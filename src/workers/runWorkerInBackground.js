@@ -15,18 +15,12 @@
  * injectable, so tests are deterministic and never spawn a real process.
  */
 
-const fs = require('node:fs')
-const os = require('node:os')
-const path = require('node:path')
 const { randomUUID } = require('node:crypto')
-const childProcess = require('node:child_process')
+// Sandbox minting + init now come from the TmpdirSandbox WorkspaceProvider (B2-7).
+// defaultPrepareSandbox is re-exported below for back-compat.
+const { createTmpdirSandbox, defaultPrepareSandbox } = require('./workspace/tmpdirSandbox')
 
 const NO_RELAY = { toUser: 0, fromUser: 0, manual: 0 }
-
-/** Default: make the sandbox a git repo so a real worker can commit inside it. */
-function defaultPrepareSandbox (dir) {
-  childProcess.spawnSync('git', ['init', '-q'], { cwd: dir })
-}
 
 /**
  * @param {{ worker, artifactStore, sandboxRoot?, clock?, newId?, prepareSandbox? }} options
@@ -41,17 +35,18 @@ function createWorkerRunner (options = {}) {
   if (!artifactStore || typeof artifactStore.write !== 'function') {
     throw new TypeError('createWorkerRunner requires an artifactStore with write()')
   }
-  const sandboxRoot = typeof options.sandboxRoot === 'string' && options.sandboxRoot ? options.sandboxRoot : os.tmpdir()
   const clock = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
   const newId = typeof options.newId === 'function' ? options.newId : (p) => `${p}_${randomUUID().slice(0, 8)}`
-  const prepareSandbox = typeof options.prepareSandbox === 'function' ? options.prepareSandbox : defaultPrepareSandbox
+  // The workspace provider owns sandbox minting + init. Back-compat: the existing
+  // sandboxRoot/prepareSandbox options are routed into the default TmpdirSandbox,
+  // so callers that pass them behave exactly as before.
+  const workspace = options.workspace || createTmpdirSandbox({ sandboxRoot: options.sandboxRoot, prepareSandbox: options.prepareSandbox })
 
   async function run (context = {}) {
     const { proposalId = null, runId = null, task, approval = null } = context || {}
 
     const taskId = newId('task')
-    const sandbox = fs.mkdtempSync(path.join(sandboxRoot, 'aroma-sandbox-'))
-    prepareSandbox(sandbox)
+    const { dir: sandbox } = workspace.prepare()
 
     // Execution Artifact — the authorised unit of work + its provenance.
     const execution = {

@@ -24,11 +24,12 @@
  * ARRAY and never a shell string — no quoting, no injection surface.
  */
 
-const os = require('node:os')
-const fs = require('node:fs')
-const path = require('node:path')
 const childProcess = require('node:child_process')
 const { createResult } = require('../capability/adapter')
+// THE BRAKE + the workspace provider now live in the WorkspaceProvider (B2-7).
+// Re-exported below so existing `require('./claudeWorker').assertSandboxUnderTmpdir`
+// call-sites keep working unchanged.
+const { createTmpdirSandbox, assertSandboxUnderTmpdir, canonicalise } = require('./workspace/tmpdirSandbox')
 
 const SUPPORTED = { Invoke: [1] }
 
@@ -36,58 +37,6 @@ const SUPPORTED = { Invoke: [1] }
 // no stdin/readline, bypassPermissions => no Allow prompt). Recorded on every
 // result so the artifact carries the 0/0/0 proof.
 const NO_RELAY = { toUser: 0, fromUser: 0, manual: 0 }
-
-/**
- * Canonicalise a path, resolving '..' AND symlinks. For a path that does not
- * exist yet (the sandbox is created just before invocation), the deepest
- * existing ancestor is realpath'd and the remaining segments re-appended — so a
- * symlinked ancestor pointing outside tmpdir cannot smuggle the target back in.
- * @param {string} p
- * @returns {string}
- */
-function canonicalise (p) {
-  const resolved = path.resolve(p)
-  try {
-    return fs.realpathSync(resolved)
-  } catch (_) {
-    let dir = resolved
-    const tail = []
-    while (!fs.existsSync(dir)) {
-      tail.unshift(path.basename(dir))
-      const parent = path.dirname(dir)
-      if (parent === dir) return resolved // reached a root that doesn't exist; give up on symlink resolution
-      dir = parent
-    }
-    return path.join(fs.realpathSync(dir), ...tail)
-  }
-}
-
-/**
- * THE BRAKE. Assert `target` resolves strictly UNDER os.tmpdir(); return the
- * canonical target. Throws (refusing invocation) on anything else: a repo path,
- * a '..' escape, an absolute real path, a symlink out, or tmpdir itself.
- * @param {string} target
- * @returns {string} the canonical, sandbox-safe path
- * @throws {Error} if the target is not strictly under os.tmpdir()
- */
-function assertSandboxUnderTmpdir (target) {
-  if (typeof target !== 'string' || target.trim() === '') {
-    throw new Error('worker refuses to invoke: sandbox target must be a non-empty path')
-  }
-  const tmpReal = fs.realpathSync(os.tmpdir())
-  const targetReal = canonicalise(target)
-  const rel = path.relative(tmpReal, targetReal)
-  // rel === ''       -> target IS tmpdir (need a subdir, not the root)
-  // rel starts '..'  -> target escapes tmpdir
-  // path.isAbsolute  -> different drive/root (Windows) -> outside tmpdir
-  if (rel === '' || rel.startsWith('..') || path.isAbsolute(rel)) {
-    throw new Error(
-      `worker refuses to invoke: sandbox target is not under os.tmpdir() ` +
-      `(target="${target}", resolved="${targetReal}", tmpdir="${tmpReal}")`
-    )
-  }
-  return targetReal
-}
 
 /**
  * Real runner: async spawn, shell:false. Never called by unit tests (stub injected).
@@ -113,9 +62,11 @@ function defaultRunner (command, argsArray, opts = {}) {
   })
 }
 
-/** Build the exact spike command argument array. Order is asserted by tests. */
-function buildArgs (task, sandbox) {
-  return ['-p', task, '--add-dir', sandbox, '--permission-mode', 'bypassPermissions', '--output-format', 'json']
+/** Build the exact spike command argument array. Order is asserted by tests.
+ *  --add-dir and --permission-mode are sourced from the workspace provider; the
+ *  default TmpdirSandbox yields the identical B2-1 args (byte-for-byte). */
+function buildArgs (task, sandbox, workspace = createTmpdirSandbox()) {
+  return ['-p', task, '--add-dir', ...workspace.addDirs(sandbox), '--permission-mode', workspace.permissionMode(), '--output-format', 'json']
 }
 
 /** Turn a runner result into a normalized Result (capability/adapter.js shape). */
@@ -161,6 +112,9 @@ function parseResult ({ status, stdout, stderr, command, args, sandbox }) {
 function createClaudeWorker (options = {}) {
   const runner = typeof options.runner === 'function' ? options.runner : defaultRunner
   const command = typeof options.command === 'string' && options.command ? options.command : 'claude'
+  // The workspace provider owns the sandbox brake + permission-mode/add-dir. The
+  // default TmpdirSandbox reproduces B2-1 behaviour exactly.
+  const workspace = options.workspace || createTmpdirSandbox()
 
   /**
    * @param {'Invoke'} capabilityId
@@ -182,8 +136,8 @@ function createClaudeWorker (options = {}) {
     // THE BRAKE — runs BEFORE any process is spawned. Throws => runner never called.
     // The SAME validated path is used for BOTH --add-dir AND the child's cwd, so
     // claude's workspace is the sandbox, not the repo. stdin is closed.
-    const safeSandbox = assertSandboxUnderTmpdir(input && input.sandbox)
-    const args = buildArgs(task, safeSandbox)
+    const safeSandbox = workspace.containmentCheck(input && input.sandbox)
+    const args = buildArgs(task, safeSandbox, workspace)
     const { status, stdout, stderr } = await runner(command, args, {
       cwd: safeSandbox,
       stdio: ['ignore', 'pipe', 'pipe']

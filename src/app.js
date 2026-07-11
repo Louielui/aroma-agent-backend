@@ -22,6 +22,7 @@ const path = require('node:path')
 
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
+const { createProposalBridgeRouter } = require('./intake/proposalBridge')
 const store = require('./store/store')
 const { listWorkers, getExecutive } = require('./workers/registry')
 const { statusLabel } = require('./dispatch/dispatcher')
@@ -416,6 +417,12 @@ function createApp (options = {}) {
   // M1: Intake endpoint (COO Brain)
   // Mounted into the hub app at /api/v1/intake (per task spec AO-001)
   app.use('/api/v1/intake', intakeRouter)
+
+  // B2-7 intake Task → Proposal bridge (PROMOTE ONLY). State-changing, so it is
+  // token-guarded like the other proposal-mutation routes. It builds + binds a
+  // Proposal and sets linkState; it NEVER confirms and NEVER starts a worker —
+  // POST /proposals/:id/confirm remains the sole execution-authorization point.
+  app.use('/api/v1/intake/tasks', requireServiceToken, createProposalBridgeRouter({ store, proposalStore }))
 
   // Worker Dispatcher — real workers + live dispatch status
   app.get('/api/v1/workers', (req, res) => {

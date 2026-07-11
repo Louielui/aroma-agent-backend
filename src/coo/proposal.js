@@ -46,6 +46,12 @@ const DEFAULT_PROPOSALS_FILE = path.join(DATA_DIR, 'aroma-proposals.json')
 const CAPABILITY_ID = 'Develop'
 const CAPABILITY_VERSION = 1
 
+// B2-7 bridge lifecycle. This is a SEPARATE field from proposal.status (which
+// keeps its pending/confirmed/cancelled values) — the bridge never adds a status
+// value. A promoted proposal moves linking → ready on a successful Task bind, or
+// linking → linking_failed if the bind write fails (resumable, never duplicated).
+const VALID_LINK_STATES = new Set(['linking', 'ready', 'linking_failed'])
+
 // The single authenticated local owner for M1, matching run/store.js. A real
 // deployment resolves this from an auth context; the constant stands in until
 // then and is intentionally a SERVER-side value a client can never influence.
@@ -210,6 +216,84 @@ function createProposalStore (options = {}) {
   }
 
   /**
+   * Create a bridge Proposal from an intake Task — B2-7 PROMOTE path. Unlike
+   * propose(), this NEVER calls an LLM: the `task` string is the deterministic
+   * brief the caller already serialized. The Proposal is created status:'pending'
+   * and linkState:'linking' (inert — no Run, no worker). The endpoint binds it to
+   * the Task and then flips linkState to 'ready'; only then may confirm authorise
+   * it. targetProject is server-fixed to 'backend' for M1 (never 'production').
+   *
+   * @param {{ task: string, sourceTaskId: string, sourceDecisionId?: string|null,
+   *   briefSerializationVersion?: string, sourceTaskProvenance?: object }} input
+   * @returns {object} the created Proposal snapshot (linkState:'linking')
+   */
+  function createBridgeProposal (input = {}) {
+    const src = input || {}
+    if (typeof src.task !== 'string' || src.task.trim() === '') {
+      throw fail(422, 'createBridgeProposal requires a non-empty task brief')
+    }
+    if (!isNonEmptyString(src.sourceTaskId)) {
+      throw fail(422, 'createBridgeProposal requires a sourceTaskId')
+    }
+    const now = new Date().toISOString()
+    const proposal = {
+      id: 'prop_' + randomUUID().slice(0, 8),
+      conversationId: null,
+      task: src.task,
+      // Server-fixed execution target for M1; a task-derived proposal is never
+      // 'production' (confirm refuses that regardless).
+      targetProject: 'backend',
+      capabilityId: CAPABILITY_ID,
+      version: CAPABILITY_VERSION,
+      status: 'pending',
+      owner: resolveOwner(),
+      confirmedBy: null,
+      cancelledBy: null,
+      createdAt: now,
+      // ── bridge provenance (persisted by the B2-6 whole-record flush) ──
+      sourceTaskId: src.sourceTaskId,
+      sourceDecisionId: src.sourceDecisionId == null ? null : src.sourceDecisionId,
+      linkState: 'linking',
+      briefSerializationVersion: isNonEmptyString(src.briefSerializationVersion) ? src.briefSerializationVersion : 'v1',
+      sourceTaskProvenance: src.sourceTaskProvenance == null ? null : src.sourceTaskProvenance
+    }
+    proposals.set(proposal.id, proposal)
+    order.push(proposal.id)
+    flush()
+    return snapshot(proposal)
+  }
+
+  /**
+   * Set the bridge linkState of a Proposal ('linking' | 'ready' |
+   * 'linking_failed') and persist. The ONLY mutator of linkState.
+   * @returns {object} the updated Proposal snapshot
+   */
+  function setLinkState (proposalId, linkState) {
+    const proposal = proposals.get(proposalId)
+    if (!proposal) throw fail(404, `unknown proposal: ${proposalId}`)
+    if (!VALID_LINK_STATES.has(linkState)) {
+      throw fail(422, `invalid linkState: ${linkState}`)
+    }
+    proposal.linkState = linkState
+    flush()
+    return snapshot(proposal)
+  }
+
+  /**
+   * Find the bridge Proposal for a source Task, or null. Used for idempotency and
+   * for safe non-duplicating RESUME of an orphaned 'linking'/'linking_failed'
+   * proposal after a failed bind — durable across restart via B2-6.
+   * @returns {object|null}
+   */
+  function findBySourceTaskId (taskId) {
+    for (const id of order) {
+      const p = proposals.get(id)
+      if (p && p.sourceTaskId === taskId) return snapshot(p)
+    }
+    return null
+  }
+
+  /**
    * Confirm a pending Proposal — the ONE and ONLY path to a Run.
    *
    * A structured action, never free-text agreement: a caller invokes this
@@ -237,6 +321,19 @@ function createProposalStore (options = {}) {
     if (proposal.status !== 'pending') {
       throw fail(409, `proposal ${proposalId} is not pending (status: ${proposal.status}); ` +
         'only a pending proposal can be confirmed')
+    }
+
+    // B2-7 bridge-only integrity guard (ADDITIVE — the status==='pending' rule
+    // above is untouched and remains the ONLY gate for non-bridge proposals). A
+    // promoted proposal carries a sourceTaskId; it may be confirmed ONLY once its
+    // Task→Proposal bind reached linkState 'ready'. Fail-closed: 'linking',
+    // 'linking_failed', a missing linkState, or any other value is REJECTED, so a
+    // half-linked promotion can never be authorised for execution. Proposals
+    // without a sourceTaskId are entirely unaffected.
+    if (proposal.sourceTaskId != null && proposal.linkState !== 'ready') {
+      throw fail(409, `bridge proposal ${proposalId} is not ready to confirm ` +
+        `(linkState: ${proposal.linkState == null ? 'none' : proposal.linkState}); ` +
+        'a promoted task-proposal must reach linkState "ready" before it can be confirmed')
     }
 
     // A Proposal can never target production. propose already refuses it; confirm
@@ -303,7 +400,16 @@ function createProposalStore (options = {}) {
     return order.map(id => snapshot(proposals.get(id))).reverse()
   }
 
-  return { propose, confirmProposal, cancelProposal, getProposal, listProposals }
+  return {
+    propose,
+    createBridgeProposal,
+    setLinkState,
+    findBySourceTaskId,
+    confirmProposal,
+    cancelProposal,
+    getProposal,
+    listProposals
+  }
 }
 
 module.exports = { createProposalStore, LOCAL_OWNER }

@@ -83,6 +83,29 @@ function recordLLMUsage (metrics = {}) {
 
 function listDecisions () { return load().decisions }
 function listTasks () { return load().tasks }
+
+/**
+ * Return one Task by id, or null. Back-compat: a Task persisted before the
+ * bridge simply has no `proposalId` field (missing ⇒ not promoted).
+ */
+function getTask (taskId) {
+  return (load().tasks || []).find(t => t.id === taskId) || null
+}
+
+/**
+ * Bind a Task to its promoted Proposal — the B2-7 bridge's ONE Task-store write.
+ * Additive and non-destructive: it sets `task.proposalId` and nothing else.
+ * Throws if the Task is unknown so the bridge can fail-closed (linking_failed).
+ * @returns {object} the updated Task
+ */
+function setTaskProposalId (taskId, proposalId) {
+  const db = load()
+  const task = (db.tasks || []).find(t => t.id === taskId)
+  if (!task) throw new Error(`unknown task: ${taskId}`)
+  task.proposalId = proposalId
+  save(db)
+  return task
+}
 function listEvents () { return load().events.slice(-50).reverse() }
 function usageSummary () {
   const u = load().llm_usage
@@ -139,4 +162,4 @@ function updateDispatch (id, patch) {
 function listDispatches () { return (load().dispatches || []).slice().reverse() }
 function getDispatch (id) { return (load().dispatches || []).find(x => x.id === id) || null }
 
-module.exports = { persistIntake, recordLLMUsage, listDecisions, listTasks, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
+module.exports = { persistIntake, recordLLMUsage, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
