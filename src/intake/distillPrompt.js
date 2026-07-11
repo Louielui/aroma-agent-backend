@@ -100,7 +100,7 @@ function parseDistillResponse (text) {
   return { ...base, mode: 'commit',
     judgment: typeof p.judgment === 'string' ? p.judgment.trim() : (typeof p.summary === 'string' ? p.summary.trim() : ''),
     decision,
-    tasks: tasks.length ? tasks : [{ title: reply.slice(0, 40), note: '由對話蒸餾', capability: 'ops' }],
+    tasks, // a commit may legitimately have zero tasks — never fabricate one to fill the shape
     risks,
     next_step: typeof p.next_step === 'string' ? p.next_step.trim() : '' }
 }
