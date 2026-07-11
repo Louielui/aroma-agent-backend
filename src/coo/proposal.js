@@ -22,11 +22,24 @@
  * language model can never set owner, confirmedBy, or a targetProject of
  * 'production', and can never trigger a confirmation.
  *
- * Everything is in-memory: no file I/O, no network, no real LLM in this file.
+ * Persistence (B2-6): the store is durable. It loads its records from a JSON
+ * file at construction and flushes the whole envelope (via a safe temp+rename
+ * write) after every mutation, so a Proposal — and its confirm/cancel state —
+ * survives a restart. A corrupt file fails LOUDLY at construct rather than
+ * starting on silently-empty state. Persistence is injectable: `persistence:
+ * false` keeps the pre-B2-6 in-memory-only behaviour (used by tests for
+ * isolation). No network and no real LLM in this file.
  */
 
+const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { classifyIntent } = require('./intent')
+const { load: loadStoreFile, save: saveStoreFile } = require('./proposalPersistence')
+
+// The durable store file, mirroring store.js's data dir (and its AROMA_DATA_DIR
+// override) so both truth files live together. `data/` is gitignored.
+const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+const DEFAULT_PROPOSALS_FILE = path.join(DATA_DIR, 'aroma-proposals.json')
 
 // Every Proposal (and the Run it may become) is a Develop@1. These are fixed
 // here, server-side — a caller or model can never choose the capability.
@@ -60,9 +73,44 @@ function deepFreeze (value) {
 }
 
 /**
+ * Resolve the injectable persistence config into a bound { load, save } backend,
+ * or null for in-memory-only. `false`/`null` → in-memory (no disk). A string →
+ * that file path. `{ path }` → that file path. `undefined` → the default file.
+ */
+function resolvePersistence (config) {
+  if (config === false || config === null) return null
+  const filePath = typeof config === 'string'
+    ? config
+    : (config && typeof config.path === 'string' ? config.path : DEFAULT_PROPOSALS_FILE)
+  return {
+    path: filePath,
+    load: () => loadStoreFile(filePath),
+    save: (data) => saveStoreFile(filePath, data)
+  }
+}
+
+/**
+ * Normalize a record read from disk WITHOUT fabricating state. A missing or
+ * blank status becomes the controlled sentinel 'unknown' — NEVER defaulted to
+ * 'pending', so a broken record can never be confirmed. A genuinely absent
+ * confirmedBy/cancelledBy becomes null (it is absent, not invented). Records we
+ * wrote ourselves already carry these fields, so a clean round-trip is untouched
+ * (confirmedAt/cancelledAt/runId are intentionally NOT defaulted — their absence
+ * is the legitimate "not yet confirmed/cancelled" state, not missing data).
+ */
+function normalizeLoaded (rec) {
+  const out = { ...rec }
+  if (!(typeof out.status === 'string' && out.status.trim().length > 0)) out.status = 'unknown'
+  if (!('confirmedBy' in out)) out.confirmedBy = null
+  if (!('cancelledBy' in out)) out.cancelledBy = null
+  return out
+}
+
+/**
  * Create a Proposal Store.
  *
- * @param {{ runStore: { startRun: function }, resolveOwner?: function }} options
+ * @param {{ runStore: { startRun: function }, resolveOwner?: function,
+ *           persistence?: (string|false|{path?:string}) }} options
  *   runStore — the injected Run Store. Its startRun is called ONLY by
  *     confirmProposal, and receives a fully server-fixed request. Tests inject a
  *     fake so the real Claude Code adapter is never invoked.
@@ -84,6 +132,28 @@ function createProposalStore (options = {}) {
   // The proposals this store owns, keyed by id, in creation order.
   const proposals = new Map()
   const order = []
+
+  // Durable backend, or null for in-memory-only. Repopulate from disk at
+  // construct: a corrupt file THROWS here (ProposalStoreCorruptError) so the
+  // store fails loudly rather than starting on silently-empty or fabricated
+  // state; a missing file loads as empty (first mutation creates it).
+  const persistence = resolvePersistence(opts.persistence)
+  if (persistence) {
+    const disk = persistence.load()
+    for (const id of disk.order) {
+      proposals.set(id, normalizeLoaded(disk.proposals[id]))
+      order.push(id)
+    }
+  }
+
+  /** Persist the whole { order, proposals } envelope after a mutation via the
+   *  safe temp+rename write. No-op in memory-only mode. One synchronous write
+   *  per mutation makes this store the single writer of its file — no
+   *  read-modify-write race and no partially-written file is ever observed. */
+  function flush () {
+    if (!persistence) return
+    persistence.save({ order: [...order], proposals: Object.fromEntries(proposals) })
+  }
 
   /** Return a deeply-frozen deep copy of a stored proposal, so callers cannot
    *  mutate the store's truth. */
@@ -134,6 +204,7 @@ function createProposalStore (options = {}) {
 
     proposals.set(proposal.id, proposal)
     order.push(proposal.id)
+    flush() // persist the newly-created Proposal
 
     return { intent: 'develop', proposal: snapshot(proposal) }
   }
@@ -192,6 +263,7 @@ function createProposalStore (options = {}) {
     })
 
     proposal.runId = runId
+    flush() // persist the confirmed status + confirmedBy/At + runId
     return runId
   }
 
@@ -216,6 +288,7 @@ function createProposalStore (options = {}) {
     proposal.status = 'cancelled'
     proposal.cancelledBy = isNonEmptyString(cancelledBy) ? cancelledBy : resolveOwner()
     proposal.cancelledAt = new Date().toISOString()
+    flush() // persist the cancelled status + cancelledBy/At
     return snapshot(proposal)
   }
 

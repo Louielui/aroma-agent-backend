@@ -48,7 +48,7 @@ const developLlm = fakeLlm({ intent: 'develop', task: VERBATIM_TASK, targetProje
 
 test('a greeting yields intent chat and creates no Proposal', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const greetingLlm = fakeLlm({ intent: 'chat', reply: 'Hi Louie! How can I help?' })
   const result = await store.propose({ conversationId: 'c1', message: 'good morning!', llm: greetingLlm })
@@ -63,7 +63,7 @@ test('a greeting yields intent chat and creates no Proposal', async () => {
 
 test('a development request yields a Proposal whose task is the exact verbatim worker string', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const result = await store.propose({ conversationId: 'c2', message: 'please add a timestamp', llm: developLlm })
 
@@ -82,7 +82,7 @@ test('a development request yields a Proposal whose task is the exact verbatim w
 
 test('creating a Proposal never calls the runStore', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   await store.propose({ conversationId: 'c3', message: 'add a timestamp', llm: developLlm })
 
@@ -94,7 +94,7 @@ test('creating a Proposal never calls the runStore', async () => {
 
 test('confirmProposal is the only path that calls runStore.startRun, passing the conversationId through', async () => {
   const runStore = makeFakeRunStore('run_created99')
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'conv-42', message: 'add a timestamp', llm: developLlm })
   assert.equal(runStore.calls.length, 0) // still nothing after proposing
@@ -118,7 +118,7 @@ test('confirmProposal is the only path that calls runStore.startRun, passing the
 
 test('confirmProposal rejects a proposal that is not pending', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'c4', message: 'add a timestamp', llm: developLlm })
   store.confirmProposal(proposal.id, 'louie') // now confirmed (not pending)
@@ -131,7 +131,7 @@ test('confirmProposal rejects a proposal that is not pending', async () => {
 
 test('a cancelled proposal can never be confirmed and creates no Run', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'c5', message: 'add a timestamp', llm: developLlm })
   const cancelled = store.cancelProposal(proposal.id, 'louie')
@@ -147,7 +147,7 @@ test('a cancelled proposal can never be confirmed and creates no Run', async () 
 
 test('a confirmed proposal cannot be confirmed twice — only one Run is ever created', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'c6', message: 'add a timestamp', llm: developLlm })
   store.confirmProposal(proposal.id, 'louie')
@@ -159,7 +159,7 @@ test('a confirmed proposal cannot be confirmed twice — only one Run is ever cr
 
 test('an llm returning a targetProject of production is rejected — no Proposal is created', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const productionLlm = fakeLlm({ intent: 'develop', task: 'ship it to prod', targetProject: 'production' })
   const result = await store.propose({ conversationId: 'c7', message: 'push straight to production', llm: productionLlm })
@@ -177,7 +177,7 @@ test('an llm returning a targetProject of production is rejected — no Proposal
 
 test('an llm that returns text agreeing to proceed does not confirm anything', async () => {
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore })
+  const store = createProposalStore({ runStore, persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'c8', message: 'add a timestamp', llm: developLlm })
   assert.equal(store.getProposal(proposal.id).status, 'pending')
@@ -202,7 +202,7 @@ test('an llm that returns text agreeing to proceed does not confirm anything', a
 test('confirmedBy is always set by the server and can never be supplied by the caller/model', async () => {
   // The server context resolves the owner; a caller cannot influence it.
   const runStore = makeFakeRunStore()
-  const store = createProposalStore({ runStore, resolveOwner: () => 'server-louie' })
+  const store = createProposalStore({ runStore, resolveOwner: () => 'server-louie', persistence: false })
 
   const { proposal } = await store.propose({ conversationId: 'c9', message: 'add a timestamp', llm: developLlm })
 

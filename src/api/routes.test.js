@@ -30,7 +30,7 @@ let base
 before(async () => {
   // Inject an inert dispatcher: it resolves immediately and does nothing, so a
   // created Run never reaches a worker and the real Claude Code is never invoked.
-  const testApp = createApp({ dispatcher: async () => {} })
+  const testApp = createApp({ dispatcher: async () => {}, proposalPersistence: false })
   await new Promise(resolve => {
     server = testApp.listen(0, resolve)
   })

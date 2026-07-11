@@ -347,10 +347,14 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
 /**
  * Build an Express app.
  *
- * @param {{ dispatcher?: function }} [options]
+ * @param {{ dispatcher?: function, proposalPersistence?: (string|false|object) }} [options]
  *   dispatcher — optional override for the Run Store's background dispatcher.
  *     Defaults to the production dispatcher, which routes through the REAL
  *     Claude Code adapter. Tests inject an inert dispatcher so no worker runs.
+ *   proposalPersistence — optional override for the Proposal Store's durable
+ *     backend (see createProposalStore). Defaults to the production file
+ *     (data/aroma-proposals.json); tests pass `false` for an isolated in-memory
+ *     store, or a temp-dir path, so they never collide on the shared file.
  * @returns {import('express').Express}
  */
 function createApp (options = {}) {
@@ -370,7 +374,8 @@ function createApp (options = {}) {
   // Store already resolves `owner` — never from a request body or a language model.
   const proposalStore = createProposalStore({
     runStore,
-    resolveOwner: () => LOCAL_OWNER
+    resolveOwner: () => LOCAL_OWNER,
+    persistence: opts.proposalPersistence
   })
 
   // B2-1 worker dependencies — built ONCE here at the composition root,
