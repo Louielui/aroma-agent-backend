@@ -43,10 +43,34 @@ const { getAdapter } = require('./adapters/adapterFactory')
 // Service-token authentication for every state-changing route. See src/api/auth.js.
 const { requireServiceToken } = require('./api/auth')
 
+// B2-1 worker invocation (integration slice). These are wired at the composition
+// root and triggered fire-and-forget AFTER the confirm response — the
+// confirmProposal / startRun / dispatch governance is never touched.
+const { createArtifactStore } = require('./store/artifactStore')
+const { createClaudeWorker } = require('./workers/claudeWorker')
+const { createWorkerRunner } = require('./workers/runWorkerInBackground')
+
+// B2-1d read-only Result Read Endpoint helpers (allowlist projection + robust,
+// traversal-safe artifact lookup). No worker invocation, no governance.
+const {
+  validateProposalId, findExecutionByProposalId, findResultByTaskId, buildResultView
+} = require('./api/executionResultView')
+
 // ── Run Store wiring ───────────────────────────────────────────────────────────
 // The owner is supplied here, from the server's trusted context — never from the
 // request body. For M1 this is a single local owner.
 const LOCAL_OWNER = 'louie'
+
+// B2-1 worker-invocation flag. Single read site (in the confirm handler), default
+// 'off' — production behaviour is byte-for-byte unchanged unless explicitly on.
+// An invalid value fails closed to 'off' with a warning, never open to 'on'.
+function resolveWorkerInvocation () {
+  const raw = process.env.WORKER_INVOCATION
+  if (raw === undefined || raw === null || raw === '') return 'off'
+  if (raw === 'on' || raw === 'off') return raw
+  console.warn(`[AROMA-HUB] Invalid WORKER_INVOCATION="${raw}" — falling back to 'off'.`)
+  return 'off'
+}
 
 // The real Claude Code adapter is built lazily (and once), so importing this
 // module never spawns anything. Paths mirror scripts/proof-run.js.
@@ -133,8 +157,29 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
   const router = express.Router()
+
+  // B2-1: schedule a worker AFTER the confirm response, fire-and-forget. It reads
+  // the proposal's own confirm provenance for the Execution Artifact and never
+  // blocks or alters the confirm/startRun path. No-op when the flag is off or no
+  // worker is wired. Any error is swallowed into a log line — never a late write
+  // to an already-sent response, never a process crash.
+  function scheduleWorker (proposalId, runId) {
+    if (resolveWorkerInvocation() !== 'on' || !workerDeps || !workerDeps.runner) return
+    Promise.resolve()
+      .then(() => {
+        const proposal = proposalStore.getProposal(proposalId)
+        if (!proposal) return
+        return workerDeps.runner.run({
+          proposalId,
+          runId,
+          task: proposal.task,
+          approval: { confirmedBy: proposal.confirmedBy, confirmedAt: proposal.confirmedAt }
+        })
+      })
+      .catch(err => console.error('[worker] invocation failed:', err && err.message ? err.message : String(err)))
+  }
 
   // ── Runs — asynchronous, governed work with a live append-only timeline ───────
 
@@ -231,6 +276,7 @@ function createAromaRouter ({ runStore, proposalStore }) {
     try {
       const runId = proposalStore.confirmProposal(req.params.id, LOCAL_OWNER)
       res.status(201).json({ runId })
+      scheduleWorker(req.params.id, runId) // B2-1: fire-and-forget, AFTER the response
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message })
     }
@@ -254,6 +300,45 @@ function createAromaRouter ({ runStore, proposalStore }) {
     const proposal = proposalStore.getProposal(req.params.id)
     if (!proposal) return res.status(404).json({ error: 'not found' })
     res.json(proposal)
+  })
+
+  // B2-1d: read a confirmed proposal's execution result (READ-ONLY, no token, no
+  // worker call). Keyed by proposalId (the id the frontend already holds). The
+  // response is an allowlist projection — it never carries the prompt, sandbox
+  // paths, or any unknown artifact field. 400 malformed id · 404 unknown ·
+  // 200 pending/running/succeeded/failed · 500 controlled (unreadable artifact).
+  router.get('/proposals/:id/result', (req, res) => {
+    const proposalId = req.params.id
+    if (!validateProposalId(proposalId)) {
+      return res.status(400).json({ error: 'invalid proposal id' })
+    }
+    const store = workerDeps && workerDeps.artifactStore
+    if (!store) return res.status(503).json({ error: 'result store unavailable' })
+    try {
+      const { execution, malformed: taskMalformed } = findExecutionByProposalId(store, proposalId)
+      const proposal = proposalStore.getProposal(proposalId)
+
+      if (!execution) {
+        if (!proposal) {
+          // Nothing known — unless a corrupt task file could have hidden it.
+          if (taskMalformed > 0) return res.status(500).json({ error: 'a stored record is unreadable' })
+          return res.status(404).json({ error: 'not found' })
+        }
+        // Proposal exists, no execution yet (worker off / not started).
+        return res.json(buildResultView({ proposalId, execution: null, result: null, proposal }))
+      }
+
+      const { result, malformed: resultMalformed } = findResultByTaskId(store, execution.id)
+      // No matching result AND a corrupt result file exists → the answer might be
+      // unreadable; surface a controlled error rather than a misleading 'running'.
+      if (!result && resultMalformed > 0) {
+        return res.status(500).json({ error: 'a stored result is unreadable' })
+      }
+      return res.json(buildResultView({ proposalId, execution, result, proposal }))
+    } catch (_) {
+      // Controlled, path-free error — never leak internals.
+      return res.status(500).json({ error: 'failed to read result' })
+    }
   })
 
   return router
@@ -287,6 +372,23 @@ function createApp (options = {}) {
     runStore,
     resolveOwner: () => LOCAL_OWNER
   })
+
+  // B2-1 worker dependencies — built ONCE here at the composition root,
+  // overridable via opts.workerDeps for test injection. Constructed regardless of
+  // the flag (cheap, no process spawned); the flag only gates whether the confirm
+  // handler triggers them. proposalStore is exposed on app.locals so tests can
+  // seed a proposal to confirm.
+  const workerDeps = opts.workerDeps || (() => {
+    // One artifact store, shared by the (write) trigger and the (read) endpoint —
+    // the read endpoint's source of truth is exactly what the worker wrote.
+    const artifactStore = createArtifactStore({ baseDir: path.resolve(__dirname, '..', '.aroma') })
+    return {
+      artifactStore,
+      runner: createWorkerRunner({ worker: createClaudeWorker(), artifactStore })
+    }
+  })()
+  app.locals.proposalStore = proposalStore
+  app.locals.workerDeps = workerDeps
 
   // ── Middleware ────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: '50kb' }))
@@ -337,7 +439,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
