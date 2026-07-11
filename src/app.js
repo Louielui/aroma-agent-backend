@@ -50,6 +50,12 @@ const { createArtifactStore } = require('./store/artifactStore')
 const { createClaudeWorker } = require('./workers/claudeWorker')
 const { createWorkerRunner } = require('./workers/runWorkerInBackground')
 
+// B2-1d read-only Result Read Endpoint helpers (allowlist projection + robust,
+// traversal-safe artifact lookup). No worker invocation, no governance.
+const {
+  validateProposalId, findExecutionByProposalId, findResultByTaskId, buildResultView
+} = require('./api/executionResultView')
+
 // ── Run Store wiring ───────────────────────────────────────────────────────────
 // The owner is supplied here, from the server's trusted context — never from the
 // request body. For M1 this is a single local owner.
@@ -296,6 +302,45 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
     res.json(proposal)
   })
 
+  // B2-1d: read a confirmed proposal's execution result (READ-ONLY, no token, no
+  // worker call). Keyed by proposalId (the id the frontend already holds). The
+  // response is an allowlist projection — it never carries the prompt, sandbox
+  // paths, or any unknown artifact field. 400 malformed id · 404 unknown ·
+  // 200 pending/running/succeeded/failed · 500 controlled (unreadable artifact).
+  router.get('/proposals/:id/result', (req, res) => {
+    const proposalId = req.params.id
+    if (!validateProposalId(proposalId)) {
+      return res.status(400).json({ error: 'invalid proposal id' })
+    }
+    const store = workerDeps && workerDeps.artifactStore
+    if (!store) return res.status(503).json({ error: 'result store unavailable' })
+    try {
+      const { execution, malformed: taskMalformed } = findExecutionByProposalId(store, proposalId)
+      const proposal = proposalStore.getProposal(proposalId)
+
+      if (!execution) {
+        if (!proposal) {
+          // Nothing known — unless a corrupt task file could have hidden it.
+          if (taskMalformed > 0) return res.status(500).json({ error: 'a stored record is unreadable' })
+          return res.status(404).json({ error: 'not found' })
+        }
+        // Proposal exists, no execution yet (worker off / not started).
+        return res.json(buildResultView({ proposalId, execution: null, result: null, proposal }))
+      }
+
+      const { result, malformed: resultMalformed } = findResultByTaskId(store, execution.id)
+      // No matching result AND a corrupt result file exists → the answer might be
+      // unreadable; surface a controlled error rather than a misleading 'running'.
+      if (!result && resultMalformed > 0) {
+        return res.status(500).json({ error: 'a stored result is unreadable' })
+      }
+      return res.json(buildResultView({ proposalId, execution, result, proposal }))
+    } catch (_) {
+      // Controlled, path-free error — never leak internals.
+      return res.status(500).json({ error: 'failed to read result' })
+    }
+  })
+
   return router
 }
 
@@ -333,12 +378,15 @@ function createApp (options = {}) {
   // the flag (cheap, no process spawned); the flag only gates whether the confirm
   // handler triggers them. proposalStore is exposed on app.locals so tests can
   // seed a proposal to confirm.
-  const workerDeps = opts.workerDeps || {
-    runner: createWorkerRunner({
-      worker: createClaudeWorker(),
-      artifactStore: createArtifactStore({ baseDir: path.resolve(__dirname, '..', '.aroma') })
-    })
-  }
+  const workerDeps = opts.workerDeps || (() => {
+    // One artifact store, shared by the (write) trigger and the (read) endpoint —
+    // the read endpoint's source of truth is exactly what the worker wrote.
+    const artifactStore = createArtifactStore({ baseDir: path.resolve(__dirname, '..', '.aroma') })
+    return {
+      artifactStore,
+      runner: createWorkerRunner({ worker: createClaudeWorker(), artifactStore })
+    }
+  })()
   app.locals.proposalStore = proposalStore
   app.locals.workerDeps = workerDeps
 
