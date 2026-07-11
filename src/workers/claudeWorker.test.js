@@ -17,11 +17,11 @@ const path = require('node:path')
 
 const { createClaudeWorker, assertSandboxUnderTmpdir } = require('./claudeWorker')
 
-// A stub runner that records every call and returns a canned success payload.
+// A stub runner that records every call (incl. the opts arg) and returns a canned payload.
 function spyRunner (payload) {
   const calls = []
-  const runner = async (command, args) => {
-    calls.push({ command, args })
+  const runner = async (command, args, opts) => {
+    calls.push({ command, args, opts })
     return payload
   }
   return { runner, calls }
@@ -60,7 +60,28 @@ test('builds the EXACT spike command: -p <task> --add-dir <sandbox> --permission
       '--permission-mode', 'bypassPermissions',
       '--output-format', 'json'
     ])
+    // cwd/stdin brake: claude runs INSIDE the sandbox (not the repo), stdin closed.
+    assert.equal(calls[0].opts.cwd, expectedSandbox)          // workspace is the sandbox
+    assert.equal(calls[0].opts.cwd, args[3])                  // cwd === the --add-dir value (same brake-validated path)
+    assert.deepEqual(calls[0].opts.stdio, ['ignore', 'pipe', 'pipe']) // stdin physically closed
   } finally { fs.rmSync(sandbox, { recursive: true, force: true }) }
+})
+
+test('cwd passed to the runner is always the brake-validated sandbox (never outside tmpdir)', async () => {
+  const sandbox = freshSandbox()
+  try {
+    const { runner, calls } = spyRunner({ status: 0, stdout: SUCCESS_JSON, stderr: '' })
+    await createClaudeWorker({ runner }).invoke('Invoke', 1, { task: 't', sandbox })
+    const cwd = calls[0].opts.cwd
+    const rel = path.relative(fs.realpathSync(os.tmpdir()), cwd)
+    assert.ok(rel !== '' && !rel.startsWith('..') && !path.isAbsolute(rel), 'cwd must be strictly under os.tmpdir()')
+  } finally { fs.rmSync(sandbox, { recursive: true, force: true }) }
+})
+
+test('a sandbox outside tmpdir refuses BEFORE spawn — so cwd never reaches spawn with a bad value', async () => {
+  const { runner, calls } = spyRunner({ status: 0, stdout: SUCCESS_JSON, stderr: '' })
+  await assert.rejects(() => createClaudeWorker({ runner }).invoke('Invoke', 1, { task: 't', sandbox: process.cwd() }), /not under os\.tmpdir/)
+  assert.equal(calls.length, 0) // cwd would have been the repo — refused before any spawn
 })
 
 // --- result parse ----------------------------------------------------------

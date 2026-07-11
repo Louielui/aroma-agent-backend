@@ -89,10 +89,21 @@ function assertSandboxUnderTmpdir (target) {
   return targetReal
 }
 
-/** Real runner: async spawn, shell:false. Never called by unit tests (stub injected). */
-function defaultRunner (command, argsArray) {
+/**
+ * Real runner: async spawn, shell:false. Never called by unit tests (stub injected).
+ * `opts.cwd` sets the child's working directory (the validated sandbox) so claude
+ * operates INSIDE the sandbox, not the parent repo — `--add-dir` only widens the
+ * allowed set, it does not move the workspace. `opts.stdio` closes stdin
+ * (['ignore','pipe','pipe']) so the process physically cannot block on or request
+ * input — non-interactivity by mechanism, not by claim.
+ */
+function defaultRunner (command, argsArray, opts = {}) {
   return new Promise((resolve, reject) => {
-    const child = childProcess.spawn(command, argsArray, { shell: false })
+    const child = childProcess.spawn(command, argsArray, {
+      shell: false,
+      cwd: opts.cwd,
+      stdio: opts.stdio || ['ignore', 'pipe', 'pipe']
+    })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', d => { stdout += d.toString() })
@@ -169,9 +180,14 @@ function createClaudeWorker (options = {}) {
       throw new Error('worker invoke requires a non-empty task')
     }
     // THE BRAKE — runs BEFORE any process is spawned. Throws => runner never called.
+    // The SAME validated path is used for BOTH --add-dir AND the child's cwd, so
+    // claude's workspace is the sandbox, not the repo. stdin is closed.
     const safeSandbox = assertSandboxUnderTmpdir(input && input.sandbox)
     const args = buildArgs(task, safeSandbox)
-    const { status, stdout, stderr } = await runner(command, args)
+    const { status, stdout, stderr } = await runner(command, args, {
+      cwd: safeSandbox,
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
     return parseResult({ status, stdout, stderr, command, args, sandbox: safeSandbox })
   }
 
