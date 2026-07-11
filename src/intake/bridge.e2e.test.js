@@ -82,7 +82,10 @@ test('REAL paid bridge E2E — Task→promote→confirm→worker→Result API, f
   const worker = createClaudeWorker({ command })                       // real spawn: cwd=sandbox, stdin closed
   const runner = createWorkerRunner({ worker, artifactStore, sandboxRoot: os.tmpdir() }) // real git-init TmpdirSandbox
   // NOTE: WORKER_INVOCATION is required 'on' by the gate — we do NOT set it here.
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false })
+  // The Result Read endpoint reads artifacts from workerDeps.artifactStore, so it
+  // must be the SAME store the runner writes to — inject BOTH (as the production
+  // default workerDeps does). Injecting only { runner } → /result 503.
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner, artifactStore }, proposalPersistence: false })
   const server = built.listen(0)
   const { port } = server.address()
   const origin = `http://127.0.0.1:${port}`
