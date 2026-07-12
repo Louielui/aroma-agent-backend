@@ -31,7 +31,7 @@ const { createClaudeWorker } = require('./claudeWorker')
 const { createWorkerRunner } = require('./runWorkerInBackground')
 
 const PAID = process.env.RUN_PAID_E2E === '1'
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture') // B2-15: explicit test token
 
 // The bare `claude` on Windows is a bash script; spawn(shell:false) needs the real
 // exe. On other platforms the PATH `claude` works.
@@ -65,7 +65,7 @@ test('REAL paid unattended E2E — Capability Verification Task', { skip: PAID ?
   const command = resolveClaudeCommand()
   const worker = createClaudeWorker({ command })                 // real spawn runner (cwd=sandbox, stdin closed)
   const runner = createWorkerRunner({ worker, artifactStore: store, sandboxRoot: os.tmpdir() }) // real git-init prepareSandbox
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
+  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   const server = built.listen(0)
   const t0 = Date.now()
   try {

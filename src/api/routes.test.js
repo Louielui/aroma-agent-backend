@@ -16,11 +16,12 @@ const assert = require('node:assert/strict')
 
 const app = require('../app')
 const { createApp } = app
-const { readExpectedToken } = require('./auth')
+const { TEST_SERVICE_TOKEN } = require('./_serviceTokenFixture')
 
-// The token an incoming request must present. Read from the same helper the
-// server uses, so the test is correct whether or not HUB_TOKEN is configured.
-const TOKEN = readExpectedToken()
+// B2-15: the token an incoming request must present is injected EXPLICITLY into
+// createApp below (serviceToken), so the test configures its own auth rather than
+// relying on any server-side fallback (there is none).
+const TOKEN = TEST_SERVICE_TOKEN
 const AUTH = { Authorization: `Bearer ${TOKEN}` }
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
@@ -30,7 +31,7 @@ let base
 before(async () => {
   // Inject an inert dispatcher: it resolves immediately and does nothing, so a
   // created Run never reaches a worker and the real Claude Code is never invoked.
-  const testApp = createApp({ dispatcher: async () => {}, proposalPersistence: false, runPersistence: false })
+  const testApp = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, proposalPersistence: false, runPersistence: false })
   await new Promise(resolve => {
     server = testApp.listen(0, resolve)
   })

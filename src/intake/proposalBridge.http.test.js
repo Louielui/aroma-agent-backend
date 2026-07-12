@@ -33,7 +33,7 @@ const { createArtifactStore } = require('../store/artifactStore')
 const { createClaudeWorker } = require('../workers/claudeWorker')
 const { createWorkerRunner } = require('../workers/runWorkerInBackground')
 
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture') // B2-15: explicit test token
 const SUCCESS_JSON = JSON.stringify({ subtype: 'success', is_error: false, result: 'done', total_cost_usd: 0.001 })
 
 function buildApp () {
@@ -41,7 +41,7 @@ function buildApp () {
   const artifactStore = createArtifactStore({ baseDir: base })
   const worker = createClaudeWorker({ runner: async () => ({ status: 0, stdout: SUCCESS_JSON, stderr: '' }) })
   const runner = createWorkerRunner({ worker, artifactStore, sandboxRoot: os.tmpdir(), prepareSandbox: () => {} })
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
+  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, artifactStore, base }
 }
 

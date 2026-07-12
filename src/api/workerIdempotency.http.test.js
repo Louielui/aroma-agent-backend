@@ -19,12 +19,12 @@ const assert = require('node:assert/strict')
 
 const { createApp } = require('../app')
 
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('./_serviceTokenFixture') // B2-15: explicit test token
 
 function buildApp () {
   const spy = [] // every runner.run({runId,...}) call
   const runner = { run: async (ctx) => { spy.push(ctx); return { ok: true } } }
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
+  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, spy }
 }
 

@@ -9,8 +9,22 @@
 
 const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
+const { readExpectedToken } = require('./api/auth')
 
 const PORT = process.env.PORT || 8081
+
+// B2-15 STARTUP FAIL-FAST — this lives ONLY on the production entry/listen path
+// (never in createApp), so tests that build apps via createApp cannot trip it.
+// Context is detected BY CODE LOCATION, not NODE_ENV. If no service token is
+// configured, refuse to start: a privileged server must never run un-authenticated
+// (and must never fall back to a shared literal — auth.js has no fallback).
+function assertServiceTokenConfigured () {
+  if (!readExpectedToken()) {
+    console.error('[AROMA-HUB] FATAL: HUB_TOKEN is not configured. Refusing to start — ' +
+      'privileged routes would be unauthenticated. Set HUB_TOKEN in the service environment.')
+    process.exit(1)
+  }
+}
 
 // B2-11b STARTUP RECONCILE — PURE MARK, ZERO DISPATCH. Runs here (server startup)
 // rather than inside createApp, so tests that build apps never trigger it. For
@@ -48,6 +62,7 @@ function startupSandboxSweep () {
   }
 }
 
+assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
 startupReconcile()
 
 app.listen(PORT, () => {

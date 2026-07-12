@@ -26,7 +26,7 @@ const { createArtifactStore } = require('../store/artifactStore')
 const { createClaudeWorker } = require('../workers/claudeWorker')
 const { createWorkerRunner } = require('../workers/runWorkerInBackground')
 
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('./_serviceTokenFixture') // B2-15: explicit test token
 const SUCCESS_JSON = JSON.stringify({
   subtype: 'success', is_error: false, result: 'created hello.txt and committed', total_cost_usd: 0.003
 })
@@ -38,7 +38,7 @@ function buildApp () {
   // REAL Step-2 adapter (its sandbox brake runs) driven by a stub runner (no real claude).
   const worker = createClaudeWorker({ runner: stubRunner })
   const runner = createWorkerRunner({ worker, artifactStore: store, sandboxRoot: os.tmpdir(), prepareSandbox: () => {} })
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
+  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, store, base }
 }
 

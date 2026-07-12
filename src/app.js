@@ -42,7 +42,7 @@ const { createProposalStore } = require('./coo/proposal')
 const { getAdapter } = require('./adapters/adapterFactory')
 
 // Service-token authentication for every state-changing route. See src/api/auth.js.
-const { requireServiceToken } = require('./api/auth')
+const { createRequireServiceToken } = require('./api/auth')
 
 // B2-1 worker invocation (integration slice). These are wired at the composition
 // root and triggered fire-and-forget AFTER the confirm response — the
@@ -193,7 +193,7 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken }) {
   const router = express.Router()
 
   // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
@@ -447,6 +447,10 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize }) 
  *     backend (see createProposalStore). Defaults to the production file
  *     (data/aroma-proposals.json); tests pass `false` for an isolated in-memory
  *     store, or a temp-dir path, so they never collide on the shared file.
+ *   serviceToken — B2-15 explicit auth injection. When a non-empty string is
+ *     given, privileged routes are guarded by exactly that token (a deliberately
+ *     configured expected token). Omitted in production → the middleware falls
+ *     back to readExpectedToken() and fails CLOSED (401) if HUB_TOKEN is unset.
  * @returns {import('express').Express}
  */
 function createApp (options = {}) {
@@ -468,6 +472,18 @@ function createApp (options = {}) {
   const dispatcherConfigured = developDispatcher !== null
   const inertDispatcher = async () => {} // DI safety floor — never invoked on the unauthorized path
   const authorize = () => resolveExecutionAuthorization(dispatcherConfigured)
+
+  // B2-15 auth injection seam. The service-token middleware is built PER APP. In
+  // production nothing is injected → the resolver defaults to readExpectedToken()
+  // → fail-closed (401) when HUB_TOKEN is unset. Tests pass an explicit
+  // opts.serviceToken so privileged routes are guarded by a DELIBERATELY-configured
+  // token — never a hidden fallback. Global process.env is never mutated.
+  const injectedServiceToken = (typeof opts.serviceToken === 'string' && opts.serviceToken.length > 0)
+    ? opts.serviceToken
+    : null
+  const requireServiceToken = createRequireServiceToken(
+    injectedServiceToken ? { resolveToken: () => injectedServiceToken } : {}
+  )
 
   const app = express()
 
@@ -568,7 +584,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 

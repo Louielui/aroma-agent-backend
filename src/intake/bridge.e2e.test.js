@@ -47,7 +47,7 @@ const FLAG_ON = process.env.WORKER_INVOCATION === 'on'
 const GATED = PAID && FLAG_ON
 const SKIP = GATED ? false : 'set WORKER_INVOCATION=on AND RUN_PAID_E2E=1 to run the paid bridge E2E'
 
-const TOKEN = 'svc-token-aroma-os' // dev service-token stub (not a secret); never logged
+const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture') // B2-15: explicit test token (not a secret); never logged
 
 // A trivial, safe, self-contained sandbox action → cheap + near-deterministic.
 const TASK_TITLE = 'Create hello.txt containing OK'
@@ -85,7 +85,7 @@ test('REAL paid bridge E2E — Task→promote→confirm→worker→Result API, f
   // The Result Read endpoint reads artifacts from workerDeps.artifactStore, so it
   // must be the SAME store the runner writes to — inject BOTH (as the production
   // default workerDeps does). Injecting only { runner } → /result 503.
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner, artifactStore }, proposalPersistence: false, runPersistence: false })
+  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner, artifactStore }, proposalPersistence: false, runPersistence: false })
   const server = built.listen(0)
   const { port } = server.address()
   const origin = `http://127.0.0.1:${port}`

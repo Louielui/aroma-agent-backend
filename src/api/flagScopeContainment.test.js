@@ -18,7 +18,7 @@ const assert = require('node:assert/strict')
 const app = require('../app')
 const { createApp, resolveDevelopDispatch, resolveExecutionAuthorization } = app
 
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('./_serviceTokenFixture') // B2-15: explicit test token
 const inertArtifactStore = {
   write () { throw new Error('no artifact write in containment test') },
   list () { return [] },
@@ -90,7 +90,7 @@ async function confirmCase ({ worker, develop, dispatcher }) {
 
   const workerState = { called: 0 }
   const landmineRunner = { run: async () => { workerState.called += 1 } }
-  const opts = { workerDeps: { runner: landmineRunner, artifactStore: inertArtifactStore }, proposalPersistence: false, runPersistence: false }
+  const opts = { serviceToken: TOKEN, workerDeps: { runner: landmineRunner, artifactStore: inertArtifactStore }, proposalPersistence: false, runPersistence: false }
   if (dispatcher) opts.dispatcher = dispatcher
 
   const built = createApp(opts)

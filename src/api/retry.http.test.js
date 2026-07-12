@@ -19,7 +19,7 @@ const path = require('node:path')
 const { createApp } = require('../app')
 const { createArtifactStore } = require('../store/artifactStore')
 
-const TOKEN = 'svc-token-aroma-os'
+const { TEST_SERVICE_TOKEN: TOKEN } = require('./_serviceTokenFixture') // B2-15: explicit test token
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
 afterEach(() => { delete process.env.WORKER_INVOCATION; delete process.env.DEVELOP_DISPATCH })
@@ -43,6 +43,7 @@ test('retry endpoint: token required, interrupted → 201 inert attempt, missing
   const artifactStore = createArtifactStore({ baseDir: base })
   const spy = []
   const built = createApp({
+    serviceToken: TOKEN,
     dispatcher: async () => { spy.push(1) },
     workerDeps: { runner: { run: async () => { throw new Error('worker must not run') } }, artifactStore },
     proposalPersistence: false,
