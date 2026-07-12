@@ -47,11 +47,21 @@ const STAGES = [
   'DENIED',
   'FAILED',
   'ROLLED_BACK',
-  'REJECTED'
+  'REJECTED',
+  // B2-11b recovery marks (startup reconcile — a MARK, never an action):
+  'RECONCILED_PENDING',
+  'RECONCILED_INTERRUPTED',
+  'RECONCILED_SUCCEEDED',
+  'RECONCILED_FAILED',
+  // B2-11b retry: the seed of a NEW attempt (inert — never auto-dispatched):
+  'RETRY_ATTEMPT'
 ]
 
-// Once any of these lands, the Run is done: nothing more may be appended.
-const TERMINAL_STAGES = ['COMPLETED', 'DENIED', 'FAILED', 'ROLLED_BACK', 'REJECTED']
+// Once any of these lands, the Run is done: nothing more may be appended. The
+// reconciled-terminal marks settle an interrupted/finished attempt; a retry
+// creates a NEW Run rather than appending to a settled one.
+const TERMINAL_STAGES = ['COMPLETED', 'DENIED', 'FAILED', 'ROLLED_BACK', 'REJECTED',
+  'RECONCILED_INTERRUPTED', 'RECONCILED_SUCCEEDED', 'RECONCILED_FAILED']
 
 // Facts a stage MUST carry — only what the recording component actually knows.
 // Stages not listed here have no mandatory facts (facts may still be supplied).
@@ -81,11 +91,21 @@ const STAGE_STATUS = {
   DENIED: 'denied',
   FAILED: 'failed',
   ROLLED_BACK: 'rolled_back',
-  REJECTED: 'rejected'
+  REJECTED: 'rejected',
+  // B2-11b recovered statuses (derived from durable evidence at startup):
+  RECONCILED_PENDING: 'pending',
+  RECONCILED_INTERRUPTED: 'interrupted',
+  RECONCILED_SUCCEEDED: 'succeeded',
+  RECONCILED_FAILED: 'failed',
+  // A retried attempt is inert until a future dispatch (gated by B2-9):
+  RETRY_ATTEMPT: 'retry_pending'
 }
 
-// The statuses that mean the Run has reached an end state.
-const TERMINAL_STATUSES = ['completed', 'denied', 'failed', 'rolled_back', 'rejected']
+// The statuses that mean the Run has reached an end state. 'interrupted' and
+// 'succeeded' (recovered) are terminal-for-this-attempt: an interrupted attempt
+// is retried by creating a NEW Run, never by continuing the settled one.
+const TERMINAL_STATUSES = ['completed', 'denied', 'failed', 'rolled_back', 'rejected',
+  'interrupted', 'succeeded']
 
 // The in-memory store. Runs live here for the life of the process only.
 const runs = new Map()

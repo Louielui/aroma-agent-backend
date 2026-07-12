@@ -289,6 +289,26 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize }) 
     }
   })
 
+  // B2-11b: human-gated Retry of an INTERRUPTED run. Requires an explicit `reason`
+  // (Louie's authorization); retryApprovedBy/At are server-side. It creates a NEW
+  // attempt preserving the original, and does NOT dispatch — the new attempt is
+  // inert and a future dispatch stays gated by B2-9. Duplicate retry → 409.
+  router.post('/runs/:id/retry', requireServiceToken, (req, res) => {
+    try {
+      const body = req.body || {}
+      const reason = typeof body.reason === 'string' ? body.reason : ''
+      const findExecution = (runId) => {
+        const store = workerDeps && workerDeps.artifactStore
+        if (!store || typeof store.list !== 'function') return null
+        try { return store.list('tasks').find(e => e && e.runId === runId) || null } catch (_) { return null }
+      }
+      const attempt = runStore.retry(req.params.id, { reason, findExecution })
+      res.status(201).json(attempt)
+    } catch (err) {
+      res.status(err.statusCode || 400).json({ error: err.message })
+    }
+  })
+
   // ── Conversation → Proposal → Run bridge ──────────────────────────────────────
 
   // A message becomes either a chat reply or a PROPOSAL that shows EXACTLY what
@@ -482,6 +502,7 @@ function createApp (options = {}) {
   })()
   app.locals.proposalStore = proposalStore
   app.locals.workerDeps = workerDeps
+  app.locals.runStore = runStore // B2-11b: exposed for startup reconcile (index.js) + tests
 
   // ── Middleware ────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: '50kb' }))

@@ -31,6 +31,15 @@
 const path = require('node:path')
 const run = require('./run')
 const { load: loadRunsFile, save: saveRunsFile } = require('./runPersistence')
+const { deriveRecoveredStatus } = require('./recovery')
+
+// B2-11b: the reconcile marks a run may already carry (idempotency guard).
+const RECONCILE_MARKS = new Set(['RECONCILED_PENDING', 'RECONCILED_INTERRUPTED', 'RECONCILED_SUCCEEDED', 'RECONCILED_FAILED'])
+
+/** True when a value is a present, non-blank string. */
+function isNonEmptyString (value) {
+  return typeof value === 'string' && value.trim().length > 0
+}
 
 // The single authenticated local owner for M1. A real deployment would resolve
 // the owner from an auth context; this constant stands in for that until then.
@@ -452,7 +461,129 @@ function createRunStore (options = {}) {
     return getRun(runId)
   }
 
-  return { startRun, getRun, listRuns, approveRun, rejectRun }
+  /**
+   * B2-11b STARTUP RECONCILE — PURE MARK, ZERO DISPATCH. For each owned Run that
+   * is neither settled (already terminal) nor already reconciled, derive the
+   * recovered status from durable evidence (its timeline + the safe-loaded .aroma
+   * Execution/Result artifacts) and append the RECONCILED_* mark (durable via
+   * flush). It NEVER dispatches, spawns, retries, or auto-proceeds — it only
+   * records what the evidence shows. Idempotent: a second run marks nothing new.
+   *
+   * @param {{ findExecution?: (runId:string)=>object|null,
+   *           findResult?: (executionId:string)=>object|null }} [artifactReader]
+   *   Safe-loaded artifact lookups. A throw/corrupt read is treated as ABSENT
+   *   (fail-closed → INTERRUPTED), never read as success.
+   * @returns {{ reconciled: number }}
+   */
+  function reconcile (artifactReader = {}) {
+    if (order.length === 0) return { reconciled: 0 } // no runs → never touch artifacts
+    const reader = artifactReader || {}
+    const findExecution = typeof reader.findExecution === 'function' ? reader.findExecution : () => null
+    const findResult = typeof reader.findResult === 'function' ? reader.findResult : () => null
+    const safe = (fn) => { try { return fn() } catch (_) { return null } }
+
+    let reconciled = 0
+    for (const id of order) {
+      const current = run.getRun(id)
+      if (!current) continue
+      if (run.isTerminal(run.deriveStatus(current))) continue // settled — nothing to recover
+      if (current.timeline.some(e => RECONCILE_MARKS.has(e.stage))) continue // idempotent
+
+      const execution = safe(() => findExecution(id)) // corrupt/throw → null (fail-closed)
+      const result = execution ? safe(() => findResult(execution.id)) : null
+      const { mark } = deriveRecoveredStatus({ run: current, execution, result })
+      appendAndFlush(id, mark, { ts: new Date().toISOString() }) // a MARK, not an action
+      reconciled += 1
+    }
+    return { reconciled }
+  }
+
+  /** Find an existing retry attempt for `runId` (durable duplicate-retry guard). */
+  function findRetryAttemptFor (runId) {
+    for (const id of order) {
+      const r = run.getRun(id)
+      if (!r) continue
+      if (r.timeline.some(e => e.stage === 'RETRY_ATTEMPT' && e.facts && e.facts.priorRunId === runId)) return id
+    }
+    return null
+  }
+
+  /**
+   * B2-11b HUMAN-GATED RETRY. Creates a NEW attempt for an INTERRUPTED Run,
+   * preserving the original PERMANENTLY (the original is never mutated — duplicate
+   * prevention is by scan, not by marking the original). Retry does NOT dispatch:
+   * the new attempt is INERT (TASK_CREATED → RETRY_ATTEMPT, status 'retry_pending')
+   * and a future dispatch is still gated by the normal B2-9 authorization path.
+   *
+   * @param {string} runId the interrupted original
+   * @param {{ reason: string, findExecution?: (runId:string)=>object|null }} options
+   *   reason — explicit Louie authorization (required). retryApprovedBy/At are
+   *   resolved SERVER-side (never from caller input), as owner/approvedBy are.
+   * @returns {object} the new attempt summary
+   */
+  function retry (runId, options = {}) {
+    const original = getRun(runId)
+    if (!original) throw fail(404, `unknown run: ${runId}`)
+
+    const opts = options || {}
+    const reason = isNonEmptyString(opts.reason) ? opts.reason.trim() : ''
+    if (!reason) throw fail(422, 'retry requires an explicit reason (Louie authorization)')
+
+    const status = run.deriveStatus(original)
+    if (status !== 'interrupted') {
+      throw fail(409, `run ${runId} is not interrupted (status: ${status}); only an interrupted attempt may be retried`)
+    }
+
+    // Durable duplicate-retry prevention: a retry attempt linked to this original
+    // already exists → refuse. The original stays the canonical superseded record.
+    const already = findRetryAttemptFor(runId)
+    if (already) {
+      throw fail(409, `run ${runId} was already retried (attempt ${already})`)
+    }
+
+    // Prior execution linkage (best-effort, from the safe-loaded artifact reader).
+    const findExecution = typeof opts.findExecution === 'function' ? opts.findExecution : () => null
+    let priorExecution = null
+    try { priorExecution = findExecution(runId) } catch (_) { priorExecution = null }
+    const priorExecutionId = priorExecution && priorExecution.id ? priorExecution.id : null
+    const proposalId = priorExecution && priorExecution.proposalId ? priorExecution.proposalId : null
+
+    // Create the NEW attempt — INERT. createRun seeds TASK_CREATED; we do NOT call
+    // scheduleDispatch, so retry NEVER auto-dispatches.
+    const created = run.createRun({
+      owner: resolveOwner(),
+      task: original.task,
+      intent: original.intent,
+      targetProject: original.targetProject,
+      capabilityId: original.capabilityId,
+      version: original.version,
+      conversationId: original.conversationId,
+      goal: original.goal
+    })
+    const attemptId = created.id
+    order.push(attemptId)
+    owned.add(attemptId)
+    flush()
+
+    const retryApprovedBy = resolveOwner() // server-side identity, never from caller
+    const retryApprovedAt = new Date().toISOString()
+    appendAndFlush(attemptId, 'RETRY_ATTEMPT', {
+      priorRunId: runId, priorExecutionId, proposalId, retryApprovedBy, retryApprovedAt, retryReason: reason
+    })
+
+    return {
+      attemptId,
+      priorRunId: runId,
+      priorExecutionId,
+      proposalId,
+      status: run.deriveStatus(getRun(attemptId)), // 'retry_pending' — inert, still gated by B2-9
+      retryApprovedBy,
+      retryApprovedAt,
+      retryReason: reason
+    }
+  }
+
+  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry }
 }
 
 module.exports = { createRunStore, LOCAL_OWNER }
