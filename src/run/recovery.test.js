@@ -12,6 +12,7 @@ const { deriveRecoveredStatus } = require('./recovery')
 const runWith = (stages) => ({ timeline: stages.map(s => ({ stage: s, at: 't', facts: {} })) })
 const SEED = ['TASK_CREATED']
 const CLAIMED = ['TASK_CREATED', 'DISPATCH_CLAIMED']
+const WORKER_CLAIMED = ['TASK_CREATED', 'WORKER_CLAIMED']
 
 test('(a) confirmed, NO DISPATCH_CLAIMED → PENDING', () => {
   assert.deepEqual(deriveRecoveredStatus({ run: runWith(SEED) }), { status: 'pending', mark: 'RECONCILED_PENDING' })
@@ -19,6 +20,10 @@ test('(a) confirmed, NO DISPATCH_CLAIMED → PENDING', () => {
 
 test('(b) DISPATCH_CLAIMED present, NO execution → INTERRUPTED (fail-closed)', () => {
   assert.deepEqual(deriveRecoveredStatus({ run: runWith(CLAIMED) }), { status: 'interrupted', mark: 'RECONCILED_INTERRUPTED' })
+})
+
+test('(b) WORKER_CLAIMED present, NO execution → INTERRUPTED (B2-14 worker track, mirrors DISPATCH_CLAIMED)', () => {
+  assert.deepEqual(deriveRecoveredStatus({ run: runWith(WORKER_CLAIMED) }), { status: 'interrupted', mark: 'RECONCILED_INTERRUPTED' })
 })
 
 test('(c) execution present, NO result → INTERRUPTED', () => {

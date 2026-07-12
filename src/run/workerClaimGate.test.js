@@ -99,13 +99,13 @@ test('recovery: interrupted worker (WORKER_CLAIMED + Execution artifact, no resu
   assert.equal(runModel.deriveStatus(store.getRun('run_w')), 'interrupted', 'the free recovery benefit — via the Execution artifact, recovery unchanged')
 })
 
-test('SCOPED QUESTION (documented, NOT changed): WORKER_CLAIMED-only, no Execution artifact → still PENDING today', () => {
+test('recovery narrow window: WORKER_CLAIMED-only, no Execution + no Result → INTERRUPTED (mirrors DISPATCH_CLAIMED)', () => {
   const file = tmpFile()
   runPersist.save(file, { order: ['run_w2'], runs: { run_w2: rec('run_w2', ['TASK_CREATED', 'WORKER_CLAIMED']) } })
   const store = createRunStore({ dispatcher: async () => {}, persistence: file })
   store.reconcile({ findExecution: () => null, findResult: () => null })
-  // recovery.js only recognizes DISPATCH_CLAIMED (not WORKER_CLAIMED) for the
-  // no-execution-artifact window → PENDING. Recognizing WORKER_CLAIMED equivalently
-  // is a 1-line recovery.js change — RAISED as a scoped question, NOT made here.
-  assert.equal(runModel.deriveStatus(store.getRun('run_w2')), 'pending')
+  // B2-14 scoped recovery alignment: a WORKER_CLAIMED claim with NO artifacts means
+  // the worker MAY have started → fail-closed to INTERRUPTED (human-gated), exactly
+  // as DISPATCH_CLAIMED does. NOT PENDING.
+  assert.equal(runModel.deriveStatus(store.getRun('run_w2')), 'interrupted')
 })

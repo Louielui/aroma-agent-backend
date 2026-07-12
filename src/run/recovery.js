@@ -13,7 +13,8 @@
  *
  * The six recovered states (STEP 2):
  *   (a) confirmed, NO DISPATCH_CLAIMED           → PENDING     (never started)
- *   (b) DISPATCH_CLAIMED, NO execution artifact  → INTERRUPTED (may have started)
+ *   (b) DISPATCH_CLAIMED or WORKER_CLAIMED,      → INTERRUPTED (may have started)
+ *       NO execution artifact
  *   (c) execution artifact, NO result            → INTERRUPTED (no terminal evidence)
  *   (d) result artifact + ok                     → SUCCEEDED   (from disk)
  *   (e) result artifact + not ok                 → FAILED      (from disk)
@@ -49,7 +50,10 @@ function deriveRecoveredStatus ({ run, execution = null, result = null } = {}) {
   }
   // No readable result:
   if (execution) return { status: 'interrupted', mark: MARK.interrupted } // (c) started, no result
-  if (hasStage(run, 'DISPATCH_CLAIMED')) return { status: 'interrupted', mark: MARK.interrupted } // (b) claimed
+  // (b) claimed but no artifacts yet — either dispatch track (DISPATCH_CLAIMED, B2-11a)
+  // or the sandbox-worker track (WORKER_CLAIMED, B2-14). Same narrow window, same
+  // fail-closed derivation: a claim means it MAY have started → INTERRUPTED, not PENDING.
+  if (hasStage(run, 'DISPATCH_CLAIMED') || hasStage(run, 'WORKER_CLAIMED')) return { status: 'interrupted', mark: MARK.interrupted }
   return { status: 'pending', mark: MARK.pending } // (a) never started
 }
 
