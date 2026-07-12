@@ -233,6 +233,17 @@ function createRunStore (options = {}) {
     // 'created') — no fabricated develop/completed stage, no side-effect.
     if (!authorizeDispatch()) return
 
+    // B2-11a DURABLE DISPATCH CLAIM. Written ONLY here — AFTER the B2-9 gate has
+    // authorized this dispatch and IMMEDIATELY BEFORE the real dispatcher spawns
+    // (synchronously, before the setImmediate turn). The unauthorized / conflict /
+    // no-dispatcher branch returned above, so a claim can NEVER exist for a
+    // dispatch that does not happen (B2-9: flag-off = 0 execution = 0 claim). It is
+    // flushed to disk (B2-10), so after a restart a "claimed-but-no-execution" Run
+    // is distinguishable from a "never-claimed" (confirmed-only) Run — the evidence
+    // a future recovery (B2-11b) needs. This slice ONLY records evidence; it does
+    // not recover, retry, or mark Interrupted.
+    appendAndFlush(id, 'DISPATCH_CLAIMED', { runId: id, attempt: 1, ts: new Date().toISOString() })
+
     const runContext = makeRunContext(id)
 
     setImmediate(() => {

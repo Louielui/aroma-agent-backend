@@ -69,11 +69,12 @@ test('appendStage (via dispatcher) → restart → stage persists; deriveStatus 
   await done
   const statusLive = runModel.deriveStatus(store1.getRun(id))
 
-  // direct file evidence, then restart
-  assert.deepEqual(runPersist.load(file).runs[id].timeline.map(e => e.stage), ['TASK_CREATED', 'POLICY_EVALUATED'])
+  // direct file evidence, then restart. The authorized dispatch records a durable
+  // DISPATCH_CLAIMED (B2-11a) between TASK_CREATED and the dispatcher's stages.
+  assert.deepEqual(runPersist.load(file).runs[id].timeline.map(e => e.stage), ['TASK_CREATED', 'DISPATCH_CLAIMED', 'POLICY_EVALUATED'])
   const store2 = createRunStore({ dispatcher: noDispatch(), persistence: file })
   const after = store2.getRun(id)
-  assert.deepEqual(after.timeline.map(e => e.stage), ['TASK_CREATED', 'POLICY_EVALUATED'])
+  assert.deepEqual(after.timeline.map(e => e.stage), ['TASK_CREATED', 'DISPATCH_CLAIMED', 'POLICY_EVALUATED'])
   assert.equal(runModel.deriveStatus(after), statusLive)
   assert.equal(runModel.deriveStatus(after), 'policy_evaluated')
 })

@@ -25,6 +25,32 @@ const path = require('node:path')
 
 const KINDS = ['tasks', 'results']
 
+/**
+ * B2-11a safe-load. A DEFINED error for a present-but-unreadable artifact file,
+ * so a caller can distinguish "corrupt" from "absent" (null) and handle it in a
+ * controlled way instead of an uncaught JSON.parse SyntaxError crash. Carries a
+ * 500 statusCode and a name tests can assert on. A half-written artifact (a crash
+ * mid-write) is invalid JSON → surfaced through this, never misread as valid.
+ */
+class ArtifactCorruptError extends Error {
+  constructor (message, cause) {
+    super(message)
+    this.name = 'ArtifactCorruptError'
+    this.statusCode = 500
+    if (cause !== undefined) this.cause = cause
+  }
+}
+
+/** Parse one artifact file defensively. @throws {ArtifactCorruptError} */
+function parseArtifactFile (filePath) {
+  const raw = fs.readFileSync(filePath, 'utf8')
+  try {
+    return JSON.parse(raw)
+  } catch (err) {
+    throw new ArtifactCorruptError(`artifact file is not valid JSON: ${filePath}`, err)
+  }
+}
+
 /** Make an ISO timestamp safe as a filename segment (': ' and '.' are illegal on Windows). */
 function safeStamp (createdAt) {
   return String(createdAt).replace(/[:.]/g, '-')
@@ -86,7 +112,10 @@ function createArtifactStore (options = {}) {
     const suffix = `-${id}.json`
     const match = fs.readdirSync(dir).find(f => f.endsWith(suffix))
     if (!match) return null
-    return JSON.parse(fs.readFileSync(path.join(dir, match), 'utf8'))
+    // B2-11a safe-load contract for read(id): missing → null (as today); FOUND but
+    // malformed → throw ArtifactCorruptError (controlled, distinct from not-found),
+    // never a raw crash, never a half-written file read as valid, never overwritten.
+    return parseArtifactFile(path.join(dir, match))
   }
 
   /**
@@ -96,14 +125,24 @@ function createArtifactStore (options = {}) {
    */
   function list (kind) {
     const dir = dirFor(kind)
-    if (!fs.existsSync(dir)) return []
-    return fs.readdirSync(dir)
-      .filter(f => f.endsWith('.json'))
-      .sort()
-      .map(f => JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8')))
+    if (!fs.existsSync(dir)) return [] // missing dir → controlled, as today
+    // B2-11a safe-load contract for list(): SKIP-and-continue on a malformed entry
+    // (a half-written artifact from a crash mid-write is invalid JSON) so one bad
+    // file can never crash a whole listing or be misread as valid. Valid records
+    // are returned in chronological order; corrupt files are never overwritten.
+    const records = []
+    for (const f of fs.readdirSync(dir).filter(x => x.endsWith('.json')).sort()) {
+      try {
+        records.push(parseArtifactFile(path.join(dir, f)))
+      } catch (err) {
+        if (!(err instanceof ArtifactCorruptError)) throw err // unexpected IO error surfaces
+        // else: skip this corrupt/partial file and continue
+      }
+    }
+    return records
   }
 
   return { write, read, list, dirFor }
 }
 
-module.exports = { createArtifactStore, KINDS }
+module.exports = { createArtifactStore, KINDS, ArtifactCorruptError }

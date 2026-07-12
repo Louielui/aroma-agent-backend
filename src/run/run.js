@@ -35,6 +35,7 @@ const TARGET_PROJECTS = ['backend', 'frontend']
 // The exact, closed stage vocabulary. Any stage not in this set is unknown.
 const STAGES = [
   'TASK_CREATED',
+  'DISPATCH_CLAIMED',
   'POLICY_EVALUATED',
   'AGENT_SELECTED',
   'AGENT_RUNNING',
@@ -66,6 +67,9 @@ const REQUIRED_FACTS = {
 // through this table, so the status is a pure function of the recorded stages.
 const STAGE_STATUS = {
   TASK_CREATED: 'created',
+  // B2-11a: authorization succeeded and a real dispatch is about to spawn. A
+  // durable, non-terminal marker (evidence for a future recovery) — not a result.
+  DISPATCH_CLAIMED: 'dispatch_claimed',
   POLICY_EVALUATED: 'policy_evaluated',
   AGENT_SELECTED: 'agent_selected',
   AGENT_RUNNING: 'running',

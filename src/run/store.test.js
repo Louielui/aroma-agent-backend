@@ -83,7 +83,10 @@ test('startRun returns a run id immediately, before the dispatch has finished', 
   assert.match(id, /^run_/)
   const now = store.getRun(id)
   assert.equal(isTerminal(deriveStatus(now)), false)
-  assert.deepEqual(stagesOf(now), ['TASK_CREATED'])
+  // B2-11a: the authorized dispatch synchronously records a durable DISPATCH_CLAIMED
+  // marker before the (later-turn) spawn — so the seed timeline is TASK_CREATED +
+  // DISPATCH_CLAIMED, still non-terminal, dispatcher not yet run.
+  assert.deepEqual(stagesOf(now), ['TASK_CREATED', 'DISPATCH_CLAIMED'])
 
   // Let the run finish so nothing dangles past the test.
   gate.resolve()
