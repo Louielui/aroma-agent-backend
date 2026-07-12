@@ -8,6 +8,7 @@
  */
 
 const app = require('./app')
+const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 
 const PORT = process.env.PORT || 8081
 
@@ -34,6 +35,19 @@ function startupReconcile () {
   }
 }
 
+// B2-12 STARTUP-ONLY SANDBOX SWEEP — once at boot, best-effort, containment-checked.
+// It only removes aged os.tmpdir()/aroma-sandbox-* dirs; never .aroma/data/repo, no
+// dispatch, no lifecycle management. Wrapped + called AFTER listen so it can NEVER
+// block server startup. No periodic timer, no daemon.
+function startupSandboxSweep () {
+  try {
+    const summary = sweepAgedSandboxes()
+    console.log(`[AROMA-HUB] sandbox sweep: scanned=${summary.scanned} deleted=${summary.deleted} skipped=${summary.skipped} errors=${summary.errors}`)
+  } catch (err) {
+    console.error('[AROMA-HUB] sandbox sweep error (ignored):', err && err.message ? err.message : String(err))
+  }
+}
+
 startupReconcile()
 
 app.listen(PORT, () => {
@@ -41,3 +55,5 @@ app.listen(PORT, () => {
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)
   // NEVER log the API key
 })
+
+startupSandboxSweep() // after listen — never blocks boot

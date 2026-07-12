@@ -113,4 +113,97 @@ function createTmpdirSandbox (options = {}) {
   }
 }
 
-module.exports = { createTmpdirSandbox, assertSandboxUnderTmpdir, canonicalise, defaultPrepareSandbox }
+// ── B2-12 startup-only conservative sandbox cleanup ──────────────────────────
+// The exact prefix prepare() mints (mkdtemp(path.join(root, SANDBOX_PREFIX))).
+const SANDBOX_PREFIX = 'aroma-sandbox-'
+const DEFAULT_TTL_HOURS = 24
+
+/**
+ * Resolve SANDBOX_TTL_HOURS, fail-safe (mirrors resolveWorkerInvocation's style):
+ * unset/empty → 24; non-numeric / <= 0 / non-finite → 24 with a warning. A longer
+ * default is the SAFE direction (keep more, delete less).
+ * @returns {number} hours
+ */
+function resolveSandboxTtl () {
+  const raw = process.env.SANDBOX_TTL_HOURS
+  if (raw === undefined || raw === null || raw === '') return DEFAULT_TTL_HOURS
+  const n = Number(raw)
+  if (!Number.isFinite(n) || n <= 0) {
+    console.warn(`[AROMA-HUB] Invalid SANDBOX_TTL_HOURS="${raw}" — falling back to ${DEFAULT_TTL_HOURS}h.`)
+    return DEFAULT_TTL_HOURS
+  }
+  return n
+}
+
+/**
+ * Sweep aged ephemeral sandbox dirs ONCE (startup-only; NO lifecycle management).
+ * BEST-EFFORT: every candidate is guarded independently; a failure logs + continues
+ * and the whole call NEVER throws — so it can never block server boot.
+ *
+ * Containment (STRICTER than creation) — a candidate is deleted ONLY if ALL hold:
+ *   1. basename starts with the exact `aroma-sandbox-` prefix;
+ *   2. it is NOT a symlink (lstat) — symlinks are skipped, never followed/deleted;
+ *   3. it is a directory;
+ *   4. its canonical (realpath, symlink-resolved) path is a DIRECT child of tmpDir
+ *      (reject anything whose canonical location is not directly under tmpDir);
+ *   5. its age (now - mtime) exceeds the TTL.
+ * Any check failing → SKIP + log; NEVER attempt a delete. It only ever touches
+ * `<tmpDir>/aroma-sandbox-*` dirs — never .aroma/, data/, or any real repo.
+ *
+ * @param {{ tmpDir?: string, ttlHours?: number, now?: number, rm?: function }} [options]
+ *   All injectable so tests use a scratch dir + controlled ages (no real os.tmpdir
+ *   mutation). `rm(path)` defaults to fs.rmSync(recursive, force).
+ * @returns {{ scanned: number, deleted: number, skipped: number, errors: number }}
+ */
+function sweepAgedSandboxes (options = {}) {
+  const opts = options || {}
+  const tmpDir = typeof opts.tmpDir === 'string' && opts.tmpDir ? opts.tmpDir : os.tmpdir()
+  const ttlHours = Number.isFinite(opts.ttlHours) && opts.ttlHours > 0 ? opts.ttlHours : resolveSandboxTtl()
+  const now = typeof opts.now === 'number' ? opts.now : Date.now()
+  const rm = typeof opts.rm === 'function' ? opts.rm : (p) => fs.rmSync(p, { recursive: true, force: true })
+  const ttlMs = ttlHours * 60 * 60 * 1000
+  const summary = { scanned: 0, deleted: 0, skipped: 0, errors: 0 }
+
+  let tmpReal
+  try { tmpReal = fs.realpathSync(tmpDir) } catch (_) { return summary } // no tmpDir → nothing to do
+  let entries
+  try { entries = fs.readdirSync(tmpReal) } catch (_) { return summary }
+
+  for (const name of entries) {
+    summary.scanned += 1
+    try {
+      // (1) name
+      if (!name.startsWith(SANDBOX_PREFIX)) { summary.skipped += 1; continue }
+      const entryPath = path.join(tmpReal, name)
+      // (2) lstat — never follow symlinks
+      const lst = fs.lstatSync(entryPath)
+      if (lst.isSymbolicLink()) { summary.skipped += 1; console.warn(`[sandbox-sweep] skip symlink: ${name}`); continue }
+      // (3) directory only
+      if (!lst.isDirectory()) { summary.skipped += 1; continue }
+      // (4) canonical path must be a DIRECT child of tmpDir (no escape)
+      const real = fs.realpathSync(entryPath)
+      if (path.dirname(real) !== tmpReal) { summary.skipped += 1; console.warn(`[sandbox-sweep] skip out-of-prefix: ${name}`); continue }
+      // (5) TTL — keep anything younger than the TTL (fail-safe)
+      if ((now - lst.mtimeMs) <= ttlMs) { summary.skipped += 1; continue }
+      // all checks passed — delete (best-effort)
+      rm(real)
+      summary.deleted += 1
+    } catch (err) {
+      summary.errors += 1
+      console.warn(`[sandbox-sweep] error on ${name}: ${err && err.message ? err.message : String(err)}`)
+      // continue to the next entry — never abort the sweep
+    }
+  }
+  return summary
+}
+
+module.exports = {
+  createTmpdirSandbox,
+  assertSandboxUnderTmpdir,
+  canonicalise,
+  defaultPrepareSandbox,
+  resolveSandboxTtl,
+  sweepAgedSandboxes,
+  SANDBOX_PREFIX,
+  DEFAULT_TTL_HOURS
+}
