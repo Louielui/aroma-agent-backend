@@ -17,6 +17,8 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { spawnSync } = require('node:child_process')
 const path = require('node:path')
+const fs = require('node:fs')
+const os = require('node:os')
 
 const { createApp } = require('../app')
 const { TEST_SERVICE_TOKEN } = require('./_serviceTokenFixture')
@@ -96,10 +98,18 @@ test('read endpoints unaffected: /health and /proposals need no token even with 
 test('startup fail-fast: index.js refuses to start (exit 1) when HUB_TOKEN is unset', () => {
   const env = { ...process.env }
   delete env.HUB_TOKEN
-  // index.js exits(1) in assertServiceTokenConfigured() BEFORE app.listen — so this
-  // never binds a port. Tests build apps via createApp and never import index.js,
-  // so only THIS explicit spawn exercises the startup guard.
-  const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'index.js')], { env, encoding: 'utf8', timeout: 20000 })
-  assert.equal(res.status, 1, 'index.js must exit 1 when no token is configured')
-  assert.match(String(res.stderr || ''), /FATAL/)
+  // dotenv.config() (app.js) loads `.env` from the CHILD's cwd. To genuinely
+  // simulate "no HUB_TOKEN" regardless of what the real repo .env contains, we
+  // spawn from an EMPTY temp dir with no .env — so dotenv finds no file and cannot
+  // repopulate HUB_TOKEN. (index.js resolves its own modules by file location, not
+  // cwd, so it still loads normally.) index.js then exits(1) in
+  // assertServiceTokenConfigured() BEFORE app.listen — this never binds a port.
+  const emptyCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-noenv-'))
+  try {
+    const res = spawnSync(process.execPath, [path.join(__dirname, '..', 'index.js')], { cwd: emptyCwd, env, encoding: 'utf8', timeout: 20000 })
+    assert.equal(res.status, 1, 'index.js must exit 1 when no token is configured')
+    assert.match(String(res.stderr || ''), /FATAL/)
+  } finally {
+    fs.rmSync(emptyCwd, { recursive: true, force: true })
+  }
 })
