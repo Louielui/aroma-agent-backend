@@ -85,7 +85,7 @@ test('REAL paid bridge E2E — Task→promote→confirm→worker→Result API, f
   // The Result Read endpoint reads artifacts from workerDeps.artifactStore, so it
   // must be the SAME store the runner writes to — inject BOTH (as the production
   // default workerDeps does). Injecting only { runner } → /result 503.
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner, artifactStore }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner, artifactStore }, proposalPersistence: false, runPersistence: false })
   const server = built.listen(0)
   const { port } = server.address()
   const origin = `http://127.0.0.1:${port}`

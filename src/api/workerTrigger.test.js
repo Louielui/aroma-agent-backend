@@ -38,7 +38,7 @@ function buildApp () {
   // REAL Step-2 adapter (its sandbox brake runs) driven by a stub runner (no real claude).
   const worker = createClaudeWorker({ runner: stubRunner })
   const runner = createWorkerRunner({ worker, artifactStore: store, sandboxRoot: os.tmpdir(), prepareSandbox: () => {} })
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, store, base }
 }
 

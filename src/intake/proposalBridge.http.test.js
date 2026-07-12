@@ -41,7 +41,7 @@ function buildApp () {
   const artifactStore = createArtifactStore({ baseDir: base })
   const worker = createClaudeWorker({ runner: async () => ({ status: 0, stdout: SUCCESS_JSON, stderr: '' }) })
   const runner = createWorkerRunner({ worker, artifactStore, sandboxRoot: os.tmpdir(), prepareSandbox: () => {} })
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, artifactStore, base }
 }
 

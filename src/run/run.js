@@ -249,6 +249,22 @@ function listRuns () {
 }
 
 /**
+ * Rehydrate a Run record into the store from durable storage (B2-10). PURE DATA:
+ * it stores the record verbatim and does NOTHING else — it never generates an id,
+ * never appends a stage, never derives or dispatches anything. This is the ONLY
+ * load path; it must never route through createRun (which seeds TASK_CREATED and
+ * mints a new id) or any dispatch, so loading Runs can never trigger execution
+ * (preserving B2-9). The record is stored MUTABLE (not frozen) so a later
+ * appendStage can push onto its timeline exactly as for a live Run.
+ *
+ * @param {object} record a Run record read from disk (must carry a string id and
+ *   a timeline array — the persistence layer validates this before we are called)
+ */
+function rehydrate (record) {
+  runs.set(record.id, record)
+}
+
+/**
  * Whether a derived status is a terminal (end) state.
  * @param {string} status
  * @returns {boolean}
@@ -273,5 +289,6 @@ module.exports = {
   deriveStatus,
   getRun,
   listRuns,
+  rehydrate,
   isTerminal
 }

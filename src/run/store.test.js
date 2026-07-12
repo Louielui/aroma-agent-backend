@@ -14,7 +14,10 @@
 const { test } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { createRunStore } = require('./store')
+const { createRunStore: createRealRunStore } = require('./store')
+// B2-10: every store in this file runs in-memory (persistence:false) so these
+// process-local tests never touch disk or collide on the default runs file.
+const createRunStore = (opts = {}) => createRealRunStore({ ...opts, persistence: false })
 const { deriveStatus, isTerminal } = require('./run')
 
 // --- tiny async helpers ----------------------------------------------------

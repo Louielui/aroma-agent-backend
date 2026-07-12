@@ -30,7 +30,7 @@ function buildApp () {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-read-'))
   const store = createArtifactStore({ baseDir: base })
   const landmineRunner = { run: async () => { throw new Error('worker must NEVER run in a read test') } }
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { artifactStore: store, runner: landmineRunner }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { artifactStore: store, runner: landmineRunner }, proposalPersistence: false, runPersistence: false })
   return { built, store, base }
 }
 
@@ -177,7 +177,7 @@ test('malformed result artifact → controlled 500, no crash, no path leak', asy
 test('traversal / malformed id → 400 and the store is NEVER touched', async () => {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-read-lm-'))
   const landmine = { dirFor: () => { throw new Error('STORE_TOUCHED') } } // any access explodes
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { artifactStore: landmine, runner: { run: async () => {} } }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { artifactStore: landmine, runner: { run: async () => {} } }, proposalPersistence: false, runPersistence: false })
   const server = built.listen(0)
   try {
     for (const badId of ['a.b', 'a..b', 'x'.repeat(65), 'has%20space']) {

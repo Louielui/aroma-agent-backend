@@ -28,18 +28,56 @@
  * Everything is in-memory: no file I/O, no network, no LLM in this file.
  */
 
+const path = require('node:path')
 const run = require('./run')
+const { load: loadRunsFile, save: saveRunsFile } = require('./runPersistence')
 
 // The single authenticated local owner for M1. A real deployment would resolve
 // the owner from an auth context; this constant stands in for that until then.
 // It is intentionally a SERVER-side value — a client can never influence it.
 const LOCAL_OWNER = 'louie'
 
+// B2-10 durable Run store. The file mirrors store.js's data dir (and its
+// AROMA_DATA_DIR override) so all truth files live together. `data/` is gitignored.
+const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+const DEFAULT_RUNS_FILE = path.join(DATA_DIR, 'aroma-runs.json')
+
 /** Build an Error carrying an HTTP-appropriate statusCode for the router. */
 function fail (statusCode, message) {
   const err = new Error(message)
   err.statusCode = statusCode
   return err
+}
+
+/**
+ * Resolve the injectable persistence config into a bound { load, save } backend,
+ * or null for in-memory-only. `false`/`null` → in-memory (no disk); a string →
+ * that file path; `{ path }` → that file path; `undefined` → the default file.
+ */
+function resolvePersistence (config) {
+  if (config === false || config === null) return null
+  const filePath = typeof config === 'string'
+    ? config
+    : (config && typeof config.path === 'string' ? config.path : DEFAULT_RUNS_FILE)
+  return {
+    path: filePath,
+    load: () => loadRunsFile(filePath),
+    save: (data) => saveRunsFile(filePath, data)
+  }
+}
+
+/**
+ * Normalize a Run record read from disk WITHOUT fabricating data. Genuinely-absent
+ * optional fields default to null (they are absent, not invented). Records we
+ * wrote ourselves already carry every field, so a clean round-trip is untouched.
+ * `id` and `timeline` are guaranteed present by runPersistence's shape validation.
+ */
+function normalizeLoaded (rec) {
+  const out = { ...rec }
+  for (const k of ['owner', 'workspace', 'conversationId', 'goal', 'task', 'intent', 'targetProject', 'capabilityId', 'version', 'createdAt']) {
+    if (!(k in out)) out[k] = null
+  }
+  return out
 }
 
 /**
@@ -86,6 +124,46 @@ function createRunStore (options = {}) {
   const order = []
   const owned = new Set()
 
+  // B2-10 durable backend, or null for in-memory-only. Repopulate from disk at
+  // construct via the PURE run.rehydrate path (never createRun/startRun/
+  // scheduleDispatch), so LOADING RUNS TRIGGERS NO DISPATCH — preserving B2-9
+  // (confirm ≠ execution authorization; flag-off = 0 execution). A corrupt file
+  // THROWS here (RunStoreCorruptError) rather than starting on silently-empty
+  // state. Slice scope: this loads Runs faithfully and stops — no recovery, no
+  // reconcile, no Interrupted marking (that is slice 2).
+  const persistence = resolvePersistence(opts.persistence)
+  if (persistence) {
+    const disk = persistence.load()
+    for (const id of disk.order) {
+      run.rehydrate(normalizeLoaded(disk.runs[id]))
+      order.push(id)
+      owned.add(id)
+    }
+  }
+
+  /** Persist the whole { order, runs } envelope after a mutation via the safe
+   *  temp+rename write. No-op in memory-only mode. One synchronous write per
+   *  mutation makes this store the single writer of its file — no partially
+   *  written file is ever observed. */
+  function flush () {
+    if (!persistence) return
+    const runs = {}
+    for (const id of order) {
+      const rec = run.getRun(id) // frozen deep clone — safe to serialize
+      if (rec) runs[id] = rec
+    }
+    persistence.save({ order: [...order], runs })
+  }
+
+  /** Append a stage to a Run AND persist. Every stage mutation in this store goes
+   *  through here (directly or via makeRunContext), so no timeline change is ever
+   *  left unpersisted. Returns run.appendStage's snapshot, exactly as before. */
+  function appendAndFlush (id, stage, facts) {
+    const snap = run.appendStage(id, stage, facts)
+    flush()
+    return snap
+  }
+
   /**
    * Create a Run and begin dispatching it in the background.
    *
@@ -125,6 +203,7 @@ function createRunStore (options = {}) {
     const id = created.id
     order.push(id)
     owned.add(id)
+    flush() // persist the newly-created Run at its seed TASK_CREATED stage
 
     // TASK_CREATED is already the seed stage of the Run (see run.createRun).
     // Kick off the dispatch on a future turn so this call returns first.
@@ -137,7 +216,7 @@ function createRunStore (options = {}) {
   function makeRunContext (id) {
     return {
       appendStage (stage, facts) {
-        return run.appendStage(id, stage, facts)
+        return appendAndFlush(id, stage, facts)
       }
     }
   }
@@ -180,7 +259,7 @@ function createRunStore (options = {}) {
     if (run.deriveStatus(current) !== 'patch_ready') return
     const patchReady = [...current.timeline].reverse().find(e => e.stage === 'PATCH_READY')
     if (!patchReady) return
-    run.appendStage(id, 'PENDING_APPROVAL', { patchPath: patchReady.facts.patchPath })
+    appendAndFlush(id, 'PENDING_APPROVAL', { patchPath: patchReady.facts.patchPath })
   }
 
   /**
@@ -195,7 +274,7 @@ function createRunStore (options = {}) {
     if (run.isTerminal(run.deriveStatus(current))) return
     const error = err && err.message ? err.message : String(err)
     try {
-      run.appendStage(id, 'FAILED', { error })
+      appendAndFlush(id, 'FAILED', { error })
     } catch (_) {
       // A concurrent terminal stage (or any other append guard) may have landed
       // first. Recording the failure is best-effort; never let it throw into the
@@ -294,7 +373,7 @@ function createRunStore (options = {}) {
     // Record the approval on the Run and move it into APPLYING. appendStage
     // enforces that APPLYING can only follow a PENDING_APPROVAL carrying an
     // approver, so an unapproved Run can never reach here.
-    run.appendStage(runId, 'APPLYING', {
+    appendAndFlush(runId, 'APPLYING', {
       approvedBy: approval.approvedBy,
       approvedAt: approval.approvedAt,
       patchPath
@@ -318,16 +397,16 @@ function createRunStore (options = {}) {
       })
     } catch (err) {
       const error = err && err.message ? err.message : String(err)
-      run.appendStage(runId, 'ROLLED_BACK', { error })
+      appendAndFlush(runId, 'ROLLED_BACK', { error })
       return getRun(runId)
     }
 
     if (result && result.status === 'ok') {
       const backupRef = (result.output && result.output.backupRef) || result.backupRef
-      run.appendStage(runId, 'COMPLETED', { backupRef })
+      appendAndFlush(runId, 'COMPLETED', { backupRef })
     } else {
       const error = (result && (result.error || result.reason)) || 'apply failed'
-      run.appendStage(runId, 'ROLLED_BACK', { error })
+      appendAndFlush(runId, 'ROLLED_BACK', { error })
     }
     return getRun(runId)
   }
@@ -358,7 +437,7 @@ function createRunStore (options = {}) {
     const facts = { rejectedBy: rejecter }
     if (typeof reason === 'string' && reason.trim()) facts.reason = reason
 
-    run.appendStage(runId, 'REJECTED', facts)
+    appendAndFlush(runId, 'REJECTED', facts)
     return getRun(runId)
   }
 

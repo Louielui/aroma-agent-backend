@@ -65,7 +65,7 @@ test('REAL paid unattended E2E — Capability Verification Task', { skip: PAID ?
   const command = resolveClaudeCommand()
   const worker = createClaudeWorker({ command })                 // real spawn runner (cwd=sandbox, stdin closed)
   const runner = createWorkerRunner({ worker, artifactStore: store, sandboxRoot: os.tmpdir() }) // real git-init prepareSandbox
-  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false })
+  const built = createApp({ dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   const server = built.listen(0)
   const t0 = Date.now()
   try {

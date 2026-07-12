@@ -90,7 +90,7 @@ async function confirmCase ({ worker, develop, dispatcher }) {
 
   const workerState = { called: 0 }
   const landmineRunner = { run: async () => { workerState.called += 1 } }
-  const opts = { workerDeps: { runner: landmineRunner, artifactStore: inertArtifactStore }, proposalPersistence: false }
+  const opts = { workerDeps: { runner: landmineRunner, artifactStore: inertArtifactStore }, proposalPersistence: false, runPersistence: false }
   if (dispatcher) opts.dispatcher = dispatcher
 
   const built = createApp(opts)

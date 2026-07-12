@@ -450,7 +450,11 @@ function createApp (options = {}) {
   const runStore = createRunStore({
     resolveOwner: () => LOCAL_OWNER,
     dispatcher: developDispatcher || inertDispatcher,
-    authorizeDispatch: () => authorize().developAuthorized
+    authorizeDispatch: () => authorize().developAuthorized,
+    // B2-10: durable Run store. Default is the production file
+    // (data/aroma-runs.json); tests pass `false` for an isolated in-memory store,
+    // or a temp-dir path, so they never collide on the shared file.
+    persistence: opts.runPersistence
   })
 
   // The Proposal Store shares this app's Run Store. `owner`/`confirmedBy` are
