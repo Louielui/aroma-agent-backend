@@ -72,6 +72,14 @@ function createRunStore (options = {}) {
     ? opts.resolveOwner
     : () => LOCAL_OWNER
 
+  // B2-9 flag-scope containment. An optional authorization predicate, evaluated
+  // AT DISPATCH TIME. When it returns false, scheduleDispatch does NOT invoke the
+  // dispatcher at all (the gate returns before invocation). Default is `() => true`
+  // so existing callers/tests that construct a store without it are unchanged.
+  const authorizeDispatch = typeof opts.authorizeDispatch === 'function'
+    ? opts.authorizeDispatch
+    : () => true
+
   // The runs this store owns, in creation order. run.js holds the Runs
   // themselves (keyed by id); we track ordering here so listRuns can return the
   // most recent runs this store created, most-recent-first.
@@ -140,6 +148,12 @@ function createRunStore (options = {}) {
    * recorded as FAILED — never left dangling as an unhandled rejection.
    */
   function scheduleDispatch (id, snapshot) {
+    // B2-9 AUTHORIZATION GATE — decides FIRST. If dispatch is not authorized, the
+    // dispatcher is NEVER invoked (not even an inert floor): we do not schedule at
+    // all. The Run keeps only its seed TASK_CREATED stage (derived status
+    // 'created') — no fabricated develop/completed stage, no side-effect.
+    if (!authorizeDispatch()) return
+
     const runContext = makeRunContext(id)
 
     setImmediate(() => {

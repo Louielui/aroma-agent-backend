@@ -73,6 +73,41 @@ function resolveWorkerInvocation () {
   return 'off'
 }
 
+// B2-9 flag-scope containment. DEVELOP_DISPATCH gates ONLY the real-repo Claude
+// Develop dispatch (the Run-store dispatcher). It mirrors resolveWorkerInvocation
+// EXACTLY: strict 'on' only; unset/empty/misspelled/wrong-case/any-other → 'off'
+// (fail-closed). It NEVER implies the sandbox worker, and WORKER_INVOCATION never
+// implies Develop — the two flags are independent.
+function resolveDevelopDispatch () {
+  const raw = process.env.DEVELOP_DISPATCH
+  if (raw === undefined || raw === null || raw === '') return 'off'
+  if (raw === 'on' || raw === 'off') return raw
+  console.warn(`[AROMA-HUB] Invalid DEVELOP_DISPATCH="${raw}" — falling back to 'off'.`)
+  return 'off'
+}
+
+// B2-9 execution-authorization gate. Confirm approves a Proposal; it is NOT
+// blanket authorization to run anything. Real execution is authorized ONLY here,
+// fail-closed and with NO implicit priority:
+//   - both flags on  → 'configuration_conflict' (zero worker, zero dispatcher)
+//   - DEVELOP on AND a dispatcher explicitly injected/configured → Develop authorized
+//   - WORKER on (and no conflict)                                → sandbox worker authorized
+//   - otherwise                                                  → 'not_authorized'
+// `dispatcherConfigured` reflects whether a REAL/injected Develop dispatcher exists
+// at all (the productionDispatcher is never the implicit default — see createApp),
+// so DEVELOP='on' with no dispatcher configured is still not_authorized.
+function resolveExecutionAuthorization (dispatcherConfigured) {
+  const worker = resolveWorkerInvocation()
+  const develop = resolveDevelopDispatch()
+  if (worker === 'on' && develop === 'on') {
+    return { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false }
+  }
+  const developAuthorized = develop === 'on' && dispatcherConfigured === true
+  const workerAuthorized = worker === 'on'
+  const status = developAuthorized ? 'develop_authorized' : (workerAuthorized ? 'worker_authorized' : 'not_authorized')
+  return { status, workerAuthorized, developAuthorized }
+}
+
 // The real Claude Code adapter is built lazily (and once), so importing this
 // module never spawns anything. Paths mirror scripts/proof-run.js.
 let realAdapter = null
@@ -158,16 +193,22 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize }) {
   const router = express.Router()
+
+  // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
+  // caller ever omits it, so the worker/dispatch can never fire un-gated.
+  const authorizeExecution = typeof authorize === 'function'
+    ? authorize
+    : () => ({ status: 'not_authorized', workerAuthorized: false, developAuthorized: false })
 
   // B2-1: schedule a worker AFTER the confirm response, fire-and-forget. It reads
   // the proposal's own confirm provenance for the Execution Artifact and never
-  // blocks or alters the confirm/startRun path. No-op when the flag is off or no
-  // worker is wired. Any error is swallowed into a log line — never a late write
-  // to an already-sent response, never a process crash.
+  // blocks or alters the confirm/startRun path. No-op unless the sandbox worker is
+  // AUTHORIZED (WORKER_INVOCATION on AND no config conflict) and a worker is wired.
+  // Any error is swallowed into a log line — never a late write, never a crash.
   function scheduleWorker (proposalId, runId) {
-    if (resolveWorkerInvocation() !== 'on' || !workerDeps || !workerDeps.runner) return
+    if (!authorizeExecution().workerAuthorized || !workerDeps || !workerDeps.runner) return
     Promise.resolve()
       .then(() => {
         const proposal = proposalStore.getProposal(proposalId)
@@ -275,9 +316,30 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
   // body field a caller could use to name the confirmer.
   router.post('/proposals/:id/confirm', requireServiceToken, (req, res) => {
     try {
+      // Resolve authorization ONCE, before anything dispatches. The Run-store
+      // Develop dispatch (inside confirmProposal→startRun) is gated by the same
+      // authorization (authorizeDispatch=developAuthorized) in run/store.js; the
+      // sandbox worker below by workerAuthorized. Under conflict, NEITHER fires.
+      const auth = authorizeExecution()
+
+      // Confirm the Proposal (persists 'confirmed' + creates the Run). This ALWAYS
+      // creates a Run; the Run is DISPATCHED only if Develop is authorized — an
+      // unauthorized Run stays at its seed TASK_CREATED stage (no fabricated
+      // develop/completed stage).
       const runId = proposalStore.confirmProposal(req.params.id, LOCAL_OWNER)
-      res.status(201).json({ runId })
-      scheduleWorker(req.params.id, runId) // B2-1: fire-and-forget, AFTER the response
+
+      // Honest confirm contract: proposal is confirmed; dispatchStatus reports what
+      // (if anything) was actually authorized to run. runId is the created Run.
+      let dispatchStatus
+      if (auth.status === 'configuration_conflict') dispatchStatus = 'configuration_conflict'
+      else if (auth.developAuthorized) dispatchStatus = 'develop_dispatched'
+      else if (auth.workerAuthorized) dispatchStatus = 'worker_scheduled'
+      else dispatchStatus = 'not_authorized'
+
+      res.status(201).json({ proposalStatus: 'confirmed', dispatchStatus, runId })
+
+      // Only the sandbox worker path is triggered here, and only when authorized.
+      if (auth.workerAuthorized) scheduleWorker(req.params.id, runId) // B2-1: AFTER the response
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message })
     }
@@ -360,14 +422,35 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps }) {
  */
 function createApp (options = {}) {
   const opts = options || {}
-  const dispatcher = typeof opts.dispatcher === 'function' ? opts.dispatcher : productionDispatcher
+
+  // B2-9 flag-scope containment. The productionDispatcher (real-repo Claude
+  // Develop) is NO LONGER the implicit default. A real Develop dispatcher exists
+  // ONLY when either (a) explicitly injected via opts.dispatcher (tests do this),
+  // or (b) explicitly configured via opts.useProductionDispatcher === true AND
+  // DEVELOP_DISPATCH === 'on'. Otherwise no real dispatcher is built at all (no
+  // backendRoot binding, no develop.js reachability). An inert DI floor stands in
+  // so the Run Store always has a function, but the authorization gate returns
+  // BEFORE invoking it on the unauthorized path — it is never actually called.
+  const injectedDispatcher = typeof opts.dispatcher === 'function' ? opts.dispatcher : null
+  const configuredProductionDispatcher = (opts.useProductionDispatcher === true && resolveDevelopDispatch() === 'on')
+    ? productionDispatcher
+    : null
+  const developDispatcher = injectedDispatcher || configuredProductionDispatcher // may be null
+  const dispatcherConfigured = developDispatcher !== null
+  const inertDispatcher = async () => {} // DI safety floor — never invoked on the unauthorized path
+  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured)
 
   const app = express()
 
   // The Run Store — the asynchronous seam between an HTTP request and the worker.
+  // Its background dispatch is gated by the execution-authorization gate: when
+  // Develop is not authorized (the default), scheduleDispatch NEVER invokes the
+  // dispatcher (see run/store.js). So a confirm triggers NO real dispatch unless
+  // Develop is explicitly authorized (flag on + dispatcher configured).
   const runStore = createRunStore({
     resolveOwner: () => LOCAL_OWNER,
-    dispatcher
+    dispatcher: developDispatcher || inertDispatcher,
+    authorizeDispatch: () => authorize().developAuthorized
   })
 
   // The Proposal Store shares this app's Run Store. `owner`/`confirmedBy` are
@@ -451,7 +534,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
@@ -475,5 +558,9 @@ function createApp (options = {}) {
 // createApp is attached for tests that need an isolated, injectable app.
 const app = createApp()
 app.createApp = createApp
+// B2-9: exposed for unit tests (pure, no side effects).
+app.resolveDevelopDispatch = resolveDevelopDispatch
+app.resolveWorkerInvocation = resolveWorkerInvocation
+app.resolveExecutionAuthorization = resolveExecutionAuthorization
 
 module.exports = app

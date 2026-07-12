@@ -67,8 +67,9 @@ async function waitFor (predicate, ms = 3000) {
   return false
 }
 
-test('flag OFF: confirm returns exactly {runId} and NO worker artifact is written', async () => {
+test('flag OFF: confirm reports not_authorized and NO worker artifact is written', async () => {
   delete process.env.WORKER_INVOCATION
+  delete process.env.DEVELOP_DISPATCH
   const { built, store, base } = buildApp()
   const server = built.listen(0)
   try {
@@ -76,7 +77,10 @@ test('flag OFF: confirm returns exactly {runId} and NO worker artifact is writte
     const { status, json } = await confirm(server, pid)
 
     assert.equal(status, 201)
-    assert.deepEqual(Object.keys(json), ['runId']) // byte-for-byte legacy confirm shape
+    // B2-9 honest contract: confirmed proposal + explicit dispatchStatus.
+    assert.deepEqual(Object.keys(json).sort(), ['dispatchStatus', 'proposalStatus', 'runId'])
+    assert.equal(json.proposalStatus, 'confirmed')
+    assert.equal(json.dispatchStatus, 'not_authorized')
     assert.ok(json.runId)
 
     await new Promise(r => setTimeout(r, 150)) // give any (wrongly) scheduled worker a chance
@@ -87,12 +91,14 @@ test('flag OFF: confirm returns exactly {runId} and NO worker artifact is writte
 
 test('flag ON: worker fires after response; chain Result->Execution->proposalId->approval resolves', async () => {
   process.env.WORKER_INVOCATION = 'on'
+  delete process.env.DEVELOP_DISPATCH
   const { built, store, base } = buildApp()
   const server = built.listen(0)
   try {
     const pid = await seedProposal(built)
     const { status, json } = await confirm(server, pid)
     assert.equal(status, 201)
+    assert.equal(json.dispatchStatus, 'worker_scheduled') // B2-9: sandbox worker authorized
     assert.ok(json.runId)
 
     const landed = await waitFor(() => store.list('results').length > 0)

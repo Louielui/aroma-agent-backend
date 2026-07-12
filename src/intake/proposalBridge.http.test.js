@@ -96,6 +96,7 @@ test('promote endpoint: token required, 404 unknown task, promotes+binds, idempo
 
 test('flag OFF: a READY bridge proposal confirms → {runId} only, NO worker artifact', async () => {
   delete process.env.WORKER_INVOCATION
+  delete process.env.DEVELOP_DISPATCH
   const { built, artifactStore } = buildApp()
   const server = built.listen(0)
   try {
@@ -103,7 +104,9 @@ test('flag OFF: a READY bridge proposal confirms → {runId} only, NO worker art
     const { json: { proposalId } } = await promote(server, taskId)
     const { status, json } = await confirm(server, proposalId)
     assert.equal(status, 201)
-    assert.deepEqual(Object.keys(json), ['runId']) // legacy confirm shape, byte-for-byte
+    // B2-9 honest contract: confirmed + not_authorized (flag off), runId is the created Run.
+    assert.deepEqual(Object.keys(json).sort(), ['dispatchStatus', 'proposalStatus', 'runId'])
+    assert.equal(json.dispatchStatus, 'not_authorized')
     await new Promise(r => setTimeout(r, 150))
     assert.equal(artifactStore.list('tasks').length, 0)
     assert.equal(artifactStore.list('results').length, 0)
