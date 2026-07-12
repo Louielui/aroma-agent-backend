@@ -65,6 +65,11 @@ function fail (statusCode, message) {
  */
 function resolvePersistence (config) {
   if (config === false || config === null) return null
+  // Injected backend (tests/DI): a full { load, save } object is used verbatim.
+  // The DEFAULT file mechanics (temp+rename via runPersistence) are unchanged.
+  if (config && typeof config.load === 'function' && typeof config.save === 'function') {
+    return { path: '<injected>', load: config.load, save: config.save }
+  }
   const filePath = typeof config === 'string'
     ? config
     : (config && typeof config.path === 'string' ? config.path : DEFAULT_RUNS_FILE)
@@ -126,6 +131,17 @@ function createRunStore (options = {}) {
   const authorizeDispatch = typeof opts.authorizeDispatch === 'function'
     ? opts.authorizeDispatch
     : () => true
+
+  // B2-13 execution idempotency. A SYNCHRONOUS (non-yielding) result-evidence
+  // lookup used only inside the claim gate: resultEvidence(runId) → { kind:
+  // 'ok' | 'none' | 'corrupt' } where 'ok' means a durable terminal result exists,
+  // 'corrupt' means the artifact was unreadable (B2-11a safe-load) — fail-closed to
+  // needs_review, never guessed. Default 'none' (timeline-only): a fresh run has no
+  // result, so the confirm path is unaffected. It MUST be synchronous — the gate
+  // never yields the event loop.
+  const resultEvidence = typeof opts.resultEvidence === 'function'
+    ? opts.resultEvidence
+    : () => ({ kind: 'none' })
 
   // The runs this store owns, in creation order. run.js holds the Runs
   // themselves (keyed by id); we track ordering here so listRuns can return the
@@ -235,36 +251,98 @@ function createRunStore (options = {}) {
    * THIS run's timeline. Any throw/rejection from the dispatcher is caught and
    * recorded as FAILED — never left dangling as an unhandled rejection.
    */
-  function scheduleDispatch (id, snapshot) {
-    // B2-9 AUTHORIZATION GATE — decides FIRST. If dispatch is not authorized, the
-    // dispatcher is NEVER invoked (not even an inert floor): we do not schedule at
-    // all. The Run keeps only its seed TASK_CREATED stage (derived status
-    // 'created') — no fabricated develop/completed stage, no side-effect.
-    if (!authorizeDispatch()) return
+  // B2-13 completion statuses: terminal MINUS 'interrupted'. A genuine completion
+  // whose re-dispatch is refused as already_completed. 'interrupted' is terminal
+  // but keeps its claim → re-dispatching the SAME interrupted run is refused as
+  // already_dispatched; retrying the WORK creates a NEW attempt (B2-11b).
+  const COMPLETED_STATUSES = new Set(['completed', 'denied', 'failed', 'rolled_back', 'rejected', 'succeeded'])
 
-    // B2-11a DURABLE DISPATCH CLAIM. Written ONLY here — AFTER the B2-9 gate has
-    // authorized this dispatch and IMMEDIATELY BEFORE the real dispatcher spawns
-    // (synchronously, before the setImmediate turn). The unauthorized / conflict /
-    // no-dispatcher branch returned above, so a claim can NEVER exist for a
-    // dispatch that does not happen (B2-9: flag-off = 0 execution = 0 claim). It is
-    // flushed to disk (B2-10), so after a restart a "claimed-but-no-execution" Run
-    // is distinguishable from a "never-claimed" (confirmed-only) Run — the evidence
-    // a future recovery (B2-11b) needs. This slice ONLY records evidence; it does
-    // not recover, retry, or mark Interrupted.
-    appendAndFlush(id, 'DISPATCH_CLAIMED', { runId: id, attempt: 1, ts: new Date().toISOString() })
+  /** True if the run's timeline carries a DISPATCH_CLAIMED event (immutable, B2-11a). */
+  function hasDispatchClaim (current) {
+    return !!(current && Array.isArray(current.timeline) && current.timeline.some(e => e && e.stage === 'DISPATCH_CLAIMED'))
+  }
 
+  /**
+   * B2-13 THE DISPATCH CLAIM GATE — a single SYNCHRONOUS, NON-YIELDING block (no
+   * await inside), the SOLE idempotency gate. DISPATCH_CLAIMED is the atomic claim.
+   * It returns a dispatchStatus and, ONLY when it returns 'dispatched', has written
+   * a fresh IMMUTABLE DISPATCH_CLAIMED (append-only + flush). It NEVER deletes,
+   * overwrites, or re-writes an existing claim, and it NEVER spawns. Because the
+   * check + write + flush are all synchronous with no event-loop yield, there is no
+   * TOCTOU window in a single Node process.
+   *
+   * Priority — STRICTLY SEPARATED, never collapsed (Louie constraint A):
+   *   corrupt/inconsistent evidence → 'needs_review'      (fail-closed; never guessed)
+   *   durable terminal result       → 'already_completed'  (result artifact OR a
+   *                                     completed-terminal timeline; NOT interrupted)
+   *   claim already present         → 'already_dispatched' (ONLY "already obtained the
+   *                                     unique claim" — NOT a liveness assertion)
+   *   fresh (no claim, not terminal)→ write claim → 'dispatched' (flush fail →
+   *                                     'dispatch_claim_failed', fail-closed, no spawn)
+   * @returns {{ status: string }}
+   */
+  function claimDispatch (runId) {
+    const current = run.getRun(runId)
+    if (!current) return { status: 'needs_review' } // unknown run — never guess
+
+    // corrupt evidence — highest priority, fail-closed. resultEvidence MUST be sync.
+    let ev
+    try { ev = resultEvidence(runId) } catch (_) { ev = { kind: 'corrupt' } }
+    if (ev && ev.kind === 'corrupt') return { status: 'needs_review' }
+    // durable terminal result — from the artifact OR a completed-terminal timeline.
+    if (ev && ev.kind === 'ok') return { status: 'already_completed' }
+    if (COMPLETED_STATUSES.has(run.deriveStatus(current))) return { status: 'already_completed' }
+    // claim already present (incl. interrupted / running), not terminal-completed.
+    if (hasDispatchClaim(current)) return { status: 'already_dispatched' }
+    // fresh — write the immutable claim + flush. Flush fail → fail-closed, no spawn.
+    try {
+      appendAndFlush(runId, 'DISPATCH_CLAIMED', { runId, attempt: 1, ts: new Date().toISOString() })
+    } catch (err) {
+      console.warn(`[dispatch-claim] flush failed for ${runId}: ${err && err.message ? err.message : String(err)}`)
+      return { status: 'dispatch_claim_failed' }
+    }
+    return { status: 'dispatched' }
+  }
+
+  /** The real (async) spawn — runs ONLY after a successful, unique claim. */
+  function spawnDispatch (id, snapshot) {
     const runContext = makeRunContext(id)
-
     setImmediate(() => {
       // Promise.resolve().then(...) so a synchronous throw inside the dispatcher
       // becomes a rejection we can catch, exactly like an async rejection.
       Promise.resolve()
         .then(() => dispatcher({ run: snapshot, runContext, phase: 'develop' }))
-        // A successful Develop that produced a patch stops at PATCH_READY; the
-        // store then parks it for a human decision. Anything else is left as-is.
         .then(() => promoteToPendingApproval(id))
         .catch(err => recordFailure(id, err))
     })
+  }
+
+  /**
+   * Schedule a run's dispatch: B2-9 auth gate FIRST (flag-off = 0 execution = 0
+   * claim), then the B2-13 claim gate (SOLE idempotency gate — writes the claim),
+   * then — ONLY on 'dispatched' — the real spawn. startRun calls this for a fresh
+   * run (always 'dispatched' → one spawn); dispatchRun reuses it for re-dispatch.
+   * @returns {{ dispatchStatus: string }}
+   */
+  function scheduleDispatch (id, snapshot) {
+    if (!authorizeDispatch()) return { dispatchStatus: 'not_authorized' } // B2-9 FIRST, before any claim
+    const gate = claimDispatch(id) // B2-13 sole gate — atomic claim
+    if (gate.status !== 'dispatched') return { dispatchStatus: gate.status } // refuse → NO spawn, no 2nd claim
+    spawnDispatch(id, snapshot)
+    return { dispatchStatus: 'dispatched' }
+  }
+
+  /**
+   * B2-13 re-dispatch entry — the SAME gate for any caller that would re-dispatch
+   * an EXISTING run (e.g. a future retry-dispatch). It never bypasses the claim
+   * gate, so a run is dispatched AT MOST ONCE across all callers/restarts. On
+   * anything but 'dispatched' it does NOT spawn and creates no new execution.
+   * @returns {{ dispatchStatus: string }}
+   */
+  function dispatchRun (runId) {
+    const current = getRun(runId)
+    if (!current) throw fail(404, `unknown run: ${runId}`)
+    return scheduleDispatch(runId, current)
   }
 
   /**
@@ -583,7 +661,7 @@ function createRunStore (options = {}) {
     }
   }
 
-  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry }
+  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry, claimDispatch, dispatchRun }
 }
 
 module.exports = { createRunStore, LOCAL_OWNER }
