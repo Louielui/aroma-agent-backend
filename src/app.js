@@ -56,6 +56,8 @@ const { createWorkerRunner } = require('./workers/runWorkerInBackground')
 const {
   validateProposalId, findExecutionByProposalId, findResultByTaskId, buildResultView
 } = require('./api/executionResultView')
+// Phase 1 (Human Relay Removal) — pure READ aggregation of finished executions.
+const { buildReturnReadyList } = require('./api/returnReadyView')
 
 // ── Run Store wiring ───────────────────────────────────────────────────────────
 // The owner is supplied here, from the server's trusted context — never from the
@@ -384,6 +386,29 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
       res.status(err.statusCode || 400).json({ error: err.message })
     }
   })
+
+  // ── Human Relay Removal · Phase 1 — return-ready view (READ-ONLY) ─────────────
+  // Lists FINISHED (terminal) executions as decision-ready summaries so 香香 can
+  // surface "what came back" without Louie relaying reports. Pure read over
+  // durable artifacts + the proposal store (reuses B2-8 buildResultView allowlist);
+  // NO dispatch, NO write, NO GO/confirm. Token-free, exactly like /proposals and
+  // /proposals/:id/result. Optional pure filters: ?status=succeeded|failed, ?since=<ISO>.
+  //
+  // ROUTE ORDER IS LOAD-BEARING: both static routes are registered BEFORE the
+  // parametric '/proposals/:id' below, so '/proposals/results' is never captured
+  // as a proposal :id. GET /return-ready is canonical; /proposals/results is an alias.
+  function returnReadyHandler (req, res) {
+    const store = workerDeps && workerDeps.artifactStore
+    if (!store) return res.status(503).json({ error: 'result store unavailable' })
+    try {
+      const filters = { status: req.query.status, since: req.query.since }
+      res.json(buildReturnReadyList({ artifactStore: store, proposalStore, filters }))
+    } catch (_) {
+      return res.status(500).json({ error: 'failed to build return-ready view' })
+    }
+  }
+  router.get('/return-ready', returnReadyHandler) // canonical
+  router.get('/proposals/results', returnReadyHandler) // alias — MUST precede '/proposals/:id'
 
   // Read endpoints so the UI can show persisted Proposals (read-only, no Run,
   // no token).
