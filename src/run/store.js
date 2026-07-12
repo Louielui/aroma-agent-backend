@@ -262,6 +262,11 @@ function createRunStore (options = {}) {
     return !!(current && Array.isArray(current.timeline) && current.timeline.some(e => e && e.stage === 'DISPATCH_CLAIMED'))
   }
 
+  /** True if the run's timeline carries a WORKER_CLAIMED event (immutable, B2-14). */
+  function hasWorkerClaim (current) {
+    return !!(current && Array.isArray(current.timeline) && current.timeline.some(e => e && e.stage === 'WORKER_CLAIMED'))
+  }
+
   /**
    * B2-13 THE DISPATCH CLAIM GATE — a single SYNCHRONOUS, NON-YIELDING block (no
    * await inside), the SOLE idempotency gate. DISPATCH_CLAIMED is the atomic claim.
@@ -299,6 +304,41 @@ function createRunStore (options = {}) {
       appendAndFlush(runId, 'DISPATCH_CLAIMED', { runId, attempt: 1, ts: new Date().toISOString() })
     } catch (err) {
       console.warn(`[dispatch-claim] flush failed for ${runId}: ${err && err.message ? err.message : String(err)}`)
+      return { status: 'dispatch_claim_failed' }
+    }
+    return { status: 'dispatched' }
+  }
+
+  /**
+   * B2-14 THE SANDBOX-WORKER CLAIM GATE — the worker-track twin of claimDispatch.
+   * A single SYNCHRONOUS, NON-YIELDING block (no await) keyed by runId over the
+   * durable, IMMUTABLE WORKER_CLAIMED timeline event. It returns a status and, ONLY
+   * when it returns 'dispatched', has written a fresh WORKER_CLAIMED (append-only +
+   * flush). It NEVER deletes/overwrites/re-writes an existing claim, and it NEVER
+   * spawns. Reuses claimDispatch's helpers/shape; does NOT touch DISPATCH_CLAIMED.
+   * Priority — STRICTLY SEPARATED (mirrors B2-13):
+   *   corrupt evidence            → 'needs_review'      (fail-closed)
+   *   durable terminal result     → 'already_completed' (result artifact OR a
+   *                                   completed-terminal timeline; NOT interrupted)
+   *   WORKER_CLAIMED present       → 'already_dispatched' (only "obtained the claim")
+   *   fresh                        → append WORKER_CLAIMED + flush → 'dispatched'
+   *                                   (flush fail → 'dispatch_claim_failed', no spawn)
+   * @returns {{ status: string }}
+   */
+  function claimWorker (runId) {
+    const current = run.getRun(runId)
+    if (!current) return { status: 'needs_review' } // unknown run — never guess
+
+    let ev
+    try { ev = resultEvidence(runId) } catch (_) { ev = { kind: 'corrupt' } }
+    if (ev && ev.kind === 'corrupt') return { status: 'needs_review' }
+    if (ev && ev.kind === 'ok') return { status: 'already_completed' }
+    if (COMPLETED_STATUSES.has(run.deriveStatus(current))) return { status: 'already_completed' }
+    if (hasWorkerClaim(current)) return { status: 'already_dispatched' }
+    try {
+      appendAndFlush(runId, 'WORKER_CLAIMED', { runId, attempt: 1, ts: new Date().toISOString() })
+    } catch (err) {
+      console.warn(`[worker-claim] flush failed for ${runId}: ${err && err.message ? err.message : String(err)}`)
       return { status: 'dispatch_claim_failed' }
     }
     return { status: 'dispatched' }
@@ -661,7 +701,7 @@ function createRunStore (options = {}) {
     }
   }
 
-  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry, claimDispatch, dispatchRun }
+  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry, claimDispatch, dispatchRun, claimWorker }
 }
 
 module.exports = { createRunStore, LOCAL_OWNER }

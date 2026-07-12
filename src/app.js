@@ -209,6 +209,15 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize }) 
   // Any error is swallowed into a log line — never a late write, never a crash.
   function scheduleWorker (proposalId, runId) {
     if (!authorizeExecution().workerAuthorized || !workerDeps || !workerDeps.runner) return
+    // B2-14 SANDBOX-WORKER CLAIM GATE — synchronous, AFTER the B2-9 auth gate above
+    // (auth FIRST → flag-off = 0 claim, 0 worker). Only a fresh, unique WORKER_CLAIMED
+    // claim spawns; already_dispatched / already_completed / needs_review / claim-
+    // failed → NO spawn (idempotent, fail-closed). Never bypasses authorization.
+    const claim = runStore.claimWorker(runId)
+    if (claim.status !== 'dispatched') {
+      console.warn(`[worker] not dispatched (status: ${claim.status}) for run ${runId} — no spawn`)
+      return
+    }
     Promise.resolve()
       .then(() => {
         const proposal = proposalStore.getProposal(proposalId)

@@ -36,6 +36,7 @@ const TARGET_PROJECTS = ['backend', 'frontend']
 const STAGES = [
   'TASK_CREATED',
   'DISPATCH_CLAIMED',
+  'WORKER_CLAIMED',
   'POLICY_EVALUATED',
   'AGENT_SELECTED',
   'AGENT_RUNNING',
@@ -80,6 +81,10 @@ const STAGE_STATUS = {
   // B2-11a: authorization succeeded and a real dispatch is about to spawn. A
   // durable, non-terminal marker (evidence for a future recovery) — not a result.
   DISPATCH_CLAIMED: 'dispatch_claimed',
+  // B2-14: the SANDBOX-WORKER equivalent — the worker obtained the unique dispatch
+  // claim and is about to spawn. Distinct from DISPATCH_CLAIMED (worker vs Develop
+  // track); durable, non-terminal, immutable.
+  WORKER_CLAIMED: 'worker_claimed',
   POLICY_EVALUATED: 'policy_evaluated',
   AGENT_SELECTED: 'agent_selected',
   AGENT_RUNNING: 'running',
