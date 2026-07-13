@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -102,3 +103,4 @@ original; the original remains intact.
   Integrity (unclassified data fail-closed, classification is a Governance action);
   A-03: added §7 Audit cross-reference to INV-15 Audit Immutability. Additive; no
   existing clause changed. (Status remains DRAFT.)
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

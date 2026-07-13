@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -93,3 +94,4 @@ six-layer chain (AISL-v1.0 §3) and the invariants (AISL-007) define.
   Enforcement cross-reference to §4 — no runtime layer may bypass the enforcement
   chain or skip it via internal-service/Owner-session origin. Additive; no existing
   clause changed. (Status remains DRAFT.)
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

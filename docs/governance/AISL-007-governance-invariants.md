@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -157,3 +158,4 @@ actor and no automation may amend them.
   Invariant Priority section (A-08): Absolute Redlines > Fail-Closed > Plane Is
   Authoritative > Policy Gating > Role Authority. Additive; no existing invariant
   changed. (Status remains DRAFT.)
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

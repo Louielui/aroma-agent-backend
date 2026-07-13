@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -140,3 +141,4 @@ but MUST NOT violate the constitutional principles above.
   together). A-10: added §7 "Deferred to Implementation Specification" (nonce,
   payload hash, expiry, thresholds, window, storage, crypto). Additive; no existing
   clause changed. (Status remains DRAFT.)
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

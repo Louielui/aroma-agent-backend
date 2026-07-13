@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -99,3 +100,4 @@ model cannot cross into Governance.
   Compromise: bounded Business damage (gated on High-Risk, capped by redlines),
   structurally blocked from Governance, secrets, cloning, elevation, and the
   Governance GO via plane isolation.
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -99,3 +100,4 @@ never output to any role (AISL-004 §3).
   approvals; for the Executive Director a High-Risk action may be initiated but not
   completed independently when Policy requires it; a ✅ never makes a whole resource
   category High-Risk (risk is action-level). (Status remains DRAFT.)
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13

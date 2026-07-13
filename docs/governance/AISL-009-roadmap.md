@@ -1,8 +1,9 @@
 ---
 Version: 1.0
-Status: DRAFT (awaiting Owner approval)
+Status: APPROVED
 Classification: Governance Data — Owner-only
-Approved-by: (pending Louie)
+Approved-by: Louie
+Approval date: 2026-07-13
 Last-Updated: 2026-07-12
 ---
 
@@ -65,3 +66,4 @@ governed agent. UI is last, never a prerequisite for governance.
 - **v1.0 — initial draft — 2026-07-12.** Six-step Human Relay Removal roadmap:
   AISL → read-only connector → desktop agent → read loop → GO-gated writes → UI
   last.
+- **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13
