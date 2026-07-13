@@ -33,6 +33,15 @@ Last-Updated: 2026-07-12
 > change can never be approved by anyone but the Owner.** The GO you hold is
 > scoped to the Plane you operate in.
 
+### Approval Integrity (all approval types)
+
+Every approval (Business GO, Governance GO, and any High-Risk approval) MUST bind
+to the complete action payload. An approval is one-time and MUST NOT be replayed,
+transferred, or applied to any other action. Every approval MUST have an expiry.
+If the action payload changes in any way, the prior approval is immediately void
+and the action MUST be re-approved. Technical mechanisms (nonce, payload hash,
+expiry duration) are deferred to the implementation specification.
+
 ## 2. The Policy Layer (Owner decision 3) — a distinct enforcement layer
 
 Between **Role** and **Tool** sits the **Policy Layer**. The full chain is:
@@ -82,6 +91,17 @@ termination, sensitive data export, and other irreversible operations.
 - **Thresholds are Owner-configured.** Changing a threshold is a **Governance
   action** (Owner-only) — the Executive Director cannot raise their own limit.
 
+**Dual Approval Independence.** The two approvers in any dual-approval MUST be
+distinct identities. They MUST NOT share the same session. The same person MUST
+NOT satisfy dual-approval by using two different roles. No single approver may
+substitute for the second approval.
+
+**Anti-Threshold-Splitting.** High-Risk thresholds MUST NOT be evaded by splitting
+transactions, staggering timing, batching deletions, or batching exports. The
+policy MUST be able to evaluate cumulative effect within a reasonable time window.
+The specific window, amounts, and algorithm are deferred to the implementation
+specification.
+
 ## 4. Worked ordering
 
 1. Classify the command's **Plane**. Governance → Owner GO required, and the
@@ -109,3 +129,8 @@ fail-closed boundary.
   ExecDir; Governance GO: Owner only); the Policy Layer (Plane→Role→Policy→Tool);
   High-Risk as a Policy inside the Business Plane (never a third plane); absolute
   redlines override everything.
+- **v1.0 before-merge amendment — 2026-07-12.** Added Approval Integrity
+  (A-01, payload-bound / one-time / expiring / re-approve-on-change), Dual Approval
+  Independence (A-02, distinct identity + distinct session), and
+  Anti-Threshold-Splitting (A-07, cumulative effect within a window). Additive; no
+  existing clause changed. (Status remains DRAFT.)

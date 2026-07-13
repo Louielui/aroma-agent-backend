@@ -77,6 +77,11 @@ six-layer chain (AISL-v1.0 §3) and the invariants (AISL-007) define.
   permitted actions from AISL — they never expand them.
 - The console remains the human management surface; the MCP app and desktop agent
   extend reach for 香香 without widening authority.
+- **Non-Bypass (INV-16 Non-Bypass Enforcement, AISL-007):** no operation from any
+  of these three layers — UI, Desktop Agent, MCP, worker, direct API, or background
+  jobs — may bypass the Plane → Role → Policy → Tool → Data → LLM enforcement chain,
+  and no operation may skip the chain because it originates from an internal service
+  or an Owner session.
 
 ## Changelog
 
@@ -84,3 +89,7 @@ six-layer chain (AISL-v1.0 §3) and the invariants (AISL-007) define.
   (primary UI, unchanged) / Desktop Agent (resident ops layer, secret custody,
   subordinate to AISL) / ChatGPT MCP App (NL entry via governed connector, never
   touches backend/repo/secrets/files).
+- **v1.0 before-merge amendment — 2026-07-12.** A-04: added an INV-16 Non-Bypass
+  Enforcement cross-reference to §4 — no runtime layer may bypass the enforcement
+  chain or skip it via internal-service/Owner-session origin. Additive; no existing
+  clause changed. (Status remains DRAFT.)

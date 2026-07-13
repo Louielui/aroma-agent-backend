@@ -10,7 +10,19 @@ Last-Updated: 2026-07-12
 
 The full resource × role matrix across **both planes**. Legend:
 
-- ✅ full authority (incl. approve/GO where applicable)
+- ✅ = the role has ordinary permission within that Plane and may independently
+  complete ordinary, non-High-Risk actions within that permission. All operations
+  remain subject to the Policy Layer, High-Risk gates, absolute redlines, audit,
+  and applicable approval requirements.
+
+  For the Executive Director, a ✅ does not override action-level risk
+  classification. Within Finance, HR, delete, export, or any other Business
+  domain, an action classified as High-Risk may be initiated by the Executive
+  Director but MUST NOT be completed independently when the applicable Policy
+  requires second confirmation, dual approval, or Owner approval.
+
+  The presence of a ✅ MUST NOT cause an entire resource category to be treated as
+  High-Risk. Risk is evaluated at the action level according to Policy.
 - 🔷 scoped / execute-and-propose (no GO)
 - 👁 read-only
 - ❌ no access — **structurally absent** from the session, not refused
@@ -82,3 +94,8 @@ never output to any role (AISL-004 §3).
 
 - **v1.0 — initial draft — 2026-07-12.** Full two-plane permission matrix;
   Executive Director ✅ Business / ❌ Governance; Secrets status-only even for Owner.
+- **v1.0 before-merge amendment — 2026-07-12.** A-06: Owner-approved replacement of
+  the ✅ legend — ✅ = ordinary permission subject to Policy/High-Risk/redlines/audit/
+  approvals; for the Executive Director a High-Risk action may be initiated but not
+  completed independently when Policy requires it; a ✅ never makes a whole resource
+  category High-Risk (risk is action-level). (Status remains DRAFT.)

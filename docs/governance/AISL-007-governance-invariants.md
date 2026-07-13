@@ -92,6 +92,53 @@ gated; any change to the governance of execution, or any Governance action, is
 **Owner-only** via the Governance GO. Automation may prepare and surface, never
 self-authorize a Governance change.
 
+## INV-14 — Approval Integrity
+
+Approvals bind payload, are one-time, expire, and re-approve on change. Every
+approval (Business GO, Governance GO, and any High-Risk approval) binds to the
+complete action payload; is single-use and MUST NOT be replayed, transferred, or
+reused; MUST have an expiry; and is immediately void — requiring re-approval — if
+the action payload changes in any way. (See AISL-005, "Approval Integrity".)
+
+## INV-15 — Audit Immutability
+
+The audit log is append-only. Historical audit records MUST NOT be deleted,
+modified, overwritten, concealed, or reordered by any role, including the Owner and
+all Governance Roles. No permission, Governance GO, maintenance operation, or
+administrative function may authorize rewriting historical audit records. Any
+correction, annotation, reversal, or superseding decision MUST be recorded as a new
+appended entry that references the original record; the original record remains
+intact. All GO decisions, approvals, policy evaluations, tool executions, failures,
+and attempted bypasses MUST be traceable. Storage and cryptographic mechanisms are
+deferred to the implementation specification.
+
+## INV-16 — Non-Bypass Enforcement
+
+No operation may bypass the Plane → Role → Policy → Tool → Data → LLM enforcement
+chain. This applies uniformly to UI, Desktop Agent, MCP, worker, direct API, and
+background jobs. No operation may skip the chain because it originates from an
+internal service or an Owner session.
+
+## INV-17 — Classification Integrity
+
+Plane classification is a Governance action; unclassified items are fail-closed
+(never presumed Business). New tools, data types, resources, and actions MUST NOT
+enter any Business Plane allowlist before an Owner-approved classification is
+complete; an unclassified, unclear, or insufficiently-evidenced item is refused by
+default and MUST NOT be presumed Business from its source, name, purpose, caller's
+role, or hosting service; adding/modifying/reclassifying requires an Owner
+Governance GO. (See AISL-003 §6 and AISL-004 §6.)
+
+## Invariant Priority
+
+When invariants conflict, the higher-priority invariant prevails, in this order:
+
+1. **Absolute Redlines** (INV-7)
+2. **Fail-Closed** (INV-11)
+3. **Plane Is Authoritative** (INV-1)
+4. **Policy Gating** (INV-2)
+5. **Role Authority** (INV-4)
+
 ## Amendment
 
 These invariants may be amended **only** by the Owner via the Governance GO, with
@@ -103,3 +150,10 @@ actor and no automation may amend them.
 - **v1.0 — initial draft — 2026-07-12.** Thirteen invariants, headlined by INV-1
   (Plane authoritative, evaluated before Role) and INV-2 (the Policy Layer as a
   distinct layer in Plane→Role→Policy→Tool).
+- **v1.0 before-merge amendment — 2026-07-12.** Appended four formal invariants —
+  INV-14 Approval Integrity (A-01), INV-15 Audit Immutability (A-03), INV-16
+  Non-Bypass Enforcement (A-04), INV-17 Classification Integrity (A-05) — bringing
+  the set to seventeen (INV-1..INV-17, consecutive; INV-1..13 unchanged). Added the
+  Invariant Priority section (A-08): Absolute Redlines > Fail-Closed > Plane Is
+  Authoritative > Policy Gating > Role Authority. Additive; no existing invariant
+  changed. (Status remains DRAFT.)

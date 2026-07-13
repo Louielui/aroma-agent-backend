@@ -67,8 +67,38 @@ sessions, no prompt, jailbreak, or injection can surface them from such a
 session — the data simply is not present to be surfaced. This is the data-plane
 twin of the tool-allowlist guarantee (AISL-003).
 
+## 6. Classification Integrity — unclassified is fail-closed
+
+New tools, new data types, new resources, and new actions MUST NOT be added to any
+Business Plane allowlist before an Owner-approved classification is complete.
+When an item is unclassified, its classification is unclear, or classification
+evidence is insufficient, access and execution are refused by default.
+An unclassified item MUST NOT be presumed Business based on its creation source,
+name, purpose description, caller's role, or the service it resides in.
+The Plane classification of tools, data, resources, and actions is itself a
+Governance action.
+Adding, modifying, or reclassifying MUST go through an Owner Governance GO.
+Before classification is complete, even an Owner session MUST NOT execute the item
+through an ordinary Business path; it may only be handled through the formal
+Governance classification process.
+
+(This is the data-side statement of INV-17 Classification Integrity; AISL-003 §6
+states the identical rule for tools.)
+
+## 7. Audit cross-reference
+
+All access to Business, Governance, and Secret data — and every refusal — is
+subject to **INV-15 Audit Immutability** (AISL-007): the audit log is append-only
+and MUST NOT be deleted, modified, overwritten, concealed, or reordered by any
+role, including the Owner. Corrections are appended as new entries referencing the
+original; the original remains intact.
+
 ## Changelog
 
 - **v1.0 — initial draft — 2026-07-12.** Business / Governance / Secrets classes;
   Executive Director ✅ Business Data / ❌ Governance Data / ❌ Secrets; secret
   values never output for any role (Owner status-only).
+- **v1.0 before-merge amendment — 2026-07-12.** A-05: added §6 Classification
+  Integrity (unclassified data fail-closed, classification is a Governance action);
+  A-03: added §7 Audit cross-reference to INV-15 Audit Immutability. Additive; no
+  existing clause changed. (Status remains DRAFT.)

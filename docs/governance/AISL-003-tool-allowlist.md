@@ -63,8 +63,30 @@ Introducing a new tool, changing its tier, or changing which roles it is present
 for is a **Governance-Plane change** — Owner-only, via the Governance GO
 (AISL-005). Tiering is not editable from the Business Plane.
 
+## 6. Classification Integrity — unclassified is fail-closed
+
+New tools, new data types, new resources, and new actions MUST NOT be added to any
+Business Plane allowlist before an Owner-approved classification is complete.
+When an item is unclassified, its classification is unclear, or classification
+evidence is insufficient, access and execution are refused by default.
+An unclassified item MUST NOT be presumed Business based on its creation source,
+name, purpose description, caller's role, or the service it resides in.
+The Plane classification of tools, data, resources, and actions is itself a
+Governance action.
+Adding, modifying, or reclassifying MUST go through an Owner Governance GO.
+Before classification is complete, even an Owner session MUST NOT execute the item
+through an ordinary Business path; it may only be handled through the formal
+Governance classification process.
+
+(This is the tool-side statement of INV-17 Classification Integrity; AISL-004 §6
+states the identical rule for data.)
+
 ## Changelog
 
 - **v1.0 — initial draft — 2026-07-12.** Four tool tiers (T1–T4) mapped to planes;
   Executive Director holds all Business-plane tools, zero Governance-plane tools,
   structurally absent.
+- **v1.0 before-merge amendment — 2026-07-12.** A-05: added §6 Classification
+  Integrity — new/unclassified tools are fail-closed (never presumed Business);
+  plane classification is a Governance action via the Owner Governance GO. Additive;
+  no existing clause changed. (Status remains DRAFT.)

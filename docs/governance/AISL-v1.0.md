@@ -115,7 +115,28 @@ runtime, permission, connector, MCP, authentication, or authorization behavior i
 created or changed by these documents — they are the governing specification that
 future, separately-approved implementation must conform to.
 
+### DRAFT → APPROVED transition
+
+A document transitions from DRAFT to APPROVED only upon explicit Owner approval.
+Merge does not equal automatic approval unless the merge brief explicitly contains
+an Owner approval reference. Approved-by, Approval date, version, and changelog
+MUST be updated together. An unapproved version MUST NOT be treated as formal
+authority by any runtime or implementation.
+
+## 7. Deferred to Implementation Specification
+
+The following are deferred to the implementation specification and are NOT fixed in
+this AISL v1.0 constitution: nonce format, payload hash method, expiry duration,
+threshold amounts, cumulative window length, storage technology, cryptographic
+implementation. These MUST be defined in the future implementation specification
+but MUST NOT violate the constitutional principles above.
+
 ## Changelog
 
 - **v1.0 — initial draft — 2026-07-12.** First AISL constitution: six-layer chain,
   two-plane model, plane-scoped GO, Policy Layer, and the AISL-001–009 set.
+- **v1.0 before-merge amendment — 2026-07-12.** A-09: added the DRAFT → APPROVED
+  transition rule (merge ≠ auto-approval; Approved-by/date/version/changelog updated
+  together). A-10: added §7 "Deferred to Implementation Specification" (nonce,
+  payload hash, expiry, thresholds, window, storage, crypto). Additive; no existing
+  clause changed. (Status remains DRAFT.)
