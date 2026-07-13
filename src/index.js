@@ -10,6 +10,8 @@
 const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 const { readExpectedToken } = require('./api/auth')
+const { resolveConnectorProjection } = require('./connector/connectorConfig')
+const { readBackendReadIdentity } = require('./connector/backendReadIdentity')
 
 const PORT = process.env.PORT || 8081
 
@@ -63,6 +65,17 @@ function startupSandboxSweep () {
 }
 
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
+
+// Phase 2 Gate 1 — fail-fast ONLY when the connector flag is on AND its dedicated
+// read identity is unconfigured. Flag off (default) → no-op → existing startup unchanged.
+function assertConnectorConfig () {
+  if (resolveConnectorProjection() === 'on' && !readBackendReadIdentity()) {
+    console.error('[AROMA-HUB] FATAL: CONNECTOR_PROJECTION is on but BACKEND_READ_IDENTITY is not configured. ' +
+      'Refusing to start — the connector projection endpoint would be unauthenticated.')
+    process.exit(1)
+  }
+}
+assertConnectorConfig()
 startupReconcile()
 
 app.listen(PORT, () => {

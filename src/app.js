@@ -59,6 +59,14 @@ const {
 // Phase 1 (Human Relay Removal) — pure READ aggregation of finished executions.
 const { buildReturnReadyList } = require('./api/returnReadyView')
 
+// Phase 2 Gate 1 — connector projection endpoint (feature-flagged, default OFF).
+const { createProjectionEndpoint } = require('./connector/projectionEndpoint')
+const { createAuditSink } = require('./connector/auditSink')
+const { createDurableAuditWriter } = require('./connector/durableAuditWriter')
+const { createResultIdStore } = require('./connector/resultIdStore')
+const { resolveConnectorProjection, EGRESS_POLICY_VERSION } = require('./connector/connectorConfig')
+const { readBackendReadIdentity } = require('./connector/backendReadIdentity')
+
 // ── Run Store wiring ───────────────────────────────────────────────────────────
 // The owner is supplied here, from the server's trusted context — never from the
 // request body. For M1 this is a single local owner.
@@ -195,7 +203,7 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps }) {
   const router = express.Router()
 
   // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
@@ -410,6 +418,28 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
   router.get('/return-ready', returnReadyHandler) // canonical
   router.get('/proposals/results', returnReadyHandler) // alias — MUST precede '/proposals/:id'
 
+  // Phase 2 Gate 1 — connector projection endpoint. Registered ONLY when connectorDeps
+  // is present (flag CONNECTOR_PROJECTION 'on'); otherwise this route does not exist and
+  // behaviour is byte-identical. Mounted via the router's /api/v1 twin → reachable at
+  // /api/v1/connector/return-ready. The ONLY authorization gate is the dedicated
+  // BACKEND_READ_IDENTITY secret (checked inside project()); its value is never logged
+  // or echoed. principal/app/window are Gate-1 caller-DECLARED binding/audit metadata,
+  // NOT a verified identity (a verified principal source is Gate 3) — a self-reported
+  // header must never be treated as an authenticated identity.
+  if (connectorDeps && connectorDeps.projectionEndpoint) {
+    router.get('/connector/return-ready', (req, res) => {
+      const r = connectorDeps.projectionEndpoint.project({
+        presentedReadIdentity: req.get('x-backend-read-identity'),
+        principal: req.get('x-aroma-principal'),
+        app: req.get('x-aroma-app'),
+        window: req.get('x-aroma-window'),
+        filters: { status: req.query.status, since: req.query.since }
+      })
+      const status = r.code === 'OK' ? 200 : (r.code === 'READ_IDENTITY_DENIED' ? 403 : 503)
+      res.status(status).json(r)
+    })
+  }
+
   // Read endpoints so the UI can show persisted Proposals (read-only, no Run,
   // no token).
   router.get('/proposals', (req, res) => res.json(proposalStore.listProposals()))
@@ -554,6 +584,30 @@ function createApp (options = {}) {
   app.locals.workerDeps = workerDeps
   app.locals.runStore = runStore // B2-11b: exposed for startup reconcile (index.js) + tests
 
+  // Phase 2 Gate 1 — connector projection deps. Built ONLY when the flag is on (or
+  // injected for tests). Flag off (default): connectorDeps is null → the connector
+  // route is never registered → existing behaviour is byte-identical. The durable
+  // audit dir under .aroma/connector is written by the BACKEND identity only; the MCP
+  // account never reads it directly (it appends via the channel — slice 6).
+  const connectorDeps = opts.connectorDeps || (resolveConnectorProjection() === 'on'
+    ? (() => {
+        const durableWriter = createDurableAuditWriter({ baseDir: path.resolve(__dirname, '..', '.aroma', 'connector') })
+        const auditSink = createAuditSink({ writer: durableWriter, clock: () => new Date().toISOString(), seqStart: durableWriter.lastDurableSeq(), auditorIdentity: 'auditor_reader' })
+        const resultIdStore = createResultIdStore()
+        const projectionEndpoint = createProjectionEndpoint({
+          buildReturnReadyList,
+          artifactStore: workerDeps && workerDeps.artifactStore,
+          proposalStore,
+          auditSink,
+          resultIdStore,
+          readBackendReadIdentity,
+          egressPolicyVersion: EGRESS_POLICY_VERSION
+        })
+        return { projectionEndpoint, auditSink, resultIdStore, durableWriter }
+      })()
+    : null)
+  app.locals.connectorDeps = connectorDeps
+
   // ── Middleware ────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: '50kb' }))
   app.use(express.urlencoded({ extended: false }))
@@ -609,7 +663,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
