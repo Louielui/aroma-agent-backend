@@ -64,7 +64,7 @@ const { createProjectionEndpoint } = require('./connector/projectionEndpoint')
 const { createAuditSink } = require('./connector/auditSink')
 const { createDurableAuditWriter } = require('./connector/durableAuditWriter')
 const { createResultIdStore } = require('./connector/resultIdStore')
-const { resolveConnectorProjection, EGRESS_POLICY_VERSION } = require('./connector/connectorConfig')
+const { resolveConnectorProjection, resolveConnectorGenericAuth, EGRESS_POLICY_VERSION } = require('./connector/connectorConfig')
 const { readBackendReadIdentity } = require('./connector/backendReadIdentity')
 
 // ── Run Store wiring ───────────────────────────────────────────────────────────
@@ -203,7 +203,7 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps, genericAuthEnabled }) {
   const router = express.Router()
 
   // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
@@ -415,8 +415,11 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
       return res.status(500).json({ error: 'failed to build return-ready view' })
     }
   }
-  router.get('/return-ready', returnReadyHandler) // canonical
-  router.get('/proposals/results', returnReadyHandler) // alias — MUST precede '/proposals/:id'
+  // IR-01: when CONNECTOR_GENERIC_AUTH is on, these two generic read routes require the
+  // service token (widening HUB_TOKEN's guard). Default off → token-free, byte-identical.
+  const genericAuthMw = genericAuthEnabled ? [requireServiceToken] : []
+  router.get('/return-ready', ...genericAuthMw, returnReadyHandler) // canonical
+  router.get('/proposals/results', ...genericAuthMw, returnReadyHandler) // alias — MUST precede '/proposals/:id'
 
   // Phase 2 Gate 1 — connector projection endpoint. Registered ONLY when connectorDeps
   // is present (flag CONNECTOR_PROJECTION 'on'); otherwise this route does not exist and
@@ -663,7 +666,10 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps })
+  const genericAuthEnabled = (typeof opts.connectorGenericAuth === 'boolean')
+    ? opts.connectorGenericAuth
+    : (resolveConnectorGenericAuth() === 'on')
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, connectorDeps, genericAuthEnabled })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
