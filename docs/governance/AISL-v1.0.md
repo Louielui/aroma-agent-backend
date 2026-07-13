@@ -110,7 +110,7 @@ power and self-modification power are different kinds of power and are separated
 
 ## 6. Status & Authority
 
-This set is **DRAFT** until the Owner (Louie) approves it. Until approved it
+This set is APPROVED by Louie and is the authoritative AISL v1.0 governance constitution. Until approved it
 documents intent; it does not itself grant or revoke any capability. No code,
 runtime, permission, connector, MCP, authentication, or authorization behavior is
 created or changed by these documents — they are the governing specification that
@@ -142,3 +142,4 @@ but MUST NOT violate the constitutional principles above.
   payload hash, expiry, thresholds, window, storage, crypto). Additive; no existing
   clause changed. (Status remains DRAFT.)
 - **v1.0 APPROVED — 2026-07-13.** Before-merge amendments A-01~A-10 applied; Owner approval reference: GO，Merge AISL v1.0 並轉 APPROVED — 2026-07-13
+- **v1.0 §6 correction — 2026-07-13.** Replaced the stale §6 "DRAFT until the Owner approves it" sentence with an APPROVED statement, resolving the last DRAFT/APPROVED contradiction. Owner Governance GO (Owner-only, Governance Plane) issued by Louie — 2026-07-13.
