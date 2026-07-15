@@ -24,6 +24,7 @@ const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildPersonaSystem } = require('../persona/xiangxiang')   // B2-2 slice 2 hook
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
+const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 
 /**
  * intakeService.js — orchestrates the full M1 intake pipeline.
@@ -43,8 +44,26 @@ const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 
  * @param {import('../adapters/LLMAdapter').LLMAdapter} adapter — injected LLM adapter
  * @returns {Promise<IntakeResult>}
  */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 async function processIntake (message, adapter, history = [], opts = {}) {
-  const requestId = uuidv4()
+  // Correlation id: a caller-supplied requestId is honoured ONLY when it is a valid
+  // UUID; anything missing/non-string/malformed is replaced by a fresh UUID. The
+  // final id is the single correlationId used by success, the Error, and diagnostics.
+  const supplied = opts && opts.requestId
+  const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
+  try {
+    return await runIntakePipeline(message, adapter, history, opts, requestId)
+  } catch (err) {
+    // Slice B: every error leaving intake carries the correlationId (== requestId).
+    // IntakeUpstreamError sets it in its constructor; DistillParseError and any
+    // unexpected error are tagged here. Existing set values are never overwritten.
+    if (err && err.correlationId == null) err.correlationId = requestId
+    throw err
+  }
+}
+
+async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
   // B2-2 Conversation Demo — additive, flag-gated. When `demo` is false (default,
   // i.e. no opts) every demo branch below is skipped and the pipeline is unchanged.
@@ -102,16 +121,14 @@ async function processIntake (message, adapter, history = [], opts = {}) {
       temperature: 0.3
     })
   } catch (err) {
-    throw new Error(`Intake LLM call failed: ${err.message}`)
+    // Upstream provider/adapter failure → typed, safe error. Provider message is
+    // kept only on .cause (server-side classification), never surfaced to client.
+    throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
   }
 
-  // Parse the structured JSON response
-  let distilled
-  try {
-    distilled = parseDistillResponse(llmResult.text)
-  } catch (err) {
-    throw new Error(`Intake distillation parse failed: ${err.message}`)
-  }
+  // Parse the structured JSON response. DistillParseError (Slice A) propagates
+  // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
+  const distilled = parseDistillResponse(llmResult.text)
 
   // ── DEMO — Plan A: an execution intent must resolve to EXACTLY ONE task (this
   //    is the first official-Proposal demo, not a batch system). 0 or >1 tasks →
