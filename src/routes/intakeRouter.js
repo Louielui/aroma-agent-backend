@@ -43,13 +43,17 @@ router.post(
       })
     }
 
-    const { message, history } = req.body
+    const { message, history, contextCard } = req.body // contextCard untrusted; sanitized downstream; ignored when demo OFF
 
     try {
       // Get the active adapter (swappable via LLM_PROVIDER env var)
       const adapter = getAdapter()
 
-      const result = await processIntake(message, adapter, history || [])
+      // B2-2 Conversation Demo — flag-gated. OFF (default): identical 3-arg call.
+      const demoOn = req.app.locals && req.app.locals.conversationDemo === true
+      const result = demoOn
+        ? await processIntake(message, adapter, history || [], { demo: true, contextCard, promoteToProposal: req.app.locals.promoteToProposal })
+        : await processIntake(message, adapter, history || [])
       return res.status(200).json(result)
     } catch (err) {
       // Log the error type/message — never log message content or API key
