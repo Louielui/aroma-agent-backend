@@ -72,11 +72,99 @@ function buildDistillPrompt (message, history = []) {
   return { system: SYSTEM_PROMPT, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 
+// --- Slice A: strict Distill output-contract parser (Option C) ----------------
+// Reason taxonomy (frozen). Built-in JSON.parse owns all grammar/value-boundary
+// decisions; leading/trailing/multiple/truncated all surface as invalid_json.
+const REJECT_REASONS = Object.freeze({
+  EMPTY_RESPONSE: 'empty_response',
+  FENCE_MALFORMED: 'fence_malformed',
+  INVALID_JSON: 'invalid_json',
+  NOT_SINGLE_OBJECT: 'not_single_object',
+  DUPLICATE_KEYS: 'duplicate_keys'
+})
+
+// Typed rejection. .message is safe (reason only, no raw model text). Raw sample
+// lives ONLY in .diagnostic for server-side logging — never disclosed by Slice A.
+class DistillParseError extends Error {
+  constructor (reason, diagnostic) {
+    super(`distill parse rejected: ${reason}`)
+    this.name = 'DistillParseError'
+    this.reason = reason
+    this.diagnostic = diagnostic || {}
+  }
+}
+function rejectWith (reason, text) {
+  return new DistillParseError(reason, { rawSample: String(text).slice(0, 200) })
+}
+
+// Envelope: accept a bare payload or ONE code fence whose language tag is empty or
+// "json" (case-insensitive; CRLF or LF). Anything else outside the JSON → reject.
+// Trims ONLY JSON-insignificant whitespace (space/tab/LF/CR) — NOT a BOM or other
+// Unicode whitespace, so a leading BOM survives to JSON.parse and is rejected.
+function validateEnvelope (text) {
+  const s = String(text).replace(/^[ \t\n\r]+/, '').replace(/[ \t\n\r]+$/, '')
+  if (s === '') throw rejectWith(REJECT_REASONS.EMPTY_RESPONSE, text)
+  if (!s.startsWith('```')) return s // bare candidate — JSON.parse decides validity
+  const firstNl = s.indexOf('\n')
+  if (firstNl === -1 || !s.endsWith('```')) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text)
+  const lang = s.slice(3, firstNl).replace(/\r$/, '').trim()
+  if (lang !== '' && !/^json$/i.test(lang)) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text)
+  const inner = s.slice(firstNl + 1, s.length - 3)
+  if (inner.includes('```')) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text) // multiple/nested fences
+  return inner // JSON.parse decides validity (the newline before the close fence is JSON whitespace)
+}
+
+// All-depth duplicate-key detection over a string JSON.parse has ALREADY accepted
+// (so it is guaranteed well-formed; this scanner validates NO grammar). It only
+// tracks object/array nesting and, per object scope, the set of DECODED keys — two
+// keys that decode to the same value (e.g. "a" and "a") are duplicates. Keys
+// are decoded per-token with JSON.parse; the object's own last-wins result is never
+// used to judge duplicates. String contents (incl. escaped quotes/backslashes and
+// braces) are skipped and never mistaken for structure or keys.
+function assertNoDuplicateKeys (json, rawText) {
+  const stack = []
+  const n = json.length
+  let i = 0
+  while (i < n) {
+    const c = json[i]
+    if (c === '"') {
+      let j = i + 1
+      while (j < n) {
+        if (json[j] === '\\') { j += 2; continue } // valid JSON → escape is well-formed
+        if (json[j] === '"') break
+        j++
+      }
+      const token = json.slice(i, j + 1)
+      const top = stack[stack.length - 1]
+      if (top && top.type === 'object' && top.expectKey) {
+        const key = JSON.parse(token) // safe local decode of the key token only
+        if (top.keys.has(key)) throw rejectWith(REJECT_REASONS.DUPLICATE_KEYS, rawText)
+        top.keys.add(key)
+        top.expectKey = false
+      }
+      i = j + 1
+      continue
+    }
+    if (c === '{') { stack.push({ type: 'object', keys: new Set(), expectKey: true }); i++; continue }
+    if (c === '[') { stack.push({ type: 'array' }); i++; continue }
+    if (c === '}' || c === ']') { stack.pop(); i++; continue }
+    if (c === ',') {
+      const top = stack[stack.length - 1]
+      if (top && top.type === 'object') top.expectKey = true
+      i++; continue
+    }
+    i++ // ':' , whitespace, numbers, true/false/null — never a key
+  }
+}
+
 function parseDistillResponse (text) {
+  const content = validateEnvelope(text) // bare/single-fence → inner string; else empty/fence_malformed
   let p
   try {
-    p = JSON.parse(text.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim())
-  } catch (err) { throw new Error(`LLM response not valid JSON: ${err.message}. Raw: ${text.slice(0, 200)}`) }
+    p = JSON.parse(content)
+  } catch (_) { throw rejectWith(REJECT_REASONS.INVALID_JSON, text) }
+  if (p === null || typeof p !== 'object' || Array.isArray(p)) throw rejectWith(REJECT_REASONS.NOT_SINGLE_OBJECT, text)
+  assertNoDuplicateKeys(content, text) // any-depth duplicate → reject BEFORE any normalization / intent read
 
   const intent = typeof p.intent === 'string' ? p.intent : 'unclear'
   const reply = (typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。'
@@ -105,4 +193,4 @@ function parseDistillResponse (text) {
     next_step: typeof p.next_step === 'string' ? p.next_step.trim() : '' }
 }
 
-module.exports = { buildDistillPrompt, parseDistillResponse, SYSTEM_PROMPT }
+module.exports = { buildDistillPrompt, parseDistillResponse, SYSTEM_PROMPT, DistillParseError, REJECT_REASONS }
