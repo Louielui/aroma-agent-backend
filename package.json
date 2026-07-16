@@ -9,7 +9,8 @@
     "verify:behavioral-mapping": "node scripts/memory/verifyBehavioralMapping.js",
     "verify:operating-principles-shadow": "node scripts/memory/verifyOperatingPrinciplesShadow.js",
     "submit:operating-principles-shadow": "node scripts/memory/submitOperatingPrinciplesShadow.js",
-    "approve:operating-principles-shadow": "node scripts/memory/approveOperatingPrinciplesShadow.js"
+    "approve:operating-principles-shadow": "node scripts/memory/approveOperatingPrinciplesShadow.js",
+    "activate:operating-principles-shadow": "node scripts/memory/activateOperatingPrinciplesShadow.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
