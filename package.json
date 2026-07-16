@@ -5,7 +5,8 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "verify:identity-shadow": "node scripts/memory/verifyIdentityShadow.js"
+    "verify:identity-shadow": "node scripts/memory/verifyIdentityShadow.js",
+    "verify:behavioral-mapping": "node scripts/memory/verifyBehavioralMapping.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
