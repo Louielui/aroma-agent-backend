@@ -14,6 +14,7 @@ const { MemoryError } = require('./errors')
 const DOMAINS = Object.freeze({
   identity: 'identity',
   personality: 'behavior',
+  'operating-principles': 'operating-principles',
   experience: 'advisory',
   skills: 'capability'
 })
@@ -28,6 +29,12 @@ const TRANSITIONS = Object.freeze({
     active: { SUPERSEDED: 'superseded', DEPRECATED: 'deprecated' }
   },
   personality: {
+    new: { SUBMITTED_FOR_REVIEW: 'review_ready', REJECTED: 'rejected' },
+    review_ready: { APPROVED: 'approved', REJECTED: 'rejected' },
+    approved: { ACTIVATED: 'active', DEPRECATED: 'deprecated' },
+    active: { SUPERSEDED: 'superseded', DEPRECATED: 'deprecated' }
+  },
+  'operating-principles': {
     new: { SUBMITTED_FOR_REVIEW: 'review_ready', REJECTED: 'rejected' },
     review_ready: { APPROVED: 'approved', REJECTED: 'rejected' },
     approved: { ACTIVATED: 'active', DEPRECATED: 'deprecated' },
