@@ -12,7 +12,8 @@
     "approve:operating-principles-shadow": "node scripts/memory/approveOperatingPrinciplesShadow.js",
     "activate:operating-principles-shadow": "node scripts/memory/activateOperatingPrinciplesShadow.js",
     "verify:personality-shadow": "node scripts/memory/verifyPersonalityShadow.js",
-    "submit:personality-shadow": "node scripts/memory/submitPersonalityShadow.js"
+    "submit:personality-shadow": "node scripts/memory/submitPersonalityShadow.js",
+    "approve:personality-shadow": "node scripts/memory/approvePersonalityShadow.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
