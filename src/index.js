@@ -10,8 +10,24 @@
 const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 const { readExpectedToken } = require('./api/auth')
+const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
 
 const PORT = process.env.PORT || 8081
+
+// R4a PROCESS-ROLE GUARD — runs on the production entry/listen path only, BEFORE
+// binding the port. A `primary` process may only use PERSONA_SOURCE=legacy; a
+// non-legacy source is allowed solely in an explicit `persona-canary` role. Unknown
+// role / source / forbidden combination => refuse to start (no listener, no Memory
+// read, no composer load, no model call, no truth/artifact write). Reads env only.
+function assertProcessRoleConfigured () {
+  const cfg = evaluateStartupConfig(process.env)
+  if (!cfg.valid) {
+    console.error('[AROMA-HUB] FATAL: invalid persona process configuration — ' + cfg.status +
+      '. Refusing to start. (primary requires PERSONA_SOURCE=legacy; non-legacy needs AROMA_PROCESS_ROLE=persona-canary.)')
+    process.exit(1)
+  }
+  console.log('[AROMA-HUB] process role: ' + cfg.processRole + ' | persona source: ' + cfg.personaSourceMode)
+}
 
 // B2-15 STARTUP FAIL-FAST — this lives ONLY on the production entry/listen path
 // (never in createApp), so tests that build apps via createApp cannot trip it.
@@ -62,6 +78,7 @@ function startupSandboxSweep () {
   }
 }
 
+assertProcessRoleConfigured() // R4a — fail-closed on invalid role/source BEFORE the port
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
 startupReconcile()
 
