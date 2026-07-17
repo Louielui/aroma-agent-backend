@@ -58,6 +58,13 @@ function main () {
   const createApp = require('./app').createApp
   const app = createApp({ serviceToken: canaryToken })
 
+  // 5b. Canary-only health/readiness surface — mounted ONLY on this canary app
+  // instance (the primary app never mounts these). Reuses the R2 persona source
+  // (read-only; composes lazily on first readiness request; no model, no writes).
+  const { mountCanaryHealth } = require('./persona/personaCanaryHealth')
+  const { getPersonaSource } = require('./persona/personaSource')
+  mountCanaryHealth(app, { processRole: cfg.processRole, personaSourceMode: cfg.personaSourceMode, getSource: () => getPersonaSource() })
+
   // 6. Bind localhost-only; fail closed on port-in-use / any listen error.
   const server = app.listen(CANARY_PORT, CANARY_HOST, () => {
     console.log('[AROMA-CANARY] persona-canary listening on ' + CANARY_HOST + ':' + CANARY_PORT +
