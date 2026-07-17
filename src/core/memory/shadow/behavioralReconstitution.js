@@ -145,7 +145,11 @@ function reconstituteBehavioral (combined, personaIdentity, anchor) {
   const full = personaIdentity.slice(0, anchor.section.start) + section + personaIdentity.slice(anchor.section.end)
   const fullPersonaByteIdentical = full === personaIdentity
   if (!fullPersonaByteIdentical) return { ok: false, reason: REASON.FULL_PERSONA_RECONSTITUTION_FAILED, sequenceSet, sectionSha, sectionByteIdentical: true, fullPersonaByteIdentical: false }
-  return { ok: true, reason: REASON.PASS, sequenceSet, sectionSha, sectionByteIdentical: true, fullPersonaByteIdentical: true }
+  // `section` is returned additively (verified behavioral text) so consumers such as
+  // the hybrid persona composer can reuse the verified merge without re-writing it.
+  // The safe verifier output (verifyBehavioralReconstitution / CLI) does NOT include
+  // it, so this adds no leak and does not change status / precedence / semantics.
+  return { ok: true, reason: REASON.PASS, sequenceSet, sectionSha, sectionByteIdentical: true, fullPersonaByteIdentical: true, section }
 }
 
 // Static read-only runtime-isolation probe: does index.js/app.js reach core/memory?
