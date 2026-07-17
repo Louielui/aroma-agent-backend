@@ -655,6 +655,14 @@ function createApp (options = {}) {
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
+  // R4c-F1 pre-terminal mount hook (OPT-IN). When a caller supplies
+  // opts.mountExtraRoutes (a function), it runs HERE — after the normal routes and
+  // BEFORE the terminal 404 — so an entrypoint can add its own routes ahead of the
+  // catch-all. Ordinary createApp() calls pass no hook and behave identically to
+  // before. It is NOT driven by any request/header/user input, and the primary
+  // process never supplies it, so the primary never gains those routes.
+  if (typeof opts.mountExtraRoutes === 'function') opts.mountExtraRoutes(app)
+
   // 404 handler
   app.use((req, res) => {
     res.status(404).json({ error: 'Not found', path: req.path })

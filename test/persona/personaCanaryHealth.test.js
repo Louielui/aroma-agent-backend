@@ -143,6 +143,24 @@ test('primary generic /health is unchanged (still 200, open)', async () => {
   assert.equal(h.status, 200)
 })
 
+// ---- R4c-F1: opt-in pre-terminal hook mounts routes ahead of the 404 -------
+test('createApp mountExtraRoutes hook mounts canary routes BEFORE the terminal 404; unknown paths still 404', async () => {
+  const base = tmpBase()
+  try {
+    seedTriple(base)
+    const app = createAppMod.createApp({ mountExtraRoutes: (a) => H.mountCanaryHealth(a, { processRole: 'persona-canary', personaSourceMode: 'hybrid', getSource: () => src('hybrid', base) }) })
+    const h = await serveAndGet(app, '/persona-canary/health')
+    assert.equal(h.status, 200); assert.equal(JSON.parse(h.body).status, 'CANARY_ALIVE') // reachable, not shadowed by the 404
+    const nf = await serveAndGet(app, '/definitely-not-a-route')
+    assert.equal(nf.status, 404) // terminal 404 still handles unknown paths
+  } finally { cleanup(base) }
+})
+test('the hook is opt-in: ordinary createApp() (no hook) never gains the canary routes', async () => {
+  const app = createAppMod.createApp() // no mountExtraRoutes
+  assert.equal((await serveAndGet(app, '/persona-canary/health')).status, 404)
+  assert.equal((await serveAndGet(app, '/persona-canary/readiness')).status, 404)
+})
+
 // ---- zero writes / no model -----------------------------------------------
 test('readiness performs zero filesystem writes on the core dir', () => {
   const base = tmpBase()
