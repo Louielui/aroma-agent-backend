@@ -79,11 +79,27 @@ const CONTEXT_CARD_GUARD = [
  * @returns {string}
  */
 function buildPersonaSystem (distillSystem) {
+  // Legacy wrapper — byte-identical to the historical behaviour. Delegates to the
+  // pure composer with the frozen PERSONA_IDENTITY in the persona slot.
+  return buildPersonaSystemFromPersona(PERSONA_IDENTITY, distillSystem)
+}
+
+/**
+ * Pure composer: place an ALREADY-VERIFIED persona text in the persona slot, above
+ * the fixed data-boundary guard and the existing distill classifier. Only the
+ * persona slot varies; the guard, the separators, and the classifier are exactly as
+ * before. `buildPersonaSystem(d)` === `buildPersonaSystemFromPersona(PERSONA_IDENTITY, d)`.
+ *
+ * @param {string} personaText   a verified persona string (legacy PERSONA_IDENTITY or a proven Hybrid Persona)
+ * @param {string} distillSystem the existing distill SYSTEM_PROMPT
+ * @returns {string}
+ */
+function buildPersonaSystemFromPersona (personaText, distillSystem) {
   const parts = []
-  if (PERSONA_IDENTITY) parts.push(PERSONA_IDENTITY) // trusted identity (B5, frozen)
+  if (personaText) parts.push(personaText) // trusted persona (frozen legacy, or a proven byte-identical hybrid)
   parts.push(CONTEXT_CARD_GUARD) // trusted security frame — always present in demo
   parts.push(distillSystem) // existing classifier, unchanged, kept last
   return parts.join('\n\n')
 }
 
-module.exports = { buildPersonaSystem, PERSONA_IDENTITY, CONTEXT_CARD_GUARD }
+module.exports = { buildPersonaSystem, buildPersonaSystemFromPersona, PERSONA_IDENTITY, CONTEXT_CARD_GUARD }
