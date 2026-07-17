@@ -33,12 +33,16 @@ test('unknown role and case/space variants fail closed', () => {
 
 // ---- role × mode matrix ---------------------------------------------------
 const v = (processRole, personaSourceMode) => PR.validateProcessPersonaConfig({ processRole, personaSourceMode })
-test('primary: only legacy valid; shadow/hybrid forbidden (no fallback)', () => {
+test('primary: legacy + hybrid config-valid; shadow forbidden (Runtime Guard)', () => {
   assert.equal(v('primary', 'legacy').valid, true)
   assert.equal(v('primary', 'legacy').status, 'PROCESS_CONFIG_VALID')
+  // hybrid is now CONFIG-permitted on the primary; readiness is enforced separately
+  // at startup by primaryPersonaStartupGuard (this layer reads no Memory).
+  assert.equal(v('primary', 'hybrid').valid, true)
+  assert.equal(v('primary', 'hybrid').status, 'PROCESS_CONFIG_VALID')
+  // shadow stays forbidden on the primary (canary-only diagnostic mode).
   assert.equal(v('primary', 'shadow').valid, false)
-  assert.equal(v('primary', 'shadow').status, 'PRIMARY_NON_LEGACY_FORBIDDEN')
-  assert.equal(v('primary', 'hybrid').status, 'PRIMARY_NON_LEGACY_FORBIDDEN')
+  assert.equal(v('primary', 'shadow').status, 'PRIMARY_SHADOW_FORBIDDEN')
 })
 test('persona-canary: legacy/shadow/hybrid all valid at the config layer', () => {
   assert.equal(v('persona-canary', 'legacy').valid, true)
@@ -58,7 +62,8 @@ test('evaluateStartupConfig: default env -> primary + legacy valid', () => {
 test('evaluateStartupConfig: unknown role / unknown persona source fail closed (no throw)', () => {
   assert.equal(PR.evaluateStartupConfig({ AROMA_PROCESS_ROLE: 'x' }).status, 'PROCESS_ROLE_CONFIG_ERROR')
   assert.equal(PR.evaluateStartupConfig({ PERSONA_SOURCE: 'memory' }).status, 'PERSONA_SOURCE_CONFIG_ERROR')
-  assert.equal(PR.evaluateStartupConfig({ PERSONA_SOURCE: 'shadow' }).status, 'PRIMARY_NON_LEGACY_FORBIDDEN') // default role primary
+  assert.equal(PR.evaluateStartupConfig({ PERSONA_SOURCE: 'shadow' }).status, 'PRIMARY_SHADOW_FORBIDDEN') // default role primary
+  assert.equal(PR.evaluateStartupConfig({ PERSONA_SOURCE: 'hybrid' }).valid, true) // primary+hybrid config-valid (readiness gated at startup)
 })
 test('authority is env-only: no request/header API surface exists', () => {
   // validateProcessPersonaConfig takes parsed strings, never a request object.
@@ -89,12 +94,18 @@ test('primary + shadow forbidden: index.js exits before listen', () => {
   const e = { PERSONA_SOURCE: 'shadow', PORT: '18092' }; delete e.AROMA_PROCESS_ROLE
   const r = runIndex(Object.assign({ AROMA_PROCESS_ROLE: '' }, e))
   assert.notEqual(r.code, 0)
-  assert.ok(r.out.includes('PRIMARY_NON_LEGACY_FORBIDDEN'))
+  assert.ok(r.out.includes('PRIMARY_SHADOW_FORBIDDEN'))
   assert.equal(r.out.includes('Listening on port'), false)
 })
-test('primary + hybrid forbidden: index.js exits before listen', () => {
-  const r = runIndex({ AROMA_PROCESS_ROLE: '', PERSONA_SOURCE: 'hybrid', PORT: '18093' })
-  assert.notEqual(r.code, 0); assert.ok(r.out.includes('PRIMARY_NON_LEGACY_FORBIDDEN')); assert.equal(r.out.includes('Listening on port'), false)
+test('primary + hybrid with a NOT-READY core: index.js exits before listen (Runtime Guard, no fallback)', () => {
+  const os = require('node:os'); const fs = require('node:fs')
+  const emptyCore = fs.mkdtempSync(path.join(os.tmpdir(), 'r5rg-emptycore-')) // no active stores -> composer NOT_READY
+  try {
+    const r = runIndex({ AROMA_PROCESS_ROLE: '', PERSONA_SOURCE: 'hybrid', AROMA_CORE_DIR: emptyCore, PORT: '18093' })
+    assert.notEqual(r.code, 0)
+    assert.ok(r.out.includes('PRIMARY_HYBRID_NOT_READY'), r.out)
+    assert.equal(r.out.includes('Listening on port'), false) // fail-closed: never binds
+  } finally { fs.rmSync(emptyCore, { recursive: true, force: true }) }
 })
 test('unknown PERSONA_SOURCE (persona-canary role): index.js exits before listen (R2 fail-closed preserved)', () => {
   const r = runIndex({ AROMA_PROCESS_ROLE: 'persona-canary', PERSONA_SOURCE: 'memory', PORT: '18094' })

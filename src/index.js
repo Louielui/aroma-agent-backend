@@ -11,6 +11,8 @@ const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 const { readExpectedToken } = require('./api/auth')
 const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
+const { evaluatePrimaryPersonaStartup } = require('./persona/primaryPersonaStartupGuard') // Runtime Guard — hybrid-primary readiness
+const { getPersonaSource } = require('./persona/personaSource') // memory-free import (Memory lazy-loaded only for non-legacy)
 
 const PORT = process.env.PORT || 8081
 
@@ -27,6 +29,25 @@ function assertProcessRoleConfigured () {
     process.exit(1)
   }
   console.log('[AROMA-HUB] process role: ' + cfg.processRole + ' | persona source: ' + cfg.personaSourceMode)
+}
+
+// RUNTIME GUARD — Memory-readiness gate for a primary process, on the production
+// entry/listen path only (never in createApp). Runs AFTER config validation, BEFORE
+// listen. A `legacy` primary is allowed WITHOUT touching Memory (memory-free — the
+// guard never calls getPersonaSource for legacy). A `hybrid` primary must have a
+// fully READY hybrid composer (R1/R2), or we REFUSE TO START — fail-closed, with NO
+// silent legacy fallback. It reuses the existing persona-source readiness path and
+// re-implements no verifier logic. `PERSONA_SOURCE` is read, never written.
+function assertPrimaryPersonaReady () {
+  const cfg = evaluateStartupConfig(process.env) // already proven valid by assertProcessRoleConfigured
+  const decision = evaluatePrimaryPersonaStartup(cfg, { getPersonaSource })
+  if (!decision.allow) {
+    console.error('[AROMA-HUB] FATAL: ' + decision.code + ' — persona runtime is not ready for a hybrid primary' +
+      (decision.reason ? ' (' + decision.reason + ')' : '') + '. Refusing to start. No silent fallback — ' +
+      'set PERSONA_SOURCE=legacy (or unset) to run the frozen legacy persona.')
+    process.exit(1)
+  }
+  console.log('[AROMA-HUB] persona startup guard: ' + decision.code + (decision.memoryRead ? ' (memory read)' : ' (memory-free)'))
 }
 
 // B2-15 STARTUP FAIL-FAST — this lives ONLY on the production entry/listen path
@@ -79,6 +100,7 @@ function startupSandboxSweep () {
 }
 
 assertProcessRoleConfigured() // R4a — fail-closed on invalid role/source BEFORE the port
+assertPrimaryPersonaReady() // Runtime Guard — hybrid primary needs a READY composer; legacy stays memory-free
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
 startupReconcile()
 

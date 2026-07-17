@@ -4,8 +4,12 @@
  * processRole — R4a process-role guard.
  *
  * Resolves AROMA_PROCESS_ROLE and validates it against PERSONA_SOURCE at startup,
- * FAIL-CLOSED. Only a `persona-canary` role may run a non-legacy persona source; a
- * `primary` process is restricted to `legacy` until a separate production GO.
+ * FAIL-CLOSED. A `primary` process may run `legacy` (memory-free) or `hybrid`; the
+ * `hybrid` combination is only CONFIG-permitted here and is additionally gated at
+ * startup by the Memory-readiness guard (primaryPersonaStartupGuard) — this module
+ * reads NO Memory. `primary + shadow` stays forbidden (shadow is a canary-only
+ * diagnostic that would compose+pin yet still serve legacy — a confusing half-state
+ * on the primary). A `persona-canary` role may run any mode.
  *
  * Authority is the PROCESS ENVIRONMENT only — never a request / header / query /
  * cookie / body / user input / Memory payload. This module reads no Memory, loads
@@ -44,9 +48,14 @@ function validateProcessPersonaConfig (cfg) {
   const out = (valid, status, reason) => ({ valid: !!valid, status, reason: reason || null, processRole, personaSourceMode })
   if (!VALID_ROLES.includes(processRole)) return out(false, 'PROCESS_ROLE_CONFIG_ERROR', 'unknown-role')
   if (personaSourceMode !== 'legacy' && personaSourceMode !== 'shadow' && personaSourceMode !== 'hybrid') return out(false, 'PERSONA_SOURCE_CONFIG_ERROR', 'unknown-mode')
-  if (processRole === 'primary' && personaSourceMode !== 'legacy') return out(false, 'PRIMARY_NON_LEGACY_FORBIDDEN', 'primary-non-legacy')
-  // persona-canary + legacy|shadow|hybrid is valid at the CONFIG layer. Whether
-  // hybrid is actually READY is decided later by the R1/R2 readiness gate — not here.
+  // A primary process may run legacy (memory-free) or hybrid. `primary + hybrid` is
+  // CONFIG-permitted here; whether the hybrid composer is actually READY is enforced
+  // separately at startup by primaryPersonaStartupGuard (this layer reads NO Memory).
+  // `primary + shadow` stays forbidden — shadow serves legacy to the model while
+  // composing/pinning, a pointless half-state on the primary.
+  if (processRole === 'primary' && personaSourceMode === 'shadow') return out(false, 'PRIMARY_SHADOW_FORBIDDEN', 'primary-shadow')
+  // persona-canary + legacy|shadow|hybrid, and primary + legacy|hybrid, are valid at
+  // the CONFIG layer. Whether hybrid is actually READY is decided later (R1/R2 + guard).
   return out(true, 'PROCESS_CONFIG_VALID', null)
 }
 
