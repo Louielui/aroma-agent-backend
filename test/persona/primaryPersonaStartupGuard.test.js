@@ -186,10 +186,10 @@ test('child boot: primary+hybrid with an all-active core reaches "Listening", th
   try {
     const ok = await new Promise((resolve) => {
       let out = ''
-      const on = (d) => { out += String(d); if (out.includes('Listening on port') && out.includes('PRIMARY_HYBRID_READY')) resolve({ listening: true, out }) }
+      const on = (d) => { out += String(d); if (out.includes('Listening on 127.0.0.1:') && out.includes('PRIMARY_HYBRID_READY')) resolve({ listening: true, out }) }
       child.stdout.on('data', on); child.stderr.on('data', on)
-      child.on('exit', () => resolve({ listening: out.includes('Listening on port'), out }))
-      setTimeout(() => resolve({ listening: out.includes('Listening on port'), out }), 15000)
+      child.on('exit', () => resolve({ listening: out.includes('Listening on 127.0.0.1:'), out }))
+      setTimeout(() => resolve({ listening: out.includes('Listening on 127.0.0.1:'), out }), 15000)
     })
     assert.equal(ok.listening, true, ok.out)
     assert.ok(ok.out.includes('persona startup guard: PRIMARY_HYBRID_READY (memory read)'), ok.out)

@@ -13,6 +13,7 @@ const { readExpectedToken } = require('./api/auth')
 const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
 const { evaluatePrimaryPersonaStartup } = require('./persona/primaryPersonaStartupGuard') // Runtime Guard — hybrid-primary readiness
 const { getPersonaSource } = require('./persona/personaSource') // memory-free import (Memory lazy-loaded only for non-legacy)
+const { resolveBindHost } = require('./runtime/bindConfig') // Runtime Foundation A1 — loopback-only bind policy
 
 const PORT = process.env.PORT || 8081
 
@@ -48,6 +49,21 @@ function assertPrimaryPersonaReady () {
     process.exit(1)
   }
   console.log('[AROMA-HUB] persona startup guard: ' + decision.code + (decision.memoryRead ? ' (memory read)' : ' (memory-free)'))
+}
+
+// RUNTIME FOUNDATION A1 — LOOPBACK-ONLY BIND. Resolve the listen host from
+// AROMA_BIND_HOST via the pure bindConfig policy: unset/empty -> 127.0.0.1; exactly
+// 127.0.0.1 allowed; ANY other value (0.0.0.0, ::, ::1, hostname, LAN IP, malformed)
+// FAILS CLOSED here — the service never binds a non-loopback interface, and a missing
+// env can never widen the bind. The invalid value is never echoed (no env leak).
+function resolveValidatedBindHost () {
+  const b = resolveBindHost(process.env)
+  if (!b.ok) {
+    console.error('[AROMA-HUB] FATAL: ' + b.code + ' — AROMA_BIND_HOST must be unset or exactly 127.0.0.1 (' +
+      b.reason + '). Refusing to start.')
+    process.exit(1)
+  }
+  return b.host
 }
 
 // B2-15 STARTUP FAIL-FAST — this lives ONLY on the production entry/listen path
@@ -113,10 +129,19 @@ if (process.env.CONVERSATION_DEMO === 'on' && (process.env.LLM_PROVIDER || 'clau
     `${process.env.LLM_PROVIDER} — demo replies come from a non-real provider, not the live Xiang Xiang.`)
 }
 
-app.listen(PORT, () => {
-  console.log(`[AROMA-HUB] Listening on port ${PORT}`)
+const BIND_HOST = resolveValidatedBindHost() // loopback-only; FATAL + exit if invalid — never binds a non-loopback interface
+const server = app.listen(PORT, BIND_HOST, () => {
+  console.log(`[AROMA-HUB] Listening on ${BIND_HOST}:${PORT}`)
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)
   // NEVER log the API key
+})
+// Fail closed on any bind/listen error (e.g. port in use): no half-started state, no
+// alternative port, no second listener — a safe FATAL code + non-zero exit.
+server.on('error', (err) => {
+  const code = (err && err.code) || 'LISTEN_ERROR'
+  console.error('[AROMA-HUB] FATAL: BACKEND_LISTEN_FAILED — cannot bind ' + BIND_HOST + ':' + PORT +
+    ' (' + code + '). Refusing to start.')
+  process.exit(1)
 })
 
 startupSandboxSweep() // after listen — never blocks boot

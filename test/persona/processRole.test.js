@@ -88,14 +88,14 @@ test('unknown role: index.js exits non-zero, prints FATAL, never binds the port'
   const r = runIndex({ AROMA_PROCESS_ROLE: 'bogus', PORT: '18091' })
   assert.notEqual(r.code, 0)
   assert.ok(r.out.includes('FATAL') && r.out.includes('PROCESS_ROLE_CONFIG_ERROR'))
-  assert.equal(r.out.includes('Listening on port'), false) // never reached listen
+  assert.equal(r.out.includes('Listening on'), false) // never reached listen
 })
 test('primary + shadow forbidden: index.js exits before listen', () => {
   const e = { PERSONA_SOURCE: 'shadow', PORT: '18092' }; delete e.AROMA_PROCESS_ROLE
   const r = runIndex(Object.assign({ AROMA_PROCESS_ROLE: '' }, e))
   assert.notEqual(r.code, 0)
   assert.ok(r.out.includes('PRIMARY_SHADOW_FORBIDDEN'))
-  assert.equal(r.out.includes('Listening on port'), false)
+  assert.equal(r.out.includes('Listening on'), false)
 })
 test('primary + hybrid with a NOT-READY core: index.js exits before listen (Runtime Guard, no fallback)', () => {
   const os = require('node:os'); const fs = require('node:fs')
@@ -104,12 +104,12 @@ test('primary + hybrid with a NOT-READY core: index.js exits before listen (Runt
     const r = runIndex({ AROMA_PROCESS_ROLE: '', PERSONA_SOURCE: 'hybrid', AROMA_CORE_DIR: emptyCore, PORT: '18093' })
     assert.notEqual(r.code, 0)
     assert.ok(r.out.includes('PRIMARY_HYBRID_NOT_READY'), r.out)
-    assert.equal(r.out.includes('Listening on port'), false) // fail-closed: never binds
+    assert.equal(r.out.includes('Listening on'), false) // fail-closed: never binds
   } finally { fs.rmSync(emptyCore, { recursive: true, force: true }) }
 })
 test('unknown PERSONA_SOURCE (persona-canary role): index.js exits before listen (R2 fail-closed preserved)', () => {
   const r = runIndex({ AROMA_PROCESS_ROLE: 'persona-canary', PERSONA_SOURCE: 'memory', PORT: '18094' })
-  assert.notEqual(r.code, 0); assert.ok(r.out.includes('PERSONA_SOURCE_CONFIG_ERROR')); assert.equal(r.out.includes('Listening on port'), false)
+  assert.notEqual(r.code, 0); assert.ok(r.out.includes('PERSONA_SOURCE_CONFIG_ERROR')); assert.equal(r.out.includes('Listening on'), false)
 })
 
 // ---- valid default startup does NOT get blocked by the guard --------------
@@ -121,9 +121,9 @@ test('valid default (primary+legacy) startup reaches "Listening" then is stopped
   const child = cp.spawn(process.execPath, ['src/index.js'], { cwd: BACKEND, env })
   const listening = await new Promise((resolve) => {
     let out = ''
-    const onData = (d) => { out += String(d); if (out.includes('Listening on port') && out.includes('process role: primary | persona source: legacy')) resolve(true) }
+    const onData = (d) => { out += String(d); if (out.includes('Listening on 127.0.0.1:') && out.includes('process role: primary | persona source: legacy')) resolve(true) }
     child.stdout.on('data', onData); child.stderr.on('data', onData)
-    setTimeout(() => resolve(out.includes('Listening on port')), 8000)
+    setTimeout(() => resolve(out.includes('Listening on 127.0.0.1:')), 8000)
   })
   child.kill('SIGKILL')
   fs.rmSync(dataDir, { recursive: true, force: true })
