@@ -125,6 +125,62 @@ test('ON execution: domain-seam failure surfaces the domain error, not a proposa
   assert.equal(res.promoteErrors[0].code, 'promote_rejected')
 })
 
+// ── B2-2 reply grounding: prose must match the REAL structured outcome ────────
+test('grounding: clarification (>1 task) reply claims NO proposal + no id', async () => {
+  const promoteToProposal = async () => ({ ok: true, proposal: { id: 'prop_should_not_be_used' } })
+  const res = await processIntake('兩件事', fakeAdapter(CANNED.exec2), [], { demo: true, promoteToProposal })
+  assert.equal(res.demoOutcome, 'clarification')
+  assert.notEqual(res.reply, CANNED.exec2.reply, 'does NOT echo the model speculative reply')
+  assert.ok(res.reply.includes('尚未建立任何提案'), 'explicitly says no proposal created')
+  assert.ok(!res.reply.includes('編號'), 'no proposal-id claim')
+})
+
+test('grounding: execution with a REAL proposal id → reply references THAT id', async () => {
+  const officialRecord = Object.freeze({ id: 'prop_abc12345', status: 'pending', linkState: 'ready' })
+  const promoteToProposal = async () => ({ ok: true, proposal: officialRecord })
+  const res = await processIntake('把 Timeline 到終止狀態後的輪詢停掉。', fakeAdapter(CANNED.exec1), [], { demo: true, promoteToProposal })
+  assert.equal(res.demoOutcome, 'execution_proposal')
+  assert.ok(res.reply.includes('prop_abc12345'), 'reply references the real created proposal id')
+  assert.ok(res.reply.includes('編號') && /待批准/.test(res.reply), 'grounded created claim, pending')
+})
+
+test('grounding: promote failed → reply claims NO proposal + no id', async () => {
+  // seam not wired → proposals [], promoteErrors present
+  const res = await processIntake('把 Timeline 輪詢停掉', fakeAdapter(CANNED.exec1), [], { demo: true })
+  assert.equal(res.demoOutcome, 'execution_proposal')
+  assert.deepEqual(res.proposals, [])
+  assert.ok(res.reply.includes('尚未建立任何提案'), 'no proposal claimed on promote failure')
+  assert.ok(!res.reply.includes('編號'), 'no id claimed')
+})
+
+test('grounding: speech/context pass the model reply through (no injected action claim)', async () => {
+  const s = await processIntake('聊天', fakeAdapter(CANNED.speech), [], { demo: true })
+  assert.equal(s.demoOutcome, 'speech')
+  assert.equal(s.reply, CANNED.speech.reply, 'conversational reply is the model voice, unchanged')
+  assert.equal('proposals' in s, false)
+  const c = await processIntake('背景', fakeAdapter(CANNED.context), [], { demo: true })
+  assert.equal(c.demoOutcome, 'context')
+  assert.equal(c.reply, CANNED.context.reply)
+})
+
+test('Change C: ACTION_HONESTY_GUARD reaches the adapter system on the demo path', async () => {
+  const a = fakeAdapter(CANNED.speech)
+  await processIntake('聊天', a, [], { demo: true })
+  assert.ok(a.calls[0].system.includes('行動誠實'), 'honesty frame injected (trusted system)')
+  assert.ok(a.calls[0].system.includes('資料邊界'), 'data-boundary guard still present')
+})
+
+test('OFF byte-identical: no persona/honesty frames; reply is the raw model reply', async () => {
+  const a = fakeAdapter(CANNED.speech)
+  const res = await processIntake('聊天', a, []) // demo OFF
+  const { system } = buildDistillPrompt('聊天', [])
+  assert.equal(a.calls[0].system, system, 'OFF system == raw distill system (byte-identical)')
+  assert.ok(!a.calls[0].system.includes('行動誠實'), 'no honesty frame when OFF')
+  assert.ok(!a.calls[0].system.includes('資料邊界'), 'no persona guard when OFF')
+  assert.equal(res.reply, CANNED.speech.reply, 'OFF reply is the raw model reply')
+  assert.equal('demoOutcome' in res, false)
+})
+
 // ── flag ON: persona injected + context card sanitized ───────────────────────
 test('ON: persona guard reaches the adapter system; context card sanitized + warnings surfaced', async () => {
   const a = fakeAdapter(CANNED.speech)
