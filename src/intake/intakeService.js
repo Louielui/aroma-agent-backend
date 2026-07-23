@@ -22,7 +22,8 @@ const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../d
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
-const { buildPersonaSystemFromPersona } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer)
+const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
+const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer) + honesty frame
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
@@ -120,7 +121,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (demo) {
     const src = (opts && opts.personaSource) || getPersonaSource()
     const rp = src.runtimePersona() // hybrid: throws PersonaSourceUnavailableError before the model is called
-    effSystem = buildPersonaSystemFromPersona(rp.personaText, system)
+    // Change C: inject the trusted ACTION_HONESTY_GUARD (demo-only) so the model's
+    // conversational (speech/context) prose makes no false completion claims. The
+    // action outcomes below are additionally grounded deterministically.
+    effSystem = buildPersonaSystemFromPersona(rp.personaText, system, { extraGuards: [ACTION_HONESTY_GUARD] })
   } else {
     effSystem = system
   }
@@ -157,10 +161,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens,
       latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false
     })
+    const clarificationReason = (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task'
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
-      reply: distilled.reply,
-      clarificationReason: (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task',
+      // Change B: ground the reply — narrowing created NO proposal; never echo the
+      // model's speculative "整理出一項提案" prose here.
+      reply: buildGroundedReply({ type: 'clarification', clarificationReason }),
+      clarificationReason,
       contextCardWarnings: ctx.warnings, requestId
     }
   }
@@ -242,9 +249,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (r && r.ok && r.proposal) proposals.push(r.proposal) // official record only — the single source of proposal truth
       else promoteErrors.push((r && r.error) || { code: 'promote_failed', message: 'unknown promotion failure' })
     }
+    // Change B: the ONLY source of proposal truth is the official record. Claim a
+    // created proposal (with its real id) only when exactly one real record exists;
+    // any promote failure grounds to "遇到問題,尚未建立任何提案".
+    const createdProposal = (proposals.length === 1 && proposals[0] && proposals[0].id) ? proposals[0] : null
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'execution_proposal',
-      reply: distilled.reply,
+      reply: buildGroundedReply({
+        type: 'execution_proposal',
+        proposalCreated: !!createdProposal,
+        proposalId: createdProposal ? createdProposal.id : null,
+        promoteError: promoteErrors[0] || null
+      }),
       proposals,
       promoteErrors, contextCardWarnings: ctx.warnings, requestId
     }

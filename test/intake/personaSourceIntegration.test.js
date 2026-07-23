@@ -18,7 +18,12 @@ const { test } = require('node:test')
 const assert = require('node:assert/strict')
 const { processIntake } = require('../../src/intake/intakeService')
 const { buildDistillPrompt } = require('../../src/intake/distillPrompt')
-const { buildPersonaSystem, PERSONA_IDENTITY: P } = require('../../src/persona/xiangxiang')
+const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD, PERSONA_IDENTITY: P } = require('../../src/persona/xiangxiang')
+
+// B2-2 reply grounding (Change C): the demo path injects the trusted
+// ACTION_HONESTY_GUARD between the data-boundary guard and the classifier. The
+// expected demo system prompt mirrors exactly what intakeService composes.
+const expectedDemoSystem = (distillSystem) => buildPersonaSystemFromPersona(P, distillSystem, { extraGuards: [ACTION_HONESTY_GUARD] })
 const PSsel = require('../../src/persona/personaSource')
 const op = require('../../src/core/memory/shadow/operatingPrinciplesShadow')
 const ps = require('../../src/core/memory/shadow/personalityShadow')
@@ -54,12 +59,12 @@ async function driveDemo (personaSource) {
   return { state, error }
 }
 
-test('legacy demo: system prompt byte-identical to buildPersonaSystem(distill)', async () => {
+test('legacy demo: system prompt == persona + guards(incl. honesty) + distill', async () => {
   const src = PSsel.createPersonaSource({ env: { PERSONA_SOURCE: 'legacy' } })
   const { state } = await driveDemo(src)
   assert.equal(state.calls, 1)
   const { system } = buildDistillPrompt(MSG, [])
-  assert.equal(state.captured, buildPersonaSystem(system))
+  assert.equal(state.captured, expectedDemoSystem(system))
 })
 
 test('hybrid READY: system prompt byte-identical to legacy (behavior-neutral)', async () => {
@@ -70,7 +75,7 @@ test('hybrid READY: system prompt byte-identical to legacy (behavior-neutral)', 
     const { state } = await driveDemo(src)
     assert.equal(state.calls, 1)
     const { system } = buildDistillPrompt(MSG, [])
-    assert.equal(state.captured, buildPersonaSystem(system)) // hybrid persona === legacy PERSONA_IDENTITY
+    assert.equal(state.captured, expectedDemoSystem(system)) // hybrid persona === legacy PERSONA_IDENTITY (same guards)
   } finally { cleanup(base) }
 })
 
@@ -97,7 +102,7 @@ test('shadow: adapter receives legacy system; hybrid text never sent', async () 
     const { state } = await driveDemo(src)
     assert.equal(state.calls, 1)
     const { system } = buildDistillPrompt(MSG, [])
-    assert.equal(state.captured, buildPersonaSystem(system)) // legacy (also byte-identical to hybrid here)
+    assert.equal(state.captured, expectedDemoSystem(system)) // legacy persona text (also byte-identical to hybrid here); honesty guard present
   } finally { cleanup(base) }
 })
 

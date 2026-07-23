@@ -3,3 +3,8 @@ node_modules
 data
 *.log
 .aroma
+
+# Local secrets — never commit (moved out of the repo; kept only under %LOCALAPPDATA%\Aroma\secrets)
+password.txt
+rclone-b2-config.txt
+*.creds
