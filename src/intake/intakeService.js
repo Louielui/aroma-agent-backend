@@ -21,6 +21,10 @@ const { buildDistillPrompt, parseDistillResponse } = require('./distillPrompt')
 const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../dispatch/dispatcher')
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
+const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
+const { buildPersonaSystem } = require('../persona/xiangxiang')   // B2-2 slice 2 hook
+const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
+const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 
 /**
  * intakeService.js — orchestrates the full M1 intake pipeline.
@@ -40,9 +44,31 @@ const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
  * @param {import('../adapters/LLMAdapter').LLMAdapter} adapter — injected LLM adapter
  * @returns {Promise<IntakeResult>}
  */
-async function processIntake (message, adapter, history = []) {
-  const requestId = uuidv4()
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+async function processIntake (message, adapter, history = [], opts = {}) {
+  // Correlation id: a caller-supplied requestId is honoured ONLY when it is a valid
+  // UUID; anything missing/non-string/malformed is replaced by a fresh UUID. The
+  // final id is the single correlationId used by success, the Error, and diagnostics.
+  const supplied = opts && opts.requestId
+  const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
+  try {
+    return await runIntakePipeline(message, adapter, history, opts, requestId)
+  } catch (err) {
+    // Slice B: every error leaving intake carries the correlationId (== requestId).
+    // IntakeUpstreamError sets it in its constructor; DistillParseError and any
+    // unexpected error are tagged here. Existing set values are never overwritten.
+    if (err && err.correlationId == null) err.correlationId = requestId
+    throw err
+  }
+}
+
+async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
+  // B2-2 Conversation Demo — additive, flag-gated. When `demo` is false (default,
+  // i.e. no opts) every demo branch below is skipped and the pipeline is unchanged.
+  const demo = opts && opts.demo === true                  // CONVERSATION_DEMO gate; default false
+  const contextCard = (opts && opts.contextCard) || null   // per-turn, session-only; NEVER persisted
 
   // ── STEP 1: RED-LINE CHECK (must be first, before any external call) ──────
   const redLine = checkRedLine(message)
@@ -79,24 +105,51 @@ async function processIntake (message, adapter, history = []) {
 
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   const { system, prompt } = buildDistillPrompt(message, history)
+  // DEMO (flag ON): trusted persona identity via `system`; untrusted project
+  // context via a sanitized prompt data block. Both cross the SAME LLMAdapter
+  // boundary as plain strings — no provider SDK here. Context Card sanitization
+  // surfaces observable `warnings` (never a silent rewrite).
+  const ctx = demo ? buildContextPreamble(contextCard) : { preamble: '', warnings: [] }
+  const effSystem = demo ? buildPersonaSystem(system) : system
+  const effPrompt = demo ? (ctx.preamble + prompt) : prompt
 
   let llmResult
   try {
-    llmResult = await adapter.complete(prompt, {
-      system,
+    llmResult = await adapter.complete(effPrompt, {
+      system: effSystem,
       maxTokens: 1024,
       temperature: 0.3
     })
   } catch (err) {
-    throw new Error(`Intake LLM call failed: ${err.message}`)
+    // Upstream provider/adapter failure → typed, safe error. Provider message is
+    // kept only on .cause (server-side classification), never surfaced to client.
+    throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
   }
 
-  // Parse the structured JSON response
-  let distilled
-  try {
-    distilled = parseDistillResponse(llmResult.text)
-  } catch (err) {
-    throw new Error(`Intake distillation parse failed: ${err.message}`)
+  // Parse the structured JSON response. DistillParseError (Slice A) propagates
+  // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
+  const distilled = parseDistillResponse(llmResult.text)
+
+  // ── DEMO — Plan A: an execution intent must resolve to EXACTLY ONE task (this
+  //    is the first official-Proposal demo, not a batch system). 0 or >1 tasks →
+  //    clarification; do NOT persist and do NOT promote. ──────────────────────
+  if (demo && distilled.mode === 'commit' && (!Array.isArray(distilled.tasks) || distilled.tasks.length !== 1)) {
+    logLLMCall({
+      model: llmResult.model, latencyMs: llmResult.latencyMs,
+      inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens,
+      totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false
+    })
+    await recordLLMUsage({
+      model: llmResult.model, inputTokens: llmResult.usage.inputTokens,
+      outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens,
+      latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false
+    })
+    return {
+      blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
+      reply: distilled.reply,
+      clarificationReason: (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task',
+      contextCardWarnings: ctx.warnings, requestId
+    }
   }
 
   // ── CHAT or ASK: talk only — do NOT persist any Decision/Task ─────────────
@@ -111,7 +164,9 @@ async function processIntake (message, adapter, history = []) {
       outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens,
       latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false
     })
-    return { blocked: false, mode: distilled.mode, intent: distilled.intent, reply: distilled.reply, judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
+    return { blocked: false, mode: distilled.mode, intent: distilled.intent,
+      ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
+      reply: distilled.reply, judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 
   // ── STEP 3: LOG METRICS (local — condition 6) ─────────────────────────────
@@ -153,6 +208,35 @@ async function processIntake (message, adapter, history = []) {
 
   // ── STEP 6: DISPATCH (real Worker Dispatcher) ─────────────────────────────
   const stored = persisted && persisted.ok ? persisted.data : null
+
+  // ── DEMO — EXECUTION via the OFFICIAL governance seam (single task, enforced
+  //    above). Promote the persisted Task through the injected DOMAIN seam
+  //    (opts.promoteToProposal → { ok, proposal } | { ok:false, error }): a real,
+  //    persisted, pending Proposal that is confirmable later, but NO Run, NO
+  //    worker, no dispatch, and it never touches the Timeline. Confirm remains the
+  //    sole execution gate. Proposal state comes ONLY from the official record in
+  //    `proposals[]` — nothing (status/linkState/dispatch authority) is invented.
+  if (demo) {
+    const taskId = stored && Array.isArray(stored.tasks) && stored.tasks[0] ? stored.tasks[0].id : null
+    const proposals = []
+    const promoteErrors = []
+    if (!taskId) {
+      promoteErrors.push({ code: 'persist_failed', message: 'intake task not persisted; no Proposal created' })
+    } else if (typeof opts.promoteToProposal !== 'function') {
+      promoteErrors.push({ code: 'seam_not_wired', message: 'promoteToProposal not injected' })
+    } else {
+      const r = await opts.promoteToProposal(taskId)
+      if (r && r.ok && r.proposal) proposals.push(r.proposal) // official record only — the single source of proposal truth
+      else promoteErrors.push((r && r.error) || { code: 'promote_failed', message: 'unknown promotion failure' })
+    }
+    return {
+      blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'execution_proposal',
+      reply: distilled.reply,
+      proposals,
+      promoteErrors, contextCardWarnings: ctx.warnings, requestId
+    }
+  }
+
   const decisionId = stored ? stored.decision.id : null
   const decisionStatement = stored ? stored.decision.statement : (distilled.decision ? distilled.decision.statement : '')
   const storedTasks = stored ? stored.tasks : distilled.tasks

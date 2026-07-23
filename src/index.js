@@ -65,6 +65,15 @@ function startupSandboxSweep () {
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
 startupReconcile()
 
+// B2-2 — INFORMATIONAL ONLY (never blocks startup, never changes runtime): the
+// Conversation Demo is on but not on the real reasoning provider, so replies come
+// from a stub, not the live Xiang Xiang. Activation tests intentionally run on the
+// mock provider, so this stays a warning.
+if (process.env.CONVERSATION_DEMO === 'on' && (process.env.LLM_PROVIDER || 'claude') !== 'claude') {
+  console.warn('[AROMA-HUB] CONVERSATION_DEMO=on but LLM_PROVIDER=' +
+    `${process.env.LLM_PROVIDER} — demo replies come from a non-real provider, not the live Xiang Xiang.`)
+}
+
 app.listen(PORT, () => {
   console.log(`[AROMA-HUB] Listening on port ${PORT}`)
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)

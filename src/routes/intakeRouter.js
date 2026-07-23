@@ -2,8 +2,10 @@
 
 const express = require('express')
 const { body, validationResult } = require('express-validator')
+const { v4: uuidv4 } = require('uuid')
 const { processIntake } = require('../intake/intakeService')
 const { getAdapter } = require('../adapters/adapterFactory')
+const { handleIntakeError } = require('../utils/intakeDiagnostics')
 
 const router = express.Router()
 
@@ -34,6 +36,11 @@ router.post(
       .isLength({ max: 2000 }).withMessage('message must be ≤ 2000 characters')
   ],
   async (req, res) => {
+    // One correlation id per request. Used as the intake requestId on the demo path
+    // and as the fallback id for the error boundary (covers errors thrown before the
+    // service tags one, e.g. getAdapter()).
+    const correlationId = uuidv4()
+
     // Input validation
     const errors = validationResult(req)
     if (!errors.isEmpty()) {
@@ -43,21 +50,28 @@ router.post(
       })
     }
 
-    const { message, history } = req.body
+    const { message, history, contextCard } = req.body // contextCard untrusted; sanitized downstream; ignored when demo OFF
 
     try {
       // Get the active adapter (swappable via LLM_PROVIDER env var)
       const adapter = getAdapter()
 
-      const result = await processIntake(message, adapter, history || [])
+      // B2-2 Conversation Demo — flag-gated. OFF (default): identical 3-arg call.
+      const demoOn = req.app.locals && req.app.locals.conversationDemo === true
+      const result = demoOn
+        ? await processIntake(message, adapter, history || [], { requestId: correlationId, demo: true, contextCard, promoteToProposal: req.app.locals.promoteToProposal })
+        : await processIntake(message, adapter, history || [])
       return res.status(200).json(result)
     } catch (err) {
-      // Log the error type/message — never log message content or API key
-      console.error('[AROMA-INTAKE] Error processing intake:', err.message)
-      return res.status(500).json({
-        error: 'Internal server error',
-        detail: err.message
-      })
+      // Slice B: single safe-disclosure boundary. Metadata-only server diagnostic
+      // (log-only, no raw/message/stack) + stable client contract. Never leak.
+      let mapped
+      try {
+        mapped = handleIntakeError(err, { correlationId, endpoint: '/api/v1/intake' })
+      } catch (_) {
+        mapped = { status: 500, body: { error: { code: 'internal_error', message: '系統暫時無法處理這個請求。', correlationId, retryable: false } } }
+      }
+      return res.status(mapped.status).json(mapped.body)
     }
   }
 )

@@ -22,7 +22,7 @@ const path = require('node:path')
 
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
-const { createProposalBridgeRouter } = require('./intake/proposalBridge')
+const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
 const { listWorkers, getExecutive } = require('./workers/registry')
 const { statusLabel } = require('./dispatch/dispatcher')
@@ -85,6 +85,18 @@ function resolveDevelopDispatch () {
   if (raw === undefined || raw === null || raw === '') return 'off'
   if (raw === 'on' || raw === 'off') return raw
   console.warn(`[AROMA-HUB] Invalid DEVELOP_DISPATCH="${raw}" — falling back to 'off'.`)
+  return 'off'
+}
+
+// B2-2 Conversation Demo gate. Mirrors resolveWorkerInvocation/resolveDevelopDispatch
+// EXACTLY: strict 'on' only; unset/empty/misspelled/wrong-case → 'off' (fail-closed).
+// Purely conversational: it gates additive demo wiring only — never touches the
+// Dispatcher, a Run, a Worker, or the Timeline.
+function resolveConversationDemo () {
+  const raw = process.env.CONVERSATION_DEMO
+  if (raw === undefined || raw === null || raw === '') return 'off'
+  if (raw === 'on' || raw === 'off') return raw
+  console.warn(`[AROMA-HUB] Invalid CONVERSATION_DEMO="${raw}" — falling back to 'off'.`)
   return 'off'
 }
 
@@ -582,6 +594,36 @@ function createApp (options = {}) {
   // POST /proposals/:id/confirm remains the sole execution-authorization point.
   app.use('/api/v1/intake/tasks', requireServiceToken, createProposalBridgeRouter({ store, proposalStore }))
 
+  // ── B2-2 Conversation Demo — flag-gated activation (default OFF). When OFF, NO
+  //    locals are set → intakeRouter passes NO opts → processIntake is unchanged.
+  //    When ON, expose a DOMAIN-CONTRACT promote wrapper: intakeService never sees
+  //    HTTP status/body/router — it gets { ok, proposal } | { ok:false, error }.
+  //    `store` (intake Task store) and `proposalStore` are the SAME instances the
+  //    bridge above uses; intakeService's persistIntake writes through the SAME
+  //    './store/store' module (hubClient requires it), so a persisted taskId
+  //    resolves here (store same-source). This creates an official pending
+  //    Proposal only — NO Run, NO Worker, no dispatch; confirm stays the sole gate.
+  if (resolveConversationDemo() === 'on') {
+    app.locals.conversationDemo = true
+    app.locals.promoteToProposal = async (taskId) => {
+      try {
+        const r = await promoteTaskToProposal({ store, proposalStore, taskId })
+        if (r.status === 200 && r.body && r.body.proposalId) {
+          const proposal = proposalStore.getProposal(r.body.proposalId)
+          if (!proposal) {
+            // Never surface { ok:true, proposal:undefined } — the id must resolve
+            // to a real governance record, else it is a fail-visible integrity error.
+            return { ok: false, error: { code: 'proposal_record_missing', message: `promoted proposalId ${r.body.proposalId} has no official record` } }
+          }
+          return { ok: true, proposal } // state from the OFFICIAL record only
+        }
+        return { ok: false, error: { code: 'promote_rejected', message: (r.body && r.body.error) || `status ${r.status}` } }
+      } catch (err) {
+        return { ok: false, error: { code: 'promote_error', message: err && err.message ? err.message : String(err) } }
+      }
+    }
+  }
+
   // Worker Dispatcher — real workers + live dispatch status
   app.get('/api/v1/workers', (req, res) => {
     const dsp = store.listDispatches()
@@ -637,5 +679,6 @@ app.createApp = createApp
 app.resolveDevelopDispatch = resolveDevelopDispatch
 app.resolveWorkerInvocation = resolveWorkerInvocation
 app.resolveExecutionAuthorization = resolveExecutionAuthorization
+app.resolveConversationDemo = resolveConversationDemo // B2-2: exposed for unit tests (pure)
 
 module.exports = app
