@@ -95,6 +95,33 @@ test('buildU1DraftPrompt embeds persona text read-only', () => {
   assert.ok(system.includes('PERSONA-MARKER-XYZ'));
 });
 
+test('U1 hardening: system prompt states the raw-JSON / no-code-fence output rule', () => {
+  const { system } = buildU1DraftPrompt({ instruction: 'x', personaText: 'p' });
+  assert.ok(system.includes('OUTPUT FORMAT'));
+  assert.ok(system.includes('code fences'));
+  assert.ok(system.includes('```json'));
+  assert.ok(system.includes('FIRST output character MUST be "{"'));
+  assert.ok(system.includes('LAST output character MUST be "}"'));
+});
+
+test('U1 hardening: system prompt gives first-person owner-voice tone guidance', () => {
+  const { system } = buildU1DraftPrompt({ instruction: 'x', personaText: 'p' });
+  assert.ok(system.includes('VOICE'));
+  assert.ok(system.includes("OWNER'S voice"));
+  assert.ok(system.includes('first person'));
+  assert.ok(system.includes('TONE'));
+  assert.ok(system.includes('minimal filler'));
+});
+
+test('U1 negative lock: markdown-fenced JSON is STILL rejected (parser not loosened)', () => {
+  const fenced = '```json\n' + draftJson() + '\n```';
+  assert.throws(() => parseU1DraftResponse(fenced), (e) =>
+    e instanceof DistillParseError && e.reason === DISTILL_PARSE_REASON.EXTRA_PROSE);
+  const barefence = '```\n' + draftJson() + '\n```';
+  assert.throws(() => parseU1DraftResponse(barefence), (e) =>
+    e instanceof DistillParseError && e.reason === DISTILL_PARSE_REASON.EXTRA_PROSE);
+});
+
 /* ------------------------- A. understanding extract ------------------------ */
 
 test('A1/A2 draft_proposal parses recipient/purpose/tone/constraints + signals', () => {

@@ -133,7 +133,9 @@ function buildU1DraftPrompt({ instruction, history, personaText } = {}) {
     '- If you do not know the recipient email, set recipient.email to null. NEVER guess an email.',
     '- understandingSignals MUST contain at least one signal.',
     '- Do NOT include any of these keys anywhere: stage, sent, approved, executed, gmailDraftCreated, persistentMemoryWritten, proposalCreated.',
-    '- Output the JSON object only. No leading/trailing text.',
+    '- VOICE: when mode="draft_proposal", write draft.body in the OWNER\'S voice — first person, as if the owner wrote it themselves.',
+    '- TONE (all outputs, including a mode="ask" clarifyingQuestion): direct, concise, and naturally polite. Keep it efficient — minimal filler, no "hope this finds you well" padding, no over-apologizing. Respectful but efficient.',
+    '- OUTPUT FORMAT (hard rule): output ONLY one raw JSON object. No markdown, no code fences (no ``` and no ```json), no comments, and no prose before or after. The FIRST output character MUST be "{" and the LAST output character MUST be "}".',
   ].join('\n');
 
   const prompt = [
