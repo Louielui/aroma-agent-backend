@@ -10,8 +10,61 @@
 const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
 const { readExpectedToken } = require('./api/auth')
+const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
+const { evaluatePrimaryPersonaStartup } = require('./persona/primaryPersonaStartupGuard') // Runtime Guard — hybrid-primary readiness
+const { getPersonaSource } = require('./persona/personaSource') // memory-free import (Memory lazy-loaded only for non-legacy)
+const { resolveBindHost } = require('./runtime/bindConfig') // Runtime Foundation A1 — loopback-only bind policy
 
 const PORT = process.env.PORT || 8081
+
+// R4a PROCESS-ROLE GUARD — runs on the production entry/listen path only, BEFORE
+// binding the port. A `primary` process may only use PERSONA_SOURCE=legacy; a
+// non-legacy source is allowed solely in an explicit `persona-canary` role. Unknown
+// role / source / forbidden combination => refuse to start (no listener, no Memory
+// read, no composer load, no model call, no truth/artifact write). Reads env only.
+function assertProcessRoleConfigured () {
+  const cfg = evaluateStartupConfig(process.env)
+  if (!cfg.valid) {
+    console.error('[AROMA-HUB] FATAL: invalid persona process configuration — ' + cfg.status +
+      '. Refusing to start. (primary requires PERSONA_SOURCE=legacy; non-legacy needs AROMA_PROCESS_ROLE=persona-canary.)')
+    process.exit(1)
+  }
+  console.log('[AROMA-HUB] process role: ' + cfg.processRole + ' | persona source: ' + cfg.personaSourceMode)
+}
+
+// RUNTIME GUARD — Memory-readiness gate for a primary process, on the production
+// entry/listen path only (never in createApp). Runs AFTER config validation, BEFORE
+// listen. A `legacy` primary is allowed WITHOUT touching Memory (memory-free — the
+// guard never calls getPersonaSource for legacy). A `hybrid` primary must have a
+// fully READY hybrid composer (R1/R2), or we REFUSE TO START — fail-closed, with NO
+// silent legacy fallback. It reuses the existing persona-source readiness path and
+// re-implements no verifier logic. `PERSONA_SOURCE` is read, never written.
+function assertPrimaryPersonaReady () {
+  const cfg = evaluateStartupConfig(process.env) // already proven valid by assertProcessRoleConfigured
+  const decision = evaluatePrimaryPersonaStartup(cfg, { getPersonaSource })
+  if (!decision.allow) {
+    console.error('[AROMA-HUB] FATAL: ' + decision.code + ' — persona runtime is not ready for a hybrid primary' +
+      (decision.reason ? ' (' + decision.reason + ')' : '') + '. Refusing to start. No silent fallback — ' +
+      'set PERSONA_SOURCE=legacy (or unset) to run the frozen legacy persona.')
+    process.exit(1)
+  }
+  console.log('[AROMA-HUB] persona startup guard: ' + decision.code + (decision.memoryRead ? ' (memory read)' : ' (memory-free)'))
+}
+
+// RUNTIME FOUNDATION A1 — LOOPBACK-ONLY BIND. Resolve the listen host from
+// AROMA_BIND_HOST via the pure bindConfig policy: unset/empty -> 127.0.0.1; exactly
+// 127.0.0.1 allowed; ANY other value (0.0.0.0, ::, ::1, hostname, LAN IP, malformed)
+// FAILS CLOSED here — the service never binds a non-loopback interface, and a missing
+// env can never widen the bind. The invalid value is never echoed (no env leak).
+function resolveValidatedBindHost () {
+  const b = resolveBindHost(process.env)
+  if (!b.ok) {
+    console.error('[AROMA-HUB] FATAL: ' + b.code + ' — AROMA_BIND_HOST must be unset or exactly 127.0.0.1 (' +
+      b.reason + '). Refusing to start.')
+    process.exit(1)
+  }
+  return b.host
+}
 
 // B2-15 STARTUP FAIL-FAST — this lives ONLY on the production entry/listen path
 // (never in createApp), so tests that build apps via createApp cannot trip it.
@@ -62,6 +115,8 @@ function startupSandboxSweep () {
   }
 }
 
+assertProcessRoleConfigured() // R4a — fail-closed on invalid role/source BEFORE the port
+assertPrimaryPersonaReady() // Runtime Guard — hybrid primary needs a READY composer; legacy stays memory-free
 assertServiceTokenConfigured() // B2-15 — fail-fast BEFORE binding the port
 startupReconcile()
 
@@ -74,10 +129,19 @@ if (process.env.CONVERSATION_DEMO === 'on' && (process.env.LLM_PROVIDER || 'clau
     `${process.env.LLM_PROVIDER} — demo replies come from a non-real provider, not the live Xiang Xiang.`)
 }
 
-app.listen(PORT, () => {
-  console.log(`[AROMA-HUB] Listening on port ${PORT}`)
+const BIND_HOST = resolveValidatedBindHost() // loopback-only; FATAL + exit if invalid — never binds a non-loopback interface
+const server = app.listen(PORT, BIND_HOST, () => {
+  console.log(`[AROMA-HUB] Listening on ${BIND_HOST}:${PORT}`)
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)
   // NEVER log the API key
+})
+// Fail closed on any bind/listen error (e.g. port in use): no half-started state, no
+// alternative port, no second listener — a safe FATAL code + non-zero exit.
+server.on('error', (err) => {
+  const code = (err && err.code) || 'LISTEN_ERROR'
+  console.error('[AROMA-HUB] FATAL: BACKEND_LISTEN_FAILED — cannot bind ' + BIND_HOST + ':' + PORT +
+    ' (' + code + '). Refusing to start.')
+  process.exit(1)
 })
 
 startupSandboxSweep() // after listen — never blocks boot

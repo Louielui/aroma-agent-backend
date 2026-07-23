@@ -40,6 +40,7 @@ const { createClaudeCodeAdapter } = require('./adapters/claude-code')
 // src/coo/proposal.js and src/coo/intent.js.
 const { createProposalStore } = require('./coo/proposal')
 const { getAdapter } = require('./adapters/adapterFactory')
+const { resolveArtifactDir } = require('./runtime/artifactDir') // Runtime Foundation A4 — external artifact root
 
 // Service-token authentication for every state-changing route. See src/api/auth.js.
 const { createRequireServiceToken } = require('./api/auth')
@@ -556,7 +557,16 @@ function createApp (options = {}) {
   const workerDeps = opts.workerDeps || (() => {
     // One artifact store, shared by the (write) trigger and the (read) endpoint —
     // the read endpoint's source of truth is exactly what the worker wrote.
-    const artifactStore = createArtifactStore({ baseDir: path.resolve(__dirname, '..', '.aroma') })
+    // A4: the artifact root may be redirected OUTSIDE the immutable release via
+    // AROMA_ARTIFACT_DIR. Unset -> the historical release-relative `.aroma` (dev/test
+    // unchanged). An invalid explicit value fails closed HERE, before the store is
+    // constructed and therefore before any artifact write. The raw value is not echoed.
+    const artifactRoot = resolveArtifactDir(process.env, path.resolve(__dirname, '..', '.aroma'))
+    if (!artifactRoot.ok) {
+      throw new Error('[AROMA-HUB] FATAL: ARTIFACT_DIR_INVALID — AROMA_ARTIFACT_DIR must be an absolute Windows path (' +
+        artifactRoot.reason + '). Refusing to construct the artifact store (fail-closed; no write).')
+    }
+    const artifactStore = createArtifactStore({ baseDir: artifactRoot.dir })
     return {
       artifactStore,
       runner: createWorkerRunner({ worker: createClaudeWorker(), artifactStore })
@@ -654,6 +664,14 @@ function createApp (options = {}) {
   const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
+
+  // R4c-F1 pre-terminal mount hook (OPT-IN). When a caller supplies
+  // opts.mountExtraRoutes (a function), it runs HERE — after the normal routes and
+  // BEFORE the terminal 404 — so an entrypoint can add its own routes ahead of the
+  // catch-all. Ordinary createApp() calls pass no hook and behave identically to
+  // before. It is NOT driven by any request/header/user input, and the primary
+  // process never supplies it, so the primary never gains those routes.
+  if (typeof opts.mountExtraRoutes === 'function') opts.mountExtraRoutes(app)
 
   // 404 handler
   app.use((req, res) => {

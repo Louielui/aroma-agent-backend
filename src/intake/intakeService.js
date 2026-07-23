@@ -22,7 +22,8 @@ const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../d
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
-const { buildPersonaSystem } = require('../persona/xiangxiang')   // B2-2 slice 2 hook
+const { buildPersonaSystemFromPersona } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer)
+const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 
@@ -110,7 +111,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // boundary as plain strings — no provider SDK here. Context Card sanitization
   // surfaces observable `warnings` (never a silent rewrite).
   const ctx = demo ? buildContextPreamble(contextCard) : { preamble: '', warnings: [] }
-  const effSystem = demo ? buildPersonaSystem(system) : system
+  // R2: the runtime persona slot is chosen by PERSONA_SOURCE (legacy default). In
+  // legacy mode this is byte-identical to buildPersonaSystem(system) and reads no
+  // Memory. In hybrid mode a fail-closed PersonaSourceUnavailableError propagates
+  // BEFORE any adapter/model call. Only the persona slot varies; guard, separators
+  // and the classifier are unchanged. Non-demo path is untouched.
+  let effSystem
+  if (demo) {
+    const src = (opts && opts.personaSource) || getPersonaSource()
+    const rp = src.runtimePersona() // hybrid: throws PersonaSourceUnavailableError before the model is called
+    effSystem = buildPersonaSystemFromPersona(rp.personaText, system)
+  } else {
+    effSystem = system
+  }
   const effPrompt = demo ? (ctx.preamble + prompt) : prompt
 
   let llmResult

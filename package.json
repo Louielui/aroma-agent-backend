@@ -15,7 +15,8 @@
     "submit:personality-shadow": "node scripts/memory/submitPersonalityShadow.js",
     "approve:personality-shadow": "node scripts/memory/approvePersonalityShadow.js",
     "activate:personality-shadow": "node scripts/memory/activatePersonalityShadow.js",
-    "verify:behavioral-reconstitution": "node scripts/memory/verifyBehavioralReconstitution.js"
+    "verify:behavioral-reconstitution": "node scripts/memory/verifyBehavioralReconstitution.js",
+    "verify:hybrid-persona": "node scripts/persona/verifyHybridPersona.js"
   },
   "dependencies": {
     "axios": "^1.7.2",
