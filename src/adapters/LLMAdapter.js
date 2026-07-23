@@ -13,6 +13,14 @@
  *   maxTokens?: number   — upper bound on output tokens
  *   temperature?: number — 0.0–1.0 sampling temperature
  *   system?: string      — optional system-level instruction
+ *   responseFormat?: {   — OPTIONAL vendor-neutral structured-output request
+ *     type: 'json_schema',
+ *     name: string,       — provider-neutral identifier; a provider MAY choose
+ *                           not to transmit it (e.g. Anthropic GA does not)
+ *     schema: object      — JSON Schema (additionalProperties:false on every object)
+ *   }                     — An adapter that cannot honor responseFormat MUST fail
+ *                           closed (UnsupportedCapabilityError); it must NEVER
+ *                           silently ignore it and return unconstrained text.
  * }
  *
  * CompletionResult {

@@ -11,6 +11,7 @@ const {
 } = require('./u1DraftPrompt');
 
 const { runU1DraftShadow } = require('./u1DraftShadow');
+const { U1_DRAFT_SCHEMA, U1_DRAFT_SCHEMA_NAME } = require('./u1DraftSchema');
 
 /* ----------------------- dedicated fake adapter ---------------------------- */
 /**
@@ -77,6 +78,36 @@ function draftJson(overrides = {}) {
   };
   return JSON.stringify(Object.assign(base, overrides));
 }
+
+/* --------------------- structured-output wiring tests ---------------------- */
+
+test('U1 passes responseFormat exactly once with the U1 schema + name', async () => {
+  const adapter = makeFakeAdapter({ text: draftJson() });
+  const res = await runU1DraftShadow({ instruction: 'reply to Rob', adapter, requestId: '11111111-2222-4333-8444-555555555555' });
+  assert.equal(adapter.calls.length, 1);
+  const rf = adapter.calls[0].opts.responseFormat;
+  assert.deepEqual(rf, { type: 'json_schema', name: U1_DRAFT_SCHEMA_NAME, schema: U1_DRAFT_SCHEMA });
+  // server-fixed fields still appended after a successful parse
+  assert.equal(res.stage, 'SHADOW_ONLY');
+  assert.equal(res.gmailDraftCreated, false);
+  assert.equal(res.persistentMemoryWritten, false);
+});
+
+test('U1 parser stays strict: a fenced JSON response still throws EXTRA_PROSE', async () => {
+  const fenced = '```json\n' + draftJson() + '\n```';
+  const adapter = makeFakeAdapter({ text: fenced });
+  await assert.rejects(
+    () => runU1DraftShadow({ instruction: 'x', adapter, requestId: '11111111-2222-4333-8444-555555555555' }),
+    (e) => e instanceof DistillParseError && e.reason === DISTILL_PARSE_REASON.EXTRA_PROSE);
+});
+
+test('U1 accepts a clean raw JSON response (draft_proposal) through the unchanged parser', async () => {
+  const adapter = makeFakeAdapter({ text: draftJson() });
+  const res = await runU1DraftShadow({ instruction: 'x', adapter, requestId: '11111111-2222-4333-8444-555555555555' });
+  assert.equal(res.mode, 'draft_proposal');
+  assert.equal(res.clarifyingQuestion, null);
+  assert.equal(typeof res.draft.body, 'string');
+});
 
 /* ------------------------------ prompt tests ------------------------------- */
 

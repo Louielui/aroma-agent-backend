@@ -11,6 +11,7 @@ const {
   DistillParseError,
   DISTILL_PARSE_REASON,
 } = require('./u1DraftPrompt');
+const { U1_DRAFT_SCHEMA_NAME } = require('./u1DraftSchema');
 
 // Isolate the truth store to an OS temp dir BEFORE requiring intakeService, so
 // recordLLMUsage()/hubClient writes never touch the repo's data/aroma-truth.json
@@ -286,10 +287,38 @@ test('L3 scoped exact-call reachability: mount wiring inside runIntakePipeline',
 });
 
 /* ==========================================================================
+ * S1 — Structured output wiring through the REAL processIntake.
+ *   flag ON  => U1 supplies responseFormat (json_schema, U1 name) exactly once.
+ *   flag OFF => legacy path supplies NO responseFormat.
+ * ======================================================================== */
+
+test('S1 flag ON: processIntake -> U1 supplies responseFormat with the U1 schema name', async () => {
+  const adapter = makeRecordingAdapter(u1AskJson());
+  const personaSource = makePersonaSource('MARKER_S1');
+  const res = await processIntake('回覆某人', adapter, [], {
+    u1DraftShadow: true, requestId: VALID_UUID, personaSource,
+  });
+  assert.equal(adapter.calls.length, 1);
+  const rf = adapter.calls[0].opts.responseFormat;
+  assert.ok(rf && rf.type === 'json_schema', 'responseFormat present with json_schema type');
+  assert.equal(rf.name, U1_DRAFT_SCHEMA_NAME);
+  assert.ok(rf.schema && rf.schema.type === 'object' && rf.schema.additionalProperties === false);
+  assert.equal(res.stage, 'SHADOW_ONLY');
+});
+
+test('S1 flag OFF: legacy distill path supplies NO responseFormat', async () => {
+  const adapter = makeRecordingAdapter(legacyDistillJson());
+  const personaSource = makePersonaSource('MARKER_S1OFF');
+  await processIntake('普通訊息', adapter, [], { requestId: VALID_UUID, personaSource });
+  assert.equal(adapter.calls.length, 1);
+  assert.equal(adapter.calls[0].opts.responseFormat, undefined, 'legacy call must not carry responseFormat');
+});
+
+/* ==========================================================================
  * F2 — Zero downstream mutation via IMPORT / DEPENDENCY assertions (PRESERVED).
  * ======================================================================== */
 
-const U1_SOURCE_FILES = ['u1DraftShadow.js', 'u1DraftPrompt.js'];
+const U1_SOURCE_FILES = ['u1DraftShadow.js', 'u1DraftPrompt.js', 'u1DraftSchema.js'];
 
 function extractRequireTargets(source) {
   const targets = [];
@@ -306,7 +335,7 @@ test('F2 U1 modules do not import any Gmail/Gateway/store/dispatch/memory/fs-wri
     // Allowed non-mutation deps:
     //   u1DraftShadow.js -> ./u1DraftPrompt (pure), ./intakeErrors (upstream-error contract)
     //   u1DraftPrompt.js -> ./distillPrompt (DistillParseError contract; pure error class)
-    const ALLOWED_REQUIRES = ['./u1DraftPrompt', './intakeErrors', './distillPrompt'];
+    const ALLOWED_REQUIRES = ['./u1DraftPrompt', './u1DraftSchema', './intakeErrors', './distillPrompt'];
     for (const t of targets) {
       assert.ok(
         ALLOWED_REQUIRES.includes(t),

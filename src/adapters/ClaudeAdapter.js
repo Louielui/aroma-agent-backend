@@ -2,6 +2,7 @@
 
 const axios = require('axios')
 const { LLMAdapter } = require('./LLMAdapter')
+const { assertResponseFormat } = require('./adapterErrors')
 
 /**
  * ClaudeAdapter — concrete LLMAdapter implementation for Anthropic Claude.
@@ -31,6 +32,11 @@ class ClaudeAdapter extends LLMAdapter {
     this._model = config.model || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022'
     this._apiBase = 'https://api.anthropic.com/v1'
     this._anthropicVersion = '2023-06-01'
+    // Injectable transport for tests ONLY. Production uses axios.post; the default
+    // wrapper preserves axios semantics (returns { data }, throws with .response).
+    this._post = (typeof config.transport === 'function')
+      ? config.transport
+      : ((url, data, cfg) => axios.post(url, data, cfg))
   }
 
   get providerName () {
@@ -66,6 +72,17 @@ class ClaudeAdapter extends LLMAdapter {
       body.system = opts.system
     }
 
+    // Vendor-neutral structured output -> Anthropic GA output_config.format.
+    // Validated BEFORE any network access (fail closed on a malformed contract).
+    // The generic `name` is intentionally NOT transmitted (GA format = { type,
+    // schema }); NO structured-outputs beta header is added.
+    if (opts.responseFormat !== undefined && opts.responseFormat !== null) {
+      assertResponseFormat(opts.responseFormat)
+      body.output_config = {
+        format: { type: 'json_schema', schema: opts.responseFormat.schema }
+      }
+    }
+
     const headers = {
       'Content-Type': 'application/json',
       'x-api-key': this._apiKey,         // key used here, never logged
@@ -75,7 +92,7 @@ class ClaudeAdapter extends LLMAdapter {
     const t0 = Date.now()
     let response
     try {
-      response = await axios.post(
+      response = await this._post(
         `${this._apiBase}/messages`,
         body,
         { headers, timeout: 30000 }

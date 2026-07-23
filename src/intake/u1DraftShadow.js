@@ -26,6 +26,7 @@
  */
 
 const { buildU1DraftPrompt, parseU1DraftResponse } = require('./u1DraftPrompt');
+const { U1_DRAFT_SCHEMA, U1_DRAFT_SCHEMA_NAME } = require('./u1DraftSchema');
 
 // Existing upstream-error contract (verified: src/intake/intakeErrors.js).
 // IntakeUpstreamError is constructed with an OBJECT: { correlationId, cause }.
@@ -64,6 +65,10 @@ async function runU1DraftShadow({ instruction, adapter, history, requestId, pers
       system,
       maxTokens: U1_MAX_TOKENS,
       temperature: U1_TEMPERATURE,
+      // Vendor-neutral structured output (U1 ONLY). An adapter that cannot honor
+      // it fails closed (thrown here -> IntakeUpstreamError); it is never ignored.
+      // The raw text still flows through the UNCHANGED parseU1DraftResponse below.
+      responseFormat: { type: 'json_schema', name: U1_DRAFT_SCHEMA_NAME, schema: U1_DRAFT_SCHEMA },
     });
   } catch (cause) {
     // Adapter failure ONLY -> IntakeUpstreamError(requestId). Do not leak internals.
