@@ -1,9 +1,45 @@
 'use strict'
 const { LLMAdapter } = require('./LLMAdapter')
+const { assertResponseFormat, UnsupportedCapabilityError } = require('./adapterErrors')
 const GREET = ['你好','哈囉','嗨','早安','午安','晚安','hi','hello','謝謝']
+
+// Deterministic structured-output fixture (valid against U1_DRAFT_SCHEMA AND
+// parseU1DraftResponse: draft_proposal -> draft object + clarifyingQuestion null,
+// no authority keys). Used only when responseFormat is supplied.
+const STRUCTURED_FIXTURE = JSON.stringify({
+  mode: 'draft_proposal',
+  understanding: {
+    recipient: { name: 'Rob', email: null, confidence: 'medium' },
+    purpose: { value: 'update on phase 2 equipment list', confidence: 'high' },
+    tone: { value: 'natural and polite', confidence: 'high' },
+    constraints: [],
+    understandingSignals: [
+      { classification: 'FACT', statement: 'phase 2 list still being organized', source: 'current_message', confidence: 'high' }
+    ]
+  },
+  restatement: 'Draft an email to Rob about the phase 2 equipment list.',
+  clarifyingQuestion: null,
+  draft: { to: null, subject: 'Phase 2 equipment list', body: 'Hi Rob, I am still finalizing the phase 2 equipment list; Ivy will send it to you tonight.', tone: 'natural and polite' }
+})
+
 class MockAdapter extends LLMAdapter {
+  constructor (config = {}) {
+    super()
+    // Structured output supported by default; set false to test the fail-closed path.
+    this._supportsStructuredOutput = config.supportsStructuredOutput !== false
+  }
   get providerName () { return 'mock' }
-  async complete (prompt) {
+  async complete (prompt, opts = {}) {
+    // Structured-output request: fail closed if unsupported, else return the
+    // deterministic fixture. When responseFormat is ABSENT, behaviour below is
+    // byte-for-byte the legacy mock.
+    if (opts && opts.responseFormat !== undefined && opts.responseFormat !== null) {
+      if (!this._supportsStructuredOutput) {
+        throw new UnsupportedCapabilityError('structured_output', 'mock')
+      }
+      assertResponseFormat(opts.responseFormat)
+      return { text: STRUCTURED_FIXTURE, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, model: 'mock', latencyMs: 1 }
+    }
     // Execution call (dispatcher asking 香香 to DO a knowledge task)
     if (prompt.includes('請完成這個任務並給出成果')) {
       const tm = prompt.match(/任務:([^\n]*)/)

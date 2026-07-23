@@ -27,6 +27,7 @@ const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../pers
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
+const { runU1DraftShadow } = require('./u1DraftShadow')
 
 /**
  * intakeService.js — orchestrates the full M1 intake pipeline.
@@ -105,6 +106,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
   }
 
+
+  // -- U1 DRAFT PROPOSAL SHADOW (flag-gated; after red-line, before STEP 2) --
+  if (opts && opts.u1DraftShadow === true) {
+    const src = (opts && opts.personaSource) || getPersonaSource()
+    const runtimePersona = src.runtimePersona()
+    return await runU1DraftShadow({ instruction: message, adapter, history, requestId, personaText: runtimePersona.personaText })
+  }
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   const { system, prompt } = buildDistillPrompt(message, history)
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
