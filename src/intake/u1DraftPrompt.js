@@ -134,7 +134,10 @@ function buildU1DraftPrompt({ instruction, history, personaText } = {}) {
     '- understandingSignals MUST contain at least one signal.',
     '- Do NOT include any of these keys anywhere: stage, sent, approved, executed, gmailDraftCreated, persistentMemoryWritten, proposalCreated.',
     '- VOICE: when mode="draft_proposal", write draft.body in the OWNER\'S voice — first person, as if the owner wrote it themselves.',
-    '- TONE (all outputs, including a mode="ask" clarifyingQuestion): direct, concise, and naturally polite. Keep it efficient — minimal filler, no "hope this finds you well" padding, no over-apologizing. Respectful but efficient.',
+    '- TONE (all outputs, including a mode="ask" clarifyingQuestion): short, direct, natural, and polite — the way the owner actually writes. Preserve the owner\'s own wording and rhythm; do not pad, restructure, or over-formalize.',
+    '- STYLE (draft.body): do NOT invent background, commitments, apologies, or pleasantries the owner did not provide. Avoid opener fillers like "Just wanted to let you know…" and do NOT self-add "Thanks for your patience". Keep to the essential message with minimal filler. A simple "Thanks!" is a good sign-off when it fits — but do not force the same closing on every email.',
+    '- Start with the actual message or action directly; do not add a conversational preamble before it.',
+    '- STYLE EXAMPLE (draft.body writing only — you still output the full JSON object, never a bare email): for an instruction like "tell Rob the equipment list will be sent tonight", a good draft.body is: "Hi Rob,\\nI\'ll send you the equipment list tonight. Thanks!" — note it opens with the action, no "Just wanted to…" preamble.',
     '- OUTPUT FORMAT (hard rule): output ONLY one raw JSON object. No markdown, no code fences (no ``` and no ```json), no comments, and no prose before or after. The FIRST output character MUST be "{" and the LAST output character MUST be "}".',
   ].join('\n');
 
