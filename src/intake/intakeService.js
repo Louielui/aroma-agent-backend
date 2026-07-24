@@ -18,6 +18,8 @@ function enrichTasks (storedTasks, distilledTasks) {
 const { v4: uuidv4 } = require('uuid')
 const { checkRedLine } = require('./redlinePolicy')
 const { buildDistillPrompt, parseDistillResponse } = require('./distillPrompt')
+const { buildDecisionRecallContext } = require('../coo/decisionRecall')       // Decision Recall v1 (chat-lane only)
+const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
 const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../dispatch/dispatcher')
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
@@ -48,6 +50,10 @@ const { runU1DraftShadow } = require('./u1DraftShadow')
  * @returns {Promise<IntakeResult>}
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+// DECISION_RECALL runtime flag (same env-flag style as CONVERSATION_DEMO): only exact 'on'
+// enables; unset/empty/any other value → fail-closed OFF.
+function resolveDecisionRecall () { return process.env.DECISION_RECALL === 'on' ? 'on' : 'off' }
 
 async function processIntake (message, adapter, history = [], opts = {}) {
   // Correlation id: a caller-supplied requestId is honoured ONLY when it is a valid
@@ -136,7 +142,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   } else {
     effSystem = system
   }
-  const effPrompt = demo ? (ctx.preamble + prompt) : prompt
+  const baseEffPrompt = demo ? (ctx.preamble + prompt) : prompt
+
+  // ── DECISION RECALL v1 — CHAT-LANE ONLY, opt-in, FAIL-SOFT. Injected into the shared
+  //    prompt ONLY when DECISION_RECALL='on' AND opts.interactionMode === 'chat' (which the
+  //    B2 gate guarantees is talk-only → can never produce a Proposal). Every other path —
+  //    proposal / legacy / missing-or-non-'chat' interactionMode / flag OFF, and the U1
+  //    early-return above — receives NO recall, so the adapter input is byte-identical to
+  //    today. Read is at-most-once via the injected/real store fns; any read error or
+  //    NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
+  let effPrompt = baseEffPrompt
+  if (resolveDecisionRecall() === 'on' && opts && opts.interactionMode === 'chat') {
+    try {
+      const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
+      const recall = buildDecisionRecallContext(deps)
+      if (recall && recall.block) effPrompt = recall.block + '\n\n' + baseEffPrompt
+    } catch (_) { /* FAIL-SOFT: inject nothing */ }
+  }
 
   let llmResult
   try {
