@@ -145,6 +145,9 @@ test('U1 hardening: system prompt gives first-person owner-voice tone guidance',
   // U1 voice-tuning (feat/u1-voice-tuning) — additive anchors for the STYLE line.
   assert.ok(system.includes('STYLE'));
   assert.ok(system.includes('Just wanted to'));
+  // Attempt 3 — positive few-shot anchors (draft.body-scoped; JSON contract intact).
+  assert.ok(system.includes('STYLE EXAMPLE'));
+  assert.ok(system.includes('Start with the actual message'));
 });
 
 test('U1 negative lock: markdown-fenced JSON is STILL rejected (parser not loosened)', () => {
