@@ -191,3 +191,55 @@ test('ON: persona guard reaches the adapter system; context card sanitized + war
   assert.ok(codes.includes('dropped_not_in_whitelist'), 'evil field dropped, observable')
   assert.ok(codes.includes('truncated'), 'over-length note truncated, observable')
 })
+
+// ── B2 DETERMINISTIC INTERACTION-MODE GATE ───────────────────────────────────
+function spyPromote () {
+  const calls = []
+  const fn = async (taskId) => { calls.push(taskId); return { ok: true, proposal: { id: 'p_gate', status: 'pending' } } }
+  fn.calls = calls
+  return fn
+}
+
+test('GATE chat+commit → talk-only: no Proposal/persist/dispatch (promote never called)', async () => {
+  const promote = spyPromote()
+  const res = await processIntake('幫我把第二階段清單整理好', fakeAdapter(CANNED.exec1), [], { demo: true, interactionMode: 'chat', promoteToProposal: promote })
+  assert.equal(res.talkOnly, true)
+  assert.equal(res.mode, 'chat')
+  assert.equal(res.interactionMode, 'chat')
+  assert.deepEqual(res.tasks, [])
+  assert.equal(res.decision, null)
+  assert.equal('proposals' in res, false)
+  assert.equal('demoOutcome' in res, false)
+  assert.equal(promote.calls.length, 0, 'chat mode must never promote to a Proposal')
+})
+
+test('GATE proposal+non-commit → deterministic clarification (no fabricated task/proposal)', async () => {
+  const promote = spyPromote()
+  const res = await processIntake('我想聊聊', fakeAdapter(CANNED.speech), [], { demo: true, interactionMode: 'proposal', promoteToProposal: promote })
+  assert.equal(res.demoOutcome, 'clarification')
+  assert.equal(res.clarificationReason, 'not_a_commit_intent')
+  assert.deepEqual(res.tasks, [])
+  assert.deepEqual(res.proposals, [])
+  assert.equal(promote.calls.length, 0)
+})
+
+test('GATE proposal+single-commit → existing proposal-only path unchanged', async () => {
+  const promote = spyPromote()
+  const res = await processIntake('停止 Timeline 輪詢', fakeAdapter(CANNED.exec1), [], { demo: true, interactionMode: 'proposal', promoteToProposal: promote })
+  assert.equal(res.demoOutcome, 'execution_proposal')
+  assert.equal(promote.calls.length, 1)
+})
+
+test('GATE absent interactionMode → byte-identical (exec1 still → execution_proposal, gate not entered)', async () => {
+  const promote = spyPromote()
+  const res = await processIntake('停止 Timeline 輪詢', fakeAdapter(CANNED.exec1), [], { demo: true, promoteToProposal: promote })
+  assert.equal(res.talkOnly, undefined, 'gate is inert when interactionMode is absent')
+  assert.equal(res.demoOutcome, 'execution_proposal')
+  assert.equal(promote.calls.length, 1)
+})
+
+test('GATE chat+non-commit → normal talk path (not the talk-only intercept)', async () => {
+  const res = await processIntake('你好', fakeAdapter(CANNED.speech), [], { demo: true, interactionMode: 'chat' })
+  assert.equal(res.talkOnly, undefined)
+  assert.equal(res.demoOutcome, 'speech')
+})

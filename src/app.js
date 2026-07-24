@@ -22,6 +22,7 @@ const path = require('node:path')
 
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
+const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
 const { listWorkers, getExecutive } = require('./workers/registry')
@@ -672,6 +673,11 @@ function createApp (options = {}) {
   // before. It is NOT driven by any request/header/user input, and the primary
   // process never supplies it, so the primary never gains those routes.
   if (typeof opts.mountExtraRoutes === 'function') opts.mountExtraRoutes(app)
+
+  // B2-2 Conversation Demo UI — GET /demo + POST /api/v1/demo/intake. ALWAYS mounted
+  // but guard-first: 403 {error:'demo_disabled'} when app.locals.conversationDemo !== true.
+  // Mounted here, before the terminal 404, so the guarded routes resolve.
+  app.use(createDemoRouter())
 
   // 404 handler
   app.use((req, res) => {

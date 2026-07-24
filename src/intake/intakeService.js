@@ -155,6 +155,35 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
   const distilled = parseDistillResponse(llmResult.text)
 
+  // ── B2 DETERMINISTIC INTERACTION-MODE GATE (opt-in). When opts.interactionMode is
+  //    ABSENT this whole block is skipped ⇒ byte-identical to the prior behaviour.
+  //    It sits AFTER parse (above) and BEFORE any persist/proposal/dispatch below.
+  //    A real model call ran, so usage IS recorded first (same accounting contract as
+  //    the talk / clarification paths) — but NO Decision/Task, NO Proposal, NO dispatch.
+  const interactionMode = opts && opts.interactionMode
+  if (interactionMode === 'chat' && distilled.mode === 'commit') {
+    // chat mode never creates a proposal: intercept a commit → talk-only.
+    logLLMCall({ model: llmResult.model, latencyMs: llmResult.latencyMs, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false })
+    await recordLLMUsage({ model: llmResult.model, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false })
+    return {
+      blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
+      reply: '目前是聊天模式，未建立任何提案。若要建立提案，請切換到「建立提案」。',
+      decision: null, tasks: [], risks: [], next_step: '', requestId
+    }
+  }
+  if (interactionMode === 'proposal' && distilled.mode !== 'commit') {
+    // proposal mode + a non-executable intent: deterministic clarification.
+    // Do NOT fabricate a Task or Proposal; do NOT persist or promote.
+    logLLMCall({ model: llmResult.model, latencyMs: llmResult.latencyMs, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false })
+    await recordLLMUsage({ model: llmResult.model, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false })
+    return {
+      blocked: false, mode: distilled.mode, interactionMode: 'proposal',
+      demoOutcome: 'clarification', clarificationReason: 'not_a_commit_intent',
+      reply: '這看起來不是一個可執行的任務，尚未建立任何提案。請描述你想執行的具體任務。',
+      decision: null, tasks: [], proposals: [], requestId
+    }
+  }
+
   // ── DEMO — Plan A: an execution intent must resolve to EXACTLY ONE task (this
   //    is the first official-Proposal demo, not a batch system). 0 or >1 tasks →
   //    clarification; do NOT persist and do NOT promote. ──────────────────────
