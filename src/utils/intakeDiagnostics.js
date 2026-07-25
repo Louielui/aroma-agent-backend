@@ -80,6 +80,30 @@ function rawMeta (raw) {
   }
 }
 
+/**
+ * Parse-failure forensics, projected as an ALLOWLIST of numbers/enums. Nothing is
+ * copied from the error except these named fields, so a future field added to
+ * `err.parseDiagnostics` can never leak text into the log. Absent for non-parse
+ * errors (and for a thrower that attached nothing) so existing entries are unchanged.
+ * @param {Error} err
+ * @param {{ reason: (string|null) }} c  the classified error
+ */
+function parseDiagMeta (err, c) {
+  const d = err && err.parseDiagnostics
+  if (!d || typeof d !== 'object') return {}
+  const num = (v) => (Number.isFinite(v) ? v : null)
+  const str = (v) => (typeof v === 'string' && v ? v : null)
+  return {
+    interactionMode: str(d.interactionMode),
+    configuredMaxTokens: num(d.configuredMaxTokens),
+    outputTokens: num(d.outputTokens),
+    rawTextChars: num(d.rawTextChars),
+    rawTextBytes: num(d.rawTextBytes),
+    stopReason: str(d.stopReason),
+    parseErrorReason: (c && c.reason) || null
+  }
+}
+
 function defaultSink (entry) {
   console.error('[AROMA-INTAKE-DIAG]', JSON.stringify(entry))
 }
@@ -109,7 +133,12 @@ function handleIntakeError (err, ctx = {}, deps = {}) {
     reason: c.reason,
     model: ctx.model || null,
     latencyMs: (ctx.latencyMs != null) ? ctx.latencyMs : null,
-    ...rawMeta(c.raw) // rawPresent / rawLength / redactionHit / rawHash — NEVER the raw text
+    ...rawMeta(c.raw), // rawPresent / rawLength / redactionHit / rawHash — NEVER the raw text
+    // Parse-failure forensics (present only when the thrower attached them). These are
+    // NUMBERS and short ENUMS only — no prompt, no user content, no model output, no
+    // provider body, no credentials. stopReason==='max_tokens' next to configuredMaxTokens
+    // and outputTokens is what proves a truncation instead of a malformed reply.
+    ...parseDiagMeta(err, c)
   }
   if (isDebugStack() && err && err.stack) entry.stackSample = redact(String(err.stack)).slice(0, 512)
 
