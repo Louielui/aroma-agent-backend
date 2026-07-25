@@ -41,6 +41,12 @@ const { LLMAdapter } = require('./LLMAdapter')
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_TIMEOUT_MS = 60000
+// Docs (2026-07-25): GPT-5.6 "supports none, low, medium, high, xhigh, and max"; when
+// omitted it "defaults to medium". We pin the cheapest setting for the chat lane and let
+// the operator override via OPENAI_REASONING_EFFORT without a code change (useful if a
+// specific variant rejects 'none' — the docs do not publish a per-variant breakdown).
+const DEFAULT_REASONING_EFFORT = 'none'
+const VALID_REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
  * Normalize the provider's completion signal onto the neutral vocabulary already used
@@ -79,6 +85,8 @@ class OpenAIAdapter extends LLMAdapter {
     this._model = options.model || null
     this._apiKey = options.apiKey || null
     this._timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
+    // null/'' → omit the field entirely (provider default applies).
+    this._reasoningEffort = (options.reasoningEffort === undefined) ? DEFAULT_REASONING_EFFORT : options.reasoningEffort
     // Injectable transport for tests ONLY; production uses axios.post.
     this._post = typeof options.post === 'function' ? options.post : ((url, body, cfg) => axios.post(url, body, cfg))
   }
@@ -101,6 +109,15 @@ class OpenAIAdapter extends LLMAdapter {
       store: false // never create retrievable Application State
     }
     if (opts.system) body.instructions = opts.system
+    // REASONING BUDGET GUARD (GPT-5.6 family). Verified from the docs: reasoning tokens
+    // are billed as output tokens AND count against max_output_tokens, and effort
+    // defaults to 'medium' when omitted — so on a 2048-token chat budget the reasoning
+    // pass alone can consume the allowance, returning status 'incomplete' with little or
+    // no visible text (→ envelope parse failure → fallback → two billed calls per turn).
+    // The distill lane is conversational + classification, not a reasoning task, so the
+    // effort is pinned LOW-EST here and stays operator-overridable via env.
+    const effort = opts.reasoningEffort !== undefined ? opts.reasoningEffort : this._reasoningEffort
+    if (effort) body.reasoning = { effort }
 
     const t0 = Date.now()
     let response
@@ -123,7 +140,11 @@ class OpenAIAdapter extends LLMAdapter {
         inputTokens: (data.usage && data.usage.input_tokens) || 0,
         outputTokens: (data.usage && data.usage.output_tokens) || 0,
         totalTokens: (data.usage && data.usage.total_tokens) ||
-          (((data.usage && data.usage.input_tokens) || 0) + ((data.usage && data.usage.output_tokens) || 0))
+          (((data.usage && data.usage.input_tokens) || 0) + ((data.usage && data.usage.output_tokens) || 0)),
+        // Documented path usage.output_tokens_details.reasoning_tokens — surfaced so a
+        // budget-exhaustion can be PROVEN from the logs rather than inferred. Absent on
+        // non-reasoning models / providers → 0.
+        reasoningTokens: (data.usage && data.usage.output_tokens_details && data.usage.output_tokens_details.reasoning_tokens) || 0
       },
       model: data.model || this._model,
       latencyMs,
@@ -141,7 +162,17 @@ function createOpenAIAdapterIfConfigured (env = process.env, options = {}) {
   const apiKey = env.OPENAI_API_KEY
   if (typeof model !== 'string' || model.trim() === '') return null
   if (typeof apiKey !== 'string' || apiKey.trim() === '') return null
-  return new OpenAIAdapter(Object.assign({ model: model.trim(), apiKey }, options))
+  // OPENAI_REASONING_EFFORT overrides the pinned default. An unrecognised value is
+  // IGNORED (fall back to the safe default) rather than forwarded — a typo must never
+  // become a provider 400 that costs a fallback round-trip.
+  const raw = env.OPENAI_REASONING_EFFORT
+  let reasoningEffort = DEFAULT_REASONING_EFFORT
+  if (typeof raw === 'string' && raw.trim() !== '') {
+    const v = raw.trim()
+    if (VALID_REASONING_EFFORTS.includes(v)) reasoningEffort = v
+    else console.warn(`[AROMA-HUB] Invalid OPENAI_REASONING_EFFORT="${v}" — using '${DEFAULT_REASONING_EFFORT}'.`)
+  }
+  return new OpenAIAdapter(Object.assign({ model: model.trim(), apiKey, reasoningEffort }, options))
 }
 
 module.exports = {
@@ -149,5 +180,7 @@ module.exports = {
   createOpenAIAdapterIfConfigured,
   normalizeStopReason,
   extractText,
-  OPENAI_RESPONSES_URL
+  OPENAI_RESPONSES_URL,
+  DEFAULT_REASONING_EFFORT,
+  VALID_REASONING_EFFORTS
 }

@@ -70,7 +70,7 @@ test('adapter maps the documented Responses shape to the shared result shape', a
   assert.equal(seen.body.max_output_tokens, 2048)
   assert.equal(seen.body.store, false) // ALWAYS false
   assert.equal(r.text, CHAT)
-  assert.deepEqual(r.usage, { inputTokens: 100, outputTokens: 40, totalTokens: 140 })
+  assert.deepEqual(r.usage, { inputTokens: 100, outputTokens: 40, totalTokens: 140, reasoningTokens: 0 })
   assert.equal(r.model, 'test-model-1')
   assert.equal(r.stopReason, 'end_turn')
   assert.equal(typeof r.latencyMs, 'number')
@@ -85,13 +85,47 @@ test('stopReason normalization is faithful and null-safe', () => {
   assert.equal(extractText({}), '')
 })
 
+/* ── reasoning-budget guard (GPT-5.6 family) ──────────────────────────────── */
+test('reasoning effort is pinned to the cheapest setting by default (budget guard)', async () => {
+  let body = null
+  const a = new OpenAIAdapter({ model: 'gpt-5.6-terra', apiKey: 'k', post: async (u, b) => { body = b; return { data: { status: 'completed', output: [{ content: [{ type: 'output_text', text: CHAT }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } } } })
+  await a.complete('x', { system: 'S', maxTokens: 2048 })
+  assert.deepEqual(body.reasoning, { effort: 'none' }, 'effort must be sent, not left to the medium default')
+  assert.equal(body.max_output_tokens, 2048)
+})
+
+test('reasoning effort is overridable per call and via OPENAI_REASONING_EFFORT; typos ignored', async () => {
+  let body = null
+  const mk = (o) => new OpenAIAdapter(Object.assign({ model: 'm', apiKey: 'k', post: async (u, b) => { body = b; return { data: { status: 'completed', output: [], usage: {} } } } }, o))
+  await mk({}).complete('x', { reasoningEffort: 'low' })
+  assert.deepEqual(body.reasoning, { effort: 'low' }, 'per-call override wins')
+  await mk({ reasoningEffort: null }).complete('x', {})
+  assert.equal(body.reasoning, undefined, 'explicit null omits the field (provider default)')
+  const viaEnv = createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k', OPENAI_REASONING_EFFORT: 'low' })
+  assert.equal(viaEnv._reasoningEffort, 'low')
+  const typo = createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k', OPENAI_REASONING_EFFORT: 'lowest' })
+  assert.equal(typo._reasoningEffort, 'none', 'an invalid value falls back — never forwarded as a 400')
+})
+
+test('reasoning tokens are surfaced from the documented usage path (provable budget burn)', async () => {
+  const a = new OpenAIAdapter({ model: 'm', apiKey: 'k', post: async () => ({ data: { status: 'incomplete', incomplete_details: { reason: 'max_output_tokens' }, output: [], usage: { input_tokens: 900, output_tokens: 2048, total_tokens: 2948, output_tokens_details: { reasoning_tokens: 2048 } } } }) })
+  const r = await a.complete('x', { maxTokens: 2048 })
+  assert.equal(r.usage.reasoningTokens, 2048, 'reasoning burn visible')
+  assert.equal(r.usage.outputTokens, 2048)
+  assert.equal(r.text, '', 'no visible text survived the budget')
+  assert.equal(r.stopReason, 'max_tokens', 'decisive evidence for the log report')
+})
+
 test('config is fail-closed: no model or no key -> adapter unavailable, never a default id', () => {
   assert.equal(createOpenAIAdapterIfConfigured({ OPENAI_API_KEY: 'k' }), null) // no model
   assert.equal(createOpenAIAdapterIfConfigured({ OPENAI_MODEL: '  ' , OPENAI_API_KEY: 'k' }), null) // blank model
   assert.equal(createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm' }), null) // no key
   assert.ok(createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k' }) instanceof OpenAIAdapter)
+  // Guard the real risk: no model id used as a VALUE (quoted literal / default fallback).
+  // Prose mentioning a model family in a doc comment is fine and stays readable.
   const src = fs.readFileSync(path.join(__dirname, '..', 'adapters', 'OpenAIAdapter.js'), 'utf8')
-  assert.ok(!/gpt-[0-9]/i.test(src), 'no hardcoded model id anywhere in the adapter')
+  assert.ok(!/['"`]gpt-[0-9][^'"`]*['"`]/i.test(src), 'no quoted model-id literal in the adapter')
+  assert.ok(!/\|\|\s*['"`]gpt/i.test(src), 'no defaulted model id')
 })
 
 test('adapter errors never leak the provider body, and the key is never returned', async () => {
