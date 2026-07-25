@@ -31,6 +31,17 @@
  *     proposal/execution/completion claims specifically, ACTION_HONESTY_GUARD (and
  *     the deterministic grounding in groundedReply.js) remain authoritative.
  *
+ * v1.1 — 能力邊界 (capability-boundary disclosure). Owner testing found the gap: a
+ * DIRECT capability question ("你而家可唔可以自己改 code?") was answered honestly, but a
+ * natural TASK REQUEST ("你可以直接幫我修改呢個 bug 嗎?") drew only a follow-up question
+ * about which system the bug was in — implying that supplying details would let her fix
+ * it. The clause requires disclosing an unavailable / unconnected / unauthorized
+ * capability BEFORE asking for details, splitting can-do-now vs needs-Owner-approval vs
+ * must-be-run-by-an-authorized-executor, and forbids implying that more detail makes an
+ * unavailable capability executable. BOUNDARY: ACTION_HONESTY_GUARD + groundedReply.js
+ * still own claims about what HAS happened (proposal created / executed / completed);
+ * this clause owns up-front disclosure of what CANNOT happen yet.
+ *
  * Static constant — never assembled per turn.
  */
 
@@ -60,6 +71,10 @@ const CONVERSATION_CONTRACT = [
   '- 資料不足時不編造答案。',
   '- 不用漂亮措辭掩蓋真正的問題。',
   '- 不假裝擁有人類感情,也不表演熱情。',
+  '能力邊界:',
+  '- 當 Louie 要求你做一件目前未接通、未啟用或未獲授權的事,先說明這個限制,然後才問細節。',
+  '- 分清楚三件事:你現在可以做的、需要 Louie 批准的、必須由獲授權執行者執行的。',
+  '- 不可暗示只要提供更多細節,未接通的能力就能即時執行。',
   '一致性:',
   '- 無論背後由哪個模型作答,以上表達與態度都不改變。',
   '- 多個 AI 參與時,最後仍由你以同一把聲音回答。',
