@@ -16,12 +16,18 @@ function createDriveReadAdapter (options = {}) {
   function ensure () { if (!drive) throw new Error('drive service unavailable (no google credentials)'); return drive }
 
   const methods = {
-    async searchFiles ({ q, pageSize = 25 } = {}) {
-      const r = await ensure().files.list({ q, pageSize, fields: 'files(id,name,mimeType,modifiedTime,webViewLink)' })
+    // `orderBy` is a READ-only sort hint (e.g. 'modifiedTime desc') — it grants no
+    // additional access and is what makes the recent-items fallback meaningful.
+    async searchFiles ({ q, pageSize = 25, orderBy } = {}) {
+      const args = { q, pageSize, fields: 'files(id,name,mimeType,modifiedTime,webViewLink)' }
+      if (orderBy) args.orderBy = orderBy
+      const r = await ensure().files.list(args)
       return ((r.data && r.data.files) || []).map((f) => makeContextResult({ source: 'drive', sourceId: f.id, title: f.name, originalDate: f.modifiedTime, content: f.mimeType || '', link: f.webViewLink, retrievedAt: now() }))
     },
-    async listFiles ({ pageSize = 25 } = {}) {
-      const r = await ensure().files.list({ pageSize, fields: 'files(id,name,mimeType,modifiedTime,webViewLink)' })
+    async listFiles ({ pageSize = 25, orderBy } = {}) {
+      const args = { pageSize, fields: 'files(id,name,mimeType,modifiedTime,webViewLink)' }
+      if (orderBy) args.orderBy = orderBy
+      const r = await ensure().files.list(args)
       return ((r.data && r.data.files) || []).map((f) => makeContextResult({ source: 'drive', sourceId: f.id, title: f.name, originalDate: f.modifiedTime, content: f.mimeType || '', link: f.webViewLink, retrievedAt: now() }))
     },
     async getFile ({ fileId } = {}) {

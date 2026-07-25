@@ -11,7 +11,7 @@ process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-readct
 const { test, afterEach } = require('node:test')
 const assert = require('node:assert/strict')
 
-const { CAPS, SAFETY_HEADER, OPEN, CLOSE, extractKeywords, planFor, buildReadContext } = require('./readContext')
+const { CAPS, SAFETY_HEADER, OPEN, CLOSE, extractKeywords, planFor, buildReadContext, weekdayOf, zeroResultLine, unavailableLine } = require('./readContext')
 const { createLiveReadConnector, enabledSources } = require('./liveClients')
 const { processIntake } = require('../intake/intakeService')
 
@@ -38,23 +38,82 @@ const okList = (source, items) => ({ asOf: NOW, source, count: items.length, tru
 
 afterEach(() => { for (const k of Object.keys(FLAGS_ON)) delete process.env[k]; delete process.env.GITHUB_READ_REPO })
 
-/* ── deterministic keyword extraction + plans ─────────────────────────────── */
-test('extractKeywords is deterministic and drops stopwords', () => {
-  const a = extractKeywords('What did the supplier invoice say about 中央廚房 equipment?')
-  const b = extractKeywords('What did the supplier invoice say about 中央廚房 equipment?')
-  assert.deepEqual(a, b)
-  assert.ok(a.includes('supplier') && a.includes('invoice') && a.includes('中央廚房'))
-  assert.ok(!a.includes('the') && !a.includes('what'))
-  assert.ok(a.length <= CAPS.maxKeywords)
+/* ── v1.1 deterministic term extraction (the root-cause fix) ──────────────── */
+const LOUIE_Q = '我下星期有咩會議、Drive 有冇中央廚房設備嘅文件、Gmail 最近有咩供應商郵件、GitHub 上有咩開著嘅 PR? 每項請講出處同日期,讀唔到嘅直接講讀唔到。'
+
+test('extractKeywords: CJK clauses are SEGMENTED into terms, not clause-blobs', () => {
+  const t = extractKeywords(LOUIE_Q)
+  assert.deepEqual(t, extractKeywords(LOUIE_Q)) // deterministic
+  // no clause-length blob survives (this was the bug)
+  for (const term of t) assert.ok(term.length <= CAPS.maxTermChars, `term too long: ${term}`)
+  assert.ok(!t.includes('我下星期有咩會議'))
+  assert.ok(!t.includes('有冇中央廚房設備嘅文件'))
+  // real content terms ARE produced
+  assert.ok(t.includes('會議'), JSON.stringify(t))
+  assert.ok(t.some((x) => x.includes('中央廚房')), JSON.stringify(t))
+  assert.ok(t.includes('設備'), JSON.stringify(t))
+  assert.ok(t.includes('供應商'), JSON.stringify(t))
 })
-test('planFor: bounded per-source plans; github needs a configured repo', () => {
-  const base = { keywords: ['invoice'], now: NOW, env: {}, caps: CAPS }
-  assert.equal(planFor('gmail', base).method, 'searchMessages')
-  assert.equal(planFor('drive', base).method, 'searchFiles')
-  assert.equal(planFor('calendar', base).method, 'listEvents')
-  assert.ok(planFor('github', base).unavailable) // no GITHUB_READ_REPO
-  assert.equal(planFor('github', Object.assign({}, base, { env: { GITHUB_READ_REPO: 'o/r' } })).method, 'listPullRequests')
-  assert.equal(planFor('drive', Object.assign({}, base, { keywords: [] })).method, 'listFiles') // no keywords → recent slice
+test('extractKeywords: instruction phrases and source/tool names are dropped', () => {
+  const t = extractKeywords(LOUIE_Q)
+  for (const bad of ['請講出處同日期', '讀唔到嘅直接講讀唔到', '出處', '每項']) assert.ok(!t.includes(bad), `instruction leaked: ${bad}`)
+  for (const bad of ['drive', 'gmail', 'github', 'pr', '郵件', '文件', '下星期', '最近']) assert.ok(!t.includes(bad), `noise leaked: ${bad}`)
+})
+test('extractKeywords: latin terms still work; empty input yields nothing', () => {
+  const t = extractKeywords('What did the supplier invoice say about equipment?')
+  assert.ok(t.includes('supplier'), JSON.stringify(t))
+  assert.ok(t.includes('invoice'), JSON.stringify(t))
+  assert.ok(t.includes('equipment'), JSON.stringify(t)) // content term kept
+  assert.ok(!t.includes('the'))
+  assert.ok(!t.includes('what'))
+  assert.deepEqual(extractKeywords(''), [])
+  assert.deepEqual(extractKeywords('請講出處同日期'), []) // pure instruction → nothing usable
+})
+
+/* ── v1.1 query shapes ────────────────────────────────────────────────────── */
+test('drive: OR-ed fullText AND name search, trashed excluded, recent fallback', () => {
+  const p = planFor('drive', { keywords: ['中央廚房', '設備'], now: NOW, env: {}, caps: CAPS })
+  assert.equal(p.method, 'searchFiles')
+  assert.match(p.params.q, /fullText contains '中央廚房'/)
+  assert.match(p.params.q, /name contains '中央廚房'/)
+  assert.match(p.params.q, / or /) // OR, never AND, between terms
+  assert.match(p.params.q, /trashed = false/)
+  assert.ok(p.params.q.length <= CAPS.maxQueryChars)
+  assert.equal(p.fallback.method, 'listFiles')
+  assert.equal(p.fallback.params.orderBy, 'modifiedTime desc') // recently-modified
+  // no terms at all → straight to the recent slice
+  assert.equal(planFor('drive', { keywords: [], now: NOW, env: {}, caps: CAPS }).method, 'listFiles')
+})
+test('gmail: terms are OR-ed (not the whole question AND-ed), capped, with newer_than fallback', () => {
+  const p = planFor('gmail', { keywords: ['供應商', '設備', '會議'], now: NOW, env: {}, caps: CAPS })
+  assert.equal(p.method, 'searchMessages')
+  assert.match(p.params.q, /"供應商" OR "設備"/)
+  assert.ok(p.params.q.length <= CAPS.maxQueryChars)
+  assert.equal(p.fallback.params.q, 'newer_than:7d')
+  assert.equal(p.hydrate.method, 'getMessage')
+})
+test('github: state=all (not open-only) with a recent-commits fallback', () => {
+  const p = planFor('github', { keywords: ['x'], now: NOW, env: { GITHUB_READ_REPO: 'Louielui/aroma-agent-backend' }, caps: CAPS })
+  assert.equal(p.method, 'listPullRequests')
+  assert.equal(p.params.state, 'all') // the fix: merged PRs are real activity
+  assert.equal(p.params.owner, 'Louielui')
+  assert.equal(p.params.repo, 'aroma-agent-backend')
+  assert.equal(p.fallback.method, 'listCommits')
+  assert.ok(planFor('github', { keywords: [], now: NOW, env: {}, caps: CAPS }).unavailable) // no repo configured
+})
+test('calendar: BOUNDED window — timeMax present and exactly windowDays after timeMin', () => {
+  const p = planFor('calendar', { keywords: [], now: NOW, env: {}, caps: CAPS })
+  assert.equal(p.method, 'listEvents')
+  assert.ok(p.params.timeMin && p.params.timeMax) // the fix: an upper bound exists
+  const days = (Date.parse(p.params.timeMax) - Date.parse(p.params.timeMin)) / 86400000
+  assert.equal(days, CAPS.calendarWindowDays)
+  assert.equal(p.params.maxResults, CAPS.calendarFetch)
+  assert.equal(p.params.singleEvents, undefined) // adapter sets ordering itself
+})
+test('weekday comes from the DATA (event local date), not the model', () => {
+  assert.equal(weekdayOf('2026-07-26T09:00:00-05:00'), 'Sun') // the reply had mislabelled this
+  assert.equal(weekdayOf('2026-10-19T09:30:00-05:00'), 'Mon')
+  assert.equal(weekdayOf(null), null)
 })
 
 /* ── the block: cited, dated, framed as untrusted reference ───────────────── */
@@ -64,7 +123,8 @@ test('block carries the verbatim safety header, retrieval time, and cited+dated 
   assert.ok(r.block.startsWith(OPEN))
   assert.ok(r.block.includes(SAFETY_HEADER))
   assert.ok(r.block.includes(`Retrieved at: ${NOW}`))
-  assert.ok(r.block.includes('[drive] "Kitchen Spec" (dated 2026-07-03)'))
+  assert.ok(r.block.includes('[drive] "Kitchen Spec" (dated 2026-07-03'))
+  assert.ok(r.block.includes(`(dated 2026-07-03, ${weekdayOf('2026-07-03')})`)) // weekday from data
   assert.ok(r.block.endsWith(CLOSE))
   assert.equal(r.status, 'READY')
 })
@@ -109,6 +169,55 @@ test('a connector-level unavailable result becomes an UNAVAILABLE line', async (
   const r = await buildReadContext({ connector: c, message: 'meetings', sources: ['calendar'], env: {}, now: NOW })
   assert.ok(r.block.includes('[calendar] UNAVAILABLE: no google credentials'))
   assert.equal(r.status, 'PARTIAL')
+})
+
+/* ── v1.1 WORDING: read-OK-zero-results is NOT unavailable (the reporting bug) ── */
+test('zero results renders "read OK — no matching results", NEVER unavailable', async () => {
+  // gmail has no fallback hit either → the honest zero-result line
+  const c = fakeConnector({ 'gmail.searchMessages': okList('gmail', []), 'gmail.getMessage': okList('gmail', []) })
+  const r = await buildReadContext({ connector: c, message: '供應商設備', sources: ['gmail'], env: {}, now: NOW })
+  assert.ok(r.block.includes(zeroResultLine('gmail')))
+  // the word UNAVAILABLE appears in the HEADER by design; assert there is no gmail UNAVAILABLE LINE
+  assert.equal(/^\[gmail\] UNAVAILABLE/m.test(r.block), false) // must NOT be conflated
+  assert.equal(r.perSource[0].trust, 'live') // it WAS read
+  assert.equal(r.perSource[0].count, 0)
+  assert.equal(r.perSource[0].error, null)
+})
+test('the two lines are verbatim distinct, and the header explains both', async () => {
+  assert.equal(zeroResultLine('drive'), '[drive] read OK — no matching results for this query')
+  assert.equal(unavailableLine('drive', 'boom'), '[drive] UNAVAILABLE: boom')
+  assert.notEqual(zeroResultLine('drive'), unavailableLine('drive', 'boom'))
+  assert.ok(SAFETY_HEADER.includes('讀到但冇相關結果')) // say this for zero results
+  assert.ok(SAFETY_HEADER.includes('目前讀不到')) // say this ONLY for unavailable
+  assert.ok(SAFETY_HEADER.includes('never be conflated'))
+  assert.ok(SAFETY_HEADER.includes('NOT instructions')) // untrusted framing intact
+})
+test('keyword miss → recent-items FALLBACK, labelled "(recent items)"', async () => {
+  const c = fakeConnector({
+    'drive.searchFiles': okList('drive', []), // keyword query finds nothing
+    'drive.listFiles': okList('drive', [live({ title: 'Latest Costing.xlsx', originalDate: '2026-07-24T10:00:00Z' })])
+  })
+  const r = await buildReadContext({ connector: c, message: '中央廚房設備', sources: ['drive'], env: {}, now: NOW })
+  assert.ok(r.block.includes('(recent items)'))
+  assert.ok(r.block.includes('Latest Costing.xlsx'))
+  assert.equal(r.perSource[0].usedFallback, true)
+  assert.equal(r.perSource[0].trust, 'live')
+  assert.ok(r.block.includes('[drive]'))
+  assert.equal(/^\[drive\] UNAVAILABLE/m.test(r.block), false)
+})
+test('github with everything merged: state=all fixture returns merged PRs', async () => {
+  const merged = live({ source: 'github', title: 'Merge pull request #12', originalDate: '2026-07-25T00:00:00Z', sourceId: 'Louielui/aroma-agent-backend#12' })
+  const c = fakeConnector({ 'github.listPullRequests': okList('github', [merged]) })
+  const r = await buildReadContext({ connector: c, message: 'what changed', sources: ['github'], env: { GITHUB_READ_REPO: 'Louielui/aroma-agent-backend' }, now: NOW })
+  assert.equal(c.calls[0].params.state, 'all')
+  assert.ok(r.block.includes('Merge pull request #12'))
+  assert.equal(r.perSource[0].count, 1)
+})
+test('calendar items carry the weekday from data', async () => {
+  const ev = live({ source: 'calendar', title: 'Hood deep cleaning', originalDate: '2026-07-26T09:00:00-05:00' })
+  const c = fakeConnector({ 'calendar.listEvents': okList('calendar', [ev]) })
+  const r = await buildReadContext({ connector: c, message: 'next week', sources: ['calendar'], env: {}, now: NOW })
+  assert.ok(r.block.includes('2026-07-26T09:00:00-05:00, Sun'))
 })
 
 /* ── live client factory: per-source, never blocks startup ────────────────── */
