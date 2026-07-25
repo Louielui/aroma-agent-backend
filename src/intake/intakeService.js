@@ -20,6 +20,10 @@ const { checkRedLine } = require('./redlinePolicy')
 const { buildDistillPrompt, parseDistillResponse } = require('./distillPrompt')
 const { buildDecisionRecallContext } = require('../coo/decisionRecall')       // Decision Recall v1 (chat-lane only)
 const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
+// Read Context Wiring v1 (chat-lane only, flag-gated OFF by default, fail-soft).
+const { buildReadContext } = require('../context/readContext')
+const { createLiveReadConnector, enabledSources } = require('../context/liveClients')
+const { resolveFlag } = require('../context/flags')
 const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../dispatch/dispatcher')
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
@@ -158,6 +162,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const recall = buildDecisionRecallContext(deps)
       if (recall && recall.block) effPrompt = recall.block + '\n\n' + baseEffPrompt
     } catch (_) { /* FAIL-SOFT: inject nothing */ }
+  }
+
+  // ── READ CONTEXT v1 — CHAT-LANE ONLY, flag-gated, FAIL-SOFT. Injected ONLY when
+  //    READ_ACCESS==='on' AND at least one per-source flag is 'on' AND
+  //    opts.interactionMode === 'chat'. With the flags off (the default) nothing is
+  //    built, NO source is read, and the adapter input is byte-identical to today.
+  //    The block is UNTRUSTED REFERENCE DATA (cited + dated); a per-source failure
+  //    becomes an UNAVAILABLE line and never blocks the reply. Nothing is persisted.
+  if (opts && opts.interactionMode === 'chat' && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
+    try {
+      const deps = (opts && opts.readContextDeps) || null
+      const sources = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+      if (sources.length > 0) {
+        const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
+        const rc = await buildReadContext({ connector, message, sources, env: process.env })
+        if (rc && rc.block) effPrompt = rc.block + '\n\n' + effPrompt
+      }
+    } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
   }
 
   let llmResult
