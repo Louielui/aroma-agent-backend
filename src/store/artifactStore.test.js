@@ -95,6 +95,6 @@ test('an unknown artifact kind throws', () => {
     const store = createArtifactStore({ baseDir: base })
     assert.throws(() => store.write('logs', { id: 'x', createdAt: '2026-07-11T10:00:00.000Z' }), /unknown artifact kind/)
     assert.throws(() => store.read('logs', 'x'), /unknown artifact kind/)
-    assert.deepEqual(KINDS, ['tasks', 'results'])
+    assert.deepEqual(KINDS, ['tasks', 'results', 'agent-audit'])
   } finally { cleanup(base) }
 })

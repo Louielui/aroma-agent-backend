@@ -22,7 +22,9 @@ const {
 const ALLOWED_KEYS = [
   'proposalId', 'executionId', 'status', 'ok', 'worker', 'provider',
   'startedAt', 'finishedAt', 'elapsedMs', 'exitCode', 'resultSummary',
-  'cost', 'error', 'relay', 'proposal'
+  'cost', 'error', 'relay', 'proposal',
+  // Agent Bridge v0 enrichment (allowlisted — still no sandbox/prompt/env/secrets)
+  'branch', 'filesChanged', 'diffSummary', 'testResults', 'risks', 'warnings'
 ].sort()
 
 // --- id validation (traversal / malformed) ---------------------------------

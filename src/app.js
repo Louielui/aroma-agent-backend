@@ -35,6 +35,9 @@ const { createRunStore } = require('./run/store')
 const { deriveStatus } = require('./run/run')
 const { createDispatcher } = require('./capability/dispatcher')
 const { createClaudeCodeAdapter } = require('./adapters/claude-code')
+// Agent Bridge v0 (built behind AGENT_BRIDGE, default OFF). Single source of truth
+// for the three-flag, two-of-three execution-authorization matrix.
+const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = require('./agent/agentAuthorization')
 
 // Conversation → Proposal → Run bridge (COO). Proposing is inert; the ONLY path
 // from a Proposal to a Run is the structured confirm action below. See
@@ -112,16 +115,19 @@ function resolveConversationDemo () {
 // `dispatcherConfigured` reflects whether a REAL/injected Develop dispatcher exists
 // at all (the productionDispatcher is never the implicit default — see createApp),
 // so DEVELOP='on' with no dispatcher configured is still not_authorized.
-function resolveExecutionAuthorization (dispatcherConfigured) {
-  const worker = resolveWorkerInvocation()
-  const develop = resolveDevelopDispatch()
-  if (worker === 'on' && develop === 'on') {
-    return { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false }
-  }
-  const developAuthorized = develop === 'on' && dispatcherConfigured === true
-  const workerAuthorized = worker === 'on'
-  const status = developAuthorized ? 'develop_authorized' : (workerAuthorized ? 'worker_authorized' : 'not_authorized')
-  return { status, workerAuthorized, developAuthorized }
+// Agent Bridge v0 extends this to THREE independent, fail-closed flags via the
+// shared matrix (agentAuthorization.js): ANY two-of-three 'on' → configuration_
+// conflict → ZERO execution. AGENT_BRIDGE defaults OFF and needs an agent runner
+// configured to authorize, so with the flag off (or no runner wired) the result is
+// byte-for-byte the same as before for the worker/develop lanes.
+function resolveExecutionAuthorization (dispatcherConfigured, agentRunnerConfigured = false) {
+  return authorizeExecutionMatrix({
+    worker: resolveWorkerInvocation(),
+    develop: resolveDevelopDispatch(),
+    agent: resolveAgentBridge(),
+    dispatcherConfigured,
+    agentRunnerConfigured
+  })
 }
 
 // The real Claude Code adapter is built lazily (and once), so importing this

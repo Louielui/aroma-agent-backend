@@ -51,7 +51,7 @@ test('resolveExecutionAuthorization: fail-closed matrix, no implicit priority', 
 
   // both on → conflict, nothing authorized (regardless of dispatcherConfigured)
   set('on', 'on')
-  assert.deepEqual(resolveExecutionAuthorization(true), { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false })
+  assert.deepEqual(resolveExecutionAuthorization(true), { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false, agentBridgeAuthorized: false })
 
   // develop on + dispatcher configured + worker off → develop authorized
   set('off', 'on')
