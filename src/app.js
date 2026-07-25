@@ -23,6 +23,7 @@ const path = require('node:path')
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
+const { createContextRouter } = require('./routes/contextRouter') // Read Context v1 (guarded; 403 when READ_ACCESS OFF)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
 const { listWorkers, getExecutive } = require('./workers/registry')
@@ -684,6 +685,11 @@ function createApp (options = {}) {
   // but guard-first: 403 {error:'demo_disabled'} when app.locals.conversationDemo !== true.
   // Mounted here, before the terminal 404, so the guarded routes resolve.
   app.use(createDemoRouter())
+
+  // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
+  // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
+  // READ_ACCESS === 'on'. Read-only; no parameterised method endpoint exists.
+  app.use(createContextRouter())
 
   // 404 handler
   app.use((req, res) => {
