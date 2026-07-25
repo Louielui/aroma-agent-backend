@@ -137,3 +137,59 @@ test('google scopes are ALL read-only; bootstrap refuses a write scope', () => {
   assert.doesNotThrow(() => bootstrap.assertReadOnlyScopes(googleAuth.READONLY_SCOPES))
   assert.throws(() => bootstrap.assertReadOnlyScopes(['https://www.googleapis.com/auth/drive']), /non-readonly/)
 })
+
+/* ── bootstrap consent URL (regression: "missing response_type") ───────────── */
+// Pure local string building with FAKE credentials — no network, no live call.
+function fakeOAuth (redirect) {
+  const { google } = require('googleapis')
+  return new google.auth.OAuth2('FAKE_ID.apps.googleusercontent.com', 'FAKE_SECRET', redirect || bootstrap.DEFAULT_LOOPBACK)
+}
+
+test('buildAuthUrl: response_type=code, access_type=offline, prompt=consent, exactly the 3 readonly scopes', () => {
+  const redirect = bootstrap.DEFAULT_LOOPBACK
+  const url = bootstrap.buildAuthUrl(fakeOAuth(redirect), googleAuth.READONLY_SCOPES, redirect)
+  const q = new URL(url).searchParams
+  assert.equal(q.get('response_type'), 'code')
+  assert.equal(q.get('access_type'), 'offline')
+  assert.equal(q.get('prompt'), 'consent')
+  assert.equal(q.get('redirect_uri'), redirect)
+  assert.ok(q.get('client_id'))
+  const scopes = String(q.get('scope')).split(/[\s+]+/).filter(Boolean).sort()
+  assert.deepEqual(scopes, [...googleAuth.READONLY_SCOPES].sort())
+  assert.equal(scopes.length, 3)
+  for (const s of scopes) assert.match(s, /\.readonly$/) // no write scope can appear
+})
+
+test('buildAuthUrl: refuses to build with any non-readonly scope', () => {
+  const redirect = bootstrap.DEFAULT_LOOPBACK
+  assert.throws(() => bootstrap.buildAuthUrl(fakeOAuth(redirect), ['https://www.googleapis.com/auth/drive'], redirect), /non-readonly/)
+  assert.throws(() => bootstrap.buildAuthUrl(fakeOAuth(redirect), [...googleAuth.READONLY_SCOPES, 'https://www.googleapis.com/auth/gmail.send'], redirect), /non-readonly/)
+})
+
+test('assertAuthUrlValid: REJECTS a URL truncated at the first & (the reported bug)', () => {
+  const redirect = bootstrap.DEFAULT_LOOPBACK
+  const good = bootstrap.buildAuthUrl(fakeOAuth(redirect), googleAuth.READONLY_SCOPES, redirect)
+  assert.equal(bootstrap.assertAuthUrlValid(good, googleAuth.READONLY_SCOPES), true)
+  // what `cmd /c start <url>` handed to the browser: everything after the first & lost.
+  // Any surviving-param combination must be rejected (response_type is now emitted
+  // first, so the truncated URL fails on the next required param — still fail-closed).
+  const truncated = good.split('&')[0]
+  assert.throws(() => bootstrap.assertAuthUrlValid(truncated, googleAuth.READONLY_SCOPES), /refuse: auth URL missing/)
+  // and a URL with NO response_type at all is named explicitly
+  const noRt = good.replace('response_type=code&', '')
+  assert.throws(() => bootstrap.assertAuthUrlValid(noRt, googleAuth.READONLY_SCOPES), /missing response_type=code/)
+})
+
+test('pickRedirectUri: loopback from client, desktop default, OOB and --manual', () => {
+  assert.deepEqual(bootstrap.pickRedirectUri({ redirect_uris: ['http://localhost:7777/cb'] }), { uri: 'http://localhost:7777/cb', mode: 'loopback', port: 7777 })
+  assert.deepEqual(bootstrap.pickRedirectUri({ redirect_uris: [] }), { uri: bootstrap.DEFAULT_LOOPBACK, mode: 'loopback', port: 5599 })
+  assert.equal(bootstrap.pickRedirectUri({ redirect_uris: [bootstrap.OOB] }).mode, 'manual')
+  assert.equal(bootstrap.pickRedirectUri({ redirect_uris: ['http://localhost:7777/cb'] }, { manual: true }).mode, 'manual')
+})
+
+test('bootstrap never routes the URL through a shell (no cmd/start usage)', () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', '..', 'scripts', 'bootstrap-google-token.js'), 'utf8')
+  assert.ok(!/'cmd'/.test(src), 'must not spawn cmd (it splits the URL at &)')
+  assert.ok(!/shell:\s*true/.test(src), 'must never spawn with shell:true')
+  assert.ok(/shell:\s*false/.test(src), 'browser open must use shell:false')
+})
