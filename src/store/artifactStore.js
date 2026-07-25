@@ -23,7 +23,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const KINDS = ['tasks', 'results']
+const KINDS = ['tasks', 'results', 'agent-audit']
 
 /**
  * B2-11a safe-load. A DEFINED error for a present-but-unreadable artifact file,

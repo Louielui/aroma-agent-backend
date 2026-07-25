@@ -125,6 +125,16 @@ function buildResultView ({ proposalId, execution, result, proposal }) {
     relay: result && result.relay && typeof result.relay === 'object'
       ? { toUser: num(result.relay.toUser), fromUser: num(result.relay.fromUser), manual: num(result.relay.manual) }
       : { ...NO_RELAY },
+    // Agent Bridge v0 enrichment — allowlisted projection only. Never the sandbox
+    // path, prompt, env, secrets, or a raw diff. testResults is reduced to ok/exit.
+    branch: result && typeof result.branch === 'string' ? result.branch : null,
+    filesChanged: result && Array.isArray(result.filesChanged) ? result.filesChanged : null,
+    diffSummary: result && typeof result.diffSummary === 'string' ? result.diffSummary : null,
+    testResults: result && result.testResults && typeof result.testResults === 'object'
+      ? { ok: result.testResults.ok === true, exit: Number.isInteger(result.testResults.exit) ? result.testResults.exit : null }
+      : null,
+    risks: result && Array.isArray(result.risks) ? result.risks : null,
+    warnings: result && Array.isArray(result.warnings) ? result.warnings : null,
     proposal: { id: proposalId, status: proposalStatus, confirmedBy, confirmedAt }
   }
 }

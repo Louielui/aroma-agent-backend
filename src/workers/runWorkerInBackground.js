@@ -65,6 +65,15 @@ function createWorkerRunner (options = {}) {
     let result
     try {
       const r = await worker.invoke('Invoke', 1, { task, sandbox })
+      // Agent Bridge v0 result enrichment: carry through the agent-bridge fields
+      // ONLY when the worker actually produced them, so the sandbox-worker result
+      // shape stays byte-for-byte identical (back-compat). Sandbox paths, prompt,
+      // env and secrets are never added here.
+      const out = r.output || {}
+      const enrich = {}
+      for (const k of ['branch', 'filesChanged', 'diffSummary', 'testResults', 'risks', 'warnings']) {
+        if (k in out) enrich[k] = out[k]
+      }
       result = {
         id: newId('result'),
         createdAt: clock(),
@@ -77,7 +86,8 @@ function createWorkerRunner (options = {}) {
         relay: (r.output && r.output.relay) || NO_RELAY,
         cost: r.cost,
         error: r.error,
-        sandbox
+        sandbox,
+        ...enrich
       }
     } catch (err) {
       result = {
