@@ -56,6 +56,11 @@ const { runU1DraftShadow } = require('./u1DraftShadow')
  */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
+// Per-lane output limits for the distill call. DEFAULT is the historical value and
+// applies to the proposal lane and to any legacy/unset interactionMode.
+const DEFAULT_MAX_TOKENS = 1024
+const CHAT_MAX_TOKENS = 2048
+
 // DECISION_RECALL runtime flag (same env-flag style as CONVERSATION_DEMO): only exact 'on'
 // enables; unset/empty/any other value → fail-closed OFF.
 function resolveDecisionRecall () { return process.env.DECISION_RECALL === 'on' ? 'on' : 'off' }
@@ -189,11 +194,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
   }
 
+  // Output limit, selected PER LANE. The chat lane answers in prose inside the JSON
+  // `reply` string and can legitimately need more room (a truncated reply is cut
+  // mid-JSON and fails the strict parser as fence_malformed). Every other lane —
+  // proposal, legacy/unset interactionMode — keeps the historical 1024, and the
+  // email_draft lane never reaches here (U1 early-return above). The adapter's own
+  // default (ClaudeAdapter: 1024) is unchanged.
+  const maxTokens = (opts && opts.interactionMode === 'chat') ? CHAT_MAX_TOKENS : DEFAULT_MAX_TOKENS
+
   let llmResult
   try {
     llmResult = await adapter.complete(effPrompt, {
       system: effSystem,
-      maxTokens: 1024,
+      maxTokens,
       temperature: 0.3
     })
   } catch (err) {
@@ -204,7 +217,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   // Parse the structured JSON response. DistillParseError (Slice A) propagates
   // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
-  const distilled = parseDistillResponse(llmResult.text)
+  // On failure we attach NUMERIC/enum diagnostics only, so a truncation can be proven
+  // instead of inferred: stopReason==='max_tokens' next to the configured limit and
+  // the TRUE output size. The model output itself, the prompts and the user's message
+  // are never attached — the existing rawSample (capped at 200) remains the only text.
+  let distilled
+  try {
+    distilled = parseDistillResponse(llmResult.text)
+  } catch (err) {
+    if (err && err.name === 'DistillParseError') {
+      const raw = typeof llmResult.text === 'string' ? llmResult.text : ''
+      err.parseDiagnostics = {
+        interactionMode: (opts && typeof opts.interactionMode === 'string') ? opts.interactionMode : null,
+        configuredMaxTokens: maxTokens,
+        outputTokens: (llmResult.usage && Number.isFinite(llmResult.usage.outputTokens)) ? llmResult.usage.outputTokens : null,
+        rawTextChars: raw.length,
+        rawTextBytes: Buffer.byteLength(raw, 'utf8'),
+        stopReason: (typeof llmResult.stopReason === 'string' && llmResult.stopReason) ? llmResult.stopReason : null
+      }
+    }
+    throw err
+  }
 
   // ── B2 DETERMINISTIC INTERACTION-MODE GATE (opt-in). When opts.interactionMode is
   //    ABSENT this whole block is skipped ⇒ byte-identical to the prior behaviour.

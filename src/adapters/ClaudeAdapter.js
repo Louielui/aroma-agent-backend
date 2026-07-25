@@ -46,7 +46,7 @@ class ClaudeAdapter extends LLMAdapter {
   /**
    * @param {string} prompt
    * @param {{ maxTokens?: number, temperature?: number, system?: string }} [opts]
-   * @returns {Promise<{ text: string, usage: object, model: string, latencyMs: number }>}
+   * @returns {Promise<{ text: string, usage: object, model: string, latencyMs: number, stopReason: (string|null) }>}
    */
   async complete (prompt, opts = {}) {
     if (!this._apiKey) {
@@ -118,7 +118,12 @@ class ClaudeAdapter extends LLMAdapter {
       text,
       usage,
       model: data.model || this._model,
-      latencyMs
+      latencyMs,
+      // Provider-neutral completion reason, retained ONLY as the provider's short enum
+      // (e.g. 'end_turn' | 'max_tokens' | 'stop_sequence'). It is the decisive evidence
+      // that a reply was truncated rather than malformed. Never a response body; a
+      // provider without an equivalent simply yields null.
+      stopReason: (typeof data.stop_reason === 'string' && data.stop_reason) ? data.stop_reason : null
     }
   }
 }
