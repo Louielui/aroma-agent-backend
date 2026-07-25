@@ -109,6 +109,35 @@ test('contract governs HOW she speaks: no title reference, no schema change, no 
   }
 })
 
+/* ── v1.1: capability-boundary disclosure (the task-request gap) ───────────── */
+test('v1.1: capability limits must be disclosed BEFORE asking for details', () => {
+  assert.ok(CONVERSATION_CONTRACT.includes('能力邊界'), 'capability-boundary group present')
+  // (1) disclose the limitation first, then ask for details
+  assert.ok(CONVERSATION_CONTRACT.includes('先說明這個限制'), 'must disclose the limit first')
+  assert.ok(CONVERSATION_CONTRACT.includes('然後才問細節'), 'details come after disclosure')
+  assert.ok(/未接通|未啟用|未獲授權/.test(CONVERSATION_CONTRACT), 'covers unconnected/disabled/unauthorized')
+  // (2) the three-way split
+  assert.ok(CONVERSATION_CONTRACT.includes('你現在可以做的'), 'can do now')
+  assert.ok(CONVERSATION_CONTRACT.includes('需要 Louie 批准的'), 'needs Owner approval')
+  assert.ok(CONVERSATION_CONTRACT.includes('必須由獲授權執行者執行的'), 'authorized executor')
+  // (3) no implication that more detail unlocks an unavailable capability
+  assert.ok(CONVERSATION_CONTRACT.includes('不可暗示只要提供更多細節'), 'no false-unlock implication')
+})
+
+test('v1.1: the amendment did not disturb the existing groups or their order', () => {
+  const i = (s) => CONVERSATION_CONTRACT.indexOf(s)
+  assert.ok(i('表達:') < i('態度:'), '表達 before 態度')
+  assert.ok(i('態度:') < i('能力邊界:'), '態度 before 能力邊界')
+  assert.ok(i('能力邊界:') < i('一致性:'), '能力邊界 before 一致性')
+  assert.ok(i('一致性:') < i('核心規則:'), '一致性 before 核心規則')
+  assert.ok(CONVERSATION_CONTRACT.endsWith('語氣的確定程度不可超過證據所支持的程度。'), 'core rule still last')
+  // v1.1 must remain a pure ADDITION: no citation/three-state wording crept in
+  for (const owned of ['出處同日期', '讀到但冇相關結果', '目前讀不到']) {
+    assert.ok(!CONVERSATION_CONTRACT.includes(owned), `read-context header owns: ${owned}`)
+  }
+  assert.ok(!CONVERSATION_CONTRACT.includes('營運長'), 'still no title reference')
+})
+
 test('contract is a static constant within the agreed size budget', () => {
   assert.equal(typeof CONVERSATION_CONTRACT, 'string')
   // Budget: the brief targeted ~500-900 chars. Every required clause is present (see the
