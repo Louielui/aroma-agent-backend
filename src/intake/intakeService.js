@@ -30,6 +30,7 @@ const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
 const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer) + honesty frame
+const { CONVERSATION_CONTRACT, resolveConversationContract } = require('../persona/conversationContract') // Conversation Experience Contract v1 (flag-gated, OFF by default)
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
@@ -142,7 +143,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Change C: inject the trusted ACTION_HONESTY_GUARD (demo-only) so the model's
     // conversational (speech/context) prose makes no false completion claims. The
     // action outcomes below are additionally grounded deterministically.
-    effSystem = buildPersonaSystemFromPersona(rp.personaText, system, { extraGuards: [ACTION_HONESTY_GUARD] })
+    // Conversation Experience Contract v1 (flag-gated, default OFF): an additional
+    // TRUSTED frame appended to extraGuards — after persona + data-boundary guard,
+    // before the classifier (which stays last). With the flag off the guard list is
+    // exactly [ACTION_HONESTY_GUARD], so the system string is byte-identical to today.
+    const guards = [ACTION_HONESTY_GUARD]
+    if (resolveConversationContract(process.env) === 'on') guards.push(CONVERSATION_CONTRACT)
+    effSystem = buildPersonaSystemFromPersona(rp.personaText, system, { extraGuards: guards })
   } else {
     effSystem = system
   }
