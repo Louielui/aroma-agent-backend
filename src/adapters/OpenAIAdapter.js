@@ -1,0 +1,153 @@
+'use strict'
+
+/**
+ * OpenAIAdapter.js — Multi-AI Router v0. A second concrete LLMAdapter, so the
+ * vendor-neutral seam is proven by a real alternative provider rather than asserted.
+ *
+ * VERIFIED AGAINST THE OFFICIAL DOCS (2026-07-25), not from memory:
+ *   endpoint : POST https://api.openai.com/v1/responses
+ *   request  : { model, input, instructions, max_output_tokens, store, temperature }
+ *              - `instructions` is the system/developer message inserted into context
+ *              - `max_output_tokens` bounds ALL generated tokens (incl. reasoning)
+ *   response : { status, incomplete_details:{reason}, output[], usage{input_tokens,
+ *              output_tokens,total_tokens}, model }
+ *              - assistant text lives at output[i].content[j].text where the content
+ *                part has type 'output_text' (documented path: output[0].content[0].text)
+ *              - status ∈ 'in_progress' | 'completed' | 'incomplete'
+ *              - incomplete_details.reason ∈ 'max_output_tokens' | 'content_filter'
+ *
+ * DATA HANDLING — honest, not a zero-retention claim:
+ *   Every request sets `store: false`, so Aroma deliberately creates no retrievable
+ *   Application State (the Responses API otherwise retains it for at least 30 days).
+ *   That is NOT zero retention: per the docs, "abuse monitoring logs are generated for
+ *   all API feature usage and retained for up to 30 days, unless longer retention is
+ *   required by law…", and those logs "may contain certain customer content, such as
+ *   prompts and responses". Excluding content from them requires Zero Data Retention or
+ *   Modified Abuse Monitoring, which are "subject to prior approval by OpenAI and
+ *   acceptance of additional requirements".
+ *
+ * SAFETY / SCOPE (v0):
+ *   - NO tools, NO function calling, NO JSON-mode/structured-output helper. The existing
+ *     strict envelope parser is untouched and remains the only contract.
+ *   - Model comes from OPENAI_MODEL; a missing/empty value makes the adapter UNAVAILABLE
+ *     (fail-closed). A model id is never hardcoded.
+ *   - The API key is read from OPENAI_API_KEY at call time and is never logged, echoed,
+ *     returned, or written to disk.
+ *   - Uses the repo's existing axios — no new dependency.
+ */
+
+const axios = require('axios')
+const { LLMAdapter } = require('./LLMAdapter')
+
+const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
+const DEFAULT_TIMEOUT_MS = 60000
+
+/**
+ * Normalize the provider's completion signal onto the neutral vocabulary already used
+ * by ClaudeAdapter/diagnostics ('end_turn' | 'max_tokens' | …). This is a documented
+ * MAPPING of a real provider field, not an invented one; when OpenAI reports nothing
+ * usable the result is null.
+ */
+function normalizeStopReason (data) {
+  const status = data && data.status
+  const reason = data && data.incomplete_details && data.incomplete_details.reason
+  if (status === 'incomplete') {
+    if (reason === 'max_output_tokens') return 'max_tokens' // same meaning as Anthropic's
+    if (typeof reason === 'string' && reason) return reason // e.g. 'content_filter'
+    return 'incomplete'
+  }
+  if (status === 'completed') return 'end_turn'
+  return null
+}
+
+/** Extract the assistant text: the documented output[] → content[] → text path. */
+function extractText (data) {
+  const out = data && Array.isArray(data.output) ? data.output : []
+  const parts = []
+  for (const item of out) {
+    const content = item && Array.isArray(item.content) ? item.content : []
+    for (const c of content) {
+      if (c && typeof c.text === 'string' && (c.type === 'output_text' || c.type === undefined)) parts.push(c.text)
+    }
+  }
+  return parts.join('')
+}
+
+class OpenAIAdapter extends LLMAdapter {
+  constructor (options = {}) {
+    super()
+    this._model = options.model || null
+    this._apiKey = options.apiKey || null
+    this._timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
+    // Injectable transport for tests ONLY; production uses axios.post.
+    this._post = typeof options.post === 'function' ? options.post : ((url, body, cfg) => axios.post(url, body, cfg))
+  }
+
+  /**
+   * @param {string} prompt   the user-turn payload
+   * @param {{ system?: string, maxTokens?: number, temperature?: number }} [opts]
+   * @returns {Promise<{ text, usage, model, latencyMs, stopReason }>} same shape as ClaudeAdapter
+   */
+  async complete (prompt, opts = {}) {
+    if (!this._model) throw new Error('OpenAI adapter unavailable: OPENAI_MODEL is not set')
+    const apiKey = this._apiKey || process.env.OPENAI_API_KEY
+    if (!apiKey) throw new Error('OpenAI adapter unavailable: OPENAI_API_KEY is not set')
+
+    const body = {
+      model: this._model,
+      input: prompt,
+      max_output_tokens: opts.maxTokens || 1024,
+      temperature: opts.temperature !== undefined ? opts.temperature : 0.3,
+      store: false // never create retrievable Application State
+    }
+    if (opts.system) body.instructions = opts.system
+
+    const t0 = Date.now()
+    let response
+    try {
+      response = await this._post(OPENAI_RESPONSES_URL, body, {
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${apiKey}` },
+        timeout: this._timeoutMs
+      })
+    } catch (err) {
+      // Never surface the provider body/headers (they can echo the request). Status only.
+      const status = err && err.response && err.response.status
+      throw new Error(`OpenAI request failed${status ? ` (HTTP ${status})` : ''}`)
+    }
+    const latencyMs = Date.now() - t0
+    const data = (response && response.data) || {}
+
+    return {
+      text: extractText(data),
+      usage: {
+        inputTokens: (data.usage && data.usage.input_tokens) || 0,
+        outputTokens: (data.usage && data.usage.output_tokens) || 0,
+        totalTokens: (data.usage && data.usage.total_tokens) ||
+          (((data.usage && data.usage.input_tokens) || 0) + ((data.usage && data.usage.output_tokens) || 0))
+      },
+      model: data.model || this._model,
+      latencyMs,
+      stopReason: normalizeStopReason(data)
+    }
+  }
+}
+
+/**
+ * Build the adapter ONLY when both env vars are present; otherwise return null so the
+ * router falls back to Claude without ever attempting a call. Fail-closed by design.
+ */
+function createOpenAIAdapterIfConfigured (env = process.env, options = {}) {
+  const model = env.OPENAI_MODEL
+  const apiKey = env.OPENAI_API_KEY
+  if (typeof model !== 'string' || model.trim() === '') return null
+  if (typeof apiKey !== 'string' || apiKey.trim() === '') return null
+  return new OpenAIAdapter(Object.assign({ model: model.trim(), apiKey }, options))
+}
+
+module.exports = {
+  OpenAIAdapter,
+  createOpenAIAdapterIfConfigured,
+  normalizeStopReason,
+  extractText,
+  OPENAI_RESPONSES_URL
+}

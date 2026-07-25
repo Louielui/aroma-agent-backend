@@ -31,6 +31,9 @@ const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
 const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer) + honesty frame
 const { CONVERSATION_CONTRACT, resolveConversationContract } = require('../persona/conversationContract') // Conversation Experience Contract v1 (flag-gated, OFF by default)
+// Multi-AI Router v0 (flag-gated OFF; Claude stays default + one-shot fallback).
+const { selectPrimaryProvider, OPENAI } = require('../routing/modelRouter')
+const { createOpenAIAdapterIfConfigured } = require('../adapters/OpenAIAdapter')
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
@@ -159,6 +162,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     effSystem = system
   }
   const baseEffPrompt = demo ? (ctx.preamble + prompt) : prompt
+  // CONTEXT BOUNDARY for the Multi-AI Router (v0, Owner decision): when a turn is
+  // routed to GPT it receives ONLY the bounded history + the current user turn here,
+  // plus persona/guards/contract/classifier via `system`. The Context Card preamble,
+  // the Decision Recall block and the Read Context block (Gmail/Drive/Calendar/GitHub)
+  // are all EXCLUDED by construction — this variable is captured BEFORE any of them is
+  // prepended, so no future re-ordering can leak them into the GPT path.
+  const gptPrompt = prompt
 
   // ── DECISION RECALL v1 — CHAT-LANE ONLY, opt-in, FAIL-SOFT. Injected into the shared
   //    prompt ONLY when DECISION_RECALL='on' AND opts.interactionMode === 'chat' (which the
@@ -202,17 +212,67 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // default (ClaudeAdapter: 1024) is unchanged.
   const maxTokens = (opts && opts.interactionMode === 'chat') ? CHAT_MAX_TOKENS : DEFAULT_MAX_TOKENS
 
-  let llmResult
-  try {
-    llmResult = await adapter.complete(effPrompt, {
-      system: effSystem,
-      maxTokens,
-      temperature: 0.3
-    })
-  } catch (err) {
-    // Upstream provider/adapter failure → typed, safe error. Provider message is
-    // kept only on .cause (server-side classification), never surfaced to client.
-    throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
+  // ── MULTI-AI ROUTER v0 — THE ORCHESTRATION BOUNDARY ─────────────────────────
+  // This is the single place that owns BOTH adapter.complete() and the strict
+  // envelope parse, which is why parse-failure fallback lives here and NOT in the
+  // adapter or the router. The parser itself is untouched and never provider-aware.
+  //
+  // Attempt 1 (only when the router picks openai): GPT with a RESTRICTED prompt —
+  // persona + trusted guards + Conversation Contract + classifier (system) and the
+  // bounded history + current turn (user). The Read Context and Decision Recall
+  // blocks and the Context Card are deliberately NOT sent to GPT in v0.
+  // On provider failure OR parse failure: record GPT usage if any tokens were
+  // produced (otherwise Louie pays with no accounting), log a CONTENT-FREE reason,
+  // and fall back to Claude EXACTLY ONCE with the full, unchanged prompt. If Claude
+  // also fails, the existing safe error propagates. Never loops.
+  const primaryProvider = selectPrimaryProvider(process.env, opts)
+  let llmResult = null
+  let distilled = null
+  let routerFallbackReason = null
+
+  if (primaryProvider === OPENAI) {
+    const gpt = (opts && opts.openaiAdapter) || createOpenAIAdapterIfConfigured(process.env)
+    if (!gpt) {
+      routerFallbackReason = 'openai_unavailable' // not configured → no call attempted
+    } else {
+      let gptResult = null
+      try {
+        gptResult = await gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3 })
+      } catch (err) {
+        routerFallbackReason = 'openai_provider_error' // content-free: no message, no body
+      }
+      if (gptResult) {
+        try {
+          distilled = parseDistillResponse(gptResult.text)
+          llmResult = gptResult // success → the existing accounting below records it
+        } catch (err) {
+          routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
+          // GPT produced billable tokens but an unusable envelope: record its usage
+          // NOW, because the accounting below will report the Claude attempt instead.
+          try {
+            logLLMCall({ model: gptResult.model, latencyMs: gptResult.latencyMs, inputTokens: gptResult.usage.inputTokens, outputTokens: gptResult.usage.outputTokens, totalTokens: gptResult.usage.totalTokens, endpoint, blocked: false })
+            await recordLLMUsage({ model: gptResult.model, inputTokens: gptResult.usage.inputTokens, outputTokens: gptResult.usage.outputTokens, totalTokens: gptResult.usage.totalTokens, latencyMs: gptResult.latencyMs, endpoint, requestId, blocked: false })
+          } catch (_) { /* accounting must never break the turn */ }
+        }
+      }
+    }
+    if (routerFallbackReason) {
+      console.warn(`[router] falling back to claude (reason: ${routerFallbackReason}) correlationId=${requestId}`)
+    }
+  }
+
+  if (!distilled) {
+    try {
+      llmResult = await adapter.complete(effPrompt, {
+        system: effSystem,
+        maxTokens,
+        temperature: 0.3
+      })
+    } catch (err) {
+      // Upstream provider/adapter failure → typed, safe error. Provider message is
+      // kept only on .cause (server-side classification), never surfaced to client.
+      throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
+    }
   }
 
   // Parse the structured JSON response. DistillParseError (Slice A) propagates
@@ -221,9 +281,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // instead of inferred: stopReason==='max_tokens' next to the configured limit and
   // the TRUE output size. The model output itself, the prompts and the user's message
   // are never attached — the existing rawSample (capped at 200) remains the only text.
-  let distilled
   try {
-    distilled = parseDistillResponse(llmResult.text)
+    if (!distilled) distilled = parseDistillResponse(llmResult.text)
   } catch (err) {
     if (err && err.name === 'DistillParseError') {
       const raw = typeof llmResult.text === 'string' ? llmResult.text : ''
