@@ -111,6 +111,15 @@ function rejectWith (reason, text) {
 // "json" (case-insensitive; CRLF or LF). Anything else outside the JSON → reject.
 // Trims ONLY JSON-insignificant whitespace (space/tab/LF/CR) — NOT a BOM or other
 // Unicode whitespace, so a leading BOM survives to JSON.parse and is rejected.
+//
+// OUTERMOST-FENCE RULE: the wrapper opens at the very start and closes at the LAST
+// closing fence, so a ``` appearing INSIDE the payload (which happens naturally
+// whenever the reply discusses code) is part of the payload rather than a reason to
+// reject. This tolerates only the WRAPPER — the extracted payload still goes through
+// the same strict JSON.parse, the same duplicate-key scan and the same schema
+// validation, so nothing malformed or non-conforming becomes acceptable. There is no
+// salvage/best-effort path: a missing close fence, a non-json language tag, invalid
+// JSON, stray prose or a schema violation are all still rejected, unchanged.
 function validateEnvelope (text) {
   const s = String(text).replace(/^[ \t\n\r]+/, '').replace(/[ \t\n\r]+$/, '')
   if (s === '') throw rejectWith(REJECT_REASONS.EMPTY_RESPONSE, text)
@@ -119,9 +128,9 @@ function validateEnvelope (text) {
   if (firstNl === -1 || !s.endsWith('```')) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text)
   const lang = s.slice(3, firstNl).replace(/\r$/, '').trim()
   if (lang !== '' && !/^json$/i.test(lang)) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text)
-  const inner = s.slice(firstNl + 1, s.length - 3)
-  if (inner.includes('```')) throw rejectWith(REJECT_REASONS.FENCE_MALFORMED, text) // multiple/nested fences
-  return inner // JSON.parse decides validity (the newline before the close fence is JSON whitespace)
+  // s already ends with the closing fence, so slicing to length-3 IS the outermost
+  // extraction: everything between the opening line and the LAST fence.
+  return s.slice(firstNl + 1, s.length - 3) // JSON.parse decides validity
 }
 
 // All-depth duplicate-key detection over a string JSON.parse has ALREADY accepted

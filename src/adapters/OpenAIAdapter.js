@@ -127,9 +127,20 @@ class OpenAIAdapter extends LLMAdapter {
         timeout: this._timeoutMs
       })
     } catch (err) {
-      // Never surface the provider body/headers (they can echo the request). Status only.
-      const status = err && err.response && err.response.status
-      throw new Error(`OpenAI request failed${status ? ` (HTTP ${status})` : ''}`)
+      // Never surface the provider body/headers (they can echo the prompt). We attach an
+      // ALLOWLIST of three short diagnostic fields — HTTP status plus the provider's own
+      // error `type` and `code` enums — so a failure is explainable without ever carrying
+      // content. A provider that omits them yields null, never an invented value.
+      const res = err && err.response
+      const perr = res && res.data && res.data.error
+      const e = new Error(`OpenAI request failed${res && res.status ? ` (HTTP ${res.status})` : ''}`)
+      e.providerDiagnostics = {
+        httpStatus: (res && Number.isFinite(res.status)) ? res.status : null,
+        errorType: (perr && typeof perr.type === 'string') ? perr.type : null,
+        errorCode: (perr && typeof perr.code === 'string') ? perr.code : null,
+        errorParam: (perr && typeof perr.param === 'string') ? perr.param : null // e.g. 'temperature'
+      }
+      throw e
     }
     const latencyMs = Date.now() - t0
     const data = (response && response.data) || {}
