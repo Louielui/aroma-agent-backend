@@ -62,6 +62,24 @@ function createAgentRunner (options = {}) {
     const approvalId = (typeof workOrder.approvalId === 'string' && workOrder.approvalId) ? workOrder.approvalId : newId()
     const workOrderHash = hashWorkOrder(workOrder)
 
+    // HASH ENFORCEMENT (step 4). The hash is recomputed HERE from the order actually
+    // about to execute and compared with the hash the Owner approved. Any difference —
+    // an added file, a widened cap, a changed test command, a swapped goal — produces a
+    // different hash and the run is REFUSED, audited and stopped. There is deliberately
+    // NO amend path: a sealed order is never edited in flight. If a second file turns out
+    // to be needed, this run stops and a NEW Work Order must be produced and approved.
+    const approvedHash = input && input.approvedHash
+    if (typeof approvedHash !== 'string' || approvedHash.length === 0) {
+      const result = fail('missing_approved_hash')
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+      return result
+    }
+    if (approvedHash !== workOrderHash) {
+      const result = fail('hash_mismatch')
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+      return result
+    }
+
     let prepared
     try {
       prepared = workspace.prepare(approvalId) // isolated clone + agent branch + remotes removed

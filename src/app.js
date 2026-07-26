@@ -217,7 +217,7 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken }) {
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, agentRunner = null }) {
   const router = express.Router()
 
   // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
@@ -383,8 +383,20 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
 
       // Honest confirm contract: proposal is confirmed; dispatchStatus reports what
       // (if anything) was actually authorized to run. runId is the created Run.
+      // ── EXECUTE vs ORDINARY CONFIRM (step 4) ────────────────────────────────
+      // An ordinary confirm carries NO agentExecute triple, so it can never authorize
+      // agent execution — approving a normal Proposal is structurally incapable of
+      // starting the agent. Agent execution requires ALL THREE, explicitly, in the
+      // request body: agentExecute === true, a sealed workOrder, and the approvedHash
+      // the Owner saw. Missing or partial ⇒ ordinary confirm, zero agent execution.
+      const b = req.body || {}
+      const agentExecuteRequested = (b.agentExecute === true) && !!b.workOrder && typeof b.approvedWorkOrderHash === 'string'
+      const agentEligible = agentExecuteRequested && auth.agentBridgeAuthorized && agentRunner !== null
+
       let dispatchStatus
       if (auth.status === 'configuration_conflict') dispatchStatus = 'configuration_conflict'
+      else if (agentEligible) dispatchStatus = 'agent_execute_accepted'
+      else if (agentExecuteRequested) dispatchStatus = 'agent_execute_not_authorized'
       else if (auth.developAuthorized) dispatchStatus = 'develop_dispatched'
       else if (auth.workerAuthorized) dispatchStatus = 'worker_scheduled'
       else dispatchStatus = 'not_authorized'
@@ -393,6 +405,16 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
 
       // Only the sandbox worker path is triggered here, and only when authorized.
       if (auth.workerAuthorized) scheduleWorker(req.params.id, runId) // B2-1: AFTER the response
+
+      // AGENT HAND-OFF — fire-and-forget AFTER the response, exactly like the sandbox
+      // worker, and ONLY when the Owner explicitly asked to EXECUTE, the flag lane is
+      // authorized, and a runner exists. The runner itself re-verifies the hash against
+      // the order it is about to run and refuses on any mismatch (no amend path).
+      if (agentEligible) {
+        Promise.resolve()
+          .then(() => agentRunner.run({ workOrder: b.workOrder, approvedHash: b.approvedWorkOrderHash, who: LOCAL_OWNER }))
+          .catch((e) => console.warn('[agent-bridge] run failed: ' + ((e && e.message) || String(e))))
+      }
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message })
     }
@@ -696,7 +718,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, agentRunner })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
