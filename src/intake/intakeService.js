@@ -236,6 +236,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // tokens with zero rows). Idempotent by identity — the downstream outcome branches
   // still call this, and it is a no-op the second time, so success cannot double-record.
   // Shape unchanged; no content fields are added. Accounting never breaks a turn.
+  // TELEMETRY SINK (observability v1): a caller-owned plain object that this pipeline
+  // fills with NUMBERS and SHORT ENUMS only. It is never part of the HTTP response, so
+  // the response contract is unchanged; the router reads it to emit one outcome line.
+  const tel = (opts && opts.telemetry && typeof opts.telemetry === 'object') ? opts.telemetry : {}
+  tel.interactionMode = (opts && typeof opts.interactionMode === 'string') ? opts.interactionMode : null
+  function noteProvider (name, result) {
+    tel.provider = name
+    if (result && result.usage) {
+      tel.inputTokens = Number.isFinite(result.usage.inputTokens) ? result.usage.inputTokens : null
+      tel.outputTokens = Number.isFinite(result.usage.outputTokens) ? result.usage.outputTokens : null
+    }
+    // FIX 3: stopReason is recorded on the SUCCESS path too, so a valid envelope that
+    // nonetheless hit max_tokens is visible BEFORE it becomes a failure.
+    tel.stopReason = (result && typeof result.stopReason === 'string' && result.stopReason) ? result.stopReason : null
+  }
+
   const recordedResults = new Set()
   async function recordProviderUsage (result) {
     if (!result || !result.usage || recordedResults.has(result)) return
@@ -265,6 +281,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (gptResult) {
         // Billable tokens exist the moment the provider returned — record BEFORE the
         // parse, so a fallback turn accounts for BOTH providers separately.
+        noteProvider('openai', gptResult)
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text)
@@ -292,6 +309,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
     }
     // Same rule for the Claude attempt: recorded before the parse can throw.
+    noteProvider('claude', llmResult)
+    tel.fallbackUsed = (primaryProvider === OPENAI)
     await recordProviderUsage(llmResult)
   }
 
@@ -303,7 +322,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // are never attached — the existing rawSample (capped at 200) remains the only text.
   try {
     if (!distilled) distilled = parseDistillResponse(llmResult.text)
+    tel.parseResult = 'ok'
   } catch (err) {
+    tel.parseResult = 'failed'
+    tel.parseErrorReason = (err && typeof err.reason === 'string') ? err.reason : null
     if (err && err.name === 'DistillParseError') {
       const raw = typeof llmResult.text === 'string' ? llmResult.text : ''
       err.parseDiagnostics = {
