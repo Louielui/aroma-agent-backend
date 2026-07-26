@@ -1,5 +1,9 @@
 'use strict'
 
+// The worker no longer falls back to a bare 'claude' — an unresolvable CLI is a refusal.
+// These tests inject a fake runner, so they name a fake absolute path explicitly.
+const FAKE_CLI = 'C:/fake/claude.exe'
+
 // agentBridge.test.js — Agent Bridge v0. Deterministic, ZERO paid calls, ZERO real
 // clone/claude. Injected runner + fake git prove every security cap by structure.
 
@@ -133,7 +137,7 @@ test('workspace.prepare: refuse an unsafe approvalId', () => {
 
 /* ──────────────── agentBridgeWorker (Cap 1/2/3/4/8) ───────────────────────── */
 test('worker.buildArgs: NO bypassPermissions; allowedTools = Read Edit Write; no Bash', () => {
-  const w = createAgentBridgeWorker({ runner: okClaude })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const args = w.buildArgs(validWO(), '/tmp/aroma-sandbox-agent-x', 'acceptEdits')
   assert.ok(!args.includes('bypassPermissions'))
   assert.ok(args.includes('--permission-mode') && args.includes('acceptEdits'))
@@ -142,7 +146,7 @@ test('worker.buildArgs: NO bypassPermissions; allowedTools = Read Edit Write; no
   assert.ok(!/Bash|git|push/i.test(tools))
 })
 test('worker: happy path → ok, enriched output, zero risks', async () => {
-  const w = createAgentBridgeWorker({ runner: okClaude })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: fakeWorkspace(), cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
   assert.equal(r.ok, true)
   assert.equal(r.output.branch, 'agent/appr_1')
@@ -151,14 +155,14 @@ test('worker: happy path → ok, enriched output, zero risks', async () => {
   assert.equal(r.cost, 0.01)
 })
 test('worker: file changed outside allowlist → ok:false + risk', async () => {
-  const w = createAgentBridgeWorker({ runner: okClaude })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const ws = fakeWorkspace({ filesChanged: () => ['src/foo.js', 'src/secret.js'] })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: ws, cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
   assert.equal(r.ok, false)
   assert.ok(r.output.risks.includes('files_outside_allowlist'))
 })
 test('worker: a surviving remote → ok:false + risk (no push target check)', async () => {
-  const w = createAgentBridgeWorker({ runner: okClaude })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const ws = fakeWorkspace({ remotes: () => ['origin'] })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: ws, cloneDir: '/tmp/x', branch: 'agent/appr_1' })
   assert.equal(r.ok, false)
@@ -166,14 +170,14 @@ test('worker: a surviving remote → ok:false + risk (no push target check)', as
 })
 test('worker: cost over cap → ok:false + risk', async () => {
   const dear = async () => ({ status: 0, stdout: JSON.stringify({ subtype: 'success', is_error: false, result: 'x', total_cost_usd: 5 }), stderr: '', timedOut: false })
-  const w = createAgentBridgeWorker({ runner: dear })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: dear })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: fakeWorkspace(), cloneDir: '/tmp/x', branch: 'agent/appr_1' })
   assert.equal(r.ok, false)
   assert.ok(r.output.risks.includes('cost_cap_exceeded'))
 })
 test('worker: timeout kill → ok:false + risk', async () => {
   const slow = async () => ({ status: 124, stdout: '', stderr: 'killed', timedOut: true })
-  const w = createAgentBridgeWorker({ runner: slow })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: slow })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: fakeWorkspace(), cloneDir: '/tmp/x', branch: 'agent/appr_1' })
   assert.equal(r.ok, false)
   assert.ok(r.output.risks.includes('timeout'))
@@ -181,7 +185,7 @@ test('worker: timeout kill → ok:false + risk', async () => {
 test('worker: invalid work order → refuse, runner NEVER called (fail-closed)', async () => {
   let called = 0
   const spy = async () => { called++; return okClaude() }
-  const w = createAgentBridgeWorker({ runner: spy })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: spy })
   const r = await w.invoke('AgentBridge', 1, { workOrder: { goal: '' }, workspace: fakeWorkspace(), cloneDir: '/tmp/x' })
   assert.equal(r.ok, false)
   assert.ok(r.output.risks.includes('invalid_work_order'))
@@ -190,7 +194,7 @@ test('worker: invalid work order → refuse, runner NEVER called (fail-closed)',
 test('worker: bypassPermissions provider → refuse, runner NEVER called', async () => {
   let called = 0
   const spy = async () => { called++; return okClaude() }
-  const w = createAgentBridgeWorker({ runner: spy })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: spy })
   const ws = fakeWorkspace({ permissionMode: () => 'bypassPermissions' })
   const r = await w.invoke('AgentBridge', 1, { workOrder: validWO(), workspace: ws, cloneDir: '/tmp/x', branch: 'agent/appr_1' })
   assert.equal(r.ok, false)
@@ -216,7 +220,7 @@ test('full chain (injected): enriched result returns; sandbox/prompt NEVER proje
   assert.equal(WO.validateWorkOrder(wo).ok, true)
   const ws = createFeatureBranchWorkspace({ repoRoot: process.cwd(), gitRunner: makeFakeGit({ changed: ['src/foo.js'] }) })
   const prep = ws.prepare('appr_1')
-  const agent = createAgentBridgeWorker({ runner: okClaude })
+  const agent = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const agentResult = await agent.invoke('AgentBridge', 1, { workOrder: wo, workspace: ws, cloneDir: prep.dir, branch: prep.branch })
   assert.equal(agentResult.ok, true)
 

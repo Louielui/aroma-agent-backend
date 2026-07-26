@@ -24,7 +24,7 @@
 
 const crypto = require('node:crypto')
 const { validateWorkOrder, hashWorkOrder } = require('./workOrder')
-const { createAgentBridgeWorker } = require('./agentBridgeWorker')
+const { createAgentBridgeWorker, resolveAgentCliCommand } = require('./agentBridgeWorker')
 const { createFeatureBranchWorkspace } = require('./featureBranchWorkspace')
 const { createAuditLog } = require('./audit')
 
@@ -42,7 +42,21 @@ function createAgentRunner (options = {}) {
   if (!options.workspace && (typeof repoRoot !== 'string' || repoRoot.trim() === '')) {
     throw new TypeError('createAgentRunner requires repoRoot (or an injected workspace)')
   }
-  const worker = options.worker || createAgentBridgeWorker()
+  // Resolve the Claude Code CLI to an ABSOLUTE executable path here, at composition time,
+  // and hand it to the worker. The worker used to default to the bare string 'claude',
+  // which on Windows cannot start under shell:false at all (ENOENT for the extensionless
+  // script, EINVAL for the .cmd). We do NOT switch to shell:true to work around that —
+  // that would put our arguments back through a shell parser, which is precisely the
+  // injection surface Cap 1 removes. An unresolvable CLI is passed through as
+  // commandError and the worker REFUSES the run; there is no bare-'claude' fallback.
+  const cli = options.command
+    ? { ok: true, command: options.command }
+    : resolveAgentCliCommand(options.env || process.env)
+  const worker = options.worker || createAgentBridgeWorker({
+    command: cli.ok ? cli.command : null,
+    commandError: cli.ok ? null : cli.reason,
+    parentEnv: options.env || process.env
+  })
   const workspace = options.workspace || createFeatureBranchWorkspace({ repoRoot })
   const auditLog = options.auditLog || (options.artifactStore ? createAuditLog({ artifactStore: options.artifactStore }) : null)
   const newId = typeof options.newId === 'function' ? options.newId : () => `appr_${crypto.randomUUID().slice(0, 8)}`

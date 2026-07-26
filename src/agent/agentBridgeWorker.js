@@ -25,6 +25,8 @@
  */
 
 const childProcess = require('node:child_process')
+const fs = require('node:fs')
+const path = require('node:path')
 const { createResult } = require('../capability/adapter')
 const { validateWorkOrder, normRel } = require('./workOrder')
 
@@ -35,6 +37,101 @@ const TIMEOUT_EXIT = 124
 
 /** The explicit, minimal tool allowlist. No Bash/git/network — ever (Cap 1). */
 function buildAllowedTools () { return ['Read', 'Edit', 'Write'] }
+
+// ── CLI RESOLUTION ───────────────────────────────────────────────────────────
+// The command used to be the bare string 'claude' with shell:false. On Windows that
+// cannot start: `claude` is an extensionless shell script (ENOENT) and `claude.cmd`
+// cannot be spawned without a shell (EINVAL, Node >= 18.20). Using shell:true would
+// "fix" it by reintroducing shell interpretation of our arguments — exactly the
+// injection surface Cap 1 exists to remove — so the command stays an absolute path to
+// a real executable and shell:false never changes.
+//
+// Resolution order: an explicit AGENT_CLI_PATH override, then the known global-install
+// locations. If nothing resolves we return null and the run REFUSES — there is
+// deliberately no bare-'claude' fallback, because a fallback that cannot start is just
+// a delayed, confusing failure.
+const CLI_PATH_ENV = 'AGENT_CLI_PATH'
+
+function claudeCandidates (env) {
+  const out = []
+  const pkgBin = path.join('node_modules', '@anthropic-ai', 'claude-code', 'bin')
+  if (env.APPDATA) out.push(path.join(env.APPDATA, 'npm', pkgBin, 'claude.exe'))
+  if (env.LOCALAPPDATA) out.push(path.join(env.LOCALAPPDATA, 'npm', pkgBin, 'claude.exe'))
+  if (env.HOME) {
+    out.push(path.join(env.HOME, '.npm-global', pkgBin, 'claude'))
+    out.push(path.join(env.HOME, '.local', 'bin', 'claude'))
+  }
+  out.push(path.join('/usr', 'local', 'lib', pkgBin, 'claude'))
+  out.push(path.join('/usr', 'local', 'bin', 'claude'))
+  return out
+}
+
+/**
+ * @returns {{ ok:true, command:string, source:string }|{ ok:false, reason:string }}
+ */
+function resolveAgentCliCommand (env = process.env, existsSync = fs.existsSync) {
+  const override = env[CLI_PATH_ENV]
+  if (typeof override === 'string' && override.trim() !== '') {
+    const p = override.trim()
+    if (!path.isAbsolute(p)) return { ok: false, reason: `${CLI_PATH_ENV} must be an absolute path` }
+    if (!existsSync(p)) return { ok: false, reason: `${CLI_PATH_ENV} points at a file that does not exist` }
+    return { ok: true, command: p, source: CLI_PATH_ENV }
+  }
+  for (const c of claudeCandidates(env)) {
+    if (existsSync(c)) return { ok: true, command: c, source: 'default_install_path' }
+  }
+  return { ok: false, reason: `the Claude Code CLI executable was not found; set ${CLI_PATH_ENV} to its absolute path` }
+}
+
+// ── CHILD ENVIRONMENT ALLOWLIST ──────────────────────────────────────────────
+// The agent used to inherit the WHOLE parent environment. On this machine that parent
+// is the 香香 server, whose env holds ANTHROPIC_API_KEY, HUB_TOKEN, GITHUB_READ_TOKEN,
+// OPENAI_API_KEY and Google credential paths. Cap 5 makes credential FILES
+// un-allowlistable, but none of that helps if the secrets are handed to the child in
+// its environment — the agent could simply read them out of process.env.
+//
+// So the child env is BUILT, not inherited: only these names are copied, everything
+// else is dropped. Each entry is here because the CLI cannot run without it:
+//
+//   PATH / Path        - locating helper binaries the CLI itself invokes
+//   PATHEXT            - Windows executable resolution
+//   SystemRoot/windir  - Windows API + networking DLLs live there; omit and it dies
+//   COMSPEC            - Windows process creation expects it
+//   USERPROFILE/HOMEDRIVE/HOMEPATH/HOME - so the CLI finds ~/.claude/.credentials.json,
+//                        which is the ONLY authentication we deliberately pass (FIX 3)
+//   APPDATA/LOCALAPPDATA - the CLI's own config/state directories
+//   TEMP/TMP/TMPDIR    - scratch space
+//   LANG/LC_ALL        - text encoding, so non-ASCII goals are not mangled
+//   OS/PROCESSOR_ARCHITECTURE/NUMBER_OF_PROCESSORS - benign platform facts
+//
+// DELIBERATELY ABSENT: ANTHROPIC_API_KEY. Passing it would (a) make the agent bill the
+// API account instead of the Owner's subscription and (b) hand a live credential to a
+// process whose whole point is to be untrusted. The agent authenticates with the OAuth
+// credentials file instead.
+const CHILD_ENV_ALLOWLIST = Object.freeze([
+  'PATH', 'Path', 'PATHEXT',
+  'SystemRoot', 'windir', 'COMSPEC', 'ComSpec',
+  'USERPROFILE', 'HOMEDRIVE', 'HOMEPATH', 'HOME',
+  'APPDATA', 'LOCALAPPDATA',
+  'TEMP', 'TMP', 'TMPDIR',
+  'LANG', 'LC_ALL',
+  'OS', 'PROCESSOR_ARCHITECTURE', 'NUMBER_OF_PROCESSORS'
+])
+
+// Belt and braces: even an allowlisted name is dropped if it LOOKS like a credential,
+// so a future edit to the list above cannot quietly reopen this hole.
+const SECRET_SHAPED = /(KEY|TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIAL|AUTH|SESSION|COOKIE|PRIVATE)/i
+
+/** Build the child's environment from the allowlist. Never inherits. */
+function buildChildEnv (parentEnv = process.env) {
+  const out = {}
+  for (const name of CHILD_ENV_ALLOWLIST) {
+    if (SECRET_SHAPED.test(name)) continue // unreachable today; guards future edits
+    const v = parentEnv[name]
+    if (typeof v === 'string' && v !== '') out[name] = v
+  }
+  return out
+}
 
 /** Build the claude argument ARRAY. NEVER bypassPermissions; NEVER a shell string. */
 function buildArgs (workOrder, cloneDir, permissionMode) {
@@ -47,10 +144,16 @@ function buildArgs (workOrder, cloneDir, permissionMode) {
   ]
 }
 
-/** Real runner: async spawn, shell:false, HARD timeout kill, bounded output. */
+/**
+ * Real runner: async spawn, shell:false, HARD timeout kill, bounded output.
+ * `opts.env` is the BUILT allowlist env — when supplied the child does not inherit the
+ * parent's environment, so no credential reaches the agent through process.env.
+ */
 function defaultRunner (command, args, opts = {}) {
   return new Promise((resolve) => {
-    const child = childProcess.spawn(command, args, { shell: false, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const spawnOpts = { shell: false, cwd: opts.cwd, stdio: ['ignore', 'pipe', 'pipe'] }
+    if (opts.env && typeof opts.env === 'object') spawnOpts.env = opts.env
+    const child = childProcess.spawn(command, args, spawnOpts)
     let stdout = ''
     let stderr = ''
     let timedOut = false
@@ -63,14 +166,20 @@ function defaultRunner (command, args, opts = {}) {
   })
 }
 
-/** Run the Owner-approved test command in the clone. shell:false; HARD timeout. */
-function defaultTestRunner (cmd, cwd, timeoutMs) {
+/**
+ * Run the Owner-approved test command in the clone. shell:false; HARD timeout.
+ * It gets the same allowlisted environment as the agent — a test command is Owner-chosen,
+ * but it still runs inside the throwaway clone and still has no business seeing a secret.
+ */
+function defaultTestRunner (cmd, cwd, timeoutMs, env) {
   return new Promise((resolve) => {
     const parts = String(cmd).match(/(?:[^\s"']+|"[^"]*"|'[^']*')+/g) || []
     const exe = parts[0]
     const a = parts.slice(1).map((s) => s.replace(/^["']|["']$/g, ''))
     if (!exe) { resolve({ ok: false, exit: null, output: 'no test command' }); return }
-    const child = childProcess.spawn(exe, a, { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] })
+    const spawnOpts = { cwd, shell: false, stdio: ['ignore', 'pipe', 'pipe'] }
+    if (env && typeof env === 'object') spawnOpts.env = env
+    const child = childProcess.spawn(exe, a, spawnOpts)
     let out = ''
     let killed = false
     const cap = (d) => { if (out.length < 1024 * 1024) out += d.toString() }
@@ -88,9 +197,12 @@ function fail (out, error, cost, latencyMs) {
 
 function createAgentBridgeWorker (options = {}) {
   const runner = typeof options.runner === 'function' ? options.runner : defaultRunner
-  const command = typeof options.command === 'string' && options.command ? options.command : 'claude'
+  // NO bare-'claude' fallback: an unresolvable CLI is a REFUSAL, not a guess.
+  const command = (typeof options.command === 'string' && options.command) ? options.command : null
+  const commandError = command ? null : (options.commandError || 'the Claude Code CLI path was not provided or could not be resolved')
   const testRunner = typeof options.testRunner === 'function' ? options.testRunner : defaultTestRunner
   const clock = typeof options.clock === 'function' ? options.clock : () => Date.now()
+  const parentEnv = options.parentEnv || process.env
 
   /**
    * @param {'AgentBridge'} capabilityId
@@ -103,6 +215,9 @@ function createAgentBridgeWorker (options = {}) {
 
     const { workOrder, workspace, cloneDir, branch = null } = input || {}
     if (!workspace || typeof workspace.containmentCheck !== 'function') return fail({ branch, filesChanged: [], exit: null, risks: ['no_workspace'], warnings: ['missing workspace provider'] }, 'refuse: no workspace provider')
+
+    // FAIL CLOSED on an unresolvable CLI — before the clone is touched, before any spawn.
+    if (!command) return fail({ branch, filesChanged: [], exit: null, risks: ['cli_not_resolved'], warnings: [commandError] }, `refuse: ${commandError}`)
 
     // Cap 8 fail-closed: validate the Work Order first.
     const v = validateWorkOrder(workOrder)
@@ -121,10 +236,14 @@ function createAgentBridgeWorker (options = {}) {
     if (permissionMode === 'bypassPermissions') return fail({ branch, filesChanged: [], exit: null, risks: ['bypass_forbidden'], warnings: ['permission mode bypassPermissions is forbidden'] }, 'refuse: bypassPermissions is forbidden')
 
     const args = buildArgs(workOrder, safeClone, permissionMode)
+    // The child's environment is BUILT from the allowlist — never inherited. This is what
+    // keeps ANTHROPIC_API_KEY / HUB_TOKEN / GITHUB_READ_TOKEN / OPENAI_API_KEY out of the
+    // agent's reach.
+    const childEnv = buildChildEnv(parentEnv)
     const started = clock()
     let run
     try {
-      run = await runner(command, args, { cwd: safeClone, timeoutMs, stdio: ['ignore', 'pipe', 'pipe'] })
+      run = await runner(command, args, { cwd: safeClone, timeoutMs, env: childEnv, stdio: ['ignore', 'pipe', 'pipe'] })
     } catch (e) {
       return fail({ branch, filesChanged: [], exit: null, risks: ['spawn_failed'], warnings: [(e && e.message) || String(e)] }, (e && e.message) || String(e), 0, clock() - started)
     }
@@ -154,7 +273,7 @@ function createAgentBridgeWorker (options = {}) {
     // Cap 1: the approved test is run by US, not the agent.
     let testResults = null
     if (typeof workOrder.allowedTestCommand === 'string' && workOrder.allowedTestCommand.trim() !== '') {
-      try { testResults = await testRunner(workOrder.allowedTestCommand, safeClone, timeoutMs) } catch (e) { testResults = { ok: false, exit: null, output: (e && e.message) || String(e) } }
+      try { testResults = await testRunner(workOrder.allowedTestCommand, safeClone, timeoutMs, childEnv) } catch (e) { testResults = { ok: false, exit: null, output: (e && e.message) || String(e) } }
       if (testResults && testResults.ok === false) { risks.push('tests_failed'); warnings.push('approved test command did not pass') }
     }
 
@@ -181,7 +300,21 @@ function createAgentBridgeWorker (options = {}) {
   }
 
   function health () { return { availability: 'up', latencyMs: 0 } }
-  return { invoke, health, buildArgs, buildAllowedTools }
+  return { invoke, health, buildArgs, buildAllowedTools, command, buildChildEnv: () => buildChildEnv(parentEnv) }
 }
 
-module.exports = { createAgentBridgeWorker, defaultRunner, defaultTestRunner, buildAllowedTools, SUPPORTED, NO_RELAY, MAX_OUTPUT_BYTES }
+module.exports = {
+  createAgentBridgeWorker,
+  defaultRunner,
+  defaultTestRunner,
+  buildAllowedTools,
+  resolveAgentCliCommand,
+  buildChildEnv,
+  claudeCandidates,
+  CHILD_ENV_ALLOWLIST,
+  SECRET_SHAPED,
+  CLI_PATH_ENV,
+  SUPPORTED,
+  NO_RELAY,
+  MAX_OUTPUT_BYTES
+}
