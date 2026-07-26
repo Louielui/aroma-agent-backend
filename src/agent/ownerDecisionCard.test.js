@@ -233,7 +233,7 @@ test('the visible face follows the Owner-specified structure, in plain Chinese',
   assert.ok(v.card.sections[1].body.includes('真實程式庫不會被改動'))
   assert.ok(v.card.sections[3].body.includes('你的真實程式庫不受影響'))
   assert.equal(v.card.sections[4].body, '不會提交、不會上傳、不會合併、不會部署。')
-  assert.equal(v.card.sections[5].body, '最長 2 分鐘 · 最多 US$0.5')
+  assert.equal(v.card.sections[5].body, '最長 2 分鐘 · 最多 US$0.50', 'money reads as money')
 
   // the front face carries NO machine noise: no 64-char hash, no English constants, no ids
   const face = [v.card.heading].concat(v.card.sections.map((s) => s.title + '\n' + s.body)).join('\n')
@@ -276,13 +276,15 @@ test('the result view reports what the runner returned, and nothing more', () =>
   const v = buildAgentResultView({
     approvalId: wo.approvalId,
     workOrder: wo,
-    result: { ok: true, filesChanged: [CANARY], diff: '-line 1.\n+line 2.', testPassed: null, costUsd: 0.02 }
+    result: { ok: true, cost: 0.02, latencyMs: 7500, output: { filesChanged: [CANARY], diffSummary: '-line 1.\n+line 2.', testResults: null, exit: 0, risks: [], warnings: [], branch: 'agent/appr_test01' } }
   })
   assert.equal(v.status, 'done')
   assert.ok(v.headline.includes('丟棄式副本'))
   assert.equal(v.scope.inScope, true)
   const txt = v.lines.join('\n')
   assert.ok(txt.includes('+line 2.'), 'the diff is shown')
+  assert.ok(txt.includes('US$0.02'), 'the cost is shown as money')
+  assert.ok(txt.includes('7.5 秒'), 'the real duration is shown')
   assert.ok(txt.includes('有守住範圍'))
   assert.ok(txt.includes('（這張工作單沒有測試指令）'))
   assert.ok(txt.includes('完全沒有被改動'), 'the real repo is stated untouched')
@@ -290,7 +292,7 @@ test('the result view reports what the runner returned, and nothing more', () =>
 
 test('the result view flags an OUT-OF-SCOPE run instead of reporting success', () => {
   const wo = sealReal().workOrder
-  const v = buildAgentResultView({ workOrder: wo, result: { ok: true, filesChanged: [CANARY, 'src/app.js'] } })
+  const v = buildAgentResultView({ workOrder: wo, result: { ok: true, output: { filesChanged: [CANARY, 'src/app.js'], risks: [], warnings: [] } } })
   assert.equal(v.scope.inScope, false)
   assert.deepEqual(v.scope.outside, ['src/app.js'])
   assert.ok(v.lines.join('\n').includes('越界'))
@@ -303,16 +305,16 @@ test('the result view never invents evidence it was not given', () => {
   assert.equal(pending.status, 'pending')
   assert.ok(pending.headline.includes('仍未有結果'))
 
-  const bare = buildAgentResultView({ workOrder: wo, result: { ok: true } })
+  const bare = buildAgentResultView({ workOrder: wo, result: { ok: true, output: {} } })
   const txt = bare.lines.join('\n')
   assert.ok(txt.includes('執行器沒有提供這項資料'), 'missing evidence is stated as missing')
   assert.ok(!txt.includes('有守住範圍'), 'no scope claim without filesChanged')
 
-  const refused = buildAgentResultView({ workOrder: wo, result: { refused: true, reason: 'hash_mismatch' } })
+  const refused = buildAgentResultView({ workOrder: wo, result: { ok: false, error: 'refuse: hash_mismatch', output: { risks: [], warnings: [] } } })
   assert.equal(refused.status, 'refused')
   assert.ok(refused.lines.join('\n').includes('hash_mismatch'))
 
-  const timedOut = buildAgentResultView({ workOrder: wo, result: { ok: false, timedOut: true } })
+  const timedOut = buildAgentResultView({ workOrder: wo, result: { ok: false, output: { risks: ['timeout'], warnings: ['agent killed after 120s'] } } })
   assert.equal(timedOut.status, 'timeout')
   assert.ok(timedOut.headline.includes('超時'))
 })

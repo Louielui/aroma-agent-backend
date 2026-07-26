@@ -66,13 +66,19 @@ function buildApprovalView (workOrder) {
   const beforeLabel = `現時內容（讀自真實檔案${canonical.currentExcerptTruncated ? ',已截斷,下面還有' : ''}）`
   const afterLabel = '香香打算改成（這是香香的打算,不是已完成的結果 —— 它仍未執行,實際結果可能不同）'
   const before = canonical.currentExcerpt == null ? NOT_PROVIDED : canonical.currentExcerpt
-  const after = canonical.intendedChange == null ? NOT_PROVIDED : canonical.intendedChange
+  const after = canonical.intendedChange // may be null — see below
+  // If 香香 stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
+  // promise box reads as a broken form and invites the Owner to fill it in himself, which
+  // is backwards: the intent is hers to state, not his to supply.
+  const hasIntent = typeof after === 'string' && after.trim() !== ''
 
   const worstCase = '任務失敗或超時,測試副本會被丟棄。你的真實程式庫不受影響。'
 
   const willNotHappen = '不會提交、不會上傳、不會合併、不會部署。'
 
-  const caps = `最長 ${humanDuration(canonical.timeoutSec)} · 最多 US$${canonical.costCapUsd == null ? NOT_PROVIDED : canonical.costCapUsd}`
+  // Money reads as money: 0.5 -> US$0.50, never US$0.5.
+  const money = (n) => (n == null ? NOT_PROVIDED : `US$${Number(n).toFixed(2)}`)
+  const caps = `最長 ${humanDuration(canonical.timeoutSec)} · 最多 ${money(canonical.costCapUsd)}`
 
   // ── the collapsed 技術細節 — every machine-shaped value, still inside the hash ──
   const technical = {
@@ -95,7 +101,7 @@ function buildApprovalView (workOrder) {
     `可改檔案          : ${technical.allowedFiles.join(', ') || NOT_PROVIDED}`,
     `測試指令          : ${test == null || test === '' ? '（無）' : test}`,
     `禁止動作          : ${technical.forbiddenActions.join(', ') || NOT_PROVIDED}`,
-    `上限(原始值)      : ${technical.timeoutSec}s / US$${technical.costCapUsd}`,
+    `上限(原始值)      : ${technical.timeoutSec}s / ${money(technical.costCapUsd)}`,
     `工作單有效時間    : ${humanDuration(technical.approvalTtlSec)}（逾時自動失效,需重新產生）`,
     `現時內容是否截斷  : ${technical.currentExcerptTruncated ? '是' : '否'}`,
     // The no-amend rule. It was on v1's front face; it is a real guarantee but it is not
@@ -109,7 +115,9 @@ function buildApprovalView (workOrder) {
     sections: [
       { title: '要修改的內容', body: whatChanges },
       { title: '影響範圍', body: scope.join('\n') },
-      { title: '現時內容 / 打算改成', body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` },
+      hasIntent
+        ? { title: '現時內容 / 打算改成', body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
+        : { title: '現時內容', body: `${beforeLabel}：\n${indent(before)}` },
       { title: '最壞情況', body: worstCase },
       { title: '不會發生', body: willNotHappen },
       { title: '上限', body: caps }
@@ -144,6 +152,7 @@ function buildApprovalView (workOrder) {
     currentExcerpt: canonical.currentExcerpt,
     currentExcerptTruncated: canonical.currentExcerptTruncated,
     intendedChange: canonical.intendedChange,
+    hasIntent,
     approvalTtlSec: canonical.approvalTtlSec,
     // kept for continuity with v1 callers; both are now derived from the card above
     whatWillHappen: [scope.join('\n'), willNotHappen, caps].join('\n'),

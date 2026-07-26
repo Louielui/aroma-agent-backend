@@ -61,6 +61,7 @@ function createOwnerApprovalRouter (deps = {}) {
   const confirmService = deps.confirmService
   const proposeWorkOrder = deps.proposeWorkOrder
   const buildApprovalView = deps.buildApprovalView
+  const phaseLabel = deps.phaseLabel || (() => null)
   const buildAgentResultView = deps.buildAgentResultView || (() => ({ status: 'pending', headline: '', sections: [], lines: [] }))
   const sealedHashOf = deps.sealedHashOf
   const getProposal = typeof deps.getProposal === 'function' ? deps.getProposal : () => null
@@ -155,14 +156,32 @@ function createOwnerApprovalRouter (deps = {}) {
 
     const approvalId = req.params.approvalId
     const got = store.getResult(approvalId)
-    if (!got.ok) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
+    const phases = typeof store.getPhases === 'function' ? store.getPhases(approvalId) : []
     const sealedRec = store.loadSealed(approvalId)
-    const view = buildAgentResultView({
+    const workOrder = sealedRec.ok ? sealedRec.record.workOrder : null
+
+    // A hand-off that has started but not finished is REPORTED, not hidden behind a 404.
+    // The old bare 404 is exactly why an approved run looked like nothing happened: the
+    // page asked once, milliseconds after approving, and was told there was nothing.
+    const running = !got.ok && phases.length > 0
+    if (!got.ok && !running) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
+
+    const view = buildAgentResultView({ approvalId, workOrder, result: got.ok ? got.record.result : null, running })
+    const startedAt = phases.length ? phases[0].at : null
+    return res.status(200).json({
       approvalId,
-      workOrder: sealedRec.ok ? sealedRec.record.workOrder : null,
-      result: got.record.result
+      status: view.status,
+      headline: view.headline,
+      sections: view.sections,
+      lines: view.lines,
+      // Progress: fixed phase NAMES + their labels + timestamps. Nothing else crosses.
+      phases: phases.map((p) => ({ phase: p.phase, label: phaseLabel(p.phase), at: p.at })),
+      currentPhase: phases.length ? phases[phases.length - 1].phase : null,
+      startedAt,
+      elapsedMs: startedAt == null ? null : (Date.now() - startedAt),
+      capSec: workOrder && Number.isFinite(workOrder.timeoutSec) ? workOrder.timeoutSec : null,
+      finished: got.ok
     })
-    return res.status(200).json({ approvalId, status: view.status, headline: view.headline, sections: view.sections, lines: view.lines })
   })
 
   // ── APPROVE (four fields only) ────────────────────────────────────────────

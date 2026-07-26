@@ -25,6 +25,7 @@
  */
 
 const crypto = require('node:crypto')
+const { isPhase } = require('./agentResultView') // the closed progress vocabulary
 
 const APPROVAL_TTL_MS = 10 * 60 * 1000 // sealed order + its nonce, together
 const SESSION_TTL_MS = 30 * 60 * 1000
@@ -106,6 +107,21 @@ function createOwnerApprovalStore (options = {}) {
   // read must not be quietly replaced. Recording a result is NOT an authorization and
   // grants nothing — adopting a result will be its own gate when 香香 can touch the real
   // repo. Results outlive the approval TTL (an expired card's result is still evidence).
+  // Allowlisted progress phases, so the Owner is never left staring at a card that looks
+  // like nothing happened. A phase is a fixed enum name plus a timestamp — never a path,
+  // never file content, never agent output. Appended in order; the run's start time is
+  // the first entry, which is what the elapsed-vs-cap countdown is measured from.
+  const phases = new Map() // approvalId -> [{ phase, at }]
+  function recordPhase (approvalId, phase) {
+    if (typeof approvalId !== 'string' || !approvalId) return { ok: false, reason: 'invalid_approval_id' }
+    if (!isPhase(phase)) return { ok: false, reason: 'unknown_phase' } // closed vocabulary
+    const list = phases.get(approvalId) || []
+    list.push({ phase, at: now() })
+    phases.set(approvalId, list)
+    return { ok: true }
+  }
+  function getPhases (approvalId) { return (phases.get(approvalId) || []).slice() }
+
   const results = new Map() // approvalId -> { result, recordedAt }
   function recordResult (approvalId, result) {
     if (typeof approvalId !== 'string' || !approvalId) return { ok: false, reason: 'invalid_approval_id' }
@@ -122,7 +138,7 @@ function createOwnerApprovalStore (options = {}) {
 
   return {
     createSession, validSession, seal, loadSealed, issueNonce, consumeNonce,
-    recordResult, getResult, stats,
+    recordResult, getResult, recordPhase, getPhases, stats,
     APPROVAL_TTL_MS: approvalTtlMs, SESSION_TTL_MS: sessionTtlMs
   }
 }

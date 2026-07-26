@@ -21,6 +21,27 @@ const { canonicalWorkOrder } = require('./workOrder')
 
 const UNKNOWN = '（執行器沒有提供這項資料）'
 
+// ── THE PROGRESS VOCABULARY (closed allowlist) ───────────────────────────────
+// The Owner should see what is happening, but the agent's own output is NEVER the
+// source: the CLI is invoked with --output-format json, so there is one blob at the end
+// and no intermediate events to filter anyway. These phases are what the SERVER itself
+// knows from its own control flow — no stdout parsing, no paths, no file contents, no
+// prompt, no credential can ride along, because a phase is one of exactly these strings
+// and nothing else is ever emitted.
+const PHASES = Object.freeze({
+  accepted: '已批准，正在排隊',
+  preparing: '正在準備丟棄式副本',
+  running: '香香正在處理',
+  verifying: '正在核對改動範圍',
+  done: '完成',
+  failed: '未成功'
+})
+const PHASE_NAMES = Object.freeze(Object.keys(PHASES))
+/** True only for a value that is one of the fixed phase names. */
+function isPhase (p) { return typeof p === 'string' && PHASE_NAMES.includes(p) }
+/** Render a phase for the Owner. Unknown input yields null, never a passthrough. */
+function phaseLabel (p) { return isPhase(p) ? PHASES[p] : null }
+
 /** Did the run stay inside the one file it was allowed to touch? */
 function scopeVerdict (allowedFiles, filesChanged) {
   if (!Array.isArray(filesChanged)) return { known: false, inScope: null, outside: [] }
@@ -39,18 +60,48 @@ function scopeVerdict (allowedFiles, filesChanged) {
  */
 function buildAgentResultView (input = {}) {
   const canonical = canonicalWorkOrder(input.workOrder || {})
-  const r = input.result || null
+  const raw = input.result || null
   const approvalId = input.approvalId || canonical.approvalId || null
 
-  // status is derived ONLY from what the runner reported — never assumed.
+  // NORMALIZE THE RUNNER'S SHAPE FIRST.
+  // The runner returns the capability-adapter envelope — { ok, output: { filesChanged,
+  // diffSummary, testResults, exit, risks, warnings, branch }, cost, latencyMs } — while
+  // this view was reading filesChanged / diff / costUsd off the TOP level. The names and
+  // the nesting were both wrong, so the first real canary reported "執行器沒有提供這項資料"
+  // for every field even though the runner had reported all of it. Read the real shape.
+  const r = raw == null
+    ? null
+    : (() => {
+        const out = raw.output || {}
+        const risks = Array.isArray(out.risks) ? out.risks : []
+        return {
+          ok: raw.ok === true,
+          refused: typeof raw.error === 'string' && /^refuse:/.test(raw.error),
+          timedOut: risks.includes('timeout'),
+          reason: raw.error || null,
+          filesChanged: Array.isArray(out.filesChanged) ? out.filesChanged : null,
+          diff: (typeof out.diffSummary === 'string' && out.diffSummary.trim() !== '') ? out.diffSummary : null,
+          exit: out.exit === undefined ? null : out.exit,
+          branch: out.branch === undefined ? null : out.branch,
+          risks,
+          warnings: Array.isArray(out.warnings) ? out.warnings : [],
+          testPassed: (out.testResults && typeof out.testResults.ok === 'boolean') ? out.testResults.ok : null,
+          costUsd: Number.isFinite(raw.cost) ? raw.cost : null,
+          durationMs: Number.isFinite(raw.latencyMs) ? raw.latencyMs : null
+        }
+      })()
+
+  // status is derived ONLY from what the runner reported — never assumed. `running` comes
+  // from the caller (a hand-off happened, no result yet), never invented here.
   let status
-  if (r == null) status = 'pending'
+  if (r == null) status = input.running === true ? 'running' : 'pending'
   else if (r.refused === true) status = 'refused'
   else if (r.timedOut === true) status = 'timeout'
   else if (r.ok === true) status = 'done'
   else status = 'failed'
 
   const headline = {
+    running: '香香正在丟棄式副本內處理中…',
     pending: '仍未有結果（這次批准未有執行，或執行器未回報）',
     refused: '執行器拒絕了這張工作單（沒有任何改動）',
     timeout: '超時中止 —— 測試副本已丟棄',
@@ -78,7 +129,13 @@ function buildAgentResultView (input = {}) {
     ? r.diff
     : ((r && typeof r.diffStat === 'string' && r.diffStat.trim() !== '') ? r.diffStat : UNKNOWN)
 
-  const cost = (r && typeof r.costUsd === 'number') ? `US$${r.costUsd}` : UNKNOWN
+  const money = (n) => `US$${Number(n).toFixed(2)}` // 0.5 reads as US$0.50, not US$0.5
+  const costParts = []
+  if (r && typeof r.costUsd === 'number') costParts.push(money(r.costUsd))
+  if (r && typeof r.durationMs === 'number') costParts.push(`${(r.durationMs / 1000).toFixed(1)} 秒`)
+  const cost = costParts.length
+    ? `${costParts.join(' · ')}（上限 ${money(canonical.costCapUsd)} / ${canonical.timeoutSec} 秒）`
+    : UNKNOWN
 
   const sections = [
     { title: '結果', body: headline },
@@ -92,6 +149,11 @@ function buildAgentResultView (input = {}) {
   if (status === 'refused' && r && r.reason) {
     sections.splice(1, 0, { title: '拒絕原因', body: String(r.reason) })
   }
+  // A failure the Owner can act on: say WHY, using the runner's own allowlisted warnings
+  // (enums and short messages the worker composed — never agent output, never a path).
+  if (status === 'failed' && r && r.warnings.length) {
+    sections.splice(1, 0, { title: '失敗原因', body: r.warnings.join('\n') })
+  }
 
   const lines = [`【執行結果 — ${approvalId == null ? '（無 approvalId）' : approvalId}】`, '']
   for (const s of sections) {
@@ -103,4 +165,4 @@ function buildAgentResultView (input = {}) {
   return { status, headline, sections, lines, scope, approvalId }
 }
 
-module.exports = { buildAgentResultView, scopeVerdict, UNKNOWN }
+module.exports = { buildAgentResultView, scopeVerdict, UNKNOWN, PHASES, PHASE_NAMES, isPhase, phaseLabel }

@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>香香</title>
+<style>/*INLINE_CSS*/</style>
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar" aria-label="對話列表">
+      <div class="side-top">
+        <button id="collapse" class="icon-btn" type="button" aria-label="收合側欄" title="收合側欄">☰</button>
+        <span class="brand">香香</span>
+      </div>
+      <button id="new-chat" class="new-chat" type="button">＋ 開新對話</button>
+      <nav id="convs" class="convs" aria-label="歷史對話"></nav>
+      <div class="side-foot">
+        <span class="dot" id="conn-dot" aria-hidden="true"></span>
+        <span id="conn-text">本機 · 127.0.0.1</span>
+      </div>
+    </aside>
+
+    <main id="main">
+      <header id="topbar">
+        <button id="expand" class="icon-btn hidden" type="button" aria-label="展開側欄" title="展開側欄">☰</button>
+        <h1 id="conv-title">新對話</h1>
+        <div id="modes" role="group" aria-label="模式">
+          <button type="button" data-mode="chat" class="active">聊天</button>
+          <button type="button" data-mode="email_draft">寫 Email</button>
+          <button type="button" data-mode="proposal">建立提案</button>
+        </div>
+      </header>
+
+      <div id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
+
+      <div id="composer">
+        <div class="composer-inner">
+          <textarea id="msg" rows="1" placeholder="同香香講嘢…（Enter 送出，Shift+Enter 換行）" aria-label="訊息"></textarea>
+          <button id="send" type="button" aria-label="送出">↑</button>
+        </div>
+        <p class="composer-note">本機示範 · 香香唔會自行執行任何嘢，所有動作都要你批准</p>
+      </div>
+    </main>
+  </div>
+<script>/*INLINE_JS*/</script>
+</body>
+</html>
