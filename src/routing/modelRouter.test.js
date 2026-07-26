@@ -90,21 +90,34 @@ test('reasoning effort is pinned to the cheapest setting by default (budget guar
   let body = null
   const a = new OpenAIAdapter({ model: 'gpt-5.6-terra', apiKey: 'k', post: async (u, b) => { body = b; return { data: { status: 'completed', output: [{ content: [{ type: 'output_text', text: CHAT }] }], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2 } } } } })
   await a.complete('x', { system: 'S', maxTokens: 2048 })
-  assert.deepEqual(body.reasoning, { effort: 'none' }, 'effort must be sent, not left to the medium default')
+  assert.deepEqual(body.reasoning, { effort: 'low' }, 'effort must be sent, not left to the medium default')
   assert.equal(body.max_output_tokens, 2048)
+})
+
+test('fix (c): NO sampling parameters are sent — reasoning models reject them with HTTP 400', async () => {
+  let body = null
+  const a = new OpenAIAdapter({ model: 'gpt-5.6-terra', apiKey: 'k', post: async (u, b) => { body = b; return { data: { status: 'completed', output: [{ content: [{ type: 'output_text', text: CHAT }] }], usage: {} } } } })
+  // the neutral adapter contract still ACCEPTS temperature (Claude uses it) — this
+  // adapter must simply not forward it, nor any other sampling knob.
+  await a.complete('x', { system: 'S', maxTokens: 2048, temperature: 0.3, topP: 0.9 })
+  for (const banned of ['temperature', 'top_p', 'topP', 'frequency_penalty', 'presence_penalty', 'top_k']) {
+    assert.equal(banned in body, false, `${banned} must NOT be sent to a reasoning model`)
+  }
+  // exactly the minimum documented set, nothing "just in case"
+  assert.deepEqual(Object.keys(body).sort(), ['input', 'instructions', 'max_output_tokens', 'model', 'reasoning', 'store'].sort())
 })
 
 test('reasoning effort is overridable per call and via OPENAI_REASONING_EFFORT; typos ignored', async () => {
   let body = null
   const mk = (o) => new OpenAIAdapter(Object.assign({ model: 'm', apiKey: 'k', post: async (u, b) => { body = b; return { data: { status: 'completed', output: [], usage: {} } } } }, o))
-  await mk({}).complete('x', { reasoningEffort: 'low' })
-  assert.deepEqual(body.reasoning, { effort: 'low' }, 'per-call override wins')
+  await mk({}).complete('x', { reasoningEffort: 'medium' })
+  assert.deepEqual(body.reasoning, { effort: 'medium' }, 'per-call override wins')
   await mk({ reasoningEffort: null }).complete('x', {})
   assert.equal(body.reasoning, undefined, 'explicit null omits the field (provider default)')
-  const viaEnv = createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k', OPENAI_REASONING_EFFORT: 'low' })
-  assert.equal(viaEnv._reasoningEffort, 'low')
+  const viaEnv = createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k', OPENAI_REASONING_EFFORT: 'medium' })
+  assert.equal(viaEnv._reasoningEffort, 'medium', 'env override lets the Owner change effort without a deploy')
   const typo = createOpenAIAdapterIfConfigured({ OPENAI_MODEL: 'm', OPENAI_API_KEY: 'k', OPENAI_REASONING_EFFORT: 'lowest' })
-  assert.equal(typo._reasoningEffort, 'none', 'an invalid value falls back — never forwarded as a 400')
+  assert.equal(typo._reasoningEffort, 'low', 'an invalid value falls back to the safe default — never forwarded as a 400')
 })
 
 test('reasoning tokens are surfaced from the documented usage path (provable budget burn)', async () => {
