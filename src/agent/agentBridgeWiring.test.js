@@ -15,7 +15,7 @@ const assert = require('node:assert/strict')
 const { createApp } = require('../app')
 const { createAgentRunner } = require('./agentRunner')
 const { createAgentBridgeWorker } = require('./agentBridgeWorker')
-const { validateWorkOrder } = require('./workOrder')
+const { validateWorkOrder, hashWorkOrder } = require('./workOrder')
 const { authorizeExecution } = require('./agentAuthorization')
 const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture')
 
@@ -122,10 +122,19 @@ test('ISOLATION (runtime): a chat turn with recall + read-context NEVER touches 
   } finally { delete process.env.DECISION_RECALL; delete process.env.READ_ACCESS; delete process.env.CONTEXT_DRIVE }
 })
 
-test('ISOLATION: no route invokes runner.run() — confirm remains the sole trigger and does not call it', () => {
+test('ISOLATION: the agent runner has EXACTLY ONE call site, inside the guarded confirm hand-off', () => {
+  // Step 4 deliberately introduced the hand-off. The guarantee is no longer "zero call
+  // sites" but "exactly one, gated": it must sit behind the explicit EXECUTE triple AND
+  // the authorization gate, and no other route file may reference the bridge at all.
   const appSrc = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8')
   const codeLines = appSrc.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
-  assert.equal(codeLines.filter((l) => /agentRunner\.run\(|\.run\(\{\s*workOrder/.test(l)).length, 0, 'no live call site for the agent runner')
+  const callSites = codeLines.filter((l) => /agentRunner\.run\(/.test(l))
+  assert.equal(callSites.length, 1, 'exactly one live call site')
+  // the gate variable must be computed from all three explicit fields + the auth gate
+  assert.ok(/agentExecuteRequested\s*=\s*\(b\.agentExecute === true\) && !!b\.workOrder && typeof b\.approvedWorkOrderHash === 'string'/.test(appSrc), 'EXECUTE requires all three fields')
+  assert.ok(/agentEligible\s*=\s*agentExecuteRequested && auth\.agentBridgeAuthorized && agentRunner !== null/.test(appSrc), 'hand-off also requires the authorization gate')
+  assert.ok(/if \(agentEligible\) \{/.test(appSrc), 'the call site is guarded by agentEligible')
+  // the demo / context / intake surfaces remain completely unaware of the bridge
   for (const f of ['src/routes/demoRouter.js', 'src/routes/contextRouter.js', 'src/routes/intakeRouter.js']) {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8')
     assert.ok(!/agentRunner|AgentBridge/.test(src), `${f} must not reference the agent bridge`)
@@ -140,7 +149,7 @@ test('CAP 5: a Work Order naming a forbidden file is rejected BEFORE anything ru
     worker: { invoke: async () => { workerCalls++; return { ok: true, output: {} } } }
   })
   for (const bad of ['.env', '.git/config', 'src/app.js', 'src/agent/audit.js', 'src/agent/agentAuthorization.js', 'src/store/store.js', '.aroma/x', '../escape']) {
-    const r = await runner.run({ workOrder: validWO({ allowedFiles: [bad] }), who: 'louie' })
+    const r = await runner.run({ workOrder: validWO({ allowedFiles: [bad] }), approvedHash: 'x', who: 'louie' })
     assert.equal(r.ok, false, `${bad} must be refused`)
     assert.equal(r.error, 'invalid_work_order')
     assert.equal(validateWorkOrder(validWO({ allowedFiles: [bad] })).ok, false)
@@ -167,9 +176,9 @@ test('CAP 7: an append-only audit record is written for BOTH success and failure
   const auditLog = { append: (e) => { written.push(e); return e } }
   const ws = { prepare: () => ({ dir: '/tmp/aroma-sandbox-agent-y', branch: 'agent/appr_canary1' }), containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/foo.js'], diffStat: () => ' src/foo.js | 1 +', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
   const okRunner = createAgentRunner({ workspace: ws, auditLog, worker: { invoke: async () => ({ ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/foo.js'], risks: [] } }) } })
-  await okRunner.run({ workOrder: validWO(), who: 'louie' })
+  await okRunner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
   const badRunner = createAgentRunner({ workspace: ws, auditLog, worker: { invoke: async () => { throw new Error('worker exploded') } } })
-  const bad = await badRunner.run({ workOrder: validWO(), who: 'louie' })
+  const bad = await badRunner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
   assert.equal(written.length, 2, 'both attempts audited')
   assert.equal(written[0].approvalId, 'appr_canary1')
   assert.ok(written[0].workOrderHash && written[0].workOrderHash.length === 64, 'work-order hash recorded')
@@ -184,7 +193,7 @@ test('CAP 3: a workspace that refuses (not under tmpdir / remote survives) stops
     auditLog: { append: (e) => written.push(e) },
     worker: { invoke: async () => { throw new Error('must not be reached') } }
   })
-  const r = await runner.run({ workOrder: validWO(), who: 'louie' })
+  const r = await runner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
   assert.equal(r.ok, false)
   assert.match(r.error, /workspace_refused/)
   assert.equal(written.length, 1, 'the refusal is audited, never silent')

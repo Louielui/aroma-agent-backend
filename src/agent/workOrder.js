@@ -108,17 +108,30 @@ function isFileAllowed (wo, relPath) {
 }
 
 /** Deterministic sha256 of the approved Work Order (for the audit record). */
-function hashWorkOrder (wo) {
-  const canon = JSON.stringify({
-    goal: wo && wo.goal,
+/**
+ * THE canonical form of a Work Order — the single serialization used BOTH for the
+ * approval display and for the hash. WYSIWYA depends on there being exactly one of
+ * these: if the Owner sees a field, it is inside the hash, and if it is inside the
+ * hash, the Owner saw it. Never build a second projection for display.
+ */
+function canonicalWorkOrder (wo) {
+  return {
+    goal: (wo && wo.goal) || null,
     allowedFiles: [...((wo && wo.allowedFiles) || [])].sort(),
     allowedTestCommand: (wo && wo.allowedTestCommand) != null ? wo.allowedTestCommand : null,
     forbiddenActions: [...((wo && wo.forbiddenActions) || [])].sort(),
-    timeoutSec: wo && wo.timeoutSec,
-    costCapUsd: wo && wo.costCapUsd,
-    approvalId: wo && wo.approvalId
-  })
-  return crypto.createHash('sha256').update(canon).digest('hex')
+    timeoutSec: (wo && wo.timeoutSec) != null ? wo.timeoutSec : null,
+    costCapUsd: (wo && wo.costCapUsd) != null ? wo.costCapUsd : null,
+    branch: (wo && wo.branch) != null ? wo.branch : null,
+    approvalId: (wo && wo.approvalId) || null
+  }
+}
+
+/** Deterministic sha256 over the canonical form (system-computed; never model-supplied). */
+function canonicalWorkOrderJson (wo) { return JSON.stringify(canonicalWorkOrder(wo)) }
+
+function hashWorkOrder (wo) {
+  return crypto.createHash('sha256').update(canonicalWorkOrderJson(wo)).digest('hex')
 }
 
 module.exports = {
@@ -129,5 +142,7 @@ module.exports = {
   isFileAllowed,
   isForbiddenFile,
   hashWorkOrder,
+  canonicalWorkOrder,
+  canonicalWorkOrderJson,
   normRel
 }
