@@ -24,22 +24,34 @@
     <main id="main">
       <header id="topbar">
         <button id="expand" class="icon-btn hidden" type="button" aria-label="展開側欄" title="展開側欄">☰</button>
-        <h1 id="conv-title">新對話</h1>
-        <div id="modes" role="group" aria-label="模式">
-          <button type="button" data-mode="chat" class="active">聊天</button>
-          <button type="button" data-mode="email_draft">寫 Email</button>
-          <button type="button" data-mode="proposal">建立提案</button>
-        </div>
+        <h1 id="conv-title">香香</h1>
       </header>
 
       <div id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
 
       <div id="composer">
-        <div class="composer-inner">
-          <textarea id="msg" rows="1" placeholder="同香香講嘢…（Enter 送出，Shift+Enter 換行）" aria-label="訊息"></textarea>
-          <button id="send" type="button" aria-label="送出">↑</button>
+        <div class="composer-col">
+          <div id="composer-box">
+            <textarea id="msg" rows="1" placeholder="同香香講嘢…" aria-label="訊息"></textarea>
+            <div class="composer-bar">
+              <div id="modes" role="group" aria-label="模式">
+                <button type="button" data-mode="chat" class="active">聊天</button>
+                <button type="button" data-mode="email_draft">寫 Email</button>
+                <button type="button" data-mode="proposal">建立提案</button>
+              </div>
+              <div class="bar-right">
+                <div id="picker-wrap">
+                  <button id="picker" type="button" aria-haspopup="listbox" aria-expanded="false">
+                    <span id="picker-label">香香（Claude）</span><span class="caret">▾</span>
+                  </button>
+                  <div id="picker-menu" class="hidden" role="listbox" aria-label="揀邊個香香"></div>
+                </div>
+                <button id="send" type="button" aria-label="送出">↑</button>
+              </div>
+            </div>
+          </div>
+          <p class="composer-note">本機示範 · 香香唔會自行執行任何嘢，所有動作都要你批准</p>
         </div>
-        <p class="composer-note">本機示範 · 香香唔會自行執行任何嘢，所有動作都要你批准</p>
       </div>
     </main>
   </div>

@@ -173,7 +173,17 @@ for (const [label, envelope] of [
     const im = label === 'ask' || label === 'draft_proposal' ? 'email_draft' : (label === 'proposal' ? 'proposal' : 'chat')
     const r = await req(makeApp({ processIntakeFn: p }), 'POST', '/api/v1/demo/intake', { message: 'hi', interactionMode: im })
     assert.equal(r.status, 200)
-    assert.deepEqual(r.json, envelope)
+    if (im === 'chat') {
+      // The chat lane additionally reports WHICH provider answered — the model picker
+      // needs it, because a fallback means the reply may not come from the chosen one.
+      // The engine envelope itself must still pass through untouched.
+      const { servedBy, fallbackUsed, ...rest } = r.json
+      assert.deepEqual(rest, envelope, 'the engine envelope is passed through unchanged')
+      assert.ok(servedBy === null || typeof servedBy === 'string')
+      assert.equal(typeof fallbackUsed, 'boolean')
+    } else {
+      assert.deepEqual(r.json, envelope, 'non-chat lanes stay byte-identical')
+    }
   })
 }
 

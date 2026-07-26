@@ -25,6 +25,23 @@
   var titleEl = document.getElementById('conv-title')
   var sidebar = document.getElementById('sidebar')
   var modeButtons = document.querySelectorAll('#modes button')
+  var picker = document.getElementById('picker')
+  var pickerLabel = document.getElementById('picker-label')
+  var pickerMenu = document.getElementById('picker-menu')
+
+  // THE PROVIDER PICK IS A HINT, NOT AUTHORITY. It is sent as one field; the server
+  // validates it against its own closed allowlist and ignores anything else. The page
+  // cannot select a lane, a model id, a context source or anything executable.
+  //
+  // The context asymmetry is stated ON THE OPTION, not hidden in a tooltip: by the
+  // Owner's own v0 boundary the GPT prompt is captured BEFORE the read-context and
+  // decision-recall blocks are prepended, so GPT is structurally blind to them. Unsaid,
+  // a thinner GPT answer reads as "worse model" when it is "blinder by design".
+  var PROVIDERS = [
+    { id: 'claude', name: '香香（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
+    { id: 'openai', name: '香香（GPT）', note: '睇唔到 Drive／Gmail／日曆／GitHub 同過往決定 —— 佢只收到你今次講嘅嘢', warn: true }
+  ]
+  var provider = 'claude'
 
   var pending = false
   var convs = []      // [{ id, title, mode, history: [{role,text}], thread: HTMLElement }]
@@ -144,11 +161,15 @@
     if (focus !== false) msg.focus()
     return c
   }
+  // An EMPTY conversation is not history yet. Listing it produced the duplicate the Owner
+  // saw — 「新對話」 as the header and 「新對話」 again as a list entry, naming the same
+  // nothing twice. A conversation joins the list once it actually holds a turn.
+  function isListed (c) { return c.history.length > 0 }
   function selectConversation (c) {
     active = c
     clear(log)
     log.appendChild(c.thread)
-    titleEl.textContent = c.title
+    titleEl.textContent = isListed(c) ? c.title : '香香'
     setMode(c.mode, false)
     renderConvList()
     scroll()
@@ -156,6 +177,7 @@
   function renderConvList () {
     clear(convsEl)
     for (var i = 0; i < convs.length; i++) {
+      if (!isListed(convs[i])) continue
       (function (c) {
         var b = el('button', 'conv' + (c === active ? ' active' : ''), c.title)
         b.setAttribute('type', 'button')
@@ -230,7 +252,14 @@
   }
 
   /* ── send ─────────────────────────────────────────────────────────────── */
-  function setPending (p) { pending = p; send.disabled = p; msg.disabled = p }
+  function setPending (p) {
+    pending = p
+    msg.disabled = p
+    // Send stays disabled while busy AND while the box is empty, so the button never
+    // invites a click that would do nothing.
+    send.disabled = p || msg.value.trim() === ''
+    if (picker) picker.disabled = p
+  }
 
   function submit () {
     if (pending) return
@@ -254,13 +283,14 @@
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ message: text, interactionMode: conv.mode, history: conv.history })
+      body: JSON.stringify({ message: text, interactionMode: conv.mode, history: conv.history, providerHint: provider })
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
-      render(o.status, o.body, conv)
+      labelServedBy(render(o.status, o.body, conv), o.body)
       if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
+      renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       addError('連線失敗，可以重新送出。')
@@ -269,21 +299,30 @@
 
   function render (status, res, conv) {
     res = res || {}
-    if (status === 403) { addError('示範功能未啟用（demo_disabled）。'); return }
-    if (status === 400) { addError('輸入無效，請檢查訊息或模式。'); return }
+    if (status === 403) return addError('示範功能未啟用（demo_disabled）。')
+    if (status === 400) return addError('輸入無效，請檢查訊息或模式。')
     if (status >= 500 || (res.error && !res.blocked)) {
-      addError((res.error && res.error.message ? res.error.message : '系統暫時無法處理這個請求。') + '（可重新送出）')
-      return
+      return addError((res.error && res.error.message ? res.error.message : '系統暫時無法處理這個請求。') + '（可重新送出）')
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '')
       addMeta(b.body, '未送外部模型，未執行任何動作')
-      return
+      return b
     }
-    if (res.stage === 'SHADOW_ONLY') { renderDraft(res); return }
-    if (res.demoOutcome === 'execution_proposal' || res.demoOutcome === 'clarification') { renderProposal(res, conv); return }
-    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') { addBot(res.reply || ''); return }
-    addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'))
+    if (res.stage === 'SHADOW_ONLY') return renderDraft(res)
+    if (res.demoOutcome === 'execution_proposal' || res.demoOutcome === 'clarification') return renderProposal(res, conv)
+    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '')
+    return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'))
+  }
+
+  // A pick is not a promise: if the chosen provider fails, the orchestrator falls back to
+  // Claude, so the reply may not come from whoever the Owner selected. The label reads the
+  // SERVER's report of what actually answered — never the local pick.
+  function labelServedBy (t, res) {
+    if (!t || !t.body || !res || typeof res.servedBy !== 'string') return
+    var name = res.servedBy === 'openai' ? '香香（GPT）' : '香香（Claude）'
+    t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''),
+      res.fallbackUsed ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）') : ('由 ' + name + ' 回答')))
   }
 
   function renderDraft (res) {
@@ -524,12 +563,50 @@
     card.appendChild(box)
   }
 
+  /* ── provider picker ──────────────────────────────────────────────────── */
+  function currentProvider () {
+    for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
+    return PROVIDERS[0]
+  }
+  function renderPicker () {
+    pickerLabel.textContent = currentProvider().name
+    clear(pickerMenu)
+    for (var i = 0; i < PROVIDERS.length; i++) {
+      (function (pv) {
+        var b = el('button', 'opt' + (pv.id === provider ? ' active' : ''))
+        b.setAttribute('type', 'button')
+        b.setAttribute('role', 'option')
+        b.setAttribute('aria-selected', pv.id === provider ? 'true' : 'false')
+        b.appendChild(el('div', 'opt-name', pv.name + (pv.id === provider ? ' ✓' : '')))
+        b.appendChild(el('div', 'opt-note' + (pv.warn ? ' warn' : ''), pv.note))
+        b.addEventListener('click', function () {
+          provider = pv.id
+          closePicker()
+          renderPicker()
+        })
+        pickerMenu.appendChild(b)
+      })(PROVIDERS[i])
+    }
+  }
+  function openPicker () { pickerMenu.className = ''; picker.setAttribute('aria-expanded', 'true') }
+  function closePicker () { pickerMenu.className = 'hidden'; picker.setAttribute('aria-expanded', 'false') }
+  picker.addEventListener('click', function (e) {
+    e.stopPropagation()
+    if (pickerMenu.className === 'hidden') openPicker(); else closePicker()
+  })
+  document.addEventListener('click', function () { closePicker() })
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePicker() })
+  renderPicker()
+
   /* ── composer + sidebar chrome ────────────────────────────────────────── */
   function autoGrow () {
     msg.style.height = 'auto'
     msg.style.height = Math.min(msg.scrollHeight, 200) + 'px'
   }
-  msg.addEventListener('input', autoGrow)
+  msg.addEventListener('input', function () {
+    autoGrow()
+    send.disabled = pending || msg.value.trim() === ''   // disabled until real input
+  })
   send.addEventListener('click', submit)
   msg.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
@@ -544,6 +621,8 @@
     document.getElementById('expand').className = 'icon-btn hidden'
   })
 
+  send.disabled = true
+  autoGrow()
   newConversation(false)
   addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢就撳上面「建立提案」，我會出一張工作單畀你過目，**你批准咗我先會做**。')
 })()

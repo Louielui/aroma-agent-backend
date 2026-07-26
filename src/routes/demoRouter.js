@@ -29,6 +29,7 @@ const { processIntake } = require('../intake/intakeService')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
+const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -39,14 +40,20 @@ function demoGuard (req, res, next) {
 }
 
 // Map a whitelisted interactionMode to the EXACT engine opts (locked).
-function optsForMode (interactionMode, { requestId, contextCard, promoteToProposal }) {
+//
+// `providerHint` is the Owner's pick from the composer. It is VALIDATED HERE against the
+// router's closed allowlist before it can travel any further, and it is attached to the
+// CHAT opts only — the email_draft and proposal shapes below are literally unable to
+// carry it, so no hint can influence a lane that is not chat. An unrecognised value
+// becomes null and the engine falls back to its flag-driven default.
+function optsForMode (interactionMode, { requestId, contextCard, promoteToProposal, providerHint }) {
   if (interactionMode === 'email_draft') {
     // U1 early-return path: SHADOW_ONLY. No demo, no promoteToProposal.
     return { requestId, u1DraftShadow: true, contextCard }
   }
   if (interactionMode === 'chat') {
     // Keep demo:true → persona + ACTION_HONESTY_GUARD + sanitized contextCard.
-    return { requestId, interactionMode: 'chat', demo: true, contextCard }
+    return { requestId, interactionMode: 'chat', demo: true, contextCard, providerHint: normalizeProviderHint(providerHint) }
   }
   // proposal — proposal-only via the existing demo path + injected domain seam.
   return { requestId, interactionMode: 'proposal', demo: true, contextCard, promoteToProposal }
@@ -95,20 +102,36 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
       }
 
-      const { message, history, contextCard, interactionMode } = req.body
+      const { message, history, contextCard, interactionMode, providerHint } = req.body
 
       try {
         const adapter = getAdapterFn()
         const opts = optsForMode(interactionMode, {
           requestId: correlationId,
           contextCard,
-          promoteToProposal: req.app.locals && req.app.locals.promoteToProposal
+          promoteToProposal: req.app.locals && req.app.locals.promoteToProposal,
+          providerHint
         })
         opts.telemetry = telemetry
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
         const result = await processIntakeFn(message, adapter, history || [], opts)
         emit('success', 200, null)
-        return res.status(200).json(result)
+        // WHO ACTUALLY ANSWERED. The Owner can pick a provider, but a failed attempt
+        // falls back, so the pick is not a promise. `servedBy` is read from the
+        // pipeline's own telemetry — the provider that really produced this reply — and
+        // is a short enum only ('claude' | 'openai'), never a model id, never a body.
+        //
+        // CHAT LANE ONLY. It is the only lane whose provider can vary and the only one
+        // with a picker; email_draft and proposal keep a byte-identical passthrough
+        // envelope, so nothing downstream of them sees a new field.
+        const isChat = interactionMode === 'chat'
+        const answered = (isChat && result && typeof result === 'object' && !Array.isArray(result))
+          ? Object.assign({}, result, {
+              servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null,
+              fallbackUsed: telemetry.fallbackUsed === true
+            })
+          : result
+        return res.status(200).json(answered)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped
