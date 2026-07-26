@@ -49,7 +49,12 @@ test('fence policy: bare / json / JSON / no-lang accepted; other lang + malforme
   accept('```json\n{"mode":"chat","reply":"hi"}\n```\n   ')                   // trailing whitespace after close
   reject('```python\n{"mode":"chat"}\n```', REJECT_REASONS.FENCE_MALFORMED)   // other language
   reject('```json\n{"mode":"chat"}\n```\ntrailing prose', REJECT_REASONS.FENCE_MALFORMED) // prose after close
-  reject('```json\n{"a":1}\n```\n```\n{"b":2}\n```', REJECT_REASONS.FENCE_MALFORMED)       // multiple fences
+  // Multiple sequential fences: STILL REJECTED, but now via the payload gate rather than
+  // the wrapper gate. The outermost-fence rule (open at the start, close at the LAST
+  // fence) exists so a ``` INSIDE the payload — which happens whenever the reply
+  // discusses code — is content, not a rejection. A consequence is that this shape's
+  // inner text becomes `{"a":1}\n```\n```\n{"b":2}`, which JSON.parse rejects.
+  reject('```json\n{"a":1}\n```\n```\n{"b":2}\n```', REJECT_REASONS.INVALID_JSON)          // multiple fences
   reject('```json\n{"a":1}', REJECT_REASONS.FENCE_MALFORMED)                  // no closing fence
 })
 

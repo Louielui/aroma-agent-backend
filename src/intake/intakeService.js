@@ -230,6 +230,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   let distilled = null
   let routerFallbackReason = null
 
+  // ACCOUNTING: every provider call that actually RETURNED is recorded exactly once,
+  // BEFORE the envelope parse. A parse failure used to abort before the (post-parse)
+  // recording, so a paid turn could go unaccounted (observed: 251 + 312 Claude output
+  // tokens with zero rows). Idempotent by identity — the downstream outcome branches
+  // still call this, and it is a no-op the second time, so success cannot double-record.
+  // Shape unchanged; no content fields are added. Accounting never breaks a turn.
+  const recordedResults = new Set()
+  async function recordProviderUsage (result) {
+    if (!result || !result.usage || recordedResults.has(result)) return
+    recordedResults.add(result)
+    try {
+      logLLMCall({ model: result.model, latencyMs: result.latencyMs, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens, endpoint, blocked: false })
+      await recordLLMUsage({ model: result.model, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens, latencyMs: result.latencyMs, endpoint, requestId, blocked: false })
+    } catch (_) { /* accounting must never become a response failure */ }
+  }
+
   if (primaryProvider === OPENAI) {
     const gpt = (opts && opts.openaiAdapter) || createOpenAIAdapterIfConfigured(process.env)
     if (!gpt) {
@@ -239,20 +255,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       try {
         gptResult = await gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3 })
       } catch (err) {
-        routerFallbackReason = 'openai_provider_error' // content-free: no message, no body
+        // Content-free, but no longer blind: the adapter's allowlisted diagnostics
+        // (HTTP status + provider error type/code/param) are appended so a failure is
+        // explainable from the log. Never the body, prompt, output or any credential.
+        const d = (err && err.providerDiagnostics) || {}
+        const bits = [d.httpStatus != null ? `http=${d.httpStatus}` : null, d.errorType ? `type=${d.errorType}` : null, d.errorCode ? `code=${d.errorCode}` : null, d.errorParam ? `param=${d.errorParam}` : null].filter(Boolean)
+        routerFallbackReason = `openai_provider_error${bits.length ? ` (${bits.join(' ')})` : ''}`
       }
       if (gptResult) {
+        // Billable tokens exist the moment the provider returned — record BEFORE the
+        // parse, so a fallback turn accounts for BOTH providers separately.
+        await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text)
-          llmResult = gptResult // success → the existing accounting below records it
+          llmResult = gptResult
         } catch (err) {
           routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
-          // GPT produced billable tokens but an unusable envelope: record its usage
-          // NOW, because the accounting below will report the Claude attempt instead.
-          try {
-            logLLMCall({ model: gptResult.model, latencyMs: gptResult.latencyMs, inputTokens: gptResult.usage.inputTokens, outputTokens: gptResult.usage.outputTokens, totalTokens: gptResult.usage.totalTokens, endpoint, blocked: false })
-            await recordLLMUsage({ model: gptResult.model, inputTokens: gptResult.usage.inputTokens, outputTokens: gptResult.usage.outputTokens, totalTokens: gptResult.usage.totalTokens, latencyMs: gptResult.latencyMs, endpoint, requestId, blocked: false })
-          } catch (_) { /* accounting must never break the turn */ }
         }
       }
     }
@@ -273,6 +291,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // kept only on .cause (server-side classification), never surfaced to client.
       throw new IntakeUpstreamError({ correlationId: requestId, cause: err })
     }
+    // Same rule for the Claude attempt: recorded before the parse can throw.
+    await recordProviderUsage(llmResult)
   }
 
   // Parse the structured JSON response. DistillParseError (Slice A) propagates
@@ -306,8 +326,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const interactionMode = opts && opts.interactionMode
   if (interactionMode === 'chat' && distilled.mode === 'commit') {
     // chat mode never creates a proposal: intercept a commit → talk-only.
-    logLLMCall({ model: llmResult.model, latencyMs: llmResult.latencyMs, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false })
-    await recordLLMUsage({ model: llmResult.model, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false })
+    await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
       reply: '目前是聊天模式，未建立任何提案。若要建立提案，請切換到「建立提案」。',
@@ -317,8 +336,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (interactionMode === 'proposal' && distilled.mode !== 'commit') {
     // proposal mode + a non-executable intent: deterministic clarification.
     // Do NOT fabricate a Task or Proposal; do NOT persist or promote.
-    logLLMCall({ model: llmResult.model, latencyMs: llmResult.latencyMs, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false })
-    await recordLLMUsage({ model: llmResult.model, inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens, latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false })
+    await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     return {
       blocked: false, mode: distilled.mode, interactionMode: 'proposal',
       demoOutcome: 'clarification', clarificationReason: 'not_a_commit_intent',
@@ -331,16 +349,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //    is the first official-Proposal demo, not a batch system). 0 or >1 tasks →
   //    clarification; do NOT persist and do NOT promote. ──────────────────────
   if (demo && distilled.mode === 'commit' && (!Array.isArray(distilled.tasks) || distilled.tasks.length !== 1)) {
-    logLLMCall({
-      model: llmResult.model, latencyMs: llmResult.latencyMs,
-      inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens,
-      totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false
-    })
-    await recordLLMUsage({
-      model: llmResult.model, inputTokens: llmResult.usage.inputTokens,
-      outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens,
-      latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false
-    })
+    await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     const clarificationReason = (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task'
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
@@ -354,31 +363,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   // ── CHAT or ASK: talk only — do NOT persist any Decision/Task ─────────────
   if (distilled.mode !== 'commit') {
-    logLLMCall({
-      model: llmResult.model, latencyMs: llmResult.latencyMs,
-      inputTokens: llmResult.usage.inputTokens, outputTokens: llmResult.usage.outputTokens,
-      totalTokens: llmResult.usage.totalTokens, endpoint, blocked: false
-    })
-    await recordLLMUsage({
-      model: llmResult.model, inputTokens: llmResult.usage.inputTokens,
-      outputTokens: llmResult.usage.outputTokens, totalTokens: llmResult.usage.totalTokens,
-      latencyMs: llmResult.latencyMs, endpoint, requestId, blocked: false
-    })
+    await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
       reply: distilled.reply, judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 
   // ── STEP 3: LOG METRICS (local — condition 6) ─────────────────────────────
-  logLLMCall({
-    model: llmResult.model,
-    latencyMs: llmResult.latencyMs,
-    inputTokens: llmResult.usage.inputTokens,
-    outputTokens: llmResult.usage.outputTokens,
-    totalTokens: llmResult.usage.totalTokens,
-    endpoint,
-    blocked: false
-  })
+  // Idempotent: this turn's provider result was already recorded pre-parse.
+  await recordProviderUsage(llmResult)
 
   // ── STEP 4: PERSIST via Wall-E's hub endpoint ─────────────────────────────
   const persistPayload = {
@@ -395,16 +388,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const persisted = await persistIntake(persistPayload)
 
   // ── STEP 5: WRITE LLM USAGE via Wall-E's hub endpoint ────────────────────
-  await recordLLMUsage({
-    model: llmResult.model,
-    inputTokens: llmResult.usage.inputTokens,
-    outputTokens: llmResult.usage.outputTokens,
-    totalTokens: llmResult.usage.totalTokens,
-    latencyMs: llmResult.latencyMs,
-    endpoint,
-    requestId,
-    blocked: false
-  })
+  // Idempotent: recorded pre-parse; kept here so the ordering contract is explicit.
+  await recordProviderUsage(llmResult)
 
   // ── STEP 6: DISPATCH (real Worker Dispatcher) ─────────────────────────────
   const stored = persisted && persisted.ok ? persisted.data : null
