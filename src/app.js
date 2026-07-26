@@ -45,7 +45,7 @@ const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // se
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
 const { buildApprovalView } = require('./agent/workOrderView')
-const { buildAgentResultView } = require('./agent/agentResultView') // Layer 2 result view (read-only)
+const { buildAgentResultView, phaseLabel } = require('./agent/agentResultView') // Layer 2 result view (read-only)
 
 // Conversation → Proposal → Run bridge (COO). Proposing is inert; the ONLY path
 // from a Proposal to a Run is the structured confirm action below. See
@@ -542,7 +542,8 @@ function createApp (options = {}) {
     try {
       builtAgentRunner = createAgentRunner({
         repoRoot: path.resolve(__dirname, '..'),
-        artifactStore: opts.workerDeps && opts.workerDeps.artifactStore ? opts.workerDeps.artifactStore : undefined
+        artifactStore: opts.workerDeps && opts.workerDeps.artifactStore ? opts.workerDeps.artifactStore : undefined,
+        onPhase: (id, phase) => { try { ownerApprovalStore.recordPhase(id, phase) } catch (_) {} }
       })
     } catch (err) {
       // Fail-closed: a runner that cannot be assembled leaves the lane unauthorized.

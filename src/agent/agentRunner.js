@@ -60,6 +60,14 @@ function createAgentRunner (options = {}) {
   const workspace = options.workspace || createFeatureBranchWorkspace({ repoRoot })
   const auditLog = options.auditLog || (options.artifactStore ? createAuditLog({ artifactStore: options.artifactStore }) : null)
   const newId = typeof options.newId === 'function' ? options.newId : () => `appr_${crypto.randomUUID().slice(0, 8)}`
+  // Progress reporting is OPTIONAL and inert: it emits a fixed phase NAME from the closed
+  // vocabulary and nothing else — no path, no output, no file content — and a throwing or
+  // absent sink can never affect the run.
+  const onPhase = typeof options.onPhase === 'function' ? options.onPhase : null
+  const emitPhase = (approvalId, phase) => {
+    if (!onPhase) return
+    try { onPhase(approvalId, phase) } catch (_) {}
+  }
 
   /**
    * Run ONE already-approved Work Order. @returns the enriched worker result.
@@ -96,19 +104,24 @@ function createAgentRunner (options = {}) {
 
     let prepared
     try {
+      emitPhase(approvalId, 'preparing')
       prepared = workspace.prepare(approvalId) // isolated clone + agent branch + remotes removed
     } catch (e) {
       const result = fail(`workspace_refused: ${(e && e.message) || String(e)}`)
+      emitPhase(approvalId, 'failed')
       if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
       return result
     }
 
     let result
     try {
+      emitPhase(approvalId, 'running')
       result = await worker.invoke('AgentBridge', 1, { workOrder, workspace, cloneDir: prepared.dir, branch: prepared.branch })
+      emitPhase(approvalId, 'verifying')
     } catch (e) {
       result = fail(`worker_error: ${(e && e.message) || String(e)}`)
     }
+    emitPhase(approvalId, result && result.ok === true ? 'done' : 'failed')
 
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
     if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
