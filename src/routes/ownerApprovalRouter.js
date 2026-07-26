@@ -61,6 +61,7 @@ function createOwnerApprovalRouter (deps = {}) {
   const confirmService = deps.confirmService
   const proposeWorkOrder = deps.proposeWorkOrder
   const buildApprovalView = deps.buildApprovalView
+  const buildAgentResultView = deps.buildAgentResultView || (() => ({ status: 'pending', headline: '', sections: [], lines: [] }))
   const sealedHashOf = deps.sealedHashOf
   const getProposal = typeof deps.getProposal === 'function' ? deps.getProposal : () => null
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
@@ -99,9 +100,19 @@ function createOwnerApprovalRouter (deps = {}) {
     if (proposal.status !== 'pending') return refuse(res, 409, 'proposal_not_pending', null, 'owner_local')
 
     // 香香 PROPOSES; the SYSTEM validates and seals. Candidate content only.
+    // `intendedChange` is 香香's stated intent for the card's after-side; it is echoed
+    // verbatim, labelled as intent, and grants nothing. The TTL that will actually be
+    // enforced is passed in so the number the Owner reads on the card is the real one
+    // (and is therefore inside the hash).
     const produced = proposeWorkOrder({
-      proposal: { goal: b.goal, candidateFile: b.candidateFile, allowedTestCommand: b.allowedTestCommand },
-      conversation: Array.isArray(b.conversation) ? b.conversation : [String(b.conversation || '')]
+      proposal: {
+        goal: b.goal,
+        candidateFile: b.candidateFile,
+        allowedTestCommand: b.allowedTestCommand,
+        intendedChange: b.intendedChange
+      },
+      conversation: Array.isArray(b.conversation) ? b.conversation : [String(b.conversation || '')],
+      defaults: { approvalTtlSec: Math.floor(store.APPROVAL_TTL_MS / 1000) }
     })
     if (!produced.ok) {
       auditFn({ approvalId: null, outcome: 'refused', reason: 'work_order_rejected', entryPoint: 'owner_local' })
@@ -116,8 +127,12 @@ function createOwnerApprovalRouter (deps = {}) {
     auditFn({ approvalId: produced.workOrder.approvalId, outcome: 'sealed', reason: null, entryPoint: 'owner_local' })
 
     // The card gets the display + hash + nonce. Never HUB_TOKEN, never a secret.
+    // `card` / `technical` are the v2 Owner-facing projection; both come from
+    // buildApprovalView, i.e. from the canonical object the hash covers.
     return res.status(201).json({
       approvalId: produced.workOrder.approvalId,
+      card: view.card,
+      technicalLines: view.technicalLines,
       display: view.display,
       lines: view.lines,
       workOrderHash: view.hash,
@@ -125,6 +140,29 @@ function createOwnerApprovalRouter (deps = {}) {
       typedConfirmationRequired: TYPED_CONFIRMATION,
       expiresInSec: Math.floor(store.APPROVAL_TTL_MS / 1000)
     })
+  })
+
+  // ── LAYER 2: the result view (READ-ONLY) ──────────────────────────────────
+  // A GET that reports what the runner returned for an approval. It changes nothing,
+  // authorizes nothing, and consumes no nonce. Still loopback + same-origin bound so a
+  // foreign page cannot read what happened. 404 `no_result` while nothing has run — with
+  // AGENT_BRIDGE off that is the only answer this route can ever give.
+  router.get('/api/v1/owner/results/:approvalId', (req, res) => {
+    const peer = (req.socket && (req.socket.remoteAddress || '')) || ''
+    if (!LOOPBACK.includes(peer)) return res.status(403).json({ error: 'approval_refused', reason: 'not_loopback' })
+    const sfs = req.headers['sec-fetch-site']
+    if (sfs !== undefined && sfs !== 'same-origin') return res.status(403).json({ error: 'approval_refused', reason: 'bad_sec_fetch_site' })
+
+    const approvalId = req.params.approvalId
+    const got = store.getResult(approvalId)
+    if (!got.ok) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
+    const sealedRec = store.loadSealed(approvalId)
+    const view = buildAgentResultView({
+      approvalId,
+      workOrder: sealedRec.ok ? sealedRec.record.workOrder : null,
+      result: got.record.result
+    })
+    return res.status(200).json({ approvalId, status: view.status, headline: view.headline, sections: view.sections, lines: view.lines })
   })
 
   // ── APPROVE (four fields only) ────────────────────────────────────────────

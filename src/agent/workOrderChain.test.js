@@ -126,10 +126,16 @@ test('WYSIWYA: the displayed object IS the hashed object (same serialization)', 
 test('the display states the consequence in plain language (diff only, worst case, no amend)', () => {
   const { workOrder } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
   const v = buildApprovalView(workOrder)
-  assert.ok(v.display.whatWillHappen.includes('不會 commit'))
-  assert.ok(v.display.whatWillHappen.includes('已移除所有 remote'))
-  assert.ok(v.display.worstCase.includes('無法回到 main'))
-  assert.ok(v.display.worstCase.includes('重新建立一張新的工作單'), 'no-amend rule stated to the Owner')
+  // Owner Decision Card v2 says the same things in the Owner's own language. The English
+  // constants ("不會 commit", "remote") moved into the collapsed technical section; the
+  // visible face states the consequence as a decision, not as a field dump.
+  assert.ok(v.display.whatWillHappen.includes('不會提交、不會上傳、不會合併、不會部署。'))
+  assert.ok(v.display.whatWillHappen.includes('丟棄式副本'))
+  assert.ok(v.display.worstCase.includes('你的真實程式庫不受影響'))
+  const tech = v.technicalLines.join('\n')
+  assert.ok(tech.includes('已移除所有 remote'), 'the isolation mechanism is still disclosed')
+  assert.ok(tech.includes('無法回到 main'))
+  assert.ok(tech.includes('必須重新建立一張新的工作單'), 'no-amend rule still stated to the Owner')
   assert.ok(v.lines.join('\n').includes(v.hash))
 })
 

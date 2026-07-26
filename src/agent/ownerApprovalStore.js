@@ -100,9 +100,31 @@ function createOwnerApprovalStore (options = {}) {
     return { ok: true }
   }
 
-  function stats () { return { sealed: sealed.size, nonces: nonces.size, sessions: sessions.size } }
+  // ── Layer 2 results (READ-ONLY surface, write-once per approval) ───────────
+  // What the runner reported for an approval, so the Owner can be shown what actually
+  // happened. Write-once for the same reason a sealed order is: a result the Owner has
+  // read must not be quietly replaced. Recording a result is NOT an authorization and
+  // grants nothing — adopting a result will be its own gate when 香香 can touch the real
+  // repo. Results outlive the approval TTL (an expired card's result is still evidence).
+  const results = new Map() // approvalId -> { result, recordedAt }
+  function recordResult (approvalId, result) {
+    if (typeof approvalId !== 'string' || !approvalId) return { ok: false, reason: 'invalid_approval_id' }
+    if (results.has(approvalId)) return { ok: false, reason: 'already_recorded' }
+    results.set(approvalId, Object.freeze({ result: Object.freeze(result), recordedAt: now() }))
+    return { ok: true }
+  }
+  function getResult (approvalId) {
+    const rec = results.get(approvalId)
+    return rec ? { ok: true, record: rec } : { ok: false, reason: 'no_result' }
+  }
 
-  return { createSession, validSession, seal, loadSealed, issueNonce, consumeNonce, stats, APPROVAL_TTL_MS: approvalTtlMs, SESSION_TTL_MS: sessionTtlMs }
+  function stats () { return { sealed: sealed.size, nonces: nonces.size, sessions: sessions.size, results: results.size } }
+
+  return {
+    createSession, validSession, seal, loadSealed, issueNonce, consumeNonce,
+    recordResult, getResult, stats,
+    APPROVAL_TTL_MS: approvalTtlMs, SESSION_TTL_MS: sessionTtlMs
+  }
 }
 
 module.exports = { createOwnerApprovalStore, APPROVAL_TTL_MS, SESSION_TTL_MS }

@@ -45,6 +45,7 @@ const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // se
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
 const { buildApprovalView } = require('./agent/workOrderView')
+const { buildAgentResultView } = require('./agent/agentResultView') // Layer 2 result view (read-only)
 
 // Conversation → Proposal → Run bridge (COO). Proposing is inert; the ONLY path
 // from a Proposal to a Run is the structured confirm action below. See
@@ -645,7 +646,15 @@ function createApp (options = {}) {
 
   const scheduleWorker = createScheduleWorker({ runStore, proposalStore, workerDeps, authorizeExecution: authorize })
   const confirmService = createConfirmService({
-    proposalStore, authorize, agentRunner, scheduleWorker, owner: LOCAL_OWNER, auditFn: approvalAudit
+    proposalStore,
+    authorize,
+    agentRunner,
+    scheduleWorker,
+    owner: LOCAL_OWNER,
+    auditFn: approvalAudit,
+    // LAYER 2 sink — inert. Records what the runner reported so the Owner can be SHOWN the
+    // outcome; it authorizes nothing. Resolved lazily because the store is built just below.
+    recordResult: (id, r) => ownerApprovalStore.recordResult(id, r)
   })
   const ownerApprovalStore = createOwnerApprovalStore(opts.ownerApprovalStoreOptions || {})
   app.locals.ownerApprovalStore = ownerApprovalStore
@@ -768,6 +777,7 @@ function createApp (options = {}) {
     confirmService,
     proposeWorkOrder,
     buildApprovalView,
+    buildAgentResultView,
     sealedHashOf: confirmService.sealedHashOf,
     getProposal: (id) => proposalStore.getProposal(id),
     auditFn: approvalAudit

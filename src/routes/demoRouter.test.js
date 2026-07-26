@@ -217,9 +217,11 @@ test('DEMO_HTML: the emitted browser script is syntactically valid JS', () => {
 })
 
 test('DEMO_HTML: the approval card is a viewer + four fields of intent, and holds no authority', () => {
-  // WYSIWYA — the card RENDERS the server's own lines; it never rebuilds the order client-side.
-  assert.ok(DEMO_HTML.includes("(sealed.lines || []).join('\\n')"), 'displays the server-rendered sealed order')
-  assert.ok(DEMO_HTML.includes("'hash: ' + sealed.workOrderHash"), 'shows the hash the server computed')
+  // WYSIWYA — the card RENDERS the server's own projection; it never rebuilds the order
+  // client-side. v2 shows the server-built sections plus the server-built technical lines.
+  assert.ok(DEMO_HTML.includes('var c = sealed.card'), 'displays the server-built card object')
+  assert.ok(DEMO_HTML.includes("(sealed.technicalLines || []).join('\\n')"), 'displays the server-built technical section')
+  assert.ok(!/sealed\.(goal|allowedFiles|timeoutSec|costCapUsd|branch)\b/.test(DEMO_HTML), 'the page never re-composes fields itself')
 
   // The approve payload carries EXACTLY the four intent fields — no Work Order content.
   const m = DEMO_HTML.match(/\/api\/v1\/owner\/approve[\s\S]*?JSON\.stringify\(\{([\s\S]*?)\}\)/)
@@ -237,4 +239,64 @@ test('DEMO_HTML: the approval card is a viewer + four fields of intent, and hold
   // One click only, and a burnt nonce is never retried from the page.
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'single click')
   assert.ok(DEMO_HTML.includes('這張單已作廢，請重新產生'), 'a refusal ends the card instead of retrying')
+})
+
+/* ── Owner Decision Card v2 — the four walkthrough defects ─────────────────── */
+
+test('DEFECT (a): no input uses its required value as the placeholder, and submits are gated', () => {
+  // The walkthrough cost two attempts and burned a nonce because an empty field LOOKED
+  // filled: the placeholder WAS the required value. Placeholders are now instructions.
+  assert.ok(DEMO_HTML.includes("setAttribute('placeholder', '請輸入要改的檔案路徑')"), 'file path placeholder is an instruction')
+  assert.ok(DEMO_HTML.includes("'請輸入 ' + sealed.typedConfirmationRequired + ' 以確認'"), 'confirmation placeholder is an instruction')
+  assert.ok(!/placeholder',\s*sealed\.typedConfirmationRequired\)/.test(DEMO_HTML), 'the required value is never the placeholder')
+  assert.ok(!/placeholder',\s*'EXECUTE'/.test(DEMO_HTML), 'EXECUTE is never shown as ghost text')
+
+  // gating: both buttons start disabled and are enabled only by real input
+  assert.ok(DEMO_HTML.includes('mk.disabled = true'), 'the seal button starts disabled')
+  assert.ok(DEMO_HTML.includes("mk.disabled = fileIn.value.trim() === ''"), 'seal enabled only on a non-empty path')
+  assert.ok(DEMO_HTML.includes('go.disabled = true;'), 'the approve button starts disabled')
+  assert.ok(DEMO_HTML.includes('go.disabled = (typed.value !== sealed.typedConfirmationRequired)'), 'approve enabled only on an EXACT match')
+  // and the click handlers still refuse a disabled button (defence in depth)
+  assert.ok(DEMO_HTML.includes('if (mk.disabled) return;') && DEMO_HTML.includes('if (go.disabled) return;'))
+})
+
+test('DEFECT (b): a new card clears the previous red errors', () => {
+  assert.ok(DEMO_HTML.includes('function clearErrors()'), 'there is an error-clearing routine')
+  assert.ok(DEMO_HTML.includes("log.querySelectorAll('.bubble.err')"), 'it targets the error bubbles')
+  // called both when a card renders and when a fresh Work Order is requested
+  const renderIdx = DEMO_HTML.indexOf('function renderApprovalCard(')
+  assert.ok(DEMO_HTML.slice(renderIdx, renderIdx + 200).includes('clearErrors()'), 'cleared on a new card')
+  const reqIdx = DEMO_HTML.indexOf('function requestWorkOrder(')
+  assert.ok(DEMO_HTML.slice(reqIdx, reqIdx + 300).includes('clearErrors()'), 'cleared on a new request')
+})
+
+test('DEFECT (c): the failure message is not doubled', () => {
+  // reasonForOwner already opens with 未能建立工作單, so the page must show it verbatim.
+  assert.ok(DEMO_HTML.includes("addBubble('err', o.body.reasonForOwner || ("), 'reasonForOwner is shown as-is')
+  assert.ok(!DEMO_HTML.includes("'未能建立工作單：' + (o.body.reasonForOwner"), 'never prefixed onto reasonForOwner')
+})
+
+test('DEFECT (d): the card renders the server-built sections, never a raw brief', () => {
+  assert.ok(DEMO_HTML.includes('sealed.card'), 'the page renders the server-built card object')
+  // the v1 worker-brief structure ("Title: x\n\nDetails: y") must not appear as text the
+  // page composes. (`technicalTitle:` is an object key, not brief structure.)
+  assert.ok(!/(^|[^A-Za-z])Title:\s/.test(DEMO_HTML), 'no worker-brief Title: in the page')
+  assert.ok(!/(^|[^A-Za-z])Details:\s/.test(DEMO_HTML), 'no worker-brief Details: in the page')
+})
+
+test('the v2 card is a viewer: collapsed section is presentation only, payload unchanged', () => {
+  // ▸ 技術細節 collapsed by default via <details> with no `open` attribute
+  assert.ok(DEMO_HTML.includes("document.createElement('details')"), 'collapsible technical section')
+  assert.ok(!/details.*setAttribute\('open'/.test(DEMO_HTML), 'collapsed by default')
+  assert.ok(DEMO_HTML.includes('sealed.technicalLines'), 'the collapsed text comes from the server')
+
+  // the approve payload is STILL exactly the four intent fields
+  const m = DEMO_HTML.match(/\/api\/v1\/owner\/approve[\s\S]*?JSON\.stringify\(\{([\s\S]*?)\}\)/)
+  const keys = (m[1].match(/^\s*(\w+):/gm) || []).map((s) => s.trim().replace(':', '')).sort()
+  assert.deepEqual(keys, ['approvalId', 'nonce', 'typedConfirmation', 'workOrderHash'])
+
+  // the Layer 2 result fetch is a READ — no body, no method override
+  assert.ok(DEMO_HTML.includes("fetch('/api/v1/owner/results/'"), 'result view is fetched')
+  const r = DEMO_HTML.match(/fetch\('\/api\/v1\/owner\/results\/'[\s\S]{0,120}/)[0]
+  assert.ok(!/method:\s*'POST'/.test(r), 'the result view is a plain GET')
 })
