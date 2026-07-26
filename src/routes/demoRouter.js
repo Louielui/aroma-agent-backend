@@ -27,6 +27,7 @@ const { v4: uuidv4 } = require('uuid')
 const { getAdapter } = require('../adapters/adapterFactory')
 const { processIntake } = require('../intake/intakeService')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
+const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
@@ -77,10 +78,20 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
     async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
       const correlationId = uuidv4()
+      // OBSERVABILITY v1: exactly ONE outcome line per request — success, handled
+      // failure, or a failure BEFORE the model call (which used to be invisible).
+      // `telemetry` is filled by the pipeline with numbers/short enums only; it is
+      // never part of the HTTP response.
+      const t0 = Date.now()
+      const telemetry = {}
+      const emit = (outcome, httpStatus, errorCode) => logIntakeOutcome(Object.assign({
+        correlationId, endpoint: '/api/v1/demo/intake', outcome, httpStatus, latencyMs: Date.now() - t0, errorCode: errorCode || null
+      }, telemetry))
 
       // Validate BEFORE any adapter acquisition / model call.
       const errors = validationResult(req)
       if (!errors.isEmpty()) {
+        emit('validation_rejected', 400, 'validation_failed')
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
       }
 
@@ -93,8 +104,10 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           contextCard,
           promoteToProposal: req.app.locals && req.app.locals.promoteToProposal
         })
+        opts.telemetry = telemetry
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
         const result = await processIntakeFn(message, adapter, history || [], opts)
+        emit('success', 200, null)
         return res.status(200).json(result)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
@@ -104,6 +117,9 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         } catch (_) {
           mapped = { status: 500, body: { error: { code: 'internal_error', message: '系統暫時無法處理這個請求。', correlationId, retryable: false } } }
         }
+        // 'early_error' when the pipeline never reached a provider (adapter acquisition,
+        // guard, unexpected throw); 'handled_error' once a provider had been contacted.
+        emit(telemetry.provider ? 'handled_error' : 'early_error', mapped.status, mapped.body && mapped.body.error && mapped.body.error.code)
         return res.status(mapped.status).json(mapped.body)
       }
     }

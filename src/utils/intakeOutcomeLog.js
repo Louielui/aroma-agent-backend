@@ -1,0 +1,73 @@
+'use strict'
+
+/**
+ * intakeOutcomeLog.js — ONE line per intake request, whatever happens.
+ *
+ * WHY: previously only *errors* produced a diagnostic line, so a request that arrived
+ * and failed early (validation, guard, adapter acquisition, an unhandled throw) was
+ * completely invisible — a real failure could leave no trace at all. This closes that
+ * hole: success, handled failure and early failure all emit exactly one record.
+ *
+ * SAFETY — ALLOWLIST BY CONSTRUCTION. The entry is built field by field from a fixed
+ * list of NUMBERS and SHORT ENUMS. The input object is never spread and unknown keys
+ * are dropped, so a future caller cannot accidentally widen it. It can therefore never
+ * contain the prompt, the system prompt, the user's message, the model's output,
+ * retrieved source content, or any credential — the same discipline as the existing
+ * parse diagnostics (see intakeDiagnostics.js).
+ */
+
+const FIELDS = Object.freeze([
+  'correlationId', // uuid minted server-side
+  'endpoint', // fixed route string
+  'interactionMode', // 'chat' | 'proposal' | 'email_draft' | null
+  'provider', // 'claude' | 'openai' | null
+  'outcome', // 'success' | 'handled_error' | 'early_error' | 'validation_rejected' | 'guard_rejected'
+  'httpStatus', // number
+  'latencyMs', // number (whole request)
+  'inputTokens', // number | null
+  'outputTokens', // number | null
+  'stopReason', // short provider enum | null  (recorded on SUCCESS too — near-miss visibility)
+  'parseResult', // 'ok' | 'failed' | null
+  'parseErrorReason', // short enum | null
+  'fallbackUsed', // boolean | null
+  'errorCode' // short enum | null — never a message
+])
+
+const NUMERIC = new Set(['httpStatus', 'latencyMs', 'inputTokens', 'outputTokens'])
+const BOOLEAN = new Set(['fallbackUsed'])
+const MAX_ENUM_CHARS = 64 // a short enum can never smuggle content
+
+function project (input) {
+  const src = (input && typeof input === 'object') ? input : {}
+  const out = { event: 'INTAKE_OUTCOME', timestamp: new Date().toISOString() }
+  for (const key of FIELDS) {
+    const v = src[key]
+    if (v === undefined || v === null) { out[key] = null; continue }
+    if (NUMERIC.has(key)) { out[key] = Number.isFinite(v) ? v : null; continue }
+    if (BOOLEAN.has(key)) { out[key] = (v === true); continue }
+    // everything else is a SHORT string enum; anything longer is dropped, never truncated
+    // into the log (truncated content is still content).
+    out[key] = (typeof v === 'string' && v.length > 0 && v.length <= MAX_ENUM_CHARS) ? v : null
+  }
+  return out
+}
+
+function defaultSink (entry) {
+  try { console.log('[AROMA-INTAKE-OUTCOME]', JSON.stringify(entry)) } catch (_) {}
+}
+
+/**
+ * Emit exactly one outcome line. Never throws — an observability failure must never
+ * become a response failure.
+ * @param {object} input  fields from the FIELDS allowlist; everything else is ignored
+ * @param {{ sink?: (entry:object)=>void }} [deps]
+ */
+function logIntakeOutcome (input, deps = {}) {
+  const sink = (deps && typeof deps.sink === 'function') ? deps.sink : defaultSink
+  let entry
+  try { entry = project(input) } catch (_) { return null }
+  try { sink(entry) } catch (_) { /* swallow */ }
+  return entry
+}
+
+module.exports = { logIntakeOutcome, project, FIELDS }
