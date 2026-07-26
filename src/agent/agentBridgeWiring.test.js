@@ -1,5 +1,9 @@
 'use strict'
 
+// The worker no longer falls back to a bare 'claude' — an unresolvable CLI is a refusal.
+// These tests inject a fake runner, so they name a fake absolute path explicitly.
+const FAKE_CLI = 'C:/fake/claude.exe'
+
 // agentBridgeWiring.test.js — Agent Bridge Wiring v1.
 // Deterministic; injected fakes ONLY. NO real repo clone, NO Claude Code CLI invocation,
 // NO paid call. Proves the bridge is REACHABLE behind the OFF flag and nothing more.
@@ -179,7 +183,7 @@ test('CAP 5: a Work Order naming a forbidden file is rejected BEFORE anything ru
 })
 
 test('CAPS 1-4 + 8 re-asserted post-wiring: no bypassPermissions, timeout/cost, no remote, fail-stop', async () => {
-  const w = createAgentBridgeWorker({ runner: async () => ({ status: 0, stdout: JSON.stringify({ subtype: 'success', is_error: false, result: 'x', total_cost_usd: 0.01 }), stderr: '', timedOut: false }) })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: async () => ({ status: 0, stdout: JSON.stringify({ subtype: 'success', is_error: false, result: 'x', total_cost_usd: 0.01 }), stderr: '', timedOut: false }) })
   const args = w.buildArgs(validWO(), '/tmp/aroma-sandbox-agent-x', 'acceptEdits')
   assert.ok(!args.includes('bypassPermissions'))                            // Cap 1
   assert.equal(args[args.indexOf('--allowedTools') + 1], 'Read Edit Write') // Cap 1: no Bash/git/network
