@@ -39,6 +39,7 @@ const { createClaudeCodeAdapter } = require('./adapters/claude-code')
 // Agent Bridge v0 (built behind AGENT_BRIDGE, default OFF). Single source of truth
 // for the three-flag, two-of-three execution-authorization matrix.
 const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = require('./agent/agentAuthorization')
+const { createAgentRunner } = require('./agent/agentRunner') // Agent Bridge wiring v1 (built ONLY when AGENT_BRIDGE==='on')
 
 // Conversation → Proposal → Run bridge (COO). Proposing is inert; the ONLY path
 // from a Proposal to a Run is the structured confirm action below. See
@@ -517,7 +518,33 @@ function createApp (options = {}) {
   const developDispatcher = injectedDispatcher || configuredProductionDispatcher // may be null
   const dispatcherConfigured = developDispatcher !== null
   const inertDispatcher = async () => {} // DI safety floor — never invoked on the unauthorized path
-  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured)
+
+  // AGENT BRIDGE WIRING v1 — mirrors the Develop-dispatcher containment above. The
+  // runner is built ONLY when AGENT_BRIDGE resolves exactly 'on' (or a test injects
+  // one); with the flag unset/empty/invalid nothing is constructed, so
+  // agentRunnerConfigured stays false and agentBridgeAuthorized can never be true.
+  // Construction is deliberately the WHOLE of this step: no route invokes runner.run()
+  // — the sole trigger remains the token-gated POST /proposals/:id/confirm, and it
+  // cannot carry an approved Work Order until the Work Order producer and approval
+  // surface exist. So this makes the bridge REACHABLE, not executable.
+  const injectedAgentRunner = (opts.agentRunner && typeof opts.agentRunner.run === 'function') ? opts.agentRunner : null
+  let builtAgentRunner = null
+  if (!injectedAgentRunner && resolveAgentBridge() === 'on') {
+    try {
+      builtAgentRunner = createAgentRunner({
+        repoRoot: path.resolve(__dirname, '..'),
+        artifactStore: opts.workerDeps && opts.workerDeps.artifactStore ? opts.workerDeps.artifactStore : undefined
+      })
+    } catch (err) {
+      // Fail-closed: a runner that cannot be assembled leaves the lane unauthorized.
+      console.warn('[agent-bridge] runner not constructed: ' + ((err && err.message) || String(err)))
+      builtAgentRunner = null
+    }
+  }
+  const agentRunner = injectedAgentRunner || builtAgentRunner
+  const agentRunnerConfigured = agentRunner !== null
+
+  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured, agentRunnerConfigured)
 
   // B2-15 auth injection seam. The service-token middleware is built PER APP. In
   // production nothing is injected → the resolver defaults to readExpectedToken()
@@ -703,6 +730,13 @@ function createApp (options = {}) {
     console.error('[AROMA-HUB] Unhandled error:', err.message)
     res.status(500).json({ error: 'Internal server error' })
   })
+
+  // Read-only introspection seams for unit tests (same pattern as
+  // app.resolveConversationDemo). `agentRunner` is exposed so a test can assert it was
+  // NOT constructed with the flag off; it is not a route and nothing invokes it.
+  app.authorizeExecution = authorize
+  app.agentRunnerConfigured = agentRunnerConfigured
+  app.agentRunner = agentRunner
 
   return app
 }
