@@ -195,9 +195,46 @@ test('DEMO_HTML: no storage/cookies, no innerHTML/eval/new Function', () => {
   assert.ok(!/innerHTML|eval\(|new Function/.test(DEMO_HTML))
 })
 
-test('DEMO_HTML: safety labels + disabled confirm + unknown fallback + Enter/Shift+Enter', () => {
-  for (const l of ['SHADOW_ONLY', '未寄出', '未寫入記憶', 'Proposal only — not run', '確認執行（尚未開放）']) assert.ok(DEMO_HTML.includes(l), 'label ' + l)
-  assert.ok(DEMO_HTML.includes("setAttribute('disabled'"), 'confirm button disabled')
+test('DEMO_HTML: safety labels + unknown fallback + Enter/Shift+Enter', () => {
+  for (const l of ['SHADOW_ONLY', '未寄出', '未寫入記憶', 'Proposal only — not run']) assert.ok(DEMO_HTML.includes(l), 'label ' + l)
+  // The old placeholder "確認執行（尚未開放）" is GONE — it is replaced by the real Owner
+  // approval card, which still cannot execute from the chat card itself: the chat lane can
+  // only ASK the server to seal a Work Order, and executing needs the sealed card's typed
+  // confirmation + single-use nonce. Asserted below.
+  assert.ok(!DEMO_HTML.includes('確認執行（尚未開放）'), 'the disabled placeholder is retired')
+  assert.ok(DEMO_HTML.includes('產生工作單（仍需你批准）'), 'the chat card only requests a Work Order')
   assert.ok(DEMO_HTML.includes('格式未知'), 'unknown-shape safe fallback')
   assert.ok(DEMO_HTML.includes("e.key === 'Enter'") && DEMO_HTML.includes('shiftKey'), 'Enter sends, Shift+Enter newline')
+})
+
+test('DEMO_HTML: the emitted browser script is syntactically valid JS', () => {
+  // The page is built from a module-level template literal, so an unescaped \n (or a
+  // stray backtick) silently emits a BROKEN script — the card would simply never render
+  // and the Owner would see nothing. Parse it here rather than discover that in the UI.
+  const m = DEMO_HTML.match(/<script>([\s\S]*?)<\/script>/)
+  assert.ok(m, 'the page has exactly one inline script')
+  assert.doesNotThrow(() => new Function(m[1]), 'inline script must parse') // eslint-disable-line no-new-func
+})
+
+test('DEMO_HTML: the approval card is a viewer + four fields of intent, and holds no authority', () => {
+  // WYSIWYA — the card RENDERS the server's own lines; it never rebuilds the order client-side.
+  assert.ok(DEMO_HTML.includes("(sealed.lines || []).join('\\n')"), 'displays the server-rendered sealed order')
+  assert.ok(DEMO_HTML.includes("'hash: ' + sealed.workOrderHash"), 'shows the hash the server computed')
+
+  // The approve payload carries EXACTLY the four intent fields — no Work Order content.
+  const m = DEMO_HTML.match(/\/api\/v1\/owner\/approve[\s\S]*?JSON\.stringify\(\{([\s\S]*?)\}\)/)
+  assert.ok(m, 'approve fetch found')
+  const keys = (m[1].match(/^\s*(\w+):/gm) || []).map((s) => s.trim().replace(':', '')).sort()
+  assert.deepEqual(keys, ['approvalId', 'nonce', 'typedConfirmation', 'workOrderHash'], 'exactly four fields')
+
+  // No Work Order field may appear anywhere in the approve payload region.
+  for (const f of ['workOrder:', 'allowedFiles', 'timeoutSec', 'costCapUsd', 'branch:', 'forbiddenActions']) {
+    assert.ok(!m[1].includes(f), 'approve payload must not carry ' + f)
+  }
+  // The page never holds or sends a token, and never talks to anything but same-origin.
+  assert.ok(!/HUB_TOKEN|Authorization|Bearer/i.test(DEMO_HTML), 'no token anywhere in the page')
+  assert.ok(DEMO_HTML.includes("credentials: 'same-origin'"), 'session cookie only, same-origin')
+  // One click only, and a burnt nonce is never retried from the page.
+  assert.ok(DEMO_HTML.includes('go.disabled = true'), 'single click')
+  assert.ok(DEMO_HTML.includes('這張單已作廢，請重新產生'), 'a refusal ends the card instead of retrying')
 })
