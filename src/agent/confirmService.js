@@ -33,6 +33,11 @@ function createConfirmService (deps = {}) {
   const scheduleWorker = typeof deps.scheduleWorker === 'function' ? deps.scheduleWorker : () => {}
   const owner = deps.owner || 'louie'
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
+  // Layer 2 sink. Optional and inert: if nothing is wired, the hand-off behaves exactly as
+  // before and the Owner simply has no result view to read.
+  const recordResult = typeof deps.recordResult === 'function'
+    ? (id, r) => { try { deps.recordResult(id, r) } catch (e) { console.warn('[agent-bridge] result not recorded: ' + ((e && e.message) || String(e))) } }
+    : () => {}
 
   /**
    * Confirm a Proposal, and (only when explicitly requested AND authorized) hand a
@@ -72,10 +77,17 @@ function createConfirmService (deps = {}) {
     // from the order it is about to run and refuses on mismatch (no amend path); we also
     // record what we handed over so an attempt is never silent.
     if (agentEligible) {
-      auditFn({ approvalId: input.workOrder.approvalId || null, outcome: 'handed_off', reason: null, entryPoint })
+      const approvalId = input.workOrder.approvalId || null
+      auditFn({ approvalId, outcome: 'handed_off', reason: null, entryPoint })
       Promise.resolve()
         .then(() => agentRunner.run({ workOrder: input.workOrder, approvedHash: input.approvedHash, who: owner }))
-        .catch((e) => console.warn('[agent-bridge] run failed: ' + ((e && e.message) || String(e))))
+        // LAYER 2: record what the runner reported so the Owner can be SHOWN the outcome.
+        // Recording is inert — it authorizes nothing and never re-runs anything.
+        .then((result) => { recordResult(approvalId, result || null) })
+        .catch((e) => {
+          console.warn('[agent-bridge] run failed: ' + ((e && e.message) || String(e)))
+          recordResult(approvalId, { ok: false, reason: 'runner_error' })
+        })
     } else if (agentExecuteRequested) {
       auditFn({ approvalId: (input.workOrder && input.workOrder.approvalId) || null, outcome: 'refused', reason: dispatchStatus, entryPoint })
     }

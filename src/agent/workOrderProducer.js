@@ -24,10 +24,70 @@
  */
 
 const crypto = require('node:crypto')
+const fs = require('node:fs')
+const path = require('node:path')
 const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile } = require('./workOrder')
 
 // System-owned defaults. 香香 cannot raise these; the Owner changes them here.
-const DEFAULTS = Object.freeze({ timeoutSec: 120, costCapUsd: 0.5 })
+const DEFAULTS = Object.freeze({ timeoutSec: 120, costCapUsd: 0.5, approvalTtlSec: 600 })
+
+// ── The bounded read behind 「現時內容」 (Owner Decision Card v2) ─────────────────
+// The card shows the Owner what the file says RIGHT NOW. That is a fact, so it is read
+// from the real file at seal time — never described by a model. The read is bounded so a
+// large file cannot flood the card: the FIRST 20 LINES, and at most 800 CHARACTERS,
+// whichever limit is reached first. `truncated` says plainly when there is more.
+const MAX_EXCERPT_LINES = 20
+const MAX_EXCERPT_CHARS = 800
+
+const REPO_ROOT = path.resolve(__dirname, '..', '..')
+
+/**
+ * Read the head of a repo-relative file. Refuses anything that is not a readable regular
+ * file inside the repo — so a Work Order can never be sealed for a path that does not
+ * exist (previously the validator did no fs check at all and such a path sealed fine).
+ * @returns {{ok:true, text, truncated}|{ok:false, reason}}
+ */
+function readCurrentExcerptFromDisk (repoRoot, relPath) {
+  const root = path.resolve(repoRoot)
+  const abs = path.resolve(root, relPath)
+  if (abs !== root && !abs.startsWith(root + path.sep)) return { ok: false, reason: 'outside_repo' }
+  let st
+  try { st = fs.statSync(abs) } catch { return { ok: false, reason: 'not_found' } }
+  if (!st.isFile()) return { ok: false, reason: 'not_a_file' }
+  let raw
+  try { raw = fs.readFileSync(abs, 'utf8') } catch { return { ok: false, reason: 'unreadable' } }
+  const all = raw.replace(/\r\n/g, '\n').split('\n')
+  let text = all.slice(0, MAX_EXCERPT_LINES).join('\n')
+  let truncated = all.length > MAX_EXCERPT_LINES
+  if (text.length > MAX_EXCERPT_CHARS) { text = text.slice(0, MAX_EXCERPT_CHARS); truncated = true }
+  return { ok: true, text, truncated }
+}
+
+const EXCERPT_REFUSALS = Object.freeze({
+  not_found: (f) => `「${f}」在程式庫中不存在。我不會為一個不存在的檔案建立工作單`,
+  not_a_file: (f) => `「${f}」不是一個檔案(可能是資料夾)`,
+  unreadable: (f) => `「${f}」無法讀取,所以我無法向你顯示它現時的內容`,
+  outside_repo: (f) => `「${f}」不在程式庫範圍內`
+})
+
+/**
+ * Turn whatever arrived in `goal` into ONE plain sentence.
+ *
+ * A promoted Proposal carries a v1 worker brief ("Title: x\n\nDetails: y") — that is
+ * machine structure, and it leaked onto the Owner's card verbatim. Normalizing here (at
+ * seal time, deterministically) means the sentence the Owner reads is the sentence inside
+ * the hash; there is no separate display-time rewrite.
+ */
+function plainGoal (raw) {
+  let s = String(raw == null ? '' : raw).replace(/\r\n/g, '\n').trim()
+  const m = s.match(/^Title:\s*([\s\S]*?)(?:\n\s*\n\s*Details:\s*([\s\S]*))?$/)
+  if (m) {
+    const title = (m[1] || '').replace(/\s+/g, ' ').trim().replace(/[。.]+$/, '')
+    const details = (m[2] || '').replace(/\s+/g, ' ').trim()
+    s = (title && details && details !== title) ? `${title}（${details}）` : (title || details)
+  }
+  return s.replace(/\s+/g, ' ').trim()
+}
 // One explicit path. Not "at most a few" — exactly one.
 const MAX_ALLOWED_FILES = 1
 const WILDCARD_RE = /[*?[\]{}]/
@@ -54,8 +114,10 @@ function reject (errors) {
     ok: false,
     workOrder: null,
     errors,
-    // plain-language explanation the Owner sees instead of a Work Order
-    reasonForOwner: '未能建立工作單:' + errors.join(';') + '。需要你確認一個已經在對話中提過、且不屬於受保護範圍的單一檔案。'
+    // Plain-language explanation the Owner sees instead of a Work Order. It carries its own
+    // "未能建立工作單" opener, so no caller should prefix that again (the demo page used to,
+    // producing "未能建立工作單：未能建立工作單:").
+    reasonForOwner: '未能建立工作單:' + errors.join(';') + '。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。'
   }
 }
 
@@ -69,7 +131,7 @@ function proposeWorkOrder (input = {}) {
   const errors = []
 
   // ── L0: shape ─────────────────────────────────────────────────────────────
-  const goal = typeof p.goal === 'string' ? p.goal.trim() : ''
+  const goal = plainGoal(p.goal)
   if (!goal) errors.push('goal 不可為空')
 
   // The producer accepts ONE candidate. An array is tolerated only to reject it loudly.
@@ -107,6 +169,17 @@ function proposeWorkOrder (input = {}) {
     return reject([`「${file}」未在對話中提及過。我不會自行搜尋或推測檔案路徑`])
   }
 
+  // ── L3: the file must actually EXIST and be readable, because the card promises the
+  //    Owner a true "現時內容". No file ⇒ no card and no Work Order. ──────────────
+  const reader = typeof input.readCurrentExcerpt === 'function'
+    ? input.readCurrentExcerpt
+    : (rel) => readCurrentExcerptFromDisk(input.repoRoot || REPO_ROOT, rel)
+  const cur = reader(file)
+  if (!cur || cur.ok !== true) {
+    const why = (cur && EXCERPT_REFUSALS[cur.reason]) || EXCERPT_REFUSALS.not_found
+    return reject([why(file)])
+  }
+
   // ── SEAL: system-owned fields only. The model supplies none of these. ──────
   const defaults = Object.assign({}, DEFAULTS, input.defaults || {})
   const newId = typeof input.newId === 'function' ? input.newId : () => `appr_${crypto.randomUUID().slice(0, 8)}`
@@ -121,7 +194,14 @@ function proposeWorkOrder (input = {}) {
     timeoutSec: defaults.timeoutSec,
     costCapUsd: defaults.costCapUsd,
     branch: `agent/${approvalId}`,
-    approvalId
+    approvalId,
+    // Card v2 facts, sealed together with everything else so they are inside the hash.
+    // `intendedChange` is 香香's STATED INTENT, echoed verbatim and labelled as intent —
+    // the agent has not run, so it is never presented as an achieved result.
+    currentExcerpt: cur.text,
+    currentExcerptTruncated: !!cur.truncated,
+    intendedChange: (typeof p.intendedChange === 'string' && p.intendedChange.trim() !== '') ? p.intendedChange.trim() : null,
+    approvalTtlSec: defaults.approvalTtlSec
   }
 
   // Final gate: the sealed order must satisfy the SAME validator the runner uses.
@@ -131,4 +211,13 @@ function proposeWorkOrder (input = {}) {
   return { ok: true, workOrder, hash: hashWorkOrder(workOrder), errors: [] }
 }
 
-module.exports = { proposeWorkOrder, mentionedFilesFrom, DEFAULTS, MAX_ALLOWED_FILES }
+module.exports = {
+  proposeWorkOrder,
+  mentionedFilesFrom,
+  plainGoal,
+  readCurrentExcerptFromDisk,
+  DEFAULTS,
+  MAX_ALLOWED_FILES,
+  MAX_EXCERPT_LINES,
+  MAX_EXCERPT_CHARS
+}

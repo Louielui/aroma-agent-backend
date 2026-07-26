@@ -123,7 +123,17 @@ function canonicalWorkOrder (wo) {
     timeoutSec: (wo && wo.timeoutSec) != null ? wo.timeoutSec : null,
     costCapUsd: (wo && wo.costCapUsd) != null ? wo.costCapUsd : null,
     branch: (wo && wo.branch) != null ? wo.branch : null,
-    approvalId: (wo && wo.approvalId) || null
+    approvalId: (wo && wo.approvalId) || null,
+    // ── Owner Decision Card v2 ────────────────────────────────────────────────
+    // These three exist so the Owner-facing before/after card is INSIDE the hash.
+    // The card is a projection of this object and nothing else, so a value the Owner
+    // read cannot be changed without changing the hash the server recomputes at
+    // approval. They are display facts, never controls: the runner's scope is still
+    // allowedFiles + forbiddenActions alone.
+    currentExcerpt: (wo && wo.currentExcerpt) != null ? wo.currentExcerpt : null, // read from the real file at seal time
+    currentExcerptTruncated: !!(wo && wo.currentExcerptTruncated),
+    intendedChange: (wo && wo.intendedChange) != null ? wo.intendedChange : null, // INTENT — not a result
+    approvalTtlSec: (wo && wo.approvalTtlSec) != null ? wo.approvalTtlSec : null
   }
 }
 

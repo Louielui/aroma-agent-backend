@@ -22,6 +22,7 @@ const crypto = require('node:crypto')
 
 const { createApp } = require('../app')
 const { hashWorkOrder } = require('../agent/workOrder')
+const { buildApprovalView } = require('../agent/workOrderView')
 
 const ORIGIN = 'http://127.0.0.1:8090'
 const GOOD_HEADERS = { origin: ORIGIN, 'sec-fetch-site': 'same-origin', 'content-type': 'application/json' }
@@ -573,8 +574,163 @@ test('CHAT LANE: even a develop-intent turn only PROPOSES — sealing needs a se
       // changes nothing: no card, no nonce, no hand-off — the Owner must still seal + type.
       const pid = seedProposal(ctx)
       assert.equal(ctx.app.locals.proposalStore.getProposal(pid).status, 'pending')
-      assert.deepEqual(ctx.app.locals.ownerApprovalStore.stats(), { sealed: 0, nonces: 0, sessions: 0 })
+      assert.deepEqual(ctx.app.locals.ownerApprovalStore.stats(), { sealed: 0, nonces: 0, sessions: 0, results: 0 })
       assert.equal(ctx.runs.length, 0)
     })
   } finally { delete process.env.AGENT_BRIDGE }
+})
+
+
+/* ── 12. Owner Decision Card v2 over the real endpoints ───────────────────── */
+
+const CANARY_FILE = 'docs/canary/agent-canary.md'
+
+async function sealCanary (ctx, over = {}) {
+  const proposalId = over.proposalId !== undefined ? over.proposalId : seedProposal(ctx)
+  const res = await req(ctx, {
+    url: '/api/v1/owner/work-orders',
+    headers: GOOD_HEADERS,
+    body: Object.assign({
+      goal: 'Title: 改 canary 檔\n\nDetails: 由 line 1 改成 line 2',
+      candidateFile: CANARY_FILE,
+      intendedChange: 'canary target — safe to modify. line 2.',
+      conversation: ['請改 ' + CANARY_FILE + ' 一行文字']
+    }, over, { proposalId })
+  })
+  return { res, cookie: cookieOf(res), proposalId }
+}
+
+test('v2: the sealed response carries the Owner card, and it matches the sealed order', async () => {
+  await withApp(async (ctx) => {
+    const { res } = await sealCanary(ctx)
+    assert.equal(res.status, 201, JSON.stringify(res.json))
+    const b = res.json
+    assert.equal(b.card.heading, '香香想進行一項安全測試')
+    assert.deepEqual(b.card.sections.map((s) => s.title), ['要修改的內容', '影響範圍', '現時內容 / 打算改成', '最壞情況', '不會發生', '上限'])
+
+    // WYSIWYA over HTTP: rebuild the view from the SEALED record and compare byte-for-byte
+    const sealed = ctx.app.locals.ownerApprovalStore.loadSealed(b.approvalId).record.workOrder
+    const view = buildApprovalView(sealed)
+    assert.deepEqual(b.card, view.card, 'the card the browser got IS the projection of the sealed order')
+    assert.deepEqual(b.technicalLines, view.technicalLines)
+    assert.equal(b.workOrderHash, view.hash)
+    assert.equal(hashWorkOrder(sealed), b.workOrderHash)
+
+    // the TTL the Owner reads is the TTL that is actually enforced
+    assert.equal(sealed.approvalTtlSec, b.expiresInSec)
+    assert.ok(b.technicalLines.join('\n').includes('10 分鐘'))
+
+    // the goal was normalized at seal time — no brief structure reaches the Owner
+    assert.ok(!/Title:|Details:/.test(JSON.stringify(b.card)), 'no worker-brief structure on the card')
+    assert.equal(sealed.goal, '改 canary 檔（由 line 1 改成 line 2）')
+
+    // 現時內容 is the real file
+    const real = fs.readFileSync(path.join(__dirname, '..', '..', CANARY_FILE), 'utf8').replace(/\r\n/g, '\n')
+    assert.ok(real.startsWith(sealed.currentExcerpt.split('\n')[0]), 'the excerpt is the real file head')
+  })
+})
+
+test('v2: a non-existent file is REFUSED at seal — no card, no approvalId', async () => {
+  await withApp(async (ctx) => {
+    const { res } = await sealCanary(ctx, {
+      candidateFile: 'docs/canary/not-here.md',
+      conversation: ['請改 docs/canary/not-here.md']
+    })
+    assert.equal(res.status, 422)
+    assert.equal(res.json.error, 'work_order_rejected')
+    assert.ok(res.json.reasonForOwner.includes('不存在'))
+    assert.ok(!res.json.approvalId)
+    assert.equal(ctx.app.locals.ownerApprovalStore.stats().sealed, 0, 'nothing was sealed')
+  })
+})
+
+test('v2: approving still carries only four fields, and the card adds no new authority', async () => {
+  process.env.AGENT_BRIDGE = 'on'
+  try {
+    await withApp(async (ctx) => {
+      const { res: sres, cookie } = await sealCanary(ctx)
+      // the collapsed section is presentation: sending its values back is still a protocol error
+      const withTech = await req(ctx, {
+        url: '/api/v1/owner/approve',
+        headers: Object.assign({ cookie }, GOOD_HEADERS),
+        body: approveBody(sres.json, { branch: 'main', timeoutSec: 999 })
+      })
+      assert.equal(withTech.status, 400)
+      assert.equal(withTech.json.reason, 'forbidden_body_fields')
+
+      const ok = await req(ctx, {
+        url: '/api/v1/owner/approve',
+        headers: Object.assign({ cookie }, GOOD_HEADERS),
+        body: approveBody(sres.json)
+      })
+      assert.equal(ok.status, 201)
+      await new Promise((r) => setImmediate(r))
+      assert.equal(ctx.runs.length, 1)
+      // what the runner got is the sealed order, including the v2 fields
+      assert.equal(ctx.runs[0].workOrder.currentExcerpt != null, true)
+      assert.equal(ctx.runs[0].approvedHash, sres.json.workOrderHash)
+    })
+  } finally { delete process.env.AGENT_BRIDGE }
+})
+
+/* ── 13. Layer 2 — the result view over HTTP (read-only) ──────────────────── */
+
+test('LAYER 2: the result view reports the runner outcome, and is a pure read', async () => {
+  process.env.AGENT_BRIDGE = 'on'
+  try {
+    await withApp(async (ctx) => {
+      const { res: sres, cookie } = await sealCanary(ctx)
+      const id = sres.json.approvalId
+
+      // before anything runs there is honestly no result
+      const before = await req(ctx, { method: 'GET', url: '/api/v1/owner/results/' + id, headers: GOOD_HEADERS })
+      assert.equal(before.status, 404)
+      assert.equal(before.json.error, 'no_result')
+
+      await req(ctx, { url: '/api/v1/owner/approve', headers: Object.assign({ cookie }, GOOD_HEADERS), body: approveBody(sres.json) })
+      for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r)) // fire-and-forget chain
+
+      const after = await req(ctx, { method: 'GET', url: '/api/v1/owner/results/' + id, headers: GOOD_HEADERS })
+      assert.equal(after.status, 200)
+      assert.equal(after.json.status, 'done')
+      assert.ok(after.json.lines.join('\n').includes('完全沒有被改動'), 'the real repo is stated untouched')
+
+      // reading it again changes nothing and never re-runs
+      const again = await req(ctx, { method: 'GET', url: '/api/v1/owner/results/' + id, headers: GOOD_HEADERS })
+      assert.deepEqual(again.json, after.json)
+      assert.equal(ctx.runs.length, 1, 'reading a result never triggers another run')
+    })
+  } finally { delete process.env.AGENT_BRIDGE }
+})
+
+test('LAYER 2: with AGENT_BRIDGE OFF a correct approval produces NO result at all', async () => {
+  delete process.env.AGENT_BRIDGE
+  await withApp(async (ctx) => {
+    const { res: sres, cookie } = await sealCanary(ctx)
+    const ok = await req(ctx, { url: '/api/v1/owner/approve', headers: Object.assign({ cookie }, GOOD_HEADERS), body: approveBody(sres.json) })
+    assert.equal(ok.json.dispatchStatus, 'agent_execute_not_authorized')
+    for (let i = 0; i < 5; i++) await new Promise((r) => setImmediate(r))
+    const r = await req(ctx, { method: 'GET', url: '/api/v1/owner/results/' + sres.json.approvalId, headers: GOOD_HEADERS })
+    assert.equal(r.status, 404, 'nothing ran, so there is nothing to show')
+    assert.equal(ctx.runs.length, 0)
+  })
+})
+
+test('LAYER 2: a result is write-once and the route is loopback + same-origin bound', async () => {
+  const { createOwnerApprovalStore } = require('../agent/ownerApprovalStore')
+  const s = createOwnerApprovalStore()
+  assert.equal(s.recordResult('a1', { ok: true }).ok, true)
+  assert.equal(s.recordResult('a1', { ok: false }).reason, 'already_recorded', 'a read result is never replaced')
+  assert.equal(s.getResult('a1').record.result.ok, true)
+  assert.equal(s.getResult('nope').reason, 'no_result')
+
+  await withApp(async (ctx) => {
+    const r = await req(ctx, {
+      method: 'GET',
+      url: '/api/v1/owner/results/anything',
+      headers: Object.assign({}, GOOD_HEADERS, { 'sec-fetch-site': 'cross-site' })
+    })
+    assert.equal(r.status, 403)
+    assert.equal(r.json.reason, 'bad_sec_fetch_site')
+  })
 })

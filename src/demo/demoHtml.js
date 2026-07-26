@@ -36,10 +36,19 @@ const DEMO_HTML = `<!doctype html>
   #send { padding: 8px 16px; border-radius: 8px; border: none; background: #D97757; color: #fff; cursor: pointer; }
   #send[disabled] { opacity: .5; cursor: default; }
   button[disabled].confirm { opacity: .5; cursor: default; }
-  .order { border: 2px solid #D97757; border-radius: 10px; padding: 12px; margin: 8px 0; }
-  .order pre { white-space: pre-wrap; font: 12px/1.6 ui-monospace, monospace; margin: 0 0 8px; }
+  .order { border: 2px solid #D97757; border-radius: 10px; padding: 14px 16px; margin: 8px 0; line-height: 1.7; }
+  .order-h { font-size: 16px; font-weight: 600; margin-bottom: 10px; }
+  .sec-t { font-size: 12px; color: #6b665d; margin-top: 10px; }
+  .sec-b { white-space: pre-wrap; }
+  .order details { margin-top: 12px; }
+  .order summary { font-size: 12px; color: #6b665d; cursor: pointer; }
+  .order pre { white-space: pre-wrap; font: 12px/1.6 ui-monospace, monospace; margin: 8px 0 0; }
+  .act { margin-top: 14px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .result { margin-top: 14px; border-top: 1px solid #ece6da; padding-top: 10px; }
+  button.reject { padding: 6px 12px; border-radius: 8px; border: 1px solid #bbb; background: #fff; cursor: pointer; }
+  button[disabled].reject { opacity: .5; cursor: default; }
   .hash { font: 11px ui-monospace, monospace; color: #666; word-break: break-all; }
-  .typed { font: inherit; padding: 6px; border-radius: 6px; border: 1px solid #bbb; width: 12em; }
+  .typed { font: inherit; padding: 6px; border-radius: 6px; border: 1px solid #bbb; width: 14em; }
 </style>
 </head>
 <body>
@@ -73,6 +82,13 @@ const DEMO_HTML = `<!doctype html>
   }
   function scroll() { log.scrollTop = log.scrollHeight; }
   function addBubble(cls, text) { var b = el('div', 'bubble ' + cls, text); log.appendChild(b); scroll(); return b; }
+  // DEFECT (b): a red error from an earlier failed attempt used to stay on screen after a
+  // later success, so the Owner could not tell which message was current. Any new card
+  // clears the previous errors first.
+  function clearErrors() {
+    var olds = log.querySelectorAll('.bubble.err');
+    for (var i = 0; i < olds.length; i++) olds[i].parentNode.removeChild(olds[i]);
+  }
   function labels(card, arr) { var row = el('div'); for (var i = 0; i < arr.length; i++) row.appendChild(el('span', 'label', arr[i])); card.appendChild(row); }
   function kv(card, key, val) { var p = el('div'); p.appendChild(el('span', 'k', key + '：')); p.appendChild(el('span', null, (val === null || val === undefined || val === '') ? '（無）' : val)); card.appendChild(p); }
 
@@ -127,13 +143,23 @@ const DEMO_HTML = `<!doctype html>
       var goal = proposals[0].task || res.reply || '';
       var fileRow = el('div');
       var fileIn = el('input', 'typed'); fileIn.setAttribute('type', 'text');
-      fileIn.setAttribute('placeholder', '要改的單一檔案 (例 src/app.js)');
-      fileIn.setAttribute('aria-label', '要改的單一檔案');
+      // DEFECT (a): the placeholder used to BE the required value, so an empty field
+      // looked filled. It is now an instruction, and the button stays disabled until the
+      // field genuinely holds something.
+      fileIn.setAttribute('placeholder', '請輸入要改的檔案路徑');
+      fileIn.setAttribute('aria-label', '要改的單一檔案路徑');
+      var intentIn = el('input', 'typed'); intentIn.setAttribute('type', 'text');
+      intentIn.setAttribute('placeholder', '請輸入你想改成甚麼（可留空）');
+      intentIn.setAttribute('aria-label', '香香打算改成甚麼');
       var mk = el('button', 'confirm', '產生工作單（仍需你批准）');
       mk.setAttribute('type', 'button');
-      fileRow.appendChild(fileIn); fileRow.appendChild(mk); card.appendChild(fileRow);
+      mk.disabled = true;
+      fileIn.addEventListener('input', function () { mk.disabled = fileIn.value.trim() === ''; });
+      fileRow.appendChild(fileIn); fileRow.appendChild(intentIn); fileRow.appendChild(mk);
+      card.appendChild(fileRow);
       mk.addEventListener('click', function () {
-        requestWorkOrder(goal, fileIn.value.trim(), null, pid);
+        if (mk.disabled) return;
+        requestWorkOrder(goal, fileIn.value.trim(), null, pid, intentIn.value.trim());
       });
     }
     log.appendChild(card); scroll();
@@ -145,20 +171,49 @@ const DEMO_HTML = `<!doctype html>
   // approving posts exactly approvalId + workOrderHash + nonce + typedConfirmation. The
   // page holds no token; nothing here can widen what will run.
   function renderApprovalCard(sealed) {
+    clearErrors(); // DEFECT (b): a stale red error must not sit above a fresh card
+    var c = sealed.card || { heading: '', sections: [], actions: ['批准測試', '拒絕'], technicalTitle: '技術細節' };
     var card = el('div', 'order');
-    var pre = el('pre'); pre.textContent = (sealed.lines || []).join('\\n'); card.appendChild(pre);
-    card.appendChild(el('div', 'hash', 'hash: ' + sealed.workOrderHash));
-    card.appendChild(el('div', 'k', '你批准的就是上面這一張(hash 由伺服器重算核對)。逾時 ' + Math.round((sealed.expiresInSec || 0) / 60) + ' 分鐘後這張單自動失效。'));
+    card.appendChild(el('div', 'order-h', c.heading));
 
-    var row = el('div');
+    var secs = Array.isArray(c.sections) ? c.sections : [];
+    for (var i = 0; i < secs.length; i++) {
+      card.appendChild(el('div', 'sec-t', secs[i].title));
+      card.appendChild(el('div', 'sec-b', secs[i].body));
+    }
+
+    // ▸ 技術細節 — collapsed by default. Collapsing is PRESENTATION ONLY: the same sealed
+    // values, hidden or shown, and nothing here travels back to the server.
+    var det = document.createElement('details');
+    var sum = document.createElement('summary');
+    sum.textContent = c.technicalTitle || '技術細節';
+    det.appendChild(sum);
+    var tech = el('pre'); tech.textContent = (sealed.technicalLines || []).join('\\n');
+    det.appendChild(tech);
+    card.appendChild(det);
+
+    var row = el('div', 'act');
     var typed = el('input', 'typed'); typed.setAttribute('type', 'text');
-    typed.setAttribute('placeholder', sealed.typedConfirmationRequired);
-    typed.setAttribute('aria-label', '輸入 ' + sealed.typedConfirmationRequired + ' 以確認');
-    var go = el('button', 'confirm', '批准並執行');
+    // DEFECT (a): instruction, never the required value itself.
+    typed.setAttribute('placeholder', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認');
+    typed.setAttribute('aria-label', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認');
+    var go = el('button', 'confirm', (c.actions && c.actions[0]) || '批准測試');
     go.setAttribute('type', 'button');
-    row.appendChild(typed); row.appendChild(go); card.appendChild(row);
-    var out = el('div', 'k'); card.appendChild(out);
+    go.disabled = true; // enabled only on an EXACT match — no accidental approval
+    var no = el('button', 'reject', (c.actions && c.actions[1]) || '拒絕');
+    no.setAttribute('type', 'button');
+    var out = el('div', 'k');
+    typed.addEventListener('input', function () {
+      go.disabled = (typed.value !== sealed.typedConfirmationRequired);
+    });
+    row.appendChild(typed); row.appendChild(go); row.appendChild(no);
+    card.appendChild(row); card.appendChild(out);
     log.appendChild(card); scroll();
+
+    no.addEventListener('click', function () {
+      go.disabled = true; typed.disabled = true; no.disabled = true;
+      out.textContent = '你拒絕了這張工作單。甚麼都沒有執行。';
+    });
 
     go.addEventListener('click', function () {
       if (go.disabled) return;
@@ -176,26 +231,58 @@ const DEMO_HTML = `<!doctype html>
       }).then(function (r) {
         return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
       }).then(function (o) {
-        if (o.status === 201) { out.textContent = '已批准：' + (o.body.dispatchStatus || ''); typed.disabled = true; return; }
+        typed.disabled = true; no.disabled = true;
+        if (o.status === 201) {
+          out.textContent = (o.body.dispatchStatus === 'agent_execute_accepted')
+            ? '已批准，香香開始在丟棄式副本內嘗試。'
+            : '已批准（提案已確認），但執行通道未開啟，所以甚麼都沒有跑。';
+          requestResult(sealed.approvalId, card);
+          return;
+        }
         out.textContent = '被拒絕：' + (o.body.reason || o.body.error || '未知原因') + '（這張單已作廢，請重新產生）';
-        typed.disabled = true; // the nonce is burnt either way — never offer a retry here
       }).catch(function () { out.textContent = '連線失敗（這張單已作廢，請重新產生）'; });
     });
   }
 
+  // ── LAYER 2: the result view (read-only) ───────────────────────────────────
+  // Asks the server what actually happened. Purely a read: it approves nothing, and
+  // adopting a result is NOT a thing this page can do.
+  function requestResult(approvalId, host) {
+    fetch('/api/v1/owner/results/' + encodeURIComponent(approvalId), { credentials: 'same-origin' })
+      .then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+      }).then(function (o) {
+        var box = el('div', 'result');
+        if (o.status !== 200) {
+          box.appendChild(el('div', 'k', '尚未有執行結果可看。'));
+        } else {
+          box.appendChild(el('div', 'sec-t', '執行結果'));
+          var s = Array.isArray(o.body.sections) ? o.body.sections : [];
+          for (var i = 0; i < s.length; i++) {
+            box.appendChild(el('div', 'sec-t', s[i].title));
+            box.appendChild(el('div', 'sec-b', s[i].body));
+          }
+        }
+        host.appendChild(box); scroll();
+      }).catch(function () { /* a missing result view is never an error the Owner must act on */ });
+  }
+
   // Ask the SERVER to build + seal a Work Order from what the conversation proposed. The
-  // server validates it, assigns approvalId/branch/caps, and returns the display + hash.
-  function requestWorkOrder(goal, candidateFile, testCommand, proposalId) {
+  // server validates it, reads the file's CURRENT content, assigns approvalId/branch/caps,
+  // and returns the card + hash. It refuses outright if the file does not exist.
+  function requestWorkOrder(goal, candidateFile, testCommand, proposalId, intendedChange) {
+    clearErrors(); // DEFECT (b)
     fetch('/api/v1/owner/work-orders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ goal: goal, candidateFile: candidateFile, allowedTestCommand: testCommand, proposalId: proposalId, conversation: historyText() })
+      body: JSON.stringify({ goal: goal, candidateFile: candidateFile, allowedTestCommand: testCommand, proposalId: proposalId, intendedChange: intendedChange, conversation: historyText() })
     }).then(function (r) {
       return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
     }).then(function (o) {
       if (o.status === 201) { renderApprovalCard(o.body); return; }
-      addBubble('err', '未能建立工作單：' + (o.body.reasonForOwner || o.body.reason || o.body.error || '未知原因'));
+      // DEFECT (c): reasonForOwner already opens with 未能建立工作單 — never prefix it again.
+      addBubble('err', o.body.reasonForOwner || ('未能建立工作單：' + (o.body.reason || o.body.error || '未知原因')));
     }).catch(function () { addBubble('err', '連線失敗（未建立任何工作單）。'); });
   }
 
