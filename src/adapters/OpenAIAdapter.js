@@ -41,11 +41,19 @@ const { LLMAdapter } = require('./LLMAdapter')
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_TIMEOUT_MS = 60000
-// Docs (2026-07-25): GPT-5.6 "supports none, low, medium, high, xhigh, and max"; when
-// omitted it "defaults to medium". We pin the cheapest setting for the chat lane and let
-// the operator override via OPENAI_REASONING_EFFORT without a code change (useful if a
-// specific variant rejects 'none' — the docs do not publish a per-variant breakdown).
-const DEFAULT_REASONING_EFFORT = 'none'
+// Docs: GPT-5.6 "supports none, low, medium, high, xhigh, and max"; omitted -> "defaults
+// to medium". The guide also warns "Some models support only a subset of these values, so
+// check the relevant model page" — and the gpt-5.6-terra model page does NOT publish its
+// accepted set, so per-variant support is UNVERIFIED.
+//
+// DEFAULT CHOICE = 'low' (changed from 'none'). Rationale: 'none' is unverified for terra
+// and a rejected value costs a 400 + a fallback round-trip; 'medium' is the only value
+// provably accepted (it is the documented default) but it burns the most reasoning tokens
+// against the 2048 chat budget — the exact risk this guard exists to remove. 'low' is
+// documented at the family level and is the guide's recommendation for latency-sensitive
+// workloads, so it is the safest documented middle. If terra rejects it, the new provider
+// diagnostics name the parameter and OPENAI_REASONING_EFFORT changes it without a deploy.
+const DEFAULT_REASONING_EFFORT = 'low'
 const VALID_REASONING_EFFORTS = Object.freeze(['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
 
 /**
@@ -101,11 +109,17 @@ class OpenAIAdapter extends LLMAdapter {
     const apiKey = this._apiKey || process.env.OPENAI_API_KEY
     if (!apiKey) throw new Error('OpenAI adapter unavailable: OPENAI_API_KEY is not set')
 
+    // MINIMUM VIABLE BODY. Reasoning models reject sampling parameters: a GPT-5-family
+    // request carrying `temperature` fails with HTTP 400 — "Unsupported parameter:
+    // 'temperature' is not supported for these models and only the default (1) value is
+    // supported" — and `top_p` behaves the same way. That unconditional temperature is
+    // what made every Stage-2 GPT attempt throw before returning text. The neutral
+    // LLMAdapter contract still ACCEPTS opts.temperature (Claude uses it); this adapter
+    // simply does not forward it. Nothing is sent "just in case".
     const body = {
       model: this._model,
       input: prompt,
       max_output_tokens: opts.maxTokens || 1024,
-      temperature: opts.temperature !== undefined ? opts.temperature : 0.3,
       store: false // never create retrievable Application State
     }
     if (opts.system) body.instructions = opts.system
