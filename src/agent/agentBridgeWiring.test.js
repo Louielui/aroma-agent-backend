@@ -122,18 +122,38 @@ test('ISOLATION (runtime): a chat turn with recall + read-context NEVER touches 
   } finally { delete process.env.DECISION_RECALL; delete process.env.READ_ACCESS; delete process.env.CONTEXT_DRIVE }
 })
 
-test('ISOLATION: the agent runner has EXACTLY ONE call site, inside the guarded confirm hand-off', () => {
-  // Step 4 deliberately introduced the hand-off. The guarantee is no longer "zero call
-  // sites" but "exactly one, gated": it must sit behind the explicit EXECUTE triple AND
-  // the authorization gate, and no other route file may reference the bridge at all.
-  const appSrc = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8')
-  const codeLines = appSrc.split(/\r?\n/).filter((l) => !/^\s*(\/\/|\*|\/\*)/.test(l))
-  const callSites = codeLines.filter((l) => /agentRunner\.run\(/.test(l))
-  assert.equal(callSites.length, 1, 'exactly one live call site')
-  // the gate variable must be computed from all three explicit fields + the auth gate
-  assert.ok(/agentExecuteRequested\s*=\s*\(b\.agentExecute === true\) && !!b\.workOrder && typeof b\.approvedWorkOrderHash === 'string'/.test(appSrc), 'EXECUTE requires all three fields')
-  assert.ok(/agentEligible\s*=\s*agentExecuteRequested && auth\.agentBridgeAuthorized && agentRunner !== null/.test(appSrc), 'hand-off also requires the authorization gate')
-  assert.ok(/if \(agentEligible\) \{/.test(appSrc), 'the call site is guarded by agentEligible')
+test('ISOLATION: the agent runner has EXACTLY ONE call site, in the ONE shared confirm service', () => {
+  // Step 4 introduced the hand-off; the Owner-approval round MOVED it into the single
+  // shared confirm domain service, so BOTH entry points (Bearer confirm + local Owner
+  // card) reach the runner through one gated implementation. The guarantee tightens
+  // from "one call site in app.js" to "one call site in the whole of src/, and it is in
+  // confirmService.js" — app.js itself must now hold ZERO.
+  const SRC = path.join(__dirname, '..')
+  const liveCallSites = []
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      const p = path.join(dir, e.name)
+      if (e.isDirectory()) { walk(p); continue }
+      if (!e.name.endsWith('.js') || e.name.endsWith('.test.js')) continue
+      for (const l of fs.readFileSync(p, 'utf8').split(/\r?\n/)) {
+        if (/^\s*(\/\/|\*|\/\*)/.test(l)) continue // comments don't execute
+        if (/agentRunner\.run\(/.test(l)) liveCallSites.push(path.relative(SRC, p).replace(/\\/g, '/'))
+      }
+    }
+  }
+  walk(SRC)
+  assert.deepEqual(liveCallSites, ['agent/confirmService.js'], 'exactly one live call site, in the shared service')
+
+  const appSrc = fs.readFileSync(path.join(SRC, 'app.js'), 'utf8')
+  const svcSrc = fs.readFileSync(path.join(SRC, 'agent', 'confirmService.js'), 'utf8')
+  // the gate variable must still be computed from all three explicit fields + the auth gate
+  assert.ok(/agentExecuteRequested\s*=\s*\(input\.agentExecute === true\) && !!input\.workOrder && typeof input\.approvedHash === 'string'/.test(svcSrc), 'EXECUTE requires all three fields')
+  assert.ok(/agentEligible\s*=\s*agentExecuteRequested && auth\.agentBridgeAuthorized && agentRunner !== null/.test(svcSrc), 'hand-off also requires the authorization gate')
+  assert.ok(/if \(agentEligible\) \{/.test(svcSrc), 'the call site is guarded by agentEligible')
+  // and BOTH entries must go through that one service — no second confirm implementation
+  assert.ok(/confirmService\.confirmProposalAction\(/.test(appSrc), 'the Bearer confirm route calls the shared service')
+  const ownerSrc = fs.readFileSync(path.join(SRC, 'routes', 'ownerApprovalRouter.js'), 'utf8')
+  assert.ok(/confirmService\.confirmProposalAction\(/.test(ownerSrc), 'the Owner card calls the SAME shared service')
   // the demo / context / intake surfaces remain completely unaware of the bridge
   for (const f of ['src/routes/demoRouter.js', 'src/routes/contextRouter.js', 'src/routes/intakeRouter.js']) {
     const src = fs.readFileSync(path.join(__dirname, '..', '..', f), 'utf8')

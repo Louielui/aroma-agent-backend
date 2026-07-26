@@ -40,6 +40,11 @@ const { createClaudeCodeAdapter } = require('./adapters/claude-code')
 // for the three-flag, two-of-three execution-authorization matrix.
 const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = require('./agent/agentAuthorization')
 const { createAgentRunner } = require('./agent/agentRunner') // Agent Bridge wiring v1 (built ONLY when AGENT_BRIDGE==='on')
+const { createConfirmService } = require('./agent/confirmService') // THE single confirm domain service (both entry points)
+const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // server-authoritative sealed orders + nonces + sessions
+const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
+const { proposeWorkOrder } = require('./agent/workOrderProducer')
+const { buildApprovalView } = require('./agent/workOrderView')
 
 // Conversation → Proposal → Run bridge (COO). Proposing is inert; the ONLY path
 // from a Proposal to a Run is the structured confirm action below. See
@@ -217,21 +222,17 @@ function parseIntentJson (text) {
  * unprefixed path and on its /api/v1 twin. State-changing (POST) routes carry
  * requireServiceToken; read-only GET routes for runs and proposals do not.
  */
-function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, agentRunner = null }) {
-  const router = express.Router()
-
-  // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
-  // caller ever omits it, so the worker/dispatch can never fire un-gated.
-  const authorizeExecution = typeof authorize === 'function'
-    ? authorize
-    : () => ({ status: 'not_authorized', workerAuthorized: false, developAuthorized: false })
-
-  // B2-1: schedule a worker AFTER the confirm response, fire-and-forget. It reads
-  // the proposal's own confirm provenance for the Execution Artifact and never
-  // blocks or alters the confirm/startRun path. No-op unless the sandbox worker is
-  // AUTHORIZED (WORKER_INVOCATION on AND no config conflict) and a worker is wired.
-  // Any error is swallowed into a log line — never a late write, never a crash.
-  function scheduleWorker (proposalId, runId) {
+// B2-1: schedule a worker AFTER the confirm response, fire-and-forget. It reads
+// the proposal's own confirm provenance for the Execution Artifact and never
+// blocks or alters the confirm/startRun path. No-op unless the sandbox worker is
+// AUTHORIZED (WORKER_INVOCATION on AND no config conflict) and a worker is wired.
+// Any error is swallowed into a log line — never a late write, never a crash.
+//
+// Lifted to module scope (unchanged behaviour) so the ONE shared confirm service —
+// used by both the Bearer confirm route and the local Owner approval card — owns the
+// single sandbox-worker schedule call, instead of each entry point having its own.
+function createScheduleWorker ({ runStore, proposalStore, workerDeps, authorizeExecution }) {
+  return function scheduleWorker (proposalId, runId) {
     if (!authorizeExecution().workerAuthorized || !workerDeps || !workerDeps.runner) return
     // B2-14 SANDBOX-WORKER CLAIM GATE — synchronous, AFTER the B2-9 auth gate above
     // (auth FIRST → flag-off = 0 claim, 0 worker). Only a fresh, unique WORKER_CLAIMED
@@ -255,6 +256,16 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
       })
       .catch(err => console.error('[worker] invocation failed:', err && err.message ? err.message : String(err)))
   }
+}
+
+function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, confirmService }) {
+  const router = express.Router()
+
+  // B2-9: the authorization gate. Defaults to a fail-closed 'not_authorized' if a
+  // caller ever omits it, so the worker/dispatch can never fire un-gated.
+  const authorizeExecution = typeof authorize === 'function'
+    ? authorize
+    : () => ({ status: 'not_authorized', workerAuthorized: false, developAuthorized: false })
 
   // ── Runs — asynchronous, governed work with a live append-only timeline ───────
 
@@ -373,48 +384,23 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
       // Develop dispatch (inside confirmProposal→startRun) is gated by the same
       // authorization (authorizeDispatch=developAuthorized) in run/store.js; the
       // sandbox worker below by workerAuthorized. Under conflict, NEITHER fires.
-      const auth = authorizeExecution()
-
-      // Confirm the Proposal (persists 'confirmed' + creates the Run). This ALWAYS
-      // creates a Run; the Run is DISPATCHED only if Develop is authorized — an
-      // unauthorized Run stays at its seed TASK_CREATED stage (no fabricated
-      // develop/completed stage).
-      const runId = proposalStore.confirmProposal(req.params.id, LOCAL_OWNER)
-
-      // Honest confirm contract: proposal is confirmed; dispatchStatus reports what
-      // (if anything) was actually authorized to run. runId is the created Run.
-      // ── EXECUTE vs ORDINARY CONFIRM (step 4) ────────────────────────────────
-      // An ordinary confirm carries NO agentExecute triple, so it can never authorize
-      // agent execution — approving a normal Proposal is structurally incapable of
-      // starting the agent. Agent execution requires ALL THREE, explicitly, in the
-      // request body: agentExecute === true, a sealed workOrder, and the approvedHash
-      // the Owner saw. Missing or partial ⇒ ordinary confirm, zero agent execution.
+      // ONE shared confirm domain service. This Bearer entry and the local Owner
+      // approval card both call the SAME confirmProposalAction — the authorization read,
+      // the Proposal confirm, dispatchStatus, the sandbox-worker schedule and the agent
+      // hand-off (with its hash check) exist in exactly one implementation. Nothing is
+      // duplicated here and the server never self-HTTPs with HUB_TOKEN.
+      //
+      // An ordinary confirm carries no agentExecute triple, so approving a normal
+      // Proposal is structurally incapable of starting the agent.
       const b = req.body || {}
-      const agentExecuteRequested = (b.agentExecute === true) && !!b.workOrder && typeof b.approvedWorkOrderHash === 'string'
-      const agentEligible = agentExecuteRequested && auth.agentBridgeAuthorized && agentRunner !== null
-
-      let dispatchStatus
-      if (auth.status === 'configuration_conflict') dispatchStatus = 'configuration_conflict'
-      else if (agentEligible) dispatchStatus = 'agent_execute_accepted'
-      else if (agentExecuteRequested) dispatchStatus = 'agent_execute_not_authorized'
-      else if (auth.developAuthorized) dispatchStatus = 'develop_dispatched'
-      else if (auth.workerAuthorized) dispatchStatus = 'worker_scheduled'
-      else dispatchStatus = 'not_authorized'
-
-      res.status(201).json({ proposalStatus: 'confirmed', dispatchStatus, runId })
-
-      // Only the sandbox worker path is triggered here, and only when authorized.
-      if (auth.workerAuthorized) scheduleWorker(req.params.id, runId) // B2-1: AFTER the response
-
-      // AGENT HAND-OFF — fire-and-forget AFTER the response, exactly like the sandbox
-      // worker, and ONLY when the Owner explicitly asked to EXECUTE, the flag lane is
-      // authorized, and a runner exists. The runner itself re-verifies the hash against
-      // the order it is about to run and refuses on any mismatch (no amend path).
-      if (agentEligible) {
-        Promise.resolve()
-          .then(() => agentRunner.run({ workOrder: b.workOrder, approvedHash: b.approvedWorkOrderHash, who: LOCAL_OWNER }))
-          .catch((e) => console.warn('[agent-bridge] run failed: ' + ((e && e.message) || String(e))))
-      }
+      const out = confirmService.confirmProposalAction({
+        proposalId: req.params.id,
+        agentExecute: b.agentExecute,
+        workOrder: b.workOrder,
+        approvedHash: b.approvedWorkOrderHash,
+        entryPoint: 'bearer_token'
+      })
+      res.status(out.status).json(out.body)
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message })
     }
@@ -633,6 +619,37 @@ function createApp (options = {}) {
   app.locals.workerDeps = workerDeps
   app.locals.runStore = runStore // B2-11b: exposed for startup reconcile (index.js) + tests
 
+  // ── ONE shared confirm service + the server-authoritative approval state ──────
+  // Owner's non-negotiable principle: the browser expresses INTENT; it is NEVER the
+  // authority source for a Work Order. So there is exactly ONE confirm implementation
+  // (confirmService — the only `agentRunner.run(` call site in the repo) and exactly ONE
+  // place a Work Order can be read from for execution (ownerApprovalStore's sealed,
+  // write-once records). The Bearer route and the local Owner card both call the SAME
+  // service in-process; the server never HTTPs itself and HUB_TOKEN never leaves it.
+  const approvalAuditLog = []
+  const approvalAudit = (entry) => {
+    // Every approval ATTEMPT is recorded — accepted, refused or expired — with ids and
+    // enums only. Never a token, never a header, never Work Order content.
+    const rec = {
+      at: new Date().toISOString(),
+      approvalId: (entry && entry.approvalId) || null,
+      outcome: (entry && entry.outcome) || 'unknown',
+      reason: (entry && entry.reason) || null,
+      entryPoint: (entry && entry.entryPoint) || 'unknown'
+    }
+    approvalAuditLog.push(rec)
+    if (approvalAuditLog.length > 500) approvalAuditLog.shift()
+    console.log('[owner-approval] ' + JSON.stringify(rec))
+  }
+  app.locals.approvalAuditLog = approvalAuditLog
+
+  const scheduleWorker = createScheduleWorker({ runStore, proposalStore, workerDeps, authorizeExecution: authorize })
+  const confirmService = createConfirmService({
+    proposalStore, authorize, agentRunner, scheduleWorker, owner: LOCAL_OWNER, auditFn: approvalAudit
+  })
+  const ownerApprovalStore = createOwnerApprovalStore(opts.ownerApprovalStoreOptions || {})
+  app.locals.ownerApprovalStore = ownerApprovalStore
+
   // ── Middleware ────────────────────────────────────────────────────────────────
   app.use(express.json({ limit: '50kb' }))
   app.use(express.urlencoded({ extended: false }))
@@ -718,7 +735,7 @@ function createApp (options = {}) {
   // ── Aroma OS routes — mounted on BOTH the unprefixed path and the /api/v1 twin ──
   // Existing scripts keep hitting the unprefixed routes; the browser reaches the
   // same handlers through the proxy under /api/v1.
-  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, agentRunner })
+  const aromaRouter = createAromaRouter({ runStore, proposalStore, workerDeps, authorize, requireServiceToken, confirmService })
   app.use('/', aromaRouter)
   app.use('/api/v1', aromaRouter)
 
@@ -739,6 +756,22 @@ function createApp (options = {}) {
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
   // READ_ACCESS === 'on'. Read-only; no parameterised method endpoint exists.
   app.use(createContextRouter())
+
+  // Local Owner approval card — POST /api/v1/owner/work-orders (seal + surface) and
+  // POST /api/v1/owner/approve (four fields only). Not token-gated: it is gated by
+  // loopback peer + exact Origin/Host + Sec-Fetch-Site + a server-issued session +
+  // a single-use bound nonce + a SERVER-verified typed confirmation. It deliberately
+  // does NOT sit behind requireServiceToken, because HUB_TOKEN must never reach the
+  // browser. Execution content is loaded from the sealed store, never from the body.
+  app.use(createOwnerApprovalRouter({
+    store: ownerApprovalStore,
+    confirmService,
+    proposeWorkOrder,
+    buildApprovalView,
+    sealedHashOf: confirmService.sealedHashOf,
+    getProposal: (id) => proposalStore.getProposal(id),
+    auditFn: approvalAudit
+  }))
 
   // 404 handler
   app.use((req, res) => {

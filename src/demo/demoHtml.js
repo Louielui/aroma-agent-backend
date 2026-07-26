@@ -36,6 +36,10 @@ const DEMO_HTML = `<!doctype html>
   #send { padding: 8px 16px; border-radius: 8px; border: none; background: #D97757; color: #fff; cursor: pointer; }
   #send[disabled] { opacity: .5; cursor: default; }
   button[disabled].confirm { opacity: .5; cursor: default; }
+  .order { border: 2px solid #D97757; border-radius: 10px; padding: 12px; margin: 8px 0; }
+  .order pre { white-space: pre-wrap; font: 12px/1.6 ui-monospace, monospace; margin: 0 0 8px; }
+  .hash { font: 11px ui-monospace, monospace; color: #666; word-break: break-all; }
+  .typed { font: inherit; padding: 6px; border-radius: 6px; border: 1px solid #bbb; width: 12em; }
 </style>
 </head>
 <body>
@@ -114,11 +118,91 @@ const DEMO_HTML = `<!doctype html>
       card.appendChild(el('div', 'k', '尚未建立任何提案（需澄清）。'));
     }
     labels(card, ['Proposal only — not run']);
-    var confirm = el('button', 'confirm', '確認執行（尚未開放）');
-    confirm.setAttribute('disabled', 'disabled');
-    confirm.setAttribute('type', 'button');
-    card.appendChild(confirm);
+
+    // The chat lane REMAINS propose-only: it can never execute and never seals a Work
+    // Order by itself. This button only ASKS the server to build + seal one for review;
+    // execution still needs the sealed card, the typed confirmation and the nonce below.
+    if (proposals.length && proposals[0] && proposals[0].id) {
+      var pid = proposals[0].id;
+      var goal = proposals[0].task || res.reply || '';
+      var fileRow = el('div');
+      var fileIn = el('input', 'typed'); fileIn.setAttribute('type', 'text');
+      fileIn.setAttribute('placeholder', '要改的單一檔案 (例 src/app.js)');
+      fileIn.setAttribute('aria-label', '要改的單一檔案');
+      var mk = el('button', 'confirm', '產生工作單（仍需你批准）');
+      mk.setAttribute('type', 'button');
+      fileRow.appendChild(fileIn); fileRow.appendChild(mk); card.appendChild(fileRow);
+      mk.addEventListener('click', function () {
+        requestWorkOrder(goal, fileIn.value.trim(), null, pid);
+      });
+    }
     log.appendChild(card); scroll();
+  }
+
+  // ── OWNER APPROVAL CARD ────────────────────────────────────────────────────
+  // The card is a VIEWER plus four fields of INTENT. It never builds, edits or stores a
+  // Work Order: everything shown comes from the server's sealed record (res.lines), and
+  // approving posts exactly approvalId + workOrderHash + nonce + typedConfirmation. The
+  // page holds no token; nothing here can widen what will run.
+  function renderApprovalCard(sealed) {
+    var card = el('div', 'order');
+    var pre = el('pre'); pre.textContent = (sealed.lines || []).join('\\n'); card.appendChild(pre);
+    card.appendChild(el('div', 'hash', 'hash: ' + sealed.workOrderHash));
+    card.appendChild(el('div', 'k', '你批准的就是上面這一張(hash 由伺服器重算核對)。逾時 ' + Math.round((sealed.expiresInSec || 0) / 60) + ' 分鐘後這張單自動失效。'));
+
+    var row = el('div');
+    var typed = el('input', 'typed'); typed.setAttribute('type', 'text');
+    typed.setAttribute('placeholder', sealed.typedConfirmationRequired);
+    typed.setAttribute('aria-label', '輸入 ' + sealed.typedConfirmationRequired + ' 以確認');
+    var go = el('button', 'confirm', '批准並執行');
+    go.setAttribute('type', 'button');
+    row.appendChild(typed); row.appendChild(go); card.appendChild(row);
+    var out = el('div', 'k'); card.appendChild(out);
+    log.appendChild(card); scroll();
+
+    go.addEventListener('click', function () {
+      if (go.disabled) return;
+      go.disabled = true; // one click only; the nonce is single-use server-side anyway
+      fetch('/api/v1/owner/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          approvalId: sealed.approvalId,
+          workOrderHash: sealed.workOrderHash,
+          nonce: sealed.nonce,
+          typedConfirmation: typed.value
+        })
+      }).then(function (r) {
+        return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+      }).then(function (o) {
+        if (o.status === 201) { out.textContent = '已批准：' + (o.body.dispatchStatus || ''); typed.disabled = true; return; }
+        out.textContent = '被拒絕：' + (o.body.reason || o.body.error || '未知原因') + '（這張單已作廢，請重新產生）';
+        typed.disabled = true; // the nonce is burnt either way — never offer a retry here
+      }).catch(function () { out.textContent = '連線失敗（這張單已作廢，請重新產生）'; });
+    });
+  }
+
+  // Ask the SERVER to build + seal a Work Order from what the conversation proposed. The
+  // server validates it, assigns approvalId/branch/caps, and returns the display + hash.
+  function requestWorkOrder(goal, candidateFile, testCommand, proposalId) {
+    fetch('/api/v1/owner/work-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ goal: goal, candidateFile: candidateFile, allowedTestCommand: testCommand, proposalId: proposalId, conversation: historyText() })
+    }).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; });
+    }).then(function (o) {
+      if (o.status === 201) { renderApprovalCard(o.body); return; }
+      addBubble('err', '未能建立工作單：' + (o.body.reasonForOwner || o.body.reason || o.body.error || '未知原因'));
+    }).catch(function () { addBubble('err', '連線失敗（未建立任何工作單）。'); });
+  }
+
+  function historyText() {
+    var out = [];
+    for (var i = 0; i < history.length; i++) out.push(String(history[i].text || ''));
+    return out;
   }
 
   function render(status, res) {
