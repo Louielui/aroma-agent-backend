@@ -114,12 +114,23 @@ body {
 .turn { display: flex; gap: 12px; }
 .turn.user { justify-content: flex-end; }
 
+/* THE LANTERN IS A PHYSICAL OBJECT — every colour here is hardcoded, none is a token, so
+   it looks the same in light and dark and can never invert. The pale disc is part of the
+   object's presentation, not the page's: it keeps the warm mark legible on either
+   background. Sized 28px to match the existing row rhythm; the artwork is vector and is
+   verified legible from 24px through 32px. */
 .avatar {
   flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%;
-  background: var(--accent); color: #fff;
+  background: #FDF4E6; box-shadow: inset 0 0 0 1px #EBD9BC;
   display: flex; align-items: center; justify-content: center;
-  font-size: 12px; font-weight: 600; margin-top: 2px;
+  margin-top: 2px; overflow: hidden;
 }
+.avatar svg { width: 24px; height: 24px; display: block; }
+
+/* The header mark. Tall and narrow (200x360), so it is sized by height and keeps its
+   aspect; hidden from assistive tech because the title beside it already says 香香. */
+.brand-mark { display: inline-flex; align-items: center; flex: 0 0 auto; }
+.brand-mark svg { height: 26px; width: auto; display: block; }
 
 .body { min-width: 0; max-width: 86%; }
 .turn.user .body {
