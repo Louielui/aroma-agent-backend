@@ -34,7 +34,12 @@ const crypto = require('node:crypto')
 
 const SESSION_COOKIE = 'aroma_owner_session' // deliberately NOT the approval router's cookie
 const DEFAULT_TTL_MS = 30 * 24 * 60 * 60 * 1000 // 30 days — a phone should not re-login weekly
-const MIN_PASSWORD_CHARS = 12
+// OWNER'S DECISION, 2026-07-27: 8, not 12. The 12 was mine, not asked for; it exists only
+// to stop a placeholder like "x" counting as "configured" and silently leaving the door
+// open. The Owner was told a shorter password is a weaker lock on his Gmail and Drive and
+// chose 8 anyway, which is his call to make. The floor still does its actual job: empty
+// and one-character values are still refused, so fail-closed cannot be defeated by a stub.
+const MIN_PASSWORD_CHARS = 8
 
 /** The Owner's password, from the environment only. Never logged, never returned. */
 function readOwnerPassword (env = process.env) {
