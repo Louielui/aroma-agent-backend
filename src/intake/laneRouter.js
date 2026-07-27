@@ -121,4 +121,24 @@ function routeLane (message, opts) {
   return { lane: CHAT, reason: INTERROGATIVE.test(text) ? 'question' : 'default' }
 }
 
-module.exports = { routeLane, isShortReply, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }
+// Asking to LOOK something up. 「幫我睇 Calendar」 is a read instruction, not an edit —
+// but it is still phrased as an instruction, so the classifier reads it as mode:'commit'
+// and the chat-lane interception answered it with 「我未有建立提案」. Telling the Owner no
+// proposal was filed, when he never asked for one, is a non-answer.
+const READ_ACT = /(睇下|睇一睇|睇|望下|望|查下|查一查|查|睇睇|搵下|搵|找一下|找|列出|列一列|顯示|話我知|講下|講一講|同我睇|show|list|read|check|find|look|display|tell me|give me)/i
+
+/**
+ * Is this message asking to READ / be told something, rather than to change something?
+ *
+ * Deliberately conservative: a message that carries ANY change verb is NOT a read request,
+ * so 「睇下 docs/x.md 然後改嗰行」 keeps the proposal handling. Pure, zero-context, free —
+ * same contract as routeLane.
+ */
+function isReadRequest (message) {
+  const text = typeof message === 'string' ? message.trim() : ''
+  if (!text) return false
+  if (CHANGE_ACT.test(text)) return false
+  return READ_ACT.test(text) || INTERROGATIVE.test(text)
+}
+
+module.exports = { routeLane, isShortReply, isReadRequest, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }
