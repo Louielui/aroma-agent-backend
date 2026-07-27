@@ -19,6 +19,7 @@ const {
   SESSION_COOKIE, readCookie, passwordMatches, readOwnerPassword,
   ownerPasswordConfigured, sessionCookie, clearedCookie
 } = require('../api/ownerAuth')
+const { iconDataUri } = require('../demo/appManifest') // the same dot the rest of the app uses
 
 /** Minimal same-origin check for the login POST itself. Sec-Fetch-Site is sent by every
  *  current browser; when present it must not be cross-site. It is NOT required to be
@@ -60,6 +61,7 @@ function loginPage ({ next = '/demo', error = null, configured = true } = {}) {
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>守燈</title>
+<link rel="icon" type="image/svg+xml" href="${iconDataUri()}">
 <style>
 :root{color-scheme:light dark}
 body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;
