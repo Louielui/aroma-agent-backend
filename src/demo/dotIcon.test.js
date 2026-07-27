@@ -111,10 +111,14 @@ test('*** --avatar-size is the ONLY place the avatar size is written ***', () =>
 
 test('*** the row still lines up: the dot centres on the first line of the reply ***', () => {
   const rule = CSS.slice(CSS.indexOf('.avatar {'), CSS.indexOf('.brand-mark'))
-  // alignment is DERIVED from the size, so changing the knob cannot knock the row askew
-  assert.match(rule, /margin-top:\s*calc\(2px \+ \(1\.65em - var\(--avatar-size\)\) \/ 2\)/)
-  // the constants it derives from are the real ones, not guesses
-  assert.match(CSS, /font:\s*15px\/1\.65/, 'body line-height is 1.65')
+  // Alignment derives from BOTH knobs — the avatar size and the line-height token — so
+  // neither can be changed into a misaligned row. This assertion previously pinned a
+  // literal 1.65em copied out of the body rule; when the line-height token moved to 1.75
+  // the dot would have drifted off the line and this test would still have passed.
+  assert.match(rule, /margin-top:\s*calc\(2px \+ \(var\(--msg-line\) \* 1em - var\(--avatar-size\)\) \/ 2\)/)
+  // the things it derives from are tokens, and they exist
+  assert.match(CSS, /--msg-line:\s*[\d.]+/, 'the line-height is a token')
+  assert.match(CSS, /line-height:\s*var\(--msg-line\)/, 'and the body actually uses it')
   assert.match(CSS, /\.turn\.bot \.body \{ padding-top: 2px; \}/, 'bot body padding is 2px')
   // the served-by label lives INSIDE .body, so it shares the bubble's left edge
   assert.match(CSS, /\.served \{[^}]*margin-top/, 'served label is a block under the reply')
