@@ -1,24 +1,57 @@
-/* 守燈 UI — Stage A.
-   Owner direction: it must read like a real chat product, not a log viewer.
-   Palette follows the house "wabi-sabi calm" tokens: warm paper, muted text, ONE coral
-   accent. Dark mode included because the Owner works late. No external font, no CDN,
-   no image — everything here is inline and same-origin by construction. */
+/* 守燈 UI.
+   Owner direction: it must read like a real chat product, not a log viewer, and the
+   typography and background should match Manus — cooler and lighter than the old cream,
+   larger and airier body text, nothing bold in running text.
+
+   EVERYTHING TUNABLE IS A NAMED TOKEN IN THIS ONE BLOCK. Nothing below re-states a colour,
+   a size, a weight or a line-height; they all read from here, so "background a bit warmer"
+   or "text bigger" is a one-line change and cannot half-apply. Dark mode overrides the
+   same names, so it follows automatically.
+
+   No external font, no CDN, no image — everything here is inline and same-origin. */
 
 :root {
-  --bg: #faf7f2;
-  --panel: #f4efe6;
-  --card: #ffffff;
-  --line: #ece6da;
-  --divider: #f2ede3;
-  --ink: #2c2a26;
-  --muted: #6b665d;
-  --soft: #8a857c;
-  --faint: #a39d92;
+  /* ── surfaces ─────────────────────────────────────────────────────────── */
+  --bg: #F7F6F3;          /* page background — warm off-white */
+  --panel: #F2F1ED;       /* sidebar — a touch darker than the page */
+  --card: #FFFFFF;        /* raised surfaces: user bubble, menus, cards */
+  --line: #E6E4DE;        /* borders */
+  --divider: #EDEBE5;     /* hairlines between regions */
+
+  /* ── text ─────────────────────────────────────────────────────────────── */
+  --ink: #2C2C2C;         /* body text */
+  --muted: #5F5F5A;       /* secondary text */
+  --soft: #757570;        /* labels */
+  --faint: #8A8A85;       /* muted / footer / timestamps */
+
+  /* ── type ─────────────────────────────────────────────────────────────── */
+  /* Inter first for anyone who has it; then each platform's own neutral UI face, then
+     the Traditional Chinese faces — the interface is Chinese, so those must stay in the
+     stack or the CJK glyphs fall back to something clumsy. All local; nothing is fetched. */
+  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
+               Roboto, "Helvetica Neue", Arial, "Microsoft JhengHei", "PingFang TC",
+               "Noto Sans TC", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+
+  --msg-size: 16px;       /* the conversation itself */
+  --msg-line: 1.75;       /* generous — this is the "airy" of Manus */
+  --ui-size: 14px;        /* sidebar items, buttons, controls */
+  --ui-line: 1.5;
+  --small-size: 12px;     /* footer, served-by, timestamps */
+  --title-size: 15px;     /* top-bar title */
+  --brand-size: 16px;     /* sidebar wordmark */
+
+  --weight-normal: 400;   /* running text is NEVER bold */
+  --weight-medium: 500;   /* the only step up: titles, active items, primary button */
+
+  /* ── accents & status ─────────────────────────────────────────────────── */
   --accent: #d97757;
   --accent-hover: #c96a47;
   --ok: #5f8466;
   --warn: #a8782a;
   --bad: #b0564b;
+
+  /* ── geometry ─────────────────────────────────────────────────────────── */
   --radius: 14px;
   --side-w: 264px;
   --col: 720px;
@@ -29,17 +62,24 @@
   color-scheme: light dark;
 }
 
+/* DARK MODE overrides the SAME token names, so every rule below follows without knowing
+   dark mode exists. The surfaces are re-tuned to the new neutral palette (the old ones
+   were warm-brown to match the cream) and the four text levels keep their order and
+   contrast, inverted. Sizes, weights and the font stack are shared — only colour changes,
+   because type that shifts between themes reads as two different products.
+   The avatar dot is NOT here: its colour lives in dot.svg as a literal and no token
+   reaches it, so #FFA02E is the same in both themes by construction. */
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1b19;
-    --panel: #232120;
-    --card: #262422;
-    --line: #383430;
-    --divider: #302c29;
-    --ink: #ece7df;
-    --muted: #a8a199;
-    --soft: #8d867e;
-    --faint: #6f6860;
+    --bg: #1B1B1A;
+    --panel: #212120;
+    --card: #262625;
+    --line: #383836;
+    --divider: #2E2E2C;
+    --ink: #ECECEA;
+    --muted: #ABABA6;
+    --soft: #91918C;
+    --faint: #7A7A75;
   }
 }
 
@@ -49,9 +89,12 @@ body {
   margin: 0;
   background: var(--bg);
   color: var(--ink);
-  font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei",
-        "PingFang TC", "Noto Sans TC", sans-serif;
+  font-family: var(--font-sans);
+  font-size: var(--msg-size);
+  line-height: var(--msg-line);
+  font-weight: var(--weight-normal);
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 #app { display: flex; height: 100vh; overflow: hidden; }
@@ -71,7 +114,7 @@ body {
 #sidebar.collapsed { margin-left: calc(-1 * var(--side-w)); }
 
 .side-top { display: flex; align-items: center; gap: 10px; }
-.brand { font-weight: 650; font-size: 16px; letter-spacing: .02em; }
+.brand { font-weight: var(--weight-medium); font-size: var(--brand-size); letter-spacing: .01em; }
 
 .icon-btn {
   background: transparent; border: 0; color: var(--muted);
@@ -83,7 +126,7 @@ body {
   width: 100%; text-align: left; padding: 9px 12px;
   background: var(--card); color: var(--ink);
   border: 1px solid var(--line); border-radius: 10px;
-  font: inherit; font-size: 14px; cursor: pointer;
+  font: inherit; font-size: var(--ui-size); cursor: pointer;
 }
 .new-chat:hover { border-color: var(--accent); color: var(--accent); }
 
@@ -91,13 +134,13 @@ body {
 .conv {
   text-align: left; width: 100%;
   padding: 8px 10px; border: 0; background: transparent; border-radius: 8px;
-  color: var(--muted); font: inherit; font-size: 14px; cursor: pointer;
+  color: var(--muted); font: inherit; font-size: var(--ui-size); cursor: pointer;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .conv:hover { background: var(--divider); color: var(--ink); }
-.conv.active { background: var(--card); color: var(--ink); font-weight: 550; }
+.conv.active { background: var(--card); color: var(--ink); font-weight: var(--weight-medium); }
 
-.side-foot { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--faint); padding: 4px 2px; }
+.side-foot { display: flex; align-items: center; gap: 7px; font-size: var(--small-size); color: var(--faint); padding: 4px 2px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
 .dot.off { background: var(--bad); }
 
@@ -108,7 +151,7 @@ body {
   display: flex; align-items: center; gap: 12px;
   padding: 12px 20px; border-bottom: 1px solid var(--divider);
 }
-#conv-title { font-size: 15px; font-weight: 550; margin: 0; flex: 1; color: var(--muted);
+#conv-title { font-size: var(--title-size); font-weight: var(--weight-medium); margin: 0; flex: 1; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 #log { flex: 1; overflow-y: auto; padding: 28px 20px 8px; }
@@ -130,11 +173,13 @@ body {
   width: var(--avatar-size);
   height: var(--avatar-size);
   /* Centre the dot on the FIRST LINE of the reply rather than on the top of the block.
-     The bot body is padded 2px and a line box is 1.65em tall, so the line's centre sits at
-     2px + 1.65em/2; the dot's centre must land there whatever its size. Derived, not a
+     The bot body is padded 2px and a line box is --msg-line tall, so the line's centre
+     sits at 2px + that/2; the dot's centre must land there whatever its size. Derived from
+     the LINE-HEIGHT TOKEN, not from a copy of its value — when --msg-line moved from 1.65
+     to 1.75 a literal here would have silently drifted the dot off the line. Not a
      magic number, so changing --avatar-size keeps the row aligned instead of nudging the
      dot out of line. */
-  margin-top: calc(2px + (1.65em - var(--avatar-size)) / 2);
+  margin-top: calc(2px + (var(--msg-line) * 1em - var(--avatar-size)) / 2);
 }
 .avatar svg { width: 100%; height: 100%; display: block; }
 
@@ -154,11 +199,11 @@ body {
 .md > *:last-child { margin-bottom: 0; }
 .md p { margin: 0 0 10px; white-space: pre-wrap; }
 .md h1, .md h2, .md h3 { margin: 16px 0 8px; line-height: 1.35; }
-.md h1 { font-size: 19px; } .md h2 { font-size: 17px; } .md h3 { font-size: 15px; }
+.md h1 { font-size: 1.25em; } .md h2 { font-size: 1.125em; } .md h3 { font-size: 1em; }
 .md ul, .md ol { margin: 0 0 10px; padding-left: 22px; }
 .md li { margin: 3px 0; }
 .md code {
-  font: 13px/1.5 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: 0.85em/1.5 var(--font-mono);
   background: var(--divider); padding: 1px 5px; border-radius: 5px;
 }
 .md pre {
@@ -171,9 +216,9 @@ body {
 
 .err-note {
   border-left: 3px solid var(--bad); background: color-mix(in srgb, var(--bad) 8%, transparent);
-  padding: 8px 12px; border-radius: 0 8px 8px 0; color: var(--ink); font-size: 14px;
+  padding: 8px 12px; border-radius: 0 8px 8px 0; color: var(--ink); font-size: var(--ui-size);
 }
-.meta { font-size: 12px; color: var(--faint); margin-top: 6px; }
+.meta { font-size: var(--small-size); color: var(--faint); margin-top: 6px; }
 
 /* thinking / typing indicator */
 .typing { display: inline-flex; gap: 4px; align-items: center; padding: 4px 0; }
@@ -192,21 +237,21 @@ body {
   border-left: 3px solid var(--accent); border-radius: var(--radius);
   padding: 18px 20px; margin-top: 4px;
 }
-.order h2 { font-size: 16px; font-weight: 650; margin: 0 0 14px; }
+.order h2 { font-size: var(--msg-size); font-weight: var(--weight-medium); margin: 0 0 14px; }
 .sec { margin-top: 14px; }
 .sec:first-of-type { margin-top: 0; }
-.sec-t { font-size: 12px; color: var(--soft); margin-bottom: 3px; letter-spacing: .02em; }
+.sec-t { font-size: var(--small-size); color: var(--soft); margin-bottom: 3px; letter-spacing: .02em; }
 .sec-b { white-space: pre-wrap; }
-.sec-b.mono { font: 12.5px/1.6 ui-monospace, SFMono-Regular, Consolas, monospace;
+.sec-b.mono { font: var(--small-size)/1.6 var(--font-mono);
   background: var(--divider); border-radius: 8px; padding: 10px 12px; overflow-x: auto; }
 
 details.tech { margin-top: 16px; border-top: 1px solid var(--divider); padding-top: 10px; }
-details.tech summary { font-size: 12px; color: var(--soft); cursor: pointer; list-style: none; }
+details.tech summary { font-size: var(--small-size); color: var(--soft); cursor: pointer; list-style: none; }
 details.tech summary::-webkit-details-marker { display: none; }
 details.tech summary::before { content: "▸ "; }
 details.tech[open] summary::before { content: "▾ "; }
 details.tech pre {
-  font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace;
+  font: var(--small-size)/1.7 var(--font-mono);
   white-space: pre-wrap; margin: 10px 0 0; color: var(--muted);
 }
 
@@ -218,7 +263,7 @@ details.tech pre {
 .typed:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 button.primary {
   padding: 8px 16px; border-radius: 9px; border: 0;
-  background: var(--accent); color: #fff; font: inherit; font-weight: 550; cursor: pointer;
+  background: var(--accent); color: #fff; font: inherit; font-weight: var(--weight-medium); cursor: pointer;
 }
 button.primary:hover:not([disabled]) { background: var(--accent-hover); }
 button.ghost {
@@ -229,7 +274,7 @@ button[disabled] { opacity: .45; cursor: default; }
 
 /* ── live progress + result ──────────────────────────────────────────────── */
 .progress { margin-top: 16px; border-top: 1px solid var(--divider); padding-top: 12px; }
-.phase-row { display: flex; align-items: center; gap: 9px; font-size: 14px; color: var(--muted); }
+.phase-row { display: flex; align-items: center; gap: 9px; font-size: var(--ui-size); color: var(--muted); }
 .spin {
   width: 12px; height: 12px; border-radius: 50%;
   border: 2px solid var(--line); border-top-color: var(--accent);
@@ -239,9 +284,9 @@ button[disabled] { opacity: .45; cursor: default; }
 @media (prefers-reduced-motion: reduce) { .spin { animation-duration: 3s; } }
 .bar { height: 3px; background: var(--divider); border-radius: 2px; margin-top: 10px; overflow: hidden; }
 .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s linear; }
-.elapsed { font-size: 12px; color: var(--faint); margin-top: 6px; }
-.done-mark { color: var(--ok); font-weight: 600; }
-.fail-mark { color: var(--bad); font-weight: 600; }
+.elapsed { font-size: var(--small-size); color: var(--faint); margin-top: 6px; }
+.done-mark { color: var(--ok); font-weight: var(--weight-medium); }
+.fail-mark { color: var(--bad); font-weight: var(--weight-medium); }
 
 .result { margin-top: 16px; border-top: 1px solid var(--divider); padding-top: 12px; }
 
@@ -274,7 +319,7 @@ button[disabled] { opacity: .45; cursor: default; }
   border: 0; outline: none;                 /* no default outline */
   resize: none;                             /* no visible resize handle */
   background: transparent; color: var(--ink);
-  font: inherit; line-height: 1.6;
+  font: inherit; line-height: var(--msg-line);
   padding: 4px 0 2px;
   max-height: 200px; overflow-y: auto;      /* auto-grow up to here, then scroll */
 }
@@ -300,14 +345,14 @@ button[disabled] { opacity: .45; cursor: default; }
   min-width: 210px; background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.14);
 }
-.lane-hint { font-size: 11.5px; color: var(--faint); }
+.lane-hint { font-size: var(--small-size); color: var(--faint); }
 
 /* provider picker */
 #picker-wrap { position: relative; }
 #picker {
   display: flex; align-items: center; gap: 5px;
   border: 0; background: transparent; color: var(--muted);
-  font: inherit; font-size: 12.5px; padding: 5px 9px; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: var(--small-size); padding: 5px 9px; border-radius: 8px; cursor: pointer;
 }
 #picker:hover { background: var(--divider); color: var(--ink); }
 #picker .caret { font-size: 10px; color: var(--faint); }
@@ -324,8 +369,8 @@ button[disabled] { opacity: .45; cursor: default; }
 }
 .opt:hover { background: var(--divider); }
 .opt.active { background: var(--divider); }
-.opt-name { font-size: 13.5px; font-weight: 550; }
-.opt-note { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.opt-name { font-size: var(--ui-size); font-weight: var(--weight-medium); }
+.opt-note { font-size: var(--small-size); color: var(--muted); margin-top: 3px; line-height: var(--ui-line); }
 .opt-note.warn { color: var(--warn); }
 
 #send {
@@ -337,10 +382,10 @@ button[disabled] { opacity: .45; cursor: default; }
 #send:hover:not([disabled]) { background: var(--accent-hover); }
 #send[disabled] { background: var(--line); color: var(--faint); cursor: default; }
 
-.composer-note { font-size: 11.5px; color: var(--faint); text-align: center; margin: 8px 0 0; }
+.composer-note { font-size: var(--small-size); color: var(--faint); text-align: center; margin: 8px 0 0; }
 
 /* which 守燈 actually answered (a pick is not a promise — a fallback can change it) */
-.served { font-size: 11.5px; color: var(--faint); margin-top: 6px; }
+.served { font-size: var(--small-size); color: var(--faint); margin-top: 6px; }
 .served.fallback { color: var(--warn); }
 
 .hidden { display: none !important; }
