@@ -2,9 +2,9 @@
 
 /**
  * shortReplyIntercept.test.js — answering 「1」 to a numbered list must not be treated as
- * an attempt to make 香香 do something.
+ * an attempt to make 守燈 do something.
  *
- * WHAT ACTUALLY HAPPENED, from the live log. 香香 offered options; the Owner replied
+ * WHAT ACTUALLY HAPPENED, from the live log. 守燈 offered options; the Owner replied
  * 「1」; the classifier read that as mode:'commit'; the chat-lane interception fired and
  * REPLACED her real 622-token answer with a canned notice about proposals. The routing
  * was already correct (lane=chat, laneReason=continuation) — the previous fix changed the
@@ -45,7 +45,7 @@ const HISTORY = [
 
 /* ── the fix ──────────────────────────────────────────────────────────────── */
 
-test('*** 「1」 after a numbered list keeps 香香\'s real answer ***', async () => {
+test('*** 「1」 after a numbered list keeps 守燈\'s real answer ***', async () => {
   const res = await processIntake('1', fake(COMMIT), HISTORY, { demo: true, interactionMode: 'chat' })
   assert.equal(res.reply, '好，我幫你睇咗第一個選項：先接 POS，因為佢影響每日落單。',
     'her actual answer is returned, not a canned notice')

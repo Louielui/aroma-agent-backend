@@ -8,7 +8,7 @@
  * it requires editing ONE field here, never the core. Adding a new employee (Gemini,
  * Cursor Agent, …) is one new entry here — zero core changes.
  *
- * 香香 (Aroma) is NOT in this pool. She is the AI EXECUTIVE: she understands, plans,
+ * 守燈 (Aroma) is NOT in this pool. She is the AI EXECUTIVE: she understands, plans,
  * dispatches, integrates and reports — she does not do specialist work herself.
  *
  * `engine`:
@@ -18,7 +18,7 @@
  */
 
 const EXECUTIVE = {
-  id: 'aroma', name: '香香', role: 'AI Executive', provider: 'Claude',
+  id: 'aroma', name: '守燈', role: 'AI Executive', provider: 'Claude',
   responsibilities: ['理解需求', '拆解任務', '制定計畫', '派工', '整合成果', '向 Louie 回報', '等待批准'],
   connected: true
 }

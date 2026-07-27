@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * laneRouter.js — Unified Conversation v1. ONE composer; 香香 picks the lane.
+ * laneRouter.js — Unified Conversation v1. ONE composer; 守燈 picks the lane.
  *
  * Owner's principle: 「統一使用介面，但唔統一權限」 — one chat surface, permissions stay
  * separated. The three mode buttons are gone; this decides where a turn goes.
@@ -37,7 +37,7 @@ const PROPOSAL = 'proposal'
 const LANES = Object.freeze([CHAT, EMAIL, PROPOSAL])
 
 // ── vocabulary ───────────────────────────────────────────────────────────────
-// Asking whether 香香 CAN do something is a question about her, not an instruction.
+// Asking whether 守燈 CAN do something is a question about her, not an instruction.
 // 「你識唔識寫 email?」 is chat; 「寫封 email 畀 Rob」 is the email lane.
 // Two forms, because the English one has no pronoun to anchor on: 「你識唔識…」 needs the
 // pronoun to distinguish it from a plain instruction, while "can you …" is already
@@ -64,9 +64,9 @@ const FILE_OBJECT = /([A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]{1,6}|[A-Z
 const INTERROGATIVE = /(有冇|有沒有|係咪|是否|point解|點解|為何|為什麼|點樣|如何|怎樣|怎麼|幾多|幾時|邊個|邊啲|邊樣|咩嘢|什麼|甚麼|which|what|when|who|how many|how do|is there|are there|do i have|\?|？)/i
 
 // ── SHORT REPLIES ARE CONTINUATIONS, NOT NEW REQUESTS ───────────────────────
-// When 香香 offers numbered options and the Owner answers 「1」, that is him continuing
+// When 守燈 offers numbered options and the Owner answers 「1」, that is him continuing
 // the turn she just made — not a fresh, contentless instruction. Routing it as a new
-// input made 香香 answer as though he had said nothing meaningful.
+// input made 守燈 answer as though he had said nothing meaningful.
 //
 // A short reply therefore CONTINUES the previous lane. The one exception is the safe
 // direction the Owner asked for: it never continues INTO the proposal lane. A bare

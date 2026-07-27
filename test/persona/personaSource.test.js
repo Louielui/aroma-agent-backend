@@ -68,7 +68,7 @@ test('legacy loads NO composer and NO core/memory (fresh require cache, child pr
   `
   const res = cp.spawnSync(process.execPath, ['-e', script], { encoding: 'utf8' })
   const out = JSON.parse((res.stdout || '').trim())
-  assert.equal(out.len, 3116)
+  assert.equal(out.len, 3113) // RE-SIGNED with the 2026-07-27 persona unlock (was 3116)
   assert.equal(out.composerLoaded, false)
   assert.equal(out.memLoaded, false)
 })
@@ -120,7 +120,7 @@ test('hybrid NOT_READY -> fail closed (throws, no persona text)', () => {
   const base = tmpBase()
   try {
     seedId(base); seedOp(base, { stopAt: 'review_ready' }); const s = src('hybrid', base)
-    assert.throws(() => s.runtimePersona(), (e) => e.code === 'PERSONA_SOURCE_UNAVAILABLE' && !/香香|思考順序/.test(String(e.reason)))
+    assert.throws(() => s.runtimePersona(), (e) => e.code === 'PERSONA_SOURCE_UNAVAILABLE' && !/守燈|思考順序/.test(String(e.reason)))
   } finally { cleanup(base) }
 })
 test('hybrid verification FAIL -> fail closed', () => {
@@ -181,7 +181,7 @@ test('safeMetadata carries revision ids only — no persona / fragment / tail te
   try {
     seedTriple(base); const s = src('shadow', base)
     const m = JSON.stringify(s.safeMetadata())
-    for (const leak of ['香香', '思考順序', '表達風格', P.slice(0, 807), P.slice(1586)]) assert.equal(m.includes(leak), false)
+    for (const leak of ['守燈', '思考順序', '表達風格', P.slice(0, 807), P.slice(1586)]) assert.equal(m.includes(leak), false)
     assert.ok(m.includes(s.pin.identityRevisionId))
   } finally { cleanup(base) }
 })

@@ -23,8 +23,8 @@ const { IntakeUpstreamError } = require('../intake/intakeErrors')  // Slice B er
 // Client-facing, fixed and safe. Never contain: parser reason, provider name/text,
 // raw, prompt, Context Card, stack, path, or err.message.
 const SAFE_MESSAGES = Object.freeze({
-  invalid_llm_output: '香香未能產生有效回應，請稍後再試。',
-  llm_unavailable: '香香目前暫時無法連接服務，請稍後再試。',
+  invalid_llm_output: '守燈未能產生有效回應，請稍後再試。',
+  llm_unavailable: '守燈目前暫時無法連接服務，請稍後再試。',
   internal_error: '系統暫時無法處理這個請求。'
 })
 const STATUS = Object.freeze({ invalid_llm_output: 500, llm_unavailable: 503, internal_error: 500 })

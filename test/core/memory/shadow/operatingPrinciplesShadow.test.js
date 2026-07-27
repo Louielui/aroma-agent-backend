@@ -436,7 +436,7 @@ test('verifier output never contains fragment / persona text', () => {
   try {
     seedActive(base, goodPayload())
     const s = JSON.stringify(verify(base))
-    for (const leak of ['香香', '思考順序', '表達風格', '即時事實', P.slice(807, 886)]) assert.equal(s.includes(leak), false)
+    for (const leak of ['守燈', '思考順序', '表達風格', '即時事實', P.slice(807, 886)]) assert.equal(s.includes(leak), false)
   } finally { cleanup(base) }
 })
 

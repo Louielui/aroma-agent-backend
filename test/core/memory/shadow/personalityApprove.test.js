@@ -170,7 +170,7 @@ test('CLI dry-run exit 0; confirmed exit 0 APPROVED; re-run ALREADY_APPROVED_MAT
     const d = runCli(base, ['--expect-revision-id', r0.revisionId]); assert.equal(d.code, 0); assert.ok(d.out.includes('"status":"DRY_RUN"'))
     const c = runCli(base, ['--expect-revision-id', r0.revisionId, '--confirm']); assert.equal(c.code, 0); assert.ok(c.out.includes('"status":"APPROVED"'))
     const again = runCli(base, ['--expect-revision-id', r0.revisionId, '--confirm']); assert.equal(again.code, 0); assert.ok(again.out.includes('ALREADY_APPROVED_MATCH'))
-    for (const leak of ['香香', '表達風格', P.slice(886, 952)]) assert.equal(c.out.includes(leak), false)
+    for (const leak of ['守燈', '表達風格', P.slice(886, 952)]) assert.equal(c.out.includes(leak), false)
   } finally { cleanup(base) }
 })
 test('CLI review_ready without --expect-revision-id -> exit 2; missing AROMA_CORE_DIR -> exit 3', () => {

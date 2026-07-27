@@ -188,7 +188,7 @@ test('telemetry emits no persona / tail / fragment / prompt text across all phas
     ev(base, op.OP_STORE, op.OP_RECORD_ID, src.pin.operatingPrinciplesRevisionId, 'SUPERSEDED', 'active')
     try { src.runtimePersona() } catch (e) { /* drift */ }
     const all = JSON.stringify(c.rows)
-    for (const leak of ['香香', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586)]) assert.equal(all.includes(leak), false)
+    for (const leak of ['守燈', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586)]) assert.equal(all.includes(leak), false)
   } finally { cleanup(base) }
 })
 test('telemetry writes nothing to the filesystem', () => {

@@ -6,7 +6,7 @@ const WORKER_MAP = {
   coding: 'Codex', software: 'Codex',
   execution: 'Windows Agent', desktop: 'Windows Agent',
   browser: 'Manus', ssh: 'SSH Agent',
-  verification: '香香(自己)', ops: '待指派'
+  verification: '守燈(自己)', ops: '待指派'
 }
 function enrichTasks (storedTasks, distilledTasks) {
   return (storedTasks || []).map((t, i) => {
@@ -226,7 +226,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
       } catch (err) {
         // Same rule as the read block below: fail soft, but never silently. A recall
-        // failure used to be invisible, so 香香 answering without past decisions looked
+        // failure used to be invisible, so 守燈 answering without past decisions looked
         // identical to there being none.
         recallBlockCache = null
         logReadSource({ source: 'decisions', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
@@ -430,7 +430,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
 
     // A SHORT CONFIRMATION CONTINUING A PREVIOUS TURN IS AN ANSWER, NOT AN INSTRUCTION.
-    // 香香 offered a numbered list, the Owner replied 「1」, and the classifier read that
+    // 守燈 offered a numbered list, the Owner replied 「1」, and the classifier read that
     // as a commit. The interception then threw away the real 622-token answer she had
     // just written and replaced it with a canned notice about proposals — for a turn
     // where he had simply picked an option. Selecting from a list she offered is the most

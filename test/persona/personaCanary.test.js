@@ -163,6 +163,6 @@ test('e2e: real personaCanary entrypoint serves /persona-canary/health and /read
     assert.equal(nf.status, 404)
     // no leakage in either response
     const all = h.body + rd.body
-    for (const leak of ['canary-secret', '香香', '思考順序', P.slice(0, 807), P.slice(886, 952), '/Users/', 'AromaCore', 'Error:', 'HUB_TOKEN', 'ANTHROPIC']) assert.equal(all.includes(leak), false, 'leak: ' + leak)
+    for (const leak of ['canary-secret', '守燈', '思考順序', P.slice(0, 807), P.slice(886, 952), '/Users/', 'AromaCore', 'Error:', 'HUB_TOKEN', 'ANTHROPIC']) assert.equal(all.includes(leak), false, 'leak: ' + leak)
   } finally { cleanupChild(child); fs.rmSync(core, { recursive: true, force: true }) }
 })

@@ -8,7 +8,7 @@
  *
  * Honesty rules (Louie's v1):
  *  - Workers that are NOT connected NEVER "run". Their dispatch stays "waiting_connection".
- *  - Only 香香 (Claude), the one connected worker, executes — and only KNOWLEDGE tasks
+ *  - Only 守燈 (Claude), the one connected worker, executes — and only KNOWLEDGE tasks
  *    (analysis / review / planning / checklists / writing). It never touches files,
  *    code, or production. Red-line content is never sent out (→ waiting_approval).
  *  - Every status transition is persisted.
@@ -37,7 +37,7 @@ function createDispatchesForTasks (tasks, decisionId) {
   })
 }
 
-/** Execute one dispatch with the connected knowledge worker (香香/Claude). Real, not simulated. */
+/** Execute one dispatch with the connected knowledge worker (守燈/Claude). Real, not simulated. */
 async function executeDispatch (dispatchId, adapter, context = {}) {
   const d = store.getDispatch(dispatchId)
   if (!d) return
@@ -57,7 +57,7 @@ async function executeDispatch (dispatchId, adapter, context = {}) {
 
   store.updateDispatch(dispatchId, { status: 'running' })
   try {
-    const system = `你是「香香」,Louie 的 AI 營運長,正在親自完成一個知識型任務。
+    const system = `你是「守燈」,Louie 的 AI 營運長,正在親自完成一個知識型任務。
 只產出「知識型成果」(分析、檢查清單、計畫、審查意見、草稿)。
 你【不能】也【不會】真的動檔案、改程式或碰 production——只給出可用的文字成果。
 用繁體中文,簡潔、具體、可直接使用。最後用一行「自我檢查:」總結你對這份成果的信心與提醒。`

@@ -605,7 +605,7 @@ test('v2: the sealed response carries the Owner card, and it matches the sealed 
     const { res } = await sealCanary(ctx)
     assert.equal(res.status, 201, JSON.stringify(res.json))
     const b = res.json
-    assert.equal(b.card.heading, '香香想進行一項安全測試')
+    assert.equal(b.card.heading, '守燈想進行一項安全測試')
     assert.deepEqual(b.card.sections.map((s) => s.title), ['要修改的內容', '影響範圍', '現時內容 / 打算改成', '最壞情況', '不會發生', '上限'])
 
     // WYSIWYA over HTTP: rebuild the view from the SEALED record and compare byte-for-byte

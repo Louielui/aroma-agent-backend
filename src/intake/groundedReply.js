@@ -6,7 +6,7 @@
  * The distill model call co-generates its `reply` prose in the SAME turn it
  * classifies — i.e. BEFORE the governance layer decides the real outcome
  * (narrow-to-clarification, or whether a real Proposal was actually created and
- * its id). Trusting that speculative prose let 香香 claim a filed proposal the
+ * its id). Trusting that speculative prose let 守燈 claim a filed proposal the
  * system never created. This module rebuilds the action-bearing reply
  * DETERMINISTICALLY from the REAL outcome, so the prose can never over-claim.
  *
@@ -22,7 +22,7 @@
 function isNonEmptyString (v) { return typeof v === 'string' && v.trim() !== '' }
 
 /**
- * Build a 香香-voice Traditional Chinese reply grounded in the REAL outcome.
+ * Build a 守燈-voice Traditional Chinese reply grounded in the REAL outcome.
  *
  * @param {object} outcome
  * @param {'clarification'|'execution_proposal'} outcome.type

@@ -9,7 +9,7 @@ const { verifyIdentityShadow, seedIdentity, REASON, IDENTITY_RECORD_ID } = requi
 const { tmpBase, cleanup } = require('../_helpers')
 
 // Synthetic persona (deterministic, isolated) that satisfies the marker contract.
-const FAKE = 'WHO I AM — 香香, AI COO.' + '\n\n1. 思考順序:' + 'principles + business context + runtime awareness'
+const FAKE = 'WHO I AM — 守燈, AI COO.' + '\n\n1. 思考順序:' + 'principles + business context + runtime awareness'
 const SEED_OPTS = { approvalRef: 'gate/2026', rationale: 'M2 migration', sourceCommit: 'a8d230b998bb547578d70e602b318a91493a9595' }
 
 function seed (base, persona) { return seedIdentity(base, { personaIdentity: persona, ...SEED_OPTS }) }
@@ -25,7 +25,7 @@ test('PASS after a valid seed; metadata is safe (no Identity text) and carries h
     assert.match(v.hShadow, /^[a-f0-9]{64}$/)
     const s = JSON.stringify(v)
     assert.equal(s.includes('WHO I AM'), false) // never leaks Identity text
-    assert.equal(s.includes('香香'), false)
+    assert.equal(s.includes('守燈'), false)
   } finally { cleanup(base) }
 })
 
@@ -33,7 +33,7 @@ test('IDENTITY_TEXT_MISMATCH: valid active revision but text differs (exact-stri
   const base = tmpBase()
   try {
     seed(base, FAKE)
-    const DRIFTED = 'WHO I AM — 香香, AI COO (edited).' + '\n\n1. 思考順序:' + 'principles + business context + runtime awareness'
+    const DRIFTED = 'WHO I AM — 守燈, AI COO (edited).' + '\n\n1. 思考順序:' + 'principles + business context + runtime awareness'
     assert.equal(verifyIdentityShadow(base, DRIFTED).status, REASON.IDENTITY_TEXT_MISMATCH)
   } finally { cleanup(base) }
 })

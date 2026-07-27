@@ -1,12 +1,12 @@
 'use strict'
 
 /**
- * workOrder.js — the structured Work Order that 香香 produces and Louie approves,
+ * workOrder.js — the structured Work Order that 守燈 produces and Louie approves,
  * plus its STRUCTURAL validation. Agent Bridge v0 (built behind AGENT_BRIDGE, OFF).
  *
  * The Work Order is the ONLY thing that authorizes an agent run, and validation is
  * fail-closed: anything it does not explicitly permit is rejected. In particular
- * the allowedFiles allowlist can NEVER include the files that hold 香香's own
+ * the allowedFiles allowlist can NEVER include the files that hold 守燈's own
  * permission / approval / audit / flag / credential code — those are structurally
  * un-allowlistable here (Cap 5), so an approved Work Order can never point the
  * agent at the machinery that would let it expand its own authority.
@@ -23,7 +23,7 @@ const FORBIDDEN_ACTIONS = Object.freeze([
 ])
 const MUST_FORBID = Object.freeze(['commit', 'push', 'PR', 'merge', 'deploy'])
 
-// Files/dirs the agent may NEVER be allowed to edit — 香香's own permission,
+// Files/dirs the agent may NEVER be allowed to edit — 守燈's own permission,
 // approval, audit, flag, credential and truth machinery. Matched (Cap 5) against a
 // normalized relative path (posix separators, lowercased). If a Work Order's
 // allowedFiles names any of these, validation FAILS — they are un-allowlistable.

@@ -7,7 +7,7 @@
  * in the prompt, in capitals: a line marked "read OK — no matching results" means say
  * 讀到但冇相關結果, and only "UNAVAILABLE" means say 目前讀不到. That instruction has now
  * failed FIVE times. The telemetry for the failing turn was unambiguous —
- * trust:"live", count:2, usedFallback:true, error:null — and 香香 still told the Owner
+ * trust:"live", count:2, usedFallback:true, error:null — and 守燈 still told the Owner
  * 「我目前讀唔到你的日程」. The data was honest; the narration was not.
  *
  * So this follows groundedReply.js, the one enforcement in this pipeline that has never

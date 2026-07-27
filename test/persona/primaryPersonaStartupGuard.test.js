@@ -142,7 +142,7 @@ test('non-primary role (persona-canary) -> allow (not this guard concern), memor
 })
 test('safeReason collapses non-opaque values (no leak)', () => {
   assert.equal(G.safeReason('HYBRID_PERSONA_NOT_READY'), 'HYBRID_PERSONA_NOT_READY')
-  assert.equal(G.safeReason('香香 persona text /Users/x'), 'NOT_READY')
+  assert.equal(G.safeReason('守燈 persona text /Users/x'), 'NOT_READY')
   assert.equal(G.safeReason(undefined), 'NOT_READY')
 })
 

@@ -114,10 +114,10 @@ test('the artwork has one source: the page is rebuilt from the files, determinis
 
 /* ── the name and the text are untouched ──────────────────────────────────── */
 
-test('*** icon only — the name 香香 and every string are unchanged ***', () => {
-  assert.ok(DEMO_HTML.includes('<title>香香</title>'))
-  assert.ok(DEMO_HTML.includes('<span class="brand">香香</span>'))
-  assert.ok(DEMO_HTML.includes('<h1 id="conv-title">香香</h1>'))
-  assert.ok(DEMO_HTML.includes('同香香講嘢…'))
-  assert.ok(DEMO_HTML.includes('香香（Claude）'))
+test('*** icon only — the name 守燈 and every string are unchanged ***', () => {
+  assert.ok(DEMO_HTML.includes('<title>守燈</title>'))
+  assert.ok(DEMO_HTML.includes('<span class="brand">守燈</span>'))
+  assert.ok(DEMO_HTML.includes('<h1 id="conv-title">守燈</h1>'))
+  assert.ok(DEMO_HTML.includes('同守燈講嘢…'))
+  assert.ok(DEMO_HTML.includes('守燈（Claude）'))
 })
