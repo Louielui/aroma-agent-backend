@@ -73,6 +73,13 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
   // same way as the page it describes). Static, same-origin, generated at load time from
   // the dot already in assets/; it references no other host and no other file.
   router.get('/manifest.webmanifest', demoGuard, (req, res) => {
+    // MUST REVALIDATE. The manifest carries the app's icon, and the icon changes: the
+    // lantern became a dot and the installed app kept showing the lantern. Chrome captures
+    // the icon at install time, so an installed app needs a reinstall either way — but
+    // without this header Chrome may not even re-FETCH the manifest to notice, which makes
+    // the stale icon look permanent. `no-cache` means revalidate every time, not "never
+    // cache": the ETag still makes it a cheap 304 when nothing changed.
+    res.setHeader('Cache-Control', 'no-cache')
     res.type('application/manifest+json').send(MANIFEST_JSON)
   })
 

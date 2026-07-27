@@ -30,7 +30,12 @@ async function get (app, path) {
   await new Promise((r) => server.once('listening', r))
   try {
     const res = await fetch('http://127.0.0.1:' + server.address().port + path)
-    return { status: res.status, type: res.headers.get('content-type') || '', text: await res.text() }
+    return {
+      status: res.status,
+      type: res.headers.get('content-type') || '',
+      cacheControl: res.headers.get('cache-control'),
+      text: await res.text()
+    }
   } finally {
     await new Promise((r) => server.close(r))
   }
@@ -63,6 +68,15 @@ test('the manifest route serves the right content type and parses', async () => 
   const res = await get(makeApp(true), '/manifest.webmanifest')
   assert.match(res.type, /application\/manifest\+json/)
   assert.deepEqual(JSON.parse(res.text), MANIFEST)
+})
+
+test('*** the manifest must be revalidated, or an icon change looks permanent ***', async () => {
+  // The lantern became a dot and the installed app went on showing the lantern. Chrome
+  // captures the icon at install time, so that needed a reinstall — but a cached manifest
+  // means Chrome may not even re-fetch to notice it changed, which turns a stale icon into
+  // a permanent one. no-cache = revalidate every time (the ETag still gives a cheap 304).
+  const res = await get(makeApp(true), '/manifest.webmanifest')
+  assert.equal(res.cacheControl, 'no-cache')
 })
 
 test('it is guarded exactly like the page it describes', async () => {
