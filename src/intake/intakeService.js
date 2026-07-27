@@ -32,7 +32,8 @@ const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply 
 const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer) + honesty frame
 const { CONVERSATION_CONTRACT, resolveConversationContract } = require('../persona/conversationContract') // Conversation Experience Contract v1 (flag-gated, OFF by default)
 // Multi-AI Router v0 (flag-gated OFF; Claude stays default + one-shot fallback).
-const { selectPrimaryProvider, OPENAI } = require('../routing/modelRouter')
+const { selectPrimaryProvider, OPENAI, CLAUDE } = require('../routing/modelRouter')
+const { sourcesForProvider, decisionRecallSharedWith, withheldFrom } = require('../context/providerSharing') // per-source, per-provider sharing policy
 const { createOpenAIAdapterIfConfigured } = require('../adapters/OpenAIAdapter')
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
@@ -162,69 +163,70 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     effSystem = system
   }
   const baseEffPrompt = demo ? (ctx.preamble + prompt) : prompt
-  // CONTEXT BOUNDARY for the Multi-AI Router (v0, Owner decision): when a turn is
-  // routed to GPT it receives ONLY the bounded history + the current user turn here,
-  // plus persona/guards/contract/classifier via `system`. The Context Card preamble,
-  // the Decision Recall block and the Read Context block (Gmail/Drive/Calendar/GitHub)
-  // are all EXCLUDED by construction — this variable is captured BEFORE any of them is
-  // prepended, so no future re-ordering can leak them into the GPT path.
-  const gptPrompt = prompt
 
-  // ── DECISION RECALL v1 — CHAT-LANE ONLY, opt-in, FAIL-SOFT. Injected into the shared
-  //    prompt ONLY when DECISION_RECALL='on' AND opts.interactionMode === 'chat' (which the
-  //    B2 gate guarantees is talk-only → can never produce a Proposal). Every other path —
-  //    proposal / legacy / missing-or-non-'chat' interactionMode / flag OFF, and the U1
-  //    early-return above — receives NO recall, so the adapter input is byte-identical to
-  //    today. Read is at-most-once via the injected/real store fns; any read error or
-  //    NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
-  // ── THE CLAUDE PROMPT IS BUILT ON DEMAND ───────────────────────────────────
-  // Both blocks below used to be assembled unconditionally, BEFORE the provider was
-  // chosen. That meant a GPT-served chat turn paid the full read-context fetch —
-  // measured at 2.5–5.1s, against ~10ms for the entire rest of the pipeline — and then
-  // threw the result away, because the GPT path is denied that context by construction.
-  // The Owner waited seconds for data his chosen model was never going to see.
+  // ── CONTEXT SHARING (v1 — supersedes the v0 boundary) ──────────────────────
+  // In v0 the GPT path was denied the Read Context and Decision Recall blocks by
+  // construction. The Owner has since decided, knowingly, that his operational data may
+  // go to a second vendor, so BOTH providers now receive the same context, assembled the
+  // same way, with the same caps and the same untrusted-data framing.
   //
-  // Assembling it lazily fixes the latency AND hardens the boundary: the context is now
-  // only ever BUILT on the path that is allowed to receive it. `gptPrompt` remains the
-  // raw turn captured above, so nothing here can leak into the GPT request.
+  // That decision stays reversible WITHOUT a code change: providerSharing.js gates each
+  // source per provider from configuration, fail-closed toward withholding. Gmail — the
+  // one most likely to be pulled back — can be withheld from GPT on its own with a
+  // single line, and Claude is unaffected.
   //
-  // Memoised: the Claude fallback after a GPT failure still gets the full, unchanged
-  // prompt, and the sources are never read twice in one turn.
-  let claudePromptCache = null
-  async function buildClaudePrompt () {
-    if (claudePromptCache !== null) return claudePromptCache
+  // The prompt is still built LAZILY and PER PROVIDER: nothing is fetched until we know
+  // who is being asked, and a provider is never handed a block it is not permitted.
+  const promptCache = new Map()   // provider -> assembled prompt
+  const readBlockCache = new Map() // source-set key -> read-context block (one fetch per set)
+  let recallBlockCache // undefined = not attempted yet; null = nothing to inject
+
+  async function buildPromptFor (providerName) {
+    if (promptCache.has(providerName)) return promptCache.get(providerName)
     let effPrompt = baseEffPrompt
+    const isChat = !!(opts && opts.interactionMode === 'chat')
 
     // DECISION RECALL v1 — chat-lane only, opt-in, FAIL-SOFT. Any read error or
     // NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
-    if (resolveDecisionRecall() === 'on' && opts && opts.interactionMode === 'chat') {
+    // Withholdable from OpenAI on its own via CONTEXT_DECISIONS_OPENAI=off.
+    if (isChat && resolveDecisionRecall() === 'on' && decisionRecallSharedWith(providerName, process.env)) {
       try {
-        const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
-        const recall = buildDecisionRecallContext(deps)
-        if (recall && recall.block) effPrompt = recall.block + '\n\n' + baseEffPrompt
-      } catch (_) { /* FAIL-SOFT: inject nothing */ }
+        if (recallBlockCache === undefined) {
+          const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
+          const recall = buildDecisionRecallContext(deps)
+          recallBlockCache = (recall && recall.block) ? recall.block : null
+        }
+        if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
+      } catch (_) { recallBlockCache = null /* FAIL-SOFT: inject nothing */ }
     }
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
-    // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND
-    // opts.interactionMode === 'chat'. With the flags off (the default) nothing is
-    // built, NO source is read, and the adapter input is byte-identical to today.
+    // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND the lane is chat.
+    // With the flags off (the default) nothing is built and NO source is read.
     // The block is UNTRUSTED REFERENCE DATA (cited + dated); a per-source failure
     // becomes an UNAVAILABLE line and never blocks the reply. Nothing is persisted.
-    if (opts && opts.interactionMode === 'chat' && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
+    if (isChat && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
       try {
         const deps = (opts && opts.readContextDeps) || null
-        const sources = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+        const all = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+        // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
+        // gets that minus anything the Owner has withheld from it.
+        const sources = sourcesForProvider(providerName, all, process.env)
         if (sources.length > 0) {
-          const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
-          const rc = await buildReadContext({ connector, message, sources, env: process.env })
-          if (rc && rc.block) effPrompt = rc.block + '\n\n' + effPrompt
+          const key = sources.join(',')
+          if (!readBlockCache.has(key)) {
+            const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
+            const rc = await buildReadContext({ connector, message, sources, env: process.env })
+            readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
+          }
+          const block = readBlockCache.get(key)
+          if (block) effPrompt = block + '\n\n' + effPrompt
         }
       } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
     }
 
-    claudePromptCache = effPrompt
-    return claudePromptCache
+    promptCache.set(providerName, effPrompt)
+    return effPrompt
   }
 
   // Output limit, selected PER LANE. The chat lane answers in prose inside the JSON
@@ -292,7 +294,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } else {
       let gptResult = null
       try {
-        gptResult = await gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3 })
+        gptResult = await gpt.complete(await buildPromptFor(OPENAI), { system: effSystem, maxTokens, temperature: 0.3 })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
         // (HTTP status + provider error type/code/param) are appended so a failure is
@@ -324,7 +326,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // Built HERE, on the Claude path only — whether this is the primary attempt or the
       // one-shot fallback after GPT. Either way Claude receives the full, unchanged
       // prompt, so the fallback answer is exactly as informed as it has always been.
-      llmResult = await adapter.complete(await buildClaudePrompt(), {
+      llmResult = await adapter.complete(await buildPromptFor(CLAUDE), {
         system: effSystem,
         maxTokens,
         temperature: 0.3

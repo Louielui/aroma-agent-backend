@@ -186,7 +186,7 @@ test('flag ON but OPENAI unconfigured -> no GPT call attempted, Claude serves th
 })
 
 /* ── CONTEXT BOUNDARY (the owner decision) ────────────────────────────────── */
-test('GPT receives persona+guards+contract+classifier and history/turn ONLY — never recall or read-context', async () => {
+test('GPT receives persona+guards+contract+classifier AND the same recall/read-context Claude gets', async () => {
   ON()
   process.env.CONVERSATION_CONTRACT = 'on'
   process.env.DECISION_RECALL = 'on'
@@ -198,12 +198,21 @@ test('GPT receives persona+guards+contract+classifier and history/turn ONLY — 
   await processIntake('請問近況', claude, [], { demo: true, interactionMode: 'chat', openaiAdapter: gpt, contextCard: { project: 'CARD_SENTINEL' }, decisionRecallDeps: recallDeps, readContextDeps: readDeps })
 
   const sentToGpt = gpt.calls[0]
-  // EXCLUDED from GPT
-  assert.ok(!sentToGpt.prompt.includes('RECALL_SENTINEL'), 'decision recall must NOT reach GPT')
-  assert.ok(!sentToGpt.prompt.includes('<decision_recall_context>'), 'recall block absent')
-  assert.ok(!sentToGpt.prompt.includes('READCTX_SENTINEL'), 'read context must NOT reach GPT')
-  assert.ok(!sentToGpt.prompt.includes('<external_read_context>'), 'read-context block absent')
-  assert.ok(!sentToGpt.prompt.includes('CARD_SENTINEL'), 'context card must NOT reach GPT')
+  // INVERTED by a later Owner decision. In v0 these three were excluded from GPT by
+  // construction; the Owner has since accepted, knowingly, that his operational data goes
+  // to a second vendor, so GPT now receives what Claude receives. The withholding that
+  // makes that reversible is per-source configuration — see providerSharing.js and
+  // contextAsymmetry.test.js — not a hard-coded exclusion here.
+  assert.ok(sentToGpt.prompt.includes('RECALL_SENTINEL'), 'decision recall now reaches GPT')
+  assert.ok(sentToGpt.prompt.includes('READCTX_SENTINEL'), 'read context now reaches GPT')
+  assert.ok(sentToGpt.prompt.includes('CARD_SENTINEL'), 'the context card reaches GPT too')
+  // ...and can still be withheld, one source at a time, without touching code
+  process.env.CONTEXT_DRIVE_OPENAI = 'off'
+  const gpt2 = fake(CHAT)
+  await processIntake('請問近況', fake(CHAT), [], { demo: true, interactionMode: 'chat', openaiAdapter: gpt2, contextCard: { project: 'CARD_SENTINEL' }, decisionRecallDeps: recallDeps, readContextDeps: readDeps })
+  assert.ok(!gpt2.calls[0].prompt.includes('READCTX_SENTINEL'), 'drive withheld from GPT on its own')
+  assert.ok(gpt2.calls[0].prompt.includes('RECALL_SENTINEL'), 'while recall still reaches it')
+  delete process.env.CONTEXT_DRIVE_OPENAI
   // INCLUDED for GPT
   assert.ok(sentToGpt.prompt.includes('請問近況'), 'current user turn present')
   assert.ok(sentToGpt.system.includes(PERSONA_IDENTITY), 'persona identity present')

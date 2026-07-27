@@ -33,13 +33,15 @@
   // validates it against its own closed allowlist and ignores anything else. The page
   // cannot select a lane, a model id, a context source or anything executable.
   //
-  // The context asymmetry is stated ON THE OPTION, not hidden in a tooltip: by the
-  // Owner's own v0 boundary the GPT prompt is captured BEFORE the read-context and
-  // decision-recall blocks are prepended, so GPT is structurally blind to them. Unsaid,
-  // a thinner GPT answer reads as "worse model" when it is "blinder by design".
+  // WHAT THE OPTION SAYS MUST BE TRUE. Until the Owner's second GO, GPT was denied the
+  // read-context and decision-recall blocks and this note said so. That claim is now
+  // FALSE — both providers receive the same context — and a stale claim about where his
+  // data goes is worse than no claim at all. The note now states the thing that actually
+  // matters when choosing: the same data, but a second vendor receives it.
+  // contextAsymmetry.test.js pins that this stays true.
   var PROVIDERS = [
     { id: 'claude', name: '香香（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
-    { id: 'openai', name: '香香（GPT）', note: '睇唔到 Drive／Gmail／日曆／GitHub 同過往決定 —— 佢只收到你今次講嘅嘢', warn: true }
+    { id: 'openai', name: '香香（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
   ]
   var provider = 'claude'
 
