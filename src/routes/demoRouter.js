@@ -30,6 +30,7 @@ const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
+const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -77,7 +78,12 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         .trim()
         .notEmpty().withMessage('message must not be empty')
         .isLength({ max: 2000 }).withMessage('message must be ≤ 2000 characters'),
+      // Unified Conversation v1: the page no longer asks the Owner to pick a lane, so
+      // interactionMode is now OPTIONAL. When absent, the server routes from the message
+      // itself. When present it is still honoured and still strictly whitelisted, so the
+      // "+" shortcuts, existing scripts and every existing test keep working unchanged.
       body('interactionMode')
+        .optional()
         .isString().withMessage('interactionMode must be a string')
         .bail()
         .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal')
@@ -102,7 +108,27 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
       }
 
-      const { message, history, contextCard, interactionMode, providerHint } = req.body
+      const { message, history, contextCard, providerHint } = req.body
+
+      // ── ROUTE FIRST, FETCH SECOND (Owner's order, do not invert) ────────────
+      // The lane is decided here, from the user's words alone, BEFORE any context is
+      // fetched — so an email costs no Drive/Gmail round-trip and a question costs no
+      // proposal machinery. An explicit interactionMode (the "+" shortcuts, scripts,
+      // tests) still wins; routing is what happens when nobody chose.
+      //
+      // THE LANE GUARANTEE MOVED, AND THIS IS WHERE IT NOW LIVES. It used to be
+      // structural — the chat opts simply had no promoteToProposal to hand over. It is
+      // still structural, one step earlier: optsForMode below builds the SAME three
+      // locked shapes it always did, and only the 'proposal' shape carries
+      // promoteToProposal. The router chooses among those shapes and can do nothing else.
+      // It reads no retrieved content, so no Drive document or Decision record can steer
+      // a turn into the proposal lane; and a proposal is inert anyway.
+      const routed = routeLane(message)
+      const interactionMode = (typeof req.body.interactionMode === 'string' && req.body.interactionMode)
+        ? req.body.interactionMode
+        : routed.lane
+      telemetry.lane = interactionMode
+      telemetry.laneReason = (typeof req.body.interactionMode === 'string' && req.body.interactionMode) ? 'explicit' : routed.reason
 
       try {
         const adapter = getAdapterFn()
@@ -127,6 +153,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         const isChat = interactionMode === 'chat'
         const answered = (isChat && result && typeof result === 'object' && !Array.isArray(result))
           ? Object.assign({}, result, {
+              lane: interactionMode,
               servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null,
               fallbackUsed: telemetry.fallbackUsed === true
             })

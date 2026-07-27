@@ -251,12 +251,16 @@ test('the placeholder is short enough not to be clipped', () => {
   assert.ok(!m[1].includes('Enter'), 'the Enter/Shift+Enter hint is no longer crammed into it')
 })
 
-test('the lane switcher sits inside the composer, not floating in the top bar', () => {
+test('the composer bar holds the shortcuts and the picker — and no lane switcher at all', () => {
+  // Stage A.1 moved the lane switcher into the composer. Unified Conversation v1 REMOVED
+  // it: 香香 routes internally, so there is no lane to pick before typing. What remains in
+  // the bar is the "+" shortcuts, the provider picker and send.
   const body2 = DEMO_HTML.slice(DEMO_HTML.indexOf('<body>'))
   const bar = body2.slice(body2.indexOf('composer-bar'), body2.indexOf('composer-note'))
-  assert.ok(bar.includes('id="modes"'), 'the lane switcher is in the composer bar')
-  const top = body2.slice(body2.indexOf('id="topbar"'), body2.indexOf('id="log"'))
-  assert.ok(!top.includes('id="modes"'), 'and no longer detached at the top right')
+  assert.ok(bar.includes('id="plus"'), 'the + shortcuts live in the composer bar')
+  assert.ok(bar.includes('id="picker"'), 'so does the provider picker')
+  assert.ok(bar.includes('id="send"'), 'and send')
+  assert.ok(!body2.includes('id="modes"'), 'the lane switcher is gone from the page entirely')
 })
 
 test('an empty conversation is not also listed in the sidebar', () => {

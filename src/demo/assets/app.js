@@ -24,7 +24,9 @@
   var convsEl = document.getElementById('convs')
   var titleEl = document.getElementById('conv-title')
   var sidebar = document.getElementById('sidebar')
-  var modeButtons = document.querySelectorAll('#modes button')
+  var plus = document.getElementById('plus')
+  var plusMenu = document.getElementById('plus-menu')
+  var laneHint = document.getElementById('lane-hint')
   var picker = document.getElementById('picker')
   var pickerLabel = document.getElementById('picker-label')
   var pickerMenu = document.getElementById('picker-menu')
@@ -46,7 +48,7 @@
   var provider = 'claude'
 
   var pending = false
-  var convs = []      // [{ id, title, mode, history: [{role,text}], thread: HTMLElement }]
+  var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
   var active = null
 
   /* ── tiny DOM helpers ─────────────────────────────────────────────────── */
@@ -156,7 +158,7 @@
   /* ── conversations ────────────────────────────────────────────────────── */
   function newConversation (focus) {
     var thread = el('div', 'thread')
-    var c = { id: 'c' + (convs.length + 1), title: '新對話', mode: 'chat', history: [], thread: thread }
+    var c = { id: 'c' + (convs.length + 1), title: '新對話', history: [], thread: thread }
     convs.unshift(c)
     selectConversation(c)
     renderConvList()
@@ -172,7 +174,6 @@
     clear(log)
     log.appendChild(c.thread)
     titleEl.textContent = isListed(c) ? c.title : '香香'
-    setMode(c.mode, false)
     renderConvList()
     scroll()
   }
@@ -238,20 +239,55 @@
     }
   }
 
-  /* ── modes ────────────────────────────────────────────────────────────── */
-  function setMode (mode, store) {
-    for (var i = 0; i < modeButtons.length; i++) {
-      var b = modeButtons[i]
-      if (b.getAttribute('data-mode') === mode) b.className = 'active'
-      else b.className = ''
+  /* ── the "+" shortcuts ────────────────────────────────────────────────────
+   * ONE composer. 香香 routes internally, so there is no lane to pick before typing.
+   * These two remain as SHORTCUTS for when the Owner wants to force a lane — never as a
+   * required upfront choice. A shortcut applies to the NEXT message only and then clears
+   * itself, so a forced lane can never quietly persist into later turns. */
+  var SHORTCUTS = [
+    { mode: 'email_draft', name: '寫 Email', note: '直接走 Email 草稿通道' },
+    { mode: 'proposal', name: '建立提案', note: '直接出一張提案（唔會執行）' }
+  ]
+  var forcedMode = null
+
+  function setForced (mode) {
+    forcedMode = mode || null
+    var s = null
+    for (var i = 0; i < SHORTCUTS.length; i++) if (SHORTCUTS[i].mode === forcedMode) s = SHORTCUTS[i]
+    laneHint.textContent = s ? ('下一句：' + s.name + '（撳一下取消）') : ''
+    laneHint.className = 'lane-hint' + (s ? ' on' : '')
+  }
+  laneHint.addEventListener('click', function () { if (forcedMode) setForced(null) })
+
+  function renderPlusMenu () {
+    clear(plusMenu)
+    for (var i = 0; i < SHORTCUTS.length; i++) {
+      (function (s) {
+        var b = el('button', 'opt' + (s.mode === forcedMode ? ' active' : ''))
+        b.setAttribute('type', 'button')
+        b.setAttribute('role', 'menuitem')
+        b.appendChild(el('div', 'opt-name', s.name))
+        b.appendChild(el('div', 'opt-note', s.note))
+        b.addEventListener('click', function () {
+          setForced(forcedMode === s.mode ? null : s.mode)
+          closePlus()
+          renderPlusMenu()
+          msg.focus()
+        })
+        plusMenu.appendChild(b)
+      })(SHORTCUTS[i])
     }
-    if (store !== false && active) active.mode = mode
   }
-  for (var mi = 0; mi < modeButtons.length; mi++) {
-    (function (b) {
-      b.addEventListener('click', function () { setMode(b.getAttribute('data-mode'), true) })
-    })(modeButtons[mi])
-  }
+  function openPlus () { plusMenu.className = ''; plus.setAttribute('aria-expanded', 'true') }
+  function closePlus () { plusMenu.className = 'hidden'; plus.setAttribute('aria-expanded', 'false') }
+  plus.addEventListener('click', function (e) {
+    e.stopPropagation()
+    if (plusMenu.className === 'hidden') openPlus(); else closePlus()
+  })
+  renderPlusMenu()
+
+  /** What the server says the turn actually became — shown after the fact, never before. */
+  var LANE_NAMES = { chat: '聊天', email_draft: 'Email 草稿', proposal: '提案' }
 
   /* ── send ─────────────────────────────────────────────────────────────── */
   function setPending (p) {
@@ -280,12 +316,21 @@
     setPending(true)
     var typing = addTyping()
     var conv = active
+    // ONE-SHOT: a shortcut applies to THIS message and is cleared immediately. A forced
+    // lane that quietly persisted would be the old upfront mode choice returning by
+    // stealth — worse than the buttons, because nothing on screen would say so.
+    var forced = forcedMode
+    setForced(null)
 
     fetch('/api/v1/demo/intake', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
-      body: JSON.stringify({ message: text, interactionMode: conv.mode, history: conv.history, providerHint: provider })
+      // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
+      // lane the Owner never chose would put the old upfront decision back, invisibly.
+      body: JSON.stringify(forced
+        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider }
+        : { message: text, history: conv.history, providerHint: provider })
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
@@ -596,8 +641,8 @@
     e.stopPropagation()
     if (pickerMenu.className === 'hidden') openPicker(); else closePicker()
   })
-  document.addEventListener('click', function () { closePicker() })
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closePicker() })
+  document.addEventListener('click', function () { closePicker(); closePlus() })
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePicker(); closePlus() } })
   renderPicker()
 
   /* ── composer + sidebar chrome ────────────────────────────────────────── */
