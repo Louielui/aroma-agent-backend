@@ -269,8 +269,14 @@ test('the login page is self-contained — no external anything', () => {
   assert.equal(page.includes('http://'), false)
   assert.equal(page.includes('https://'), false)
   assert.equal(/<script/.test(page), false, 'no script at all on the credential page')
-  assert.equal(/<link/.test(page), false)
   assert.equal(/<img/.test(page), false)
+  // It carries exactly ONE link — the favicon, inlined as a data: URI so the tab shows the
+  // dot instead of a blank square. Nothing is fetched. Anything with an off-origin href
+  // would be, and is still refused.
+  const links = page.match(/<link[^>]*>/g) || []
+  assert.equal(links.length, 1)
+  assert.match(links[0], /rel="icon"/)
+  assert.match(links[0], /href="data:image\/svg\+xml,/)
 })
 
 test('the `next` parameter cannot be turned into an off-site redirect', async () => {
