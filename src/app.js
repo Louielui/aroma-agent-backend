@@ -55,7 +55,9 @@ const { getAdapter } = require('./adapters/adapterFactory')
 const { resolveArtifactDir } = require('./runtime/artifactDir') // Runtime Foundation A4 — external artifact root
 
 // Service-token authentication for every state-changing route. See src/api/auth.js.
-const { createRequireServiceToken } = require('./api/auth')
+const { createRequireServiceToken, readExpectedToken } = require('./api/auth')
+const { createSessionStore, createRequireOwner, readOwnerPassword, ownerPasswordConfigured } = require('./api/ownerAuth') // Owner gate: demo + context + intake
+const { createOwnerAuthRouter } = require('./routes/ownerAuthRouter') // the login surface (mounted OUTSIDE the gate)
 
 // B2-1 worker invocation (integration slice). These are wired at the composition
 // root and triggered fire-and-forget AFTER the confirm response — the
@@ -683,6 +685,59 @@ function createApp (options = {}) {
   app.use(express.json({ limit: '50kb' }))
   app.use(express.urlencoded({ extended: false }))
 
+  // ── OWNER AUTHENTICATION ──────────────────────────────────────────────────────
+  // Until this existed, the ONLY thing protecting the Owner's data was the loopback
+  // bind: GET /api/v1/context/recent handed ~6,000 characters of live Gmail, Drive,
+  // Calendar and GitHub excerpts to any caller, and both intake routes would spend money
+  // on a model call for an anonymous one.
+  //
+  // Defined HERE, above the first gated mount, so one gate covers demo, context and
+  // intake rather than three that could drift apart. The login surface is mounted
+  // OUTSIDE the gate — otherwise the only way to log in would be to already be logged in.
+  //
+  // It does NOT touch the approval defences. Exact Origin, exact Host, loopback socket
+  // peer, Sec-Fetch-Site, the approval router's own session, the one-time bound nonce and
+  // the typed EXECUTE all remain exactly as they were; this only decides who reaches the
+  // routes at all, and uses a separate cookie name so neither session can stand in for
+  // the other.
+  // Same injection discipline as the service token above: tests pass an explicit
+  // opts.ownerPassword so the gate is configured DELIBERATELY, and global process.env is
+  // never mutated. Production injects nothing → the resolver reads AROMA_OWNER_PASSWORD
+  // and fails closed when it is unset.
+  const injectedOwnerPassword = (typeof opts.ownerPassword === 'string' && opts.ownerPassword.length > 0)
+    ? opts.ownerPassword
+    : null
+  const resolveOwnerPassword = injectedOwnerPassword ? () => injectedOwnerPassword : readOwnerPassword
+  const ownerConfigured = injectedOwnerPassword ? () => true : () => ownerPasswordConfigured()
+
+  const ownerSessions = opts.ownerSessions || createSessionStore()
+  app.locals.ownerSessions = ownerSessions
+  app.use(createOwnerAuthRouter({ sessions: ownerSessions, isConfigured: ownerConfigured, resolvePassword: resolveOwnerPassword }))
+
+  // A browser asking for a PAGE is sent to the login form; anything else gets a plain 401
+  // it can act on. A machine caller may present the service token instead — the proposal
+  // bridge is not a browser and already holds a credential of the same standing.
+  const requireOwner = createRequireOwner({
+    sessions: ownerSessions,
+    isConfigured: ownerConfigured,
+    // Resolve the token through the SAME seam the privileged routes use (opts.serviceToken
+    // in tests, readExpectedToken() in production). Reading the env directly here would
+    // make the gate and the routes behind it disagree about which token is valid.
+    serviceTokenOk: (req) => {
+      const h = req.headers.authorization
+      const expected = injectedServiceToken || readExpectedToken()
+      return typeof h === 'string' && h.startsWith('Bearer ') &&
+        typeof expected === 'string' && expected.length > 0 && h.slice(7) === expected
+    },
+    onUnauthenticated: (req, res) => {
+      const wantsHtml = typeof req.headers.accept === 'string' && req.headers.accept.includes('text/html')
+      if (wantsHtml && req.method === 'GET') {
+        return res.redirect(302, '/owner/login?next=' + encodeURIComponent(req.originalUrl || '/demo'))
+      }
+      return res.status(401).json({ error: 'owner_auth_required' })
+    }
+  })
+
   // ── Routes ────────────────────────────────────────────────────────────────────
 
   // Health check — unprefixed and open, exactly as it is today. The apply script
@@ -699,7 +754,10 @@ function createApp (options = {}) {
 
   // M1: Intake endpoint (COO Brain)
   // Mounted into the hub app at /api/v1/intake (per task spec AO-001)
-  app.use('/api/v1/intake', intakeRouter)
+  // Owner-gated: this route makes a paid model call, and had no credential of any kind.
+  // The gate admits the service token too, so /api/v1/intake/tasks below — which matches
+  // this mount first — keeps working for its existing machine caller.
+  app.use('/api/v1/intake', requireOwner, intakeRouter)
 
   // B2-7 intake Task → Proposal bridge (PROMOTE ONLY). State-changing, so it is
   // token-guarded like the other proposal-mutation routes. It builds + binds a
@@ -779,11 +837,22 @@ function createApp (options = {}) {
   // B2-2 Conversation Demo UI — GET /demo + POST /api/v1/demo/intake. ALWAYS mounted
   // but guard-first: 403 {error:'demo_disabled'} when app.locals.conversationDemo !== true.
   // Mounted here, before the terminal 404, so the guarded routes resolve.
+  // PATH-SCOPED, NOT PATHLESS. `app.use(requireOwner, router)` with no path runs the gate
+  // on EVERY request that reaches this point — including the approval routes mounted
+  // below, which it would then answer 503 for. That is precisely the thing this change is
+  // required not to do, so the gate is bound to the paths it protects and nothing else.
+  //
+  // /manifest.webmanifest is deliberately NOT gated: it holds no secret (a name, two
+  // colours and the lantern), and Chrome fetches a manifest WITHOUT credentials, so
+  // gating it would break installing the app for no gain.
+  app.use('/demo', requireOwner)
+  app.use('/api/v1/demo', requireOwner)
   app.use(createDemoRouter())
 
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
   // READ_ACCESS === 'on'. Read-only; no parameterised method endpoint exists.
+  app.use('/api/v1/context', requireOwner)
   app.use(createContextRouter())
 
   // Local Owner approval card — POST /api/v1/owner/work-orders (seal + surface) and
