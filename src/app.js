@@ -843,7 +843,7 @@ function createApp (options = {}) {
   // required not to do, so the gate is bound to the paths it protects and nothing else.
   //
   // /manifest.webmanifest is deliberately NOT gated: it holds no secret (a name, two
-  // colours and the lantern), and Chrome fetches a manifest WITHOUT credentials, so
+  // colours and the dot), and Chrome fetches a manifest WITHOUT credentials, so
   // gating it would break installing the app for no gain.
   app.use('/demo', requireOwner)
   app.use('/api/v1/demo', requireOwner)
