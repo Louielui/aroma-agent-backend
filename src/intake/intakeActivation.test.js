@@ -33,19 +33,25 @@ const appMod = require('../app')
 // Stub worker deps so createApp never touches the real .aroma dir.
 const stubWorkerDeps = { artifactStore: { dirFor: () => path.join(os.tmpdir(), 'aroma-nonexistent-activation') } }
 
+// /api/v1/intake is Owner-gated now — it makes a paid model call and used to accept
+// anonymous callers. These tests are about the intake CONTRACT, not about auth, so they
+// present the service token: the same alternative credential the proposal bridge uses.
+const TEST_TOKEN = 'activation-test-service-token'
+const AUTH = { authorization: 'Bearer ' + TEST_TOKEN }
+
 function buildApp (demoOn) {
   process.env.CONVERSATION_DEMO = demoOn ? 'on' : 'off'
-  return appMod.createApp({ dispatcher: async () => {}, workerDeps: stubWorkerDeps, proposalPersistence: false, runPersistence: false })
+  return appMod.createApp({ dispatcher: async () => {}, workerDeps: stubWorkerDeps, proposalPersistence: false, runPersistence: false, serviceToken: TEST_TOKEN })
 }
 
 async function jpost (server, p, body) {
   const { port } = server.address()
-  const r = await fetch(`http://127.0.0.1:${port}${p}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const r = await fetch(`http://127.0.0.1:${port}${p}`, { method: 'POST', headers: Object.assign({ 'content-type': 'application/json' }, AUTH), body: JSON.stringify(body) })
   return { status: r.status, body: await r.json() }
 }
 async function jget (server, p) {
   const { port } = server.address()
-  const r = await fetch(`http://127.0.0.1:${port}${p}`)
+  const r = await fetch(`http://127.0.0.1:${port}${p}`, { headers: AUTH })
   let body = null
   try { body = await r.json() } catch (_) {}
   return { status: r.status, body }

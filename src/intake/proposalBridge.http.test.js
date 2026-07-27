@@ -41,7 +41,11 @@ function buildApp () {
   const artifactStore = createArtifactStore({ baseDir: base })
   const worker = createClaudeWorker({ runner: async () => ({ status: 0, stdout: SUCCESS_JSON, stderr: '' }) })
   const runner = createWorkerRunner({ worker, artifactStore, sandboxRoot: os.tmpdir(), prepareSandbox: () => {} })
-  const built = createApp({ serviceToken: TOKEN, dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
+  // ownerPassword is injected so this app is in the PRODUCTION-shaped state: Owner auth
+  // configured. Without it the new gate would answer 503 (not configured) before the
+  // route's own requireServiceToken could answer 401, and the "token required" assertion
+  // below would be testing the wrong refusal.
+  const built = createApp({ serviceToken: TOKEN, ownerPassword: 'bridge-test-owner-password', dispatcher: async () => {}, workerDeps: { runner }, proposalPersistence: false, runPersistence: false })
   return { built, artifactStore, base }
 }
 
