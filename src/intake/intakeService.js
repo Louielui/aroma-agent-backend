@@ -379,7 +379,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
-      reply: '目前是聊天模式，未建立任何提案。若要建立提案，請切換到「建立提案」。',
+      // STALE TEXT REMOVED. This used to say 「請切換到「建立提案」」 — a button that no
+      // longer exists since Unified Conversation v1. It was still being shown to the
+      // Owner, telling him to press something that is not there. The lane is now chosen
+      // from what he says, so the honest reply names what is missing instead: a specific
+      // thing to change.
+      reply: '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。',
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }

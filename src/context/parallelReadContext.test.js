@@ -193,3 +193,86 @@ test('non-chat lanes still read nothing at all', async () => {
     }
   })
 })
+
+/* ── the calendar window: TODAY counts, and an empty window is not a dead end ── */
+
+const { planFor } = (() => {
+  // planFor is module-internal; exercise it through buildReadContext with a recording
+  // connector, which is what actually matters anyway.
+  return {}
+})()
+
+function calConnector (events) {
+  const calls = []
+  return {
+    calls,
+    async read (source, method, params) {
+      calls.push({ method, params })
+      const from = new Date(params.timeMin).getTime()
+      const to = params.timeMax ? new Date(params.timeMax).getTime() : Infinity
+      const hits = events.filter((e) => {
+        const t = new Date(e).getTime()
+        return t >= from && t <= to
+      })
+      return {
+        asOf: 'x', source, count: hits.length,
+        results: hits.map((e, i) => ({ source, sourceId: 'e' + i, title: 'EVENT_' + i, retrievedAt: 'x', originalDate: e, content: '', link: 'l', trust: 'live', error: null }))
+      }
+    }
+  }
+}
+
+test('*** the calendar window starts at TODAY 00:00, not at the current instant ***', async () => {
+  // The Owner asked 「今日有咩安排」 in the afternoon and got nothing, because the window
+  // began at NOW and his morning meeting was already in the past. The day you are
+  // standing in is part of "upcoming".
+  const nowIso = '2026-07-27T14:59:00-05:00'
+  const thisMorning = '2026-07-27T09:00:00-05:00'
+  const c = calConnector([thisMorning])
+  const r = await buildReadContext({ connector: c, message: '今日有咩安排', sources: ['calendar'], env: {}, now: nowIso })
+
+  const p = c.calls[0].params
+  assert.ok(new Date(p.timeMin).getTime() <= new Date(thisMorning).getTime(),
+    'timeMin must be at or before this morning, got ' + p.timeMin)
+  assert.equal(r.perSource[0].count, 1, 'this morning\'s event is found')
+  assert.ok(r.block.includes('EVENT_0'))
+})
+
+test('the window is still BOUNDED — it does not return events years out', async () => {
+  const nowIso = '2026-07-27T12:00:00-05:00'
+  const c = calConnector(['2027-11-24T22:30:00-06:00'])
+  await buildReadContext({ connector: c, message: '下星期有咩', sources: ['calendar'], env: {}, now: nowIso })
+  const p = c.calls[0].params
+  assert.ok(p.timeMax, 'the primary query is bounded')
+  const days = (new Date(p.timeMax) - new Date(p.timeMin)) / 86400000
+  assert.ok(days <= 15 && days >= 13, 'roughly the configured window, got ' + days + ' days')
+})
+
+test('an EMPTY window falls back to the next scheduled events, honestly labelled', async () => {
+  // The Owner's real calendar had nothing for 14 days but a real event further out.
+  // "No events" was true and useless — and read as "the calendar is broken".
+  const nowIso = '2026-07-27T12:00:00-05:00'
+  const c = calConnector(['2026-10-19T09:30:00-05:00'])
+  const r = await buildReadContext({ connector: c, message: '有咩安排', sources: ['calendar'], env: {}, now: nowIso })
+
+  assert.equal(c.calls.length, 2, 'the bounded query ran, then the fallback')
+  assert.equal(c.calls[1].params.timeMax, undefined, 'the fallback drops timeMax')
+  assert.equal(r.perSource[0].usedFallback, true)
+  assert.equal(r.perSource[0].count, 1)
+  // Assert on the ITEM lines, not the whole block: the safety header legitimately
+  // DOCUMENTS both labels, so scanning it would test the documentation, not the data.
+  const calLines = r.block.split('\n').filter((l) => l.startsWith('[calendar]'))
+  assert.equal(calLines.length, 1)
+  assert.ok(calLines[0].includes('next scheduled, beyond the window asked about'),
+    'labelled so it is never mistaken for "within the period you asked about"')
+  assert.ok(!calLines[0].includes('(recent items)'), 'and not mislabelled as RECENT — these are future events')
+})
+
+test('a genuinely empty calendar still reports read-OK, never UNAVAILABLE', async () => {
+  const c = calConnector([])
+  const r = await buildReadContext({ connector: c, message: '有咩安排', sources: ['calendar'], env: {}, now: '2026-07-27T12:00:00-05:00' })
+  assert.equal(r.perSource[0].trust, 'live', 'the source WAS read')
+  const calLine = r.block.split('\n').filter((l) => l.startsWith('[calendar]'))[0]
+  assert.ok(calLine.includes('read OK — no matching results'), 'so 香香 must say 讀到但冇結果, not 讀不到')
+  assert.ok(!calLine.includes('UNAVAILABLE'), 'an empty diary is not a failure')
+})
