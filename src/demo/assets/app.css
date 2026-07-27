@@ -12,29 +12,39 @@
 
 :root {
   /* ── surfaces ─────────────────────────────────────────────────────────── */
-  --bg: #F7F6F3;          /* page background — warm off-white */
-  --panel: #F2F1ED;       /* sidebar — a touch darker than the page */
-  --card: #FFFFFF;        /* raised surfaces: user bubble, menus, cards */
-  --line: #E6E4DE;        /* borders */
-  --divider: #EDEBE5;     /* hairlines between regions */
+  /* APPROXIMATE (sampled off a Manus screenshot, not computed). These four are the ones
+     to nudge first if the match looks off — each is one line. */
+  --bg: #FDFCFA;          /* ~ main chat background, warm off-white */
+  --panel: #F6F4F1;       /* ~ sidebar */
+  --bubble-user: #F7F6F4; /* ~ the user's message bubble (the assistant has none) */
+  /* EXACT (read from Manus computed styles) */
+  --line: #e5e7eb;        /* borders */
+  --divider: #e5e7eb;     /* hairlines between regions — same value in the reference */
+  --card: #FFFFFF;        /* raised surfaces: menus, cards. Not the bubble. */
 
   /* ── text ─────────────────────────────────────────────────────────────── */
-  --ink: #2C2C2C;         /* body text */
+  --ink: #1A1A18;         /* ~ body text (approximate, sampled) */
   --muted: #5F5F5A;       /* secondary text */
   --soft: #757570;        /* labels */
   --faint: #8A8A85;       /* muted / footer / timestamps */
 
   /* ── type ─────────────────────────────────────────────────────────────── */
-  /* Inter first for anyone who has it; then each platform's own neutral UI face, then
-     the Traditional Chinese faces — the interface is Chinese, so those must stay in the
-     stack or the CJK glyphs fall back to something clumsy. All local; nothing is fetched. */
-  --font-sans: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Text", "Segoe UI",
-               Roboto, "Helvetica Neue", Arial, "Microsoft JhengHei", "PingFang TC",
-               "Noto Sans TC", sans-serif;
+  /* EXACT — the Manus stack, verbatim. System faces only; nothing is fetched.
+     Note: it carries no CJK face of its own, so Chinese glyphs fall through to the generic
+     `sans-serif` and the browser's own default for the script. That was MEASURED by
+     rasterising a glyph and comparing pixels (advance width cannot tell CJK faces apart —
+     they are all full-width): the rendering matches generic `sans-serif` and matches none
+     of Microsoft JhengHei / JhengHei UI / YaHei / SimSun / MingLiU, so the exact face is
+     the browser's choice and is not pinned here. It looks correct, but it is NOT under our
+     control. If Chinese ever renders wrong on another machine, the fix is to insert a CJK
+     face before `sans-serif` — that is the only change needed. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI",
+               Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji",
+               "Segoe UI Symbol";
   --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
-  --msg-size: 16px;       /* the conversation itself */
-  --msg-line: 1.75;       /* generous — this is the "airy" of Manus */
+  --msg-size: 16px;       /* EXACT — the conversation itself */
+  --msg-line: 1.5;        /* EXACT */
   --ui-size: 14px;        /* sidebar items, buttons, controls */
   --ui-line: 1.5;
   --small-size: 12px;     /* footer, served-by, timestamps */
@@ -54,7 +64,8 @@
   /* ── geometry ─────────────────────────────────────────────────────────── */
   --radius: 14px;
   --side-w: 264px;
-  --col: 720px;
+  --col: 634px;           /* EXACT — the message column. .thread and .composer-col share it. */
+  --msg-gap: 28px;        /* vertical space BETWEEN messages — the reference is generous */
   /* THE ONE KNOB FOR THE CHAT AVATAR. Change this number and nothing else: the dot's
      width, height, flex-basis and its vertical alignment with the first line of the reply
      are all derived from it. 24px is a starting point, chosen to be adjusted. */
@@ -76,6 +87,7 @@
     --card: #262625;
     --line: #383836;
     --divider: #2E2E2C;
+    --bubble-user: #2A2A28;
     --ink: #ECECEA;
     --muted: #ABABA6;
     --soft: #91918C;
@@ -155,7 +167,7 @@ body {
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 #log { flex: 1; overflow-y: auto; padding: 28px 20px 8px; }
-.thread { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.thread { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: var(--msg-gap); }
 
 /* ── messages ────────────────────────────────────────────────────────────── */
 .turn { display: flex; gap: 12px; }
@@ -189,8 +201,11 @@ body {
 .brand-mark svg { width: 20px; height: 20px; display: block; }
 
 .body { min-width: 0; max-width: 86%; }
+/* ONLY THE USER GETS A BUBBLE. The assistant's reply is plain text on the page
+   background — checked against the reference, and this was already how it worked, so the
+   only change here is the bubble's own tint. */
 .turn.user .body {
-  background: var(--card); border: 1px solid var(--line);
+  background: var(--bubble-user); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 10px 14px;
 }
 .turn.bot .body { padding-top: 2px; }
