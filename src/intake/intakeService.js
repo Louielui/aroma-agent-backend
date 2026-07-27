@@ -40,7 +40,26 @@ const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 const { runU1DraftShadow } = require('./u1DraftShadow')
-const { isShortReply } = require('./laneRouter') // a short confirmation is an answer, not an instruction
+const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
+const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
+
+/**
+ * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
+ * just visible on one screen. Allowlisted by construction, same discipline as the other
+ * two logs: the source names, which rule fired, and the request id — never the reply, the
+ * message, or anything read.
+ */
+function logReadClaimCorrection (guarded, requestId) {
+  try {
+    console.log('[AROMA-READ-CLAIM]', JSON.stringify({
+      event: 'READ_CLAIM_CORRECTED',
+      timestamp: new Date().toISOString(),
+      kind: guarded.kind,
+      sources: guarded.sources,
+      requestId: typeof requestId === 'string' ? requestId : null
+    }))
+  } catch (_) {}
+}
 
 /**
  * intakeService.js — orchestrates the full M1 intake pipeline.
@@ -183,6 +202,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const readBlockCache = new Map() // source-set key -> read-context block (one fetch per set)
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
 
+  // THE TURN'S REAL READ OUTCOME, recorded AT the read — source -> {source,trust,count,
+  // usedFallback}. Keyed by source so the same source fetched for a second provider does
+  // not double-count. This is what the reply is checked against below; reconstructing it
+  // afterwards is the exact bug class that has already cost three rounds.
+  const turnPerSource = new Map()
+
   async function buildPromptFor (providerName) {
     if (promptCache.has(providerName)) return promptCache.get(providerName)
     let effPrompt = baseEffPrompt
@@ -226,6 +251,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
             const rc = await buildReadContext({ connector, message, sources, env: process.env })
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
+            for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
+              if (row && row.source) turnPerSource.set(row.source, row)
+            }
           }
           const block = readBlockCache.get(key)
           if (block) effPrompt = block + '\n\n' + effPrompt
@@ -412,18 +440,28 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // whichever reply is returned, NOTHING is created — no Decision, no Task, no
     // Proposal, no dispatch — and the proposal seam is not even present in chat opts. All
     // that changes is which words come back.
-    const shortContinuation = isShortReply(String(message == null ? '' : message).trim()) &&
-      Array.isArray(history) && history.length > 0
-    const reply = (shortContinuation && typeof distilled.reply === 'string' && distilled.reply.trim())
+    const trimmed = String(message == null ? '' : message).trim()
+    const shortContinuation = isShortReply(trimmed) && Array.isArray(history) && history.length > 0
+
+    // A READ INSTRUCTION IS NOT AN EDIT INSTRUCTION. 「幫我睇 Calendar」 was answered with
+    // 「我未有建立提案」 — the Owner asked to be shown something and was told about a
+    // proposal he never requested. Short replies were already exempt; ordinary read
+    // instructions were not. The interception still holds for anything carrying a change
+    // verb, so the safe direction is untouched: this branch creates NOTHING either way.
+    const readRequest = isReadRequest(trimmed)
+
+    const reply = ((shortContinuation || readRequest) && typeof distilled.reply === 'string' && distilled.reply.trim())
       ? distilled.reply.trim()
-      // Not a continuation: the Owner asked for something actionable in a lane that does
-      // not act, so say what is missing — a specific file and change — rather than
-      // pointing at the mode button that no longer exists.
+      // Neither a continuation nor a lookup: the Owner asked for something actionable in a
+      // lane that does not act, so say what is missing — a specific file and change —
+      // rather than pointing at the mode button that no longer exists.
       : '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。'
 
+    const guarded = enforceReadState(reply, Array.from(turnPerSource.values()))
+    if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
-      reply,
+      reply: guarded.reply, readClaimCorrected: guarded.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }
@@ -458,9 +496,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ── CHAT or ASK: talk only — do NOT persist any Decision/Task ─────────────
   if (distilled.mode !== 'commit') {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
+    // The ordinary chat path — this is the one the 「我目前讀唔到你的日程」 turn came down
+    // while the calendar telemetry said trust:'live'.
+    const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()))
+    if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
-      reply: distilled.reply, judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
+      reply: guarded.reply, readClaimCorrected: guarded.corrected,
+      judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 
   // ── STEP 3: LOG METRICS (local — condition 6) ─────────────────────────────
