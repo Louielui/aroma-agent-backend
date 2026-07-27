@@ -22,6 +22,7 @@ const { buildDecisionRecallContext } = require('../coo/decisionRecall')       //
 const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
 // Read Context Wiring v1 (chat-lane only, flag-gated OFF by default, fail-soft).
 const { buildReadContext } = require('../context/readContext')
+const { logReadSource } = require('../utils/readContextLog') // fail-soft, but never silent
 const { createLiveReadConnector, enabledSources } = require('../context/liveClients')
 const { resolveFlag } = require('../context/flags')
 const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../dispatch/dispatcher')
@@ -39,6 +40,7 @@ const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime
 const { buildContextPreamble } = require('./contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 const { runU1DraftShadow } = require('./u1DraftShadow')
+const { isShortReply } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 
 /**
  * intakeService.js — orchestrates the full M1 intake pipeline.
@@ -197,7 +199,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           recallBlockCache = (recall && recall.block) ? recall.block : null
         }
         if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
-      } catch (_) { recallBlockCache = null /* FAIL-SOFT: inject nothing */ }
+      } catch (err) {
+        // Same rule as the read block below: fail soft, but never silently. A recall
+        // failure used to be invisible, so 香香 answering without past decisions looked
+        // identical to there being none.
+        recallBlockCache = null
+        logReadSource({ source: 'decisions', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
+      }
     }
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
@@ -222,7 +230,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           const block = readBlockCache.get(key)
           if (block) effPrompt = block + '\n\n' + effPrompt
         }
-      } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
+      } catch (err) {
+        // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
+        // failure therefore produced a turn that looked normal, with no context and no
+        // record that context had been attempted — which is how 「讀唔到」 became
+        // undiagnosable. It still fails soft (the reply proceeds without context), but
+        // the attempt is now on the record, scrubbed to the same allowlist as everything
+        // else in that log.
+        logReadSource({
+          source: 'all',
+          trust: 'unavailable',
+          count: 0,
+          usedFallback: false,
+          error: (err && err.message) || String(err),
+          durationMs: null
+        })
+      }
     }
 
     promptCache.set(providerName, effPrompt)
@@ -377,14 +400,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (interactionMode === 'chat' && distilled.mode === 'commit') {
     // chat mode never creates a proposal: intercept a commit → talk-only.
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
+
+    // A SHORT CONFIRMATION CONTINUING A PREVIOUS TURN IS AN ANSWER, NOT AN INSTRUCTION.
+    // 香香 offered a numbered list, the Owner replied 「1」, and the classifier read that
+    // as a commit. The interception then threw away the real 622-token answer she had
+    // just written and replaced it with a canned notice about proposals — for a turn
+    // where he had simply picked an option. Selecting from a list she offered is the most
+    // ordinary thing in a conversation.
+    //
+    // THE SAFE DIRECTION IS UNCHANGED, because this branch is still the interception:
+    // whichever reply is returned, NOTHING is created — no Decision, no Task, no
+    // Proposal, no dispatch — and the proposal seam is not even present in chat opts. All
+    // that changes is which words come back.
+    const shortContinuation = isShortReply(String(message == null ? '' : message).trim()) &&
+      Array.isArray(history) && history.length > 0
+    const reply = (shortContinuation && typeof distilled.reply === 'string' && distilled.reply.trim())
+      ? distilled.reply.trim()
+      // Not a continuation: the Owner asked for something actionable in a lane that does
+      // not act, so say what is missing — a specific file and change — rather than
+      // pointing at the mode button that no longer exists.
+      : '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。'
+
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
-      // STALE TEXT REMOVED. This used to say 「請切換到「建立提案」」 — a button that no
-      // longer exists since Unified Conversation v1. It was still being shown to the
-      // Owner, telling him to press something that is not there. The lane is now chosen
-      // from what he says, so the honest reply names what is missing instead: a specific
-      // thing to change.
-      reply: '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。',
+      reply,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }
