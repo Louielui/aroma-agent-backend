@@ -536,13 +536,40 @@ function createApp (options = {}) {
   // — the sole trigger remains the token-gated POST /proposals/:id/confirm, and it
   // cannot carry an approved Work Order until the Work Order producer and approval
   // surface exist. So this makes the bridge REACHABLE, not executable.
+  // ── THE ARTIFACT STORE, BUILT ONCE, BEFORE ANYTHING THAT NEEDS IT ───────────
+  // CAP 7 REGRESSION (found by the first real canary, fixed here). The agent runner used
+  // to be handed `opts.workerDeps && opts.workerDeps.artifactStore` — the INJECTED deps,
+  // which are undefined in the real assembly. The real workerDeps (and its artifact
+  // store) were only built ~60 lines later, so in production artifactStore was undefined,
+  // the runner's auditLog was null, and the first canary executed with NO audit record at
+  // all. Tests never caught it because every test injects an artifactStore.
+  //
+  // The fix is ordering, not a new object: ONE store is constructed here and shared by
+  // the agent runner, the sandbox worker and the read endpoints — which is what the
+  // comment on workerDeps always claimed. An injected workerDeps still wins, so tests and
+  // fakes behave exactly as before.
+  const sharedArtifactStore = (opts.workerDeps && 'artifactStore' in opts.workerDeps)
+    ? opts.workerDeps.artifactStore
+    : (() => {
+        // A4: the artifact root may be redirected OUTSIDE the immutable release via
+        // AROMA_ARTIFACT_DIR. Unset -> the historical release-relative `.aroma`. An
+        // invalid explicit value fails closed HERE, before any store exists and therefore
+        // before any artifact write. The raw value is never echoed.
+        const artifactRoot = resolveArtifactDir(process.env, path.resolve(__dirname, '..', '.aroma'))
+        if (!artifactRoot.ok) {
+          throw new Error('[AROMA-HUB] FATAL: ARTIFACT_DIR_INVALID — AROMA_ARTIFACT_DIR must be an absolute Windows path (' +
+            artifactRoot.reason + '). Refusing to construct the artifact store (fail-closed; no write).')
+        }
+        return createArtifactStore({ baseDir: artifactRoot.dir })
+      })()
+
   const injectedAgentRunner = (opts.agentRunner && typeof opts.agentRunner.run === 'function') ? opts.agentRunner : null
   let builtAgentRunner = null
   if (!injectedAgentRunner && resolveAgentBridge() === 'on') {
     try {
       builtAgentRunner = createAgentRunner({
         repoRoot: path.resolve(__dirname, '..'),
-        artifactStore: opts.workerDeps && opts.workerDeps.artifactStore ? opts.workerDeps.artifactStore : undefined,
+        artifactStore: sharedArtifactStore, // CAP 7: the REAL store, so an audit record is always written
         onPhase: (id, phase) => { try { ownerApprovalStore.recordPhase(id, phase) } catch (_) {} }
       })
     } catch (err) {
@@ -599,24 +626,15 @@ function createApp (options = {}) {
   // the flag (cheap, no process spawned); the flag only gates whether the confirm
   // handler triggers them. proposalStore is exposed on app.locals so tests can
   // seed a proposal to confirm.
-  const workerDeps = opts.workerDeps || (() => {
-    // One artifact store, shared by the (write) trigger and the (read) endpoint —
-    // the read endpoint's source of truth is exactly what the worker wrote.
-    // A4: the artifact root may be redirected OUTSIDE the immutable release via
-    // AROMA_ARTIFACT_DIR. Unset -> the historical release-relative `.aroma` (dev/test
-    // unchanged). An invalid explicit value fails closed HERE, before the store is
-    // constructed and therefore before any artifact write. The raw value is not echoed.
-    const artifactRoot = resolveArtifactDir(process.env, path.resolve(__dirname, '..', '.aroma'))
-    if (!artifactRoot.ok) {
-      throw new Error('[AROMA-HUB] FATAL: ARTIFACT_DIR_INVALID — AROMA_ARTIFACT_DIR must be an absolute Windows path (' +
-        artifactRoot.reason + '). Refusing to construct the artifact store (fail-closed; no write).')
-    }
-    const artifactStore = createArtifactStore({ baseDir: artifactRoot.dir })
-    return {
-      artifactStore,
-      runner: createWorkerRunner({ worker: createClaudeWorker(), artifactStore })
-    }
-  })()
+  const workerDeps = opts.workerDeps || {
+    // THE SAME instance the agent runner received above. One store, so the sandbox
+    // worker's writes, the agent's audit records and the read endpoints all see exactly
+    // the same artifacts — which is what this comment always claimed, but the agent
+    // runner used to be handed `undefined` instead (see sharedArtifactStore above).
+    artifactStore: sharedArtifactStore,
+    runner: createWorkerRunner({ worker: createClaudeWorker(), artifactStore: sharedArtifactStore })
+  }
+
   app.locals.proposalStore = proposalStore
   app.locals.workerDeps = workerDeps
   app.locals.runStore = runStore // B2-11b: exposed for startup reconcile (index.js) + tests
@@ -803,6 +821,10 @@ function createApp (options = {}) {
   app.authorizeExecution = authorize
   app.agentRunnerConfigured = agentRunnerConfigured
   app.agentRunner = agentRunner
+  // CAP 7 observability: true only when the runner really has an artifact store to write
+  // its append-only audit records to. Asserted against the REAL composition root.
+  app.agentAuditConfigured = !!(agentRunner && agentRunner.auditConfigured === true)
+  app.artifactStore = sharedArtifactStore
 
   return app
 }
