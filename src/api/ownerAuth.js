@@ -104,15 +104,33 @@ function createSessionStore ({ ttlMs = DEFAULT_TTL_MS, now = () => Date.now() } 
   }
 }
 
-/** The Set-Cookie value. httpOnly so script cannot read it; Strict so it never rides a
- *  cross-site request. `Secure` is deliberately NOT set yet: the service is plain http on
- *  loopback today, and a Secure cookie would simply never be stored. It must be added in
- *  the same change that introduces HTTPS. */
+/**
+ * The Set-Cookie value. httpOnly so script cannot read it; Strict so it never rides a
+ * cross-site request; Secure so it is never sent over a plaintext connection.
+ *
+ * SECURE IS ALWAYS SET, AND THAT WAS MEASURED, NOT ASSUMED. The worry was that adding it
+ * would break desktop access, because a Secure cookie is normally only stored over HTTPS
+ * and the desktop reaches this server as plain `http://127.0.0.1:8090`. Browsers treat
+ * loopback as a trustworthy origin, but "browsers treat" is not evidence, so it was tested
+ * against a throwaway listener on 127.0.0.1: a Secure cookie was stored and returned
+ * (`secure_cookie_came_back: true`), alongside a plain cookie as a control to prove the
+ * probe itself worked. Chromium, which is what Chrome and the installed app both use.
+ *
+ * So both real access paths keep working: plain http on loopback (desktop) and HTTPS via
+ * `tailscale serve` (phone). The ONE configuration this would break is serving plain http
+ * on a NON-loopback address — the browser would silently drop the cookie and login would
+ * loop with no error shown. That configuration is precisely the one the Tailscale approach
+ * exists to avoid: the server stays loopback-only and TLS is terminated in front of it.
+ * If a non-loopback plain-http bind is ever considered, this flag has to be revisited
+ * FIRST, and the failure will look like "login does nothing", not like a cookie problem.
+ */
 function sessionCookie (id, ttlMs) {
-  return `${SESSION_COOKIE}=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${Math.floor(ttlMs / 1000)}`
+  return `${SESSION_COOKIE}=${encodeURIComponent(id)}; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=${Math.floor(ttlMs / 1000)}`
 }
 function clearedCookie () {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`
+  // Must carry the SAME attributes as the cookie it clears, or the browser treats it as a
+  // different cookie and the original quietly survives — i.e. logout would not log out.
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Secure; Max-Age=0`
 }
 
 /**

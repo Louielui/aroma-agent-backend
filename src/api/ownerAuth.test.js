@@ -162,8 +162,28 @@ test('the cookie is httpOnly, SameSite=Strict and long-lived', async () => {
   assert.match(c, /Path=\//)
   const maxAge = Number((c.match(/Max-Age=(\d+)/) || [])[1])
   assert.ok(maxAge > 7 * 24 * 3600, 'long-lived: a phone should not have to re-login weekly')
-  // Secure is deliberately absent while the service is plain http — see ownerAuth.js.
-  assert.equal(/;\s*Secure/i.test(c), false)
+})
+
+test('*** the cookie is Secure — it must never cross a plaintext connection ***', async () => {
+  // INVERTED from "Secure is deliberately absent", which was correct only while there was
+  // no HTTPS at all. The reason it was held back — that a Secure cookie would break plain
+  // http on 127.0.0.1 — was then MEASURED rather than assumed: a Secure cookie is stored
+  // and returned over http://127.0.0.1 in Chromium (with a plain cookie as a control to
+  // prove the probe worked). So desktop loopback access is unaffected and the phone over
+  // HTTPS is protected.
+  const { res } = await login(makeApp().app)
+  assert.match(res.setCookie, /;\s*Secure/, 'Secure is set')
+})
+
+test('logout clears with the SAME attributes, or it would not actually clear', () => {
+  const { clearedCookie } = require('./ownerAuth')
+  const cleared = clearedCookie()
+  // A browser matches a clearing cookie by name AND attributes. Drop Secure here and the
+  // original cookie survives — logout would appear to work and change nothing.
+  for (const attr of [/HttpOnly/, /SameSite=Strict/, /;\s*Secure/, /Path=\//]) {
+    assert.match(cleared, attr, 'clearing cookie carries: ' + attr)
+  }
+  assert.match(cleared, /Max-Age=0/)
 })
 
 test('a wrong password is refused and tells the caller nothing', async () => {
