@@ -263,13 +263,22 @@ button[disabled] { opacity: .45; cursor: default; }
 .bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 /* the lane switcher now reads as part of the composer, not a detached widget */
-#modes { display: flex; gap: 2px; background: var(--divider); padding: 3px; border-radius: 9px; }
-#modes button {
+/* The three permanent mode buttons are GONE — 香香 routes internally. What remains is a
+   "+" for the two shortcuts, and a quiet hint naming the lane a turn actually took, so
+   routing stays visible without becoming a decision the Owner must make upfront. */
+#plus-wrap { position: relative; }
+#plus {
+  width: 28px; height: 28px; border-radius: 8px;
   border: 0; background: transparent; color: var(--muted);
-  font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+  font-size: 16px; line-height: 1; cursor: pointer;
 }
-#modes button:hover { color: var(--ink); }
-#modes button.active { background: var(--card); color: var(--ink); font-weight: 550; }
+#plus:hover { background: var(--divider); color: var(--ink); }
+#plus-menu {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 20;
+  min-width: 210px; background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.14);
+}
+.lane-hint { font-size: 11.5px; color: var(--faint); }
 
 /* provider picker */
 #picker-wrap { position: relative; }
@@ -318,5 +327,5 @@ button[disabled] { opacity: .45; cursor: default; }
   #sidebar { position: absolute; z-index: 5; height: 100%; }
   #sidebar.collapsed { margin-left: calc(-1 * var(--side-w)); }
   .body { max-width: 100%; }
-  #modes button { padding: 4px 8px; font-size: 12px; }
+  .lane-hint { display: none; }
 }

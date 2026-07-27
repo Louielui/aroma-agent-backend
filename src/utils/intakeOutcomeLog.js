@@ -30,7 +30,11 @@ const FIELDS = Object.freeze([
   'parseResult', // 'ok' | 'failed' | null
   'parseErrorReason', // short enum | null
   'fallbackUsed', // boolean | null
-  'errorCode' // short enum | null — never a message
+  'errorCode', // short enum | null — never a message
+  // Unified Conversation v1. The Owner no longer picks a lane, so the log must record
+  // which one the router chose and WHY — otherwise a mis-routed turn is invisible.
+  'lane', // 'chat' | 'proposal' | 'email_draft' — the lane actually used
+  'laneReason' // short enum: 'explicit' | 'write_act' | 'change_act' | 'question' | 'capability_question' | 'default' | 'empty'
 ])
 
 const NUMERIC = new Set(['httpStatus', 'latencyMs', 'inputTokens', 'outputTokens'])

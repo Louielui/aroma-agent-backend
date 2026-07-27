@@ -84,8 +84,11 @@ test('POST /api/v1/demo/intake OFF → 403; adapter/processIntake not called', a
 
 /* ============================ validation (pre-model) ====================== */
 
+// NOTE: 'missing interactionMode' is deliberately NOT here any more. Under Unified
+// Conversation v1 the page no longer asks the Owner to pick a lane, so an absent
+// interactionMode is the NORMAL case — the server routes from the message. An explicitly
+// supplied one is still strictly whitelisted, which is what the rest of this table pins.
 for (const [label, body] of [
-  ['missing interactionMode', { message: 'hi' }],
   ['unknown interactionMode', { message: 'hi', interactionMode: 'delete_everything' }],
   ['non-string interactionMode', { message: 'hi', interactionMode: 5 }],
   ['empty message', { message: '   ', interactionMode: 'chat' }]
@@ -177,7 +180,7 @@ for (const [label, envelope] of [
       // The chat lane additionally reports WHICH provider answered — the model picker
       // needs it, because a fallback means the reply may not come from the chosen one.
       // The engine envelope itself must still pass through untouched.
-      const { servedBy, fallbackUsed, ...rest } = r.json
+      const { servedBy, fallbackUsed, lane, ...rest } = r.json
       assert.deepEqual(rest, envelope, 'the engine envelope is passed through unchanged')
       assert.ok(servedBy === null || typeof servedBy === 'string')
       assert.equal(typeof fallbackUsed, 'boolean')
@@ -195,9 +198,17 @@ test('DEMO_HTML: same-origin fetch target only, no external URLs', () => {
   assert.ok(!/<script\s+src=/.test(DEMO_HTML) && !/<link\s/.test(DEMO_HTML), 'no external script/link')
 })
 
-test('DEMO_HTML: three explicit mode controls', () => {
-  for (const m of ['chat', 'email_draft', 'proposal']) assert.ok(DEMO_HTML.includes('data-mode="' + m + '"'))
-  for (const t of ['聊天', '寫 Email', '建立提案']) assert.ok(DEMO_HTML.includes(t))
+test('DEMO_HTML: ONE composer — no permanent mode controls, two shortcuts behind "+"', () => {
+  // Unified Conversation v1: 「統一使用介面，但唔統一權限」. The three upfront buttons are
+  // gone — 香香 routes internally — so the Owner never has to classify his own sentence
+  // before typing it. Both lanes survive only as optional shortcuts.
+  assert.ok(!DEMO_HTML.includes('data-mode='), 'no permanent mode controls remain')
+  assert.ok(!DEMO_HTML.includes('id="modes"'), 'the mode switcher element is gone')
+  assert.ok(DEMO_HTML.includes('寫 Email') && DEMO_HTML.includes('建立提案'), 'both survive as shortcuts')
+  assert.ok(DEMO_HTML.includes('id="plus"'), 'behind a + menu')
+  // A shortcut is ONE-SHOT: a forced lane must never persist silently into later turns.
+  assert.ok(DEMO_HTML.includes('ONE-SHOT'), 'the one-shot rule is stated in the code')
+  assert.ok(DEMO_HTML.includes('setForced(null)'), 'and actually cleared at send time')
 })
 
 test('DEMO_HTML: no storage/cookies, no innerHTML/eval/new Function', () => {

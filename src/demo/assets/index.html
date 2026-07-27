@@ -34,11 +34,11 @@
           <div id="composer-box">
             <textarea id="msg" rows="1" placeholder="同香香講嘢…" aria-label="訊息"></textarea>
             <div class="composer-bar">
-              <div id="modes" role="group" aria-label="模式">
-                <button type="button" data-mode="chat" class="active">聊天</button>
-                <button type="button" data-mode="email_draft">寫 Email</button>
-                <button type="button" data-mode="proposal">建立提案</button>
+              <div id="plus-wrap">
+                <button id="plus" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="更多" title="更多">＋</button>
+                <div id="plus-menu" class="hidden" role="menu" aria-label="捷徑"></div>
               </div>
+              <span id="lane-hint" class="lane-hint"></span>
               <div class="bar-right">
                 <div id="picker-wrap">
                   <button id="picker" type="button" aria-haspopup="listbox" aria-expanded="false">
