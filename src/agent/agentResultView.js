@@ -59,7 +59,23 @@ function scopeVerdict (allowedFiles, filesChanged) {
  * @returns {{ status, headline, sections, lines, scope }}
  */
 function buildAgentResultView (input = {}) {
-  const canonical = canonicalWorkOrder(input.workOrder || {})
+  // SCOPE AND CAPS COME FROM THE SNAPSHOT taken at hand-off — never re-derived from the
+  // sealed Work Order, which expires after 10 minutes. Rebuilding them at read time is
+  // what made a finished, perfectly in-scope run report 「越界…這份結果不應採用」 once the
+  // order had expired: no order, empty allowlist, so every changed file looked foreign.
+  // `input.facts` is the recorded truth. The workOrder fallback exists only for direct
+  // callers that have one in hand at the time (and for the in-flight view); the router
+  // always passes facts.
+  const canonical = input.facts
+    ? {
+        allowedFiles: Array.isArray(input.facts.allowedFiles) ? input.facts.allowedFiles : [],
+        allowedTestCommand: input.facts.allowedTestCommand == null ? null : input.facts.allowedTestCommand,
+        timeoutSec: input.facts.timeoutSec == null ? null : input.facts.timeoutSec,
+        costCapUsd: input.facts.costCapUsd == null ? null : input.facts.costCapUsd,
+        branch: input.facts.branch == null ? null : input.facts.branch,
+        approvalId: input.approvalId || null
+      }
+    : canonicalWorkOrder(input.workOrder || {})
   const raw = input.result || null
   const approvalId = input.approvalId || canonical.approvalId || null
 
@@ -129,13 +145,18 @@ function buildAgentResultView (input = {}) {
     ? r.diff
     : ((r && typeof r.diffStat === 'string' && r.diffStat.trim() !== '') ? r.diffStat : UNKNOWN)
 
-  const money = (n) => `US$${Number(n).toFixed(2)}` // 0.5 reads as US$0.50, not US$0.5
+  const money = (n) => (n == null ? UNKNOWN : `US$${Number(n).toFixed(2)}`) // 0.5 -> US$0.50
   const costParts = []
   if (r && typeof r.costUsd === 'number') costParts.push(money(r.costUsd))
-  if (r && typeof r.durationMs === 'number') costParts.push(`${(r.durationMs / 1000).toFixed(1)} 秒`)
-  const cost = costParts.length
-    ? `${costParts.join(' · ')}（上限 ${money(canonical.costCapUsd)} / ${canonical.timeoutSec} 秒）`
-    : UNKNOWN
+  // Duration: the MEASURED wall time of the run, recorded once at completion. Prefer the
+  // execution record's own measurement over the worker's spawn latency, and never compute
+  // it from "now" — that is what made the reported time grow forever after the run.
+  const durationMs = Number.isFinite(input.durationMs) ? input.durationMs : (r && r.durationMs)
+  if (Number.isFinite(durationMs)) costParts.push(`${(durationMs / 1000).toFixed(1)} 秒`)
+  const capsText = (canonical.costCapUsd == null && canonical.timeoutSec == null)
+    ? ''
+    : `（上限 ${money(canonical.costCapUsd)} / ${canonical.timeoutSec == null ? UNKNOWN : canonical.timeoutSec + ' 秒'}）`
+  const cost = costParts.length ? `${costParts.join(' · ')}${capsText}` : UNKNOWN
 
   const sections = [
     { title: '結果', body: headline },

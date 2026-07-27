@@ -35,6 +35,11 @@ function createConfirmService (deps = {}) {
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
   // Layer 2 sink. Optional and inert: if nothing is wired, the hand-off behaves exactly as
   // before and the Owner simply has no result view to read.
+  // Snapshot the scope + caps at HAND-OFF, before anything runs. The result view reads
+  // these instead of rebuilding them from the sealed order, which expires.
+  const recordExecutionStart = typeof deps.recordExecutionStart === 'function'
+    ? (id, facts) => { try { deps.recordExecutionStart(id, facts) } catch (e) { console.warn('[agent-bridge] start not recorded: ' + ((e && e.message) || String(e))) } }
+    : () => {}
   const recordResult = typeof deps.recordResult === 'function'
     ? (id, r) => { try { deps.recordResult(id, r) } catch (e) { console.warn('[agent-bridge] result not recorded: ' + ((e && e.message) || String(e))) } }
     : () => {}
@@ -79,6 +84,13 @@ function createConfirmService (deps = {}) {
     if (agentEligible) {
       const approvalId = input.workOrder.approvalId || null
       auditFn({ approvalId, outcome: 'handed_off', reason: null, entryPoint })
+      recordExecutionStart(approvalId, {
+        allowedFiles: input.workOrder.allowedFiles,
+        timeoutSec: input.workOrder.timeoutSec,
+        costCapUsd: input.workOrder.costCapUsd,
+        allowedTestCommand: input.workOrder.allowedTestCommand,
+        branch: input.workOrder.branch
+      })
       Promise.resolve()
         .then(() => agentRunner.run({ workOrder: input.workOrder, approvedHash: input.approvedHash, who: owner }))
         // LAYER 2: record what the runner reported so the Owner can be SHOWN the outcome.

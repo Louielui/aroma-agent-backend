@@ -122,23 +122,92 @@ function createOwnerApprovalStore (options = {}) {
   }
   function getPhases (approvalId) { return (phases.get(approvalId) || []).slice() }
 
-  const results = new Map() // approvalId -> { result, recordedAt }
-  function recordResult (approvalId, result) {
+  // ── EXECUTION RECORDS: facts captured WHEN THEY ARE TRUE ───────────────────
+  // The result view used to rebuild allowedFiles / timeoutSec / costCapUsd from the
+  // SEALED Work Order at read time. Sealed orders expire after 10 minutes, so reading a
+  // finished run later found no order, an empty allowlist, and therefore accused a
+  // perfectly in-scope run of going out of scope — with 「這份結果不應採用」 on screen.
+  // The caps rendered as US$0.00 / null for the same reason.
+  //
+  // This is the third bug of exactly one shape (after the missing audit store and the
+  // wrong result field paths): FACTS WERE RECONSTRUCTED AFTER THE EVENT instead of
+  // recorded at the time. So they are recorded at the time now. The scope and the caps
+  // are snapshotted at HAND-OFF, before anything runs, and the duration is measured at
+  // completion. Nothing downstream re-derives any of it, and the sealed order can expire
+  // whenever it likes.
+  const executions = new Map() // approvalId -> { facts, startedAt, result?, finishedAt?, durationMs? }
+
+  /** Snapshot the scope + caps at hand-off. Write-once; a second call is ignored. */
+  function recordExecutionStart (approvalId, facts = {}) {
     if (typeof approvalId !== 'string' || !approvalId) return { ok: false, reason: 'invalid_approval_id' }
-    if (results.has(approvalId)) return { ok: false, reason: 'already_recorded' }
-    results.set(approvalId, Object.freeze({ result: Object.freeze(result), recordedAt: now() }))
+    if (executions.has(approvalId)) return { ok: false, reason: 'already_started' }
+    executions.set(approvalId, {
+      facts: Object.freeze({
+        allowedFiles: Array.isArray(facts.allowedFiles) ? Object.freeze([...facts.allowedFiles]) : Object.freeze([]),
+        timeoutSec: Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
+        costCapUsd: Number.isFinite(facts.costCapUsd) ? facts.costCapUsd : null,
+        allowedTestCommand: (typeof facts.allowedTestCommand === 'string' && facts.allowedTestCommand) ? facts.allowedTestCommand : null,
+        branch: (typeof facts.branch === 'string' && facts.branch) ? facts.branch : null
+      }),
+      startedAt: now(),
+      result: undefined
+    })
     return { ok: true }
   }
-  function getResult (approvalId) {
-    const rec = results.get(approvalId)
-    return rec ? { ok: true, record: rec } : { ok: false, reason: 'no_result' }
+
+  function recordResult (approvalId, result) {
+    if (typeof approvalId !== 'string' || !approvalId) return { ok: false, reason: 'invalid_approval_id' }
+    const rec = executions.get(approvalId)
+    if (rec && rec.result !== undefined) return { ok: false, reason: 'already_recorded' }
+    const finishedAt = now()
+    if (rec) {
+      // Duration is MEASURED here, once, and stored. It is not "now minus start" at read
+      // time, which is what made the reported elapsed time grow forever after the run.
+      rec.result = Object.freeze(result)
+      rec.finishedAt = finishedAt
+      rec.durationMs = finishedAt - rec.startedAt
+      return { ok: true }
+    }
+    // A result with no recorded start (a caller that never announced one). Still stored,
+    // but the duration is honestly unknown rather than invented.
+    executions.set(approvalId, {
+      facts: Object.freeze({ allowedFiles: Object.freeze([]), timeoutSec: null, costCapUsd: null, allowedTestCommand: null, branch: null }),
+      startedAt: null,
+      result: Object.freeze(result),
+      finishedAt,
+      durationMs: null
+    })
+    return { ok: true }
   }
 
-  function stats () { return { sealed: sealed.size, nonces: nonces.size, sessions: sessions.size, results: results.size } }
+  /** @returns the execution record: snapshotted facts + timings + result (if finished). */
+  function getResult (approvalId) {
+    const rec = executions.get(approvalId)
+    if (!rec || rec.result === undefined) return { ok: false, reason: 'no_result' }
+    return {
+      ok: true,
+      record: {
+        result: rec.result,
+        recordedAt: rec.finishedAt,
+        facts: rec.facts,
+        startedAt: rec.startedAt,
+        finishedAt: rec.finishedAt,
+        durationMs: rec.durationMs
+      }
+    }
+  }
+
+  /** The in-flight view: facts + start, before any result exists. */
+  function getExecution (approvalId) {
+    const rec = executions.get(approvalId)
+    return rec ? { ok: true, record: rec } : { ok: false, reason: 'no_execution' }
+  }
+
+  function stats () { return { sealed: sealed.size, nonces: nonces.size, sessions: sessions.size, results: executions.size } }
 
   return {
     createSession, validSession, seal, loadSealed, issueNonce, consumeNonce,
-    recordResult, getResult, recordPhase, getPhases, stats,
+    recordResult, getResult, recordExecutionStart, getExecution, recordPhase, getPhases, stats,
     APPROVAL_TTL_MS: approvalTtlMs, SESSION_TTL_MS: sessionTtlMs
   }
 }
