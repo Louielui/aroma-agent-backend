@@ -42,7 +42,14 @@ function createAuditLog (options = {}) {
       branch: (out.branch === undefined) ? null : out.branch,
       filesChanged: Array.isArray(out.filesChanged) ? out.filesChanged : null,
       risks: Array.isArray(out.risks) ? out.risks : null,
-      cost: result && Number.isFinite(result.cost) ? result.cost : null
+      cost: result && Number.isFinite(result.cost) ? result.cost : null,
+      // How long it actually took. The record used to carry only createdAt, so the audit
+      // could not answer 'how long did this run' without the (expiring) result view.
+      // durationMs is the runner's measured wall time for the whole run; workerLatencyMs
+      // is the worker's own spawn-to-return figure, kept because they answer different
+      // questions (clone + verification is in one and not the other).
+      durationMs: Number.isFinite(entry.durationMs) ? entry.durationMs : null,
+      workerLatencyMs: result && Number.isFinite(result.latencyMs) ? result.latencyMs : null
     }
     artifactStore.write('agent-audit', record)
     return record

@@ -157,8 +157,7 @@ function createOwnerApprovalRouter (deps = {}) {
     const approvalId = req.params.approvalId
     const got = store.getResult(approvalId)
     const phases = typeof store.getPhases === 'function' ? store.getPhases(approvalId) : []
-    const sealedRec = store.loadSealed(approvalId)
-    const workOrder = sealedRec.ok ? sealedRec.record.workOrder : null
+    const exec = typeof store.getExecution === 'function' ? store.getExecution(approvalId) : { ok: false }
 
     // A hand-off that has started but not finished is REPORTED, not hidden behind a 404.
     // The old bare 404 is exactly why an approved run looked like nothing happened: the
@@ -166,8 +165,24 @@ function createOwnerApprovalRouter (deps = {}) {
     const running = !got.ok && phases.length > 0
     if (!got.ok && !running) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
 
-    const view = buildAgentResultView({ approvalId, workOrder, result: got.ok ? got.record.result : null, running })
-    const startedAt = phases.length ? phases[0].at : null
+    // FACTS COME FROM THE SNAPSHOT taken at hand-off — never from the sealed order, which
+    // expires after 10 minutes and used to make a finished, in-scope run read as
+    // 「越界…這份結果不應採用」 with caps of US$0.00 / null once it had.
+    const facts = got.ok ? got.record.facts : (exec.ok ? exec.record.facts : null)
+    const startedAt = got.ok ? got.record.startedAt : (exec.ok ? exec.record.startedAt : (phases.length ? phases[0].at : null))
+    // A FINISHED run reports its MEASURED duration, recorded once at completion. Only a
+    // run still in flight is measured against the clock.
+    const durationMs = got.ok
+      ? got.record.durationMs
+      : (startedAt == null ? null : (Date.now() - startedAt))
+
+    const view = buildAgentResultView({
+      approvalId,
+      facts,
+      durationMs: got.ok ? durationMs : undefined,
+      result: got.ok ? got.record.result : null,
+      running
+    })
     return res.status(200).json({
       approvalId,
       status: view.status,
@@ -178,8 +193,8 @@ function createOwnerApprovalRouter (deps = {}) {
       phases: phases.map((p) => ({ phase: p.phase, label: phaseLabel(p.phase), at: p.at })),
       currentPhase: phases.length ? phases[phases.length - 1].phase : null,
       startedAt,
-      elapsedMs: startedAt == null ? null : (Date.now() - startedAt),
-      capSec: workOrder && Number.isFinite(workOrder.timeoutSec) ? workOrder.timeoutSec : null,
+      elapsedMs: durationMs,
+      capSec: facts && Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
       finished: got.ok
     })
   })

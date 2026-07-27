@@ -74,6 +74,9 @@ function createAgentRunner (options = {}) {
    * @param {{ workOrder: object, who?: string }} input
    */
   async function run (input = {}) {
+    // Measured from the top of the run, so the audit records the WHOLE thing — clone,
+    // spawn and post-run verification — not just the worker's spawn latency.
+    const runStartedAt = Date.now()
     const workOrder = input && input.workOrder
     const who = (input && typeof input.who === 'string') ? input.who : null
 
@@ -93,12 +96,12 @@ function createAgentRunner (options = {}) {
     const approvedHash = input && input.approvedHash
     if (typeof approvedHash !== 'string' || approvedHash.length === 0) {
       const result = fail('missing_approved_hash')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
     if (approvedHash !== workOrderHash) {
       const result = fail('hash_mismatch')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
 
@@ -109,7 +112,7 @@ function createAgentRunner (options = {}) {
     } catch (e) {
       const result = fail(`workspace_refused: ${(e && e.message) || String(e)}`)
       emitPhase(approvalId, 'failed')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
 
@@ -124,7 +127,7 @@ function createAgentRunner (options = {}) {
     emitPhase(approvalId, result && result.ok === true ? 'done' : 'failed')
 
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
-    if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result }) } catch (_) {} }
+    if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
     try { workspace.cleanup(prepared.dir) } catch (_) {}
     return result
   }

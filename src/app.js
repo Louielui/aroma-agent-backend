@@ -673,7 +673,8 @@ function createApp (options = {}) {
     auditFn: approvalAudit,
     // LAYER 2 sink — inert. Records what the runner reported so the Owner can be SHOWN the
     // outcome; it authorizes nothing. Resolved lazily because the store is built just below.
-    recordResult: (id, r) => ownerApprovalStore.recordResult(id, r)
+    recordResult: (id, r) => ownerApprovalStore.recordResult(id, r),
+    recordExecutionStart: (id, f) => ownerApprovalStore.recordExecutionStart(id, f)
   })
   const ownerApprovalStore = createOwnerApprovalStore(opts.ownerApprovalStoreOptions || {})
   app.locals.ownerApprovalStore = ownerApprovalStore
