@@ -22,6 +22,8 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
+const { iconDataUri } = require('./appManifest') // the padded square: favicon + app icon
+
 const ASSET_DIR = path.join(__dirname, 'assets')
 
 function readAsset (name) {
@@ -32,9 +34,9 @@ function readAsset (name) {
 }
 
 /**
- * THE LANTERN. The mark is drawn ONCE, in lantern.svg (full) and lantern-small.svg
- * (simplified for ~28-32px), and inlined in three places from those two files — header,
- * favicon, chat avatar — so the artwork has a single source and cannot drift apart.
+ * THE MARK. It is drawn ONCE, in dot.svg, and used in three places — the header mark, the
+ * chat avatar, and (padded onto a square canvas by appManifest.js) the favicon and the
+ * installed app icon. One source, so they cannot drift apart.
  *
  * Two rules govern how it is inlined:
  *
@@ -54,11 +56,7 @@ function inlineSvg (name) {
   return readAsset(name).replace(XMLNS_ATTR, '').trim()
 }
 
-function faviconDataUri (name) {
-  return 'data:image/svg+xml,' + encodeURIComponent(readAsset(name).trim())
-}
-
-const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_LANTERN*/', '/*INLINE_LANTERN_SMALL*/', '/*FAVICON_URI*/']
+const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/']
 
 /**
  * Inline the CSS/JS/artwork into their placeholder comments. `split/join` is used rather
@@ -69,9 +67,12 @@ function buildDemoHtml () {
   const parts = {
     '/*INLINE_CSS*/': readAsset('app.css'),
     '/*INLINE_JS*/': readAsset('app.js'),
-    '/*INLINE_LANTERN*/': inlineSvg('lantern.svg'),
-    '/*INLINE_LANTERN_SMALL*/': inlineSvg('lantern-small.svg'),
-    '/*FAVICON_URI*/': faviconDataUri('lantern.svg')
+    // The same dot fills both the header mark and the avatar template, so one entry
+    // replaces both occurrences.
+    '/*INLINE_DOT*/': inlineSvg('dot.svg'),
+    // The favicon is the padded SQUARE form, shared with the installed app icon so the
+    // tab and the taskbar show the same thing. appManifest owns that geometry.
+    '/*FAVICON_URI*/': iconDataUri()
   }
   let out = readAsset('index.html')
   for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])

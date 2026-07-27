@@ -212,7 +212,7 @@
 
   /* ── message rendering ────────────────────────────────────────────────── */
 
-  // The lantern, cloned from the <template> in the document. No markup is built from a
+  // The dot, cloned from the <template> in the document. No markup is built from a
   // string here — the artwork is real, parsed DOM, so it costs nothing per turn and the
   // page keeps its markup-from-strings guarantee intact.
   function avatar () {

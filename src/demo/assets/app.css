@@ -22,6 +22,10 @@
   --radius: 14px;
   --side-w: 264px;
   --col: 720px;
+  /* THE ONE KNOB FOR THE CHAT AVATAR. Change this number and nothing else: the dot's
+     width, height, flex-basis and its vertical alignment with the first line of the reply
+     are all derived from it. 24px is a starting point, chosen to be adjusted. */
+  --avatar-size: 24px;
   color-scheme: light dark;
 }
 
@@ -114,23 +118,30 @@ body {
 .turn { display: flex; gap: 12px; }
 .turn.user { justify-content: flex-end; }
 
-/* THE LANTERN IS A PHYSICAL OBJECT — every colour here is hardcoded, none is a token, so
-   it looks the same in light and dark and can never invert. The pale disc is part of the
-   object's presentation, not the page's: it keeps the warm mark legible on either
-   background. Sized 28px to match the existing row rhythm; the artwork is vector and is
-   verified legible from 24px through 32px. */
-.avatar {
-  flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%;
-  background: #FDF4E6; box-shadow: inset 0 0 0 1px #EBD9BC;
-  display: flex; align-items: center; justify-content: center;
-  margin-top: 2px; overflow: hidden;
-}
-.avatar svg { width: 24px; height: 24px; display: block; }
+/* THE DOT IS THE AVATAR. No disc behind it, no ring, no glow — the mark fills its own box
+   and that box is the avatar. Its colour lives in dot.svg as a literal hex and nothing
+   here repaints it, so it is identical in light and dark mode.
 
-/* The header mark. Tall and narrow (200x360), so it is sized by height and keeps its
-   aspect; hidden from assistive tech because the title beside it already says 守燈. */
+   ONE KNOB: --avatar-size (declared in :root). It is the only place the size is written;
+   width, height, flex-basis and the vertical alignment below are all derived from it, so
+   "bigger" or "smaller" is a one-line change with the row still lining up. */
+.avatar {
+  flex: 0 0 var(--avatar-size);
+  width: var(--avatar-size);
+  height: var(--avatar-size);
+  /* Centre the dot on the FIRST LINE of the reply rather than on the top of the block.
+     The bot body is padded 2px and a line box is 1.65em tall, so the line's centre sits at
+     2px + 1.65em/2; the dot's centre must land there whatever its size. Derived, not a
+     magic number, so changing --avatar-size keeps the row aligned instead of nudging the
+     dot out of line. */
+  margin-top: calc(2px + (1.65em - var(--avatar-size)) / 2);
+}
+.avatar svg { width: 100%; height: 100%; display: block; }
+
+/* The header mark: the same dot, sized for the top bar. Deliberately NOT tied to
+   --avatar-size — resizing the chat avatar should not resize the brand mark. */
 .brand-mark { display: inline-flex; align-items: center; flex: 0 0 auto; }
-.brand-mark svg { height: 26px; width: auto; display: block; }
+.brand-mark svg { width: 20px; height: 20px; display: block; }
 
 .body { min-width: 0; max-width: 86%; }
 .turn.user .body {

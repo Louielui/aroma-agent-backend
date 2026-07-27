@@ -83,25 +83,12 @@ test('*** installing fetches nothing new: the icon is inline, not a URL ***', ()
 
 /* ── the tile is a real app icon, not a sliver ────────────────────────────── */
 
-test('*** the app tile is square, full-bleed, and keeps the lantern in the safe zone ***', () => {
+test('the app icon is a square canvas holding one centred dot', () => {
   const svg = buildAppIconSvg()
-  assert.ok(svg.includes('viewBox="0 0 512 512"'), 'square tile')
-  assert.ok(/<rect width="512" height="512" fill="#FDF4E6"\/>/.test(svg), 'full-bleed background so a maskable crop has something to cut')
-  // the lantern is scaled to 62% height and centred — inside the 80% maskable safe circle
-  const m = svg.match(/translate\(([\d.]+),([\d.]+)\) scale\(([\d.]+)\)/)
-  assert.ok(m, 'the artwork is placed, not dropped in raw')
-  const scale = parseFloat(m[3])
-  const h = 360 * scale, w = 200 * scale
-  assert.ok(h / 512 > 0.5 && h / 512 < 0.75, 'big enough to read, small enough to survive the crop')
-  assert.ok(Math.abs(parseFloat(m[1]) - (512 - w) / 2) < 0.5, 'horizontally centred')
-  assert.ok(Math.abs(parseFloat(m[2]) - (512 - h) / 2) < 0.5, 'vertically centred')
-})
-
-test('the tile is built from the SAME lantern the page uses — one source, no drift', () => {
-  const svg = buildAppIconSvg()
-  // a distinctive path from lantern.svg
-  assert.ok(svg.includes('M92 270 Q86 310 96 344 Q100 348 104 344 Q114 310 108 270 Z'), 'the real artwork, not a copy')
-  assert.equal(svg.includes('var(--'), false, 'a physical object: no theme token can repaint it')
+  assert.ok(svg.includes('viewBox="0 0 512 512"'), 'square canvas')
+  assert.ok(svg.includes('<circle'), 'the dot')
+  assert.equal(svg.includes('var(--'), false, 'no theme token can repaint it')
+  // Geometry, padding and the 32px check live in dotIcon.test.js, which owns the mark.
 })
 
 test('the page links the manifest and declares a theme colour for both schemes', () => {
