@@ -30,8 +30,18 @@ test('the page is built from asset files and inlines them — one same-origin do
   assert.equal(DEMO_HTML.match(/<script>/g).length, 1, 'exactly one inline script')
   assert.equal(DEMO_HTML.match(/<style>/g).length, 1, 'exactly one inline style')
   assert.ok(!/<script[^>]+src=/.test(DEMO_HTML), 'no external script')
-  assert.ok(!/<link[^>]+href=/.test(DEMO_HTML), 'no external stylesheet')
   assert.ok(!/<img/.test(DEMO_HTML), 'no image request')
+  // The page carries exactly ONE <link>: the favicon, inlined as a data: URI. This
+  // assertion used to be "no <link ... href=" at all, which was a proxy for the thing
+  // that actually matters — that the browser fetches nothing. It is now stated directly:
+  // no stylesheet link, and every href on the page is a data: URI or a same-origin path.
+  const links = DEMO_HTML.match(/<link[^>]*>/g) || []
+  assert.equal(links.length, 1, 'exactly one link element')
+  assert.ok(/rel="icon"/.test(links[0]), 'and it is the favicon')
+  assert.ok(!/rel="stylesheet"/.test(DEMO_HTML), 'no external stylesheet')
+  for (const href of DEMO_HTML.match(/href="([^"]*)"/g) || []) {
+    assert.ok(/^href="(data:|\/)/.test(href), 'href must be inline or same-origin: ' + href.slice(0, 40))
+  }
   // and it is deterministic
   assert.equal(buildDemoHtml(), DEMO_HTML)
 })

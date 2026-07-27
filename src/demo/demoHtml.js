@@ -32,17 +32,51 @@ function readAsset (name) {
 }
 
 /**
- * Inline the CSS/JS into their placeholder comments. `split/join` is used rather than
- * String.replace because a replacement string containing `$&`, `$1` etc. would otherwise
- * be interpreted as a substitution pattern and silently corrupt the asset.
+ * THE LANTERN. The mark is drawn ONCE, in lantern.svg (full) and lantern-small.svg
+ * (simplified for ~28-32px), and inlined in three places from those two files — header,
+ * favicon, chat avatar — so the artwork has a single source and cannot drift apart.
+ *
+ * Two rules govern how it is inlined:
+ *
+ * 1. INSIDE THE PAGE the xmlns attribute is STRIPPED. An HTML parser puts <svg> in the
+ *    SVG namespace by itself, so the attribute is redundant there — and keeping it would
+ *    put a literal "http://" in the page, which the static safety scan forbids outright.
+ *    Rather than loosen that scan for a string browsers never fetch, the attribute is
+ *    simply removed where it does nothing.
+ *
+ * 2. THE FAVICON is a data: URI, and a data: URI IS parsed as standalone XML, so there
+ *    the xmlns is REQUIRED and kept. It is percent-encoded whole — no literal "http://"
+ *    reaches the page, and no request leaves the browser.
+ */
+const XMLNS_ATTR = / xmlns="[^"]*"/g
+
+function inlineSvg (name) {
+  return readAsset(name).replace(XMLNS_ATTR, '').trim()
+}
+
+function faviconDataUri (name) {
+  return 'data:image/svg+xml,' + encodeURIComponent(readAsset(name).trim())
+}
+
+const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_LANTERN*/', '/*INLINE_LANTERN_SMALL*/', '/*FAVICON_URI*/']
+
+/**
+ * Inline the CSS/JS/artwork into their placeholder comments. `split/join` is used rather
+ * than String.replace because a replacement string containing `$&`, `$1` etc. would
+ * otherwise be interpreted as a substitution pattern and silently corrupt the asset.
  */
 function buildDemoHtml () {
-  const html = readAsset('index.html')
-  const css = readAsset('app.css')
-  const js = readAsset('app.js')
-  const out = html.split('/*INLINE_CSS*/').join(css).split('/*INLINE_JS*/').join(js)
-  if (out.includes('/*INLINE_CSS*/') || out.includes('/*INLINE_JS*/')) {
-    throw new Error('demoHtml: an inline placeholder was not replaced')
+  const parts = {
+    '/*INLINE_CSS*/': readAsset('app.css'),
+    '/*INLINE_JS*/': readAsset('app.js'),
+    '/*INLINE_LANTERN*/': inlineSvg('lantern.svg'),
+    '/*INLINE_LANTERN_SMALL*/': inlineSvg('lantern-small.svg'),
+    '/*FAVICON_URI*/': faviconDataUri('lantern.svg')
+  }
+  let out = readAsset('index.html')
+  for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])
+  for (const key of PLACEHOLDERS) {
+    if (out.includes(key)) throw new Error('demoHtml: an inline placeholder was not replaced: ' + key)
   }
   return out
 }

@@ -211,9 +211,20 @@
   }
 
   /* ── message rendering ────────────────────────────────────────────────── */
+
+  // The lantern, cloned from the <template> in the document. No markup is built from a
+  // string here — the artwork is real, parsed DOM, so it costs nothing per turn and the
+  // page keeps its markup-from-strings guarantee intact.
+  function avatar () {
+    var box = el('div', 'avatar')
+    var tpl = document.getElementById('tpl-avatar')
+    if (tpl && tpl.content) box.appendChild(tpl.content.cloneNode(true))
+    return box
+  }
+
   function turn (who) {
     var t = el('div', 'turn ' + who)
-    if (who === 'bot') t.appendChild(el('div', 'avatar', '香'))
+    if (who === 'bot') t.appendChild(avatar())
     var body = el('div', 'body')
     t.appendChild(body)
     active.thread.appendChild(t)
