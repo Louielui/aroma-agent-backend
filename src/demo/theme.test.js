@@ -28,15 +28,38 @@ function token (name, block = ROOT) {
 
 /* ── the values the Owner asked for ───────────────────────────────────────── */
 
-test('*** the Manus palette and type are the declared tokens ***', () => {
-  assert.equal(token('bg'), '#F7F6F3', 'page background: warm off-white')
-  assert.equal(token('panel'), '#F2F1ED', 'sidebar: a touch darker')
-  assert.equal(token('ink'), '#2C2C2C', 'body text')
-  assert.equal(token('faint'), '#8A8A85', 'muted / footer')
+test('*** EXACT values, read from Manus computed styles ***', () => {
+  // These came from the reference's own computed styles, so they are not judgement calls.
   assert.equal(token('msg-size'), '16px')
-  assert.equal(token('msg-line'), '1.75')
+  assert.equal(token('msg-line'), '1.5')
+  assert.equal(token('line'), '#e5e7eb', 'border colour')
+  assert.equal(token('divider'), '#e5e7eb', 'divider is the same value in the reference')
+  assert.equal(token('col'), '634px', 'message column width')
+  assert.equal(
+    token('font-sans').replace(/\s+/g, ' '),
+    '-apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"',
+    'the stack is used verbatim, in order'
+  )
+})
+
+test('*** APPROXIMATE values, sampled from a screenshot — flagged as such in the source ***', () => {
+  // Marked approximate so the next correction is obvious and cheap. If these ever become
+  // computed values, the comment moves with them.
+  assert.equal(token('bg'), '#FDFCFA', 'main chat background')
+  assert.equal(token('panel'), '#F6F4F1', 'sidebar')
+  assert.equal(token('ink'), '#1A1A18', 'body text')
+  assert.equal(token('bubble-user'), '#F7F6F4', 'the user bubble')
+  const surfaces = ROOT.slice(ROOT.indexOf('--bg:'), ROOT.indexOf('--card:'))
+  assert.match(ROOT, /APPROXIMATE/, 'the source says which values are sampled')
+  assert.match(ROOT, /EXACT/, 'and which are computed')
+  assert.ok(surfaces.includes('~'), 'the sampled ones are marked inline too')
+})
+
+test('the rest of the scale is unchanged and still declared', () => {
   assert.equal(token('ui-size'), '14px')
   assert.equal(token('weight-normal'), '400')
+  assert.equal(token('faint'), '#8A8A85')
+  assert.ok(token('msg-gap'), 'the space between messages is a token, not a literal')
 })
 
 test('the body actually uses them — a token nothing reads is decoration', () => {
@@ -140,12 +163,51 @@ test('*** the avatar dot is #FFA02E in BOTH themes — no token reaches it ***',
 
 /* ── no font is fetched ───────────────────────────────────────────────────── */
 
-test('the font stack is local: no webfont, no CDN, and CJK is still covered', () => {
+test('the font stack is local — no webfont, no CDN, nothing fetched', () => {
   const stack = token('font-sans')
   assert.equal(/@font-face|url\(|https?:/.test(CSS), false, 'nothing is fetched')
-  assert.ok(stack.includes('Inter'), 'Inter first for anyone who has it')
-  assert.ok(stack.includes('sans-serif'), 'ends in a generic family')
-  for (const cjk of ['Microsoft JhengHei', 'PingFang TC', 'Noto Sans TC']) {
-    assert.ok(stack.includes(cjk), 'the interface is Chinese — keeps ' + cjk)
+  assert.ok(stack.startsWith('-apple-system'), 'the reference stack, in its order')
+  assert.ok(stack.includes('sans-serif'), 'a generic family is present')
+})
+
+test('*** the stack names no CJK face — a deliberate consequence of using it verbatim ***', () => {
+  // The reference stack was given as authoritative and is used unchanged. It carries no
+  // Chinese face, so CJK glyphs resolve through the generic `sans-serif` to the platform's
+  // default — which was CHECKED in a browser, not assumed, and renders as Microsoft
+  // JhengHei UI on this machine. This test records that as a known property rather than
+  // letting it look like an oversight: if Chinese ever renders wrong somewhere, the fix is
+  // to insert a CJK face before `sans-serif`, and this is the place that says so.
+  const stack = token('font-sans')
+  for (const cjk of ['JhengHei', 'PingFang', 'Noto Sans TC', 'Heiti', 'MingLiU']) {
+    assert.equal(stack.includes(cjk), false, 'verbatim: no CJK face was added — ' + cjk)
   }
+  assert.match(ROOT, /no CJK face of its own/, 'and the source explains why')
+})
+
+/* ── only the user gets a bubble ──────────────────────────────────────────── */
+
+test('*** the assistant reply has NO bubble — plain text on the page background ***', () => {
+  // Checked against the reference: only the user's message sits in a bubble. This was
+  // already how it worked, so the assertion exists to keep it that way rather than to
+  // record a change.
+  const user = CSS.slice(CSS.indexOf('.turn.user .body {'), CSS.indexOf('.turn.bot .body'))
+  const bot = CSS.slice(CSS.indexOf('.turn.bot .body'), CSS.indexOf('.md > *:first-child'))
+  assert.match(user, /background:\s*var\(--bubble-user\)/, 'the user bubble is tinted')
+  assert.match(user, /border:\s*1px solid var\(--line\)/)
+  assert.match(user, /border-radius:\s*var\(--radius\)/)
+  for (const forbidden of [/background/, /border/, /box-shadow/]) {
+    assert.equal(forbidden.test(bot), false, 'the assistant reply carries no ' + forbidden)
+  }
+})
+
+test('the bubble uses its own token, not the generic card surface', () => {
+  // --card is white and belongs to menus and raised panels. The bubble is a warm tint and
+  // must be tunable on its own, or "make the bubble warmer" would repaint every menu.
+  assert.notEqual(token('bubble-user'), token('card'))
+  assert.ok(token('bubble-user', DARK), 'dark mode gives it a value too')
+})
+
+test('the message column and the composer share ONE width token', () => {
+  assert.match(CSS, /\.thread \{ max-width: var\(--col\)/)
+  assert.match(CSS, /\.composer-col \{ max-width: var\(--col\)/)
 })
