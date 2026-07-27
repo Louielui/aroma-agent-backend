@@ -46,6 +46,10 @@
     { id: 'openai', name: '香香（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
   ]
   var provider = 'claude'
+  // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
+  // what was happening instead of arriving as a fresh, contentless input. It is a lane
+  // NAME only; the server re-validates it and refuses to continue into the proposal lane.
+  var previousLane = null
 
   var pending = false
   var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
@@ -142,7 +146,19 @@
         i++; continue
       }
 
-      if (line.trim() === '') { flushPara(); flushList(); i++; continue }
+      // A blank line ends a PARAGRAPH, but it does not necessarily end a list: models
+      // routinely put a blank line between list items. Flushing the list here started a
+      // NEW <ol> for every item, and every <ol> restarts at 1 — which is why every
+      // numbered item rendered as "1.". Only flush the list when what follows is not
+      // another item of the same list.
+      if (line.trim() === '') {
+        flushPara()
+        var j = i + 1
+        while (j < lines.length && lines[j].trim() === '') j++
+        var next = j < lines.length ? lines[j].match(/^\s*([-*]|\d+\.)\s+/) : null
+        if (!next || (list && (list.tagName === 'OL') !== (next[1].length > 1))) flushList()
+        i++; continue
+      }
 
       flushList()
       if (!para) para = el('p')
@@ -329,12 +345,19 @@
       // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
       // lane the Owner never chose would put the old upfront decision back, invisibly.
       body: JSON.stringify(forced
-        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider }
-        : { message: text, history: conv.history, providerHint: provider })
+        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane }
+        : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane })
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
+      // Remember what this turn became, so a short reply next time continues it rather
+      // than arriving as a fresh, contentless input. Chat responses carry the lane
+      // explicitly; the other two are identified by the shape they return.
+      previousLane = (o.body && typeof o.body.lane === 'string') ? o.body.lane
+        : (o.body && o.body.stage === 'SHADOW_ONLY') ? 'email_draft'
+          : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
+            : previousLane
       labelServedBy(render(o.status, o.body, conv), o.body)
       if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
       renderConvList() // the conversation has content now, so it enters the list
@@ -671,5 +694,5 @@
   send.disabled = true
   autoGrow()
   newConversation(false)
-  addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢就撳上面「建立提案」，我會出一張工作單畀你過目，**你批准咗我先會做**。')
+  addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
 })()

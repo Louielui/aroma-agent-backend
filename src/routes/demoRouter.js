@@ -123,7 +123,12 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
       // promoteToProposal. The router chooses among those shapes and can do nothing else.
       // It reads no retrieved content, so no Drive document or Decision record can steer
       // a turn into the proposal lane; and a proposal is inert anyway.
-      const routed = routeLane(message)
+      // previousLane is a LANE NAME the page reports from the turn it just rendered. It
+      // is validated against the same closed list as everything else and can only ever
+      // continue a SHORT reply — it cannot select a lane for real input, and the router
+      // refuses to continue into the proposal lane at all.
+      const prevLane = INTERACTION_MODES.includes(req.body.previousLane) ? req.body.previousLane : null
+      const routed = routeLane(message, { previousLane: prevLane })
       const interactionMode = (typeof req.body.interactionMode === 'string' && req.body.interactionMode)
         ? req.body.interactionMode
         : routed.lane

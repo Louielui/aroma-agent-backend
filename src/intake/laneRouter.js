@@ -52,22 +52,53 @@ const MAIL_OBJECT = /(e-?mail|電郵|郵件|信|回信|mail)/i
 const RECIPIENT = /(?:回覆|回复|覆|回|reply to|respond to|畀|俾|比|給|to)\s*[「"']?([A-Za-z][A-Za-z.\- ]{1,30}|[一-鿿]{2,6})[」"']?/
 
 // A request to CHANGE something in the repo.
-const CHANGE_ACT = /(修改|改一改|改吓|改下|^改|\s改|更新|修正|修復|新增|加入|刪除|移除|重新命名|rename|update|modify|edit|fix|change|refactor|remove|delete|add)/i
+// 改 is matched ANYWHERE, not only at a word start. It previously needed a space or the
+// start of the message, so the most natural Cantonese phrasing — 「幫我改 docs/x.md」 —
+// silently fell through to chat. Broadening is safe because a proposal ALSO requires a
+// file object and the absence of a question, so 「我想改善下心情」 still just talks.
+const CHANGE_ACT = /(改|更新|修正|修復|新增|加入|刪除|移除|重新命名|rename|update|modify|edit|fix|change|refactor|remove|delete|add)/i
 const FILE_OBJECT = /([A-Za-z0-9_.\-]+\/[A-Za-z0-9_.\-/]+\.[A-Za-z0-9]{1,6}|[A-Za-z0-9_.\-]+\.(?:js|ts|md|json|css|html|txt|ps1|yml|yaml)|檔案|文件|file|code|程式碼|程式)/i
 
 // Existence / quantity / manner questions. These ask ABOUT the world; they never
 // instruct. 「今日有冇重要 email?」 lands here and stays in chat.
 const INTERROGATIVE = /(有冇|有沒有|係咪|是否|point解|點解|為何|為什麼|點樣|如何|怎樣|怎麼|幾多|幾時|邊個|邊啲|邊樣|咩嘢|什麼|甚麼|which|what|when|who|how many|how do|is there|are there|do i have|\?|？)/i
 
+// ── SHORT REPLIES ARE CONTINUATIONS, NOT NEW REQUESTS ───────────────────────
+// When 香香 offers numbered options and the Owner answers 「1」, that is him continuing
+// the turn she just made — not a fresh, contentless instruction. Routing it as a new
+// input made 香香 answer as though he had said nothing meaningful.
+//
+// A short reply therefore CONTINUES the previous lane. The one exception is the safe
+// direction the Owner asked for: it never continues INTO the proposal lane. A bare
+// 「好」 must not mint a proposal record; if he wants one he says what to change, and
+// that routes on its own words.
+const SHORT_CONFIRMATION = /^(?:[1-9]|10|[a-e]|好|好呀|好的|係|係呀|是|啱|得|得咗|ok|okay|yes|y|yep|sure|對|冇問題|冇錯|可以|繼續|go|do it)[\s.。!！)）]*$/i
+const CONTINUABLE = Object.freeze([CHAT, EMAIL]) // deliberately NOT proposal
+
+/** True for a reply so short it can only be an answer to what was just asked. */
+function isShortReply (text) {
+  return text.length <= 12 && SHORT_CONFIRMATION.test(text)
+}
+
 /**
  * Decide the lane for ONE user message.
  * @param {string} message  the Owner's words, and nothing else
+ * @param {{ previousLane?: string }} [opts]  the lane of the PREVIOUS turn — a lane NAME
+ *   from the closed set, never content. Used only to continue a short reply.
  * @returns {{ lane: 'chat'|'email_draft'|'proposal', reason: string }}
  *   `reason` is a short enum for the log — never the message, never content.
  */
-function routeLane (message) {
+function routeLane (message, opts) {
   const text = typeof message === 'string' ? message.trim() : ''
   if (!text) return { lane: CHAT, reason: 'empty' }
+
+  // A short reply continues what was already happening.
+  if (isShortReply(text)) {
+    const prev = opts && typeof opts.previousLane === 'string' ? opts.previousLane : null
+    if (CONTINUABLE.includes(prev)) return { lane: prev, reason: 'continuation' }
+    // No continuable previous lane (including a previous PROPOSAL turn) → talk.
+    return { lane: CHAT, reason: 'continuation_chat' }
+  }
 
   // 1. "Can you …?" is a question about capability, not a request. Chat.
   if (CAPABILITY_QUESTION.test(text)) return { lane: CHAT, reason: 'capability_question' }
@@ -90,4 +121,4 @@ function routeLane (message) {
   return { lane: CHAT, reason: INTERROGATIVE.test(text) ? 'question' : 'default' }
 }
 
-module.exports = { routeLane, LANES, CHAT, EMAIL, PROPOSAL }
+module.exports = { routeLane, isShortReply, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }

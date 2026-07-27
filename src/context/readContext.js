@@ -130,12 +130,29 @@ function planFor (source, { keywords = [], now, env = {}, caps = CAPS } = {}) {
   }
 
   if (source === 'calendar') {
-    // BOUNDED window: now .. now + calendarWindowDays. Without timeMax the API
-    // returns the next N events however far out (months/years), which is wrong for
-    // a "next week" question.
-    const start = new Date(now)
+    // BOUNDED window: START OF TODAY .. +calendarWindowDays.
+    //
+    // It used to start at the current INSTANT, which quietly broke the single most
+    // common calendar question. Asking 「今日有咩安排」 at 3pm could not see the 10am
+    // meeting — it was already in the past — so the Owner got an empty answer about a
+    // day that had things in it. The day you are standing in is part of "upcoming".
+    //
+    // timeMax is still bounded: without it the API returns the next N events however far
+    // out (months, years), which is wrong for a "this week" question.
+    const start = startOfLocalDay(now)
     const end = new Date(start.getTime() + caps.calendarWindowDays * 24 * 60 * 60 * 1000)
-    return { method: 'listEvents', params: { calendarId: 'primary', timeMin: start.toISOString(), timeMax: end.toISOString(), maxResults: caps.calendarFetch } }
+    return {
+      method: 'listEvents',
+      params: { calendarId: 'primary', timeMin: start.toISOString(), timeMax: end.toISOString(), maxResults: caps.calendarFetch },
+      // NOTHING in the window is a real answer, but a useless one when the diary simply
+      // starts further out — the Owner reads "no events" as "the calendar is broken".
+      // The fallback drops timeMax and returns the NEXT few events whenever they are,
+      // clearly labelled so it is never mistaken for "within the window you asked about".
+      fallback: {
+        method: 'listEvents',
+        params: { calendarId: 'primary', timeMin: start.toISOString(), maxResults: caps.calendarFetch }
+      }
+    }
   }
 
   if (source === 'github') {
@@ -158,12 +175,20 @@ function capContent (s, max) {
 }
 
 /** One rendered reference line — always source + date (+ weekday) + link. */
+/** Midnight today in the local zone — the Owner's 「今日」, not a UTC boundary. */
+function startOfLocalDay (isoOrDate) {
+  const d = new Date(isoOrDate)
+  const local = new Date(d.getTime())
+  local.setHours(0, 0, 0, 0)
+  return local
+}
+
 function renderItem (r, caps = CAPS, opts = {}) {
   const c = capContent(r.content, caps.maxItemChars)
   const wd = weekdayOf(r.originalDate)
   const bits = [
     `[${r.source}]`,
-    opts.recent ? '(recent items)' : null,
+    opts.recent ? (r.source === 'calendar' ? '(next scheduled, beyond the window asked about)' : '(recent items)') : null,
     r.title ? `"${r.title}"` : '(untitled)',
     r.originalDate ? `(dated ${r.originalDate}${wd ? `, ${wd}` : ''})` : '(no date)',
     r.sourceId ? `id=${r.sourceId}` : null,
