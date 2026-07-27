@@ -21,6 +21,7 @@
   --bad: #b0564b;
   --radius: 14px;
   --side-w: 264px;
+  --col: 720px;
   color-scheme: light dark;
 }
 
@@ -106,15 +107,8 @@ body {
 #conv-title { font-size: 15px; font-weight: 550; margin: 0; flex: 1; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-#modes { display: flex; gap: 4px; background: var(--divider); padding: 3px; border-radius: 10px; }
-#modes button {
-  border: 0; background: transparent; color: var(--muted);
-  font: inherit; font-size: 13px; padding: 5px 12px; border-radius: 7px; cursor: pointer;
-}
-#modes button.active { background: var(--card); color: var(--ink); font-weight: 550; }
-
 #log { flex: 1; overflow-y: auto; padding: 28px 20px 8px; }
-.thread { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.thread { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
 
 /* ── messages ────────────────────────────────────────────────────────────── */
 .turn { display: flex; gap: 12px; }
@@ -229,10 +223,100 @@ button[disabled] { opacity: .45; cursor: default; }
 
 .result { margin-top: 16px; border-top: 1px solid var(--divider); padding-top: 12px; }
 
+/* ── the composer ────────────────────────────────────────────────────────────
+   It used to be a bare <textarea> with the browser's default border and resize grip,
+   jammed against the bottom-left while the messages above were centred. The two now
+   share ONE axis: .thread and .composer-col are both max-width:var(--col) and
+   margin-inline:auto, so the input sits directly under the text it answers. */
+#composer {
+  position: sticky; bottom: 0;
+  padding: 10px 20px 18px;                 /* breathing room beneath, not flush */
+  background: linear-gradient(to bottom, transparent, var(--bg) 22%);
+}
+.composer-col { max-width: var(--col); margin: 0 auto; }
+
+#composer-box {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 22px;                      /* one rounded container holding both */
+  padding: 10px 10px 8px 16px;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+#composer-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+#composer-box textarea {
+  display: block; width: 100%;
+  border: 0; outline: none;                 /* no default outline */
+  resize: none;                             /* no visible resize handle */
+  background: transparent; color: var(--ink);
+  font: inherit; line-height: 1.6;
+  padding: 4px 0 2px;
+  max-height: 200px; overflow-y: auto;      /* auto-grow up to here, then scroll */
+}
+#composer-box textarea::placeholder { color: var(--faint); }
+#composer-box textarea:disabled { opacity: .6; }
+
+.composer-bar { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+
+/* the lane switcher now reads as part of the composer, not a detached widget */
+#modes { display: flex; gap: 2px; background: var(--divider); padding: 3px; border-radius: 9px; }
+#modes button {
+  border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12.5px; padding: 4px 10px; border-radius: 7px; cursor: pointer;
+}
+#modes button:hover { color: var(--ink); }
+#modes button.active { background: var(--card); color: var(--ink); font-weight: 550; }
+
+/* provider picker */
+#picker-wrap { position: relative; }
+#picker {
+  display: flex; align-items: center; gap: 5px;
+  border: 0; background: transparent; color: var(--muted);
+  font: inherit; font-size: 12.5px; padding: 5px 9px; border-radius: 8px; cursor: pointer;
+}
+#picker:hover { background: var(--divider); color: var(--ink); }
+#picker .caret { font-size: 10px; color: var(--faint); }
+#picker-menu {
+  position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20;
+  width: 320px; max-width: 78vw;
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.14);
+}
+.opt {
+  display: block; width: 100%; text-align: left;
+  border: 0; background: transparent; color: var(--ink);
+  font: inherit; padding: 9px 10px; border-radius: 9px; cursor: pointer;
+}
+.opt:hover { background: var(--divider); }
+.opt.active { background: var(--divider); }
+.opt-name { font-size: 13.5px; font-weight: 550; }
+.opt-note { font-size: 12px; color: var(--muted); margin-top: 3px; line-height: 1.5; }
+.opt-note.warn { color: var(--warn); }
+
+#send {
+  flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
+  border: 0; background: var(--accent); color: #fff;
+  font-size: 15px; line-height: 1; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+#send:hover:not([disabled]) { background: var(--accent-hover); }
+#send[disabled] { background: var(--line); color: var(--faint); cursor: default; }
+
+.composer-note { font-size: 11.5px; color: var(--faint); text-align: center; margin: 8px 0 0; }
+
+/* which 香香 actually answered (a pick is not a promise — a fallback can change it) */
+.served { font-size: 11.5px; color: var(--faint); margin-top: 6px; }
+.served.fallback { color: var(--warn); }
+
 .hidden { display: none !important; }
 
 @media (max-width: 760px) {
   #sidebar { position: absolute; z-index: 5; height: 100%; }
   #sidebar.collapsed { margin-left: calc(-1 * var(--side-w)); }
   .body { max-width: 100%; }
+  #modes button { padding: 4px 8px; font-size: 12px; }
 }
