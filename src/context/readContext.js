@@ -215,38 +215,64 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   const lines = []
   let truncated = false
 
-  for (const source of sources) {
-    const plan = planFor(source, { keywords, now: asOf, env, caps })
-    if (plan.unavailable) {
-      perSource.push({ source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false })
-      lines.push(unavailableLine(source, plan.unavailable))
-      continue
-    }
+  // ── ONE SOURCE, START TO FINISH ────────────────────────────────────────────
+  // Pure per-source work: plan → read → optional recent-items fallback → cap → render.
+  // It NEVER throws: an unexpected error becomes the same 'unavailable' three-state
+  // outcome the sequential version produced, so one broken source still cannot fail the
+  // turn or affect its neighbours.
+  async function fetchOne (source) {
+    try {
+      const plan = planFor(source, { keywords, now: asOf, env, caps })
+      if (plan.unavailable) {
+        return { entry: { source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(source, plan.unavailable)], overflow: false }
+      }
 
-    let step = await runStep(connector, source, plan, caps)
-    if (step.unavailable) {
-      perSource.push({ source, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false })
-      lines.push(unavailableLine(source, step.unavailable))
-      continue
-    }
+      let step = await runStep(connector, source, plan, caps)
+      if (step.unavailable) {
+        return { entry: { source, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(source, step.unavailable)], overflow: false }
+      }
 
-    // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
-    let usedFallback = false
-    if (step.results.length === 0 && plan.fallback) {
-      const fb = await runStep(connector, source, plan.fallback, caps)
-      if (!fb.unavailable && fb.results.length > 0) { step = fb; usedFallback = true }
-    }
+      // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
+      let usedFallback = false
+      if (step.results.length === 0 && plan.fallback) {
+        const fb = await runStep(connector, source, plan.fallback, caps)
+        if (!fb.unavailable && fb.results.length > 0) { step = fb; usedFallback = true }
+      }
 
-    const kept = step.results.slice(0, caps.maxItemsPerSource)
-    if (step.results.length > kept.length) truncated = true
+      const kept = step.results.slice(0, caps.maxItemsPerSource)
+      const overflow = step.results.length > kept.length
 
-    if (kept.length === 0) { // read succeeded, nothing matched — NOT unavailable
-      perSource.push({ source, trust: 'live', count: 0, error: null, usedFallback })
-      lines.push(zeroResultLine(source))
-      continue
+      if (kept.length === 0) { // read succeeded, nothing matched — NOT unavailable
+        return { entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], overflow }
+      }
+      return {
+        entry: { source, trust: 'live', count: kept.length, error: null, usedFallback },
+        lines: kept.map((r) => renderItem(r, caps, { recent: usedFallback })),
+        overflow
+      }
+    } catch (err) {
+      const why = (err && err.message) ? String(err.message).slice(0, 120) : 'read failed'
+      return { entry: { source, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(source, why)], overflow: false }
     }
-    perSource.push({ source, trust: 'live', count: kept.length, error: null, usedFallback })
-    for (const r of kept) lines.push(renderItem(r, caps, { recent: usedFallback }))
+  }
+
+  // ── ALL SOURCES AT ONCE ────────────────────────────────────────────────────
+  // These reads used to run one after another, so a chat turn paid the SUM of four
+  // round-trips (measured: 2.5–5.1s, against ~10ms for the rest of the pipeline). They
+  // are independent reads of four unrelated services, so the wait is now the SLOWEST
+  // one, not the total. allSettled — not all — because a rejection must never take the
+  // others down; fetchOne already fails soft, and this is the belt to that braces.
+  // Results are consumed in the ORIGINAL source order, so the rendered block, the caps
+  // and the three-state per-source rendering are byte-identical to the sequential version.
+  const settled = await Promise.allSettled(sources.map((s) => fetchOne(s)))
+  for (let i = 0; i < sources.length; i++) {
+    const r = settled[i]
+    const got = r.status === 'fulfilled'
+      ? r.value
+      : { entry: { source: sources[i], trust: 'unavailable', count: 0, error: 'read failed', usedFallback: false }, lines: [unavailableLine(sources[i], 'read failed')], overflow: false }
+    perSource.push(got.entry)
+    for (const l of got.lines) lines.push(l)
+    if (got.overflow) truncated = true
   }
 
   // Total cap on the COMPLETE serialized block; stop at a whole-line boundary.
