@@ -29,6 +29,7 @@ const { processIntake } = require('../intake/intakeService')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
+const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the lantern)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
 
@@ -66,6 +67,13 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
   // GET /demo — serve the single-file UI (guarded).
   router.get('/demo', demoGuard, (req, res) => {
     res.type('html').send(DEMO_HTML)
+  })
+
+  // GET /manifest.webmanifest — makes the page installable as a desktop app (guarded the
+  // same way as the page it describes). Static, same-origin, generated at load time from
+  // the lantern already in assets/; it references no other host and no other file.
+  router.get('/manifest.webmanifest', demoGuard, (req, res) => {
+    res.type('application/manifest+json').send(MANIFEST_JSON)
   })
 
   // POST /api/v1/demo/intake — deterministic-mode intake (guarded).

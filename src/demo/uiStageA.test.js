@@ -36,8 +36,9 @@ test('the page is built from asset files and inlines them — one same-origin do
   // that actually matters — that the browser fetches nothing. It is now stated directly:
   // no stylesheet link, and every href on the page is a data: URI or a same-origin path.
   const links = DEMO_HTML.match(/<link[^>]*>/g) || []
-  assert.equal(links.length, 1, 'exactly one link element')
-  assert.ok(/rel="icon"/.test(links[0]), 'and it is the favicon')
+  assert.equal(links.length, 2, 'exactly two link elements')
+  assert.deepEqual(links.map((l) => (l.match(/rel="([^"]+)"/) || [])[1]).sort(), ['icon', 'manifest'],
+    'the favicon and the install manifest — nothing else')
   assert.ok(!/rel="stylesheet"/.test(DEMO_HTML), 'no external stylesheet')
   for (const href of DEMO_HTML.match(/href="([^"]*)"/g) || []) {
     assert.ok(/^href="(data:|\/)/.test(href), 'href must be inline or same-origin: ' + href.slice(0, 40))
