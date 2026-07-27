@@ -177,31 +177,54 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //    early-return above — receives NO recall, so the adapter input is byte-identical to
   //    today. Read is at-most-once via the injected/real store fns; any read error or
   //    NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
-  let effPrompt = baseEffPrompt
-  if (resolveDecisionRecall() === 'on' && opts && opts.interactionMode === 'chat') {
-    try {
-      const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
-      const recall = buildDecisionRecallContext(deps)
-      if (recall && recall.block) effPrompt = recall.block + '\n\n' + baseEffPrompt
-    } catch (_) { /* FAIL-SOFT: inject nothing */ }
-  }
+  // ── THE CLAUDE PROMPT IS BUILT ON DEMAND ───────────────────────────────────
+  // Both blocks below used to be assembled unconditionally, BEFORE the provider was
+  // chosen. That meant a GPT-served chat turn paid the full read-context fetch —
+  // measured at 2.5–5.1s, against ~10ms for the entire rest of the pipeline — and then
+  // threw the result away, because the GPT path is denied that context by construction.
+  // The Owner waited seconds for data his chosen model was never going to see.
+  //
+  // Assembling it lazily fixes the latency AND hardens the boundary: the context is now
+  // only ever BUILT on the path that is allowed to receive it. `gptPrompt` remains the
+  // raw turn captured above, so nothing here can leak into the GPT request.
+  //
+  // Memoised: the Claude fallback after a GPT failure still gets the full, unchanged
+  // prompt, and the sources are never read twice in one turn.
+  let claudePromptCache = null
+  async function buildClaudePrompt () {
+    if (claudePromptCache !== null) return claudePromptCache
+    let effPrompt = baseEffPrompt
 
-  // ── READ CONTEXT v1 — CHAT-LANE ONLY, flag-gated, FAIL-SOFT. Injected ONLY when
-  //    READ_ACCESS==='on' AND at least one per-source flag is 'on' AND
-  //    opts.interactionMode === 'chat'. With the flags off (the default) nothing is
-  //    built, NO source is read, and the adapter input is byte-identical to today.
-  //    The block is UNTRUSTED REFERENCE DATA (cited + dated); a per-source failure
-  //    becomes an UNAVAILABLE line and never blocks the reply. Nothing is persisted.
-  if (opts && opts.interactionMode === 'chat' && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
-    try {
-      const deps = (opts && opts.readContextDeps) || null
-      const sources = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
-      if (sources.length > 0) {
-        const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
-        const rc = await buildReadContext({ connector, message, sources, env: process.env })
-        if (rc && rc.block) effPrompt = rc.block + '\n\n' + effPrompt
-      }
-    } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
+    // DECISION RECALL v1 — chat-lane only, opt-in, FAIL-SOFT. Any read error or
+    // NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
+    if (resolveDecisionRecall() === 'on' && opts && opts.interactionMode === 'chat') {
+      try {
+        const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
+        const recall = buildDecisionRecallContext(deps)
+        if (recall && recall.block) effPrompt = recall.block + '\n\n' + baseEffPrompt
+      } catch (_) { /* FAIL-SOFT: inject nothing */ }
+    }
+
+    // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
+    // READ_ACCESS==='on' AND at least one per-source flag is 'on' AND
+    // opts.interactionMode === 'chat'. With the flags off (the default) nothing is
+    // built, NO source is read, and the adapter input is byte-identical to today.
+    // The block is UNTRUSTED REFERENCE DATA (cited + dated); a per-source failure
+    // becomes an UNAVAILABLE line and never blocks the reply. Nothing is persisted.
+    if (opts && opts.interactionMode === 'chat' && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
+      try {
+        const deps = (opts && opts.readContextDeps) || null
+        const sources = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+        if (sources.length > 0) {
+          const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
+          const rc = await buildReadContext({ connector, message, sources, env: process.env })
+          if (rc && rc.block) effPrompt = rc.block + '\n\n' + effPrompt
+        }
+      } catch (_) { /* FAIL-SOFT: inject nothing; the reply proceeds as today */ }
+    }
+
+    claudePromptCache = effPrompt
+    return claudePromptCache
   }
 
   // Output limit, selected PER LANE. The chat lane answers in prose inside the JSON
@@ -298,7 +321,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   if (!distilled) {
     try {
-      llmResult = await adapter.complete(effPrompt, {
+      // Built HERE, on the Claude path only — whether this is the primary attempt or the
+      // one-shot fallback after GPT. Either way Claude receives the full, unchanged
+      // prompt, so the fallback answer is exactly as informed as it has always been.
+      llmResult = await adapter.complete(await buildClaudePrompt(), {
         system: effSystem,
         maxTokens,
         temperature: 0.3

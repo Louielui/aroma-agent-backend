@@ -129,7 +129,10 @@ function createAgentRunner (options = {}) {
     return result
   }
 
-  return { run }
+  // Observable so the composition root can be ASSERTED, not assumed. The first canary
+  // ran with auditLog === null because production wiring passed an undefined artifact
+  // store; nothing in the runner could report that, so nothing caught it.
+  return { run, auditConfigured: auditLog !== null }
 }
 
 module.exports = { createAgentRunner }
