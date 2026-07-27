@@ -205,7 +205,7 @@ test('DEMO_HTML: same-origin fetch target only, no external URLs', () => {
 
 test('DEMO_HTML: ONE composer — no permanent mode controls, two shortcuts behind "+"', () => {
   // Unified Conversation v1: 「統一使用介面，但唔統一權限」. The three upfront buttons are
-  // gone — 香香 routes internally — so the Owner never has to classify his own sentence
+  // gone — 守燈 routes internally — so the Owner never has to classify his own sentence
   // before typing it. Both lanes survive only as optional shortcuts.
   assert.ok(!DEMO_HTML.includes('data-mode='), 'no permanent mode controls remain')
   assert.ok(!DEMO_HTML.includes('id="modes"'), 'the mode switcher element is gone')

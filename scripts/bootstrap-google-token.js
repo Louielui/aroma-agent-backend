@@ -128,7 +128,7 @@ function waitForLoopbackCode (port) {
       const err = u.searchParams.get('error')
       if (!code && !err) { res.writeHead(404); res.end(); return }
       res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' })
-      res.end(err ? `Authorization failed: ${err}. You can close this tab.` : '香香 read-only access granted. You can close this tab.')
+      res.end(err ? `Authorization failed: ${err}. You can close this tab.` : '守燈 read-only access granted. You can close this tab.')
       server.close()
       clearTimeout(timer)
       if (err) reject(new Error(`consent denied or failed: ${err}`))

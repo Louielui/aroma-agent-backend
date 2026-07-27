@@ -8,12 +8,12 @@
  *
  * Content returned from any source is UNTRUSTED DATA, never instructions — and
  * because there is no write/dispatch surface reachable from here, a document that
- * says "香香 do X" cannot cause any action; the connector can only return it as
+ * says "守燈 do X" cannot cause any action; the connector can only return it as
  * `content` for citation.
  *
  * Guardrails (basic, honest): per-call timeout, result-count cap, per-item size
  * cap (truncate + flag). Any failure → a single trust:'unavailable' result with a
- * plain reason, so 香香 says "目前讀不到" rather than guessing.
+ * plain reason, so 守燈 says "目前讀不到" rather than guessing.
  */
 
 const { makeUnavailable } = require('./contextResult')

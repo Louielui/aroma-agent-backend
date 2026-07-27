@@ -157,7 +157,7 @@ test('safe metadata never leaks persona / tail / behavioral / fragment text', ()
     seedTriple(base)
     const r = compose(base)
     const s = JSON.stringify(r.safeMetadata)
-    for (const leak of ['香香', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586)]) assert.equal(s.includes(leak), false)
+    for (const leak of ['守燈', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586)]) assert.equal(s.includes(leak), false)
   } finally { cleanup(base) }
 })
 test('compose performs no filesystem writes', () => {
@@ -169,7 +169,10 @@ test('compose performs no filesystem writes', () => {
   } finally { cleanup(base) }
 })
 test('PERSONA_IDENTITY unchanged; buildPersonaSystem byte-identical; runtime reachability 0', () => {
-  assert.equal(P.length, 3116)
+  // RE-SIGNED 2026-07-27 with the persona unlock: 3116 -> 3113. The rename is
+  // length-neutral (香香/守燈 are both two characters); the -3 is clause 3 losing its
+  // designer vocabulary. A length lock is only meaningful if it moves when the text does.
+  assert.equal(P.length, 3113)
   assert.equal(buildPersonaSystem('X'), buildPersonaSystem('X')); assert.ok(buildPersonaSystem('X').includes(P))
   const SRC = path.resolve(__dirname, '../../src')
   const resolveReq = (d, rel) => { const b = path.resolve(d, rel); for (const c of [b, b + '.js', path.join(b, 'index.js')]) { try { if (fs.statSync(c).isFile()) return c } catch (e) {} } return null }
@@ -193,7 +196,7 @@ test('CLI exit 4 (production-like), exit 0 (triple active, no leak), exit 3 (no 
   try {
     seedTriple(b2)
     const ok = runCli(b2); assert.equal(ok.code, 0); assert.ok(ok.out.includes('HYBRID_PERSONA_READY'))
-    for (const leak of ['香香', '思考順序', P.slice(0, 807), P.slice(1586)]) assert.equal(ok.out.includes(leak), false)
+    for (const leak of ['守燈', '思考順序', P.slice(0, 807), P.slice(1586)]) assert.equal(ok.out.includes(leak), false)
   } finally { cleanup(b2) }
   const cli = path.resolve(__dirname, '../../scripts/persona/verifyHybridPersona.js')
   const env = Object.assign({}, process.env); delete env.AROMA_CORE_DIR

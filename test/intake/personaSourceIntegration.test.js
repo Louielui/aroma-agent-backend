@@ -90,7 +90,7 @@ test('hybrid NOT_READY: adapter NEVER called, fail-closed error (no persona text
     const { state, error } = await driveDemo(src)
     assert.equal(state.calls, 0) // model never called
     assert.ok(error && error.code === 'PERSONA_SOURCE_UNAVAILABLE')
-    assert.equal(/香香|思考順序/.test(JSON.stringify(error.reason || '')), false)
+    assert.equal(/守燈|思考順序/.test(JSON.stringify(error.reason || '')), false)
   } finally { cleanup(base) }
 })
 

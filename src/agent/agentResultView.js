@@ -3,12 +3,12 @@
 /**
  * agentResultView.js — LAYER 2 of the Owner's two-layer flow, READ-ONLY.
  *
- *   Layer 1 (the approval card) = "may 香香 attempt this inside the throwaway copy?"
+ *   Layer 1 (the approval card) = "may 守燈 attempt this inside the throwaway copy?"
  *   Layer 2 (this)              = "here is what actually happened."
  *
  * For the canary there is no second approval: the work happened in a discarded copy and
  * the real repository was never touched, so there is nothing to authorize after the fact.
- * FUTURE GATE — once 香香 can touch the real repo (commit / push / deploy), ADOPTING a
+ * FUTURE GATE — once 守燈 can touch the real repo (commit / push / deploy), ADOPTING a
  * result becomes its own Owner decision and needs its own approval surface. That gate is
  * deliberately NOT built here.
  *
@@ -31,7 +31,7 @@ const UNKNOWN = '（執行器沒有提供這項資料）'
 const PHASES = Object.freeze({
   accepted: '已批准，正在排隊',
   preparing: '正在準備丟棄式副本',
-  running: '香香正在處理',
+  running: '守燈正在處理',
   verifying: '正在核對改動範圍',
   done: '完成',
   failed: '未成功'
@@ -117,7 +117,7 @@ function buildAgentResultView (input = {}) {
   else status = 'failed'
 
   const headline = {
-    running: '香香正在丟棄式副本內處理中…',
+    running: '守燈正在丟棄式副本內處理中…',
     pending: '仍未有結果（這次批准未有執行，或執行器未回報）',
     refused: '執行器拒絕了這張工作單（沒有任何改動）',
     timeout: '超時中止 —— 測試副本已丟棄',

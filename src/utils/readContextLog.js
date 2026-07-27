@@ -5,8 +5,8 @@
  *
  * WHY THIS EXISTS. The read path logged nothing at all, and a per-source failure was
  * swallowed by a bare `catch (_) {}`. So when the Owner asked 「呢個星期有咩安排？」 and
- * 香香 answered 「讀唔到」, there was no way to tell whether the calendar had returned
- * UNAVAILABLE or had returned results that 香香 then mis-reported. A whole round was
+ * 守燈 answered 「讀唔到」, there was no way to tell whether the calendar had returned
+ * UNAVAILABLE or had returned results that 守燈 then mis-reported. A whole round was
  * spent unable to answer that. This closes it.
  *
  * SAFETY — ALLOWLIST BY CONSTRUCTION, same discipline as the intake outcome line. The

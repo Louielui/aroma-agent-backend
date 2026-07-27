@@ -24,8 +24,13 @@
 // work is created, dispatched, approved, or done at model-output time. The old
 // "派給對應的工人 / 完成後我回報 / 你只做到…建立任務" phrasing must not return.
 // Machine-verified by src/intake/distillGovernanceWording.test.js.
-const SYSTEM_PROMPT = `你是「香香」,Louie(CEO)的 AI 營運長(COO)——不是聊天機器人。
-你的職責：理解 → 判斷 → 建議 → 提出提案（Proposal）。派工、執行與完成後的正式回報，屬於 Louie 批准後由治理層推進的階段；你不得在尚未發生時宣稱它們已經發生或必然會發生。你像一位懂 Louie 生意的可靠主管。
+// IDENTITY LIVES IN THE PERSONA, NOT HERE. This prompt used to open with its own
+// identity sentence — and it called Louie "CEO" while the persona calls him "Chef".
+// Two contradictory identity sentences sat in the same system string, one after the
+// other. The sentence is removed rather than corrected: the classifier's job is to
+// classify, and a second voice describing who she is can only ever drift from the
+// first. The persona is now the single source of identity.
+const SYSTEM_PROMPT = `你的職責：理解 → 判斷 → 建議 → 提出提案（Proposal）。派工、執行與完成後的正式回報，屬於 Louie 批准後由治理層推進的階段；你不得在尚未發生時宣稱它們已經發生或必然會發生。你像一位懂 Louie 生意的可靠主管。
 
 只輸出「有效的 JSON」,不要 markdown 圍欄。文字用「繁體中文」(技術詞如 hub-api-v1、main 保留原文)。
 
@@ -60,7 +65,7 @@ mode="commit"（decision / task / reminder —— 操作型):
 【背景/現況 ≠ 指令 —— 最容易犯的錯】intent="context":
 當 Louie 只是「陳述背景、現況、關係、事實或想法」,而【沒有】明確要求你現在去做/建立/修改/停止/執行某件事——這是 context,一律用 mode="chat" 回應(表示理解並確認),【絕對不要】產生 decision 或 task。
 只有當 Louie 明確下達行動要求(做/建立/改/停/查/派工…)時,才用 mode="commit"。判斷不確定時,傾向 context/chat,不要擅自建立任務。
-- context/chat(不建立任務)例:「從今天開始我們一起開發 Aroma System」「我們公司主要做餐飲」「Aroma 有三個門市」「我昨天跟供應商談過了」「我最近在想香香的定位」。
+- context/chat(不建立任務)例:「從今天開始我們一起開發 Aroma System」「我們公司主要做餐飲」「Aroma 有三個門市」「我昨天跟供應商談過了」「我最近在想守燈的定位」。
 - commit(建立任務)例:「幫我把 Timeline 的輪詢在終止狀態後停掉」「建立一個新的供應商資料表」。
 
 【最重要的規則:絕不謊稱已完成】
@@ -77,7 +82,7 @@ function buildDistillPrompt (message, history = []) {
   let convo = ''
   if (Array.isArray(history) && history.length) {
     convo = '對話歷史(舊到新):\n' + history.slice(-8)
-      .map(h => `${h.role === 'louie' ? 'Louie' : '香香'}: ${h.text}`).join('\n') + '\n\n'
+      .map(h => `${h.role === 'louie' ? 'Louie' : '守燈'}: ${h.text}`).join('\n') + '\n\n'
   }
   return { system: SYSTEM_PROMPT, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }

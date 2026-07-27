@@ -85,7 +85,7 @@ function resolveAgentCliCommand (env = process.env, existsSync = fs.existsSync) 
 
 // ── CHILD ENVIRONMENT ALLOWLIST ──────────────────────────────────────────────
 // The agent used to inherit the WHOLE parent environment. On this machine that parent
-// is the 香香 server, whose env holds ANTHROPIC_API_KEY, HUB_TOKEN, GITHUB_READ_TOKEN,
+// is the 守燈 server, whose env holds ANTHROPIC_API_KEY, HUB_TOKEN, GITHUB_READ_TOKEN,
 // OPENAI_API_KEY and Google credential paths. Cap 5 makes credential FILES
 // un-allowlistable, but none of that helps if the secrets are handed to the child in
 // its environment — the agent could simply read them out of process.env.

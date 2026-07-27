@@ -40,7 +40,7 @@ class MockAdapter extends LLMAdapter {
       assertResponseFormat(opts.responseFormat)
       return { text: STRUCTURED_FIXTURE, usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 }, model: 'mock', latencyMs: 1 }
     }
-    // Execution call (dispatcher asking 香香 to DO a knowledge task)
+    // Execution call (dispatcher asking 守燈 to DO a knowledge task)
     if (prompt.includes('請完成這個任務並給出成果')) {
       const tm = prompt.match(/任務:([^\n]*)/)
       const title = tm ? tm[1].trim() : '任務'

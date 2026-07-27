@@ -1,4 +1,4 @@
-/* 香香 UI — Stage A.
+/* 守燈 UI — Stage A.
    Owner direction: it must read like a real chat product, not a log viewer.
    Palette follows the house "wabi-sabi calm" tokens: warm paper, muted text, ONE coral
    accent. Dark mode included because the Owner works late. No external font, no CDN,
@@ -128,7 +128,7 @@ body {
 .avatar svg { width: 24px; height: 24px; display: block; }
 
 /* The header mark. Tall and narrow (200x360), so it is sized by height and keeps its
-   aspect; hidden from assistive tech because the title beside it already says 香香. */
+   aspect; hidden from assistive tech because the title beside it already says 守燈. */
 .brand-mark { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .brand-mark svg { height: 26px; width: auto; display: block; }
 
@@ -274,7 +274,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .bar-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
 
 /* the lane switcher now reads as part of the composer, not a detached widget */
-/* The three permanent mode buttons are GONE — 香香 routes internally. What remains is a
+/* The three permanent mode buttons are GONE — 守燈 routes internally. What remains is a
    "+" for the two shortcuts, and a quiet hint naming the lane a turn actually took, so
    routing stays visible without becoming a decision the Owner must make upfront. */
 #plus-wrap { position: relative; }
@@ -328,7 +328,7 @@ button[disabled] { opacity: .45; cursor: default; }
 
 .composer-note { font-size: 11.5px; color: var(--faint); text-align: center; margin: 8px 0 0; }
 
-/* which 香香 actually answered (a pick is not a promise — a fallback can change it) */
+/* which 守燈 actually answered (a pick is not a promise — a fallback can change it) */
 .served { font-size: 11.5px; color: var(--faint); margin-top: 6px; }
 .served.fallback { color: var(--warn); }
 

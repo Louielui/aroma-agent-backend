@@ -419,7 +419,7 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
   })
 
   // ── Human Relay Removal · Phase 1 — return-ready view (READ-ONLY) ─────────────
-  // Lists FINISHED (terminal) executions as decision-ready summaries so 香香 can
+  // Lists FINISHED (terminal) executions as decision-ready summaries so 守燈 can
   // surface "what came back" without Louie relaying reports. Pure read over
   // durable artifacts + the proposal store (reuses B2-8 buildResultView allowlist);
   // NO dispatch, NO write, NO GO/confirm. Token-free, exactly like /proposals and

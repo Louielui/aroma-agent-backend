@@ -21,7 +21,7 @@
  * 2. DETERMINISTIC — pure. No I/O, no clock, no randomness, and above all NO model call at
  *    render time. The same sealed order always renders the same card.
  * 3. HONEST BEFORE/AFTER — 「現時內容」 is a bounded read of the real file taken at seal
- *    time (a fact). 「香香打算改成」 is INTENT: the agent has not run and may produce
+ *    time (a fact). 「守燈打算改成」 is INTENT: the agent has not run and may produce
  *    something else. The card labels it as intent and never states it as a result.
  */
 
@@ -52,7 +52,7 @@ function buildApprovalView (workOrder) {
   const test = canonical.allowedTestCommand
 
   // ── the visible face — plain Chinese, one decision ────────────────────────
-  const heading = '香香想進行一項安全測試'
+  const heading = '守燈想進行一項安全測試'
 
   const whatChanges = canonical.goal || NOT_PROVIDED
 
@@ -64,10 +64,10 @@ function buildApprovalView (workOrder) {
   // Before/after. The labels carry the epistemic status, so the Owner cannot mistake the
   // intended text for something that has already happened.
   const beforeLabel = `現時內容（讀自真實檔案${canonical.currentExcerptTruncated ? ',已截斷,下面還有' : ''}）`
-  const afterLabel = '香香打算改成（這是香香的打算,不是已完成的結果 —— 它仍未執行,實際結果可能不同）'
+  const afterLabel = '守燈打算改成（這是守燈的打算,不是已完成的結果 —— 它仍未執行,實際結果可能不同）'
   const before = canonical.currentExcerpt == null ? NOT_PROVIDED : canonical.currentExcerpt
   const after = canonical.intendedChange // may be null — see below
-  // If 香香 stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
+  // If 守燈 stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
   // promise box reads as a broken form and invites the Owner to fill it in himself, which
   // is backwards: the intent is hers to state, not his to supply.
   const hasIntent = typeof after === 'string' && after.trim() !== ''
