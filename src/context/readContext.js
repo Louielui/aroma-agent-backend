@@ -1,5 +1,7 @@
 'use strict'
 
+const { logReadSource } = require('../utils/readContextLog') // one allowlisted line per source
+
 /**
  * readContext.js — builds ONE bounded, cited, dated context block from the connected
  * read-only sources, for injection into 香香's chat prompt. Read Context v1.1.
@@ -230,7 +232,7 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [] }
@@ -246,15 +248,16 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   // outcome the sequential version produced, so one broken source still cannot fail the
   // turn or affect its neighbours.
   async function fetchOne (source) {
+    const startedAt = Date.now()
     try {
       const plan = planFor(source, { keywords, now: asOf, env, caps })
       if (plan.unavailable) {
-        return { entry: { source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(source, plan.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(source, plan.unavailable)], overflow: false }
       }
 
       let step = await runStep(connector, source, plan, caps)
       if (step.unavailable) {
-        return { entry: { source, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(source, step.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(source, step.unavailable)], overflow: false }
       }
 
       // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
@@ -268,7 +271,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       const overflow = step.results.length > kept.length
 
       if (kept.length === 0) { // read succeeded, nothing matched — NOT unavailable
-        return { entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], overflow }
+        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], overflow }
       }
       return {
         entry: { source, trust: 'live', count: kept.length, error: null, usedFallback },
@@ -277,7 +280,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       }
     } catch (err) {
       const why = (err && err.message) ? String(err.message).slice(0, 120) : 'read failed'
-      return { entry: { source, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(source, why)], overflow: false }
+      return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(source, why)], overflow: false }
     }
   }
 
@@ -289,6 +292,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   // others down; fetchOne already fails soft, and this is the belt to that braces.
   // Results are consumed in the ORIGINAL source order, so the rendered block, the caps
   // and the three-state per-source rendering are byte-identical to the sequential version.
+  const startedAll = Date.now()
   const settled = await Promise.allSettled(sources.map((s) => fetchOne(s)))
   for (let i = 0; i < sources.length; i++) {
     const r = settled[i]
@@ -298,6 +302,19 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     perSource.push(got.entry)
     for (const l of got.lines) lines.push(l)
     if (got.overflow) truncated = true
+
+    // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
+    // source that could not be read at all looked identical from outside — which is
+    // exactly the question that could not be answered when 香香 said 「讀唔到」. The
+    // projection carries counts and short enums only; content never reaches the log.
+    logReadSource({
+      source: got.entry.source,
+      trust: got.entry.trust,
+      count: got.entry.count,
+      usedFallback: got.entry.usedFallback === true,
+      error: got.entry.error,
+      durationMs: Number.isFinite(got.durationMs) ? got.durationMs : (Date.now() - startedAll)
+    }, logSink)
   }
 
   // Total cap on the COMPLETE serialized block; stop at a whole-line boundary.
