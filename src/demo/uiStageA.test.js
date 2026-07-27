@@ -274,13 +274,18 @@ test('the picker offers exactly the two providers the server allows', () => {
   assert.ok(DEMO_HTML.includes('providerHint: provider'), 'the pick is sent as a hint field')
 })
 
-test('*** the context asymmetry is stated ON the option, not buried ***', () => {
-  // Without this the Owner reads a thinner GPT answer as a worse model rather than a
-  // blinder one. It must be visible text in the menu, not a title attribute.
-  assert.ok(DEMO_HTML.includes('睇唔到 Drive／Gmail／日曆／GitHub 同過往決定'), 'the GPT limitation is spelled out')
-  assert.ok(DEMO_HTML.includes('睇到 Drive／Gmail／日曆／GitHub 同過往決定'), 'and the Claude capability, for contrast')
+test('*** what the picker CLAIMS about each provider must be TRUE, and stated on the option ***', () => {
+  // The old note told the Owner that GPT could not see Drive/Gmail/Calendar/GitHub or
+  // past decisions. After his second GO that is FALSE — and a stale claim about where his
+  // data goes is worse than no claim at all. The note must now state the real trade-off:
+  // the same context, but a second vendor receives it. contextAsymmetry.test.js pins the
+  // behaviour; this pins what the interface says about it.
+  assert.ok(!DEMO_HTML.includes('睇唔到 Drive'), 'the stale "GPT is blind" claim is gone from the interface')
+  assert.ok(DEMO_HTML.includes('一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定'), 'GPT is stated to see the same context')
+  assert.ok(DEMO_HTML.includes('會送去 OpenAI'), 'and that the data goes to a second vendor')
+  assert.ok(DEMO_HTML.includes('睇到 Drive／Gmail／日曆／GitHub 同過往決定'), 'the Claude capability, for contrast')
   assert.ok(DEMO_HTML.includes("el('div', 'opt-note'"), 'rendered as a visible note element')
-  assert.ok(!/title="[^"]*睇唔到/.test(DEMO_HTML), 'not a tooltip-only disclosure')
+  assert.ok(!/title="[^"]*OpenAI/.test(DEMO_HTML), 'not a tooltip-only disclosure')
   assert.ok(/\.opt-note\s*\{/.test(DEMO_HTML), 'and it is styled to be read')
 })
 

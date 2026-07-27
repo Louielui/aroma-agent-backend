@@ -110,19 +110,34 @@ async function withEnv (vars, fn) {
 }
 const ENV = { DECISION_RECALL: 'off', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', MULTI_AI_ROUTER: 'off' }
 
-test('a GPT-served turn does NOT fetch context it is structurally denied', async () => {
+test('a GPT-served turn fetches only what it is PERMITTED — and nothing when all is withheld', async () => {
+  // INVERTED by a later Owner decision: GPT now receives the same context as Claude, so
+  // a GPT turn fetches. The lazy build still earns its keep — it means a source the Owner
+  // has withheld from OpenAI is never even READ on a GPT-served turn, so withholding
+  // costs nothing and leaks nothing.
   await withEnv(ENV, async () => {
-    const c = connector({ drive: 600 })
+    const shared = connector({ drive: 50 })
+    const gpt = recorder()
+    await processIntake('今日有咩要跟進', recorder(), [], {
+      demo: true, interactionMode: 'chat', providerHint: 'openai', openaiAdapter: gpt,
+      readContextDeps: { sources: ['drive'], connector: shared }
+    })
+    assert.ok(shared.calls.length > 0, 'the source is read for GPT now')
+    assert.ok(gpt.seen[0].includes('T_drive'), 'and GPT receives it')
+  })
+
+  await withEnv(Object.assign({}, ENV, { CONTEXT_DRIVE_OPENAI: 'off' }), async () => {
+    const withheld = connector({ drive: 600 })
     const gpt = recorder()
     const t0 = Date.now()
     await processIntake('今日有咩要跟進', recorder(), [], {
       demo: true, interactionMode: 'chat', providerHint: 'openai', openaiAdapter: gpt,
-      readContextDeps: { sources: ['drive'], connector: c }
+      readContextDeps: { sources: ['drive'], connector: withheld }
     })
     const ms = Date.now() - t0
-    assert.equal(c.calls.length, 0, 'the connector was NEVER called on a GPT turn')
-    assert.ok(ms < 300, 'so the Owner does not wait for it: ' + ms + 'ms')
-    assert.ok(!gpt.seen[0].includes('T_drive'), 'and GPT still receives no context')
+    assert.equal(withheld.calls.length, 0, 'a withheld source is never even READ on a GPT turn')
+    assert.ok(ms < 300, 'so withholding costs nothing: ' + ms + 'ms')
+    assert.ok(!gpt.seen[0].includes('T_drive'), 'and certainly never sent')
   })
 })
 
