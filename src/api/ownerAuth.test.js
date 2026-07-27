@@ -215,6 +215,20 @@ test('the configured check requires a real password, not a stub', () => {
   assert.equal(readOwnerPassword({}), null)
 })
 
+test('*** the floor is 8 — the Owner\'s decision, recorded ***', () => {
+  // 12 was my own default and it locked the Owner out of his own system. He was told what
+  // a shorter password costs and chose 8. Pinned here so the number is a decision on the
+  // record rather than something that quietly drifts back up or down.
+  assert.equal(MIN_PASSWORD_CHARS, 8)
+  assert.equal(ownerPasswordConfigured({ AROMA_OWNER_PASSWORD: 'x'.repeat(8) }), true, '8 is accepted')
+  assert.equal(ownerPasswordConfigured({ AROMA_OWNER_PASSWORD: 'x'.repeat(7) }), false, '7 is not')
+  // and the reason the floor exists at all is unchanged: a stub must never count as
+  // "configured", because that would leave everything open while looking configured.
+  for (const stub of ['', 'x', 'xx', 'set-me']) {
+    assert.equal(ownerPasswordConfigured({ AROMA_OWNER_PASSWORD: stub }), false, 'stub refused: ' + JSON.stringify(stub))
+  }
+})
+
 /* ── the password never appears anywhere a person or a log can see ────────── */
 
 test('*** the password is never in the login page, in either state ***', () => {
