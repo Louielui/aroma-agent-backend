@@ -196,10 +196,11 @@ test('DEMO_HTML: same-origin fetch target only, no external URLs', () => {
   assert.ok(DEMO_HTML.includes("fetch('/api/v1/demo/intake'"), 'posts to the same-origin demo path')
   assert.ok(!/https?:\/\//.test(DEMO_HTML), 'no absolute http(s) URL')
   assert.ok(!/<script\s+src=/.test(DEMO_HTML), 'no external script')
-  // The favicon link is inline artwork, not a fetch: a data: URI the browser never goes
-  // out for. Anything else with an href would be, so it is still refused.
+  // Two links are permitted and no others: the favicon, which is inline artwork the
+  // browser never goes out for, and the install manifest, which is a same-origin path on
+  // this server. Anything with an off-origin href is still refused outright.
   for (const link of DEMO_HTML.match(/<link[^>]*>/g) || []) {
-    assert.ok(/href="data:/.test(link), 'a link element may only carry inline data: ' + link.slice(0, 40))
+    assert.ok(/href="(data:|\/)[^"]*"/.test(link), 'inline or same-origin only: ' + link.slice(0, 40))
   }
 })
 
