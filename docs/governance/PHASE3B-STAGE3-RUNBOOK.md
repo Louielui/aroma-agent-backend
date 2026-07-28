@@ -210,6 +210,15 @@ measurement at all.
 
 The harness then runs unattended and does all of the following without asking anything:
 
+0. **re-measures the clean-desktop baseline itself, before opening any sentinel.** A4b is a
+   *gate* — it decides whether Part B may begin at all. This is a *same-round reference*,
+   and the two are different obligations, not a repeat. By the time Part B runs, A4b is
+   minutes or hours old, and a notification, a pop-up or a stray window in between would
+   invalidate it silently. Under M3 a zero result is evidence only against a baseline from
+   the same round.
+   - either signature count non-zero → `INVALID` immediately; **no sentinel is opened and
+     nothing is measured**
+   - DPI differs from the A4b gate reading → `HALT`
 1. records identity: whoami, SID, SessionId, WinSta, Desktop, **and session state**
 2. reads the run manifest and both nonces
 3. opens its own sentinel `AROMA-OWN-<operatorNonce>`

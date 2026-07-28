@@ -261,7 +261,13 @@ const VACUOUS_PASS_RULES = Object.freeze([
   // capture does not contain enough of the OWN signature colour, the capture is not
   // demonstrably looking at a screen that holds the sentinel — so nothing it fails to find
   // is meaningful either.
-  { id: 'own-signature-unrecognised', when: (c) => c.action === 'capture_screen' && typeof c.ownSignatureSamples === 'number' && c.ownSignatureSamples < MIN_OWN_SIGNATURE_SAMPLES, why: 'the positive signature colour was not recognised in the capture, so this capture cannot support an absence claim' }
+  { id: 'own-signature-unrecognised', when: (c) => c.action === 'capture_screen' && typeof c.ownSignatureSamples === 'number' && c.ownSignatureSamples < MIN_OWN_SIGNATURE_SAMPLES, why: 'the positive signature colour was not recognised in the capture, so this capture cannot support an absence claim' },
+  // M3: a zero result is evidence only against a baseline taken in the SAME round. The
+  // Part A gate baseline is minutes to hours stale by the time Part B runs, and a
+  // notification, a pop-up or a stray window in between would silently invalidate it.
+  { id: 'baseline-not-same-round', when: (c) => c.sameRoundBaseline !== true, why: 'no clean-desktop baseline was taken in this round, so a zero result has nothing to be zero against' },
+  { id: 'baseline-contaminated', when: (c) => (c.baselineOwnHits > 0 || c.baselineOwnerHits > 0), why: 'a signature colour was already present on the clean desktop, so any later hit is unattributable' },
+  { id: 'baseline-dpi-mismatch', when: (c) => c.baselineDpiMatchesGate === false, why: 'DPI changed since the gate measurement, so the coordinate arithmetic no longer applies' }
 ])
 
 /**

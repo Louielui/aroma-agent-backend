@@ -30,7 +30,12 @@ const good = (over = {}) => Object.assign({
   timedOut: false,
   permitted: true,
   expectedPermitted: true,
-  mechanism: 'PERMITTED'
+  mechanism: 'PERMITTED',
+  // M3: the same-round baseline, taken by the harness before any sentinel is opened
+  sameRoundBaseline: true,
+  baselineOwnHits: 0,
+  baselineOwnerHits: 0,
+  baselineDpiMatchesGate: true
 }, over)
 
 /* ── the baseline must actually pass, or every test below is vacuous ──────── */
@@ -147,6 +152,40 @@ test('the two signatures are far apart and far from Windows chrome', () => {
     assert.equal(O.matchesSignature(c, O.SIGNATURE_OWN), false, 'chrome must not match own: ' + JSON.stringify(c))
     assert.equal(O.matchesSignature(c, O.SIGNATURE_OWNER), false, 'chrome must not match owner: ' + JSON.stringify(c))
   }
+})
+
+/* ── M3: the baseline must be from THIS round ─────────────────────────────── */
+
+test('*** no same-round baseline makes every zero result meaningless ***', () => {
+  // The Part A gate baseline is stale by the time Part B runs: a notification, a pop-up or
+  // a stray window in between would invalidate it silently. A zero needs something from
+  // this round to be zero against.
+  const r = O.adjudicate(good({ sameRoundBaseline: false }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'baseline-not-same-round'))
+})
+
+test('*** a contaminated baseline makes later hits unattributable ***', () => {
+  for (const over of [{ baselineOwnHits: 1 }, { baselineOwnerHits: 1 }]) {
+    const r = O.adjudicate(good(over))
+    assert.equal(r.verdict, 'INVALID', JSON.stringify(over))
+    assert.ok(r.reasons.some((x) => x.id === 'baseline-contaminated'))
+  }
+})
+
+test('*** DPI drifting since the gate invalidates the coordinate arithmetic ***', () => {
+  const r = O.adjudicate(good({ baselineDpiMatchesGate: false }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'baseline-dpi-mismatch'))
+})
+
+test('the gate baseline and the same-round baseline are different obligations', () => {
+  // Both must hold. Passing the Part A gate does not excuse the harness from re-measuring,
+  // and a clean same-round baseline does not excuse skipping the gate.
+  const gateOnly = O.adjudicate(good({ sameRoundBaseline: false, baselineOwnerHits: 0 }))
+  assert.equal(gateOnly.verdict, 'INVALID')
+  const sameRoundContaminated = O.adjudicate(good({ sameRoundBaseline: true, baselineOwnerHits: 3 }))
+  assert.equal(sameRoundContaminated.verdict, 'INVALID')
 })
 
 test('*** wallpaper colour gamut must not trip either signature ***', () => {
