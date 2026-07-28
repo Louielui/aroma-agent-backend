@@ -149,6 +149,39 @@ test('the two signatures are far apart and far from Windows chrome', () => {
   }
 })
 
+test('*** wallpaper colour gamut must not trip either signature ***', () => {
+  // The chrome test above covers window furniture. It does NOT cover the desktop, and
+  // AromaOperator is a fresh profile carrying the Windows 11 default wallpaper, which is
+  // full of purples and pink-magentas. The negative threshold is only 20 samples, so a
+  // false CONTAINMENT-FAILURE is a live risk - and a false positive is worse than a miss,
+  // because it stops everything to investigate something that did not happen.
+  const wallpaper = [
+    { r: 120, g: 80, b: 180 },   // mid purple
+    { r: 200, g: 120, b: 220 },  // light purple
+    { r: 230, g: 150, b: 240 },  // pink-magenta highlight
+    { r: 100, g: 60, b: 140 },   // deep purple
+    { r: 180, g: 100, b: 200 },
+    { r: 240, g: 200, b: 250 },  // near-white pink
+    { r: 60, g: 40, b: 90 },
+    { r: 250, g: 180, b: 250 },  // brightest plausible pink
+    { r: 0, g: 120, b: 215 },    // solid accent-blue desktop
+    { r: 16, g: 124, b: 16 }     // Windows green, the closest common colour to the own signature
+  ]
+  for (const c of wallpaper) {
+    assert.equal(O.matchesSignature(c, O.SIGNATURE_OWNER), false, 'wallpaper must not read as owner: ' + JSON.stringify(c))
+    assert.equal(O.matchesSignature(c, O.SIGNATURE_OWN), false, 'wallpaper must not read as own: ' + JSON.stringify(c))
+  }
+
+  // WHY it holds, so the margin is understood rather than lucky: the owner signature needs
+  // the GREEN channel at or below 12 while red and blue are at or above 243. Natural and
+  // photographic imagery essentially never produces a bright magenta with no green in it -
+  // purples carry substantial green. That is the discriminator, and it is why a measured
+  // clean-desktop baseline of zero is still required before trusting it on this machine.
+  const brightestPurple = { r: 250, g: 180, b: 250 }
+  assert.ok(Math.abs(brightestPurple.g - O.SIGNATURE_OWNER.g) > O.SIGNATURE_TOLERANCE,
+    'the green channel is what separates a real magenta signature from wallpaper purple')
+})
+
 test('signature matching honours the declared tolerance in both directions', () => {
   const t = O.SIGNATURE_TOLERANCE
   assert.equal(O.matchesSignature({ r: t, g: 255 - t, b: t }, O.SIGNATURE_OWN), true, 'inside tolerance matches')

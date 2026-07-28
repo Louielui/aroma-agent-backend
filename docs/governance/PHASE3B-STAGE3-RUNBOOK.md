@@ -123,6 +123,42 @@ Expected: writes the reference image and its hash, and prints a non-black pixel 
 **If the ratio is near zero, stop** — a black reference makes the later comparison
 meaningless.
 
+**A4b — SESSION 5, as AromaOperator. Baseline the things that do NOT carry over.**
+
+> This is the one Part A step performed in session 5. Switch in, run it, switch back.
+> It must pass before any sentinel is opened.
+
+Two properties were verified in louis's session and are **not** inherited:
+
+1. **DPI is a per-user setting.** AromaOperator is a fresh profile and may be at a
+   different scale. The entire sampling arithmetic — 64,896 whole-screen samples, 1,250
+   sentinel samples, the 500/20 thresholds — is stated in physical pixels measured in
+   session 3. If session 5 differs, none of it applies.
+2. **The desktop is not neutral.** A fresh profile carries the Windows 11 default
+   wallpaper, which is full of purples and pink-magentas. The owner signature is magenta
+   at tolerance 12 and trips on 20 samples. A wallpaper false positive would raise a
+   `CONTAINMENT-FAILURE` for something that never happened — worse than a miss, because it
+   halts everything to investigate a fiction.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\AromaOperator-Probe\stage3-baseline.ps1 -Session3Json C:\Aroma\ComputerOperator-Evidence\baseline-session3.json
+```
+
+Expected: `BASELINE OK`, with **`OWN signature hits : 0`** and **`OWNER signature hits : 0`**
+on a clean desktop, and DPI matching session 3.
+
+Session 3 reference for comparison, measured: `dpiX 144`, physical `2496 x 1664`,
+`scaling 1`, `64896` sampled points, both signature counts `0`.
+
+**If it fails:**
+
+- *signature present on the clean desktop* → set this account's desktop background to a
+  **solid neutral (black or mid grey)**, remove the wallpaper, re-run. **Do not loosen the
+  tolerance or raise the threshold to make it pass** — that trades a false alarm for a real
+  miss, which is the wrong direction.
+- *DPI differs from session 3* → **stop and report.** The coordinate arithmetic does not
+  carry over and every downstream count would be wrong.
+
 **A5 — session 3, normal. Open the owner sentinel at the REQUIRED SIZE, and LEAVE IT OPEN.**
 
 The non-black ratio is sampled on a grid of step **8 px**, because scanning ~2M pixels in
