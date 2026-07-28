@@ -81,7 +81,13 @@ test('authorizeExecution: any two-of-three on → configuration_conflict → zer
   const pairs = [['on', 'on', 'off'], ['on', 'off', 'on'], ['off', 'on', 'on'], ['on', 'on', 'on']]
   for (const [w, d, a] of pairs) {
     const r = authorizeExecution({ worker: w, develop: d, agent: a, dispatcherConfigured: true, agentRunnerConfigured: true })
-    assert.deepEqual(r, { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false, agentBridgeAuthorized: false })
+    // The four ORIGINAL fields. A fifth (computerOperatorAuthorized) was added when
+    // COMPUTER_OPERATOR joined the gate; agentAuthorization.test.js proves these four
+    // are byte-identical to the three-flag implementation for every combination.
+    assert.deepEqual(
+      { status: r.status, workerAuthorized: r.workerAuthorized, developAuthorized: r.developAuthorized, agentBridgeAuthorized: r.agentBridgeAuthorized },
+      { status: 'configuration_conflict', workerAuthorized: false, developAuthorized: false, agentBridgeAuthorized: false })
+    assert.equal(r.computerOperatorAuthorized, false, 'the fourth lane is refused by the same conflict')
   }
 })
 test('authorizeExecution: single-lane, needs its runner configured', () => {

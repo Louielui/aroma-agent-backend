@@ -23,7 +23,12 @@
 const fs = require('node:fs')
 const path = require('node:path')
 
-const KINDS = ['tasks', 'results', 'agent-audit']
+// 'computer-audit' — Computer Operator v0. Added in Phase 2, deliberately BEFORE anything
+// can act: writing an unknown kind throws, so without this entry the very first real
+// desktop run would have executed and then failed to leave a record. That is exactly how
+// the Agent Bridge audit gap was found — on the first real execution — and the point of
+// exercising the audit path during dry-runs is to find this class of gap while it is free.
+const KINDS = ['tasks', 'results', 'agent-audit', 'computer-audit']
 
 /**
  * B2-11a safe-load. A DEFINED error for a present-but-unreadable artifact file,
