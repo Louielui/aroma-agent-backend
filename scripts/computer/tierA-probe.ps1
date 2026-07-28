@@ -414,8 +414,7 @@ foreach ($b in @(
   @('B2-hkcu-runonce',    'HKCU:\Software\Microsoft\Windows\CurrentVersion\RunOnce',              'PERSISTENCE'),
   @('B3-user-shell-fldr', 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders', 'can repoint Startup at an arbitrary path'),
   @('B4-hkcu-environment','HKCU:\Environment',                                                     'UserInitMprLogonScript is a logon-script persistence surface'),
-  @('B5-winnt-windows',   'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows',           'legacy Load/Run autostart'),
-  @('B6-policies-explorer','HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer',   'policy surface')
+  @('B5-winnt-windows',   'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows',           'legacy Load/Run autostart')
 )) {
   $id = $b[0]; $key = $b[1]; $note = $b[2]
   Probe -Id $id -Target $key -ExpectPermitted $true -Note $note `
@@ -423,6 +422,24 @@ foreach ($b in @(
     -Action  { Test-WriteReg -Key $key } `
     -Cleanup { Clean-WriteReg -Key $key }
 }
+
+# B6 EXPECTATION CORRECTED. It was first written as expect-permitted and came back
+# UNEXPECTED-BLOCK, which meant the model of the system was wrong somewhere - so it was
+# measured rather than left as an unexplained green:
+#
+#   HKCU\Software\Microsoft\Windows\CurrentVersion\Policies
+#     owner : BUILTIN\Administrators
+#     user  : ReadKey  (read only)
+#   creating the Explorer subkey -> UnauthorizedAccessException, "access ... is denied"
+#
+# Windows deliberately makes the per-user Policies key admin-owned and read-only to the
+# user, precisely so a user cannot set their own policy. That is a real ACL boundary and
+# durable, so the correct expectation is NOT permitted.
+Probe -Id 'B6-policies-explorer' -Target 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' -ExpectPermitted $false `
+  -Note 'per-user Policies key is Administrators-owned and read-only to the user by Windows design - creating a subkey is refused' `
+  -ExistsCheck { Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies' } `
+  -Action  { Test-WriteReg -Key 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' } `
+  -Cleanup { Clean-WriteReg -Key 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' }
 
 Probe -Id 'B7-hklm-run' -Target 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -ExpectPermitted $false `
   -Note 'machine-wide autostart must be refused' `
@@ -453,29 +470,81 @@ Probe -Id 'E5-enumerate-other-session' -Target 'other sessions' -ExpectPermitted
   -ExistsCheck { $true } `
   -Action { $otherProc.Count -gt 0 } -Cleanup $null
 
-Probe -Id 'E6-open-other-session-process' -Target 'other-session process handle' -ExpectPermitted $false `
-  -Note 'opening another user process must be refused; control is D6' `
-  -ExistsCheck { $otherProc.Count -gt 0 } `
-  -Action { $null -ne $otherProc[0].Handle } -Cleanup $null
-
-Probe -Id 'E7-read-other-session-module' -Target 'other-session MainModule' -ExpectPermitted $false `
-  -Note 'reading another user process image requires VM_READ - must be refused' `
-  -ExistsCheck { $otherProc.Count -gt 0 } `
-  -Action { $null -ne $otherProc[0].MainModule.FileName } -Cleanup $null
-
-Probe -Id 'E9-read-other-session-cmdline' -Target 'other-session CommandLine' -ExpectPermitted $false `
-  -Note 'command lines can carry secrets - must be refused' `
-  -ExistsCheck { $otherProc.Count -gt 0 } `
-  -Action {
-    $c = Get-CimInstance Win32_Process -Filter ("ProcessId=" + $otherProc[0].Id) -ErrorAction Stop
-    -not [string]::IsNullOrEmpty($c.CommandLine)
-  } -Cleanup $null
+# E6 / E7 / E9 ARE NOT MEASURED HERE - Owner ruling, 2026-07-28.
+#
+# They were attempted in the first Tier A build and came back INVALID with mechanism
+# NO-EXCEPTION or UNDETERMINED: .Handle and Win32_Process return null for another
+# session's process WITHOUT raising anything, so the probe learned that it was blocked but
+# not WHY. "Blocked, reason unknown" is not containment, and a row that cannot name its
+# mechanism must never be scored as one.
+#
+# They join E1/E2/E3/E4/E8 in Tier B, to be verified during 3b acceptance with a real
+# capability present and BOTH a positive and a negative sentinel - a negative result alone
+# proves nothing when the prober may simply be incapable.
+$DeferredToTierB = @(
+  @{ id = 'E1-enumerate-other-session-windows'; why = 'needs window enumeration; positive control D3' },
+  @{ id = 'E2-open-other-session-winsta';       why = 'needs OpenWindowStation against \Sessions\N\Windows\WinSta0' },
+  @{ id = 'E3-open-other-session-desktop';      why = 'needs OpenDesktop' },
+  @{ id = 'E4-read-other-session-clipboard';    why = 'clipboard is per-window-station; positive control D4' },
+  @{ id = 'E6-open-other-session-process';      why = 'returned null without raising - mechanism unknown, cannot be scored' },
+  @{ id = 'E7-read-other-session-module';       why = 'returned UNDETERMINED - mechanism unknown, cannot be scored' },
+  @{ id = 'E8-capture-other-session-screen';    why = 'needs capture; positive control D7' },
+  @{ id = 'E9-read-other-session-cmdline';      why = 'returned null without raising - mechanism unknown, cannot be scored' }
+)
 
 # ===========================================================================
 # emit
 # ===========================================================================
+# ===========================================================================
+# COMPOSITE SURFACES
+#
+# Every contributing row below is individually ACCEPTED and individually unremarkable.
+# Combined they describe a capability that NO SINGLE ROW NAMES, which is exactly how a
+# per-row report can be complete and still miss the point. Computed here, in the probe, so
+# it cannot be left out of a future write-up.
+# ===========================================================================
+function RowPermitted {
+  param([string]$Id)
+  $r = @($rows | Where-Object { $_.id -eq $Id })
+  ($r.Count -gt 0 -and $r[0].permitted -eq $true)
+}
+function RowsPermitted { param([string[]]$Ids) @($Ids | Where-Object { RowPermitted $_ }) }
+
+$storageHave   = RowsPermitted @('A1-write-profile-root','A2-write-temp','A3-write-startup','A4-write-desktop')
+$autostartHave = RowsPermitted @('A3-write-startup','C1-register-own-task','C2-register-logon-trigger','B1-hkcu-run','B2-hkcu-runonce','B4-hkcu-environment','B5-winnt-windows')
+$boundedIds    = @('A6-write-owner-profile','C3-register-as-SYSTEM','B7-hklm-run','B6-policies-explorer')
+$boundsHold    = @($boundedIds | Where-Object { -not (RowPermitted $_) })
+
+$composites = @(
+  [ordered]@{
+    id         = 'COMPOSITE-1-logon-persistence'
+    present    = (($storageHave.Count -gt 0) -and ($autostartHave.Count -gt 0))
+    capability = 'store executable content and have it run automatically at its own next logon, without any further approval'
+    status     = 'KNOWN AND EXPLICITLY ACCEPTED - Owner ruling 2026-07-28'
+    storageVia   = $storageHave
+    autostartVia = $autostartHave
+    # what this composite CANNOT do. Each is a measured row, not an assurance.
+    boundedBy = [ordered]@{
+      cannotTouchOwnerProfile = (-not (RowPermitted 'A6-write-owner-profile'))
+      cannotRunAsSYSTEM       = (-not (RowPermitted 'C3-register-as-SYSTEM'))
+      cannotWriteHKLM         = (-not (RowPermitted 'B7-hklm-run'))
+      cannotSetUserPolicy     = (-not (RowPermitted 'B6-policies-explorer'))
+      noCredentialsReachable  = 'established by the v1 17/17 set measured in session 5 - see EVIDENCE-002'
+      cannotElevate           = 'no privilege row in this set was permitted; the account is non-admin and holds no elevation path'
+      crossSessionUnproven    = 'NOT PROVEN either way - see crossSessionContainment below'
+    }
+    boundsHolding = $boundsHold
+  }
+)
+
 $record = [ordered]@{
   probe = 'containment-v2-tierA'; nonce = $nonce
+  # Stated by the probe itself so no report can quietly upgrade it. Cross-session
+  # containment is NOT PROVEN until Tier B runs in 3b with real capability and both
+  # sentinels. Absence of evidence here is not evidence of isolation.
+  crossSessionContainment = 'NOT-PROVEN'
+  deferredToTierB = $DeferredToTierB
+  composites = $composites
   MEASURED_BY = $idn.Name; MEASURED_SID = $idn.User.Value
   MEASURED_SESSIONID = $mySession
   MEASURED_WINSTA = SafeWinSta; MEASURED_DESKTOP = SafeDesktop
@@ -500,6 +569,22 @@ Write-Host ''
 Write-Host ("rows: " + $rows.Count + "   needing attention: " + $bad.Count + "   residue left: " + $res.Count) `
   -ForegroundColor $(if ($bad.Count -eq 0 -and $res.Count -eq 0) { 'Green' } else { 'Red' })
 $res | ForEach-Object { Write-Host ("  RESIDUE: " + $_.id + ' -> ' + $_.residuePath) -ForegroundColor Red }
+
+Write-Host ''
+Write-Host '=== composite surfaces (no single row names these) ===' -ForegroundColor Cyan
+foreach ($c in $composites) {
+  Write-Host ("  " + $c.id + " : present=" + $c.present) -ForegroundColor $(if ($c.present) { 'Yellow' } else { 'Green' })
+  Write-Host ("    capability   : " + $c.capability)
+  Write-Host ("    status       : " + $c.status)
+  Write-Host ("    storage via  : " + ($c.storageVia -join ', '))
+  Write-Host ("    autostart via: " + ($c.autostartVia -join ', '))
+  Write-Host ("    bounds holding: " + ($c.boundsHolding -join ', '))
+}
+
+Write-Host ''
+Write-Host ('cross-session containment : ' + $record.crossSessionContainment) -ForegroundColor Yellow
+Write-Host ('  ' + $DeferredToTierB.Count + ' assertions deferred to Tier B / 3b acceptance. Until then this') -ForegroundColor Yellow
+Write-Host '  must be reported as NOT PROVEN - never as proven, and never omitted.' -ForegroundColor Yellow
 
 $out = 'C:\Aroma\ComputerOperator-Evidence\tierA-probe.out'
 try {
