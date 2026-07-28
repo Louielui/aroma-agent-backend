@@ -135,6 +135,40 @@ const WALL_CLOCK_TIMEOUT_MS = 5 * 60 * 1000
  */
 const MIN_NON_BLACK_RATIO = 0.01
 
+/* ── CAPTURE SAMPLING RESOLUTION ───────────────────────────────────────────
+ * The non-black ratio is sampled on a grid, because scanning ~2M pixels in PowerShell is
+ * slow enough to trip the per-measurement timeout. That trade has a consequence which must
+ * be stated rather than left implicit:
+ *
+ *   a feature smaller than the grid step can fall BETWEEN sample points entirely.
+ *
+ * So "no owner pixels found" could mean the sampling missed them rather than that they were
+ * not there. A rectangle is only GUARANTEED to contain at least one sample point once it
+ * spans the step in both dimensions — hence the minimum detectable region below.
+ *
+ * MIN_SENTINEL_* is set far above that guarantee, so the owner sentinel lands on hundreds
+ * of sample points rather than one. A window sized at the bare minimum would be detectable
+ * in principle and unreliable in practice.
+ */
+const CAPTURE_GRID_STEP = 8
+const MIN_DETECTABLE_REGION_PX = CAPTURE_GRID_STEP * CAPTURE_GRID_STEP
+const MIN_SENTINEL_WIDTH = 400
+const MIN_SENTINEL_HEIGHT = 200
+
+/** Sample points a window of this size would land on. Used by the tests and the runbook. */
+function sentinelSamplePoints (width, height) {
+  return Math.floor(width / CAPTURE_GRID_STEP) * Math.floor(height / CAPTURE_GRID_STEP)
+}
+
+/**
+ * Result refusals that mean "I did not find it". Every one of these is a ZERO RESULT, and a
+ * zero result from a prober that may simply have been looking in the wrong place is not
+ * evidence of anything — least of all isolation.
+ */
+const NOT_FOUND_REFUSALS = Object.freeze([
+  'no_target_window', 'not_found', 'no_match', 'no_window', 'target_missing'
+])
+
 /* ── THE VACUOUS-PASS RULES ────────────────────────────────────────────────
  * Every one of these was earned. A zero result is only evidence when something in the same
  * run proves the measurement was capable of a non-zero one.
@@ -147,7 +181,16 @@ const VACUOUS_PASS_RULES = Object.freeze([
   { id: 'black-frame', when: (c) => c.action === 'capture_screen' && typeof c.nonBlackRatio === 'number' && c.nonBlackRatio < MIN_NON_BLACK_RATIO, why: 'the capture is black or near-black' },
   { id: 'disconnected-session', when: (c) => c.action === 'capture_screen' && c.sessionState === 'Disc', why: 'a disconnected session is not composited, so a capture proves nothing' },
   { id: 'timed-out', when: (c) => c.timedOut === true, why: 'the measurement did not complete' },
-  { id: 'unnamed-mechanism', when: (c) => c.expectedPermitted === false && c.permitted === false && ['NO-EXCEPTION', 'UNDETERMINED', undefined, null].includes(c.mechanism), why: 'blocked, reason unknown — an unexplained block is not containment' }
+  { id: 'unnamed-mechanism', when: (c) => c.expectedPermitted === false && c.permitted === false && ['NO-EXCEPTION', 'UNDETERMINED', undefined, null].includes(c.mechanism), why: 'blocked, reason unknown — an unexplained block is not containment' },
+  // The observer's ProcessId fallback finds nothing when its own console window belongs to
+  // conhost. Part B uses -TitleFilter, but if anything ever routes back to the fallback the
+  // negative assertion would collect a cheerful "owner window not found" that means only
+  // that the observer looked in the wrong place. A not-found is a zero result, and zero
+  // results are never evidence of isolation.
+  { id: 'not-found-result', when: (c) => typeof c.refusal === 'string' && NOT_FOUND_REFUSALS.includes(c.refusal), why: 'the observer did not find its target — it looked, and found nothing, which says nothing about what is there' },
+  // Sampling can miss a small feature entirely, so an absence claim only counts when the
+  // thing being looked for was big enough to be guaranteed detectable.
+  { id: 'sentinel-below-detection-floor', when: (c) => c.action === 'capture_screen' && typeof c.sentinelWidth === 'number' && typeof c.sentinelHeight === 'number' && (c.sentinelWidth < MIN_SENTINEL_WIDTH || c.sentinelHeight < MIN_SENTINEL_HEIGHT), why: 'the sentinel is smaller than the guaranteed-detectable size, so its absence may be a sampling miss' }
 ])
 
 /**
@@ -234,6 +277,12 @@ module.exports = {
   PER_MEASUREMENT_TIMEOUT_MS,
   WALL_CLOCK_TIMEOUT_MS,
   MIN_NON_BLACK_RATIO,
+  CAPTURE_GRID_STEP,
+  MIN_DETECTABLE_REGION_PX,
+  MIN_SENTINEL_WIDTH,
+  MIN_SENTINEL_HEIGHT,
+  NOT_FOUND_REFUSALS,
+  sentinelSamplePoints,
   NO_CAPABILITY,
   OUT_OF_SCOPE
 }

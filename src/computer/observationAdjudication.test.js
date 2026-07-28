@@ -62,6 +62,47 @@ for (const [label, over, ruleId] of cases) {
   })
 }
 
+/* ── not-found is a zero result, never isolation evidence ─────────────────── */
+
+test('*** a no_target_window result is INVALID, not "the owner window is absent" ***', () => {
+  // The observer's ProcessId fallback finds nothing when its console belongs to conhost.
+  // If anything ever routes back to it, the negative assertion would collect a cheerful
+  // "not found" that means only that the observer looked in the wrong place.
+  const r = O.adjudicate(good({ refusal: 'no_target_window' }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'not-found-result'))
+})
+
+test('every not-found refusal is treated the same way, not just the one we hit', () => {
+  for (const refusal of O.NOT_FOUND_REFUSALS) {
+    const r = O.adjudicate(good({ refusal }))
+    assert.equal(r.verdict, 'INVALID', refusal + ' must be INVALID')
+    assert.ok(r.reasons.some((x) => x.id === 'not-found-result'), refusal)
+  }
+})
+
+/* ── sampling resolution bounds what an absence can mean ──────────────────── */
+
+test('*** a sentinel below the detection floor makes its absence meaningless ***', () => {
+  const small = O.adjudicate(good({ action: 'capture_screen', sentinelWidth: 100, sentinelHeight: 40 }))
+  assert.equal(small.verdict, 'INVALID')
+  assert.ok(small.reasons.some((x) => x.id === 'sentinel-below-detection-floor'))
+
+  const ok = O.adjudicate(good({ action: 'capture_screen', sentinelWidth: O.MIN_SENTINEL_WIDTH, sentinelHeight: O.MIN_SENTINEL_HEIGHT }))
+  assert.equal(ok.verdict, 'ACCEPTED', 'at the documented minimum it is accepted')
+})
+
+test('the sampling grid and its detection floor are declared values, not prose', () => {
+  assert.equal(O.CAPTURE_GRID_STEP, 8)
+  // a region must span the step in BOTH dimensions to be guaranteed to contain a sample
+  assert.equal(O.MIN_DETECTABLE_REGION_PX, 64)
+  // and the required sentinel is far above that guarantee, so it lands on many samples
+  assert.ok(O.MIN_SENTINEL_WIDTH >= O.CAPTURE_GRID_STEP * 8)
+  assert.ok(O.MIN_SENTINEL_HEIGHT >= O.CAPTURE_GRID_STEP * 8)
+  assert.equal(O.sentinelSamplePoints(400, 200), 1250, 'the required size lands on 1250 sample points, not one')
+  assert.equal(O.sentinelSamplePoints(8, 8), 1, 'the bare minimum lands on exactly one — detectable in principle, unreliable in practice')
+})
+
 test('a black capture in a disconnected session reports BOTH reasons, not just the first', () => {
   // Knowing only the first reason a result was worthless sends you fixing one at a time.
   const r = O.adjudicate(good({ action: 'capture_screen', nonBlackRatio: 0, sessionState: 'Disc' }))

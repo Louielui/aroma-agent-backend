@@ -123,7 +123,24 @@ Expected: writes the reference image and its hash, and prints a non-black pixel 
 **If the ratio is near zero, stop** — a black reference makes the later comparison
 meaningless.
 
-**A5 — session 3, normal. Open the owner sentinel and LEAVE IT OPEN.**
+**A5 — session 3, normal. Open the owner sentinel at the REQUIRED SIZE, and LEAVE IT OPEN.**
+
+The non-black ratio is sampled on a grid of step **8 px**, because scanning ~2M pixels in
+PowerShell is slow enough to trip the per-measurement timeout. That has a consequence:
+
+> a feature smaller than the grid step can fall **between** sample points entirely, so
+> "no owner pixels found" could mean the sampling missed them.
+
+A region is only guaranteed to contain at least one sample point once it spans the step in
+both dimensions — 8 × 8 px, 64 px². That is the bare guarantee and it is not good enough to
+rely on: one sample point is detectable in principle and unreliable in practice.
+
+**The owner sentinel window must therefore be at least 400 × 200 px**, which lands on
+**1250** sample points. The script sets this size; if it cannot, it fails rather than
+opening a smaller window.
+
+A capture row whose sentinel is below this floor is adjudicated `INVALID` —
+`sentinel-below-detection-floor` — so a sampling miss can never be recorded as isolation.
 
 ```
 powershell -NoProfile -ExecutionPolicy Bypass -File C:\Aroma\aroma-agent-backend\scripts\computer\stage3-owner-sentinel.ps1
@@ -354,3 +371,19 @@ The pixel comparison is therefore recorded as **supporting** evidence only. The 
 negative evidence is **E8**: a direct attempt to capture session 3's desktop, which must
 fail with a **named mechanism**. A mechanism of `NO-EXCEPTION` or `UNDETERMINED` is
 `INVALID` and does not count.
+
+**Stated once, plainly, so no report can drift from it: a pixel comparison NEVER on its own
+constitutes evidence of isolation.** It has two independent ways of being trivially true —
+the other session was not being composited, and the sampling grid can miss a small feature —
+and neither has anything to do with containment. E8 is the primary evidence; the pixel
+result is corroboration or it is nothing.
+
+### Not-found is a zero result
+
+Any observation returning `no_target_window` — or any other not-found refusal — is
+adjudicated `INVALID` (`not-found-result`). The observer's ProcessId fallback finds nothing
+when its own console window belongs to conhost; Part B uses `-TitleFilter`, but if anything
+ever routes back to the fallback, the negative assertion would otherwise collect a cheerful
+"owner window not found" that means only that the observer looked in the wrong place.
+
+The observer looking and finding nothing says nothing about what is there.
