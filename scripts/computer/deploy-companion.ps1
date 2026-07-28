@@ -110,9 +110,53 @@ function Add-DenyAce {
   return $true
 }
 
-# (a) future-proof: inherit-only deny on the root
+# (a) future-proof: inherit-only deny on the root, for its CHILDREN
 if (Add-DenyAce -Path $AromaRoot -Inheritance 'ContainerInherit,ObjectInherit' -Propagation 'InheritOnly') {
   Write-Host "   DENY (inherit-only) on $AromaRoot - covers future children too" -ForegroundColor Green
+}
+
+# (a2) THE CONTAINER ITSELF. InheritOnly means "children, NOT this folder" - so the
+# directory's own Modify right survived and the account could still CREATE FILES IN
+# C:\Aroma. That is a persistence path: drop something beside xiangxiang.ps1, the resident
+# entry that runs at every login. Denying the file was not enough; the container had to be
+# denied too.
+#
+# This ACE denies only the WRITE-shaped rights and is scoped to this folder alone. Read
+# and Traverse are deliberately NOT denied, so the account can still walk through C:\Aroma
+# into the two Companion folders. That is what keeps traverse working WITHOUT relying on
+# the "bypass traverse checking" privilege, which cannot be read unelevated and is
+# therefore not something to depend on.
+$writeRights = [System.Security.AccessControl.FileSystemRights]'CreateFiles,CreateDirectories,DeleteSubdirectoriesAndFiles,Delete,WriteAttributes,WriteExtendedAttributes,ChangePermissions,TakeOwnership'
+
+# The SAME class was then audited machine-wide, not just fixed where it was spotted. Four
+# containers were writable by this account:
+#   C:\Aroma          - ours, the bug above
+#   C:\               - Windows default (Users may create directories at the root)
+#   C:\ProgramData    - Windows default
+#   C:\Users\Public   - Windows default
+# The last three are not something this deployment created; they apply to every standard
+# account on the machine. They are still persistence surfaces for THIS account, so they
+# are denied for it specifically. That is a per-account change, not a machine-wide policy
+# change - every other user keeps the Windows defaults untouched.
+$containersToDeny = @($AromaRoot, 'C:\', 'C:\ProgramData', 'C:\Users\Public')
+foreach ($c in $containersToDeny) {
+  if (-not (Test-Path -LiteralPath $c)) { continue }
+  try {
+    $cAcl = Get-Acl -LiteralPath $c
+    foreach ($r in @($cAcl.Access)) {
+      if ($r.AccessControlType -eq 'Deny' -and $r.IdentityReference.Value -eq $userSid.Value `
+          -and $r.PropagationFlags -eq [System.Security.AccessControl.PropagationFlags]::None `
+          -and $r.InheritanceFlags -eq [System.Security.AccessControl.InheritanceFlags]::None) {
+        [void]$cAcl.RemoveAccessRule($r)
+      }
+    }
+    $cAcl.AddAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
+      $userSid, $writeRights, 'None', 'None', 'Deny')))
+    Set-Acl -LiteralPath $c -AclObject $cAcl
+    Write-Host ("   DENY write on the container itself: " + $c + " (read + traverse kept)") -ForegroundColor Green
+  } catch {
+    Write-Host ("   WARNING: could not deny container write on " + $c + " : " + $_.Exception.Message) -ForegroundColor Yellow
+  }
 }
 
 # (b) explicit deny on every existing child except the two Companion folders
@@ -187,12 +231,10 @@ $pipeName = 'aroma-op-3a-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
 $evidenceFile = Join-Path $EvidenceDir ('killswitch-evidence-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.json')
 $companionLog = Join-Path $EvidenceDir 'companion-stdout.log'
 
-# The Service side starts FIRST so the pipe exists before the Companion connects.
-$harness = Start-Process -FilePath $node `
-  -ArgumentList @((Join-Path $ScriptDir 'demo-killswitch.js'), $pipeName, $evidenceFile) `
-  -WorkingDirectory $ScriptDir -NoNewWindow -PassThru
-Start-Sleep -Seconds 2
-
+# ORDER REVERSED. The COMPANION creates the pipe now - see the DACL note in
+# ipcChannel.js - so it starts FIRST and the harness connects to it. The previous order
+# had the Owner create the pipe, which this account can only ever open READ-ONLY, which is
+# exactly why the last run reported zero connections and no error of its own.
 $companion = $null
 try {
   $companion = Start-Process -FilePath $node `
@@ -205,6 +247,26 @@ try {
   Write-Host "   FAILED to start the Companion as $AccountName : $($_.Exception.Message)" -ForegroundColor Red
   Write-Host "   (a wrong password, or the account lacks 'Log on as a batch job')" -ForegroundColor Yellow
 }
+Start-Sleep -Seconds 3
+
+# If the Companion died on startup, say so HERE with its own output, rather than letting
+# the harness report a vague "never appeared" thirty seconds later. The last run's real
+# error was only visible in a log nobody printed.
+if ($companion) {
+  $early = Get-Process -Id $companion.Id -ErrorAction SilentlyContinue
+  if (-not $early) {
+    Write-Host "   THE COMPANION EXITED IMMEDIATELY - its own output follows:" -ForegroundColor Red
+    foreach ($lf in @($companionLog, ($companionLog + '.err'))) {
+      if (Test-Path -LiteralPath $lf) {
+        Get-Content -LiteralPath $lf -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object { Write-Host ("     " + $_) -ForegroundColor Red }
+      }
+    }
+  }
+}
+
+$harness = Start-Process -FilePath $node `
+  -ArgumentList @((Join-Path $ScriptDir 'demo-killswitch.js'), $pipeName, $evidenceFile) `
+  -WorkingDirectory $ScriptDir -NoNewWindow -PassThru
 
 # ---------------------------------------------------------------------------
 # 4. wait for the demonstration, then report
@@ -265,6 +327,9 @@ $r.readClaudeCreds        = Try-Read 'C:\Users\louis\.claude\.credentials.json'
 # MUST BE FALSE - governance controls
 $r.readLauncher           = Try-Read 'C:\Aroma\xiangxiang.ps1'
 $r.writeLauncherDir       = Try-Write 'C:\Aroma'
+$r.writeCRoot             = Try-Write 'C:\'
+$r.writeProgramData       = Try-Write 'C:\ProgramData'
+$r.writeUsersPublic       = Try-Write 'C:\Users\Public'
 $r.listRepo               = Try-List 'C:\Aroma\aroma-agent-backend\src'
 $r.writeAuditStore        = Try-Write 'C:\Aroma\aroma-agent-backend\.aroma\agent-audit'
 $r.listSecrets            = Try-List 'C:\Aroma\secrets'
@@ -298,7 +363,8 @@ try {
     try { $res = $raw | ConvertFrom-Json } catch { }
     if ($res) {
       $mustBeFalse = @('readGoogleRefreshToken','readGoogleOAuthClient','readDotEnv','readClaudeCreds',
-                       'readLauncher','writeLauncherDir','listRepo','writeAuditStore','listSecrets',
+                       'readLauncher','writeLauncherDir','writeCRoot','writeProgramData','writeUsersPublic',
+                       'listRepo','writeAuditStore','listSecrets',
                        'listLogs','listBackup','listOwnerProfile')
       $mustBeTrue  = @('readStagedCompanion','writeEvidence')
       $bad = @()

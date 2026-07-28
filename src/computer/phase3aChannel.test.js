@@ -16,7 +16,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
 
-const { createServiceEndpoint, createCompanionEndpoint, pipePath } = require('./ipcChannel')
+const { createPipeListener, createPipeConnector, pipePath } = require('./ipcChannel')
 const { createCompanion, CAPABILITIES, anyCapabilityEnabled, NO_CAPABILITY } = require('./companion')
 const { createKillSwitch } = require('./killSwitch')
 const { ROLE_SERVICE, ROLE_COMPANION } = require('./sessionBoundary')
@@ -29,23 +29,33 @@ const step = (over = {}) => Object.assign({
   approvalId: 'appr_3a', stepIndex: 0, stepNonce: nonce()
 }, over)
 
-/** Wire a Service and a Companion over a real pipe; returns both plus a request helper. */
+/**
+ * Wire a Companion and a Service over a real pipe, IN THE DEPLOYED DIRECTION.
+ *
+ * The COMPANION creates the pipe and the SERVICE connects. That inversion is not a
+ * refactor — it is forced by the DACL libuv puts on a named pipe, which grants Everyone
+ * READ ONLY, so a pipe created by the Owner can never be opened duplex by the operator
+ * account. This helper used to wire it the other way; it was testing a configuration the
+ * deployment can no longer use.
+ */
 async function wire () {
   const name = NAME()
   const replies = []
-  const service = createServiceEndpoint({ name, onMessage: (m) => replies.push(m) })
-  await service.listen()
   const companion = createCompanion({ now: () => 1 })
-  const endpoint = createCompanionEndpoint({ name, onMessage: (m) => companion.handle(m) })
-  await endpoint.connect()
-  // The client's 'connect' resolves before the server has registered the socket, so wait
-  // for the SERVICE side to see it. Without this the helper races and `send()` writes to
-  // an empty set — which looked like "the Companion ignored the request".
-  for (let i = 0; i < 200 && service.connectionCount() === 0; i++) await new Promise((r) => setTimeout(r, 5))
+  const endpoint = createPipeListener({ name, onMessage: (m) => companion.handle(m) })
+  await endpoint.listen()
+
+  const service = createPipeConnector({ name, onMessage: (m) => { replies.push(m) } })
+  await service.connect()
+  // connect() resolves on the CLIENT before the listener has registered the socket, so
+  // wait for the Companion side to actually see it. Without this the helper races and the
+  // first assertion reads 0 connections on a channel that is about to work.
+  for (let i = 0; i < 400 && endpoint.connectionCount() === 0; i++) await new Promise((r) => setTimeout(r, 5))
+
   const ask = async (msg) => {
     const before = replies.length
     service.send(msg)
-    for (let i = 0; i < 100 && replies.length === before; i++) await new Promise((r) => setTimeout(r, 5))
+    for (let i = 0; i < 200 && replies.length === before; i++) await new Promise((r) => setTimeout(r, 5))
     return replies[replies.length - 1]
   }
   return { service, endpoint, companion, replies, ask, name }
@@ -57,11 +67,11 @@ test('*** the Service and Companion talk over a real named pipe ***', async () =
   const w = await wire()
   try {
     assert.match(w.service.pipePath, /^\\\\\.\\pipe\\aroma-op-test-/)
-    assert.equal(w.service.connectionCount(), 1, 'the Companion is connected')
+    assert.equal(w.endpoint.connectionCount(), 1, 'the Service is connected to the pipe the Companion created')
     const pong = await w.ask(Object.assign(step(), { type: 'ping' }))
     assert.equal(pong.type, 'pong', 'the handshake completes')
     assert.equal(pong.from, ROLE_COMPANION)
-  } finally { w.endpoint.close(); await w.service.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 test('the pipe is local by construction — no port, no host, no network', () => {
@@ -81,7 +91,7 @@ test('*** the Companion refuses EVERY request — no capability is enabled ***',
       assert.equal(res.refusal, NO_CAPABILITY)
       assert.equal(res.capability, action, 'and it names what it will not do')
     }
-  } finally { w.endpoint.close(); await w.service.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 test('*** every capability in the register is FALSE in this build ***', () => {
@@ -102,7 +112,7 @@ test('a malformed or misdirected frame is refused at the boundary', async () => 
     assert.equal((await w.ask(step({ type: 'run_everything' }))).refusal, 'bad_envelope')
     assert.equal((await w.ask(step({ from: ROLE_COMPANION }))).refusal, 'bad_envelope')
     assert.equal((await w.ask(step({ approvalId: '../etc' }))).refusal, 'bad_envelope')
-  } finally { w.endpoint.close(); await w.service.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 /* ══ THE KILL SWITCH, DEMONSTRATED THREE WAYS ═════════════════════════════ */
@@ -118,7 +128,7 @@ test('*** KILL 1 — the SERVICE GATE stops it before anything is sent ***', asy
     await new Promise((r) => setTimeout(r, 50))
     assert.equal(w.replies.length, before, 'no request was ever sent')
     assert.equal(gate.guard().ok, false)
-  } finally { w.endpoint.close(); await w.service.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 test('*** KILL 2 — the COMPANION ABORT stops it after it is running ***', async () => {
@@ -132,26 +142,27 @@ test('*** KILL 2 — the COMPANION ABORT stops it after it is running ***', asyn
     const after = await w.ask(Object.assign(step({ stepNonce: nonce() }), { type: 'ping' }))
     assert.equal(after.ok, false)
     assert.equal(after.refusal, 'aborted')
-  } finally { w.endpoint.close(); await w.service.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 test('*** KILL 3 — the OS FALLBACK: closing the channel leaves it nothing to answer on ***', async () => {
   const w = await wire()
   try {
-    assert.equal(w.service.connectionCount(), 1)
-    // This is what stopping the Windows service or logging the account out does: the pipe
-    // and every connection on it are destroyed.
-    await w.service.close()
-    await new Promise((r) => setTimeout(r, 50))
-    assert.equal(w.service.connectionCount(), 0, 'no connections survive')
-    assert.equal(w.endpoint.isConnected(), false, 'the Companion is disconnected')
+    assert.equal(w.endpoint.connectionCount(), 1)
+    // This is what stopping the Windows service or logging the account out does: the
+    // COMPANION's pipe and every connection on it are destroyed. It owns the pipe now, so
+    // the fallback acts on its endpoint, not the Service's.
+    await w.endpoint.close()
+    await new Promise((r) => setTimeout(r, 150))
+    assert.equal(w.endpoint.connectionCount(), 0, 'no connections survive')
+    assert.equal(w.service.isConnected(), false, 'the Service side is left with nothing')
     // and it does not come back — there is no reconnect path. Comments are stripped
     // before scanning: the file's own documentation says "no reconnect loop", which the
     // scanner would otherwise flag as a reconnect loop.
     const raw = require('node:fs').readFileSync(require('node:path').join(__dirname, 'ipcChannel.js'), 'utf8')
     const src = raw.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
     assert.equal(/reconnect|retryConnect|setInterval|setTimeout/.test(src), false, 'no reconnect loop exists')
-  } finally { w.endpoint.close() }
+  } finally { w.service.close(); await w.endpoint.close() }
 })
 
 test('all three bindings are now real, and the register says so', () => {
