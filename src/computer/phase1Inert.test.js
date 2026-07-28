@@ -18,7 +18,16 @@ const path = require('node:path')
 
 const DIR = __dirname
 const SRC = path.resolve(DIR, '..')
-const MODULES = ['computerWorkOrder.js', 'computerAudit.js', 'sessionBoundary.js', 'computerOperatorFlag.js']
+// PURE modules — no I/O of any kind, ever. Phase 2 adds two more to this tier.
+const MODULES = [
+  'computerWorkOrder.js', 'computerAudit.js', 'sessionBoundary.js', 'computerOperatorFlag.js',
+  'killSwitch.js', 'orderRegistry.js'
+]
+
+// The Supervisor is the ONE module permitted to reach a disk, and ONLY to persist the
+// audit record. It gets its own, narrower rules below: it may build an artifact store,
+// and it must still be unable to spawn, connect, click, type or capture.
+const SUPERVISOR = 'computerSupervisor.js'
 
 const codeOf = (f) => {
   // Comments quote the very words being banned ("no child_process", "captures screen"),
@@ -51,12 +60,20 @@ test('*** no Phase 1 module can touch a disk, a process, a network or a device *
   }
 })
 
-test('the only dependency any Phase 1 module has is node:crypto, for hashing', () => {
-  const found = new Set()
+test('the pure modules import nothing but node:crypto and each other', () => {
+  const external = new Set()
+  const internal = new Set()
   for (const f of MODULES) {
-    for (const m of codeOf(f).matchAll(/require\(\s*['"]([^'"]+)['"]/g)) found.add(m[1])
+    for (const m of codeOf(f).matchAll(/require\(\s*['"]([^'"]+)['"]/g)) {
+      // A sibling in this folder is itself covered by every rule in this file, so it adds
+      // no reach. Anything else is a genuine new dependency and must be justified.
+      if (m[1].startsWith('./')) internal.add(m[1]); else external.add(m[1])
+    }
   }
-  assert.deepEqual([...found].sort(), ['node:crypto'], 'hashing only — nothing else is imported')
+  assert.deepEqual([...external].sort(), ['node:crypto'], 'hashing only — no other outside dependency')
+  for (const i of internal) {
+    assert.ok(MODULES.includes(i.replace('./', '') + '.js'), 'sibling is itself a pure module: ' + i)
+  }
 })
 
 test('*** nothing spawns, writes, connects, clicks, types or captures ***', () => {
@@ -92,7 +109,7 @@ test('*** NOTHING in the application requires the Computer Operator modules ***'
       if (e.isDirectory()) { if (p !== DIR) walk(p); continue }
       if (!e.name.endsWith('.js')) continue
       const code = fs.readFileSync(p, 'utf8')
-      if (/require\([^)]*computer\/(computerWorkOrder|computerAudit|sessionBoundary|computerOperatorFlag)/.test(code)) {
+      if (/require\([^)]*computer\/(computerWorkOrder|computerAudit|sessionBoundary|computerOperatorFlag|computerSupervisor|killSwitch|orderRegistry)/.test(code)) {
         importers.push(path.relative(SRC, p))
       }
     }
@@ -114,14 +131,64 @@ test('*** the flag is unread, so turning it on does nothing ***', () => {
   assert.equal(appCode.includes('computerOperatorFlag'), false)
 })
 
-test('*** the existing three-flag matrix is UNTOUCHED — the fourth flag joins no matrix ***', () => {
-  // Whether COMPUTER_OPERATOR and AGENT_BRIDGE may coexist is an OPEN OWNER QUESTION.
-  // Until it is ruled on, the gate still knows about exactly three flags.
-  const gate = fs.readFileSync(path.join(SRC, 'agent', 'agentAuthorization.js'), 'utf8')
-  assert.equal(gate.includes('COMPUTER_OPERATOR'), false, 'the gate has not been extended')
-  assert.equal(gate.includes('computer'), false)
+test('*** INVERTED: the gate is now FOUR flags, mutually exclusive (Owner ruling) ***', () => {
+  // Phase 1 asserted the opposite — that the gate had NOT been extended — because the
+  // question was open. The Owner ruled on 2026-07-28: COMPUTER_OPERATOR joins the
+  // existing gate as a peer, any two of four ⇒ configuration_conflict. Inverted here
+  // rather than deleted, so the file records a decision instead of losing the history.
   const { authorizeExecution } = require('../agent/agentAuthorization')
-  assert.equal(authorizeExecution({ worker: 'off', develop: 'off', agent: 'off' }).status, 'not_authorized')
+  const conflict = authorizeExecution({
+    worker: 'on', computer: 'on', develop: 'off', agent: 'off',
+    computerSupervisorConfigured: true
+  })
+  assert.equal(conflict.status, 'configuration_conflict', 'the fourth flag is inside the matrix')
+  assert.equal(conflict.computerOperatorAuthorized, false)
+  // and it still authorizes nothing on its own without a configured supervisor
+  assert.equal(authorizeExecution({ worker: 'off', develop: 'off', agent: 'off', computer: 'on' }).status, 'not_authorized')
+})
+
+/* ── the Supervisor: allowed a disk, for the audit, and nothing else ──────── */
+
+test('*** the Supervisor cannot spawn, connect, click, type or capture ***', () => {
+  const code = codeOf(SUPERVISOR)
+  for (const call of ['spawn', 'exec', 'execSync', 'execFile', 'fork', 'fetch', 'listen',
+    'connect', 'createServer', 'request', 'sendKeys', 'SendKeys', 'mouseMove', 'mouseClick',
+    'keyTap', 'screenshot', 'capture', 'GetForegroundWindow', 'SetCursorPos', 'UIAutomation']) {
+    const re = new RegExp('(^|[^\\w$])\\.?' + call + '\\s*\\(')
+    assert.equal(re.test(code), false, 'Supervisor must not call ' + call)
+  }
+  for (const hatch of ['eval(', 'new Function', 'process.binding', 'import(']) {
+    assert.equal(code.includes(hatch), false, 'Supervisor must not use ' + hatch)
+  }
+})
+
+test('the Supervisor reaches a disk ONLY through the artifact store', () => {
+  const code = codeOf(SUPERVISOR)
+  // it must not touch fs directly — the audit goes through the same store as every other
+  // artifact, so it inherits that store's kind allowlist and layout
+  for (const direct of ['node:fs', "'fs'", 'writeFileSync', 'readFileSync', 'mkdirSync', 'unlinkSync']) {
+    assert.equal(code.includes(direct), false, 'no direct filesystem access: ' + direct)
+  }
+  assert.ok(code.includes('artifactStore'), 'persistence is via the artifact store')
+})
+
+test('*** no Supervisor exists in the running application — it is constructed by nobody ***', () => {
+  // Phase 2 must not wire into app.js. The importer scan above already covers src/;
+  // this states the specific claim for the one module that could act if it were wired.
+  const appCode = fs.readFileSync(path.join(SRC, 'app.js'), 'utf8')
+  assert.equal(appCode.includes('computerSupervisor'), false)
+  assert.equal(appCode.includes('createComputerSupervisor'), false)
+  assert.equal(appCode.includes('computerSupervisorConfigured'), false,
+    'the app never tells the gate a supervisor is configured')
+})
+
+test('the computer-audit artifact kind is registered BEFORE anything can act', () => {
+  // Writing an unknown kind throws. Without this entry the first real desktop run would
+  // have acted and then failed to leave a record — the Agent Bridge failure, repeated.
+  const { createArtifactStore } = require('../store/artifactStore')
+  const storeSrc = fs.readFileSync(path.join(SRC, 'store', 'artifactStore.js'), 'utf8')
+  assert.ok(storeSrc.includes("'computer-audit'"), 'the kind is in the allowlist')
+  assert.equal(typeof createArtifactStore, 'function')
 })
 
 /* ── Phase 1 created nothing on the machine ───────────────────────────────── */

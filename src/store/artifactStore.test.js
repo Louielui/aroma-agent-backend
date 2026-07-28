@@ -95,6 +95,9 @@ test('an unknown artifact kind throws', () => {
     const store = createArtifactStore({ baseDir: base })
     assert.throws(() => store.write('logs', { id: 'x', createdAt: '2026-07-11T10:00:00.000Z' }), /unknown artifact kind/)
     assert.throws(() => store.read('logs', 'x'), /unknown artifact kind/)
-    assert.deepEqual(KINDS, ['tasks', 'results', 'agent-audit'])
+    // 'computer-audit' was added in Computer Operator Phase 2, deliberately BEFORE
+    // anything can act: an unknown kind throws, so without the entry the first real
+    // desktop run would have executed and then failed to leave a record.
+    assert.deepEqual(KINDS, ['tasks', 'results', 'agent-audit', 'computer-audit'])
   } finally { cleanup(base) }
 })

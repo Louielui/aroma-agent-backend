@@ -30,9 +30,14 @@ const crypto = require('node:crypto')
 
 // ── THE CLOSED ACTION ENUM ────────────────────────────────────────────────────
 // Owner-approved v0 capability, and NOTHING else: read, create a NEW file, copy.
-// Deliberately does NOT contain open_app / type_text / click — the canary needs those
-// and the canary is not approved, so the vocabulary to express it does not exist yet.
-// Adding an action here is a visible, reviewable change requiring an Owner decision.
+//
+// OWNER RULING 2026-07-28 — THIS ENUM STAYS FILE-ONLY. open_app / type_text / click are
+// NOT to be added here. They arrive with the canary RED GO, and when they do they get
+// their OWN order type — a desktop order — rather than being mixed into the
+// file-operation schema. The two have different preconditions, different evidence and
+// different blast radius; one schema covering both would have to be validated for the
+// weaker of the two. Anyone tempted to add a desktop action to this list should build
+// the second order type instead.
 const ACTIONS = Object.freeze(['read_file', 'create_file', 'copy_file'])
 const ACTION_SET = new Set(ACTIONS)
 
@@ -58,7 +63,9 @@ const ALLOWED_ROOT = 'C:\\Aroma\\ComputerOperator-Test'
 const ALLOWED_APPS = Object.freeze([])
 
 // Hard ceilings the Owner's order cannot raise — a bound on the bound.
-const HARD_MAX_STEPS = 20
+// Owner ruling 2026-07-28: lowered from 20. A v0 file-operation order that needs more
+// than ten steps is not a v0 order.
+const HARD_MAX_STEPS = 10
 const HARD_MAX_TIMEOUT_SEC = 300
 
 /** Normalize a Windows path for comparison: backslashes, no trailing slash, lowercased. */
