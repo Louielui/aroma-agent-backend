@@ -330,6 +330,44 @@ result.
 Both stop mechanisms were pre-verified in session 3 before Part B depends on them — see
 `verify-observer-kill.ps1` and the scope note below.
 
+## Result writing must survive its own failure
+
+Timeouts cover "hung". `HALT` covers "went wrong". Neither covers **the write of the result
+file failing** — and on this machine that is a live risk, not a hypothetical: BACKLOG-001
+records an intermittent `EPERM` on `rename` under the system temp directory caused by a
+transient lock.
+
+If that happened at the end of Part B, you would switch back to nothing at all, unable to
+tell "it ran and could not write" from "it never ran" — and the nonce is already burned, so
+the cost of guessing wrong is a full Part A redo.
+
+So the harness leaves a trail rather than a single artefact:
+
+| Marker | Written | Contains |
+|---|---|---|
+| `stage3-STARTED-<nonce>.json` | first thing, before anything else | nonce, timestamp, session id, session state, DPI block, identity |
+| `stage3-results.json` | after measurement | the full record |
+| `stage3-COMPLETED-<nonce>.json` | last thing | nonce, timestamp, row count, verdict summary |
+
+**Result writing is write-then-verify.** After writing, the harness reads the file back and
+compares. On mismatch it retries; if it still cannot, it writes to a fallback path and
+**prints the entire JSON to the console**, so the screen itself becomes the record of last
+resort.
+
+### How to read what you find
+
+| On return you see | It means |
+|---|---|
+| `STARTED` + `results` + `COMPLETED` | the run finished; read the results |
+| `STARTED` + `results`, no `COMPLETED` | it died after measuring — the results are real but possibly partial. Send them and say so |
+| `STARTED`, no results | **it ran and could not write.** Not "it never ran". Check the console for the dumped JSON before doing anything else |
+| no `STARTED` at all | it never started — hash mismatch, execution policy, or the harness never launched. The nonce is unused and Part A does **not** need redoing |
+| `COMPLETED` without `STARTED` | should be impossible. Treat as untrustworthy and re-run the whole of Part A |
+
+That last distinction is the point of the markers: **`STARTED` with no results is a very
+different situation from no `STARTED`**, and without them both look identical — an empty
+evidence directory.
+
 ## OWNER ESCAPE HATCH — when the harness itself is what died
 
 The timeout path above depends on the harness being alive to run it. If the harness
