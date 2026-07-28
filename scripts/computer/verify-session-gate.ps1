@@ -61,10 +61,28 @@ Write-Host ("last run result : 0x{0:X}" -f $info.LastTaskResult)
 Write-Host ("last run time   : " + $info.LastRunTime)
 
 if (-not (Test-Path -LiteralPath $OutFile)) {
+  # "No output" has several causes and only ONE of them means the session gate failed.
+  # Naming them apart matters: option C is a real cost, and it must not be paid because
+  # of a permissions problem or a typo wearing the costume of a session problem.
+  $code = $info.LastTaskResult
   Write-Host ""
-  Write-Host "GATE FAILED - the task produced no output." -ForegroundColor Red
-  Write-Host "0x41303 means it has never run; 0x41301 means it is still running." -ForegroundColor Yellow
-  Write-Host "Do NOT switch to CreateProcessAsUser or a stored password. Fall back to option C." -ForegroundColor Red
+  switch ($code) {
+    0x41303 { Write-Host "cause: the task has NEVER RUN. This is the genuine session-gate failure -" -ForegroundColor Red
+              Write-Host "       an interactive-token task has no session to attach to." -ForegroundColor Red }
+    0x41301 { Write-Host "cause: still running. Re-run this script in a moment - NOT a gate failure." -ForegroundColor Yellow }
+    3       { Write-Host "cause: the probe RAN but could not WRITE its result. This is a PERMISSIONS" -ForegroundColor Yellow
+              Write-Host "       problem, NOT a session failure. The gate is not answered either way." -ForegroundColor Yellow
+              Write-Host "       Do not fall back to option C on this result - fix the write and re-run." -ForegroundColor Yellow }
+    1       { Write-Host "cause: the probe errored. Read the task history - NOT a gate failure yet." -ForegroundColor Yellow }
+    default { Write-Host ("cause: unrecognised exit code 0x{0:X} - report this before concluding anything." -f $code) -ForegroundColor Yellow }
+  }
+  Write-Host ""
+  if ($code -eq 0x41303) {
+    Write-Host "GATE FAILED - fall back to option C." -ForegroundColor Red
+    Write-Host "Do NOT switch to CreateProcessAsUser, a stored password or elevation." -ForegroundColor Red
+  } else {
+    Write-Host "GATE NOT ANSWERED - the mechanism was not actually tested. Report this output." -ForegroundColor Yellow
+  }
   return
 }
 

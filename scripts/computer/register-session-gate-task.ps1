@@ -102,12 +102,16 @@ $action = New-ScheduledTaskAction -Execute $PowerShell -Argument $argString -Wor
 # Interactive token: runs only while that user is logged on, and no password is stored.
 $principal = New-ScheduledTaskPrincipal -UserId $Qualified -LogonType Interactive -RunLevel Limited
 
+# -DisallowStartIfOnBatteries and -StopIfGoingOnBatteries do NOT exist. I invented both
+# names from the task-scheduler UI wording. The real switches are the two positive forms
+# below. Found by the AST audit (v2) that now reads each parameter from the command's own
+# metadata instead of from my memory - see the note in that audit about why v1 could not
+# have caught this.
 $settings = New-ScheduledTaskSettingsSet `
   -MultipleInstances IgnoreNew `
   -ExecutionTimeLimit (New-TimeSpan -Minutes 2) `
-  -DisallowStartIfOnBatteries:$false `
-  -StopIfGoingOnBatteries:$false `
   -AllowStartIfOnBatteries `
+  -DontStopIfGoingOnBatteries `
   -StartWhenAvailable:$false `
   -DontStopOnIdleEnd
 

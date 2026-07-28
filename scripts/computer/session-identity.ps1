@@ -80,5 +80,14 @@ $result = [ordered]@{
 $json = ($result | ConvertTo-Json -Compress)
 Write-Output $json
 if ($OutPath) {
-  try { Set-Content -LiteralPath $OutPath -Value $json -Encoding UTF8 } catch { }
+  # DELIBERATELY NOT SWALLOWED. If this write fails silently the task still exits 0 and
+  # produces no file, which is indistinguishable from "the task never ran because there is
+  # no interactive session" - and that would push the Owner to option C on a false signal.
+  # A distinct exit code makes the two causes tell themselves apart.
+  try {
+    Set-Content -LiteralPath $OutPath -Value $json -Encoding UTF8
+  } catch {
+    Write-Error ('could not write result to ' + $OutPath + ' : ' + $_.Exception.Message)
+    exit 3
+  }
 }
