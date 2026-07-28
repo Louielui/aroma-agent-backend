@@ -33,7 +33,11 @@ test('*** the manifest resolves every dependency — nothing is MISSING ***', ()
   assert.deepEqual(m.missing, [], 'every relative require resolved to a real file')
   assert.ok(m.files.length >= 4, 'entry plus its dependencies')
   const names = m.files.map((f) => f.name).sort()
-  assert.deepEqual(names, ['companion-entry.js', 'companion.js', 'ipcChannel.js', 'sessionBoundary.js'])
+  // PHASE 3b: observation.js joins the closure because the Companion now delegates to it.
+  // This list is DERIVED from the require graph, so it changing is the correct signal that
+  // the staged set changed - and it means the deployed staging directory is now STALE and
+  // must be re-staged before the Companion can load. See GOV-001.
+  assert.deepEqual(names, ['companion-entry.js', 'companion.js', 'ipcChannel.js', 'observation.js', 'sessionBoundary.js'])
 })
 
 test('extension-less requires are resolved — the case that broke the first walker', () => {

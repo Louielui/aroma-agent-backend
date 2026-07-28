@@ -62,8 +62,13 @@ test('*** the Companion cannot move a mouse, send a key, launch an app or write 
 
 test('*** the Companion imports NOTHING that could reach a desktop or a disk ***', () => {
   const imports = [...codeOf('companion.js').matchAll(/require\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
-  // Only the IPC contract. No fs, no child_process, no native binding, no automation lib.
-  assert.deepEqual(imports, ['./sessionBoundary'], 'the Companion imports only the contract')
+  // NARROWED FOR PHASE 3b — GOV-001, Owner GO 2026-07-28. Was ['./sessionBoundary'].
+  // The Companion now DELEGATES observation to observation.js rather than performing it,
+  // which is why this is the only assertion in this file that had to move: companion.js
+  // itself still contains no observation code, so the banned-token scan above and the
+  // capability register assertion below are both unchanged and still enforced.
+  // Still a closed list, still no fs, no child_process, no native binding, no automation lib.
+  assert.deepEqual(imports, ['./sessionBoundary', './observation'], 'the Companion imports only the contract and the observation boundary')
   for (const banned of ['node:fs', 'fs', 'node:child_process', 'child_process', 'robotjs',
     '@nut-tree', 'nut-js', 'screenshot-desktop', 'koffi', 'ffi-napi', 'edge-js', 'node-window-manager']) {
     assert.equal(imports.includes(banned), false, 'must not import: ' + banned)

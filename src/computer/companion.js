@@ -26,6 +26,9 @@
  */
 
 const { validateEnvelope, ROLE_SERVICE, ROLE_COMPANION } = require('./sessionBoundary')
+// Phase 3b. Observation lives behind its own module so the Companion's cannot-ACT proof
+// stays exactly as strong as it was in 3a - see observation.js and GOV-001.
+const { createObserver, OBSERVATION_ACTIONS } = require('./observation')
 
 /**
  * THE CAPABILITY REGISTER. Every capability the Companion will ever have, and whether it
@@ -59,6 +62,7 @@ const NO_CAPABILITY = 'no_capability_enabled'
 function createCompanion (deps = {}) {
   const now = typeof deps.now === 'function' ? deps.now : () => Date.now()
   const onAudit = typeof deps.onAudit === 'function' ? deps.onAudit : () => {}
+  const observer = (deps.observer && typeof deps.observer.observe === 'function') ? deps.observer : createObserver({ now })
   let aborted = false
   let stopReason = null
 
@@ -88,6 +92,17 @@ function createCompanion (deps = {}) {
       // THE ONLY ANSWER THIS BUILD CAN GIVE. Not "not implemented" — refused, named, and
       // audited, so a Service that somehow sent a real step gets an unambiguous no.
       const wanted = (envelope.step && typeof envelope.step.action === 'string') ? envelope.step.action : null
+
+      // Observation is DELEGATED, never performed here. In stage 1 the observer refuses
+      // everything, so this changes the source of the refusal and nothing else — but it
+      // means the Companion never grows observation code of its own, which is what keeps
+      // its own source scan meaningful.
+      if (wanted && OBSERVATION_ACTIONS.includes(wanted)) {
+        const seen = observer.observe({ action: wanted })
+        onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: seen.ok ? 'observed' : 'refused', refusalReason: seen.ok ? null : seen.refusal, at: now() })
+        return reply(envelope, seen)
+      }
+
       onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: 'refused', refusalReason: NO_CAPABILITY, at: now() })
       return reply(envelope, { ok: false, refusal: NO_CAPABILITY, capability: wanted })
     }
