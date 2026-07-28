@@ -81,9 +81,14 @@ function createKillSwitch (options = {}) {
  */
 const KILL_SWITCH_BINDINGS = Object.freeze({
   serviceGate: Object.freeze({ implemented: true, note: 'this latch; checked before each step dispatch' }),
-  companionAbortSignal: Object.freeze({ implemented: false, note: 'needs the Companion to exist' }),
-  osBackstop: Object.freeze({ implemented: false, note: 'needs the Windows service and account to exist' }),
-  stopsAnythingRunningToday: false
+  companionAbortSignal: Object.freeze({ implemented: true, note: 'Phase 3a: abort over the IPC channel, demonstrated against a live Companion' }),
+  osBackstop: Object.freeze({ implemented: true, note: 'Phase 3a: closing the channel destroys every connection; no reconnect path exists' }),
+  // Phase 3a: it now stops a real process over a real pipe. What it has NOT been shown
+  // against is a Companion deployed under the AromaOperator account, because creating
+  // that account is the Owner's step. Stated as data so the claim cannot outrun the
+  // evidence.
+  stopsAnythingRunningToday: true,
+  demonstratedUnderCompanionAccount: false
 })
 
 module.exports = { createKillSwitch, KILL_SWITCH_BINDINGS, STOP_CONDITIONS }

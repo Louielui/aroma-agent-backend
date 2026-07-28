@@ -16,11 +16,22 @@ const { createKillSwitch, KILL_SWITCH_BINDINGS, STOP_CONDITIONS } = require('./k
 
 /* ── honesty about what does not exist ────────────────────────────────────── */
 
-test('*** it stops NOTHING today, and says so as data ***', () => {
-  assert.equal(KILL_SWITCH_BINDINGS.stopsAnythingRunningToday, false)
-  assert.equal(KILL_SWITCH_BINDINGS.serviceGate.implemented, true, 'the latch itself exists')
-  assert.equal(KILL_SWITCH_BINDINGS.companionAbortSignal.implemented, false, 'no Companion to signal')
-  assert.equal(KILL_SWITCH_BINDINGS.osBackstop.implemented, false, 'no service or account to stop')
+test('*** INVERTED in Phase 3a: it now stops a real process — all three bindings live ***', () => {
+  // Phase 2 asserted the opposite, correctly at the time: the latch stopped nothing,
+  // because there was nothing to stop. Phase 3a built a Companion and a real named pipe
+  // and demonstrated all three bindings against it (phase3aChannel.test.js). Inverted
+  // here rather than deleted, so the file records when the control became real.
+  assert.equal(KILL_SWITCH_BINDINGS.stopsAnythingRunningToday, true)
+  assert.equal(KILL_SWITCH_BINDINGS.serviceGate.implemented, true, 'the latch, checked before dispatch')
+  assert.equal(KILL_SWITCH_BINDINGS.companionAbortSignal.implemented, true, 'abort over the IPC channel')
+  assert.equal(KILL_SWITCH_BINDINGS.osBackstop.implemented, true, 'closing the channel; no reconnect path')
+})
+
+test('*** …but the claim stops exactly where the evidence does ***', () => {
+  // It has NOT been demonstrated against a Companion running under the AromaOperator
+  // account, because that account does not exist — creating it is the Owner's step. The
+  // register carries that limit as data so the claim cannot quietly outrun the proof.
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedUnderCompanionAccount, false)
 })
 
 /* ── the latch ────────────────────────────────────────────────────────────── */
