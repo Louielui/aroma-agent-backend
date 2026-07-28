@@ -150,3 +150,18 @@ test('the kill-switch register does not claim more than has been shown', () => {
   assert.ok(KILL_SWITCH_BINDINGS.demonstratedOn)
   assert.equal(KILL_SWITCH_BINDINGS.demonstratedBindings.length, 3)
 })
+
+test('*** the Observer is a SECOND entry point and the 3a bindings do not reach it ***', () => {
+  // Phase 3b. The three demonstrated bindings were all proven against the Companion. The
+  // Observer runs in its own process, started by a scheduled task the Companion cannot
+  // touch — so killing the Companion does not stop an observation already in flight.
+  // This is asserted rather than described so the register cannot quietly imply coverage
+  // it does not have.
+  const { KILL_SWITCH_BINDINGS } = require('./killSwitch')
+  assert.equal(KILL_SWITCH_BINDINGS.killingCompanionStopsObserver, false,
+    'if this ever becomes true it must be because it was DEMONSTRATED, not assumed')
+  assert.equal(KILL_SWITCH_BINDINGS.observerKill.implemented, false, 'Phase 3b: not built yet')
+  assert.equal(KILL_SWITCH_BINDINGS.observerKillDemonstrated, false, 'and not demonstrated')
+  // the three that ARE demonstrated must not silently grow to include the observer
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedBindings.includes('observerKill'), false)
+})

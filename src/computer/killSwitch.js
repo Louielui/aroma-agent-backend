@@ -100,7 +100,35 @@ const KILL_SWITCH_BINDINGS = Object.freeze({
   // demonstration against a target it did not first prove alive.
   demonstratedUnderCompanionAccount: true,
   demonstratedOn: '2026-07-28',
-  demonstratedBindings: Object.freeze(['serviceGate', 'companionAbort', 'osFallback'])
+  demonstratedBindings: Object.freeze(['serviceGate', 'companionAbort', 'osFallback']),
+
+  // ── PHASE 3b: A SECOND ENTRY POINT EXISTS, AND THESE THREE DO NOT COVER IT ──────
+  //
+  // The Observer is NOT the Companion. It is a separate process started by a fixed
+  // scheduled task — the Companion cannot start it and, by the same token, cannot stop it.
+  // Asked plainly, "does killing A stop B", the answer is no, and leaving that blank would
+  // be the more comfortable and less honest option:
+  //
+  //   serviceGate    stops the NEXT step being dispatched. An observation already running
+  //                  in another process is not dispatched through the gate and continues.
+  //   companionAbort stops the Companion. The Observer has no parent-child relationship
+  //                  with it and keeps running to completion.
+  //   osBackstop     destroys the IPC channel. The Observer does not use that channel to
+  //                  do its work; it writes to the evidence store and exits.
+  //
+  // So an observation IN FLIGHT survives all three bindings that were demonstrated in 3a.
+  // It is bounded only by the Observer's own single-shot design and hard timeout — and a
+  // bound is not a control. "It will stop by itself shortly" is not a kill switch.
+  killingCompanionStopsObserver: false,
+
+  // The fourth binding this implies. Declared present-and-false rather than absent, so
+  // enabling it is an edit to a value a test watches rather than a new name nobody checks —
+  // the same reason the Phase 3b capabilities were declared off instead of omitted.
+  observerKill: Object.freeze({
+    implemented: false,
+    note: 'Stop the Observer itself mid-observation: Stop-ScheduledTask plus Stop-Process on its PID. Not built, not demonstrated.'
+  }),
+  observerKillDemonstrated: false
 })
 
 module.exports = { createKillSwitch, KILL_SWITCH_BINDINGS, STOP_CONDITIONS }
