@@ -242,6 +242,32 @@ Rules that hold in every timeout path:
 - the results file records, per row, the elapsed milliseconds, so a row that passed at
   19.9 s is visible rather than looking identical to one that passed instantly
 
+## After a timeout, the harness must PROVE the Observer is gone
+
+A timeout says the harness stopped waiting. It says nothing about whether the Observer
+stopped running. Assuming it exited is the same shape of error as assuming a kill worked
+because it returned without an error — and it would leave a live observation process behind
+in a session with nobody watching.
+
+So on every timeout path, in this order:
+
+1. `Stop-ScheduledTask` on the observer task
+2. `Stop-Process -Id <observer pid> -Force`
+3. **poll until the PID is genuinely absent**, up to 10 s
+
+Then:
+
+- **gone** → row recorded `INVALID` / `TIMEOUT`, `residueLeft = false`
+- **still present** → row recorded `INVALID` / `TIMEOUT-ORPHAN`, `residueLeft = true`,
+  `residuePath = "process <pid> still running"`, and the harness **halts** rather than
+  continuing to measure alongside a live observer it could not stop
+
+The harness never reports a clean timeout it did not verify. "It probably exited" is not a
+result.
+
+Both stop mechanisms were pre-verified in session 3 before Part B depends on them — see
+`verify-observer-kill.ps1` and the scope note below.
+
 ## Retry semantics — a nonce is burned on use
 
 Both nonces are minted once, in A3, and are single-use.
