@@ -35,6 +35,7 @@ $ServiceName = 'AromaComputerOperator'
 $EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence'
 $StageDir    = 'C:\Aroma\ComputerOperator-Companion'
 $RepoDir     = 'C:\Aroma\aroma-agent-backend'
+$AromaRoot   = 'C:\Aroma'
 $SID_ADMINS  = 'S-1-5-32-544'
 
 $results = New-Object System.Collections.ArrayList
@@ -105,28 +106,66 @@ try {
   } else { Note 'staged companion' 'not present' 'Gray' }
 } catch { Note 'staged companion' "FAILED: $($_.Exception.Message)" 'Red' }
 
-# -- 3c. the repo DENY ---------------------------------------------------------
-# deploy-companion.ps1 adds an explicit DENY for the operator account on the repo, so it
-# cannot read .env or edit the governance code. Removing the account alone would leave an
-# orphaned-SID ACE behind, which clutters the ACL and confuses later reads. Remove the ACE
-# BEFORE the account goes, while its SID still resolves.
+# -- 3c. EVERY deny ACE this deployment added ---------------------------------
+# ORDER MATTERS. deploy-companion.ps1 denies the operator account on C:\Aroma
+# (inherit-only) and on every child except the two Companion folders. Those ACEs must be
+# removed BEFORE the account is deleted, while its SID still resolves to a name - once the
+# account is gone the ACEs remain as unresolvable orphaned SIDs, cluttering every ACL under
+# C:\Aroma and making later reads confusing. This step therefore runs before step 4.
 try {
   $u = Get-LocalUser -Name $AccountName -ErrorAction SilentlyContinue
-  if ($u -and (Test-Path -LiteralPath $RepoDir)) {
-    $racl = Get-Acl -LiteralPath $RepoDir
-    $removed = 0
-    foreach ($rule in @($racl.Access)) {
-      if ($rule.AccessControlType -eq 'Deny' -and $rule.IdentityReference.Value -eq $u.SID.Value) {
-        [void]$racl.RemoveAccessRule($rule); $removed++
-      }
-      elseif ($rule.AccessControlType -eq 'Deny' -and $rule.IdentityReference.Value -like "*\$AccountName") {
-        [void]$racl.RemoveAccessRule($rule); $removed++
-      }
+  if (-not $u) {
+    Note 'deny ACEs' 'account already gone - see the orphan sweep below' 'Yellow'
+  } else {
+    $sidValue = $u.SID.Value
+    $targets = New-Object System.Collections.ArrayList
+    [void]$targets.Add($AromaRoot)
+    foreach ($item in Get-ChildItem -LiteralPath $AromaRoot -Force -ErrorAction SilentlyContinue) {
+      [void]$targets.Add($item.FullName)
     }
-    if ($removed -gt 0) { Set-Acl -LiteralPath $RepoDir -AclObject $racl; Note 'repo DENY' "removed $removed rule(s)" }
-    else { Note 'repo DENY' 'none present' 'Gray' }
-  } else { Note 'repo DENY' 'account gone or repo missing - skipped' 'Gray' }
-} catch { Note 'repo DENY' "FAILED: $($_.Exception.Message)" 'Red' }
+    $cleared = 0; $touched = 0
+    foreach ($t in $targets) {
+      try {
+        $a = Get-Acl -LiteralPath $t -ErrorAction Stop
+        $n = 0
+        foreach ($rule in @($a.Access)) {
+          if ($rule.AccessControlType -eq 'Deny' -and $rule.IdentityReference.Value -eq $sidValue) { [void]$a.RemoveAccessRule($rule); $n++ }
+        }
+        if ($n -gt 0) { Set-Acl -LiteralPath $t -AclObject $a; $cleared += $n; $touched++ }
+      } catch { }
+    }
+    Note 'deny ACEs' "removed $cleared ACE(s) across $touched path(s)"
+  }
+} catch { Note 'deny ACEs' "FAILED: $($_.Exception.Message)" 'Red' }
+
+# -- 3d. orphan sweep ----------------------------------------------------------
+# The safety net for the case above: if the account was deleted first (by hand, or by an
+# earlier interrupted run), its ACEs are now unresolvable SIDs. Remove any deny ACE whose
+# identity no longer translates to a name - those can only be leftovers.
+try {
+  $sweptPaths = 0; $sweptAces = 0
+  $targets = New-Object System.Collections.ArrayList
+  [void]$targets.Add($AromaRoot)
+  foreach ($item in Get-ChildItem -LiteralPath $AromaRoot -Force -ErrorAction SilentlyContinue) { [void]$targets.Add($item.FullName) }
+  foreach ($t in $targets) {
+    try {
+      $a = Get-Acl -LiteralPath $t -ErrorAction Stop
+      $n = 0
+      foreach ($rule in @($a.Access)) {
+        if ($rule.AccessControlType -ne 'Deny') { continue }
+        $id = $rule.IdentityReference.Value
+        # An unresolved ACE shows as a raw SID string; a resolved one shows DOMAIN\Name.
+        if ($id -notmatch '^S-1-5-21-') { continue }
+        $resolves = $false
+        try { $null = (New-Object Security.Principal.SecurityIdentifier($id)).Translate([Security.Principal.NTAccount]); $resolves = $true } catch { }
+        if (-not $resolves) { [void]$a.RemoveAccessRule($rule); $n++ }
+      }
+      if ($n -gt 0) { Set-Acl -LiteralPath $t -AclObject $a; $sweptAces += $n; $sweptPaths++ }
+    } catch { }
+  }
+  if ($sweptAces -gt 0) { Note 'orphan ACE sweep' "removed $sweptAces orphaned ACE(s) across $sweptPaths path(s)" }
+  else { Note 'orphan ACE sweep' 'none found' 'Gray' }
+} catch { Note 'orphan ACE sweep' "FAILED: $($_.Exception.Message)" 'Red' }
 
 # -- 4. the account -----------------------------------------------------------
 $userSid = $null
