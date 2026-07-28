@@ -46,9 +46,6 @@ $ErrorActionPreference = 'Continue'
 $nonce  = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $rows   = New-Object System.Collections.Generic.List[object]
 $GateTask = 'AromaComputerOperator-SessionGate'
-# initialised so the C4 cleanup can reference it even when the attempt threw first -
-# under Set-StrictMode an unset variable is an error, not $null
-$script:C4OriginalAction = $null
 
 # ---------------------------------------------------------------------------
 # identity - emitted with the rows so scope travels with the result
@@ -147,34 +144,133 @@ function Probe {
 # SHA pinning protects the file the task points at; it does not protect the pointer.
 # ===========================================================================
 
-Probe -Id 'C4-modify-gate-task' -Target $GateTask -ExpectPermitted $false `
-  -Note 'rewrite the pinned SessionGate task definition - if permitted, the SHA pin is defeated' `
+# The SessionGate task is the ONLY approved route into session 5. Damaging it does not
+# just fail a row, it removes 3b's only mechanism. So C4 is wrapped in a full
+# export / compare / restore / re-verify cycle, and the probe HALTS if it cannot prove the
+# task was left exactly as it was found.
+#
+# Backing up only the action was not enough: an overwrite can disturb triggers, principal
+# or settings too, and restoring one field would leave the others silently changed.
+# The unit of backup is therefore the complete task XML, compared byte for byte.
+
+function HashString {
+  param([string]$s)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s)) | ForEach-Object { $_.ToString('x2') }) -join '' }
+  finally { $sha.Dispose() }
+}
+function ExportGate {
+  try { (Export-ScheduledTask -TaskName $GateTask -ErrorAction Stop | Out-String) } catch { $null }
+}
+
+$EvidenceDir      = 'C:\Aroma\ComputerOperator-Evidence'
+$gateBackupPath   = Join-Path $EvidenceDir ('sessiongate-backup-' + $nonce + '.xml')
+$gateXmlBefore    = ExportGate
+$gateHashBefore   = if ($gateXmlBefore) { HashString $gateXmlBefore } else { $null }
+$gateBackupWritten = $false
+$script:Incident  = $null
+
+if ($gateXmlBefore) {
+  try {
+    Set-Content -LiteralPath $gateBackupPath -Value $gateXmlBefore -Encoding UTF8 -ErrorAction Stop
+    $gateBackupWritten = $true
+  } catch { $gateBackupWritten = $false }
+}
+
+# NO BASELINE, NO ATTEMPT. Attempting a destructive write with nothing to restore from is
+# how a measurement becomes an outage. If the export or its backup failed, C4 is recorded
+# as INVALID and skipped rather than risked.
+$c4Safe = ($null -ne $gateXmlBefore) -and $gateBackupWritten
+
+if (-not $c4Safe) {
+  $rows.Add([ordered]@{
+    id = 'C4-modify-gate-task'; target = $GateTask; permitted = $false; expectedPermitted = $false
+    verdict = 'INVALID'; mechanism = 'NO-BASELINE'; targetExists = ($null -ne $gateXmlBefore)
+    errorType = $null; residueLeft = $false; residuePath = $null
+    note = 'SKIPPED - could not export the task and write a backup, so a failed restore would be unrecoverable. Not attempted by design.'
+  })
+} else {
+  Probe -Id 'C4-modify-gate-task' -Target $GateTask -ExpectPermitted $false `
+    -Note 'rewrite the pinned SessionGate task definition - if permitted, the SHA pin is defeated because the pin binds the FILE, not the pointer to it' `
+    -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
+    -Action {
+      $a = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+           -Argument '-NoProfile -File C:\AromaOperator-Probe\NOT-THE-PINNED-SCRIPT.ps1'
+      Set-ScheduledTask -TaskName $GateTask -Action $a -ErrorAction Stop | Out-Null
+      $true
+    } `
+    -Cleanup {
+      # Runs whether the attempt succeeded or failed - "it threw, so nothing changed" is an
+      # assumption, and this is exactly the place not to make one.
+      $after = ExportGate
+      if ($null -ne $after -and (HashString $after) -eq $gateHashBefore) { return $null }
+
+      # differs: restore the WHOLE definition from the backup XML, not one field
+      try { Register-ScheduledTask -TaskName $GateTask -Xml $gateXmlBefore -Force -ErrorAction Stop | Out-Null } catch { }
+
+      $third = ExportGate
+      if ($null -ne $third -and (HashString $third) -eq $gateHashBefore) {
+        return ('task was modified and was RESTORED from ' + $gateBackupPath)
+      }
+      $script:Incident = 'C4 modified the SessionGate task and the restore did not reproduce the original XML'
+      ('CONTAINMENT-INCIDENT - restore failed. Backup XML: ' + $gateBackupPath)
+    }
+}
+
+# ---------------------------------------------------------------------------
+# C4a / C4b - re-verify the gate immediately, whatever C4 returned.
+# The SHA pin binds the FILE; C4 measures the POINTER. Both have to line up, so both are
+# checked here rather than one being inferred from the other.
+# ---------------------------------------------------------------------------
+$StagedGateScript = 'C:\Aroma\ComputerOperator-Companion\session-identity.ps1'
+$StagedGateSha    = '98A474BC6EC12F2E16D235098C8B323750225FE0BACF23CCBF340632CBF31C67'
+
+Probe -Id 'C4a-gate-action-intact' -Target $GateTask -ExpectPermitted $true `
+  -Note 'the task action must still point at session-identity.ps1' `
   -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
   -Action {
     $t = Get-ScheduledTask -TaskName $GateTask -ErrorAction Stop
-    # captured BEFORE the attempt so the cleanup can put it back if the attempt succeeds
-    $script:C4OriginalAction = $t.Actions[0]
-    $a = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-         -Argument '-NoProfile -File C:\AromaOperator-Probe\NOT-THE-PINNED-SCRIPT.ps1'
-    Set-ScheduledTask -TaskName $GateTask -Action $a -ErrorAction Stop | Out-Null
-    $true
-  } `
-  -Cleanup {
-    # If the write succeeded, the pinned gate task is now POINTING SOMEWHERE ELSE. That is
-    # the violation we are testing for, and leaving it in that state would break the gate.
-    # So: detect, restore, and report residue only if the restore also failed.
-    $t = Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue
-    if (-not $t) { return $null }
-    if (([string]$t.Actions[0].Arguments) -notmatch 'NOT-THE-PINNED-SCRIPT') { return $null }
-    if ($script:C4OriginalAction) {
-      try {
-        Set-ScheduledTask -TaskName $GateTask -Action $script:C4OriginalAction -ErrorAction Stop | Out-Null
-        $chk = Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue
-        if ($chk -and ([string]$chk.Actions[0].Arguments) -notmatch 'NOT-THE-PINNED-SCRIPT') { return $null }
-      } catch { }
-    }
-    $GateTask + ' WAS MODIFIED AND COULD NOT BE RESTORED - re-run register-session-gate-task.ps1'
+    ([string]$t.Actions[0].Arguments) -match 'session-identity\.ps1'
+  } -Cleanup $null
+
+Probe -Id 'C4b-gate-script-sha' -Target $StagedGateScript -ExpectPermitted $true `
+  -Note 'and the file it points at must still hash to the pinned value' `
+  -ExistsCheck { Test-Path -LiteralPath $StagedGateScript } `
+  -Action { (Get-FileHash -LiteralPath $StagedGateScript -Algorithm SHA256 -ErrorAction Stop).Hash -eq $StagedGateSha } `
+  -Cleanup $null
+
+# ---------------------------------------------------------------------------
+# HALT if the gate could not be put back. The remaining 23 rows are not worth the risk of
+# operating against a task whose state is unknown.
+# ---------------------------------------------------------------------------
+# "cannot read it" is NOT "it is broken". Only treat a gate row as breakage when the
+# target demonstrably exists and the check still came back false; an unreadable task is
+# unknown state, which is INVALID, not an incident.
+$gateIntact = @($rows | Where-Object {
+  $_.id -in @('C4a-gate-action-intact','C4b-gate-script-sha') -and
+  $_.targetExists -eq $true -and -not $_.permitted
+})
+if ($script:Incident -or $gateIntact.Count -gt 0) {
+  $reason = if ($script:Incident) { $script:Incident } else { 'gate re-verification failed after C4' }
+  Write-Host ''
+  Write-Host '*** CONTAINMENT-INCIDENT - PROBE HALTED ***' -ForegroundColor Red
+  Write-Host ("  " + $reason) -ForegroundColor Red
+  Write-Host ("  backup XML : " + $gateBackupPath) -ForegroundColor Yellow
+  Write-Host '  Remaining rows were NOT run. Re-run register-session-gate-task.ps1 elevated.' -ForegroundColor Yellow
+  $incidentRecord = [ordered]@{
+    probe = 'containment-v2-tierA'; nonce = $nonce; HALTED = $true
+    incident = $reason
+    gateBackupPath = $gateBackupPath; gateHashBefore = $gateHashBefore
+    MEASURED_BY = $idn.Name; MEASURED_SID = $idn.User.Value
+    MEASURED_SESSIONID = (Get-Process -Id $PID).SessionId
+    MEASURED_AT = (Get-Date).ToString('o')
+    rows = $rows
   }
+  $ij = ($incidentRecord | ConvertTo-Json -Depth 6)
+  Write-Output $ij
+  try { Set-Content -LiteralPath (Join-Path $EvidenceDir ('tierA-INCIDENT-' + $nonce + '.json')) -Value $ij -Encoding UTF8 -ErrorAction Stop } catch { }
+  exit 9
+}
 
 Probe -Id 'C5-read-gate-task' -Target $GateTask -ExpectPermitted $true `
   -Note 'reading the definition is expected and harmless' `
