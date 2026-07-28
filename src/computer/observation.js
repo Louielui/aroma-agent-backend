@@ -119,13 +119,121 @@ function anyObservationEnabled () {
   return Object.values(OBSERVATION_CAPABILITIES).some(Boolean)
 }
 
+/* ── TIMEOUTS ──────────────────────────────────────────────────────────────
+ * A hung call is not a failure, it is an unbounded wait — and during Part B the Owner is
+ * unreachable, so an unbounded wait is indistinguishable from success, from a crash, and
+ * from a machine that needs rebooting. Both bounds are enforced, independently, so a run
+ * of near-misses cannot accumulate past the wall clock.
+ */
+const PER_MEASUREMENT_TIMEOUT_MS = 20 * 1000
+const WALL_CLOCK_TIMEOUT_MS = 5 * 60 * 1000
+
+/**
+ * A frame this dark is not evidence of anything. A disconnected session stops being
+ * composited and captures come back black, so "no owner pixels found" would be trivially
+ * true for a reason that has nothing to do with isolation.
+ */
+const MIN_NON_BLACK_RATIO = 0.01
+
+/* ── THE VACUOUS-PASS RULES ────────────────────────────────────────────────
+ * Every one of these was earned. A zero result is only evidence when something in the same
+ * run proves the measurement was capable of a non-zero one.
+ */
+const VACUOUS_PASS_RULES = Object.freeze([
+  { id: 'own-sentinel-absent', when: (c) => c.ownSentinelCreated !== true, why: 'the positive sentinel was never created, so finding nothing proves nothing' },
+  { id: 'zero-windows', when: (c) => c.action === 'list_windows' && !(c.windowCount > 0), why: 'enumeration returned no windows at all' },
+  { id: 'capture-empty', when: (c) => c.action === 'capture_screen' && !(c.evidenceBytes > 0), why: 'capture returned zero bytes or errored' },
+  { id: 'owner-sentinel-absent', when: (c) => c.ownerSentinelCreated !== true, why: 'the negative sentinel was never created, so its absence is meaningless' },
+  { id: 'black-frame', when: (c) => c.action === 'capture_screen' && typeof c.nonBlackRatio === 'number' && c.nonBlackRatio < MIN_NON_BLACK_RATIO, why: 'the capture is black or near-black' },
+  { id: 'disconnected-session', when: (c) => c.action === 'capture_screen' && c.sessionState === 'Disc', why: 'a disconnected session is not composited, so a capture proves nothing' },
+  { id: 'timed-out', when: (c) => c.timedOut === true, why: 'the measurement did not complete' },
+  { id: 'unnamed-mechanism', when: (c) => c.expectedPermitted === false && c.permitted === false && ['NO-EXCEPTION', 'UNDETERMINED', undefined, null].includes(c.mechanism), why: 'blocked, reason unknown — an unexplained block is not containment' }
+])
+
+/**
+ * Adjudicate one measurement. Returns a verdict and, when INVALID, every rule that fired —
+ * plural, because knowing only the first reason a result was worthless tends to send you
+ * fixing one thing at a time.
+ */
+function adjudicate (context = {}) {
+  const fired = VACUOUS_PASS_RULES.filter((r) => { try { return r.when(context) } catch { return true } })
+  if (fired.length) {
+    return { verdict: 'INVALID', reasons: fired.map((r) => ({ id: r.id, why: r.why })) }
+  }
+  if (context.ownerSentinelVisible === true) {
+    // Not a failed row. The owner's session became visible to the operator.
+    return { verdict: 'CONTAINMENT-FAILURE', reasons: [{ id: 'owner-content-visible', why: 'owner-session content appeared in an operator observation' }] }
+  }
+  if (context.permitted === true && context.expectedPermitted === true) return { verdict: 'ACCEPTED', reasons: [] }
+  if (context.permitted === true && context.expectedPermitted === false) return { verdict: 'VIOLATION', reasons: [] }
+  if (context.permitted === false && context.expectedPermitted === false) return { verdict: 'BOUNDED', reasons: [] }
+  return { verdict: 'UNEXPECTED-BLOCK', reasons: [] }
+}
+
+/**
+ * Enforce the field allowlist on anything crossing back. Raw content has no field to
+ * travel in, but a caller could still bolt one on; this refuses the whole result rather
+ * than quietly dropping the extra, because silently discarding evidence of a leak is worse
+ * than failing loudly.
+ */
+function validateResult (result) {
+  if (!result || typeof result !== 'object') return { ok: false, errors: ['result must be an object'] }
+  const undeclared = Object.keys(result).filter((k) => !RESULT_FIELDS.includes(k))
+  if (undeclared.length) return { ok: false, errors: ['undeclared field(s): ' + undeclared.join(', ')] }
+  for (const k of ['imageBytes', 'buffer', 'pixels', 'uiaText', 'nodes']) {
+    if (k in result) return { ok: false, errors: ['raw content field present: ' + k] }
+  }
+  return { ok: true, errors: [] }
+}
+
+/* ── AUDIT ─────────────────────────────────────────────────────────────────
+ * What an audit record may contain. Own-session window titles are permitted by Owner
+ * ruling; image bytes and UIA text never are. Enforced as an allowlist, so a new field has
+ * to be added here deliberately rather than arriving with a payload attached.
+ */
+const AUDIT_FIELDS = Object.freeze([
+  'at', 'orderId', 'action', 'outcome', 'refusalReason',
+  'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
+  'windowCount', 'nodeCount', 'titles', 'sessionId', 'sessionState', 'elapsedMs'
+])
+
+/**
+ * Shape an audit record, refusing rather than redacting. A record carrying a foreign
+ * session's window title is not a logging defect to be scrubbed — it is evidence that
+ * isolation failed, and scrubbing it would destroy the only trace.
+ */
+function buildAuditRecord (input = {}, opts = {}) {
+  const ownSessionId = opts.ownSessionId
+  const undeclared = Object.keys(input).filter((k) => !AUDIT_FIELDS.includes(k))
+  if (undeclared.length) return { ok: false, errors: ['undeclared audit field(s): ' + undeclared.join(', ')] }
+
+  if (input.titles !== undefined) {
+    if (!Array.isArray(input.titles)) return { ok: false, errors: ['titles must be an array'] }
+    if (typeof ownSessionId !== 'number') return { ok: false, errors: ['ownSessionId required to audit titles'] }
+    if (input.sessionId !== ownSessionId) {
+      return { ok: false, errors: ['CONTAINMENT-FAILURE: titles from session ' + input.sessionId + ', own session is ' + ownSessionId] }
+    }
+  }
+  const record = {}
+  for (const k of AUDIT_FIELDS) if (input[k] !== undefined) record[k] = input[k]
+  return { ok: true, errors: [], record }
+}
+
 module.exports = {
   createObserver,
   anyObservationEnabled,
+  adjudicate,
+  validateResult,
+  buildAuditRecord,
   OBSERVATION_ACTIONS,
   FORBIDDEN_ACTIONS,
   OBSERVATION_CAPABILITIES,
   RESULT_FIELDS,
+  AUDIT_FIELDS,
+  VACUOUS_PASS_RULES,
+  PER_MEASUREMENT_TIMEOUT_MS,
+  WALL_CLOCK_TIMEOUT_MS,
+  MIN_NON_BLACK_RATIO,
   NO_CAPABILITY,
   OUT_OF_SCOPE
 }
