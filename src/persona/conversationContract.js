@@ -21,7 +21,7 @@
  *   - It governs the PROSE INSIDE the `reply` field only. It does NOT alter the
  *     output format: the JSON-only output contract and the intent/mode schema owned
  *     by the distill classifier are untouched and remain authoritative.
- *   - It says nothing about WHO 守燈 is titled as — identity/title belongs to the
+ *   - It says nothing about WHO 心燈 is titled as — identity/title belongs to the
  *     frozen PERSONA_IDENTITY (and the 「AI 營運長」 title question is a separate,
  *     deferred governance item). This block is only about HOW she speaks.
  *   - It deliberately does NOT restate citation / source-and-date / the three

@@ -275,6 +275,6 @@ test('CLI output never leaks fragment / persona text', () => {
   try {
     const r0 = mkReviewReady(base)
     const r = runCli(base, ['--expect-revision-id', r0.revisionId, '--confirm'])
-    for (const leak of ['守燈', '思考順序', P.slice(807, 886)]) assert.equal(r.out.includes(leak), false)
+    for (const leak of ['心燈', '思考順序', P.slice(807, 886)]) assert.equal(r.out.includes(leak), false)
   } finally { cleanup(base) }
 })

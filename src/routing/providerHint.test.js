@@ -3,7 +3,7 @@
 /**
  * providerHint.test.js — the Owner's provider pick is INTENT, never authority.
  *
- * The composer lets the Owner choose which 守燈 answers. That value arrives from the
+ * The composer lets the Owner choose which 心燈 answers. That value arrives from the
  * browser, so it is treated exactly like every other browser-supplied value in this
  * system: validated against a closed allowlist at the boundary, able to influence one
  * narrow thing, and structurally incapable of reaching anything else.

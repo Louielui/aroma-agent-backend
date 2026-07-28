@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * appManifest.js — makes the 守燈 page installable as a desktop app, and owns the one
+ * appManifest.js — makes the 心燈 page installable as a desktop app, and owns the one
  * square icon used by both the manifest and the favicon.
  *
  * A web app manifest is the whole mechanism: with it, Chrome offers "Install", and the
@@ -55,8 +55,8 @@ function iconDataUri () {
 function buildManifest () {
   const icon = iconDataUri()
   return {
-    name: '守燈',
-    short_name: '守燈',
+    name: '心燈',
+    short_name: '心燈',
     description: 'Aroma 的 AI 營運長',
     // The page lives at /demo; '/' is a 404, so it cannot be the entry point.
     start_url: '/demo',

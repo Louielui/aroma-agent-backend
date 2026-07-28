@@ -153,7 +153,7 @@ test('(a) no prompt / user content / model output / secret appears in any record
     const claude = fake(JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'REPLY_SENTINEL' }))
     await processIntake('USER_MESSAGE_SENTINEL', claude, [], { demo: true, interactionMode: 'chat' })
     const all = m.lines.join('\n')
-    for (const bad of ['USER_MESSAGE_SENTINEL', 'REPLY_SENTINEL', SECRET, 'sk-ant', '守燈']) {
+    for (const bad of ['USER_MESSAGE_SENTINEL', 'REPLY_SENTINEL', SECRET, 'sk-ant', '心燈']) {
       assert.ok(!all.includes(bad), `metrics must never contain: ${bad}`)
     }
     const rec = JSON.parse(m.lines.find((l) => l.includes('fake-claude')))

@@ -7,7 +7,7 @@
  * per record = append-only; existing records are never mutated or overwritten). It
  * records who authorized it, when, the approved Work Order's hash, and the honest
  * result outcome. It NEVER stores the prompt, the sandbox path, env, secrets, or a
- * raw diff — only the outcome metadata 守燈 needs to report to Louie.
+ * raw diff — only the outcome metadata 心燈 needs to report to Louie.
  *
  * This file is itself structurally un-allowlistable (see workOrder FORBIDDEN
  * patterns), so an agent run can never edit its own audit trail.

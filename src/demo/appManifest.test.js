@@ -44,8 +44,8 @@ async function get (app, path) {
 /* ── Chrome's installability criteria, asserted one by one ────────────────── */
 
 test('*** the manifest meets Chrome\'s install criteria ***', () => {
-  assert.equal(MANIFEST.name, '守燈')
-  assert.equal(MANIFEST.short_name, '守燈')
+  assert.equal(MANIFEST.name, '心燈')
+  assert.equal(MANIFEST.short_name, '心燈')
   assert.equal(MANIFEST.display, 'standalone', 'standalone is what removes the address bar')
   assert.ok(MANIFEST.start_url, 'a start_url is required')
   assert.ok(Array.isArray(MANIFEST.icons) && MANIFEST.icons.length > 0, 'at least one icon')

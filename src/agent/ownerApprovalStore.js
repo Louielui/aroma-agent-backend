@@ -105,7 +105,7 @@ function createOwnerApprovalStore (options = {}) {
   // What the runner reported for an approval, so the Owner can be shown what actually
   // happened. Write-once for the same reason a sealed order is: a result the Owner has
   // read must not be quietly replaced. Recording a result is NOT an authorization and
-  // grants nothing — adopting a result will be its own gate when 守燈 can touch the real
+  // grants nothing — adopting a result will be its own gate when 心燈 can touch the real
   // repo. Results outlive the approval TTL (an expired card's result is still evidence).
   // Allowlisted progress phases, so the Owner is never left staring at a card that looks
   // like nothing happened. A phase is a fixed enum name plus a timestamp — never a path,

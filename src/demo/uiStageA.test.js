@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * uiStageA.test.js — the 守燈 UI rebuild (Stage A).
+ * uiStageA.test.js — the 心燈 UI rebuild (Stage A).
  *
  * The UI moved out of a template literal into real asset files. Two things must hold:
  *   1. the page keeps every static-safety property it had (no markup-from-strings, no
@@ -264,7 +264,7 @@ test('the placeholder is short enough not to be clipped', () => {
 
 test('the composer bar holds the shortcuts and the picker — and no lane switcher at all', () => {
   // Stage A.1 moved the lane switcher into the composer. Unified Conversation v1 REMOVED
-  // it: 守燈 routes internally, so there is no lane to pick before typing. What remains in
+  // it: 心燈 routes internally, so there is no lane to pick before typing. What remains in
   // the bar is the "+" shortcuts, the provider picker and send.
   const body2 = DEMO_HTML.slice(DEMO_HTML.indexOf('<body>'))
   const bar = body2.slice(body2.indexOf('composer-bar'), body2.indexOf('composer-note'))
@@ -277,7 +277,7 @@ test('the composer bar holds the shortcuts and the picker — and no lane switch
 test('an empty conversation is not also listed in the sidebar', () => {
   assert.ok(DEMO_HTML.includes('function isListed (c) { return c.history.length > 0 }'), 'listing requires content')
   assert.ok(DEMO_HTML.includes('if (!isListed(convs[i])) continue'), 'empty ones are skipped')
-  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '守燈'"), 'the header does not repeat an empty title')
+  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '心燈'"), 'the header does not repeat an empty title')
 })
 
 /* ── Stage A.2: the model picker ─────────────────────────────────────────── */

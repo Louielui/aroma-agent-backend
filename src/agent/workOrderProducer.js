@@ -5,7 +5,7 @@
  * Contract v1: "Policy constrains; Xiangxiang proposes; Louie approves; executor
  * cannot expand."
  *
- * 守燈 supplies a PROPOSAL (a goal, one candidate file, optionally a test command).
+ * 心燈 supplies a PROPOSAL (a goal, one candidate file, optionally a test command).
  * That proposal is never an authorization and never a Work Order. This module is the
  * SYSTEM side: it constrains, validates, and — only if everything passes — SEALS a
  * Work Order with system-owned fields (forbiddenActions, timeoutSec, costCapUsd,
@@ -18,7 +18,7 @@
  *                     deliberately NO second validator: this module calls the one in
  *                     workOrder.js and never re-implements or relaxes it.
  *   L2 provenance   — Owner decision (option B): the file must ALREADY have been
- *                     mentioned in the conversation. 守燈 may not browse or invent paths.
+ *                     mentioned in the conversation. 心燈 may not browse or invent paths.
  *
  * A rejected proposal returns { ok:false, errors[], reasonForOwner } and NO Work Order.
  */
@@ -28,7 +28,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile } = require('./workOrder')
 
-// System-owned defaults. 守燈 cannot raise these; the Owner changes them here.
+// System-owned defaults. 心燈 cannot raise these; the Owner changes them here.
 const DEFAULTS = Object.freeze({ timeoutSec: 120, costCapUsd: 0.5, approvalTtlSec: 600 })
 
 // ── The bounded read behind 「現時內容」 (Owner Decision Card v2) ─────────────────
@@ -196,7 +196,7 @@ function proposeWorkOrder (input = {}) {
     branch: `agent/${approvalId}`,
     approvalId,
     // Card v2 facts, sealed together with everything else so they are inside the hash.
-    // `intendedChange` is 守燈's STATED INTENT, echoed verbatim and labelled as intent —
+    // `intendedChange` is 心燈's STATED INTENT, echoed verbatim and labelled as intent —
     // the agent has not run, so it is never presented as an achieved result.
     currentExcerpt: cur.text,
     currentExcerptTruncated: !!cur.truncated,

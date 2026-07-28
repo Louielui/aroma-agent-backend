@@ -145,10 +145,10 @@ test('the favicon is the padded square, shared with the installed app icon', () 
   assert.ok(uri.includes('xmlns='), 'a data: URI is standalone XML, so xmlns is required there')
 })
 
-test('*** icon only — the name 守燈 and every string are unchanged ***', () => {
-  assert.ok(DEMO_HTML.includes('<title>守燈</title>'))
-  assert.ok(DEMO_HTML.includes('<span class="brand">守燈</span>'))
-  assert.ok(DEMO_HTML.includes('<h1 id="conv-title">守燈</h1>'))
-  assert.ok(DEMO_HTML.includes('同守燈講嘢…'))
-  assert.ok(DEMO_HTML.includes('守燈（Claude）'))
+test('*** icon only — the name 心燈 and every string are unchanged ***', () => {
+  assert.ok(DEMO_HTML.includes('<title>心燈</title>'))
+  assert.ok(DEMO_HTML.includes('<span class="brand">心燈</span>'))
+  assert.ok(DEMO_HTML.includes('<h1 id="conv-title">心燈</h1>'))
+  assert.ok(DEMO_HTML.includes('同心燈講嘢…'))
+  assert.ok(DEMO_HTML.includes('心燈（Claude）'))
 })

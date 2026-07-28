@@ -12,7 +12,7 @@
  *    back through a parser and hand back the injection surface Cap 1 exists to remove.
  *
  * 2. CHILD ENVIRONMENT. The agent used to inherit the whole parent environment. On this
- *    machine the parent is the 守燈 server, holding ANTHROPIC_API_KEY, HUB_TOKEN,
+ *    machine the parent is the 心燈 server, holding ANTHROPIC_API_KEY, HUB_TOKEN,
  *    GITHUB_READ_TOKEN, OPENAI_API_KEY and Google credential paths. Cap 5 makes
  *    credential FILES un-allowlistable — which is worth nothing if the same secrets are
  *    handed to the agent in process.env. The child env is now BUILT from an allowlist.

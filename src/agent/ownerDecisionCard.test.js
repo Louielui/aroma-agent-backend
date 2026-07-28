@@ -9,7 +9,7 @@
  *   1. WYSIWYA survives the redesign — every displayed value is a projection of the sealed
  *      canonical object, and mutating any of them changes the hash.
  *   2. 現時內容 is a real bounded read of a real file; a non-existent path REFUSES to seal.
- *   3. 守燈打算改成 is labelled as INTENT and never stated as an achieved result.
+ *   3. 心燈打算改成 is labelled as INTENT and never stated as an achieved result.
  */
 
 const test = require('node:test')
@@ -195,7 +195,7 @@ test('打算改成 is labelled INTENT — the card never claims it as a result',
   assert.ok(beforeAfter, 'the before/after section exists')
 
   // the intent label must say, in the Owner's language, that this has NOT happened yet
-  assert.ok(beforeAfter.body.includes('守燈打算改成'), 'intent is labelled as an intention')
+  assert.ok(beforeAfter.body.includes('心燈打算改成'), 'intent is labelled as an intention')
   assert.ok(beforeAfter.body.includes('不是已完成的結果'), 'explicitly not a result')
   assert.ok(beforeAfter.body.includes('仍未執行'), 'explicitly not yet run')
   assert.ok(beforeAfter.body.includes('實際結果可能不同'), 'explicitly may differ')
@@ -221,7 +221,7 @@ test('a truncated excerpt is disclosed on the card', () => {
 
 test('the visible face follows the Owner-specified structure, in plain Chinese', () => {
   const v = buildApprovalView(sealReal().workOrder)
-  assert.equal(v.card.heading, '守燈想進行一項安全測試')
+  assert.equal(v.card.heading, '心燈想進行一項安全測試')
   assert.deepEqual(v.card.sections.map((s) => s.title), [
     '要修改的內容', '影響範圍', '現時內容 / 打算改成', '最壞情況', '不會發生', '上限'
   ])

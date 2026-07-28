@@ -203,7 +203,7 @@ test('OP contamination in a fresh-created revision path is rejected by identity 
 // --- safe output ------------------------------------------------------------
 test('output never leaks persona / fragment text', () => {
   const base = tmpBase()
-  try { run(base, { confirm: true }); const s = JSON.stringify(run(base, { confirm: true })); for (const leak of ['守燈', '表達風格', P.slice(886, 952)]) assert.equal(s.includes(leak), false) } finally { cleanup(base) }
+  try { run(base, { confirm: true }); const s = JSON.stringify(run(base, { confirm: true })); for (const leak of ['心燈', '表達風格', P.slice(886, 952)]) assert.equal(s.includes(leak), false) } finally { cleanup(base) }
 })
 
 // --- CLI --------------------------------------------------------------------
