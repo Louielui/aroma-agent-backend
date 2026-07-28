@@ -268,6 +268,48 @@ result.
 Both stop mechanisms were pre-verified in session 3 before Part B depends on them — see
 `verify-observer-kill.ps1` and the scope note below.
 
+## OWNER ESCAPE HATCH — when the harness itself is what died
+
+The timeout path above depends on the harness being alive to run it. If the harness
+crashes, or session 5 misbehaves, an Observer can be left running with nothing to stop it —
+and back in session 3 you cannot stop it either. Measured, non-destructively, with a
+positive control so it is a named mechanism rather than an assumption:
+
+```
+POSITIVE CONTROL  own session-3 process   canTerminate = True   OK
+CROSS-SESSION     session-5 process       canTerminate = False  ERROR_ACCESS_DENIED
+```
+
+Unelevated, there is no cross-session kill. That is consistent with E6 and it is the
+finding, not an inconvenience. **The escape hatch therefore requires elevation.**
+
+### Verify it BEFORE Part A — session 3, elevated
+
+The hatch must not be used for the first time in anger.
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\Aroma\aroma-agent-backend\scripts\computer\owner-escape-hatch.ps1 -Verify
+```
+
+This registers a stand-in **as AromaOperator, in session 5**, via an interactive-token task
+(which is why AromaOperator must already be signed in), proves it alive by reading back the
+PID it wrote, kills it from session 3, and polls until the PID is genuinely absent. It
+refuses to claim success if the stand-in was never proven alive, or if it landed in our own
+session and so tested nothing cross-session.
+
+Expected: `ESCAPE HATCH VERIFIED (elevated, cross-session)` and `residueLeft : False`.
+Anything else ⇒ **do not begin Part A**.
+
+### Use it — session 3, elevated, paste as-is
+
+```
+powershell -NoProfile -ExecutionPolicy Bypass -File C:\Aroma\aroma-agent-backend\scripts\computer\owner-escape-hatch.ps1
+```
+
+Stops the observer task, then terminates any PowerShell host running as `AromaOperator` in
+a session that is not yours, polling each until gone and reporting residue for any it could
+not stop. Deliberately narrow — it does not sweep that account's whole session.
+
 ## Retry semantics — a nonce is burned on use
 
 Both nonces are minted once, in A3, and are single-use.
