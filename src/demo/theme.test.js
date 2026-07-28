@@ -211,3 +211,40 @@ test('the message column and the composer share ONE width token', () => {
   assert.match(CSS, /\.thread \{ max-width: var\(--col\)/)
   assert.match(CSS, /\.composer-col \{ max-width: var\(--col\)/)
 })
+
+/* ── the composer is a quiet container ────────────────────────────────────── */
+
+test('*** the composer carries NO accent colour, resting or focused ***', () => {
+  // It used to turn coral on :focus-within — and the cursor lives in the composer, so the
+  // orange outline was effectively always on. Resting and focus states are both checked,
+  // because removing it from one and leaving it in the other is the easy half-fix.
+  const box = CSS.slice(CSS.indexOf('#composer-box {'), CSS.indexOf('#composer-box textarea {'))
+  assert.ok(box.length > 0, 'composer rules found')
+  assert.equal(/var\(--accent/.test(box), false, 'no accent anywhere in the composer')
+  assert.match(box, /border:\s*1px solid var\(--line\)/, 'resting border is the neutral divider colour')
+  assert.match(box, /border-color:\s*var\(--focus\)/, 'focus darkens to the neutral focus colour')
+  assert.match(box, /box-shadow:[^;]*var\(--focus\)/, 'and the ring is that same neutral')
+})
+
+test('*** focus is still VISIBLE — removing the colour must not remove the indicator ***', () => {
+  const box = CSS.slice(CSS.indexOf('#composer-box {'), CSS.indexOf('#composer-box textarea {'))
+  assert.match(box, /:focus-within\s*\{/, 'a focus state exists at all')
+  // and it clears WCAG 2.2's 3:1 for a focus indicator, in BOTH themes
+  const lin = (c) => { c /= 255; return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4) }
+  const L = (h) => { const v = h.replace('#', ''); const [r, g, b] = [0, 2, 4].map((i) => parseInt(v.slice(i, i + 2), 16)); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b) }
+  const ratio = (a, b) => { const l1 = Math.max(L(a), L(b)), l2 = Math.min(L(a), L(b)); return (l1 + 0.05) / (l2 + 0.05) }
+  for (const block of [ROOT, DARK]) {
+    const f = token('focus', block)
+    assert.ok(f, 'a focus colour is defined')
+    assert.ok(ratio(f, token('card', block)) >= 3, 'focus vs the composer interior >= 3:1')
+    assert.ok(ratio(f, token('bg', block)) >= 3, 'focus vs the page behind it >= 3:1')
+  }
+})
+
+test('the accent survives everywhere it was NOT asked to change', () => {
+  // "Keep the orange dot avatar and any orange used elsewhere untouched."
+  assert.match(CSS, /\.new-chat:hover \{ border-color: var\(--accent\)/, 'sidebar button hover')
+  assert.match(CSS, /#send[^{]*\{[^}]*background: var\(--accent\)/, 'the send button')
+  assert.match(CSS, /\.typed:focus \{ outline: 2px solid var\(--accent\)/, 'the typed-EXECUTE field')
+  assert.equal(token('accent'), '#d97757', 'the accent token itself is unchanged')
+})
