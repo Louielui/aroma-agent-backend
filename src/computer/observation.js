@@ -74,7 +74,13 @@ const RESULT_FIELDS = Object.freeze([
   'ok', 'action', 'refusal', 'capability',
   'sessionId', 'windowStation', 'desktop', 'sessionState',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
-  'windowCount', 'nodeCount', 'titles', 'at'
+  'windowCount', 'nodeCount', 'titles', 'at',
+  // DPI travels WITH each capture. Per-monitor awareness means it varies by screen, so a
+  // capture recorded without it cannot be reasoned about after the fact — which is exactly
+  // what made the earlier 1664x1109 numbers unusable.
+  'dpiAwareness', 'dpiX', 'scalingFactor',
+  'logicalWidth', 'logicalHeight', 'physicalWidth', 'physicalHeight',
+  'primaryScreen', 'sentinelScreen', 'elapsedMs'
 ])
 
 /**
@@ -150,10 +156,24 @@ const MIN_NON_BLACK_RATIO = 0.01
  * of sample points rather than one. A window sized at the bare minimum would be detectable
  * in principle and unreliable in practice.
  */
-const CAPTURE_GRID_STEP = 8
+/**
+ * THE COORDINATE SPACE, STATED ONCE AND ENFORCED WHERE THE SAMPLING HAPPENS.
+ *
+ * Every value below is in PHYSICAL pixels — the space the capture is actually sampled in.
+ * This is not a formality. Before DPI awareness was declared, the observer reported a
+ * 1664x1109 desktop on a display whose framebuffer is 2496x1664, window coordinates landed
+ * 1.5x off, and the sentinel self-check sampled empty screen and read a stable grey.
+ *
+ * With per-monitor-v2 awareness declared, logical and physical coincide (measured:
+ * logical 2496x1664, physical 2496x1664, dpiX 144), so these numbers now mean what they
+ * say. The sentinel is sized in physical pixels with WinForms auto-scaling OFF, so the
+ * floor cannot quietly change meaning on a scaled display.
+ */
+const COORDINATE_SPACE = 'physical'
+const CAPTURE_GRID_STEP = 8          // physical px
 const MIN_DETECTABLE_REGION_PX = CAPTURE_GRID_STEP * CAPTURE_GRID_STEP
-const MIN_SENTINEL_WIDTH = 400
-const MIN_SENTINEL_HEIGHT = 200
+const MIN_SENTINEL_WIDTH = 400       // physical px
+const MIN_SENTINEL_HEIGHT = 200      // physical px
 
 /** Sample points a window of this size would land on. Used by the tests and the runbook. */
 function sentinelSamplePoints (width, height) {
@@ -294,7 +314,10 @@ function validateResult (result) {
 const AUDIT_FIELDS = Object.freeze([
   'at', 'orderId', 'action', 'outcome', 'refusalReason',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
-  'windowCount', 'nodeCount', 'titles', 'sessionId', 'sessionState', 'elapsedMs'
+  'windowCount', 'nodeCount', 'titles', 'sessionId', 'sessionState', 'elapsedMs',
+  'dpiAwareness', 'dpiX', 'scalingFactor',
+  'logicalWidth', 'logicalHeight', 'physicalWidth', 'physicalHeight',
+  'primaryScreen', 'sentinelScreen'
 ])
 
 /**
@@ -338,6 +361,7 @@ module.exports = {
   MIN_DETECTABLE_REGION_PX,
   MIN_SENTINEL_WIDTH,
   MIN_SENTINEL_HEIGHT,
+  COORDINATE_SPACE,
   NOT_FOUND_REFUSALS,
   sentinelSamplePoints,
   SIGNATURE_OWN,

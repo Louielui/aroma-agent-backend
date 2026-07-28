@@ -92,6 +92,33 @@ test('*** a sentinel below the detection floor makes its absence meaningless ***
   assert.equal(ok.verdict, 'ACCEPTED', 'at the documented minimum it is accepted')
 })
 
+test('*** the sampling arithmetic is stated in PHYSICAL pixels and still holds after DPI ***', () => {
+  // Recomputed in the post-DPI-fix space rather than carried over. Measured: the capture is
+  // 2496x1664 physical (it was reported as 1664x1109 while the process was DPI-unaware).
+  assert.equal(O.COORDINATE_SPACE, 'physical')
+  const capW = 2496, capH = 1664
+  const totalSamples = Math.floor(capW / O.CAPTURE_GRID_STEP) * Math.floor(capH / O.CAPTURE_GRID_STEP)
+  assert.equal(totalSamples, 64896, 'whole-screen sample count in the physical space')
+
+  // The sentinel is specified in physical px with auto-scaling off, so its sample count is
+  // unchanged by the fix - which is the point of specifying it there.
+  assert.equal(O.sentinelSamplePoints(O.MIN_SENTINEL_WIDTH, O.MIN_SENTINEL_HEIGHT), 1250)
+
+  // Both thresholds re-checked against the new numbers rather than assumed to survive.
+  assert.ok(O.MIN_OWN_SIGNATURE_SAMPLES <= 1250 * 0.4, 'positive needs at most 40% of the sentinel')
+  const negAreaPx = O.MIN_OWNER_SIGNATURE_SAMPLES * O.MIN_DETECTABLE_REGION_PX
+  assert.equal(negAreaPx, 1280, 'negative trips on ~1280 physical px of owner colour, a ~36x36 patch')
+  assert.ok(negAreaPx < O.MIN_SENTINEL_WIDTH * O.MIN_SENTINEL_HEIGHT * 0.02,
+    'and that is under 2% of a sentinel, so a partly-visible owner window still trips it')
+})
+
+test('DPI is carried on both the result and the audit, not recorded once per machine', () => {
+  for (const f of ['dpiAwareness', 'dpiX', 'scalingFactor', 'logicalWidth', 'physicalWidth', 'primaryScreen', 'sentinelScreen']) {
+    assert.ok(O.RESULT_FIELDS.includes(f), 'result carries ' + f)
+    assert.ok(O.AUDIT_FIELDS.includes(f), 'audit carries ' + f)
+  }
+})
+
 test('the sampling grid and its detection floor are declared values, not prose', () => {
   assert.equal(O.CAPTURE_GRID_STEP, 8)
   // a region must span the step in BOTH dimensions to be guaranteed to contain a sample

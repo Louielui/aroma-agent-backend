@@ -33,6 +33,28 @@ $ErrorActionPreference = 'Stop'
 $started = Get-Date
 
 # ---------------------------------------------------------------------------
+# DPI AWARENESS - MUST come before any window or capture call
+#
+# Without this the process is DPI-unaware: on a 150% display it sees a virtualised
+# 1664x1109 desktop while the real framebuffer is 2496x1664, screen coordinates land in the
+# wrong place, and captures come back scaled. That was measured, not guessed - a sentinel
+# self-check read a stable grey because it was sampling the wrong region entirely.
+#
+# PER_MONITOR_AWARE_V2 (-4) first; SetProcessDPIAware() is the pre-1703 fallback. Both are
+# no-ops if awareness is already set, so this is safe to call unconditionally.
+# ---------------------------------------------------------------------------
+Add-Type -Namespace DPI -Name Aware -MemberDefinition @"
+[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int index);
+[DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
+"@ -ErrorAction SilentlyContinue
+$dpiMode = 'none'
+try { if ([DPI.Aware]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $dpiMode = 'per-monitor-v2' } } catch { }
+if ($dpiMode -eq 'none') { try { if ([DPI.Aware]::SetProcessDPIAware()) { $dpiMode = 'system' } } catch { } }
+
+# ---------------------------------------------------------------------------
 # identity - emitted with the result so scope travels with it and cannot be
 # attached afterwards by whoever writes the report
 # ---------------------------------------------------------------------------
@@ -71,8 +93,26 @@ $result = [ordered]@{
   imageWidth = $null; imageHeight = $null; nonBlackRatio = $null
   windowCount = $null; nodeCount = $null; titles = $null
   measuredBy = $idn.Name; measuredSid = $idn.User.Value
+  # DPI is recorded per measurement, not once per machine: per-monitor awareness means it
+  # varies by screen, so a capture without its DPI cannot be reasoned about afterwards.
+  dpiAwareness = $dpiMode; dpiX = $null; scalingFactor = $null
+  logicalWidth = $null; logicalHeight = $null
+  physicalWidth = $null; physicalHeight = $null
+  primaryScreen = $null; sentinelScreen = $null
   at = $started.ToString('o'); elapsedMs = $null
 }
+
+# measured once awareness is set, so these are the numbers that actually apply
+try {
+  $dc = [DPI.Aware]::GetDC([IntPtr]::Zero)
+  $result.dpiX = [DPI.Aware]::GetDeviceCaps($dc, 88)          # LOGPIXELSX
+  $result.logicalWidth = [DPI.Aware]::GetDeviceCaps($dc, 8)   # HORZRES
+  $result.logicalHeight = [DPI.Aware]::GetDeviceCaps($dc, 10) # VERTRES
+  $result.physicalWidth = [DPI.Aware]::GetDeviceCaps($dc, 118)  # DESKTOPHORZRES
+  $result.physicalHeight = [DPI.Aware]::GetDeviceCaps($dc, 117) # DESKTOPVERTRES
+  [void][DPI.Aware]::ReleaseDC([IntPtr]::Zero, $dc)
+  if ($result.logicalWidth -gt 0) { $result.scalingFactor = [math]::Round($result.physicalWidth / $result.logicalWidth, 3) }
+} catch { }
 
 function Save-Evidence {
   param([byte[]]$Bytes, [string]$Suffix)

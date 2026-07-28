@@ -32,6 +32,20 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# DPI AWARENESS FIRST - see observer.ps1 for the measurement that made this necessary.
+# Without it RectangleToScreen returns logical coordinates while CopyFromScreen reads
+# physical ones, so the self-check samples the wrong region and reports a stable grey.
+Add-Type -Namespace DPI -Name Aware -MemberDefinition @"
+[DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
+[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+[DllImport("gdi32.dll")] public static extern int GetDeviceCaps(IntPtr hdc, int index);
+[DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr hWnd);
+[DllImport("user32.dll")] public static extern int ReleaseDC(IntPtr hWnd, IntPtr hdc);
+"@ -ErrorAction SilentlyContinue
+$dpiMode = 'none'
+try { if ([DPI.Aware]::SetProcessDpiAwarenessContext([IntPtr](-4))) { $dpiMode = 'per-monitor-v2' } } catch { }
+if ($dpiMode -eq 'none') { try { if ([DPI.Aware]::SetProcessDPIAware()) { $dpiMode = 'system' } } catch { } }
+
 # Kept in step with src/computer/observation.js. Divergence here is silent and would show
 # up only as an unexplained INVALID, so both sides are asserted by tests.
 $SPEC = @{
@@ -56,6 +70,10 @@ Write-Host ""
 
 $form = New-Object System.Windows.Forms.Form
 $form.Text = $title
+# AutoScaleMode None: the size below is PHYSICAL pixels, which is the space the capture
+# samples in. Leaving it on Font/Dpi would let WinForms rescale the form and the 400x200
+# floor would silently mean something different on a scaled display.
+$form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
 $form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
 $form.ClientSize = New-Object System.Drawing.Size($MIN_W, $MIN_H)
@@ -106,7 +124,25 @@ for ($attempt = 1; $attempt -le 3; $attempt++) {
   if ($ratio -ge 0.9) { break }
 }
 
-Write-Host ("client rect  : " + $rect.Width + "x" + $rect.Height + " at " + $rect.X + "," + $rect.Y)
+Write-Host ("client rect  : " + $rect.Width + "x" + $rect.Height + " at " + $rect.X + "," + $rect.Y + "  [PHYSICAL px]")
+
+# Which screen, and is it the primary. The runbook requires the sentinel on the primary
+# screen; per-monitor awareness means DPI varies per display, so a sentinel on a secondary
+# screen at a different scale would not be comparable.
+$scr = [System.Windows.Forms.Screen]::FromControl($form)
+$isPrimary = $scr.Primary
+Write-Host ("dpi mode     : " + $dpiMode)
+$dc2 = [DPI.Aware]::GetDC([IntPtr]::Zero)
+$logW2 = [DPI.Aware]::GetDeviceCaps($dc2, 8); $physW2 = [DPI.Aware]::GetDeviceCaps($dc2, 118)
+[void][DPI.Aware]::ReleaseDC([IntPtr]::Zero, $dc2)
+Write-Host ("desktop      : logical " + $logW2 + "  physical " + $physW2 + "  scaling " + $(if ($logW2 -gt 0) { [math]::Round($physW2 / $logW2, 3) } else { 'n/a' }))
+Write-Host ("screen       : " + $scr.DeviceName + "  bounds " + $scr.Bounds + "  primary=" + $isPrimary)
+if (-not $isPrimary) {
+  Write-Host "FAILED - the sentinel is not on the primary screen." -ForegroundColor Red
+  Write-Host "Per-monitor DPI means a secondary screen may be at a different scale, so the" -ForegroundColor Red
+  Write-Host "sampling arithmetic would not carry over. Move it and re-run." -ForegroundColor Red
+  $form.Close(); exit 7
+}
 
 # A solid fill should match nearly everything inside the client area. Requiring most of it
 # catches the cases that matter: a theme override, a colour profile shift, a window that
