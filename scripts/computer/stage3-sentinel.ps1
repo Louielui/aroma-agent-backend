@@ -165,6 +165,38 @@ Write-Host ""
 Write-Host "SENTINEL VERIFIED - colour and size confirmed on screen" -ForegroundColor Green
 Write-Host ("  " + $matched + " sample points carry the signature") -ForegroundColor Green
 
+# ---------------------------------------------------------------------------
+# ATTESTATION MARKER - written only after self-verification passes.
+#
+# Without this the harness has no way to know the OWNER sentinel was ever created, and
+# "the owner window was not found" is then trivially true - which is exactly the vacuous
+# pass this phase exists to prevent. Found by running the harness: with no owner sentinel
+# open at all it still reported E1 as BOUNDED.
+#
+# The marker attests the sentinel was open AND recognisable at a known time. The harness
+# refuses to adjudicate a negative row without it.
+# ---------------------------------------------------------------------------
+$markerDir = 'C:\Aroma\ComputerOperator-Evidence'
+if ($env:AROMA_SENTINEL_MARKER_DIR) { $markerDir = $env:AROMA_SENTINEL_MARKER_DIR }
+try {
+  if (-not (Test-Path -LiteralPath $markerDir)) { New-Item -ItemType Directory -Force -Path $markerDir | Out-Null }
+  $marker = [ordered]@{
+    marker = 'SENTINEL-VERIFIED'; role = $Role; nonce = $Nonce; title = $title
+    signature = @{ R = $s.R; G = $s.G; B = $s.B }; tolerance = $TOLERANCE
+    matchedSamples = $matched; sampledPoints = $sampled; matchRatio = $ratio
+    clientWidth = $rect.Width; clientHeight = $rect.Height
+    screen = $scr.DeviceName; primary = $isPrimary
+    sessionId = (Get-Process -Id $PID).SessionId
+    verifiedAt = (Get-Date).ToString('o')
+  }
+  $mp = Join-Path $markerDir ('stage3-sentinel-' + $Role + '-' + $Nonce + '.json')
+  Set-Content -LiteralPath $mp -Value ($marker | ConvertTo-Json -Depth 5) -Encoding UTF8 -ErrorAction Stop
+  Write-Host ("  attestation written: " + $mp) -ForegroundColor Green
+} catch {
+  Write-Host ("  COULD NOT WRITE ATTESTATION: " + $_.Exception.Message) -ForegroundColor Red
+  Write-Host "  The harness will refuse to adjudicate negative rows without it." -ForegroundColor Red
+}
+
 if ($SelfTestSeconds -gt 0) {
   Write-Host ("self-test mode: closing in " + $SelfTestSeconds + "s") -ForegroundColor Yellow
   $until = (Get-Date).AddSeconds($SelfTestSeconds)
