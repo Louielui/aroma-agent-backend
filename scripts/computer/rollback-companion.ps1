@@ -33,6 +33,8 @@ $ErrorActionPreference = 'Continue'
 $AccountName = 'AromaOperator'
 $ServiceName = 'AromaComputerOperator'
 $EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence'
+$StageDir    = 'C:\Aroma\ComputerOperator-Companion'
+$RepoDir     = 'C:\Aroma\aroma-agent-backend'
 $SID_ADMINS  = 'S-1-5-32-544'
 
 $results = New-Object System.Collections.ArrayList
@@ -94,6 +96,37 @@ try {
   }
   if ($killed -gt 0) { Note 'companion processes' "stopped $killed" } else { Note 'companion processes' 'none running' 'Gray' }
 } catch { Note 'companion processes' "FAILED: $($_.Exception.Message)" 'Red' }
+
+# -- 3b. the staged Companion copy --------------------------------------------
+try {
+  if (Test-Path -LiteralPath $StageDir) {
+    Remove-Item -LiteralPath $StageDir -Recurse -Force -ErrorAction Stop
+    Note 'staged companion' 'removed'
+  } else { Note 'staged companion' 'not present' 'Gray' }
+} catch { Note 'staged companion' "FAILED: $($_.Exception.Message)" 'Red' }
+
+# -- 3c. the repo DENY ---------------------------------------------------------
+# deploy-companion.ps1 adds an explicit DENY for the operator account on the repo, so it
+# cannot read .env or edit the governance code. Removing the account alone would leave an
+# orphaned-SID ACE behind, which clutters the ACL and confuses later reads. Remove the ACE
+# BEFORE the account goes, while its SID still resolves.
+try {
+  $u = Get-LocalUser -Name $AccountName -ErrorAction SilentlyContinue
+  if ($u -and (Test-Path -LiteralPath $RepoDir)) {
+    $racl = Get-Acl -LiteralPath $RepoDir
+    $removed = 0
+    foreach ($rule in @($racl.Access)) {
+      if ($rule.AccessControlType -eq 'Deny' -and $rule.IdentityReference.Value -eq $u.SID.Value) {
+        [void]$racl.RemoveAccessRule($rule); $removed++
+      }
+      elseif ($rule.AccessControlType -eq 'Deny' -and $rule.IdentityReference.Value -like "*\$AccountName") {
+        [void]$racl.RemoveAccessRule($rule); $removed++
+      }
+    }
+    if ($removed -gt 0) { Set-Acl -LiteralPath $RepoDir -AclObject $racl; Note 'repo DENY' "removed $removed rule(s)" }
+    else { Note 'repo DENY' 'none present' 'Gray' }
+  } else { Note 'repo DENY' 'account gone or repo missing - skipped' 'Gray' }
+} catch { Note 'repo DENY' "FAILED: $($_.Exception.Message)" 'Red' }
 
 # -- 4. the account -----------------------------------------------------------
 $userSid = $null
