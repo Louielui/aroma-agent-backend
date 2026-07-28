@@ -27,11 +27,24 @@ test('*** INVERTED in Phase 3a: it now stops a real process — all three bindin
   assert.equal(KILL_SWITCH_BINDINGS.osBackstop.implemented, true, 'closing the channel; no reconnect path')
 })
 
-test('*** …but the claim stops exactly where the evidence does ***', () => {
-  // It has NOT been demonstrated against a Companion running under the AromaOperator
-  // account, because that account does not exist — creating it is the Owner's step. The
-  // register carries that limit as data so the claim cannot quietly outrun the proof.
-  assert.equal(KILL_SWITCH_BINDINGS.demonstratedUnderCompanionAccount, false)
+test('*** INVERTED 2026-07-28: all three bindings demonstrated under the operator account ***', () => {
+  // Held FALSE through three failed attempts, each of which was green while proving
+  // nothing — a harness that never connected, a probe that never ran, and three bindings
+  // sharing one Companion so the last had nothing left to kill. Flipped only when each
+  // binding had been demonstrated against its own Companion, proven alive first.
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedUnderCompanionAccount, true)
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedOn, '2026-07-28')
+  assert.deepEqual([...KILL_SWITCH_BINDINGS.demonstratedBindings],
+    ['serviceGate', 'companionAbort', 'osFallback'], 'all three, named')
+})
+
+test('the register never claims more than the three bindings it lists', () => {
+  // Every binding named as demonstrated must also be implemented. A name here with no
+  // implementation would be the same class of false claim this whole phase kept hitting.
+  for (const b of KILL_SWITCH_BINDINGS.demonstratedBindings) {
+    const key = b === 'osFallback' ? 'osBackstop' : (b === 'companionAbort' ? 'companionAbortSignal' : b)
+    assert.equal(KILL_SWITCH_BINDINGS[key].implemented, true, 'implemented: ' + b)
+  }
 })
 
 /* ── the latch ────────────────────────────────────────────────────────────── */
