@@ -130,6 +130,16 @@ Write-Host ("execute        : " + $t.Actions[0].Execute)
 Write-Host ("arguments      : " + $t.Actions[0].Arguments)
 Write-Host ("multi instance : " + $t.Settings.MultipleInstances)
 Write-Host ("time limit     : " + $t.Settings.ExecutionTimeLimit)
-Write-Host ("triggers       : " + $t.Triggers.Count + "   (0 = it can ONLY be started on demand)")
+# Get-ScheduledTask returns $null - not an empty array - when a task has no triggers, and
+# under Set-StrictMode -Version Latest reading .Count off $null throws. So a CORRECT
+# registration was guaranteed to fail on this line.
+# The obvious fix is wrong: @($null).Count is 1, which would print "triggers: 1" on a task
+# with zero triggers - a false claim in the very line that asserts on-demand-only. Both
+# behaviours were measured, not assumed.
+$triggerCount = @($t.Triggers | Where-Object { $_ }).Count
+Write-Host ("triggers       : " + $triggerCount + "   (0 = it can ONLY be started on demand)")
+if ($triggerCount -ne 0) {
+  Write-Host "WARNING: this task has a trigger. It must be on-demand only." -ForegroundColor Red
+}
 Write-Host ""
 Write-Host "Next: run verify-session-gate.ps1 (elevated) once AromaOperator is signed in." -ForegroundColor Cyan
