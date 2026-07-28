@@ -354,7 +354,7 @@ test('*** the gate is path-scoped: the approval routes are NOT behind it ***', a
   app.get('/demo', (req, res) => res.send('page'))
   app.get('/api/v1/context/recent', (req, res) => res.json({ block: 'SECRET' }))
   app.post('/api/v1/owner/approve', (req, res) => res.status(403).json({ error: 'approval_refused' }))
-  app.get('/manifest.webmanifest', (req, res) => res.json({ name: '守燈' }))
+  app.get('/manifest.webmanifest', (req, res) => res.json({ name: '心燈' }))
   app.get('/health', (req, res) => res.json({ status: 'ok' }))
 
   // what the gate owns → refused

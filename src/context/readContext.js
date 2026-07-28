@@ -4,7 +4,7 @@ const { logReadSource } = require('../utils/readContextLog') // one allowlisted 
 
 /**
  * readContext.js — builds ONE bounded, cited, dated context block from the connected
- * read-only sources, for injection into 守燈's chat prompt. Read Context v1.1.
+ * read-only sources, for injection into 心燈's chat prompt. Read Context v1.1.
  *
  * Mirrors the proven Decision Recall contract:
  *   - pure builder: it only calls the injected connector's READ methods and returns
@@ -44,7 +44,7 @@ const SAFETY_HEADER = 'These are read-only excerpts just retrieved from connecte
 const SOURCE_NOISE = new Set(['drive', 'gmail', 'github', 'calendar', 'google', 'email', 'mail', 'inbox', 'repo', 'repos', 'pr', 'prs', 'commit', 'commits', 'branch', 'file', 'files', 'doc', 'docs', 'document', 'documents', 'event', 'events', 'meeting', 'meetings', 'message', 'messages'])
 // Generic CJK words that match everything (or are time/meta words), so they are noise.
 const CJK_NOISE = new Set(['郵件', '文件', '檔案', '資料', '嘅文件', '下星期', '上星期', '今日', '今天', '明天', '最近', '而家', '星期', '日期', '出處', '每項', '直接'])
-// A chunk containing any of these is an INSTRUCTION to 守燈, never a search term.
+// A chunk containing any of these is an INSTRUCTION to 心燈, never a search term.
 const INSTRUCTION_MARKERS = ['請', '講', '出處', '讀唔到', '唔到', '列出', '說明', '講明', '回報', '每項']
 // CJK function words / particles used as SEGMENT BOUNDARIES inside a clause.
 const CJK_PARTICLES = '我你佢哋的了嗎呢係咪有冇同埋啲個嘅要唔咗幫睇咩乜邊定喺俾同時之'
@@ -305,7 +305,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
     // source that could not be read at all looked identical from outside — which is
-    // exactly the question that could not be answered when 守燈 said 「讀唔到」. The
+    // exactly the question that could not be answered when 心燈 said 「讀唔到」. The
     // projection carries counts and short enums only; content never reaches the log.
     logReadSource({
       source: got.entry.source,

@@ -1,4 +1,4 @@
-/* 守燈 UI — Stage A client.
+/* 心燈 UI — Stage A client.
  *
  * SECURITY INVARIANTS (asserted by demoRouter.test.js — do not weaken).
  * The test scans this file as raw text for the forbidden APIs, so the rules below are
@@ -42,8 +42,8 @@
   // matters when choosing: the same data, but a second vendor receives it.
   // contextAsymmetry.test.js pins that this stays true.
   var PROVIDERS = [
-    { id: 'claude', name: '守燈（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
-    { id: 'openai', name: '守燈（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
+    { id: 'claude', name: '心燈（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
+    { id: 'openai', name: '心燈（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
   ]
   var provider = 'claude'
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
@@ -189,7 +189,7 @@
     active = c
     clear(log)
     log.appendChild(c.thread)
-    titleEl.textContent = isListed(c) ? c.title : '守燈'
+    titleEl.textContent = isListed(c) ? c.title : '心燈'
     renderConvList()
     scroll()
   }
@@ -267,7 +267,7 @@
   }
 
   /* ── the "+" shortcuts ────────────────────────────────────────────────────
-   * ONE composer. 守燈 routes internally, so there is no lane to pick before typing.
+   * ONE composer. 心燈 routes internally, so there is no lane to pick before typing.
    * These two remain as SHORTCUTS for when the Owner wants to force a lane — never as a
    * required upfront choice. A shortcut applies to the NEXT message only and then clears
    * itself, so a forced lane can never quietly persist into later turns. */
@@ -401,7 +401,7 @@
   // SERVER's report of what actually answered — never the local pick.
   function labelServedBy (t, res) {
     if (!t || !t.body || !res || typeof res.servedBy !== 'string') return
-    var name = res.servedBy === 'openai' ? '守燈（GPT）' : '守燈（Claude）'
+    var name = res.servedBy === 'openai' ? '心燈（GPT）' : '心燈（Claude）'
     t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''),
       res.fallbackUsed ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）') : ('由 ' + name + ' 回答')))
   }
@@ -543,7 +543,7 @@
         typed.disabled = true; no.disabled = true
         if (o.status === 201) {
           if (o.body.dispatchStatus === 'agent_execute_accepted') {
-            out.textContent = '已批准。守燈開始喺丟棄式副本入面做。'
+            out.textContent = '已批准。心燈開始喺丟棄式副本入面做。'
             watchProgress(sealed.approvalId, card, sealed)
           } else {
             out.textContent = '已批准：工作單已確認，但執行通道未開啟，所以甚麼都冇跑過。'
@@ -705,5 +705,5 @@
   send.disabled = true
   autoGrow()
   newConversation(false)
-  addBot('我係守燈。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
+  addBot('我係心燈。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
 })()

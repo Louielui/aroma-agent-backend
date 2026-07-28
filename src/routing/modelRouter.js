@@ -17,7 +17,7 @@
  * Fail-closed: unset/empty/invalid flag values resolve to 'off'.
  *
  * ── THE OWNER'S PROVIDER HINT (v0.1) ────────────────────────────────────────────
- * The browser may express which 守燈 the Owner wants to talk to. That is INTENT, not
+ * The browser may express which 心燈 the Owner wants to talk to. That is INTENT, not
  * authority, so the hint is validated HERE against a closed allowlist and can do
  * exactly ONE thing: choose between the two providers for a CHAT turn.
  *

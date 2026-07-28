@@ -349,6 +349,6 @@ test('CLI output never leaks fragment / persona text', () => {
   const base = tmpBase()
   try {
     const r = runCli(base, ['--confirm'])
-    for (const leak of ['守燈', '思考順序', P.slice(807, 886)]) assert.equal(r.out.includes(leak), false)
+    for (const leak of ['心燈', '思考順序', P.slice(807, 886)]) assert.equal(r.out.includes(leak), false)
   } finally { cleanup(base) }
 })

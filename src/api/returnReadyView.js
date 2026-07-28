@@ -3,7 +3,7 @@
 /**
  * returnReadyView.js — Human Relay Removal Phase 1 (Claude Code → Aroma
  * auto-return). A PURE READ aggregation that lists FINISHED (terminal)
- * executions as decision-ready summaries, so 守燈 can surface "what came back"
+ * executions as decision-ready summaries, so 心燈 can surface "what came back"
  * without Louie copying reports by hand.
  *
  * It is read-only by construction:

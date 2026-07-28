@@ -100,8 +100,8 @@ function createOwnerApprovalRouter (deps = {}) {
     if (!proposal) return refuse(res, 404, 'unknown_proposal', null, 'owner_local')
     if (proposal.status !== 'pending') return refuse(res, 409, 'proposal_not_pending', null, 'owner_local')
 
-    // 守燈 PROPOSES; the SYSTEM validates and seals. Candidate content only.
-    // `intendedChange` is 守燈's stated intent for the card's after-side; it is echoed
+    // 心燈 PROPOSES; the SYSTEM validates and seals. Candidate content only.
+    // `intendedChange` is 心燈's stated intent for the card's after-side; it is echoed
     // verbatim, labelled as intent, and grants nothing. The TTL that will actually be
     // enforced is passed in so the number the Owner reads on the card is the real one
     // (and is therefore inside the hash).

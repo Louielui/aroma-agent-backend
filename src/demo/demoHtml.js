@@ -1,7 +1,7 @@
 'use strict'
 
 /**
- * demoHtml.js — assembles the 守燈 page from real asset files.
+ * demoHtml.js — assembles the 心燈 page from real asset files.
  *
  * WHY THIS IS NO LONGER A TEMPLATE LITERAL. The whole UI used to live inside one
  * module-level backtick string. Every backtick, ${...} and backslash in the markup had

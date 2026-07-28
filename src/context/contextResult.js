@@ -1,14 +1,14 @@
 'use strict'
 
 /**
- * contextResult.js — the lean, sourced context shape 守燈 uses to cite external
+ * contextResult.js — the lean, sourced context shape 心燈 uses to cite external
  * reads and to fail honestly. Read-only by nature (it only describes data).
  *
  *   { source, sourceId, title, retrievedAt, originalDate|null, content, link,
  *     trust: 'live' | 'unavailable', error: string|null }
  *
  * `retrievedAt` (asOf) is always present so a citation carries its freshness. On
- * failure the shape is identical but trust='unavailable' + a plain reason, so 守燈
+ * failure the shape is identical but trust='unavailable' + a plain reason, so 心燈
  * can say "目前讀不到" instead of guessing from memory.
  */
 
