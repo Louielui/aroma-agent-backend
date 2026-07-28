@@ -237,7 +237,28 @@ The harness then runs unattended and does all of the following without asking an
 
 **Either way, do nothing else. Switch back.**
 
-**B3 — switch back to session 3.** Leave AromaOperator signed in; do not sign it out.
+**B3 — session 5. CHECK THE RESULT FILE EXISTS *BEFORE* SWITCHING BACK.**
+
+The last-resort console dump is printed to the screen **in session 5**. Once you switch
+away you cannot read it, and closing that PowerShell window destroys it outright. So the
+check happens while you are still there:
+
+```
+Test-Path C:\Aroma\ComputerOperator-Evidence\stage3-results.json
+```
+
+- **True** → the result is on disk. Still **leave the PowerShell window open** until the
+  results have been reviewed; if anything is wrong with the file, the console is the only
+  remaining copy.
+- **False** → **do not close that window.** The console holds the dumped JSON and it is the
+  only record. Scroll back, select all, copy it out to a file under
+  `C:\AromaOperator-Probe\` or read it directly. Only then switch back.
+
+Do not close the session-5 PowerShell window at any point until the results have been
+reviewed and confirmed readable.
+
+**B4 — switch back to session 3.** Leave AromaOperator signed in; do not sign it out, and
+do not close the harness window.
 
 ---
 
@@ -254,7 +275,17 @@ C:\Aroma\ComputerOperator-Evidence\stage3-results.json
 C:\Aroma\ComputerOperator-Evidence\stage3-summary.txt
 ```
 
-**C3** — close the owner sentinel window.
+**C3** — check the manifest consumption record, because it and not the evidence directory
+decides whether a redo is needed:
+
+```
+Get-Content C:\Aroma\ComputerOperator-Evidence\stage3-manifest.json
+```
+
+Unreadable, missing or ambiguous ⇒ full Part A redo.
+
+**C4** — only after the results have been reviewed and confirmed readable: close the owner
+sentinel window, and close the session-5 harness window.
 
 ---
 
@@ -361,12 +392,45 @@ resort.
 | `STARTED` + `results` + `COMPLETED` | the run finished; read the results |
 | `STARTED` + `results`, no `COMPLETED` | it died after measuring — the results are real but possibly partial. Send them and say so |
 | `STARTED`, no results | **it ran and could not write.** Not "it never ran". Check the console for the dumped JSON before doing anything else |
-| no `STARTED` at all | it never started — hash mismatch, execution policy, or the harness never launched. The nonce is unused and Part A does **not** need redoing |
+| no `STARTED` at all | **inconclusive on its own — see below.** Two different things produce an empty evidence directory |
 | `COMPLETED` without `STARTED` | should be impossible. Treat as untrustworthy and re-run the whole of Part A |
 
-That last distinction is the point of the markers: **`STARTED` with no results is a very
-different situation from no `STARTED`**, and without them both look identical — an empty
-evidence directory.
+**`STARTED` with no results is a different situation from no `STARTED`** — and without the
+markers both look identical.
+
+### Whether a redo is needed is decided by POSITIVE EVIDENCE, never by absence
+
+An empty evidence directory has two causes, and they need opposite responses:
+
+- the harness never launched — hash mismatch, execution policy, never started
+- the harness ran and **could not write to the evidence directory at all**, which is
+  exactly the BACKLOG-001 failure mode, in which case `STARTED` is missing for the same
+  reason the results are
+
+Reading "no `STARTED`" as "it never ran" picks the optimistic branch of an ambiguity. A
+zero result cannot explain itself.
+
+**The manifest consumption record is the authority.** The harness marks the manifest
+consumed *before* it measures anything, so:
+
+| Manifest says | Ruling |
+|---|---|
+| explicitly **not consumed** | the nonce is unused. Part B may be re-run without redoing Part A |
+| **consumed** | the nonce is burned. **Full Part A redo**, whatever the evidence directory does or does not contain |
+| **unreadable, missing, or ambiguous** | **default to a full Part A redo** — the safe direction |
+
+Absence of `STARTED` is a *clue* that narrows where to look. It is never the ruling.
+
+"The nonce is unused" may only be stated when the manifest **positively shows** it
+unconsumed.
+
+**Manifest location.** It must be writable by AromaOperator — it is marked consumed from
+session 5 — and readable by the Owner from session 3. It therefore lives in the evidence
+directory, which is the one location measured to satisfy both (`writeEvidence` = true in
+the v1 set, EVIDENCE-002).
+
+If the manifest itself cannot be written, the harness **halts before measuring**: a run
+whose consumption cannot be recorded is a run that cannot be adjudicated afterwards.
 
 ## OWNER ESCAPE HATCH — when the harness itself is what died
 
