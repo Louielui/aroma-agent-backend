@@ -135,8 +135,13 @@ test('*** the Companion account has NOT been created by this code ***', () => {
 })
 
 test('the kill-switch register does not claim more than has been shown', () => {
+  // INVERTED 2026-07-28. Held false while the account did not exist and then while three
+  // successive demonstrations were green without proving anything. Now true, on evidence:
+  // each binding demonstrated under AromaOperator against its own proven-live Companion.
   const { KILL_SWITCH_BINDINGS } = require('./killSwitch')
-  assert.equal(KILL_SWITCH_BINDINGS.stopsAnythingRunningToday, true, 'it now stops a real process')
-  assert.equal(KILL_SWITCH_BINDINGS.demonstratedUnderCompanionAccount, false,
-    'but NOT yet under the AromaOperator account — that account does not exist')
+  assert.equal(KILL_SWITCH_BINDINGS.stopsAnythingRunningToday, true)
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedUnderCompanionAccount, true)
+  // and the claim is still bounded — it names WHEN and WHICH, so it cannot quietly grow
+  assert.ok(KILL_SWITCH_BINDINGS.demonstratedOn)
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedBindings.length, 3)
 })

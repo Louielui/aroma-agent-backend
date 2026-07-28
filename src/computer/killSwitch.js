@@ -83,12 +83,24 @@ const KILL_SWITCH_BINDINGS = Object.freeze({
   serviceGate: Object.freeze({ implemented: true, note: 'this latch; checked before each step dispatch' }),
   companionAbortSignal: Object.freeze({ implemented: true, note: 'Phase 3a: abort over the IPC channel, demonstrated against a live Companion' }),
   osBackstop: Object.freeze({ implemented: true, note: 'Phase 3a: closing the channel destroys every connection; no reconnect path exists' }),
-  // Phase 3a: it now stops a real process over a real pipe. What it has NOT been shown
-  // against is a Companion deployed under the AromaOperator account, because creating
-  // that account is the Owner's step. Stated as data so the claim cannot outrun the
-  // evidence.
   stopsAnythingRunningToday: true,
-  demonstratedUnderCompanionAccount: false
+
+  // FLIPPED 2026-07-28 ON EVIDENCE, not on completion of the code. All three bindings were
+  // demonstrated under the AromaOperator account, each against a SEPARATE Companion that
+  // was proven alive by a ping/pong round-trip first.
+  //
+  // It took three attempts to earn this, and the failures are worth remembering:
+  //   1. the harness looked for its modules in the wrong folder, so nothing ever connected;
+  //   2. the containment probe was written to a path that account cannot read, so the one
+  //      result that had to be False was never measured at all;
+  //   3. all three bindings ran against ONE Companion — KILL 2 killed it, so KILL 3 passed
+  //      with nothing left to kill.
+  // Every one of those was GREEN while proving nothing. That is why this field exists
+  // separately from stopsAnythingRunningToday, and why the harness now refuses to report a
+  // demonstration against a target it did not first prove alive.
+  demonstratedUnderCompanionAccount: true,
+  demonstratedOn: '2026-07-28',
+  demonstratedBindings: Object.freeze(['serviceGate', 'companionAbort', 'osFallback'])
 })
 
 module.exports = { createKillSwitch, KILL_SWITCH_BINDINGS, STOP_CONDITIONS }
