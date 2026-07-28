@@ -64,16 +64,65 @@ $userSid = $user.SID
 Write-Host "preflight passed" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# 1. DENY the operator account the repo. This is the important step.
+# 1. LOCK THE OPERATOR ACCOUNT OUT OF EVERYTHING UNDER C:\Aroma
+#
+# An audit of the whole machine found the repo was not the only problem - the ENTIRE
+# C:\Aroma tree grants Authenticated Users MODIFY, and AromaOperator is one. That means
+# it could read and WRITE:
+#   . C:\Aroma\secrets\google-refresh-token.json  - Gmail, Drive and Calendar access
+#   . C:\Aroma\xiangxiang.ps1                     - the resident launcher (env, flags)
+#   . C:\Aroma\aroma-agent-backend\.env           - API keys and the Owner password
+#   . C:\Aroma\aroma-agent-backend\.aroma         - THE AUDIT STORE ITSELF
+# An operator that can rewrite its own audit trail, or read the Owner's Google token, is
+# not contained by anything the Companion process does or does not do.
+#
+# TWO LAYERS, because a hardcoded list goes stale:
+#   (a) an INHERIT-ONLY deny on C:\Aroma - applies to every child, present and FUTURE,
+#       but not to C:\Aroma itself, so traversal to the two Companion folders still works
+#       and does not depend on the "bypass traverse checking" privilege.
+#   (b) an explicit deny on each existing child except the two Companion folders, so the
+#       intent is visible in each ACL rather than only inherited.
+# The two Companion folders have inheritance PROTECTED, so neither layer reaches them.
 # ---------------------------------------------------------------------------
 Write-Host ""
-Write-Host "1. denying $AccountName access to the repo (.env, governance code)" -ForegroundColor Cyan
-$acl = Get-Acl -LiteralPath $RepoDir
-$denyRule = New-Object System.Security.AccessControl.FileSystemAccessRule(
-  $userSid, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Deny')
-$acl.AddAccessRule($denyRule)
-Set-Acl -LiteralPath $RepoDir -AclObject $acl
-Write-Host "   DENY applied to $RepoDir" -ForegroundColor Green
+Write-Host "1. locking $AccountName out of C:\Aroma" -ForegroundColor Cyan
+
+$AromaRoot = 'C:\Aroma'
+$KeepReachable = @($StageDir, $EvidenceDir)   # the ONLY two it may reach
+
+function Add-DenyAce {
+  param([string]$Path, [string]$Inheritance, [string]$Propagation)
+  if (-not (Test-Path -LiteralPath $Path)) { return $false }
+  $a = Get-Acl -LiteralPath $Path
+  # Drop any existing deny for this SID first, so re-running does not stack duplicates.
+  foreach ($r in @($a.Access)) {
+    if ($r.AccessControlType -eq 'Deny' -and $r.IdentityReference.Value -eq $userSid.Value) { [void]$a.RemoveAccessRule($r) }
+  }
+  $rule = New-Object System.Security.AccessControl.FileSystemAccessRule(
+    $userSid, 'FullControl', $Inheritance, $Propagation, 'Deny')
+  $a.AddAccessRule($rule)
+  Set-Acl -LiteralPath $Path -AclObject $a
+  return $true
+}
+
+# (a) future-proof: inherit-only deny on the root
+if (Add-DenyAce -Path $AromaRoot -Inheritance 'ContainerInherit,ObjectInherit' -Propagation 'InheritOnly') {
+  Write-Host "   DENY (inherit-only) on $AromaRoot - covers future children too" -ForegroundColor Green
+}
+
+# (b) explicit deny on every existing child except the two Companion folders
+$denied = @()
+$skipped = @()
+foreach ($item in Get-ChildItem -LiteralPath $AromaRoot -Force -ErrorAction SilentlyContinue) {
+  if ($KeepReachable -contains $item.FullName) { $skipped += $item.Name; continue }
+  $inh = if ($item.PSIsContainer) { 'ContainerInherit,ObjectInherit' } else { 'None' }
+  try {
+    if (Add-DenyAce -Path $item.FullName -Inheritance $inh -Propagation 'None') { $denied += $item.Name }
+  } catch { Write-Host ("   WARNING: could not deny " + $item.Name + " : " + $_.Exception.Message) -ForegroundColor Yellow }
+}
+Write-Host ("   DENY applied to " + $denied.Count + " item(s):") -ForegroundColor Green
+$denied | ForEach-Object { Write-Host ("     " + $_) }
+if ($skipped.Count) { Write-Host ("   left reachable: " + ($skipped -join ', ')) -ForegroundColor Yellow }
 
 # ---------------------------------------------------------------------------
 # 2. stage only what the Companion needs, read-only to it
@@ -87,6 +136,9 @@ foreach ($f in 'companion.js','ipcChannel.js','sessionBoundary.js','killSwitch.j
 }
 Copy-Item -LiteralPath (Join-Path $ScriptDir 'companion-entry.js') -Destination $StageDir
 
+# Inheritance is PROTECTED on both Companion folders. That is what keeps the inherit-only
+# DENY on C:\Aroma from reaching them - so it is asserted here rather than assumed, and
+# re-asserted on the evidence folder in case anything reset it.
 $sacl = Get-Acl -LiteralPath $StageDir
 $sacl.SetAccessRuleProtection($true, $false)
 $sacl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRule(
@@ -96,6 +148,15 @@ $sacl.SetAccessRule((New-Object System.Security.AccessControl.FileSystemAccessRu
 Set-Acl -LiteralPath $StageDir -AclObject $sacl
 Write-Host "   staged 5 files, READ-ONLY to $AccountName" -ForegroundColor Green
 Get-ChildItem -LiteralPath $StageDir | ForEach-Object { Write-Host ("     " + $_.Name) }
+
+$eacl = Get-Acl -LiteralPath $EvidenceDir
+if (-not $eacl.AreAccessRulesProtected) {
+  $eacl.SetAccessRuleProtection($true, $true)
+  Set-Acl -LiteralPath $EvidenceDir -AclObject $eacl
+  Write-Host "   re-protected the evidence folder's ACL" -ForegroundColor Yellow
+} else {
+  Write-Host "   evidence folder ACL already protected" -ForegroundColor Green
+}
 
 # ---------------------------------------------------------------------------
 # 3. launch the Companion AS the operator account
@@ -165,12 +226,32 @@ if (Test-Path -LiteralPath $companionLog) { Get-Content -LiteralPath $companionL
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== containment check ===" -ForegroundColor Cyan
+# The probe runs AS the operator account and tries each thing the audit found reachable.
+# Every MUST-BE-FALSE line is a credential or a governance control; the two MUST-BE-TRUE
+# lines are the only places it is supposed to be able to work.
 $probe = Join-Path $env:TEMP 'aroma-op-probe.ps1'
 Set-Content -LiteralPath $probe -Encoding UTF8 -Value @'
-$r = @{}
-$r.canReadEnv  = try { Get-Content 'C:\Aroma\aroma-agent-backend\.env' -TotalCount 1 -ErrorAction Stop; $true } catch { $false }
-$r.canListRepo = try { Get-ChildItem 'C:\Aroma\aroma-agent-backend\src' -ErrorAction Stop | Out-Null; $true } catch { $false }
-$r.canReadStage = try { Get-ChildItem 'C:\Aroma\ComputerOperator-Companion' -ErrorAction Stop | Out-Null; $true } catch { $false }
+function Try-Read { param($p) try { Get-Content -LiteralPath $p -TotalCount 1 -ErrorAction Stop | Out-Null; $true } catch { $false } }
+function Try-List { param($p) try { Get-ChildItem -LiteralPath $p -ErrorAction Stop | Out-Null; $true } catch { $false } }
+function Try-Write { param($p) try { $f=Join-Path $p ('w-'+[guid]::NewGuid().ToString('N')+'.tmp'); Set-Content -LiteralPath $f -Value 'x' -ErrorAction Stop; Remove-Item -LiteralPath $f -Force -ErrorAction SilentlyContinue; $true } catch { $false } }
+$r = [ordered]@{}
+# MUST BE FALSE - credentials
+$r.readGoogleRefreshToken = Try-Read 'C:\Aroma\secrets\google-refresh-token.json'
+$r.readGoogleOAuthClient  = Try-Read 'C:\Aroma\secrets\google-oauth-client.json'
+$r.readDotEnv             = Try-Read 'C:\Aroma\aroma-agent-backend\.env'
+$r.readClaudeCreds        = Try-Read (Join-Path $env:USERPROFILE '..\louis\.claude\.credentials.json')
+# MUST BE FALSE - governance controls
+$r.readLauncher           = Try-Read 'C:\Aroma\xiangxiang.ps1'
+$r.writeLauncherDir       = Try-Write 'C:\Aroma'
+$r.listRepo               = Try-List 'C:\Aroma\aroma-agent-backend\src'
+$r.writeAuditStore        = Try-Write 'C:\Aroma\aroma-agent-backend\.aroma\agent-audit'
+$r.listSecrets            = Try-List 'C:\Aroma\secrets'
+$r.listLogs               = Try-List 'C:\Aroma\logs'
+$r.listBackup             = Try-List 'C:\ProgramData\AromaBackup'
+$r.listOwnerProfile       = Try-List 'C:\Users\louis'
+# MUST BE TRUE - the only two it should reach
+$r.readStagedCompanion    = Try-List 'C:\Aroma\ComputerOperator-Companion'
+$r.writeEvidence          = Try-Write 'C:\Aroma\ComputerOperator-Evidence'
 $r | ConvertTo-Json -Compress
 '@
 $probeOut = Join-Path $env:TEMP 'aroma-op-probe.out'
@@ -180,8 +261,31 @@ try {
     -Credential $cred -RedirectStandardOutput $probeOut -NoNewWindow -PassThru
   $pp | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
   if (Test-Path $probeOut) {
-    Write-Host ("as " + $AccountName + " : " + (Get-Content $probeOut -Raw).Trim())
-    Write-Host "canReadEnv MUST be False, canListRepo MUST be False, canReadStage MUST be True" -ForegroundColor Yellow
+    $raw = (Get-Content $probeOut -Raw).Trim()
+    $res = $null
+    try { $res = $raw | ConvertFrom-Json } catch { }
+    if ($res) {
+      $mustBeFalse = @('readGoogleRefreshToken','readGoogleOAuthClient','readDotEnv','readClaudeCreds',
+                       'readLauncher','writeLauncherDir','listRepo','writeAuditStore','listSecrets',
+                       'listLogs','listBackup','listOwnerProfile')
+      $mustBeTrue  = @('readStagedCompanion','writeEvidence')
+      $bad = @()
+      foreach ($k in $mustBeFalse) {
+        $v = $res.$k
+        if ($v) { $bad += $k }
+        Write-Host ("  {0,-24} {1,-6}  (must be False)" -f $k, $v) -ForegroundColor $(if ($v) { 'Red' } else { 'Green' })
+      }
+      foreach ($k in $mustBeTrue) {
+        $v = $res.$k
+        if (-not $v) { $bad += $k }
+        Write-Host ("  {0,-24} {1,-6}  (must be True)" -f $k, $v) -ForegroundColor $(if ($v) { 'Green' } else { 'Red' })
+      }
+      Write-Host ""
+      if ($bad.Count -eq 0) { Write-Host "CONTAINMENT HOLDS" -ForegroundColor Green }
+      else { Write-Host ("CONTAINMENT FAILED on: " + ($bad -join ', ')) -ForegroundColor Red }
+    } else {
+      Write-Host ("as " + $AccountName + " : " + $raw)
+    }
   }
 } catch { Write-Host "containment probe could not run: $($_.Exception.Message)" -ForegroundColor Yellow }
 Remove-Item $probe, $probeOut -Force -ErrorAction SilentlyContinue
