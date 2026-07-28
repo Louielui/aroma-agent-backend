@@ -4,6 +4,23 @@
 finalised at the end of Stage 2, when the harness exists and can be hashed. The *steps* do
 not change after this point.
 
+## Standing precondition — AromaOperator must stay signed in
+
+Session 5 must remain a live interactive session from the moment it was created until
+Part C is finished. **Do not sign that account out. Do not reboot. Do not let the machine
+sleep into a state that drops the session.**
+
+Everything downstream attaches to that one session:
+
+- the interactive-token scheduled task has nothing to attach to without it, and simply does
+  not run — this is the item-10 gate that took several rounds to satisfy
+- the escape hatch verification, the sentinel, and the whole coordinate baseline were all
+  measured against that session
+
+If it is lost, the recovery is not "sign back in and continue". A new logon is a new
+session with a new id, so the interactive logon, the gate task check, the escape-hatch
+verification and the A4b baseline all have to be redone before Part A can start again.
+
 ## The constraint that shapes this
 
 While you are in session 5 there is **no contact between us**. The harness therefore:
