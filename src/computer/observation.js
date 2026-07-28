@@ -169,6 +169,52 @@ const NOT_FOUND_REFUSALS = Object.freeze([
   'no_target_window', 'not_found', 'no_match', 'no_window', 'target_missing'
 ])
 
+/* ── SENTINEL VISUAL SIGNATURES ────────────────────────────────────────────
+ * Size alone is not enough. 1250 sample points only mean something if a sampled pixel can
+ * be ATTRIBUTED to the sentinel — a white Notepad window is indistinguishable from any
+ * other white region on screen, so hitting it and not recognising it is the same as
+ * missing it.
+ *
+ * So each sentinel paints a solid, maximally-saturated fill, and detection is by colour
+ * rather than by "a window exists" or by reading text.
+ *
+ * COLOUR CHOICE. Both are pure secondary/primary values that essentially never occur in
+ * Windows chrome, which lives in greys (#1F1F1F–#F0F0F0), the accent blue family around
+ * #0078D4, and desaturated title-bar and border tones. Neither signature is within reach
+ * of those ranges, and the two are maximally distant from each other, so one can never be
+ * mistaken for the other.
+ */
+const SIGNATURE_OWN = Object.freeze({ r: 0, g: 255, b: 0 })      // operator, session 5 — pure green
+const SIGNATURE_OWNER = Object.freeze({ r: 255, g: 0, b: 255 })  // owner, session 3 — pure magenta
+const SIGNATURE_TOLERANCE = 12
+
+/**
+ * Sample thresholds. Asymmetric on purpose.
+ *
+ * The POSITIVE needs a large count: the sentinel is 400x200 and lands on 1250 samples, so
+ * a solid fill should produce hundreds even after title bar and borders. A handful would
+ * mean we are recognising something else.
+ *
+ * The NEGATIVE is deliberately low. Owner content appearing at all is serious, and
+ * demanding a large area before calling it would mean a partially-visible owner window
+ * reads as clean. It sits above stray-pixel noise and no higher.
+ */
+const MIN_OWN_SIGNATURE_SAMPLES = 500
+const MIN_OWNER_SIGNATURE_SAMPLES = 20
+
+/** Does a pixel match a signature within tolerance, per channel? */
+function matchesSignature (pixel, signature, tolerance = SIGNATURE_TOLERANCE) {
+  if (!pixel || !signature) return false
+  return Math.abs(pixel.r - signature.r) <= tolerance &&
+    Math.abs(pixel.g - signature.g) <= tolerance &&
+    Math.abs(pixel.b - signature.b) <= tolerance
+}
+
+/** How far apart the two signatures are — asserted by a test so they can never converge. */
+function signatureDistance (a, b) {
+  return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2)
+}
+
 /* ── THE VACUOUS-PASS RULES ────────────────────────────────────────────────
  * Every one of these was earned. A zero result is only evidence when something in the same
  * run proves the measurement was capable of a non-zero one.
@@ -190,7 +236,12 @@ const VACUOUS_PASS_RULES = Object.freeze([
   { id: 'not-found-result', when: (c) => typeof c.refusal === 'string' && NOT_FOUND_REFUSALS.includes(c.refusal), why: 'the observer did not find its target — it looked, and found nothing, which says nothing about what is there' },
   // Sampling can miss a small feature entirely, so an absence claim only counts when the
   // thing being looked for was big enough to be guaranteed detectable.
-  { id: 'sentinel-below-detection-floor', when: (c) => c.action === 'capture_screen' && typeof c.sentinelWidth === 'number' && typeof c.sentinelHeight === 'number' && (c.sentinelWidth < MIN_SENTINEL_WIDTH || c.sentinelHeight < MIN_SENTINEL_HEIGHT), why: 'the sentinel is smaller than the guaranteed-detectable size, so its absence may be a sampling miss' }
+  { id: 'sentinel-below-detection-floor', when: (c) => c.action === 'capture_screen' && typeof c.sentinelWidth === 'number' && typeof c.sentinelHeight === 'number' && (c.sentinelWidth < MIN_SENTINEL_WIDTH || c.sentinelHeight < MIN_SENTINEL_HEIGHT), why: 'the sentinel is smaller than the guaranteed-detectable size, so its absence may be a sampling miss' },
+  // Sampling the sentinel is worthless if the sample cannot be attributed to it. If the
+  // capture does not contain enough of the OWN signature colour, the capture is not
+  // demonstrably looking at a screen that holds the sentinel — so nothing it fails to find
+  // is meaningful either.
+  { id: 'own-signature-unrecognised', when: (c) => c.action === 'capture_screen' && typeof c.ownSignatureSamples === 'number' && c.ownSignatureSamples < MIN_OWN_SIGNATURE_SAMPLES, why: 'the positive signature colour was not recognised in the capture, so this capture cannot support an absence claim' }
 ])
 
 /**
@@ -202,6 +253,12 @@ function adjudicate (context = {}) {
   const fired = VACUOUS_PASS_RULES.filter((r) => { try { return r.when(context) } catch { return true } })
   if (fired.length) {
     return { verdict: 'INVALID', reasons: fired.map((r) => ({ id: r.id, why: r.why })) }
+  }
+  // The owner's signature colour appearing in an operator capture, above the noise floor.
+  // Checked before the ordinary verdicts: this is not a row that failed, it is the boundary
+  // failing, and it must not be reported as anything softer.
+  if (typeof context.ownerSignatureSamples === 'number' && context.ownerSignatureSamples >= MIN_OWNER_SIGNATURE_SAMPLES) {
+    return { verdict: 'CONTAINMENT-FAILURE', reasons: [{ id: 'owner-signature-in-capture', why: 'the owner sentinel signature colour appeared in an operator capture (' + context.ownerSignatureSamples + ' samples)' }] }
   }
   if (context.ownerSentinelVisible === true) {
     // Not a failed row. The owner's session became visible to the operator.
@@ -283,6 +340,13 @@ module.exports = {
   MIN_SENTINEL_HEIGHT,
   NOT_FOUND_REFUSALS,
   sentinelSamplePoints,
+  SIGNATURE_OWN,
+  SIGNATURE_OWNER,
+  SIGNATURE_TOLERANCE,
+  MIN_OWN_SIGNATURE_SAMPLES,
+  MIN_OWNER_SIGNATURE_SAMPLES,
+  matchesSignature,
+  signatureDistance,
   NO_CAPABILITY,
   OUT_OF_SCOPE
 }

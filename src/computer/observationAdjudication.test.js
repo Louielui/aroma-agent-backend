@@ -103,6 +103,75 @@ test('the sampling grid and its detection floor are declared values, not prose',
   assert.equal(O.sentinelSamplePoints(8, 8), 1, 'the bare minimum lands on exactly one — detectable in principle, unreliable in practice')
 })
 
+/* ── sentinel visual signatures ───────────────────────────────────────────── */
+
+test('the two signatures are far apart and far from Windows chrome', () => {
+  // Chrome lives in greys and the accent-blue family. Neither signature is near those, and
+  // the two cannot be mistaken for each other.
+  assert.deepEqual({ ...O.SIGNATURE_OWN }, { r: 0, g: 255, b: 0 })
+  assert.deepEqual({ ...O.SIGNATURE_OWNER }, { r: 255, g: 0, b: 255 })
+  assert.ok(O.signatureDistance(O.SIGNATURE_OWN, O.SIGNATURE_OWNER) > 300, 'the two are maximally distant')
+
+  const chrome = [
+    { r: 31, g: 31, b: 31 }, { r: 32, g: 32, b: 32 }, { r: 240, g: 240, b: 240 },
+    { r: 255, g: 255, b: 255 }, { r: 0, g: 120, b: 212 }, { r: 0, g: 0, b: 0 }
+  ]
+  for (const c of chrome) {
+    assert.equal(O.matchesSignature(c, O.SIGNATURE_OWN), false, 'chrome must not match own: ' + JSON.stringify(c))
+    assert.equal(O.matchesSignature(c, O.SIGNATURE_OWNER), false, 'chrome must not match owner: ' + JSON.stringify(c))
+  }
+})
+
+test('signature matching honours the declared tolerance in both directions', () => {
+  const t = O.SIGNATURE_TOLERANCE
+  assert.equal(O.matchesSignature({ r: t, g: 255 - t, b: t }, O.SIGNATURE_OWN), true, 'inside tolerance matches')
+  assert.equal(O.matchesSignature({ r: t + 1, g: 255, b: 0 }, O.SIGNATURE_OWN), false, 'one channel outside does not')
+})
+
+test('*** an image carrying the OWNER signature adjudicates CONTAINMENT-FAILURE ***', () => {
+  const r = O.adjudicate(good({
+    action: 'capture_screen',
+    sentinelWidth: 400, sentinelHeight: 200,
+    ownSignatureSamples: 900,
+    ownerSignatureSamples: O.MIN_OWNER_SIGNATURE_SAMPLES
+  }))
+  assert.equal(r.verdict, 'CONTAINMENT-FAILURE')
+  assert.equal(r.reasons[0].id, 'owner-signature-in-capture')
+})
+
+test('*** an image carrying ONLY the own signature passes ***', () => {
+  const r = O.adjudicate(good({
+    action: 'capture_screen',
+    sentinelWidth: 400, sentinelHeight: 200,
+    ownSignatureSamples: 900,
+    ownerSignatureSamples: 0
+  }))
+  assert.equal(r.verdict, 'ACCEPTED')
+  assert.deepEqual(r.reasons, [])
+})
+
+test('*** own signature unrecognised makes the capture unable to support an absence claim ***', () => {
+  // Hitting the sentinel but not recognising it is the same as missing it.
+  const r = O.adjudicate(good({
+    action: 'capture_screen',
+    sentinelWidth: 400, sentinelHeight: 200,
+    ownSignatureSamples: O.MIN_OWN_SIGNATURE_SAMPLES - 1,
+    ownerSignatureSamples: 0
+  }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'own-signature-unrecognised'))
+})
+
+test('the negative threshold is low on purpose — a partly-visible owner window still trips it', () => {
+  // A high threshold would let a partially-occluded owner window read as clean.
+  assert.ok(O.MIN_OWNER_SIGNATURE_SAMPLES < O.MIN_OWN_SIGNATURE_SAMPLES / 10)
+  const r = O.adjudicate(good({
+    action: 'capture_screen', sentinelWidth: 400, sentinelHeight: 200,
+    ownSignatureSamples: 900, ownerSignatureSamples: 25
+  }))
+  assert.equal(r.verdict, 'CONTAINMENT-FAILURE')
+})
+
 test('a black capture in a disconnected session reports BOTH reasons, not just the first', () => {
   // Knowing only the first reason a result was worthless sends you fixing one at a time.
   const r = O.adjudicate(good({ action: 'capture_screen', nonBlackRatio: 0, sessionState: 'Disc' }))
