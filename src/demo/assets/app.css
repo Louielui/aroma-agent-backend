@@ -57,6 +57,11 @@
   /* ── accents & status ─────────────────────────────────────────────────── */
   --accent: #d97757;
   --accent-hover: #c96a47;
+  /* Focus for the composer: NEUTRAL, not the accent. #8E9196 is the lightest grey that
+     still clears WCAG 2.2's 3:1 for a focus indicator against both the composer's white
+     interior (3.16:1) and the page behind it (3.08:1) — measured, not eyeballed. Anything
+     lighter looks calmer and fails. */
+  --focus: #8E9196;
   --ok: #5f8466;
   --warn: #a8782a;
   --bad: #b0564b;
@@ -88,6 +93,7 @@
     --line: #383836;
     --divider: #2E2E2C;
     --bubble-user: #2A2A28;
+    --focus: #6E7176;
     --ink: #ECECEA;
     --muted: #ABABA6;
     --soft: #91918C;
@@ -324,9 +330,19 @@ button[disabled] { opacity: .45; cursor: default; }
   padding: 10px 10px 8px 16px;
   transition: border-color .15s ease, box-shadow .15s ease;
 }
+/* THE COMPOSER IS A QUIET CONTAINER, NOT A HIGHLIGHT. It used to turn coral the moment
+   the cursor entered it — and since the cursor lives there, the orange outline was simply
+   always on. Focus stays VISIBLE, because losing it would be an accessibility regression,
+   but it is now a neutral edge: the border darkens to --focus and a soft ring of the same
+   grey appears. No colour, no glow.
+
+   The border is KEPT rather than removed. --card (#FFFFFF) and --bg (#FDFCFA) are barely
+   a percent apart in luminance, so with no border the composer would dissolve into the
+   page and the Owner would lose the sense of a box to type in. One neutral hairline is
+   what the reference uses too. */
 #composer-box:focus-within {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+  border-color: var(--focus);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--focus) 18%, transparent);
 }
 
 #composer-box textarea {
