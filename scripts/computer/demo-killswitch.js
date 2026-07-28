@@ -3,47 +3,56 @@
 /**
  * demo-killswitch.js — Computer Operator v0, Phase 3a. THE EVIDENCE HARNESS.
  *
- * Runs as the OWNER (elevated), holds the Service end of the pipe, and demonstrates all
- * three kill-switch bindings against a Companion running under the AromaOperator account.
+ * Demonstrates ONE kill-switch binding per run, against a Companion that is PROVEN ALIVE
+ * first.
  *
- * Phase 3a already demonstrated the three bindings — but against a Companion in the test
- * process, under the Owner's own identity. That proved the mechanism, not the deployment.
- * This proves the deployment, which is why demonstratedUnderCompanionAccount stays FALSE
- * until this harness has actually run and produced the evidence file.
+ * ── WHY ONE PER RUN ───────────────────────────────────────────────────────────
+ * The first version demonstrated all three in sequence against a single Companion. KILL 2
+ * aborted it, so by the time KILL 3 ran there was nothing left to kill — and "gone after
+ * kill: True" passed while proving nothing. Green, but not proving what it claimed.
  *
- * It performs NO desktop action and never asks the Companion to. It sends a ping, an
- * execute_step it expects to be refused, and an abort.
+ * So each binding now gets a FRESH Companion, and every run begins by proving the
+ * Companion is alive with a real ping/pong round-trip — not by checking that a process id
+ * exists, which says nothing about whether it is listening. `companionAliveBefore` is
+ * recorded in the evidence, and a binding whose target was already dead is reported as
+ * NOT DEMONSTRATED rather than as a pass.
+ *
+ * It performs NO desktop action and never asks the Companion to.
  *
  * Usage (invoked by deploy-companion.ps1, not by hand):
- *   node demo-killswitch.js <pipeName> <evidenceJsonPath>
+ *   node demo-killswitch.js <pipeName> <evidenceJsonPath> <gate|abort|oskill> [readyMarkerPath]
  */
 
 const path = require('node:path')
 const fs = require('node:fs')
 
 // THIS FILE IS NOT STAGED. It runs as the OWNER, who can read the repo, so it requires
-// straight from src/computer. The previous version required them from __dirname — this
-// folder — where those modules have never been, so the harness died before the pipe
-// existed and the Companion then failed to connect. That was a path bug in the harness,
-// not the DENY doing its job.
+// straight from src/computer.
 const SRC = path.resolve(__dirname, '..', '..', 'src', 'computer')
-// The SERVICE now CONNECTS; the COMPANION creates the pipe. See the DACL note in
+// The SERVICE CONNECTS; the COMPANION creates the pipe. See the DACL note in
 // ipcChannel.js: libuv gives Everyone read-only on a named pipe, so the low-privilege
-// account could never open duplex a pipe the Owner created. That is why the first
-// deployment reported zero connections with no error of its own.
+// account could never open duplex a pipe the Owner created.
 const { createPipeConnector } = require(path.join(SRC, 'ipcChannel.js'))
 const { createKillSwitch } = require(path.join(SRC, 'killSwitch.js'))
 
-const pipeName = process.argv[2]
-const outPath = process.argv[3]
-if (!pipeName || !outPath) {
-  console.error('usage: node demo-killswitch.js <pipeName> <evidenceJsonPath>')
+const [pipeName, outPath, binding, readyMarker] = process.argv.slice(2)
+const BINDINGS = ['gate', 'abort', 'oskill']
+if (!pipeName || !outPath || !BINDINGS.includes(binding)) {
+  console.error('usage: node demo-killswitch.js <pipeName> <evidenceJsonPath> <' + BINDINGS.join('|') + '> [readyMarkerPath]')
   process.exit(2)
 }
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms))
 const nonce = () => require('node:crypto').randomBytes(16).toString('hex')
-const evidence = { pipeName, startedAt: new Date().toISOString(), companionAccount: null, checks: [] }
+
+const evidence = {
+  binding,
+  pipeName,
+  startedAt: new Date().toISOString(),
+  companionAliveBefore: false, // proven by a ping/pong round-trip, never by a pid
+  demonstratedAgainstLiveCompanion: false,
+  checks: []
+}
 
 function record (name, passed, detail) {
   evidence.checks.push({ name, passed, detail: detail || null, at: new Date().toISOString() })
@@ -53,7 +62,7 @@ function record (name, passed, detail) {
 const replies = []
 const service = createPipeConnector({ name: pipeName, onMessage: (m) => { replies.push(m) } })
 
-async function ask (msg, timeoutMs = 4000) {
+async function ask (msg, timeoutMs = 5000) {
   const before = replies.length
   service.send(msg)
   const deadline = Date.now() + timeoutMs
@@ -66,62 +75,97 @@ const step = (over = {}) => Object.assign({
   approvalId: 'appr_3a_demo', stepIndex: 0, stepNonce: nonce()
 }, over)
 
-async function main () {
-  // The Companion creates the pipe, so wait for it to appear, then connect. Retrying is
-  // correct here — the Companion is starting in another account's session and the pipe may
-  // not exist for a second or two. This is the SERVICE reaching the Companion, which is
-  // the opposite of a Companion reconnecting after being stopped; that still never happens.
-  console.log('waiting for the Companion to create ' + service.pipePath + ' ...')
+/** Connect to the pipe the Companion created, retrying while it comes up. */
+async function connect () {
   const deadline = Date.now() + 30000
-  let connected = false
   let lastErr = null
-  while (!connected && Date.now() < deadline) {
-    try { await service.connect(); connected = true } catch (e) { lastErr = e; await wait(400) }
+  while (Date.now() < deadline) {
+    try { await service.connect(); return true } catch (e) { lastErr = e; await wait(400) }
   }
-  record('companion connected', connected, connected ? 'connected' : ('never appeared: ' + (lastErr && lastErr.message)))
-  if (!connected) { finish(false); return }
-
-  // ── the Companion is alive and has NO capability ──────────────────────────
-  const pong = await ask(Object.assign(step(), { type: 'ping' }))
-  record('handshake completes', !!pong && pong.type === 'pong')
-  const caps = (pong && pong.capabilities) || {}
-  const anyOn = Object.values(caps).some(Boolean)
-  record('zero capability under the operator account', anyOn === false,
-    Object.keys(caps).length + ' capabilities, all false')
-
-  const refused = await ask(step({ step: { action: 'capture_own_screen' } }))
-  record('every request is refused', !!refused && refused.ok === false && refused.refusal === 'no_capability_enabled',
-    refused ? refused.refusal : 'no reply')
-
-  // ── KILL 1: the SERVICE GATE — nothing is sent at all ─────────────────────
-  const gate = createKillSwitch()
-  gate.stop('owner_kill_switch')
-  const before = replies.length
-  if (gate.guard().ok) service.send(step({ step: { action: 'list_windows' } }))
-  await wait(400)
-  record('KILL 1 service gate: nothing was sent', replies.length === before && gate.guard().ok === false)
-
-  // ── KILL 2: the COMPANION ABORT — it stops and stays stopped ──────────────
-  const aborted = await ask(Object.assign(step({ stepNonce: nonce() }), { type: 'abort' }))
-  record('KILL 2 abort acknowledged', !!aborted && aborted.type === 'aborted')
-  await wait(1500)
-  // The Companion owns the pipe now, so its exit shows up here as the CONNECTION dropping
-  // rather than as a connection count on our side.
-  record('KILL 2 companion closed the channel', service.isConnected() === false,
-    service.isConnected() ? 'still connected' : 'channel gone')
-
-  finish(true)
+  record('companion connected', false, 'never appeared: ' + (lastErr && lastErr.message))
+  return false
 }
 
-function finish (ok) {
+/** THE GATE THAT MAKES EVERY RESULT MEAN SOMETHING: prove it is alive and answering. */
+async function proveAlive () {
+  const pong = await ask(Object.assign(step(), { type: 'ping' }))
+  const alive = !!pong && pong.type === 'pong'
+  evidence.companionAliveBefore = alive
+  record('companion ALIVE before the demonstration (ping/pong)', alive,
+    alive ? 'answered' : 'no pong — nothing to demonstrate against')
+  if (alive) {
+    const caps = pong.capabilities || {}
+    record('zero capability under the operator account',
+      Object.values(caps).some(Boolean) === false,
+      Object.keys(caps).length + ' capabilities, all false')
+  }
+  return alive
+}
+
+async function main () {
+  if (!(await connect())) return finish()
+  record('companion connected', true)
+  if (!(await proveAlive())) return finish()
+
+  if (binding === 'gate') {
+    // KILL 1 — the SERVICE GATE. Nothing leaves this side at all, and the Companion is
+    // still alive afterwards: the gate stopped the MESSAGE, not the process.
+    const gate = createKillSwitch()
+    gate.stop('owner_kill_switch')
+    const before = replies.length
+    if (gate.guard().ok) service.send(step({ step: { action: 'list_windows' } }))
+    await wait(600)
+    record('KILL 1 service gate: nothing was sent', replies.length === before && gate.guard().ok === false)
+    const stillPong = await ask(Object.assign(step({ stepNonce: nonce() }), { type: 'ping' }))
+    record('KILL 1 companion is still alive (the gate stopped the message, not the process)',
+      !!stillPong && stillPong.type === 'pong')
+    evidence.demonstratedAgainstLiveCompanion = evidence.companionAliveBefore
+  }
+
+  if (binding === 'abort') {
+    // KILL 2 — the COMPANION ABORT. It acknowledges, then the channel goes.
+    const aborted = await ask(Object.assign(step({ stepNonce: nonce() }), { type: 'abort' }))
+    record('KILL 2 abort acknowledged', !!aborted && aborted.type === 'aborted')
+    const deadline = Date.now() + 8000
+    while (service.isConnected() && Date.now() < deadline) await wait(100)
+    record('KILL 2 companion closed the channel', service.isConnected() === false,
+      service.isConnected() ? 'still connected' : 'channel gone')
+    evidence.demonstratedAgainstLiveCompanion = evidence.companionAliveBefore
+  }
+
+  if (binding === 'oskill') {
+    // KILL 3 — the OS FALLBACK. The Companion is alive and answering RIGHT NOW; the
+    // deploy script kills the process from outside while we hold the channel open, and we
+    // record the channel dropping. This is the binding that was previously never
+    // demonstrated, because KILL 2 had already killed the only Companion.
+    if (readyMarker) {
+      try { fs.writeFileSync(readyMarker, 'alive ' + new Date().toISOString()) } catch (_) {}
+    }
+    console.log('waiting for the external OS kill...')
+    const deadline = Date.now() + 60000
+    while (service.isConnected() && Date.now() < deadline) await wait(100)
+    const dropped = service.isConnected() === false
+    record('KILL 3 OS fallback: the channel dropped when the process was killed externally', dropped,
+      dropped ? 'channel gone' : 'still connected after 60s')
+    evidence.demonstratedAgainstLiveCompanion = evidence.companionAliveBefore && dropped
+  }
+
+  finish()
+}
+
+function finish () {
   evidence.finishedAt = new Date().toISOString()
-  evidence.allPassed = ok && evidence.checks.every((c) => c.passed)
+  const allChecksPassed = evidence.checks.length > 0 && evidence.checks.every((c) => c.passed)
+  // A binding only counts if it was demonstrated against a Companion PROVEN alive first.
+  evidence.allPassed = allChecksPassed && evidence.demonstratedAgainstLiveCompanion === true
   try { fs.writeFileSync(outPath, JSON.stringify(evidence, null, 2)) } catch (e) { console.error('could not write evidence: ' + e.message) }
   console.log('')
-  console.log(evidence.allPassed ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED')
+  if (evidence.allPassed) console.log('BINDING ' + binding + ': DEMONSTRATED against a live Companion')
+  else if (!evidence.companionAliveBefore) console.log('BINDING ' + binding + ': NOT DEMONSTRATED — the Companion was not alive to begin with')
+  else console.log('BINDING ' + binding + ': FAILED')
   console.log('evidence written to ' + outPath)
   try { service.close() } catch (_) { /* the connector closes synchronously */ }
   process.exit(evidence.allPassed ? 0 : 1)
 }
 
-main().catch((e) => { console.error('harness error: ' + e.message); finish(false) })
+main().catch((e) => { console.error('harness error: ' + e.message); finish() })

@@ -218,85 +218,121 @@ if (-not $eacl.AreAccessRulesProtected) {
 }
 
 # ---------------------------------------------------------------------------
-# 3. launch the Companion AS the operator account
+# 3. DEMONSTRATE EACH BINDING AGAINST A FRESH, LIVE COMPANION
+#
+# The previous version ran all three bindings against ONE Companion. KILL 2 aborted it,
+# so KILL 3 had nothing left to kill and "gone after kill: True" passed while proving
+# nothing. Green, but not proving what it claimed.
+#
+# Each binding now gets its OWN Companion, started fresh, and the harness proves it is
+# alive with a real ping/pong round-trip before doing anything. A binding whose target was
+# not alive is reported as NOT DEMONSTRATED, never as a pass.
 # ---------------------------------------------------------------------------
 Write-Host ""
-Write-Host "3. launching the Companion as $AccountName" -ForegroundColor Cyan
+Write-Host "3. demonstrating each kill-switch binding against a fresh Companion" -ForegroundColor Cyan
 # ${Name} is required here: "$AccountName:" parses the colon as a DRIVE QUALIFIER, not as
 # punctuation, and the whole script fails to parse. Only found by parse-checking.
 Write-Host "   Enter the password you set for ${AccountName}:" -ForegroundColor Yellow
 $cred = Get-Credential -UserName ($env:COMPUTERNAME + '\' + $AccountName) -Message "Password for $AccountName"
 
-$pipeName = 'aroma-op-3a-' + [guid]::NewGuid().ToString('N').Substring(0, 12)
-$evidenceFile = Join-Path $EvidenceDir ('killswitch-evidence-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.json')
-$companionLog = Join-Path $EvidenceDir 'companion-stdout.log'
+$stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+$roundResults = @()
 
-# ORDER REVERSED. The COMPANION creates the pipe now - see the DACL note in
-# ipcChannel.js - so it starts FIRST and the harness connects to it. The previous order
-# had the Owner create the pipe, which this account can only ever open READ-ONLY, which is
-# exactly why the last run reported zero connections and no error of its own.
-$companion = $null
-try {
-  $companion = Start-Process -FilePath $node `
-    -ArgumentList @((Join-Path $StageDir 'companion-entry.js'), $pipeName) `
-    -WorkingDirectory $StageDir -Credential $cred `
-    -RedirectStandardOutput $companionLog -RedirectStandardError ($companionLog + '.err') `
-    -PassThru
-  Write-Host ("   Companion started, pid " + $companion.Id) -ForegroundColor Green
-} catch {
-  Write-Host "   FAILED to start the Companion as $AccountName : $($_.Exception.Message)" -ForegroundColor Red
-  Write-Host "   (a wrong password, or the account lacks 'Log on as a batch job')" -ForegroundColor Yellow
-}
-Start-Sleep -Seconds 3
-
-# If the Companion died on startup, say so HERE with its own output, rather than letting
-# the harness report a vague "never appeared" thirty seconds later. The last run's real
-# error was only visible in a log nobody printed.
-if ($companion) {
-  $early = Get-Process -Id $companion.Id -ErrorAction SilentlyContinue
-  if (-not $early) {
-    Write-Host "   THE COMPANION EXITED IMMEDIATELY - its own output follows:" -ForegroundColor Red
-    foreach ($lf in @($companionLog, ($companionLog + '.err'))) {
-      if (Test-Path -LiteralPath $lf) {
-        Get-Content -LiteralPath $lf -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object { Write-Host ("     " + $_) -ForegroundColor Red }
+function Start-Companion {
+  param([string]$PipeName, [string]$LogPath)
+  try {
+    $p = Start-Process -FilePath $node `
+      -ArgumentList @((Join-Path $StageDir 'companion-entry.js'), $PipeName) `
+      -WorkingDirectory $StageDir -Credential $cred `
+      -RedirectStandardOutput $LogPath -RedirectStandardError ($LogPath + '.err') `
+      -PassThru
+    Start-Sleep -Seconds 3
+    if (-not (Get-Process -Id $p.Id -ErrorAction SilentlyContinue)) {
+      Write-Host "   THE COMPANION EXITED IMMEDIATELY - its own output follows:" -ForegroundColor Red
+      foreach ($lf in @($LogPath, ($LogPath + '.err'))) {
+        if (Test-Path -LiteralPath $lf) { Get-Content -LiteralPath $lf -ErrorAction SilentlyContinue | Select-Object -First 10 | ForEach-Object { Write-Host ("     " + $_) -ForegroundColor Red } }
       }
+      return $null
     }
+    return $p
+  } catch {
+    Write-Host "   FAILED to start the Companion as $AccountName : $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host "   (a wrong password, or the account lacks 'Log on as a batch job')" -ForegroundColor Yellow
+    return $null
   }
 }
 
-$harness = Start-Process -FilePath $node `
-  -ArgumentList @((Join-Path $ScriptDir 'demo-killswitch.js'), $pipeName, $evidenceFile) `
-  -WorkingDirectory $ScriptDir -NoNewWindow -PassThru
+foreach ($round in @('gate','abort','oskill')) {
+  Write-Host ""
+  Write-Host ("   --- binding: " + $round + " ---") -ForegroundColor Cyan
+  $pipeName = 'aroma-op-3a-' + $round + '-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
+  $evidenceFile = Join-Path $EvidenceDir ("killswitch-$round-$stamp.json")
+  $companionLog = Join-Path $EvidenceDir ("companion-$round-$stamp.log")
+  $readyMarker  = Join-Path $EvidenceDir ("ready-$round-$stamp.marker")
+  Remove-Item -LiteralPath $readyMarker -Force -ErrorAction SilentlyContinue
 
-# ---------------------------------------------------------------------------
-# 4. wait for the demonstration, then report
-# ---------------------------------------------------------------------------
-Write-Host ""
-Write-Host "4. running the kill-switch demonstration" -ForegroundColor Cyan
-$harness | Wait-Process -Timeout 90 -ErrorAction SilentlyContinue
-if (-not $harness.HasExited) { Stop-Process -Id $harness.Id -Force -ErrorAction SilentlyContinue }
+  $companion = Start-Companion -PipeName $pipeName -LogPath $companionLog
+  if (-not $companion) { $roundResults += [pscustomobject]@{ binding=$round; started=$false; file=$null }; continue }
+  Write-Host ("   Companion started, pid " + $companion.Id) -ForegroundColor Green
 
-# KILL 3: the OS fallback. Whatever is left of the Companion is stopped outright.
-$stillRunning = $false
-if ($companion) {
-  $p = Get-Process -Id $companion.Id -ErrorAction SilentlyContinue
-  $stillRunning = [bool]$p
-  if ($p) { Stop-Process -Id $companion.Id -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }
+  $harness = Start-Process -FilePath $node `
+    -ArgumentList @((Join-Path $ScriptDir 'demo-killswitch.js'), $pipeName, $evidenceFile, $round, $readyMarker) `
+    -WorkingDirectory $ScriptDir -NoNewWindow -PassThru
+
+  if ($round -eq 'oskill') {
+    # THE OS FALLBACK, DEMONSTRATED PROPERLY. Wait until the harness says the Companion is
+    # alive and answering, THEN kill it from outside while the channel is open. That is
+    # what stopping the Windows service or logging the account out does.
+    $waited = 0
+    while (-not (Test-Path -LiteralPath $readyMarker) -and $waited -lt 40) { Start-Sleep -Milliseconds 500; $waited++ }
+    $aliveBeforeKill = [bool](Get-Process -Id $companion.Id -ErrorAction SilentlyContinue)
+    Write-Host ("   companion alive immediately before the OS kill : " + $aliveBeforeKill) -ForegroundColor $(if ($aliveBeforeKill) { 'Green' } else { 'Red' })
+    if ($aliveBeforeKill) {
+      Stop-Process -Id $companion.Id -Force -ErrorAction SilentlyContinue
+      Write-Host "   OS kill issued (Stop-Process)" -ForegroundColor Yellow
+    }
+  }
+
+  $harness | Wait-Process -Timeout 120 -ErrorAction SilentlyContinue
+  if (-not $harness.HasExited) { Stop-Process -Id $harness.Id -Force -ErrorAction SilentlyContinue }
+
+  # Clean up whatever is left of this round's Companion before the next round starts.
+  $left = Get-Process -Id $companion.Id -ErrorAction SilentlyContinue
+  if ($left) { Stop-Process -Id $companion.Id -Force -ErrorAction SilentlyContinue }
+  Remove-Item -LiteralPath $readyMarker -Force -ErrorAction SilentlyContinue
+
+  $roundResults += [pscustomobject]@{ binding=$round; started=$true; file=$evidenceFile }
 }
-$goneAfterOsKill = -not [bool](Get-Process -Id $companion.Id -ErrorAction SilentlyContinue)
 
+# ---------------------------------------------------------------------------
+# 4. report the evidence
+# ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "=== EVIDENCE ===" -ForegroundColor Cyan
-if (Test-Path -LiteralPath $evidenceFile) {
-  Get-Content -LiteralPath $evidenceFile -Raw | Write-Host
-} else {
-  Write-Host "no evidence file was produced - the demonstration did not complete" -ForegroundColor Red
+$allDemonstrated = $true
+foreach ($r in $roundResults) {
+  Write-Host ""
+  Write-Host ("--- " + $r.binding + " ---") -ForegroundColor Cyan
+  if (-not $r.started -or -not $r.file -or -not (Test-Path -LiteralPath $r.file)) {
+    Write-Host "  NOT DEMONSTRATED - no evidence file was produced" -ForegroundColor Red
+    $allDemonstrated = $false
+    continue
+  }
+  $j = $null
+  try { $j = Get-Content -LiteralPath $r.file -Raw | ConvertFrom-Json } catch { }
+  if (-not $j) { Write-Host "  evidence unreadable" -ForegroundColor Red; $allDemonstrated = $false; continue }
+  Write-Host ("  companionAliveBefore              : " + $j.companionAliveBefore)
+  Write-Host ("  demonstratedAgainstLiveCompanion  : " + $j.demonstratedAgainstLiveCompanion) -ForegroundColor $(if ($j.demonstratedAgainstLiveCompanion) { 'Green' } else { 'Red' })
+  foreach ($c in $j.checks) { Write-Host ("    {0,-6} {1}" -f $(if ($c.passed) { 'PASS' } else { 'FAIL' }), $c.name) -ForegroundColor $(if ($c.passed) { 'Green' } else { 'Red' }) }
+  if (-not $j.allPassed) { $allDemonstrated = $false }
 }
-Write-Host ("KILL 3 (OS fallback) - companion still running before kill : " + $stillRunning)
-Write-Host ("KILL 3 (OS fallback) - companion gone after kill           : " + $goneAfterOsKill)
+
 Write-Host ""
-Write-Host "=== companion stdout ===" -ForegroundColor Cyan
-if (Test-Path -LiteralPath $companionLog) { Get-Content -LiteralPath $companionLog | Select-Object -First 20 }
+if ($allDemonstrated) {
+  Write-Host "ALL THREE BINDINGS DEMONSTRATED AGAINST A LIVE COMPANION UNDER $AccountName" -ForegroundColor Green
+} else {
+  Write-Host "NOT ALL BINDINGS WERE DEMONSTRATED - see above. Do NOT mark 3a complete." -ForegroundColor Red
+}
 
 # ---------------------------------------------------------------------------
 # 5. verify the containment actually holds

@@ -160,3 +160,51 @@ test('the harness requires from src/, because it runs as the Owner and is never 
   const names = M.buildManifest().files.map((f) => f.name)
   assert.equal(names.includes('demo-killswitch.js'), false, 'the harness is not staged')
 })
+
+/* ── the vacuous-pass guard ───────────────────────────────────────────────── */
+
+test('*** a binding whose target is already dead must NOT count as demonstrated ***', async () => {
+  // THE PATTERN THIS EXISTS TO STOP. The first demonstration ran all three bindings
+  // against one Companion; KILL 2 aborted it, so KILL 3 had nothing left to kill and
+  // "gone after kill: True" passed while proving nothing. Green, but not proving what it
+  // claimed. The harness must now refuse to call that a demonstration.
+  const os2 = require('node:os')
+  const dir = fs.mkdtempSync(path.join(os2.tmpdir(), 'aroma-vacuous-'))
+  try {
+    const evidence = path.join(dir, 'ev.json')
+    const pipe = 'aroma-nobody-home-' + crypto.randomBytes(4).toString('hex')
+    // No Companion is started at all — the pipe never exists.
+    const r = spawnSync(process.execPath,
+      [path.resolve(__dirname, '../../scripts/computer/demo-killswitch.js'), pipe, evidence, 'oskill', path.join(dir, 'm')],
+      { encoding: 'utf8', timeout: 60000 })
+
+    assert.notEqual(r.status, 0, 'the harness must exit non-zero when nothing was demonstrated')
+    const ev = JSON.parse(fs.readFileSync(evidence, 'utf8'))
+    assert.equal(ev.companionAliveBefore, false, 'it never proved anything alive')
+    assert.equal(ev.demonstratedAgainstLiveCompanion, false, 'so nothing was demonstrated')
+    assert.equal(ev.allPassed, false, 'and the run cannot be reported as passing')
+    assert.match(r.stdout, /NOT DEMONSTRATED/, 'and it says so in words, not only in a field')
+  } finally { fs.rmSync(dir, { recursive: true, force: true }) }
+})
+
+test('the evidence records aliveness per binding, so a dead target is always visible', () => {
+  const h = fs.readFileSync(path.resolve(__dirname, '../../scripts/computer/demo-killswitch.js'), 'utf8')
+  // proven by a real round-trip, never by a process id — a pid says nothing about whether
+  // the process is listening
+  assert.ok(h.includes('companionAliveBefore'), 'the field exists')
+  assert.ok(h.includes('demonstratedAgainstLiveCompanion'), 'and the derived verdict')
+  assert.ok(/ping\/pong/.test(h), 'aliveness is a round-trip')
+  assert.ok(h.includes('evidence.demonstratedAgainstLiveCompanion === true'),
+    'allPassed depends on it — a passing check on a dead target still fails the run')
+})
+
+test('*** the deploy runs THREE rounds, each with a fresh Companion ***', () => {
+  const ps = fs.readFileSync(path.resolve(__dirname, '../../scripts/computer/deploy-companion.ps1'), 'utf8')
+  assert.match(ps, /foreach \(\$round in @\('gate','abort','oskill'\)\)/, 'one round per binding')
+  assert.ok(ps.includes('Start-Companion'), 'each round starts its own Companion')
+  // and the OS kill happens only AFTER the harness has confirmed the process is alive
+  assert.ok(ps.includes('readyMarker'), 'the harness signals it is connected and alive')
+  assert.ok(ps.includes('aliveBeforeKill'), 'the script records aliveness before killing')
+  assert.match(ps, /Stop-Process -Id \$companion\.Id -Force[\s\S]{0,120}OS kill issued/,
+    'the kill is issued against a process confirmed alive')
+})
