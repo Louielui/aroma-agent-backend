@@ -109,7 +109,21 @@ function createComputerSupervisor (deps = {}) {
   const killSwitch = deps.killSwitch || createKillSwitch({ now })
   const registry = deps.orderRegistry || createOrderRegistry({ now })
 
-  /** Resolve ONE step: what it targets, what is checked, what cannot be. */
+  /**
+   * Resolve ONE step: what it targets, what is checked, what cannot be.
+   *
+   * ── THE SCOPE CHECK BELOW IS CURRENTLY UNREACHABLE ────────────────────────
+   * `refused_out_of_scope` cannot be produced today: validateComputerWorkOrder already
+   * checks both "inside the approved root" and "covered by allowedPaths", so an order
+   * containing an out-of-scope path is rejected before any step is walked. Owner ruling
+   * 2026-07-28: KEEP it. It is retained as the SECOND gate for the Phase 3 desktop order
+   * types, whose steps will carry preconditions the file schema cannot express — at which
+   * point the two layers diverge and this one starts doing work.
+   *
+   * It is neither working nor broken today: it is dormant, on purpose. A test asserts
+   * exactly that, so nobody later reads a green suite as proof this branch runs, or reads
+   * the dead branch as a bug and deletes the second gate.
+   */
   function resolveStep (wo, step, index) {
     const params = (step && step.params) || {}
     const targets = ['path', 'sourcePath', 'destPath']

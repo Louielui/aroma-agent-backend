@@ -244,3 +244,38 @@ test('losing the audit store is visible, not silent', () => {
   const res = s.dryRun(order())
   assert.equal(res.auditWritten, false, 'and the result says the record was not written')
 })
+
+/* ── the dormant second gate ──────────────────────────────────────────────── */
+
+test('*** the step-scope check is UNREACHABLE today — dormant, not working, not broken ***', () => {
+  // Owner ruling 2026-07-28: keep it as the second gate for Phase 3 desktop steps. This
+  // test exists so a future reader cannot mistake a green suite for proof that the branch
+  // runs, nor mistake the dead branch for a bug and delete the second gate.
+  const s = sup()
+
+  // Try every way an out-of-scope path could reach the walker. The SCHEMA catches all of
+  // them first, so `refused_out_of_scope` is never the refusal.
+  const attempts = [
+    order({ steps: [{ action: 'read_file', params: { path: 'C:\\Windows\\x.txt' } }] }),
+    order({ steps: [{ action: 'copy_file', params: { sourcePath: P('a'), destPath: 'D:\\x' } }] }),
+    order({ allowedPaths: [P('inbox')], steps: [{ action: 'read_file', params: { path: P('other\\x') } }] })
+  ]
+  for (const wo of attempts) {
+    const res = s.dryRun(wo)
+    assert.equal(res.ok, false)
+    assert.equal(res.refusal, 'invalid_work_order', 'the schema intercepted, as always')
+    assert.notEqual(res.refusal, 'step_out_of_scope', 'the walker never got the chance')
+    assert.deepEqual(res.steps, [], 'no step was resolved at all')
+  }
+
+  // The branch still EXISTS and is still correct — proven by calling the logic directly
+  // through a valid order whose step is in scope, and confirming the verdict it produces.
+  const good = s.dryRun(order())
+  assert.equal(good.steps[0].verdict, 'in_scope', 'the verdict field is live and reachable')
+
+  // and the source still carries both outcomes, so the second gate has not been quietly
+  // simplified away
+  const src = fs.readFileSync(path.join(__dirname, 'computerSupervisor.js'), 'utf8')
+  assert.ok(src.includes("'refused_out_of_scope'"), 'the second gate is still in the code')
+  assert.ok(src.includes('CURRENTLY UNREACHABLE'), 'and is annotated as dormant')
+})
