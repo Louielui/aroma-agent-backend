@@ -21,8 +21,14 @@
 const path = require('node:path')
 const fs = require('node:fs')
 
-const { createServiceEndpoint } = require(path.join(__dirname, 'ipcChannel.js'))
-const { createKillSwitch } = require(path.join(__dirname, 'killSwitch.js'))
+// THIS FILE IS NOT STAGED. It runs as the OWNER, who can read the repo, so it requires
+// straight from src/computer. The previous version required them from __dirname — this
+// folder — where those modules have never been, so the harness died before the pipe
+// existed and the Companion then failed to connect. That was a path bug in the harness,
+// not the DENY doing its job.
+const SRC = path.resolve(__dirname, '..', '..', 'src', 'computer')
+const { createServiceEndpoint } = require(path.join(SRC, 'ipcChannel.js'))
+const { createKillSwitch } = require(path.join(SRC, 'killSwitch.js'))
 
 const pipeName = process.argv[2]
 const outPath = process.argv[3]

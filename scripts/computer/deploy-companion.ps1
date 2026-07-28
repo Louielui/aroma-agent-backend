@@ -49,11 +49,16 @@ $user = Get-LocalUser -Name $AccountName -ErrorAction SilentlyContinue
 if (-not $user) { $fail += "$AccountName does not exist - run provision-companion-account.ps1 first" }
 $node = 'C:\Program Files\nodejs\node.exe'
 if (-not (Test-Path -LiteralPath $node)) { $fail += "node.exe not found at $node" }
-foreach ($f in 'companion.js','ipcChannel.js','sessionBoundary.js','killSwitch.js') {
-  if (-not (Test-Path -LiteralPath (Join-Path $SrcDir $f))) { $fail += "missing module: $f" }
-}
-foreach ($f in 'companion-entry.js','demo-killswitch.js') {
+# The module list is DERIVED here too - a second hand-written list in the preflight would
+# be the same mistake in a different place, and would happily approve a staging set that
+# does not match the real require graph.
+foreach ($f in 'companion-entry.js','demo-killswitch.js','companionManifest.js') {
   if (-not (Test-Path -LiteralPath (Join-Path $ScriptDir $f))) { $fail += "missing script: $f" }
+}
+if (Test-Path -LiteralPath (Join-Path $ScriptDir 'companionManifest.js')) {
+  $preManifest = & 'C:\Program Files\nodejs\node.exe' (Join-Path $ScriptDir 'companionManifest.js') --list 2>&1
+  if ($LASTEXITCODE -ne 0) { $fail += "the Companion require graph does not resolve: $preManifest" }
+  else { foreach ($m in $preManifest) { if (-not (Test-Path -LiteralPath $m)) { $fail += "manifest names a missing file: $m" } } }
 }
 if ($fail.Count) {
   Write-Host "PREFLIGHT FAILED - nothing was changed:" -ForegroundColor Red
@@ -131,10 +136,20 @@ Write-Host ""
 Write-Host "2. staging the Companion" -ForegroundColor Cyan
 if (Test-Path -LiteralPath $StageDir) { Remove-Item -LiteralPath $StageDir -Recurse -Force }
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
-foreach ($f in 'companion.js','ipcChannel.js','sessionBoundary.js','killSwitch.js') {
-  Copy-Item -LiteralPath (Join-Path $SrcDir $f) -Destination $StageDir
+
+# THE LIST IS DERIVED, NOT HAND-WRITTEN. companionManifest.js walks the entry's real
+# require graph. The previous hand-written list is what let the deploy fail on a module
+# nobody had checked the location of. If the graph cannot be resolved, we stop before
+# copying anything rather than stage a half-complete Companion.
+$manifest = & $node (Join-Path $ScriptDir 'companionManifest.js') --list
+if ($LASTEXITCODE -ne 0 -or -not $manifest) {
+  throw "could not compute the Companion manifest - refusing to stage an incomplete copy"
 }
-Copy-Item -LiteralPath (Join-Path $ScriptDir 'companion-entry.js') -Destination $StageDir
+foreach ($srcFile in $manifest) {
+  if (-not (Test-Path -LiteralPath $srcFile)) { throw "manifest names a file that does not exist: $srcFile" }
+  Copy-Item -LiteralPath $srcFile -Destination $StageDir
+}
+Write-Host ("   manifest resolved " + @($manifest).Count + " file(s)") -ForegroundColor Green
 
 # Inheritance is PROTECTED on both Companion folders. That is what keeps the inherit-only
 # DENY on C:\Aroma from reaching them - so it is asserted here rather than assumed, and
@@ -229,7 +244,14 @@ Write-Host "=== containment check ===" -ForegroundColor Cyan
 # The probe runs AS the operator account and tries each thing the audit found reachable.
 # Every MUST-BE-FALSE line is a credential or a governance control; the two MUST-BE-TRUE
 # lines are the only places it is supposed to be able to work.
-$probe = Join-Path $env:TEMP 'aroma-op-probe.ps1'
+# WHERE THE PROBE LIVES MATTERS. The last run wrote it to $env:TEMP - which is
+# C:\Users\louis\AppData\Local\Temp - and AromaOperator cannot read anything under the
+# Owner's profile, so PowerShell reported "the argument to -File does not exist" and the
+# containment check NEVER RAN. That is the worst kind of failure: the one result that had
+# to be False was simply not measured. The probe now lives in the staged directory, which
+# that account has explicit ReadAndExecute on, and its OUTPUT goes to the evidence folder,
+# which it can write.
+$probe = Join-Path $StageDir 'containment-probe.ps1'
 Set-Content -LiteralPath $probe -Encoding UTF8 -Value @'
 function Try-Read { param($p) try { Get-Content -LiteralPath $p -TotalCount 1 -ErrorAction Stop | Out-Null; $true } catch { $false } }
 function Try-List { param($p) try { Get-ChildItem -LiteralPath $p -ErrorAction Stop | Out-Null; $true } catch { $false } }
@@ -239,7 +261,7 @@ $r = [ordered]@{}
 $r.readGoogleRefreshToken = Try-Read 'C:\Aroma\secrets\google-refresh-token.json'
 $r.readGoogleOAuthClient  = Try-Read 'C:\Aroma\secrets\google-oauth-client.json'
 $r.readDotEnv             = Try-Read 'C:\Aroma\aroma-agent-backend\.env'
-$r.readClaudeCreds        = Try-Read (Join-Path $env:USERPROFILE '..\louis\.claude\.credentials.json')
+$r.readClaudeCreds        = Try-Read 'C:\Users\louis\.claude\.credentials.json'
 # MUST BE FALSE - governance controls
 $r.readLauncher           = Try-Read 'C:\Aroma\xiangxiang.ps1'
 $r.writeLauncherDir       = Try-Write 'C:\Aroma'
@@ -254,12 +276,22 @@ $r.readStagedCompanion    = Try-List 'C:\Aroma\ComputerOperator-Companion'
 $r.writeEvidence          = Try-Write 'C:\Aroma\ComputerOperator-Evidence'
 $r | ConvertTo-Json -Compress
 '@
-$probeOut = Join-Path $env:TEMP 'aroma-op-probe.out'
+# Output goes to the evidence folder, which the operator account CAN write. The working
+# directory must also be reachable by that account: the default would be the current
+# directory, which is now denied, and a process that cannot enter its own working
+# directory fails before it runs a line.
+$probeOut = Join-Path $EvidenceDir 'containment-probe.out'
+Remove-Item -LiteralPath $probeOut -Force -ErrorAction SilentlyContinue
 try {
   $pp = Start-Process -FilePath 'powershell.exe' `
     -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$probe) `
-    -Credential $cred -RedirectStandardOutput $probeOut -NoNewWindow -PassThru
-  $pp | Wait-Process -Timeout 30 -ErrorAction SilentlyContinue
+    -WorkingDirectory $StageDir `
+    -Credential $cred -RedirectStandardOutput $probeOut -PassThru
+  $pp | Wait-Process -Timeout 60 -ErrorAction SilentlyContinue
+  if (-not (Test-Path -LiteralPath $probeOut)) {
+    Write-Host "  THE CONTAINMENT PROBE PRODUCED NO OUTPUT - it did not run." -ForegroundColor Red
+    Write-Host "  Do NOT treat containment as verified." -ForegroundColor Red
+  }
   if (Test-Path $probeOut) {
     $raw = (Get-Content $probeOut -Raw).Trim()
     $res = $null
@@ -288,7 +320,9 @@ try {
     }
   }
 } catch { Write-Host "containment probe could not run: $($_.Exception.Message)" -ForegroundColor Yellow }
-Remove-Item $probe, $probeOut -Force -ErrorAction SilentlyContinue
+# The probe script is removed; its OUTPUT is kept in the evidence folder as the record
+# that the check actually ran.
+Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
 
 Write-Host ""
 Write-Host "=== untouched ===" -ForegroundColor Cyan
