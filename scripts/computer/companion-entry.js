@@ -27,7 +27,13 @@
 const path = require('node:path')
 
 const { createCompanion } = require(path.join(__dirname, 'companion.js'))
-const { createCompanionEndpoint } = require(path.join(__dirname, 'ipcChannel.js'))
+// THE COMPANION CREATES THE PIPE. Measured, not assumed: libuv gives Everyone READ ONLY
+// on a named pipe, so a pipe created by the Owner cannot be opened duplex by this
+// account — which is why the first deployment saw zero connections and no error. As the
+// creator, this process gets full access; the elevated Service matches the
+// Administrators ACE. Listening is a transport role, not authority: it still decides
+// nothing and still refuses everything.
+const { createPipeListener } = require(path.join(__dirname, 'ipcChannel.js'))
 
 const pipeName = process.argv[2]
 if (!pipeName) {
@@ -47,37 +53,49 @@ const companion = createCompanion({
   onAudit: (a) => log('refused', { action: a.action, reason: a.refusalReason })
 })
 
-const endpoint = createCompanionEndpoint({
+const endpoint = createPipeListener({
   name: pipeName,
   onMessage: (msg) => {
     const reply = companion.handle(msg)
     if (msg && msg.type === 'abort') {
       log('aborted', { by: 'service' })
-      // Told to stop: stop. There is no acknowledgement-then-continue path.
-      setTimeout(() => { endpoint.close(); process.exit(0) }, 50)
+      // Told to stop: stop. There is no acknowledgement-then-continue path. The reply is
+      // returned first so the Service sees the acknowledgement before the pipe closes.
+      setTimeout(() => { endpoint.close().then(() => process.exit(0)).catch(() => process.exit(0)) }, 100)
     }
     return reply
   }
 })
 
-endpoint.connect()
+endpoint.listen()
   .then(() => {
-    log('connected', { pipe: pipeName, capabilities: companion.capabilities })
+    log('listening', { pipe: endpoint.pipePath, capabilities: companion.capabilities })
     log('ready', { anyCapabilityEnabled: Object.values(companion.capabilities).some(Boolean) })
   })
   .catch((err) => {
-    console.error('COMPANION FATAL: could not connect: ' + (err && err.message))
+    console.error('COMPANION FATAL: could not create the pipe: ' + (err && err.message))
     process.exit(2)
   })
 
-// The channel going away IS the OS kill switch: the Windows service stopping, or this
-// account logging out, destroys the pipe. There is no reconnect — a Companion that can
-// rejoin after being stopped has not been stopped.
+// A Companion nobody ever connects to must not sit there forever. If the Service has not
+// arrived within this window, exit — an orphan holding a pipe open in an interactive
+// session is exactly the kind of thing that should not outlive the run that started it.
+const IDLE_EXIT_MS = 120000
+const startedAt = Date.now()
+let everConnected = false
 const watchdog = setInterval(() => {
-  if (!endpoint.isConnected()) {
+  if (endpoint.connectionCount() > 0) { everConnected = true; return }
+  if (everConnected) {
+    // The Service went away: the OS kill switch, or the run finishing. Either way, stop.
     log('channel_lost', { action: 'exiting' })
     clearInterval(watchdog)
-    process.exit(3)
+    endpoint.close().then(() => process.exit(3)).catch(() => process.exit(3))
+    return
+  }
+  if (Date.now() - startedAt > IDLE_EXIT_MS) {
+    log('never_connected', { action: 'exiting', waitedMs: IDLE_EXIT_MS })
+    clearInterval(watchdog)
+    endpoint.close().then(() => process.exit(4)).catch(() => process.exit(4))
   }
 }, 250)
 

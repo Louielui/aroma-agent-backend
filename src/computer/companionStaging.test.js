@@ -104,26 +104,31 @@ test('*** the staged ENTRY connects and refuses, from the staged directory ***',
   // The end-to-end proof: run the real entry file out of the temp staging directory,
   // against a real pipe, and confirm it answers. Nothing here reads the repo.
   const dir = stageToTemp()
-  const { createServiceEndpoint } = require('./ipcChannel')
+  // The Companion LISTENS now; this side connects. Same inversion as the deployment.
+  const { createPipeConnector } = require('./ipcChannel')
   const name = 'aroma-stage-test-' + crypto.randomBytes(6).toString('hex')
   const replies = []
-  const service = createServiceEndpoint({ name, onMessage: (m) => replies.push(m) })
-  await service.listen()
+  const service = createPipeConnector({ name, onMessage: (m) => { replies.push(m) } })
 
+  // The Companion starts FIRST and creates the pipe; this side then connects, retrying
+  // while it comes up. Same order as the deployment.
   const child = spawn(process.execPath, [path.join(dir, 'companion-entry.js'), name], { cwd: dir, stdio: ['ignore', 'pipe', 'pipe'] })
   let stderr = ''
   child.stderr.on('data', (d) => { stderr += d })
 
   try {
-    const deadline = Date.now() + 10000
-    while (service.connectionCount() === 0 && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50))
-    assert.equal(service.connectionCount(), 1, 'the staged entry connected. stderr: ' + stderr)
+    const deadline = Date.now() + 15000
+    let connected = false
+    while (!connected && Date.now() < deadline) {
+      try { await service.connect(); connected = true } catch (_) { await new Promise((r) => setTimeout(r, 200)) }
+    }
+    assert.equal(connected, true, 'connected to the pipe the staged entry created. stderr: ' + stderr)
 
     const nonce = crypto.randomBytes(16).toString('hex')
     service.send({ from: 'service', to: 'companion', type: 'execute_step', approvalId: 'appr_stage', stepIndex: 0, stepNonce: nonce, step: { action: 'capture_own_screen' } })
     const d2 = Date.now() + 5000
     while (replies.length === 0 && Date.now() < d2) await new Promise((r) => setTimeout(r, 25))
-    assert.ok(replies.length > 0, 'it replied')
+    assert.ok(replies.length > 0, 'it replied. stderr: ' + stderr)
     assert.equal(replies[0].ok, false)
     assert.equal(replies[0].refusal, 'no_capability_enabled', 'still refuses everything')
   } finally {
@@ -134,7 +139,7 @@ test('*** the staged ENTRY connects and refuses, from the staged directory ***',
     const exited = new Promise((r) => child.once('exit', r))
     child.kill('SIGKILL')
     await Promise.race([exited, new Promise((r) => setTimeout(r, 3000))])
-    await service.close()
+    try { service.close() } catch (_) {}
     try { fs.rmSync(dir, { recursive: true, force: true }) } catch (_) { /* temp dir; the OS reclaims it */ }
   }
 })

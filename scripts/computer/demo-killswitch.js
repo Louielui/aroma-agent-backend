@@ -27,7 +27,11 @@ const fs = require('node:fs')
 // existed and the Companion then failed to connect. That was a path bug in the harness,
 // not the DENY doing its job.
 const SRC = path.resolve(__dirname, '..', '..', 'src', 'computer')
-const { createServiceEndpoint } = require(path.join(SRC, 'ipcChannel.js'))
+// The SERVICE now CONNECTS; the COMPANION creates the pipe. See the DACL note in
+// ipcChannel.js: libuv gives Everyone read-only on a named pipe, so the low-privilege
+// account could never open duplex a pipe the Owner created. That is why the first
+// deployment reported zero connections with no error of its own.
+const { createPipeConnector } = require(path.join(SRC, 'ipcChannel.js'))
 const { createKillSwitch } = require(path.join(SRC, 'killSwitch.js'))
 
 const pipeName = process.argv[2]
@@ -47,7 +51,7 @@ function record (name, passed, detail) {
 }
 
 const replies = []
-const service = createServiceEndpoint({ name: pipeName, onMessage: (m) => replies.push(m) })
+const service = createPipeConnector({ name: pipeName, onMessage: (m) => { replies.push(m) } })
 
 async function ask (msg, timeoutMs = 4000) {
   const before = replies.length
@@ -63,14 +67,19 @@ const step = (over = {}) => Object.assign({
 }, over)
 
 async function main () {
-  await service.listen()
-  console.log('service listening on ' + service.pipePath)
-  console.log('waiting for the Companion to connect...')
-
+  // The Companion creates the pipe, so wait for it to appear, then connect. Retrying is
+  // correct here — the Companion is starting in another account's session and the pipe may
+  // not exist for a second or two. This is the SERVICE reaching the Companion, which is
+  // the opposite of a Companion reconnecting after being stopped; that still never happens.
+  console.log('waiting for the Companion to create ' + service.pipePath + ' ...')
   const deadline = Date.now() + 30000
-  while (service.connectionCount() === 0 && Date.now() < deadline) await wait(100)
-  record('companion connected', service.connectionCount() === 1, service.connectionCount() + ' connection(s)')
-  if (service.connectionCount() === 0) { finish(false); return }
+  let connected = false
+  let lastErr = null
+  while (!connected && Date.now() < deadline) {
+    try { await service.connect(); connected = true } catch (e) { lastErr = e; await wait(400) }
+  }
+  record('companion connected', connected, connected ? 'connected' : ('never appeared: ' + (lastErr && lastErr.message)))
+  if (!connected) { finish(false); return }
 
   // ── the Companion is alive and has NO capability ──────────────────────────
   const pong = await ask(Object.assign(step(), { type: 'ping' }))
@@ -95,9 +104,11 @@ async function main () {
   // ── KILL 2: the COMPANION ABORT — it stops and stays stopped ──────────────
   const aborted = await ask(Object.assign(step({ stepNonce: nonce() }), { type: 'abort' }))
   record('KILL 2 abort acknowledged', !!aborted && aborted.type === 'aborted')
-  await wait(600)
-  record('KILL 2 companion process exited', service.connectionCount() === 0,
-    service.connectionCount() + ' connection(s) remain')
+  await wait(1500)
+  // The Companion owns the pipe now, so its exit shows up here as the CONNECTION dropping
+  // rather than as a connection count on our side.
+  record('KILL 2 companion closed the channel', service.isConnected() === false,
+    service.isConnected() ? 'still connected' : 'channel gone')
 
   finish(true)
 }
@@ -109,7 +120,8 @@ function finish (ok) {
   console.log('')
   console.log(evidence.allPassed ? 'ALL CHECKS PASSED' : 'SOME CHECKS FAILED')
   console.log('evidence written to ' + outPath)
-  service.close().then(() => process.exit(evidence.allPassed ? 0 : 1))
+  try { service.close() } catch (_) { /* the connector closes synchronously */ }
+  process.exit(evidence.allPassed ? 0 : 1)
 }
 
 main().catch((e) => { console.error('harness error: ' + e.message); finish(false) })

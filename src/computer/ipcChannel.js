@@ -52,7 +52,31 @@ function createFrameReader (onFrame, onOversize) {
 }
 
 /**
- * The SERVICE end: listens, and sends requests to whichever Companion is connected.
+ * ── WHO CREATES THE PIPE, AND WHY IT IS THE COMPANION ─────────────────────────
+ * The DACL that libuv puts on a named pipe was measured, not assumed:
+ *
+ *   Allow  Everyone                  Read, Synchronize
+ *   Allow  NT AUTHORITY\SYSTEM       Full
+ *   Allow  BUILTIN\Administrators    Full
+ *   Allow  <the creating user>       Full
+ *
+ * Everyone gets READ ONLY. A duplex client needs read AND write, so a pipe created by the
+ * Owner cannot be connected to by the operator account — which is exactly why the first
+ * deployment reported "companion connected = false" with no error of its own.
+ *
+ * So the COMPANION creates the pipe and the SERVICE connects to it. The Companion is the
+ * creating user and gets full access; the Service runs elevated as an administrator and
+ * matches the Administrators ACE. Everyone else on the machine still has read only.
+ *
+ * The two factories below are transport roles, not governance roles: whoever listens is
+ * still not the one who decides. `createPipeListener` / `createPipeConnector` are the
+ * honest names, exported alongside the original ones so existing callers keep working.
+ */
+
+/**
+ * Creates the pipe and serves it. If `onMessage` returns a value, that value is written
+ * back to the socket it came from — so the listening side can answer, which it must now
+ * that the Companion is the one listening.
  * @param {{ name: string, onMessage?: Function }} options
  */
 function createServiceEndpoint (options = {}) {
@@ -68,7 +92,13 @@ function createServiceEndpoint (options = {}) {
         sockets.add(socket)
         socket.setEncoding('utf8')
         socket.on('data', createFrameReader(
-          (msg) => { if (msg) onMessage(msg, socket) },
+          (msg) => {
+            if (!msg) return
+            const out = onMessage(msg, socket)
+            // Reply-on-return, same contract as the connecting side. Needed because the
+            // Companion is the listener now and has to be able to answer.
+            if (out && !socket.destroyed) socket.write(frame(out))
+          },
           () => socket.destroy()
         ))
         socket.on('close', () => sockets.delete(socket))
@@ -126,4 +156,14 @@ function createCompanionEndpoint (options = {}) {
   }
 }
 
-module.exports = { createServiceEndpoint, createCompanionEndpoint, pipePath, MAX_FRAME_BYTES }
+module.exports = {
+  createServiceEndpoint,
+  createCompanionEndpoint,
+  // Transport-role names. Since Phase 3a the COMPANION listens and the SERVICE connects
+  // — see the DACL note above — so calling them "service"/"companion" endpoints is now
+  // actively misleading. New callers should use these.
+  createPipeListener: createServiceEndpoint,
+  createPipeConnector: createCompanionEndpoint,
+  pipePath,
+  MAX_FRAME_BYTES
+}
