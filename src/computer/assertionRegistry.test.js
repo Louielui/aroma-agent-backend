@@ -220,6 +220,30 @@ test('once verified, the released row is accepted — and has to SAY it was veri
   assert.deepEqual(R.crossCheck(rows).errors, [])
 })
 
+test('*** an owner-side sentinel may not require copy-paste during the window ***', () => {
+  // THE DESIGN RULE (Owner, 2026-07-29), after the sentinel died twice and NEITHER was
+  // carelessness: the workflow required copying a command out of a conversation, and copying
+  // is what destroys a clipboard sentinel. A step list that says "now run -Verify -Nonce
+  // 4768d94fe1f4" is unrunnable — reading that nonce off a screen and pasting it IS the
+  // failure. Telling the Owner to be careful cannot fix it: the instruction and the failure
+  // are the same action.
+  const clip = fs.readFileSync(path.join(SCRIPTS, 'stage3-owner-clip.ps1'), 'utf8')
+  assert.match(clip, /-SeedThenVerify/, 'a single entry point exists')
+  assert.match(clip, /MUST NOT REQUIRE ANY COPY-PASTE DURING THE/i, 'and the rule is written down, not remembered')
+
+  // the nonce is held in-process and never asked for again
+  assert.match(clip, /\$s = Invoke-Seed/)
+  assert.match(clip, /Invoke-Verify -N \$s\.nonce/, 'verify reuses the seeded nonce, unprompted')
+  assert.match(clip, /Invoke-Clear -N \$s\.nonce -Verified/, 'and it clears itself afterwards')
+
+  // the wait watches the sentinel rather than only blocking, so a loss is reported when it
+  // happens instead of discovered after the round is already wasted
+  assert.match(clip, /function Wait-ForOwner/)
+  assert.match(clip, /THE SENTINEL JUST DISAPPEARED/)
+  // …and cannot hang an automated run, while saying so when it does not wait
+  assert.match(clip, /IsInputRedirected/)
+})
+
 test('*** the probe and the verifier honour the gate, read from the scripts ***', () => {
   // A rule the producer does not honour is a rule in prose. Read from the real files.
   const topup = fs.readFileSync(path.join(SCRIPTS, 'stage3-topup.ps1'), 'utf8')

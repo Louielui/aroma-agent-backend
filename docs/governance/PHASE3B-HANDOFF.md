@@ -304,7 +304,41 @@ had none. And relying on the Owner to remember a step is not a control.
 - `postRunVerification` is a **pinned** register field. `crossCheck` refuses any E4 row scored
   BOUNDED or ACCEPTED without `postRunVerified: true`.
 
-**Exercised end to end**, against a scratch evidence directory, all eight branches:
+### The design rule this produced — it is not an operator-discipline rule
+
+The sentinel died twice, and **neither time was carelessness**. The workflow requires the
+Owner to copy a command out of a conversation and paste it into a console — and copying is
+exactly what destroys a clipboard sentinel. A step list that says *"now run `-Verify -Nonce
+4768d94fe1f4`"* is unrunnable by construction: reading that nonce off a screen and pasting it
+**is** the failure. Telling the Owner to be careful cannot fix it, because the instruction and
+the failure are the same action.
+
+> **AN OWNER-SIDE STATE SENTINEL MUST NOT REQUIRE ANY COPY-PASTE DURING THE MEASUREMENT
+> WINDOW. IF THE WORKFLOW ASKS THE OWNER TO COPY A COMMAND, A NONCE OR A PATH, THE WORKFLOW
+> ITSELF DESTROYS THE SENTINEL.**
+
+This is a constraint on the design, not on the person. It applies to any future sentinel that
+lives in shared per-session state — clipboard, foreground window, selection, drag state.
+
+**`-SeedThenVerify` is the structural answer.** One paste, at the start. After that the only
+owner-side input is the **Enter** key:
+
+1. seeds and attests, holding the nonce **in this process** — it is never asked for again
+2. prints the session-5 command **to be TYPED, deliberately short**, with the reason stated:
+   pasting it would overwrite the sentinel and waste the round
+3. **watches the sentinel while waiting**, re-hashing every 400 ms, and says so the moment it
+   disappears — the difference between "re-seed now" and "the round is already lost"
+4. on Enter: verifies against the remembered nonce, then clears, then prints the E4 verdict
+5. exits non-zero when the result is not a pass, so it cannot be mistaken for one
+
+`-Seed` / `-Verify` / `-Clear` remain for scripted use and for the tests.
+
+**Exercised end to end** against a scratch evidence directory: held-through-the-window →
+`BOUNDED` and self-cleared (exit 0); top-up never ran → `PENDING-VERIFY` (exit 4); something
+copied mid-window → `INVALID / clipboard-sentinel-lost`; a leak → `CONTAINMENT-FAILURE` even
+with the sentinel lost; two modes at once → refused (exit 2).
+
+**Exercised end to end** (the earlier split-mode gate), all eight branches:
 `-Clear` before `-Verify` → refused (3); no top-up result → stays PENDING-VERIFY; sentinel
 intact → releases to BOUNDED; **sentinel replaced → INVALID / clipboard-sentinel-lost**; leak
 → CONTAINMENT-FAILURE despite a lost sentinel; `-Clear` after verify → allowed (0); two modes
@@ -503,24 +537,18 @@ reads the probe directory happens in session 5 afterwards.
 7. Note the **staged-file table** the probe prints at startup and compare it to the checklist.
    This is now the only way to verify the staged hashes, and it is the intended way.
 
-**Session 3, NOT elevated:**
+**Session 3, NOT elevated — ONE COMMAND, then Enter. Copy nothing after this paste:**
 
-8. **`.\stage3-owner-clip.ps1 -Seed`**. Overwrites the clipboard — copy anything you still
-   need FIRST — and **copy nothing at all between here and step 10**. Only the SHA-256 reaches
-   disk; the string never leaves session 3. Note the nonce.
-
-**Session 5, as AromaOperator:**
-
-9. **`.\stage3-topup.ps1`**. Writes this session's own clipboard as the E4 positive control
-   and clears it afterwards (§9). Will print E4 as PENDING-VERIFY and name step 10.
-
-**Session 3, NOT elevated:**
-
-10. **`.\stage3-owner-clip.ps1 -Verify -Nonce <nonce>`. Not optional.** The only thing that can
-    tell containment from a sentinel that was overwritten, and what releases E4. Skipping it
-    leaves E4 permanently unfinished — §5b.
-11. **`.\stage3-owner-clip.ps1 -Clear`**. Refuses if 10 has not run.
-12. **Lock 3** against the real evidence directory: a sweep run and its deletions observed.
+8. **`.\stage3-owner-clip.ps1 -SeedThenVerify`**
+   It seeds, prints a short command to **TYPE** in session 5, waits while watching the
+   sentinel, and on Enter verifies, clears and prints the E4 verdict. The nonce stays in the
+   process; you are never asked for it. Copy anything you still need BEFORE this paste.
+9. **In session 5, as AromaOperator — TYPE** the command it prints (`.\stage3-topup.ps1`).
+   **Do not paste it**; pasting overwrites the sentinel and wastes the round. That is why it
+   is short.
+10. Back in session 3, **press Enter**. Nothing else. Exit 0 means E4 resolved; any other exit
+    means it did not, and the message says which.
+11. **Lock 3** against the real evidence directory: a sweep run and its deletions observed.
 
 **Session 5 must stay signed in throughout.** No sign-out, no reboot, no sleep.
 
