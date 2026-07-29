@@ -75,8 +75,19 @@ $form.Text = $title
 # floor would silently mean something different on a scaled display.
 $form.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
 $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-$form.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+# EXPLICIT POSITIONING, NOT CenterScreen.
+# CenterScreen put the window on \\.\DISPLAY5 at X=-1920 - the non-primary monitor - twice
+# in a row at identical coordinates, so it was the form's own placement and not anything
+# following the mouse or the console window. The primary-screen guard then correctly
+# refused it. Computing the centre of PrimaryScreen.Bounds removes the ambiguity rather
+# than relying on what CenterScreen chooses on a negative-origin multi-monitor desktop.
+$form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
 $form.ClientSize = New-Object System.Drawing.Size($MIN_W, $MIN_H)
+$pb = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+$form.Location = New-Object System.Drawing.Point(
+  ([int]($pb.X + ($pb.Width - $MIN_W) / 2)),
+  ([int]($pb.Y + ($pb.Height - $MIN_H) / 2)))
+Write-Host ("primary bounds : " + $pb + "  -> placing at " + $form.Location)
 $form.BackColor = [System.Drawing.Color]::FromArgb($s.R, $s.G, $s.B)
 $form.TopMost = $true
 $form.MinimizeBox = $false

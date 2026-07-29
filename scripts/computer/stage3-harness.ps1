@@ -62,6 +62,8 @@ $mySession = (Get-Process -Id $PID).SessionId
 $rows = New-Object System.Collections.Generic.List[object]
 $script:Halted = $null
 $script:SentinelForm = $null
+$script:SentinelScreen = $null
+$script:SentinelPrimary = $null
 
 function Get-SessionState {
   $s = 'Unknown'
@@ -284,16 +286,31 @@ if (-not $script:Halted) {
     $f.Text = $ownTitle
     $f.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
     $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    $f.StartPosition = [System.Windows.Forms.FormStartPosition]::CenterScreen
+    # EXPLICIT, not CenterScreen. On this desktop CenterScreen placed the owner sentinel on
+    # the non-primary monitor at X=-1920, twice, at identical coordinates. In session 3 that
+    # was caught by a guard and re-run; here there is nobody to re-run it, so the position
+    # is computed rather than chosen.
+    $f.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
     $f.ClientSize = New-Object System.Drawing.Size($MIN_SENTINEL_W, $MIN_SENTINEL_H)
+    $pb = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+    $f.Location = New-Object System.Drawing.Point(
+      ([int]($pb.X + ($pb.Width - $MIN_SENTINEL_W) / 2)),
+      ([int]($pb.Y + ($pb.Height - $MIN_SENTINEL_H) / 2)))
     $f.BackColor = [System.Drawing.Color]::FromArgb($SIG_OWN.R, $SIG_OWN.G, $SIG_OWN.B)
     $f.TopMost = $true
     $f.Show(); $f.Activate(); $f.BringToFront(); $f.Refresh()
     for ($i = 0; $i -lt 20; $i++) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
     $script:SentinelForm = $f
     $sentinelOk = $f.Visible
+    $onScreen = [System.Windows.Forms.Screen]::FromControl($f)
     Write-Host ("  title   : " + $ownTitle)
     Write-Host ("  visible : " + $sentinelOk)
+    Write-Host ("  screen  : " + $onScreen.DeviceName + "  primary=" + $onScreen.Primary + "  at " + $f.Location)
+    # Recorded, not enforced: the capture covers the whole virtual screen, so a sentinel on
+    # either monitor is still sampled and counted. Worth knowing which one it landed on if
+    # a result ever needs explaining.
+    $script:SentinelScreen = $onScreen.DeviceName
+    $script:SentinelPrimary = $onScreen.Primary
   } catch { Write-Host ("  sentinel failed: " + $_.Exception.Message) -ForegroundColor Red }
 
   if (-not $sentinelOk) {
@@ -436,6 +453,8 @@ $record = [ordered]@{
   sessionId = $mySession; sessionState = $sessionState
   ownSentinelTitle = $ownTitle; ownerSentinelTitle = $ownerTitle
   ownSentinelCreated = $sentinelOk
+  ownSentinelScreen = $script:SentinelScreen
+  ownSentinelOnPrimary = $script:SentinelPrimary
   sameRoundBaseline = @{ ownHits = $baseline.ownSamples; ownerHits = $baseline.ownerSamples; nonBlackRatio = $baseline.nonBlackRatio; sampled = $baseline.sampled }
   rows = $rows
   residue = $residue

@@ -158,7 +158,7 @@ reading their absence as isolation.
 hash and runs only on a match — there is no override:
 
 ```
-$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A'; $n=27854; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
+$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='96469DD7BBBB614D980B8C6EB9506D521D877D32C04C8D4EF2E08BE99A485813'; $n=29045; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
 ```
 
 **Expected:** `MATCH - running`, then a row table, then `STAGE 3 COMPLETE` or
@@ -253,7 +253,7 @@ reported with its PID.
 
 | file | SHA-256 | bytes |
 |---|---|---|
-| `stage3-harness.ps1` | `FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A` | 27854 |
+| `stage3-harness.ps1` | `96469DD7BBBB614D980B8C6EB9506D521D877D32C04C8D4EF2E08BE99A485813` | 29045 |
 | `observer.ps1` | `910618A13F66FA6F70E436AE202150BE75862E70C7D2F6ABBAA9F5A67E6B6700` | 13226 |
 | `stage3-baseline.ps1` | `F8494D0FF9FDD6390DC10CAF3DC28CDD2AE2D9FA629A714C64B347794FCE2298` | 10247 |
 
