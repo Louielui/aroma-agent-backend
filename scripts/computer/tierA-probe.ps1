@@ -147,7 +147,7 @@ function Probe {
 
   # A row that disagrees with the register is REFUSED, not tidied into a passing one. It is
   # kept and marked, because the fact that something tried to emit it is the evidence.
-  if (-not $reg.known -or $reg.drift.Count -gt 0) { $verdict = 'INVALID'; $mech = 'REGISTRY-DRIFT' }
+  if (-not $reg.known -or @($reg.drift).Count -gt 0) { $verdict = 'INVALID'; $mech = 'REGISTRY-DRIFT' }
 
   $rows.Add([ordered]@{
     id = $Id; target = $Target; permitted = $result; expectedPermitted = $ExpectPermitted
@@ -564,7 +564,7 @@ $composites = @(
 )
 
 $registryDrift = Get-AssertionRegistryDrift
-$controlProblems = Test-PositiveControls -Rows @($rows)
+$controlProblems = (Test-PositiveControls -Rows $rows.ToArray())
 
 $record = [ordered]@{
   probe = 'containment-v2-tierA'; nonce = $nonce
@@ -605,8 +605,8 @@ $res | ForEach-Object { Write-Host ("  RESIDUE: " + $_.id + ' -> ' + $_.residueP
 Write-Host ''
 Write-Host '=== register cross-check ===' -ForegroundColor Cyan
 Write-Host ('  fingerprint : ' + (Get-AssertionRegistryFingerprint))
-Write-Host ('  id/target/mask drift  : ' + $registryDrift.Count) -ForegroundColor $(if ($registryDrift.Count) { 'Red' } else { 'Green' })
-Write-Host ('  positive-control gaps : ' + $controlProblems.Count) -ForegroundColor $(if ($controlProblems.Count) { 'Red' } else { 'Green' })
+Write-Host ('  id/target/mask drift  : ' + @($registryDrift).Count) -ForegroundColor $(if (@($registryDrift).Count) { 'Red' } else { 'Green' })
+Write-Host ('  positive-control gaps : ' + @($controlProblems).Count) -ForegroundColor $(if (@($controlProblems).Count) { 'Red' } else { 'Green' })
 foreach ($d in $registryDrift)   { Write-Host ('    DRIFT   : ' + $d) -ForegroundColor Red }
 foreach ($c in $controlProblems) { Write-Host ('    CONTROL : ' + $c) -ForegroundColor Red }
 

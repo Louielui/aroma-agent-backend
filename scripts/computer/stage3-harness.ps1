@@ -1,4 +1,4 @@
-﻿# stage3-harness.ps1 - Phase 3b Part B. Runs UNATTENDED in session 5, as AromaOperator.
+# stage3-harness.ps1 - Phase 3b Part B. Runs UNATTENDED in session 5, as AromaOperator.
 #
 # THE CONSTRAINT THAT SHAPES EVERY LINE
 # While this runs there is no contact with the Owner. So it asks nothing, decides nothing
@@ -38,9 +38,14 @@ $WALL_START = Get-Date
 # an E7 collision put PROCESS_TERMINATE under the id for "read another session's module"
 # and the row looked covered, so a run whose ids are unconstrained produces more rows of
 # exactly that kind.
+# SNAPSHOT BEFORE DOT-SOURCING. Dot-sourcing runs the other script's param() block in THIS
+# scope, and assertionRegistry.ps1 declares $SelfTest / $RegistryPath - so the dot-source
+# below silently overwrote ours with its defaults. Measured: -RegistryPath never worked.
+$REGISTRY_PATH = $RegistryPath
+
 . (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
 try {
-  $regCount = Import-AssertionRegistry -Path $RegistryPath
+  $regCount = Import-AssertionRegistry -Path $REGISTRY_PATH
   Write-Host ("assertion register : " + $regCount + " entries  " + (Get-AssertionRegistryFingerprint)) -ForegroundColor Cyan
 } catch {
   Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
@@ -151,7 +156,7 @@ function Add-Row {
   $r = [ordered]@{ id = $Id; target = $Target; expectedPermitted = $reg.expectedPermitted
                    accessMask = $reg.accessMask; note = $Note }
   foreach ($k in $Data.Keys) { $r[$k] = $Data[$k] }
-  if (-not $reg.known -or $reg.drift.Count -gt 0) {
+  if (-not $reg.known -or @($reg.drift).Count -gt 0) {
     $r['verdict'] = 'INVALID'
     $r['mechanism'] = 'REGISTRY-DRIFT'
     $r['registryDrift'] = @($reg.drift)
@@ -522,8 +527,8 @@ try { Stop-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue }
 # independent things are reported: ids/targets/masks that disagreed with the register, and
 # negatives whose positive control was absent or did not hold in THIS run.
 $registryDrift = Get-AssertionRegistryDrift
-$controlProblems = Test-PositiveControls -Rows @($rows)
-if ($registryDrift.Count -or $controlProblems.Count) {
+$controlProblems = (Test-PositiveControls -Rows $rows.ToArray())
+if (@($registryDrift).Count -or @($controlProblems).Count) {
   Write-Host ""
   Write-Host "*** REGISTER CROSS-CHECK FOUND PROBLEMS ***" -ForegroundColor Red
   foreach ($d in $registryDrift)   { Write-Host ("  DRIFT   : " + $d) -ForegroundColor Red }
@@ -560,15 +565,15 @@ $completedPath = Join-Path $EvidenceDir ('stage3-COMPLETED-' + $manifest.operato
 [void](Write-Verified -Path $completedPath -Content (([ordered]@{
   marker = 'COMPLETED'; operatorNonce = $manifest.operatorNonce
   rowCount = $rows.Count; halted = $script:Halted
-  registryDriftCount = $registryDrift.Count
-  positiveControlProblemCount = $controlProblems.Count
+  registryDriftCount = @($registryDrift).Count
+  positiveControlProblemCount = @($controlProblems).Count
   resultsWritten = $wrote; at = (Get-Date).ToString('o')
 }) | ConvertTo-Json -Depth 5) -Quiet)
 
 Write-Host ""
 if ($script:Halted) {
   Write-Host ("STAGE 3 HALTED: " + $script:Halted) -ForegroundColor Red
-} elseif ($registryDrift.Count -or $controlProblems.Count) {
+} elseif (@($registryDrift).Count -or @($controlProblems).Count) {
   # "STAGE 3 COMPLETE" was once read as "3b is done" while four Tier B assertions had never
   # run. It now says only what it can support: the run finished, and the rows are not clean.
   Write-Host "STAGE 3 RAN - ROWS NOT CLEAN. Register drift or a failed positive control." -ForegroundColor Red

@@ -392,6 +392,73 @@ test('*** every assertion id appearing in a probe script exists in the register 
   assert.deepEqual(unknown.filter((u) => !allowed.has(u)), [])
 })
 
+/* ── the PowerShell defects that only appear when nothing is wrong ────────── */
+
+test('*** no probe reads a param that the dot-sourced register would clobber ***', () => {
+  // MEASURED: dot-sourcing runs the other script's param() block IN THIS SCOPE.
+  // assertionRegistry.ps1 declares -SelfTest and -RegistryPath, so after the dot-source both
+  // of the caller's values are silently replaced by $false / $null. `stage3-topup.ps1
+  // -SelfTest` therefore ran the FULL REAL MEASUREMENT PATH, and -RegistryPath never worked
+  // in any probe. Snapshot before the dot-source, into a name that is genuinely different —
+  // PowerShell variable names are CASE-INSENSITIVE, so $SELFTEST is the same variable as
+  // $SelfTest and the first fix failed for that reason.
+  const CLOBBERED = ['SelfTest', 'RegistryPath']
+  for (const f of ['tierA-probe.ps1', 'stage3-harness.ps1', 'stage3-topup.ps1']) {
+    const code = fs.readFileSync(path.join(SCRIPTS, f), 'utf8')
+    const dotSource = code.indexOf("assertionRegistry.ps1'")
+    assert.ok(dotSource > 0, f + ' dot-sources the register')
+    const after = code.slice(dotSource)
+    for (const p of CLOBBERED) {
+      assert.equal(new RegExp('\\$' + p + '\\b').test(after), false,
+        f + ' reads $' + p + ' AFTER the dot-source, where it has been overwritten')
+    }
+  }
+})
+
+test('*** the top-up refuses to measure if -SelfTest was bound ***', () => {
+  // The backstop, independent of every variable: $PSBoundParameters is captured at binding
+  // and a dot-source cannot reach it. Twice a broken flag let the real measurement path run
+  // in the OWNER's session and overwrite the clipboard sentinel.
+  const code = fs.readFileSync(path.join(SCRIPTS, 'stage3-topup.ps1'), 'utf8')
+  assert.match(code, /PSBoundParameters\.ContainsKey\('SelfTest'\)[\s\S]{0,600}exit 14/,
+    'reaching the measurement path with -SelfTest bound must exit, not press on')
+  assert.match(code, /\$SELF_TEST = \(\$PSBoundParameters\.ContainsKey\('SelfTest'\)/,
+    'the flag is sourced from PSBoundParameters, not from the clobberable parameter variable')
+})
+
+test('*** empty collections survive being returned and counted ***', () => {
+  // Three separate PowerShell 5.1 behaviours, all invisible until nothing is wrong:
+  //   . @($x) where $x is a List[object] THROWS "Argument types do not match", even empty
+  //   . a function returning @() emits zero objects, so the caller's variable becomes $null
+  //   . $null.Count under Set-StrictMode is a terminating error, not 0
+  // Together they killed the first real top-up run in the reporting section, after every
+  // measurement, having written nothing.
+  const reg = fs.readFileSync(path.join(SCRIPTS, 'assertionRegistry.ps1'), 'utf8')
+  assert.match(reg, /^Set-StrictMode -Version Latest$/m,
+    'the register runs under the same strictness as its callers, or its self-test proves nothing')
+  assert.match(reg, /function Get-AssertionRegistryDrift \{ , @/,
+    'leading comma so an empty return survives')
+  assert.match(reg, /, @\(\$problems\)/, 'same for the control check')
+
+  // Comments are stripped first: these files QUOTE the defective forms in order to explain
+  // them, and a scanner that trips on a file's own documentation is the trap this repo has
+  // fallen into before.
+  // SPLIT ON /\r?\n/, not '\n'. In a JS regex `.` does not match \r — it is a line
+  // terminator — so on a CRLF checkout `/^\s*#.*$/` fails to match a comment line and the
+  // strip silently does nothing. This repo normalises line endings, so the same file is LF
+  // in one working tree and CRLF in another: a scanner that only works on one of them is a
+  // scanner that passes until it matters.
+  const stripPs = (s) => s.split(/\r?\n/).map((l) => l.replace(/^\s*#.*$/, '')).join('\n')
+  for (const f of ['tierA-probe.ps1', 'stage3-harness.ps1', 'stage3-topup.ps1']) {
+    const code = stripPs(fs.readFileSync(path.join(SCRIPTS, f), 'utf8'))
+    assert.equal(/@\(\$rows\)/.test(code), false, f + ' must not wrap the row List in @() — it throws')
+    assert.ok(/\$rows\.ToArray\(\)|\$rowArray/.test(code), f + ' uses ToArray() instead')
+    // and no bare .Count on a collection that a function may have returned empty
+    assert.equal(/(?<!@\()\$(registryDrift|controlProblems|pendingRows)\.Count/.test(code), false,
+      f + ' still has a bare .Count on a possibly-null accumulator')
+  }
+})
+
 test('*** no probe script defines expectedPermitted at a call site any more ***', () => {
   // "may not define assertions locally", enforced. The -ExpectPermitted parameter is gone
   // from both probes; the value comes from the register or the row does not exist.

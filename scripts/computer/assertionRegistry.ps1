@@ -24,6 +24,13 @@
 
 param([switch]$SelfTest, [string]$RegistryPath)
 
+# THE SAME STRICTNESS AS EVERY CALLER. This was missing, and it is why the self-test below
+# passed while stage3-topup.ps1 crashed on the identical code: the probes all run
+# Set-StrictMode -Version Latest, the self-test did not, and a `.Count` on an unrolled empty
+# array is silently 0 in one mode and a terminating error in the other. A self-test that runs
+# under weaker rules than production is not a test of production.
+Set-StrictMode -Version Latest
+
 $script:AR_Entries     = $null
 $script:AR_Fingerprint = $null
 $script:AR_Drift       = New-Object System.Collections.Generic.List[string]
@@ -53,11 +60,17 @@ function Get-Assertion {
 function Get-AssertionsByTier {
   param([Parameter(Mandatory = $true)][ValidateSet('A', 'B')][string]$Tier)
   if ($null -eq $script:AR_Entries) { [void](Import-AssertionRegistry) }
-  @($script:AR_Entries.Values | Where-Object { $_.tier -eq $Tier } | Sort-Object id)
+  , @($script:AR_Entries.Values | Where-Object { $_.tier -eq $Tier } | Sort-Object id)
 }
 
 function Get-AssertionRegistryFingerprint { $script:AR_Fingerprint }
-function Get-AssertionRegistryDrift { @($script:AR_Drift) }
+
+# LEADING COMMA, DELIBERATELY. A function that returns @() emits ZERO objects, so the caller's
+# variable becomes $null - and under Set-StrictMode `$null.Count` is a TERMINATING error, not
+# 0. That is exactly what killed stage3-topup.ps1 on its first real run, on the clean path:
+# no drift, no control problems, empty arrays everywhere, and the reporting section died
+# before writing anything. The comma wraps the array so an empty one survives the return.
+function Get-AssertionRegistryDrift { , @($script:AR_Drift) }
 
 # Does an emitted target agree with the register? Exact string, or the declared pattern for
 # ids whose target carries a per-run nonce.
@@ -138,7 +151,7 @@ function Test-PositiveControls {
       $problems.Add("$($r.id): positive control $($e.positiveControlId) is $($byId[[string]$e.positiveControlId].verdict), not ACCEPTED - the negative proves nothing")
     }
   }
-  @($problems)
+  , @($problems)   # leading comma - see Get-AssertionRegistryDrift
 }
 
 # ---------------------------------------------------------------------------
@@ -151,6 +164,25 @@ if ($SelfTest) {
   Write-Host "=== assertionRegistry.ps1 self-test ===" -ForegroundColor Cyan
   Write-Host ("  entries     : " + $n)
   Write-Host ("  fingerprint : " + (Get-AssertionRegistryFingerprint))
+
+  # THE CLEAN PATH IS THE PATH PRODUCTION TAKES. Asserted first, and under StrictMode, because
+  # every empty-collection defect only shows up when nothing is wrong.
+  $emptyDrift = Get-AssertionRegistryDrift
+  $emptyProblems = Test-PositiveControls -Rows @()
+  $emptyTierless = Get-AssertionsByTier -Tier 'A'
+  $survivesEmpty = $true
+  foreach ($probe in @(@{ n = 'Get-AssertionRegistryDrift'; v = $emptyDrift },
+                       @{ n = 'Test-PositiveControls'; v = $emptyProblems },
+                       @{ n = 'Get-AssertionsByTier'; v = $emptyTierless })) {
+    try {
+      $null = $probe.v.Count
+      if ($null -eq $probe.v) { throw 'returned $null' }
+    } catch {
+      $survivesEmpty = $false
+      Write-Host ("  EMPTY-RETURN DEFECT in " + $probe.n + " : " + $_.Exception.Message) -ForegroundColor Red
+    }
+  }
+  Write-Host ("  empty returns keep .Count : " + $survivesEmpty) -ForegroundColor $(if ($survivesEmpty) { 'Green' } else { 'Red' })
 
   $bad = 0
   foreach ($id in ($script:AR_Entries.Keys | Sort-Object)) {
@@ -173,7 +205,7 @@ if ($SelfTest) {
     } else { $e.target }
 
     $r = Resolve-AssertionRow -Id $id -Target $probe -AccessMask $e.accessMask
-    if (-not $r.known -or $r.drift.Count -gt 0) {
+    if (-not $r.known -or @($r.drift).Count -gt 0) {
       $bad++
       Write-Host ("  DRIFT " + $id + " : " + ($r.drift -join '; ')) -ForegroundColor Red
     }
@@ -201,11 +233,12 @@ if ($SelfTest) {
   Write-Host ("  resolved with no drift   : " + ($n - $bad) + " / " + $n) -ForegroundColor $(if ($bad -eq 0) { 'Green' } else { 'Red' })
   Write-Host ("  detects a wrong mask     : " + ($neg.drift.Count -gt 0))
   Write-Host ("  detects an unknown id    : " + (-not $unknown.known))
-  Write-Host ("  detects a MISSING control: " + ($missingCtl.Count -eq 1))
-  Write-Host ("  detects a FAILED control : " + ($failedCtl.Count -eq 1))
-  Write-Host ("  passes a good control    : " + ($goodCtl.Count -eq 0))
+  Write-Host ("  detects a MISSING control: " + (@($missingCtl).Count -eq 1))
+  Write-Host ("  detects a FAILED control : " + (@($failedCtl).Count -eq 1))
+  Write-Host ("  passes a good control    : " + (@($goodCtl).Count -eq 0))
 
-  $pass = ($bad -eq 0) -and $controlOk -and ($missingCtl.Count -eq 1) -and ($failedCtl.Count -eq 1) -and ($goodCtl.Count -eq 0)
+  $pass = ($bad -eq 0) -and $survivesEmpty -and $controlOk -and
+          (@($missingCtl).Count -eq 1) -and (@($failedCtl).Count -eq 1) -and (@($goodCtl).Count -eq 0)
   Write-Host ""
   if ($pass) { Write-Host "SELF-TEST PASS" -ForegroundColor Green; exit 0 }
   Write-Host "SELF-TEST FAIL" -ForegroundColor Red

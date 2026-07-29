@@ -35,16 +35,54 @@ param(
   [string]$EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence',
   [string]$ClipNonce,
   [int]$WallClockMs = 300000,
-  [string]$RegistryPath
+  [string]$RegistryPath,
+  # SELF-TEST. Takes no measurements and touches no clipboard: it injects synthetic rows and
+  # runs the REAL reporting section, because that is the part that failed. See the block at
+  # the end of this file for why the clean path specifically.
+  [switch]$SelfTest,
+  [ValidateSet('clean', 'pending', 'dirty')][string]$SelfTestMode = 'clean'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 $WALL_START = Get-Date
 
+# ── EVERY CROSS-BLOCK VARIABLE, INITIALISED BEFORE ANY BRANCH CAN SKIP IT ────
+# The measurement section is inside `if (-not $script:Halted)`. Anything it defines is
+# therefore UNDEFINED on the halt path, and under Set-StrictMode reading an unset variable is
+# a terminating error - so a halt would have crashed the reporting section that exists to
+# record the halt. That is the same defect that lost the first real run, on a second path.
+$clipAtt = $null
+$rowArray = @()
+$registryDrift = @()
+$controlProblems = @()
+$pendingRows = @()
+$otherSession = $null
+
+# ── SNAPSHOT THE PARAMETERS BEFORE DOT-SOURCING ANYTHING ────────────────────
+# DOT-SOURCING A SCRIPT RUNS ITS param() BLOCK IN THIS SCOPE. assertionRegistry.ps1 declares
+# `param([switch]$SelfTest, [string]$RegistryPath)`, so the dot-source below SILENTLY
+# OVERWRITES both of ours with its defaults - $false and $null.
+#
+# MEASURED, not theorised: `stage3-topup.ps1 -SelfTest` ran the FULL REAL MEASUREMENT PATH,
+# twice, because $SelfTest was $false by the time the branch was reached. `-RegistryPath` was
+# being discarded the same way, here and in stage3-harness.ps1 - that parameter never worked.
+#
+# THE FIRST ATTEMPTED FIX ALSO FAILED, and instructively: the snapshot was named $SELFTEST,
+# which PowerShell treats as THE SAME VARIABLE as $SelfTest because variable names are
+# CASE-INSENSITIVE. A name that looks different and is not - exactly the disease this whole
+# phase keeps finding, in a new place.
+#
+# So the source of truth is $PSBoundParameters, which is captured at binding time and cannot
+# be reached by a later dot-source at all, and the local is named with an underscore so it is
+# genuinely a different name.
+$SELF_TEST = ($PSBoundParameters.ContainsKey('SelfTest') -and [bool]$PSBoundParameters['SelfTest'])
+$SELF_TEST_MODE = $SelfTestMode
+$REGISTRY_PATH = $RegistryPath
+
 . (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
 try {
-  $regCount = Import-AssertionRegistry -Path $RegistryPath
+  $regCount = Import-AssertionRegistry -Path $REGISTRY_PATH
 } catch {
   Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
   exit 13
@@ -56,6 +94,15 @@ $rows = New-Object System.Collections.Generic.List[object]
 $nonce = [guid]::NewGuid().ToString('N').Substring(0, 12)
 $script:Halted = $null
 
+if ($SELF_TEST) {
+  $EvidenceDir = Join-Path ([IO.Path]::GetTempPath()) ('topup-selftest-' + $nonce)
+  New-Item -ItemType Directory -Path $EvidenceDir -Force | Out-Null
+  Write-Host "=== stage3-topup.ps1 SELF-TEST ($SELF_TEST_MODE) ===" -ForegroundColor Magenta
+  Write-Host ("  evidence dir : " + $EvidenceDir)
+  Write-Host "  no measurements, no clipboard, no handles - the REPORTING path only"
+  Write-Host ""
+}
+
 Write-Host "=== Phase 3b Part B TOP-UP ===" -ForegroundColor Cyan
 Write-Host ("running as        : " + $idn.Name + "  SessionId=" + $mySession)
 Write-Host ("assertion register: " + $regCount + " entries  " + (Get-AssertionRegistryFingerprint))
@@ -64,15 +111,20 @@ Write-Host ""
 # ── the other session, named by measurement rather than assumed ──────────────
 $otherProc = @(Get-Process | Where-Object { $_.SessionId -ne $mySession -and $_.SessionId -ne 0 } | Sort-Object SessionId)
 $ownProc = @(Get-Process | Where-Object { $_.SessionId -eq $mySession -and $_.Id -ne $PID })
-$otherSession = if ($otherProc.Count -gt 0) { $otherProc[0].SessionId } else { $null }
+$otherSession = if (@($otherProc).Count -gt 0) { $otherProc[0].SessionId } else { $null }
 Write-Host ("other session     : " + $(if ($null -ne $otherSession) { $otherSession } else { 'NONE VISIBLE' }))
-if ($null -eq $otherSession) {
+if ($SELF_TEST) {
+  # The self-test asserts the reporting path, not the environment. Halting here because this
+  # machine has one session would mean the clean path is never exercised - and the clean path
+  # is exactly the one that broke.
+  $otherSession = 3
+} elseif ($null -eq $otherSession) {
   # Not a pass. With no other session running there is nothing to be isolated FROM, and
   # every negative below would be trivially true.
   $script:Halted = 'no other interactive session is present - every cross-session negative would be vacuous'
   Write-Host ("HALTED: " + $script:Halted) -ForegroundColor Red
 }
-if ($ownProc.Count -eq 0 -and -not $script:Halted) {
+if (-not $SELF_TEST -and @($ownProc).Count -eq 0 -and -not $script:Halted) {
   $script:Halted = 'no other own-session process to use as a positive control'
   Write-Host ("HALTED: " + $script:Halted) -ForegroundColor Red
 }
@@ -162,7 +214,7 @@ function Add-Row {
   $r = [ordered]@{ id = $Id; target = $Target; expectedPermitted = $reg.expectedPermitted
                    accessMask = $reg.accessMask; note = $Note }
   foreach ($k in $Data.Keys) { $r[$k] = $Data[$k] }
-  if (-not $reg.known -or $reg.drift.Count -gt 0) {
+  if (-not $reg.known -or @($reg.drift).Count -gt 0) {
     $r['verdict'] = 'INVALID'; $r['mechanism'] = 'REGISTRY-DRIFT'; $r['registryDrift'] = @($reg.drift)
   }
   $r['implies'] = $reg.implies
@@ -195,7 +247,43 @@ try {
   }) | ConvertTo-Json -Depth 4)
 } catch { Write-Host ("  could not write STARTED marker: " + $_.Exception.Message) -ForegroundColor Yellow }
 
-if (-not $script:Halted) {
+if ($SELF_TEST) {
+  # Synthetic rows in the exact shape Add-Row produces, so the reporting section sees what it
+  # sees in production. Ids and targets come from the register, so a rename breaks this too.
+  $clipAtt = [pscustomobject]@{ nonce = 'selftestclip'; digest = ('0' * 64); seeded = $true }
+  $mk = {
+    param([string]$Id, [string]$Target, $Mask, [string]$Verdict, [string]$Mech, [hashtable]$Extra)
+    $d = @{ verdict = $Verdict; mechanism = $Mech; residueLeft = $false }
+    if ($Extra) { foreach ($k in $Extra.Keys) { $d[$k] = $Extra[$k] } }
+    Add-Row -Id $Id -Target $Target -AccessMask $Mask -Note 'self-test synthetic row' -Data $d
+  }
+  & $mk 'POS-open-own-winsta'  ('\Sessions\' + $mySession + '\Windows') 0x0001 'ACCEPTED' 'PERMITTED' $null
+  & $mk 'E2-open-other-session-winsta' '\Sessions\3\Windows' 0x0001 'BOUNDED' 'ACL' $null
+  & $mk 'POS-read-own-clipboard' 'own session clipboard' $null 'ACCEPTED' 'PERMITTED' $null
+
+  switch ($SELF_TEST_MODE) {
+    'clean'   { & $mk 'E4-read-other-session-clipboard' 'session 3 clipboard' $null 'BOUNDED' 'ACL' @{ postRunVerified = $true } }
+    'pending' { & $mk 'E4-read-other-session-clipboard' 'session 3 clipboard' $null 'PENDING-VERIFY' 'ACL' @{ pendingVerdict = 'BOUNDED'; requiresPostRunVerify = $true } }
+    'dirty'   {
+      & $mk 'E4-read-other-session-clipboard' 'session 3 clipboard' $null 'BOUNDED' 'ACL' $null
+      # a negative whose control is absent, and a target that disagrees with the register
+      & $mk 'E7-read-other-session-module' 'the wrong object entirely' 0x0410 'BOUNDED' 'ACL' $null
+    }
+  }
+} elseif (-not $script:Halted) {
+# ── THE BACKSTOP ────────────────────────────────────────────────────────────
+# Independent of every variable above. If -SelfTest was bound and control still reached the
+# measurement path, something in the flag plumbing is wrong and the correct response is to
+# measure NOTHING - not to press on. Twice now, a broken flag let this path run for real in
+# the OWNER's session and overwrite the clipboard sentinel. $PSBoundParameters is captured at
+# parameter binding and cannot be reached by a dot-source, so it is the one thing here that
+# cannot be clobbered.
+if ($PSBoundParameters.ContainsKey('SelfTest')) {
+  Write-Host ""
+  Write-Host "*** REFUSED: -SelfTest was bound, yet the MEASUREMENT path was reached. ***" -ForegroundColor Red
+  Write-Host "*** The self-test flag is not plumbed correctly. NOTHING was measured.  ***" -ForegroundColor Red
+  exit 14
+}
 Write-Host "=== measurements ===" -ForegroundColor Cyan
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -449,12 +537,19 @@ Add-Row -Id 'E9-read-other-session-cmdline' -Target 'other-session process Comma
 # ═══════════════════════════════════════════════════════════════════════════
 # results
 # ═══════════════════════════════════════════════════════════════════════════
+# ── .ToArray(), NOT @() ──────────────────────────────────────────────────────
+# MEASURED on PowerShell 5.1.26100: `@($x)` where $x is a List[object] throws
+# "Argument types do not match" - EVEN WHEN THE LIST IS EMPTY. List[string] is fine, which is
+# why the existing Get-TopLevelTitles never showed it. This is what actually killed the first
+# real run: the reporting section threw at the `Test-PositiveControls -Rows @($rows)` line,
+# so $controlProblems and then $record were never set, and nothing was written at all.
+$rowArray = $rows.ToArray()
 $registryDrift = Get-AssertionRegistryDrift
-$controlProblems = Test-PositiveControls -Rows @($rows)
+$controlProblems = (Test-PositiveControls -Rows $rowArray)
 
 # PENDING-VERIFY rows are unfinished, not passing. Named at the top level so a reader of the
 # results file cannot miss that this run does not stand on its own.
-$pendingRows = @(@($rows) | Where-Object { $_.Contains('verdict') -and $_.verdict -eq 'PENDING-VERIFY' } | ForEach-Object { $_.id })
+$pendingRows = @($rowArray | Where-Object { $_.Contains('verdict') -and $_.verdict -eq 'PENDING-VERIFY' } | ForEach-Object { $_.id })
 
 $record = [ordered]@{
   probe = 'stage3-topup'
@@ -490,29 +585,29 @@ try {
 try {
   Set-Content -LiteralPath (Join-Path $EvidenceDir ('stage3-topup-COMPLETED-' + $nonce + '.json')) -Encoding UTF8 -ErrorAction Stop -Value (([ordered]@{
     marker = 'TOPUP-COMPLETED'; nonce = $nonce; rowCount = $rows.Count; halted = $script:Halted
-    registryDriftCount = $registryDrift.Count; positiveControlProblemCount = $controlProblems.Count
+    registryDriftCount = @($registryDrift).Count; positiveControlProblemCount = @($controlProblems).Count
     resultsWritten = $wrote; at = (Get-Date).ToString('o')
   }) | ConvertTo-Json -Depth 4)
 } catch { }
 
 Write-Host ""
 Write-Host "=== register cross-check ===" -ForegroundColor Cyan
-Write-Host ("  id/target/mask drift  : " + $registryDrift.Count) -ForegroundColor $(if ($registryDrift.Count) { 'Red' } else { 'Green' })
-Write-Host ("  positive-control gaps : " + $controlProblems.Count) -ForegroundColor $(if ($controlProblems.Count) { 'Red' } else { 'Green' })
+Write-Host ("  id/target/mask drift  : " + @($registryDrift).Count) -ForegroundColor $(if (@($registryDrift).Count) { 'Red' } else { 'Green' })
+Write-Host ("  positive-control gaps : " + @($controlProblems).Count) -ForegroundColor $(if (@($controlProblems).Count) { 'Red' } else { 'Green' })
 foreach ($d in $registryDrift)   { Write-Host ("    DRIFT   : " + $d) -ForegroundColor Red }
 foreach ($c in $controlProblems) { Write-Host ("    CONTROL : " + $c) -ForegroundColor Red }
 
 Write-Host ""
 if ($script:Halted) {
   Write-Host ("TOP-UP HALTED: " + $script:Halted) -ForegroundColor Red
-} elseif ($registryDrift.Count -or $controlProblems.Count) {
+} elseif (@($registryDrift).Count -or @($controlProblems).Count) {
   Write-Host "TOP-UP RAN - ROWS NOT CLEAN. Do not read this as a pass." -ForegroundColor Red
-} elseif ($pendingRows.Count) {
-  Write-Host ("TOP-UP RAN - " + $pendingRows.Count + " ROW(S) UNFINISHED, awaiting owner-side verification.") -ForegroundColor Yellow
+} elseif (@($pendingRows).Count) {
+  Write-Host ("TOP-UP RAN - " + @($pendingRows).Count + " ROW(S) UNFINISHED, awaiting owner-side verification.") -ForegroundColor Yellow
 } else {
   Write-Host "TOP-UP COMPLETE - rows agree with the register and every negative had a holding control" -ForegroundColor Cyan
 }
-if ($pendingRows.Count) {
+if (@($pendingRows).Count) {
   Write-Host ""
   Write-Host "*** REQUIRED NEXT STEP, IN SESSION 3 ***" -ForegroundColor Yellow
   foreach ($p in $pendingRows) { Write-Host ("  " + $p + " is PENDING-VERIFY") -ForegroundColor Yellow }
@@ -520,4 +615,70 @@ if ($pendingRows.Count) {
   Write-Host "  Without it these rows stay unfinished. They will never become a pass on their own." -ForegroundColor Yellow
 }
 Write-Host ""
-Write-Host "DO NOT CLOSE THIS WINDOW until the results have been confirmed readable." -ForegroundColor Yellow
+if (-not $SELF_TEST) {
+  Write-Host "DO NOT CLOSE THIS WINDOW until the results have been confirmed readable." -ForegroundColor Yellow
+  return
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SELF-TEST ASSERTIONS
+#
+# THE CLEAN PATH IS THE ONE THAT BROKE. Every empty-collection defect in PowerShell only
+# appears when nothing is wrong: `@()` on a List[object] throws even when the list is empty,
+# a function returning an empty array assigns $null, and `$null.Count` under Set-StrictMode
+# is a terminating error rather than 0. So a run with zero drift and zero control problems -
+# the run that is expected to happen - is the run that dies, and it dies in the reporting
+# section, AFTER every measurement, having written nothing.
+#
+# This asserts the reporting section actually produced files. Nothing else is proof: the
+# console printing plausible output is exactly what the crashed run also did.
+# ═══════════════════════════════════════════════════════════════════════════
+$fails = New-Object System.Collections.Generic.List[string]
+function Check {
+  param([string]$What, [bool]$Ok)
+  Write-Host ("  {0,-52} {1}" -f $What, $(if ($Ok) { 'ok' } else { 'FAIL' })) -ForegroundColor $(if ($Ok) { 'Green' } else { 'Red' })
+  if (-not $Ok) { $fails.Add($What) }
+}
+
+Write-Host "=== self-test assertions ===" -ForegroundColor Magenta
+Check 'results file was WRITTEN (not just printed)' ([bool]$wrote)
+Check 'results file exists on disk' (Test-Path -LiteralPath $resultsPath)
+$completedPath = Join-Path $EvidenceDir ('stage3-topup-COMPLETED-' + $nonce + '.json')
+Check 'COMPLETED marker exists' (Test-Path -LiteralPath $completedPath)
+Check 'STARTED marker exists' (Test-Path -LiteralPath (Join-Path $EvidenceDir ('stage3-topup-STARTED-' + $nonce + '.json')))
+
+$doc = $null
+try { $doc = Get-Content -LiteralPath $resultsPath -Raw | ConvertFrom-Json } catch { }
+Check 'results file is valid JSON' ($null -ne $doc)
+if ($doc) {
+  Check 'rows survived into the record' (@($doc.rows).Count -eq $rows.Count)
+  Check 'clipNonce recorded' ([string]$doc.clipNonce -eq 'selftestclip')
+  Check 'registryFingerprint recorded' ([bool]$doc.registryFingerprint)
+  switch ($SELF_TEST_MODE) {
+    'clean' {
+      Check 'clean run: no register drift' (@($doc.registryDrift).Count -eq 0)
+      Check 'clean run: no control problems' (@($doc.positiveControlProblems).Count -eq 0)
+      Check 'clean run: nothing pending' (@($doc.pendingVerification).Count -eq 0)
+    }
+    'pending' {
+      Check 'pending run: E4 is listed as unfinished' (@($doc.pendingVerification) -contains 'E4-read-other-session-clipboard')
+      Check 'pending run: still no drift' (@($doc.registryDrift).Count -eq 0)
+    }
+    'dirty' {
+      Check 'dirty run: drift was detected' (@($doc.registryDrift).Count -gt 0)
+      Check 'dirty run: a missing control was detected' (@($doc.positiveControlProblems).Count -gt 0)
+      Check 'dirty run: the drifted row is INVALID/REGISTRY-DRIFT' (
+        [bool](@($doc.rows) | Where-Object { $_.id -eq 'E7-read-other-session-module' -and $_.mechanism -eq 'REGISTRY-DRIFT' }))
+    }
+  }
+}
+
+Remove-Item -LiteralPath $EvidenceDir -Recurse -Force -ErrorAction SilentlyContinue
+
+Write-Host ""
+if (@($fails).Count -eq 0) {
+  Write-Host ("SELF-TEST PASS (" + $SELF_TEST_MODE + ")") -ForegroundColor Green
+  exit 0
+}
+Write-Host ("SELF-TEST FAIL (" + $SELF_TEST_MODE + "): " + (@($fails) -join '; ')) -ForegroundColor Red
+exit 1
