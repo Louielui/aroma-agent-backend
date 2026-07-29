@@ -114,7 +114,7 @@ Copy-Item C:\Aroma\aroma-agent-backend\scripts\computer\stage3-harness.ps1 C:\Ar
 icacls C:\AromaOperator-Probe\stage3-harness.ps1
 ```
 
-Expected: `8C0D5D55C948F6CCB8EEFE5EF40F3BF9190113C78DFF1EC080B419A33A1ED8D6` and `27449`, and an ACL showing `AromaOperator` with
+Expected: `FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A` and `27854`, and an ACL showing `AromaOperator` with
 `(DENY)` on write and `(RX)` allowed. Any mismatch ⇒ **stop**.
 
 **A3 — session 3, normal. Generate the run manifest (nonces).**
@@ -218,7 +218,7 @@ One paste. Verification and execution are in the same process so nothing can cha
 file between the check and the run.
 
 ```
-$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='8C0D5D55C948F6CCB8EEFE5EF40F3BF9190113C78DFF1EC080B419A33A1ED8D6'; $n=27449; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
+$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A'; $n=27854; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
 ```
 
 Hash mismatch means it does not run. There is no override and no "run it anyway" branch —

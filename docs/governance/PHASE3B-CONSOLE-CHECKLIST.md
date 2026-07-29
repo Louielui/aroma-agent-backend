@@ -46,6 +46,26 @@ something different on each display and the thresholds would have silently drift
 
 ---
 
+## STEP 0b — session 3, ELEVATED. Stage everything session 5 will need
+
+**This step was missing and it would have cost a full Part A redo.** AromaOperator cannot
+read `C:\Aroma` at all — `listRepo` = false, 17/17 — so every script the harness touches
+must already be in `C:\AromaOperator-Probe\`.
+
+Verified by inspection of `stage3-harness.ps1`: exactly **one** script dependency
+(`observer.ps1`, line 360), **zero** dot-sourcing, and no path under `C:\Aroma` other than
+the evidence directory, which is explicitly allowed. `stage3-baseline.ps1` is also needed
+there because STEP 1 runs it from session 5.
+
+```
+Copy-Item C:\Aroma\aroma-agent-backend\scripts\computer\stage3-harness.ps1  C:\AromaOperator-Probe\ -Force
+Copy-Item C:\Aroma\aroma-agent-backend\scripts\computer\observer.ps1        C:\AromaOperator-Probe\ -Force
+Copy-Item C:\Aroma\aroma-agent-backend\scripts\computer\stage3-baseline.ps1 C:\AromaOperator-Probe\ -Force
+Get-ChildItem C:\AromaOperator-Probe\*.ps1 | ForEach-Object { '{0}  {1}  {2}' -f $_.Name, (Get-FileHash $_.FullName -Algorithm SHA256).Hash, $_.Length }
+```
+
+Compare every line against the table at the end of this file. Any mismatch ⇒ **stop**.
+
 ## STEP 1 — switch to session 5, run the A4b baseline, switch back
 
 The one thing that cannot be checked from session 3. DPI is per-user and the fresh profile
@@ -138,7 +158,7 @@ reading their absence as isolation.
 hash and runs only on a match — there is no override:
 
 ```
-$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='8C0D5D55C948F6CCB8EEFE5EF40F3BF9190113C78DFF1EC080B419A33A1ED8D6'; $n=27449; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
+$f='C:\AromaOperator-Probe\stage3-harness.ps1'; $e='FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A'; $n=27854; $a=(Get-FileHash $f -Algorithm SHA256).Hash; $b=(Get-Item $f).Length; "hash : $a"; "bytes: $b"; if($a -eq $e -and $b -eq $n){'MATCH - running'; powershell -NoProfile -ExecutionPolicy Bypass -File $f}else{'MISMATCH - DO NOT RUN'}
 ```
 
 **Expected:** `MATCH - running`, then a row table, then `STAGE 3 COMPLETE` or
@@ -167,7 +187,7 @@ Test-Path C:\Aroma\ComputerOperator-Evidence\stage3-results.json
 | If | Do |
 |---|---|
 | `True` | Good. **Still leave the PowerShell window open** |
-| `False` | **DO NOT CLOSE THE WINDOW.** The console holds the dumped JSON and is the only copy. Scroll up, select all, copy, and save it to `C:\AromaOperator-Probe\manual-results.txt`. Only then continue |
+| `False` | **DO NOT CLOSE THE WINDOW.** The console holds the dumped JSON and is the only copy. Scroll up, select all, copy, and save it to **`%USERPROFILE%\manual-results.txt`** — *not* the probe directory, which AromaOperator cannot write to by design. Only then continue |
 
 ---
 
@@ -226,3 +246,20 @@ to avoid.
 
 Expected: per-target `gone : True` and `residueLeft : False`. Anything still running is
 reported with its PID.
+
+---
+
+## Staged-file hash table — check STEP 0b against this
+
+| file | SHA-256 | bytes |
+|---|---|---|
+| `stage3-harness.ps1` | `FAE20D38378812C5CF5AAEF4C8E34F23ED46D6A5FB1948A824D9E2726D29051A` | 27854 |
+| `observer.ps1` | `910618A13F66FA6F70E436AE202150BE75862E70C7D2F6ABBAA9F5A67E6B6700` | 13226 |
+| `stage3-baseline.ps1` | `F8494D0FF9FDD6390DC10CAF3DC28CDD2AE2D9FA629A714C64B347794FCE2298` | 10247 |
+
+`observer.ps1` is unchanged from the hash recorded when the Observer task was registered,
+so the task's SHA pin still matches.
+
+**The harness hash changed** from the earlier `8C0D5D55…`/27449. That earlier build wrote
+its fallback into the probe directory, which AromaOperator cannot write to — the fallback
+could never have fired. Re-stage; do not run the old one.

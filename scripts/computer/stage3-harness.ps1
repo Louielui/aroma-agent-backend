@@ -103,7 +103,13 @@ function Write-Verified {
     } catch { }
     Start-Sleep -Milliseconds 300
   }
-  $fallback = Join-Path $ProbeDir ('FALLBACK-' + (Split-Path $Path -Leaf))
+  # NOT the probe directory. AromaOperator has an explicit DENY on write there - that is
+  # deliberate, it is what stops the account rewriting the script it is about to run - so a
+  # fallback aimed at it could never succeed. Its own profile is the one location Tier A
+  # measured as writable (A1/A2, ACCEPTED).
+  $fallbackDir = $env:USERPROFILE
+  if (-not $fallbackDir) { $fallbackDir = $env:TEMP }
+  $fallback = Join-Path $fallbackDir ('FALLBACK-' + (Split-Path $Path -Leaf))
   try {
     Set-Content -LiteralPath $fallback -Value $Content -Encoding UTF8 -ErrorAction Stop
     Write-Host ("  PRIMARY WRITE FAILED - wrote fallback: " + $fallback) -ForegroundColor Yellow
