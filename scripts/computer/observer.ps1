@@ -91,7 +91,7 @@ $result = [ordered]@{
   sessionId = $mySession; windowStation = SafeWinSta; desktop = SafeDesktop; sessionState = $sessionState
   evidenceSha256 = $null; evidenceBytes = $null
   imageWidth = $null; imageHeight = $null; nonBlackRatio = $null
-  windowCount = $null; nodeCount = $null; titles = $null
+  windowCount = $null; nodeCount = $null; nodeReadFailures = $null; titles = $null
   measuredBy = $idn.Name; measuredSid = $idn.User.Value
   # DPI is recorded per measurement, not once per machine: per-monitor awareness means it
   # varies by screen, so a capture without its DPI cannot be reasoned about afterwards.
@@ -214,15 +214,27 @@ try {
 
       $nodes = $target.FindAll([System.Windows.Automation.TreeScope]::Descendants, [System.Windows.Automation.Condition]::TrueCondition)
       $lines = New-Object System.Collections.Generic.List[string]
+      # COUNTED, NOT SWALLOWED. This catch block used to be empty, and that is how a run
+      # produced a 0-byte artefact while reporting ok=true: every per-node property read can
+      # fail independently, and discarding those failures leaves a node count that does not
+      # describe what was captured. Refuse, do not trim.
+      $failures = 0
       foreach ($n in $nodes) {
-        try { $lines.Add(($n.Current.ControlType.ProgrammaticName + ' | ' + $n.Current.Name)) } catch { }
+        try { $lines.Add(($n.Current.ControlType.ProgrammaticName + ' | ' + $n.Current.Name)) } catch { $failures++ }
       }
       $bytes = [Text.Encoding]::UTF8.GetBytes(($lines -join "`r`n"))
       $ev = Save-Evidence -Bytes $bytes -Suffix '.uia.txt'
       $result.nodeCount = $lines.Count
+      $result.nodeReadFailures = $failures
       $result.evidenceSha256 = $ev.sha
       $result.evidenceBytes = $ev.bytes
-      $result.ok = $true
+      # A ZERO-NODE READ IS NOT A SUCCESS. The only reason a positive control exists is to
+      # show the reader is not blind; one that read nothing shows the opposite. Named
+      # refusals, because an unexplained falsy result is exactly what the rules forbid.
+      if ($failures -gt 0) { $result.refusal = 'uia_node_read_failures'; $result.ok = $false }
+      elseif ($lines.Count -le 0) { $result.refusal = 'uia_zero_nodes'; $result.ok = $false }
+      elseif ($ev.bytes -le 0) { $result.refusal = 'uia_empty_evidence'; $result.ok = $false }
+      else { $result.ok = $true }
     }
   }
 } catch {

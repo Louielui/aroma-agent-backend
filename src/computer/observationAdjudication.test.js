@@ -67,6 +67,79 @@ for (const [label, over, ruleId] of cases) {
   })
 }
 
+/* ── read_uia_tree had NO vacuous-pass rule at all ────────────────────────── */
+
+/** A UIA context that would legitimately pass, so each case below spoils exactly one thing. */
+const goodUia = (over = {}) => good(Object.assign({
+  action: 'read_uia_tree', nodeCount: 37, nodeReadFailures: 0, evidenceBytes: 1_842
+}, over))
+
+test('the good UIA context adjudicates ACCEPTED — the control for the three cases below', () => {
+  assert.equal(O.adjudicate(goodUia()).verdict, 'ACCEPTED')
+})
+
+test('*** a zero-node UIA read is INVALID, and once was not ***', () => {
+  // MEASURED, not hypothetical. The stored artefact for POS-read_uia_tree-own is 0 bytes.
+  // list_windows had zero-windows and capture_screen had capture-empty; read_uia_tree had
+  // nothing, so the observer's `ok = true` carried the row straight to ACCEPTED. A positive
+  // control exists for exactly one reason — to show the observer is not blind — so a
+  // control that read nothing is not a weak control, it is NO control, and every negative
+  // resting on it was unsupported.
+  for (const over of [{ nodeCount: 0 }, { nodeCount: null }, { nodeCount: undefined }]) {
+    const r = O.adjudicate(goodUia(over))
+    assert.equal(r.verdict, 'INVALID', JSON.stringify(over))
+    assert.ok(r.reasons.some((x) => x.id === 'uia-zero-nodes'))
+  }
+})
+
+test('*** an empty UIA artefact is INVALID even if a node count is reported ***', () => {
+  // Both directions matter: nodes counted but nothing stored is the shape the 0-byte file
+  // would take if the per-node reads had failed rather than the tree being empty.
+  const r = O.adjudicate(goodUia({ nodeCount: 12, evidenceBytes: 0 }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'uia-empty-evidence'))
+})
+
+test('*** swallowed per-node failures make the node count meaningless ***', () => {
+  // observer.ps1 caught and DISCARDED each node's property read failure, so N nodes could
+  // yield zero text while still reporting N. Refuse, do not trim: the failures are counted
+  // and the row is INVALID rather than tidied into a pass.
+  const r = O.adjudicate(goodUia({ nodeReadFailures: 3 }))
+  assert.equal(r.verdict, 'INVALID')
+  assert.ok(r.reasons.some((x) => x.id === 'uia-node-read-failures'))
+})
+
+test('the UIA rules do not fire on the other two actions', () => {
+  // A rule that fires everywhere would make every capture and every enumeration INVALID,
+  // which is a different way of proving nothing.
+  assert.equal(O.adjudicate(good({ action: 'list_windows', nodeCount: 0 })).verdict, 'ACCEPTED')
+  assert.equal(O.adjudicate(good({
+    action: 'capture_screen', sentinelWidth: 400, sentinelHeight: 200,
+    ownSignatureSamples: 900, ownerSignatureSamples: 0, nodeCount: 0
+  })).verdict, 'ACCEPTED')
+})
+
+test('nodeReadFailures is a COUNT and travels on both the result and the audit', () => {
+  assert.ok(O.RESULT_FIELDS.includes('nodeReadFailures'))
+  assert.ok(O.AUDIT_FIELDS.includes('nodeReadFailures'))
+  // and it is a count, never text — the shape is the guarantee
+  for (const banned of ['uiaText', 'nodes', 'nodeText']) {
+    assert.equal(O.RESULT_FIELDS.includes(banned), false)
+  }
+})
+
+test('*** the observer names a refusal for each zero case, so no block is unexplained ***', () => {
+  // Read from the script, because the observer is what actually produces the artefact and a
+  // rule the producer does not honour is a rule in prose.
+  const src = fs.readFileSync(path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'observer.ps1'), 'utf8')
+  for (const refusal of ['uia_zero_nodes', 'uia_empty_evidence', 'uia_node_read_failures']) {
+    assert.ok(src.includes(refusal), 'observer.ps1 names the refusal ' + refusal)
+  }
+  assert.ok(src.includes('$failures++'), 'per-node failures are counted, not swallowed')
+  assert.equal(/catch \{ \}\s*\r?\n\s*\}\s*\r?\n\s*\$bytes = \[Text\.Encoding\]/.test(src), false,
+    'the empty catch before the byte join is gone')
+})
+
 /* ── not-found is a zero result, never isolation evidence ─────────────────── */
 
 test('*** a no_target_window result is INVALID, not "the owner window is absent" ***', () => {
@@ -385,6 +458,103 @@ test('*** LOCK 3 — the 7-day sweep actually deletes an aged file from disk ***
   assert.equal(result.kept, 1, 'the in-window file survived')
 
   fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('*** LOCK 3 — the sweep deletes the names that actually hold raw content ***', () => {
+  // THE DEFECT THIS REPLACES: the sweep matched `ev_*.png` and nothing else, so every
+  // artefact that actually holds pixels or UI text — stage3-capture-*, obs-*, obs-*.uia.txt
+  // — was never swept, in any run, ever. The old test passed and was honest about what it
+  // tested; it just did not test the files being produced. Exercised here against the REAL
+  // names, with the deletion observed on disk.
+  const { createEvidenceStore } = require('./evidenceStore')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-evidence-'))
+  let clock = Date.parse('2026-07-20T00:00:00Z')
+  const store = createEvidenceStore({ baseDir: dir, now: () => clock })
+
+  const aged = [
+    'ev_abc.png',
+    'stage3-capture-005713.png',
+    'stage3-owner-reference-32f6763b0bb5.png',
+    'stage3-sentinel-own-deadbeef.png',
+    'obs-20260728-120000.png',
+    'obs-20260728-120000.uia.txt'
+  ]
+  const records = [
+    'stage3-manifest.json',
+    'stage3-results.json',
+    'stage3-STARTED-abc123.json',
+    'stage3-COMPLETED-abc123.json',
+    'stage3-topup-results-def456.json',
+    'stage3-sentinel-owner-792a95043e4f.json',
+    'stage3-clip-owner-abc.json',
+    'stage3-uia.json',
+    'sessiongate-backup-0123abcd.xml',
+    'tierA-probe.out'
+  ]
+  for (const n of aged.concat(records)) {
+    fs.writeFileSync(path.join(dir, n), 'x')
+    fs.utimesSync(path.join(dir, n), new Date(clock), new Date(clock))
+  }
+  // one raw artefact written INSIDE the window, so the sweep has to discriminate by age too
+  clock += 8 * 24 * 60 * 60 * 1000
+  fs.writeFileSync(path.join(dir, 'stage3-capture-235959.png'), 'x')
+  fs.utimesSync(path.join(dir, 'stage3-capture-235959.png'), new Date(clock), new Date(clock))
+  // and one nobody declared
+  fs.writeFileSync(path.join(dir, 'something-nobody-declared.bin'), 'x')
+
+  const r = store.sweep()
+
+  assert.deepEqual(r.deleted.sort(), aged.slice().sort(), 'every aged raw artefact was deleted')
+  for (const n of aged) {
+    assert.equal(fs.existsSync(path.join(dir, n)), false, n + ' is GONE FROM DISK, not merely reported')
+  }
+  assert.equal(r.kept, 1, 'the in-window capture survived')
+  assert.equal(fs.existsSync(path.join(dir, 'stage3-capture-235959.png')), true)
+
+  // and the audit trail is untouched — deleting it would destroy the record of what the
+  // pixels once showed, which is the opposite of what Lock 3 is for
+  assert.deepEqual(r.retained.sort(), records.slice().sort())
+  for (const n of records) assert.equal(fs.existsSync(path.join(dir, n)), true, n + ' must survive')
+
+  // an artefact nobody declared is REPORTED, never deleted and never silently kept forever
+  assert.deepEqual(r.unclassified, ['something-nobody-declared.bin'])
+  assert.equal(fs.existsSync(path.join(dir, 'something-nobody-declared.bin')), true)
+
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('*** the 0-byte UIA artefact that started this is swept like any other ***', () => {
+  // obs-...uia.txt at 0 bytes was the artefact nobody could explain. Whatever its size, it
+  // holds UI node text and it is on the deletion path.
+  const { classify } = require('./evidenceStore')
+  assert.equal(classify('obs-20260728-005713.uia.txt').kind, 'raw')
+  assert.equal(classify('obs-20260728-005713.uia.txt').rule, 'observer-uia-text')
+})
+
+test('every raw-content and record rule is reachable and none overlaps', () => {
+  // A rule that can never fire is decoration, and a name matching both sets would make the
+  // outcome depend on evaluation order rather than on a decision.
+  const E = require('./evidenceStore')
+  const samples = {
+    'ev_x.png': 'store-own',
+    'stage3-capture-1.png': 'stage3-capture',
+    'stage3-owner-reference-1.png': 'stage3-owner-reference',
+    'stage3-sentinel-own-1.png': 'stage3-sentinel-shot',
+    'obs-1.png': 'observer-capture',
+    'obs-1.uia.txt': 'observer-uia-text'
+  }
+  for (const [name, rule] of Object.entries(samples)) {
+    const c = E.classify(name)
+    assert.equal(c.kind, 'raw', name)
+    assert.equal(c.rule, rule, name)
+  }
+  assert.deepEqual(E.RAW_CONTENT_PATTERNS.map((r) => r.id).sort(), Object.values(samples).sort(),
+    'every raw rule has a sample above — an unreachable rule is decoration')
+  for (const r of E.RECORD_PATTERNS) assert.ok(r.why && r.why.length > 10, r.id + ' says why it is retained')
+
+  // the sentinel PNG and the sentinel ATTESTATION are different things and must not collide
+  assert.equal(E.classify('stage3-sentinel-owner-792a.json').kind, 'record')
+  assert.equal(E.classify('stage3-sentinel-own-792a.png').kind, 'raw')
 })
 
 test('the sweep is driven by the injected clock, so the deletion path is reachable in a test', () => {

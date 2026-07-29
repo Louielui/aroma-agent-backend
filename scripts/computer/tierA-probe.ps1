@@ -1,4 +1,4 @@
-﻿# tierA-probe.ps1 - Containment Set v2, TIER A. Run AS AromaOperator, INSIDE session 5.
+# tierA-probe.ps1 - Containment Set v2, TIER A. Run AS AromaOperator, INSIDE session 5.
 #
 # TIER A ONLY: everything measurable with zero observation capability. No window
 # enumeration, no clipboard, no screen capture, no cross-session handle opening. Tier B is
@@ -46,6 +46,17 @@ $ErrorActionPreference = 'Continue'
 $nonce  = [guid]::NewGuid().ToString('N').Substring(0, 8)
 $rows   = New-Object System.Collections.Generic.List[object]
 $GateTask = 'AromaComputerOperator-SessionGate'
+
+# ── THE ASSERTION REGISTER ───────────────────────────────────────────────────
+# This probe may not DEFINE an assertion. expectedPermitted comes from the register, and the
+# target it measures is CHECKED against the register rather than trusted. See
+# assertionRegistry.ps1 for why: an id whose meaning can change unnoticed makes every other
+# id unverified too.
+. (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
+try { [void](Import-AssertionRegistry) } catch {
+  Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
+  exit 13
+}
 
 # ---------------------------------------------------------------------------
 # identity - emitted with the rows so scope travels with the result
@@ -100,12 +111,15 @@ function Probe {
   param(
     [string]$Id,
     [string]$Target,
-    [bool]$ExpectPermitted,
     [string]$Note,
     [scriptblock]$ExistsCheck,
     [scriptblock]$Action,
     [scriptblock]$Cleanup
   )
+  # expectedPermitted is NOT a parameter. It is the register's, so a call site cannot flip
+  # what an assertion claims without the register saying so.
+  $reg = Resolve-AssertionRow -Id $Id -Target $Target
+  $ExpectPermitted = $reg.expectedPermitted
   $exists = $null
   if ($ExistsCheck) { try { $exists = [bool](& $ExistsCheck) } catch { $exists = $null } }
 
@@ -131,11 +145,18 @@ function Probe {
     elseif (-not $ExpectPermitted)            { 'BOUNDED' }
     else                                      { 'UNEXPECTED-BLOCK' }
 
+  # A row that disagrees with the register is REFUSED, not tidied into a passing one. It is
+  # kept and marked, because the fact that something tried to emit it is the evidence.
+  if (-not $reg.known -or $reg.drift.Count -gt 0) { $verdict = 'INVALID'; $mech = 'REGISTRY-DRIFT' }
+
   $rows.Add([ordered]@{
     id = $Id; target = $Target; permitted = $result; expectedPermitted = $ExpectPermitted
+    accessMask = $reg.accessMask
     verdict = $verdict; mechanism = $mech; targetExists = $exists
     errorType = $(if ($err) { $err.GetType().Name } else { $null })
     residueLeft = $residue; residuePath = $residuePath; note = $Note
+    registryDrift = @($reg.drift)
+    implies = $reg.implies; doesNotImply = $reg.doesNotImply
   })
 }
 
@@ -183,14 +204,18 @@ if ($gateXmlBefore) {
 $c4Safe = ($null -ne $gateXmlBefore) -and $gateBackupWritten
 
 if (-not $c4Safe) {
+  # Even the skipped row takes its expectation from the register - a hand-written $false
+  # here would be a second definition of C4, which is the thing this register exists to stop.
+  $c4reg = Resolve-AssertionRow -Id 'C4-modify-gate-task' -Target $GateTask
   $rows.Add([ordered]@{
-    id = 'C4-modify-gate-task'; target = $GateTask; permitted = $false; expectedPermitted = $false
+    id = 'C4-modify-gate-task'; target = $GateTask; permitted = $false; expectedPermitted = $c4reg.expectedPermitted
+    accessMask = $c4reg.accessMask
     verdict = 'INVALID'; mechanism = 'NO-BASELINE'; targetExists = ($null -ne $gateXmlBefore)
     errorType = $null; residueLeft = $false; residuePath = $null
     note = 'SKIPPED - could not export the task and write a backup, so a failed restore would be unrecoverable. Not attempted by design.'
   })
 } else {
-  Probe -Id 'C4-modify-gate-task' -Target $GateTask -ExpectPermitted $false `
+  Probe -Id 'C4-modify-gate-task' -Target $GateTask `
     -Note 'rewrite the pinned SessionGate task definition - if permitted, the SHA pin is defeated because the pin binds the FILE, not the pointer to it' `
     -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
     -Action {
@@ -225,7 +250,7 @@ if (-not $c4Safe) {
 $StagedGateScript = 'C:\Aroma\ComputerOperator-Companion\session-identity.ps1'
 $StagedGateSha    = '98A474BC6EC12F2E16D235098C8B323750225FE0BACF23CCBF340632CBF31C67'
 
-Probe -Id 'C4a-gate-action-intact' -Target $GateTask -ExpectPermitted $true `
+Probe -Id 'C4a-gate-action-intact' -Target $GateTask `
   -Note 'the task action must still point at session-identity.ps1' `
   -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
   -Action {
@@ -233,7 +258,7 @@ Probe -Id 'C4a-gate-action-intact' -Target $GateTask -ExpectPermitted $true `
     ([string]$t.Actions[0].Arguments) -match 'session-identity\.ps1'
   } -Cleanup $null
 
-Probe -Id 'C4b-gate-script-sha' -Target $StagedGateScript -ExpectPermitted $true `
+Probe -Id 'C4b-gate-script-sha' -Target $StagedGateScript `
   -Note 'and the file it points at must still hash to the pinned value' `
   -ExistsCheck { Test-Path -LiteralPath $StagedGateScript } `
   -Action { (Get-FileHash -LiteralPath $StagedGateScript -Algorithm SHA256 -ErrorAction Stop).Hash -eq $StagedGateSha } `
@@ -272,13 +297,13 @@ if ($script:Incident -or $gateIntact.Count -gt 0) {
   exit 9
 }
 
-Probe -Id 'C5-read-gate-task' -Target $GateTask -ExpectPermitted $true `
+Probe -Id 'C5-read-gate-task' -Target $GateTask `
   -Note 'reading the definition is expected and harmless' `
   -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
   -Action { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction Stop) } -Cleanup $null
 
 $tmpTask = 'AromaProbeTemp-' + $nonce
-Probe -Id 'C1-register-own-task' -Target $tmpTask -ExpectPermitted $true `
+Probe -Id 'C1-register-own-task' -Target $tmpTask `
   -Note 'a non-admin registering a task in its own context is normal Windows behaviour - persistence surface' `
   -ExistsCheck { $true } `
   -Action {
@@ -293,7 +318,7 @@ Probe -Id 'C1-register-own-task' -Target $tmpTask -ExpectPermitted $true `
   }
 
 $tmpTask2 = 'AromaProbeTrig-' + $nonce
-Probe -Id 'C2-register-logon-trigger' -Target $tmpTask2 -ExpectPermitted $true `
+Probe -Id 'C2-register-logon-trigger' -Target $tmpTask2 `
   -Note 'an at-logon trigger is the persistence-relevant form' `
   -ExistsCheck { $true } `
   -Action {
@@ -312,7 +337,7 @@ Probe -Id 'C2-register-logon-trigger' -Target $tmpTask2 -ExpectPermitted $true `
   }
 
 $tmpTask3 = 'AromaProbeSys-' + $nonce
-Probe -Id 'C3-register-as-SYSTEM' -Target $tmpTask3 -ExpectPermitted $false `
+Probe -Id 'C3-register-as-SYSTEM' -Target $tmpTask3 `
   -Note 'running as SYSTEM requires admin - expected to be refused' `
   -ExistsCheck { $true } `
   -Action {
@@ -358,13 +383,13 @@ foreach ($a in @(
   @('A4-write-desktop',      $desktop, 'a4', 'user-visible surface')
 )) {
   $id = $a[0]; $dir = $a[1]; $tag = $a[2]; $note = $a[3]
-  Probe -Id $id -Target $dir -ExpectPermitted $true -Note $note `
+  Probe -Id $id -Target $dir -Note $note `
     -ExistsCheck { Test-Path -LiteralPath $dir } `
     -Action  { Test-WriteDir -Dir $dir -Tag $tag } `
     -Cleanup { Clean-WriteDir -Dir $dir -Tag $tag }
 }
 
-Probe -Id 'A5-set-acl-on-own-dir' -Target $prof -ExpectPermitted $true `
+Probe -Id 'A5-set-acl-on-own-dir' -Target $prof `
   -Note 'can the account re-permission objects it owns' `
   -ExistsCheck { Test-Path -LiteralPath $prof } `
   -Action {
@@ -384,7 +409,7 @@ Probe -Id 'A5-set-acl-on-own-dir' -Target $prof -ExpectPermitted $true `
     $null
   }
 
-Probe -Id 'A6-write-owner-profile' -Target 'C:\Users\louis' -ExpectPermitted $false `
+Probe -Id 'A6-write-owner-profile' -Target 'C:\Users\louis' `
   -Note 'writing into the Owner profile must be refused' `
   -ExistsCheck { Test-Path -LiteralPath 'C:\Users\louis' } `
   -Action  { Test-WriteDir -Dir 'C:\Users\louis' -Tag 'a6' } `
@@ -417,7 +442,7 @@ foreach ($b in @(
   @('B5-winnt-windows',   'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Windows',           'legacy Load/Run autostart')
 )) {
   $id = $b[0]; $key = $b[1]; $note = $b[2]
-  Probe -Id $id -Target $key -ExpectPermitted $true -Note $note `
+  Probe -Id $id -Target $key -Note $note `
     -ExistsCheck { $true } `
     -Action  { Test-WriteReg -Key $key } `
     -Cleanup { Clean-WriteReg -Key $key }
@@ -435,13 +460,13 @@ foreach ($b in @(
 # Windows deliberately makes the per-user Policies key admin-owned and read-only to the
 # user, precisely so a user cannot set their own policy. That is a real ACL boundary and
 # durable, so the correct expectation is NOT permitted.
-Probe -Id 'B6-policies-explorer' -Target 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' -ExpectPermitted $false `
+Probe -Id 'B6-policies-explorer' -Target 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' `
   -Note 'per-user Policies key is Administrators-owned and read-only to the user by Windows design - creating a subkey is refused' `
   -ExistsCheck { Test-Path -LiteralPath 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies' } `
   -Action  { Test-WriteReg -Key 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' } `
   -Cleanup { Clean-WriteReg -Key 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Explorer' }
 
-Probe -Id 'B7-hklm-run' -Target 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' -ExpectPermitted $false `
+Probe -Id 'B7-hklm-run' -Target 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' `
   -Note 'machine-wide autostart must be refused' `
   -ExistsCheck { Test-Path -LiteralPath 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' } `
   -Action  { Test-WriteReg -Key 'HKLM:\Software\Microsoft\Windows\CurrentVersion\Run' } `
@@ -456,16 +481,16 @@ $mySession = (Get-Process -Id $PID).SessionId
 $ownProc   = @(Get-Process | Where-Object { $_.SessionId -eq $mySession -and $_.Id -ne $PID })
 $otherProc = @(Get-Process | Where-Object { $_.SessionId -ne $mySession -and $_.SessionId -ne 0 })
 
-Probe -Id 'D5-enumerate-own-session' -Target ('session ' + $mySession) -ExpectPermitted $true `
+Probe -Id 'D5-enumerate-own-session' -Target ('session ' + $mySession) `
   -Note 'positive control for E5' -ExistsCheck { $true } `
   -Action { $ownProc.Count -gt 0 } -Cleanup $null
 
-Probe -Id 'D6-open-own-session-process' -Target 'own-session process handle' -ExpectPermitted $true `
+Probe -Id 'D6-open-own-session-process' -Target 'own-session process handle' `
   -Note 'POSITIVE CONTROL for E6 - if this fails, E6 proves nothing' `
   -ExistsCheck { $ownProc.Count -gt 0 } `
   -Action { $null -ne $ownProc[0].Handle } -Cleanup $null
 
-Probe -Id 'E5-enumerate-other-session' -Target 'other sessions' -ExpectPermitted $true `
+Probe -Id 'E5-enumerate-other-session' -Target 'other sessions' `
   -Note 'NOT blocked by anything - process names and PIDs in other sessions are visible machine-wide. Recorded as a known-visible surface, deliberately NOT asserted false.' `
   -ExistsCheck { $true } `
   -Action { $otherProc.Count -gt 0 } -Cleanup $null
@@ -481,15 +506,16 @@ Probe -Id 'E5-enumerate-other-session' -Target 'other sessions' -ExpectPermitted
 # They join E1/E2/E3/E4/E8 in Tier B, to be verified during 3b acceptance with a real
 # capability present and BOTH a positive and a negative sentinel - a negative result alone
 # proves nothing when the prober may simply be incapable.
+# DERIVED FROM THE REGISTER, not hand-written. The previous hand-written list is how a
+# ninth Tier B assertion (E10) and a tenth (E6b) could exist in the harness while this list
+# still said eight - the same class of defect as the row count that was quoted as 24, 26 and
+# 23 on three different days. Each entry carries the positive control the register demands,
+# so "deferred" cannot quietly mean "deferred and uncontrolled".
 $DeferredToTierB = @(
-  @{ id = 'E1-enumerate-other-session-windows'; why = 'needs window enumeration; positive control D3' },
-  @{ id = 'E2-open-other-session-winsta';       why = 'needs OpenWindowStation against \Sessions\N\Windows\WinSta0' },
-  @{ id = 'E3-open-other-session-desktop';      why = 'needs OpenDesktop' },
-  @{ id = 'E4-read-other-session-clipboard';    why = 'clipboard is per-window-station; positive control D4' },
-  @{ id = 'E6-open-other-session-process';      why = 'returned null without raising - mechanism unknown, cannot be scored' },
-  @{ id = 'E7-read-other-session-module';       why = 'returned UNDETERMINED - mechanism unknown, cannot be scored' },
-  @{ id = 'E8-capture-other-session-screen';    why = 'needs capture; positive control D7' },
-  @{ id = 'E9-read-other-session-cmdline';      why = 'returned null without raising - mechanism unknown, cannot be scored' }
+  Get-AssertionsByTier -Tier 'B' | Where-Object { -not $_.expectedPermitted } | ForEach-Object {
+    @{ id = $_.id; why = 'Tier B: needs real capability in session 5'; positiveControlId = $_.positiveControlId
+       accessMask = $_.accessMask; doesNotImply = $_.doesNotImply }
+  }
 )
 
 # ===========================================================================
@@ -537,8 +563,14 @@ $composites = @(
   }
 )
 
+$registryDrift = Get-AssertionRegistryDrift
+$controlProblems = Test-PositiveControls -Rows @($rows)
+
 $record = [ordered]@{
   probe = 'containment-v2-tierA'; nonce = $nonce
+  registryFingerprint = (Get-AssertionRegistryFingerprint)
+  registryDrift = @($registryDrift)
+  positiveControlProblems = @($controlProblems)
   # Stated by the probe itself so no report can quietly upgrade it. Cross-session
   # containment is NOT PROVEN until Tier B runs in 3b with real capability and both
   # sentinels. Absence of evidence here is not evidence of isolation.
@@ -569,6 +601,14 @@ Write-Host ''
 Write-Host ("rows: " + $rows.Count + "   needing attention: " + $bad.Count + "   residue left: " + $res.Count) `
   -ForegroundColor $(if ($bad.Count -eq 0 -and $res.Count -eq 0) { 'Green' } else { 'Red' })
 $res | ForEach-Object { Write-Host ("  RESIDUE: " + $_.id + ' -> ' + $_.residuePath) -ForegroundColor Red }
+
+Write-Host ''
+Write-Host '=== register cross-check ===' -ForegroundColor Cyan
+Write-Host ('  fingerprint : ' + (Get-AssertionRegistryFingerprint))
+Write-Host ('  id/target/mask drift  : ' + $registryDrift.Count) -ForegroundColor $(if ($registryDrift.Count) { 'Red' } else { 'Green' })
+Write-Host ('  positive-control gaps : ' + $controlProblems.Count) -ForegroundColor $(if ($controlProblems.Count) { 'Red' } else { 'Green' })
+foreach ($d in $registryDrift)   { Write-Host ('    DRIFT   : ' + $d) -ForegroundColor Red }
+foreach ($c in $controlProblems) { Write-Host ('    CONTROL : ' + $c) -ForegroundColor Red }
 
 Write-Host ''
 Write-Host '=== composite surfaces (no single row names these) ===' -ForegroundColor Cyan

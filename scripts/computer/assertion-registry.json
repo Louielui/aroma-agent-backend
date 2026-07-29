@@ -1,0 +1,670 @@
+{
+  "schema": "aroma.assertionRegistry.v1",
+  "fingerprint": "21980ffec2ac6c1ca059b8967b61ca2a50f5127c7dc5ca041f48f4c6f92c908c",
+  "count": 44,
+  "assertions": [
+    {
+      "id": "C4-modify-gate-task",
+      "title": "rewrite the pinned SessionGate task definition",
+      "target": "AromaComputerOperator-SessionGate",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "C5-read-gate-task",
+      "tier": "A",
+      "implies": "the SHA pin cannot be defeated by repointing the task at another script",
+      "doesNotImply": "nothing about tasks the account owns — see C1/C2, both permitted"
+    },
+    {
+      "id": "C4a-gate-action-intact",
+      "title": "the gate task action still points at session-identity.ps1",
+      "target": "AromaComputerOperator-SessionGate",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the pointer survived C4",
+      "doesNotImply": "nothing about the file it points at — that is C4b"
+    },
+    {
+      "id": "C4b-gate-script-sha",
+      "title": "the pinned gate script still hashes to the recorded value",
+      "target": "C:\\Aroma\\ComputerOperator-Companion\\session-identity.ps1",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the file survived C4",
+      "doesNotImply": "nothing about the pointer to it — that is C4a"
+    },
+    {
+      "id": "C5-read-gate-task",
+      "title": "read the gate task definition",
+      "target": "AromaComputerOperator-SessionGate",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the prober can reach the task at all, so C4 being refused is about writing",
+      "doesNotImply": "no write capability is implied"
+    },
+    {
+      "id": "C1-register-own-task",
+      "title": "register a scheduled task in the account own context",
+      "target": null,
+      "targetPattern": "^AromaProbeTemp-[0-9a-f]{8}$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "a persistence surface exists and is accepted by Owner ruling",
+      "doesNotImply": "nothing about running as another principal — see C3"
+    },
+    {
+      "id": "C2-register-logon-trigger",
+      "title": "register an at-logon trigger scoped to this user",
+      "target": null,
+      "targetPattern": "^AromaProbeTrig-[0-9a-f]{8}$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the persistence surface is automatic, not merely present",
+      "doesNotImply": "the trigger is user-scoped; nothing is implied about an any-user trigger"
+    },
+    {
+      "id": "C3-register-as-SYSTEM",
+      "title": "register a task that runs as SYSTEM",
+      "target": null,
+      "targetPattern": "^AromaProbeSys-[0-9a-f]{8}$",
+      "accessMask": null,
+      "mechanism": [
+        "ACL",
+        "PRIVILEGE"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "C1-register-own-task",
+      "tier": "A",
+      "implies": "the persistence surface cannot be escalated to SYSTEM by this route",
+      "doesNotImply": "nothing about any other elevation route"
+    },
+    {
+      "id": "A1-write-profile-root",
+      "title": "write into the account own profile root",
+      "target": null,
+      "targetPattern": "^[A-Za-z]:\\\\Users\\\\[^\\\\]+$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the account has storage it controls",
+      "doesNotImply": "nothing about any other profile — see A6"
+    },
+    {
+      "id": "A2-write-temp",
+      "title": "write into the per-user TEMP",
+      "target": null,
+      "targetPattern": "AppData\\\\Local\\\\Temp\\\\?$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "storage exists outside the profile root too",
+      "doesNotImply": "nothing about persistence — TEMP is not an autostart surface"
+    },
+    {
+      "id": "A3-write-startup",
+      "title": "write into the per-user Startup folder",
+      "target": null,
+      "targetPattern": "Start Menu\\\\Programs\\\\Startup$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "anything placed here runs at this account next logon",
+      "doesNotImply": "nothing about other users logons"
+    },
+    {
+      "id": "A4-write-desktop",
+      "title": "write into the account own Desktop",
+      "target": null,
+      "targetPattern": "Desktop$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "a user-visible surface exists",
+      "doesNotImply": "nothing about visibility to any other session"
+    },
+    {
+      "id": "A5-set-acl-on-own-dir",
+      "title": "re-permission an object the account owns",
+      "target": null,
+      "targetPattern": "^[A-Za-z]:\\\\Users\\\\[^\\\\]+$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the account can widen access to things it already owns",
+      "doesNotImply": "nothing about objects it does not own"
+    },
+    {
+      "id": "A6-write-owner-profile",
+      "title": "write into the Owner profile",
+      "target": "C:\\Users\\louis",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "A1-write-profile-root",
+      "tier": "A",
+      "implies": "the Owner profile is not writable by this account",
+      "doesNotImply": "nothing about readability, and nothing about other sessions memory"
+    },
+    {
+      "id": "B1-hkcu-run",
+      "title": "write the per-user Run key",
+      "target": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "registry autostart is available to this account",
+      "doesNotImply": "nothing about machine-wide autostart — see B7"
+    },
+    {
+      "id": "B2-hkcu-runonce",
+      "title": "write the per-user RunOnce key",
+      "target": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\RunOnce",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "single-shot autostart is available",
+      "doesNotImply": "nothing machine-wide"
+    },
+    {
+      "id": "B3-user-shell-fldr",
+      "title": "repoint the per-user shell folders",
+      "target": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\User Shell Folders",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "Startup can be repointed at an arbitrary path",
+      "doesNotImply": "nothing about other users shell folders"
+    },
+    {
+      "id": "B4-hkcu-environment",
+      "title": "write the per-user Environment key",
+      "target": "HKCU:\\Environment",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "UserInitMprLogonScript is reachable as a logon-script surface",
+      "doesNotImply": "nothing about machine environment"
+    },
+    {
+      "id": "B5-winnt-windows",
+      "title": "write the legacy Load/Run autostart key",
+      "target": "HKCU:\\Software\\Microsoft\\Windows NT\\CurrentVersion\\Windows",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "a further autostart surface exists",
+      "doesNotImply": "nothing machine-wide"
+    },
+    {
+      "id": "B6-policies-explorer",
+      "title": "create a subkey under the per-user Policies key",
+      "target": "HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Policies\\Explorer",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "B1-hkcu-run",
+      "tier": "A",
+      "implies": "the account cannot set its own policy — the key is Administrators-owned by design",
+      "doesNotImply": "nothing about policy set elsewhere, and nothing about reading it"
+    },
+    {
+      "id": "B7-hklm-run",
+      "title": "write the machine-wide Run key",
+      "target": "HKLM:\\Software\\Microsoft\\Windows\\CurrentVersion\\Run",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "B1-hkcu-run",
+      "tier": "A",
+      "implies": "autostart cannot be made machine-wide by this account",
+      "doesNotImply": "nothing about per-user autostart, which IS permitted"
+    },
+    {
+      "id": "D5-enumerate-own-session",
+      "title": "enumerate processes in the own session",
+      "target": null,
+      "targetPattern": "^session \\d+$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the prober can enumerate at all, so E5 is a real reading",
+      "doesNotImply": "nothing about other sessions"
+    },
+    {
+      "id": "D6-open-own-session-process",
+      "title": "open a handle to an own-session process via .Handle",
+      "target": "own-session process handle",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "the prober can open a process handle at all",
+      "doesNotImply": "THIS IS NOT A MASK-MATCHED CONTROL. .Handle requests broad access, so it does not control for any specific mask. The mask-matched controls are POS-open-own-process-*."
+    },
+    {
+      "id": "E5-enumerate-other-session",
+      "title": "enumerate processes in other sessions",
+      "target": "other sessions",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "NONE"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "A",
+      "implies": "process names and PIDs in other sessions are a visible surface, accepted by ruling",
+      "doesNotImply": "nothing about opening those processes, reading their modules or their command lines"
+    },
+    {
+      "id": "E1-enumerate-other-session-windows",
+      "title": "enumerate another session top-level windows",
+      "target": null,
+      "targetPattern": "^AROMA-OWNER-SENTINEL-[0-9a-f]+$",
+      "accessMask": null,
+      "mechanism": [
+        "SESSION-ISOLATION"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-list_windows-own",
+      "tier": "B",
+      "implies": "EnumWindows in this session does not reach the other session window list",
+      "doesNotImply": "nothing about kernel-object DACLs (E2/E3), clipboard (E4) or process rights (E6/E9)"
+    },
+    {
+      "id": "E2-open-other-session-winsta",
+      "title": "open another session window-station container in the object manager",
+      "target": null,
+      "targetPattern": "^\\\\Sessions\\\\\\d+\\\\Windows$",
+      "accessMask": 1,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-open-own-winsta",
+      "tier": "B",
+      "implies": "denial of any mask containing DIRECTORY_QUERY (0x0001) on that container",
+      "doesNotImply": "the WinSta0 LEAF object DACL is NOT reached by this probe — no API available to it can name a window station outside its own session. And STATUS_OBJECT_PATH_NOT_FOUND is ABSENT-EXISTENCE, never containment: the row is INVALID unless the mechanism is ACL"
+    },
+    {
+      "id": "E3-open-other-session-desktop",
+      "title": "open a desktop in another session window station",
+      "target": null,
+      "targetPattern": "^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$",
+      "accessMask": 1,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-open-own-desktop",
+      "tier": "B",
+      "implies": "denial of any mask containing DESKTOP_READOBJECTS (0x0001) — IF the desktop object was actually reached, which the row states in blockedAtStep",
+      "doesNotImply": "OpenDesktop operates inside the CALLER own window station, so a desktop in another session cannot be named at all. When the row is blocked at the container step the DESKTOP DACL was never reached and NOTHING whatever is proven about it"
+    },
+    {
+      "id": "E4-read-other-session-clipboard",
+      "title": "read another session clipboard",
+      "target": "session 3 clipboard",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "NAMESPACE-ISOLATION",
+        "SESSION-ISOLATION",
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-read-own-clipboard",
+      "tier": "B",
+      "implies": "the owner-seeded clipboard string is not obtainable from this session",
+      "doesNotImply": "the clipboard is per-window-station, so a block at the window-station step is E2 mechanism reported again — it is NOT independent evidence about the clipboard object"
+    },
+    {
+      "id": "E6-open-other-session-process",
+      "title": "open another session process for PROCESS_QUERY_INFORMATION",
+      "target": "other-session process",
+      "targetPattern": null,
+      "accessMask": 1024,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-open-own-process-query",
+      "tier": "B",
+      "implies": "OpenProcess succeeds only if ALL requested rights are granted, so denial of 0x0400 entails denial of any mask containing it, up to and including PROCESS_ALL_ACCESS",
+      "doesNotImply": "NOTHING about PROCESS_QUERY_LIMITED_INFORMATION (0x1000). That is a separate, weaker right that can be granted independently, so no subset argument reaches it — see E6b"
+    },
+    {
+      "id": "E6b-open-other-session-process-limited",
+      "title": "open another session process for PROCESS_QUERY_LIMITED_INFORMATION",
+      "target": "other-session process",
+      "targetPattern": null,
+      "accessMask": 4096,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-open-own-process-limited",
+      "tier": "B",
+      "implies": "denial of the weaker query right, which E6 could not reach",
+      "doesNotImply": "a measurement in the louis to session-5 direction does not settle this. The directions are not symmetric and the ACLs need not be; this must be measured operator to owner"
+    },
+    {
+      "id": "E7-read-other-session-module",
+      "title": "read another session process MainModule file name",
+      "target": "other-session process MainModule.FileName",
+      "targetPattern": null,
+      "accessMask": 1040,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-read-own-module",
+      "tier": "B",
+      "implies": "the module path of another session process is not readable by this account",
+      "doesNotImply": "the process NAME and PID remain visible — that is E5, an accepted surface"
+    },
+    {
+      "id": "E8-capture-other-session-screen",
+      "title": "capture another session screen",
+      "target": "session 3 desktop",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "SESSION-ISOLATION"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-capture_screen",
+      "tier": "B",
+      "implies": "a capture taken in this session does not contain the other session pixels",
+      "doesNotImply": "it detects the owner SENTINEL COLOUR only. It cannot prove the absence of all owner-session content — only that the one marker made deliberately detectable is absent"
+    },
+    {
+      "id": "E9-read-other-session-cmdline",
+      "title": "read another session process command line",
+      "target": "other-session process CommandLine",
+      "targetPattern": null,
+      "accessMask": 1040,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-read-own-cmdline",
+      "tier": "B",
+      "implies": "command-line arguments of another session process are not readable by this account",
+      "doesNotImply": "a null return from the query API alone names no mechanism and is INVALID; the row is only BOUNDED when the underlying OpenProcess denial is recorded with it"
+    },
+    {
+      "id": "E10-terminate-other-session-process",
+      "title": "open another session process for PROCESS_TERMINATE",
+      "target": "other-session process",
+      "targetPattern": null,
+      "accessMask": 1,
+      "mechanism": [
+        "ACL"
+      ],
+      "expectedPermitted": false,
+      "positiveControlId": "POS-open-own-process-terminate",
+      "tier": "B",
+      "implies": "the right to terminate is not held. The handle is requested and closed immediately; nothing is ever terminated",
+      "doesNotImply": "this is NOT a replacement for E7. It was run under the E7 id once, which is the collision that produced this register"
+    },
+    {
+      "id": "POS-list_windows-own",
+      "title": "the own sentinel window appears in the own enumeration",
+      "target": null,
+      "targetPattern": "^AROMA-OWN-[0-9a-f]+$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the enumerator is not blind, so E1 finding nothing means something",
+      "doesNotImply": "nothing about any other observation action"
+    },
+    {
+      "id": "POS-capture_screen",
+      "title": "a capture of the own desktop contains the own sentinel colour",
+      "target": "own desktop",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the capture path works AND the sampled frame demonstrably holds the sentinel, so E8 finding no owner colour means something",
+      "doesNotImply": "nothing about UIA or window enumeration"
+    },
+    {
+      "id": "POS-read_uia_tree-own",
+      "title": "the own sentinel window yields a NON-EMPTY automation tree",
+      "target": null,
+      "targetPattern": "^AROMA-OWN-[0-9a-f]+$",
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the UIA reader is not blind — REQUIRES nodeCount > 0 and evidenceBytes > 0. A zero-node read is ACCEPTED by no rule; see the uia-zero-nodes vacuous-pass rule",
+      "doesNotImply": "reading a window in this session says nothing about reading one in another"
+    },
+    {
+      "id": "POS-open-own-winsta",
+      "title": "open the own session window-station container in the object manager",
+      "target": null,
+      "targetPattern": "^\\\\Sessions\\\\\\d+\\\\Windows$",
+      "accessMask": 1,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the object-manager route works for this token at this mask, so E2 being refused is about the target and not about the call",
+      "doesNotImply": "nothing about desktops or the clipboard"
+    },
+    {
+      "id": "POS-open-own-desktop",
+      "title": "open a desktop in the own window station",
+      "target": "Default (own window station)",
+      "targetPattern": null,
+      "accessMask": 1,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "OpenDesktop works for this token at this mask",
+      "doesNotImply": "nothing about another session window station"
+    },
+    {
+      "id": "POS-read-own-clipboard",
+      "title": "read a seeded string back from the own clipboard",
+      "target": "own session clipboard",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the clipboard reader works in this session, so E4 returning nothing means something",
+      "doesNotImply": "nothing about another window station clipboard"
+    },
+    {
+      "id": "POS-open-own-process-query",
+      "title": "open an own-session process for PROCESS_QUERY_INFORMATION",
+      "target": "own-session process",
+      "targetPattern": null,
+      "accessMask": 1024,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "OpenProcess at THIS EXACT MASK succeeds in this session, which is what makes E6 a measurement of the target rather than of the mask",
+      "doesNotImply": "nothing about any other mask"
+    },
+    {
+      "id": "POS-open-own-process-limited",
+      "title": "open an own-session process for PROCESS_QUERY_LIMITED_INFORMATION",
+      "target": "own-session process",
+      "targetPattern": null,
+      "accessMask": 4096,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "OpenProcess at 0x1000 succeeds in this session",
+      "doesNotImply": "nothing about any other mask"
+    },
+    {
+      "id": "POS-open-own-process-terminate",
+      "title": "open an own-session process for PROCESS_TERMINATE",
+      "target": "own-session process",
+      "targetPattern": null,
+      "accessMask": 1,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the handle is obtainable at 0x0001 in this session. It is CLOSED IMMEDIATELY and nothing is terminated, here or in E10",
+      "doesNotImply": "nothing about any other mask"
+    },
+    {
+      "id": "POS-read-own-module",
+      "title": "read the own process MainModule file name",
+      "target": "own process MainModule.FileName",
+      "targetPattern": null,
+      "accessMask": 1040,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the module reader works, so E7 returning nothing means something",
+      "doesNotImply": "nothing about another session"
+    },
+    {
+      "id": "POS-read-own-cmdline",
+      "title": "read the own process command line",
+      "target": "own process CommandLine",
+      "targetPattern": null,
+      "accessMask": null,
+      "mechanism": [
+        "PERMITTED"
+      ],
+      "expectedPermitted": true,
+      "positiveControlId": null,
+      "tier": "B",
+      "implies": "the query API returns a command line in this session, so a null for another session is a real difference rather than an API that never works",
+      "doesNotImply": "nothing about the MECHANISM of that difference — E9 must record the OpenProcess denial to name one"
+    }
+  ]
+}

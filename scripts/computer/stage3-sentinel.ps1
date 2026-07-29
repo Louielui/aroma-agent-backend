@@ -8,11 +8,17 @@
 # colour, never by "a window exists" and never by reading text.
 #
 # THE TWO SIGNATURES
-#   own    (operator, session 5)  RGB(0,255,0)    pure green
-#   owner  (owner,    session 3)  RGB(255,0,255)  pure magenta
+#   own    (operator, session 5)  RGB(32,208,64)
+#   owner  (owner,    session 3)  RGB(208,32,144)
 # Both sit far outside Windows chrome, which lives in greys and the accent-blue family, and
 # they are maximally distant from each other so one can never be read as the other.
 # Tolerance is 12 per channel.
+#
+# THESE ARE NOT THE ORIGINAL COLOURS, and this comment said so a day late. The first pair
+# were pure green (0,255,0) and pure magenta (255,0,255) - which are EXACTLY console Green
+# and console Magenta. One magenta console line put 18 owner hits into a clean baseline and
+# halted a real Part B run. The values in $SPEC below changed; this header did not, and a
+# header that describes the previous build is the same defect as a drifted assertion id.
 #
 # IT VERIFIES ITSELF BEFORE IT COUNTS AS OPEN
 # The window is captured back off the screen and the rendered colour is checked against the

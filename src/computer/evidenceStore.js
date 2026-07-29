@@ -30,6 +30,57 @@ const RETENTION_MS = RETENTION_DAYS * 24 * 60 * 60 * 1000
 const EVIDENCE_EXT = '.png'
 const EVIDENCE_PREFIX = 'ev_'
 
+/* ── LOCK 3, CORRECTED 2026-07-29 ──────────────────────────────────────────
+ * The sweep matched `ev_*.png` only. Every artefact that actually holds raw content is
+ * named otherwise — `stage3-capture-*.png`, `stage3-owner-reference-*.png`, `obs-*.png`,
+ * `obs-*.uia.txt` — so NONE of them was ever swept. The retention test passed and was
+ * honest about what it tested: the store's own sweep, over files the store itself wrote.
+ * It simply did not cover the files being produced. An earlier green report on Lock 3 was
+ * withdrawn on that basis.
+ *
+ * THE SPLIT THAT MAKES THIS SAFE TO WIDEN
+ * Widening a deletion path is the one change here that can destroy evidence, so the store
+ * now classifies every name into exactly one of three sets, by declaration:
+ *
+ *   RAW_CONTENT   pixels and UI text. Deleted at 7 days. This is what Lock 3 is FOR.
+ *   RECORD        adjudication and provenance — manifests, results, STARTED/COMPLETED
+ *                 markers, attestations. NEVER swept. Deleting these would destroy the
+ *                 audit trail that proves what the raw content once showed, which is the
+ *                 opposite of the intent.
+ *   unclassified  anything else. NEVER swept, and REPORTED BY NAME, so a new artefact type
+ *                 shows up as a question instead of silently accumulating forever or
+ *                 silently being deleted. Absence of a rule is not permission either way.
+ */
+const RAW_CONTENT_PATTERNS = Object.freeze([
+  { id: 'store-own', pattern: /^ev_[A-Za-z0-9_-]*\.png$/, why: 'the evidence store writes these itself' },
+  { id: 'stage3-capture', pattern: /^stage3-capture-.+\.png$/i, why: 'whole-screen captures taken by the Part B harness' },
+  { id: 'stage3-owner-reference', pattern: /^stage3-owner-reference-.+\.png$/i, why: 'owner-side reference captures' },
+  { id: 'stage3-sentinel-shot', pattern: /^stage3-sentinel-.+\.png$/i, why: 'sentinel self-verification captures' },
+  { id: 'observer-capture', pattern: /^obs-.+\.png$/i, why: 'captures written by observer.ps1' },
+  { id: 'observer-uia-text', pattern: /^obs-.+\.uia\.txt$/i, why: 'UIA NODE TEXT — the only artefact here that is literally UI text' }
+])
+
+/**
+ * Never swept, and each says why. A record is not raw content: it carries hashes, counts and
+ * verdicts, which is exactly what has to outlive the pixels.
+ */
+const RECORD_PATTERNS = Object.freeze([
+  { id: 'manifest', pattern: /^stage3-manifest\.json$/i, why: 'the nonce chain; deleting it would make a past run unadjudicable' },
+  { id: 'results', pattern: /^stage3-(results|topup-results-.+)\.json$/i, why: 'the rows themselves' },
+  { id: 'markers', pattern: /^stage3-(topup-)?(STARTED|COMPLETED)-.+\.json$/i, why: 'proof the run started and finished' },
+  { id: 'attestations', pattern: /^stage3-(sentinel-owner|clip-owner)-.+\.json$/i, why: 'owner-side attestations that make negatives non-vacuous' },
+  { id: 'uia-result', pattern: /^stage3-uia\.json$/i, why: 'counts and a hash, not node text — the text is in the .uia.txt' },
+  { id: 'gate-backup', pattern: /^sessiongate-backup-.+\.xml$/i, why: 'the restore source for C4; losing it turns a measurement into an outage' },
+  { id: 'tierA', pattern: /^tierA-(probe\.out|INCIDENT-.+\.json)$/i, why: 'Tier A rows and incidents' }
+])
+
+/** Which set does a name fall into? Exactly one, or none. */
+function classify (name) {
+  for (const r of RAW_CONTENT_PATTERNS) if (r.pattern.test(name)) return { kind: 'raw', rule: r.id }
+  for (const r of RECORD_PATTERNS) if (r.pattern.test(name)) return { kind: 'record', rule: r.id }
+  return { kind: 'unclassified', rule: null }
+}
+
 /**
  * @param {{ baseDir: string, now?: Function }} options
  *   baseDir — a directory inside the COMPANION account's own profile. Required; the store
@@ -77,30 +128,58 @@ function createEvidenceStore (options = {}) {
      * is auditable as a fact rather than assumed to have happened.
      */
     sweep () {
-      if (!fs.existsSync(baseDir)) return { deleted: [], kept: 0, retentionDays: RETENTION_DAYS }
+      if (!fs.existsSync(baseDir)) {
+        return { deleted: [], kept: 0, retained: [], unclassified: [], retentionDays: RETENTION_DAYS }
+      }
       const cutoff = now() - RETENTION_MS
       const deleted = []
+      const retained = []
+      const unclassified = []
       let kept = 0
       for (const name of fs.readdirSync(baseDir)) {
-        // Belt and braces: only this store's own files are ever candidates.
-        if (!name.startsWith(EVIDENCE_PREFIX) || !name.endsWith(EVIDENCE_EXT)) continue
         const full = path.join(baseDir, name)
         let st
         try { st = fs.statSync(full) } catch (_) { continue }
         if (!st.isFile()) continue
+
+        const c = classify(name)
+        // A record is never deleted, and an unclassified name is never deleted either —
+        // reported instead, because deleting something nobody declared is how a control
+        // becomes an incident.
+        if (c.kind === 'record') { retained.push(name); continue }
+        if (c.kind === 'unclassified') { unclassified.push(name); continue }
+
         if (st.mtimeMs <= cutoff) {
           try { fs.unlinkSync(full); deleted.push(name) } catch (_) {}
         } else kept++
       }
-      return { deleted, kept, retentionDays: RETENTION_DAYS }
+      return { deleted, kept, retained, unclassified, retentionDays: RETENTION_DAYS }
     },
 
     /** Names only — never contents. Diagnostics, not a read channel. */
     list () {
       if (!fs.existsSync(baseDir)) return []
       return fs.readdirSync(baseDir).filter((n) => n.startsWith(EVIDENCE_PREFIX) && n.endsWith(EVIDENCE_EXT))
-    }
+    },
+
+    /** Every raw-content artefact the sweep is responsible for, whatever wrote it. */
+    listRawContent () {
+      if (!fs.existsSync(baseDir)) return []
+      return fs.readdirSync(baseDir).filter((n) => classify(n).kind === 'raw')
+    },
+
+    /** What the sweep WOULD do, without doing it. For a runbook, and for a test. */
+    classify
   }
 }
 
-module.exports = { createEvidenceStore, RETENTION_DAYS, RETENTION_MS, EVIDENCE_PREFIX, EVIDENCE_EXT }
+module.exports = {
+  createEvidenceStore,
+  RETENTION_DAYS,
+  RETENTION_MS,
+  EVIDENCE_PREFIX,
+  EVIDENCE_EXT,
+  RAW_CONTENT_PATTERNS,
+  RECORD_PATTERNS,
+  classify
+}

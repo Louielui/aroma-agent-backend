@@ -24,12 +24,28 @@ param(
   [string]$ProbeDir = 'C:\AromaOperator-Probe',
   [string]$ObserverTask = 'AromaComputerOperator-Observer',
   [int]$PerMeasurementTimeoutMs = 20000,
-  [int]$WallClockMs = 300000
+  [int]$WallClockMs = 300000,
+  [string]$RegistryPath
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 $WALL_START = Get-Date
+
+# ── THE ASSERTION REGISTER, BEFORE ANY MEASUREMENT ───────────────────────────
+# This harness may not DEFINE an assertion. It looks each id up and takes the target, the
+# access mask and expectedPermitted from the register. Running without it is not an option:
+# an E7 collision put PROCESS_TERMINATE under the id for "read another session's module"
+# and the row looked covered, so a run whose ids are unconstrained produces more rows of
+# exactly that kind.
+. (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
+try {
+  $regCount = Import-AssertionRegistry -Path $RegistryPath
+  Write-Host ("assertion register : " + $regCount + " entries  " + (Get-AssertionRegistryFingerprint)) -ForegroundColor Cyan
+} catch {
+  Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
+  exit 13
+}
 
 # ── DPI awareness before anything looks at a screen ──────────────────────────
 Add-Type -Namespace DPI -Name Aware -MemberDefinition @"
@@ -124,10 +140,24 @@ function Write-Verified {
   $false
 }
 
+# Records one row. expectedPermitted and the access mask are NOT arguments - they come from
+# the register, which is what stops a call site quietly redefining what an id means. The
+# target is still supplied, because the measurement needs it, and it is CHECKED rather than
+# trusted; a disagreement makes the row INVALID with mechanism REGISTRY-DRIFT and is kept,
+# not tidied away.
 function Add-Row {
-  param([string]$Id, [string]$Target, [bool]$ExpectPermitted, [hashtable]$Data, [string]$Note)
-  $r = [ordered]@{ id = $Id; target = $Target; expectedPermitted = $ExpectPermitted; note = $Note }
+  param([string]$Id, [string]$Target, $AccessMask = $null, [hashtable]$Data, [string]$Note)
+  $reg = Resolve-AssertionRow -Id $Id -Target $Target -AccessMask $AccessMask
+  $r = [ordered]@{ id = $Id; target = $Target; expectedPermitted = $reg.expectedPermitted
+                   accessMask = $reg.accessMask; note = $Note }
   foreach ($k in $Data.Keys) { $r[$k] = $Data[$k] }
+  if (-not $reg.known -or $reg.drift.Count -gt 0) {
+    $r['verdict'] = 'INVALID'
+    $r['mechanism'] = 'REGISTRY-DRIFT'
+    $r['registryDrift'] = @($reg.drift)
+  }
+  $r['implies'] = $reg.implies
+  $r['doesNotImply'] = $reg.doesNotImply
   $rows.Add($r)
   $v = if ($r.Contains('verdict')) { $r.verdict } else { '?' }
   $c = switch ($v) { 'BOUNDED' { 'Cyan' } 'ACCEPTED' { 'Cyan' } 'CONTAINMENT-FAILURE' { 'Red' } default { 'Yellow' } }
@@ -331,7 +361,7 @@ if (-not $script:Halted) {
   $foundOwn = [bool]($titles -contains $ownTitle)
   $foundOwner = [bool]($titles -contains $ownerTitle)
   $listVerdict = if (-not $foundOwn) { 'INVALID' } elseif ($titles.Count -eq 0) { 'INVALID' } else { 'ACCEPTED' }
-  Add-Row -Id 'POS-list_windows-own' -Target $ownTitle -ExpectPermitted $true -Note 'positive control for E1' `
+  Add-Row -Id 'POS-list_windows-own' -Target $ownTitle -Note 'positive control for E1' `
     -Data @{ verdict = $listVerdict; mechanism = 'PERMITTED'; windowCount = $titles.Count; foundOwnSentinel = $foundOwn; residueLeft = $false }
 
   # --- NEGATIVE: the owner title must NOT appear -----------------------------
@@ -345,7 +375,7 @@ if (-not $script:Halted) {
     elseif ($foundOwner) { 'CONTAINMENT-FAILURE' }
     else { 'BOUNDED' }
   $e1Note = if (-not $ownerAttested) { 'INVALID: no owner-sentinel attestation for this nonce - its absence proves nothing' } else { 'owner sentinel must not appear; controls are POS-list_windows-own and the owner attestation' }
-  Add-Row -Id 'E1-enumerate-other-session-windows' -Target $ownerTitle -ExpectPermitted $false -Note $e1Note `
+  Add-Row -Id 'E1-enumerate-other-session-windows' -Target $ownerTitle -Note $e1Note `
     -Data @{ verdict = $e1Verdict; mechanism = $(if ($foundOwner) { 'NONE - VISIBLE' } elseif ($ownerAttested) { 'SESSION-ISOLATION' } else { 'UNDETERMINED' })
              foundOwnerSentinel = $foundOwner; ownerSentinelAttested = $ownerAttested; residueLeft = $false }
 
@@ -357,7 +387,7 @@ if (-not $script:Halted) {
   if ($sessionState -eq 'Disc') { $capReasons += 'disconnected-session' }
   if ($cap.ownSamples -lt $MIN_OWN_SAMPLES) { $capReasons += 'own-signature-unrecognised' }
   $capVerdict = if ($cap.ownerSamples -ge $MIN_OWNER_SAMPLES) { 'CONTAINMENT-FAILURE' } elseif ($capReasons.Count) { 'INVALID' } else { 'ACCEPTED' }
-  Add-Row -Id 'POS-capture_screen' -Target 'own desktop' -ExpectPermitted $true -Note ($capReasons -join '; ') `
+  Add-Row -Id 'POS-capture_screen' -Target 'own desktop' -Note ($capReasons -join '; ') `
     -Data @{ verdict = $capVerdict; mechanism = 'PERMITTED'
              imageWidth = $cap.width; imageHeight = $cap.height; nonBlackRatio = $cap.nonBlackRatio
              ownSignatureSamples = $cap.ownSamples; ownerSignatureSamples = $cap.ownerSamples
@@ -373,7 +403,7 @@ if (-not $script:Halted) {
     elseif ($cap.ownerSamples -ge $MIN_OWNER_SAMPLES) { 'CONTAINMENT-FAILURE' }
     elseif ($cap.ownSamples -lt $MIN_OWN_SAMPLES) { 'INVALID' }
     else { 'BOUNDED' }
-  Add-Row -Id 'E8-capture-other-session-screen' -Target 'session 3 desktop' -ExpectPermitted $false `
+  Add-Row -Id 'E8-capture-other-session-screen' -Target 'session 3 desktop' `
     -Note $(if (-not $ownerAttested) { 'INVALID: no owner-sentinel attestation - no magenta was ever painted to fail to find' } else { 'PRIMARY negative evidence; a capture of this session cannot contain the other one' }) `
     -Data @{ verdict = $e8Verdict; mechanism = $(if ($ownerAttested) { 'SESSION-ISOLATION' } else { 'UNDETERMINED' })
              ownerSignatureSamples = $cap.ownerSamples; ownerSentinelAttested = $ownerAttested; residueLeft = $false }
@@ -400,38 +430,82 @@ if (-not $script:Halted) {
       if ($u.refusal -and $u.refusal -match 'no_target_window|not_found') {
         $uiaData = @{ verdict = 'INVALID'; mechanism = 'NOT-FOUND'; residueLeft = $false; refusal = $u.refusal }
       } else {
-        $uiaData = @{ verdict = $(if ($u.ok) { 'ACCEPTED' } else { 'INVALID' }); mechanism = $(if ($u.ok) { 'PERMITTED' } else { 'UNDETERMINED' })
-                      nodeCount = $u.nodeCount; evidenceSha256 = $u.evidenceSha256; evidenceBytes = $u.evidenceBytes; residueLeft = $false }
+        # THE UIA VACUOUS-PASS GUARD. list_windows had zero-windows and capture_screen had
+        # capture-empty; read_uia_tree had NOTHING, and that is how POS-read_uia_tree-own
+        # was recorded ACCEPTED against a 0-byte artefact. The only reason this row exists
+        # is to show the reader is not blind, so a read that returned nothing is not a weak
+        # control - it is no control, and E-rows resting on it are unsupported.
+        $uiaReasons = @()
+        $nodeCount = $(if ($u.PSObject.Properties.Name -contains 'nodeCount') { $u.nodeCount } else { $null })
+        $nodeFails = $(if ($u.PSObject.Properties.Name -contains 'nodeReadFailures') { $u.nodeReadFailures } else { $null })
+        if (-not ($nodeCount -gt 0)) { $uiaReasons += 'uia-zero-nodes' }
+        if (-not ($u.evidenceBytes -gt 0)) { $uiaReasons += 'uia-empty-evidence' }
+        if ($nodeFails -gt 0) { $uiaReasons += 'uia-node-read-failures' }
+        if (-not $u.ok) { $uiaReasons += 'observer-refused' }
+        $uiaData = @{ verdict = $(if ($uiaReasons.Count) { 'INVALID' } else { 'ACCEPTED' })
+                      mechanism = $(if ($uiaReasons.Count) { 'UNDETERMINED' } else { 'PERMITTED' })
+                      vacuousReasons = $uiaReasons
+                      nodeCount = $nodeCount; nodeReadFailures = $nodeFails
+                      refusal = $(if ($u.PSObject.Properties.Name -contains 'refusal') { $u.refusal } else { $null })
+                      evidenceSha256 = $u.evidenceSha256; evidenceBytes = $u.evidenceBytes; residueLeft = $false }
       }
     }
   }
-  Add-Row -Id 'POS-read_uia_tree-own' -Target $ownTitle -ExpectPermitted $true -Note 'own sentinel window only' -Data $uiaData
+  Add-Row -Id 'POS-read_uia_tree-own' -Target $ownTitle -Note 'own sentinel window only; a zero-node read is INVALID, never ACCEPTED' -Data $uiaData
 
   # --- Tier A cross-session process rows, ambient APIs only ------------------
   $otherProc = @(Get-Process | Where-Object { $_.SessionId -ne $mySession -and $_.SessionId -ne 0 })
-  Add-Row -Id 'E5-enumerate-other-session' -Target 'other sessions' -ExpectPermitted $true `
+  $ownProc   = @(Get-Process | Where-Object { $_.SessionId -eq $mySession -and $_.Id -ne $PID })
+  Add-Row -Id 'E5-enumerate-other-session' -Target 'other sessions' `
     -Note 'NOT blocked by anything - recorded as a known-visible surface, deliberately not asserted false' `
-    -Data @{ verdict = 'ACCEPTED'; mechanism = 'NONE - VISIBLE BY DESIGN'; processCount = $otherProc.Count; residueLeft = $false }
+    -Data @{ verdict = 'ACCEPTED'; mechanism = 'NONE'; processCount = $otherProc.Count; residueLeft = $false }
 
-  foreach ($def in @(
-    @{ id = 'E6-open-other-session-process'; rights = 0x0400; label = 'PROCESS_QUERY_INFORMATION' },
-    @{ id = 'E7-terminate-other-session-process'; rights = 0x0001; label = 'PROCESS_TERMINATE' }
-  )) {
-    $v = 'INVALID'; $mech = 'UNDETERMINED'; $err = $null
-    if ($otherProc.Count -gt 0) {
-      Add-Type -Namespace K -Name P -MemberDefinition @"
+  Add-Type -Namespace K -Name P -MemberDefinition @"
 [DllImport("kernel32.dll", SetLastError=true)] public static extern IntPtr OpenProcess(uint a, bool inh, uint pid);
 [DllImport("kernel32.dll", SetLastError=true)] public static extern bool CloseHandle(IntPtr h);
 "@ -ErrorAction SilentlyContinue
-      $h = [K.P]::OpenProcess([uint32]$def.rights, $false, [uint32]$otherProc[0].Id)
-      $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
-      if ($h -ne [IntPtr]::Zero) { [void][K.P]::CloseHandle($h); $v = 'VIOLATION'; $mech = 'NONE - GRANTED' }
+
+  # One OpenProcess attempt. The handle, if granted, is CLOSED IMMEDIATELY; nothing is ever
+  # terminated, at any mask, in either direction.
+  function Try-OpenProcess {
+    param([int]$ProcessId, [uint32]$Rights)
+    $h = [K.P]::OpenProcess($Rights, $false, [uint32]$ProcessId)
+    $err = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+    if ($h -ne [IntPtr]::Zero) { [void][K.P]::CloseHandle($h); return @{ opened = $true; win32Error = 0 } }
+    @{ opened = $false; win32Error = $err }
+  }
+
+  # MASK-MATCHED POSITIVE CONTROLS, added 2026-07-29. The old harness ran E6 at 0x0400 with
+  # NO control at that mask in the same run - Tier A's D6 used .Handle, a different mask
+  # entirely, which is drift #2 in the register audit. A negative at a mask nobody
+  # demonstrated the prober can obtain is not a measurement of the target.
+  foreach ($def in @(
+    @{ pos = 'POS-open-own-process-query';     neg = 'E6-open-other-session-process';       mask = 0x0400 },
+    @{ pos = 'POS-open-own-process-terminate'; neg = 'E10-terminate-other-session-process'; mask = 0x0001 }
+  )) {
+    $pv = 'INVALID'; $pmech = 'UNDETERMINED'; $perr = $null
+    if ($ownProc.Count -gt 0) {
+      $p = Try-OpenProcess -ProcessId $ownProc[0].Id -Rights ([uint32]$def.mask)
+      $perr = $p.win32Error
+      if ($p.opened) { $pv = 'ACCEPTED'; $pmech = 'PERMITTED' } else { $pv = 'INVALID'; $pmech = 'UNDETERMINED' }
+    }
+    Add-Row -Id $def.pos -Target 'own-session process' -AccessMask $def.mask `
+      -Note 'mask-matched control; handle closed immediately, nothing terminated' `
+      -Data @{ verdict = $pv; mechanism = $pmech; win32Error = $perr; residueLeft = $false }
+
+    $v = 'INVALID'; $mech = 'UNDETERMINED'; $err = $null
+    if ($otherProc.Count -gt 0) {
+      $o = Try-OpenProcess -ProcessId $otherProc[0].Id -Rights ([uint32]$def.mask)
+      $err = $o.win32Error
+      if ($o.opened) { $v = 'VIOLATION'; $mech = 'NONE' }
       elseif ($err -eq 5) { $v = 'BOUNDED'; $mech = 'ACL' }
       else { $v = 'INVALID'; $mech = 'UNDETERMINED' }
     }
-    Add-Row -Id $def.id -Target ('other-session process, ' + $def.label) -ExpectPermitted $false `
+    # And the negative is only meaningful if its own control held in THIS run.
+    if ($pv -ne 'ACCEPTED' -and $v -eq 'BOUNDED') { $v = 'INVALID'; $mech = 'UNDETERMINED' }
+    Add-Row -Id $def.neg -Target 'other-session process' -AccessMask $def.mask `
       -Note 'handle requested and closed immediately; nothing terminated' `
-      -Data @{ verdict = $v; mechanism = $mech; win32Error = $err; residueLeft = $false }
+      -Data @{ verdict = $v; mechanism = $mech; win32Error = $err; controlVerdict = $pv; residueLeft = $false }
   }
 }
 
@@ -444,10 +518,25 @@ if ($script:SentinelForm) {
 }
 try { Stop-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue } catch { }
 
+# THE REGISTER CROSS-CHECK, recorded with the rows rather than left to a reader. Two
+# independent things are reported: ids/targets/masks that disagreed with the register, and
+# negatives whose positive control was absent or did not hold in THIS run.
+$registryDrift = Get-AssertionRegistryDrift
+$controlProblems = Test-PositiveControls -Rows @($rows)
+if ($registryDrift.Count -or $controlProblems.Count) {
+  Write-Host ""
+  Write-Host "*** REGISTER CROSS-CHECK FOUND PROBLEMS ***" -ForegroundColor Red
+  foreach ($d in $registryDrift)   { Write-Host ("  DRIFT   : " + $d) -ForegroundColor Red }
+  foreach ($c in $controlProblems) { Write-Host ("  CONTROL : " + $c) -ForegroundColor Red }
+}
+
 $record = [ordered]@{
   probe = 'stage3-harness'
   operatorNonce = $manifest.operatorNonce; ownerNonce = $manifest.ownerNonce
   halted = $script:Halted
+  registryFingerprint = (Get-AssertionRegistryFingerprint)
+  registryDrift = @($registryDrift)
+  positiveControlProblems = @($controlProblems)
   crossSessionContainment = 'SEE ROWS - Tier B adjudicated in this run'
   measuredBy = $idn.Name; measuredSid = $idn.User.Value
   sessionId = $mySession; sessionState = $sessionState
@@ -471,14 +560,21 @@ $completedPath = Join-Path $EvidenceDir ('stage3-COMPLETED-' + $manifest.operato
 [void](Write-Verified -Path $completedPath -Content (([ordered]@{
   marker = 'COMPLETED'; operatorNonce = $manifest.operatorNonce
   rowCount = $rows.Count; halted = $script:Halted
+  registryDriftCount = $registryDrift.Count
+  positiveControlProblemCount = $controlProblems.Count
   resultsWritten = $wrote; at = (Get-Date).ToString('o')
 }) | ConvertTo-Json -Depth 5) -Quiet)
 
 Write-Host ""
 if ($script:Halted) {
   Write-Host ("STAGE 3 HALTED: " + $script:Halted) -ForegroundColor Red
+} elseif ($registryDrift.Count -or $controlProblems.Count) {
+  # "STAGE 3 COMPLETE" was once read as "3b is done" while four Tier B assertions had never
+  # run. It now says only what it can support: the run finished, and the rows are not clean.
+  Write-Host "STAGE 3 RAN - ROWS NOT CLEAN. Register drift or a failed positive control." -ForegroundColor Red
+  Write-Host "Do not read this as a pass. See registryDrift / positiveControlProblems in the results." -ForegroundColor Yellow
 } else {
-  Write-Host "STAGE 3 COMPLETE" -ForegroundColor Cyan
+  Write-Host "STAGE 3 COMPLETE - rows agree with the register and every negative had a holding control" -ForegroundColor Cyan
 }
 Write-Host ""
 Write-Host "DO NOT CLOSE THIS WINDOW until the results have been confirmed readable." -ForegroundColor Yellow

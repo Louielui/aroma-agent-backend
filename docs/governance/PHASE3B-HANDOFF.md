@@ -1,11 +1,38 @@
 # Phase 3b — handoff
 
-**Updated 2026-07-29.** Branch `feat/computer-3b-observation`, HEAD `5c9e1b9`. `main` untouched.
-Supersedes the earlier version of this file, which was written before Stage 3 ran.
+**Updated 2026-07-29 (second revision of the day).** Branch `feat/computer-3b-observation`.
+`main` untouched. `COMPUTER_OPERATOR` off, `src/app.js` 0 references, 8090 untouched.
 
-**Phase 3b is NOT closed.** Part B executed and returned `STAGE 3 COMPLETE`, but four Tier B
-assertions were never run, Lock 3 is not met, and the integrity of the assertion IDs
-themselves is unverified. Do not read "STAGE 3 COMPLETE" as "3b done".
+**Phase 3b is NOT closed.** Part B executed and returned `STAGE 3 COMPLETE`, but Tier B is
+still incomplete, Lock 3 has only just been corrected in code and not yet exercised against
+the real evidence store, and one of the three positive controls has been **downgraded**.
+Do not read "STAGE 3 COMPLETE" as "3b done" — the harness itself no longer prints that
+phrase unless the register cross-check is clean.
+
+---
+
+## 0. Corrections to the previous revision of this file
+
+Three, all verified by measurement before being written here.
+
+**1. Test suite: 1600 / 1596 / 0 / 4 was WRONG. Measured 1601 / 1597 / 0 / 4** at the same
+tree, twice, deterministically. No test file had changed since `f6379b7`, the working tree
+was clean, and no test is registered from a directory listing — so the two figures described
+identical code and one of them was mis-transcribed. The decisive evidence: an earlier
+revision of this file quoted "1600 tests, 1595 pass, 0 fail, 4 skipped", and 1595 + 4 =
+1599. The number never added up. **This is the same defect as the 24 / 26 / 23 row count in
+§2 — a figure quoted rather than measured, propagating because nobody re-derived it.**
+
+*(After this round's work the suite is **1638 / 1634 pass / 0 fail / 4 skipped**.)*
+
+**2. The stated HEAD was stale.** The previous revision said `HEAD 5c9e1b9`; the actual HEAD
+was `51bdf3e`, which is the commit that wrote that very sentence. Harmless in effect,
+identical in kind to the two above: a record describing a state that had already moved.
+
+**3. `stage3-sentinel.ps1`'s header still described the ORIGINAL signature colours** —
+`(0,255,0)` / `(255,0,255)` — a day after `$SPEC` was changed to `(32,208,64)` /
+`(208,32,144)` precisely because the originals sat on the console palette. Fixed. A header
+that describes the previous build is a drifted record, no different from a drifted id.
 
 ---
 
@@ -13,214 +40,326 @@ themselves is unverified. Do not read "STAGE 3 COMPLETE" as "3b done".
 
 | Item | State |
 |---|---|
-| Evidence-directory PNG contents | **NOT CHECKED** |
-| Lock 3 (7-day retention) | **NOT MET** |
-| Tier B | **4 of 8** adjudicated |
+| Evidence-directory PNG contents | **CHECKED — see §2. Non-vacuous, but 3 of 5 images, not 5** |
+| `obs-*.uia.txt` 0 bytes | **EXPLAINED — see §3. It was a vacuous positive control** |
+| Lock 3 (7-day retention) | **CODE CORRECTED — not yet exercised against the real store** |
+| Tier B | **4 of 11 adjudicated**; the top-up is written and not yet run |
+| Assertion-ID integrity | **NOW ENFORCED — `assertionRegistry`, 44 entries, cross-checked** |
 | Cross-session containment | **NOT PROVEN** |
-| Assertion-ID integrity | **UNVERIFIED** |
-| Test suite | 1600 tests, 1596 pass, 0 fail, 4 skipped |
-| `COMPUTER_OPERATOR` | off · `app.js` 0 references · 8090 untouched |
+| Test suite | 1638 tests, 1634 pass, 0 fail, 4 skipped |
 
-### PNG contents — not checked
+---
 
-`check-evidence-signatures.ps1` exists and is correct, but its only run was pointed at the
-assistant's **scratchpad**, not the evidence directory — which the assistant had already
-stated it cannot read unelevated. The "13 PNGs, OWN 0 / OWNER 0" result describes test
-artefacts and is **not evidence about the evidence store**. It was retracted.
+## 2. PNG contents — checked, and what the result does and does not support
 
-The Owner runs it elevated; until that output exists, PNG contents are **unchecked**.
-
-Scope limit the script states about itself: it detects the owner **sentinel colour**. It
-cannot prove the absence of all owner-session content — only that the one marker made
-deliberately detectable is absent.
-
-### Lock 3 — not met
-
-The 7-day sweep in `evidenceStore.js` matches `ev_*.png` only:
+The Owner ran `check-evidence-signatures.ps1` elevated, against the real evidence directory:
 
 ```
-EVIDENCE_PREFIX = 'ev_'   EVIDENCE_EXT = '.png'
-sweep skips anything not matching both
+images found : 5
+stage3-capture-005711.png                OWN 0     OWNER 0
+stage3-capture-005713.png                OWN 1249  OWNER 0   <- LOAD-BEARING
+stage3-owner-reference-32f6763b0bb5.png  OWN 0     OWNER 0
+stage3-capture-003300.png                OWN 0     OWNER 0   <- old colours, meaningless
+stage3-owner-reference-792a95043e4f.png  OWN 0     OWNER 0   <- old colours, meaningless
+NO OWNER-SIGNATURE CONTENT IN ANY STORED IMAGE
+UIA artefacts : 2  (obs-...uia.txt 0 bytes / stage3-uia.json 695 bytes, age 0.3 days)
 ```
 
-The artefacts that actually hold raw content are named otherwise — `stage3-capture-*.png`,
-`stage3-uia.json`, `obs-*.png`, `obs-*.uia.txt` — so **none of them is ever swept**. The
-retention test passes and is honest about what it tests; it tests the store's own sweep,
-which does not cover the files being produced. An earlier green report on Lock 3 was
-withdrawn.
+**One. `005713` is the whole result, and it is NOT vacuous.** That single image carries both
+directions at once: `OWN 1249` proves the capture was real, was looking at the screen the
+sentinel was on, and was capable of recognising a signature colour — and the *same* image
+reads `OWNER 0`. Positive and negative in one frame, so the zero cannot be explained by a
+broken capture. 1249 against the specified 1250 sample points is the sentinel, essentially
+whole.
 
-### Tier B — 4 of 8
+**Two. Five images were checked; only three can mean anything.** `stage3-capture-003300.png`
+and `stage3-owner-reference-792a95043e4f.png` predate the colour change and were painted in
+the *old* signatures. Checking them with the *new* ones must return 0 whatever they contain.
+They are superseded artefacts and **must not be counted** — this is 3 of 5, never 5 of 5. A
+zero from an instrument that could not have returned anything else is not a measurement.
+
+**Three. The tool's scope limit stands, and it is stated by the tool about itself.** It
+detects the **owner sentinel colour**. It cannot show that no owner-session content of any
+kind is present — only that the one marker made deliberately detectable is absent. "No owner
+signature in any stored image" is exactly that sentence and no wider one.
+
+---
+
+## 3. The 0-byte `obs-*.uia.txt` — explained, and it was a vacuous positive control
+
+**Mechanism.** `observer.ps1` joined its node lines into one string and wrote the bytes. An
+empty node set joins to an empty string, which is 0 bytes — while `ok` stayed `true` and
+`nodeCount` was reported. Worse, the per-node property read sat in `try { ... } catch { }`
+with an **empty catch**, so N nodes could yield zero text and still report N.
+
+**Why it mattered more than the file.** `observation.js` had a vacuous-pass rule for
+`list_windows` (`zero-windows`) and several for `capture_screen` (`capture-empty`,
+`black-frame`, the signature floors). It had **no rule for `read_uia_tree` at all**. So the
+observer's `ok = true` carried the row straight through to ACCEPTED against an empty read.
+
+**Consequence, written into the record: `POS-read_uia_tree-own` is DOWNGRADED to NOT VALID.**
+A positive control exists for exactly one reason — to show the observer is not blind. One
+that read nothing shows the opposite. It is not a weak control; it is no control, and it may
+not be cited as corroboration for anything. **Part B therefore had two standing positive
+controls, not three:** `POS-list_windows-own` and `POS-capture_screen`.
+
+**Fixed this round.**
+- `observation.js` gains three rules: `uia-zero-nodes`, `uia-empty-evidence`,
+  `uia-node-read-failures`. A zero-node read can no longer be ACCEPTED by any path.
+- `observer.ps1` counts per-node failures instead of discarding them and returns a NAMED
+  refusal (`uia_zero_nodes` / `uia_empty_evidence` / `uia_node_read_failures`) rather than a
+  cheerful `ok`.
+- `stage3-harness.ps1` applies the same guard where it adjudicates the row.
+
+**Still open — one number would settle the root cause.** Read `nodeCount` out of
+`stage3-uia.json` (695 bytes, needs elevation):
+- `nodeCount = 0` → the sentinel window genuinely exposes no descendants; the target was
+  wrong and the fix is the rule above plus a better UIA target.
+- `nodeCount > 0` with 0 bytes → every per-node read threw and the empty catch ate them all;
+  a swallowed-error path, and a violation of working rule 5.
+
+Either way the rule was required, so nothing waits on the answer.
+
+---
+
+## 4. Assertion-ID drift — now enforced by a register, not by re-reading
+
+Found by reading code and register together after the Owner observed that if one number can
+change meaning unnoticed, **every** number is unverified until re-read. Re-reading is not a
+control. `src/computer/assertionRegistry.js` is.
+
+**The four findings, unchanged:**
+
+1. **E7 collision.** The register said `E7-read-other-session-module`. The harness ran
+   `E7-terminate-other-session-process`. The registered E7 was never run while the row
+   looked covered.
+2. **E6 semantic narrowing.** Tier A's E6 used `.Handle` (broad access); the harness E6
+   requested `PROCESS_QUERY_INFORMATION` (0x0400). Different access masks, so the harness
+   result did not carry the registered meaning.
+3. **Row count.** 24, 26 and 23 quoted; **measured 23**. 26 was never correct.
+4. **Structural: every `POS-*` row was harness-only, in no register at all.** It could not
+   drift from a definition because none existed — the same class of risk, not a smaller one.
+
+**What now exists**
+
+`assertionRegistry.js` — 44 entries, one source of truth, each carrying `id`, `title`,
+`target`/`targetPattern`, `accessMask`, `mechanism`, `expectedPermitted`,
+`positiveControlId`, `tier`, `implies`, `doesNotImply`. Projected to
+`scripts/computer/assertion-registry.json` for the PowerShell side, guarded by a test that
+fails if the projection falls behind its source.
+
+Enforced, both statically and at run time:
+- every id emitted by any probe exists in the register (test scans the `.ps1` files; the
+  probes also refuse an unknown id while running)
+- `target`, `accessMask` and `expectedPermitted` must match field for field — a drifted row
+  is recorded `INVALID / REGISTRY-DRIFT`, kept and counted, **never tidied into a pass**
+- every `expectedPermitted: false` entry names a positive control, and that control must be
+  **present in the same run and ACCEPTED** — a negative whose control failed proves nothing
+- `POS-*` rows are registered under the same rules
+- **`-ExpectPermitted` is gone from every call site.** The probes read the expectation from
+  the register; they can no longer state one
+- per-id pinned SHA-256 fingerprints: changing an id's target, mask, mechanism, expectation,
+  control or tier fails a test. If it fails, the question is not "update the number" but
+  "did this assertion change meaning?" — if it did, it needs a **new id**
+
+**Corrections applied to the ids themselves**
+- `E7-read-other-session-module` is restored to its registered meaning and is in the top-up.
+- `E10-terminate-other-session-process` is the terminate assertion, under its own id, with
+  `doesNotImply: "NOT a replacement for E7"`.
+- `E6` records mask 0x0400, `implies` denial of any mask containing it up to
+  `PROCESS_ALL_ACCESS`, and `doesNotImply` anything about 0x1000.
+- `E6b-open-other-session-process-limited` asserts 0x1000 on its own, and records that the
+  earlier all-four-denied probe ran **louis → session 5** while E6 is **operator → session
+  3**: the directions are not symmetric, so that was corroboration, not the measurement.
+- `D6-open-own-session-process` is marked **NOT a mask-matched control** (it uses `.Handle`).
+  `POS-open-own-process-query` / `-limited` / `-terminate` are, and the harness now runs the
+  matching control in the same run as each negative.
+
+---
+
+## 5. E2 — the first route was RUN and found incapable
+
+Worth recording in full, because it is the exact failure this whole set exists to catch, and
+it was caught by executing rather than by reading.
+
+E2 was first written against Win32 `OpenWindowStation` with the path
+`\Sessions\N\Windows\WinSta0`. Measured:
+
+```
+'WinSta0'                           -> opened; and it is OUR OWN station, in every session
+'\Sessions\<OWN>\Windows\WinSta0'   -> ERROR_BAD_PATHNAME (161)   <- our own, still refused
+'\Sessions\<ABSENT>\Windows\WinSta0'-> ERROR_BAD_PATHNAME (161)   <- identical
+```
+
+The call does not accept qualified paths at all. It cannot tell "isolated" from "absent"
+from "wrong API" — so a BOUNDED verdict from it would have been **vacuous and would have
+looked exactly like containment**.
+
+The object-manager route discriminates. Measured on this machine:
+
+```
+\Sessions\<own>\Windows      -> STATUS_SUCCESS
+\Sessions\<absent>\Windows   -> STATUS_OBJECT_PATH_NOT_FOUND   <- ABSENT, never containment
+\Sessions\<own>              -> STATUS_ACCESS_DENIED           <- a nameable ACL
+```
+
+So E2 was **re-pinned deliberately** — before it had ever produced a row, so nothing recorded
+is invalidated — to the object-manager container, `NtOpenDirectoryObject` at `DIRECTORY_QUERY`,
+with the *same call against our own container* as its positive control. Only
+`STATUS_ACCESS_DENIED` scores as BOUNDED; `OBJECT_PATH_NOT_FOUND` stays INVALID.
+`doesNotImply` states that the **WinSta0 leaf object's DACL is not reached by this probe**.
+
+**E3 inherits the honest consequence.** `OpenDesktop` operates inside the caller's own window
+station, so another session's desktop cannot be named at all by any API the probe has. E3
+records `blockedAtStep` and claims nothing about the desktop DACL. It will most likely come
+back **INVALID / not proven** — which is the correct answer, and better than a BOUNDED that
+would not survive one question.
+
+---
+
+## 6. Tier B — 4 of 11
 
 | ID | Verdict | Mechanism |
 |---|---|---|
 | E1 enumerate other-session windows | **BOUNDED** | SESSION-ISOLATION |
-| E2 OpenWindowStation | **NOT PROVEN** | — |
-| E3 OpenDesktop | **NOT PROVEN** | — |
-| E4 other-session clipboard | **NOT PROVEN** | — |
+| E2 open other-session winsta container | **NOT RUN** | top-up, re-pinned — §5 |
+| E3 open other-session desktop | **NOT RUN** | top-up; expected NOT PROVEN — §5 |
+| E4 other-session clipboard | **NOT RUN** | top-up; needs the owner seed |
 | E5 enumerate other-session processes | **ACCEPTED** | none — known-visible surface |
-| E6 OpenProcess | **BOUNDED** | ACL, win32Error 5 |
-| E7 read other-session MainModule | **NOT PROVEN** | — |
+| E6 OpenProcess 0x0400 | **BOUNDED** | ACL, win32Error 5 |
+| E6b OpenProcess 0x1000 | **NOT RUN** | top-up, operator → owner direction |
+| E7 read other-session MainModule | **NOT RUN** | top-up — the assertion the collision hid |
 | E8 capture other-session screen | **BOUNDED** | SESSION-ISOLATION |
-| E9 other-session command line | **NOT PROVEN** | — |
-| E10 PROCESS_TERMINATE (new, see §4) | **BOUNDED** | ACL, win32Error 5 |
+| E9 other-session command line | **NOT RUN** | top-up |
+| E10 OpenProcess 0x0001 (terminate) | **BOUNDED** | ACL, win32Error 5 |
 
-E2/E3/E4/E7/E9 were **omitted from the harness**, not deliberately skipped and not merged
-into other rows. Nothing may be inferred about them from E1/E8 being BOUNDED: those use
-window enumeration and screen capture, while E2/E3 test kernel-object DACLs, E4 tests
-window-station clipboard namespacing, and E9 tests process-token rights. **Four different
-mechanisms. One holding is not evidence for another.**
+E10's result is the row that used to be filed under E7. It is real and it stands — under its
+own id.
 
-Positive controls that did hold, and which make the negatives meaningful: `POS-list_windows-own`,
-`POS-capture_screen`, `POS-read_uia_tree-own`, all ACCEPTED, with owner-sentinel attestation
-present, own sentinel on the primary monitor, same-round baseline OWN 0 / OWNER 0, no
-residue, wall clock 3432 ms, and a closed manifest loop (minted louis/session 3 → consumed
-AromaOperator/session 5, STARTED and COMPLETED markers both present).
+**Standing positive controls: two, not three.** `POS-list_windows-own` and
+`POS-capture_screen`, both ACCEPTED, with owner-sentinel attestation present, own sentinel on
+the primary monitor, same-round baseline OWN 0 / OWNER 0, no residue, wall clock 3432 ms, and
+a closed manifest loop (minted louis/session 3 → consumed AromaOperator/session 5, STARTED and
+COMPLETED both present). `POS-read_uia_tree-own` is downgraded — §3.
 
 ---
 
-## 2. Assertion-ID drift — three findings
+## 7. Lock 3 — corrected in code, not yet exercised on the real store
 
-Found by reading code and register together after the Owner observed that if one number can
-change meaning unnoticed, **every** number is unverified until re-read.
+The sweep matched `ev_*.png` and nothing else. Every artefact that actually holds raw content
+is named otherwise — `stage3-capture-*.png`, `stage3-owner-reference-*.png`, `obs-*.png`,
+`obs-*.uia.txt` — so **none of them was ever swept, in any run**. The old test passed and was
+honest about what it tested; it simply did not test the files being produced.
 
-**1. E7 collision.** Register says `E7-read-other-session-module` (read MainModule). The
-harness ran `E7-terminate-other-session-process` (PROCESS_TERMINATE). Different assertions
-under one number, with no note. The registered E7 was therefore never run, while the row
-looked covered.
+Widening a deletion path is the one change here that can destroy evidence, so the store now
+sorts every name into exactly one of three sets, **by declaration**:
 
-**2. E6 semantic narrowing.** The Tier A E6 used `.Handle` (broad access). The harness E6
-requests `PROCESS_QUERY_INFORMATION` (0x0400) specifically. Both are "open another session's
-process", but they test different access masks, so the harness result does not carry the
-registered meaning.
+- **RAW_CONTENT** — pixels and UI text. Deleted at 7 days. This is what Lock 3 is *for*.
+- **RECORD** — manifests, results, STARTED/COMPLETED markers, attestations, the SessionGate
+  backup XML, Tier A output. **Never swept.** These carry the hashes, counts and verdicts
+  that have to outlive the pixels; deleting them would destroy the proof of what the raw
+  content once showed.
+- **unclassified** — anything else. Never swept, and **reported by name**, so a new artefact
+  type surfaces as a question instead of silently accumulating forever or silently being
+  deleted. Absence of a rule is not permission in either direction.
 
-**3. Row count.** 24, 26 and 23 were all quoted at different points. **Measured: 23.** The
-figure 26 was never correct, and it propagated — the Owner repeated it from the assistant's
-own report.
+Exercised end to end in `observationAdjudication.test.js` against the real filenames: six
+aged raw artefacts deleted and confirmed gone from disk, an in-window capture kept, ten
+record files untouched, one undeclared file reported and left alone.
 
-**And a fourth, structural:** every `POS-*` row is harness-only and appears in **no register
-at all**. It cannot drift from a definition because none exists. An unregistered positive
-control is the same class of risk as a drifted negative ID: nothing constrains what it means.
-
----
-
-## 3. `assertionRegistry` — design, not yet implemented
-
-One module is the single source of truth. The harness and the Tier A probe **read** from it
-and may not define assertions locally.
-
-Per entry:
-
-```
-id                  stable, never reused for a different assertion
-title               short human description
-target              the exact object/path/mask under test
-accessMask          where applicable, the literal numeric mask (e.g. 0x0400)
-mechanism           expected class: ACL | SESSION-ISOLATION | PRIVILEGE | NONE
-expectedPermitted   true | false
-positiveControlId   the id of the row that proves the prober is not blind
-tier                A | B
-implies             what the result licenses  (e.g. "denial of any superset mask")
-doesNotImply        what it explicitly does NOT license
-```
-
-Tests that must exist:
-
-- every id emitted by any probe or harness **exists** in the registry
-- for each emitted row, `target`, `accessMask`, `mechanism` and `expectedPermitted` **match
-  the registry entry field for field** — a changed target or mask fails the test
-- every registry entry with `expectedPermitted: false` names a `positiveControlId`, and that
-  control is present in the same run
-- **`POS-*` rows are registered too** — the positive controls are constrained by the same
-  mechanism as the negatives
-- ids are unique, and a test fails if an id's `target` or `accessMask` changes without the
-  id changing
-
-The point is that the drift above becomes a failing test rather than something someone has
-to notice.
+**Still not met.** This is code plus a test. Lock 3 is met when a sweep runs against the real
+evidence directory and the deletion is observed there.
 
 ---
 
-## 4. E6 — decision: correct the register, do not re-run
+## 8. What must be run — Owner, elevated / in-session
 
-Owner ruling, confirmed by the assistant.
+Collected here so it is one sitting, in order. Nothing below is run by the assistant.
 
-**Narrow denial implies broad denial.** `OpenProcess` succeeds only if *all* requested
-rights are granted, so a denial of `PROCESS_QUERY_INFORMATION` (0x0400) entails denial of
-any mask containing it — including the `PROCESS_ALL_ACCESS` that `.Handle` requests. The
-executed assertion is therefore **stronger** than the registered one, and the result stands.
-The fix is to make the register match the mask actually used.
+1. **Stage the new files into the probe directory.** `stage3-topup.ps1`,
+   `assertionRegistry.ps1` and `assertion-registry.json` must sit beside `observer.ps1` in
+   `C:\AromaOperator-Probe`; `stage3-harness.ps1` and `tierA-probe.ps1` now dot-source the
+   register and **will halt (exit 13) without it**.
+2. **One number, for §3:** `nodeCount` from `stage3-uia.json` in the evidence directory.
+3. **E4 owner seed, in session 3, NOT elevated:** `.\stage3-owner-clip.ps1`. It overwrites
+   the clipboard — copy anything you still need first — and nothing may be copied afterwards
+   until the top-up has run. Only the SHA-256 is written to disk; the string never leaves
+   session 3.
+4. **The top-up, as AromaOperator in session 5:** `.\stage3-topup.ps1`. It writes this
+   session's own clipboard as the E4 positive control and clears it afterwards (see §9).
+5. **`.\stage3-owner-clip.ps1 -Clear`** in session 3 once the top-up has finished.
+6. **Lock 3, against the real evidence directory:** a sweep run and its deletions observed.
+7. Optional, cheap: `powershell -File assertionRegistry.ps1 -SelfTest` on the staged copy,
+   to confirm the register loads where the probes will actually read it.
 
-**It does NOT imply `PROCESS_QUERY_LIMITED_INFORMATION` (0x1000).** That is a separate,
-weaker right that can be granted independently, so no subset argument reaches it. It must be
-asserted on its own.
-
-A probe of 0x0001 / 0x0010 / 0x0400 / 0x1000 found **all four denied** — but it ran
-**louis → session 5**, whereas E6 is **operator → session 3**. The directions are not
-symmetric and the ACLs need not be. That measurement is **corroboration, not the
-measurement**, and 0x1000 in the operator→owner direction remains untested.
-
-Register the mask, the implication and the non-implication explicitly. A register that says
-only "cannot open other-session process" claims more than was proven — the same disease as
-a drifted id: **the record reading wider than the evidence.**
-
----
-
-## 5. Next round, in this order
-
-1. **`assertionRegistry` + full cross-check tests** — including `POS-*`. Nothing else until
-   the ids can be trusted; re-running assertions whose identity is unverified just produces
-   more unverified rows.
-2. **Top-up run**: E2, E3, E4, E7, E9 — each with its own positive control inside session 5.
-   Add **E10** for PROCESS_TERMINATE as its own id (a valid extra finding, not a
-   replacement for E7). Extend E6 with 0x1000 in the operator→owner direction.
-3. **Lock 3**: make retention actually cover `stage3-*` and `obs-*`, with the deletion path
-   exercised by a test against those names.
-
-The top-up **does not need a full Part A redo**: none of E2/E3/E4/E7/E9 depends on the owner
-sentinel or the owner reference capture — each needs a positive control inside session 5
-(own window station, own desktop, own clipboard, own process). A fresh manifest is minted
-anyway for a clean evidence chain, but it is not what makes those rows valid.
+**Session 5 must stay signed in throughout.** No sign-out, no reboot, no sleep.
 
 ---
 
-## 6. Environment facts
+## 9. Decisions taken this round that the Owner may want to reverse
 
-- **Session 5 must stay signed in.** No sign-out, no reboot, no sleep. The gate task, the
-  escape-hatch verification and the A4b baseline are all bound to that session id; losing it
-  costs the whole Part A precondition chain. Sleep is already disabled (standby/hibernate AC = 0).
+**The E4 positive control writes the operator's own clipboard.** There is no other way to
+make it non-vacuous: a reader returning nothing from an empty clipboard is indistinguishable
+from one that cannot read at all. It is a write to session 5's own clipboard object — no
+keystroke, no click, no other session — and it is cleared at the end of the run. Note that
+`set_clipboard` is in `FORBIDDEN_ACTIONS` for the observation *module*; this is the probe, not
+that module, and the two are deliberately separate. Say so if you want it removed, and E4
+becomes NOT MEASURABLE rather than quietly weaker.
+
+**Lock 3 sweeps raw content only.** A literal reading of "cover `stage3-*` and `obs-*`" would
+delete `stage3-results.json`, `stage3-manifest.json` and the STARTED/COMPLETED markers —
+the audit trail itself. The scope was narrowed to pixels and UI text, with the retained set
+declared by name and by reason. Reversible in one list if you want it wider.
+
+**The Tier A probe keeps its `-Target` literals.** They are the objects the measurement
+actually operates on ( `$dir`, `$key` ), so they cannot simply be read from the register —
+but they are now **checked against** it, and a disagreement makes the row
+`INVALID / REGISTRY-DRIFT`. `expectedPermitted` is fully register-owned. This is one step
+short of "reads everything from the register".
+
+---
+
+## 10. Environment facts
+
+- **Session 5 must stay signed in.** The gate task, the escape-hatch verification and the A4b
+  baseline are all bound to that session id. Sleep already disabled (standby/hibernate AC = 0).
 - **Signature colours** — changed after the original pair were found to sit exactly on the
-  Windows console palette, which let a single magenta console line put 18 owner hits into a
-  clean baseline:
+  Windows console palette, which let one magenta console line put 18 owner hits into a clean
+  baseline:
   ```
   OWN    RGB(32, 208, 64)
   OWNER  RGB(208, 32, 144)     tolerance ±12
   ```
   Every channel clears tolerance against all 16 palette entries by ≥16.
 - **`cls` before pasting anything in session 5.** Console text is part of the captured frame.
-- **The evidence directory needs elevation to read.** The assistant cannot inspect it; any
-  check of its contents must be a script the Owner runs.
-- Display: console, dpiX 96 after the Owner set scaling to 100%. **Two monitors** —
-  `\\.\DISPLAY1` primary at 0,0 and `\\.\DISPLAY5` at −1920,0; VirtualScreen 3840×1080. The
-  capture samples the **virtual** screen; `GetDeviceCaps` reports only the primary, which is
-  why two scripts once disagreed by a factor of two.
-- Sentinels are positioned explicitly from `PrimaryScreen.Bounds`, never `CenterScreen`,
-  which placed them on the negative-origin monitor.
+- **The evidence directory needs elevation to read.** Any check of its contents must be a
+  script the Owner runs.
+- Display: console, dpiX 96 after scaling was set to 100%. **Two monitors** — `\\.\DISPLAY1`
+  primary at 0,0 and `\\.\DISPLAY5` at −1920,0; VirtualScreen 3840×1080. The capture samples
+  the **virtual** screen; `GetDeviceCaps` reports only the primary.
+- Sentinels are positioned explicitly from `PrimaryScreen.Bounds`, never `CenterScreen`.
 
 ---
 
-## 7. Working rules — every one of these caught something real
+## 11. Working rules — every one of these caught something real
 
 1. **Run it; do not parse-check it.** The DPI defect, the wallpaper risk, the Lock 3
-   selectivity flaw, a `-Include` that matched all 144 files, and a one-liner that failed
-   while printing plausible output were all found by executing.
+   selectivity flaw, a `-Include` that matched all 144 files, a one-liner that failed while
+   printing plausible output — and this round, an `OpenWindowStation` route that would have
+   produced a confident, vacuous BOUNDED (§5) and a `-f` format string that threw inside the
+   drift detector itself. Both were found by executing, in the first minute.
 2. **A zero result is evidence only against a same-round positive baseline.**
 3. **Never infer from absence.** "No STARTED" had two causes; the optimistic one was wrong.
 4. **An unexplained block is not containment.** `NO-EXCEPTION` and `UNDETERMINED` are INVALID.
-5. **Refuse, do not trim.** Dropping a bad field destroys the evidence that something tried.
+5. **Refuse, do not trim.** Dropping a bad field destroys the evidence that something tried —
+   and an empty `catch { }` is the same crime with better manners (§3).
 6. **No baseline, no destructive attempt.**
 7. **Report mechanism-verified and real-value-unverified as separate columns.**
-8. **NEW — check what you are measuring before reporting the measurement.** The PNG check
-   was run against the scratchpad and reported as though it covered the evidence directory,
-   in the same session in which the assistant had said it could not read that directory. A
-   correct method pointed at the wrong subject produces a confident, wrong answer, and it
-   looks exactly like a right one.
+8. **Check what you are measuring before reporting the measurement.** The PNG check was once
+   run against the scratchpad and reported as covering the evidence directory. A correct
+   method pointed at the wrong subject produces a confident, wrong answer that looks exactly
+   like a right one.
+9. **NEW — a quoted number is not a measured one.** 26 rows, 1600 tests, `HEAD 5c9e1b9`, and a
+   sentinel header describing colours that had already changed. Every one propagated because
+   it was copied rather than re-derived. Anything that can be measured in one command should
+   be, every time it is written down.

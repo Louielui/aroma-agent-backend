@@ -128,19 +128,43 @@ test('*** the sweep only ever touches its OWN files ***', () => {
 })
 
 test('deletion is by file age, so a lost index cannot retain evidence forever', () => {
-  // There is no index. Stated as a property: the store keeps no manifest at all, so the
-  // failure mode where bookkeeping is lost and files live on cannot occur.
+  // There is no index. Stated as a property: the store keeps no bookkeeping of its own, so
+  // the failure mode where a record is lost and files live on forever cannot occur.
+  //
+  // NARROWED 2026-07-29. The original assertion banned the word "manifest" outright. That
+  // stopped being the right test when the sweep learned to RETAIN the harness's
+  // stage3-manifest.json: the store still keeps no index, but it now has to name one file
+  // it must never delete. The property is unchanged; the assertion is now about the store
+  // WRITING an index rather than about the string appearing at all.
   const src = fs.readFileSync(path.join(__dirname, 'evidenceStore.js'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
-  assert.equal(/manifest|index\.json|\.db\b/.test(src), false, 'no manifest exists to lose')
+  assert.equal(/index\.json|\.db\b|writeFileSync\([^)]*manifest/i.test(src), false, 'no index of its own exists to lose')
+  assert.equal((src.match(/fs\.writeFileSync/g) || []).length, 1, 'the only write is put()')
   assert.ok(src.includes('mtimeMs'), 'age comes from the filesystem itself')
 })
 
 test('sweeping an empty or absent directory is safe', () => {
   const base = path.join(os.tmpdir(), 'aroma-evidence-absent-' + crypto.randomBytes(4).toString('hex'))
   const store = createEvidenceStore({ baseDir: base, now: () => 1 })
-  assert.deepEqual(store.sweep(), { deleted: [], kept: 0, retentionDays: 7 })
+  assert.deepEqual(store.sweep(),
+    { deleted: [], kept: 0, retained: [], unclassified: [], retentionDays: 7 })
   assert.deepEqual(store.list(), [])
+})
+
+test('*** the sweep now covers the names that actually hold raw content ***', () => {
+  // The old sweep matched ev_*.png only, so stage3-* and obs-* — the artefacts that hold
+  // the pixels and the UI text — were never on the deletion path at all. Asserted here at
+  // the store's own boundary; the end-to-end deletion is exercised in
+  // observationAdjudication.test.js against the real filenames.
+  const { classify } = require('./evidenceStore')
+  for (const n of ['stage3-capture-005713.png', 'obs-1.png', 'obs-1.uia.txt', 'stage3-owner-reference-32f6.png']) {
+    assert.equal(classify(n).kind, 'raw', n + ' is on the deletion path')
+  }
+  for (const n of ['stage3-results.json', 'stage3-manifest.json', 'tierA-probe.out']) {
+    assert.equal(classify(n).kind, 'record', n + ' is the audit trail and must survive')
+  }
+  assert.equal(classify('holiday-photo.png').kind, 'unclassified',
+    'an undeclared name is never deleted — absence of a rule is not permission')
 })
 
 test('the store refuses to guess a location', () => {

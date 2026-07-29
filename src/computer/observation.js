@@ -74,7 +74,7 @@ const RESULT_FIELDS = Object.freeze([
   'ok', 'action', 'refusal', 'capability',
   'sessionId', 'windowStation', 'desktop', 'sessionState',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
-  'windowCount', 'nodeCount', 'titles', 'at',
+  'windowCount', 'nodeCount', 'nodeReadFailures', 'titles', 'at',
   // DPI travels WITH each capture. Per-monitor awareness means it varies by screen, so a
   // capture recorded without it cannot be reasoned about after the fact — which is exactly
   // what made the earlier 1664x1109 numbers unusable.
@@ -243,6 +243,18 @@ const VACUOUS_PASS_RULES = Object.freeze([
   { id: 'own-sentinel-absent', when: (c) => c.ownSentinelCreated !== true, why: 'the positive sentinel was never created, so finding nothing proves nothing' },
   { id: 'zero-windows', when: (c) => c.action === 'list_windows' && !(c.windowCount > 0), why: 'enumeration returned no windows at all' },
   { id: 'capture-empty', when: (c) => c.action === 'capture_screen' && !(c.evidenceBytes > 0), why: 'capture returned zero bytes or errored' },
+  // FOUND 2026-07-29, and it had already fired unnoticed. list_windows had zero-windows and
+  // capture_screen had capture-empty, but read_uia_tree had NO RULE AT ALL — so an
+  // automation read that returned nothing was adjudicated ACCEPTED. The stored artefact for
+  // POS-read_uia_tree-own is 0 bytes: the observer joins its node lines, an empty node set
+  // joins to an empty string, and ok stays true. A positive control exists for exactly one
+  // reason — to prove the observer is not blind — so a control that read nothing is not a
+  // weak control, it is no control, and every negative resting on it is unsupported.
+  { id: 'uia-zero-nodes', when: (c) => c.action === 'read_uia_tree' && !(c.nodeCount > 0), why: 'the automation tree came back with no nodes — a reader that returned nothing cannot show it is not blind' },
+  { id: 'uia-empty-evidence', when: (c) => c.action === 'read_uia_tree' && !(c.evidenceBytes > 0), why: 'the stored automation text is empty, so nothing was actually read' },
+  // Counted, not swallowed. observer.ps1 caught and discarded per-node property failures, so
+  // a tree of N nodes could yield zero text while still reporting N. Refuse, do not trim.
+  { id: 'uia-node-read-failures', when: (c) => c.action === 'read_uia_tree' && c.nodeReadFailures > 0, why: 'one or more nodes could not be read, so the node count does not describe what was captured' },
   { id: 'owner-sentinel-absent', when: (c) => c.ownerSentinelCreated !== true, why: 'the negative sentinel was never created, so its absence is meaningless' },
   { id: 'black-frame', when: (c) => c.action === 'capture_screen' && typeof c.nonBlackRatio === 'number' && c.nonBlackRatio < MIN_NON_BLACK_RATIO, why: 'the capture is black or near-black' },
   { id: 'disconnected-session', when: (c) => c.action === 'capture_screen' && c.sessionState === 'Disc', why: 'a disconnected session is not composited, so a capture proves nothing' },
@@ -320,7 +332,7 @@ function validateResult (result) {
 const AUDIT_FIELDS = Object.freeze([
   'at', 'orderId', 'action', 'outcome', 'refusalReason',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
-  'windowCount', 'nodeCount', 'titles', 'sessionId', 'sessionState', 'elapsedMs',
+  'windowCount', 'nodeCount', 'nodeReadFailures', 'titles', 'sessionId', 'sessionState', 'elapsedMs',
   'dpiAwareness', 'dpiX', 'scalingFactor',
   'logicalWidth', 'logicalHeight', 'physicalWidth', 'physicalHeight',
   'primaryScreen', 'sentinelScreen'
