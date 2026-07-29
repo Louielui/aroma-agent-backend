@@ -8,6 +8,11 @@ demonstrated against a live Companion, 17/17 CONTAINMENT HOLDS), `register-obser
 (Interactive/Limited, 0 triggers, observer SHA `910618A1…`/13226, C4 baseline XML
 `338ac8cd…`), `verify-staging.ps1` (closure match True, standalone load exit 0).
 
+> **SUPERSEDED 2026-07-29 — `register-observer-task.ps1` must be re-run.** `observer.ps1`
+> changed to `5281BC37…`/14216, so the SHA in that task's description no longer describes
+> the staged file. Back up `observer-task-baseline.xml` before re-running; it is overwritten
+> in place. Full detail in the hash table at the end of this file.
+
 ---
 
 ## STEP 0 — session 3, no elevation. VERIFY WHO AND WHERE YOU ARE
@@ -251,15 +256,61 @@ reported with its PID.
 
 ## Staged-file hash table — check STEP 0b against this
 
+**Updated 2026-07-29.** Every row below was re-measured, not carried over.
+
 | file | SHA-256 | bytes |
 |---|---|---|
-| `stage3-harness.ps1` | `0A4DC9E44BEC3F4111248EEC2C8D7B1CE716810BC20FAFBC846D29D0C4C8FE91` | 29039 |
-| `observer.ps1` | `910618A13F66FA6F70E436AE202150BE75862E70C7D2F6ABBAA9F5A67E6B6700` | 13226 |
+| `stage3-harness.ps1` | `F7ADEB9016FD8C82F1B00913C07DE11F0012C7924B34759A222B863C7CB22BEC` | 34917 |
+| `observer.ps1` | `5281BC37E5EB028D5609680B4A10687C2D9BEC82954B7ABBFDE7341709F89FE9` | 14216 |
 | `stage3-baseline.ps1` | `EBAF59DF3CACBCD9F5DD775EBA64B6DB2BB5E9E606FAF3A1538B403E8298B5D6` | 10244 |
+| `tierA-probe.ps1` | `B61AE1EC3ABBE93313BDBE34D5F4538E28B7CBCD08FA7736A2DF85902F5C8D41` | 34178 |
+| `assertionRegistry.ps1` **new** | `22F88E59838090F8261261FEB0E576442BD333D32A2DF18FF90BD13A77C35C18` | 10098 |
+| `assertion-registry.json` **new** | `E79C5D6000AC25228E6528372D8AC086CE1839471815825A1E29E16A896E932F` | 26505 |
+| `stage3-topup.ps1` **new** | `AF770CAB4B189819A4DF9670EA73CAC899D11D0EFB88EFE79B2716151559874E` | 32863 |
 
-`observer.ps1` is unchanged from the hash recorded when the Observer task was registered,
-so the task's SHA pin still matches.
+`stage3-owner-clip.ps1` (`5E4083F05172484CE4C921D3A76E03EA535571FCF2CFF39837EB0F60B56B0BC6`,
+13810) runs on the OWNER side in session 3 and is **not** staged into the probe directory.
 
-**The harness hash changed** from the earlier `8C0D5D55…`/27449. That earlier build wrote
-its fallback into the probe directory, which AromaOperator cannot write to — the fallback
-could never have fired. Re-stage; do not run the old one.
+> These hashes are of the repo working tree as it stands. This repo normalises line endings
+> on checkout, so a fresh clone will hash differently. Copy from
+> `C:\Aroma\aroma-agent-backend\scripts\computer\`, then `Get-FileHash` the staged copy and
+> compare. If it does not match, stop.
+
+### `observer.ps1` CHANGED — and the sentence that used to be here was the drift
+
+This table previously said *"`observer.ps1` is unchanged from the hash recorded when the
+Observer task was registered, so the task's SHA pin still matches."* **That is now false.**
+The observer changed on 2026-07-29 (per-node read failures are counted instead of swallowed;
+a zero-node read returns a named refusal instead of `ok = true`):
+
+```
+910618A1…  13226   ->   5281BC37…  14216
+```
+
+**The task will still start.** The SHA is recorded in the task DESCRIPTION only —
+Task Scheduler verifies nothing, and no code reads that string at run time. What actually
+protects the staged file is its ACL: an explicit DENY on Write / Delete / ChangePermissions
+/ TakeOwnership for AromaOperator, plus ALLOW ReadAndExecute. So the pin is a **record, not
+a gate**, and its failure mode is precisely the one this project keeps finding: copy a new
+file in, everything keeps working, and the record quietly describes a file that is gone.
+
+So `register-observer-task.ps1` must be re-run elevated — **and back the C4 baseline up
+first**, because it writes `observer-task-baseline.xml` to a fixed filename with
+`Set-Content` and the previous baseline is overwritten with no copy kept:
+
+```
+Copy-Item 'C:\Aroma\ComputerOperator-Evidence\observer-task-baseline.xml' `
+          'C:\Aroma\ComputerOperator-Evidence\observer-task-baseline-pre-uiafix-20260729.xml'
+```
+
+Nothing reads that baseline yet — the script's own closing note asks for an observer-task row
+in the Tier A probe and **that row was never added**, so no check would have noticed the
+overwrite either.
+
+**The harness hash also changed twice.** `8C0D5D55…`/27449 (fallback written into a directory
+AromaOperator cannot write to — it could never have fired) → `0A4DC9E4…`/29039 → the current
+`F7ADEB90…`/34917 (reads the assertion register; refuses to print STAGE 3 COMPLETE when the
+cross-check is dirty). Re-stage; do not run an older one.
+
+**`stage3-harness.ps1` and `tierA-probe.ps1` now EXIT 13** if `assertionRegistry.ps1` and
+`assertion-registry.json` are not beside them in the probe directory.

@@ -489,7 +489,11 @@ test('*** LOCK 3 — the sweep deletes the names that actually hold raw content 
     'stage3-clip-owner-abc.json',
     'stage3-uia.json',
     'sessiongate-backup-0123abcd.xml',
-    'tierA-probe.out'
+    'tierA-probe.out',
+    // both of these were falling through as `unclassified` until 2026-07-29
+    'observer-task-baseline.xml',
+    'observer-task-baseline-pre-uiafix-20260729.xml',
+    'observer-result.json'
   ]
   for (const n of aged.concat(records)) {
     fs.writeFileSync(path.join(dir, n), 'x')

@@ -71,7 +71,15 @@ const RECORD_PATTERNS = Object.freeze([
   { id: 'attestations', pattern: /^stage3-(sentinel-owner|clip-owner)-.+\.json$/i, why: 'owner-side attestations that make negatives non-vacuous' },
   { id: 'uia-result', pattern: /^stage3-uia\.json$/i, why: 'counts and a hash, not node text — the text is in the .uia.txt' },
   { id: 'gate-backup', pattern: /^sessiongate-backup-.+\.xml$/i, why: 'the restore source for C4; losing it turns a measurement into an outage' },
-  { id: 'tierA', pattern: /^tierA-(probe\.out|INCIDENT-.+\.json)$/i, why: 'Tier A rows and incidents' }
+  { id: 'tierA', pattern: /^tierA-(probe\.out|INCIDENT-.+\.json)$/i, why: 'Tier A rows and incidents' },
+  // Found 2026-07-29 while tracing the observer SHA pin: both of these were falling through
+  // as `unclassified`. Never deleted — the classifier fails safe — but reported every sweep
+  // as an open question, which is noise where a decision belongs. They are records: the
+  // baseline is the only thing that could ever show the observer task's POINTER being
+  // changed (the hole C4 exists to close), and the result file carries counts and
+  // own-session titles, not raw content.
+  { id: 'observer-task-baseline', pattern: /^observer-task-baseline(-.+)?\.xml$/i, why: 'the C4-style pointer baseline for the Observer task, including dated pre-change copies' },
+  { id: 'observer-result', pattern: /^observer-result\.json$/i, why: 'counts and own-session titles from the task-launched observer, not raw content' }
 ])
 
 /** Which set does a name fall into? Exactly one, or none. */
