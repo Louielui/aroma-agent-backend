@@ -317,7 +317,7 @@ its first real invocation. Fixed. **Rule 1 again, and it paid again.**
 
 ---
 
-## 5c. Execution boundary — DESIGN ONLY, not implemented
+## 5c. Execution boundary — A and B, both implemented
 
 **The problem, stated as the Owner did.** The assistant ran the real measurement path twice
 in the Owner's own session 3, destroying the live clipboard sentinel. The proximate cause was
@@ -333,34 +333,85 @@ anticipated — and the author is the party that keeps getting this wrong.
 3. It fails CLOSED — an unknown state refuses to measure.
 4. It is auditable after the fact: a refusal leaves a record.
 
-**Option A — the probes refuse to run except as the Companion account.** One line near the
-top of every measurement script: if the current identity is not `AromaOperator`, refuse and
-exit. Cheap, immediate, and it would have stopped both incidents outright.
-*Limit:* still script-internal, so it shares the weakness above — but it is a different and
-much simpler predicate than a flag, and it is the same shape as the `hostname` check that
-already guards the other repo. **Recommended as the immediate step.**
+**Owner ruling 2026-07-29: do both. B is the boundary, A is the belt.** Both implemented
+below. Option C — requiring a one-shot manifest only the session-gate task can mint — was
+considered and deferred: it couples every probe to a Part A precondition chain that the
+top-up is specifically argued not to need.
 
-**Option B — the probe directory is unreadable to the Owner's interactive account.** Today
-`C:\AromaOperator-Probe` denies AromaOperator *write*; it does not deny louis *read and
-execute*. Invert the second half: grant execute to AromaOperator only. Then running a probe
-as louis fails at the filesystem, before a single line parses, and no script cooperation is
-required. **This is the real structural answer.**
-*Cost:* the Owner must still be able to stage files there — so staging is done elevated,
-which is already the case, and read-back for hash verification needs an elevated shell.
+### A — `probeIdentityGate.ps1`, IMPLEMENTED
 
-**Option C — measurement requires a token the Owner's session cannot mint.** The probe reads
-a one-shot manifest that only the session-gate task creates, in session 5, on the Companion's
-logon. Without it the probe halts. Part B already has exactly this shape — the manifest nonce
-— but the top-up deliberately does not consume it, which is why the top-up had no such gate.
-*Cost:* couples every probe to a Part A precondition chain; the handoff argues the top-up
-should not need one. Worth revisiting only if A and B prove insufficient.
+Dot-sourced by `tierA-probe.ps1`, `stage3-harness.ps1` and `stage3-topup.ps1`. If the SAM
+account is not `AromaOperator`, the script refuses and exits 15 before measuring anything.
+The refusal is **recorded, not merely printed** — a console line dies with the window:
 
-**Recommendation: B as the boundary, A as the belt.** A is minutes of work and closes the
-observed hole today; B removes the assistant's ability to execute the path at all, which is
-what was actually asked for. Both leave a record: A writes a refusal line, B produces an
-access-denied that cannot be mistaken for a measurement.
+```json
+{"marker":"PROBE-REFUSED","script":"stage3-topup.ps1","reason":"a measurement path may only
+run as the Companion account","expectedAccount":"AromaOperator","actualIdentity":"AROMABRAIN\\louis",
+"sessionId":3,"at":"2026-07-29T09:29:05.98-05:00"}
+```
 
-**Not implemented.** Owner asked for the design first.
+Written to `%TEMP%\probe-refusals.log` first — TEMP is writable by whoever is running,
+including the Owner in their own session, which is exactly the case being caught — and to the
+evidence directory as well, but never depending on it.
+
+**Verified live**: the top-up run as louis in session 3 exited 15, measured nothing, recorded
+the refusal in both locations, and left the clipboard untouched. The gate sits at the
+measurement path itself, next to the `exit 14` self-test backstop, so no earlier branch going
+wrong can route around it. The file declares **no `param()` block** — a dot-sourced file that
+declares parameters overwrites its caller's, which is the defect that made all this necessary.
+
+The account name is a constant, not a parameter. A parameter would be an override, and an
+override is a bypass.
+
+### B — `restrict-probe-dir.ps1`, IMPLEMENTED (Owner runs it elevated)
+
+`-Status` / `-Apply` / `-Revert`. Applies an **explicit DENY** for `louis` on
+`C:\AromaOperator-Probe`, plus an explicit ALLOW ReadAndExecute for `AromaOperator` so the
+Companion's access does not depend on an inherited grant that a later change to `C:\` could
+remove unnoticed. Backs the prior SDDL up to
+`probedir-acl-pre-gateb-<timestamp>.txt` first — no baseline, no destructive change, the same
+rule the Tier A probe applies to the SessionGate task.
+
+**Why a DENY and not just removing an ALLOW.** louis is in Administrators, and Administrators
+holds inherited Full Control on `C:\`. Removing a grant changes nothing; only an explicit
+DENY does, because explicit ACEs are evaluated before inherited ones and deny before allow.
+
+**Why READ and not EXECUTE.** PowerShell opens a `.ps1` as data. Denying `ExecuteFile` alone
+would not stop `powershell -File`; denying `ReadData` does.
+
+#### THE LIMIT — B IS NOT AN ABSOLUTE BOUNDARY
+
+An elevated shell can still **take ownership** of the directory and rewrite the DACL. The
+Owner holds `SeTakeOwnershipPrivilege` and `SeRestorePrivilege`; nothing here removes them and
+nothing in a script could.
+
+> **Gate B prevents accidents. It does not prevent the Owner.**
+
+That is the honest scope and it must not be written up as anything wider. What it buys is that
+reaching the scripts becomes a **deliberate, visible act** — taking ownership is not something
+anyone does by mistake, and it leaves an ACL that no longer matches what `-Status` expects.
+`-Status` reports the directory owner on every run for that reason.
+
+#### WHAT CHANGES FOR THE OWNER'S WORKFLOW
+
+| operation | under Gate B | why |
+|---|---|---|
+| `Copy-Item` **into** the probe directory | **works** | creating a file needs Write on the directory; the deny is on reading |
+| `Get-FileHash` on a **staged** file | **fails** | needs ReadData. Deliberate. |
+| `powershell -File <staged script>` | **fails** | PowerShell reads a script as data — this is the point |
+
+So **hash verification moves**, and this is the one real workflow change:
+
+1. Hash the **repo** copy before staging — the Owner can always read the repo, and that is
+   what the published table lists.
+2. `Copy-Item` into the probe directory as usual, elevated. Unaffected.
+3. Read the **staged-file table that the probe prints at startup, in session 5**.
+   `stage3-harness.ps1` and `stage3-topup.ps1` both enumerate their own directory and print
+   name / bytes / SHA-256 before measuring anything, precisely so the Owner never needs read
+   access to that directory.
+
+`-Status` proves the effect rather than describing it: it attempts to hash one staged file
+with the current token and reports whether it succeeded.
 
 ---
 
@@ -424,27 +475,57 @@ evidence directory and the deletion is observed there.
 
 Collected here so it is one sitting, in order. Nothing below is run by the assistant.
 
-1. **Stage the new files into the probe directory.** `stage3-topup.ps1`,
-   `assertionRegistry.ps1` and `assertion-registry.json` must sit beside `observer.ps1` in
-   `C:\AromaOperator-Probe`; `stage3-harness.ps1` and `tierA-probe.ps1` now dot-source the
-   register and **will halt (exit 13) without it**.
-2. **One number, for §3:** `nodeCount` from `stage3-uia.json` in the evidence directory.
-3. **E4 owner seed, session 3, NOT elevated:** `.\stage3-owner-clip.ps1 -Seed`. It
-   overwrites the clipboard — copy anything you still need FIRST — and **copy nothing at all
-   between here and step 4b**. Only the SHA-256 reaches disk; the string never leaves session
-   3. Note the nonce it prints.
-4. **The top-up, as AromaOperator in session 5:** `.\stage3-topup.ps1`. It writes this
-   session's own clipboard as the E4 positive control and clears it afterwards (§9). It will
-   print that E4 is PENDING-VERIFY and name step 4b.
-4b. **`.\stage3-owner-clip.ps1 -Verify -Nonce <nonce>`, session 3.** **Not optional.** This is
-   the only thing that can tell containment from a sentinel that was overwritten, and it is
-   what releases E4. Skipping it leaves E4 permanently unfinished — see §5b.
-5. **`.\stage3-owner-clip.ps1 -Clear`**, session 3. It will refuse if 4b has not run.
-6. **Lock 3, against the real evidence directory:** a sweep run and its deletions observed.
-7. Optional, cheap: `powershell -File assertionRegistry.ps1 -SelfTest` on the staged copy,
-   to confirm the register loads where the probes will actually read it.
+**ORDER MATTERS.** Hash verification happens BEFORE Gate B is applied, and everything that
+reads the probe directory happens in session 5 afterwards.
+
+**Session 3, elevated:**
+
+1. **Back up the observer task baseline, then re-register it** — `observer.ps1` changed hash,
+   so the SHA in the task description is stale (§ the checklist). Copy
+   `observer-task-baseline.xml` to a dated `-pre-uiafix-` name first; the script overwrites it
+   in place with no copy kept.
+2. **Hash the REPO copies and compare against the checklist table.** Do this now, while the
+   repo is the source — after step 5 the staged copies are unreadable to you, by design.
+3. **Stage** into `C:\AromaOperator-Probe`: `stage3-topup.ps1`, `assertionRegistry.ps1`,
+   `probeIdentityGate.ps1` and `assertion-registry.json` beside `observer.ps1`, plus the
+   updated `stage3-harness.ps1` and `tierA-probe.ps1`. All three probes now dot-source the
+   register and the identity gate and **halt (exit 13) without them**.
+   `stage3-owner-clip.ps1` is **not** staged — it runs Owner-side from the repo.
+4. **`nodeCount` from `stage3-uia.json`** in the evidence directory (§3).
+5. **`.\restrict-probe-dir.ps1 -Status`**, then **`-Apply`**, then **`-Status`** again.
+   The second `-Status` must report `readable by THIS token : NO`. Gate B is live from here.
+
+**Session 5, as AromaOperator:**
+
+6. **`.\stage3-topup.ps1 -SelfTest`** — zero side effects. Confirms the reporting path writes
+   files on that machine under that account, and that the register loads from the staged copy.
+   *(This replaces the old step 7: under Gate B you cannot run it as louis.)*
+7. Note the **staged-file table** the probe prints at startup and compare it to the checklist.
+   This is now the only way to verify the staged hashes, and it is the intended way.
+
+**Session 3, NOT elevated:**
+
+8. **`.\stage3-owner-clip.ps1 -Seed`**. Overwrites the clipboard — copy anything you still
+   need FIRST — and **copy nothing at all between here and step 10**. Only the SHA-256 reaches
+   disk; the string never leaves session 3. Note the nonce.
+
+**Session 5, as AromaOperator:**
+
+9. **`.\stage3-topup.ps1`**. Writes this session's own clipboard as the E4 positive control
+   and clears it afterwards (§9). Will print E4 as PENDING-VERIFY and name step 10.
+
+**Session 3, NOT elevated:**
+
+10. **`.\stage3-owner-clip.ps1 -Verify -Nonce <nonce>`. Not optional.** The only thing that can
+    tell containment from a sentinel that was overwritten, and what releases E4. Skipping it
+    leaves E4 permanently unfinished — §5b.
+11. **`.\stage3-owner-clip.ps1 -Clear`**. Refuses if 10 has not run.
+12. **Lock 3** against the real evidence directory: a sweep run and its deletions observed.
 
 **Session 5 must stay signed in throughout.** No sign-out, no reboot, no sleep.
+
+If Gate B needs lifting for any reason: `.\restrict-probe-dir.ps1 -Revert`, elevated. It says
+so loudly when it does.
 
 ---
 

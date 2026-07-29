@@ -80,6 +80,7 @@ $SELF_TEST = ($PSBoundParameters.ContainsKey('SelfTest') -and [bool]$PSBoundPara
 $SELF_TEST_MODE = $SelfTestMode
 $REGISTRY_PATH = $RegistryPath
 
+. (Join-Path $PSScriptRoot 'probeIdentityGate.ps1')
 . (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
 try {
   $regCount = Import-AssertionRegistry -Path $REGISTRY_PATH
@@ -106,6 +107,18 @@ if ($SELF_TEST) {
 Write-Host "=== Phase 3b Part B TOP-UP ===" -ForegroundColor Cyan
 Write-Host ("running as        : " + $idn.Name + "  SessionId=" + $mySession)
 Write-Host ("assertion register: " + $regCount + " entries  " + (Get-AssertionRegistryFingerprint))
+
+# STAGED-FILE HASHES, REPORTED FROM INSIDE THE SESSION THAT CAN READ THEM. Once
+# restrict-probe-dir.ps1 is applied the Owner cannot read this directory at all, so the staged
+# copy identifies itself here and the Owner compares against the checklist from this console.
+if (-not $SELF_TEST) {
+  Write-Host ""
+  Write-Host "=== staged files, as this account sees them ===" -ForegroundColor Cyan
+  foreach ($sf in (Get-ChildItem -LiteralPath $PSScriptRoot -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+    try { Write-Host ("  {0,-26} {1,7}  {2}" -f $sf.Name, $sf.Length, (Get-FileHash -LiteralPath $sf.FullName -Algorithm SHA256).Hash) }
+    catch { Write-Host ("  {0,-26} UNREADABLE" -f $sf.Name) -ForegroundColor Yellow }
+  }
+}
 Write-Host ""
 
 # ── the other session, named by measurement rather than assumed ──────────────
@@ -284,6 +297,9 @@ if ($PSBoundParameters.ContainsKey('SelfTest')) {
   Write-Host "*** The self-test flag is not plumbed correctly. NOTHING was measured.  ***" -ForegroundColor Red
   exit 14
 }
+# GATE A. Identity, checked at the measurement path itself rather than at the top, so it
+# cannot be bypassed by any earlier branch going wrong. The self-test never reaches here.
+if (-not (Test-ProbeIdentity -Script 'stage3-topup.ps1' -EvidenceDir $EvidenceDir)) { exit 15 }
 Write-Host "=== measurements ===" -ForegroundColor Cyan
 
 # ═══════════════════════════════════════════════════════════════════════════

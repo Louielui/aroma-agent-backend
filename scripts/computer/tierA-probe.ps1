@@ -52,11 +52,18 @@ $GateTask = 'AromaComputerOperator-SessionGate'
 # target it measures is CHECKED against the register rather than trusted. See
 # assertionRegistry.ps1 for why: an id whose meaning can change unnoticed makes every other
 # id unverified too.
+. (Join-Path $PSScriptRoot 'probeIdentityGate.ps1')
 . (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
 try { [void](Import-AssertionRegistry) } catch {
   Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
   exit 13
 }
+
+# ── GATE A: IDENTITY ─────────────────────────────────────────────────────────
+# This probe deliberately attempts writes, registers scheduled tasks and touches the
+# SessionGate definition. Running it as the Owner would do all of that in the Owner's own
+# profile and hive. It may only run as the Companion account.
+if (-not (Test-ProbeIdentity -Script 'tierA-probe.ps1' -EvidenceDir 'C:\Aroma\ComputerOperator-Evidence')) { exit 15 }
 
 # ---------------------------------------------------------------------------
 # identity - emitted with the rows so scope travels with the result

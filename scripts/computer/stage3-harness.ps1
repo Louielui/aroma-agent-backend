@@ -43,6 +43,7 @@ $WALL_START = Get-Date
 # below silently overwrote ours with its defaults. Measured: -RegistryPath never worked.
 $REGISTRY_PATH = $RegistryPath
 
+. (Join-Path $PSScriptRoot 'probeIdentityGate.ps1')
 . (Join-Path $PSScriptRoot 'assertionRegistry.ps1')
 try {
   $regCount = Import-AssertionRegistry -Path $REGISTRY_PATH
@@ -50,6 +51,22 @@ try {
 } catch {
   Write-Host ("HALTED: " + $_.Exception.Message) -ForegroundColor Red
   exit 13
+}
+
+# ── GATE A: IDENTITY ─────────────────────────────────────────────────────────
+# Everything below this line measures. It may only do so as the Companion account. The belt,
+# not the boundary - see probeIdentityGate.ps1 and restrict-probe-dir.ps1.
+if (-not (Test-ProbeIdentity -Script 'stage3-harness.ps1' -EvidenceDir $EvidenceDir)) { exit 15 }
+
+# ── STAGED-FILE HASHES, REPORTED FROM INSIDE THE SESSION THAT CAN READ THEM ──
+# Once restrict-probe-dir.ps1 is applied the Owner cannot read this directory at all, so the
+# staged copy has to identify itself. Printed, not enforced: the Owner compares against the
+# table in PHASE3B-CONSOLE-CHECKLIST.md from this console.
+Write-Host ""
+Write-Host "=== staged files, as this account sees them ===" -ForegroundColor Cyan
+foreach ($sf in (Get-ChildItem -LiteralPath $PSScriptRoot -File -ErrorAction SilentlyContinue | Sort-Object Name)) {
+  try { Write-Host ("  {0,-26} {1,7}  {2}" -f $sf.Name, $sf.Length, (Get-FileHash -LiteralPath $sf.FullName -Algorithm SHA256).Hash) }
+  catch { Write-Host ("  {0,-26} UNREADABLE" -f $sf.Name) -ForegroundColor Yellow }
 }
 
 # ── DPI awareness before anything looks at a screen ──────────────────────────

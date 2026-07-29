@@ -493,6 +493,74 @@ test('*** empty collections survive being returned and counted ***', () => {
   }
 })
 
+/* ── the execution boundary: A the belt, B the boundary ───────────────────── */
+
+test('*** every measurement script refuses to run as anyone but the Companion ***', () => {
+  // GATE A. The assistant ran the real measurement path twice inside the OWNER's session and
+  // destroyed a live clipboard sentinel. The proximate cause was a switch that failed to
+  // bind; the actual problem was that the path could run there at all.
+  for (const f of ['tierA-probe.ps1', 'stage3-harness.ps1', 'stage3-topup.ps1']) {
+    const code = fs.readFileSync(path.join(SCRIPTS, f), 'utf8')
+    assert.match(code, /probeIdentityGate\.ps1/, f + ' loads the identity gate')
+    assert.match(code, /if \(-not \(Test-ProbeIdentity[^)]*\)\) \{ exit 15 \}/,
+      f + ' refuses and exits rather than continuing')
+  }
+})
+
+test('*** the gate file declares no parameters — it is dot-sourced ***', () => {
+  // Dot-sourcing runs the other script's param() block in the CALLER's scope. That is how
+  // assertionRegistry.ps1's -SelfTest and -RegistryPath silently reset both in every probe.
+  // A file that is dot-sourced must declare none.
+  //
+  // Anchored at column 0, with no leading whitespace: a SCRIPT-level param block is the first
+  // statement and sits at the margin, while a FUNCTION's param is indented and is perfectly
+  // fine — it binds inside the function, not in the caller. The first version of this
+  // assertion allowed leading whitespace and flagged the file's own helper functions.
+  const gate = fs.readFileSync(path.join(SCRIPTS, 'probeIdentityGate.ps1'), 'utf8')
+  assert.equal(/^param\s*\(/m.test(gate), false, 'a dot-sourced file must not clobber its caller')
+  assert.match(gate, /function Test-ProbeIdentity/)
+  assert.match(gate, /function Write-ProbeRefusal/)
+})
+
+test('*** a refusal is RECORDED, not merely printed ***', () => {
+  // A console line vanishes with the window. The whole point of a refusal is that it can be
+  // reviewed afterwards: who, which session, when.
+  const gate = fs.readFileSync(path.join(SCRIPTS, 'probeIdentityGate.ps1'), 'utf8')
+  for (const field of ['actualIdentity', 'sessionId', 'at', 'script', 'expectedAccount']) {
+    assert.match(gate, new RegExp(field + '\\s*='), 'the refusal record carries ' + field)
+  }
+  assert.match(gate, /Add-Content/, 'and it is written to disk')
+  // TEMP is attempted first because it is writable by whoever is running — including the
+  // Owner in their own session, which is the case this gate exists to catch.
+  assert.match(gate, /\$env:TEMP/)
+})
+
+test('*** Gate B states its own limit rather than claiming to be absolute ***', () => {
+  // The Owner is in Administrators and holds SeTakeOwnershipPrivilege. An elevated shell can
+  // take the directory back and rewrite the DACL, and nothing in a script can prevent that.
+  // The write-up must say so, or the record reads wider than the control.
+  const b = fs.readFileSync(path.join(SCRIPTS, 'restrict-probe-dir.ps1'), 'utf8')
+  assert.match(b, /PREVENTS ACCIDENTS\. IT DOES NOT PREVENT THE OWNER/i)
+  assert.match(b, /take ownership/i)
+  // an explicit DENY, because removing an ALLOW leaves the inherited Administrators grant
+  assert.match(b, /'Deny'/)
+  assert.match(b, /ReadData/, 'read is what must be denied — PowerShell opens a .ps1 as data')
+  // and a baseline before a destructive change, the same rule the Tier A probe applies to C4
+  assert.match(b, /probedir-acl-pre-gateb-/)
+  assert.match(b, /-Status/)
+  assert.match(b, /-Revert/)
+})
+
+test('*** the probes report their own staged hashes, since the Owner can no longer read them ***', () => {
+  // Under Gate B, Get-FileHash on a staged file fails for the Owner. Verification therefore
+  // moves inside session 5: the probe prints what it actually loaded.
+  for (const f of ['stage3-harness.ps1', 'stage3-topup.ps1']) {
+    const code = fs.readFileSync(path.join(SCRIPTS, f), 'utf8')
+    assert.match(code, /staged files, as this account sees them/, f + ' identifies its staged copy')
+    assert.match(code, /Get-FileHash -LiteralPath \$sf\.FullName/, f + ' hashes each sibling')
+  }
+})
+
 test('*** no probe script defines expectedPermitted at a call site any more ***', () => {
   // "may not define assertions locally", enforced. The -ExpectPermitted parameter is gone
   // from both probes; the value comes from the register or the row does not exist.
