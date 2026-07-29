@@ -39,6 +39,17 @@ $logW = [Q.G]::GetDeviceCaps($h, 8);   $logH = [Q.G]::GetDeviceCaps($h, 10)
 $phyW = [Q.G]::GetDeviceCaps($h, 118); $phyH = [Q.G]::GetDeviceCaps($h, 117)
 [void][Q.G]::ReleaseDC([IntPtr]::Zero, $h)
 
+# The capture samples the VIRTUAL screen, not the primary monitor. On a multi-monitor
+# desktop these differ, and reporting the primary figure as "whole screen" is how the two
+# scripts came to disagree by a factor of two.
+Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+$vsW = $phyW; $vsH = $phyH; $monCount = 1
+try {
+  $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
+  $vsW = $vs.Width; $vsH = $vs.Height
+  $monCount = @([System.Windows.Forms.Screen]::AllScreens).Count
+} catch { }
+
 $mySession = (Get-Process -Id $PID).SessionId
 $sessions = @()
 try { $sessions = @(quser 2>$null) } catch { }
@@ -56,7 +67,8 @@ Write-Host ("  connection  : " + $connection) -ForegroundColor $(if ($connection
 Write-Host ("  dpi mode    : " + $dpiMode)
 Write-Host ("  dpiX        : " + $dpiX)
 Write-Host ("  logical     : " + $logW + " x " + $logH)
-Write-Host ("  physical    : " + $phyW + " x " + $phyH)
+Write-Host ("  physical    : " + $phyW + " x " + $phyH + "   (PRIMARY monitor)")
+Write-Host ("  virtual     : " + $vsW + " x " + $vsH + "   (ALL " + $monCount + " monitor(s) - this is what gets captured)") -ForegroundColor $(if ($monCount -gt 1) { 'Yellow' } else { 'Gray' })
 Write-Host ""
 Write-Host "=== sessions ===" -ForegroundColor Cyan
 $sessions | ForEach-Object { Write-Host ("  " + $_) }
@@ -119,7 +131,16 @@ if (-not $NoWrite) {
     logicalWidth = $logW; logicalHeight = $logH
     physicalWidth = $phyW; physicalHeight = $phyH
     gridStep = 8
-    wholeScreenSamples = ([math]::Floor($phyW / 8) * [math]::Floor($phyH / 8))
+    # PRIMARY-monitor figure, from GetDeviceCaps. Kept for reference and clearly labelled.
+    primaryMonitorSamples = ([math]::Floor($phyW / 8) * [math]::Floor($phyH / 8))
+    # THE AUTHORITATIVE ONE. The capture samples the whole VIRTUAL screen, so on a
+    # multi-monitor desktop GetDeviceCaps under-reports by exactly the number of extra
+    # monitors. Measured here: primary 1920x1080 but virtual 3840x1080 across two displays,
+    # which is why the two scripts disagreed by a factor of two.
+    virtualScreenWidth = $vsW
+    virtualScreenHeight = $vsH
+    monitorCount = $monCount
+    wholeScreenSamples = ([math]::Floor($vsW / 8) * [math]::Floor($vsH / 8))
     sentinelSamples = 1250
     minOwnSignatureSamples = 500
     minOwnerSignatureSamples = 20
