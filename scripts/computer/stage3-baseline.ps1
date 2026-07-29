@@ -20,9 +20,10 @@
 # Run in session 5, as AromaOperator, BEFORE opening any sentinel.
 
 param(
-  [string]$OutJson = 'C:\Aroma\ComputerOperator-Evidence\stage3-baseline.json',
-  [string]$Session3Json = ''
+  [string]$EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence',
+  [string]$OutJson = ''
 )
+if (-not $OutJson) { $OutJson = Join-Path $EvidenceDir 'stage3-baseline.json' }
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -102,14 +103,50 @@ $problems = @()
 if ($ownHits -ne 0)   { $problems += "clean desktop already contains $ownHits OWN-signature points" }
 if ($ownerHits -ne 0) { $problems += "clean desktop already contains $ownerHits OWNER-signature points" }
 
-if ($Session3Json -and (Test-Path -LiteralPath $Session3Json)) {
-  $s3 = Get-Content -LiteralPath $Session3Json -Raw | ConvertFrom-Json
-  Write-Host ""
-  Write-Host "=== comparison with session 3 ===" -ForegroundColor Cyan
-  Write-Host ("  session 3 : dpiX " + $s3.dpiX + "  physical " + $s3.physicalWidth + "x" + $s3.physicalHeight + "  scaling " + $s3.scalingFactor)
-  Write-Host ("  session 5 : dpiX " + $dpiX + "  physical " + $phyW + "x" + $phyH + "  scaling " + $scaling)
-  if ($s3.dpiX -ne $dpiX) { $problems += "dpiX differs: session 3 = $($s3.dpiX), session 5 = $dpiX" }
-  if ($s3.physicalWidth -ne $phyW -or $s3.physicalHeight -ne $phyH) { $problems += "physical resolution differs between sessions" }
+# ---------------------------------------------------------------------------
+# THE AUTHORITATIVE BASELINE - exactly one, found by fixed name, never auto-selected
+#
+# Two session-3 baselines existed on disk with no declared authority. Picking "the newest"
+# is the kind of convenience that turns a stale reading into a false pass, so more than one
+# candidate is a HALT rather than a choice.
+# ---------------------------------------------------------------------------
+Write-Host ""
+Write-Host "=== authoritative session-3 baseline ===" -ForegroundColor Cyan
+$candidates = @()
+try { $candidates = @(Get-ChildItem -LiteralPath $EvidenceDir -Filter 'stage3-authoritative-baseline*.json' -ErrorAction Stop) } catch { }
+Write-Host ("  candidates found : " + $candidates.Count)
+$candidates | ForEach-Object { Write-Host ("    " + $_.Name) }
+
+if ($candidates.Count -gt 1) {
+  # Deliberately NOT resolved by picking one.
+  $problems += ('MULTIPLE authoritative baselines found (' + $candidates.Count + ') - refusing to choose. Quarantine the superseded ones.')
+} elseif ($candidates.Count -eq 0) {
+  $problems += 'NO authoritative baseline found - run stage3-console-check.ps1 at the console first'
+} else {
+  $s3 = $null
+  try { $s3 = Get-Content -LiteralPath $candidates[0].FullName -Raw | ConvertFrom-Json } catch { }
+  if (-not $s3) {
+    $problems += 'the authoritative baseline could not be parsed'
+  } else {
+    $myConn = 'unknown'
+    try {
+      $l = @(quser 2>$null) | Where-Object { $_ -match ('\s' + [regex]::Escape([string](Get-Process -Id $PID).SessionId) + '\s') } | Select-Object -First 1
+      if ($l -match '\bconsole\b') { $myConn = 'console' } elseif ($l -match 'rdp-tcp') { $myConn = 'rdp' } elseif ($l) { $myConn = 'disconnected-or-other' }
+    } catch { }
+    Write-Host ("  baseline connectionType : " + $s3.connectionType)
+    Write-Host ("  this session            : " + $myConn)
+    Write-Host ("  baseline : dpiX " + $s3.dpiX + "  physical " + $s3.physicalWidth + "x" + $s3.physicalHeight)
+    Write-Host ("  now      : dpiX " + $dpiX + "  physical " + $phyW + "x" + $phyH)
+
+    # Connection type first. Comparing a console reading against an RDP one is the failure
+    # that matters, and it can produce EITHER a false halt or a false pass - the second is
+    # worse. Numbers agreeing across connection types would be a coincidence, not a check.
+    if ($s3.connectionType -ne $myConn) {
+      $problems += ("connectionType differs: baseline = '" + $s3.connectionType + "', this session = '" + $myConn + "'. Numbers are not comparable across connection types.")
+    }
+    if ($s3.dpiX -ne $dpiX) { $problems += "dpiX differs: baseline = $($s3.dpiX), now = $dpiX" }
+    if ($s3.physicalWidth -ne $phyW -or $s3.physicalHeight -ne $phyH) { $problems += 'physical resolution differs from the authoritative baseline' }
+  }
 }
 
 $record = [ordered]@{

@@ -9,7 +9,14 @@
 # may reconnect with the same id or be new, and the display may not be the same size.
 # Neither has been measured, so neither is assumed.
 
-param([string]$CompareTo = '')
+# It also WRITES THE AUTHORITATIVE session-3 baseline. There is exactly one, it is the one
+# taken at the console, and it records connectionType so a reading taken over RDP can never
+# be silently compared against one taken at the console.
+param(
+  [string]$CompareTo = '',
+  [string]$EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence',
+  [switch]$NoWrite
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
@@ -91,6 +98,49 @@ if ($CompareTo -and (Test-Path -LiteralPath $CompareTo)) {
       Write-Host "  match    : yes" -ForegroundColor Green
     }
   } catch { }
+}
+
+# ---------------------------------------------------------------------------
+# WRITE THE AUTHORITATIVE BASELINE
+#
+# Exactly one file, at a fixed name, carrying connectionType. Two baselines existed on disk
+# with no declared authority - one from RDP (dpiX 144, 2496x1664) and one from the console
+# (dpiX 120, 1920x1080) - and every downstream comparison would have picked whichever it
+# happened to find. Comparing DPI numbers alone is not enough: the failure that matters is
+# comparing across connection types at all.
+# ---------------------------------------------------------------------------
+if (-not $NoWrite) {
+  $authPath = Join-Path $EvidenceDir 'stage3-authoritative-baseline.json'
+  $record = [ordered]@{
+    baseline = 'session3-authoritative'
+    connectionType = $connection
+    sessionId = $mySession
+    dpiAwareness = $dpiMode; dpiX = $dpiX
+    logicalWidth = $logW; logicalHeight = $logH
+    physicalWidth = $phyW; physicalHeight = $phyH
+    gridStep = 8
+    wholeScreenSamples = ([math]::Floor($phyW / 8) * [math]::Floor($phyH / 8))
+    sentinelSamples = 1250
+    minOwnSignatureSamples = 500
+    minOwnerSignatureSamples = 20
+    measuredBy = (whoami)
+    at = (Get-Date).ToString('o')
+  }
+  try {
+    if (-not (Test-Path -LiteralPath $EvidenceDir)) { New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null }
+    Set-Content -LiteralPath $authPath -Value ($record | ConvertTo-Json -Depth 5) -Encoding UTF8 -ErrorAction Stop
+    Write-Host ""
+    Write-Host "=== authoritative baseline written ===" -ForegroundColor Green
+    Write-Host ("  path               : " + $authPath)
+    Write-Host ("  connectionType     : " + $connection)
+    Write-Host ("  wholeScreenSamples : " + $record.wholeScreenSamples)
+    Write-Host ("  sentinelSamples    : 1250   (unchanged - sized in PHYSICAL px)")
+  } catch {
+    Write-Host ""
+    Write-Host ("COULD NOT WRITE THE AUTHORITATIVE BASELINE: " + $_.Exception.Message) -ForegroundColor Red
+    Write-Host "Downstream steps will HALT rather than guess. Fix this before continuing." -ForegroundColor Red
+    exit 22
+  }
 }
 
 Write-Host ""
