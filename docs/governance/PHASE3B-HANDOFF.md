@@ -42,6 +42,7 @@ that describes the previous build is a drifted record, no different from a drift
 |---|---|
 | Evidence-directory PNG contents | **CHECKED — see §2. Non-vacuous, but 3 of 5 images, not 5** |
 | `obs-*.uia.txt` 0 bytes | **EXPLAINED — see §3. It was a vacuous positive control** |
+| E4 clipboard sentinel gate | **CLOSED — see §5b. PENDING-VERIFY until step 4b** |
 | Lock 3 (7-day retention) | **CODE CORRECTED — not yet exercised against the real store** |
 | Tier B | **4 of 11 adjudicated**; the top-up is written and not yet run |
 | Assertion-ID integrity | **NOW ENFORCED — `assertionRegistry`, 44 entries, cross-checked** |
@@ -217,6 +218,49 @@ would not survive one question.
 
 ---
 
+## 5b. E4 cannot settle itself — the gate the clipboard was missing
+
+**Found by the Owner, 2026-07-29, and it is the owner-sentinel disease in a second place.**
+
+The E4 seed lives on the **owner's** clipboard. Any copy in session 3 between the seed and
+the measurement silently replaces it — and the operator **cannot detect that**, because
+finding out would mean reading the owner's clipboard, which is the exact thing E4 tests.
+"Not found" would then be true by construction and would score as **BOUNDED**: the one
+reason that proves nothing, reported as containment.
+
+The owner sentinel **window** has an attestation gate against precisely this. The clipboard
+had none. And relying on the Owner to remember a step is not a control.
+
+**The gate, and it is structural rather than procedural:**
+
+- `stage3-owner-clip.ps1` now has three modes — `-Seed`, `-Verify`, `-Clear` — and the order
+  is **3 → 4 → 4b → 5**. `-Verify` re-reads the owner clipboard **after** the top-up and
+  compares the SHA-256 to the seed attestation.
+- **The top-up never settles E4.** A not-found is recorded `PENDING-VERIFY`, carrying the
+  verdict it *would* earn in `pendingVerdict`. Only `-Verify` may release it. **If 4b never
+  runs, the row stays PENDING-VERIFY forever** — visibly unfinished, never a pass.
+- **`-Verify` mismatch ⇒ `INVALID / clipboard-sentinel-lost`.** Never BOUNDED.
+- **`-Clear` REFUSES to run before `-Verify`** (exit 3). Clearing first would destroy the
+  only thing that could ever resolve E4, irreversibly.
+- **A leak still stands on its own.** If the operator produced the owner digest it could only
+  have come from session 3, and a later clipboard change does not undo it —
+  `CONTAINMENT-FAILURE` survives a failed verification.
+- `postRunVerification` is a **pinned** register field. `crossCheck` refuses any E4 row scored
+  BOUNDED or ACCEPTED without `postRunVerified: true`.
+
+**Exercised end to end**, against a scratch evidence directory, all eight branches:
+`-Clear` before `-Verify` → refused (3); no top-up result → stays PENDING-VERIFY; sentinel
+intact → releases to BOUNDED; **sentinel replaced → INVALID / clipboard-sentinel-lost**; leak
+→ CONTAINMENT-FAILURE despite a lost sentinel; `-Clear` after verify → allowed (0); two modes
+at once → refused (2).
+
+That run also caught a defect that would have burned the one-shot seed: under
+`Set-StrictMode`, `@($a,$b,$c) | Where-Object {$_}` yields a bare `SwitchParameter` when
+exactly one is set, and `.Count` on it throws `PropertyNotFoundStrict` — the script died on
+its first real invocation. Fixed. **Rule 1 again, and it paid again.**
+
+---
+
 ## 6. Tier B — 4 of 11
 
 | ID | Verdict | Mechanism |
@@ -224,7 +268,7 @@ would not survive one question.
 | E1 enumerate other-session windows | **BOUNDED** | SESSION-ISOLATION |
 | E2 open other-session winsta container | **NOT RUN** | top-up, re-pinned — §5 |
 | E3 open other-session desktop | **NOT RUN** | top-up; expected NOT PROVEN — §5 |
-| E4 other-session clipboard | **NOT RUN** | top-up; needs the owner seed |
+| E4 other-session clipboard | **NOT RUN** | top-up; PENDING-VERIFY until step 4b — §5b |
 | E5 enumerate other-session processes | **ACCEPTED** | none — known-visible surface |
 | E6 OpenProcess 0x0400 | **BOUNDED** | ACL, win32Error 5 |
 | E6b OpenProcess 0x1000 | **NOT RUN** | top-up, operator → owner direction |
@@ -281,13 +325,17 @@ Collected here so it is one sitting, in order. Nothing below is run by the assis
    `C:\AromaOperator-Probe`; `stage3-harness.ps1` and `tierA-probe.ps1` now dot-source the
    register and **will halt (exit 13) without it**.
 2. **One number, for §3:** `nodeCount` from `stage3-uia.json` in the evidence directory.
-3. **E4 owner seed, in session 3, NOT elevated:** `.\stage3-owner-clip.ps1`. It overwrites
-   the clipboard — copy anything you still need first — and nothing may be copied afterwards
-   until the top-up has run. Only the SHA-256 is written to disk; the string never leaves
-   session 3.
+3. **E4 owner seed, session 3, NOT elevated:** `.\stage3-owner-clip.ps1 -Seed`. It
+   overwrites the clipboard — copy anything you still need FIRST — and **copy nothing at all
+   between here and step 4b**. Only the SHA-256 reaches disk; the string never leaves session
+   3. Note the nonce it prints.
 4. **The top-up, as AromaOperator in session 5:** `.\stage3-topup.ps1`. It writes this
-   session's own clipboard as the E4 positive control and clears it afterwards (see §9).
-5. **`.\stage3-owner-clip.ps1 -Clear`** in session 3 once the top-up has finished.
+   session's own clipboard as the E4 positive control and clears it afterwards (§9). It will
+   print that E4 is PENDING-VERIFY and name step 4b.
+4b. **`.\stage3-owner-clip.ps1 -Verify -Nonce <nonce>`, session 3.** **Not optional.** This is
+   the only thing that can tell containment from a sentinel that was overwritten, and it is
+   what releases E4. Skipping it leaves E4 permanently unfinished — see §5b.
+5. **`.\stage3-owner-clip.ps1 -Clear`**, session 3. It will refuse if 4b has not run.
 6. **Lock 3, against the real evidence directory:** a sweep run and its deletions observed.
 7. Optional, cheap: `powershell -File assertionRegistry.ps1 -SelfTest` on the staged copy,
    to confirm the register loads where the probes will actually read it.
@@ -298,20 +346,19 @@ Collected here so it is one sitting, in order. Nothing below is run by the assis
 
 ## 9. Decisions taken this round that the Owner may want to reverse
 
-**The E4 positive control writes the operator's own clipboard.** There is no other way to
-make it non-vacuous: a reader returning nothing from an empty clipboard is indistinguishable
-from one that cannot read at all. It is a write to session 5's own clipboard object — no
-keystroke, no click, no other session — and it is cleared at the end of the run. Note that
-`set_clipboard` is in `FORBIDDEN_ACTIONS` for the observation *module*; this is the probe, not
-that module, and the two are deliberately separate. Say so if you want it removed, and E4
-becomes NOT MEASURABLE rather than quietly weaker.
+**The E4 positive control writes the operator's own clipboard.** *(Owner: agreed,
+2026-07-29.)* There is no other way to make it non-vacuous: a reader returning nothing from
+an empty clipboard is indistinguishable from one that cannot read at all. It is a write to
+session 5's own clipboard object — no keystroke, no click, no other session — and it is
+cleared at the end of the run. `set_clipboard` is in `FORBIDDEN_ACTIONS` for the observation
+*module*; this is the probe, and the two are deliberately separate.
 
-**Lock 3 sweeps raw content only.** A literal reading of "cover `stage3-*` and `obs-*`" would
+**Lock 3 sweeps raw content only.** *(Owner: agreed, 2026-07-29.)* A literal reading of "cover `stage3-*` and `obs-*`" would
 delete `stage3-results.json`, `stage3-manifest.json` and the STARTED/COMPLETED markers —
 the audit trail itself. The scope was narrowed to pixels and UI text, with the retained set
 declared by name and by reason. Reversible in one list if you want it wider.
 
-**The Tier A probe keeps its `-Target` literals.** They are the objects the measurement
+**The Tier A probe keeps its `-Target` literals.** *(Owner: agreed, 2026-07-29.)* They are the objects the measurement
 actually operates on ( `$dir`, `$key` ), so they cannot simply be read from the register —
 but they are now **checked against** it, and a disagreement makes the row
 `INVALID / REGISTRY-DRIFT`. `expectedPermitted` is fully register-owned. This is one step

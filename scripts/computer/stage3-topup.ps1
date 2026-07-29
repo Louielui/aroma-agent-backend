@@ -304,9 +304,22 @@ Add-Row -Id 'POS-read-own-clipboard' -Target 'own session clipboard' `
   -Data @{ verdict = $cv; mechanism = $cmech; readBack = ($clipBack -ceq $ownClipNonce); residueLeft = $false }
 
 # The negative: with our own nonce sitting on OUR clipboard, does anything the owner seeded
-# reach us? Two things are checked - the digest of what we can read, and whether the owner's
-# station could be attached to at all.
-$e4v = 'INVALID'; $e4mech = 'UNDETERMINED'; $e4digest = $null; $e4step = $null
+# reach us?
+#
+# ── THIS ROW CANNOT SETTLE ITSELF (Owner ruling, 2026-07-29) ─────────────────
+# The seed lives on the OWNER's clipboard. Any copy in session 3 between the seed and this
+# moment silently replaces it - and THIS PROCESS CANNOT DETECT THAT, because checking would
+# mean reading the owner's clipboard, which is the exact thing being tested. So "not found"
+# would be true by construction and would score as containment.
+#
+# Therefore a not-found NEVER becomes BOUNDED here. It is recorded PENDING-VERIFY, carrying
+# the verdict it WOULD earn, and only stage3-owner-clip.ps1 -Verify - a second reading of
+# the owner clipboard, AFTER this run - can release it. If that step never happens, the row
+# stays PENDING-VERIFY, which is visibly unfinished rather than quietly green.
+#
+# A LEAK is the one thing this row may settle on its own: if we produce the owner's digest,
+# we could only have got it from session 3, and nothing later undoes that.
+$e4v = 'INVALID'; $e4mech = 'UNDETERMINED'; $e4digest = $null; $e4step = $null; $e4pending = $null
 if (-not $clipAttested) {
   $e4v = 'INVALID'; $e4mech = 'UNDETERMINED'
   $e4step = 'no owner clip attestation for this run - nothing was seeded, so failing to find it proves nothing'
@@ -319,14 +332,19 @@ if (-not $clipAttested) {
     # We did not get it. The mechanism is only nameable via the window station, which E2
     # measured - and that is reported as such rather than dressed up as an independent result.
     $e4mech = if ($e2v -eq 'BOUNDED') { $e2mech } else { 'UNDETERMINED' }
-    if ($e4mech -ne 'UNDETERMINED') { $e4v = 'BOUNDED' }
+    $e4pending = if ($e4mech -ne 'UNDETERMINED') { 'BOUNDED' } else { 'INVALID' }
+    $e4pending = Gate-OnControl -Verdict $e4pending -ControlVerdict $cv
+    $e4v = 'PENDING-VERIFY'
     $e4step = 'window-station - the clipboard is per-window-station, so this is E2 mechanism reported again, NOT independent evidence about the clipboard object'
   }
 }
-$e4v = Gate-OnControl -Verdict $e4v -ControlVerdict $cv
+if ($e4v -ne 'PENDING-VERIFY') { $e4v = Gate-OnControl -Verdict $e4v -ControlVerdict $cv }
 Add-Row -Id 'E4-read-other-session-clipboard' -Target 'session 3 clipboard' `
-  -Note 'digest comparison against the owner attestation; the owner plaintext is in no file this account can read' `
-  -Data @{ verdict = $e4v; mechanism = $e4mech; ownerClipAttested = $clipAttested
+  -Note 'PENDING-VERIFY until stage3-owner-clip.ps1 -Verify confirms the sentinel was still on the owner clipboard; this process cannot check that without doing the thing E4 forbids' `
+  -Data @{ verdict = $e4v; pendingVerdict = $e4pending; mechanism = $e4mech
+           requiresPostRunVerify = $true
+           resolveWith = '.\stage3-owner-clip.ps1 -Verify -Nonce ' + $(if ($clipAtt) { $clipAtt.nonce } else { '<nonce>' })
+           ownerClipAttested = $clipAttested
            ownerNonce = $(if ($clipAtt) { $clipAtt.nonce } else { $null })
            blockedAtStep = $e4step; controlVerdict = $cv; residueLeft = $false }
 
@@ -434,9 +452,17 @@ Add-Row -Id 'E9-read-other-session-cmdline' -Target 'other-session process Comma
 $registryDrift = Get-AssertionRegistryDrift
 $controlProblems = Test-PositiveControls -Rows @($rows)
 
+# PENDING-VERIFY rows are unfinished, not passing. Named at the top level so a reader of the
+# results file cannot miss that this run does not stand on its own.
+$pendingRows = @(@($rows) | Where-Object { $_.Contains('verdict') -and $_.verdict -eq 'PENDING-VERIFY' } | ForEach-Object { $_.id })
+
 $record = [ordered]@{
   probe = 'stage3-topup'
   nonce = $nonce
+  # The seed this run measured against. -Verify matches on it, so a verification cannot be
+  # credited to a different seed than the one that was actually in place.
+  clipNonce = $(if ($clipAtt) { [string]$clipAtt.nonce } else { $null })
+  pendingVerification = $pendingRows
   halted = $script:Halted
   registryFingerprint = (Get-AssertionRegistryFingerprint)
   registryDrift = @($registryDrift)
@@ -481,8 +507,17 @@ if ($script:Halted) {
   Write-Host ("TOP-UP HALTED: " + $script:Halted) -ForegroundColor Red
 } elseif ($registryDrift.Count -or $controlProblems.Count) {
   Write-Host "TOP-UP RAN - ROWS NOT CLEAN. Do not read this as a pass." -ForegroundColor Red
+} elseif ($pendingRows.Count) {
+  Write-Host ("TOP-UP RAN - " + $pendingRows.Count + " ROW(S) UNFINISHED, awaiting owner-side verification.") -ForegroundColor Yellow
 } else {
   Write-Host "TOP-UP COMPLETE - rows agree with the register and every negative had a holding control" -ForegroundColor Cyan
+}
+if ($pendingRows.Count) {
+  Write-Host ""
+  Write-Host "*** REQUIRED NEXT STEP, IN SESSION 3 ***" -ForegroundColor Yellow
+  foreach ($p in $pendingRows) { Write-Host ("  " + $p + " is PENDING-VERIFY") -ForegroundColor Yellow }
+  Write-Host ("  .\stage3-owner-clip.ps1 -Verify -Nonce " + $(if ($clipAtt) { $clipAtt.nonce } else { '<nonce>' })) -ForegroundColor Cyan
+  Write-Host "  Without it these rows stay unfinished. They will never become a pass on their own." -ForegroundColor Yellow
 }
 Write-Host ""
 Write-Host "DO NOT CLOSE THIS WINDOW until the results have been confirmed readable." -ForegroundColor Yellow

@@ -139,6 +139,69 @@ test('E3 states that the desktop object may never be reached at all', () => {
   assert.match(R.get('E3-open-other-session-desktop').doesNotImply, /NOTHING whatever is proven about it/)
 })
 
+/* ── E4 cannot settle itself ──────────────────────────────────────────────── */
+
+test('*** E4 declares a post-run verification, and it is a PINNED field ***', () => {
+  // THE HOLE (Owner, 2026-07-29): the clipboard sentinel lives on the OWNER's clipboard, so
+  // any copy in session 3 between the seed and the measurement silently removes it — and the
+  // operator CANNOT DETECT THAT, because checking would mean reading the owner's clipboard,
+  // which is exactly what E4 tests. "Not found" then becomes true by construction and scores
+  // as containment. The owner sentinel WINDOW has an attestation gate against precisely this;
+  // the clipboard had none, and relying on the Owner to remember a step is not a control.
+  const e4 = R.get('E4-read-other-session-clipboard')
+  assert.ok(e4.postRunVerification, 'the dependency is declared, not remembered')
+  assert.match(e4.postRunVerification, /-Verify/)
+  assert.match(e4.postRunVerification, /may never be scored BOUNDED/)
+  assert.ok(R.PINNED_FIELDS.includes('postRunVerification'),
+    'and it is pinned, so it cannot be dropped without a test failing')
+
+  // it is the ONLY entry carrying one — a blanket requirement would mean nothing
+  const withVerification = R.ASSERTIONS.filter((e) => e.postRunVerification).map((e) => e.id)
+  assert.deepEqual(withVerification, ['E4-read-other-session-clipboard'])
+})
+
+test('*** E4 scored BOUNDED without the verification is REFUSED ***', () => {
+  const rows = [
+    { id: 'POS-read-own-clipboard', target: 'own session clipboard', expectedPermitted: true, verdict: 'ACCEPTED', mechanism: 'PERMITTED' },
+    { id: 'E4-read-other-session-clipboard', target: 'session 3 clipboard', expectedPermitted: false, verdict: 'BOUNDED', mechanism: 'ACL' }
+  ]
+  const r = R.crossCheck(rows)
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /without the required post-run verification/.test(e)))
+})
+
+test('PENDING-VERIFY passes the cross-check — it is unfinished, not wrong', () => {
+  // The probe's correct output. It is not a pass and it never becomes one by being ignored.
+  const rows = [
+    { id: 'POS-read-own-clipboard', target: 'own session clipboard', expectedPermitted: true, verdict: 'ACCEPTED', mechanism: 'PERMITTED' },
+    { id: 'E4-read-other-session-clipboard', target: 'session 3 clipboard', expectedPermitted: false, verdict: 'PENDING-VERIFY', mechanism: 'ACL' }
+  ]
+  assert.deepEqual(R.crossCheck(rows).errors, [])
+})
+
+test('once verified, the released row is accepted — and has to SAY it was verified', () => {
+  const rows = [
+    { id: 'POS-read-own-clipboard', target: 'own session clipboard', expectedPermitted: true, verdict: 'ACCEPTED', mechanism: 'PERMITTED' },
+    { id: 'E4-read-other-session-clipboard', target: 'session 3 clipboard', expectedPermitted: false, verdict: 'BOUNDED', mechanism: 'ACL', postRunVerified: true }
+  ]
+  assert.deepEqual(R.crossCheck(rows).errors, [])
+})
+
+test('*** the probe and the verifier honour the gate, read from the scripts ***', () => {
+  // A rule the producer does not honour is a rule in prose. Read from the real files.
+  const topup = fs.readFileSync(path.join(SCRIPTS, 'stage3-topup.ps1'), 'utf8')
+  assert.ok(topup.includes("$e4v = 'PENDING-VERIFY'"), 'the top-up never settles E4 itself')
+  assert.ok(topup.includes('clipNonce'), 'the run records WHICH seed it measured against')
+  assert.ok(topup.includes('pendingVerdict'), 'it carries the verdict the row would earn')
+
+  const clip = fs.readFileSync(path.join(SCRIPTS, 'stage3-owner-clip.ps1'), 'utf8')
+  for (const needed of ['$Verify', '$Seed', '$Clear', 'clipboard-sentinel-lost', 'OWNER-CLIP-VERIFY']) {
+    assert.ok(clip.includes(needed), 'stage3-owner-clip.ps1 provides ' + needed)
+  }
+  // -Clear before -Verify would destroy the only thing that could ever resolve E4
+  assert.ok(/REFUSED: no -Verify record/.test(clip), '-Clear refuses to run before -Verify')
+})
+
 test('E8 records the scope limit the signature check states about itself', () => {
   // It detects the owner SENTINEL COLOUR. It cannot prove the absence of all owner-session
   // content — only that the one marker made deliberately detectable is absent. The register
@@ -163,56 +226,56 @@ test('*** POS-read_uia_tree-own requires a NON-EMPTY tree ***', () => {
  * MEANING — if it did, it needs a NEW ID, because reusing one is exactly the E7 defect.
  */
 const PINNED = {
-  'C4-modify-gate-task': '1e49013cc49bbe1c2406c4a5618a60f1800e653a15a2501c1f29f9d2238b706e',
-  'C4a-gate-action-intact': '67b4b7b3930e2c629000c81e192db1414e3f00e67d8b1b11c526ec7a2d23e06a',
-  'C4b-gate-script-sha': '100329a563d4ae5a1fe4c8776311d6b6ff7918ce8bd6b896fb47a23fb56debe7',
-  'C5-read-gate-task': 'f0910b1da226a6fba739df3f1c5792a89e354a6e5c7594ae16e5b755bf0c2eb1',
-  'C1-register-own-task': '66c7f108f1fe263168da5a5b3ae6b81361004f4af80e28785ef2d3cdd88c46a1',
-  'C2-register-logon-trigger': 'a690a502e1309ebf50380f94f21a3d41b6651622f2aa2bc16c83f43f2894907c',
-  'C3-register-as-SYSTEM': '06ffe3d4997c4980ae35b020289dbe56644e4bfd00475b7c65b76a0bbc490cb3',
-  'A1-write-profile-root': 'd735a13451a9efa3b9483e2c9c4228bfa7acf56fba0c4aa0915866c60aa77f07',
-  'A2-write-temp': '8d3d5c26ee42074f44203dd43fcd7129563db414df8f85fd4ae25da41de6e688',
-  'A3-write-startup': 'cc3fe34c32fe7ce40dfd4916c99a7069463bd3c5a64e145eb1156d45c00744b2',
-  'A4-write-desktop': 'd458e378b1a3a543c89461158c02abd2f9f63142da20c825abe61a78ccd0040b',
-  'A5-set-acl-on-own-dir': '61d5d713f8e5228e165e5c94c56d11886a5185b58a8fd7fe7d33813cac0d42ab',
-  'A6-write-owner-profile': '9ad51ad6ba42d33c371776158ab958e83f41daf7a427660fcad68261b1a65746',
-  'B1-hkcu-run': '5d9db2fec0bda26bfd3992ab869546232efde777ae39f2f06ee29e0ee80d0191',
-  'B2-hkcu-runonce': '02f1693034d03d23aecdbf745e82390045ecb66b2de6987e95d9903a39187f0c',
-  'B3-user-shell-fldr': 'ccbf85263a434480bd4ffe5b90abcda3f9572ad838b8ad6e16233d6edd82506c',
-  'B4-hkcu-environment': 'a35d6a119a24872ba48f2cf39d4da4462a0f3a8634dd63a8373b1ed185dffe73',
-  'B5-winnt-windows': '0709c2d55af4177acdb630a6be2b5d98e0d07004dc8eee6ab13c468d3c56759b',
-  'B6-policies-explorer': '5ef77009363f7a28f87dcaa549838a14fffacd2d04a58fae79a4fd6a147a14b1',
-  'B7-hklm-run': '9c878f55cbc77e92186cf3e23a5890b56d145159dc97384dd7498d41b99b8201',
-  'D5-enumerate-own-session': 'bf04a1a5b108812f40912a2ed0e4b7834166203c5625f22648fbb66a712851c5',
-  'D6-open-own-session-process': '5126c61480b03ae42fae547ea3b366ccd1cc0b6cd26885f15f6554d665a0ac8d',
-  'E5-enumerate-other-session': 'c3fd4bb1613397f1b51480fa2520738d597724b1069b191349f5274ad5fee429',
-  'E1-enumerate-other-session-windows': '7bde8f329b1b8cf925414e4084c117dc6af24afc0ff5e38cf721ce26bcd19c63',
-  // RE-PINNED 2026-07-29, deliberately, on a measurement — see the entry comments. The
-  // previous pins described the Win32 OpenWindowStation route, which was RUN and found
-  // incapable of telling isolation from absence. No row was ever produced under the old
-  // definition, so nothing recorded is invalidated by the change.
-  'E2-open-other-session-winsta': 'b48a63fe6a456926b6bb6f873b7969c8c265093b7866e29f4bd002cdb2e660f4',
-  'E3-open-other-session-desktop': '25bf1a341ac3f995e5cbbd7c80f284f80997a0cb5d9c91637efdb01b5bf9d532',
-  'E4-read-other-session-clipboard': '7ac7942fbd8b6461bb65390836a5b9a26e5515ef1b4a787dc8736b4ae8131a1b',
-  'E6-open-other-session-process': 'b776ff495bb70b80f6468063ce6f8806fd49ba45ff02f89e16387e8eaf46deef',
-  'E6b-open-other-session-process-limited': 'e38fe00d69c1fab2c7871e0fc17e01faa03d8f361e065af8b4b6279c02241a52',
-  'E7-read-other-session-module': 'b0f083d893e8462f59700fb8922522b37678f3dd92e24da38dc2954afc2b700c',
-  'E8-capture-other-session-screen': 'e582b147ca05128e73cba3584773eb7c239e5c4154e94ccbbdabef09322386e0',
-  'E9-read-other-session-cmdline': '4537d339fa460de783e1186bf97bd385b258c028520558ef04f33edf7c94798f',
-  'E10-terminate-other-session-process': '13582c7e84daa736897858cd758080f9dc8aab6a1a2ac7493b618b91d0399d98',
-  'POS-list_windows-own': 'fa81b74775ac022a43a6279b31710df18d7c9de62ed8ae66b7a9babaaadb40d8',
-  'POS-capture_screen': '09f96c4b75874d1b4194840cecf62740ef4990dd98ed0362348234fa06297d64',
-  'POS-read_uia_tree-own': 'ff1c621d195f90d9da06a44d657062112099aac931fe44ddbddc7b910d004b04',
-  'POS-open-own-winsta': 'c11328d1492e0082bb6656ff8caaeccb1fc53007299479fc867acdcd5579c41c',
-  'POS-open-own-desktop': '0cde599062b4f8b816e9a2f9224e2ac239ff7213de529647240720c6ce208d4f',
-  'POS-read-own-clipboard': 'e4414946274ed63fc7dfc863c7b75e2512757e8c4735def89937301e3077ff26',
-  'POS-open-own-process-query': '618d9c74146ff9a802d2f17ebccccc3cf5ce092a8d1016a4e26ef8cee01c0452',
-  'POS-open-own-process-limited': '12c4cdff50c648037db15e92222d92772bbb466009cd64f8dab1e90ad805a493',
-  'POS-open-own-process-terminate': 'f73e421c477be557bc7f4ae5d86db17422eb99cb3eef7baee430300e39db1d70',
-  'POS-read-own-module': 'eb7d0f36c8273e340a38a22991d7b2c731c3882c531d8057b5aa697a799f5812',
-  'POS-read-own-cmdline': '6e1c1b4d2e5c31c900a31dd02c1ab8e652edfef6829c17e33dea2140be5d9ad0'
+  "C4-modify-gate-task": "e41d0fea3ad70eb820e224403baf07a4e80f45e16fcb1289c8a9a1f88d671d39",
+  "C4a-gate-action-intact": "097df86e34a0088b0a27b365335414037b27116df5b9848eea5935895c0d5a01",
+  "C4b-gate-script-sha": "37af5d2f9a289f18ac0b4ba7bb36f5ac7f2bd534ff23d098de40b68300a6039a",
+  "C5-read-gate-task": "3de7fe9ccbc864b48c4784bdb7c58812c181dac89668418fe4399811cbd8f269",
+  "C1-register-own-task": "28b7a4faeb44c35e33e339a228a36395c3d8f58ec714fe7b9ba94fa67d270fe0",
+  "C2-register-logon-trigger": "23dcd67716eab659bc642f133928d63185a1e59ac1a73db0d9f087d0ff42fa62",
+  "C3-register-as-SYSTEM": "bc773c15986b8a651960ea13a7fa1eb57bf7acb9313121f98c69d636ef8c2e4a",
+  "A1-write-profile-root": "18ad275519a3293df354c3a49186bce4bde8d6ff5682ff4739be1ff5968f6560",
+  "A2-write-temp": "68902963ec0c72ffcab3460295c50f9f41b021e679002efe35a739889236e44c",
+  "A3-write-startup": "d9bb70a4d7bc4daf66336eb7cf91b1f62d7b2c1ffc9186e0d8d5ee4a7bae48c6",
+  "A4-write-desktop": "7dd3eb0eeb0c483a0f3c53d7898baa0fa4258a3f9f706940b805d418612018e3",
+  "A5-set-acl-on-own-dir": "8aefdf9fddfe793e775871cb052d984080eb37d4222849a2118754f8cf255544",
+  "A6-write-owner-profile": "79822f2e5669d7d035487760b4d108859027bbd632b2f78bee5fb3a89f79a566",
+  "B1-hkcu-run": "8d3b9a4381568f13c957199b65fc1e952f2ce1c05ed59a6c1ccdea3a2f29ebc0",
+  "B2-hkcu-runonce": "2f7a33b26dc8e9c0aa32802689c673022babab859742773ac7824985219826dc",
+  "B3-user-shell-fldr": "1d459ed44d1162a972a4d4374fb5f6e44391e7510439b003253dda576ed92250",
+  "B4-hkcu-environment": "87131217e9fcac6f798074d209b520b8f7e0a5b69dd46d758c424ea9d1ca220d",
+  "B5-winnt-windows": "6cbccd880d816e35c0175e06e2864cdce04a05447880bde064af07615c9c7693",
+  "B6-policies-explorer": "915d796df6e5a6e99c2b175b1297173aceef8d2b3379617b5e0626bd236cd672",
+  "B7-hklm-run": "5797ec16f802921d084bc4f835babeb52cc3ad0fa8c813d4db01b1a64402102a",
+  "D5-enumerate-own-session": "f6c2e2bd54ff1efd0a904b834d88d9d9b43f0798071fe78aa638472d82862cad",
+  "D6-open-own-session-process": "ffab811fd3acf9e1ee155b414668b8a083648fc9b9667b836f05eec20e3f6d91",
+  "E5-enumerate-other-session": "8936c0ab820e9abf46dcceafa0c3b9bbe3651ecf013e424925635a43f2370320",
+  "E1-enumerate-other-session-windows": "683f5373cb3b594767ab6ed673be762e5c0db9762862132f287c89428855a39f",
+  "E2-open-other-session-winsta": "6400e0853fd42348bf2e59513de660d6ee50882a4940315e855842fad229be80",
+  "E3-open-other-session-desktop": "8f3be2e6e4c38cdaf97b813b85bd4898219437314eabbf934d1745351b6c7952",
+  "E4-read-other-session-clipboard": "06e9b1ce01bbc3232328cfcfdd7763a6dc0999d432fc5dd88a2e8a6079dbc110",
+  "E6-open-other-session-process": "e4c9cb5fb7112db9cfa45a81284d26813c0eaeddaa61d79dc24be99339c849b3",
+  "E6b-open-other-session-process-limited": "9e3d0629282efce67939b56398820c1b23fda02551f601cb5af130d7a81897aa",
+  "E7-read-other-session-module": "57f4b75f0c401461ee095e53b1abe738d68b02845a0defa821a4b951ab7e7af1",
+  "E8-capture-other-session-screen": "74d6c01a0d6d2de77fa4a38baa8272f1fa12cc2a7e6016a06623c1179ad52ab2",
+  "E9-read-other-session-cmdline": "58eaaadc3972a4fac14915cf674466f1c693bd96364fad860abcd9a103c175a3",
+  "E10-terminate-other-session-process": "fa5a1df141bf687d952c918c37d20ec8c1b8be611682e8431281a0a54d6b4976",
+  "POS-list_windows-own": "a26e80640bf9cf58ddf1ab8e73c7840c5bd65201baa7941edee55c74088b5af2",
+  "POS-capture_screen": "6bdc145c6c8ee035ba0345042840c74f93ec23a38f28e23b282830bd5f6c4d62",
+  "POS-read_uia_tree-own": "ef00f7c0c6629fb8e74354270dd9436451695a8bb2f56326d2b446e2972e22c1",
+  "POS-open-own-winsta": "22924084172e836b677439a25fa815a677c9160088e0f3dcfb4b0d30e324f9e4",
+  "POS-open-own-desktop": "8b42b9c3ecf6e0ba78baba7208ac8dd9f267446029db321023ad181fd66abe0b",
+  "POS-read-own-clipboard": "cd4d2a0f8408661732a7f93ec273b97c1a4151335b579067fa1bcef856fd6f6c",
+  "POS-open-own-process-query": "7cef1ec744f011ff8fe80daf9f04141e74d14cdda38151df3acdc1d72a09617d",
+  "POS-open-own-process-limited": "41a68405c112cfdc71144c40e1c514aa5d888cfb93762a843801f58e61e425de",
+  "POS-open-own-process-terminate": "d25173511eef8a832818243adea350e3c545039e405c618cd64d62c36cc8345b",
+  "POS-read-own-module": "d75ba336b0abd6ab9221317d6026eddde44b1f67953b701d0b0e925443d2eb7e",
+  "POS-read-own-cmdline": "ef31d5eb82a743d63ca4e649feaa382b847edf32dbe2583184a0267b935937ee"
 }
 
+// ALL 44 FINGERPRINTS CHANGED ON 2026-07-29 for a SCHEMA reason, not 44 content reasons:
+// `postRunVerification` joined PINNED_FIELDS, and the fingerprint covers the pinned set.
+// Exactly one entry has a non-null value for it — E4 — and that change is asserted on its
+// own above, so the real edit is not hidden inside a mass re-pin.
 test('*** an id cannot change what it means without changing the id ***', () => {
   for (const [id, want] of Object.entries(PINNED)) {
     assert.equal(R.fingerprint(id), want, id + ' changed meaning under the same id')

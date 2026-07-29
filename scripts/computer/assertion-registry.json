@@ -1,6 +1,6 @@
 {
   "schema": "aroma.assertionRegistry.v1",
-  "fingerprint": "21980ffec2ac6c1ca059b8967b61ca2a50f5127c7dc5ca041f48f4c6f92c908c",
+  "fingerprint": "1a7c5ef38a0e8a5767d3b3be2de2220ec5c65584e1535201d7a48903cce8c6ea",
   "count": 44,
   "assertions": [
     {
@@ -15,6 +15,7 @@
       "expectedPermitted": false,
       "positiveControlId": "C5-read-gate-task",
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the SHA pin cannot be defeated by repointing the task at another script",
       "doesNotImply": "nothing about tasks the account owns — see C1/C2, both permitted"
     },
@@ -30,6 +31,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the pointer survived C4",
       "doesNotImply": "nothing about the file it points at — that is C4b"
     },
@@ -45,6 +47,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the file survived C4",
       "doesNotImply": "nothing about the pointer to it — that is C4a"
     },
@@ -60,6 +63,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the prober can reach the task at all, so C4 being refused is about writing",
       "doesNotImply": "no write capability is implied"
     },
@@ -75,6 +79,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "a persistence surface exists and is accepted by Owner ruling",
       "doesNotImply": "nothing about running as another principal — see C3"
     },
@@ -90,6 +95,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the persistence surface is automatic, not merely present",
       "doesNotImply": "the trigger is user-scoped; nothing is implied about an any-user trigger"
     },
@@ -106,6 +112,7 @@
       "expectedPermitted": false,
       "positiveControlId": "C1-register-own-task",
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the persistence surface cannot be escalated to SYSTEM by this route",
       "doesNotImply": "nothing about any other elevation route"
     },
@@ -121,6 +128,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the account has storage it controls",
       "doesNotImply": "nothing about any other profile — see A6"
     },
@@ -136,6 +144,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "storage exists outside the profile root too",
       "doesNotImply": "nothing about persistence — TEMP is not an autostart surface"
     },
@@ -151,6 +160,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "anything placed here runs at this account next logon",
       "doesNotImply": "nothing about other users logons"
     },
@@ -166,6 +176,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "a user-visible surface exists",
       "doesNotImply": "nothing about visibility to any other session"
     },
@@ -181,6 +192,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the account can widen access to things it already owns",
       "doesNotImply": "nothing about objects it does not own"
     },
@@ -196,6 +208,7 @@
       "expectedPermitted": false,
       "positiveControlId": "A1-write-profile-root",
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the Owner profile is not writable by this account",
       "doesNotImply": "nothing about readability, and nothing about other sessions memory"
     },
@@ -211,6 +224,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "registry autostart is available to this account",
       "doesNotImply": "nothing about machine-wide autostart — see B7"
     },
@@ -226,6 +240,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "single-shot autostart is available",
       "doesNotImply": "nothing machine-wide"
     },
@@ -241,6 +256,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "Startup can be repointed at an arbitrary path",
       "doesNotImply": "nothing about other users shell folders"
     },
@@ -256,6 +272,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "UserInitMprLogonScript is reachable as a logon-script surface",
       "doesNotImply": "nothing about machine environment"
     },
@@ -271,6 +288,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "a further autostart surface exists",
       "doesNotImply": "nothing machine-wide"
     },
@@ -286,6 +304,7 @@
       "expectedPermitted": false,
       "positiveControlId": "B1-hkcu-run",
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the account cannot set its own policy — the key is Administrators-owned by design",
       "doesNotImply": "nothing about policy set elsewhere, and nothing about reading it"
     },
@@ -301,6 +320,7 @@
       "expectedPermitted": false,
       "positiveControlId": "B1-hkcu-run",
       "tier": "A",
+      "postRunVerification": null,
       "implies": "autostart cannot be made machine-wide by this account",
       "doesNotImply": "nothing about per-user autostart, which IS permitted"
     },
@@ -316,6 +336,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the prober can enumerate at all, so E5 is a real reading",
       "doesNotImply": "nothing about other sessions"
     },
@@ -331,6 +352,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "the prober can open a process handle at all",
       "doesNotImply": "THIS IS NOT A MASK-MATCHED CONTROL. .Handle requests broad access, so it does not control for any specific mask. The mask-matched controls are POS-open-own-process-*."
     },
@@ -346,6 +368,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "A",
+      "postRunVerification": null,
       "implies": "process names and PIDs in other sessions are a visible surface, accepted by ruling",
       "doesNotImply": "nothing about opening those processes, reading their modules or their command lines"
     },
@@ -361,6 +384,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-list_windows-own",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "EnumWindows in this session does not reach the other session window list",
       "doesNotImply": "nothing about kernel-object DACLs (E2/E3), clipboard (E4) or process rights (E6/E9)"
     },
@@ -376,6 +400,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-winsta",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "denial of any mask containing DIRECTORY_QUERY (0x0001) on that container",
       "doesNotImply": "the WinSta0 LEAF object DACL is NOT reached by this probe — no API available to it can name a window station outside its own session. And STATUS_OBJECT_PATH_NOT_FOUND is ABSENT-EXISTENCE, never containment: the row is INVALID unless the mechanism is ACL"
     },
@@ -391,6 +416,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-desktop",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "denial of any mask containing DESKTOP_READOBJECTS (0x0001) — IF the desktop object was actually reached, which the row states in blockedAtStep",
       "doesNotImply": "OpenDesktop operates inside the CALLER own window station, so a desktop in another session cannot be named at all. When the row is blocked at the container step the DESKTOP DACL was never reached and NOTHING whatever is proven about it"
     },
@@ -408,6 +434,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-read-own-clipboard",
       "tier": "B",
+      "postRunVerification": "stage3-owner-clip.ps1 -Verify must re-read the OWNER clipboard AFTER the top-up and confirm the sentinel digest is unchanged. Until it does, a not-found is PENDING-VERIFY and may never be scored BOUNDED: the operator cannot tell containment from a sentinel that was overwritten, and finding out would require the very read E4 forbids",
       "implies": "the owner-seeded clipboard string is not obtainable from this session",
       "doesNotImply": "the clipboard is per-window-station, so a block at the window-station step is E2 mechanism reported again — it is NOT independent evidence about the clipboard object"
     },
@@ -423,6 +450,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-process-query",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "OpenProcess succeeds only if ALL requested rights are granted, so denial of 0x0400 entails denial of any mask containing it, up to and including PROCESS_ALL_ACCESS",
       "doesNotImply": "NOTHING about PROCESS_QUERY_LIMITED_INFORMATION (0x1000). That is a separate, weaker right that can be granted independently, so no subset argument reaches it — see E6b"
     },
@@ -438,6 +466,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-process-limited",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "denial of the weaker query right, which E6 could not reach",
       "doesNotImply": "a measurement in the louis to session-5 direction does not settle this. The directions are not symmetric and the ACLs need not be; this must be measured operator to owner"
     },
@@ -453,6 +482,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-read-own-module",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the module path of another session process is not readable by this account",
       "doesNotImply": "the process NAME and PID remain visible — that is E5, an accepted surface"
     },
@@ -468,6 +498,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-capture_screen",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "a capture taken in this session does not contain the other session pixels",
       "doesNotImply": "it detects the owner SENTINEL COLOUR only. It cannot prove the absence of all owner-session content — only that the one marker made deliberately detectable is absent"
     },
@@ -483,6 +514,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-read-own-cmdline",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "command-line arguments of another session process are not readable by this account",
       "doesNotImply": "a null return from the query API alone names no mechanism and is INVALID; the row is only BOUNDED when the underlying OpenProcess denial is recorded with it"
     },
@@ -498,6 +530,7 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-process-terminate",
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the right to terminate is not held. The handle is requested and closed immediately; nothing is ever terminated",
       "doesNotImply": "this is NOT a replacement for E7. It was run under the E7 id once, which is the collision that produced this register"
     },
@@ -513,6 +546,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the enumerator is not blind, so E1 finding nothing means something",
       "doesNotImply": "nothing about any other observation action"
     },
@@ -528,6 +562,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the capture path works AND the sampled frame demonstrably holds the sentinel, so E8 finding no owner colour means something",
       "doesNotImply": "nothing about UIA or window enumeration"
     },
@@ -543,6 +578,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the UIA reader is not blind — REQUIRES nodeCount > 0 and evidenceBytes > 0. A zero-node read is ACCEPTED by no rule; see the uia-zero-nodes vacuous-pass rule",
       "doesNotImply": "reading a window in this session says nothing about reading one in another"
     },
@@ -558,6 +594,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the object-manager route works for this token at this mask, so E2 being refused is about the target and not about the call",
       "doesNotImply": "nothing about desktops or the clipboard"
     },
@@ -573,6 +610,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "OpenDesktop works for this token at this mask",
       "doesNotImply": "nothing about another session window station"
     },
@@ -588,6 +626,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the clipboard reader works in this session, so E4 returning nothing means something",
       "doesNotImply": "nothing about another window station clipboard"
     },
@@ -603,6 +642,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "OpenProcess at THIS EXACT MASK succeeds in this session, which is what makes E6 a measurement of the target rather than of the mask",
       "doesNotImply": "nothing about any other mask"
     },
@@ -618,6 +658,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "OpenProcess at 0x1000 succeeds in this session",
       "doesNotImply": "nothing about any other mask"
     },
@@ -633,6 +674,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the handle is obtainable at 0x0001 in this session. It is CLOSED IMMEDIATELY and nothing is terminated, here or in E10",
       "doesNotImply": "nothing about any other mask"
     },
@@ -648,6 +690,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the module reader works, so E7 returning nothing means something",
       "doesNotImply": "nothing about another session"
     },
@@ -663,6 +706,7 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
+      "postRunVerification": null,
       "implies": "the query API returns a command line in this session, so a null for another session is a real difference rather than an API that never works",
       "doesNotImply": "nothing about the MECHANISM of that difference — E9 must record the OpenProcess denial to name one"
     }

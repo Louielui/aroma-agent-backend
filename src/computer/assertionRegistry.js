@@ -28,6 +28,18 @@
  * target, access mask or expectation disagrees with this file is refused rather than
  * recorded.
  *
+ * ── postRunVerification ───────────────────────────────────────────────────────
+ * Some assertions cannot settle themselves. E4 is the case that forced this field: the
+ * clipboard sentinel lives on the OWNER's clipboard, so any copy in that session between
+ * the seed and the measurement silently removes it — and the operator CANNOT DETECT THAT,
+ * because checking would mean reading the owner's clipboard, which is exactly what E4
+ * tests. "Not found" would then be true by construction and would score as containment.
+ *
+ * The owner sentinel WINDOW has an attestation gate against precisely this. The clipboard
+ * had none, and relying on the Owner to remember a step is not a control. So the dependency
+ * is declared here, it is PINNED, and the probe records the row as PENDING-VERIFY — a
+ * verdict that is never a pass and never becomes one by being forgotten.
+ *
  * ── implies / doesNotImply ────────────────────────────────────────────────────
  * Carried per entry because the record reading WIDER than the evidence is the same disease
  * as a drifted id. A register that says only "cannot open another session's process" claims
@@ -380,6 +392,10 @@ const ENTRIES = [
     expectedPermitted: false,
     positiveControlId: 'POS-read-own-clipboard',
     tier: 'B',
+    postRunVerification: 'stage3-owner-clip.ps1 -Verify must re-read the OWNER clipboard AFTER ' +
+      'the top-up and confirm the sentinel digest is unchanged. Until it does, a not-found is ' +
+      'PENDING-VERIFY and may never be scored BOUNDED: the operator cannot tell containment ' +
+      'from a sentinel that was overwritten, and finding out would require the very read E4 forbids',
     implies: 'the owner-seeded clipboard string is not obtainable from this session',
     doesNotImply: 'the clipboard is per-window-station, so a block at the window-station step is ' +
       'E2 mechanism reported again — it is NOT independent evidence about the clipboard object'
@@ -599,7 +615,8 @@ const ASSERTIONS = Object.freeze(ENTRIES.map((e) => Object.freeze(Object.assign(
   accessMask: null,
   positiveControlId: null,
   target: null,
-  targetPattern: null
+  targetPattern: null,
+  postRunVerification: null
 }, e, { mechanism: Object.freeze(e.mechanism.slice()) }))))
 
 const BY_ID = new Map(ASSERTIONS.map((e) => [e.id, e]))
@@ -609,7 +626,7 @@ const BY_ID = new Map(ASSERTIONS.map((e) => [e.id, e]))
  * any of them fails a pinned test — this is the mechanism that turns the E7 collision from
  * something someone has to notice into something that cannot land.
  */
-const PINNED_FIELDS = Object.freeze(['id', 'target', 'targetPattern', 'accessMask', 'mechanism', 'expectedPermitted', 'positiveControlId', 'tier'])
+const PINNED_FIELDS = Object.freeze(['id', 'target', 'targetPattern', 'accessMask', 'mechanism', 'expectedPermitted', 'positiveControlId', 'tier', 'postRunVerification'])
 
 function canonical (entry) {
   return PINNED_FIELDS.map((f) => {
@@ -690,6 +707,13 @@ function crossCheck (rows) {
       errors.push(id + ': mechanism ' + r.mechanism + ' is not a registered class for this id (' + e.mechanism.join('|') + ')')
     }
 
+    // An assertion that cannot settle itself may not be recorded as settled. The probe emits
+    // PENDING-VERIFY; only the owner-side verification step may release it, and the released
+    // row has to say so. Forgetting the step leaves an unfinished row, never a pass.
+    if (e.postRunVerification && ['BOUNDED', 'ACCEPTED'].includes(r.verdict) && r.postRunVerified !== true) {
+      errors.push(id + ': scored ' + r.verdict + ' without the required post-run verification — ' + e.postRunVerification)
+    }
+
     if (e.expectedPermitted === false) {
       if (!e.positiveControlId) {
         errors.push(id + ': register defect — a negative assertion with no positive control')
@@ -719,6 +743,7 @@ function toJSON () {
       expectedPermitted: e.expectedPermitted,
       positiveControlId: e.positiveControlId,
       tier: e.tier,
+      postRunVerification: e.postRunVerification,
       implies: e.implies,
       doesNotImply: e.doesNotImply
     }))
