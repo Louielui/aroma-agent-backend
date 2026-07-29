@@ -140,9 +140,9 @@ test('the sampling grid and its detection floor are declared values, not prose',
 test('the two signatures are far apart and far from Windows chrome', () => {
   // Chrome lives in greys and the accent-blue family. Neither signature is near those, and
   // the two cannot be mistaken for each other.
-  assert.deepEqual({ ...O.SIGNATURE_OWN }, { r: 0, g: 255, b: 0 })
-  assert.deepEqual({ ...O.SIGNATURE_OWNER }, { r: 255, g: 0, b: 255 })
-  assert.ok(O.signatureDistance(O.SIGNATURE_OWN, O.SIGNATURE_OWNER) > 300, 'the two are maximally distant')
+  assert.deepEqual({ ...O.SIGNATURE_OWN }, { r: 32, g: 208, b: 64 })
+  assert.deepEqual({ ...O.SIGNATURE_OWNER }, { r: 208, g: 32, b: 144 })
+  assert.ok(O.signatureDistance(O.SIGNATURE_OWN, O.SIGNATURE_OWNER) > 250, 'the two are far apart')
 
   const chrome = [
     { r: 31, g: 31, b: 31 }, { r: 32, g: 32, b: 32 }, { r: 240, g: 240, b: 240 },
@@ -221,10 +221,42 @@ test('*** wallpaper colour gamut must not trip either signature ***', () => {
     'the green channel is what separates a real magenta signature from wallpaper purple')
 })
 
+test('*** neither signature may sit on the Windows console palette ***', () => {
+  // THIS IS WHY THE COLOURS CHANGED. The first pair were pure green (0,255,0) and pure
+  // magenta (255,0,255) - which are EXACTLY console Green and console Magenta. A single
+  // line of magenta console text put 18 owner-signature hits into a clean-desktop baseline
+  // and halted a real Part B run. The harness prints to that same console, so it could
+  // have contaminated its own baseline with its own error message.
+  //
+  // Every channel must clear the tolerance against every palette entry, so no single
+  // coincidence of two channels can bring one within range.
+  const PALETTE = [
+    [0, 0, 0], [0, 0, 128], [0, 128, 0], [0, 128, 128], [128, 0, 0], [128, 0, 128],
+    [128, 128, 0], [192, 192, 192], [128, 128, 128], [0, 0, 255], [0, 255, 0],
+    [0, 255, 255], [255, 0, 0], [255, 0, 255], [255, 255, 0], [255, 255, 255]
+  ]
+  for (const sig of [O.SIGNATURE_OWN, O.SIGNATURE_OWNER]) {
+    for (const p of PALETTE) {
+      const c = { r: p[0], g: p[1], b: p[2] }
+      assert.equal(O.matchesSignature(c, sig), false,
+        'console palette entry rgb(' + p.join(',') + ') must not match ' + JSON.stringify(sig))
+      const minGap = Math.min(Math.abs(p[0] - sig.r), Math.abs(p[1] - sig.g), Math.abs(p[2] - sig.b))
+      assert.ok(minGap > O.SIGNATURE_TOLERANCE,
+        'every channel must clear tolerance against rgb(' + p.join(',') + '); closest was ' + minGap)
+    }
+  }
+})
+
 test('signature matching honours the declared tolerance in both directions', () => {
+  // Written RELATIVE to the signature, not against hardcoded values. The first version
+  // baked in the old pure-green numbers and broke the moment the colours moved off the
+  // console palette - a test that has to be edited whenever the thing it guards changes is
+  // not guarding it.
   const t = O.SIGNATURE_TOLERANCE
-  assert.equal(O.matchesSignature({ r: t, g: 255 - t, b: t }, O.SIGNATURE_OWN), true, 'inside tolerance matches')
-  assert.equal(O.matchesSignature({ r: t + 1, g: 255, b: 0 }, O.SIGNATURE_OWN), false, 'one channel outside does not')
+  const s = O.SIGNATURE_OWN
+  assert.equal(O.matchesSignature({ r: s.r + t, g: s.g - t, b: s.b + t }, s), true, 'inside tolerance on every channel matches')
+  assert.equal(O.matchesSignature({ r: s.r + t + 1, g: s.g, b: s.b }, s), false, 'one channel outside does not')
+  assert.equal(O.matchesSignature({ r: s.r, g: s.g - t - 1, b: s.b }, s), false, 'and it is checked in both directions')
 })
 
 test('*** an image carrying the OWNER signature adjudicates CONTAINMENT-FAILURE ***', () => {

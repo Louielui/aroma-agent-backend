@@ -204,8 +204,8 @@ const NOT_FOUND_REFUSALS = Object.freeze([
  * of those ranges, and the two are maximally distant from each other, so one can never be
  * mistaken for the other.
  */
-const SIGNATURE_OWN = Object.freeze({ r: 0, g: 255, b: 0 })      // operator, session 5 — pure green
-const SIGNATURE_OWNER = Object.freeze({ r: 255, g: 0, b: 255 })  // owner, session 3 — pure magenta
+const SIGNATURE_OWN = Object.freeze({ r: 32, g: 208, b: 64 })     // operator, session 5
+const SIGNATURE_OWNER = Object.freeze({ r: 208, g: 32, b: 144 })  // owner, session 3
 const SIGNATURE_TOLERANCE = 12
 
 /**

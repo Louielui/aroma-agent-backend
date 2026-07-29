@@ -63,7 +63,7 @@ $operatorPresent = [bool]($sessions | Select-String -Pattern 'aromaoperator' -Qu
 Write-Host "=== STEP 0 - identity and display ===" -ForegroundColor Cyan
 Write-Host ("  whoami      : " + (whoami))
 Write-Host ("  SessionId   : " + $mySession)
-Write-Host ("  connection  : " + $connection) -ForegroundColor $(if ($connection -eq 'console') { 'Green' } else { 'Yellow' })
+Write-Host ("  connection  : " + $connection) -ForegroundColor $(if ($connection -eq 'console') { 'Cyan' } else { 'Yellow' })
 Write-Host ("  dpi mode    : " + $dpiMode)
 Write-Host ("  dpiX        : " + $dpiX)
 Write-Host ("  logical     : " + $logW + " x " + $logH)
@@ -73,7 +73,7 @@ Write-Host ""
 Write-Host "=== sessions ===" -ForegroundColor Cyan
 $sessions | ForEach-Object { Write-Host ("  " + $_) }
 Write-Host ""
-Write-Host ("  AromaOperator still signed in : " + $operatorPresent) -ForegroundColor $(if ($operatorPresent) { 'Green' } else { 'Red' })
+Write-Host ("  AromaOperator still signed in : " + $operatorPresent) -ForegroundColor $(if ($operatorPresent) { 'Cyan' } else { 'Red' })
 
 # ---------------------------------------------------------------------------
 # rulings - stated here so nothing has to be decided at the machine
@@ -107,7 +107,7 @@ if ($CompareTo -and (Test-Path -LiteralPath $CompareTo)) {
       Write-Host "sample figure and the 500/20 thresholds are unaffected - only the" -ForegroundColor Yellow
       Write-Host "whole-screen total changes. Record both numbers and carry on." -ForegroundColor Yellow
     } else {
-      Write-Host "  match    : yes" -ForegroundColor Green
+      Write-Host "  match    : yes" -ForegroundColor Cyan
     }
   } catch { }
 }
@@ -151,7 +151,7 @@ if (-not $NoWrite) {
     if (-not (Test-Path -LiteralPath $EvidenceDir)) { New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null }
     Set-Content -LiteralPath $authPath -Value ($record | ConvertTo-Json -Depth 5) -Encoding UTF8 -ErrorAction Stop
     Write-Host ""
-    Write-Host "=== authoritative baseline written ===" -ForegroundColor Green
+    Write-Host "=== authoritative baseline written ===" -ForegroundColor Cyan
     Write-Host ("  path               : " + $authPath)
     Write-Host ("  connectionType     : " + $connection)
     Write-Host ("  wholeScreenSamples : " + $record.wholeScreenSamples)
@@ -165,4 +165,4 @@ if (-not $NoWrite) {
 }
 
 Write-Host ""
-Write-Host "STEP 0 OK - at the console, session 5 present. Continue to STEP 1." -ForegroundColor Green
+Write-Host "STEP 0 OK - at the console, session 5 present. Continue to STEP 1." -ForegroundColor Cyan

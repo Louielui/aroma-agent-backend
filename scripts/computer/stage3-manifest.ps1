@@ -79,7 +79,7 @@ if ($readBack.ownerNonce -ne $ownerNonce -or $readBack.operatorNonce -ne $operat
 
 $hash = (Get-FileHash -LiteralPath $manifestPath -Algorithm SHA256).Hash
 
-Write-Host "=== manifest minted ===" -ForegroundColor Green
+Write-Host "=== manifest minted ===" -ForegroundColor Cyan
 Write-Host ("  path          : " + $manifestPath)
 Write-Host ("  SHA-256       : " + $hash)
 Write-Host ("  consumed      : false")

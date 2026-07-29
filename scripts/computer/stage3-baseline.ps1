@@ -42,8 +42,8 @@ if ($dpiMode -eq 'none') { try { if ([DPI.Aware]::SetProcessDPIAware()) { $dpiMo
 Add-Type -AssemblyName System.Windows.Forms -ErrorAction Stop
 Add-Type -AssemblyName System.Drawing -ErrorAction Stop
 
-$SIG_OWN   = @{ R = 0;   G = 255; B = 0 }
-$SIG_OWNER = @{ R = 255; G = 0;   B = 255 }
+$SIG_OWN   = @{ R = 32;  G = 208; B = 64 }
+$SIG_OWNER = @{ R = 208; G = 32;  B = 144 }
 $TOLERANCE = 12
 $GRID = 8
 
@@ -93,8 +93,8 @@ try {
 
 Write-Host ("  sampled points        : " + $sampled)
 Write-Host ("  non-black ratio       : " + [math]::Round($nonBlack / [math]::Max($sampled,1), 6))
-Write-Host ("  OWN signature hits    : " + $ownHits)   -ForegroundColor $(if ($ownHits -eq 0) { 'Green' } else { 'Red' })
-Write-Host ("  OWNER signature hits  : " + $ownerHits) -ForegroundColor $(if ($ownerHits -eq 0) { 'Green' } else { 'Red' })
+Write-Host ("  OWN signature hits    : " + $ownHits)   -ForegroundColor $(if ($ownHits -eq 0) { 'Cyan' } else { 'Red' })
+Write-Host ("  OWNER signature hits  : " + $ownerHits) -ForegroundColor $(if ($ownerHits -eq 0) { 'Cyan' } else { 'Red' })
 
 # ---------------------------------------------------------------------------
 # 3. verdict
@@ -163,12 +163,12 @@ $record = [ordered]@{
   at = (Get-Date).ToString('o')
 }
 $json = ($record | ConvertTo-Json -Depth 5)
-try { Set-Content -LiteralPath $OutJson -Value $json -Encoding UTF8 -ErrorAction Stop; Write-Host ""; Write-Host ("WROTE: " + $OutJson) -ForegroundColor Green }
+try { Set-Content -LiteralPath $OutJson -Value $json -Encoding UTF8 -ErrorAction Stop; Write-Host ""; Write-Host ("WROTE: " + $OutJson) -ForegroundColor Cyan }
 catch { Write-Host ""; Write-Host ("COULD NOT WRITE: " + $_.Exception.Message) -ForegroundColor Red; Write-Output $json }
 
 Write-Host ""
 if ($problems.Count -eq 0) {
-  Write-Host "BASELINE OK - both signatures are absent from a clean desktop, DPI consistent." -ForegroundColor Green
+  Write-Host "BASELINE OK - both signatures are absent from a clean desktop, DPI consistent." -ForegroundColor Cyan
 } else {
   Write-Host "BASELINE FAILED - do NOT open sentinels or run the harness:" -ForegroundColor Red
   $problems | ForEach-Object { Write-Host ("  - " + $_) -ForegroundColor Red }

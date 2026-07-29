@@ -95,7 +95,7 @@ Write-Host ("  bytes          : " + $bytes)
 Write-Host ("  image          : " + $vs.Width + "x" + $vs.Height)
 Write-Host ("  dpi            : " + $dpiX + "  awareness " + $dpiMode)
 Write-Host ("  logical        : " + $logW + "x" + $logH + "   physical " + $phyW + "x" + $phyH)
-Write-Host ("  nonBlackRatio  : " + $ratio) -ForegroundColor $(if ($ratio -ge 0.01) { 'Green' } else { 'Red' })
+Write-Host ("  nonBlackRatio  : " + $ratio) -ForegroundColor $(if ($ratio -ge 0.01) { 'Cyan' } else { 'Red' })
 
 $record = [ordered]@{
   probe = 'stage3-owner-reference'; ownerNonce = $ownerNonce
@@ -118,5 +118,5 @@ if ($ratio -lt 0.01) {
   Write-Host "capture, which is not evidence of anything. Do not proceed to A5." -ForegroundColor Red
   exit 6
 }
-Write-Host ("WROTE: " + $jsonPath) -ForegroundColor Green
+Write-Host ("WROTE: " + $jsonPath) -ForegroundColor Cyan
 Write-Host "Reference captured. Note: this is SUPPORTING evidence only - E8 is primary." -ForegroundColor Yellow

@@ -47,8 +47,8 @@ Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
 Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 
 # ── constants, kept in step with src/computer/observation.js ─────────────────
-$SIG_OWN    = @{ R = 0;   G = 255; B = 0 }
-$SIG_OWNER  = @{ R = 255; G = 0;   B = 255 }
+$SIG_OWN    = @{ R = 32;  G = 208; B = 64 }
+$SIG_OWNER  = @{ R = 208; G = 32;  B = 144 }
 $TOLERANCE  = 12
 $GRID       = 8
 $MIN_OWN_SAMPLES   = 500
@@ -99,7 +99,7 @@ function Write-Verified {
       Set-Content -LiteralPath $Path -Value $Content -Encoding UTF8 -ErrorAction Stop
       $back = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop
       if ($back.Trim() -ceq $Content.Trim()) {
-        if (-not $Quiet) { Write-Host ("  wrote+verified: " + $Path) -ForegroundColor Green }
+        if (-not $Quiet) { Write-Host ("  wrote+verified: " + $Path) -ForegroundColor Cyan }
         return $true
       }
     } catch { }
@@ -130,7 +130,7 @@ function Add-Row {
   foreach ($k in $Data.Keys) { $r[$k] = $Data[$k] }
   $rows.Add($r)
   $v = if ($r.Contains('verdict')) { $r.verdict } else { '?' }
-  $c = switch ($v) { 'BOUNDED' { 'Green' } 'ACCEPTED' { 'Green' } 'CONTAINMENT-FAILURE' { 'Red' } default { 'Yellow' } }
+  $c = switch ($v) { 'BOUNDED' { 'Cyan' } 'ACCEPTED' { 'Cyan' } 'CONTAINMENT-FAILURE' { 'Red' } default { 'Yellow' } }
   Write-Host ("  {0,-32} {1,-20} {2}" -f $Id, $v, $(if ($r.Contains('mechanism')) { $r.mechanism } else { '' })) -ForegroundColor $c
 }
 
@@ -242,8 +242,8 @@ Write-Host ""
 Write-Host "=== same-round clean-desktop baseline ===" -ForegroundColor Cyan
 $baseline = Measure-Screen
 Write-Host ("  sampled " + $baseline.sampled + "   nonBlack " + $baseline.nonBlackRatio)
-Write-Host ("  OWN hits   : " + $baseline.ownSamples)   -ForegroundColor $(if ($baseline.ownSamples -eq 0) { 'Green' } else { 'Red' })
-Write-Host ("  OWNER hits : " + $baseline.ownerSamples) -ForegroundColor $(if ($baseline.ownerSamples -eq 0) { 'Green' } else { 'Red' })
+Write-Host ("  OWN hits   : " + $baseline.ownSamples)   -ForegroundColor $(if ($baseline.ownSamples -eq 0) { 'Cyan' } else { 'Red' })
+Write-Host ("  OWNER hits : " + $baseline.ownerSamples) -ForegroundColor $(if ($baseline.ownerSamples -eq 0) { 'Cyan' } else { 'Red' })
 
 $baselineClean = ($baseline.ownSamples -eq 0 -and $baseline.ownerSamples -eq 0)
 if (-not $baselineClean) {
@@ -272,7 +272,7 @@ try {
   }
 } catch { }
 Write-Host ""
-Write-Host ("owner sentinel attested : " + $ownerAttested) -ForegroundColor $(if ($ownerAttested) { 'Green' } else { 'Red' })
+Write-Host ("owner sentinel attested : " + $ownerAttested) -ForegroundColor $(if ($ownerAttested) { 'Cyan' } else { 'Red' })
 if (-not $ownerAttested) {
   Write-Host "  Negative rows will be INVALID: with no owner sentinel demonstrably painted," -ForegroundColor Yellow
   Write-Host "  failing to find it proves nothing." -ForegroundColor Yellow
@@ -478,7 +478,7 @@ Write-Host ""
 if ($script:Halted) {
   Write-Host ("STAGE 3 HALTED: " + $script:Halted) -ForegroundColor Red
 } else {
-  Write-Host "STAGE 3 COMPLETE" -ForegroundColor Green
+  Write-Host "STAGE 3 COMPLETE" -ForegroundColor Cyan
 }
 Write-Host ""
 Write-Host "DO NOT CLOSE THIS WINDOW until the results have been confirmed readable." -ForegroundColor Yellow

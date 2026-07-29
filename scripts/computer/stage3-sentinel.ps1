@@ -49,8 +49,8 @@ if ($dpiMode -eq 'none') { try { if ([DPI.Aware]::SetProcessDPIAware()) { $dpiMo
 # Kept in step with src/computer/observation.js. Divergence here is silent and would show
 # up only as an unexplained INVALID, so both sides are asserted by tests.
 $SPEC = @{
-  own   = @{ R = 0;   G = 255; B = 0;   Title = 'AROMA-OWN-' }
-  owner = @{ R = 255; G = 0;   B = 255; Title = 'AROMA-OWNER-SENTINEL-' }
+  own   = @{ R = 32;  G = 208; B = 64;  Title = 'AROMA-OWN-' }
+  owner = @{ R = 208; G = 32;  B = 144; Title = 'AROMA-OWNER-SENTINEL-' }
 }
 $TOLERANCE = 12
 $MIN_W = 400
@@ -173,8 +173,8 @@ if ($ratio -lt 0.9) {
 }
 
 Write-Host ""
-Write-Host "SENTINEL VERIFIED - colour and size confirmed on screen" -ForegroundColor Green
-Write-Host ("  " + $matched + " sample points carry the signature") -ForegroundColor Green
+Write-Host "SENTINEL VERIFIED - colour and size confirmed on screen" -ForegroundColor Cyan
+Write-Host ("  " + $matched + " sample points carry the signature") -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------
 # ATTESTATION MARKER - written only after self-verification passes.
@@ -202,7 +202,7 @@ try {
   }
   $mp = Join-Path $markerDir ('stage3-sentinel-' + $Role + '-' + $Nonce + '.json')
   Set-Content -LiteralPath $mp -Value ($marker | ConvertTo-Json -Depth 5) -Encoding UTF8 -ErrorAction Stop
-  Write-Host ("  attestation written: " + $mp) -ForegroundColor Green
+  Write-Host ("  attestation written: " + $mp) -ForegroundColor Cyan
 } catch {
   Write-Host ("  COULD NOT WRITE ATTESTATION: " + $_.Exception.Message) -ForegroundColor Red
   Write-Host "  The harness will refuse to adjudicate negative rows without it." -ForegroundColor Red
