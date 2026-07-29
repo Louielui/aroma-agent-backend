@@ -346,28 +346,62 @@ const ENTRIES = [
     doesNotImply: 'nothing about kernel-object DACLs (E2/E3), clipboard (E4) or process rights (E6/E9)'
   },
   {
-    // TARGET CHANGED 2026-07-29, BEFORE THIS ID EVER PRODUCED A ROW, on a measurement.
-    // It was written against Win32 OpenWindowStation with the path \Sessions\N\Windows\WinSta0.
-    // That was RUN and found INCAPABLE: the call returns ERROR_BAD_PATHNAME (161) for a
-    // qualified path even when the path is our OWN session's, and identically for a session
-    // number that does not exist at all. So the API cannot distinguish "isolated" from
-    // "absent" from "I do not accept paths", and every negative from it would have been
-    // vacuous. The object-manager route DOES discriminate — measured on this machine:
-    //   \Sessions\<own>\Windows  -> STATUS_SUCCESS
-    //   \Sessions\<absent>\...   -> STATUS_OBJECT_PATH_NOT_FOUND  (absent, NOT containment)
-    //   \Sessions\<own>          -> STATUS_ACCESS_DENIED          (a nameable ACL)
+    // RETIRED 2026-07-29, on a measurement, having produced no legitimate row.
+    //
+    // Every route tried reaches the CONTAINER, never the window station itself:
+    //   Win32 OpenWindowStation  - refuses a qualified path, identically for our own session
+    //                              and for a session number that does not exist
+    //   NtOpenDirectoryObject    - opens \Sessions\N\Windows, which is a Directory object.
+    //                              The leaf \Sessions\N\Windows\WinSta0 returns
+    //                              STATUS_OBJECT_NAME_NOT_FOUND (0xC0000034) - a window
+    //                              station is not a Directory, so this lookup never finds it
+    //
+    // So this probe has NO ROUTE to the object this id names. Registering an assertion that
+    // nothing can execute is worse than admitting there is no route, so the id is kept and
+    // marked unmeasurable rather than quietly retargeted at something easier. What the
+    // container-open actually measures is E2a, below, and it is an ACCEPTED SURFACE.
     id: 'E2-open-other-session-winsta',
-    title: 'open another session window-station container in the object manager',
-    targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows$',
-    accessMask: MASK.DIRECTORY_QUERY,
+    title: 'open another session window station (NO ROUTE - unmeasurable by this probe)',
+    target: '\\Sessions\\N\\Windows\\WinSta0',
+    accessMask: MASK.WINSTA_READATTRIBUTES,
     mechanism: ['ACL'],
     expectedPermitted: false,
     positiveControlId: 'POS-open-own-winsta',
     tier: 'B',
-    implies: 'denial of any mask containing DIRECTORY_QUERY (0x0001) on that container',
-    doesNotImply: 'the WinSta0 LEAF object DACL is NOT reached by this probe — no API available ' +
-      'to it can name a window station outside its own session. And STATUS_OBJECT_PATH_NOT_FOUND ' +
-      'is ABSENT-EXISTENCE, never containment: the row is INVALID unless the mechanism is ACL'
+    status: 'unmeasurable',
+    implies: 'NOTHING. It has never been executed and no probe can execute it.',
+    doesNotImply: 'in particular, E2a opening the CONTAINING DIRECTORY says nothing about this ' +
+      'object. Cross-session window-station access remains NOT PROVEN in either direction'
+  },
+  {
+    // NEW 2026-07-29, replacing what E2 was mis-measuring. MEASURED DACL on this machine,
+    // identical for session 0, session 3, session 5 and the global \Windows:
+    //
+    //   D:(A;;CCDCRC;;;WD)(A;;CCDCLCSWSDRCWDWO;;;SY)(A;;CCDCLCSWSDRCWDWO;;;S-1-5-90-0-N)
+    //        ^^^^^^  ^^ Everyone: DIRECTORY_QUERY | DIRECTORY_TRAVERSE | READ_CONTROL
+    //
+    // Everyone can open and traverse this directory BY DESIGN - it is the namespace node a
+    // process walks to reach its own window station. A non-administrator token opened another
+    // session's copy, which is the ACE working as specified, not a boundary failing.
+    //
+    // So this is recorded as a KNOWN-VISIBLE SURFACE and signed off, exactly like E5. It is
+    // deliberately NOT asserted false: an assertion that must fail against a documented
+    // world-readable object would report a VIOLATION every single run, and a boundary that
+    // cries wolf is worse than no boundary.
+    id: 'E2a-open-other-session-winsta-directory',
+    title: 'open another session window-station CONTAINER in the object manager',
+    targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows$',
+    accessMask: MASK.DIRECTORY_QUERY,
+    mechanism: ['NONE'],
+    expectedPermitted: true,
+    tier: 'B',
+    status: 'active',
+    implies: 'the object-manager namespace node for another session is readable, by an ACE that ' +
+      'grants Everyone QUERY|TRAVERSE|READ_CONTROL. Accepted surface, Owner ruling 2026-07-29',
+    doesNotImply: 'NOTHING WHATEVER about the WinSta0 object inside it - see E2. Opening the ' +
+      'container confers no window access: reaching windows requires SetProcessWindowStation ' +
+      'with a handle to the STATION, at WINSTA_* rights, which this does not obtain. E1 and E8 ' +
+      'are unaffected by this row and rest on their own sentinels'
   },
   {
     id: 'E3-open-other-session-desktop',
@@ -616,7 +650,8 @@ const ASSERTIONS = Object.freeze(ENTRIES.map((e) => Object.freeze(Object.assign(
   positiveControlId: null,
   target: null,
   targetPattern: null,
-  postRunVerification: null
+  postRunVerification: null,
+  status: 'active'
 }, e, { mechanism: Object.freeze(e.mechanism.slice()) }))))
 
 const BY_ID = new Map(ASSERTIONS.map((e) => [e.id, e]))
@@ -626,7 +661,7 @@ const BY_ID = new Map(ASSERTIONS.map((e) => [e.id, e]))
  * any of them fails a pinned test — this is the mechanism that turns the E7 collision from
  * something someone has to notice into something that cannot land.
  */
-const PINNED_FIELDS = Object.freeze(['id', 'target', 'targetPattern', 'accessMask', 'mechanism', 'expectedPermitted', 'positiveControlId', 'tier', 'postRunVerification'])
+const PINNED_FIELDS = Object.freeze(['id', 'target', 'targetPattern', 'accessMask', 'mechanism', 'expectedPermitted', 'positiveControlId', 'tier', 'postRunVerification', 'status'])
 
 function canonical (entry) {
   return PINNED_FIELDS.map((f) => {
@@ -690,6 +725,14 @@ function crossCheck (rows) {
     const e = BY_ID.get(id)
     if (!e) { errors.push(id + ': not in the register — nothing constrains what it means'); continue }
 
+    // An id kept for the record but which no probe can execute must not appear as a row at
+    // all. E2 is the case: every route reaches the containing directory, never the window
+    // station, so a row under that id would claim a measurement that did not happen.
+    if (e.status === 'unmeasurable') {
+      errors.push(id + ': registered UNMEASURABLE — no probe has a route to this object, so a row under this id claims a measurement that did not happen')
+      continue
+    }
+
     if (!targetMatches(e, r.target)) {
       errors.push(id + ': target drift — register ' + (e.targetPattern ? '/' + e.targetPattern + '/' : JSON.stringify(e.target)) + ', row ' + JSON.stringify(r.target))
     }
@@ -743,6 +786,7 @@ function toJSON () {
       expectedPermitted: e.expectedPermitted,
       positiveControlId: e.positiveControlId,
       tier: e.tier,
+      status: e.status,
       postRunVerification: e.postRunVerification,
       implies: e.implies,
       doesNotImply: e.doesNotImply

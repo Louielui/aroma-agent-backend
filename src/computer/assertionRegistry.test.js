@@ -117,22 +117,55 @@ test('*** the mask-matched controls exist, because D6 used .Handle and is not on
   }
 })
 
-test('*** E2 records that the Win32 route was tried and found incapable ***', () => {
-  // The route was RUN, not reasoned about: OpenWindowStation refuses a qualified path even
-  // for our OWN session's station, and returns the identical error for a session number
-  // that does not exist. A negative from it would have been vacuous and would have looked
-  // exactly like containment.
+test('*** E2 is UNMEASURABLE and may not be emitted as a row ***', () => {
+  // Two routes were RUN and both reach the CONTAINER, never the window station:
+  //   Win32 OpenWindowStation  — refuses a qualified path, identically for our own session
+  //                              and for a session number that does not exist
+  //   NtOpenDirectoryObject    — \Sessions\N\Windows\WinSta0 returns 0xC0000034
+  //                              STATUS_OBJECT_NAME_NOT_FOUND: a window station is not a
+  //                              Directory, so that lookup can never find it
+  // Registering an assertion nothing can execute is worse than admitting there is no route.
   const e2 = R.get('E2-open-other-session-winsta')
-  assert.equal(e2.accessMask, R.MASK.DIRECTORY_QUERY)
-  assert.match(e2.doesNotImply, /LEAF object DACL is NOT reached/)
-  assert.match(e2.doesNotImply, /ABSENT-EXISTENCE, never containment/)
-  assert.deepEqual(e2.mechanism, ['ACL'], 'only a nameable access denial counts')
+  assert.equal(e2.status, 'unmeasurable')
+  assert.match(e2.implies, /^NOTHING\b/, 'it has never run, so it licenses nothing')
 
-  // and its control is the SAME call on our own container, which is what makes it a
-  // measurement of the target rather than of the API
-  const ctrl = R.get(e2.positiveControlId)
-  assert.equal(ctrl.accessMask, e2.accessMask)
-  assert.equal(ctrl.targetPattern, e2.targetPattern)
+  const r = R.crossCheck([{ id: 'E2-open-other-session-winsta', target: '\\Sessions\\3\\Windows\\WinSta0', accessMask: 0x0002, expectedPermitted: false, verdict: 'BOUNDED', mechanism: 'ACL' }])
+  assert.equal(r.ok, false)
+  assert.ok(r.errors.some((e) => /registered UNMEASURABLE/.test(e)))
+})
+
+test('*** E2a is an ACCEPTED SURFACE — the DACL grants Everyone, by design ***', () => {
+  // MEASURED on this machine, identical for sessions 0, 3, 5 and the global \Windows:
+  //   D:(A;;CCDCRC;;;WD)(A;;...;;;SY)(A;;...;;;S-1-5-90-0-N)
+  // WD is Everyone, CC|DC|RC is DIRECTORY_QUERY | DIRECTORY_TRAVERSE | READ_CONTROL. A
+  // NON-ADMINISTRATOR token opened another session's copy — the ACE working as specified.
+  //
+  // Asserting this false would produce a VIOLATION every single run against a documented
+  // world-readable object, and a boundary that cries wolf is worse than no boundary.
+  const e2a = R.get('E2a-open-other-session-winsta-directory')
+  assert.ok(e2a)
+  assert.equal(e2a.expectedPermitted, true, 'recorded and signed off, exactly like E5')
+  assert.deepEqual(e2a.mechanism, ['NONE'])
+  assert.equal(e2a.positiveControlId, null, 'an accepted surface needs no negative control')
+  assert.match(e2a.doesNotImply, /NOTHING WHATEVER about the WinSta0 object/)
+  assert.match(e2a.doesNotImply, /E1 and E8 are unaffected/)
+
+  // and it is emittable, unlike E2
+  assert.equal(e2a.status, 'active')
+  assert.deepEqual(R.crossCheck([{ id: 'E2a-open-other-session-winsta-directory', target: '\\Sessions\\5\\Windows', accessMask: 0x0001, expectedPermitted: true, verdict: 'ACCEPTED', mechanism: 'NONE' }]).errors, [])
+})
+
+test('*** opening the container is not evidence about E1 or E8 ***', () => {
+  // Reaching windows requires attaching to the window STATION and a desktop, at WINSTA_*
+  // rights. A handle to the containing directory confers none of that. E1 and E8 were each
+  // measured directly, against their own sentinels — nothing about them derives from E2 or
+  // E2a in either direction.
+  for (const id of ['E1-enumerate-other-session-windows', 'E8-capture-other-session-screen']) {
+    const e = R.get(id)
+    assert.equal(e.positiveControlId.startsWith('POS-'), true, id + ' has its own control')
+    assert.notEqual(e.positiveControlId, 'POS-open-own-winsta', id + ' does not lean on the winsta route')
+  }
+  assert.match(R.get('E2a-open-other-session-winsta-directory').doesNotImply, /confers no window access/)
 })
 
 test('E3 states that the desktop object may never be reached at all', () => {
@@ -226,50 +259,51 @@ test('*** POS-read_uia_tree-own requires a NON-EMPTY tree ***', () => {
  * MEANING — if it did, it needs a NEW ID, because reusing one is exactly the E7 defect.
  */
 const PINNED = {
-  "C4-modify-gate-task": "e41d0fea3ad70eb820e224403baf07a4e80f45e16fcb1289c8a9a1f88d671d39",
-  "C4a-gate-action-intact": "097df86e34a0088b0a27b365335414037b27116df5b9848eea5935895c0d5a01",
-  "C4b-gate-script-sha": "37af5d2f9a289f18ac0b4ba7bb36f5ac7f2bd534ff23d098de40b68300a6039a",
-  "C5-read-gate-task": "3de7fe9ccbc864b48c4784bdb7c58812c181dac89668418fe4399811cbd8f269",
-  "C1-register-own-task": "28b7a4faeb44c35e33e339a228a36395c3d8f58ec714fe7b9ba94fa67d270fe0",
-  "C2-register-logon-trigger": "23dcd67716eab659bc642f133928d63185a1e59ac1a73db0d9f087d0ff42fa62",
-  "C3-register-as-SYSTEM": "bc773c15986b8a651960ea13a7fa1eb57bf7acb9313121f98c69d636ef8c2e4a",
-  "A1-write-profile-root": "18ad275519a3293df354c3a49186bce4bde8d6ff5682ff4739be1ff5968f6560",
-  "A2-write-temp": "68902963ec0c72ffcab3460295c50f9f41b021e679002efe35a739889236e44c",
-  "A3-write-startup": "d9bb70a4d7bc4daf66336eb7cf91b1f62d7b2c1ffc9186e0d8d5ee4a7bae48c6",
-  "A4-write-desktop": "7dd3eb0eeb0c483a0f3c53d7898baa0fa4258a3f9f706940b805d418612018e3",
-  "A5-set-acl-on-own-dir": "8aefdf9fddfe793e775871cb052d984080eb37d4222849a2118754f8cf255544",
-  "A6-write-owner-profile": "79822f2e5669d7d035487760b4d108859027bbd632b2f78bee5fb3a89f79a566",
-  "B1-hkcu-run": "8d3b9a4381568f13c957199b65fc1e952f2ce1c05ed59a6c1ccdea3a2f29ebc0",
-  "B2-hkcu-runonce": "2f7a33b26dc8e9c0aa32802689c673022babab859742773ac7824985219826dc",
-  "B3-user-shell-fldr": "1d459ed44d1162a972a4d4374fb5f6e44391e7510439b003253dda576ed92250",
-  "B4-hkcu-environment": "87131217e9fcac6f798074d209b520b8f7e0a5b69dd46d758c424ea9d1ca220d",
-  "B5-winnt-windows": "6cbccd880d816e35c0175e06e2864cdce04a05447880bde064af07615c9c7693",
-  "B6-policies-explorer": "915d796df6e5a6e99c2b175b1297173aceef8d2b3379617b5e0626bd236cd672",
-  "B7-hklm-run": "5797ec16f802921d084bc4f835babeb52cc3ad0fa8c813d4db01b1a64402102a",
-  "D5-enumerate-own-session": "f6c2e2bd54ff1efd0a904b834d88d9d9b43f0798071fe78aa638472d82862cad",
-  "D6-open-own-session-process": "ffab811fd3acf9e1ee155b414668b8a083648fc9b9667b836f05eec20e3f6d91",
-  "E5-enumerate-other-session": "8936c0ab820e9abf46dcceafa0c3b9bbe3651ecf013e424925635a43f2370320",
-  "E1-enumerate-other-session-windows": "683f5373cb3b594767ab6ed673be762e5c0db9762862132f287c89428855a39f",
-  "E2-open-other-session-winsta": "6400e0853fd42348bf2e59513de660d6ee50882a4940315e855842fad229be80",
-  "E3-open-other-session-desktop": "8f3be2e6e4c38cdaf97b813b85bd4898219437314eabbf934d1745351b6c7952",
-  "E4-read-other-session-clipboard": "06e9b1ce01bbc3232328cfcfdd7763a6dc0999d432fc5dd88a2e8a6079dbc110",
-  "E6-open-other-session-process": "e4c9cb5fb7112db9cfa45a81284d26813c0eaeddaa61d79dc24be99339c849b3",
-  "E6b-open-other-session-process-limited": "9e3d0629282efce67939b56398820c1b23fda02551f601cb5af130d7a81897aa",
-  "E7-read-other-session-module": "57f4b75f0c401461ee095e53b1abe738d68b02845a0defa821a4b951ab7e7af1",
-  "E8-capture-other-session-screen": "74d6c01a0d6d2de77fa4a38baa8272f1fa12cc2a7e6016a06623c1179ad52ab2",
-  "E9-read-other-session-cmdline": "58eaaadc3972a4fac14915cf674466f1c693bd96364fad860abcd9a103c175a3",
-  "E10-terminate-other-session-process": "fa5a1df141bf687d952c918c37d20ec8c1b8be611682e8431281a0a54d6b4976",
-  "POS-list_windows-own": "a26e80640bf9cf58ddf1ab8e73c7840c5bd65201baa7941edee55c74088b5af2",
-  "POS-capture_screen": "6bdc145c6c8ee035ba0345042840c74f93ec23a38f28e23b282830bd5f6c4d62",
-  "POS-read_uia_tree-own": "ef00f7c0c6629fb8e74354270dd9436451695a8bb2f56326d2b446e2972e22c1",
-  "POS-open-own-winsta": "22924084172e836b677439a25fa815a677c9160088e0f3dcfb4b0d30e324f9e4",
-  "POS-open-own-desktop": "8b42b9c3ecf6e0ba78baba7208ac8dd9f267446029db321023ad181fd66abe0b",
-  "POS-read-own-clipboard": "cd4d2a0f8408661732a7f93ec273b97c1a4151335b579067fa1bcef856fd6f6c",
-  "POS-open-own-process-query": "7cef1ec744f011ff8fe80daf9f04141e74d14cdda38151df3acdc1d72a09617d",
-  "POS-open-own-process-limited": "41a68405c112cfdc71144c40e1c514aa5d888cfb93762a843801f58e61e425de",
-  "POS-open-own-process-terminate": "d25173511eef8a832818243adea350e3c545039e405c618cd64d62c36cc8345b",
-  "POS-read-own-module": "d75ba336b0abd6ab9221317d6026eddde44b1f67953b701d0b0e925443d2eb7e",
-  "POS-read-own-cmdline": "ef31d5eb82a743d63ca4e649feaa382b847edf32dbe2583184a0267b935937ee"
+  "C4-modify-gate-task": "654275eb04580dfdf85d16896ef5cf8f0ecfd523e710870fa8a7400e882f15b6",
+  "C4a-gate-action-intact": "eab0bd0b82457a48436524e5d8b99483e51dfca344930b92fe3ea8bc22fe9fb4",
+  "C4b-gate-script-sha": "33270756634ffeb8a18b999c5a0a5e5396b93c39f8755e83fea076c67bad47ab",
+  "C5-read-gate-task": "dcb6fda11045d26240055c51cc5643e1b73eeb1ef5ecac2be3c030f0b711862f",
+  "C1-register-own-task": "a94b80f0859f2088a563e09b8f520fdd8198eacaf8ef1b6b36ea79c8c4d23184",
+  "C2-register-logon-trigger": "de278489d49c6d5050d80ce3f91c6939ea4b27bc6f112230c1f2e3545cd6370e",
+  "C3-register-as-SYSTEM": "aa175bae05406df41d7c2e1d98646b62fb028b0a9881ddfe30b52843dd48c507",
+  "A1-write-profile-root": "050a6db0898fd8d8a350977f7c1041610bd946c22ffb22d231a5e7ac49225be4",
+  "A2-write-temp": "c9c9db9f4213a27c0c553585192eee9e4aa011f445f604766387635aa69ccff5",
+  "A3-write-startup": "7e462b03ef4397956ed4df14188fa80dbfcbf8a624f3643fee51b2c0f8d3c9c0",
+  "A4-write-desktop": "75448b7f5f8e622d08a6fe00628876ce454af480e43e230e8b5bc471a2541aaa",
+  "A5-set-acl-on-own-dir": "9e11112f24634cfebe40be232c93eafb37d79b783efe007817f50df1ef379676",
+  "A6-write-owner-profile": "008a6157c4d6c949931e694b6781d611208e5d0f49175b70333dbc422fd37dfe",
+  "B1-hkcu-run": "85a30f39c82fb0237542bfe34cc34f09b7ed5fe4e6312217630b305e509233ae",
+  "B2-hkcu-runonce": "69178ff68d2c97cd9e90d9ac464b8bc6aa73bc3f6282036854866510a23cce18",
+  "B3-user-shell-fldr": "3ac2fbc876d9d7e3f23ca895c220dbd7138c7e10ead37716f8878b925429a3d6",
+  "B4-hkcu-environment": "4f01d38317a10813c858c1ef623917a5f2e890a56b7a8c1010e34be6980f1ddf",
+  "B5-winnt-windows": "206f40ca99bb5e2d8d9a36f22c407313c9f788684fabe83fb4c52ca91e46611d",
+  "B6-policies-explorer": "55e92bcc272cfcaf5169e71d3bd3343cc33f41c5daa92ad2b37427ea685b3065",
+  "B7-hklm-run": "a096c463841a7d6925a651008a203214d4bf080ccb34415b67b3408d8a93489c",
+  "D5-enumerate-own-session": "cc27288a5706931caae5b051b145d8b40d2f2f20999f01549cdae92a7edf39c3",
+  "D6-open-own-session-process": "60ed9b6d0a48bb582d05d0a4af3fc06c396b97deeb640d42c7db83f2f1d2358c",
+  "E5-enumerate-other-session": "2ce50aee2701423aeeb7adc5fac6c23a2a8c8d126ac484140c4bd048e63b3dbf",
+  "E1-enumerate-other-session-windows": "e3180952561607503084b98e901f0a12ebefcc066f3b483321fa008499474f23",
+  "E2-open-other-session-winsta": "fb141c594ab3ef1815bcd547663d5ee560f12719fa88d802801672bd35f48bd7",
+  "E2a-open-other-session-winsta-directory": "c7e224bf697fdddcf6229bf79675512818e812b287a324d4c5d36521d4e28d66",
+  "E3-open-other-session-desktop": "1806517bc02e3f734861d0645ef08dc6a842434609f3183e20d7fdee94f919d1",
+  "E4-read-other-session-clipboard": "d07cb8ebdd6010a097163680d832895691830563f946c6c64282d0a4e92b17a3",
+  "E6-open-other-session-process": "a8bd3c585b42396c878d0fe13bb30988ea91d05913692d0d57f7398889854bfc",
+  "E6b-open-other-session-process-limited": "e5f0f5d8b48c8c38c9f51880337faf7c0bad99cacf44d61e4ed7251495dd6e48",
+  "E7-read-other-session-module": "3ed0da55ab86f75beb4697f855b18dd4c487c64338d6f0d556703daecbf4c970",
+  "E8-capture-other-session-screen": "ac231a9778115945f2074883038cb5cdf3c0f223f00f56700302affceca07369",
+  "E9-read-other-session-cmdline": "52e80fa0ace411326d47e35496fcc0b7998710e3ae5f0c577fa5b628b47ad221",
+  "E10-terminate-other-session-process": "36a129c89d15dcbb65a2a2440b3d7a197e5115a9cedd23f9fd8074025f89f3a2",
+  "POS-list_windows-own": "3b806f3d32500a6a15085523d2167160de56d31746b9d9536d002316c727255c",
+  "POS-capture_screen": "6c534bee943347f0eff15f829a8c84318f13f62ff7675fbfac7f23a2a5b4fc0c",
+  "POS-read_uia_tree-own": "f374e132e29c21fef507f4757d73b813c7c184d7b4b64d670a5949d00380099a",
+  "POS-open-own-winsta": "bb887d52c05ff995a8aa54f54d8dd30cae5fc077cfc8c71aea0983f76004229d",
+  "POS-open-own-desktop": "8261a94c940c53747e514fa290b53455e344edaf07cdbec929acd1d177d6a2c1",
+  "POS-read-own-clipboard": "71b4fb6ee15001f45308f79f473bf6275ba9b8e0be68a904de57fc545bb97f07",
+  "POS-open-own-process-query": "58dadd60bdbaa775a950a0aafdf90cad1ee765b021cd623c74eb1d237d24bd7c",
+  "POS-open-own-process-limited": "a888580f49a085cf090cddbaaf6909a5cbe8195f6ad5c98a8796d0f34edd33bb",
+  "POS-open-own-process-terminate": "7e12e61e58072e2a78c08a391b83ba477ae810f0b0466f175574405c2ccbb08d",
+  "POS-read-own-module": "9c5783815a1711f18ab78b8524bad2f641ac3525f338d4ab75ad559822ec053f",
+  "POS-read-own-cmdline": "1b01a2a2ab5e7589f43d8569fa687b37a9c2ea9f086204ff4bd786abb523fd3b"
 }
 
 // ALL 44 FINGERPRINTS CHANGED ON 2026-07-29 for a SCHEMA reason, not 44 content reasons:

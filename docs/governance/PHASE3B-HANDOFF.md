@@ -178,6 +178,62 @@ Enforced, both statically and at run time:
 
 ---
 
+## 5a. E2 — the VIOLATION was FALSE, and the id is now retired
+
+The accidental run reported `E2-open-other-session-winsta = VIOLATION / NONE`. Chased with
+measurements rather than argument. It is not a containment failure, for two independent
+reasons, and both matter.
+
+**One — E2 and its control open the same kind of object, and it is not a window station.**
+`POS-open-own-winsta` and E2 issue the identical call at the identical mask, so the control
+is kind- and mask-matched. But what they open is an object-manager **Directory**, the
+namespace node `\Sessions\N\Windows`. The window station is a leaf *inside* it, and it was
+never reached:
+
+```
+\Sessions\5\Windows          -> STATUS_SUCCESS,  type Directory
+\Sessions\5\Windows\WinSta0  -> 0xC0000034 STATUS_OBJECT_NAME_NOT_FOUND
+```
+
+A window station is not a Directory, so `NtOpenDirectoryObject` can never find it. Combined
+with the Win32 route (§5), **this probe has no route at all to the object E2 names.**
+
+**Two — the directory is world-readable BY DESIGN.** Measured DACL, identical for session 0,
+session 3, session 5 and the global `\Windows`:
+
+```
+D:(A;;CCDCRC;;;WD)(A;;CCDCLCSWSDRCWDWO;;;SY)(A;;CCDCLCSWSDRCWDWO;;;S-1-5-90-0-N)
+     ^^^^^^ ^^  Everyone: DIRECTORY_QUERY | DIRECTORY_TRAVERSE | READ_CONTROL
+```
+
+`WD` is Everyone. The token that opened session 5's copy was **not an administrator**
+(`IsInRole(Administrator) = False`). So this is the ACE working exactly as specified — the
+same class of surface as E5, not a boundary failing. Asserting it false would report a
+VIOLATION every single run against a documented world-readable object, and a boundary that
+cries wolf is worse than no boundary.
+
+**What changed**
+
+- **`E2-open-other-session-winsta` is RETIRED**, marked `status: 'unmeasurable'`, `implies:
+  "NOTHING"`. It is kept so the gap stays visible, and `crossCheck` now **refuses any row
+  under it** — a row would claim a measurement that did not happen. Cross-session
+  window-station access is **NOT PROVEN, in either direction, with no route**.
+- **`E2a-open-other-session-winsta-directory` is new**, `expectedPermitted: true`,
+  mechanism `NONE`: an accepted surface, signed off, with the DACL recorded as the reason.
+
+**E1 and E8 are untouched by this, and never rested on it.** Reaching windows requires
+attaching to the window **station** and a desktop — `SetProcessWindowStation` with a handle
+to the station at `WINSTA_*` rights. A handle to the containing directory confers none of
+that. E1 and E8 were each measured directly, against their own sentinels and a same-round
+baseline, with their own positive controls. Asserted by a test.
+
+**E4's mechanism weakened as a consequence, correctly.** It used to inherit E2's mechanism
+when the clipboard read found nothing. With no measured cross-session window-station result
+to inherit, a not-found now names no mechanism at all: `UNDETERMINED`, pending verdict
+`INVALID`, never `BOUNDED`. An unexplained block is not containment.
+
+---
+
 ## 5. E2 — the first route was RUN and found incapable
 
 Worth recording in full, because it is the exact failure this whole set exists to catch, and
@@ -261,12 +317,60 @@ its first real invocation. Fixed. **Rule 1 again, and it paid again.**
 
 ---
 
+## 5c. Execution boundary — DESIGN ONLY, not implemented
+
+**The problem, stated as the Owner did.** The assistant ran the real measurement path twice
+in the Owner's own session 3, destroying the live clipboard sentinel. The proximate cause was
+a flag that failed to bind. The *actual* problem is that the assistant had the ability to run
+a measurement path in the Owner's session at all. `exit 14` is a good backstop but it lives
+**inside the script**, so it protects only against the failure modes the script's author
+anticipated — and the author is the party that keeps getting this wrong.
+
+**What a structural boundary would have to satisfy**
+
+1. It holds when the script is buggy, edited, or replaced.
+2. It does not depend on the assistant choosing correctly.
+3. It fails CLOSED — an unknown state refuses to measure.
+4. It is auditable after the fact: a refusal leaves a record.
+
+**Option A — the probes refuse to run except as the Companion account.** One line near the
+top of every measurement script: if the current identity is not `AromaOperator`, refuse and
+exit. Cheap, immediate, and it would have stopped both incidents outright.
+*Limit:* still script-internal, so it shares the weakness above — but it is a different and
+much simpler predicate than a flag, and it is the same shape as the `hostname` check that
+already guards the other repo. **Recommended as the immediate step.**
+
+**Option B — the probe directory is unreadable to the Owner's interactive account.** Today
+`C:\AromaOperator-Probe` denies AromaOperator *write*; it does not deny louis *read and
+execute*. Invert the second half: grant execute to AromaOperator only. Then running a probe
+as louis fails at the filesystem, before a single line parses, and no script cooperation is
+required. **This is the real structural answer.**
+*Cost:* the Owner must still be able to stage files there — so staging is done elevated,
+which is already the case, and read-back for hash verification needs an elevated shell.
+
+**Option C — measurement requires a token the Owner's session cannot mint.** The probe reads
+a one-shot manifest that only the session-gate task creates, in session 5, on the Companion's
+logon. Without it the probe halts. Part B already has exactly this shape — the manifest nonce
+— but the top-up deliberately does not consume it, which is why the top-up had no such gate.
+*Cost:* couples every probe to a Part A precondition chain; the handoff argues the top-up
+should not need one. Worth revisiting only if A and B prove insufficient.
+
+**Recommendation: B as the boundary, A as the belt.** A is minutes of work and closes the
+observed hole today; B removes the assistant's ability to execute the path at all, which is
+what was actually asked for. Both leave a record: A writes a refusal line, B produces an
+access-denied that cannot be mistaken for a measurement.
+
+**Not implemented.** Owner asked for the design first.
+
+---
+
 ## 6. Tier B — 4 of 11
 
 | ID | Verdict | Mechanism |
 |---|---|---|
 | E1 enumerate other-session windows | **BOUNDED** | SESSION-ISOLATION |
-| E2 open other-session winsta container | **NOT RUN** | top-up, re-pinned — §5 |
+| E2 open other-session **window station** | **NOT PROVEN — NO ROUTE** | retired, unmeasurable — §5a |
+| E2a open other-session winsta **container** | **NOT RUN** | accepted surface, Everyone by design — §5a |
 | E3 open other-session desktop | **NOT RUN** | top-up; expected NOT PROVEN — §5 |
 | E4 other-session clipboard | **NOT RUN** | top-up; PENDING-VERIFY until step 4b — §5b |
 | E5 enumerate other-session processes | **ACCEPTED** | none — known-visible surface |

@@ -258,7 +258,7 @@ if ($SELF_TEST) {
     Add-Row -Id $Id -Target $Target -AccessMask $Mask -Note 'self-test synthetic row' -Data $d
   }
   & $mk 'POS-open-own-winsta'  ('\Sessions\' + $mySession + '\Windows') 0x0001 'ACCEPTED' 'PERMITTED' $null
-  & $mk 'E2-open-other-session-winsta' '\Sessions\3\Windows' 0x0001 'BOUNDED' 'ACL' $null
+  & $mk 'E2a-open-other-session-winsta-directory' '\Sessions\3\Windows' 0x0001 'ACCEPTED' 'NONE' $null
   & $mk 'POS-read-own-clipboard' 'own session clipboard' $null 'ACCEPTED' 'PERMITTED' $null
 
   switch ($SELF_TEST_MODE) {
@@ -306,22 +306,34 @@ Add-Row -Id 'POS-open-own-winsta' -Target $ownDirPath -AccessMask $DIRECTORY_QUE
   -Data @{ verdict = $pv; mechanism = $(if ($pOpened) { 'PERMITTED' } else { 'UNDETERMINED' })
            ntStatus = ('0x{0:X8}' -f $pSt); ownStationName = $ownStationName; residueLeft = $false }
 
+# ── E2a, AN ACCEPTED SURFACE - NOT A NEGATIVE ───────────────────────────────
+# This opens the CONTAINING DIRECTORY, and that directory grants Everyone
+# QUERY|TRAVERSE|READ_CONTROL by design. Measured DACL, identical for sessions 0, 3 and 5 and
+# for the global \Windows:
+#
+#   D:(A;;CCDCRC;;;WD)(A;;CCDCLCSWSDRCWDWO;;;SY)(A;;CCDCLCSWSDRCWDWO;;;S-1-5-90-0-N)
+#        ^^^^^^ ^^ Everyone
+#
+# A NON-ADMINISTRATOR token opened another session's copy. That is the ACE working as
+# specified. Asserting this false would report a VIOLATION every run against a documented
+# world-readable object, and a boundary that cries wolf is worse than no boundary. So it is
+# recorded and signed off, exactly like E5 - and the registered E2, the window station
+# ITSELF, stays NOT PROVEN because no route to it exists. See the register.
 $e2Target = '\Sessions\' + $otherSession + '\Windows'
 $e2Opened = $false
 $e2St = [NtObj]::TryOpenDirectory($e2Target, [uint32]$DIRECTORY_QUERY, [ref]$e2Opened)
-$e2mech = Classify-Ntstatus -Status $e2St
-$e2v = 'INVALID'
-if ($e2Opened) { $e2v = 'VIOLATION'; $e2mech = 'NONE' }
-elseif ($e2mech -eq 'ACL') { $e2v = 'BOUNDED' }
-# ABSENT-EXISTENCE stays INVALID on purpose. A target that is not there proves nothing, and
-# the Win32 route returned the same code for a session that exists and one that does not.
-$e2v = Gate-OnControl -Verdict $e2v -ControlVerdict $pv
-Add-Row -Id 'E2-open-other-session-winsta' -Target $e2Target -AccessMask $DIRECTORY_QUERY `
-  -Note 'object-manager route; the Win32 OpenWindowStation route was run and found incapable - it refuses a qualified path even for our own station' `
+$e2v = if ($e2Opened) { 'ACCEPTED' } else { 'INVALID' }
+$e2mech = if ($e2Opened) { 'NONE' } else { Classify-Ntstatus -Status $e2St }
+Add-Row -Id 'E2a-open-other-session-winsta-directory' -Target $e2Target -AccessMask $DIRECTORY_QUERY `
+  -Note 'ACCEPTED SURFACE, not a negative: Everyone holds QUERY|TRAVERSE|READ_CONTROL on this directory by design. The WinSta0 leaf is NOT reached - see E2, which is registered UNMEASURABLE.' `
   -Data @{ verdict = $e2v; mechanism = $e2mech; ntStatus = ('0x{0:X8}' -f $e2St)
            controlVerdict = $pv; ownStationName = $ownStationName
            leafObjectReached = $false
+           leafNtStatus = '0xC0000034 STATUS_OBJECT_NAME_NOT_FOUND - a window station is not a Directory, so this lookup can never find it'
            residueLeft = $false }
+# E2 itself is deliberately NOT emitted. The register marks it unmeasurable and crossCheck
+# refuses a row under it, because a row would claim a measurement that did not happen.
+$e2v = 'NOT-EMITTED'
 
 # ═══════════════════════════════════════════════════════════════════════════
 # E3 - a desktop inside that window station
@@ -349,8 +361,6 @@ else {
   # not containment and it is not scored as any.
   $e3step = if ($e3err -eq 161) {
     'name - OpenDesktop does not accept a qualified path, so the desktop object was never reached. NOT PROVEN, and not scoreable by this route.'
-  } elseif ($e2v -eq 'BOUNDED') {
-    'container - the window-station container was refused first, so the DESKTOP DACL was never reached and nothing is claimed about it'
   } else { 'desktop' }
   if ($e3err -eq 5) { $e3v = 'BOUNDED'; $e3mech = 'ACL' }
 }
@@ -417,10 +427,12 @@ if (-not $clipAttested) {
     $e4v = 'CONTAINMENT-FAILURE'; $e4mech = 'NONE'
     $e4step = 'the owner-seeded clipboard string reached this session'
   } else {
-    # We did not get it. The mechanism is only nameable via the window station, which E2
-    # measured - and that is reported as such rather than dressed up as an independent result.
-    $e4mech = if ($e2v -eq 'BOUNDED') { $e2mech } else { 'UNDETERMINED' }
-    $e4pending = if ($e4mech -ne 'UNDETERMINED') { 'BOUNDED' } else { 'INVALID' }
+    # We did not get it - but nothing here can NAME why. The clipboard is per-window-station,
+    # and no route to another session's window station exists (E2 is registered unmeasurable),
+    # so there is no measured mechanism to attribute this to. An unexplained block is not
+    # containment: UNDETERMINED, and the pending verdict is INVALID rather than BOUNDED.
+    $e4mech = 'UNDETERMINED'
+    $e4pending = 'INVALID'
     $e4pending = Gate-OnControl -Verdict $e4pending -ControlVerdict $cv
     $e4v = 'PENDING-VERIFY'
     $e4step = 'window-station - the clipboard is per-window-station, so this is E2 mechanism reported again, NOT independent evidence about the clipboard object'
