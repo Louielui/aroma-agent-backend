@@ -114,14 +114,21 @@ controls, not three:** `POS-list_windows-own` and `POS-capture_screen`.
   cheerful `ok`.
 - `stage3-harness.ps1` applies the same guard where it adjudicates the row.
 
-**Still open — one number would settle the root cause.** Read `nodeCount` out of
-`stage3-uia.json` (695 bytes, needs elevation):
-- `nodeCount = 0` → the sentinel window genuinely exposes no descendants; the target was
-  wrong and the fix is the rule above plus a better UIA target.
-- `nodeCount > 0` with 0 bytes → every per-node read threw and the empty catch ate them all;
-  a swallowed-error path, and a violation of working rule 5.
+**SETTLED — `nodeCount = 0`.** *(Owner read it from `stage3-uia.json`, 2026-07-30.)*
 
-Either way the rule was required, so nothing waits on the answer.
+The two branches were:
+- `nodeCount = 0` → the sentinel window genuinely exposes no descendants; **the target was
+  wrong**, and the fix is the rule above plus a better UIA target.
+- `nodeCount > 0` with 0 bytes → every per-node read threw and the empty catch ate them all.
+
+**It is the first.** The window exposed nothing to enumerate, so the probe measured an absence
+of *subject*, not an absence of *access* — which is exactly the vacuous positive control the
+rule now refuses to score. The swallowed catch was still a real defect and its fix stands, but
+it was **not** what produced the 0-byte file.
+
+**Consequence for the register:** any future UIA row needs a target that actually exposes
+descendants before its result means anything. A zero against this target would still be
+vacuous.
 
 ---
 
@@ -788,7 +795,8 @@ elevation is not optional (C-4 in §5b):
    identity gate and **halt (exit 13) without them**. `stage3-owner-clip.ps1` and
    `restrict-probe-dir.ps1` are **not** staged — they run Owner-side from the repo.
    `Copy-Item` into the directory still works under Gate B.
-4. **`nodeCount` from `stage3-uia.json`** (§3) — the one number still outstanding.
+4. ~~**`nodeCount` from `stage3-uia.json`** (§3)~~ — **DONE. It is 0** (Owner, 2026-07-30). The
+   target exposed no descendants; see §3. Nothing outstanding here.
 5. **`.\restrict-probe-dir.ps1 -Status`** only. **Do NOT re-run `-Apply`:** it is already
    applied and verified (`louis` gets PermissionDenied on a staged file). `-Apply` happens to be
    idempotent — .NET merges an identical ACE — but it writes a fresh ACL baseline and makes a
@@ -984,3 +992,47 @@ re-minted with the nonce rotated. Case 3 reproduces `1e80253806ce` and resolves 
 - **`ROUND_CAP = 3` did not engage here**, because the failure was adjudicated as a Part B
   failure and sealed rather than retried. Worth confirming on the next run whether a harness
   exit should retry within the visit or stop — it currently stops.
+
+### Launcher 3 — the report reader *(added 2026-07-30, at the Owner's instruction)*
+
+`Report-Reader-Launcher.ps1`, icon **`Aroma 報告 —— 攞返驗收報告`** on the Owner's desktop. One
+press, one UAC prompt, no typing. It copies **every** commissioning round out to
+`C:\Aroma\Commissioning-Reports` — explicitly granted to the Owner rather than relying on
+inheritance, since a missing inherited grant is the original problem — and writes an `INDEX.txt`
+listing every file with its SHA-256.
+
+Not scoped to one round: any future report is retrievable by pressing the same icon.
+
+**Strictly read-only on the evidence.** It copies out and never writes, moves or deletes under
+the evidence root; a reader that can damage the record is not a reader. Pinned by test.
+
+The Owner's point stands and is recorded: round `1e80253806ce` was diagnosed **from source
+alone**. The diagnosis was sound and independently reproduced in a sandbox, but **inference is
+not reading**, and until this launcher existed nobody had read the two reports.
+
+### A second bug the same round exposed — and it was in the fix, not the original
+
+**The operator's icon was placed on the OWNER's desktop.** Found by listing the desktop after
+placing icon 3, not by any test.
+
+Cause: `User Shell Folders` values are `REG_EXPAND_SZ`, and `Get-ItemProperty` **expands them
+against the current process environment**. Reading *another* account's `%USERPROFILE%\Desktop`
+therefore returns *this* user's desktop — which then passes `Test-Path` and looks like a
+perfectly good answer. Measured directly: ACP on this machine is **1252**, and the raw-vs-
+expanded read differs.
+
+Fixed in two layers, because the first layer only fixes this instance:
+1. read the raw value with `DoNotExpandEnvironmentNames` and substitute the profile root manually
+2. **discard any resolved desktop that is not under that account's own profile root** — which
+   makes the entire class of error impossible rather than this one occurrence
+
+The stray icon was removed from the Owner's desktop. It was harmless (launcher 2 refuses to run
+outside the Companion account) but it contradicted the one-page guide, which says that icon
+lives on the *other* account's desktop.
+
+**Related measurement, worth keeping:** `WScript.Shell.CreateShortcut` **cannot** save a
+Chinese-named shortcut on this machine at all — ACP 1252 has no representation for the
+characters, and it fails even in an ASCII directory. It also returns a **blank** shortcut object
+on read-back instead of erroring, so a naive verification of a never-written icon reports
+success. Every icon is therefore built at an ASCII temp path, verified there, and copied into
+place.

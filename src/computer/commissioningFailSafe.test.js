@@ -32,6 +32,7 @@ test('the commissioning scripts exist and are the expected set', () => {
   for (const need of ['commissioningCore.ps1', 'commissioningSelfCheck.ps1', 'commissioningPrepare.ps1',
                       'commissioningLock5.ps1', 'commissioningLock5Operator.ps1',
                       'Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1',
+                      'Report-Reader-Launcher.ps1', 'bootstrap-owner-icon.ps1',
                       'install-commissioning.ps1']) {
     assert.ok(set.includes(need), 'missing: ' + need)
   }
@@ -76,7 +77,8 @@ test('*** every failure routes through the ONE fail-safe screen ***', () => {
 test('*** every catch block in a launcher ends in CX-Fail ***', () => {
   // A catch that merely logs, or one that lets execution continue, would leave Louie looking
   // at a half-finished screen with no instruction. Both launchers wrap everything.
-  for (const f of ['Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1']) {
+  for (const f of ['Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1',
+                   'Report-Reader-Launcher.ps1']) {
     const c = code(f)
     const catches = (c.match(/\bcatch\s*\{/g) || []).length
     assert.ok(catches >= 1, f + ' has a top-level catch')
@@ -231,6 +233,38 @@ test('*** the two desktop icon names match what the guide tells Louie to look fo
   assert.match(inst, /-Name 'Aroma 第二步 —— 操作員檢查'/)
   assert.match(own, /'Aroma 第二步 —— 操作員檢查\.lnk'/,
     'launcher 1 must look for exactly the name the installer creates')
+
+  // The report reader is a THIRD icon, pressed after the visit rather than during it. It is
+  // owner-side, so the bootstrap can place it without elevation - and must, for the same
+  // reason icon 1 must: nothing else runs before it.
+  const boot = fs.readFileSync(path.join(DIR, 'bootstrap-owner-icon.ps1'), 'utf8')
+  assert.match(inst, /-Name 'Aroma 報告 —— 攞返驗收報告'/)
+  assert.match(boot, /-Name 'Aroma 報告 —— 攞返驗收報告' -Script 'Report-Reader-Launcher\.ps1'/)
+  assert.match(boot, /-Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher\.ps1'/)
+})
+
+test('*** the report reader can retrieve every round, and never writes to the evidence ***', () => {
+  // WHY IT EXISTS: the commissioning reports live under the evidence root, which needs
+  // elevation to read (handoff §10). Round 1e80253806ce was therefore diagnosed from source
+  // alone - sound, but inference is not reading. This is what makes the reports readable.
+  const rd = code('Report-Reader-Launcher.ps1')
+
+  // It must elevate itself. Louie answers UAC; he is never told to right-click.
+  assert.match(rd, /Verb RunAs/, 'the reader must self-elevate')
+
+  // EVERY round, not the latest one: the point is that any future report is retrievable too.
+  assert.match(rd, /Get-ChildItem -LiteralPath \$script:CX_CommissionRoot -Directory/,
+    'it must enumerate all rounds, not a single named one')
+
+  // READ-ONLY on the evidence. A reader that can damage the record is not a reader. Nothing
+  // may remove, move or overwrite anything under the evidence root.
+  for (const m of rd.matchAll(/(Remove-Item|Move-Item|Set-Content|Out-File)[^\n]*/g)) {
+    assert.equal(/CX_CommissionRoot|CX_EvidenceRoot|\$srcDir|\$f\.FullName/.test(m[0]), false,
+      'the reader must never write to the evidence: ' + m[0].slice(0, 70))
+  }
+  // and the copy direction is out of the evidence, never into it
+  assert.match(rd, /Copy-Item -LiteralPath \$f\.FullName -Destination \$target/,
+    'copies must go from the evidence to the destination')
 })
 
 test('*** the FIRST icon has a named creator and is never assumed to exist ***', () => {
@@ -286,6 +320,19 @@ test('*** desktop locations are resolved, never hardcoded to \\Users\\<name>\\De
     'Resolve-DesktopPaths must not use a leading comma: the caller re-wraps with @()')
   assert.match(inst, /\$desktops = @\(Resolve-DesktopPaths/,
     'and the caller must wrap with @() so the empty case is really count 0')
+
+  // MEASURED during round 1e80253806ce: the OPERATOR's icon was placed on LOUIS's desktop.
+  // Cause: User Shell Folders values are REG_EXPAND_SZ, and Get-ItemProperty expands them
+  // against the CURRENT PROCESS environment - so reading another account's
+  // "%USERPROFILE%\Desktop" returns *this* user's desktop, which then passes Test-Path and
+  // looks like a perfectly good answer.
+  assert.equal(/Get-ItemProperty -Path \$k -Name 'Desktop'/.test(inst), false,
+    "another account's shell folders must not be read through the expanding API")
+  assert.match(inst, /DoNotExpandEnvironmentNames/,
+    'the raw value must be read and substituted manually')
+  // and the belt that makes the whole class impossible, not just this instance
+  assert.match(inst, /\$out \| Where-Object \{ \$_ -notlike \(\$root \+ '\\\*'\) \}/,
+    "any desktop outside that account's own profile must be discarded")
 })
 
 test('*** shortcut names in Chinese are built via an ASCII path, not saved directly ***', () => {

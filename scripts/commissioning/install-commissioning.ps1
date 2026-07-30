@@ -30,7 +30,8 @@ $ErrorActionPreference = 'Stop'
 $src = Join-Path $Repo 'scripts\commissioning'
 $files = @('commissioningCore.ps1','commissioningPrepare.ps1','commissioningLock5.ps1',
            'commissioningLock5Operator.ps1','commissioningSelfCheck.ps1','install-commissioning.ps1',
-           'Owner-Sentinel-Launcher.ps1','Operator-Verification-Launcher.ps1')
+           'Owner-Sentinel-Launcher.ps1','Operator-Verification-Launcher.ps1',
+           'Report-Reader-Launcher.ps1')
 
 if (-not $Quiet) { Write-Host '=== install commissioning launchers ===' -ForegroundColor Cyan }
 foreach ($f in $files) {
@@ -99,12 +100,30 @@ function Resolve-DesktopPaths {
   # the account is signed in - which launcher 1 has already required by this point)
   try {
     $sid = (New-Object Security.Principal.NTAccount($env:COMPUTERNAME, $Account)).Translate([Security.Principal.SecurityIdentifier]).Value
-    $k = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
-    $v = (Get-ItemProperty -Path $k -Name 'Desktop' -ErrorAction Stop).Desktop
-    $v = $v -replace '%USERPROFILE%', $root
-    $v = [Environment]::ExpandEnvironmentVariables($v)
-    if ($v -and (Test-Path -LiteralPath $v) -and -not $out.Contains($v)) { $out.Add($v) }
+    # RAW, NOT EXPANDED. These values are REG_EXPAND_SZ, and Get-ItemProperty expands them
+    # against the CURRENT PROCESS environment - so another account's "%USERPROFILE%\Desktop"
+    # comes back as *this* user's desktop. MEASURED: that is how the operator's icon was
+    # placed on louis's desktop during round 1e80253806ce. Never expand another user's value.
+    $rk = [Microsoft.Win32.Registry]::Users.OpenSubKey("$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders")
+    if ($rk) {
+      try {
+        $v = $rk.GetValue('Desktop', $null, [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
+        if ($v) {
+          $v = $v -replace '%USERPROFILE%', $root
+          if ($v -and (Test-Path -LiteralPath $v) -and -not $out.Contains($v)) { $out.Add($v) }
+        }
+      } finally { $rk.Close() }
+    }
   } catch { }
+
+  # THE BELT: nothing outside that account's own profile is that account's desktop. This is
+  # what makes the whole class of error impossible rather than just the one instance above -
+  # any future path that resolves somewhere else is dropped rather than written to.
+  $bad = @($out | Where-Object { $_ -notlike ($root + '\*') })
+  foreach ($b in $bad) {
+    Write-Host ("  ignoring a desktop outside " + $Account + "'s profile: " + $b) -ForegroundColor Yellow
+    [void]$out.Remove($b)
+  }
   # NO leading comma here. MEASURED: `return ,$arr` read back through the caller's @(...)
   # yields a 1-element array holding the array - count=1 EVEN WHEN EMPTY - which would make
   # the caller's "no desktop found" throw unreachable and hand Join-Path an array. The leading
@@ -164,6 +183,10 @@ New-Launcher -Account $OwnerAccount `
   -Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher.ps1'
 New-Launcher -Account $OperatorAccount `
   -Name 'Aroma 第二步 —— 操作員檢查' -Script 'Operator-Verification-Launcher.ps1'
+# Not part of the two-press commissioning sequence - it is pressed AFTERWARDS, whenever a report
+# needs to come back out. Refreshed here so it always points at the installed copy.
+New-Launcher -Account $OwnerAccount `
+  -Name 'Aroma 報告 —— 攞返驗收報告' -Script 'Report-Reader-Launcher.ps1'
 
 Write-Host ''
 if (-not $Quiet) { Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan }
