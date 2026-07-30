@@ -1036,3 +1036,36 @@ characters, and it fails even in an ASCII directory. It also returns a **blank**
 on read-back instead of erroring, so a naive verification of a never-written icon reports
 success. Every icon is therefore built at an ASCII temp path, verified there, and copied into
 place.
+
+---
+
+## 13. PRE-PUBLICATION CLEANUP LIST — required before any widening of repo access
+
+*(Owner ruling 2026-07-30. Recorded, deliberately NOT actioned that day.)*
+
+**The rule.** These items are acceptable **only for as long as `aroma-agent-backend` stays
+PRIVATE with its current collaborator set. Every one of them must be handled BEFORE any of:**
+
+- making the repository public
+- adding a collaborator, team, or outside contributor
+- granting any CI/CD service, bot, or integration read access to the tree
+- publishing, mirroring, or exporting the history anywhere
+
+Note that **rewriting the working tree is not enough** — these values are in committed history,
+so removing them means history rewriting (`git filter-repo`) or accepting that the history
+remains readable. Decide which before, not after.
+
+| # | Item | Where | Class | Action before opening up |
+|---|---|---|---|---|
+| 1 | Companion account **SID** `S-1-5-21-…-1009` | `docs/governance/EVIDENCE-002-session5-containment-rerun.md:21`, inside a quoted measurement | Internal sensitive topology — **accepted** while private (Owner ruling, same class as account names and absolute paths) | Redact to a placeholder; the measurement's meaning does not depend on the literal value |
+| 2 | Owner **business email** `louie@aromabistro741.com` | `src/capability/dispatcher.test.js`, `src/utils/readContextLog.test.js` | Almost certainly intentional test fixture | Replace with a fixture address (`owner@example.test`) |
+| 3 | **Account and machine names** — `AromaOperator`, `louis`, `AROMABRAIN` | ~67 occurrences across the commissioning and probe scripts | Accepted while private | Parameterise or scrub; note the scripts will not run unmodified afterwards |
+| 4 | **Absolute paths** revealing the containment layout | 73 addition lines: probe dir, Gate B DENY target, gate-script location, evidence root, staging dir | Accepted while private | Same treatment as #3 |
+
+**Why #3 and #4 matter more than they look.** Together they disclose *which account is
+constrained and exactly where the boundary sits* — that is the containment design itself, not
+merely a path. Fine inside a private repo; it is a map for anyone who should not have it.
+
+**None of these is a credential.** No key, token, password or SID-with-secret-value grants
+access to anything. This list is about disclosure, not compromise, and nothing here required
+the 2026-07-30 push to be held.
