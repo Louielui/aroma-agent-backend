@@ -484,6 +484,62 @@ reaching the scripts becomes a **deliberate, visible act** — taking ownership 
 anyone does by mistake, and it leaves an ACL that no longer matches what `-Status` expects.
 `-Status` reports the directory owner on every run for that reason.
 
+#### DESIGN RULE — an elevated owner-side tool must NOT read staged files
+
+The two controls collided the first time they met: `register-observer-task.ps1` line 78 does
+`Get-FileHash` on the staged `observer.ps1`, and Gate B denies exactly that. The rule that
+falls out, and it is the general one:
+
+> **When an owner-side elevated tool needs to know something about a staged file, it reads the
+> REPO SOURCE, and verification of what actually LANDED is deferred to a session-5 probe that
+> can read. Gate B is never lifted to make a tool work.**
+
+Three permitted moves, in order:
+
+1. **Read the source instead.** The tool almost always just copied the file there, so the repo
+   copy is what it meant to record. This is what `register-observer-task.ps1` now does.
+2. **Defer the reality check to a session-5 row.** Reading the source records *intent* and
+   assumes the copy was faithful — genuinely weaker, and it must be compensated, not waved
+   through. `C8-observer-script-sha-matches-pin` hashes the STAGED file as AromaOperator and
+   compares it to the pin, so a bad copy surfaces as a failing row instead of as nothing.
+3. **If neither works, the tool belongs in session 5** — that is a signal about where the tool
+   should live, not a reason to revert the boundary.
+
+**Never** `-Revert` Gate B for a utility. The boundary is the deliverable; the utility is a
+convenience, and reverting a verified control so a convenience keeps working inverts the two.
+
+**Measured interaction surface**, so the next tool does not have to find out by colliding:
+
+| operation on a staged file, as elevated Owner | under Gate B | measured |
+|---|---|---|
+| `Get-FileHash` / `Get-Content` (needs ReadData) | **DENIED** | yes |
+| `Get-ChildItem` on the directory (needs ListDirectory) | **DENIED** | yes |
+| `Get-Item .Length` (needs ReadAttributes) | **works** | yes — returned 14216 |
+| `Get-Acl` (needs READ_CONTROL) | **works** | yes |
+| `Set-Acl` (needs WRITE_DAC) | works | not re-measured |
+| `Copy-Item` INTO the directory | works | previously measured |
+
+**The complete list of scripts that touch the probe directory**, so nobody discovers the next
+one by hitting it:
+
+| script | runs as | affected? |
+|---|---|---|
+| `register-observer-task.ps1` | Owner, elevated | **YES — line 78, fixed** |
+| `restrict-probe-dir.ps1 -Status` | Owner, elevated | **YES — its own self-proof, fixed below** |
+| `relocate-probe.ps1` | Owner, elevated | only `Test-Path` + copy-in; first-time setup |
+| `verify-staging.ps1` | Owner, elevated | **NO** — targets `ComputerOperator-Companion`, a different tree |
+| Lock 3 sweep | Owner, elevated | **NO** — targets the evidence directory |
+| `deploy-companion.ps1` | Owner, elevated | **NO** — Companion staging tree |
+| `stage3-harness` / `-topup` / `-lock5` / `tierA-probe` / `observer` | AromaOperator, session 5 | **NO** — explicit ALLOW |
+
+**A defect Gate B caused in its own checker.** `-Status` used `Get-ChildItem` to pick a file to
+test. Gate B denies ListDirectory, so once applied the enumeration returned nothing, the count
+was zero, and **the read test was silently skipped** — the one check that proves the gate works
+was disabled by the gate working, and a control that stops reporting when it succeeds is
+indistinguishable from one that never ran. `-Status` now targets a **known name**, reports
+"directory listable" as evidence in its own right, and flags the inconsistent case where a DENY
+is present yet the file still reads.
+
 #### WHAT CHANGES FOR THE OWNER'S WORKFLOW
 
 | operation | under Gate B | why |

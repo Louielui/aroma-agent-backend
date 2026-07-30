@@ -642,6 +642,34 @@ test('*** Gate B states its own limit rather than claiming to be absolute ***', 
   assert.match(b, /-Revert/)
 })
 
+test('*** no elevated owner-side tool reads a staged file under Gate B ***', () => {
+  // The two controls collided the first time they met: register-observer-task.ps1 hashed the
+  // STAGED observer, and Gate B denies exactly that. The rule is that the tool changes, not
+  // the boundary — reverting a verified control so a utility keeps working inverts the two.
+  const reg = fs.readFileSync(path.join(SCRIPTS, 'register-observer-task.ps1'), 'utf8')
+  assert.match(reg, /\$Source = Join-Path \$RepoScripts \$ScriptName/, 'it hashes the repo source')
+  assert.match(reg, /Get-FileHash -LiteralPath \$Source/)
+  assert.equal(/Get-FileHash -LiteralPath \$Staged/.test(stripPs(reg)), false,
+    'and no longer the staged copy')
+  // the weakening is compensated, not waved through
+  assert.match(reg, /C8-observer-script-sha-matches-pin/,
+    'the write-time check is weaker, so it names the session-5 row that verifies reality')
+})
+
+test('*** Gate B did not silently disable its own checker ***', () => {
+  // -Status used Get-ChildItem to pick a file to test. Gate B denies ListDirectory, so once
+  // applied the enumeration returned nothing and the read test was SKIPPED — the one check
+  // that proves the gate works, disabled by the gate working. A control that stops reporting
+  // when it succeeds is indistinguishable from one that never ran.
+  const b = fs.readFileSync(path.join(SCRIPTS, 'restrict-probe-dir.ps1'), 'utf8')
+  assert.match(b, /\$known = Join-Path \$ProbeDir 'observer\.ps1'/, 'the target is a KNOWN name')
+  assert.match(b, /directory LISTABLE by this token/, 'and unlistability is reported as evidence')
+  assert.match(b, /INCONSISTENT: a DENY ACE is present but the file is still readable/,
+    'a DENY that does not bite is reported, not assumed impossible')
+  const code = stripPs(b)
+  assert.equal(/\$probe\[0\]\.FullName/.test(code), false, 'no discovered-file dependence remains')
+})
+
 test('*** the probes report their own staged hashes, since the Owner can no longer read them ***', () => {
   // Under Gate B, Get-FileHash on a staged file fails for the Owner. Verification therefore
   // moves inside session 5: the probe prints what it actually loaded.

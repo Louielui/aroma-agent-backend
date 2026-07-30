@@ -114,15 +114,30 @@ if ($Status) {
   Write-Host "LIMIT: an elevated shell can take ownership and rewrite this DACL. Gate B prevents" -ForegroundColor Yellow
   Write-Host "accidents, not the Owner. Treat a changed owner or a missing DENY as a deliberate act." -ForegroundColor Yellow
 
-  # Prove the effect rather than describe it: try to read one staged file AS THIS TOKEN.
-  $probe = @(Get-ChildItem -LiteralPath $ProbeDir -Filter '*.ps1' -File -ErrorAction SilentlyContinue | Select-Object -First 1)
-  if (@($probe).Count) {
-    try {
-      $null = Get-FileHash -LiteralPath $probe[0].FullName -Algorithm SHA256 -ErrorAction Stop
-      Write-Host ("readable by THIS token (" + (whoami) + ") : YES  -> " + $probe[0].Name) -ForegroundColor Yellow
-    } catch {
-      Write-Host ("readable by THIS token (" + (whoami) + ") : NO   -> " + $probe[0].Name) -ForegroundColor Green
-    }
+  # ── PROVE THE EFFECT, AND DO NOT USE ENUMERATION TO DO IT ─────────────────
+  # The first version did Get-ChildItem on the directory to pick a file to test. Gate B denies
+  # ListDirectory, so once applied the enumeration returned NOTHING, `@($probe).Count` was 0,
+  # and the whole read test was SILENTLY SKIPPED. The one check that proves the gate works was
+  # disabled by the gate working. A control that stops reporting when it succeeds is
+  # indistinguishable from one that was never run.
+  #
+  # So the target is a KNOWN NAME, not a discovered one, and "the directory cannot be listed"
+  # is itself reported as evidence rather than swallowed.
+  $listable = $false
+  try { $null = @(Get-ChildItem -LiteralPath $ProbeDir -Force -ErrorAction Stop); $listable = $true } catch { }
+  Write-Host ("directory LISTABLE by this token : " + $listable) -ForegroundColor $(if ($listable) { 'Yellow' } else { 'Green' })
+
+  $known = Join-Path $ProbeDir 'observer.ps1'
+  $readable = $null
+  try { $null = Get-FileHash -LiteralPath $known -Algorithm SHA256 -ErrorAction Stop; $readable = $true }
+  catch { $readable = $false; $readErr = $_.Exception.GetType().Name }
+  Write-Host ("staged file READABLE by this token: " + $readable + "   (" + $known + ")") -ForegroundColor $(if ($readable) { 'Yellow' } else { 'Green' })
+  if ($readable -eq $false) { Write-Host ("  refused with: " + $readErr) -ForegroundColor Green }
+
+  if ($readable -and $deny.Count) {
+    Write-Host ""
+    Write-Host "INCONSISTENT: a DENY ACE is present but the file is still readable by this token." -ForegroundColor Red
+    Write-Host "Check the directory owner above - the DACL may have been rewritten." -ForegroundColor Red
   }
   exit 0
 }

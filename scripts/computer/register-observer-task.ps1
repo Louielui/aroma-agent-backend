@@ -74,9 +74,31 @@ if (-not $loggedOn) {
 # ---------------------------------------------------------------------------
 # stage the observer read-only and pin its hash
 # ---------------------------------------------------------------------------
+# ── HASH THE REPO SOURCE, NOT THE STAGED COPY ───────────────────────────────
+# GATE B collided with this line. restrict-probe-dir.ps1 denies the Owner ReadData on the
+# probe directory, so `Get-FileHash` on $Staged now fails with Access Denied — and this
+# script runs as the Owner, elevated.
+#
+# The fix is to change the tool, NOT to lift the boundary. Reverting a verified control so
+# one utility can keep working inverts the priority: the boundary is the deliverable and the
+# utility is a convenience.
+#
+# WHAT THIS COSTS, STATED PLAINLY. Hashing $Staged verified what actually landed. Hashing the
+# SOURCE records what was SENT and assumes Copy-Item was faithful. That is genuinely weaker,
+# and it is NOT left uncompensated:
+#
+#   C8-observer-script-sha-matches-pin, in tierA-probe.ps1, hashes the STAGED file and
+#   compares it to the SHA recorded in this description — running as AromaOperator, in
+#   session 5, which is the account that CAN read it.
+#
+# So the writer records intent and a reader in the capable session verifies reality. A bad
+# copy shows up as a failing C8 rather than as nothing at all.
 Copy-Item -LiteralPath (Join-Path $RepoScripts $ScriptName) -Destination $Staged -Force
-$hash = (Get-FileHash -LiteralPath $Staged -Algorithm SHA256).Hash
-$bytes = (Get-Item -LiteralPath $Staged).Length
+$Source = Join-Path $RepoScripts $ScriptName
+$hash = (Get-FileHash -LiteralPath $Source -Algorithm SHA256).Hash
+# .Length needs FILE_READ_ATTRIBUTES, which Gate B does not deny, so this still reads the
+# staged file - but it is taken from the source too, so the two figures describe one thing.
+$bytes = (Get-Item -LiteralPath $Source).Length
 
 # explicit DENY on write, explicit ALLOW read+execute. Explicit ACEs are evaluated before
 # inherited ones, so this does not depend on reasoning about inheritance order - and
