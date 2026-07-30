@@ -1,6 +1,6 @@
 # Phase 3b — handoff
 
-**Updated 2026-07-29 (second revision of the day).** Branch `feat/computer-3b-observation`.
+**Updated 2026-07-29 (fourth revision of the day).** Branch `feat/computer-3b-observation`.
 `main` untouched. `COMPUTER_OPERATOR` off, `src/app.js` 0 references, 8090 untouched.
 
 **Phase 3b is NOT closed.** Part B executed and returned `STAGE 3 COMPLETE`, but Tier B is
@@ -23,7 +23,7 @@ revision of this file quoted "1600 tests, 1595 pass, 0 fail, 4 skipped", and 159
 1599. The number never added up. **This is the same defect as the 24 / 26 / 23 row count in
 §2 — a figure quoted rather than measured, propagating because nobody re-derived it.**
 
-*(After this round's work the suite is **1638 / 1634 pass / 0 fail / 4 skipped**.)*
+*(Measured at this revision: **1657 / 1653 pass / 0 fail / 4 skipped**. Re-measure it rather than quoting this line — see working rule 9.)*
 
 **2. The stated HEAD was stale.** The previous revision said `HEAD 5c9e1b9`; the actual HEAD
 was `51bdf3e`, which is the commit that wrote that very sentence. Harmless in effect,
@@ -42,12 +42,14 @@ that describes the previous build is a drifted record, no different from a drift
 |---|---|
 | Evidence-directory PNG contents | **CHECKED — see §2. Non-vacuous, but 3 of 5 images, not 5** |
 | `obs-*.uia.txt` 0 bytes | **EXPLAINED — see §3. It was a vacuous positive control** |
-| E4 clipboard sentinel gate | **CLOSED — see §5b. PENDING-VERIFY until step 4b** |
+| E4 clipboard sentinel gate | **CLOSED, and E4 is RESOLVED — protocol complete, verdict INVALID (structural). §5b** |
 | Lock 3 (7-day retention) | **CODE CORRECTED — not yet exercised against the real store** |
+| Lock 5 | **HARNESS WRITTEN — see §5e. Not yet run.** |
+| Observer task in Tier A | **C6–C9 ADDED — see §5d. Not yet run.** |
 | Tier B | **4 of 11 adjudicated**; the top-up is written and not yet run |
-| Assertion-ID integrity | **NOW ENFORCED — `assertionRegistry`, 44 entries, cross-checked** |
+| Assertion-ID integrity | **NOW ENFORCED — `assertionRegistry`, 49 entries, cross-checked** |
 | Cross-session containment | **NOT PROVEN** |
-| Test suite | 1638 tests, 1634 pass, 0 fail, 4 skipped |
+| Test suite | 1657 tests, 1653 pass, 0 fail, 4 skipped |
 
 ---
 
@@ -337,6 +339,15 @@ one careless click ends the round.
 structural expression of C-3: one paste before the window opens, Enter afterwards, nothing in
 between.
 
+**C-4 — every owner-side step that writes the evidence directory must run ELEVATED.**
+`stage3-owner-clip.ps1` writes the seed attestation and the verify record. A non-elevated
+session 3 cannot write there; the attestation failed exactly that way once, and the run that
+worked was an elevated window. **The step list said "NOT elevated" twice anyway** — the same
+class of error as a quoted number, and corrected in the script header, the checklist and here.
+Elevation does not affect the clipboard: it is per window station and shared across integrity
+levels within a session, so an elevated console seeds the same clipboard, and session 5 still
+cannot reach it — which is the thing E4 tests.
+
 The general rule behind all three: **if a sentinel occupies a channel, that channel is
 unavailable for work — and the protocol must be designed around its absence, not around the
 Owner remembering it is absent.**
@@ -620,49 +631,73 @@ evidence directory and the deletion is observed there.
 
 Collected here so it is one sitting, in order. Nothing below is run by the assistant.
 
-**ORDER MATTERS.** Hash verification happens BEFORE Gate B is applied, and everything that
-reads the probe directory happens in session 5 afterwards.
+**ORDER MATTERS, and three things were wrong in the previous version — all caught by the
+Owner reading it against the machine rather than against the text.** Gate B is already
+applied. The kill bindings cannot run in session 5. E4 is finished.
 
-**Session 3, elevated:**
+**Session 3, ELEVATED** — every owner-side step here writes the evidence directory, so
+elevation is not optional (C-4 in §5b):
 
-1. **Back up the observer task baseline, then re-register it** — `observer.ps1` changed hash,
-   so the SHA in the task description is stale (§ the checklist). Copy
-   `observer-task-baseline.xml` to a dated `-pre-uiafix-` name first; the script overwrites it
-   in place with no copy kept.
-2. **Hash the REPO copies and compare against the checklist table.** Do this now, while the
-   repo is the source — after step 5 the staged copies are unreadable to you, by design.
+1. **Back up the observer task baseline, then re-register it.** `observer.ps1` changed hash, so
+   the SHA in the task description is stale. Copy `observer-task-baseline.xml` to a dated
+   `-pre-uiafix-` name FIRST — the script overwrites it in place with no copy kept.
+2. **Hash the REPO copies against the checklist table.** Under Gate B you cannot hash the
+   staged copies, by design; the repo is the source and the checklist lists repo values.
 3. **Stage** into `C:\AromaOperator-Probe`: `stage3-topup.ps1`, `assertionRegistry.ps1`,
-   `probeIdentityGate.ps1` and `assertion-registry.json` beside `observer.ps1`, plus the
-   updated `stage3-harness.ps1` and `tierA-probe.ps1`. All three probes now dot-source the
-   register and the identity gate and **halt (exit 13) without them**.
-   `stage3-owner-clip.ps1` is **not** staged — it runs Owner-side from the repo.
-4. **`nodeCount` from `stage3-uia.json`** in the evidence directory (§3).
-5. **`.\restrict-probe-dir.ps1 -Status`**, then **`-Apply`**, then **`-Status`** again.
-   The second `-Status` must report `readable by THIS token : NO`. Gate B is live from here.
+   `probeIdentityGate.ps1`, `assertion-registry.json`, `stage3-lock5.ps1`, and the updated
+   `stage3-harness.ps1` and `tierA-probe.ps1`. All probes dot-source the register and the
+   identity gate and **halt (exit 13) without them**. `stage3-owner-clip.ps1` and
+   `restrict-probe-dir.ps1` are **not** staged — they run Owner-side from the repo.
+   `Copy-Item` into the directory still works under Gate B.
+4. **`nodeCount` from `stage3-uia.json`** (§3) — the one number still outstanding.
+5. **`.\restrict-probe-dir.ps1 -Status`** only. **Do NOT re-run `-Apply`:** it is already
+   applied and verified (`louis` gets PermissionDenied on a staged file). `-Apply` happens to be
+   idempotent — .NET merges an identical ACE — but it writes a fresh ACL baseline and makes a
+   system change for no reason, and a needless write is how a control's provenance gets muddied.
 
 **Session 5, as AromaOperator:**
 
 6. **`.\stage3-topup.ps1 -SelfTest`** — zero side effects. Confirms the reporting path writes
-   files on that machine under that account, and that the register loads from the staged copy.
-   *(This replaces the old step 7: under Gate B you cannot run it as louis.)*
+   files on that machine under that account and that the register loads from the staged copy.
 7. Note the **staged-file table** the probe prints at startup and compare it to the checklist.
-   This is now the only way to verify the staged hashes, and it is the intended way.
+   Under Gate B this is the only way to verify the staged hashes, and it is the intended way.
+8. **`.\tierA-probe.ps1`** — now emits `C6`–`C9`. **`C9` attempts to repoint the Observer task
+   and restores it**, backing the definition up to `observertask-backup-<nonce>.xml` first; it
+   HALTS rather than proceeding if it cannot prove the task was put back.
+9. **`.\stage3-lock5.ps1`** — starts the observation stand-in, prints its pid and its natural
+   end, then **waits**. Leave the window open.
 
-**Session 3, NOT elevated — ONE COMMAND, then Enter. Copy nothing after this paste:**
+**Session 3, ELEVATED — while Lock 5 waits:**
 
-7b. **Turn console QuickEdit OFF** for the session-3 window (properties → uncheck QuickEdit
-   Mode). With it on, a click-drag selects and the next Enter copies — the console displaying
-   the instructions is itself a clipboard writer. See C-2 in §5b.
-8. **`.\stage3-owner-clip.ps1 -SeedThenVerify`**
-   It seeds, prints a short command to **TYPE** in session 5, waits while watching the
-   sentinel, and on Enter verifies, clears and prints the E4 verdict. The nonce stays in the
-   process; you are never asked for it. Copy anything you still need BEFORE this paste.
-9. **In session 5, as AromaOperator — TYPE** the command it prints (`.\stage3-topup.ps1`).
-   **Do not paste it**; pasting overwrites the sentinel and wastes the round. That is why it
-   is short.
-10. Back in session 3, **press Enter**. Nothing else. Exit 0 means E4 resolved; any other exit
-    means it did not, and the message says which.
-11. **Lock 3** against the real evidence directory: a sweep run and its deletions observed.
+10. **Run the three kill bindings** (`deploy-companion.ps1` driving `demo-killswitch.js`, one
+    fresh Companion each). They have always run here and cannot run anywhere else:
+    `deploy-companion.ps1` lives under `C:\Aroma`, which AromaOperator cannot read and cannot
+    elevate to. **Switching sessions does not disturb Lock 5** — the stand-in is a process, not a
+    window; disconnecting session 5 does not end it, `Get-Process` is machine-wide, and the
+    heartbeat file records that it stayed alive while you were away. Do **not log off** session 5.
+
+**Session 5:**
+
+11. Back in the Lock 5 window, **press Enter**. It re-measures the observation and then runs
+    L5-3. `CONFIRMED` on L5-1 means the observation survived — the declared gap, now measured.
+    If the stand-in reached its own natural end first the row reads **INVALID / VOID**, not a
+    finding: re-run with a longer `-ObservationSeconds`.
+
+**Session 3, ELEVATED:**
+
+12. **Lock 3** against the real evidence directory: a sweep run and its deletions observed.
+
+**E4 IS FINISHED — IT IS NOT IN THIS LIST.** The protocol completed on nonce `2c44dc772a56`:
+sentinel held, top-up ran against that seed, pending verdict released, `protocol: complete`,
+`retryUseful: false`. The answer is INVALID and the reason is structural.
+
+The register has since grown 45 → 49, so a stored `registryFingerprint` no longer matches
+today's. **That does not invalidate the run, and it was checked rather than assumed:** comparing
+the pinned fields of all **12** ids the top-up emits, between the 45-entry projection the staged
+top-up ran against and the current 49-entry one — **0 changed**. The only delta is four ADDED
+Tier A ids (`C6`–`C9`), which the top-up does not emit. No row's meaning moved, so re-running
+E4 would produce the same INVALID for the same structural reason. A step that cannot change its
+own outcome does not belong in a checklist.
 
 **Session 5 must stay signed in throughout.** No sign-out, no reboot, no sleep.
 

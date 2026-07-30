@@ -35,7 +35,19 @@
 #
 # THE CLIPBOARD IS OVERWRITTEN. Copy anything you still need BEFORE starting.
 #
-# Usage (session 3, as the Owner, NOT elevated):
+# ── RUN ELEVATED. MEASURED, TWICE. ─────────────────────────────────────────
+# This script WRITES THE EVIDENCE DIRECTORY (the seed attestation and the verify record), and
+# a non-elevated session 3 cannot write there - the attestation failed exactly that way once,
+# and the run that worked was an elevated window. The instruction said "NOT elevated" twice
+# anyway. It is corrected here, in the checklist and in the handoff:
+#
+#   ANY OWNER-SIDE STEP THAT WRITES THE EVIDENCE DIRECTORY MUST RUN ELEVATED.
+#
+# Elevation does not affect the clipboard: it is per window station, shared across integrity
+# levels within a session, so an elevated console seeds the same clipboard a non-elevated one
+# would - and session 5 still cannot reach it, which is what E4 tests.
+#
+# Usage (session 3, as the Owner, ELEVATED):
 #   .\stage3-owner-clip.ps1 -SeedThenVerify     <- the supported route. One paste, then Enter.
 #   .\stage3-owner-clip.ps1 -Seed
 #   .\stage3-owner-clip.ps1 -Verify [-Nonce <n>]
