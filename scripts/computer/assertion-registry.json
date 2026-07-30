@@ -1,6 +1,6 @@
 {
   "schema": "aroma.assertionRegistry.v1",
-  "fingerprint": "97632623fb42a2fed8df72f533465fa628c14e590ccf617e9560f6c062d112a4",
+  "fingerprint": "77182f82fa250544ea4e5ec8e6025be0095f41269c1d26c1aef6682f099e7423",
   "count": 49,
   "assertions": [
     {
@@ -40,7 +40,7 @@
     {
       "id": "C4b-gate-script-sha",
       "title": "the pinned gate script still hashes to the recorded value",
-      "target": "C:\\Aroma\\ComputerOperator-Companion\\session-identity.ps1",
+      "target": "C:\\Aroma\\ComputerOperator-Gate\\session-identity.ps1",
       "targetPattern": null,
       "accessMask": null,
       "mechanism": [

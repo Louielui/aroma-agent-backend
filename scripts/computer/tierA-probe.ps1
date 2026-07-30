@@ -254,7 +254,10 @@ if (-not $c4Safe) {
 # The SHA pin binds the FILE; C4 measures the POINTER. Both have to line up, so both are
 # checked here rather than one being inferred from the other.
 # ---------------------------------------------------------------------------
-$StagedGateScript = 'C:\Aroma\ComputerOperator-Companion\session-identity.ps1'
+# MOVED out of the Companion staging tree, which is DELETED and rebuilt by
+# deploy-companion.ps1 and by rollback-companion.ps1. The file was destroyed there and only
+# this row noticed. The SHA below is UNCHANGED - same file, new location.
+$StagedGateScript = 'C:\Aroma\ComputerOperator-Gate\session-identity.ps1'
 $StagedGateSha    = '98A474BC6EC12F2E16D235098C8B323750225FE0BACF23CCBF340632CBF31C67'
 
 Probe -Id 'C4a-gate-action-intact' -Target $GateTask `

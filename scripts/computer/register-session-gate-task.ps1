@@ -35,12 +35,29 @@ $ErrorActionPreference = 'Stop'
 $TaskName    = 'AromaComputerOperator-SessionGate'
 $AccountName = 'AromaOperator'
 $Qualified   = $env:COMPUTERNAME + '\' + $AccountName
+# ── THE GATE SCRIPT LIVES IN ITS OWN DIRECTORY. IT USED TO LIVE IN STAGING. ──
+# It was DESTROYED there, by a re-stage, and only one Tier A row ever noticed (C4b).
+#
+# The cause was structural, not careless: the staging directory had FOUR writers with
+# CONTRADICTORY CONTRACTS over one location, and they cannot all be true —
+#
+#   deploy-companion.ps1        "this directory EQUALS the derived closure; I DELETE and
+#                                rebuild it"                       (Remove-Item -Recurse)
+#   rollback-companion.ps1      deletes it outright                (Remove-Item -Recurse)
+#   register-session-gate-task  "I keep session-identity.ps1 here, forever"
+#   verify-staging.ps1          asserts staging EQUALS the closure — but enumerates
+#                               `-Filter *.js`, so it is STRUCTURALLY BLIND to this .ps1
+#
+# Putting the file back and relying on the new re-stage guard would leave TWO deleters and
+# ONE guard, plus a verifier that cannot see the file at all. Position beats procedure: this
+# directory has ONE writer — this script — and nothing rebuilds it.
+$GateDir     = 'C:\Aroma\ComputerOperator-Gate'
 $StageDir    = 'C:\Aroma\ComputerOperator-Companion'
 $EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence'
 $RepoScripts = 'C:\Aroma\aroma-agent-backend\scripts\computer'
 $PowerShell  = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
 $ScriptName  = 'session-identity.ps1'
-$StagedScript = Join-Path $StageDir $ScriptName
+$StagedScript = Join-Path $GateDir $ScriptName
 $OutFile     = Join-Path $EvidenceDir 'session-identity-task.json'
 
 Write-Host "=== Phase 3b - session gate task ===" -ForegroundColor Cyan
@@ -52,7 +69,13 @@ $fail = @()
 if (-not (Get-LocalUser -Name $AccountName -ErrorAction SilentlyContinue)) { $fail += "$AccountName does not exist" }
 if (-not (Test-Path -LiteralPath $PowerShell)) { $fail += "powershell.exe not found at $PowerShell" }
 if (-not (Test-Path -LiteralPath (Join-Path $RepoScripts $ScriptName))) { $fail += "missing source script: $ScriptName" }
-if (-not (Test-Path -LiteralPath $StageDir)) { $fail += "staging directory missing - run deploy-companion.ps1 first" }
+    # The gate directory is created by THIS script and by nothing else - see the note above.
+    # The staging directory is deliberately NOT required any more: this script no longer
+    # writes there, and coupling the gate to a directory that gets rebuilt is what broke it.
+if (-not (Test-Path -LiteralPath $GateDir)) {
+  New-Item -ItemType Directory -Force -Path $GateDir | Out-Null
+  Write-Host ("created gate directory: " + $GateDir) -ForegroundColor Green
+}
 foreach ($c in 'Register-ScheduledTask','New-ScheduledTaskPrincipal','New-ScheduledTaskAction') {
   if (-not (Get-Command $c -ErrorAction SilentlyContinue)) { $fail += "required cmdlet missing: $c" }
 }
@@ -80,11 +103,50 @@ if (-not $loggedOn) {
 # ---------------------------------------------------------------------------
 # stage the probe read-only, and pin its hash
 # ---------------------------------------------------------------------------
+# ── C4 DISCIPLINE: BASELINE AND BACK UP BEFORE CHANGING THE TASK ────────────
+# Re-registering DESTROYS and recreates the task. If anything below fails half-way, the only
+# route into session 5 is gone - and that costs the whole Part A precondition chain. So the
+# existing definition is exported and backed up FIRST. No baseline, no destructive change.
+function HashStr { param([string]$s)
+  $sha = [Security.Cryptography.SHA256]::Create()
+  try { ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($s)) | ForEach-Object { $_.ToString('x2') }) -join '' }
+  finally { $sha.Dispose() }
+}
+$stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+$gateXmlBefore = $null
+try { $gateXmlBefore = (Export-ScheduledTask -TaskName $TaskName -ErrorAction Stop | Out-String) } catch { }
+if ($gateXmlBefore) {
+  $bk = Join-Path $EvidenceDir ('sessiongate-backup-pre-gatedir-' + $stamp + '.xml')
+  # WriteAllText, NOT Set-Content: Set-Content appends its own trailing newline, which is what
+  # made C7 structurally unable to pass. Measured: 1346 written, 1348 read back.
+  [IO.File]::WriteAllText($bk, $gateXmlBefore, (New-Object Text.UTF8Encoding($true)))
+  Write-Host ""
+  Write-Host ("prior definition backed up : " + $bk) -ForegroundColor Green
+  Write-Host ("  sha : " + (HashStr $gateXmlBefore))
+} else {
+  Write-Host ""
+  Write-Host "no existing task to back up (first registration, or it is already gone)." -ForegroundColor Yellow
+}
+
+# ---------------------------------------------------------------------------
+# stage the probe read-only, and pin its hash
+# ---------------------------------------------------------------------------
 Copy-Item -LiteralPath (Join-Path $RepoScripts $ScriptName) -Destination $StagedScript -Force
 $hash = (Get-FileHash -LiteralPath $StagedScript -Algorithm SHA256).Hash
+$srcHash = (Get-FileHash -LiteralPath (Join-Path $RepoScripts $ScriptName) -Algorithm SHA256).Hash
 Write-Host ""
 Write-Host ("staged probe : " + $StagedScript)
 Write-Host ("SHA-256      : " + $hash)
+# The copy is VERIFIED, not assumed. This directory is readable by the Owner (unlike the
+# Gate-B probe directory), so the strong check is available here and is used.
+if ($hash -ne $srcHash) {
+  Write-Host ""
+  Write-Host "*** ABORT: the staged copy does not match the repo source. Nothing registered. ***" -ForegroundColor Red
+  Write-Host ("  source : " + $srcHash) -ForegroundColor Red
+  Write-Host ("  staged : " + $hash) -ForegroundColor Red
+  return
+}
+Write-Host "copy verified against the repo source." -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 # register the ONE fixed task
@@ -97,7 +159,9 @@ if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue) {
 # Arguments are FIXED. No -Command, no caller input, no variable part except the two
 # absolute paths this script controls.
 $argString = '-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $StagedScript + '" "' + $OutFile + '"'
-$action = New-ScheduledTaskAction -Execute $PowerShell -Argument $argString -WorkingDirectory $StageDir
+# WorkingDirectory is the GATE directory now, not staging. Pointing the working directory at
+# a tree that gets deleted and rebuilt is the same defect as pointing the script there.
+$action = New-ScheduledTaskAction -Execute $PowerShell -Argument $argString -WorkingDirectory $GateDir
 
 # Interactive token: runs only while that user is logged on, and no password is stored.
 $principal = New-ScheduledTaskPrincipal -UserId $Qualified -LogonType Interactive -RunLevel Limited

@@ -203,6 +203,61 @@ test('*** the observer-task baseline now has a READER ***', () => {
   assert.match(probe, /C9 modified the Observer task and the restore did not reproduce/)
 })
 
+test('*** the gate script lives where NOTHING rebuilds it ***', () => {
+  // It used to live in the Companion staging directory and was DESTROYED there by a re-stage.
+  // The cause was structural: four writers with contradictory contracts over one location —
+  // deploy-companion.ps1 deletes and rebuilds it, rollback-companion.ps1 deletes it,
+  // register-session-gate-task.ps1 wanted to keep a file there forever, and verify-staging.ps1
+  // asserts staging EQUALS the closure while enumerating `-Filter *.js`, so it was
+  // structurally blind to the .ps1 it was supposed to police.
+  //
+  // Putting it back and relying on the new re-stage guard would leave TWO deleters, ONE guard,
+  // and a blind verifier. Position beats procedure.
+  // Plain string containment, not a regex. Backslash-heavy Windows paths inside a JS regex
+  // inside a PowerShell string literal need four levels of escaping, and the first attempt got
+  // one level wrong and asserted against a path with a doubled separator.
+  const GATE = 'C:\\Aroma\\ComputerOperator-Gate'
+  const reg = fs.readFileSync(path.join(SCRIPTS, 'register-session-gate-task.ps1'), 'utf8')
+  assert.ok(reg.includes("$GateDir     = '" + GATE + "'"), 'the gate script has its own directory')
+  assert.equal(/\$StagedScript = Join-Path \$StageDir/.test(stripPs(reg)), false,
+    'and it is no longer written into the staging tree')
+  assert.match(reg, /-WorkingDirectory \$GateDir/,
+    'the working directory moved too - pointing it at a rebuilt tree is the same defect')
+
+  // C4 discipline on a destructive change: baseline and back up before re-registering
+  assert.match(reg, /sessiongate-backup-pre-gatedir-/)
+  assert.match(reg, /WriteAllText/, 'and the backup avoids the Set-Content trailing-newline trap')
+
+  // the probe follows the file
+  const probe = fs.readFileSync(path.join(SCRIPTS, 'tierA-probe.ps1'), 'utf8')
+  assert.ok(probe.includes("$StagedGateScript = '" + GATE + "\\session-identity.ps1'"),
+    'the probe targets the new location')
+})
+
+test('*** C4b moved LOCATION, not MEANING — so the id is kept, unlike E2 ***', () => {
+  // The distinction the register exists to make. The assertion is unchanged: "the pinned gate
+  // script is intact". Only where it lives changed, and the pinned SHA is untouched — which is
+  // itself the evidence that it is the same file being asserted about. E2 changed MEANING and
+  // was therefore retired; this one is carried over deliberately.
+  const c4b = R.get('C4b-gate-script-sha')
+  assert.equal(c4b.target, 'C:\\Aroma\\ComputerOperator-Gate\\session-identity.ps1')
+  assert.equal(c4b.expectedPermitted, true, 'the expectation is unchanged')
+  assert.equal(R.get('E2-open-other-session-winsta').status, 'unmeasurable',
+    'contrast: E2 changed meaning and was retired rather than retargeted')
+
+  // and the SHA the probe pins is still the original one
+  const probe = fs.readFileSync(path.join(SCRIPTS, 'tierA-probe.ps1'), 'utf8')
+  assert.match(probe, /\$StagedGateSha\s+=\s+'98A474BC6EC12F2E16D235098C8B323750225FE0BACF23CCBF340632CBF31C67'/)
+})
+
+test('*** a re-stage refuses to destroy files it cannot account for ***', () => {
+  const dep = fs.readFileSync(path.join(SCRIPTS, 'deploy-companion.ps1'), 'utf8')
+  assert.match(dep, /REFUSING TO RE-STAGE: files here are not in the derived closure/)
+  assert.match(dep, /throw 'refusing to destroy undeclared files in the staging directory'/)
+  assert.match(dep, /\[switch\]\$ForceRestage/, 'the override exists, is off by default')
+  assert.match(dep, /-ForceRestage: DESTROYING/, 'and it says what it is destroying')
+})
+
 test('*** C8 says it is a RECORD check, not an enforcement ***', () => {
   // The observer SHA lives in the task DESCRIPTION. Task Scheduler verifies no hash and
   // nothing reads that string at run time, so the task starts either way. Claiming this row
@@ -346,7 +401,7 @@ test('*** POS-read_uia_tree-own requires a NON-EMPTY tree ***', () => {
 const PINNED = {
   "C4-modify-gate-task": "654275eb04580dfdf85d16896ef5cf8f0ecfd523e710870fa8a7400e882f15b6",
   "C4a-gate-action-intact": "eab0bd0b82457a48436524e5d8b99483e51dfca344930b92fe3ea8bc22fe9fb4",
-  "C4b-gate-script-sha": "33270756634ffeb8a18b999c5a0a5e5396b93c39f8755e83fea076c67bad47ab",
+  "C4b-gate-script-sha": "3e410797c274b9b71ac10e97698c1f3c9683ee15a167ea591b3410db20367f57",
   "C5-read-gate-task": "dcb6fda11045d26240055c51cc5643e1b73eeb1ef5ecac2be3c030f0b711862f",
   "C6-observer-task-pointer": "45a36d2cb63ce2ec54461c87e6fbb62c9f5e883e8409297903a06de7908c0872",
   "C7-observer-task-xml-baseline": "a4a84ef787bc38b0a06d3f51e9fa766ba4e64e4e04890422a819dcf5fca1a74f",

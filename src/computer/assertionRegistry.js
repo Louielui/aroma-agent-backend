@@ -110,9 +110,20 @@ const ENTRIES = [
     doesNotImply: 'nothing about the file it points at — that is C4b'
   },
   {
+    // TARGET MOVED 2026-07-29. This is a LOCATION change, not a MEANING change, and the
+    // distinction is the one the register exists to make.
+    //
+    // The assertion is unchanged: "the pinned gate script is intact". What changed is where
+    // that script lives, because the old location — the Companion staging directory — is
+    // DELETED AND REBUILT by deploy-companion.ps1 and by rollback-companion.ps1, and the file
+    // was destroyed there. The pinned SHA is UNTOUCHED (98A474BC…), which is itself the
+    // evidence that it is the same file being asserted about.
+    //
+    // Contrast E2, which was RETIRED: there the meaning changed, so the id could not be
+    // carried over. Here it can, and the fingerprint changes only because target is pinned.
     id: 'C4b-gate-script-sha',
     title: 'the pinned gate script still hashes to the recorded value',
-    target: 'C:\\Aroma\\ComputerOperator-Companion\\session-identity.ps1',
+    target: 'C:\\Aroma\\ComputerOperator-Gate\\session-identity.ps1',
     mechanism: ['PERMITTED'],
     expectedPermitted: true,
     tier: 'A',
