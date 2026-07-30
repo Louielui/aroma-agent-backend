@@ -274,6 +274,32 @@ function CX-WaitForMarker {
   $null
 }
 
+# Is THIS session a remote (Terminal Services / RDP) one?
+#
+# WHY IT IS A HARD STOP, not a note in a guide. Fast user switching is a CONSOLE feature. From
+# inside an RDP session, Ctrl+Alt+Del is delivered to the local machine, and the RDP-specific
+# Ctrl+Alt+End security screen does not offer another session on the host. So step 2 of the
+# guide - switch to the Companion account - is simply not performable, and the Owner discovers
+# that only after the launcher has already prepared the machine and is sitting on a handoff.
+#
+# MEASURED 2026-07-30: the Owner was on `rdp-tcp#0`, session 3, while the guide said to attend
+# physically. A sentence in a guide does not survive the one time somebody does not re-read it.
+#
+# Two independent signals, because either alone can be wrong: TerminalServerSession is the
+# documented .NET property, and SESSIONNAME is what the session itself reports. If the Owner
+# later logs in at the console, Windows reconnects the session and BOTH flip - so this does not
+# need clearing by hand.
+function CX-IsRemoteSession {
+  $viaNet = $false
+  try { $viaNet = [Windows.Forms.SystemInformation]::TerminalServerSession } catch { }
+  $viaName = ($env:SESSIONNAME -and $env:SESSIONNAME -like 'RDP-*')
+  [pscustomobject]@{
+    isRemote = ([bool]$viaNet -or [bool]$viaName)
+    terminalServerSession = [bool]$viaNet
+    sessionName = $(if ($env:SESSIONNAME) { $env:SESSIONNAME } else { '(unset)' })
+  }
+}
+
 function CX-IsElevated {
   $p = New-Object Security.Principal.WindowsPrincipal ([Security.Principal.WindowsIdentity]::GetCurrent())
   $p.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)

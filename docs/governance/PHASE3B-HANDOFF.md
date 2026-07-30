@@ -1069,3 +1069,59 @@ merely a path. Fine inside a private repo; it is a map for anyone who should not
 **None of these is a credential.** No key, token, password or SID-with-secret-value grants
 access to anything. This list is about disclosure, not compromise, and nothing here required
 the 2026-07-30 push to be held.
+
+---
+
+## 14. Remote sessions cannot commission — and why option B was DEFERRED, not adopted
+
+*(Owner ruling 2026-07-30, after hitting this live.)*
+
+**The finding.** The Owner pressed nothing, because he was on `rdp-tcp#0` (session 3) while the
+guide said to attend physically. **Fast user switching is a CONSOLE feature.** From inside RDP,
+Ctrl+Alt+Del is delivered to the local machine, and the RDP-specific Ctrl+Alt+End security
+screen does not offer another session on the host. Step 2 of the guide therefore has **no
+button at all** from a remote session.
+
+Measured at the same time: `AROMABRAIN` is a **physical desktop** (Gigabyte X870E, RTX 5080)
+with console session 4 present and unoccupied, so attending in person is available;
+`Remote Desktop Users` is **empty**, so the constraint holds and the Companion cannot RDP in;
+`AromaOperator` is **not** an administrator.
+
+### The option that was NOT taken, and the Owner's reason for refusing it
+
+**Option B** was to remove the account switch entirely: launcher 1 triggers a scheduled task in
+session 5 — the same `LogonType Interactive` / no-stored-password mechanism the Observer and
+SessionGate tasks already use — which runs Part B headless and reports back through the
+existing file handoff. One press, from anywhere, no switching.
+
+The assistant flagged one cost: session 5 is currently `Disc`, and capture/UIA probes can behave
+differently in a disconnected session.
+
+**The Owner identified the larger cost, and it is the deciding one:**
+
+> If Lock 3 + DoD run in a `Disc` session and "eyes complete" runs in an `Active` one, the
+> record is a **mixed-condition record**. DoD step 2 is a formal acceptance that the Companion
+> can see only its own desktop — and that acceptance would rest on numbers measured under
+> different conditions from the ones the eyes were measured under.
+
+That is the same defect this phase keeps dismantling elsewhere: a conclusion resting on evidence
+gathered under conditions other than the ones it claims to describe. **All three read-only steps
+therefore run in one Active session.**
+
+**Option B is still worth building — as independent work AFTER 3b closes.** It is a convenience
+for future re-runs and must never be adopted mid-phase to save a trip, because that trades away
+the measurement conditions. Recorded here so it is picked up deliberately rather than
+rediscovered.
+
+### The structural fix, since a guide is not a control
+
+A sentence in the guide does not survive the one occasion nobody re-reads it. **Launcher 1 now
+hard-stops on a remote session**, ahead of both the operator-session check and preparation —
+i.e. before anything on the machine is touched — and reports through the ordinary fail-safe
+screen. `CX-IsRemoteSession` uses **two independent signals**, `TerminalServerSession` and
+`SESSIONNAME`: verified necessary, because in the agent's own RDP session
+`TerminalServerSession` was `True` while `SESSIONNAME` was **unset**, so the name check alone
+would have missed it. Both flip automatically if the Owner later logs in at the console, so
+nothing has to be cleared by hand. Pinned by test, including the ordering.
+
+The guide gained the same warning at the top, for the reader who has not started yet.

@@ -383,6 +383,37 @@ test('*** the commissioning round mints the manifest the HARNESS reads, every ro
     'the manifest step must run INSIDE the round loop, so each retry gets a fresh nonce')
 })
 
+test('*** a remote session is refused BEFORE the machine is touched ***', () => {
+  // MEASURED 2026-07-30: the Owner ran this from rdp-tcp#0. Fast user switching is a CONSOLE
+  // feature - from inside RDP, Ctrl+Alt+Del goes to the local machine and the security screen
+  // offers no other session on the host. So step 2 of the guide has no button at all, and
+  // without this check the Owner finds that out only after the machine has been prepared and
+  // the launcher is sitting on a handoff nobody can answer.
+  const core = code('commissioningCore.ps1')
+  assert.match(core, /function CX-IsRemoteSession/, 'the core must be able to detect a remote session')
+  // TWO independent signals: either alone can be wrong.
+  assert.match(core, /TerminalServerSession/, 'the documented .NET property')
+  assert.match(core, /SESSIONNAME -like 'RDP-\*'/, 'and what the session reports about itself')
+
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  assert.match(own, /CX-IsRemoteSession/, 'launcher 1 must check it')
+  assert.match(own, /Stage 'preflight\/remote'/, 'and stop through the fail-safe screen')
+
+  // ORDER MATTERS: it must refuse before the machine is prepared, and before the
+  // operator-session check, because it invalidates the run earlier than either.
+  const remoteAt = own.indexOf('CX-IsRemoteSession')
+  const sessAt = own.indexOf('CX-OperatorSession')
+  const prepAt = own.indexOf('commissioningPrepare.ps1')
+  assert.ok(remoteAt > 0 && sessAt > 0 && prepAt > 0, 'all three stages present')
+  assert.ok(remoteAt < sessAt, 'the remote check must precede the operator-session check')
+  assert.ok(remoteAt < prepAt, 'and must precede preparation - nothing may be changed first')
+
+  // and the guide says it too, since the guide is read before the launcher runs
+  const guide = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'docs', 'governance', 'COMMISSIONING-ONE-PAGE.md'), 'utf8')
+  assert.match(guide, /遙距連線（RDP）/, 'the guide must warn about RDP up front')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

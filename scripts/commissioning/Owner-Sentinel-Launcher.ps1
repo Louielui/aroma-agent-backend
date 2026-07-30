@@ -130,6 +130,25 @@ try {
   }
   $UI.SetStep('pre', 'ok', '旗標關閉、路徑齊全、證據資料夾寫得入')
 
+  # ── REMOTE SESSION: STOP BEFORE TOUCHING ANYTHING ────────────────────────
+  # Sits ahead of the operator-session check because it invalidates the run earlier: from RDP
+  # the account switch cannot be performed AT ALL, so preparing the machine and then handing
+  # off would strand the Owner at a step that has no button. Owner ruling 2026-07-30, after
+  # hitting exactly that.
+  $rs = CX-IsRemoteSession
+  if ($rs.isRemote) {
+    $UI.SetStep('pre', 'fail', '而家係遙距連線')
+    [void](CX-Fail -UI $UI -Nonce $null -Stage 'preflight/remote' `
+      -Reason '你而家係遙距連線（RDP），呢個驗收唔可以喺遙距做' `
+      -Detail @(
+        '第 2 步要切換 Windows 帳戶，而切換帳戶係主控台先做到嘅功能。',
+        'RDP 入面撳 Ctrl+Alt+Del 係去咗你自己部機，個保安畫面亦唔會俾另一個 session 你揀。',
+        '請去到 ' + $env:COMPUTERNAME + ' 機面前，喺主控台登入，然後再撳一次呢個圖示。',
+        '呢部機冇任何嘢被改動過。',
+        ('session name: ' + $rs.sessionName)) -Launcher 'owner')
+    $UI.Form.ShowDialog() | Out-Null; exit 1
+  }
+
   # ── THE PRECONDITION THE OWNER NAMED: is session 5 still signed in? ──────
   # If it is, switching to it needs only an unlock - no password, and the whole
   # credential risk disappears. If it is gone we stop HERE, not half way through.
