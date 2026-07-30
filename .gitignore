@@ -8,3 +8,48 @@ data
 password.txt
 rclone-b2-config.txt
 *.creds
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Computer Operator generated evidence — defense in depth
+#
+# NOTHING listed here is produced inside the repo today. Every one of these lives outside it
+# (C:\Aroma\ComputerOperator-Evidence, C:\Aroma\Commissioning-Reports, C:\AromaOperator-Probe).
+# These rules exist so that if an output path is ever mistyped or a probe is ever run with the
+# repo as its working directory, the artefact cannot be committed by accident. They protect
+# against a future mistake, not a present leak.
+#
+# ── READ THIS IF GIT IS REFUSING TO ADD YOUR FILE ──────────────────────────
+# Three of these are REPO-WIDE by filename, not confined to a directory:
+#     **/*.lnk        **/stage3-*.json        **/*-baseline*.xml
+# So a LEGITIMATE future file matching one of those names will silently fail to be added, and
+# `git add` will say nothing useful. That is the exact silent-failure shape this project keeps
+# getting bitten by, so it is written down here rather than left to be rediscovered.
+#   . to see whether a rule is the reason:   git check-ignore -v <path>
+#   . to commit a legitimate file anyway:    git add -f <path>
+# If you find yourself using -f more than once for the same kind of file, narrow the rule
+# instead — an override used routinely is a rule that is wrong.
+# ═══════════════════════════════════════════════════════════════════════════
+
+# the evidence root: probe results, captures, manifests, ACL baselines, audit markers
+**/ComputerOperator-Evidence/
+# the readable copies produced by launcher 3 (every round, with SHA-256 index)
+**/Commissioning-Reports/
+# the staged probe scripts and their output, behind the Gate B DENY boundary
+**/AromaOperator-Probe/
+# fail-safe stop reports written by any commissioning launcher — machine state, by design
+**/FAILED-*.json
+**/FAILED-*.txt
+# Part A/B harness output: run manifest, results, STARTED/COMPLETED markers, UIA dumps
+**/stage3-*.json
+# sentinel and owner-reference captures — screen contents of a live session
+**/stage3-*.png
+# observer run records and their captures/UIA text
+**/obs-*.json
+**/obs-*.png
+**/obs-*.txt
+# scheduled-task baselines exported before a change (observer task, gate task)
+**/*-baseline*.xml
+# the probe-directory ACL captured before Gate B was applied
+**/probedir-acl-pre-*.txt
+# desktop shortcuts are generated per machine by the bootstrap/installer, never source
+**/*.lnk
