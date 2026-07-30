@@ -196,7 +196,7 @@ function CX-NewUI {
 # construct at all, and that every catch block routes here.
 $script:CX_FAILSAFE_LINE1 = '已經停止 —— 而且係安全咁停低咗。'
 $script:CX_FAILSAFE_LINE2 = '已經記錄低咗。冇任何嘢需要你去修。'
-$script:CX_FAILSAFE_LINE3 = '影一張相,然後就可以停手。'
+$script:CX_FAILSAFE_LINE3 = '影一張相，然後就可以停手。'
 
 function CX-FailSafeBanner {
   param([string]$Path, [string]$Sha)

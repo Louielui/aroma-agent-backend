@@ -89,7 +89,7 @@ foreach ($b in $BINDINGS) {
 
   # the Owner side connects as the SERVICE and demonstrates this one binding
   $kd = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $Nonce -Name ('KILL-DONE-' + $b + '.json')) -TimeoutSeconds 600 `
-        -WaitBanner ('停止控制檢查:綁定 ' + $b)
+        -WaitBanner ('停止控制檢查：綁定 ' + $b)
   $bindingResults += [ordered]@{ binding=$b; ok=[bool]($kd -and $kd.ok); detail=$(if ($kd) { $kd.detail } else { 'timed out' }) }
   try { if (Get-Process -Id $cp.Id -ErrorAction SilentlyContinue) { Stop-Process -Id $cp.Id -Force -ErrorAction SilentlyContinue } } catch { }
   if (-not ($kd -and $kd.ok)) { break }

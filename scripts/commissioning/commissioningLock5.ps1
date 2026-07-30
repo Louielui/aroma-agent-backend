@@ -39,7 +39,7 @@ $demo = Join-Path $script:CX_Scripts 'demo-killswitch.js'
 
 # wait for the observation to be PROVEN in flight before any binding runs
 $inflight = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $Nonce -Name 'OBSERVATION-INFLIGHT.json') -TimeoutSeconds 600 `
-  -WaitBanner '停止控制檢查:等緊另一個帳戶開始一個觀察。'
+  -WaitBanner '停止控制檢查：等緊另一個帳戶開始一個觀察。'
 if (-not $inflight) {
   return @{ ok = $false; verdict = 'INVALID'; summary = 'the operator side never reported an observation in flight' }
 }
@@ -48,7 +48,7 @@ $results = @()
 foreach ($b in $BINDINGS) {
   if ($UI) { $UI.SetStep('lock5', 'run', ('binding ' + $b)) }
   $ready = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $Nonce -Name ('COMPANION-READY-' + $b + '.json')) -TimeoutSeconds 600 `
-    -WaitBanner ('停止控制檢查:等緊一個全新 Companion,綁定 ' + $b)
+    -WaitBanner ('停止控制檢查：等緊一個全新 Companion，綁定 ' + $b)
   if (-not $ready) {
     $results += [ordered]@{ binding=$b; ok=$false; detail='no Companion was offered' }
     [void](CX-WriteJson -Path (CX-Marker -Nonce $Nonce -Name ('KILL-DONE-' + $b + '.json')) -Object @{
@@ -76,7 +76,7 @@ foreach ($b in $BINDINGS) {
 }
 
 $done = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $Nonce -Name 'LOCK5-DONE.json') -TimeoutSeconds 900 `
-  -WaitBanner '停止控制檢查:等緊另一個帳戶重新量度觀察。'
+  -WaitBanner '停止控制檢查：等緊另一個帳戶重新量度觀察。'
 if (-not $done) {
   return @{ ok = $false; verdict = 'INVALID'; summary = 'the operator side did not report the observation result' }
 }

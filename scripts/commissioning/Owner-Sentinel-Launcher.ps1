@@ -51,11 +51,11 @@ if (-not (CX-IsElevated)) {
   exit 0
 }
 
-$UI = CX-NewUI -Title 'Aroma 第一步 —— 擁有者標記' -Subtitle $(if ($DRY) { '試跑 —— 唔會改動呢部機任何嘢' } else { '實體機驗收,第 1 步,共 2 步' })
+$UI = CX-NewUI -Title 'Aroma 第一步 —— 擁有者標記' -Subtitle $(if ($DRY) { '試跑 —— 唔會改動呢部機任何嘢' } else { '實體機驗收，第 1 步，共 2 步' })
 $UI.Banner2('開始緊……', 'info')
 
 foreach ($s in @(
-  @('inst',   '自我安裝,並喺另一個帳戶放低第二個圖示'),
+  @('inst',   '自我安裝，並喺另一個帳戶放低第二個圖示'),
   @('self',   '檢查自己嘅機件正常'),
   @('pre',    '檢查部機準備好'),
   @('sess',   '檢查操作員帳戶仲登入住'),
@@ -110,9 +110,9 @@ try {
   $UI.SetStep('pre', 'run', '')
   $problems = New-Object System.Collections.Generic.List[string]
 
-  if ($env:COMPUTER_OPERATOR) { $problems.Add('COMPUTER_OPERATOR 喺呢個環境有值,佢必須保持關閉') }
+  if ($env:COMPUTER_OPERATOR) { $problems.Add('COMPUTER_OPERATOR 喺呢個環境有值，佢必須保持關閉') }
   foreach ($p in @($script:CX_Repo, $script:CX_Scripts, $script:CX_EvidenceRoot)) {
-    if (-not (Test-Path -LiteralPath $p)) { $problems.Add('缺少必要路徑:' + $p) }
+    if (-not (Test-Path -LiteralPath $p)) { $problems.Add('缺少必要路徑：' + $p) }
   }
   if (-not (Get-LocalUser -Name $script:CX_Account -ErrorAction SilentlyContinue)) {
     $problems.Add($script:CX_Account + ' 帳戶唔存在')
@@ -121,11 +121,11 @@ try {
   try {
     $t = Join-Path $script:CX_EvidenceRoot ('.cx-write-test-' + [guid]::NewGuid().ToString('N').Substring(0,6))
     [IO.File]::WriteAllText($t, 'x'); Remove-Item -LiteralPath $t -Force
-  } catch { $problems.Add('寫唔入證據資料夾:' + $_.Exception.Message) }
+  } catch { $problems.Add('寫唔入證據資料夾：' + $_.Exception.Message) }
 
   if ($problems.Count -gt 0) {
     $UI.SetStep('pre', 'fail', ($problems -join '; '))
-    [void](CX-Fail -UI $UI -Nonce $null -Stage 'preflight' -Reason '部機而家嘅狀態,唔容許呢個啟動器繼續' -Detail $problems -Launcher 'owner')
+    [void](CX-Fail -UI $UI -Nonce $null -Stage 'preflight' -Reason '部機而家嘅狀態，唔容許呢個啟動器繼續' -Detail $problems -Launcher 'owner')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $UI.SetStep('pre', 'ok', '旗標關閉、路徑齊全、證據資料夾寫得入')
@@ -138,9 +138,9 @@ try {
   if (-not $op.signedIn) {
     $UI.SetStep('sess', 'fail', '操作員帳戶並冇登入')
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'preflight/session' `
-      -Reason ($script:CX_Account + ' 冇登入,所以今次執行無法繼續') `
+      -Reason ($script:CX_Account + ' 冇登入，所以今次執行無法繼續') `
       -Detail @(
-        '切去嗰個帳戶會需要佢嘅密碼,而呢個啟動器唔可以問你攞。',
+        '切去嗰個帳戶會需要佢嘅密碼，而呢個啟動器唔可以問你攞。',
         '嗰個 session 必須喺驗收開始之前已經登入。',
         '呢部機冇任何嘢被改動過。') -Launcher 'owner')
     $UI.Form.ShowDialog() | Out-Null; exit 1
@@ -150,7 +150,7 @@ try {
   # ── PHASE 2: PREPARE. ONLY THE KNOWN ITEMS. ──────────────────────────────
   $UI.SetStep('prep', 'run', '')
   if ($DRY) {
-    $UI.SetStep('prep', 'skip', '試跑 —— 冇重新註冊工作,冇上架檔案')
+    $UI.SetStep('prep', 'skip', '試跑 —— 冇重新註冊工作，冇上架檔案')
   } else {
     $prepDetail = & (Join-Path $PSScriptRoot 'commissioningPrepare.ps1') -UI $UI
     if (-not $prepDetail.ok) {
@@ -223,9 +223,9 @@ try {
 
     $UI.Banner2(
       "而家請切去另一個 Windows 帳戶" + "`r`n`r`n" +
-      "撳 Ctrl+Alt+Del,揀「切換使用者」,再揀 " + $script:CX_Account + "," + "`r`n" +
+      "撳 Ctrl+Alt+Del，揀「切換使用者」，再揀 " + $script:CX_Account + "," + "`r`n" +
       "然後撳嗰個桌面上「Aroma 第二步 —— 操作員檢查」個圖示。" + "`r`n`r`n" +
-      "呢個窗唔好閂。等嗰邊話完成之後,返嚟呢度。", 'wait')
+      "呢個窗唔好閂。等嗰邊話完成之後，返嚟呢度。", 'wait')
     $UI.SetFoot('回合 ' + $NONCE + '  —  等緊另一個帳戶')
 
     $done = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') `
@@ -270,12 +270,12 @@ try {
   if (-not $sealed) {
     $UI.SetStep('report', 'run', '')
     [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'part-b' `
-      -Reason ('Part B 喺 ' + $ROUND_CAP + ' 個回合內都冇通過,按裁決停止') -Detail $roundLog -Launcher 'owner')
+      -Reason ('Part B 喺 ' + $ROUND_CAP + ' 個回合內都冇通過，按裁決停止') -Detail $roundLog -Launcher 'owner')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
 
   # ── PHASE 7: LOCK 5 - ONLY NOW, AND IT CANNOT UNDO PART B ────────────────
-  $UI.SetStep('lock5', 'run', 'Part B 已封存,Lock 5 可以開始')
+  $UI.SetStep('lock5', 'run', 'Part B 已封存，Lock 5 可以開始')
   $lock5 = & (Join-Path $PSScriptRoot 'commissioningLock5.ps1') -UI $UI -Nonce $sealed.nonce -DryRun:$DRY
   $UI.SetStep('lock5', $(if ($lock5.ok) { 'ok' } else { 'fail' }), $lock5.summary)
 
@@ -309,9 +309,9 @@ try {
   $UI.SetStep('report', 'ok', $txtPath)
 
   $UI.Banner2(
-    "PART B:通過" + "`r`n" +
+    "PART B：通過" + "`r`n" +
     "LOCK 5:" + $lock5.verdict + "`r`n`r`n" +
-    "報告:" + $txtPath, $(if ($lock5.ok) { 'pass' } else { 'wait' }))
+    "報告：" + $txtPath, $(if ($lock5.ok) { 'pass' } else { 'wait' }))
   $UI.SetFoot('SHA-256 ' + (CX-Sha256File -Path $txtPath) + '   —  可以閂咗呢個窗。')
 }
 catch {

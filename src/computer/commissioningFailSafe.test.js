@@ -65,7 +65,7 @@ test('*** every failure routes through the ONE fail-safe screen ***', () => {
   // later edit cannot quietly soften or re-word them.
   assert.match(core, /CX_FAILSAFE_LINE1\s*=\s*'已經停止 —— 而且係安全咁停低咗。'/)
   assert.match(core, /CX_FAILSAFE_LINE2\s*=\s*'已經記錄低咗。冇任何嘢需要你去修。'/)
-  assert.match(core, /CX_FAILSAFE_LINE3\s*=\s*'影一張相,然後就可以停手。'/)
+  assert.match(core, /CX_FAILSAFE_LINE3\s*=\s*'影一張相，然後就可以停手。'/)
   // the banner uses all three, and the written report repeats them
   assert.match(core, /function CX-FailSafeBanner/)
   for (const n of ['CX_FAILSAFE_LINE1', 'CX_FAILSAFE_LINE2', 'CX_FAILSAFE_LINE3']) {
@@ -168,6 +168,57 @@ test('*** what Louie can SEE is in Chinese, not English ***', () => {
       assert.ok(/[一-鿿]/.test(m[2]), f + ' step label is not in Chinese: ' + m[2])
     }
     assert.match(c, /-Title 'Aroma 第[一二]步/, f + ' window title is in Chinese')
+  }
+})
+
+test('*** no character from the rare CJK Extension-A block appears anywhere ***', () => {
+  // 䇄 (U+41C4) was written for 雙 (U+96D9) three times in the guide. It is a TYPO, not a
+  // corruption: those are unrelated codepoints with no shared bytes, and corruption yields
+  // U+FFFD or Latin-1 garbage, never a different VALID ideograph.
+  //
+  // But eyeballing Cantonese for a wrong-but-valid character is exactly what fails when one
+  // person reads it alone at a machine. Ordinary Traditional Chinese lives in U+4E00-U+9FFF;
+  // anything from Extension A (U+3400-U+4DBF) in this material is a mistyped character.
+  const all = files().map((f) => path.join(DIR, f))
+  all.push(path.resolve(__dirname, '..', '..', 'docs', 'governance', 'COMMISSIONING-ONE-PAGE.md'))
+  for (const f of all) {
+    const txt = fs.readFileSync(f, 'utf8')
+    for (const ch of txt) {
+      const c = ch.codePointAt(0)
+      assert.ok(!(c >= 0x3400 && c <= 0x4DBF),
+        path.basename(f) + ' contains a rare Extension-A character ' + ch +
+        ' (U+' + c.toString(16).toUpperCase() + ') — almost certainly a mistyped ideograph')
+    }
+  }
+})
+
+test('*** nothing Louie reads is mojibake or lossy ***', () => {
+  // Round-trip the bytes: invalid UTF-8 would not reproduce them. Then look for the two
+  // signatures of a bad decode — U+FFFD, and UTF-8 bytes read as Latin-1/CP1252.
+  const all = files().map((f) => path.join(DIR, f))
+  all.push(path.resolve(__dirname, '..', '..', 'docs', 'governance', 'COMMISSIONING-ONE-PAGE.md'))
+  for (const f of all) {
+    const raw = fs.readFileSync(f)
+    const txt = raw.toString('utf8')
+    assert.ok(Buffer.from(txt, 'utf8').equals(raw), path.basename(f) + ' is not valid UTF-8')
+    assert.equal(/�/.test(txt), false, path.basename(f) + ' contains U+FFFD (a lossy decode)')
+    assert.equal(/[Â-Ã][-¿]/.test(txt), false,
+      path.basename(f) + ' contains a UTF-8-read-as-Latin-1 mojibake sequence')
+  }
+})
+
+test('*** Chinese text uses fullwidth punctuation, not halfwidth ***', () => {
+  // Mixed , : ; among 。、 reads as broken to the person it is written for, even though it is
+  // not corruption. Checked only where an ideograph is immediately adjacent, which is what
+  // keeps code punctuation out of scope.
+  for (const f of files()) {
+    const txt = fs.readFileSync(path.join(DIR, f), 'utf8')
+    for (let i = 0; i < txt.length; i++) {
+      if (!',:;'.includes(txt[i])) continue
+      const adjacent = /[一-鿿]/.test(txt[i - 1] || '') || /[一-鿿]/.test(txt[i + 1] || '')
+      assert.ok(!adjacent, f + ' uses halfwidth "' + txt[i] + '" next to Chinese: ...' +
+        txt.slice(Math.max(0, i - 12), i + 12).replace(/\r?\n/g, ' ') + '...')
+    }
   }
 })
 

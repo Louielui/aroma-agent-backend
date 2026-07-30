@@ -20,14 +20,14 @@ $ErrorActionPreference = 'Stop'
 $DRY = ($PSBoundParameters.ContainsKey('DryRun') -and [bool]$PSBoundParameters['DryRun'])
 . (Join-Path $PSScriptRoot 'commissioningCore.ps1')
 
-$UI = CX-NewUI -Title 'Aroma 第二步 —— 操作員檢查' -Subtitle $(if ($DRY) { '試跑 —— 唔會量度任何嘢' } else { '實體機驗收,第 2 步,共 2 步' })
+$UI = CX-NewUI -Title 'Aroma 第二步 —— 操作員檢查' -Subtitle $(if ($DRY) { '試跑 —— 唔會量度任何嘢' } else { '實體機驗收，第 2 步，共 2 步' })
 $UI.Banner2('開始緊……', 'info')
 foreach ($s in @(
   @('who',   '檢查係唔係正確嘅 Windows 帳戶'),
   @('ready', '接手另一個帳戶交過嚟嘅執行'),
   @('files', '報告已上架檔案'),
   @('partb', '執行 Part B 檢查'),
-  @('hand',  '把結果送返去'),
+  @('hand',  '將結果送返去'),
   @('lock5', 'Lock 5 —— 停止控制檢查'),
   @('done',  '完成')
 )) { $UI.AddStep($s[0], $s[1]) }
@@ -41,8 +41,8 @@ try {
   if ($sam -ne $script:CX_Account) {
     $UI.SetStep('who', 'fail', ('而家係以 ' + $me + ' 身分執行'))
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'identity' `
-      -Reason ('呢個啟動器必須以 ' + $script:CX_Account + ' 身分執行,而唔係 ' + $me) `
-      -Detail @('請切換 Windows 帳戶,再撳嗰個桌面上嘅圖示。','冇量度過任何嘢。') -Launcher 'operator')
+      -Reason ('呢個啟動器必須以 ' + $script:CX_Account + ' 身分執行，而唔係 ' + $me) `
+      -Detail @('請切換 Windows 帳戶，再撳嗰個桌面上嘅圖示。','冇量度過任何嘢。') -Launcher 'operator')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $UI.SetStep('who', 'ok', ($me + '  session ' + (Get-Process -Id $PID).SessionId))
@@ -60,7 +60,7 @@ try {
     $UI.SetStep('ready', 'fail', '冇任何執行喺度等緊')
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'handoff' `
       -Reason '冇任何驗收執行喺度等緊呢個帳戶' `
-      -Detail @('請先喺另一個 Windows 帳戶撳擁有者啟動器,等佢叫你切換先。','冇量度過任何嘢。') -Launcher 'operator')
+      -Detail @('請先喺另一個 Windows 帳戶撳擁有者啟動器，等佢叫你切換先。','冇量度過任何嘢。') -Launcher 'operator')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $NONCE = $round
