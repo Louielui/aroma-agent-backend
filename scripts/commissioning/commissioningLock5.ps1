@@ -13,6 +13,10 @@
 
 param($UI, [string]$Nonce, [switch]$DryRun)
 
+# Dot-source the core: this script is invoked with & from the launcher, so $script:
+# variables set in the LAUNCHER's scope are NOT visible here. The self-check caught this.
+. (Join-Path $PSScriptRoot 'commissioningCore.ps1')
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Continue'
 

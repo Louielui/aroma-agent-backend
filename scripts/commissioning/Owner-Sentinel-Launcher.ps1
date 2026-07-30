@@ -40,11 +40,13 @@ if (-not (CX-IsElevated)) {
   if ($DRY) { $argl += '-DryRun' }
   try { Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' -ArgumentList $argl -Verb RunAs | Out-Null }
   catch {
+    # Declining UAC is not an error to diagnose - it ends the run, safely, with the same three
+    # instructions every other stop uses. 'OK' only: never a Yes/No that asks Louie to decide.
     Add-Type -AssemblyName System.Windows.Forms
+    $r = CX-Fail -UI $null -Nonce $null -Stage 'elevation' -Reason 'administrator approval was not given' `
+      -Detail @('Nothing on this machine has been changed.') -Launcher 'owner'
     [Windows.Forms.MessageBox]::Show(
-      "This needs administrator approval to continue." + "`r`n`r`n" +
-      "Press the launcher again and choose Yes when Windows asks." + "`r`n`r`n" +
-      "Nothing has been changed.", 'Aroma Commissioning', 'OK', 'Warning') | Out-Null
+      (CX-FailSafeBanner -Path $r.txt -Sha $r.sha256), 'Aroma Commissioning', 'OK', 'Information') | Out-Null
   }
   exit 0
 }
@@ -53,6 +55,8 @@ $UI = CX-NewUI -Title 'Aroma - Owner Sentinel' -Subtitle $(if ($DRY) { 'DRY RUN 
 $UI.Banner2('Starting...', 'info')
 
 foreach ($s in @(
+  @('inst',   'Install itself and place the second icon'),
+  @('self',   'Check its own machinery works'),
   @('pre',    'Check the machine is ready'),
   @('sess',   'Check the Operator account is still signed in'),
   @('prep',   'Prepare tasks and staged files'),
@@ -68,6 +72,40 @@ $NONCE = $null
 $roundLog = New-Object System.Collections.Generic.List[object]
 
 try {
+  # ── PHASE 0.5: INSTALL ITSELF ────────────────────────────────────────────
+  # THERE IS ONLY ONE PERSON ON THIS MACHINE. An earlier draft said "the executor runs the
+  # installer, not Louie" - on a machine where Louie is the only human, that sentence puts him
+  # back in front of exactly the untested path it claimed to protect him from. So the launcher
+  # installs itself: copies its own files, sets the permissions, and places the second icon on
+  # the Operator desktop. Louie presses ONE icon and never learns which stage he is in.
+  $UI.SetStep('inst', 'run', '')
+  if ($DRY) {
+    $UI.SetStep('inst', 'skip', 'dry run - nothing installed')
+  } else {
+    $inst = & (Join-Path $PSScriptRoot 'install-commissioning.ps1') -Quiet 2>&1 | Out-String
+    $opIcon = Join-Path (Join-Path (Join-Path 'C:\Users' $script:CX_Account) 'Desktop') 'Aroma - Operator Check.lnk'
+    if (-not (Test-Path -LiteralPath $opIcon)) {
+      $UI.SetStep('inst', 'fail', 'the second icon could not be placed')
+      [void](CX-Fail -UI $UI -Nonce $null -Stage 'install' -Reason 'the Operator icon could not be placed on its desktop' -Detail @($inst) -Launcher 'owner')
+      $UI.Form.ShowDialog() | Out-Null; exit 1
+    }
+    $UI.SetStep('inst', 'ok', 'second icon is on the Operator desktop')
+  }
+
+  # ── PHASE 0.6: SELF-CHECK ────────────────────────────────────────────────
+  # Exercises this launcher's OWN machinery against a scratch directory - exact writes,
+  # hashing, the failure report, the marker handoff both ways - before it touches the machine.
+  # It cannot exercise the other session (that needs Louie to switch, and making him switch
+  # twice for a rehearsal is a worse trade than running the real thing behind fail-safes).
+  $UI.SetStep('self', 'run', '')
+  $sc = & (Join-Path $PSScriptRoot 'commissioningSelfCheck.ps1')
+  if (-not $sc.ok) {
+    $UI.SetStep('self', 'fail', $sc.summary)
+    [void](CX-Fail -UI $UI -Nonce $null -Stage 'self-check' -Reason 'the launcher''s own machinery did not pass its self-check' -Detail $sc.detail -Launcher 'owner')
+    $UI.Form.ShowDialog() | Out-Null; exit 1
+  }
+  $UI.SetStep('self', 'ok', $sc.summary)
+
   # ── PHASE 1: PREFLIGHT. HARD STOPS. ──────────────────────────────────────
   $UI.SetStep('pre', 'run', '')
   $problems = New-Object System.Collections.Generic.List[string]

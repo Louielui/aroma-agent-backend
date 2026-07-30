@@ -107,19 +107,43 @@ touch your own session — and writing down the proof.
 
 ---
 
-### Notes for the executor (not for Louie)
+### Design notes (not instructions — Louie's part ends above)
 
-- Run `install-commissioning.ps1` **elevated, before the visit**. It places both icons and
-  sets the directory permissions. Louie never runs it.
-- Do a **`-DryRun`** pass first: it exercises every screen and the whole file handoff without
-  measuring anything or changing machine state.
-- **Louie's account must stay signed in on both sides.** The Owner launcher hard-stops at the
-  start if `AromaOperator` is not signed in, because switching would then need a password —
-  which Louie must not be asked for. Verified present at build time: `signedIn=True, session=5`.
-- **Part B is sealed to disk before Lock 5 begins.** A Lock 5 failure cannot invalidate a Part B
-  pass; the report carries the two verdicts in separate columns.
-- Up to **3 rounds** are attempted automatically. Every round is recorded and the final report
-  names the total and each round's outcome. After the third it stops and reports.
-- Everything Louie might otherwise have to do — nonce handling, manifest minting and consuming,
-  hash verification, timeouts, cleanup, residue, audit writes, the PASS/FAIL call — is done by
-  the launchers.
+**There is one person at this machine.** Any step written as "someone else prepares this
+first" is a step Louie performs cold on a path nobody has run. So there are no such steps:
+
+- **The launcher installs itself.** Pressing the icon copies its own files, sets the
+  permissions, and places the second icon on the Operator desktop. No separate installer.
+- **It self-checks before touching anything.** Exact writes, hashing, the failure report, the
+  marker handoff in both directions — on a scratch directory, on every press. If its own
+  machinery is broken it stops there, before changing the machine.
+- **It cannot rehearse the other session.** That would mean four account switches instead of
+  two. The cross-session path runs once, live, behind the fail-safe below.
+
+**The fail-safe, which is tested rather than promised** — `commissioningFailSafe.test.js`:
+
+- No commissioning script may contain `Read-Host`, `PromptForChoice`, `ReadLine`, `ReadKey`,
+  `Get-Credential`, or a Yes/No dialog. **Asserted across every file, including failure paths.**
+- Every failure renders the same three fixed lines: *stopped safely* / *recorded, nothing for
+  you to fix* / *photo, then stop* — plus a path and a SHA-256.
+- Every launcher's outermost `catch` must reach that screen.
+- Every wait is bounded; a failing operator run still reports back, so the other side stops
+  waiting instead of hanging.
+- Part B's seal must be written **before** Lock 5 is invoked — asserted by source order.
+- Launcher 2 must not contain `Verb RunAs` or branch on elevation at all.
+
+Other properties:
+
+- **`AromaOperator` must stay signed in.** Launcher 1 hard-stops at the very start if it is
+  not, because switching would then need a password Louie must not be asked for. Measured at
+  build time: `signedIn=True, session=5`.
+- **Part B is sealed to disk before Lock 5 begins.** A Lock 5 failure cannot invalidate a Part
+  B pass; the report carries the two verdicts in separate columns.
+- Up to **3 rounds** automatically; every round recorded; the final report names the total and
+  each outcome; after the third it stops and reports.
+- Nonce handling, manifest minting and consuming, hash verification, timeouts, cleanup,
+  residue, audit writes and the PASS/FAIL call are all done by the launchers.
+
+**Still first-run-live:** `commissioningPrepare.ps1` and the two Lock 5 halves have been
+parse-checked and their core exercised, but their full paths execute for the first time during
+the visit. That is precisely what the fail-safe exists for, and why it is enforced by test.

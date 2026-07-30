@@ -1,6 +1,8 @@
 # install-commissioning.ps1 - put the two icons where Louie can press them. RUN ELEVATED.
 #
-# This is EXECUTOR work, done before the physical visit. Louie never runs this.
+# CALLED BY LAUNCHER 1 ON EVERY PRESS. There is one person at this machine, so there is no
+# separate installer step for somebody else to perform - a step described that way is a step
+# Louie performs cold, on an untested path. It is idempotent and safe to re-run.
 #
 # Two icons, two desktops:
 #   "Aroma - Owner Sentinel"  on Louie's desktop        - self-elevates when pressed
@@ -11,7 +13,11 @@
 # Owner read there, so a launcher placed there could not be started from Louie's session.
 
 #Requires -RunAsAdministrator
+# -Quiet: called BY launcher 1, which has already elevated. There is one person at this
+# machine, so a separate installer step does not exist - the launcher
+# installs itself on every press.
 param(
+  [switch]$Quiet,
   [string]$Repo = 'C:\Aroma\aroma-agent-backend',
   [string]$InstallDir = 'C:\Aroma\Commissioning',
   [string]$OwnerAccount = 'louis',
@@ -23,15 +29,16 @@ $ErrorActionPreference = 'Stop'
 
 $src = Join-Path $Repo 'scripts\commissioning'
 $files = @('commissioningCore.ps1','commissioningPrepare.ps1','commissioningLock5.ps1',
-           'commissioningLock5Operator.ps1','Owner-Sentinel-Launcher.ps1','Operator-Verification-Launcher.ps1')
+           'commissioningLock5Operator.ps1','commissioningSelfCheck.ps1','install-commissioning.ps1',
+           'Owner-Sentinel-Launcher.ps1','Operator-Verification-Launcher.ps1')
 
-Write-Host '=== install commissioning launchers ===' -ForegroundColor Cyan
+if (-not $Quiet) { Write-Host '=== install commissioning launchers ===' -ForegroundColor Cyan }
 foreach ($f in $files) {
   if (-not (Test-Path -LiteralPath (Join-Path $src $f))) { throw "missing from the repo: $f" }
 }
 if (-not (Test-Path -LiteralPath $InstallDir)) { New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null }
 foreach ($f in $files) { Copy-Item -LiteralPath (Join-Path $src $f) -Destination $InstallDir -Force }
-Write-Host ("  copied " + $files.Count + " files to " + $InstallDir) -ForegroundColor Green
+if (-not $Quiet) { Write-Host ("  copied " + $files.Count + " files to " + $InstallDir) -ForegroundColor Green }
 
 # The operator account must be able to READ and RUN the launcher it is given, and must not be
 # able to modify it. Explicit, not inherited: an inherited grant can be removed by a later
@@ -78,5 +85,5 @@ New-Launcher -DesktopPath (Join-Path (Join-Path 'C:\Users' $OperatorAccount) 'De
   -Name 'Aroma - Operator Check' -Script 'Operator-Verification-Launcher.ps1' -Elevate $false
 
 Write-Host ''
-Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan
-Write-Host 'Run a DRY RUN first: add -DryRun to the Owner launcher target and press it.' -ForegroundColor Yellow
+if (-not $Quiet) { Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan }
+Write-Host 'Launcher 1 runs this itself and self-checks before touching anything.' -ForegroundColor Yellow

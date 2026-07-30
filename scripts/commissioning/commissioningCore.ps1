@@ -187,6 +187,23 @@ function CX-NewUI {
 # NOTHING. He is not being invited to diagnose; he is being told it stopped and where the
 # report is.
 # ═══════════════════════════════════════════════════════════════════════════
+# THE ONE FAILURE SCREEN. Every failure, from every stage, renders through this and nothing
+# else. Louie is never shown a choice, a retry, a prompt or a stack trace - only these three
+# instructions, always in this order, always the same words.
+#
+# This is a GUARANTEE, and it is enforced by test, not by discipline:
+# commissioningFailSafe.test.js asserts that no commissioning script contains an interactive
+# construct at all, and that every catch block routes here.
+$script:CX_FAILSAFE_LINE1 = 'STOPPED - and it stopped safely.'
+$script:CX_FAILSAFE_LINE2 = 'It has been recorded. There is nothing for you to fix.'
+$script:CX_FAILSAFE_LINE3 = 'Take a photo of this window, then stop.'
+
+function CX-FailSafeBanner {
+  param([string]$Path, [string]$Sha)
+  ($script:CX_FAILSAFE_LINE1 + "`r`n" + $script:CX_FAILSAFE_LINE2 + "`r`n" + $script:CX_FAILSAFE_LINE3 +
+   "`r`n`r`n" + $Path + "`r`n" + 'SHA-256: ' + $Sha)
+}
+
 function CX-Fail {
   param($UI, [string]$Nonce, [string]$Stage, [string]$Reason, $Detail, [string]$Launcher)
   $dir = if ($Nonce) { CX-RoundDir -Nonce $Nonce } else { $script:CX_CommissionRoot }
@@ -210,8 +227,11 @@ function CX-Fail {
   $txt = @()
   $txt += 'AROMA COMMISSIONING - STOPPED'
   $txt += ''
+  $txt += $script:CX_FAILSAFE_LINE1
+  $txt += $script:CX_FAILSAFE_LINE2
+  $txt += $script:CX_FAILSAFE_LINE3
+  $txt += ''
   $txt += 'Nothing further is needed from you at the machine.'
-  $txt += 'Send this file to whoever is running the commissioning.'
   $txt += ''
   $txt += ('launcher : ' + $Launcher)
   $txt += ('stage    : ' + $Stage)
@@ -226,7 +246,7 @@ function CX-Fail {
 
   $sha = CX-Sha256File -Path $txtPath
   if ($UI) {
-    $UI.Banner2("STOPPED - nothing more to do here." + "`r`n" + "Report: " + $txtPath + "`r`n" + "SHA-256: " + $sha, 'fail')
+    $UI.Banner2((CX-FailSafeBanner -Path $txtPath -Sha $sha), 'fail')
     $UI.SetFoot('You may close this window.')
   }
   [pscustomobject]@{ json = $jsonPath; txt = $txtPath; sha256 = $sha }
