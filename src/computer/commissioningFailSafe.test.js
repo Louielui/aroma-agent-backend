@@ -477,6 +477,83 @@ test('*** launcher 4 runs Lock 3 without turning Louie back into the executor **
   assert.match(rc, /verdict\s*=\s*\$\(if \(\$res\.ok\)/, 'and the sweep verdict separately')
 })
 
+test('*** pressing an icon that does not apply is HARMLESS, and says so in its own words ***', () => {
+  // THE GAP THE OWNER FOUND: if Part B fails, should he still press the retention icon? The
+  // guide did not say — so he would have stood at the machine, in front of a red screen,
+  // DECIDING. That is the single thing this design exists to spare him, arriving at the last
+  // step. The icon decides instead.
+  const core = code('commissioningCore.ps1')
+  assert.match(core, /CX_NA_LINE1\s*=\s*'Part B 未通過 —— 呢一步唔適用。'/)
+  assert.match(core, /CX_NA_LINE2\s*=\s*'冇做過任何嘢，亦冇刪過任何嘢。'/)
+  assert.match(core, /CX_NA_LINE3\s*=\s*'影一張相，然後就可以停手。'/)
+  assert.match(core, /function CX-NotApplicable\b/)
+
+  // It must NOT reuse the failure screen. Nothing broke, and telling him something stopped
+  // unsafely when it merely does not apply teaches him to distrust the red screen that does
+  // matter — so the amber outcome is a separate one, and stays separate.
+  const na = core.slice(core.indexOf('function CX-NotApplicable'))
+  assert.equal(/CX_FAILSAFE_LINE/.test(na.slice(0, na.indexOf('function CX-WaitForMarker'))), false,
+    'the not-applicable screen must not borrow the failure wording')
+  assert.match(na, /'wait'/, 'and must be amber, not the red failure banner')
+})
+
+test('*** launcher 4 refuses itself when Part B did not pass — before touching anything ***', () => {
+  const rc = code('Retention-Check-Launcher.ps1')
+  assert.match(rc, /CX-NotApplicable/, 'it must have a not-applicable path')
+  assert.match(rc, /PARTB-SEALED\.json/, 'keyed on the sealed Part B verdict')
+  assert.match(rc, /\$partBVerdict -ne 'PASS'/, 'and only PASS may proceed')
+
+  // "no seal" and "sealed as FAIL" are different situations and must be reported as such.
+  assert.match(rc, /elseif \(-not \$seal\)/, 'an unsealed round must be distinguished from a failed one')
+
+  // ORDER: the gate must precede the context capture, the sweep and the DoD seal, so pressing
+  // it after a failed Part B leaves the round exactly as Part B left it.
+  const gateAt = rc.indexOf('$partBVerdict -ne')
+  for (const [what, needle] of [
+    ['the measurement context', 'New-MeasurementContext'],
+    ['the sweep', 'lock3-sweep.js'],
+    ['the DoD seal', 'CONTEXT-dod.json']
+  ]) {
+    const i = rc.indexOf(needle)
+    assert.ok(i > 0 && gateAt < i, `the Part B gate must precede ${what}`)
+  }
+  // and it is not a failure: nothing went wrong, so it must not exit non-zero
+  const tail = rc.slice(gateAt, rc.indexOf('$UI.SetStep(\'gate\', \'ok\''))
+  assert.match(tail, /exit 0/, 'a not-applicable exit is not a failure exit')
+})
+
+test('*** the report icon is safe to press at ANY time ***', () => {
+  // Owner requirement: it must be safe whenever, and KNOWN to be rather than assumed.
+  const rd = code('Report-Reader-Launcher.ps1')
+
+  // An empty store is not a failure. A red stop screen for an empty folder teaches the red
+  // screen to mean nothing, and it has to keep meaning something.
+  assert.match(rd, /CX-NotApplicable[\s\S]{0,400}exit 0/,
+    'nothing-to-copy must be an amber not-applicable, exiting 0')
+  assert.equal(/Stage 'source'/.test(rd), false, 'the old red-stop path for an empty store must be gone')
+
+  // It must not depend on a run having finished, or on any run state at all.
+  assert.equal(/PARTB-SEALED|OPERATOR-DONE|LOCK3-DONE/.test(rd), false,
+    'the reader must not gate on run state — it copies whatever exists')
+
+  // and still never writes into the evidence (re-asserted here because "safe at any time" is
+  // exactly the claim that would be broken by a later convenience feature)
+  for (const m of rd.matchAll(/(Remove-Item|Move-Item|Set-Content|Out-File)[^\n]*/g)) {
+    assert.equal(/CX_CommissionRoot|CX_EvidenceRoot|\$srcDir|\$f\.FullName/.test(m[0]), false,
+      'the reader must never write to the evidence: ' + m[0].slice(0, 70))
+  }
+})
+
+test('*** the guide answers the Part B failure question in one sentence ***', () => {
+  // The Owner asked for a definitive answer written down, because he reads this alone with
+  // nobody to ask. Pinned so it cannot soften into "it depends".
+  const guide = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'docs', 'governance', 'COMMISSIONING-ONE-PAGE.md'), 'utf8')
+  assert.match(guide, /如果 Part B 冇通過，仲使唔使撳保留期檢查？/)
+  assert.match(guide, /\*\*照撳。撳咗都唔會出事。\*\*/, 'the answer must be one unambiguous sentence')
+  assert.match(guide, /呢個圖示幾時撳都安全|幾時撳都得/, 'and the report icon must be stated as always-safe')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

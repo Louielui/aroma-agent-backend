@@ -48,8 +48,9 @@ $UI = CX-NewUI -Title 'Aroma 第四步 —— 保留期檢查' -Subtitle 'Lock 3
 $UI.Banner2('開始緊……', 'info')
 
 foreach ($s in @(
-  @('ctx',   '記錄今次量測嘅條件'),
   @('find',  '揾出今次驗收嘅回合'),
+  @('gate',  '睇 Part B 有冇通過'),
+  @('ctx',   '記錄今次量測嘅條件'),
   @('sweep', '行保留期掃描'),
   @('chain', '核對三個階段係咪同一組條件'),
   @('report','寫出報告'),
@@ -57,14 +58,13 @@ foreach ($s in @(
 )) { $UI.AddStep($s[0], $s[1]) }
 
 try {
-  # ── 1. MEASUREMENT CONTEXT FIRST, AND IT CAN REFUSE ──────────────────────
-  # Before anything is read or removed. A Lock 3 result taken while the Companion session is
-  # Disconnected cannot be joined to a Part B taken while it was Active - the DoD would be
-  # accepting numbers gathered under conditions other than the ones it describes.
-  $UI.SetStep('ctx', 'run', '')
+  # ── 1. WHICH ROUND ───────────────────────────────────────────────────────
+  $UI.SetStep('find', 'run', '')
   . (Join-Path $script:CX_Scripts 'measurementContext.ps1')
 
-  # The run this belongs to: the newest sealed commissioning round, unless told otherwise.
+  # The newest round that got as far as sealing Part B - sealed, not passed. The verdict is
+  # examined separately below, because "no seal" and "sealed as FAIL" are different situations
+  # and collapsing them would report the wrong one.
   $round = $RunId
   if (-not $round) {
     $newest = @(Get-ChildItem -LiteralPath $script:CX_CommissionRoot -Directory -Force -ErrorAction SilentlyContinue |
@@ -72,14 +72,41 @@ try {
                 Sort-Object LastWriteTime -Descending)
     if ($newest.Count -gt 0) { $round = $newest[0].Name }
   }
-  if (-not $round) {
-    [void](CX-Fail -UI $UI -Nonce $null -Stage 'context' `
-      -Reason '揾唔到一個已經封存 Part B 嘅回合' `
-      -Detail @('Lock 3 必須綁返同一次驗收，唔可以獨立成立。',
-                '請先完成 Part B（第一步同第二步），再撳呢個。') -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
-  }
 
+  # ── 2. THE GATE THE OWNER ASKED FOR ──────────────────────────────────────
+  # THE GAP THIS CLOSES: if Part B fails, should he still press this icon? The guide did not
+  # say - so he would have stood at the machine in front of a red screen deciding, which is the
+  # single thing this design exists to spare him. The icon decides instead, and pressing it
+  # after a failed Part B is now HARMLESS rather than merely inadvisable.
+  #
+  # Nothing is read, swept, sealed or removed above this point, so a not-applicable exit leaves
+  # the round exactly as Part B left it.
+  $UI.SetStep('find', $(if ($round) { 'ok' } else { 'skip' }), $(if ($round) { '回合 ' + $round } else { '揾唔到回合' }))
+  $UI.SetStep('gate', 'run', '')
+
+  $seal = $null
+  if ($round) { $seal = CX-ReadJson -Path (CX-Marker -Nonce $round -Name 'PARTB-SEALED.json') }
+  $partBVerdict = $(if ($seal -and $seal.verdict) { [string]$seal.verdict } else { $null })
+
+  if (-not $round -or -not $seal -or $partBVerdict -ne 'PASS') {
+    $why = if (-not $round) { '仲未有一次驗收行到封存 Part B 呢一步。' }
+           elseif (-not $seal) { 'Part B 未封存 —— 嗰次驗收冇行完。' }
+           else { 'Part B 嘅結果係 ' + $partBVerdict + '，唔係 PASS。' }
+    $UI.SetStep('gate', 'skip', $why)
+    [void](CX-NotApplicable -UI $UI -Nonce $round -Launcher 'retention' -Why $why `
+      -Detail @('保留期檢查只可以喺 Part B 通過之後行。',
+                'Part B 未通過之前，佢嘅結果冇嘢可以綁返去，DoD 亦唔應該封存。',
+                '冇跑過保留期掃描，冇刪過任何檔案，冇改過任何嘢。'))
+    $UI.Form.ShowDialog() | Out-Null
+    exit 0   # not a failure: nothing went wrong, and nothing was done
+  }
+  $UI.SetStep('gate', 'ok', 'Part B：通過')
+
+  # ── 3. MEASUREMENT CONTEXT, AND IT CAN REFUSE ────────────────────────────
+  # A Lock 3 result taken while the Companion session is Disconnected cannot be joined to a
+  # Part B taken while it was Active - the DoD would be accepting numbers gathered under
+  # conditions other than the ones it describes.
+  $UI.SetStep('ctx', 'run', '')
   $ctx = New-MeasurementContext -Stage 'lock3' -RunId $round
   [void](Write-MeasurementContext -Path (CX-Marker -Nonce $round -Name 'CONTEXT-lock3.json') -Object $ctx)
   if (-not $ctx.usable) {
@@ -91,9 +118,8 @@ try {
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $UI.SetStep('ctx', 'ok', ('session ' + $ctx.subjectSessionId + ' / ' + $ctx.subjectState + ' / ' + $ctx.subjectProtocol))
-  $UI.SetStep('find', 'ok', ('回合 ' + $round))
 
-  # ── 2. THE SWEEP ─────────────────────────────────────────────────────────
+  # ── 4. THE SWEEP ─────────────────────────────────────────────────────────
   $UI.SetStep('sweep', 'run', $(if ($DRY) { '試跑 —— 唔會刪任何嘢' } else { '' }))
   # Runs the JS sweep, NOT a PowerShell reimplementation. The classification and the retention
   # rule live in src/computer/evidenceStore.js and are covered by its tests; a second copy in

@@ -253,6 +253,65 @@ function CX-Fail {
 }
 
 # ═══════════════════════════════════════════════════════════════════════════
+# NOT APPLICABLE - a THIRD outcome, and it exists because of a gap the Owner found.
+#
+# If Part B fails, should he still press the retention-check icon? The guide did not say, which
+# left him standing at the machine in front of a red screen DECIDING - the one thing this whole
+# design exists to spare him. "Ask afterwards" is not an answer when nobody is there to ask.
+#
+# So the icon answers for itself. But it must not answer with the FAILURE screen: nothing broke,
+# and telling him something stopped unsafely when it merely does not apply teaches him to
+# distrust the red screen that does matter. Hence a separate outcome, in its own words, amber
+# rather than red - and, like the failure screen, pinned by test so it cannot be re-worded into
+# something ambiguous.
+$script:CX_NA_LINE1 = 'Part B 未通過 —— 呢一步唔適用。'
+$script:CX_NA_LINE2 = '冇做過任何嘢，亦冇刪過任何嘢。'
+$script:CX_NA_LINE3 = '影一張相，然後就可以停手。'
+
+function CX-NotApplicableBanner {
+  param([string]$Why, [string]$Path)
+  ($script:CX_NA_LINE1 + "`r`n" + $script:CX_NA_LINE2 + "`r`n" + $script:CX_NA_LINE3 +
+   "`r`n`r`n" + $Why + "`r`n" + $Path)
+}
+
+function CX-NotApplicable {
+  param($UI, [string]$Nonce, [string]$Launcher, [string]$Why, $Detail)
+  $dir = if ($Nonce) { CX-RoundDir -Nonce $Nonce } else { $script:CX_CommissionRoot }
+  if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+  $stamp = (Get-Date).ToString('yyyyMMdd-HHmmss')
+  $base = Join-Path $dir ('NOT-APPLICABLE-' + $Launcher + '-' + $stamp)
+
+  $rec = [ordered]@{
+    marker = 'COMMISSIONING-NOT-APPLICABLE'
+    launcher = $Launcher; why = $Why; detail = $Detail; roundNonce = $Nonce
+    identity = ([Security.Principal.WindowsIdentity]::GetCurrent()).Name
+    sessionId = (Get-Process -Id $PID).SessionId
+    at = (Get-Date).ToString('o')
+  }
+  $jsonPath = CX-WriteJson -Path ($base + '.json') -Object $rec
+
+  $txt = @()
+  $txt += 'AROMA COMMISSIONING - NOT APPLICABLE (nothing was done, nothing failed)'
+  $txt += ''
+  $txt += $script:CX_NA_LINE1
+  $txt += $script:CX_NA_LINE2
+  $txt += $script:CX_NA_LINE3
+  $txt += ''
+  $txt += ('launcher : ' + $Launcher)
+  $txt += ('why      : ' + $Why)
+  $txt += ('round    : ' + $(if ($Nonce) { $Nonce } else { '(none)' }))
+  $txt += ('when     : ' + (Get-Date).ToString('o'))
+  $txtPath = $base + '.txt'
+  [IO.File]::WriteAllText($txtPath, (($txt -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding($false)))
+
+  if ($UI) {
+    $UI.Banner2((CX-NotApplicableBanner -Why $Why -Path $txtPath), 'wait')
+    $UI.SetFoot('可以閂咗呢個窗。')
+  }
+  [pscustomobject]@{ json = $jsonPath; txt = $txtPath }
+}
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Wait for a marker file written by the OTHER session. This is the whole handoff: no nonce in
 # anyone's head, nothing on the clipboard, no key press.
 # ═══════════════════════════════════════════════════════════════════════════

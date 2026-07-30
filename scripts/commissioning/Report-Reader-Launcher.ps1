@@ -58,19 +58,28 @@ foreach ($s in @(
 
 try {
   # ── 1. the source ─────────────────────────────────────────────────────────
+  # ── SAFE AT ANY MOMENT, BY CONSTRUCTION ──────────────────────────────────
+  # Owner requirement: this icon must be safe to press whenever, and be KNOWN to be. It only
+  # ever copies OUT, so it cannot disturb a run in progress or a run that failed. The two
+  # "nothing there" cases are therefore NOT failures - showing a red stop screen for an empty
+  # folder would teach the red screen to mean nothing, and the red screen has to keep meaning
+  # something. Both exit 0.
   $UI.SetStep('src', 'run', '')
-  if (-not (Test-Path -LiteralPath $script:CX_CommissionRoot)) {
-    [void](CX-Fail -UI $UI -Nonce $null -Stage 'source' -Reason '揾唔到驗收報告資料夾' `
-      -Detail @($script:CX_CommissionRoot) -Launcher 'reader')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+  $rounds = @()
+  $loose = @()
+  if (Test-Path -LiteralPath $script:CX_CommissionRoot) {
+    $rounds = @(Get-ChildItem -LiteralPath $script:CX_CommissionRoot -Directory -Force -ErrorAction SilentlyContinue |
+                Sort-Object LastWriteTime)
+    $loose = @(Get-ChildItem -LiteralPath $script:CX_CommissionRoot -File -Force -ErrorAction SilentlyContinue)
   }
-  $rounds = @(Get-ChildItem -LiteralPath $script:CX_CommissionRoot -Directory -Force -ErrorAction SilentlyContinue |
-              Sort-Object LastWriteTime)
-  $loose = @(Get-ChildItem -LiteralPath $script:CX_CommissionRoot -File -Force -ErrorAction SilentlyContinue)
   if ($rounds.Count -eq 0 -and $loose.Count -eq 0) {
-    [void](CX-Fail -UI $UI -Nonce $null -Stage 'source' -Reason '一份報告都冇' `
-      -Detail @($script:CX_CommissionRoot) -Launcher 'reader')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    $UI.SetStep('src', 'skip', '一份報告都仲未有')
+    [void](CX-NotApplicable -UI $UI -Nonce $null -Launcher 'reader' `
+      -Why '仲未有任何驗收報告可以攞。' `
+      -Detail @('驗收未跑過，或者跑咗但未寫低任何嘢。',
+                '呢個圖示幾時撳都安全 —— 佢淨係抄出嚟，唔會改動任何證據。'))
+    $UI.Form.ShowDialog() | Out-Null
+    exit 0
   }
   $UI.SetStep('src', 'ok', ($rounds.Count.ToString() + ' 個回合，另有 ' + $loose.Count + ' 個檔案'))
 
