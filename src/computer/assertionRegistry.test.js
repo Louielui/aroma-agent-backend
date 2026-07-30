@@ -244,6 +244,25 @@ test('*** an owner-side sentinel may not require copy-paste during the window **
   assert.match(clip, /IsInputRedirected/)
 })
 
+test('*** protocol outcome and assertion verdict are separate, or the Owner loops forever ***', () => {
+  // The first version closed with "Not a pass. Re-run to try the round again" for anything
+  // that was not BOUNDED. E4 is structurally INVALID today — E2 is retired, so a not-found has
+  // no mechanism to inherit and can never be BOUNDED. "The protocol succeeded" and "the answer
+  // is INVALID" are the same event, and the script told the Owner to retry it.
+  const clip = fs.readFileSync(path.join(SCRIPTS, 'stage3-owner-clip.ps1'), 'utf8')
+  assert.match(clip, /protocol = 'complete'/, 'the outcome is data, not prose')
+  assert.match(clip, /protocol = 'incomplete'/)
+  assert.match(clip, /protocol = 'failed'/)
+  assert.match(clip, /retryUseful = \$true/)
+  assert.match(clip, /retryUseful = \$false/)
+  assert.match(clip, /THE PROTOCOL SUCCEEDED\. This verdict is the measured answer/)
+  assert.match(clip, /re-running will not make it so - the reason is structural/)
+  // a leak is loud and is never a retry
+  assert.match(clip, /THE BOUNDARY FAILED[\s\S]{0,120}exit 5/)
+  // a row with no verdict is malformed, not settled — it used to read as "already settled"
+  assert.match(clip, /carries no verdict - malformed, not settled/)
+})
+
 test('*** the probe and the verifier honour the gate, read from the scripts ***', () => {
   // A rule the producer does not honour is a rule in prose. Read from the real files.
   const topup = fs.readFileSync(path.join(SCRIPTS, 'stage3-topup.ps1'), 'utf8')

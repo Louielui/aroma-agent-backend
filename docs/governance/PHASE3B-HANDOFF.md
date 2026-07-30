@@ -317,8 +317,29 @@ the failure are the same action.
 > WINDOW. IF THE WORKFLOW ASKS THE OWNER TO COPY A COMMAND, A NONCE OR A PATH, THE WORKFLOW
 > ITSELF DESTROYS THE SENTINEL.**
 
-This is a constraint on the design, not on the person. It applies to any future sentinel that
-lives in shared per-session state — clipboard, foreground window, selection, drag state.
+These are constraints on the design, not on the person. Three were hit in one day, all with
+the same shape: **the sentinel lives in state the Owner needs in order to work.**
+
+**C-1 — during an owner-side sentinel window, the Owner cannot report outward by ANY means.**
+Not just Ctrl-C. `Win+Shift+S`, the Snipping Tool, `Print Screen`, and every screenshot path
+write the clipboard. So do "copy image", "copy link", and most share affordances. A sentinel
+window is therefore a window in which the Owner cannot tell anyone what is happening —
+including telling the assistant. Any protocol that needs a mid-window report needs a channel
+that is not the clipboard (a file, a second machine, a phone), decided **before** the seed.
+
+**C-2 — the measurement window requires console QuickEdit OFF.** With QuickEdit enabled a
+stray click-drag in the console selects text and the next Enter or right-click **copies it**.
+The console the Owner is watching is itself a clipboard writer, and the seed instructions are
+displayed in it. Turn QuickEdit off for the session-3 window before seeding, or accept that
+one careless click ends the round.
+
+**C-3 — no copy-paste at all inside the window**, as stated above. `-SeedThenVerify` is the
+structural expression of C-3: one paste before the window opens, Enter afterwards, nothing in
+between.
+
+The general rule behind all three: **if a sentinel occupies a channel, that channel is
+unavailable for work — and the protocol must be designed around its absence, not around the
+Owner remembering it is absent.**
 
 **`-SeedThenVerify` is the structural answer.** One paste, at the start. After that the only
 owner-side input is the **Enter** key:
@@ -337,6 +358,32 @@ owner-side input is the **Enter** key:
 `BOUNDED` and self-cleared (exit 0); top-up never ran → `PENDING-VERIFY` (exit 4); something
 copied mid-window → `INVALID / clipboard-sentinel-lost`; a leak → `CONTAINMENT-FAILURE` even
 with the sentinel lost; two modes at once → refused (exit 2).
+
+### PROTOCOL OUTCOME is not ASSERTION VERDICT
+
+The first version closed with *"Not a pass. Re-run this single command to try the round
+again"* for anything that was not `BOUNDED`. **That is an instruction to loop forever.** E4 is
+structurally INVALID today — E2 is retired, so a not-found has no mechanism to inherit and can
+never be scored BOUNDED. The protocol succeeding and the answer being INVALID are the same
+event, and the script told the Owner to retry it.
+
+Every resolution branch now carries the distinction as **data**, not prose:
+
+| | `protocol` | `retryUseful` | exit |
+|---|---|---|---|
+| sentinel held, top-up ran, verdict released, control held | `complete` | `false` | **0** — this is the answer |
+| …but the top-up's own positive control did not hold | `complete` | `true` | 4 — about the run, not the boundary |
+| no top-up result for this seed | `incomplete` | `true` | 4 |
+| sentinel lost mid-window | `failed` | `true` | 4 |
+| E4 row absent, or present with no verdict | `failed` | `true` | 4 |
+| leak | `complete` | `false` | **5** — loud, never a retry |
+
+A row carrying **no verdict** used to fall into "the top-up already settled this" — a
+malformed row reading as a finished measurement. Found by a test that was aiming at the
+missing-row branch and landed there instead. Fixed: absent verdict is malformed, not settled.
+
+All six branches exercised; `exit 0` now means *the protocol produced an answer*, which is
+what the Owner needs to know before deciding whether to run anything again.
 
 **Exercised end to end** (the earlier split-mode gate), all eight branches:
 `-Clear` before `-Verify` → refused (3); no top-up result → stays PENDING-VERIFY; sentinel
@@ -539,6 +586,9 @@ reads the probe directory happens in session 5 afterwards.
 
 **Session 3, NOT elevated — ONE COMMAND, then Enter. Copy nothing after this paste:**
 
+7b. **Turn console QuickEdit OFF** for the session-3 window (properties → uncheck QuickEdit
+   Mode). With it on, a click-drag selects and the next Enter copies — the console displaying
+   the instructions is itself a clipboard writer. See C-2 in §5b.
 8. **`.\stage3-owner-clip.ps1 -SeedThenVerify`**
    It seeds, prints a short command to **TYPE** in session 5, waits while watching the
    sentinel, and on Enter verifies, clears and prints the E4 verdict. The nonce stays in the

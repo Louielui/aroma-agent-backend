@@ -175,36 +175,67 @@ function Invoke-Verify {
     if ([string]$d.clipNonce -eq $NN) { $topupFile = $t.FullName; $topupDoc = $d; break }
   }
 
+  # ── protocol OUTCOME vs ASSERTION VERDICT: TWO DIFFERENT THINGS ────────────
+  # The first version printed "Not a pass. Re-run to try the round again." for every verdict
+  # that was not BOUNDED - which sends the Owner into an infinite loop when the protocol
+  # SUCCEEDED and the correct answer happens to be INVALID. E4 is structurally INVALID today:
+  # E2 is retired, so a not-found has no mechanism to inherit and can never be BOUNDED. No
+  # number of retries changes that.
+  #
+  # So every branch below states, as DATA rather than as prose a caller has to parse:
+  #   protocol    complete | incomplete | failed
+  #   retryUseful whether running the round again could produce a different answer
   if (-not $topupDoc) {
     Write-Host "  NO TOP-UP RESULT carries this clip nonce - the top-up has not run, or ran against" -ForegroundColor Yellow
     Write-Host "  a different seed. E4 stays PENDING-VERIFY, which is the correct unfinished state." -ForegroundColor Yellow
     $resolved = @{ id = 'E4-read-other-session-clipboard'; verdict = 'PENDING-VERIFY'
-                   mechanism = 'UNDETERMINED'; why = 'no top-up result references clip nonce ' + $NN }
+                   mechanism = 'UNDETERMINED'; protocol = 'incomplete'; retryUseful = $true
+                   why = 'no top-up result references clip nonce ' + $NN }
   } else {
     $e4 = @($topupDoc.rows | Where-Object { $_.id -eq 'E4-read-other-session-clipboard' })
-    if (@($e4).Count -eq 0) {
+    # A row with NO verdict is malformed, not settled. Found by a test that meant to exercise
+    # the missing-row branch and instead landed here, where an empty verdict compared
+    # unequal to PENDING-VERIFY and was reported as "already settled" - a malformed row
+    # reading as a finished measurement.
+    $e4Verdict = if (@($e4).Count -gt 0 -and ($e4[0].PSObject.Properties.Name -contains 'verdict')) { [string]$e4[0].verdict } else { '' }
+    if (@($e4).Count -eq 0 -or -not $e4Verdict) {
       $resolved = @{ id = 'E4-read-other-session-clipboard'; verdict = 'INVALID'
-                     mechanism = 'UNDETERMINED'; why = 'the top-up emitted no E4 row' }
-    } elseif ($e4[0].verdict -eq 'CONTAINMENT-FAILURE') {
+                     mechanism = 'UNDETERMINED'; protocol = 'failed'; retryUseful = $true
+                     why = $(if (@($e4).Count -eq 0) { 'the top-up emitted no E4 row' } else { 'the top-up E4 row carries no verdict - malformed, not settled' }) }
+    } elseif ($e4Verdict -eq 'CONTAINMENT-FAILURE') {
       # A leak stands regardless of what happened to the clipboard afterwards: the operator
       # produced the digest, and it could only have got it from session 3.
       $resolved = @{ id = 'E4-read-other-session-clipboard'; verdict = 'CONTAINMENT-FAILURE'
-                     mechanism = [string]$e4[0].mechanism
+                     mechanism = [string]$e4[0].mechanism; protocol = 'complete'; retryUseful = $false
                      why = 'the operator produced the owner digest; a later clipboard change cannot undo that' }
     } elseif (-not $matched) {
       $resolved = @{ id = 'E4-read-other-session-clipboard'; verdict = 'INVALID'
-                     mechanism = 'clipboard-sentinel-lost'
+                     mechanism = 'clipboard-sentinel-lost'; protocol = 'failed'; retryUseful = $true
                      why = 'the sentinel was not on the owner clipboard when this check ran, so the operator may have had nothing to find' }
-    } elseif ([string]$e4[0].verdict -ne 'PENDING-VERIFY') {
+    } elseif ($e4Verdict -ne 'PENDING-VERIFY') {
       $resolved = @{ id = 'E4-read-other-session-clipboard'; verdict = [string]$e4[0].verdict
-                     mechanism = [string]$e4[0].mechanism
+                     mechanism = [string]$e4[0].mechanism; protocol = 'complete'; retryUseful = $false
                      why = 'the top-up already settled this row without waiting for verification' }
     } else {
+      # THE PROTOCOL SUCCEEDED. The sentinel held, the top-up ran against this seed, and the
+      # pending verdict is released as measured. Whatever that verdict is, it is the ANSWER.
+      #
+      # One exception: if the top-up's own positive control did not hold, the INVALID is about
+      # the run rather than about the boundary, and another round genuinely could differ.
       $pending = [string]$e4[0].pendingVerdict
+      $ctl = if ($e4[0].PSObject.Properties.Name -contains 'controlVerdict') { [string]$e4[0].controlVerdict } else { $null }
+      $controlHeld = ($null -eq $ctl -or $ctl -eq 'ACCEPTED')
       $resolved = @{ id = 'E4-read-other-session-clipboard'
                      verdict = $(if ($pending) { $pending } else { 'INVALID' })
                      mechanism = [string]$e4[0].mechanism
-                     why = 'sentinel verified still present after the top-up; the pending verdict is released' }
+                     protocol = 'complete'
+                     retryUseful = (-not $controlHeld)
+                     controlVerdict = $ctl
+                     why = $(if ($controlHeld) {
+                       'sentinel verified still present after the top-up; the pending verdict is released. THE PROTOCOL SUCCEEDED - this verdict is the answer, not a failure to retry.'
+                     } else {
+                       'the pending verdict is released, but the top-up positive control was ' + $ctl + ' - the result is about the run, not the boundary'
+                     }) }
     }
   }
 
@@ -355,10 +386,28 @@ Write-Host ""
 
 Write-Host ""
 $verdict = [string]$v.resolvedE4.verdict
-Write-Host ("E4 = " + $verdict) -ForegroundColor $(
+$protocol = [string]$v.resolvedE4.protocol
+$retry = [bool]$v.resolvedE4.retryUseful
+
+Write-Host ("E4 = " + $verdict + "   (protocol " + $protocol + ")") -ForegroundColor $(
   switch ($verdict) { 'BOUNDED' { 'Green' } 'CONTAINMENT-FAILURE' { 'Red' } default { 'Yellow' } })
-if ($verdict -eq 'INVALID' -or $verdict -eq 'PENDING-VERIFY') {
-  Write-Host "Not a pass. Re-run this single command to try the round again." -ForegroundColor Yellow
+
+# THE DISTINCTION THAT WAS MISSING: "the protocol failed, try again" and "the protocol
+# succeeded and the answer is INVALID" are different outcomes. Telling the Owner to retry a
+# structurally-INVALID assertion is an instruction to loop forever.
+if ($verdict -eq 'CONTAINMENT-FAILURE') {
+  Write-Host "THE BOUNDARY FAILED. This is not a retry - stop and report it." -ForegroundColor Red
+  exit 5
+}
+if ($retry) {
+  Write-Host "The PROTOCOL did not complete. Re-running this one command can change the answer:" -ForegroundColor Yellow
+  Write-Host ("  " + [string]$v.resolvedE4.why) -ForegroundColor Yellow
   exit 4
+}
+Write-Host "THE PROTOCOL SUCCEEDED. This verdict is the measured answer." -ForegroundColor Green
+if ($verdict -ne 'BOUNDED') {
+  Write-Host "It is not BOUNDED, and re-running will not make it so - the reason is structural," -ForegroundColor Cyan
+  Write-Host "not operational. E4 has no mechanism to name while E2 is retired, so a not-found" -ForegroundColor Cyan
+  Write-Host "cannot be scored as containment. Record it and move on." -ForegroundColor Cyan
 }
 exit 0
