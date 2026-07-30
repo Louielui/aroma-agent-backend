@@ -1,4 +1,4 @@
-# Operator-Verification-Launcher.ps1 - LAUNCHER 2. The AromaOperator session.
+﻿# Operator-Verification-Launcher.ps1 - LAUNCHER 2. The AromaOperator session.
 #
 # ── IT DOES NOT ELEVATE, AND MUST NOT TRY ───────────────────────────────────
 # MEASURED: AromaOperator is NOT in Administrators (only AromaBrain\Administrator and
@@ -20,16 +20,16 @@ $ErrorActionPreference = 'Stop'
 $DRY = ($PSBoundParameters.ContainsKey('DryRun') -and [bool]$PSBoundParameters['DryRun'])
 . (Join-Path $PSScriptRoot 'commissioningCore.ps1')
 
-$UI = CX-NewUI -Title 'Aroma - Operator Check' -Subtitle $(if ($DRY) { 'DRY RUN - nothing will be measured' } else { 'Physical machine commissioning, step 2 of 2' })
-$UI.Banner2('Starting...', 'info')
+$UI = CX-NewUI -Title 'Aroma 第二步 —— 操作員檢查' -Subtitle $(if ($DRY) { '試跑 —— 唔會量度任何嘢' } else { '實體機驗收,第 2 步,共 2 步' })
+$UI.Banner2('開始緊……', 'info')
 foreach ($s in @(
-  @('who',   'Check this is the right Windows account'),
-  @('ready', 'Pick up the run from the other account'),
-  @('files', 'Report the staged files'),
-  @('partb', 'Run the Part B checks'),
-  @('hand',  'Send the result back'),
-  @('lock5', 'Lock 5 - stop-control check'),
-  @('done',  'Finish')
+  @('who',   '檢查係唔係正確嘅 Windows 帳戶'),
+  @('ready', '接手另一個帳戶交過嚟嘅執行'),
+  @('files', '報告已上架檔案'),
+  @('partb', '執行 Part B 檢查'),
+  @('hand',  '把結果送返去'),
+  @('lock5', 'Lock 5 —— 停止控制檢查'),
+  @('done',  '完成')
 )) { $UI.AddStep($s[0], $s[1]) }
 
 $NONCE = $null
@@ -39,10 +39,10 @@ try {
   $me = ([Security.Principal.WindowsIdentity]::GetCurrent()).Name
   $sam = ($me -split '\\')[-1]
   if ($sam -ne $script:CX_Account) {
-    $UI.SetStep('who', 'fail', ('running as ' + $me))
+    $UI.SetStep('who', 'fail', ('而家係以 ' + $me + ' 身分執行'))
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'identity' `
-      -Reason ('this launcher must run as ' + $script:CX_Account + ', not ' + $me) `
-      -Detail @('Switch Windows accounts and press the icon on that desktop instead.','Nothing was measured.') -Launcher 'operator')
+      -Reason ('呢個啟動器必須以 ' + $script:CX_Account + ' 身分執行,而唔係 ' + $me) `
+      -Detail @('請切換 Windows 帳戶,再撳嗰個桌面上嘅圖示。','冇量度過任何嘢。') -Launcher 'operator')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $UI.SetStep('who', 'ok', ($me + '  session ' + (Get-Process -Id $PID).SessionId))
@@ -57,15 +57,15 @@ try {
     }
   }
   if (-not $ready) {
-    $UI.SetStep('ready', 'fail', 'no run is waiting')
+    $UI.SetStep('ready', 'fail', '冇任何執行喺度等緊')
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'handoff' `
-      -Reason 'no commissioning run is waiting for this account' `
-      -Detail @('Press the Owner launcher first, in the other Windows account, and wait until it says to switch.','Nothing was measured.') -Launcher 'operator')
+      -Reason '冇任何驗收執行喺度等緊呢個帳戶' `
+      -Detail @('請先喺另一個 Windows 帳戶撳擁有者啟動器,等佢叫你切換先。','冇量度過任何嘢。') -Launcher 'operator')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   $NONCE = $round
   $DRY = $DRY -or [bool]$ready.dryRun
-  $UI.SetStep('ready', 'ok', ('round ' + $round))
+  $UI.SetStep('ready', 'ok', ('回合 ' + $round))
 
   # ── staged files: the probe directory is unreadable to the Owner by design,
   #    so THIS session is the only place the staged hashes can be reported. ──
@@ -75,12 +75,12 @@ try {
     $staged += [ordered]@{ name = $f.Name; bytes = $f.Length; sha256 = (CX-Sha256File -Path $f.FullName) }
   }
   if (@($staged).Count -eq 0) {
-    $UI.SetStep('files', 'fail', 'the probe directory is empty or unreadable')
-    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'staged-files' -Reason 'this account cannot read the probe directory' -Detail @($script:CX_ProbeDir) -Launcher 'operator')
+    $UI.SetStep('files', 'fail', '探針資料夾係空嘅或者讀唔到')
+    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'staged-files' -Reason '呢個帳戶讀唔到探針資料夾' -Detail @($script:CX_ProbeDir) -Launcher 'operator')
     $UI.Form.ShowDialog() | Out-Null; exit 1
   }
   [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'STAGED-FILES.json') -Object @{ marker='STAGED-FILES'; files=$staged; at=(Get-Date).ToString('o') })
-  $UI.SetStep('files', 'ok', (@($staged).Count.ToString() + ' files recorded'))
+  $UI.SetStep('files', 'ok', ('記錄咗 ' + @($staged).Count.ToString() + ' 個檔案'))
 
   # ── PART B ───────────────────────────────────────────────────────────────
   $UI.SetStep('partb', 'run', '')
@@ -88,7 +88,7 @@ try {
   $results = @()
   $failed = $null
   if ($DRY) {
-    $UI.SetStep('partb', 'skip', 'dry run - no probes executed')
+    $UI.SetStep('partb', 'skip', '試跑 —— 冇執行任何探針')
   } else {
     foreach ($script in @($ready.partBScripts)) {
       $UI.SetStep('partb', 'run', $script)
@@ -97,7 +97,7 @@ try {
       $p = Start-Process -FilePath $ps -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $script:CX_ProbeDir $script)) `
         -PassThru -WindowStyle Hidden -RedirectStandardOutput $log
       $p | Wait-Process -Timeout 900 -ErrorAction SilentlyContinue
-      if (-not $p.HasExited) { try { Stop-Process -Id $p.Id -Force } catch { }; $failed = ($script + ' timed out'); break }
+      if (-not $p.HasExited) { try { Stop-Process -Id $p.Id -Force } catch { }; $failed = ($script + ' 逾時'); break }
       $results += [ordered]@{ script = $script; exitCode = $p.ExitCode; log = $log }
       if ($p.ExitCode -ne 0) { $failed = ($script + ' exited ' + $p.ExitCode); break }
       $UI.Pump()
@@ -110,7 +110,7 @@ try {
         marker='OPERATOR-DONE'; verdict='FAIL'; reason=$failed; results=$results; at=(Get-Date).ToString('o') })
       $UI.Form.ShowDialog() | Out-Null; exit 1
     }
-    $UI.SetStep('partb', 'ok', (@($results).Count.ToString() + ' probes completed'))
+    $UI.SetStep('partb', 'ok', ('完成咗 ' + @($results).Count.ToString() + ' 個探針'))
   }
 
   # ── hand the result back ─────────────────────────────────────────────────
@@ -128,14 +128,14 @@ try {
   $UI.SetStep('hand', 'ok', ('Part B ' + $verdict))
 
   # ── LOCK 5 - only after the Owner side has SEALED Part B ─────────────────
-  $UI.SetStep('lock5', 'run', 'waiting for Part B to be sealed')
-  $UI.Banner2("Part B finished." + "`r`n`r`n" + "Stay here - the stop-control check runs next." , 'wait')
+  $UI.SetStep('lock5', 'run', '等緊 Part B 封存')
+  $UI.Banner2("Part B 完成。" + "`r`n`r`n" + "請留喺呢度 —— 跟住會做停止控制檢查。" , 'wait')
   $go = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $NONCE -Name 'LOCK5-GO.json') -TimeoutSeconds 900 `
-    -WaitBanner 'Part B finished. Waiting for the other account to seal it.'
+    -WaitBanner 'Part B 完成。等緊另一個帳戶封存佢。'
   if (-not $go) {
-    $UI.SetStep('lock5', 'skip', 'the other account did not open Lock 5 - Part B stands')
+    $UI.SetStep('lock5', 'skip', '另一個帳戶冇開啟 Lock 5 —— Part B 結果仍然成立')
   } elseif ($DRY) {
-    $UI.SetStep('lock5', 'skip', 'dry run')
+    $UI.SetStep('lock5', 'skip', '試跑')
     [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'LOCK5-DONE.json') -Object @{ marker='LOCK5-DONE'; verdict='SKIPPED'; dryRun=$true; at=(Get-Date).ToString('o') })
   } else {
     $l5 = & (Join-Path $PSScriptRoot 'commissioningLock5Operator.ps1') -UI $UI -Nonce $NONCE
@@ -144,10 +144,10 @@ try {
 
   $UI.SetStep('done', 'ok', '')
   $UI.Banner2(
-    "FINISHED HERE." + "`r`n`r`n" +
-    "Switch back to the other Windows account." + "`r`n" +
-    "That window will show the final result.", 'pass')
-  $UI.SetFoot('round ' + $NONCE + '  -  you may close this window.')
+    "呢邊完成。" + "`r`n`r`n" +
+    "請切返去另一個 Windows 帳戶。" + "`r`n" +
+    "嗰個窗會顯示最終結果。", 'pass')
+  $UI.SetFoot('回合 ' + $NONCE + '  —  可以閂咗呢個窗。')
 }
 catch {
   [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'unexpected' -Reason $_.Exception.Message -Detail @($_.ScriptStackTrace) -Launcher 'operator')

@@ -59,10 +59,13 @@ test('*** NOTHING in the commissioning path can ask Louie a question ***', () =>
 
 test('*** every failure routes through the ONE fail-safe screen ***', () => {
   const core = code('commissioningCore.ps1')
-  // the three lines, fixed, in the core and nowhere improvised
-  assert.match(core, /CX_FAILSAFE_LINE1\s*=\s*'STOPPED - and it stopped safely\.'/)
-  assert.match(core, /CX_FAILSAFE_LINE2\s*=\s*'It has been recorded\. There is nothing for you to fix\.'/)
-  assert.match(core, /CX_FAILSAFE_LINE3\s*=\s*'Take a photo of this window, then stop\.'/)
+  // THE THREE LINES ARE IN TRADITIONAL CHINESE, and pinned here exactly.
+  // Louie reads them at the machine with nobody to help; every other communication with him is
+  // in Chinese, so an English failure screen is a failure screen he cannot use. Pinned so a
+  // later edit cannot quietly soften or re-word them.
+  assert.match(core, /CX_FAILSAFE_LINE1\s*=\s*'已經停止 —— 而且係安全咁停低咗。'/)
+  assert.match(core, /CX_FAILSAFE_LINE2\s*=\s*'已經記錄低咗。冇任何嘢需要你去修。'/)
+  assert.match(core, /CX_FAILSAFE_LINE3\s*=\s*'影一張相,然後就可以停手。'/)
   // the banner uses all three, and the written report repeats them
   assert.match(core, /function CX-FailSafeBanner/)
   for (const n of ['CX_FAILSAFE_LINE1', 'CX_FAILSAFE_LINE2', 'CX_FAILSAFE_LINE3']) {
@@ -140,6 +143,43 @@ test('*** Part B is sealed before Lock 5 can open ***', () => {
   assert.ok(sealAt < lock5At, 'the seal must be written before Lock 5 is invoked')
   assert.match(own, /partB = \[ordered\]@\{[\s\S]{0,200}sealedSha256/, 'the report carries the sealed hash')
   assert.match(own, /lock5 = \[ordered\]@\{/, 'and Lock 5 is a separate column')
+})
+
+test('*** any script with Chinese in it is UTF-8 WITH BOM ***', () => {
+  // PowerShell 5.1 reads a BOM-LESS .ps1 as ANSI. Every Chinese string would render as
+  // mojibake — at the machine, on the failure screen, with nobody there to recognise it. The
+  // encoding is therefore part of the guarantee, not a formatting preference.
+  for (const f of files()) {
+    const raw = fs.readFileSync(path.join(DIR, f))
+    const hasChinese = /[一-鿿]/.test(raw.toString('utf8'))
+    if (!hasChinese) continue
+    assert.ok(raw[0] === 0xEF && raw[1] === 0xBB && raw[2] === 0xBF,
+      f + ' contains Chinese and MUST be UTF-8 with BOM, or PowerShell 5.1 will mangle it')
+  }
+})
+
+test('*** what Louie can SEE is in Chinese, not English ***', () => {
+  // Step labels and banners are the screen. A stray English label is not cosmetic: it is a
+  // line he cannot act on. (Technical report files stay English by ruling — they are the
+  // handoff artefact, not the screen.)
+  for (const f of ['Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1']) {
+    const c = code(f)
+    for (const m of c.matchAll(/@\('(\w+)',\s*'([^']+)'\)/g)) {
+      assert.ok(/[一-鿿]/.test(m[2]), f + ' step label is not in Chinese: ' + m[2])
+    }
+    assert.match(c, /-Title 'Aroma 第[一二]步/, f + ' window title is in Chinese')
+  }
+})
+
+test('*** the two desktop icon names match what the guide tells Louie to look for ***', () => {
+  // Launcher 1 checks for the operator icon BY NAME. If the installer and the launcher drift
+  // apart, launcher 1 reports "the second icon could not be placed" while it is sitting there.
+  const inst = fs.readFileSync(path.join(DIR, 'install-commissioning.ps1'), 'utf8')
+  const own = fs.readFileSync(path.join(DIR, 'Owner-Sentinel-Launcher.ps1'), 'utf8')
+  assert.match(inst, /-Name 'Aroma 第一步 —— 擁有者標記'/)
+  assert.match(inst, /-Name 'Aroma 第二步 —— 操作員檢查'/)
+  assert.match(own, /'Aroma 第二步 —— 操作員檢查\.lnk'/,
+    'launcher 1 must look for exactly the name the installer creates')
 })
 
 test('*** the operator launcher never tries to elevate ***', () => {

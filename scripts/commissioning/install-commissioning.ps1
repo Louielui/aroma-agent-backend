@@ -1,4 +1,4 @@
-# install-commissioning.ps1 - put the two icons where Louie can press them. RUN ELEVATED.
+﻿# install-commissioning.ps1 - put the two icons where Louie can press them. RUN ELEVATED.
 #
 # CALLED BY LAUNCHER 1 ON EVERY PRESS. There is one person at this machine, so there is no
 # separate installer step for somebody else to perform - a step described that way is a step
@@ -80,9 +80,9 @@ function New-Launcher {
 }
 
 New-Launcher -DesktopPath (Join-Path (Join-Path 'C:\Users' $OwnerAccount) 'Desktop') `
-  -Name 'Aroma - Owner Sentinel' -Script 'Owner-Sentinel-Launcher.ps1' -Elevate $true
+  -Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher.ps1' -Elevate $true
 New-Launcher -DesktopPath (Join-Path (Join-Path 'C:\Users' $OperatorAccount) 'Desktop') `
-  -Name 'Aroma - Operator Check' -Script 'Operator-Verification-Launcher.ps1' -Elevate $false
+  -Name 'Aroma 第二步 —— 操作員檢查' -Script 'Operator-Verification-Launcher.ps1' -Elevate $false
 
 Write-Host ''
 if (-not $Quiet) { Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan }

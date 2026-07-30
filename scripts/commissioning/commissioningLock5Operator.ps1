@@ -1,4 +1,4 @@
-# commissioningLock5Operator.ps1 - the OPERATOR half of Lock 5. Non-elevated, session 5.
+﻿# commissioningLock5Operator.ps1 - the OPERATOR half of Lock 5. Non-elevated, session 5.
 #
 # ── WHY THE COMPANION IS STARTED HERE AND NOT BY THE OWNER SIDE ─────────────
 # deploy-companion.ps1 launches the Companion with `Start-Process -Credential`, and line 271
@@ -89,7 +89,7 @@ foreach ($b in $BINDINGS) {
 
   # the Owner side connects as the SERVICE and demonstrates this one binding
   $kd = CX-WaitForMarker -UI $UI -Path (CX-Marker -Nonce $Nonce -Name ('KILL-DONE-' + $b + '.json')) -TimeoutSeconds 600 `
-        -WaitBanner ('Stop-control check: binding ' + $b)
+        -WaitBanner ('停止控制檢查:綁定 ' + $b)
   $bindingResults += [ordered]@{ binding=$b; ok=[bool]($kd -and $kd.ok); detail=$(if ($kd) { $kd.detail } else { 'timed out' }) }
   try { if (Get-Process -Id $cp.Id -ErrorAction SilentlyContinue) { Stop-Process -Id $cp.Id -Force -ErrorAction SilentlyContinue } } catch { }
   if (-not ($kd -and $kd.ok)) { break }

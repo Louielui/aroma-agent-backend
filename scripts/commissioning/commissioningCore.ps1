@@ -1,4 +1,4 @@
-# commissioningCore.ps1 - shared core for the two physical-machine commissioning launchers.
+﻿# commissioningCore.ps1 - shared core for the two physical-machine commissioning launchers.
 #
 # Owner ruling 2026-07-30: one-visit commissioning. Louie does THREE things only - attend
 # physically, press two launcher icons, switch Windows accounts. He does not paste commands,
@@ -194,14 +194,14 @@ function CX-NewUI {
 # This is a GUARANTEE, and it is enforced by test, not by discipline:
 # commissioningFailSafe.test.js asserts that no commissioning script contains an interactive
 # construct at all, and that every catch block routes here.
-$script:CX_FAILSAFE_LINE1 = 'STOPPED - and it stopped safely.'
-$script:CX_FAILSAFE_LINE2 = 'It has been recorded. There is nothing for you to fix.'
-$script:CX_FAILSAFE_LINE3 = 'Take a photo of this window, then stop.'
+$script:CX_FAILSAFE_LINE1 = '已經停止 —— 而且係安全咁停低咗。'
+$script:CX_FAILSAFE_LINE2 = '已經記錄低咗。冇任何嘢需要你去修。'
+$script:CX_FAILSAFE_LINE3 = '影一張相,然後就可以停手。'
 
 function CX-FailSafeBanner {
   param([string]$Path, [string]$Sha)
   ($script:CX_FAILSAFE_LINE1 + "`r`n" + $script:CX_FAILSAFE_LINE2 + "`r`n" + $script:CX_FAILSAFE_LINE3 +
-   "`r`n`r`n" + $Path + "`r`n" + 'SHA-256: ' + $Sha)
+   "`r`n`r`n" + $Path + "`r`n" + 'SHA-256:' + $Sha)
 }
 
 function CX-Fail {
@@ -231,7 +231,7 @@ function CX-Fail {
   $txt += $script:CX_FAILSAFE_LINE2
   $txt += $script:CX_FAILSAFE_LINE3
   $txt += ''
-  $txt += 'Nothing further is needed from you at the machine.'
+  $txt += '喺機前面已經冇嘢需要你做。'
   $txt += ''
   $txt += ('launcher : ' + $Launcher)
   $txt += ('stage    : ' + $Stage)
@@ -247,7 +247,7 @@ function CX-Fail {
   $sha = CX-Sha256File -Path $txtPath
   if ($UI) {
     $UI.Banner2((CX-FailSafeBanner -Path $txtPath -Sha $sha), 'fail')
-    $UI.SetFoot('You may close this window.')
+    $UI.SetFoot('可以閂咗呢個窗。')
   }
   [pscustomobject]@{ json = $jsonPath; txt = $txtPath; sha256 = $sha }
 }
@@ -267,7 +267,7 @@ function CX-WaitForMarker {
     }
     if ($UI) {
       $left = [int]($deadline - (Get-Date)).TotalMinutes
-      $UI.Banner2($WaitBanner + "`r`n`r`n" + '(waiting - up to ' + $left + ' more minutes)', 'wait')
+      $UI.Banner2($WaitBanner + "`r`n`r`n" + '(等緊 —— 最多仲有 ' + $left + ' 分鐘)', 'wait')
     }
     Start-Sleep -Milliseconds 600
   }

@@ -1,149 +1,134 @@
-# Aroma — physical machine commissioning
+# Aroma 實體機驗收 —— 一頁指引
 
-**For Louie. One page. No commands anywhere on it.**
+**畀 Louie。一頁。全文冇任何指令。**
 
-You will press **two icons** and **switch Windows accounts twice**. That is all.
-If anything goes wrong, a window will tell you it has stopped and where the report is.
-**You are never asked to fix anything, judge anything, or type anything in.**
+你要做嘅係：**撳兩個圖示**，**切換 Windows 帳戶兩次**。就係咁多。
 
----
-
-## Before you start
-
-Sit at the machine itself. Not remotely.
-
-Have the screen on and the keyboard reachable. Nothing else is needed — no notes, no
-passwords, no numbers to remember.
-
-> **Do not close either window until this page says you may.** Both stay open, one in each
-> account, and they talk to each other.
+出咗事會有一個窗話你知已經停低咗、報告喺邊。
+**任何時候都唔會要你去修嘢、判斷嘢、或者打任何字入去。**
 
 ---
 
-## Step 1 — press the first icon
+## 開始之前
 
-On the desktop of **your own account**, find:
+坐喺部機面前，唔好用遙距。開著螢幕，鍵盤攞得到。
 
-> **Aroma — Owner Sentinel**
+其他乜都唔使 —— 唔使筆記、唔使密碼、唔使記任何數字。
 
-Double-click it.
-
-Windows will ask for permission (a blue box asking if you allow changes). **Choose Yes.**
-
-A window opens and works through a checklist. A **bright green square window** may appear on
-screen — that is meant to happen; leave it alone.
-
-**Wait until the big message at the bottom says to switch accounts.**
-
-*If instead it turns red and says STOPPED — you are finished. Nothing else to do here. Read
-Step 4.*
+> **兩個窗喺呢一頁話你可以之前都唔好閂。** 一個帳戶一個，佢哋兩個係互相等緊對方。
 
 ---
 
-## Step 2 — switch to the other account
+## 第 1 步 —— 撳第一個圖示
 
-Press **Ctrl + Alt + Delete** together, then choose **Switch user**.
+喺**你自己個帳戶**嘅桌面，揾：
 
-Pick the account called **AromaOperator**.
+> **Aroma 第一步 —— 擁有者標記**
 
-> It should already be signed in, so you will only need to unlock it — the same as waking your
-> own screen. **If it asks you to sign in from scratch instead, stop and read Step 4.**
+䇄擊佢。
 
----
+Windows 會問你批唔批准（一個藍色框問你准唔准佢改變）。**揀「是」。**
 
-## Step 3 — press the second icon
+一個窗會開，逐項行落去。可能會彈出一個**光綠色嘅方形窗** —— 嗰個係應該出現嘅，唔好郁佢。
 
-On **that** account's desktop, find:
+**等到最底嗰段大字叫你切換帳戶。**
 
-> **Aroma — Operator Check**
-
-Double-click it.
-
-This one does **not** ask for permission — that is correct, do not go looking for a permission
-box.
-
-A window opens and works through its own checklist. It takes a few minutes and will pause at
-times — that is normal, the two windows are waiting for each other.
-
-**Wait until it says FINISHED HERE and tells you to switch back.**
-
-Then press **Ctrl + Alt + Delete → Switch user**, and go back to **your own account**.
+*如果佢變咗紅色、寫住「已經停止」—— 你已經完成。呢度冇嘢再做。跳去第 4 步。*
 
 ---
 
-## Step 4 — read the result
+## 第 2 步 —— 切去另一個帳戶
 
-Your first window is still open. Look at the big message at the bottom.
+撳 **Ctrl + Alt + Delete**，揀**「切換使用者」**，再揀 **AromaOperator**。
 
-| What it says | What it means | What you do |
+> **佢應該已經登入緊，所以你只需要解鎖，同你平時喚醒自己個螢幕一樣。**
+>
+> **如果佢係叫你由頭登入（要你打密碼），請停手，跳去第 4 步。**
+>
+> **點解要停手：呢個帳戶嘅密碼唔喺你手上。** 佢係機器用嘅帳戶，密碼冇交畀你保管，
+> 所以由頭登入係**做唔到**，唔係「唔應該做」。你唔會揾得返，亦唔應該去試。
+> 第一個窗其實會喺最開頭就查呢一項，查到冇登入就會即刻停低出報告 ——
+> 所以就算你已經行到呢一步先發現，一樣係影相然後停手。
+
+---
+
+## 第 3 步 —— 撳第二個圖示
+
+喺**嗰個帳戶**嘅桌面，揾：
+
+> **Aroma 第二步 —— 操作員檢查**
+
+䇄擊佢。
+
+**呢個唔會問你批准** —— 咁樣係正常嘅，唔好去揾嗰個批准框。
+
+一個窗會開，行佢自己嗰啲項目。要幾分鐘，中間會停一停 —— 都係正常，兩個窗喺度等緊對方。
+
+**等到佢寫住「呢邊完成」同埋叫你切返去。**
+
+然後撳 **Ctrl + Alt + Delete → 切換使用者**，返去**你自己個帳戶**。
+
+---
+
+## 第 4 步 —— 睇結果
+
+你第一個窗仲開住。睇最底嗰段大字。
+
+| 佢寫住 | 意思 | 你做乜 |
 |---|---|---|
-| **PART B: PASS** and a **LOCK 5** line | It worked | Nothing. Send the report file path. |
-| **STOPPED** in red, with a file path | It stopped safely | Nothing. Send that file path. |
+| **PART B：通過**，同埋一行 **LOCK 5** | 成功 | 冇嘢做。把報告檔案路徑傳出去。 |
+| **已經停止**（紅色），連住一個檔案路徑 | 安全咁停低咗 | 冇嘢做。把嗰個路徑傳出去。 |
 
-Either way there is a **file path** and a long code (SHA-256) on screen.
-**Take a photo of the window with your phone.** That is the whole handover.
+兩種情況都會喺畫面上有一個**檔案路徑**同一串長碼（SHA-256）。
 
-Then you may close both windows.
-
----
-
-## If something looks wrong
-
-**Do not try to fix it.** There is nothing on this page that expects you to.
-
-- A red **STOPPED** window is a *normal, safe* outcome — it means the machine refused to
-  continue rather than doing something half-finished.
-- If a window seems frozen for more than about twenty minutes, take a photo and close it.
-- If no window appears at all when you double-click, take a photo of the desktop.
-
-In every case: **photo, then stop.** Someone else picks it up from there.
+**用手機影一張窗嘅相。** 咁就係全部交接。之後兩個窗都可以閂。
 
 ---
 
-## What this is doing, in one sentence
+## 如果覺得有嘢唔對路
 
-It is checking that the restricted Windows account on this machine genuinely cannot see or
-touch your own session — and writing down the proof.
+**唔好嘗試去修。** 呢一頁冇任何一步係預期你要修嘢。
+
+- 紅色**「已經停止」**係一個**正常而且安全**嘅結果 —— 代表部機**寧願拒絕繼續，都唔做一半**。
+- 如果個窗好似卡住咗超過大約二十分鐘，影相，然後閂咗佢。
+- 如果䇄擊完乜窗都冇出，影一張桌面嘅相。
+
+無論邊種情況：**影相，然後停手。** 之後有人接手。
 
 ---
 
-### Design notes (not instructions — Louie's part ends above)
+## 呢件事喺度做緊乜，一句講完
 
-**There is one person at this machine.** Any step written as "someone else prepares this
-first" is a step Louie performs cold on a path nobody has run. So there are no such steps:
+佢喺度驗證呢部機上面嗰個受限 Windows 帳戶，**真係睇唔到亦掂唔到你自己個 session** —— 並且把證據寫低。
 
-- **The launcher installs itself.** Pressing the icon copies its own files, sets the
-  permissions, and places the second icon on the Operator desktop. No separate installer.
-- **It self-checks before touching anything.** Exact writes, hashing, the failure report, the
-  marker handoff in both directions — on a scratch directory, on every press. If its own
-  machinery is broken it stops there, before changing the machine.
-- **It cannot rehearse the other session.** That would mean four account switches instead of
-  two. The cross-session path runs once, live, behind the fail-safe below.
+---
 
-**The fail-safe, which is tested rather than promised** — `commissioningFailSafe.test.js`:
+### 設計備註（唔係指示 —— Louie 嘅部分喺上面已經完）
 
-- No commissioning script may contain `Read-Host`, `PromptForChoice`, `ReadLine`, `ReadKey`,
-  `Get-Credential`, or a Yes/No dialog. **Asserted across every file, including failure paths.**
-- Every failure renders the same three fixed lines: *stopped safely* / *recorded, nothing for
-  you to fix* / *photo, then stop* — plus a path and a SHA-256.
-- Every launcher's outermost `catch` must reach that screen.
-- Every wait is bounded; a failing operator run still reports back, so the other side stops
-  waiting instead of hanging.
-- Part B's seal must be written **before** Lock 5 is invoked — asserted by source order.
-- Launcher 2 must not contain `Verb RunAs` or branch on elevation at all.
+**呢部機得一個人。** 任何寫成「由第二個人事先準備」嘅步驟，實際上就係 Louie 冷手上陣去行一條冇人跑過嘅路。所以呢類步驟一個都冇：
 
-Other properties:
+- **啟動器自己安裝自己。** 撳圖示會 copy 自己啲檔、設權限、喺操作員桌面放低第二個圖示。冇獨立安裝步驟。
+- **佢喺郁部機之前先自我檢查。** 精確寫入、hash、失敗報告、marker 雙向交接 —— 喺 scratch 目錄，每次撳都做。自己機件壞就停喺嗰度，未改過部機。
+- **佢綵排唔到另一個 session。** 綵排會變成四次切帳戶而唔係兩次。跨 session 路徑跑一次、真跑，落喺下面嘅 fail-safe 後面。
 
-- **`AromaOperator` must stay signed in.** Launcher 1 hard-stops at the very start if it is
-  not, because switching would then need a password Louie must not be asked for. Measured at
-  build time: `signedIn=True, session=5`.
-- **Part B is sealed to disk before Lock 5 begins.** A Lock 5 failure cannot invalidate a Part
-  B pass; the report carries the two verdicts in separate columns.
-- Up to **3 rounds** automatically; every round recorded; the final report names the total and
-  each outcome; after the third it stops and reports.
-- Nonce handling, manifest minting and consuming, hash verification, timeouts, cleanup,
-  residue, audit writes and the PASS/FAIL call are all done by the launchers.
+**Fail-safe：由測試釘死，唔係口頭承諾** —— `commissioningFailSafe.test.js`：
 
-**Still first-run-live:** `commissioningPrepare.ps1` and the two Lock 5 halves have been
-parse-checked and their core exercised, but their full paths execute for the first time during
-the visit. That is precisely what the fail-safe exists for, and why it is enforced by test.
+- 任何 commissioning 腳本都**唔可以**含 `Read-Host`、`PromptForChoice`、`ReadLine`、`ReadKey`、`Get-Credential`、或者 Yes/No 對話框。**逐個檔掃，包括失敗路徑。**
+- 每次失敗渲染**同樣三行固定中文**：*已經停止 —— 而且係安全咁停低咗* ／ *已經記錄低咗。冇任何嘢需要你去修* ／ *影一張相，然後就可以停手* —— 加路徑同 SHA-256。三行由測試逐字釘死。
+- 每個啟動器最外層 `catch` 必須去到嗰個畫面。
+- 每個等待都有上限；操作員側失敗仍然會回報，另一邊唔會吊死。
+- Part B 封存必須寫喺 Lock 5 之前（由源碼次序斷言）。
+- 啟動器 2 唔可以含 `Verb RunAs` 或任何提權分支。
+- **凡含中文嘅 `.ps1` 必須係 UTF-8 with BOM** —— PowerShell 5.1 冇 BOM 會當 ANSI 讀，中文會變亂碼，而且係喺機前面、喺失敗畫面上、冇人喺度認得出。
+- 兩個桌面圖示名稱必須同啟動器 1 揾嘅名一致，否則佢會報「放唔到第二個圖示」而其實個圖示就喺度。
+
+其他性質：
+
+- **`AromaOperator` 必須保持登入。** 啟動器 1 喺最開頭就硬停，因為切換過去否則要密碼 —— 而 Louie 唔可以被要求提供。建置時實測：`signedIn=True, session=5`。
+- **Part B 喺 Lock 5 開始之前已經封存落磁碟。** Lock 5 失敗改變唔到 Part B 通過；報告兩欄分開。
+- 最多 **3 個回合**自動重試；每回合獨立記錄；最終報告列明總數同每回合結果；第 3 個之後停低出報告。
+- nonce 處理、manifest 鑄造同消耗、hash 驗證、逾時、清理、殘留、audit 寫入、PASS/FAIL 判定，全部由啟動器做。
+
+**仍然係第一次真跑**：`commissioningPrepare.ps1` 同兩個 Lock 5 半邊已經語法檢查、核心已實跑、`$script:` 那類 scoping bug 已被自我檢查抓走 —— 但完整路徑第一次執行就係到場嗰次。**fail-safe 就係為呢件事而存在，所以佢係測試而唔係聲稱。**
+
+技術報告檔（JSON 同 `.txt` 內文）維持英文：佢哋係交接用嘅工件，唔係 Louie 喺機前面睇嘅畫面。三行 fail-safe 中文亦會寫入報告檔頂部。
