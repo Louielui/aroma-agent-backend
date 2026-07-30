@@ -1125,3 +1125,110 @@ would have missed it. Both flip automatically if the Owner later logs in at the 
 nothing has to be cleared by hand. Pinned by test, including the ordering.
 
 The guide gained the same warning at the top, for the reader who has not started yet.
+
+---
+
+## 15. Prepare-only round, 2026-07-30 — the measurement-context chain, and three defects
+
+Built and pushed with **nothing measured**: no session switched, no scheduled task triggered, no
+commissioning result produced. The Owner was remote throughout, and the launchers were never run
+— they self-elevate, and a UAC prompt on a machine with nobody in front of it is a prompt nobody
+answers.
+
+### 15.1 The gap the Owner found by reading, not by running
+
+**If Part B fails, should he still press the retention icon?** The guide did not say. He would
+therefore have stood at the machine, in front of a red screen, **deciding** — the single thing
+this design exists to spare him, arriving at the last step of the visit. "Ask afterwards" is not
+an answer when nobody is there to ask.
+
+**Launcher 4 now answers for itself.** It reads the sealed Part B verdict FIRST and refuses if it
+is not `PASS`. Asserted by test to precede the measurement-context capture, the sweep and the DoD
+seal, so a not-applicable press leaves the round exactly as Part B left it. `PARTB-SEALED.json` is
+written on both the pass and fail paths, so the verdict is always available to key on.
+
+**"No seal" and "sealed as FAIL" are reported as different situations.** Collapsing them would
+name the wrong one. Verified against all three cases — no round, sealed FAIL, sealed PASS.
+
+### 15.2 A THIRD outcome, and why it may not borrow the red screen wording
+
+`CX-NotApplicable` — **amber**, exit **0**, with its own three pinned lines:
+
+```
+Part B 未通過 —— 呢一步唔適用。
+冇做過任何嘢，亦冇刪過任何嘢。
+影一張相，然後就可以停手。
+```
+
+**Nothing broke.** Showing the red 已經停止 screen for a step that merely does not apply would
+teach the Owner to distrust the red screen — and the red screen has to keep meaning something. A
+test asserts the two screens **never borrow each other wording**, in either direction.
+
+Exercised end to end in a sandbox: both report files written, all three lines rendering correctly
+under PowerShell 5.1.
+
+### 15.3 "Safe at any time" is now verified, not assumed
+
+The report icon empty-store case used to be a **red stop**. A red screen for an empty folder is
+the same erosion as above. It is now amber and exits 0.
+
+Tested that the reader gates on **no run state at all** — no `PARTB-SEALED`, no `OPERATOR-DONE`,
+no `LOCK3-DONE` — and re-asserted that it never writes into the evidence root. That re-assertion
+is deliberate: *"safe at any time"* is exactly the claim a later convenience feature would quietly
+break.
+
+### 15.4 The guide answers in one sentence, pinned
+
+> **如果 Part B 冇通過，仲使唔使撳保留期檢查？ 照撳。撳咗都唔會出事。**
+
+Pinned by test so it cannot soften into "it depends". The Owner reads this alone at the machine
+with nobody to ask; an ambiguous sentence there is a decision handed back to him.
+
+### 15.5 A disconnected session protocol is UNKNOWABLE — so Active is a precondition
+
+**MEASURED:** a disconnected session reports a **blank session name**. Session 5 on this machine,
+state `Disc`, has no name in either `quser` or `qwinsta`.
+
+So while the Companion session is Disconnected, its protocol is not awkward to obtain — it
+**cannot be read at all**, and any record claiming `protocol: console` about it is reporting a
+guess. Consequences, both now enforced:
+
+- `subjectState` is checked **before** `subjectProtocol`. Active is a **precondition for the
+  protocol meaning anything**, not a preference.
+- A chain in which **every** stage is `Disc` is `UNUSABLE_CONDITIONS`, **not** merely consistent.
+  Uniform agreement on an unknowable value is not evidence — the same shape as a positive control
+  that could not have failed.
+
+### 15.6 The parser bug: reporting "not there" when it merely could not read
+
+The first session-table parser used measured column constants and returned **zero rows**, which
+fell through to `subjectState = 'NOT-SIGNED-IN'` for an account that **was** signed in.
+
+**This is the worst failure available in this component**, because absence and refusal need
+*opposite* responses: "the Companion never signed in" means stop and tell the Owner, while "I
+could not read the table" means fix the reader. A parser that renders one as the other sends the
+whole run down the wrong branch, confidently.
+
+Now header-driven — offsets read from the `SESSIONNAME`/`USERNAME`/`ID`/`STATE` header rather
+than hardcoded — and verified against the real table. The name column is still parsed **by
+position**, because a disconnected session leaves it empty and splitting on whitespace would
+silently shift the username into it, making every `Disc` session look as though it were named
+after its user.
+
+*(Same family as §0 quoted-not-measured numbers and the stale observer SHA pin: a component
+reporting a state it did not actually establish.)*
+
+### 15.7 BACKLOG-001 flake — recorded again, and how it was judged
+
+One full-suite run showed **1 failure**; three further full runs were clean, and the four test
+files touched this round passed **103/103 five times consecutively**.
+
+**The test name was not captured.** The judgement is therefore based on **reproducibility, not on
+identification** — and that limitation is stated rather than glossed, because "it is the known
+flake" is precisely the sentence that would one day hide a real regression. If it recurs, capture
+the failing name first: `node --test 2>&1 | Select-String '✖'`.
+
+Final state of this round: suite **1704 / 1699 pass / 0 fail / 4 skipped**, 10 launcher files
+redeployed to `C:\Aroma\Commissioning` all hash-identical to the repo, three owner-side icons
+placed and read back with correct targets. The operator-desktop icon still requires elevation and
+is placed by launcher 1 own self-install on the first press — nothing extra for the Owner.
