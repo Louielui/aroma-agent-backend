@@ -129,6 +129,64 @@ const ENTRIES = [
     implies: 'the prober can reach the task at all, so C4 being refused is about writing',
     doesNotImply: 'no write capability is implied'
   },
+  /* ── the Observer task. ADDED 2026-07-29, and it should have existed already ──
+   * register-observer-task.ps1 exports observer-task-baseline.xml and its own closing note
+   * asks for "an observer-task row in the Tier A probe to diff against this". That row was
+   * never added, so the baseline was written and NOTHING EVER READ IT. The write-up at the
+   * time said the C4 gap was "now covered for this task too" — it was not. A baseline with
+   * no reader is a file, not a control.
+   *
+   * C8 is the row that would have caught the stale SHA: the pin lives in the task
+   * DESCRIPTION, Task Scheduler verifies nothing, and observer.ps1 changed underneath it.
+   */
+  {
+    id: 'C6-observer-task-pointer',
+    title: 'the Observer task action still points at observer.ps1',
+    target: 'AromaComputerOperator-Observer',
+    mechanism: ['PERMITTED'],
+    expectedPermitted: true,
+    tier: 'A',
+    implies: 'the POINTER survived — the hole C4 exists to close is a repointed task, and a SHA pin binds the file, not the pointer',
+    doesNotImply: 'nothing about the file it points at (C8) or about the rest of the definition (C7)'
+  },
+  {
+    id: 'C7-observer-task-xml-baseline',
+    title: 'the Observer task definition still matches its exported baseline, byte for byte',
+    target: 'observer-task-baseline.xml',
+    mechanism: ['PERMITTED'],
+    expectedPermitted: true,
+    tier: 'A',
+    implies: 'triggers, principal and settings are unchanged too — backing up only the action was ' +
+      'never enough, since an overwrite can disturb the others silently',
+    doesNotImply: 'a MISSING baseline is not a pass: with nothing to compare against the row is ' +
+      'INVALID, never ACCEPTED'
+  },
+  {
+    id: 'C8-observer-script-sha-matches-pin',
+    title: 'the staged observer.ps1 hashes to the SHA recorded in the task description',
+    target: 'C:\\AromaOperator-Probe\\observer.ps1',
+    mechanism: ['PERMITTED'],
+    expectedPermitted: true,
+    tier: 'A',
+    implies: 'the pin and the file agree. THIS IS A RECORD CHECK, NOT AN ENFORCEMENT: Task ' +
+      'Scheduler verifies no hash and nothing reads that string at run time, so the task starts ' +
+      'either way. What this catches is the record going stale — which it did, unnoticed, when ' +
+      'observer.ps1 changed on 2026-07-29',
+    doesNotImply: 'it does NOT stop a changed observer from running; only the file ACL does that'
+  },
+  {
+    id: 'C9-modify-observer-task',
+    title: 'rewrite the Observer task definition',
+    target: 'AromaComputerOperator-Observer',
+    mechanism: ['ACL'],
+    expectedPermitted: false,
+    positiveControlId: 'C6-observer-task-pointer',
+    tier: 'A',
+    implies: 'the Observer task cannot be repointed at another script by this account — the same ' +
+      'assertion C4 makes for the SessionGate task, which does NOT transfer to a task that did ' +
+      'not exist when C4 was measured',
+    doesNotImply: 'nothing about tasks this account owns, which it can create and modify freely (C1/C2)'
+  },
   {
     id: 'C1-register-own-task',
     title: 'register a scheduled task in the account own context',

@@ -26,6 +26,16 @@ const R = require('./assertionRegistry')
 
 const SCRIPTS = path.resolve(__dirname, '..', '..', 'scripts', 'computer')
 
+/**
+ * PowerShell source with comment lines removed.
+ *
+ * These files QUOTE the very patterns the scanners look for, in order to explain them — and a
+ * scanner that trips on a file's own documentation is a trap this repo has now fallen into
+ * three times. Split on /\r?\n/, not '\n': in a JS regex `.` does not match \r, so on a CRLF
+ * checkout `/^\s*#.*$/` matches nothing and the strip silently does nothing.
+ */
+const stripPs = (s) => s.split(/\r?\n/).map((l) => l.replace(/^\s*#.*$/, '')).join('\n')
+
 /* ── shape ────────────────────────────────────────────────────────────────── */
 
 test('every entry declares the fields the register is for', () => {
@@ -172,6 +182,38 @@ test('E3 states that the desktop object may never be reached at all', () => {
   assert.match(R.get('E3-open-other-session-desktop').doesNotImply, /NOTHING whatever is proven about it/)
 })
 
+/* ── the Observer task: a baseline nothing read ───────────────────────────── */
+
+test('*** the observer-task baseline now has a READER ***', () => {
+  // register-observer-task.ps1 exports observer-task-baseline.xml and its own closing note
+  // asks for "an observer-task row in the Tier A probe to diff against this". That row was
+  // never added, so the baseline was written and nothing ever read it — while the write-up
+  // claimed the C4 gap was "now covered for this task too". A baseline with no reader is a
+  // file, not a control.
+  const probe = fs.readFileSync(path.join(SCRIPTS, 'tierA-probe.ps1'), 'utf8')
+  for (const id of ['C6-observer-task-pointer', 'C7-observer-task-xml-baseline',
+                    'C8-observer-script-sha-matches-pin', 'C9-modify-observer-task']) {
+    assert.ok(R.has(id), id + ' is registered')
+    assert.match(probe, new RegExp("-Id '" + id + "'"), id + ' is actually emitted by the probe')
+  }
+  assert.match(probe, /observer-task-baseline\.xml/, 'and the baseline file is read')
+
+  // C9 carries the same discipline as C4: no baseline, no destructive attempt
+  assert.match(probe, /observertask-backup-/, 'the definition is backed up before it is attacked')
+  assert.match(probe, /C9 modified the Observer task and the restore did not reproduce/)
+})
+
+test('*** C8 says it is a RECORD check, not an enforcement ***', () => {
+  // The observer SHA lives in the task DESCRIPTION. Task Scheduler verifies no hash and
+  // nothing reads that string at run time, so the task starts either way. Claiming this row
+  // stops a changed observer running would be the record reading wider than the control.
+  const c8 = R.get('C8-observer-script-sha-matches-pin')
+  assert.match(c8.implies, /RECORD CHECK, NOT AN ENFORCEMENT/)
+  assert.match(c8.doesNotImply, /does NOT stop a changed observer from running/)
+  // and C9 states that C4's result does not transfer to a task that did not exist then
+  assert.match(R.get('C9-modify-observer-task').implies, /does NOT transfer to a task that did/)
+})
+
 /* ── E4 cannot settle itself ──────────────────────────────────────────────── */
 
 test('*** E4 declares a post-run verification, and it is a PINNED field ***', () => {
@@ -306,6 +348,10 @@ const PINNED = {
   "C4a-gate-action-intact": "eab0bd0b82457a48436524e5d8b99483e51dfca344930b92fe3ea8bc22fe9fb4",
   "C4b-gate-script-sha": "33270756634ffeb8a18b999c5a0a5e5396b93c39f8755e83fea076c67bad47ab",
   "C5-read-gate-task": "dcb6fda11045d26240055c51cc5643e1b73eeb1ef5ecac2be3c030f0b711862f",
+  "C6-observer-task-pointer": "45a36d2cb63ce2ec54461c87e6fbb62c9f5e883e8409297903a06de7908c0872",
+  "C7-observer-task-xml-baseline": "a4a84ef787bc38b0a06d3f51e9fa766ba4e64e4e04890422a819dcf5fca1a74f",
+  "C8-observer-script-sha-matches-pin": "56cfec2f9af7ae9406af91571c9383a8f3f1b596d6b33963120fe92f83ffc422",
+  "C9-modify-observer-task": "c2237df515fa69afcf346356edbb48a45ccb474f5eec1b6099360ae832e18c88",
   "C1-register-own-task": "a94b80f0859f2088a563e09b8f520fdd8198eacaf8ef1b6b36ea79c8c4d23184",
   "C2-register-logon-trigger": "de278489d49c6d5050d80ce3f91c6939ea4b27bc6f112230c1f2e3545cd6370e",
   "C3-register-as-SYSTEM": "aa175bae05406df41d7c2e1d98646b62fb028b0a9881ddfe30b52843dd48c507",
@@ -459,7 +505,7 @@ test('*** every assertion id appearing in a probe script exists in the register 
   // unknown id while the probe is running; this catches a typo before anyone runs anything.
   const unknown = []
   for (const f of fs.readdirSync(SCRIPTS).filter((n) => n.endsWith('.ps1'))) {
-    const code = fs.readFileSync(path.join(SCRIPTS, f), 'utf8')
+    const code = stripPs(fs.readFileSync(path.join(SCRIPTS, f), 'utf8'))
     for (const m of code.matchAll(/-Id\s+'([^']+)'/g)) {
       if (!R.has(m[1])) unknown.push(f + ' : ' + m[1])
     }
@@ -525,8 +571,10 @@ test('*** empty collections survive being returned and counted ***', () => {
   // strip silently does nothing. This repo normalises line endings, so the same file is LF
   // in one working tree and CRLF in another: a scanner that only works on one of them is a
   // scanner that passes until it matters.
-  const stripPs = (s) => s.split(/\r?\n/).map((l) => l.replace(/^\s*#.*$/, '')).join('\n')
-  for (const f of ['tierA-probe.ps1', 'stage3-harness.ps1', 'stage3-topup.ps1']) {
+  // stage3-lock5.ps1 joined this list AFTER it was written with the same defect and its own
+  // self-test caught it. A guard that only covers the files that existed when it was written
+  // stops being a guard the moment someone adds a file.
+  for (const f of ['tierA-probe.ps1', 'stage3-harness.ps1', 'stage3-topup.ps1', 'stage3-lock5.ps1']) {
     const code = stripPs(fs.readFileSync(path.join(SCRIPTS, f), 'utf8'))
     assert.equal(/@\(\$rows\)/.test(code), false, f + ' must not wrap the row List in @() — it throws')
     assert.ok(/\$rows\.ToArray\(\)|\$rowArray/.test(code), f + ' uses ToArray() instead')

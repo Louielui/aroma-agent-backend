@@ -309,6 +309,107 @@ Probe -Id 'C5-read-gate-task' -Target $GateTask `
   -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction SilentlyContinue) } `
   -Action { $null -ne (Get-ScheduledTask -TaskName $GateTask -ErrorAction Stop) } -Cleanup $null
 
+# ===========================================================================
+# THE OBSERVER TASK - C6 / C7 / C8 / C9
+#
+# ADDED 2026-07-29, AND IT SHOULD HAVE EXISTED ALREADY. register-observer-task.ps1 exports
+# observer-task-baseline.xml and its own closing note asks for "an observer-task row in the
+# Tier A probe to diff against this". That row was never added, so the baseline was written
+# and NOTHING EVER READ IT. The write-up at the time said the C4 gap was "now covered for
+# this task too". It was not. A baseline with no reader is a file, not a control.
+#
+# C8 is the row that would have caught the stale pin: the observer SHA lives in the task
+# DESCRIPTION, Task Scheduler verifies nothing, and observer.ps1 changed underneath it.
+# ===========================================================================
+$ObserverTask = 'AromaComputerOperator-Observer'
+# $PSScriptRoot, not a hardcoded path: this probe RUNS FROM the probe directory, so the
+# staged observer is its own sibling. A literal would be a second definition of where the
+# staged copy lives, and would silently measure the wrong file if the directory ever moved.
+$ObserverScript = Join-Path $PSScriptRoot 'observer.ps1'
+$ObserverBaseline = Join-Path $EvidenceDir 'observer-task-baseline.xml'
+
+function ExportTask { param([string]$Name) try { (Export-ScheduledTask -TaskName $Name -ErrorAction Stop | Out-String) } catch { $null } }
+
+Probe -Id 'C6-observer-task-pointer' -Target $ObserverTask `
+  -Note 'the task action must still name observer.ps1 - a SHA pin binds the FILE, not the pointer to it' `
+  -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue) } `
+  -Action {
+    $t = Get-ScheduledTask -TaskName $ObserverTask -ErrorAction Stop
+    ([string]$t.Actions[0].Arguments) -match 'observer\.ps1'
+  } -Cleanup $null
+
+# A MISSING baseline is not a pass. ExistsCheck false makes the row INVALID, which is the
+# correct reading of "there was nothing to compare against".
+Probe -Id 'C7-observer-task-xml-baseline' -Target 'observer-task-baseline.xml' `
+  -Note 'the WHOLE definition, not just the action: an overwrite can disturb triggers, principal or settings silently' `
+  -ExistsCheck { Test-Path -LiteralPath $ObserverBaseline } `
+  -Action {
+    $now = ExportTask -Name $ObserverTask
+    if (-not $now) { return $false }
+    $was = Get-Content -LiteralPath $ObserverBaseline -Raw -ErrorAction Stop
+    (HashString $now) -eq (HashString $was)
+  } -Cleanup $null
+
+# THE STALE-PIN ROW. Compares the staged file against the SHA recorded in the description.
+# It is a RECORD check and says so: nothing reads that string at run time, so a mismatch does
+# not stop the task - it only means the record has stopped describing the file.
+Probe -Id 'C8-observer-script-sha-matches-pin' -Target $ObserverScript `
+  -Note 'RECORD check, not enforcement: Task Scheduler verifies no hash. This catches the pin going stale, which it did, unnoticed.' `
+  -ExistsCheck { (Test-Path -LiteralPath $ObserverScript) -and ($null -ne (Get-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue)) } `
+  -Action {
+    $t = Get-ScheduledTask -TaskName $ObserverTask -ErrorAction Stop
+    $desc = [string]$t.Description
+    if ($desc -notmatch '([A-Fa-f0-9]{64})') { return $false }
+    $pinned = $Matches[1]
+    $actual = (Get-FileHash -LiteralPath $ObserverScript -Algorithm SHA256 -ErrorAction Stop).Hash
+    $actual -eq $pinned
+  } -Cleanup $null
+
+# C9 - the destructive one, with the SAME discipline as C4: export, back up, attempt,
+# compare, restore, re-verify. NO BASELINE, NO ATTEMPT.
+$obsXmlBefore = ExportTask -Name $ObserverTask
+$obsBackupPath = Join-Path $EvidenceDir ('observertask-backup-' + $nonce + '.xml')
+$obsHashBefore = if ($obsXmlBefore) { HashString $obsXmlBefore } else { $null }
+$obsBackupWritten = $false
+if ($obsXmlBefore) {
+  try { Set-Content -LiteralPath $obsBackupPath -Value $obsXmlBefore -Encoding UTF8 -ErrorAction Stop; $obsBackupWritten = $true } catch { $obsBackupWritten = $false }
+}
+
+if (-not ($obsXmlBefore -and $obsBackupWritten)) {
+  $c9reg = Resolve-AssertionRow -Id 'C9-modify-observer-task' -Target $ObserverTask
+  $rows.Add([ordered]@{
+    id = 'C9-modify-observer-task'; target = $ObserverTask; permitted = $false
+    expectedPermitted = $c9reg.expectedPermitted; accessMask = $c9reg.accessMask
+    verdict = 'INVALID'; mechanism = 'NO-BASELINE'; targetExists = ($null -ne $obsXmlBefore)
+    errorType = $null; residueLeft = $false; residuePath = $null
+    note = 'SKIPPED - could not export the task and write a backup, so a failed restore would be unrecoverable. Not attempted by design.'
+    registryDrift = @($c9reg.drift); implies = $c9reg.implies; doesNotImply = $c9reg.doesNotImply
+  })
+} else {
+  Probe -Id 'C9-modify-observer-task' -Target $ObserverTask `
+    -Note 'repoint the Observer task at another script - C4 proved this for the SessionGate task, and that result does NOT transfer to a task that did not exist when C4 was measured' `
+    -ExistsCheck { $null -ne (Get-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue) } `
+    -Action {
+      $a = New-ScheduledTaskAction -Execute 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+           -Argument '-NoProfile -File C:\AromaOperator-Probe\NOT-THE-PINNED-OBSERVER.ps1'
+      Set-ScheduledTask -TaskName $ObserverTask -Action $a -ErrorAction Stop | Out-Null
+      $true
+    } `
+    -Cleanup {
+      # Runs whether the attempt succeeded or failed - "it threw, so nothing changed" is an
+      # assumption, and this is exactly the place not to make one.
+      $after = ExportTask -Name $ObserverTask
+      if ($null -ne $after -and (HashString $after) -eq $obsHashBefore) { return $null }
+      try { Register-ScheduledTask -TaskName $ObserverTask -Xml $obsXmlBefore -Force -ErrorAction Stop | Out-Null } catch { }
+      $third = ExportTask -Name $ObserverTask
+      if ($null -ne $third -and (HashString $third) -eq $obsHashBefore) {
+        return ('observer task was modified and was RESTORED from ' + $obsBackupPath)
+      }
+      $script:Incident = 'C9 modified the Observer task and the restore did not reproduce the original XML'
+      ('CONTAINMENT-INCIDENT - restore failed. Backup XML: ' + $obsBackupPath)
+    }
+}
+
 $tmpTask = 'AromaProbeTemp-' + $nonce
 Probe -Id 'C1-register-own-task' -Target $tmpTask `
   -Note 'a non-admin registering a task in its own context is normal Windows behaviour - persistence surface' `
