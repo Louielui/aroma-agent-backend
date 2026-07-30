@@ -340,15 +340,49 @@ Probe -Id 'C6-observer-task-pointer' -Target $ObserverTask `
 
 # A MISSING baseline is not a pass. ExistsCheck false makes the row INVALID, which is the
 # correct reading of "there was nothing to compare against".
+#
+# ── TWO DEFECTS FIXED HERE, BOTH FOUND BY THE OWNER ASKING WHY IT SAID NO-EXCEPTION ──
+#
+# 1. IT COULD NEVER HAVE PASSED. Set-Content APPENDS ITS OWN TRAILING NEWLINE, and the
+#    exported XML already ends in one. Measured: write 1346 chars, read back 1348 - identical
+#    for 1346 then two extra (CR LF). So hashing the raw strings compared a value against
+#    itself-plus-a-newline and could not agree, ever. The claim that C7 "will be trivially
+#    green on the first run after re-registering" was wrong, and this is the second time an
+#    assertion has been written against a route structurally incapable of succeeding - the
+#    first was E2's OpenWindowStation. Content equality is what is meant; a trailing newline
+#    is not drift, so both sides are TrimEnd()ed.
+#
+# 2. IT COLLAPSED TWO DIFFERENT ANSWERS INTO ONE UNEXPLAINED $false. "Could not export the
+#    task" and "exported it and the XML differs" both returned a bare falsy, which Classify
+#    reports as NO-EXCEPTION - blocked, reason unknown. That is precisely the vacuous shape
+#    this whole set exists to refuse, written by the person writing the rules about it.
+#    The export failure now THROWS so it is classified, and a real difference is recorded
+#    with both hashes rather than as a silent false.
+$script:C7Diag = $null
 Probe -Id 'C7-observer-task-xml-baseline' -Target 'observer-task-baseline.xml' `
   -Note 'the WHOLE definition, not just the action: an overwrite can disturb triggers, principal or settings silently' `
   -ExistsCheck { Test-Path -LiteralPath $ObserverBaseline } `
   -Action {
     $now = ExportTask -Name $ObserverTask
-    if (-not $now) { return $false }
+    if (-not $now) {
+      # THROW, do not return false: an export that failed must be classified (ACL, absent,
+      # whatever it was), not reported as an unexplained mismatch.
+      $script:C7Diag = 'export-failed'
+      throw [System.UnauthorizedAccessException]::new('Export-ScheduledTask returned nothing for ' + $ObserverTask)
+    }
     $was = Get-Content -LiteralPath $ObserverBaseline -Raw -ErrorAction Stop
-    (HashString $now) -eq (HashString $was)
+    $hNow = HashString ($now.TrimEnd())
+    $hWas = HashString ($was.TrimEnd())
+    if ($hNow -ne $hWas) {
+      $script:C7Diag = 'differs: export=' + $hNow.Substring(0, 16) + ' baseline=' + $hWas.Substring(0, 16)
+      return $false
+    }
+    $script:C7Diag = 'match: ' + $hNow.Substring(0, 16)
+    $true
   } -Cleanup $null
+# The diagnosis travels with the row, so a future INVALID says WHICH of the two it was.
+# $rows.Count directly - a List[object] has .Count, and @() around one THROWS on 5.1.
+if ($rows.Count -gt 0) { $rows[$rows.Count - 1]['c7Diagnosis'] = $script:C7Diag }
 
 # THE STALE-PIN ROW. Compares the staged file against the SHA recorded in the description.
 # It is a RECORD check and says so: nothing reads that string at run time, so a mismatch does
@@ -731,8 +765,24 @@ foreach ($c in $composites) {
 
 Write-Host ''
 Write-Host ('cross-session containment : ' + $record.crossSessionContainment) -ForegroundColor Yellow
-Write-Host ('  ' + $DeferredToTierB.Count + ' assertions deferred to Tier B / 3b acceptance. Until then this') -ForegroundColor Yellow
-Write-Host '  must be reported as NOT PROVEN - never as proven, and never omitted.' -ForegroundColor Yellow
+# ── SAY WHERE TIER B WENT, NOT JUST HOW MANY ARE LEFT HERE ──────────────────
+# This used to print "<n> assertions deferred to Tier B" and then "until then this must be
+# reported as NOT PROVEN". The Tier B ids now live in stage3-topup.ps1 and stage3-harness.ps1,
+# so the count read 0 and the two sentences contradicted each other: nothing deferred, yet
+# still not proven. A reader would reasonably conclude Tier B was finished.
+#
+# The count was never the point. NOT PROVEN is a statement about cross-session containment,
+# not about this probe's backlog.
+$deferredHere = @($DeferredToTierB).Count
+if ($deferredHere -gt 0) {
+  Write-Host ('  ' + $deferredHere + ' assertion(s) still deferred FROM THIS PROBE.') -ForegroundColor Yellow
+} else {
+  Write-Host '  0 deferred from THIS PROBE - the Tier B ids have moved to stage3-topup.ps1 and' -ForegroundColor Yellow
+  Write-Host '  stage3-harness.ps1. That is a relocation, NOT a completion.' -ForegroundColor Yellow
+}
+Write-Host '  Cross-session containment is reported NOT PROVEN by this probe regardless: it is' -ForegroundColor Yellow
+Write-Host '  measured in session 5 by the Tier B harnesses, and only their rows can settle it.' -ForegroundColor Yellow
+Write-Host '  Never report it as proven from here, and never omit it.' -ForegroundColor Yellow
 
 $out = 'C:\Aroma\ComputerOperator-Evidence\tierA-probe.out'
 try {

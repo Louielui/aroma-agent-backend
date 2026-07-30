@@ -28,6 +28,11 @@
 # is removed by that script too.
 
 #Requires -RunAsAdministrator
+# -ForceRestage: destroy files in the staging directory that are not in the derived closure.
+# Off by default and deliberately awkward - a re-stage already destroyed session-identity.ps1
+# once, silently, and only one Tier A row ever noticed.
+param([switch]$ForceRestage)
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -178,7 +183,37 @@ if ($skipped.Count) { Write-Host ("   left reachable: " + ($skipped -join ', '))
 # ---------------------------------------------------------------------------
 Write-Host ""
 Write-Host "2. staging the Companion" -ForegroundColor Cyan
-if (Test-Path -LiteralPath $StageDir) { Remove-Item -LiteralPath $StageDir -Recurse -Force }
+# ── REFUSE TO WIPE ANYTHING NOBODY DECLARED ─────────────────────────────────
+# This step deletes the WHOLE staging directory and rebuilds it from the derived closure.
+# Correct for the closure, and silently destructive for everything else - and it already
+# destroyed something real: session-identity.ps1, the script the SessionGate task points at,
+# lived here, is not in the closure, and was wiped by a re-stage. NOTHING NOTICED except
+# C4b-gate-script-sha, one Tier A row, on the next run.
+#
+# Two lessons, the second being the general one:
+#   . anything not in the derived closure MUST NOT LIVE HERE. This is precisely why the Owner
+#     ruled that probes do not belong in the staging tree.
+#   . a destructive rebuild must refuse to destroy what it cannot account for. Refuse, do not
+#     trim - the same rule this set applies everywhere else.
+if (Test-Path -LiteralPath $StageDir) {
+  $expectedNames = @()
+  try { $expectedNames = @(& $node (Join-Path $ScriptDir 'companionManifest.js') --list | ForEach-Object { Split-Path $_ -Leaf }) } catch { }
+  $presentNames = @(Get-ChildItem -LiteralPath $StageDir -File -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })
+  $foreign = @($presentNames | Where-Object { $expectedNames -notcontains $_ })
+  if (@($foreign).Count -gt 0 -and -not $ForceRestage) {
+    Write-Host ""
+    Write-Host "*** REFUSING TO RE-STAGE: files here are not in the derived closure ***" -ForegroundColor Red
+    foreach ($x in $foreign) { Write-Host ("    " + $x) -ForegroundColor Red }
+    Write-Host "  Re-staging DELETES THE WHOLE DIRECTORY. These would be destroyed with no record." -ForegroundColor Red
+    Write-Host "  Move them somewhere that is not rebuilt, then re-run. -ForceRestage overrides," -ForegroundColor Yellow
+    Write-Host "  and if you use it, record in the handoff what was lost." -ForegroundColor Yellow
+    throw 'refusing to destroy undeclared files in the staging directory'
+  }
+  if (@($foreign).Count -gt 0) {
+    Write-Host ("   -ForceRestage: DESTROYING " + @($foreign).Count + " undeclared file(s): " + (@($foreign) -join ', ')) -ForegroundColor Red
+  }
+  Remove-Item -LiteralPath $StageDir -Recurse -Force
+}
 New-Item -ItemType Directory -Force -Path $StageDir | Out-Null
 
 # THE LIST IS DERIVED, NOT HAND-WRITTEN. companionManifest.js walks the entry's real

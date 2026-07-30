@@ -168,7 +168,12 @@ if ($triggerCount -ne 0) { Write-Host "  WARNING: this task has a trigger. It mu
 if (-not (Test-Path -LiteralPath $EvidenceDir)) { New-Item -ItemType Directory -Force -Path $EvidenceDir | Out-Null }
 $baselinePath = Join-Path $EvidenceDir 'observer-task-baseline.xml'
 $xml = (Export-ScheduledTask -TaskName $TaskName | Out-String)
-Set-Content -LiteralPath $baselinePath -Value $xml -Encoding UTF8
+# WriteAllText, NOT Set-Content. Set-Content APPENDS ITS OWN TRAILING NEWLINE, so the file on
+# disk was always two characters longer than the string it came from - measured: 1346 written,
+# 1348 read back. Any later comparison by hash therefore compared a value against
+# itself-plus-a-newline and could never agree, which is exactly why C7 came back INVALID.
+# C7 also TrimEnd()s both sides now, so an already-written baseline still compares correctly.
+[IO.File]::WriteAllText($baselinePath, $xml, (New-Object Text.UTF8Encoding($true)))
 $sha = [Security.Cryptography.SHA256]::Create()
 try { $xmlHash = ($sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($xml)) | ForEach-Object { $_.ToString('x2') }) -join '' } finally { $sha.Dispose() }
 

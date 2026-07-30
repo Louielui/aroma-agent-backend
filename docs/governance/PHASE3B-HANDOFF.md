@@ -594,6 +594,89 @@ Four rows added to the Tier A probe:
 
 ---
 
+## 5d-bis. Two INVALIDs from the first Tier A run with C6–C9
+
+27 rows, drift 0, control gaps 0, residue 0. `C9-modify-observer-task` = **BOUNDED / ACL** —
+the Observer task cannot be repointed, and the gap C4 never covered is now closed by
+measurement. `C8` ACCEPTED. Two rows came back INVALID and both were real.
+
+### C4b — the SessionGate script was DESTROYED BY RE-STAGING
+
+`C4a-gate-action-intact` still ACCEPTED, `C4b-gate-script-sha` INVALID / ABSENT-EXISTENCE:
+**the pointer is intact and the file it points at is gone.**
+
+**Confirmed in the code, not inferred.** `deploy-companion.ps1` staged the Companion by
+deleting the WHOLE directory and rebuilding it from the derived closure:
+
+```
+if (Test-Path $StageDir) { Remove-Item -LiteralPath $StageDir -Recurse -Force }
+New-Item -ItemType Directory -Force -Path $StageDir
+```
+
+The closure is five `.js` files. `session-identity.ps1` — the script the SessionGate task
+points at — lived in that directory, is not in the closure, and was therefore destroyed by a
+re-stage. The repo copy survives and still hashes to the pinned
+`98A474BC…`, so nothing is lost; the *staged* copy is gone.
+
+**Nothing noticed except C4b.** One Tier A row, on the next run. That is the finding worth
+more than the file:
+
+> **A destructive rebuild that only replaces what it declares will silently destroy everything
+> it does not — and only an assertion that names the missing thing will ever report it.**
+
+Two consequences, both acted on:
+
+1. **`deploy-companion.ps1` now REFUSES to re-stage** when the directory contains files outside
+   the derived closure. It lists them and throws. `-ForceRestage` overrides, prints what it is
+   destroying, and the handoff must record what was lost. Refuse, do not trim.
+2. **This is exactly why the Owner ruled that probes do not belong in the staging tree**, and
+   the ruling is now vindicated rather than merely asserted: `containment-probe.ps1` is also
+   staged there and removed afterwards. Anything that must survive a re-stage must live
+   somewhere that is not rebuilt.
+
+**Still to decide (Owner):** the SessionGate task currently points at a path with no file. It
+needs either a re-stage of `session-identity.ps1` into a location that is NOT wiped, or the
+task repointed. Repointing changes what `C4b` pins, so it is a register change, not an edit.
+
+### C7 — the assertion COULD NEVER HAVE PASSED
+
+Not a permissions problem. Diagnosed by ruling candidates out, each by measurement:
+
+| candidate | measured | verdict |
+|---|---|---|
+| `Export-ScheduledTask` non-deterministic run to run | two exports, byte-identical | ruled out |
+| `Out-String` wrapping at console width | widths 60→4096, all identical hashes | ruled out |
+| `Set-Content` / `Get-Content -Raw` round-trip | **write 1346 chars, read back 1348** | **CAUSE** |
+
+`Set-Content` **appends its own trailing newline**, and the exported XML already ends in one.
+So the baseline on disk was always the export plus `CR LF`, and hashing the raw strings
+compared a value against itself-plus-a-newline. **C7 was structurally incapable of returning
+true** — and the claim in the previous revision that it "will be trivially green on the first
+run" was wrong. **This is the second assertion written against a route that could not succeed;
+the first was E2's `OpenWindowStation`.**
+
+**And it hid which failure it was.** "Could not export" and "exported, and it differs" both
+returned a bare `$false`, which `Classify` reports as `NO-EXCEPTION` — blocked, reason
+unknown. That is the exact vacuous shape this set exists to refuse, written by the same hand
+that wrote the rule against it.
+
+Fixed three ways: the baseline is written with `WriteAllText` (no added newline); C7 compares
+`TrimEnd()`ed content, so an already-written baseline still compares correctly; and the two
+failure modes are separated — an export failure now **throws** so it gets classified, a real
+difference records **both hashes**, and the row carries a `c7Diagnosis` field saying which.
+Verified: `raw-equal=False, trimmed-equal=True` for the old file, `True/True` for the new.
+
+### The "0 deferred" contradiction
+
+`tierA-probe.ps1` printed *"0 assertions deferred to Tier B"* followed by *"until then this
+must be reported as NOT PROVEN"* — nothing deferred, yet still not proven. A reader would
+reasonably conclude Tier B was finished. The count was never the point: the Tier B ids moved
+to `stage3-topup.ps1` and `stage3-harness.ps1`, which is a **relocation, not a completion**.
+The closing text now says where they went and states that NOT PROVEN is a claim about
+cross-session containment, not about this probe's backlog.
+
+---
+
 ## 5e. Lock 5 — a measurement, not a pass
 
 `stage3-lock5.ps1`, run as AromaOperator in session 5. Three questions:
