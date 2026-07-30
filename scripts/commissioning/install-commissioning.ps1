@@ -61,12 +61,76 @@ $cacl.AddAccessRule((New-Object Security.AccessControl.FileSystemAccessRule($q, 
 Set-Acl -LiteralPath $cx -AclObject $cacl
 Write-Host '  handoff directory writable by both accounts' -ForegroundColor Green
 
+# ── DESKTOPS ARE NOT WHERE THE PATH SAYS ──────────────────────────────────
+# This used to hardcode C:\Users\<account>\Desktop. MEASURED on this machine: the profile can
+# be OneDrive-redirected to a LOCALISED folder (C:\Users\louis\OneDrive\桌面), and BOTH the
+# redirected and the plain folder can exist at once with items in each. A wrong guess puts the
+# icon somewhere Louie cannot see, which - for the one icon he has to press - is the same as
+# not having built any of this. So resolve every plausible desktop and write to all of them.
+# A duplicate in a stale folder costs nothing; a miss costs the visit.
+function Get-ProfileRoot {
+  param([string]$Account)
+  # Ask the SID's ProfileImagePath rather than assuming the folder is named after the account.
+  try {
+    $sid = (New-Object Security.Principal.NTAccount($env:COMPUTERNAME, $Account)).Translate([Security.Principal.SecurityIdentifier]).Value
+    $pp = (Get-ItemProperty -Path ("HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\ProfileList\" + $sid) -Name 'ProfileImagePath' -ErrorAction Stop).ProfileImagePath
+    if ($pp) { return [Environment]::ExpandEnvironmentVariables($pp) }
+  } catch { }
+  # No guess here. Falling back to C:\Users\<account> is the very assumption that puts an icon
+  # where Louie cannot see it, and a wrong path fails SILENTLY - the copy succeeds into a
+  # folder nobody is looking at. Stopping produces a report; guessing produces a wasted visit.
+  throw ("could not resolve the profile folder for " + $Account + " from ProfileList - refusing to guess a desktop path")
+}
+
+function Resolve-DesktopPaths {
+  param([string]$Account)
+  $root = Get-ProfileRoot -Account $Account
+  $out = New-Object System.Collections.Generic.List[string]
+  foreach ($c in @((Join-Path $root 'Desktop'), (Join-Path $root 'OneDrive\Desktop'), (Join-Path $root 'OneDrive\桌面'))) {
+    # MEASURED: probing the OTHER account's profile without elevation raises Access Denied,
+    # which under $ErrorActionPreference='Stop' aborts with an opaque Test-Path error instead
+    # of the clear "no desktop found" report. Treat unreadable as absent and let the caller's
+    # own check produce the message that actually tells someone what happened.
+    $ok = $false
+    try { $ok = Test-Path -LiteralPath $c -ErrorAction Stop } catch { $ok = $false }
+    if ($ok -and -not $out.Contains($c)) { $out.Add($c) }
+  }
+  # and whatever that account's own shell settings say, if its hive is loaded (it is, while
+  # the account is signed in - which launcher 1 has already required by this point)
+  try {
+    $sid = (New-Object Security.Principal.NTAccount($env:COMPUTERNAME, $Account)).Translate([Security.Principal.SecurityIdentifier]).Value
+    $k = "Registry::HKEY_USERS\$sid\Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"
+    $v = (Get-ItemProperty -Path $k -Name 'Desktop' -ErrorAction Stop).Desktop
+    $v = $v -replace '%USERPROFILE%', $root
+    $v = [Environment]::ExpandEnvironmentVariables($v)
+    if ($v -and (Test-Path -LiteralPath $v) -and -not $out.Contains($v)) { $out.Add($v) }
+  } catch { }
+  # NO leading comma here. MEASURED: `return ,$arr` read back through the caller's @(...)
+  # yields a 1-element array holding the array - count=1 EVEN WHEN EMPTY - which would make
+  # the caller's "no desktop found" throw unreachable and hand Join-Path an array. The leading
+  # comma is only correct when the caller does NOT re-wrap; here @() already covers the empty
+  # case. (Same trap, opposite direction, as Get-AssertionRegistryDrift.)
+  return $out.ToArray()
+}
+
 function New-Launcher {
-  param([string]$DesktopPath, [string]$Name, [string]$Script, [bool]$Elevate)
-  if (-not (Test-Path -LiteralPath $DesktopPath)) { Write-Host ("  SKIPPED (no desktop): " + $DesktopPath) -ForegroundColor Yellow; return }
-  $lnkPath = Join-Path $DesktopPath ($Name + '.lnk')
+  param([string]$Account, [string]$Name, [string]$Script)
+  $desktops = @(Resolve-DesktopPaths -Account $Account)
+  if ($desktops.Count -eq 0) {
+    # NOT a warning. A missing icon is discovered by Louie standing at the machine with
+    # nothing to press, which is exactly the situation the fail-safe exists to prevent.
+    throw ("no desktop folder could be found for " + $Account + " (profile root: " + (Get-ProfileRoot -Account $Account) + ") - refusing to report success without placing '" + $Name + "'")
+  }
+  # WScript.Shell saves through an ANSI code path and these names are Chinese. MEASURED: it
+  # writes "Aroma ??? -- ?????.lnk" and fails, and it fails even for an ASCII filename inside
+  # the OneDrive\桌面 folder, because the FOLDER name cannot be encoded either. Reading such a
+  # path back returns a blank shortcut instead of an error, so a naive check "passes".
+  # Build once at a fully-ASCII temp path, verify there, then copy the finished bytes.
+  $asciiTemp = $env:TEMP
+  if (-not $asciiTemp -or $asciiTemp -match '[^\u0000-\u007F]') { $asciiTemp = 'C:\Windows\Temp' }
+  $src = Join-Path $asciiTemp ('aroma-lnk-' + [guid]::NewGuid().ToString('N') + '.lnk')
   $sh = New-Object -ComObject WScript.Shell
-  $lnk = $sh.CreateShortcut($lnkPath)
+  $lnk = $sh.CreateShortcut($src)
   $lnk.TargetPath = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
   $lnk.Arguments = '-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + (Join-Path $InstallDir $Script) + '"'
   $lnk.WorkingDirectory = $InstallDir
@@ -76,13 +140,30 @@ function New-Launcher {
   # NOTE: the shortcut is NOT marked run-as-administrator. Launcher 1 elevates ITSELF, so the
   # behaviour survives the shortcut being recreated, and Louie is never asked to right-click
   # and pick "Run as administrator" - he answers a UAC prompt, which is one button.
-  Write-Host ("  icon: " + $lnkPath) -ForegroundColor Green
+  $check = $sh.CreateShortcut($src)
+  if ($check.Arguments -notlike ('*' + $Script + '*')) {
+    Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue
+    throw ("built '" + $Name + "' but it read back with the wrong target - refusing to place it")
+  }
+  $srcLen = (Get-Item -LiteralPath $src).Length
+
+  $placed = 0
+  foreach ($d in $desktops) {
+    $lnkPath = Join-Path $d ($Name + '.lnk')
+    Copy-Item -LiteralPath $src -Destination $lnkPath -Force
+    # verify by size: COM blanks rather than fails when it cannot encode these paths
+    $got = Get-Item -LiteralPath $lnkPath -ErrorAction SilentlyContinue
+    if ($got -and $got.Length -eq $srcLen) { $placed++; Write-Host ("  icon: " + $lnkPath) -ForegroundColor Green }
+    else { Write-Host ("  COPIED BUT NOT VERIFIED: " + $lnkPath) -ForegroundColor Red }
+  }
+  Remove-Item -LiteralPath $src -Force -ErrorAction SilentlyContinue
+  if ($placed -eq 0) { throw ("could not place '" + $Name + "' on any desktop for " + $Account) }
 }
 
-New-Launcher -DesktopPath (Join-Path (Join-Path 'C:\Users' $OwnerAccount) 'Desktop') `
-  -Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher.ps1' -Elevate $true
-New-Launcher -DesktopPath (Join-Path (Join-Path 'C:\Users' $OperatorAccount) 'Desktop') `
-  -Name 'Aroma 第二步 —— 操作員檢查' -Script 'Operator-Verification-Launcher.ps1' -Elevate $false
+New-Launcher -Account $OwnerAccount `
+  -Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher.ps1'
+New-Launcher -Account $OperatorAccount `
+  -Name 'Aroma 第二步 —— 操作員檢查' -Script 'Operator-Verification-Launcher.ps1'
 
 Write-Host ''
 if (-not $Quiet) { Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan }

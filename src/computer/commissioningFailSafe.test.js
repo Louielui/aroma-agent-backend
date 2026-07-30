@@ -233,6 +233,79 @@ test('*** the two desktop icon names match what the guide tells Louie to look fo
     'launcher 1 must look for exactly the name the installer creates')
 })
 
+test('*** the FIRST icon has a named creator and is never assumed to exist ***', () => {
+  // THE BUG THIS PINS: install-commissioning.ps1 creates both icons, but it only ever runs
+  // FROM launcher 1 - which is started by pressing icon 1. Icon 1 could therefore only be
+  // created by something that could not run until icon 1 already existed. It silently did not
+  // exist, and the single icon Louie must press to begin was missing when he went to look.
+  // Every other guarantee here is worthless if there is nothing to press.
+  const boot = path.join(DIR, 'bootstrap-owner-icon.ps1')
+  assert.equal(fs.existsSync(boot), true,
+    'bootstrap-owner-icon.ps1 must exist: something outside the launcher must create icon 1')
+  const src = fs.readFileSync(boot, 'utf8')
+  assert.match(src, /Aroma 第一步 —— 擁有者標記/, 'and it must create exactly that icon name')
+  assert.match(src, /Owner-Sentinel-Launcher\.ps1/, 'pointing at launcher 1')
+
+  // It must run as Louie WITHOUT elevation - an elevation prompt is one more thing that can
+  // block the only path in, and writing into his own profile does not need it.
+  assert.equal(/Verb RunAs|Requires -RunAsAdministrator/.test(stripPs(src)), false,
+    'the bootstrap must not require elevation to write into the owner profile')
+
+  // It must VERIFY the file landed. "I created it" is not evidence, and on these paths the
+  // shortcut COM object blanks instead of failing.
+  assert.match(stripPs(src), /Test-Path -LiteralPath \$lnk|\$got\.Length -eq \$srcLen/,
+    'the bootstrap must verify the icon is really on disk after writing it')
+  assert.match(stripPs(src), /exit 1/, 'and must exit non-zero if no icon was placed')
+})
+
+test('*** desktop locations are resolved, never hardcoded to \\Users\\<name>\\Desktop ***', () => {
+  // MEASURED on this machine: the desktop can be OneDrive-redirected to a LOCALISED folder
+  // (C:\Users\louis\OneDrive\桌面) while C:\Users\louis\Desktop ALSO exists with items in it.
+  // A hardcoded guess puts the icon where Louie cannot see it - indistinguishable, to him,
+  // from the icon not existing.
+  for (const f of ['install-commissioning.ps1', 'bootstrap-owner-icon.ps1']) {
+    const src = stripPs(fs.readFileSync(path.join(DIR, f), 'utf8'))
+    assert.equal(/Join-Path 'C:\\Users'/.test(src), false,
+      `${f} must not assume the profile folder is named after the account`)
+    assert.match(src, /OneDrive\\桌面/,
+      `${f} must consider the localised OneDrive desktop`)
+  }
+  const inst = stripPs(fs.readFileSync(path.join(DIR, 'install-commissioning.ps1'), 'utf8'))
+  // and a desktop it cannot find must be a hard stop, not a yellow warning: a skipped operator
+  // icon is only discovered by Louie, mid-run, in the other account, with nothing to press.
+  assert.match(inst, /throw \("no desktop folder could be found for/,
+    'a missing desktop must throw, so the fail-safe screen reports it')
+  assert.equal(/SKIPPED \(no desktop\)/.test(inst), false,
+    'the old warn-and-continue path must be gone')
+
+  // MEASURED in PowerShell 5.1: a function ending `return ,$arr`, read back through the
+  // caller's @(...), yields a 1-element array holding the array - count=1 EVEN WHEN EMPTY.
+  // That makes the throw above unreachable and hands Join-Path an array instead of a path,
+  // i.e. it silently converts "no desktop" into "icon written somewhere meaningless".
+  assert.equal(/return ,\$out\.ToArray\(\)/.test(inst), false,
+    'Resolve-DesktopPaths must not use a leading comma: the caller re-wraps with @()')
+  assert.match(inst, /\$desktops = @\(Resolve-DesktopPaths/,
+    'and the caller must wrap with @() so the empty case is really count 0')
+})
+
+test('*** shortcut names in Chinese are built via an ASCII path, not saved directly ***', () => {
+  // MEASURED: WScript.Shell.CreateShortcut saves through an ANSI code path. With a non-Chinese
+  // system locale it wrote "Aroma ??? —— ?????.lnk" and threw; inside OneDrive\桌面 it failed
+  // even for an ASCII filename, because the FOLDER name cannot be encoded either. Worse, on
+  // read-back it returns a BLANK shortcut rather than erroring - so a naive verification of a
+  // never-written icon reports success. Both icon names are Chinese, so this would have taken
+  // out the operator icon too, discovered only at step 3 in the other account.
+  for (const f of ['install-commissioning.ps1', 'bootstrap-owner-icon.ps1']) {
+    const src = stripPs(fs.readFileSync(path.join(DIR, f), 'utf8'))
+    assert.match(src, /\$asciiTemp/, `${f} must build the .lnk at an ASCII path`)
+    assert.match(src, /\[\^\\u0000-\\u007F\]/, `${f} must check that temp path is really ASCII`)
+    assert.match(src, /Copy-Item -LiteralPath \$src/, `${f} must copy the finished bytes into place`)
+    // the Save() must target the temp path, never the Chinese destination
+    assert.equal(/CreateShortcut\(\$lnkPath\)|CreateShortcut\(\$lnk\b/.test(src), false,
+      `${f} must not CreateShortcut directly on the destination path`)
+  }
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.
