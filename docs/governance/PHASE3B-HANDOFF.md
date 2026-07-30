@@ -915,3 +915,72 @@ short of "reads everything from the register".
    assistant's crash output. Neither party's number is a measurement. Anything that can be
    measured in one command must be, every time it is written down — and when the two disagree,
    the arbiter is the command, not the more senior speaker.
+
+---
+
+## 12. Commissioning route — VERIFIED on the physical machine, and now cheap to repeat
+
+*(Owner ruling 2026-07-30, executed the same day. Round `1e80253806ce`.)*
+
+**The mechanism worked end to end.** Two launchers, self-installation, self-check, cross-account
+handoff, Chinese display, fail-safe, report generation — all exercised on the real machine, in
+both sessions. The Owner pressed two icons, switched accounts twice, photographed two screens,
+and **typed nothing**. No command was pasted, no nonce carried by hand, no machine state judged
+by a human.
+
+**This is the correct shape of Principle 003.** The exception bought a repeatable route, not a
+one-off. The expensive part — proving the two-session path works at all — is now spent, and a
+re-run costs two presses and two account switches.
+
+### What the round actually found
+
+`stage3-harness.ps1` exited **11 — "nonce already burned"**. Owner launcher: 8 of 8 green,
+stopped while sealing Part B. Operator launcher: 3 of 4 green, stopped at the harness.
+
+**Root cause: two unrelated nonce systems that nobody had joined.**
+
+| | minted by | read by |
+|---|---|---|
+| `<round>\MANIFEST.json` | the commissioning launcher | the launchers, for their own handoff |
+| `stage3-manifest.json` (evidence root) | `stage3-manifest.ps1` | **`stage3-harness.ps1`** |
+
+The commissioning path never called `stage3-manifest.ps1`. The harness therefore read the
+**leftover manifest from the earlier manual Part A run**, found `consumed = true`, and refused —
+**exactly as designed**. It halts *before* measuring anything, so nothing was damaged, no nonce
+was spent, and the round is cleanly repeatable.
+
+**This is not a containment finding and must not be recorded as one.** Nothing was measured, so
+nothing about session isolation was learned or contradicted in this round.
+
+### The fix, and why it is not a blanket `-Force`
+
+Item 5 was added to `commissioningPrepare.ps1`, exposed as `-ManifestOnly`:
+
+| state of `stage3-manifest.json` | action |
+|---|---|
+| absent | mint |
+| present, `consumed = true` | that run is over — mint fresh (`-Force`) |
+| present, `consumed = false` | a live run nobody used — **use it, do not mint over it** |
+
+A blanket `-Force` would silently discard a live manual Part A run, which is precisely what the
+one-shot nonce exists to prevent. The guarantee is preserved, not bypassed.
+
+**It runs per round, inside the retry loop — not in phase 2.** The harness *burns* the manifest
+when it runs, so minting once would leave a round-2 retry running against a manifest round 1 had
+already consumed: the same exit 11, one round later, defeating the retry cap entirely. Pinned by
+a source-order test.
+
+Verified by running all three branches against the real `stage3-manifest.ps1` in a sandbox
+evidence directory: absent → minted; unconsumed → reused with the nonce unchanged; burned →
+re-minted with the nonce rotated. Case 3 reproduces `1e80253806ce` and resolves it.
+
+### Two properties confirmed rather than assumed
+
+- **The evidence directory is unreadable without elevation** (§10 already records this). It is
+  **not** Gate B — Gate B targets `C:\AromaOperator-Probe` only. The consequence is that the
+  commissioning reports land where neither the Owner nor an unelevated agent can read them,
+  even though the launcher displays the path and SHA-256 on screen. Reading them back is an
+  elevated action.
+- **`ROUND_CAP = 3` did not engage here**, because the failure was adjudicated as a Part B
+  failure and sealed rather than retried. Worth confirming on the next run whether a harness
+  exit should retry within the visit or stop — it currently stops.

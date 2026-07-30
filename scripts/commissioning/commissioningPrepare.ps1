@@ -1,20 +1,25 @@
-# commissioningPrepare.ps1 - PHASE 2 of launcher 1. Elevated, in Louie's session.
+﻿# commissioningPrepare.ps1 - PHASE 2 of launcher 1. Elevated, in Louie's session.
 #
 # OWNER RULING 2026-07-30: preparation folds into the launcher so Louie never judges machine
 # state - AND it is limited to the KNOWN, IDEMPOTENT, BASELINED items listed here. Anything
 # unexpected STOPS and reports. This is not a general repair tool and must never become one.
 #
-# The four known items, each already carrying its own baseline/backup/verify discipline:
+# The five known items, each already carrying its own baseline/backup/verify discipline:
 #   1. the SessionGate script lives in C:\Aroma\ComputerOperator-Gate (it was destroyed once
 #      by a re-stage of the Companion tree) and the gate task points there
 #   2. the Observer task's SHA pin matches the staged observer.ps1
 #   3. the probe directory holds the current staged scripts
 #   4. Gate B is applied
+#   5. Part A's run manifest exists and is UNCONSUMED (added 2026-07-30 - see below)
 #
 # Returns @{ ok; reason; detail; summary }. It NEVER throws for an expected condition - the
 # caller decides how to stop, so a failure can still be written to a report.
 
-param($UI)
+# -ManifestOnly runs ONLY item 5. It is called once PER ROUND, because the harness burns the
+# manifest when it runs: a round-2 retry against a round-1 manifest is the exact failure this
+# whole item was added to fix, just one round later. Items 1-4 stay outside the loop - they are
+# machine state, not per-run state, and re-registering tasks each round would be noise.
+param($UI, [switch]$ManifestOnly)
 
 # Dot-source the core: this script is invoked with & from the launcher, so $script:
 # variables set in the LAUNCHER's scope are NOT visible here. The self-check caught this.
@@ -27,7 +32,59 @@ $detail = New-Object System.Collections.Generic.List[string]
 $did = New-Object System.Collections.Generic.List[string]
 $ps = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
 
-function Note { param([string]$m) $detail.Add($m); if ($UI) { $UI.SetStep('prep', 'run', $m) } }
+function Note { param([string]$m) $detail.Add($m); if ($UI) { $UI.SetStep($(if ($ManifestOnly) { 'mint' } else { 'prep' }), 'run', $m) } }
+
+# ── ITEM 5 (per round) ──────────────────────────────────────────────────────
+# WHY THIS EXISTS. Round 1e80253806ce failed at stage3-harness.ps1 exit 11 - "nonce already
+# burned". There were TWO unrelated nonce systems and nobody had joined them:
+#   . commissioning mints <round>\MANIFEST.json, used only for the launcher-to-launcher handoff
+#   . stage3-harness.ps1 reads C:\Aroma\ComputerOperator-Evidence\stage3-manifest.json, which
+#     is Part A's manifest, minted by stage3-manifest.ps1 - a script the commissioning path
+#     never called
+# So the harness read the LEFTOVER manifest from the earlier manual Part A run, found
+# consumed=true, and refused exactly as designed. Not a containment failure: it halts before
+# measuring anything, so nothing was damaged and the round is cleanly repeatable.
+#
+# The one-shot guarantee is preserved rather than bypassed:
+#   absent              -> mint
+#   present, consumed   -> that run is over; mint fresh (-Force)
+#   present, unconsumed -> a live run nobody used; USE IT, do not mint over it
+# Blanket -Force would have discarded a live manual run, which is the thing the one-shot nonce
+# exists to prevent.
+function Invoke-ManifestItem {
+  Note 'checking the Part A run manifest'
+  $manifestPath = Join-Path $script:CX_EvidenceRoot 'stage3-manifest.json'
+  $existing = $null
+  if (Test-Path -LiteralPath $manifestPath) {
+    try { $existing = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $existing = $null }
+  }
+  $needMint = $true
+  $forceMint = $false
+  if ($existing -and $existing.consumed -eq $false) { $needMint = $false }
+  elseif ($existing) { $forceMint = $true }
+
+  if (-not $needMint) { $did.Add('run manifest already usable'); return $null }
+
+  Note $(if ($forceMint) { 'minting a fresh run manifest (the previous one was already used)' } else { 'minting the run manifest' })
+  # NOT $args - that is an automatic variable, and splatting it back is a trap in waiting.
+  $mintArgs = @('-NoProfile','-ExecutionPolicy','Bypass','-File',(Join-Path $script:CX_Scripts 'stage3-manifest.ps1'),'-EvidenceDir',$script:CX_EvidenceRoot)
+  if ($forceMint) { $mintArgs += '-Force' }
+  $out = & $ps @mintArgs 2>&1 | Out-String
+  # VERIFY by reading the file back, not by trusting the exit code: a manifest that did not
+  # land leaves the harness refusing to start for a reason nobody at the machine can see.
+  $after = $null
+  try { $after = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json } catch { }
+  if (-not $after) { return @{ ok = $false; reason = 'the run manifest could not be minted'; detail = @($out); summary = '' } }
+  if ($after.consumed -ne $false) { return @{ ok = $false; reason = 'the run manifest was minted but is already marked used'; detail = @($out); summary = '' } }
+  $did.Add($(if ($forceMint) { 'run manifest re-minted' } else { 'run manifest minted' }))
+  return $null
+}
+
+if ($ManifestOnly) {
+  $bad = Invoke-ManifestItem
+  if ($bad) { return $bad }
+  return @{ ok = $true; reason = ''; detail = @($detail); summary = (($did) -join ', ') }
+}
 
 # ── 1. the gate script and its task ─────────────────────────────────────────
 $gateScript = Join-Path $script:CX_GateDir 'session-identity.ps1'
@@ -105,5 +162,6 @@ if ($readable) {
   if ($still) { return @{ ok = $false; reason = 'Gate B could not be applied'; detail = @($out); summary = '' } }
   $did.Add('Gate B applied')
 } else { $did.Add('Gate B already applied') }
+
 
 @{ ok = $true; reason = ''; detail = @($detail); summary = (($did) -join ', ') }

@@ -306,6 +306,36 @@ test('*** shortcut names in Chinese are built via an ASCII path, not saved direc
   }
 })
 
+test('*** the commissioning round mints the manifest the HARNESS reads, every round ***', () => {
+  // THE BUG THIS PINS: round 1e80253806ce died at stage3-harness.ps1 exit 11, "nonce already
+  // burned". Two unrelated nonce systems, never joined: commissioning minted
+  // <round>\MANIFEST.json for its own handoff, while the harness reads Part A's
+  // stage3-manifest.json in the evidence root - minted by stage3-manifest.ps1, a script the
+  // commissioning path never called. It therefore read the leftover manifest from the earlier
+  // manual run, found consumed=true, and refused exactly as designed.
+  const prep = code('commissioningPrepare.ps1')
+  assert.match(prep, /stage3-manifest\.ps1/,
+    'preparation must mint the manifest the harness actually reads')
+  assert.match(prep, /\[switch\]\$ManifestOnly/, 'and expose it as a per-round step')
+
+  // The one-shot nonce must be preserved, not bypassed. A blanket -Force would silently
+  // discard a live manual Part A run - the precise thing the one-shot nonce exists to stop.
+  assert.match(prep, /if \(\$existing -and \$existing\.consumed -eq \$false\) \{ \$needMint = \$false \}/,
+    'an existing UNCONSUMED manifest must be reused, never minted over')
+  assert.match(prep, /if \(\$forceMint\) \{ \$mintArgs \+= '-Force' \}/,
+    '-Force must be conditional on the previous run being finished')
+
+  // Per ROUND, not once. Minting in phase 2 would leave a round-2 retry running against a
+  // manifest round 1 already burned: the same failure one round later, which defeats the
+  // retry cap entirely.
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  const loopAt = own.indexOf('for ($round = 1')
+  const callAt = own.indexOf('-ManifestOnly')
+  assert.ok(loopAt > 0, 'the round loop must exist')
+  assert.ok(callAt > loopAt,
+    'the manifest step must run INSIDE the round loop, so each retry gets a fresh nonce')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

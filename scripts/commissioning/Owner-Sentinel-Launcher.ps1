@@ -179,7 +179,23 @@ try {
       at = (Get-Date).ToString('o')
     }
     [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'MANIFEST.json') -Object $manifest)
-    $UI.SetStep('mint', 'ok', ('round ' + $round + ' - ' + $NONCE))
+
+    # Part A's OWN manifest, which is a different file the harness reads and burns. Minted per
+    # round, not once: round 1e80253806ce died on stage3-harness.ps1 exit 11 because nothing in
+    # the commissioning path ever minted it, and doing it in PHASE 2 instead would leave a
+    # round-2 retry running against a manifest round 1 already burned - the same failure, one
+    # round later, which is exactly what a retry cap is supposed to survive.
+    if (-not $DRY) {
+      $mf = & (Join-Path $PSScriptRoot 'commissioningPrepare.ps1') -UI $UI -ManifestOnly
+      if (-not $mf.ok) {
+        $UI.SetStep('mint', 'fail', $mf.reason)
+        [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'mint' -Reason $mf.reason -Detail $mf.detail -Launcher 'owner')
+        $UI.Form.ShowDialog() | Out-Null; exit 1
+      }
+      $UI.SetStep('mint', 'ok', ('round ' + $round + ' - ' + $NONCE + ' - ' + $mf.summary))
+    } else {
+      $UI.SetStep('mint', 'ok', ('round ' + $round + ' - ' + $NONCE))
+    }
 
     # ── PHASE 4: owner sentinel ────────────────────────────────────────────
     $UI.SetStep('sent', 'run', '')
