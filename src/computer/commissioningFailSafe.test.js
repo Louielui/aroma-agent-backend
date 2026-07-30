@@ -32,7 +32,7 @@ test('the commissioning scripts exist and are the expected set', () => {
   for (const need of ['commissioningCore.ps1', 'commissioningSelfCheck.ps1', 'commissioningPrepare.ps1',
                       'commissioningLock5.ps1', 'commissioningLock5Operator.ps1',
                       'Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1',
-                      'Report-Reader-Launcher.ps1', 'bootstrap-owner-icon.ps1',
+                      'Report-Reader-Launcher.ps1', 'Retention-Check-Launcher.ps1', 'bootstrap-owner-icon.ps1',
                       'install-commissioning.ps1']) {
     assert.ok(set.includes(need), 'missing: ' + need)
   }
@@ -78,7 +78,7 @@ test('*** every catch block in a launcher ends in CX-Fail ***', () => {
   // A catch that merely logs, or one that lets execution continue, would leave Louie looking
   // at a half-finished screen with no instruction. Both launchers wrap everything.
   for (const f of ['Owner-Sentinel-Launcher.ps1', 'Operator-Verification-Launcher.ps1',
-                   'Report-Reader-Launcher.ps1']) {
+                   'Report-Reader-Launcher.ps1', 'Retention-Check-Launcher.ps1']) {
     const c = code(f)
     const catches = (c.match(/\bcatch\s*\{/g) || []).length
     assert.ok(catches >= 1, f + ' has a top-level catch')
@@ -412,6 +412,69 @@ test('*** a remote session is refused BEFORE the machine is touched ***', () => 
   const guide = fs.readFileSync(
     path.resolve(__dirname, '..', '..', 'docs', 'governance', 'COMMISSIONING-ONE-PAGE.md'), 'utf8')
   assert.match(guide, /遙距連線（RDP）/, 'the guide must warn about RDP up front')
+})
+
+test('*** RDP is refused BEFORE any nonce, sentinel, manifest or evidence exists ***', () => {
+  // Owner requirement, prepare-only round: the remote check must stop the run before ANYTHING
+  // is created. Not merely before "preparation" — before the first artefact of any kind, so a
+  // refused run leaves no round directory, no burned nonce and no partial evidence to reason
+  // about later. Ordering is asserted against every mutation site by name, because a check
+  // that is merely "early" drifts down the file one edit at a time.
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  const at = (s) => own.indexOf(s)
+  const remoteAt = at('CX-IsRemoteSession')
+  assert.ok(remoteAt > 0, 'the remote check must be present')
+
+  const MUTATIONS = [
+    ['round nonce', '$NONCE = [guid]::NewGuid()'],
+    ['round directory', 'New-Item -ItemType Directory -Force -Path $dir'],
+    ['commissioning manifest', "'MANIFEST.json'"],
+    ['Part A run manifest', '-ManifestOnly'],
+    ['owner sentinel', 'stage3-sentinel.ps1'],
+    ['READY handoff', "'READY.json'"],
+    ['machine preparation', 'commissioningPrepare.ps1']
+  ]
+  for (const [what, needle] of MUTATIONS) {
+    const idx = at(needle)
+    assert.ok(idx > 0, `expected to find the ${what} site (${needle})`)
+    assert.ok(remoteAt < idx,
+      `the remote check must precede ${what}: a refused run must leave nothing behind`)
+  }
+
+  // and the refusal itself must not create a round directory — CX-Fail with a null nonce
+  // writes into the commissioning root rather than minting one.
+  const joined = own.replace(/`\r?\n\s*/g, ' ')
+  const refusal = joined.slice(joined.indexOf('CX-IsRemoteSession'))
+  const call = refusal.slice(0, refusal.indexOf('exit 1'))
+  assert.match(call, /CX-Fail -UI \$UI -Nonce \$null/,
+    'the RDP refusal must not mint a round nonce to report against')
+})
+
+test('*** launcher 4 runs Lock 3 without turning Louie back into the executor ***', () => {
+  // Owner ruling: without this, the visit ends with him opening PowerShell and pasting a
+  // command — the exact role the two-press design exists to remove, arriving at the last step.
+  const rc = code('Retention-Check-Launcher.ps1')
+  assert.match(rc, /Verb RunAs/, 'it must self-elevate rather than ask for right-click')
+
+  // It must call the TESTED sweep, not a second implementation. A PowerShell reimplementation
+  // of the classifier would drift from evidenceStore.js exactly as the assertion ids and the
+  // observer SHA pin did.
+  assert.match(rc, /lock3-sweep\.js/, 'the sweep must be the JS one that has tests')
+  assert.equal(/RETENTION_DAYS|classify\s*\(/.test(rc), false,
+    'the retention rule and the classifier must not be duplicated in PowerShell')
+
+  // Context first, and it must be able to refuse.
+  const ctxAt = rc.indexOf('New-MeasurementContext')
+  const sweepAt = rc.indexOf('lock3-sweep.js')
+  assert.ok(ctxAt > 0 && sweepAt > 0 && ctxAt < sweepAt,
+    'the measurement context must be captured before the sweep runs')
+  assert.match(rc, /if \(-not \$ctx\.usable\)/, 'and an unusable context must stop the run')
+
+  // Lock 3's own result and the context verdict are separate columns. A clean sweep inside a
+  // mixed-condition record is a passed Lock 3 that still cannot be accepted, and the report
+  // has to be able to say exactly that rather than collapsing to one word.
+  assert.match(rc, /chainVerdict\s*=/, 'the report must carry the chain verdict separately')
+  assert.match(rc, /verdict\s*=\s*\$\(if \(\$res\.ok\)/, 'and the sweep verdict separately')
 })
 
 test('*** the operator launcher never tries to elevate ***', () => {

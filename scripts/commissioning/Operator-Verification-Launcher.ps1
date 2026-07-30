@@ -82,6 +82,29 @@ try {
   [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'STAGED-FILES.json') -Object @{ marker='STAGED-FILES'; files=$staged; at=(Get-Date).ToString('o') })
   $UI.SetStep('files', 'ok', ('記錄咗 ' + @($staged).Count.ToString() + ' 個檔案'))
 
+  # ── MEASUREMENT CONTEXT, BEFORE ANY PROBE RUNS ───────────────────────────
+  # Owner ruling 2026-07-30. Part B, Lock 3 and the DoD must be joinable, and they are only
+  # joinable if each records the conditions it was taken under. Captured HERE because this is
+  # the one process running inside the Companion session - its window station and desktop
+  # cannot be observed correctly from anywhere else.
+  #
+  # It REFUSES rather than annotates. A Part B measured while the Companion session is
+  # Disconnected would produce numbers that cannot be combined with anything, and discovering
+  # that at adjudication time means the visit is wasted instead of merely paused.
+  . (Join-Path $script:CX_Scripts 'measurementContext.ps1')
+  $ctx = New-MeasurementContext -Stage 'part-b' -RunId $NONCE
+  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $NONCE -Name 'CONTEXT-part-b.json') -Object $ctx)
+  if (-not $ctx.usable) {
+    $UI.SetStep('partb', 'fail', '量測條件唔合格')
+    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'context' `
+      -Reason '而家嘅量測條件，唔可以用嚟做正式接受' `
+      -Detail (@('三個階段必須喺同一組條件下量度。') + @($ctx.unusableBecause) +
+               @('冇跑過任何探針。')) -Launcher 'operator')
+    [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object @{
+      marker='OPERATOR-DONE'; verdict='FAIL'; reason='measurement context unusable'; context=$ctx; at=(Get-Date).ToString('o') })
+    $UI.Form.ShowDialog() | Out-Null; exit 1
+  }
+
   # ── PART B ───────────────────────────────────────────────────────────────
   $UI.SetStep('partb', 'run', '')
   $ps = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'

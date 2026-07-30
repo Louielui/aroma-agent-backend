@@ -31,7 +31,7 @@ $src = Join-Path $Repo 'scripts\commissioning'
 $files = @('commissioningCore.ps1','commissioningPrepare.ps1','commissioningLock5.ps1',
            'commissioningLock5Operator.ps1','commissioningSelfCheck.ps1','install-commissioning.ps1',
            'Owner-Sentinel-Launcher.ps1','Operator-Verification-Launcher.ps1',
-           'Report-Reader-Launcher.ps1')
+           'Report-Reader-Launcher.ps1','Retention-Check-Launcher.ps1')
 
 if (-not $Quiet) { Write-Host '=== install commissioning launchers ===' -ForegroundColor Cyan }
 foreach ($f in $files) {
@@ -187,6 +187,10 @@ New-Launcher -Account $OperatorAccount `
 # needs to come back out. Refreshed here so it always points at the installed copy.
 New-Launcher -Account $OwnerAccount `
   -Name 'Aroma 報告 —— 攞返驗收報告' -Script 'Report-Reader-Launcher.ps1'
+# Lock 3, as one press. Without it the visit ends with the Owner opening PowerShell and pasting
+# a command - back to being the executor, at the end of a visit designed so he is not.
+New-Launcher -Account $OwnerAccount `
+  -Name 'Aroma 第四步 —— 保留期檢查' -Script 'Retention-Check-Launcher.ps1'
 
 Write-Host ''
 if (-not $Quiet) { Write-Host 'Installed. Louie presses ONLY these two icons.' -ForegroundColor Cyan }

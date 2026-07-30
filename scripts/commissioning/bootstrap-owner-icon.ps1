@@ -128,6 +128,7 @@ function New-DesktopIcon {
 $all = New-Object System.Collections.Generic.List[string]
 foreach ($p in @(New-DesktopIcon -Name 'Aroma 第一步 —— 擁有者標記' -Script 'Owner-Sentinel-Launcher.ps1')) { if ($p) { $all.Add($p) } }
 foreach ($p in @(New-DesktopIcon -Name 'Aroma 報告 —— 攞返驗收報告' -Script 'Report-Reader-Launcher.ps1')) { if ($p) { $all.Add($p) } }
+foreach ($p in @(New-DesktopIcon -Name 'Aroma 第四步 —— 保留期檢查' -Script 'Retention-Check-Launcher.ps1')) { if ($p) { $all.Add($p) } }
 
 if ($all.Count -eq 0) {
   Write-Host 'NO ICON WAS CREATED. Louie would have nothing to press.' -ForegroundColor Red
