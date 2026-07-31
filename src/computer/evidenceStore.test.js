@@ -163,6 +163,17 @@ test('*** the sweep now covers the names that actually hold raw content ***', ()
   for (const n of ['stage3-results.json', 'stage3-manifest.json', 'tierA-probe.out']) {
     assert.equal(classify(n).kind, 'record', n + ' is the audit trail and must survive')
   }
+  // DECIDED 2026-07-31. The 2026-07-30 sweep reported 48 of 97 files unclassified and every one
+  // was a companion log — roughly half the store outside the control's declared coverage. The
+  // fail-safe held (undeclared names are never deleted, only reported), but a permanent open
+  // question is a decision nobody made. They are RECORDS: deploy-companion writes them as the
+  // stdout/stderr of a Companion launch, and those launches ARE the Lock 5 kill bindings, so
+  // they are the only artefact showing a binding was exercised rather than claimed. Deleting
+  // them on a timer would destroy Lock 5's audit trail while leaving Lock 5's verdict standing.
+  for (const n of ['companion-gate-20260728-013948.log', 'companion-abort-20260730-073847.log.err',
+                   'companion-oskill-20260731-001122.log']) {
+    assert.equal(classify(n).kind, 'record', n + ' is Lock 5 evidence and must never be swept')
+  }
   assert.equal(classify('holiday-photo.png').kind, 'unclassified',
     'an undeclared name is never deleted — absence of a rule is not permission')
 })

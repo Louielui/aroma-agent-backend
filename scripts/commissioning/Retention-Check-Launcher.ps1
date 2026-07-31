@@ -123,7 +123,7 @@ try {
   # conditions other than the ones it describes.
   $UI.SetStep('ctx', 'run', '')
   $ctx = New-MeasurementContext -Stage 'lock3' -RunId $round
-  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $round -Name 'CONTEXT-lock3.json') -Object $ctx)
+  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $round -Name 'CONTEXT-lock3.json') -Context $ctx)
   if (-not $ctx.usable) {
     $UI.SetStep('ctx', 'fail', '量測條件唔合格')
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'context' `
@@ -192,17 +192,22 @@ try {
   # Say the word and it splits into a fifth icon.
   $UI.SetStep('chain', 'run', '')
   $dodCtx = New-MeasurementContext -Stage 'dod' -RunId $round
-  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $round -Name 'CONTEXT-dod.json') -Object $dodCtx)
+  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $round -Name 'CONTEXT-dod.json') -Context $dodCtx)
 
   $seal = CX-ReadJson -Path (CX-Marker -Nonce $round -Name 'PARTB-SEALED.json')
   $verdicts = @{ 'part-b' = $(if ($seal -and $seal.verdict) { [string]$seal.verdict } else { 'UNKNOWN' })
                  'lock3'  = $(if ($res.ok) { 'PASS' } else { 'FAIL' })
                  'dod'    = 'PASS' }
+  # Through a FILE, not the command line. ConvertTo-Json -Compress lost its quoting crossing
+  # into node, arrived as {part-b:PASS,...}, and the run reported INCOMPLETE_CONTEXT — naming
+  # the wrong thing and sending the reader to context files that were fine.
+  $verdictsPath = CX-Marker -Nonce $round -Name 'dod-verdicts.json'
+  [void](CX-WriteJson -Path $verdictsPath -Object $verdicts)
   $adj = Join-Path $script:CX_Scripts 'dod-adjudicate.js'
   $chainOut = CX-Marker -Nonce $round -Name 'DOD-VERDICT.json'
   $clog = CX-Marker -Nonce $round -Name 'dod-adjudicate.log'
   $cargs = @($adj, '--round-dir', (CX-RoundDir -Nonce $round), '--result', $chainOut,
-             '--verdicts', ($verdicts | ConvertTo-Json -Compress))
+             '--verdicts-file', $verdictsPath)
   $cp = Start-Process -FilePath $node -ArgumentList $cargs -PassThru -WindowStyle Hidden -RedirectStandardOutput $clog
   $cp | Wait-Process -Timeout 300 -ErrorAction SilentlyContinue
   $chain = CX-ReadJson -Path $chainOut

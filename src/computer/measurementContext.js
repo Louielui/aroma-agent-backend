@@ -73,7 +73,11 @@ const VERDICT = {
   PASS: 'PASS',
   MIXED: 'MIXED_MEASUREMENT_CONDITIONS',
   INCOMPLETE: 'INCOMPLETE_CONTEXT',
-  UNUSABLE: 'UNUSABLE_CONDITIONS'
+  UNUSABLE: 'UNUSABLE_CONDITIONS',
+  // A malformed input to the adjudicator is its OWN failure. It used to surface as
+  // INCOMPLETE_CONTEXT, which pointed the reader at context files that were perfectly fine
+  // while the real problem was quoting lost on a command line.
+  BAD_INPUT: 'ADJUDICATOR_BAD_INPUT'
 }
 
 const isBlank = (v) => v === undefined || v === null || (typeof v === 'string' && v.trim() === '')

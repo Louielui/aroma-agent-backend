@@ -207,7 +207,22 @@ function New-MeasurementContext {
 
 function Write-MeasurementContext {
   param([string]$Path, $Context)
+  # ── REFUSE TO WRITE NOTHING ─────────────────────────────────────────────────
+  # MEASURED 2026-07-31: all three CONTEXT-*.json files for round 28ba1e19f7ab were 0 bytes.
+  # Every call site passed -Object, this parameter is -Context, so nothing bound, $Context was
+  # $null, ConvertTo-Json produced nothing, and WriteAllText created an empty file. The
+  # surrounding [void](...) swallowed the rest. The result LOOKED written — a file existed at
+  # the expected path — and the DoD chain was unsealable because of it.
+  #
+  # A file that exists but says nothing is worse than a missing one: absence is noticed, an
+  # empty file is inherited. So this throws, loudly, before anything is created.
+  if ($null -eq $Context) {
+    throw "Write-MeasurementContext: no context supplied for $Path (check the caller uses -Context, not -Object)"
+  }
   $json = ($Context | ConvertTo-Json -Depth 6)
+  if ([string]::IsNullOrWhiteSpace($json)) {
+    throw "Write-MeasurementContext: the context serialised to nothing for $Path"
+  }
   # WriteAllText, never Set-Content: Set-Content appends its own trailing newline, which is what
   # made an earlier hash comparison structurally unable to pass.
   [IO.File]::WriteAllText($Path, $json, (New-Object Text.UTF8Encoding($false)))

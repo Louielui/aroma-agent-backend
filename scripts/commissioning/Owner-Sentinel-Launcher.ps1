@@ -233,6 +233,31 @@ try {
       $UI.SetStep('mint', 'ok', ('round ' + $round + ' - ' + $NONCE))
     }
 
+    # ── THE SENTINEL NONCE COMES FROM PART A'S MANIFEST, NOT FROM THIS ROUND ─
+    # ROOT CAUSE OF THE VOIDED ROUND 28ba1e19f7ab. The sentinel was painted under the
+    # COMMISSIONING round nonce, while stage3-harness.ps1 builds both the window title and the
+    # attestation path from Part A's manifest ownerNonce:
+    #     $ownerTitle      = 'AROMA-OWNER-SENTINEL-' + $manifest.ownerNonce
+    #     $ownerAttestPath = 'stage3-sentinel-owner-' + $manifest.ownerNonce + '.json'
+    # Two different values, so the attestation was never found, $ownerAttested stayed false, and
+    # all three EYE positive controls came back INVALID - the negatives proved nothing.
+    #
+    # §12 joined the two manifests for CONSUMPTION. Their IDENTITY was never joined. This joins
+    # it: the sentinel is painted with the nonce the harness will actually look for.
+    $SENTINEL_NONCE = $NONCE
+    if (-not $DRY) {
+      $paManifest = CX-ReadJson -Path (Join-Path $script:CX_EvidenceRoot 'stage3-manifest.json')
+      if (-not $paManifest -or -not $paManifest.ownerNonce) {
+        $UI.SetStep('sent', 'fail', '讀唔到 Part A manifest 嘅 ownerNonce')
+        [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'sentinel-nonce' `
+          -Reason '讀唔到 Part A manifest，哨兵會用錯 nonce' `
+          -Detail @('哨兵嘅 nonce 必須同 harness 揾嘅一致，否則三個眼睛正控制會全部 INVALID。',
+                    '呢個就係 28ba1e19f7ab 被作廢嘅原因。') -Launcher 'owner')
+        CX-Wait -UI $UI; exit 1
+      }
+      $SENTINEL_NONCE = [string]$paManifest.ownerNonce
+    }
+
     # ── PHASE 4: owner sentinel ────────────────────────────────────────────
     $UI.SetStep('sent', 'run', '')
     $sentinelOk = $false; $sentinelDetail = 'dry run'
@@ -243,9 +268,9 @@ try {
       $sp = Join-Path $script:CX_Scripts 'stage3-sentinel.ps1'
       $so = Join-Path $dir 'owner-sentinel.out'
       $pr = Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
-        -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$sp,'-Role','owner','-Nonce',$NONCE) `
+        -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$sp,'-Role','owner','-Nonce',$SENTINEL_NONCE) `
         -PassThru -WindowStyle Normal -RedirectStandardOutput $so
-      $att = Join-Path $script:CX_EvidenceRoot ('stage3-sentinel-owner-' + $NONCE + '.json')
+      $att = Join-Path $script:CX_EvidenceRoot ('stage3-sentinel-owner-' + $SENTINEL_NONCE + '.json')
       $wait = 0
       while ($wait -lt 40000 -and -not (Test-Path -LiteralPath $att)) { Start-Sleep -Milliseconds 500; $wait += 500; $UI.Pump() }
       $a = CX-ReadJson -Path $att

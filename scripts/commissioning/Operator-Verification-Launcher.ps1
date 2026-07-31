@@ -122,7 +122,7 @@ try {
   # account is supposed to read from, and prepare stages the file into it.
   . (Join-Path $script:CX_ProbeDir 'measurementContext.ps1')
   $ctx = New-MeasurementContext -Stage 'part-b' -RunId $NONCE
-  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $NONCE -Name 'CONTEXT-part-b.json') -Object $ctx)
+  [void](Write-MeasurementContext -Path (CX-Marker -Nonce $NONCE -Name 'CONTEXT-part-b.json') -Context $ctx)
   if (-not $ctx.usable) {
     $UI.SetStep('partb', 'fail', '量測條件唔合格')
     [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'context' `
@@ -167,17 +167,52 @@ try {
 
   # ── hand the result back ─────────────────────────────────────────────────
   $UI.SetStep('hand', 'run', '')
-  $topup = @(Get-ChildItem -LiteralPath $script:CX_EvidenceRoot -Filter 'stage3-topup-results-*.json' -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1)
-  $doc = if (@($topup).Count) { CX-ReadJson -Path $topup[0].FullName } else { $null }
-  $drift = if ($doc) { @($doc.registryDrift).Count } else { 0 }
-  $gaps  = if ($doc) { @($doc.positiveControlProblems).Count } else { 0 }
-  $rows  = if ($doc) { @($doc.rows).Count } else { 0 }
-  $verdict = if ($DRY) { 'PASS' } elseif ($drift -eq 0 -and $gaps -eq 0 -and $rows -gt 0) { 'PASS' } else { 'FAIL' }
+  # ── THE VERDICT READS EVERY ROW. ─────────────────────────────────────────
+  # THE DEFECT THIS REPLACES, round 28ba1e19f7ab: the rule was
+  #     drift -eq 0 -and gaps -eq 0 -and rows -gt 0  ->  PASS
+  # `drift` and `gaps` describe REGISTER CONSISTENCY - whether each negative row has a DECLARED
+  # positive control. They say nothing about whether those controls PASSED. So "the register is
+  # coherent" was converted into "Part B passed", and a PASS was sealed while the harness's own
+  # last line read "STAGE 3 RAN - ROWS NOT CLEAN" and both eye controls were INVALID.
+  #
+  # Register consistency is a PRECONDITION, never a result. The rows are the result.
+  $docs = New-Object System.Collections.Generic.List[object]
+  foreach ($pat in @('stage3-results.json', 'stage3-topup-results-*.json')) {
+    foreach ($fi in @(Get-ChildItem -LiteralPath $script:CX_EvidenceRoot -Filter $pat -ErrorAction SilentlyContinue |
+                      Sort-Object LastWriteTime -Descending | Select-Object -First 1)) {
+      $j = CX-ReadJson -Path $fi.FullName
+      if ($j) { $docs.Add($j) }
+    }
+  }
+  $drift = 0; $gaps = 0; $rows = 0
+  $badRows = New-Object System.Collections.Generic.List[string]
+  foreach ($doc in $docs) {
+    $drift += @($doc.registryDrift).Count
+    $gaps  += @($doc.positiveControlProblems).Count
+    foreach ($r in @($doc.rows)) {
+      $rows++
+      $v = if ($r.PSObject.Properties.Name -contains 'verdict') { [string]$r.verdict } else { '' }
+      # A positive control is the thing that makes a negative mean anything. It must be
+      # ACCEPTED - not merely present, not merely INVALID-but-declared.
+      if ([string]$r.id -like 'POS-*') {
+        if ($v -ne 'ACCEPTED') { $badRows.Add(([string]$r.id) + ' (positive control is ' + $v + ', not ACCEPTED)') }
+      } elseif ($v -eq 'INVALID' -or $v -eq 'CONTAINMENT-FAILURE' -or $v -eq '') {
+        $badRows.Add(([string]$r.id) + ' (' + $(if ($v) { $v } else { 'no verdict' }) + ')')
+      }
+    }
+  }
+  $verdict = if ($DRY) { 'PASS' }
+             elseif ($drift -eq 0 -and $gaps -eq 0 -and $rows -gt 0 -and $badRows.Count -eq 0) { 'PASS' }
+             else { 'FAIL' }
 
   [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object ([ordered]@{
     marker='OPERATOR-DONE'; verdict=$verdict; rowCount=$rows; registryDrift=$drift; controlGaps=$gaps
+    # Named, not counted. A FAIL that does not say which row failed sends the next reader back
+    # to the logs, which is where the last hollow PASS survived unnoticed.
+    failingRows = @($badRows)
     resultFiles = @($results | ForEach-Object { $_.log }); dryRun=[bool]$DRY; at=(Get-Date).ToString('o') }))
-  $UI.SetStep('hand', 'ok', ('Part B ' + $verdict))
+  $UI.SetStep('hand', $(if ($verdict -eq 'PASS') { 'ok' } else { 'fail' }),
+    ('Part B ' + $verdict + $(if ($badRows.Count) { '  —  ' + $badRows.Count + ' 行唔合格' } else { '' })))
 
   # ── LOCK 5 - only after the Owner side has SEALED Part B ─────────────────
   $UI.SetStep('lock5', 'run', '等緊 Part B 封存')

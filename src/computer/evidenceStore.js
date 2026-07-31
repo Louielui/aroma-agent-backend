@@ -72,6 +72,24 @@ const RECORD_PATTERNS = Object.freeze([
   { id: 'uia-result', pattern: /^stage3-uia\.json$/i, why: 'counts and a hash, not node text — the text is in the .uia.txt' },
   { id: 'gate-backup', pattern: /^sessiongate-backup-.+\.xml$/i, why: 'the restore source for C4; losing it turns a measurement into an outage' },
   { id: 'tierA', pattern: /^tierA-(probe\.out|INCIDENT-.+\.json)$/i, why: 'Tier A rows and incidents' },
+  // DECIDED 2026-07-31, because "unclassified" was not an answer. The 2026-07-30 sweep reported
+  // 48 of 97 files unclassified and every one was a companion log — roughly half the store
+  // sitting outside the control's declared coverage. The classifier failed safe (an undeclared
+  // name is never deleted, only reported), but a permanent open question is a decision nobody
+  // made, and the Owner asked for one.
+  //
+  // THEY ARE RECORDS. deploy-companion.ps1 writes companion-<round>-<stamp>.log as the stdout
+  // and stderr of a Companion launch, and those rounds ARE the Lock 5 kill bindings. The log is
+  // the only artefact showing a binding was actually exercised rather than merely claimed, so
+  // deleting it on a timer would quietly destroy Lock 5's audit trail while leaving Lock 5's
+  // verdict standing — evidence gone, conclusion kept, which is the exact shape this phase
+  // exists to prevent.
+  //
+  // WHY NOT `raw`: retention bounds how long CAPTURED CONTENT is kept. These carry process
+  // output — pids, exit codes, status lines — not screen pixels, window text or UIA nodes.
+  // IF THAT EVER CHANGES, this classification must change with it: a companion log that starts
+  // carrying observation content is raw material and belongs on the deletion path.
+  { id: 'companion-log', pattern: /^companion-.+\.log(\.err)?$/i, why: 'stdout/stderr of a Companion launch — the only proof a Lock 5 kill binding was exercised' },
   // Found 2026-07-29 while tracing the observer SHA pin: both of these were falling through
   // as `unclassified`. Never deleted — the classifier fails safe — but reported every sweep
   // as an open question, which is noise where a decision belongs. They are records: the

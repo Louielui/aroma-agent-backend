@@ -34,10 +34,26 @@ if (!roundDir || !resultPath) {
   write({ verdict: VERDICT.INCOMPLETE, problems: ['missing --round-dir or --result'], at: new Date().toISOString() }, 2)
 }
 
+// ── VERDICTS COME FROM A FILE, NOT THE COMMAND LINE ────────────────────────
+// MEASURED 2026-07-31: launcher 4 passed --verdicts with ConvertTo-Json -Compress, and the
+// quoting did not survive the crossing into node. It arrived as {part-b:PASS,...}, failed to
+// parse, and the run reported INCOMPLETE_CONTEXT — which names the wrong thing entirely and
+// sent the reader looking at context files that were fine. A file has no quoting to lose.
+//
+// --verdicts is still accepted so an operator can pass one by hand, but the launchers use the
+// file, and a malformed input is now its OWN verdict rather than masquerading as a missing
+// context.
+const verdictsFile = arg('--verdicts-file')
 let stageVerdicts = {}
-if (verdictsRaw) {
+if (verdictsFile) {
+  try {
+    stageVerdicts = JSON.parse(fs.readFileSync(verdictsFile, 'utf8'))
+  } catch (e) {
+    write({ verdict: VERDICT.BAD_INPUT, problems: ['--verdicts-file could not be read as JSON: ' + e.message], at: new Date().toISOString() }, 2)
+  }
+} else if (verdictsRaw) {
   try { stageVerdicts = JSON.parse(verdictsRaw) } catch (e) {
-    write({ verdict: VERDICT.INCOMPLETE, problems: ['--verdicts was not valid JSON: ' + e.message], at: new Date().toISOString() }, 2)
+    write({ verdict: VERDICT.BAD_INPUT, problems: ['--verdicts was not valid JSON: ' + e.message], at: new Date().toISOString() }, 2)
   }
 }
 

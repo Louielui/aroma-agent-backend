@@ -605,6 +605,140 @@ test('*** nothing on the launcher path hardcodes a repository tree ***', () => {
   assert.match(core, /stage3-harness/, 'and must require a probe script to be present')
 })
 
+test('*** no launcher calls a helper with a parameter that helper does not declare ***', () => {
+  // THE CLASS GUARD. Write-MeasurementContext takes -Context; all three call sites passed
+  // -Object. PowerShell bound nothing, $Context stayed $null, ConvertTo-Json produced nothing,
+  // and WriteAllText left a 0-BYTE FILE at the expected path. The [void](...) around it hid the
+  // rest. The DoD chain for round 28ba1e19f7ab was unsealable because of it, and the file
+  // EXISTING is what made it invisible — absence gets noticed, an empty file gets inherited.
+  const COMPUTER = path.resolve(__dirname, '..', '..', 'scripts', 'computer')
+
+  // PowerShell binary/unary operators look exactly like parameters. They are not.
+  const OPERATORS = new Set(['eq', 'ne', 'gt', 'ge', 'lt', 'le', 'like', 'notlike', 'match',
+    'notmatch', 'contains', 'notcontains', 'in', 'notin', 'is', 'isnot', 'and', 'or', 'not',
+    'xor', 'band', 'bor', 'bxor', 'bnot', 'join', 'split', 'replace', 'f', 'ceq', 'cne',
+    'shl', 'shr', 'as'])
+  // Common cmdlet parameters that a helper may legitimately forward.
+  const COMMON = new Set(['whatif', 'confirm', 'erroraction', 'errorvariable', 'verbose', 'debug'])
+
+  // Declared parameters, keyed by function name. Only Verb-Noun names — PowerShell convention,
+  // and it keeps one-letter locals in self-tests from being mistaken for helpers.
+  const declared = new Map()
+  for (const dir of [COMPUTER, DIR]) {
+    for (const f of fs.readdirSync(dir).filter((n) => n.endsWith('.ps1'))) {
+      const src = fs.readFileSync(path.join(dir, f), 'utf8')
+      for (const m of src.matchAll(/function\s+([A-Za-z]+-[A-Za-z0-9]+)\s*\{[\s\S]{0,300}?param\s*\(([\s\S]*?)\)\s*\n/g)) {
+        declared.set(m[1].toLowerCase(), new Set([...m[2].matchAll(/\$([A-Za-z]\w*)/g)].map((x) => x[1].toLowerCase())))
+      }
+    }
+  }
+  assert.ok(declared.has('write-measurementcontext'), 'the helper under test must be discoverable')
+  assert.ok(declared.get('write-measurementcontext').has('context'), 'and it declares -Context')
+
+  // Collect parameters belonging to THIS call only: depth 0 relative to the call start, so the
+  // arguments of a nested call like (CX-Marker -Nonce $n -Name 'x') are not attributed here.
+  const paramsOfCall = (src, from) => {
+    const out = []
+    let depth = 0
+    for (let i = from; i < src.length; i++) {
+      const ch = src[i]
+      if (ch === '(' || ch === '{' || ch === '[') { depth++; continue }
+      if (ch === ')' || ch === '}' || ch === ']') { if (depth === 0) break; depth--; continue }
+      if (ch === '\n' || ch === ';' || ch === '|') { if (depth === 0) break; continue }
+      if (depth === 0 && ch === '-' && /[A-Za-z]/.test(src[i + 1] || '')) {
+        const prev = src[i - 1] || ''
+        if (prev !== ' ' && prev !== '\t') continue          // -eq style needs a space before too
+        const name = (src.slice(i + 1).match(/^[A-Za-z]\w*/) || [''])[0]
+        // a value like -Nonce $x is a param; an operator is followed by a space then a value
+        out.push({ name: name.toLowerCase(), raw: name })
+        i += name.length
+      }
+    }
+    return out
+  }
+
+  const problems = []
+  for (const f of files()) {
+    const src = code(f)
+    for (const [fn, params] of declared) {
+      const re = new RegExp('(?<![\\w-])' + fn.replace(/-/g, '\\-') + '(?![\\w-])', 'gi')
+      for (const hit of src.matchAll(re)) {
+        for (const p of paramsOfCall(src, hit.index + fn.length)) {
+          if (OPERATORS.has(p.name) || COMMON.has(p.name)) continue
+          // PowerShell accepts any unambiguous prefix of a declared parameter name
+          if ([...params].some((d) => d === p.name || d.startsWith(p.name))) continue
+          problems.push(`${f}: ${fn} -${p.raw} is not a parameter of ${fn}`)
+        }
+      }
+    }
+  }
+  assert.deepEqual(problems, [], problems.join(' | '))
+})
+
+test('*** the Part B verdict reads every ROW, not just register consistency ***', () => {
+  // THE HOLLOW PASS, pinned so it cannot return. The old rule was
+  //     drift == 0 AND controlGaps == 0 AND rows > 0  ->  PASS
+  // and those two numbers describe whether each negative row has a DECLARED positive control —
+  // not whether the controls PASSED. Round 28ba1e19f7ab sealed PASS while the harness's own
+  // last line read "STAGE 3 RAN - ROWS NOT CLEAN" and all three eye controls were INVALID.
+  const op = code('Operator-Verification-Launcher.ps1')
+
+  // the rule must no longer be reachable in its old form
+  assert.equal(/\$drift -eq 0 -and \$gaps -eq 0 -and \$rows -gt 0 \) \{ 'PASS' \}/.test(op), false,
+    'the register-consistency-only rule must be gone')
+
+  // a positive control must be ACCEPTED, not merely declared
+  assert.match(op, /POS-\*/, 'positive-control rows must be identified')
+  assert.match(op, /\$v -ne 'ACCEPTED'/, 'a positive control must be ACCEPTED to count')
+  // an INVALID row must block the pass
+  assert.match(op, /\$v -eq 'INVALID'/, 'an INVALID row must be caught')
+  assert.match(op, /\$badRows\.Count -eq 0/, 'and must prevent PASS')
+  // and the failing rows must be NAMED in the handback, not just counted
+  assert.match(op, /failingRows = @\(\$badRows\)/, 'a FAIL must say which rows failed')
+  // it must read the harness results too, not only the top-up
+  assert.match(op, /stage3-results\.json/, 'the harness rows must be read, not only the top-up rows')
+})
+
+test('*** the sentinel is painted with the nonce the harness will look for ***', () => {
+  // ROOT CAUSE of the voided round. stage3-harness.ps1 builds BOTH the window title and the
+  // attestation path from Part A's manifest ownerNonce; launcher 1 painted with the
+  // commissioning round nonce. Two identities, so the attestation was never found and every eye
+  // control came back INVALID.
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  assert.match(own, /\$SENTINEL_NONCE/, 'the sentinel nonce must be a distinct, deliberate value')
+  assert.match(own, /\$paManifest\.ownerNonce/, "it must come from Part A's manifest")
+  assert.match(own, /'-Role','owner','-Nonce',\$SENTINEL_NONCE/, 'and be what the sentinel is painted with')
+  assert.match(own, /'stage3-sentinel-owner-' \+ \$SENTINEL_NONCE/, 'and what the attestation is looked up by')
+  // and it must refuse rather than silently fall back to the round nonce
+  assert.match(own, /Stage 'sentinel-nonce'/, 'an unreadable Part A manifest must stop the run')
+
+  // the harness end of the contract, so the two cannot drift apart again
+  const h = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'stage3-harness.ps1'), 'utf8')
+  assert.match(h, /'stage3-sentinel-owner-' \+ \$manifest\.ownerNonce/,
+    'the harness still looks the attestation up by the manifest ownerNonce')
+})
+
+test('*** the adjudicator takes its verdicts from a FILE, and bad input is its own verdict ***', () => {
+  const adj = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'dod-adjudicate.js'), 'utf8')
+  assert.match(adj, /--verdicts-file/, 'a file has no quoting to lose')
+  assert.match(adj, /VERDICT\.BAD_INPUT/,
+    'malformed input must not masquerade as INCOMPLETE_CONTEXT — that named the wrong thing')
+  const rc = code('Retention-Check-Launcher.ps1')
+  assert.match(rc, /--verdicts-file/, 'launcher 4 must pass the file')
+  assert.equal(/'--verdicts', \(\$verdicts \| ConvertTo-Json/.test(rc), false,
+    'the command-line JSON form must be gone')
+})
+
+test('*** Write-MeasurementContext refuses to write nothing ***', () => {
+  const mc = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'measurementContext.ps1'), 'utf8')
+  assert.match(mc, /if \(\$null -eq \$Context\) \{\s*\n?\s*throw/,
+    'a null context must throw, not leave a 0-byte file that looks written')
+  assert.match(mc, /IsNullOrWhiteSpace\(\$json\)/, 'and an empty serialisation must throw too')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.
