@@ -178,6 +178,114 @@ if (-not $CANARY_EXECUTE_AUTHORISED) {
   exit 4
 }
 
+# ===========================================================================
+#  PREFLIGHT, then the flag, then the child. In that order and no other.
+# ===========================================================================
+$Entry = Join-Path $RepoDir 'scripts\computer\run-notepad-canary.js'
+
+# ── the checks PowerShell is the right tool for ──────────────────────────
+# ACLs, process lists and the staging directory. Node does the receipt, the
+# package, the folder state and the audit sink. Both run BEFORE the flag.
 Say ""
-Say "  (execution would begin here)" 'DarkGray'
-exit 0
+Say "  Checking..." 'Cyan'
+
+$notepads = @(Get-Process -Name 'notepad' -ErrorAction SilentlyContinue).Count
+if ($notepads -ne 0) { Cancel-Now ("Notepad is already open (" + $notepads + "). Please close it first.") }
+
+$testDir = 'C:\Aroma\ComputerOperator-Test'
+try {
+  $acl = Get-Acl -LiteralPath $testDir -ErrorAction Stop
+} catch {
+  Cancel-Now "The folder's permissions cannot be read from here. Run this as the Owner."
+}
+$rules = @($acl.Access)
+if (-not $acl.AreAccessRulesProtected) { Cancel-Now "The folder's permissions are not the approved ones." }
+if (@($rules | Where-Object { $_.IsInherited }).Count -ne 0) { Cancel-Now "The folder's permissions are not the approved ones." }
+if (@($rules | Where-Object { $_.AccessControlType -eq 'Deny' }).Count -ne 0) { Cancel-Now "The folder's permissions are not the approved ones." }
+if ($rules.Count -ne 3) { Cancel-Now "The folder's permissions are not the approved ones." }
+
+# ── the Node preflight, with the flag still off ─────────────────────────
+$preRaw = & $Node $Entry preflight
+$preExit = $LASTEXITCODE
+$pre = $null
+try { $pre = $preRaw | ConvertFrom-Json } catch { Cancel-Now "the checks could not be read" }
+if ($preExit -ne 0 -or -not $pre.ok) {
+  Say ""
+  Say "  IT WILL NOT RUN." 'Red'
+  Say ""
+  Say ("  " + $pre.human) 'White'
+  if ($pre.detail) { Say ("  " + $pre.detail) 'DarkGray' }
+  Say ""
+  Say "  Nothing was opened, nothing was written, the switch stayed off." 'White'
+  exit 3
+}
+Say "  All checks passed." 'Green'
+
+# ===========================================================================
+#  THE FLAG. Process scope ONLY, set as late as possible, restored always.
+# ===========================================================================
+#  User and Machine scopes are never touched — no setx, no registry, nothing
+#  that outlives this window. The Node child inherits the Process value, which
+#  is the entire reason the Process scope is the right one.
+#
+#  The original value is captured BEFORE anything changes it, so the finally
+#  restores the exact prior state rather than assuming it was unset.
+# ===========================================================================
+$flagWasSet = $null -ne $env:COMPUTER_OPERATOR
+$flagOriginal = $env:COMPUTER_OPERATOR
+$userBefore = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'User')
+$machineBefore = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'Machine')
+
+$runExit = 1
+$runRaw = $null
+try {
+  $env:COMPUTER_OPERATOR = 'on'
+  Say ""
+  Say "  Running..." 'Cyan'
+  $runRaw = & $Node $Entry run
+  $runExit = $LASTEXITCODE
+} finally {
+  # Restore the EXACT prior state. Unset stays unset; a prior value comes back
+  # as itself. This runs on success, on failure and on Ctrl-C.
+  if ($flagWasSet) { $env:COMPUTER_OPERATOR = $flagOriginal }
+  else { Remove-Item Env:\COMPUTER_OPERATOR -ErrorAction SilentlyContinue }
+}
+
+# ── prove the restore, do not assume it ─────────────────────────────────
+$procAfter = $env:COMPUTER_OPERATOR
+$userAfter = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'User')
+$machineAfter = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'Machine')
+
+$restored = if ($flagWasSet) { $procAfter -eq $flagOriginal } else { $null -eq $procAfter }
+if (-not $restored -or $userAfter -ne $userBefore -or $machineAfter -ne $machineBefore) {
+  Say ""
+  Say "*** CONTAINMENT INCIDENT ***" -ForegroundColor Red
+  Say "  The computer operator switch did not return to how it was." 'Red'
+  Say ("  process before : " + $(if ($flagWasSet) { $flagOriginal } else { '<unset>' })) 'Red'
+  Say ("  process after  : " + $(if ($procAfter) { $procAfter } else { '<unset>' })) 'Red'
+  Say ("  user   before/after : " + $userBefore + " / " + $userAfter) 'Red'
+  Say ("  machine before/after: " + $machineBefore + " / " + $machineAfter) 'Red'
+  Say ""
+  Say "  Not retrying. Close this window and report it." 'Yellow'
+  exit 9
+}
+Say "  Switch returned to off." 'Green'
+
+# ── report the run ──────────────────────────────────────────────────────
+$res = $null
+try { $res = $runRaw | ConvertFrom-Json } catch { }
+Say ""
+if ($runExit -eq 0 -and $res -and $res.ok) {
+  Say "  DONE." 'Green'
+  Say ""
+  Say "  The file has been created. Please open it and check it, then" 'White'
+  Say "  delete it when you are satisfied." 'White'
+} else {
+  Say "  IT DID NOT COMPLETE." 'Yellow'
+  if ($res -and $res.human) { Say ("  " + $res.human) 'White' }
+  elseif ($res -and $res.refusal) { Say ("  reason: " + $res.refusal) 'DarkGray' }
+  Say ""
+  Say "  The switch is off and the approval has been used up." 'White'
+}
+Say ""
+exit $runExit

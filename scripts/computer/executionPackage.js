@@ -55,6 +55,8 @@ const PACKAGE_FILES = Object.freeze([
   'src/computer/computerExecutor.js',
   'src/computer/computerOperatorWiring.js',
   'src/computer/desktopAdapter.js',
+  // the fixed entrypoint: the only production caller of the wiring
+  'scripts/computer/run-notepad-canary.js',
   // the hands
   'scripts/computer/uiaCanary.ps1',
   // the work order itself travels with the package: it is what the code will be pointed at
