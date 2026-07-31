@@ -187,15 +187,118 @@ removed by cleanup step 5. `main` is untouched at `1a6d7bd`.
 
 If any of these move, the order is void and must be re-sealed.
 
-## 13. Blocking preconditions for EXECUTE
+## 13. Blocking preconditions for EXECUTE — **BOTH NOW MET** (2026-07-31)
 
-Neither can be done from here, and both are the Owner's to perform:
+Both were the Owner's to perform, and both were performed by him in elevated PowerShell.
 
-1. **`C:\Aroma\ComputerOperator-Test` does not exist**, and this system will not create it. It
-   must be created with an explicit ALLOW for the Companion account — `deploy-companion.ps1`
-   applies a container-level DENY for AromaOperator on `C:\Aroma`, so without an explicit ALLOW
-   on this subdirectory the Save As will be refused by the filesystem regardless of everything
-   above. One elevated action, by the Owner.
-2. **The deployed Companion staging directory is now stale.** The staged closure grew from five
-   files to seven (`sealedOrderGate.js`, `computerOperatorFlag.js`). It must be re-staged before
-   the Companion can load.
+1. **`C:\Aroma\ComputerOperator-Test` — CREATED.** Script A, run under
+   `run-script-a-measured.ps1`. Three ACEs, inheritance protected, AromaOperator holds
+   `ReadAndExecute, Write` (`0x1201BF`) and none of Delete, ChangePermissions, TakeOwnership or
+   FullControl. `C:\Aroma`'s own descriptor was captured before and after and is ordinally
+   identical; on the verify-only re-run the child descriptor was identical too. **A PASS.**
+2. **Companion re-staged to the seven-file closure — DONE.** Script B, under
+   `run-script-b-measured.ps1`. The inventory confirmed the concern was real rather than
+   theoretical: the old staging held five files, and two of them were stale content —
+   `companion.js` at `0c0903fe…` and `observation.js` at `4326c45a…`, neither matching the
+   current sources. Parent descriptor ordinally identical before and after. **B PASS.**
+
+### 13a. `ComputerOperator-Backups` ACL — INDEPENDENTLY VERIFIED
+
+Owner, elevated read-only `Get-Acl`, 2026-07-31. The earlier
+`PASS BY SCRIPT ASSERTION — NOT YET INDEPENDENTLY REVIEWED` label is **removed**.
+
+**`C:\Aroma\ComputerOperator-Backups`** (the root)
+
+| Field | Value |
+|---|---|
+| Owner | `BUILTIN\Administrators` |
+| `AreAccessRulesProtected` | **True** |
+| Own (non-inherited) ACEs | 2 |
+| — | `NT AUTHORITY\SYSTEM` — Allow, FullControl, ContainerInherit+ObjectInherit |
+| — | `BUILTIN\Administrators` — Allow, FullControl, ContainerInherit+ObjectInherit |
+| Inherited ACE count | **0** |
+| AromaOperator ACE count | **0** |
+| SDDL | `O:BAG:S-1-5-21-…-1002D:PAI(A;OICI;FA;;;SY)(A;OICI;FA;;;BA)` |
+
+**`…\companion-20260731-191120`** (an individual backup set)
+
+| Field | Value |
+|---|---|
+| Owner | `BUILTIN\Administrators` |
+| `AreAccessRulesProtected` | **False** |
+| Own (non-inherited) ACEs | **0** |
+| Inherited ACEs | 2 — SYSTEM and Administrators, both `FullControl` |
+| SDDL | `O:BAG:S-1-5-21-…-1002D:AI(A;OICIID;FA;;;SY)(A;OICIID;FA;;;BA)` |
+
+**THE DISTINCTION, AND IT MUST NOT BE PARAPHRASED AWAY.** The backup ROOT is protected.
+Individual backup sets are **not** independently protected — they inherit the root's
+SYSTEM-and-Administrators-only ACL. Read the two SDDLs together: the root carries `P` and its
+ACEs have no `ID`; the set has no `P` and both its ACEs carry `ID`. That is the whole story in
+two flags.
+
+Cause, visible in the script rather than inferred: `Set-ProtectedAcl` is applied at
+`stage-companion.ps1` L323 (`$BackupRoot`) and L385 (`$StageDir`) only. A backup set is created
+by a plain `New-Item` at L338 and is never given an ACL of its own.
+
+What is therefore guaranteed, stated exactly:
+
+- **While the root ACL is unchanged**, every backup set — existing and future — remains
+  inaccessible to AromaOperator.
+- **If the root ACL changes, every backup set changes with it**, existing ones included. Today's
+  "AromaOperator ACE count = 0" on a set is inherited, not self-held, and is contingent on the
+  root staying as it is.
+- `C:\Aroma`'s inherit-only DENY **stops at the protected root** and never reaches the sets,
+  which is why a set that is itself unprotected is still safe.
+- **Backup security depends on the root as a SINGLE CONTROL POINT.**
+
+**It must never be written that each backup set is independently locked down.** It is not. The
+single control point is a deliberate property with a real upside — no per-set drift, nothing to
+get wrong on the fiftieth backup — but it is one lock, not many, and a future reader who
+believes otherwise will misjudge the blast radius of one ACL edit.
+
+---
+
+## 14. The `approvalId` authorization chain — **NOT ESTABLISHED**
+
+Answering the Owner's six questions against the code as it stands, not as intended.
+
+**The one sentence that matters:** `computeOrderHash` is a plain SHA-256 over public data with
+**no secret anywhere in the system**. Anyone who can run the builder can compute a valid
+`orderHash` for any content with any `approvalId`. The seal is therefore a **checksum, not a
+signature** — it proves the order has not been *altered since it was sealed*, and proves nothing
+about *who sealed it*.
+
+| Question | Answer today |
+|---|---|
+| Is `approvalId` in the canonical hash? | **Yes** — `sealedOrderGate.js:84`, alongside `orderId`, `allowedPath`, `maxSteps`, `timeoutSec`, `sealedText` and the steps. |
+| Who generates it? | **Nobody. There is no generator.** It is a free string typed into the order by whoever builds it. |
+| How is it bound to a specific hash? | By being an input to that hash. Real binding, and it is integrity only. |
+| How does the gate prove it came from the Owner? | **It does not.** `verifySeal` checks `typeof === 'string'` and non-empty (`sealedOrderGate.js:107`). That is the entire check. There is no signature verification anywhere in `src/computer` — grepped, not recalled. |
+| What stops a builder minting, reusing or replaying one? | **Nothing on the executor path.** `orderRegistry.js` does single-live-order, per-step nonces and expiry — but it is wired only into `computerSupervisor` (the dry-run planner), never into `computerExecutor` or `sealedOrderGate`. |
+| Does changing the order invalidate an old `approvalId`? | **Against tampering, yes; against the builder, no.** Any content change moves the hash, so a *stale* `orderHash` fails with `order_hash_mismatch`. But the builder can recompute the hash freely, so it invalidates an *unmodified copy*, not a *re-sealed* one. |
+
+### What is missing, concretely
+
+1. **A secret the Owner alone holds.** Without one, nothing distinguishes an order he approved
+   from one built to look approved.
+2. **A signature over the hash**, verified by the gate before unlock.
+3. **An issuance record** the gate can consult — an `approvalId` that was never issued must fail.
+4. **Single-use and expiry on the executor path** — `orderRegistry`'s guarantees exist and do not
+   reach the code that acts.
+
+### A circularity to resolve while fixing it
+
+`approvalId` is *inside* the hash, so the id must exist before the hash does. The Owner cannot
+approve a hash and then have the id added — that changes the hash. Two workable shapes:
+
+- **Owner issues the id first**, builder seals with it, Owner approves the resulting hash. Works
+  with today's structure; needs two round trips.
+- **Take `approvalId` out of the hash.** Hash covers the work only; approval becomes a signature
+  *over* that hash. One round trip, no circularity, and it is the shape that supports a real
+  signature. **Recommended** — but it changes the seal and voids order hash `df26f090…`.
+
+### Standing rule until this is built
+
+`approvalId` stays empty. The gate's five conditions remain necessary and, on the question of
+provenance, **not sufficient** — and this document says so rather than letting a green test
+suite imply otherwise.
