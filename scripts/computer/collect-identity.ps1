@@ -62,7 +62,13 @@ $elevated = Try-Get { (New-Object Security.Principal.WindowsPrincipal($id)).IsIn
 $sidList = Try-Get { @($id.Groups | ForEach-Object { $_.ToString() }) }
 
 $integrity = Try-Get {
-  $lvl = @($sidList | Where-Object { $_ -like 'S-1-16-*' })[0]
+  # NOT [0]. Under StrictMode -Version Latest, indexing an EMPTY array throws
+  # IndexOutOfRangeException rather than yielding $null - measured, and it is
+  # exactly what made this whole fallback dead code: the throw happened on this
+  # line, Try-Get swallowed it, integrityLevel came back null, and the judge
+  # refused every snapshot. The whoami branch below was never once reached.
+  # Select-Object -First 1 yields nothing on an empty pipeline and cannot throw.
+  $lvl = $sidList | Where-Object { $_ -like 'S-1-16-*' } | Select-Object -First 1
   if (-not $lvl) {
     $lvl = (whoami /groups /fo csv | ConvertFrom-Csv | Where-Object { $_.SID -like 'S-1-16-*' } | Select-Object -First 1).SID
   }
