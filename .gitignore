@@ -53,3 +53,6 @@ rclone-b2-config.txt
 **/probedir-acl-pre-*.txt
 # desktop shortcuts are generated per machine by the bootstrap/installer, never source
 **/*.lnk
+
+# Owner approval receipts are per-machine and are never committed.
+.aroma/

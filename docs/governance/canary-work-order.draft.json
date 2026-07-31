@@ -1,0 +1,25 @@
+{
+  "orderId": "wo_canary_notepad_1",
+  "approvalId": "",
+  "sealed": true,
+  "sealedText": "Aroma Computer Operator canary. Round 1.",
+  "allowedPath": "C:\\Aroma\\ComputerOperator-Test",
+  "maxSteps": 3,
+  "timeoutSec": 300,
+  "orderHash": "",
+  "steps": [
+    { "n": 1, "action": "open_app", "appId": "notepad" },
+    {
+      "n": 2,
+      "action": "type_text",
+      "text": "Aroma Computer Operator canary. Round 1.",
+      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null }
+    },
+    {
+      "n": 3,
+      "action": "save",
+      "fileName": "canary-1.txt",
+      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null }
+    }
+  ]
+}
