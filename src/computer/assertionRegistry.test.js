@@ -178,8 +178,32 @@ test('*** opening the container is not evidence about E1 or E8 ***', () => {
   assert.match(R.get('E2a-open-other-session-winsta-directory').doesNotImply, /confers no window access/)
 })
 
-test('E3 states that the desktop object may never be reached at all', () => {
-  assert.match(R.get('E3-open-other-session-desktop').doesNotImply, /NOTHING whatever is proven about it/)
+test('E3 is RETIRED, and E3a replaces it with a same-shape control', () => {
+  // Owner ruling 2026-07-31, on the E2 precedent. E3's route is station-relative: OpenDesktop
+  // refuses a qualified \Sessions\N\... path (win32Error 161, blocked parsing the NAME), so the
+  // desktop DACL is never consulted and no row from it can be anything but NOT PROVEN.
+  const e3 = R.get('E3-open-other-session-desktop')
+  assert.equal(e3.status, 'unmeasurable', 'E3 must be retired, like E2')
+  assert.match(e3.implies, /NOTHING/)
+
+  // THE CONDITION THAT MADE THIS RETIREMENT DIFFERENT FROM E2's. E2 could be retired on its own
+  // evidence: it failed for its OWN station under the same qualified path, so incapability was
+  // demonstrated. E3 had no such evidence — its control passed a BARE NAME while the negative
+  // passed a QUALIFIED PATH, so an ACCEPTED control said nothing about the negative's route.
+  // E3a exists to remove that gap, and the test that matters is that both rows make the SAME
+  // CALL: identical target shape and identical access mask, differing only in session number.
+  const e3a = R.get('E3a-open-other-session-desktop-object')
+  const pos = R.get('POS-open-own-desktop-object')
+  assert.ok(e3a && pos, 'E3a and its control must both exist')
+  assert.equal(e3a.positiveControlId, 'POS-open-own-desktop-object')
+  assert.equal(e3a.targetPattern, pos.targetPattern,
+    'control and negative must match the same target shape, or the control proves nothing about the route')
+  assert.equal(e3a.accessMask, pos.accessMask,
+    'and the same access mask, for the same reason')
+  assert.equal(e3a.expectedPermitted, false)
+  assert.equal(pos.expectedPermitted, true)
+  // and the register must say plainly what a double failure would mean
+  assert.match(e3a.doesNotImply, /route incapability/)
 })
 
 /* ── the Observer task: a baseline nothing read ───────────────────────────── */
@@ -429,7 +453,9 @@ const PINNED = {
   "E1-enumerate-other-session-windows": "e3180952561607503084b98e901f0a12ebefcc066f3b483321fa008499474f23",
   "E2-open-other-session-winsta": "fb141c594ab3ef1815bcd547663d5ee560f12719fa88d802801672bd35f48bd7",
   "E2a-open-other-session-winsta-directory": "c7e224bf697fdddcf6229bf79675512818e812b287a324d4c5d36521d4e28d66",
-  "E3-open-other-session-desktop": "1806517bc02e3f734861d0645ef08dc6a842434609f3183e20d7fdee94f919d1",
+  "E3-open-other-session-desktop": "2862dcfd798eec1cc3b662eebbd4eb0d429ac6b8501ea956899650035abb9b7d",
+  "POS-open-own-desktop-object": "6b37cdd03f7fd5ad8ceb4c331982df92e08d389db90317044f2182e6d1393f78",
+  "E3a-open-other-session-desktop-object": "7a8c6f13549e747f633f94260ef0ce06b0063d8186328781c3a438279645b3f5",
   "E4-read-other-session-clipboard": "d07cb8ebdd6010a097163680d832895691830563f946c6c64282d0a4e92b17a3",
   "E6-open-other-session-process": "a8bd3c585b42396c878d0fe13bb30988ea91d05913692d0d57f7398889854bfc",
   "E6b-open-other-session-process-limited": "e5f0f5d8b48c8c38c9f51880337faf7c0bad99cacf44d61e4ed7251495dd6e48",

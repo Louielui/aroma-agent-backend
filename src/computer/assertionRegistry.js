@@ -473,19 +473,65 @@ const ENTRIES = [
       'are unaffected by this row and rest on their own sentinels'
   },
   {
+    // RETIRED 2026-07-31, Owner ruling, following the E2 precedent exactly.
+    //
+    // Measured: win32Error 161 ERROR_BAD_PATHNAME, blockedAtStep "name". OpenDesktop is
+    // STATION-RELATIVE — it takes a bare desktop name on the caller's own window station and
+    // does not accept a qualified \Sessions\N\... path, so the desktop object was never reached
+    // and no security check ever ran. A row from this route can only ever be NOT PROVEN.
+    //
+    // THE OWNER'S CONDITION, and it is the reason this retirement needed its own evidence:
+    // E2's retirement was sound because E2 failed FOR ITS OWN STATION under the same qualified
+    // path — route incapability was demonstrated, not assumed. E3 had no such evidence. Its
+    // positive control POS-open-own-desktop passes a BARE NAME while the negative passes a
+    // QUALIFIED PATH: two different call shapes, so the control proved the route worked for a
+    // call the negative never makes. That is the same "the control proves nothing about the
+    // negative" defect this register exists to catch, sitting inside the register itself.
+    //
+    // Replaced by E3a, whose control uses the IDENTICAL call shape against our OWN session.
     id: 'E3-open-other-session-desktop',
-    title: 'open a desktop in another session window station',
+    title: 'open a desktop in another session window station (RETIRED — station-relative API, no route)',
     targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$',
     accessMask: MASK.DESKTOP_READOBJECTS,
     mechanism: ['ACL'],
     expectedPermitted: false,
     positiveControlId: 'POS-open-own-desktop',
     tier: 'B',
-    implies: 'denial of any mask containing DESKTOP_READOBJECTS (0x0001) — IF the desktop object ' +
-      'was actually reached, which the row states in blockedAtStep',
-    doesNotImply: 'OpenDesktop operates inside the CALLER own window station, so a desktop in ' +
-      'another session cannot be named at all. When the row is blocked at the container step the ' +
-      'DESKTOP DACL was never reached and NOTHING whatever is proven about it'
+    status: 'unmeasurable',
+    implies: 'NOTHING. The call is blocked parsing the name, so the desktop DACL is never consulted.',
+    doesNotImply: 'in particular it does not imply that cross-session desktop access is denied. ' +
+      'That remains NOT PROVEN in either direction until E3a reports.'
+  },
+  {
+    // NEW 2026-07-31. The object-manager route, mirroring E2a — and unlike E3 its positive
+    // control makes the SAME CALL against our own session, so a failure on the other session
+    // can be attributed to the target rather than to the route.
+    id: 'POS-open-own-desktop-object',
+    title: 'open OUR OWN desktop by object-manager path (same call shape as E3a)',
+    targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$',
+    accessMask: MASK.DIRECTORY_QUERY,
+    mechanism: ['PERMITTED'],
+    expectedPermitted: true,
+    positiveControlId: null,
+    tier: 'B',
+    implies: 'the object-manager route can reach a desktop leaf at this mask for this token',
+    doesNotImply: 'nothing about another session; this is the control, not the measurement'
+  },
+  {
+    id: 'E3a-open-other-session-desktop-object',
+    title: 'open another session desktop by object-manager path',
+    targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$',
+    accessMask: MASK.DIRECTORY_QUERY,
+    mechanism: ['ACL', 'NAMESPACE-ISOLATION'],
+    expectedPermitted: false,
+    positiveControlId: 'POS-open-own-desktop-object',
+    tier: 'B',
+    implies: 'denial at this mask by this route — ONLY IF POS-open-own-desktop-object was ACCEPTED ' +
+      'in the same run, proving the route reaches a desktop leaf at all',
+    doesNotImply: 'if the control also fails, this row says nothing about containment and everything ' +
+      'about the route: a desktop is not a Directory object, so the lookup may never find one. ' +
+      'That outcome is route incapability, PROVEN by a same-shape control, and is grounds to retire ' +
+      'this id too — not grounds to call anything denied'
   },
   {
     id: 'E4-read-other-session-clipboard',

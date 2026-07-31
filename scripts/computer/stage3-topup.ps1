@@ -1,4 +1,4 @@
-# stage3-topup.ps1 - Phase 3b Part B TOP-UP. Runs in session 5, as AromaOperator.
+﻿# stage3-topup.ps1 - Phase 3b Part B TOP-UP. Runs in session 5, as AromaOperator.
 #
 # WHY A SECOND SCRIPT AND NOT A RE-RUN
 # Five Tier B assertions were OMITTED from the first harness - not skipped, not merged into
@@ -381,10 +381,53 @@ else {
   if ($e3err -eq 5) { $e3v = 'BOUNDED'; $e3mech = 'ACL' }
 }
 $e3v = Gate-OnControl -Verdict $e3v -ControlVerdict $dv
-Add-Row -Id 'E3-open-other-session-desktop' -Target $e3Target -AccessMask $DESKTOP_READOBJECTS `
-  -Note 'blocked-at-step is recorded; a name-level or container-level block says nothing about the desktop object' `
-  -Data @{ verdict = $e3v; mechanism = $e3mech; win32Error = $e3err; blockedAtStep = $e3step
-           controlVerdict = $dv; residueLeft = $false }
+# E3 IS DELIBERATELY NOT EMITTED, exactly as E2 is not. The register marks it unmeasurable and
+# crossCheck refuses a row under it, because a row would claim a measurement that never happened:
+# win32Error 161 is the API refusing to PARSE the name, so the desktop DACL was never consulted.
+# The values above are computed only to be carried as evidence on the E3a row below.
+
+# ═══════════════════════════════════════════════════════════════════════════
+# E3a - the same question by the OBJECT-MANAGER route, with a SAME-SHAPE CONTROL
+#
+# OWNER CONDITION, 2026-07-31, and it is the whole point of this pair: E3's control passed a
+# BARE NAME ('Default') while E3 itself passed a QUALIFIED PATH. Two different call shapes, so
+# an ACCEPTED control said nothing about whether the negative's route works at all. E2's
+# retirement was sound precisely because E2 failed for its OWN station under the same qualified
+# path — incapability was demonstrated. E3 had no such evidence, so it could not be retired on
+# E2's authority alone.
+#
+# Both rows below make the IDENTICAL call. Only the session number differs.
+#   control  -> our own session's desktop leaf
+#   negative -> the other session's desktop leaf
+# If the control opens and the negative does not, that difference is attributable to the TARGET.
+# If BOTH fail, the route cannot reach a desktop leaf at all — a desktop is not a Directory
+# object — and that is route incapability PROVEN by a same-shape control, which is the evidence
+# needed to retire this id too. It is not, in any reading, evidence of containment.
+# ═══════════════════════════════════════════════════════════════════════════
+$ownDeskPath = '\Sessions\' + $mySession + '\Windows\WinSta0\Default'
+$odOpened = $false
+$odSt = [NtObj]::TryOpenDirectory($ownDeskPath, [uint32]$DIRECTORY_QUERY, [ref]$odOpened)
+$odv = if ($odOpened) { 'ACCEPTED' } else { 'INVALID' }
+Add-Row -Id 'POS-open-own-desktop-object' -Target $ownDeskPath -AccessMask $DIRECTORY_QUERY `
+  -Note 'SAME call shape as E3a, aimed at our own session. If this fails, the route cannot reach a desktop leaf at all and E3a proves nothing about containment.' `
+  -Data @{ verdict = $odv; mechanism = $(if ($odOpened) { 'PERMITTED' } else { 'UNDETERMINED' })
+           ntStatus = ('0x{0:X8}' -f $odSt); residueLeft = $false }
+
+$e3aTarget = '\Sessions\' + $otherSession + '\Windows\WinSta0\Default'
+$e3aOpened = $false
+$e3aSt = [NtObj]::TryOpenDirectory($e3aTarget, [uint32]$DIRECTORY_QUERY, [ref]$e3aOpened)
+$e3av = if ($e3aOpened) { 'VIOLATION' } else { 'BOUNDED' }
+$e3amech = if ($e3aOpened) { 'NONE' } else { Classify-Ntstatus -Status $e3aSt }
+# The gate is what enforces the Owner's condition mechanically: without an ACCEPTED same-shape
+# control this can never be recorded as BOUNDED.
+$e3av = Gate-OnControl -Verdict $e3av -ControlVerdict $odv
+Add-Row -Id 'E3a-open-other-session-desktop-object' -Target $e3aTarget -AccessMask $DIRECTORY_QUERY `
+  -Note 'object-manager route; controlled by POS-open-own-desktop-object, which makes the identical call against our own session' `
+  -Data @{ verdict = $e3av; mechanism = $e3amech; ntStatus = ('0x{0:X8}' -f $e3aSt)
+           controlVerdict = $odv
+           retiredRouteWin32Error = $e3err
+           retiredRouteBlockedAt = $e3step
+           residueLeft = $false }
 
 # ═══════════════════════════════════════════════════════════════════════════
 # E4 - another session's clipboard

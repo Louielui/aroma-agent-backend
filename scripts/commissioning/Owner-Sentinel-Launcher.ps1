@@ -370,9 +370,37 @@ try {
   }
 
   if (-not $sealed) {
+    # A FAILED PART B STILL GETS A FINAL REPORT. Round b7323a3b9070 produced none at all: the
+    # only artefacts were PARTB-SEALED and a fail-safe report, so the two-column record this
+    # design promises simply did not exist for a FAIL. A result you cannot hand to anyone is
+    # half a result.
     $UI.SetStep('report', 'run', '')
-    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'part-b' `
-      -Reason ('Part B 喺 ' + $ROUND_CAP + ' 個回合內都冇通過，按裁決停止') -Detail $roundLog -Launcher 'owner')
+    $lastRound = if ($roundLog.Count) { $roundLog[$roundLog.Count - 1] } else { $null }
+    $failFinal = [ordered]@{
+      marker = 'FINAL-REPORT'; overall = 'PART-B-FAILED'
+      roundNonce = $(if ($lastRound) { $lastRound.nonce } else { $NONCE })
+      roundsRun = $roundLog.Count
+      partB = [ordered]@{
+        verdict = $(if ($lastRound) { $lastRound.outcome } else { 'UNKNOWN' })
+        sealedSha256 = $(if ($lastRound -and $lastRound.Contains('sealSha256')) { $lastRound.sealSha256 } else { $null })
+        retried = $false
+        whyNotRetried = 'Owner ruling 2026-07-31: a sealed FAIL is a known conclusion, not an unknown state. Only crashes and timeouts retry.'
+      }
+      # Kept as its own column even though it never opened, so the report never reads as though
+      # Lock 5 passed or was merely forgotten.
+      lock5 = [ordered]@{ verdict = 'NOT-OPENED'; why = 'Part B did not pass; Lock 5 opens only after Part B is sealed as PASS' }
+      rounds = @($roundLog)
+      at = (Get-Date).ToString('o')
+    }
+    $fp = CX-WriteJson -Path (CX-Marker -Nonce $failFinal.roundNonce -Name 'FINAL-REPORT.json') -Object $failFinal
+    $UI.SetStep('report', 'ok', 'FINAL-REPORT.json')
+
+    # The failure belongs to PART B, and the partb step already says so. Marking the report step
+    # red made it read as "writing the report failed" when the report was written fine.
+    $UI.SetStep('partb', 'fail', ('Part B ' + $failFinal.partB.verdict + ' —— 已封存，唔重試'))
+    [void](CX-Fail -UI $UI -Nonce $failFinal.roundNonce -Stage 'part-b' `
+      -Reason ('Part B 唔通過，結果已封存。按裁決唔重試（跑咗 ' + $roundLog.Count + ' 個回合）。') `
+      -Detail (@('最終報告：' + $fp) + @($roundLog)) -Launcher 'owner')
     CX-Wait -UI $UI; exit 1
   }
 
