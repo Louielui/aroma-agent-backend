@@ -40,6 +40,64 @@ function Cancel-Now {
   exit 2
 }
 
+# ===========================================================================
+#  READING THE OWNER'S ANSWER
+#
+#  ── WHAT WENT WRONG BEFORE, MEASURED FROM THE SYMPTOM ──────────────────
+#  The screen rendered and INSTANTLY said "you pressed something other than
+#  A", with no key touched. ReadKey did not throw - it RETURNED, immediately,
+#  with an event whose Character was not 'A'. Almost certainly a key event
+#  carrying no character: a modifier, or something already sitting in the
+#  input buffer when the window opened. The old code compared that straight
+#  against 'A' and reported it as the Owner's mistake.
+#
+#  Two separate defects, and the second is the worse one:
+#    1. a non-character event was treated as an answer;
+#    2. "no keyboard" and "wrong key" produced THE SAME SENTENCE, so the
+#       Owner had no way to tell a tool failure from his own action.
+#
+#  ── WHAT THIS DOES NOT DO ───────────────────────────────────────────────
+#  It does not relax anything. An unreadable keyboard still approves nothing.
+#  Skipping a Shift key-down is not leniency - a modifier was never an answer.
+#  And it sets no console encoding and no hidden state: the fix is in how the
+#  events are read, not in configuring the machine underneath.
+# ===========================================================================
+function Read-OwnerChoice {
+  param([string[]] $Accept)
+
+  # Capability FIRST, so "cannot ask" is decided before anything is read and
+  # can never be confused with "asked and got the wrong answer".
+  if (-not [Environment]::UserInteractive) { return @{ ok = $false; kind = 'no_keyboard'; detail = 'the session is not interactive' } }
+  try {
+    if ([Console]::IsInputRedirected) { return @{ ok = $false; kind = 'no_keyboard'; detail = 'input is redirected, so no person is typing' } }
+  } catch { return @{ ok = $false; kind = 'no_keyboard'; detail = 'could not tell whether input is a console' } }
+  if ($Host.Name -ne 'ConsoleHost') { return @{ ok = $false; kind = 'no_keyboard'; detail = ('this host is ' + $Host.Name + ', which has no console keyboard') } }
+  try { $null = $Host.UI.RawUI.KeyAvailable } catch { return @{ ok = $false; kind = 'no_keyboard'; detail = 'this host exposes no keyboard buffer' } }
+
+  # Anything already queued when the window opened is NOT a decision.
+  try { $Host.UI.RawUI.FlushInputBuffer() } catch { }
+
+  $ignored = 0
+  while ($ignored -lt 50) {
+    $k = $null
+    try { $k = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown') }
+    catch { return @{ ok = $false; kind = 'no_keyboard'; detail = $_.Exception.Message } }
+    if ($null -eq $k) { $ignored++; continue }
+
+    $ch = [string]$k.Character
+    # Modifiers and control keys carry no character. Waiting past them is what
+    # a person expects; treating them as an answer is what broke.
+    if ([string]::IsNullOrEmpty($ch)) { $ignored++; continue }
+    if ([int][char]$ch[0] -lt 32) { $ignored++; continue }
+
+    $up = $ch.ToUpper()
+    if ($Accept -contains $up) { return @{ ok = $true; key = $up } }
+    return @{ ok = $false; kind = 'other_key'; detail = $ch }
+  }
+  # Fifty events and not one character: the keyboard is not reaching us.
+  return @{ ok = $false; kind = 'no_keyboard'; detail = 'only non-character key events arrived' }
+}
+
 if (-not (Test-Path -LiteralPath $Node))   { Cancel-Now "node not found" }
 if (-not (Test-Path -LiteralPath $Helper)) { Cancel-Now "approval helper not found" }
 
@@ -72,23 +130,24 @@ Say ""
 # ---------------------------------------------------------------------------
 # CONSENT - a real key, from a real console, or nothing
 # ---------------------------------------------------------------------------
-if (-not [Environment]::UserInteractive) { Cancel-Now "not an interactive session" }
-try {
-  if ([Console]::IsInputRedirected) { Cancel-Now "input is redirected - a person must press the key" }
-} catch { Cancel-Now "could not determine whether input is a console" }
+$choice = Read-OwnerChoice -Accept @('A', 'C')
 
-$key = $null
-try {
-  $key = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
-} catch {
-  # The host has no real keyboard to read. Fail CLOSED: an unreadable console
-  # is not consent, and must never be treated as one.
-  Cancel-Now "no console keyboard available"
+if (-not $choice.ok -and $choice.kind -eq 'no_keyboard') {
+  # NOT the Owner's doing, and it must not read as if it were.
+  Say ""
+  Say "  THIS TOOL COULD NOT READ YOUR KEYBOARD." 'Red'
+  Say ""
+  Say "  You did nothing wrong. Nothing was approved and nothing" 'White'
+  Say "  was changed - the screen simply cannot take your answer." 'White'
+  Say ""
+  Say "  Please tell whoever set this up, and pass on this line:" 'White'
+  Say ("    keyboard unavailable: " + $choice.detail) 'DarkGray'
+  Say ("    host=" + $Host.Name + "  interactive=" + [Environment]::UserInteractive) 'DarkGray'
+  Say ""
+  exit 5
 }
-if ($null -eq $key) { Cancel-Now "no key was read" }
-
-$ch = [string]$key.Character
-if ($ch -ne 'a' -and $ch -ne 'A') { Cancel-Now "you pressed something other than A" }
+if (-not $choice.ok) { Cancel-Now ("you pressed '" + $choice.detail + "' rather than A or C") }
+if ($choice.key -eq 'C') { Cancel-Now "you chose Cancel" }
 
 # ---------------------------------------------------------------------------
 # ISSUE - only now, and only here

@@ -69,8 +69,12 @@ test('*** running the approval screen from a SCRIPT yields Cancel and no receipt
     { encoding: 'utf8', timeout: 60000, input: 'A\nA\nA\n' })
 
   assert.notEqual(r.status, 0, 'a scripted run must not succeed')
-  assert.equal(r.status, 2, 'and must exit with the Cancel code')
-  assert.match(String(r.stdout), /CANCELLED/, 'it says so plainly')
+  // 5, not 2, since 2026-07-31: the two outcomes are now told apart. 2 means the Owner chose
+  // Cancel or pressed another key; 5 means the keyboard could not be read at all. A script has
+  // no keyboard, so 5 is the correct and more informative answer.
+  assert.equal(r.status, 5, 'and must exit with the keyboard-unavailable code, not the Cancel code')
+  assert.match(String(r.stdout), /COULD NOT READ YOUR KEYBOARD/, 'it says which of the two it is')
+  assert.match(String(r.stdout), /input is redirected/, 'and gives the reason for whoever set it up')
   // Feeding it the letter A did not help, which is the point.
   assert.doesNotMatch(String(r.stdout), /APPROVED\./, 'no approval was recorded')
 })
@@ -90,12 +94,69 @@ test('*** the approval screen exposes NO parameter that could approve ***', () =
 
 test('*** both screens read consent from the real console, and fail closed ***', () => {
   for (const p of [APPROVE_PS1, EXECUTE_PS1]) {
+    const name = path.basename(p)
     const code = fs.readFileSync(p, 'utf8').replace(/^\s*#.*$/gm, '')
-    assert.ok(code.includes('RawUI.ReadKey'), path.basename(p) + ' must read a real key')
-    assert.ok(code.includes('IsInputRedirected'), path.basename(p) + ' must refuse redirected input')
-    assert.ok(code.includes('UserInteractive'), path.basename(p) + ' must refuse a non-interactive session')
-    // The catch around ReadKey must CANCEL, never fall through to a default of "yes".
-    assert.match(code, /catch\s*\{\s*Cancel-Now/, path.basename(p) + ' must fail closed on an unreadable console')
+    assert.ok(code.includes('RawUI.ReadKey'), name + ' must read a real key')
+    assert.ok(code.includes('IsInputRedirected'), name + ' must refuse redirected input')
+    assert.ok(code.includes('UserInteractive'), name + ' must refuse a non-interactive session')
+
+    // Every failure to READ resolves to kind='no_keyboard', which the screen turns into a
+    // refusal. The old assertion looked for `catch { Cancel-Now`, which stopped matching when
+    // the reader started returning a classified result instead of exiting inline — the shape
+    // changed, the guarantee did not, so the assertion follows the guarantee.
+    assert.match(code, /catch\s*\{\s*return\s*@\{\s*ok\s*=\s*\$false;\s*kind\s*=\s*'no_keyboard'/,
+      name + ' must fail closed when the keyboard cannot be read')
+    assert.ok(code.includes("exit 5"), name + ' must exit non-zero on an unreadable keyboard')
+
+    // Queued events are discarded before asking, so nothing that arrived before the question
+    // can answer it.
+    assert.ok(code.includes('FlushInputBuffer'), name + ' must discard anything already queued')
+  }
+})
+
+test('*** a no-keyboard failure is told APART from a wrong key ***', () => {
+  // The defect the Owner hit: both produced "you pressed something other than A", so a tool
+  // failure was reported to him as his own mistake. They are now different messages, different
+  // exit codes, and the tool-failure one says explicitly that he did nothing wrong.
+  for (const p of [APPROVE_PS1, EXECUTE_PS1]) {
+    const name = path.basename(p)
+    const code = fs.readFileSync(p, 'utf8')
+    assert.ok(code.includes('COULD NOT READ YOUR KEYBOARD'), name + ' names the tool failure')
+    assert.ok(code.includes('You did nothing wrong'), name + ' says whose fault it is not')
+    assert.match(code, /kind\s*-eq\s*'no_keyboard'/, name + ' branches on the classification')
+    assert.match(code, /rather than [AE] or C/, name + ' has a separate message for a wrong key')
+  }
+
+  // Measured end to end: a run with no keyboard gives 5 and the tool-failure text, never the
+  // wrong-key text.
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', APPROVE_PS1],
+    { encoding: 'utf8', timeout: 60000, input: '' })
+  assert.equal(r.status, 5)
+  assert.match(String(r.stdout), /COULD NOT READ YOUR KEYBOARD/)
+  assert.doesNotMatch(String(r.stdout), /you pressed/, 'it must not blame the Owner for a tool failure')
+})
+
+test('*** the reader waits past modifier keys instead of treating them as an answer ***', () => {
+  // The immediate false "wrong key" came from a key event carrying no character. Skipping those
+  // is not leniency — a Shift key-down was never an answer — and the loop is bounded so a
+  // stream of junk events ends in a no_keyboard refusal rather than spinning forever.
+  for (const p of [APPROVE_PS1, EXECUTE_PS1]) {
+    const code = fs.readFileSync(p, 'utf8').replace(/^\s*#.*$/gm, '')
+    assert.match(code, /IsNullOrEmpty\(\$ch\)/, 'characterless events are skipped')
+    assert.match(code, /\[int\]\[char\]\$ch\[0\]\s*-lt\s*32/, 'control characters are skipped')
+    assert.match(code, /while\s*\(\$ignored\s*-lt\s*50\)/, 'the skipping is bounded')
+    assert.match(code, /only non-character key events arrived/, 'and exhausting it is a no_keyboard refusal')
+  }
+})
+
+test('*** the fix introduces no console-encoding or hidden-setting workaround ***', () => {
+  // The tempting fix was to set [Console]::OutputEncoding or chcp. That makes the screen depend
+  // on state nobody can see, and the Owner ruled it out.
+  for (const p of [APPROVE_PS1, EXECUTE_PS1]) {
+    const code = fs.readFileSync(p, 'utf8').replace(/^\s*#.*$/gm, '')
+    for (const banned of ['OutputEncoding', 'InputEncoding', 'chcp', '[Console]::SetIn', 'SetConsoleMode']) {
+      assert.equal(code.includes(banned), false, path.basename(p) + ' must not set: ' + banned)
+    }
   }
 })
 
