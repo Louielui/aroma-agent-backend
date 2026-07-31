@@ -29,6 +29,27 @@
  * Test files, the measured launchers for scripts A and B, the provisioning and staging scripts.
  * None of them runs during a canary. Including them would mean an unrelated test edit
  * invalidating a live approval, which trains people to re-approve without reading.
+ *
+ * ── SELF-COVERAGE: THIS FILE IS IN ITS OWN LIST, AND THAT IS FINE ─────────
+ * It looks circular and is not. The hash is taken over the BYTES OF FILES ON DISK, never over
+ * its own output, so there is no fixed point to solve and nothing to converge:
+ *
+ *   1. read the 19 files            <- plain file reads
+ *   2. sort by path, ordinal         <- deterministic
+ *   3. SHA-256 the canonical pairs   <- one pass, no recursion
+ *
+ * Step 1 reads this file the same way it reads any other. Editing it changes its bytes, which
+ * changes its entry, which changes the package hash — the ordinary behaviour, and the point.
+ * A test proves exactly that by editing a copy in a temp repo and watching the hash move.
+ *
+ * What WOULD be circular is hashing the computed hash, or storing the expected value inside
+ * this file. Neither is done, and neither should be: an expected-value constant here would
+ * have to be updated by hand every time, which is how a checksum becomes decoration.
+ *
+ * ── THE LIST IS NOT HAND-MAINTAINED ANY MORE ─────────────────────────────
+ * executionPackageClosure.test.js walks `require` transitively from the fixed entrypoint and
+ * fails if anything reachable is absent here. The first version of this list WAS hand-written
+ * and was wrong by six files, so the walk is the authority and the list is what it checks.
  */
 
 const crypto = require('node:crypto')
@@ -60,7 +81,28 @@ const PACKAGE_FILES = Object.freeze([
   // the hands
   'scripts/computer/uiaCanary.ps1',
   // the work order itself travels with the package: it is what the code will be pointed at
-  'docs/governance/canary-work-order.draft.json'
+  'docs/governance/canary-work-order.draft.json',
+
+  // ── ADDED 2026-07-31, after a transitive require walk found them ────────
+  // The first list was written by hand from what seemed relevant, and a walk from the
+  // entrypoint found six modules that reach the production call path and were not on it.
+  // Every one of them can change what runs or what gets recorded, so an approval that did
+  // not cover them covered less than it appeared to.
+  //
+  // THIS FILE, because it DEFINES the list. Left out, someone could add or remove entries
+  // and the package hash would not move — the manifest would be the one thing the manifest
+  // did not protect. See the self-coverage note below: there is no circularity, because the
+  // hash is taken over file BYTES and never over its own output.
+  'scripts/computer/executionPackage.js',
+  // The audit sink and the directory resolver. One decides how records are written, the
+  // other decides WHERE. Either could quietly break the audit or redirect it, and an
+  // unrecorded run is the failure this whole design is built to prevent.
+  'src/store/artifactStore.js',
+  'src/runtime/artifactDir.js',
+  // Reached through computerOperatorWiring -> companion -> observation/sessionBoundary.
+  'src/computer/companion.js',
+  'src/computer/sessionBoundary.js',
+  'src/computer/observation.js'
 ])
 
 const sha256File = (abs) => crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex')
