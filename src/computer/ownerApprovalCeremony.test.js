@@ -234,22 +234,32 @@ test('the summary a person reads names every capability in plain words', () => {
 
 /* ── 5. the execute fence ─────────────────────────────────────────────────── */
 
-test('*** the execute fence is OPEN by Owner decision, and only a constant can move it ***', () => {
-  // CHANGED 2026-07-31 by Owner decision: the fence was `$false` and is now `$true`.
+test('*** the execute fence is a LITERAL $false, and nothing outside can move it ***', () => {
+  // RE-LOCKED 2026-07-31 by Owner correction. It was opened for exactly one commit and shut
+  // again in the next, on purpose: Owner-Execute.ps1 is part of the execution package, so the
+  // eventual unlock changes that package and invalidates any receipt bound to it. Wiring is
+  // therefore built and reviewed with the fence SHUT, and the unlock is the last step before
+  // a fresh approval.
   //
-  // The test is kept, not deleted, and that is the whole point of it. Its job was never
-  // "prove the fence is shut" — it is to make the fence's VALUE something a diff cannot pass
-  // over quietly. Any future change, in either direction, must now touch two files: the
-  // script and this assertion. A guard that is removed the moment it becomes inconvenient
-  // guards nothing.
+  // The test is kept through both flips rather than deleted and re-added, which is the point:
+  // the fence's value is something a diff must show twice, in either direction. A guard
+  // removed the moment it becomes inconvenient guards nothing.
   const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
-  assert.match(code, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/,
-    'the fence is OPEN — opened deliberately by the Owner on 2026-07-31')
-  assert.doesNotMatch(code, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/,
-    'and there is no second assignment quietly closing or reopening it')
-
-  // Still only a constant. It must not have become settable from outside while being opened.
-  assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'and cannot be moved by an argument')
   const stripped = code.replace(/^\s*#.*$/gm, '')
-  assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'nor by an environment variable')
+
+  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/, 'the fence is SHUT')
+  assert.doesNotMatch(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/,
+    'and nothing reopens it')
+
+  // Exactly ONE assignment. A second one anywhere — a fallback, a re-assignment further down,
+  // a branch that flips it — would make the first meaningless.
+  const assignments = stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=/g) || []
+  assert.equal(assignments.length, 1, 'exactly one assignment, no fallback path')
+
+  // A literal, never a value from outside: not a parameter, not an environment variable, not
+  // a computed expression.
+  assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'no script parameter can move it')
+  assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'no environment variable can move it')
+  const rhs = (stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=\s*(.+)/) || [])[1] || ''
+  assert.match(rhs.trim(), /^\$false\s*$/, 'the right-hand side is the bare literal, nothing else')
 })

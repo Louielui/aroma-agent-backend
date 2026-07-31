@@ -34,10 +34,20 @@ $Helper  = Join-Path $RepoDir 'scripts\computer\ownerApproval.js'
 # THE FENCE. Not a parameter, not an environment variable — a constant in the
 # file, so enabling it is a commit somebody can see.
 #
-# OPENED BY OWNER DECISION, 2026-07-31. Closing it again is equally a commit,
-# and ownerApprovalCeremony.test.js asserts this value, so either direction
-# shows up TWICE in a diff: here, and in the test.
-$CANARY_EXECUTE_AUTHORISED = $true
+# RE-LOCKED 2026-07-31, by Owner correction, BEFORE any real wiring is added.
+#
+# It was opened for one commit and closed again in the next, deliberately. The
+# reason is an ordering one: this file is inside the execution package, so the
+# eventual unlock commit necessarily changes the package and invalidates any
+# receipt bound to it. Wiring must therefore be built and reviewed while the
+# fence is SHUT, and the unlock left to the very last step — after which the
+# Owner approves again, against the package that will actually run.
+#
+# No commit in between may carry fence=true together with live wiring.
+#
+# ownerApprovalCeremony.test.js asserts this literal, so either direction shows
+# up TWICE in a diff: here, and in the test.
+$CANARY_EXECUTE_AUTHORISED = $false
 
 function Say { param([string]$T, [string]$C = 'Gray') Write-Host $T -ForegroundColor $C }
 
