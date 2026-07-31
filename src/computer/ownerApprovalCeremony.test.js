@@ -234,8 +234,22 @@ test('the summary a person reads names every capability in plain words', () => {
 
 /* ── 5. the execute fence ─────────────────────────────────────────────────── */
 
-test('*** execution is fenced off in this build, by a constant not a parameter ***', () => {
+test('*** the execute fence is OPEN by Owner decision, and only a constant can move it ***', () => {
+  // CHANGED 2026-07-31 by Owner decision: the fence was `$false` and is now `$true`.
+  //
+  // The test is kept, not deleted, and that is the whole point of it. Its job was never
+  // "prove the fence is shut" — it is to make the fence's VALUE something a diff cannot pass
+  // over quietly. Any future change, in either direction, must now touch two files: the
+  // script and this assertion. A guard that is removed the moment it becomes inconvenient
+  // guards nothing.
   const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
-  assert.match(code, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/, 'the fence is closed')
-  assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'and cannot be opened by an argument')
+  assert.match(code, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/,
+    'the fence is OPEN — opened deliberately by the Owner on 2026-07-31')
+  assert.doesNotMatch(code, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/,
+    'and there is no second assignment quietly closing or reopening it')
+
+  // Still only a constant. It must not have become settable from outside while being opened.
+  assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'and cannot be moved by an argument')
+  const stripped = code.replace(/^\s*#.*$/gm, '')
+  assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'nor by an environment variable')
 })

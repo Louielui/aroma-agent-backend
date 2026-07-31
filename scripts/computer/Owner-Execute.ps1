@@ -33,7 +33,11 @@ $Helper  = Join-Path $RepoDir 'scripts\computer\ownerApproval.js'
 
 # THE FENCE. Not a parameter, not an environment variable — a constant in the
 # file, so enabling it is a commit somebody can see.
-$CANARY_EXECUTE_AUTHORISED = $false
+#
+# OPENED BY OWNER DECISION, 2026-07-31. Closing it again is equally a commit,
+# and ownerApprovalCeremony.test.js asserts this value, so either direction
+# shows up TWICE in a diff: here, and in the test.
+$CANARY_EXECUTE_AUTHORISED = $true
 
 function Say { param([string]$T, [string]$C = 'Gray') Write-Host $T -ForegroundColor $C }
 
