@@ -162,12 +162,60 @@ try {
     } catch { $failedFiles.Add($f.Name) }
   }
 
+  # ── THE RESULT FILES LIVE IN THE EVIDENCE ROOT, NOT THE ROUND DIRECTORY ────
+  # Added 2026-07-31. Round 8c019adcbe8a could only be diagnosed by REASONING, because the
+  # numbers that would have settled it - windowCount, foundOwnSentinel, ownSignatureSamples and
+  # the capture's own failure reasons - sit in stage3-results.json one level up, and this
+  # launcher only ever copied the round directory. Diagnosing from inference when the file is
+  # sitting on the disk is the thing this phase keeps refusing to do.
+  #
+  # RECORDS ONLY. The classifier in evidenceStore.js already draws this line and it is drawn
+  # here the same way: JSON records, attestations, manifests and probe output come out; RAW
+  # CONTENT DOES NOT. Captures (*.png) and UIA node dumps (*.uia.txt) are screen contents, and
+  # this destination is readable WITHOUT elevation - copying them here would take material that
+  # retention exists to bound and put it somewhere with weaker protection than where it started.
+  # That would be a containment regression dressed up as convenience.
+  $RECORD_PATTERNS = @(
+    'stage3-manifest.json', 'stage3-results.json', 'stage3-topup-results-*.json',
+    'stage3-STARTED-*.json', 'stage3-COMPLETED-*.json',
+    'stage3-topup-STARTED-*.json', 'stage3-topup-COMPLETED-*.json',
+    'stage3-sentinel-owner-*.json', 'stage3-clip-owner-*.json',
+    'stage3-uia.json', 'tierA-probe.out', 'tierA-INCIDENT-*.json',
+    'observer-task-baseline*.xml', 'observer-result.json', 'session-identity-task.json',
+    'probedir-acl-pre-*.txt', 'companion-*.log', 'companion-*.log.err'
+  )
+  # Belt: even if a pattern above is ever widened by mistake, these never leave.
+  $NEVER_COPY = @('*.png', '*.uia.txt', '*.bmp', '*.jpg')
+
+  $UI.SetStep('copy', 'run', '證據根目錄嘅結果檔')
+  $rootDir = Join-Path $Destination '_evidence-root'
+  if (-not (Test-Path -LiteralPath $rootDir)) { New-Item -ItemType Directory -Force -Path $rootDir | Out-Null }
+  $index.Add('=== evidence root (records only - raw content is deliberately NOT copied) ===')
+  $rootCopied = 0
+  foreach ($pat in $RECORD_PATTERNS) {
+    foreach ($f in @(Get-ChildItem -LiteralPath $script:CX_EvidenceRoot -Filter $pat -File -Force -ErrorAction SilentlyContinue)) {
+      $skip = $false
+      foreach ($bad in $NEVER_COPY) { if ($f.Name -like $bad) { $skip = $true } }
+      if ($skip) { continue }
+      try {
+        Copy-Item -LiteralPath $f.FullName -Destination (Join-Path $rootDir $f.Name) -Force -ErrorAction Stop
+        $rootCopied++; $copied++
+        $index.Add(('  {0,-46} {1,8}  {2}' -f $f.Name, $f.Length, (CX-Sha256File -Path (Join-Path $rootDir $f.Name))))
+      } catch { $failedFiles.Add($f.Name) }
+    }
+  }
+  $index.Add('')
+  $index.Add('NOT copied, on purpose: *.png, *.uia.txt - raw screen content. This folder needs no')
+  $index.Add('elevation to read; raw material stays where retention and the ACL still bound it.')
+  $index.Add('')
+
   if ($copied -eq 0) {
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'copy' -Reason '一個檔案都抄唔到' `
       -Detail @($failedFiles) -Launcher 'reader')
     CX-Wait -UI $UI; exit 1
   }
-  $UI.SetStep('copy', 'ok', ($copied.ToString() + ' 個檔案' + $(if ($failedFiles.Count) { '，' + $failedFiles.Count + ' 個抄唔到' } else { '' })))
+  $UI.SetStep('copy', 'ok', ($copied.ToString() + ' 個檔案（其中 ' + $rootCopied + ' 個結果檔）' +
+    $(if ($failedFiles.Count) { '，' + $failedFiles.Count + ' 個抄唔到' } else { '' })))
 
   # ── 4. the index ──────────────────────────────────────────────────────────
   $UI.SetStep('index', 'run', '')

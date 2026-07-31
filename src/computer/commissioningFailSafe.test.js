@@ -549,6 +549,29 @@ test('*** the report icon is safe to press at ANY time ***', () => {
   assert.equal(/PARTB-SEALED|OPERATOR-DONE|LOCK3-DONE/.test(rd), false,
     'the reader must not gate on run state — it copies whatever exists')
 
+  // It now also brings out the RESULT files from the evidence ROOT. Round 8c019adcbe8a could
+  // only be diagnosed by reasoning because those numbers were one directory up and never
+  // copied, while the file sat on the disk the whole time.
+  assert.match(rd, /stage3-results\.json/, 'the harness results must come out')
+  assert.match(rd, /stage3-topup-results-\*\.json/, 'and the top-up results')
+  assert.match(rd, /stage3-sentinel-owner-\*\.json/, 'and the sentinel attestations')
+
+  // RAW CONTENT MUST NEVER FOLLOW THEM. This destination is readable WITHOUT elevation.
+  // Copying captures or UIA dumps here would move material that retention exists to bound into
+  // a place with weaker protection than where it started — a containment regression wearing the
+  // clothes of convenience. The belt is asserted, not just the intent.
+  assert.match(rd, /\$NEVER_COPY/, 'there must be an explicit never-copy list')
+  for (const raw of ['\\*\\.png', '\\*\\.uia\\.txt']) {
+    assert.match(rd, new RegExp(raw), `raw content ${raw} must be named in the never-copy list`)
+  }
+  const neverBlock = rd.slice(rd.indexOf('$NEVER_COPY'), rd.indexOf('$NEVER_COPY') + 200)
+  assert.match(neverBlock, /\*\.png/, 'captures must be excluded by name')
+  assert.match(neverBlock, /\*\.uia\.txt/, 'UIA node dumps must be excluded by name')
+  // and the record list must not itself reach for raw material
+  const recBlock = rd.slice(rd.indexOf('$RECORD_PATTERNS'), rd.indexOf('$NEVER_COPY'))
+  assert.equal(/\.png|\.uia\.txt|obs-\*/.test(recBlock), false,
+    'the record patterns must not name raw content')
+
   // and still never writes into the evidence (re-asserted here because "safe at any time" is
   // exactly the claim that would be broken by a later convenience feature)
   for (const m of rd.matchAll(/(Remove-Item|Move-Item|Set-Content|Out-File)[^\n]*/g)) {
