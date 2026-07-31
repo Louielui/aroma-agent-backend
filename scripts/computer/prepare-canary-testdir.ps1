@@ -210,6 +210,23 @@ if ($rules.Count -ne 3) {
   & $stop ("expected exactly 3 ACEs, found " + $rules.Count)
 }
 
+# ---------------------------------------------------------------------------
+# WHY EVERY CALL BELOW IS WRAPPED IN @( )
+#
+# This function already returns @( ... ). That is NOT enough, and the first
+# elevated run of this script died proving it: PowerShell UNWRAPS a one-element
+# array on return, and returns $null for an empty one. So the caller receives a
+# bare FileSystemAccessRule, or nothing - and under StrictMode -Version Latest,
+# reading .Count on either of those is a terminating error.
+#
+# The failure shape is the nastiest kind: it only appears when the result has
+# exactly zero or one element, which is the correct case. Two or more ACEs for
+# one principal - the thing that would be WRONG - is the only shape that would
+# have worked.
+#
+# The array subexpression goes at the CALL SITE, where the unwrapping happens.
+# Putting it only inside the function is what looked correct and was not.
+# ---------------------------------------------------------------------------
 function Get-AceFor {
   param([string] $Sid)
   return @($rules | Where-Object {
@@ -218,7 +235,7 @@ function Get-AceFor {
 }
 
 foreach ($p in $FORBIDDEN_PRINCIPALS) {
-  if ((Get-AceFor -Sid $p).Count -gt 0) { & $stop ("a rule exists for a forbidden principal: " + $p) }
+  if (@(Get-AceFor -Sid $p).Count -gt 0) { & $stop ("a rule exists for a forbidden principal: " + $p) }
 }
 Write-Host "  Everyone/Users/AuthU : no Allow" -ForegroundColor Green
 
@@ -227,7 +244,7 @@ foreach ($spec in @(
   @{ Sid = $SID_ADMINS;          Mask = $MASK_FULL;     Label = 'BUILTIN\Administrators' },
   @{ Sid = $SID_SYSTEM;          Mask = $MASK_FULL;     Label = 'NT AUTHORITY\SYSTEM' }
 )) {
-  $ace = Get-AceFor -Sid $spec.Sid
+  $ace = @(Get-AceFor -Sid $spec.Sid)
   if ($ace.Count -ne 1) { & $stop ("expected exactly one ACE for " + $spec.Label + ", found " + $ace.Count) }
   $a = $ace[0]
   if ($a.AccessControlType -ne 'Allow') { & $stop ($spec.Label + " ACE is not an Allow") }
@@ -240,7 +257,7 @@ foreach ($spec in @(
 }
 
 # The least-privilege claim, checked right by right rather than asserted.
-$opMask = [int](Get-AceFor -Sid $ExpectedOperatorSid)[0].FileSystemRights
+$opMask = [int]@(Get-AceFor -Sid $ExpectedOperatorSid)[0].FileSystemRights
 Write-Host ""
 Write-Host ("  least-privilege check for " + $AccountName + " (mask 0x{0:X}):" -f $opMask) -ForegroundColor Cyan
 foreach ($name in $FORBIDDEN_RIGHTS.Keys) {
