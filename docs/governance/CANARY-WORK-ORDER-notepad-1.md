@@ -1,8 +1,13 @@
 # SEALED WORK ORDER — `wo_canary_notepad_1` (revision 2)
 
 **Status: PREPARED, NOT APPROVED, NOT EXECUTED.**
-Nothing here has run. `COMPUTER_OPERATOR` is OFF and measured OFF, the allowed directory does
-not exist, and Notepad has not been opened. Executing requires a separate Owner EXECUTE GO.
+`COMPUTER_OPERATOR` is OFF and measured OFF, `approvalId` is empty, and Notepad has not been
+opened. Executing requires a separate Owner EXECUTE GO.
+
+The two environment preconditions in §13 **have now been met** (2026-07-31): the allowed
+directory exists and the Companion is staged. Nothing in the order itself has run. And per §14
+the `approvalId` authorization chain is **not yet established**, which is a second and
+independent reason this order is not executable — meeting the preconditions did not make it so.
 
 Revision 2 re-seals against the Owner ruling of 2026-07-31 (option A). Revision 1's hash
 `d27a0762…` is **void** — the order now carries its own bounds, so the hash changed.
