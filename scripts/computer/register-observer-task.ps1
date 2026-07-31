@@ -29,7 +29,16 @@ param(
   [string]$AccountName = 'AromaOperator',
   [string]$ProbeDir = 'C:\AromaOperator-Probe',
   [string]$EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence',
-  [string]$RepoScripts = 'C:\Aroma\aroma-agent-backend\scripts\computer'
+  # THIS SCRIPT'S OWN DIRECTORY, not a hardcoded tree. It lives in scripts\computer beside
+  # observer.ps1, so its own location IS the answer and cannot be wrong.
+  #
+  # MEASURED 2026-07-30, at the machine, mid-run: the old default named
+  # C:\Aroma\aroma-agent-backend\scripts\computer, which is a WORKING TREE. After the persona
+  # rename merged, that tree was checked out to `main` — where observer.ps1 does not exist.
+  # Preparation step 2 then re-registered the task against a missing source, the pin came back
+  # not matching, and launcher 1 stopped with "the observer task pin could not be refreshed".
+  # The pin was fine; the path was pointing at the wrong branch.
+  [string]$RepoScripts = $PSScriptRoot
 )
 
 Set-StrictMode -Version Latest

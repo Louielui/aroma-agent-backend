@@ -554,6 +554,44 @@ test('*** the guide answers the Part B failure question in one sentence ***', ()
   assert.match(guide, /呢個圖示幾時撳都安全|幾時撳都得/, 'and the report icon must be stated as always-safe')
 })
 
+test('*** nothing on the launcher path hardcodes a repository tree ***', () => {
+  // THIS CLASS BROKE THE RUN TWICE IN ONE EVENING, both times with the Owner standing at the
+  // machine:
+  //   1. the three desktop icons pointed into <repo>/scripts/commissioning, which vanished the
+  //      moment the tree was checked out to main after the persona rename merged
+  //   2. register-observer-task.ps1 defaulted to <repo>/scripts/computer and re-registered the
+  //      observer against a source that does not exist on main, so the pin came back not
+  //      matching and preparation stopped at step 5
+  // Neither was corruption. A hardcoded path names a WORKING TREE, and a tree has a branch that
+  // can change under the script without one named file being edited. A path cannot notice that;
+  // a resolver that insists on a marker file can.
+  const PS_DIR = path.resolve(__dirname, '..', '..', 'scripts', 'computer')
+  // Only what the launchers actually invoke. deploy-companion, rollback-companion and
+  // verify-staging are operator tooling run by hand from a known tree — deliberately out.
+  const ON_PATH = ['register-observer-task.ps1', 'register-session-gate-task.ps1',
+                   'restrict-probe-dir.ps1', 'stage3-manifest.ps1', 'measurementContext.ps1']
+  for (const f of ON_PATH) {
+    const full = path.join(PS_DIR, f)
+    if (!fs.existsSync(full)) continue
+    const live = fs.readFileSync(full, 'utf8')
+      .split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join('\n')
+    assert.equal(live.includes('aroma-agent-backend'), false,
+      f + ' hardcodes a repository tree; derive it from $PSScriptRoot instead')
+  }
+  // the two that STAGE a file must take their source from their own directory, which is the
+  // one location that cannot be pointing at another branch
+  for (const f of ['register-observer-task.ps1', 'register-session-gate-task.ps1']) {
+    const full = path.join(PS_DIR, f)
+    if (!fs.existsSync(full)) continue
+    assert.match(fs.readFileSync(full, 'utf8'), /\$RepoScripts\s*=\s*\$PSScriptRoot/,
+      f + ' must take its source directory from $PSScriptRoot')
+  }
+  // and the core must RESOLVE the repo, requiring a probe script before accepting a candidate
+  const core = code('commissioningCore.ps1')
+  assert.match(core, /function CX-ResolveRepo/, 'the core must resolve the repo, not assume it')
+  assert.match(core, /stage3-harness/, 'and must require a probe script to be present')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

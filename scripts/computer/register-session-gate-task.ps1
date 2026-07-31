@@ -54,7 +54,12 @@ $Qualified   = $env:COMPUTERNAME + '\' + $AccountName
 $GateDir     = 'C:\Aroma\ComputerOperator-Gate'
 $StageDir    = 'C:\Aroma\ComputerOperator-Companion'
 $EvidenceDir = 'C:\Aroma\ComputerOperator-Evidence'
-$RepoScripts = 'C:\Aroma\aroma-agent-backend\scripts\computer'
+# This script's OWN directory. Same defect and same fix as register-observer-task.ps1: the
+# hardcoded tree is a working tree, and after the persona rename merged it was checked out to
+# `main`, where session-identity.ps1's siblings do not exist. This one did not fire on
+# 2026-07-30 only because the gate hash already matched and step 1 skipped the re-register —
+# it was the next failure waiting, not a healthy path.
+$RepoScripts = $PSScriptRoot
 $PowerShell  = 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe'
 $ScriptName  = 'session-identity.ps1'
 $StagedScript = Join-Path $GateDir $ScriptName
