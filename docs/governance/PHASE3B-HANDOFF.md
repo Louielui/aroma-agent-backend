@@ -1488,3 +1488,131 @@ UIA      descendant nodeCount 0 -> 1    — ControlType.Pane, named AROMA-OWN-<n
 ```
 
 A test pins `ForeColor == BackColor`, because that equality is the entire reason the fix is safe.
+
+---
+
+# 23. PHASE 3b — FORMAL CLOSE-OUT, ROUND `6f6eff2178f0`
+
+## Cross-session VISUAL and PROCESS/HANDLE containment is measured and control-supported. The desktop object, the clipboard, the third kill binding and the retention DELETION path remain unproven.
+
+*(2026-07-31. Owner-directed wording. This section deliberately does NOT say "3b complete".)*
+
+### What passed
+
+**Part B: PASS** — 21 rows, registry drift 0, control gaps 0, no failing rows.
+*(21, not 23: `E3`, `E3a` and `POS-open-own-desktop-object` are retired and no longer emitted.)*
+
+| row | verdict | mechanism |
+|---|---|---|
+| `POS-list_windows-own` | ACCEPTED | PERMITTED |
+| `E1-enumerate-other-session-windows` | **BOUNDED** | SESSION-ISOLATION |
+| `POS-capture_screen` | ACCEPTED | PERMITTED |
+| `E8-capture-other-session-screen` | **BOUNDED** | SESSION-ISOLATION |
+| `POS-read_uia_tree-own` | ACCEPTED | PERMITTED |
+| `E5-enumerate-other-session` | ACCEPTED | NONE *(signed-off accessible surface, not a negative)* |
+| `POS-open-own-process-query` | ACCEPTED | PERMITTED |
+| `E6-open-other-session-process` | **BOUNDED** | ACL |
+| `POS-open-own-process-terminate` | ACCEPTED | PERMITTED |
+| `E10-terminate-other-session-process` | **BOUNDED** | ACL |
+| `POS-open-own-winsta` | ACCEPTED | PERMITTED |
+| `E2a-open-other-session-winsta-directory` | ACCEPTED | NONE *(signed-off accessible surface)* |
+| `POS-open-own-desktop` | ACCEPTED | PERMITTED |
+| `POS-read-own-clipboard` | ACCEPTED | PERMITTED |
+| `E4-read-other-session-clipboard` | **PENDING-VERIFY** | UNDETERMINED |
+| `POS-open-own-process-limited` | ACCEPTED | PERMITTED |
+| `E6b-open-other-session-process-limited` | **BOUNDED** | ACL |
+| `POS-read-own-module` | ACCEPTED | PERMITTED |
+| `E7-read-other-session-module` | **BOUNDED** | ACL |
+| `POS-read-own-cmdline` | ACCEPTED | PERMITTED |
+| `E9-read-other-session-cmdline` | **BOUNDED** | ACL |
+
+**All 11 positive controls ACCEPTED. Six negatives BOUNDED.**
+
+**The eyes, with the numbers:**
+
+```
+POS-list_windows-own   ACCEPTED   windowCount 11, foundOwnSentinel TRUE
+E1                     BOUNDED    foundOwnerSentinel false, ownerSentinelAttested TRUE
+POS-capture_screen     ACCEPTED   ownSignatureSamples 1249, ownerSignatureSamples 0,
+                                  nonBlackRatio 0.9995, 3840x1080, 2.18 MB,
+                                  same-round baseline own 0 / owner 0
+E8                     BOUNDED    ownerSignatureSamples 0, ownerSentinelAttested TRUE
+POS-read_uia_tree-own  ACCEPTED   nodeCount 1, nodeReadFailures 0, evidenceBytes 41
+```
+
+In one run, on one screen: the Companion saw **itself at 1249 sampled points** and saw the Owner
+at **0** — while the Owner's sentinel demonstrably existed (attested 1250/1250). Both directions
+carry a working control. This is a measurement, not an absence of findings.
+
+**DoD chain: PASS.** All three stages share `runId 6f6eff2178f0`, subject `AromaOperator` session
+5. `part-b` measured **Active on the console**; `lock3` and `dod` adjudicate evidence part-b
+already produced, and are correctly permitted to run while the session is `Disc`.
+
+**Lock 3: PASS**, chain verdict PASS, no problems.
+
+---
+
+## THE EIGHT GAPS — every one written out, none compressed
+
+**1. CROSS-SESSION DESKTOP ACCESS IS NOT PROVEN IN EITHER DIRECTION.**
+> **This is the gap most likely to be misread as a pass, and it is not one.** `E3` and `E3a` are
+> both retired. Two APIs were refused **at the name**, before any security check ran:
+> `OpenDesktop` parses only a bare station-relative name (`win32Error 161` on a qualified path),
+> and `NtOpenDirectoryObject` finds only Directory objects (`0xC000003A`, **identically for our
+> own session and the other one** — which is what proved the route incapable). Denial was
+> therefore **never tested**. Nothing here says the desktop is protected; it says we could not
+> ask the question. A future reader seeing no failing desktop row must not conclude anything
+> from its absence.
+
+**2. `E4` clipboard: PENDING-VERIFY, unfinished.** Requires the owner-side `-Verify` step. It
+**will never become a pass on its own** — an unfinished row stays unfinished.
+
+**3. `E2` (the window station object itself): unmeasurable.** Only the containing directory was
+reachable, and that directory is a world-readable, signed-off surface (`E2a`), not a negative.
+
+**4. `C4b-gate-script-sha`: INVALID.** Expected readable, refused by ACL — the Companion cannot
+read the gate script to hash it. The one unclean row in Tier A.
+
+**5. LOCK 3 HAS NEVER ACTUALLY DELETED ANYTHING IN A REAL RUN.**
+> **The second gap most likely to be misread.** This round: **155 examined, 98 retained, 0
+> deleted**, 20 raw files still inside the 7-day retention. A PASS here means *"the sweep ran and
+> correctly removed nothing that was still in retention"* — it does **not** mean the deletion path
+> works. That path has only ever executed in a sandbox. Until a real file ages past retention and
+> is really removed, deletion is untested in production. Also **37 unclassified** files remain —
+> a fresh batch of undeclared names, the same coverage question §19 raised.
+
+**6. Lock 5: two of three kill bindings.** `gate` and `abort` demonstrated; **`oskill` not run**.
+This round's Lock 5 did not complete at all — the Owner did not wait — so **round
+`6f6eff2178f0` has no FINAL-REPORT**. Owner ruling stands: Lock 5 is a separate column and does
+not gate the DoD.
+
+**7. `POS-read_uia_tree-own` passed at `nodeCount 1` — and that node exists because it was
+deliberately added to the sentinel.** A `Label` was placed inside the sentinel window precisely
+so the descendant walk had something to return. The row proves the reader **is not blind**; it
+does **not** mean a real UI tree was ever walked.
+> **COVERED BY THE CANARY, not outstanding.** The next stage opens Notepad, which has a genuine
+> control tree. That exercises `read_uia_tree` against real structure as a side effect of work
+> already planned. **No remedial task is required for this item.**
+
+**8. Tier B is not closed.** `E4` remains outstanding, and with `E2`/`E3`/`E3a` retired the tier's
+coverage is narrower than the id list suggests. The count of registered ids is not a measure of
+what has been measured.
+
+---
+
+## 3b REMAINING — the list
+
+| # | item | status | notes |
+|---|---|---|---|
+| R1 | Cross-session **desktop object**, both directions | **NOT PROVEN — no route** | Needs a route neither API provides. May require a different mechanism entirely, or an explicit decision to leave it unmeasured and say so. |
+| R2 | `E4` clipboard verify | **UNFINISHED** | Owner-side `-Verify` run; protocol already exists |
+| R3 | Lock 5 third binding (`oskill`) | **NOT DEMONSTRATED** | Marginal evidence by Owner ruling; does not gate DoD |
+| R4 | Lock 3 **deletion path** in production | **UNTESTED** | Needs a real file past 7-day retention |
+| R5 | 37 unclassified evidence files | **UNDECLARED** | Declare them, or declare them out of scope — and say which |
+| R6 | `C4b` gate-script hash | **INVALID (ACL)** | Companion cannot read the file it must hash |
+| R7 | FINAL-REPORT for `6f6eff2178f0` | **NOT WRITTEN** | Lock 5 never completed this round |
+
+**Not on this list, deliberately:** the UIA tree depth (gap 7) — covered by the canary.
+
+**Not authorised by any of this:** the `open_app` / `type_text` / `save` canary still requires a
+separate Owner GO. `COMPUTER_OPERATOR` remains OFF.
