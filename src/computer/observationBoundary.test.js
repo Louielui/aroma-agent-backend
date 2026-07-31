@@ -47,9 +47,22 @@ test('*** the observation action set is closed, and input actions are not in it 
   for (const bad of FORBIDDEN_ACTIONS) {
     assert.equal(OBSERVATION_ACTIONS.includes(bad), false, 'must never become an observation action: ' + bad)
   }
-  // input synthesis by name, whatever the forbidden list happens to contain
-  for (const bad of ['click', 'type_text', 'send_key', 'move_mouse', 'open_app']) {
+  // input synthesis by name, whatever the forbidden list happens to contain. `send_key`
+  // became `send_keys` when the register and the gate were unified onto one spelling.
+  for (const bad of ['click', 'type_text', 'send_keys', 'move_mouse', 'open_app']) {
     assert.equal(FORBIDDEN_ACTIONS.includes(bad), true, 'forbidden list must name: ' + bad)
+  }
+
+  // And the split is the right way round: the never-list is not quietly empty, and no name
+  // appears on both sides of it.
+  const { NEVER_ACTIONS, SEALED_ORDER_ACTIONS } = require('./observation')
+  assert.ok(NEVER_ACTIONS.length >= 10, 'the never-list still has teeth')
+  for (const a of SEALED_ORDER_ACTIONS) {
+    assert.equal(NEVER_ACTIONS.includes(a), false, 'a name cannot be both unlockable and never: ' + a)
+  }
+  for (const mustNeverBeUnlockable of ['move_mouse', 'click', 'set_clipboard', 'write_file', 'network']) {
+    assert.equal(NEVER_ACTIONS.includes(mustNeverBeUnlockable), true, 'must stay absolute: ' + mustNeverBeUnlockable)
+    assert.equal(SEALED_ORDER_ACTIONS.includes(mustNeverBeUnlockable), false)
   }
 })
 
@@ -74,18 +87,39 @@ test('*** stage 1 — every observation capability is declared and OFF ***', () 
 test('anything outside the closed set is refused as out of scope, not attempted', () => {
   const { createObserver } = require('./observation')
   const o = createObserver()
-  for (const a of ['click', 'type_text', 'open_app', 'write_file', null, 42]) {
+  for (const a of ['click', 'write_file', null, 42]) {
     const r = o.observe({ action: a })
     assert.equal(r.ok, false)
     assert.equal(r.refusal, 'action_not_in_observation_set', 'out of scope: ' + String(a))
   }
 })
 
+test('*** a gated action reaching the OBSERVER is refused, order or no order ***', () => {
+  // The four names became unlockable on 2026-07-31 — but not here. Observation reads; it has
+  // no way to act and never acquires one. A sealed order does not change that, and this test
+  // exists so nobody later "completes" the unlock by teaching the observer to type.
+  const { createObserver, SEALED_ORDER_ACTIONS, NOT_OBSERVATION } = require('./observation')
+  const o = createObserver()
+  assert.ok(SEALED_ORDER_ACTIONS.includes('type_text'))
+  assert.ok(SEALED_ORDER_ACTIONS.includes('open_app'))
+  for (const a of SEALED_ORDER_ACTIONS) {
+    const r = o.observe({ action: a })
+    assert.equal(r.ok, false, 'refused: ' + a)
+    assert.equal(r.refusal, NOT_OBSERVATION, 'and named as a routing error, not a permission one')
+  }
+})
+
 /* ── LOCK 1a — no path from observation to any model surface ──────────────── */
 
-test('*** LOCK 1a — observation.js requires nothing, so it reaches no LLM surface ***', () => {
+test('*** LOCK 1a — observation.js imports one inert sibling, and nothing else ***', () => {
+  // Was `[]`. It is now exactly one entry, and the entry is the gate: a module whose only
+  // import is node:crypto and which computes and compares without acting. Asserted as an
+  // exact list rather than a maximum, so a second import is a failing test.
   const imports = [...codeOf('observation.js').matchAll(/require\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
-  assert.deepEqual(imports, [], 'the observation boundary imports nothing at all')
+  assert.deepEqual(imports, ['./sealedOrderGate'], 'the observation boundary imports only the gate')
+
+  const gateImports = [...codeOf('sealedOrderGate.js').matchAll(/require\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
+  assert.deepEqual(gateImports, ['node:crypto'], 'and the gate itself reaches nothing')
 })
 
 test('*** LOCK 1b — the observation return path never calls prompt assembly ***', () => {

@@ -29,9 +29,12 @@
  *                            failure, not a redaction problem
  *
  * A caller therefore cannot put raw observation into a prompt even by mistake, because it
- * never holds any. This module requires NOTHING — no LLM surface, no adapter, no context
- * assembly — and Lock 1's require-graph proof asserts that emptiness stays true.
+ * never holds any. This module requires ONE local sibling — sealedOrderGate, which computes and
+ * compares and cannot act — and nothing else: no LLM surface, no adapter, no context assembly.
+ * Lock 1's require-graph proof asserts that the transitive walk still reaches no model surface.
  */
+
+const gate = require('./sealedOrderGate')
 
 /**
  * THE CLOSED SET. Observation only. Adding to this list is a capability change and an
@@ -40,14 +43,27 @@
 const OBSERVATION_ACTIONS = Object.freeze(['list_windows', 'read_uia_tree', 'capture_screen'])
 
 /**
- * Actions that must NEVER appear here however the module grows. Input synthesis is the
- * bright line of Phase 3: 3b is read-only, and this list is what a test asserts against.
+ * ── THE BOUNDARY MOVED ON 2026-07-31, AND THIS IS EXACTLY HOW FAR ─────────────
+ * This list used to be one flat set described as "must NEVER appear however the module grows".
+ * The Owner has ruled that four of them — open_app, type_text, send_keys, launch_app — become
+ * DEFAULT DENY WITH ONE UNLOCK CONDITION rather than absolute, so the split is now explicit
+ * and lives in sealedOrderGate.js, which is the only file that decides.
+ *
+ * Two things are worth being precise about, because they are easy to blur:
+ *
+ *   . NEVER_ACTIONS did not move. No order unlocks them, and the gate decides them before it
+ *     reads an order at all.
+ *   . The restricted four are still NEVER OBSERVATION ACTIONS. Nothing here performs them,
+ *     with or without an order — observation is reading, and this module has no way to act.
+ *     Their unlock path is the Companion, under a verified seal, and this module's refusal is
+ *     unchanged in behaviour. What changed is that the refusal is no longer described as
+ *     absolute, because system-wide it no longer is.
  */
-const FORBIDDEN_ACTIONS = Object.freeze([
-  'click', 'double_click', 'right_click', 'type_text', 'send_key', 'key_down', 'key_up',
-  'move_mouse', 'drag', 'scroll', 'open_app', 'launch_app', 'close_window', 'focus_window',
-  'write_file', 'delete_file', 'set_clipboard'
-])
+const NEVER_ACTIONS = gate.NEVER_ACTIONS
+const SEALED_ORDER_ACTIONS = gate.RESTRICTED_ACTIONS
+
+/** Never an observation action — the union, which is what this module's own guard asserts. */
+const FORBIDDEN_ACTIONS = Object.freeze([...NEVER_ACTIONS, ...SEALED_ORDER_ACTIONS])
 
 /**
  * Stage 1 capability register: all false. Kept as data, like the Companion's, so the tests,
@@ -61,6 +77,7 @@ const OBSERVATION_CAPABILITIES = Object.freeze({
 
 const NO_CAPABILITY = 'no_capability_enabled'
 const OUT_OF_SCOPE = 'action_not_in_observation_set'
+const NOT_OBSERVATION = 'not_an_observation_action'
 
 /**
  * Fields an observation result may ever expose. Anything not named here cannot be returned,
@@ -101,6 +118,11 @@ function createObserver (deps = {}) {
     const action = (request && typeof request.action === 'string') ? request.action : null
     const at = now()
 
+    // A gated action reaching the OBSERVER is a routing mistake, not a permission question,
+    // so it is named as one. Observation never performs these however well sealed the order.
+    if (SEALED_ORDER_ACTIONS.includes(action)) {
+      return { ok: false, action, refusal: NOT_OBSERVATION, capability: action, at }
+    }
     if (!action || !OBSERVATION_ACTIONS.includes(action)) {
       return { ok: false, action, refusal: OUT_OF_SCOPE, at }
     }
@@ -368,6 +390,9 @@ module.exports = {
   buildAuditRecord,
   OBSERVATION_ACTIONS,
   FORBIDDEN_ACTIONS,
+  NEVER_ACTIONS,
+  SEALED_ORDER_ACTIONS,
+  NOT_OBSERVATION,
   OBSERVATION_CAPABILITIES,
   RESULT_FIELDS,
   AUDIT_FIELDS,

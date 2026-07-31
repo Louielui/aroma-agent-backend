@@ -37,7 +37,16 @@ test('*** the manifest resolves every dependency — nothing is MISSING ***', ()
   // This list is DERIVED from the require graph, so it changing is the correct signal that
   // the staged set changed - and it means the deployed staging directory is now STALE and
   // must be re-staged before the Companion can load. See GOV-001.
-  assert.deepEqual(names, ['companion-entry.js', 'companion.js', 'ipcChannel.js', 'observation.js', 'sessionBoundary.js'])
+  //
+  // 2026-07-31: two more joined the closure when the Companion gained the sealed-order gate.
+  // THIS MEANS THE DEPLOYED STAGING DIRECTORY IS NOW STALE and must be re-staged before the
+  // Companion can load — the same failure mode this file was written for, caught by the same
+  // test. Neither addition can act: the gate computes and compares, the flag resolver reads an
+  // environment variable and returns a string.
+  assert.deepEqual(names, [
+    'companion-entry.js', 'companion.js', 'computerOperatorFlag.js', 'ipcChannel.js',
+    'observation.js', 'sealedOrderGate.js', 'sessionBoundary.js'
+  ])
 })
 
 test('extension-less requires are resolved — the case that broke the first walker', () => {
@@ -54,16 +63,27 @@ test('the staged graph pulls in NOTHING beyond the Companion', () => {
   // the supervisor, the audit, the work order and the flag are the Service's business.
   // If any of them appeared here, the Companion would be carrying governance code into
   // the operator account, which is the opposite of the design.
+  //
+  // computerOperatorFlag.js LEFT this list on 2026-07-31, and the reason is worth stating
+  // rather than just deleting the line. The staged Companion runs in the operator account, in
+  // its own process, with its OWN environment — so it reading its own COMPUTER_OPERATOR is not
+  // governance code crossing the boundary, it is the second half of a two-sided check: the
+  // Service must have the flag on AND so must the Companion. A resolver that returns a string
+  // carries no authority with it.
+  //
+  // The executor and the adapter are the ones that must never appear here, and they do not.
   for (const notHere of ['computerSupervisor.js', 'computerAudit.js', 'computerWorkOrder.js',
-    'computerOperatorFlag.js', 'evidenceStore.js', 'orderRegistry.js', 'killSwitch.js']) {
+    'evidenceStore.js', 'orderRegistry.js', 'killSwitch.js',
+    'computerExecutor.js', 'desktopAdapter.js', 'computerOperatorWiring.js']) {
     assert.equal(names.includes(notHere), false, 'must not be staged: ' + notHere)
   }
 })
 
-test('the staged copy reaches only two node builtins', () => {
+test('the staged copy reaches only three node builtins', () => {
   const m = M.buildManifest()
-  assert.deepEqual(m.builtins, ['node:net', 'node:path'])
-  // net is the named pipe; path is path joining. No fs, no child_process, no http.
+  assert.deepEqual(m.builtins, ['node:crypto', 'node:net', 'node:path'])
+  // net is the named pipe; path is path joining; crypto is the gate's SHA-256, which is how it
+  // checks a seal. No fs, no child_process, no http.
   for (const banned of ['node:fs', 'node:child_process', 'node:http', 'node:https', 'node:os']) {
     assert.equal(m.builtins.includes(banned), false, 'staged Companion must not use ' + banned)
   }

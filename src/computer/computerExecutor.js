@@ -35,6 +35,9 @@
  */
 
 const crypto = require('node:crypto')
+const gate = require('./sealedOrderGate')
+
+const { ACTION_FIELDS, BIND_FIELDS, LIMITS, ALLOWED_PATH, computeOrderHash } = gate
 
 /** The only actions that exist. Anything else is a refusal, not an extension point. */
 const ACTIONS = Object.freeze(['open_app', 'type_text', 'save'])
@@ -42,36 +45,11 @@ const ACTIONS = Object.freeze(['open_app', 'type_text', 'save'])
 /** The only app that may be opened. An id, never a path or an executable. */
 const ALLOWED_APP_IDS = Object.freeze(['notepad'])
 
-/** The only directory a save may target. */
-const ALLOWED_SAVE_DIR = 'C:\\Aroma\\ComputerOperator-Test\\'
-
-const LIMITS = Object.freeze({ maxSteps: 10, timeoutSec: 300, oneStepInFlight: true })
-
-/** Exact per-action parameter sets. An unexpected field is a refusal — see assertNoExtraKeys. */
-const ACTION_FIELDS = Object.freeze({
-  open_app: Object.freeze(['action', 'n', 'appId']),
-  type_text: Object.freeze(['action', 'n', 'text', 'bind']),
-  save: Object.freeze(['action', 'n', 'fileName', 'bind'])
-})
-
-/** The binding a step must carry to prove it is acting on the thing open_app produced. */
-const BIND_FIELDS = Object.freeze(['processId', 'sessionId', 'windowHandle', 'uiaControlId'])
-
-const sha256 = (s) => crypto.createHash('sha256').update(s, 'utf8').digest('hex')
-
-/** Stable hash of the order's meaning — the seal the executor checks before doing anything. */
-function computeOrderHash (order) {
-  const canonical = JSON.stringify({
-    orderId: order.orderId,
-    approvalId: order.approvalId,
-    steps: (order.steps || []).map((s) => {
-      const o = {}
-      for (const k of (ACTION_FIELDS[s.action] || []).slice().sort()) if (s[k] !== undefined) o[k] = s[k]
-      return o
-    })
-  })
-  return sha256(canonical)
-}
+/**
+ * The only directory a save may target. Derived from the gate's constant rather than written
+ * out again, so there is one string to change and one string to approve.
+ */
+const ALLOWED_SAVE_DIR = ALLOWED_PATH + '\\'
 
 function refusal (reason, detail) {
   return { ok: false, refusal: reason, reason: detail || null, stepsRun: 0, steps: [], desktopActions: 0 }
@@ -83,15 +61,18 @@ function assertNoExtraKeys (obj, allowed, where) {
   }
 }
 
-/** Static validation. Runs before ANY audit or action, and never touches a desktop. */
+/**
+ * Static validation. Runs before ANY audit or action, and never touches a desktop.
+ *
+ * The seal, the approval, the hash, the allowed path and the two limits are NOT checked here —
+ * they are checked by sealedOrderGate, which is also what the Companion and the observer ask.
+ * Three files asking one question is the only way the answer cannot drift.
+ */
 function validateOrder (order, opts = {}) {
   if (!order || typeof order !== 'object') return refusal('malformed_order', 'no order object')
-  if (order.sealed !== true) return refusal('order_not_sealed', 'only a sealed order may execute')
-  if (typeof order.approvalId !== 'string' || !order.approvalId) return refusal('order_not_approved', 'no approvalId')
 
   const steps = Array.isArray(order.steps) ? order.steps : null
   if (!steps || steps.length === 0) return refusal('malformed_order', 'no steps')
-  if (steps.length > LIMITS.maxSteps) return refusal('too_many_steps', `${steps.length} > ${LIMITS.maxSteps}`)
 
   for (const s of steps) {
     if (!s || typeof s !== 'object') return refusal('malformed_step', 'step is not an object')
@@ -125,14 +106,14 @@ function validateOrder (order, opts = {}) {
     }
   }
 
-  if (typeof order.orderHash === 'string') {
-    const actual = computeOrderHash(order)
-    if (actual !== order.orderHash) return refusal('order_hash_mismatch', `sealed ${order.orderHash}, computed ${actual}`)
-  } else {
-    return refusal('order_not_sealed', 'orderHash is required')
+  // Every step must be individually unlocked by THIS order, through the shared gate. That is
+  // where the seal, the hash, the approval, the path, the limits, the kill switch and the flag
+  // are all checked — and where "the flag is on" is refused as insufficient.
+  const flag = opts.flagOn === true ? 'on' : 'off'
+  for (const s of steps) {
+    const unlocked = gate.verifyUnlock({ action: s.action, order, flag, killSwitch: opts.killSwitch })
+    if (!unlocked.ok) return refusal(unlocked.refusal, unlocked.reason)
   }
-
-  if (opts.flagOn !== true) return refusal('flag_off', 'COMPUTER_OPERATOR is not enabled')
   return { ok: true }
 }
 
@@ -262,11 +243,14 @@ function createComputerExecutor (deps = {}) {
       if (step.action === 'open_app') return desktop.openApp({ appId: step.appId })
       if (step.action === 'type_text') return desktop.typeTextIntoControl({ bind: step.bind, text: step.text })
       if (step.action === 'save') {
-        const target = ALLOWED_SAVE_DIR + step.fileName
+        // Built from the ORDER's allowedPath, which the gate has already proven equal to
+        // ALLOWED_PATH and which the hash covers — so the directory that was approved is
+        // literally the directory that gets used.
+        const target = order.allowedPath + '\\' + step.fileName
         if (deps.fsProbe && deps.fsProbe.exists && deps.fsProbe.exists(target)) {
           throw new Error('refuse_overwrite: ' + target)
         }
-        return desktop.saveAsViaUi({ bind: step.bind, dir: ALLOWED_SAVE_DIR, fileName: step.fileName })
+        return desktop.saveAsViaUi({ bind: step.bind, dir: order.allowedPath + '\\', fileName: step.fileName })
       }
       throw new Error('unknown_action')
     }
@@ -303,6 +287,7 @@ module.exports = {
   ACTIONS,
   ALLOWED_APP_IDS,
   ALLOWED_SAVE_DIR,
+  ALLOWED_PATH,
   ACTION_FIELDS,
   BIND_FIELDS,
   LIMITS

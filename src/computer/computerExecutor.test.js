@@ -19,7 +19,7 @@ const path = require('node:path')
 
 const {
   createComputerExecutor, computeOrderHash, validateOrder,
-  ALLOWED_SAVE_DIR, LIMITS, ACTIONS
+  ALLOWED_SAVE_DIR, ALLOWED_PATH, LIMITS, ACTIONS
 } = require('./computerExecutor')
 
 /* ── fakes ────────────────────────────────────────────────────────────────── */
@@ -71,6 +71,11 @@ function seal (over = {}) {
     approvalId: 'appr_canary_1',
     sealed: true,
     sealedText: TEXT,
+    // The bounds live IN the order, so the hash covers them and the approval is against the
+    // same bounds the run uses.
+    allowedPath: ALLOWED_PATH,
+    maxSteps: 3,
+    timeoutSec: 300,
     steps: [
       { n: 1, action: 'open_app', appId: 'notepad' },
       { n: 2, action: 'type_text', text: TEXT, bind: Object.assign({}, BIND) },
@@ -348,7 +353,9 @@ test('*** editing a sealed step invalidates the hash ***', () => {
     ['appId -> cmd', (o) => { o.steps[0].appId = 'cmd' }, 'app_not_allowed'],
     ['text changed', (o) => { o.steps[1].text = 'something else' }, 'text_not_sealed'],
     ['fileName changed', (o) => { o.steps[2].fileName = 'other.txt' }, 'order_hash_mismatch'],
-    ['step appended', (o) => { o.steps.push({ n: 4, action: 'save', fileName: 'extra.txt', bind: Object.assign({}, BIND) }) }, 'order_hash_mismatch'],
+    // Caught by the order's OWN declared maxSteps of 3 before the hash is reached — the
+    // bounds travel inside the seal, so smuggling in a fourth step trips the count first.
+    ['step appended', (o) => { o.steps.push({ n: 4, action: 'save', fileName: 'extra.txt', bind: Object.assign({}, BIND) }) }, 'too_many_steps'],
     ['approvalId swapped', (o) => { o.approvalId = 'appr_other' }, 'order_hash_mismatch']
   ]
   for (const [label, mutate, expected] of mutations) {
@@ -422,13 +429,13 @@ test('*** with no adapter the path is assembled but INERT ***', () => {
   assert.ok(store.kinds().includes('admission'), 'the attempt is recorded even so')
 })
 
-test('*** the executor module itself imports no execution library ***', () => {
+test('*** the executor module imports only inert siblings ***', () => {
+  // The BROAD scan — every desktop-capable file, under an allowlist — lives in
+  // desktopSurfaceScan.test.js. This is the narrow one: the executor's own import list.
   const src = fs.readFileSync(path.join(__dirname, 'computerExecutor.js'), 'utf8')
   const requires = [...src.matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1])
-  assert.deepEqual(requires, ['node:crypto'], 'crypto only — the desktop arrives by injection')
-  for (const banned of ['clipboard', 'SendKeys', 'sendkeys', 'exec(', 'spawn(']) {
-    assert.ok(!src.includes(banned), 'must not mention: ' + banned)
-  }
+  assert.deepEqual(requires, ['node:crypto', './sealedOrderGate'],
+    'crypto and the gate — the desktop arrives by injection')
 })
 
 /* ── 9. the happy path, stated once so the refusals are not vacuous ───────── */

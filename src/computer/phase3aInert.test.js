@@ -68,22 +68,43 @@ test('*** the Companion imports NOTHING that could reach a desktop or a disk ***
   // itself still contains no observation code, so the banned-token scan above and the
   // capability register assertion below are both unchanged and still enforced.
   // Still a closed list, still no fs, no child_process, no native binding, no automation lib.
-  assert.deepEqual(imports, ['./sessionBoundary', './observation'], 'the Companion imports only the contract and the observation boundary')
+  // The allowlist grew by two on 2026-07-31, and both additions are things that CANNOT act:
+  // the gate computes and compares, the flag resolver returns a string. computerExecutor and
+  // desktopAdapter are deliberately absent — an executor reaches the Companion by injection,
+  // so the Companion still has no way to build one.
+  assert.deepEqual(imports, ['./sessionBoundary', './sealedOrderGate', './computerOperatorFlag', './observation'],
+    'the Companion imports only the contract, the gate, the flag resolver and the observation boundary')
+  for (const reachesADesktop of ['./computerExecutor', './desktopAdapter']) {
+    assert.equal(imports.includes(reachesADesktop), false, 'the Companion must not import: ' + reachesADesktop)
+  }
   for (const banned of ['node:fs', 'fs', 'node:child_process', 'child_process', 'robotjs',
     '@nut-tree', 'nut-js', 'screenshot-desktop', 'koffi', 'ffi-napi', 'edge-js', 'node-window-manager']) {
     assert.equal(imports.includes(banned), false, 'must not import: ' + banned)
   }
 })
 
-test('*** every capability in the register is declared and OFF ***', () => {
-  const { CAPABILITIES, anyCapabilityEnabled } = require('./companion')
-  assert.equal(anyCapabilityEnabled(), false, 'Phase 3a: zero capability')
-  const off = Object.entries(CAPABILITIES).filter(([, v]) => v === false).map(([k]) => k)
-  assert.equal(off.length, Object.keys(CAPABILITIES).length, 'all of them are off')
-  // The Phase 3b set is present-and-off rather than absent, so enabling one is an edit to
-  // a value a test watches — not a new name nobody is checking.
+test('*** no capability is UNCONDITIONALLY enabled ***', () => {
+  // CHANGED 2026-07-31 by Owner ruling, and the change is narrow enough to state exactly.
+  // This test used to require every register value to be `false`, which encoded "absolute
+  // prohibition". Four names — plus `save` — are now 'sealed_order_only': default deny, with
+  // one unlock condition. What is asserted instead is the claim that actually matters and
+  // that did NOT change: nothing is `true`.
+  const { CAPABILITIES, anyCapabilityEnabled, sealedOrderOnlyCapabilities, CAP } = require('./companion')
+  assert.equal(anyCapabilityEnabled(), false, 'nothing is enabled without an order')
+  for (const [k, v] of Object.entries(CAPABILITIES)) {
+    assert.notEqual(v, true, 'no capability may be unconditionally on: ' + k)
+    assert.ok([false, CAP.SEALED_ORDER_ONLY, CAP.NEVER].includes(v), 'unknown state for ' + k + ': ' + v)
+  }
+  // The Phase 3b observation set is present-and-off rather than absent.
   for (const k of ['list_windows', 'read_ui_tree', 'capture_own_screen']) {
     assert.equal(CAPABILITIES[k], false, 'Phase 3b capability still off: ' + k)
+  }
+  // Exactly these are unlockable. A sixth appearing here is a capability change.
+  assert.deepEqual(sealedOrderOnlyCapabilities().sort(),
+    ['launch_app', 'open_app', 'save', 'send_keys', 'type_text'])
+  // And these remain beyond any order at all.
+  for (const k of ['move_mouse', 'write_file', 'read_file', 'network']) {
+    assert.equal(CAPABILITIES[k], CAP.NEVER, 'no order may unlock: ' + k)
   }
 })
 
