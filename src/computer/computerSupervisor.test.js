@@ -238,11 +238,61 @@ test('the real store writes where the other audits write, under the artifact roo
   }
 })
 
-test('losing the audit store is visible, not silent', () => {
+test('losing the audit store is visible, not silent — AND the dry-run fails', () => {
   const s = createComputerSupervisor({ artifactStore: { notAWriter: true }, now: () => 1 })
   assert.equal(s.auditConfigured, false, 'a broken sink is reported, not hidden')
   const res = s.dryRun(order())
-  assert.equal(res.auditWritten, false, 'and the result says the record was not written')
+  assert.equal(res.auditWritten, false, 'the result says the record was not written')
+  assert.equal(res.ok, false, 'and an unrecorded operation does not succeed')
+  assert.equal(res.refusal, 'audit_write_failed')
+})
+
+/* ── fail-closed audit ────────────────────────────────────────────────────── */
+
+test('*** a THROWING audit sink fails the dry-run — no record, no result ***', () => {
+  // Owner ruling 2026-07-30, correcting a fail-open defect: writeAudit used to swallow the
+  // error and let the operation report success with auditWritten:false. A result that says
+  // "this happened but was never recorded" is exactly the pair that must not exist.
+  const s = createComputerSupervisor({
+    artifactStore: { write: () => { throw new Error('disk is full') } },
+    now: () => 1
+  })
+  assert.equal(s.auditConfigured, true, 'the sink LOOKS usable — the failure is at write time')
+
+  const res = s.dryRun(order())
+  assert.equal(res.ok, false, 'the operation fails because the record did not land')
+  assert.equal(res.refusal, 'audit_write_failed')
+  assert.match(res.reason, /disk is full/, 'and it says WHY, rather than hiding the cause')
+  assert.equal(res.auditWritten, false)
+  assert.equal(res.auditRecordId, null)
+})
+
+test('*** ok:true and auditWritten:false is now an IMPOSSIBLE pair ***', () => {
+  // The invariant stated as one assertion, over every route a caller can take: a success is
+  // only ever handed back once the record is on disk.
+  const cases = [
+    ['working sink', fakeStore()],
+    ['throwing sink', { write: () => { throw new Error('nope') } }],
+    ['broken sink', { notAWriter: true }]
+  ]
+  for (const [label, store] of cases) {
+    const s = createComputerSupervisor({ artifactStore: store, now: () => 1 })
+    for (const wo of [order(), order({ steps: [] }), order({ approvalId: null })]) {
+      const res = s.dryRun(wo)
+      if (res.auditWritten === false) {
+        assert.equal(res.ok, false, `${label}: unrecorded result must not be ok`)
+      }
+      if (res.ok === true) {
+        assert.equal(res.auditWritten, true, `${label}: an ok result must be recorded`)
+      }
+    }
+  }
+})
+
+test('the fail-closed rule is in the source, not just in behaviour', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'computerSupervisor.js'), 'utf8')
+  assert.ok(!/catch \(_\) \{ return null \}/.test(src), 'the swallowing catch must stay deleted')
+  assert.ok(src.includes("throw"), 'writeAudit throws rather than returning null')
 })
 
 /* ── the dormant second gate ──────────────────────────────────────────────── */
