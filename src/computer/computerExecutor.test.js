@@ -87,7 +87,12 @@ function seal (over = {}) {
 }
 
 const ON = { flagOn: true }
-const mk = (store, desktop, extra = {}) => createComputerExecutor(Object.assign({ artifactStore: store, desktop, now: () => 1, newId: () => 'cexec_test' }, extra))
+const { createOrderRegistry } = require('./orderRegistry')
+
+// Every executor gets its own registry, as production does. Tests that need to inspect or
+// pre-load one pass it explicitly.
+const mk = (store, desktop, extra = {}) => createComputerExecutor(Object.assign(
+  { artifactStore: store, desktop, orderRegistry: createOrderRegistry({ now: () => 1 }), now: () => 1, newId: () => 'cexec_test' }, extra))
 
 /* ── 0. the supervisor stays inert ────────────────────────────────────────── */
 
@@ -128,7 +133,7 @@ test('*** admission audit throws -> ZERO desktop actions ***', () => {
 
 test('an unconfigured sink is the same refusal — a missing sink is a failed sink', () => {
   const d = fakeDesktop()
-  const res = createComputerExecutor({ artifactStore: null, desktop: d }).execute(seal(), ON)
+  const res = createComputerExecutor({ artifactStore: null, desktop: d, orderRegistry: createOrderRegistry({ now: () => 1 }) }).execute(seal(), ON)
   assert.equal(d.calls, 0)
   assert.equal(res.ok, false)
   assert.equal(res.refusal, 'audit_write_failed')
@@ -421,7 +426,7 @@ test('*** with no adapter the path is assembled but INERT ***', () => {
   // This is the PREPARE-phase shape: everything is wired, the seal is checked, the admission
   // record lands — and there is still no route to a desktop.
   const store = fakeStore()
-  const ex = createComputerExecutor({ artifactStore: store, now: () => 1, newId: () => 'x' })
+  const ex = createComputerExecutor({ artifactStore: store, orderRegistry: createOrderRegistry({ now: () => 1 }), now: () => 1, newId: () => 'x' })
   assert.equal(ex.capabilities.touchesDesktop, false, 'no adapter, no desktop')
   const res = ex.execute(seal(), ON)
   assert.equal(res.ok, false)

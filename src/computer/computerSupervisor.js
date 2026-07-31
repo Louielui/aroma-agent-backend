@@ -107,7 +107,11 @@ function createComputerSupervisor (deps = {}) {
   const newId = typeof deps.newId === 'function' ? deps.newId : () => 'caudit_' + Math.abs(now() % 1e9).toString(36)
 
   const killSwitch = deps.killSwitch || createKillSwitch({ now })
-  const registry = deps.orderRegistry || createOrderRegistry({ now })
+  // SEPARATE from the executor's, and NOT single-use. Planning is not authorisation: a
+  // planner that spent approvals would burn the very approval the plan is for. See
+  // orderRegistry.js on singleUse, and computerOperatorWiring.test.js for the proof that
+  // this instance can neither block nor be reached by the executor's.
+  const registry = deps.orderRegistry || createOrderRegistry({ now, singleUse: false })
 
   /**
    * Resolve ONE step: what it targets, what is checked, what cannot be.

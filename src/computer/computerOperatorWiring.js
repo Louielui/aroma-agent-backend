@@ -57,6 +57,7 @@ function buildComputerOperator (opts = {}) {
   // ── enabled branch: the ONLY place these modules enter the process ───────
   const { createDesktopAdapter } = require('./desktopAdapter')
   const { createComputerExecutor } = require('./computerExecutor')
+  const { createOrderRegistry } = require('./orderRegistry')
 
   if (!opts.artifactStore || typeof opts.artifactStore.write !== 'function') {
     // Fail-closed at composition, not at the first step. A build with no audit sink must not
@@ -68,13 +69,19 @@ function buildComputerOperator (opts = {}) {
   }
 
   const desktop = createDesktopAdapter({ runner: opts.runner, scriptPath: opts.scriptPath, timeoutSec: opts.timeoutSec })
-  const executor = createComputerExecutor({ artifactStore: opts.artifactStore, desktop, now: opts.now })
+  // THE desktop slot. Exactly one registry instance governs it, it is single-use by
+  // default, and it is NOT the supervisor's — a dry-run must not be able to occupy or
+  // spend anything the real run depends on. computerOperatorWiring.test.js proves both
+  // halves: the two instances are distinct, and neither can see the other's state.
+  const executorRegistry = createOrderRegistry({ now: opts.now })
+  const executor = createComputerExecutor({ artifactStore: opts.artifactStore, desktop, orderRegistry: executorRegistry, now: opts.now })
 
   return {
     enabled: true,
     reason: null,
     flag,
     executor,
+    executorRegistry,
     companion: createCompanion({ now: opts.now, executor })
   }
 }

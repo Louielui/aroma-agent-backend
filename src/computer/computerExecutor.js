@@ -139,6 +139,9 @@ function fileNameProblem (name) {
 function createComputerExecutor (deps = {}) {
   const artifactStore = deps.artifactStore
   const desktop = deps.desktop || null
+  // The registry is a REQUIRED collaborator, not an option. An executor without one has
+  // no replay protection and no single-live-order guarantee, so it refuses to act.
+  const orderRegistry = deps.orderRegistry || null
   const now = typeof deps.now === 'function' ? deps.now : () => Date.now()
   const clock = () => new Date(now()).toISOString()
   const newId = typeof deps.newId === 'function' ? deps.newId : () => 'cexec_' + crypto.randomBytes(6).toString('hex')
@@ -164,6 +167,26 @@ function createComputerExecutor (deps = {}) {
 
     const runId = newId()
 
+    // ── REGISTRY ADMISSION. BEFORE THE AUDIT, BEFORE EVERYTHING. ────────────
+    // The registry answers the questions the gate cannot: has this approval been spent,
+    // is another order already live, and what are this order's one-shot step nonces.
+    // It runs first because it is the cheapest way to refuse a replay, and because an
+    // order that will not be admitted must not even generate an admission record.
+    if (!orderRegistry) return refusal('registry_not_configured', 'no order registry — refusing to act unrecorded')
+    const admitted = orderRegistry.admit({
+      approvalId: order.approvalId,
+      workOrderHash: order.orderHash,
+      stepCount: order.steps.length,
+      timeoutSec: order.timeoutSec
+    })
+    if (!admitted.ok) {
+      return Object.assign(refusal(admitted.reason, admitted.priorReason || null), { runId, desktopActions: 0 })
+    }
+    const stepNonces = admitted.stepNonces
+
+    // From here the order is LIVE. Every exit below must close or invalidate it, or the
+    // slot stays occupied and nothing can ever run again.
+
     // ── ADMISSION. DURABLE, AND BEFORE ANYTHING ELSE. ───────────────────────
     // This is the record that makes "we refuse to act unrecorded" true rather than aspirational.
     // If it does not land, not one desktop action is attempted.
@@ -177,12 +200,16 @@ function createComputerExecutor (deps = {}) {
         limits: LIMITS
       })
     } catch (err) {
-      return Object.assign(refusal('audit_write_failed', err.cause || err.message), { phase: 'admission', desktopActions: 0 })
+      // Admitted but unrecordable. The approval is burnt: an order nobody can audit does
+      // not get a second attempt under the same authorisation.
+      orderRegistry.invalidate(order.approvalId, 'admission_audit_failed')
+      return Object.assign(refusal('audit_write_failed', err.cause || err.message), { runId, phase: 'admission', desktopActions: 0 })
     }
 
     // The adapter is the ONLY way to reach a desktop, and PREPARE ships without one.
     if (!desktop) {
       try { auditOrThrow('aborted', { runId, reason: 'no_desktop_adapter' }) } catch (_) { /* already recorded above */ }
+      orderRegistry.invalidate(order.approvalId, 'no_desktop_adapter')
       return Object.assign(refusal('no_desktop_adapter', 'execution path is assembled but has no adapter'), { runId })
     }
 
@@ -190,12 +217,26 @@ function createComputerExecutor (deps = {}) {
     let desktopActions = 0
     let bindingFromOpen = null
 
-    for (const step of order.steps) {
+    for (let idx = 0; idx < order.steps.length; idx++) {
+      const step = order.steps[idx]
+
       // ── STEP-START. DURABLE, BEFORE THE STEP. ─────────────────────────────
       try {
         auditOrThrow('step-start', { runId, n: step.n, action: step.action })
       } catch (err) {
         return finishFailed('audit_write_failed', err.cause || err.message, 'step-start', step.n)
+      }
+
+      // ── BURN THE NONCE. AFTER THE AUDIT, BEFORE THE ACTION. ───────────────
+      // The Owner's ruling, and the ordering is the whole of it: if the process dies
+      // between the audit landing and the action starting, the nonce is ALREADY SPENT.
+      // The alternative — consume after the action — leaves a window where a crash looks
+      // identical to "never ran", and the only way to resolve it is to guess. A step whose
+      // outcome is unknown must not be retryable; recovery is a new approval and a new
+      // work order, which puts that judgement back with the Owner.
+      const burn = orderRegistry.consumeStep({ approvalId: order.approvalId, stepIndex: idx, stepNonce: stepNonces[idx] })
+      if (!burn.ok) {
+        return finishFailed('nonce_' + burn.reason, 'step nonce refused: ' + burn.reason, 'nonce', step.n)
       }
 
       // Stale identity is a refusal, never a re-bind. A handle that no longer names the thing we
@@ -236,8 +277,10 @@ function createComputerExecutor (deps = {}) {
     } catch (err) {
       return finishFailed('audit_write_failed', err.cause || err.message, 'completed', null)
     }
-    // A PASS exists only once the whole chain is on disk.
-    return { ok: true, runId, stepsRun: done.length, steps: done, desktopActions, auditChainComplete: true }
+    // A PASS exists only once the whole chain is on disk AND the order is closed. Closing
+    // is what frees the single live slot, so it happens on the success path too.
+    orderRegistry.close(order.approvalId)
+    return { ok: true, runId, stepsRun: done.length, steps: done, desktopActions, auditChainComplete: true, orderClosed: true }
 
     function runStep (step) {
       if (step.action === 'open_app') return desktop.openApp({ appId: step.appId })
@@ -262,7 +305,10 @@ function createComputerExecutor (deps = {}) {
       } catch (_) { cleanup = 'failed' }
       // Best-effort: the run is already failing, and a second audit failure must not mask the first.
       try { auditOrThrow('aborted', { runId, reason, detail, phase, n, cleanup, stepsRun: done.length }) } catch (_) { }
-      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, auditChainComplete: false }
+      // TERMINAL. Cleanup tidies a desktop; it does NOT reopen an order. Invalidate runs
+      // after cleanup precisely so that no cleanup path can be mistaken for a resume.
+      orderRegistry.invalidate(order.approvalId, reason)
+      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, auditChainComplete: false, orderClosed: true }
     }
   }
 

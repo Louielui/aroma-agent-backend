@@ -29,9 +29,43 @@ function createOrderRegistry (options = {}) {
 
   let live = null // { approvalId, workOrderHash, expiresAt, nonces: Map, closed }
 
+  /**
+   * ── THE SPENT LEDGER ──────────────────────────────────────────────────────
+   * Added 2026-07-31. Without it `close()` merely set `live = null`, so the SAME
+   * approvalId could be admitted again — which is precisely replay. An approval is a
+   * one-shot authorisation from the Owner, and the only way to make "one-shot" true is
+   * to remember that it was spent.
+   *
+   * Nothing is ever removed from here. It grows by one entry per order, in a process that
+   * handles a handful of orders, and the alternative to unbounded memory is an eviction
+   * policy that is indistinguishable from a replay window.
+   */
+  const spent = new Map() // approvalId -> { workOrderHash, reason, at }
+
+  /**
+   * Does spending an approval bar it forever?
+   *
+   * TRUE for the executor: an Owner approval authorises ONE run, and re-admitting it is
+   * replay. FALSE for the dry-run planner, and the reason is not convenience — a planner
+   * that spent approvals would make the real run IMPOSSIBLE. You would dry-run an order to
+   * check it, and in doing so burn the authorisation you were checking.
+   *
+   * Fail-closed default: single use unless a caller deliberately says otherwise.
+   */
+  const singleUse = options.singleUse !== false
+
+  function retire (record, reason) {
+    if (!record) return
+    if (!spent.has(record.approvalId)) {
+      spent.set(record.approvalId, { workOrderHash: record.workOrderHash, reason, at: now() })
+    }
+  }
+
   function expired () { return live !== null && live.expiresAt <= now() }
 
-  function sweep () { if (expired()) live = null }
+  // An order that ran out of time is SPENT, not merely gone. Letting it be re-admitted
+  // would turn a timeout into a retry, and a retry into a replay.
+  function sweep () { if (expired()) { retire(live, 'expired'); live = null } }
 
   return {
     /**
@@ -43,6 +77,18 @@ function createOrderRegistry (options = {}) {
       if (live) return { ok: false, reason: 'another_order_is_live' }
       if (typeof approvalId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(approvalId)) {
         return { ok: false, reason: 'bad_approval_id' }
+      }
+      // Single use, whatever it was spent on and however it ended. A different hash under
+      // the same id is the same refusal: an Owner approval authorises ONE work order, and
+      // presenting it against different content is exactly what must not work.
+      if (singleUse && spent.has(approvalId)) {
+        const prior = spent.get(approvalId)
+        return {
+          ok: false,
+          reason: 'approval_id_already_used',
+          priorReason: prior.reason,
+          hashMatches: prior.workOrderHash === (workOrderHash || null)
+        }
       }
       if (!Number.isInteger(stepCount) || stepCount <= 0) return { ok: false, reason: 'bad_step_count' }
       if (!Number.isFinite(timeoutSec) || timeoutSec <= 0) return { ok: false, reason: 'bad_timeout' }
@@ -93,9 +139,35 @@ function createOrderRegistry (options = {}) {
       sweep()
       if (!live || live.approvalId !== approvalId) return { ok: false, reason: 'not_live' }
       live.closed = true
+      retire(live, 'closed')
       live = null
       return { ok: true }
     },
+
+    /**
+     * Terminal close for a FAILED order — abort, timeout, crash, audit failure.
+     *
+     * It is deliberately the same one-way door as `close`. A run that ended badly must not
+     * be resumable, because "resume" would mean replaying steps whose outcome nobody can
+     * evidence. Recovery is a NEW approvalId and a NEW work order, which puts the decision
+     * back with the Owner where it belongs.
+     */
+    invalidate (approvalId, reason) {
+      sweep()
+      if (!live || live.approvalId !== approvalId) {
+        // Still burn the id: something tried to finish an order that is not live, and that
+        // id must never become admissible again.
+        retire({ approvalId, workOrderHash: null }, reason || 'invalidated_not_live')
+        return { ok: false, reason: 'not_live' }
+      }
+      live.closed = true
+      retire(live, reason || 'invalidated')
+      live = null
+      return { ok: true }
+    },
+
+    /** Has this approvalId ever been admitted? Spent is forever. */
+    wasUsed (approvalId) { return spent.has(approvalId) },
 
     /** Diagnostics only — never a control. */
     liveApprovalId () { sweep(); return live ? live.approvalId : null }

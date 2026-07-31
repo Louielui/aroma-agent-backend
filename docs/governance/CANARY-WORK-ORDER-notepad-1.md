@@ -263,47 +263,170 @@ believes otherwise will misjudge the blast radius of one ACL edit.
 
 ---
 
-## 14. The `approvalId` authorization chain — **NOT ESTABLISHED**
+## 14. Owner-issued `approvalId` — the authorization procedure
 
-Answering the Owner's six questions against the code as it stands, not as intended.
+Adopted 2026-07-31. **No HMAC, no digital signature, no key management and no Authority Service
+this round** — those are §15.
 
-**The one sentence that matters:** `computeOrderHash` is a plain SHA-256 over public data with
-**no secret anywhere in the system**. Anyone who can run the builder can compute a valid
-`orderHash` for any content with any `approvalId`. The seal is therefore a **checksum, not a
-signature** — it proves the order has not been *altered since it was sealed*, and proves nothing
-about *who sealed it*.
+### The twelve rules
 
-| Question | Answer today |
-|---|---|
-| Is `approvalId` in the canonical hash? | **Yes** — `sealedOrderGate.js:84`, alongside `orderId`, `allowedPath`, `maxSteps`, `timeoutSec`, `sealedText` and the steps. |
-| Who generates it? | **Nobody. There is no generator.** It is a free string typed into the order by whoever builds it. |
-| How is it bound to a specific hash? | By being an input to that hash. Real binding, and it is integrity only. |
-| How does the gate prove it came from the Owner? | **It does not.** `verifySeal` checks `typeof === 'string'` and non-empty (`sealedOrderGate.js:107`). That is the entire check. There is no signature verification anywhere in `src/computer` — grepped, not recalled. |
-| What stops a builder minting, reusing or replaying one? | **Nothing on the executor path.** `orderRegistry.js` does single-live-order, per-step nonces and expiry — but it is wired only into `computerSupervisor` (the dry-run planner), never into `computerExecutor` or `sealedOrderGate`. |
-| Does changing the order invalidate an old `approvalId`? | **Against tampering, yes; against the builder, no.** Any content change moves the hash, so a *stale* `orderHash` fails with `order_hash_mismatch`. But the builder can recompute the hash freely, so it invalidates an *unmodified copy*, not a *re-sealed* one. |
+1. **The builder must not generate or suggest an actual `approvalId`.** Not a draft, not an
+   example, not "something like appr_2026…". A value the builder proposes is a value the builder
+   chose, and the Owner rubber-stamping it is not issuance.
+2. Until the Owner issues one, the field stays **empty or an obvious placeholder**.
+3. The Owner supplies a **fresh** `approvalId` himself, **outside this repo and outside the
+   builder's process**.
+4. The builder fills in **exactly** the value given, character for character. No normalising, no
+   prefixing, no case changes.
+5. `approvalId` is part of the **canonical Work Order and of `orderHash`** —
+   `sealedOrderGate.js:84`.
+6. Once it is filled in, the canonical JSON and its SHA-256 are **recomputed**. A hash computed
+   before the id was known is meaningless.
+7. The builder returns the **complete final canonical JSON and the final hash** to the Owner. Not
+   a summary, not a diff — the bytes that will be executed.
+8. The Owner **explicitly confirms that final hash**.
+9. **No execution without that confirmation.** An unconfirmed hash is an unapproved order.
+10. **Any field change voids the old hash and the old confirmation.** Not "probably stale" —
+    void. The gate enforces it mechanically: a changed field changes the hash, and a stale
+    `orderHash` fails `order_hash_mismatch`.
+11. **One `approvalId`, one Work Order, one use.** Enforced by the registry's spent ledger rather
+    than by discipline: a second admission of the same id is refused `approval_id_already_used`,
+    whatever it was spent on and however it ended.
+12. The **EXECUTE GO must cite both** the `approvalId` and the Owner-confirmed final hash. A GO
+    naming only one of them does not identify a unique executable object.
 
-### What is missing, concretely
+### What SHA-256 does and does not do here
 
-1. **A secret the Owner alone holds.** Without one, nothing distinguishes an order he approved
-   from one built to look approved.
-2. **A signature over the hash**, verified by the gate before unlock.
-3. **An issuance record** the gate can consult — an `approvalId` that was never issued must fail.
-4. **Single-use and expiry on the executor path** — `orderRegistry`'s guarantees exist and do not
-   reach the code that acts.
+It proves **the content has not changed since the Owner confirmed that hash**. That is all.
 
-### A circularity to resolve while fixing it
+It is **not** proof of identity, authorship, provenance or authority. The hash is computed from
+public data by a public function; anyone able to run the builder can compute a valid hash for any
+content. Under this procedure the authority lives entirely in **the Owner having issued the id
+out of band and having confirmed the final hash through a channel the builder does not control**.
+The hash must not be described as proof of origin anywhere.
 
-`approvalId` is *inside* the hash, so the id must exist before the hash does. The Owner cannot
-approve a hash and then have the id added — that changes the hash. Two workable shapes:
+### The circularity, and how the procedure resolves it
 
-- **Owner issues the id first**, builder seals with it, Owner approves the resulting hash. Works
-  with today's structure; needs two round trips.
-- **Take `approvalId` out of the hash.** Hash covers the work only; approval becomes a signature
-  *over* that hash. One round trip, no circularity, and it is the shape that supports a real
-  signature. **Recommended** — but it changes the seal and voids order hash `df26f090…`.
+`approvalId` is inside the hash, so it must exist before the hash does. Hence the ordering:
+**issue → fill → recompute → return → confirm**. The Owner confirms a hash that already contains
+his id, and never confirms a hash that then changes.
 
-### Standing rule until this is built
+## 15. v2 Authority Roadmap — the identity gap, recorded
 
-`approvalId` stays empty. The gate's five conditions remain necessary and, on the question of
-provenance, **not sufficient** — and this document says so rather than letting a green test
-suite imply otherwise.
+**The gap:** this procedure has **no cryptographic proof of Owner identity**. It rests on an
+out-of-band human channel. For one canary, run by the Owner at his own machine, with the flag off
+by default and one live order at a time, that is a defensible place to stand — and it is a gap,
+written down as one rather than left implied.
+
+It must be closed **before any of**:
+
+- **standing authority** — an approval authorising more than one specific run;
+- **multi-file or open-ended work orders** — where the content is too large to eyeball, so the
+  hash becomes the only thing anyone actually checks;
+- **remote or unattended execution** — where no human is present to have issued anything.
+
+Two candidate designs, to be chosen when it matters:
+
+- **Secret-backed signature.** A key only the Owner holds; the gate verifies a signature over the
+  canonical hash. The cleanest fix, and it argues for taking `approvalId` *out* of the hash so
+  approval becomes a signature *over* the work rather than a field *inside* it.
+- **An independent Authority Plane.** A separate service that issues and records approvals, which
+  the gate consults. Heavier, and the right shape once approvals outlive a single conversation.
+
+## 16. The registry is now wired into the executor
+
+Previously `orderRegistry` guarded the dry-run planner and nothing else — its single-live-order
+rule, its nonces and its expiry were real and reached no code that could touch a desktop. The
+guarantee sat beside the risk rather than over it.
+
+### Order of operations
+
+```
+validateOrder            seal, hash, path, limits, flag, kill switch      (sealedOrderGate)
+registry.admit           approvalId, workOrderHash, stepCount, timeoutSec  <- BEFORE any action
+admission audit          durable                                          <- BEFORE any action
+  per step:
+    step-start audit     durable                                          <- BEFORE the step
+    consumeStep(nonce)   burns the nonce                                  <- BEFORE the action
+    the desktop action
+    step-outcome audit   durable
+registry.close           on success — frees the single live slot
+registry.invalidate      on ANY failure — terminal, never reopened
+```
+
+### State transitions
+
+| From | Event | To | Slot | approvalId |
+|---|---|---|---|---|
+| — | `admit` ok | LIVE | held | spent |
+| — | `admit` refused | — | free | untouched |
+| LIVE | all steps + `completed` audit | CLOSED | freed | spent forever |
+| LIVE | any failure, abort, audit failure | INVALIDATED | freed | spent forever |
+| LIVE | window elapses | EXPIRED (swept) | freed | spent forever |
+| CLOSED / INVALIDATED / EXPIRED | anything | — | — | `approval_id_already_used` |
+
+There is no transition back to LIVE. Cleanup tidies a desktop; it does not reopen an order.
+
+### Fail and crash semantics
+
+- **The nonce burns after the step-start audit and before the action.** If the process dies in
+  that window the nonce is **already spent**. Consuming after the action would leave a window
+  where a crash is indistinguishable from "never ran", and the only way out of that is guessing.
+  A step whose outcome nobody can evidence must not be retryable.
+- **Recovery is a new `approvalId` and a new Work Order.** Never a resume. That returns the
+  judgement to the Owner.
+- **An admitted-but-unrecordable order burns the approval** and frees the slot: zero desktop
+  actions, and no quiet retry under the same authorisation.
+- **A timeout is not a retry.** Expiry retires the id into the spent ledger.
+
+### Registries: SEPARATE — decided, with reasons
+
+The dry-run planner and the executor hold **different registry instances**, and the executor's is
+created in exactly one place (`computerOperatorWiring.js`).
+
+Sharing one was considered and rejected. A dry-run would occupy the single live slot, so
+**planning an order would block executing it** — a self-inflicted denial of service on the only
+path that matters. Worse, a shared registry would let a dry-run **consume the real order's step
+nonces**, after which the executor would refuse its own steps as replays.
+
+They govern **different resources**. The supervisor's registry books a planning slot that reaches
+nothing; the executor's books **the desktop**. Both being live at once is therefore not a
+contradiction — it is two independent bookings of two different things, and the invariant that
+matters, *at most one order can cause a desktop action*, holds because exactly one registry
+governs the desktop.
+
+The asymmetry is explicit: the planner's registry is `singleUse: false` (a plan may be re-run),
+the executor's is single-use by default (an approval may not). Both halves are tested in
+`executorRegistryWiring.test.js`, including that a live plan cannot block a real run.
+
+## 17. Sealed draft — NOT executable
+
+```json
+{
+  "orderId": "wo_canary_notepad_1",
+  "approvalId": "",
+  "sealed": true,
+  "sealedText": "Aroma Computer Operator canary. Round 1.",
+  "allowedPath": "C:\\Aroma\\ComputerOperator-Test",
+  "maxSteps": 3,
+  "timeoutSec": 300,
+  "orderHash": "",
+  "steps": [
+    { "n": 1, "action": "open_app", "appId": "notepad" },
+    { "n": 2, "action": "type_text", "text": "Aroma Computer Operator canary. Round 1.",
+      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null } },
+    { "n": 3, "action": "save", "fileName": "canary-1.txt",
+      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null } }
+  ]
+}
+```
+
+`approvalId` and `orderHash` are **empty on purpose**. Per rule 1 the builder does not invent an
+id, and per rules 6–8 the hash cannot exist until the Owner's id is in the document. The `bind`
+values are `null` because they are captured from step 1's real result at run time.
+
+The earlier hash `df26f090…` was computed with a placeholder approval and is **void**. The final
+hash will be produced only after the Owner issues an id, and returned in full for confirmation.
+
+**This draft is not executable**, and not by convention: `verifySeal` refuses it —
+`order_not_approved` on the empty `approvalId`, and `order_not_sealed` on the empty hash.
