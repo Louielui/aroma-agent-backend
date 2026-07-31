@@ -49,6 +49,7 @@ const JS_ALLOWLIST = Object.freeze({
   'desktopAdapter.js': 'may reach a desktop, through an injected runner only',
   'evidenceStore.js': false,
   'identityAttestation.js': false,
+  'machineProbe.js': false,
   'executeRequest.js': false,
   'companionCanaryRunner.js': false,
   'ipcChannel.js': false,
