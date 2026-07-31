@@ -1270,3 +1270,38 @@ retired name reintroduced anywhere else merges silently. A repo-wide scan is **p
 deliberately deferred** to its own branch after the physical acceptance — see
 `docs/persona/RENAME-2026-07-30.md`. Until it exists, this rule is the only thing standing in
 that gap, and it is a procedure, not a control.
+
+---
+
+## 17. The `main` reference point MOVED — check 3 of the push verification is now a different SHA
+
+*(2026-07-30, after the persona rename was merged.)*
+
+Every 3b push so far verified: **`remote main is still 4e3e50f3fd90530b3122028ef72998d23b292e37`**. That
+constant is now **wrong**, and the failure mode is the dangerous direction — the next 3b push would
+read a legitimately-advanced `main` as *"main was touched"*, report a violation that did not happen,
+and cast doubt on a clean push.
+
+```
+main BEFORE the rename merge : 4e3e50f3fd90530b3122028ef72998d23b292e37
+main AFTER  the rename merge : 1a6d7bd5be558301baaa4628a757b303bf7a49ce
+```
+
+The merge was a **fast-forward** of `chore/rename-agent-to-xiangxiang`, no force, and this branch was
+not modified, rebased, merged into, or rewritten.
+
+**Check 3 now reads:** remote `main` is `1a6d7bd…` **unless a later merge has advanced it again**.
+
+### The better form of the check, since a pinned SHA rots by design
+
+Pinning any SHA guarantees a future false alarm the moment `main` legitimately moves. What the check
+is actually for is *"this push did not touch `main`"*, so verify that directly:
+
+- record `main`'s SHA **immediately before** the push, and compare **after** — equal means untouched,
+  whatever the value happens to be
+- or assert the property: `git merge-base --is-ancestor <main> <3b-tip>` is **false**, i.e. 3b has not
+  been merged into `main`
+
+Either states the invariant instead of a snapshot of it. This is §16's standing rule applied to the
+verification procedure itself: **a number written down is a fact about the moment it was taken.** The
+rule was written the same day this constant went stale, which is as good a demonstration as it gets.
