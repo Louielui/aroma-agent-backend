@@ -81,7 +81,7 @@ test('mapping stays strictly within the behavioral section (no Identity/Business
 // --- safety / isolation -----------------------------------------------------
 test('verifier output is safe (no persona / fragment text)', () => {
   const s = JSON.stringify(verify(P, B.MAPPING))
-  for (const leak of ['心燈', '思考順序', '表達風格', 'Aroma Central Kitchen', '即時事實']) assert.equal(s.includes(leak), false)
+  for (const leak of ['香香', '思考順序', '表達風格', 'Aroma Central Kitchen', '即時事實']) assert.equal(s.includes(leak), false)
 })
 
 test('buildPersonaSystem is byte-identical and unaffected by M3a', () => {

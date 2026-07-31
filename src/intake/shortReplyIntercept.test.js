@@ -45,7 +45,7 @@ const HISTORY = [
 
 /* ── the fix ──────────────────────────────────────────────────────────────── */
 
-test('*** 「1」 after a numbered list keeps 心燈\'s real answer ***', async () => {
+test('*** 「1」 after a numbered list keeps 香香\'s real answer ***', async () => {
   const res = await processIntake('1', fake(COMMIT), HISTORY, { demo: true, interactionMode: 'chat' })
   assert.equal(res.reply, '好，我幫你睇咗第一個選項：先接 POS，因為佢影響每日落單。',
     'her actual answer is returned, not a canned notice')

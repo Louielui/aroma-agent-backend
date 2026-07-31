@@ -203,7 +203,7 @@ test('broken M3a mapping -> MAPPING_CONTRACT_ERROR / exit 3', () => {
 // =========================================================================
 test('verifier output never leaks fragment / section / persona text', () => {
   const base = tmpBase()
-  try { seedOp(base); seedPs(base); const s = JSON.stringify(verify(base)); for (const leak of ['心燈', '思考順序', '表達風格', P.slice(807, 886), P.slice(886, 952)]) assert.equal(s.includes(leak), false) } finally { cleanup(base) }
+  try { seedOp(base); seedPs(base); const s = JSON.stringify(verify(base)); for (const leak of ['香香', '思考順序', '表達風格', P.slice(807, 886), P.slice(886, 952)]) assert.equal(s.includes(leak), false) } finally { cleanup(base) }
 })
 test('verify performs no writes', () => {
   const base = tmpBase()

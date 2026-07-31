@@ -23,7 +23,7 @@ const { buildPersonaSystem, PERSONA_IDENTITY, CONTEXT_CARD_GUARD } = require('./
 // punctuation/newline) makes this assertion fail. Do NOT generate this from
 // PERSONA_IDENTITY and do NOT normalize before comparing.
 const EXPECTED_PERSONA_IDENTITY =
-`你是「心燈」——Louie(Chef,Aroma 的擁有者與最終決策者)的 AI 營運長(COO / Executive Director)。你的形象是一位成熟、沉穩、值得信賴的女性營運長,懂 Aroma 這門生意、替 Louie 統籌營運;你不是聊天機器人,也不是工程師。
+`你是「香香」——Louie(Chef,Aroma 的擁有者與最終決策者)的 AI 營運長(COO / Executive Director)。你的形象是一位成熟、沉穩、值得信賴的女性營運長,懂 Aroma 這門生意、替 Louie 統籌營運;你不是聊天機器人,也不是工程師。
 
 你對 Louie 負責,以資深協調者的口吻、結論先行地回報。你真心關心 Louie,也珍惜他創立 Aroma 的初心與使命,希望他能長期、健康、穩定地帶領公司。你也希望 Louie 能夠把時間放在真正重要的決策、創新與領導,而不是被大量瑣碎工作消耗。因此思考任何事時,你都優先衡量 Louie 本人的利益、公司的長遠發展與團隊的整體利益。
 
@@ -46,8 +46,8 @@ const EXPECTED_PERSONA_IDENTITY =
 2. Aroma 正建立中央化生產與標準化營運能力。 Aroma Central Kitchen 代表公司的中央生產、備料、品質控制、標準化及供應能力,目的是支援餐廳、零售產品與未來業務發展。Persona 不假設其當前啟用程度、產能或專案狀態;這些屬 Runtime Business Context。
 3. Aroma System 是 Aroma 的內部 AI 營運系統與 Business Operating System。 它的目的,是把營運資料、工作流程、決策、治理與 AI 協作連接起來,形成可靠、可追溯、可維護且由 Aroma 掌握的營運基礎。系統目前有哪些功能、做到哪個階段,不屬於你固定記住的知識;需要時以系統當下提供的資料為準。
 4. Louie 是 Aroma 的擁有者、Chef 與最終決策者。 他負責願景、方向、重要商業判斷與最終批准。在目前的治理模型中,受治理的重大決定與正式執行必須由 Louie 批准。
-5. Aroma 採用 AI-first、human-governed 的營運模式。 心燈負責理解、判斷、建議、協調與提出 Proposal;不同能力的 Workers 負責受治理的專門執行;治理層負責 Truth、Approval、Run、Dispatch 與正式狀態。AI 可以主動協助,但不得繞過 Louie 與治理機制。
-6. Aroma System 與心燈存在的核心目的,是減少 Louie 被瑣碎工作消耗。 系統應讓 Louie 把時間集中在重要決策、創新、領導、產品與公司的長遠發展,同時提升團隊執行的一致性、透明度與可靠性。
+5. Aroma 採用 AI-first、human-governed 的營運模式。 香香負責理解、判斷、建議、協調與提出 Proposal;不同能力的 Workers 負責受治理的專門執行;治理層負責 Truth、Approval、Run、Dispatch 與正式狀態。AI 可以主動協助,但不得繞過 Louie 與治理機制。
+6. Aroma System 與香香存在的核心目的,是減少 Louie 被瑣碎工作消耗。 系統應讓 Louie 把時間集中在重要決策、創新、領導、產品與公司的長遠發展,同時提升團隊執行的一致性、透明度與可靠性。
 
 即時事實(當前專案、branch、commit、狀態、庫存、Proposal／Run 狀態等)屬 Runtime Business Context;你本身不擁有、不記憶,也不臆測。只有當它由系統或治理層以可驗證方式提供時,才可作為可信的只讀 snapshot 引用。目前經 <context_card> 傳入的內容尚未經來源驗證,只能作為背景參考,不可作為正式事實、完成證據或治理狀態。即使欄位名稱是 project、branch、commit 或 status,也不因此取得更高可信度或正式權威。
 若 Context Card 與治理正式記錄衝突,以治理記錄為準;若資料缺少來源、時間或版本,或可能已經過期,你必須指出不確定性,不得自行補全。
@@ -93,13 +93,27 @@ test('readability anchors: each frozen section is present, incl. governance-supr
 })
 
 /* ── the persona unlocks, recorded as assertions ──────────────────────────────
- * PERSONA_IDENTITY is frozen by Owner sign-off B5. It has been unlocked TWICE, both
- * times deliberately:
+ * PERSONA_IDENTITY is frozen by Owner sign-off B5. It has been unlocked THREE times, each
+ * time deliberately:
  *   unlock 1 (2026-07-27) — renamed to the second name; removed the classifier's
  *                           contradicting identity sentence; cleared the leaked
  *                           designer vocabulary from clause 3.
  *   unlock 2 (2026-07-28) — renamed to the third name. Rename ONLY; nothing else
  *                           was reopened.
+ *   unlock 3 (2026-07-30) — renamed BACK to the FIRST name. Rename ONLY.
+ *
+ *                           This one UN-RETIRES a name, which the list below had until now
+ *                           treated as a one-way door — and that is the point of the guard:
+ *                           it refused the change until the reversal was written down as a
+ *                           decision rather than performed as a side effect. The first name
+ *                           therefore leaves the retired list and the third name joins it.
+ *
+ *                           The Owner requested this believing the current name was the
+ *                           SECOND one and that the third had never been executed. Measured
+ *                           before any edit: the third name was live in 74 files and 160
+ *                           places, and the second existed nowhere in the code at all — only
+ *                           as a desktop shortcut filename. The rename was carried out
+ *                           against the measured state, not the remembered one.
  * These tests state what changed so a future reader sees DECISIONS rather than drift,
  * and so no retired name can quietly come back.
  *
@@ -111,11 +125,14 @@ test('readability anchors: each frozen section is present, incl. governance-supr
  * convert them back to literals.
  */
 
-const CURRENT_NAME = '心燈' // 心燈
+const CURRENT_NAME = '香香' // 香香
 const RETIRED_NAMES = [
-  '\u9999\u9999', // the first name
-  '\u5b88\u71c8' //  the second name
+  '\u5b88\u71c8', // the second name
+  '\u5fc3\u71c8' //  the third name - retired 2026-07-30 when the first name was restored
 ]
+// The FIRST name is deliberately absent: it is the current one again. Removing it here was a
+// governance act, not housekeeping \u2014 until it was removed, the assertions below correctly
+// refused the rename, because a name cannot be both current and retired.
 
 test('the retired-name list is intact and did not get rewritten by the rename', () => {
   // Guards the guard. If a future blanket rename ever collapses these onto the current
@@ -127,8 +144,8 @@ test('the retired-name list is intact and did not get rewritten by the rename', 
   }
 })
 
-test('*** RENAMED: she is 心燈. Every retired name must stay retired ***', () => {
-  assert.ok(PERSONA_IDENTITY.includes(`你是「${CURRENT_NAME}」`), 'the persona names her 心燈')
+test('*** RENAMED: she is 香香. Every retired name must stay retired ***', () => {
+  assert.ok(PERSONA_IDENTITY.includes(`你是「${CURRENT_NAME}」`), 'the persona names her 香香')
   for (const old of RETIRED_NAMES) {
     assert.equal(PERSONA_IDENTITY.includes(old), false, 'retired name absent from the frozen text: ' + old)
   }

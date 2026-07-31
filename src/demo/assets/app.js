@@ -42,8 +42,8 @@
   // matters when choosing: the same data, but a second vendor receives it.
   // contextAsymmetry.test.js pins that this stays true.
   var PROVIDERS = [
-    { id: 'claude', name: '心燈（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
-    { id: 'openai', name: '心燈（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
+    { id: 'claude', name: '香香（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
+    { id: 'openai', name: '香香（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
   ]
   var provider = 'claude'
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
@@ -189,7 +189,7 @@
     active = c
     clear(log)
     log.appendChild(c.thread)
-    titleEl.textContent = isListed(c) ? c.title : '心燈'
+    titleEl.textContent = isListed(c) ? c.title : '香香'
     renderConvList()
     scroll()
   }
@@ -401,7 +401,7 @@
   // SERVER's report of what actually answered — never the local pick.
   function labelServedBy (t, res) {
     if (!t || !t.body || !res || typeof res.servedBy !== 'string') return
-    var name = res.servedBy === 'openai' ? '心燈（GPT）' : '心燈（Claude）'
+    var name = res.servedBy === 'openai' ? '香香（GPT）' : '香香（Claude）'
     t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''),
       res.fallbackUsed ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）') : ('由 ' + name + ' 回答')))
   }
@@ -543,7 +543,7 @@
         typed.disabled = true; no.disabled = true
         if (o.status === 201) {
           if (o.body.dispatchStatus === 'agent_execute_accepted') {
-            out.textContent = '已批准。心燈開始喺丟棄式副本入面做。'
+            out.textContent = '已批准。香香開始喺丟棄式副本入面做。'
             watchProgress(sealed.approvalId, card, sealed)
           } else {
             out.textContent = '已批准：工作單已確認，但執行通道未開啟，所以甚麼都冇跑過。'
@@ -705,5 +705,5 @@
   send.disabled = true
   autoGrow()
   newConversation(false)
-  addBot('我係心燈。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
+  addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
 })()

@@ -17,7 +17,7 @@ test('arrays preserve order (order is semantic)', () => {
 })
 
 test('UTF-8 content hashes deterministically', () => {
-  assert.equal(sha256Hex(canonicalize({ t: '心燈' })), sha256Hex(canonicalize({ t: '心燈' })))
+  assert.equal(sha256Hex(canonicalize({ t: '香香' })), sha256Hex(canonicalize({ t: '香香' })))
 })
 
 test('rejects undefined / function / symbol / NaN / Infinity', () => {

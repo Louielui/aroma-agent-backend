@@ -31,7 +31,7 @@ const UNKNOWN = '（執行器沒有提供這項資料）'
 const PHASES = Object.freeze({
   accepted: '已批准，正在排隊',
   preparing: '正在準備丟棄式副本',
-  running: '心燈正在處理',
+  running: '香香正在處理',
   verifying: '正在核對改動範圍',
   done: '完成',
   failed: '未成功'
@@ -117,7 +117,7 @@ function buildAgentResultView (input = {}) {
   else status = 'failed'
 
   const headline = {
-    running: '心燈正在丟棄式副本內處理中…',
+    running: '香香正在丟棄式副本內處理中…',
     pending: '仍未有結果（這次批准未有執行，或執行器未回報）',
     refused: '執行器拒絕了這張工作單（沒有任何改動）',
     timeout: '超時中止 —— 測試副本已丟棄',

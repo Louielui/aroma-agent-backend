@@ -299,7 +299,7 @@ test('CLI dry-run -> exit 0; confirmed -> exit 0 ACTIVATED; re-run -> ALREADY_AC
     assert.equal(c.code, 0); assert.ok(c.out.includes('"status":"ACTIVATED"'))
     const again = runCli(base, ['--expect-revision-id', r0.revisionId, '--expect-source-commit', ANCHOR, '--confirm'])
     assert.equal(again.code, 0); assert.ok(again.out.includes('ALREADY_ACTIVE_MATCH'))
-    for (const leak of ['心燈', '思考順序', P.slice(807, 886)]) assert.equal(c.out.includes(leak), false)
+    for (const leak of ['香香', '思考順序', P.slice(807, 886)]) assert.equal(c.out.includes(leak), false)
   } finally { cleanup(base) }
 })
 test('CLI review_ready + confirm -> exit 2 NOT_APPROVED; missing AROMA_CORE_DIR -> exit 3', () => {

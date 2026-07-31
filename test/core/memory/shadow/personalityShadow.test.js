@@ -267,7 +267,7 @@ test('verifier output never leaks persona / fragment text', () => {
   try {
     seedActive(base, goodPayload())
     const s = JSON.stringify(verify(base))
-    for (const leak of ['心燈', '表達風格', '思考順序', P.slice(886, 952)]) assert.equal(s.includes(leak), false)
+    for (const leak of ['香香', '表達風格', '思考順序', P.slice(886, 952)]) assert.equal(s.includes(leak), false)
   } finally { cleanup(base) }
 })
 test('verify performs no writes to the store tree', () => {

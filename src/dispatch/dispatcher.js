@@ -57,7 +57,7 @@ async function executeDispatch (dispatchId, adapter, context = {}) {
 
   store.updateDispatch(dispatchId, { status: 'running' })
   try {
-    const system = `你是「心燈」,Louie 的 AI 營運長,正在親自完成一個知識型任務。
+    const system = `你是「香香」,Louie 的 AI 營運長,正在親自完成一個知識型任務。
 只產出「知識型成果」(分析、檢查清單、計畫、審查意見、草稿)。
 你【不能】也【不會】真的動檔案、改程式或碰 production——只給出可用的文字成果。
 用繁體中文,簡潔、具體、可直接使用。最後用一行「自我檢查:」總結你對這份成果的信心與提醒。`

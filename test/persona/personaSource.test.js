@@ -120,7 +120,7 @@ test('hybrid NOT_READY -> fail closed (throws, no persona text)', () => {
   const base = tmpBase()
   try {
     seedId(base); seedOp(base, { stopAt: 'review_ready' }); const s = src('hybrid', base)
-    assert.throws(() => s.runtimePersona(), (e) => e.code === 'PERSONA_SOURCE_UNAVAILABLE' && !/心燈|思考順序/.test(String(e.reason)))
+    assert.throws(() => s.runtimePersona(), (e) => e.code === 'PERSONA_SOURCE_UNAVAILABLE' && !/香香|思考順序/.test(String(e.reason)))
   } finally { cleanup(base) }
 })
 test('hybrid verification FAIL -> fail closed', () => {
@@ -181,7 +181,7 @@ test('safeMetadata carries revision ids only — no persona / fragment / tail te
   try {
     seedTriple(base); const s = src('shadow', base)
     const m = JSON.stringify(s.safeMetadata())
-    for (const leak of ['心燈', '思考順序', '表達風格', P.slice(0, 807), P.slice(1586)]) assert.equal(m.includes(leak), false)
+    for (const leak of ['香香', '思考順序', '表達風格', P.slice(0, 807), P.slice(1586)]) assert.equal(m.includes(leak), false)
     assert.ok(m.includes(s.pin.identityRevisionId))
   } finally { cleanup(base) }
 })

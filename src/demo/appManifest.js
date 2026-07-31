@@ -55,8 +55,8 @@ function iconDataUri () {
 function buildManifest () {
   const icon = iconDataUri()
   return {
-    name: '心燈',
-    short_name: '心燈',
+    name: '香香',
+    short_name: '香香',
     description: 'Aroma 的 AI 營運長',
     // The page lives at /demo; '/' is a 404, so it cannot be the entry point.
     start_url: '/demo',

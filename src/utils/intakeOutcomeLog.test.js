@@ -169,7 +169,7 @@ test('SENTINEL: no prompt / user content / model output / credential in any outc
     })
     await post(app, { message: USER, interactionMode: 'chat', contextCard: { project: 'CARD_SENTINEL' } })
     const all = JSON.stringify(c.lines)
-    for (const bad of [USER, 'REPLY_SENTINEL', 'CARD_SENTINEL', KEY, 'sk-ant', '心燈']) {
+    for (const bad of [USER, 'REPLY_SENTINEL', 'CARD_SENTINEL', KEY, 'sk-ant', '香香']) {
       assert.ok(!all.includes(bad), `outcome line must never contain: ${bad}`)
     }
   } finally { c.restore(); delete process.env.OPENAI_API_KEY }

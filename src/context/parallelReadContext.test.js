@@ -273,6 +273,6 @@ test('a genuinely empty calendar still reports read-OK, never UNAVAILABLE', asyn
   const r = await buildReadContext({ connector: c, message: '有咩安排', sources: ['calendar'], env: {}, now: '2026-07-27T12:00:00-05:00' })
   assert.equal(r.perSource[0].trust, 'live', 'the source WAS read')
   const calLine = r.block.split('\n').filter((l) => l.startsWith('[calendar]'))[0]
-  assert.ok(calLine.includes('read OK — no matching results'), 'so 心燈 must say 讀到但冇結果, not 讀不到')
+  assert.ok(calLine.includes('read OK — no matching results'), 'so 香香 must say 讀到但冇結果, not 讀不到')
   assert.ok(!calLine.includes('UNAVAILABLE'), 'an empty diary is not a failure')
 })

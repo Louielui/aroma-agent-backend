@@ -18,7 +18,7 @@
  */
 
 const EXECUTIVE = {
-  id: 'aroma', name: '心燈', role: 'AI Executive', provider: 'Claude',
+  id: 'aroma', name: '香香', role: 'AI Executive', provider: 'Claude',
   responsibilities: ['理解需求', '拆解任務', '制定計畫', '派工', '整合成果', '向 Louie 回報', '等待批准'],
   connected: true
 }

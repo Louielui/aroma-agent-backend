@@ -60,7 +60,7 @@ function loginPage ({ next = '/demo', error = null, configured = true } = {}) {
   return `<!doctype html>
 <html lang="zh-Hant"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>心燈</title>
+<title>香香</title>
 <link rel="icon" type="image/svg+xml" href="${iconDataUri()}">
 <style>
 :root{color-scheme:light dark}
@@ -82,7 +82,7 @@ button:hover{background:#c96a47}
   background:#f5e3e0;color:#a8493f}
 </style></head><body>
 <form class="card" method="post" action="/owner/login">
-  <h1>心燈</h1>
+  <h1>香香</h1>
   <p class="sub">請輸入密碼</p>
   ${notice}
   <label for="p">密碼</label>

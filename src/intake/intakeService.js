@@ -6,7 +6,7 @@ const WORKER_MAP = {
   coding: 'Codex', software: 'Codex',
   execution: 'Windows Agent', desktop: 'Windows Agent',
   browser: 'Manus', ssh: 'SSH Agent',
-  verification: '心燈(自己)', ops: '待指派'
+  verification: '香香(自己)', ops: '待指派'
 }
 function enrichTasks (storedTasks, distilledTasks) {
   return (storedTasks || []).map((t, i) => {

@@ -44,7 +44,7 @@ function seedTriple (base) { seedActive(base, 'identity', idShadow.IDENTITY_RECO
 function assertAllowlisted (obj) { for (const k of Object.keys(obj)) assert.ok(ALLOWED_KEYS.includes(k), 'unexpected field: ' + k) }
 function assertNoLeak (obj) {
   const s = JSON.stringify(obj)
-  for (const leak of ['心燈', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586), 'HUB_TOKEN', 'ANTHROPIC', 'canary-secret', '/Users/', 'AromaCore', 'Error:', 'at Object']) assert.equal(s.includes(leak), false, 'leaked: ' + leak)
+  for (const leak of ['香香', '思考順序', '表達風格', P.slice(0, 807), P.slice(807, 1586), P.slice(1586), 'HUB_TOKEN', 'ANTHROPIC', 'canary-secret', '/Users/', 'AromaCore', 'Error:', 'at Object']) assert.equal(s.includes(leak), false, 'leaked: ' + leak)
 }
 function httpGet (port, p) {
   return new Promise((resolve, reject) => {
@@ -112,7 +112,7 @@ test('getSource throwing -> READINESS_ERROR fail-closed (no stack/detail)', () =
 })
 test('safeReason only echoes uppercase codes; anything else -> NOT_READY', () => {
   assert.equal(H.safeReason('BOTH_DOMAINS_NOT_ACTIVE'), 'BOTH_DOMAINS_NOT_ACTIVE')
-  assert.equal(H.safeReason('心燈 leaked persona text'), 'NOT_READY')
+  assert.equal(H.safeReason('香香 leaked persona text'), 'NOT_READY')
   assert.equal(H.safeReason(undefined), 'NOT_READY')
   assert.equal(H.safeReason(P.slice(0, 20)), 'NOT_READY')
 })

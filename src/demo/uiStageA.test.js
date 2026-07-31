@@ -277,7 +277,7 @@ test('the composer bar holds the shortcuts and the picker — and no lane switch
 test('an empty conversation is not also listed in the sidebar', () => {
   assert.ok(DEMO_HTML.includes('function isListed (c) { return c.history.length > 0 }'), 'listing requires content')
   assert.ok(DEMO_HTML.includes('if (!isListed(convs[i])) continue'), 'empty ones are skipped')
-  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '心燈'"), 'the header does not repeat an empty title')
+  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '香香'"), 'the header does not repeat an empty title')
 })
 
 /* ── Stage A.2: the model picker ─────────────────────────────────────────── */
