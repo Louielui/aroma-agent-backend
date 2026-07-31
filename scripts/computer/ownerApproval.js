@@ -40,7 +40,7 @@ const RECEIPT_DIR = path.join(REPO, '.aroma', 'owner-approvals')
  * The marking for receipts issued before the execution package existed. Owner ruling
  * 2026-07-31: keep them, never honour them.
  */
-const PRE_IMPLEMENTATION_STATUS = 'SCOPE APPROVED — PRE-IMPLEMENTATION — NOT EXECUTABLE'
+const PRE_IMPLEMENTATION_STATUS = 'SCOPE APPROVED - PRE-IMPLEMENTATION - NOT EXECUTABLE'
 
 /** Which packaged files differ from what the receipt pinned — so a refusal can name them. */
 function changedPackageFiles (receipt) {
@@ -68,6 +68,16 @@ function readOrder (file) {
  * The scope, in the words a person can check. Derived from the order, and deliberately
  * exhaustive: anything the run can do must appear here, or the Owner is approving something
  * he was not shown.
+ *
+ * ── EVERY STRING HERE IS PURE ASCII, AND THAT IS A REQUIREMENT ────────────
+ * The Owner saw mojibake on the real screen: an em dash written as UTF-8 and read back by a
+ * fresh console under its OEM code page. PowerShell 5.1 decodes a native command's output
+ * using [Console]::OutputEncoding, which in a double-clicked console is the OEM page, not
+ * UTF-8 — so a character that renders correctly in a developer's terminal turns to noise in
+ * front of the person who has to read it and decide.
+ *
+ * Setting the console encoding would have been the clever fix and the wrong one: it makes the
+ * screen depend on a setting nobody can see. ASCII depends on nothing. A test asserts it.
  */
 function summarise (order) {
   const lines = []
@@ -75,11 +85,11 @@ function summarise (order) {
   const type = order.steps.find((s) => s.action === 'type_text')
   const open = order.steps.find((s) => s.action === 'open_app')
 
-  lines.push(['Application', open ? 'Notepad only — nothing else is opened' : '(none)'])
+  lines.push(['Application', open ? 'Notepad only - nothing else is opened' : '(none)'])
   lines.push(['Text typed', type ? JSON.stringify(type.text) : '(none)'])
   lines.push(['File written', save ? order.allowedPath + '\\' + save.fileName : '(none)'])
   lines.push(['Folder', order.allowedPath + '  (nowhere else)'])
-  lines.push(['Overwrite', 'never — refuses if the file already exists'])
+  lines.push(['Overwrite', 'never - refuses if the file already exists'])
   lines.push(['Steps', order.steps.map((s) => s.n + '. ' + s.action).join('   ')])
   lines.push(['Time limit', order.timeoutSec + ' seconds, then it stops'])
   lines.push(['Afterwards', 'Notepad is closed; the file stays for you to check and delete'])
@@ -99,7 +109,7 @@ function renderSummary (order) {
  */
 function issue (opts = {}) {
   const order = readOrder(opts.orderFile)
-  if (order.approvalId) throw new Error('draft already carries an approvalId — refusing to re-approve')
+  if (order.approvalId) throw new Error('draft already carries an approvalId - refusing to re-approve')
 
   const approvalId = opts.approvalId || mintApprovalId(opts.rng)
   const bound = Object.assign({}, order, { approvalId })
@@ -181,7 +191,7 @@ function verify (opts = {}) {
       ok: false,
       refusal: 'pre_implementation_receipt',
       status: PRE_IMPLEMENTATION_STATUS,
-      reason: 'approved before the execution package was pinned — retained for audit, never executable',
+      reason: 'approved before the execution package was pinned - retained for audit, never executable',
       receipt: r,
       file: found.file
     }

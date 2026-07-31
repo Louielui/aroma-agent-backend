@@ -354,7 +354,9 @@ test('*** a PRE-IMPLEMENTATION receipt is refused, and never reaches the spent l
   const v = A.verify({ receipt: v1, orderFile })
   assert.equal(v.ok, false)
   assert.equal(v.refusal, 'pre_implementation_receipt')
-  assert.equal(v.status, 'SCOPE APPROVED — PRE-IMPLEMENTATION — NOT EXECUTABLE')
+  // ASCII hyphens since 2026-07-31: this string is PRINTED, and an em dash turned to mojibake
+  // on the Owner's real console. The wording is unchanged; only the dash characters are.
+  assert.equal(v.status, 'SCOPE APPROVED - PRE-IMPLEMENTATION - NOT EXECUTABLE')
   assert.equal(A.PRE_IMPLEMENTATION_STATUS, v.status)
 
   // The refusal happens BEFORE any registry is consulted, which is what makes "never accepted
@@ -378,4 +380,81 @@ test('the real receipt on this machine is a v1 — audit only', () => {
     assert.equal(v.ok, false)
     assert.equal(v.refusal, 'pre_implementation_receipt')
   }
+})
+
+/* ── 8. the screen must be readable on a real console ─────────────────────── */
+
+const NON_ASCII = /[^\x00-\x7F]/
+/**
+ * The mojibake the Owner actually saw. UTF-8 bytes decoded as CP1252/OEM produce these:
+ * an em dash (E2 80 94) reads as "â€"", a box-drawing dash (E2 94 80) as "â”€", and the
+ * high bytes surface as stray capitals and diaereses — the "[Cö" on his screen.
+ */
+const MOJIBAKE = /â€|â”|Ã.|â‚|Â.|�|\[C[öÖäÄüÜ]/
+
+test('*** the approval summary is pure ASCII — no mojibake is possible ***', () => {
+  // Asserted on the RENDERED OUTPUT, not on the source. A source scan would pass while the
+  // screen still broke, because what reaches the console is what summarise() produced.
+  const rendered = A.renderSummary(A.readOrder())
+  assert.doesNotMatch(rendered, NON_ASCII, 'every character the Owner reads must be ASCII')
+  assert.doesNotMatch(rendered, MOJIBAKE, 'and none of it can already be mangled')
+
+  // The two lines that were broken, now stated exactly.
+  assert.ok(rendered.includes('Notepad only - nothing else is opened'))
+  assert.ok(rendered.includes('never - refuses if the file already exists'))
+  assert.equal(rendered.includes('—'), false, 'no em dash anywhere')
+  assert.equal(rendered.includes('─'), false, 'no box-drawing dash anywhere')
+})
+
+test('*** every string the ceremony can PRINT is ASCII — receipt summary included ***', () => {
+  const dir = tmp()
+  const orderFile = path.join(dir, 'wo.json')
+  fs.copyFileSync(A.DRAFT, orderFile)
+  const { receipt } = A.issue({ receiptDir: dir, orderFile, at: '2026-07-31T00:00:00.000Z' })
+
+  // The EXECUTE screen renders from the receipt, so that path needs the same guarantee.
+  assert.doesNotMatch(A.renderReceiptSummary(receipt), NON_ASCII, 'the receipt-rendered summary')
+  assert.doesNotMatch(A.PRE_IMPLEMENTATION_STATUS, NON_ASCII, 'the pre-implementation marking')
+
+  // Refusal reasons reach the screen too.
+  const v1 = JSON.parse(JSON.stringify(receipt))
+  delete v1.executionPackageManifestHash
+  const refused = A.verify({ receipt: v1, orderFile })
+  assert.doesNotMatch(String(refused.reason), NON_ASCII, 'refusal reasons are printed, so they are ASCII too')
+  assert.doesNotMatch(String(refused.status), NON_ASCII)
+})
+
+test('*** no NON-COMMENT line of the ceremony code carries a non-ASCII character ***', () => {
+  // Comments are exempt on purpose: they never reach a console, and banning them would push
+  // the prose towards worse English for no benefit. Code lines are where the risk lives.
+  const files = [
+    path.join(SCRIPTS, 'ownerApproval.js'),
+    path.join(SCRIPTS, 'Owner-Approve.ps1'),
+    path.join(SCRIPTS, 'Owner-Execute.ps1')
+  ]
+  const offenders = []
+  for (const f of files) {
+    const lines = fs.readFileSync(f, 'utf8').split(/\r?\n/)
+    lines.forEach((line, i) => {
+      const isComment = /^\s*(\*|\/\*|\/\/|#)/.test(line)
+      if (!isComment && NON_ASCII.test(line)) offenders.push(path.basename(f) + ':' + (i + 1) + '  ' + line.trim().slice(0, 60))
+    })
+  }
+  assert.deepEqual(offenders, [], 'non-ASCII on a code line:\n  ' + offenders.join('\n  '))
+})
+
+test('*** POSITIVE CONTROL — the rules catch a real em dash and real mojibake ***', () => {
+  // Without this, "no non-ASCII found" could mean the regexes match nothing at all.
+  assert.match('Notepad only — nothing else', NON_ASCII, 'an em dash is caught')
+  assert.match('Notepad only ─ nothing', NON_ASCII, 'a box dash is caught')
+  assert.match('Notepad only â€" nothing', MOJIBAKE, 'CP1252-decoded UTF-8 is caught')
+  assert.match('summary [Cö broken', MOJIBAKE, 'the exact shape seen on screen is caught')
+  assert.doesNotMatch('Notepad only - nothing else is opened', NON_ASCII, 'and the fixed text passes')
+  assert.doesNotMatch('Notepad only - nothing else is opened', MOJIBAKE)
+})
+
+test('the sealed text itself is ASCII, so it survives any console', () => {
+  const d = A.readOrder()
+  assert.doesNotMatch(d.sealedText, NON_ASCII)
+  assert.equal(d.sealedText, 'Aroma Computer Operator canary. Round 1.')
 })
