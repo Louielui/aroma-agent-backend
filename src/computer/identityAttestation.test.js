@@ -22,6 +22,12 @@ const good = (over = {}) => Object.assign({
   isInteractive: true,
   integrityLevel: 'Medium',
   groupSids: ['S-1-5-32-545', 'S-1-1-0', 'S-1-5-11'],
+  // Added when the collector grew: presence and ENABLED state are different questions, and the
+  // collector is identified so a snapshot cannot be scored by a checker expecting other fields.
+  administratorsPresent: false,
+  administratorsEnabled: false,
+  collectorVersion: 1,
+  collectorSha256: 'a'.repeat(64),
   processId: 7788,
   attestedAt: '2026-07-31T23:00:00.000Z'
 }, over)

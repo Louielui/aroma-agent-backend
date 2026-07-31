@@ -53,7 +53,15 @@ const FORBIDDEN_GROUPS = Object.freeze({
 /** Everything an attestation must carry. A missing field is a refusal. */
 const REQUIRED_FIELDS = Object.freeze([
   'account', 'sid', 'sessionId', 'desktop', 'isElevated', 'isInteractive',
-  'integrityLevel', 'groupSids', 'processId', 'attestedAt'
+  'integrityLevel', 'groupSids', 'processId', 'attestedAt',
+  // The Administrators SID is not enough on its own. A filtered token still CARRIES it, as
+  // DENY_ONLY - present, and unusable. Recording only presence would refuse every ordinary
+  // user; recording only elevation would miss a token where it is genuinely enabled. So the
+  // STATE is measured, and the collector must say which.
+  'administratorsPresent', 'administratorsEnabled',
+  // Which collector produced this, so a snapshot can never be read by a checker that expects
+  // different fields and silently scores the ones it recognises.
+  'collectorVersion', 'collectorSha256'
 ])
 
 const no = (refusal, reason, detail) => ({ ok: false, refusal, reason, detail: detail || null })
@@ -103,6 +111,25 @@ function attest (snapshot, expected = REQUIRED) {
       return no('privileged_group', 'the token carries a group that defeats containment', FORBIDDEN_GROUPS[sid])
     }
   }
+  // ── A NARROWER GATE, AND CURRENTLY UNREACHABLE. SAID SO ON PURPOSE. ──────
+  // Enabled Administrators defeats containment even at Medium integrity and without elevation,
+  // so it is refused explicitly. For THIS account it can never be the reason: AromaOperator is
+  // a plain Users member, so if Administrators appears in the token at all the group loop above
+  // has already refused it — present-but-deny-only included.
+  //
+  // Kept rather than folded in, and annotated rather than left to be discovered: a future
+  // account whose token legitimately carries Administrators as DENY_ONLY would pass the broad
+  // rule and must still be caught here. Do not read a green suite as proof this branch runs.
+  if (snapshot.administratorsEnabled === true) {
+    return no('administrators_enabled', 'the token has Administrators ENABLED, not deny-only')
+  }
+  if (typeof snapshot.administratorsEnabled !== 'boolean' || typeof snapshot.administratorsPresent !== 'boolean') {
+    return no('incomplete_attestation', 'the Administrators state was not measured as a boolean')
+  }
+  if (expected.collectorVersion !== undefined && snapshot.collectorVersion !== expected.collectorVersion) {
+    return no('collector_version_mismatch', 'the snapshot came from a different collector', String(snapshot.collectorVersion))
+  }
+
   if (snapshot.integrityLevel !== 'Medium') {
     return no('wrong_integrity', 'the token integrity level is not Medium', String(snapshot.integrityLevel))
   }
@@ -133,6 +160,10 @@ function toAuditRecord (snapshot, verdict) {
     integrityLevel: snapshot && snapshot.integrityLevel,
     groupSids: (snapshot && snapshot.groupSids) || null,
     processId: snapshot && snapshot.processId,
+    administratorsPresent: snapshot && snapshot.administratorsPresent,
+    administratorsEnabled: snapshot && snapshot.administratorsEnabled,
+    collectorVersion: snapshot && snapshot.collectorVersion,
+    collectorSha256: snapshot && snapshot.collectorSha256,
     attestedAt: snapshot && snapshot.attestedAt,
     expectedSid: REQUIRED.sid,
     expectedDesktop: REQUIRED.desktop
