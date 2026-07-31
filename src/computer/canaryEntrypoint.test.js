@@ -23,6 +23,25 @@ const EXECUTE_PS1 = path.join(SCRIPTS, 'Owner-Execute.ps1')
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-entry-'))
 
+/**
+ * Script-level parameters, asked of the real PowerShell parser.
+ *
+ * A regex cannot tell `function Say { param(...) }` from a script param block without becoming
+ * a parser, and the first version of this check in the sibling test failed exactly there. Kept
+ * as a small local copy rather than imported across test files: a test that depends on another
+ * test file's internals fails for reasons that have nothing to do with what it is testing.
+ */
+function scriptParamNames (file) {
+  const ps = [
+    '$e=$null;',
+    `$ast=[System.Management.Automation.Language.Parser]::ParseFile('${file}',[ref]$null,[ref]$e);`,
+    'if($ast.ParamBlock -eq $null){ "" } else { ($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) -join "," }'
+  ].join(' ')
+  const r = spawnSync('powershell.exe', ['-NoProfile', '-Command', ps], { encoding: 'utf8', timeout: 60000 })
+  assert.equal(r.status, 0, 'the parser ran: ' + (r.stderr || ''))
+  return String(r.stdout).trim().split(',').filter(Boolean)
+}
+
 /** A world the test fully controls. Defaults are the happy path. */
 function fakeIo (over = {}) {
   const io = {
@@ -75,23 +94,49 @@ const base = (o = {}) => Object.assign({ receiptDir: o.dir, orderFile: o.orderFi
 
 /* ── 1-2. the fence and the missing receipt ───────────────────────────────── */
 
-test('*** 1. with the fence shut, pressing E sets no flag and calls no Node ***', () => {
+test('*** 1. the fence is checked BEFORE the flag and BEFORE the entrypoint ***', () => {
+  // ── RESPONSIBILITY, narrowed 2026-07-31 ──────────────────────────────────
+  // This used to also assert the fence's current VALUE. That was never this test's job, and
+  // it made the value live in two files: locking or unlocking the fence meant editing three
+  // places, and a pre-unlock check found exactly that. One of them would eventually be missed.
+  //
+  // The value is owned by ownerApprovalCeremony.test.js, which does nothing else.
+  // What is owned HERE is the ORDERING, which holds whichever way the fence is set: the check
+  // happens first, and nothing outside the file can route around it.
   const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
   const stripped = code.replace(/^\s*#.*$/gm, '')
-  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/, 'the fence is shut')
 
-  // The fence check must come BEFORE the flag is ever assigned, or "shut" means nothing.
   const fenceAt = stripped.indexOf('if (-not $CANARY_EXECUTE_AUTHORISED)')
   const flagAt = stripped.indexOf("$env:COMPUTER_OPERATOR = 'on'")
-  const nodeAt = stripped.indexOf('& $Node $Entry')
-  assert.ok(fenceAt > 0 && flagAt > fenceAt, 'the flag is only set after the fence check')
-  assert.ok(nodeAt > fenceAt, 'the entrypoint is only called after the fence check')
+  const preflightAt = stripped.indexOf('& $Node $Entry preflight')
+  const runAt = stripped.indexOf('& $Node $Entry run')
 
-  // And a scripted run never reaches any of it.
+  assert.ok(fenceAt > 0, 'the fence check exists')
+  assert.ok(flagAt > 0 && preflightAt > 0 && runAt > 0, 'the flag and both entrypoint calls exist')
+  assert.ok(flagAt > fenceAt, 'the flag is only ever set after the fence check')
+  assert.ok(preflightAt > fenceAt, 'the entrypoint is only called after the fence check')
+  assert.ok(runAt > fenceAt, 'including the run phase')
+
+  // The failing branch must exit, not fall through into the code below it. A fence that is
+  // checked and then ignored is decoration.
+  const fenceBlock = stripped.slice(fenceAt, flagAt)
+  assert.match(fenceBlock, /exit\s+4/, 'a shut fence exits rather than continuing')
+
+  // Nothing outside the file can supply the value: not a parameter, not an environment
+  // variable, not stdin, not a fallback assignment.
+  assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'no script parameter')
+  assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'no environment variable')
+  assert.doesNotMatch(stripped, /Read-Host|\[Console\]::In\b/, 'no stdin')
+  const assignments = stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=/g) || []
+  assert.equal(assignments.length, 1, 'exactly one assignment — no fallback re-assignment')
+
+  // And a scripted run reaches none of it, whichever way the fence is set: the interactivity
+  // gate stops it earlier.
   const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', EXECUTE_PS1],
     { encoding: 'utf8', timeout: 60000, input: 'E\n' })
-  assert.notEqual(r.status, 0)
-  assert.doesNotMatch(String(r.stdout), /Running\.\.\./)
+  assert.notEqual(r.status, 0, 'a scripted run must not succeed')
+  assert.doesNotMatch(String(r.stdout), /Running\.\.\./, 'the flag was never set')
+  assert.doesNotMatch(String(r.stdout), /All checks passed/, 'the entrypoint was never called')
 })
 
 test('*** 2. no receipt -> 0 desktop actions ***', () => {
