@@ -18,7 +18,12 @@
 # installs itself on every press.
 param(
   [switch]$Quiet,
-  [string]$Repo = 'C:\Aroma\aroma-agent-backend',
+  # NOT hardcoded. The same trap that broke the desktop icons on 2026-07-30: this path is a
+  # working TREE, the tree has a branch, and after the persona rename merged the tree was on
+  # `main` — where scripts\commissioning does not exist. Launcher 1 calls this on every press,
+  # so a wrong default here fails the run at its very first step. Empty means "resolve it",
+  # and the resolution happens below, after the core is loaded.
+  [string]$Repo = '',
   [string]$InstallDir = 'C:\Aroma\Commissioning',
   [string]$OwnerAccount = 'louis',
   [string]$OperatorAccount = 'AromaOperator'
@@ -26,6 +31,22 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Resolve the repo if the caller did not name one. Prefer THIS script's own tree — the copy
+# being run is by definition in a tree that has the files — then fall back to the core's
+# resolver, which requires a probe script to be present before accepting a candidate.
+if (-not $Repo) {
+  $ownTree = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+  if ($ownTree -and (Test-Path -LiteralPath (Join-Path $ownTree 'scripts\computer\stage3-harness.ps1'))) {
+    $Repo = $ownTree
+  } else {
+    . (Join-Path $PSScriptRoot 'commissioningCore.ps1')
+    $Repo = $script:CX_Repo
+  }
+}
+if (-not $Repo) {
+  throw 'could not locate a repository tree holding the commissioning scripts - refusing to guess'
+}
 
 $src = Join-Path $Repo 'scripts\commissioning'
 $files = @('commissioningCore.ps1','commissioningPrepare.ps1','commissioningLock5.ps1',

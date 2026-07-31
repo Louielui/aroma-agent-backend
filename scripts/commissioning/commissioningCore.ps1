@@ -22,8 +22,38 @@ Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
 
 $script:CX_EvidenceRoot = 'C:\Aroma\ComputerOperator-Evidence'
 $script:CX_CommissionRoot = Join-Path $script:CX_EvidenceRoot 'commissioning'
-$script:CX_Repo = 'C:\Aroma\aroma-agent-backend'
-$script:CX_Scripts = Join-Path $script:CX_Repo 'scripts\computer'
+# ── THE REPO IS FOUND, NOT ASSUMED ──────────────────────────────────────────
+# This used to be the literal 'C:\Aroma\aroma-agent-backend'. MEASURED 2026-07-30, the night of
+# the physical run: that path is a WORKING TREE, and a working tree has a branch. The persona
+# rename was merged and the tree checked out to `main` — where scripts\commissioning does not
+# exist and 10 of the 11 probe scripts are absent, because they live on the 3b branch. All three
+# desktop icons pointed into a folder that had silently stopped existing, and the Owner found
+# out by double-clicking an icon that did nothing.
+#
+# A hardcoded path cannot notice that. So: prefer the tree this very file is running from, then
+# fall back to known trees, and REQUIRE a probe script to be present before accepting one — the
+# check is "does this tree actually carry what I need", not "does this folder exist".
+#
+# If none qualifies, CX_Scripts is left $null on purpose. The launcher's preflight reports a
+# missing path through the ordinary fail-safe screen, which is a stop the Owner can photograph
+# rather than a folder that quietly resolves to the wrong branch.
+function CX-ResolveRepo {
+  $marker = 'scripts\computer\stage3-harness.ps1'
+  $candidates = New-Object System.Collections.Generic.List[string]
+  # 1. the tree this script is in: <repo>\scripts\commissioning\thisfile
+  if ($PSScriptRoot) {
+    $up = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+    if ($up) { $candidates.Add($up) }
+  }
+  # 2. known trees on this machine, most specific first
+  foreach ($c in @('C:\Aroma\aroma-3b', 'C:\Aroma\aroma-agent-backend')) { $candidates.Add($c) }
+  foreach ($c in $candidates) {
+    if ($c -and (Test-Path -LiteralPath (Join-Path $c $marker))) { return $c }
+  }
+  $null
+}
+$script:CX_Repo = CX-ResolveRepo
+$script:CX_Scripts = if ($script:CX_Repo) { Join-Path $script:CX_Repo 'scripts\computer' } else { $null }
 $script:CX_ProbeDir = 'C:\AromaOperator-Probe'
 $script:CX_GateDir = 'C:\Aroma\ComputerOperator-Gate'
 $script:CX_StageDir = 'C:\Aroma\ComputerOperator-Companion'
