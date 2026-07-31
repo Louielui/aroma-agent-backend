@@ -30,10 +30,30 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const { computeOrderHash, ALLOWED_PATH, LIMITS } = require('../../src/computer/sealedOrderGate')
+const pkg = require('./executionPackage')
 
 const REPO = path.resolve(__dirname, '..', '..')
 const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order.draft.json')
 const RECEIPT_DIR = path.join(REPO, '.aroma', 'owner-approvals')
+
+/**
+ * The marking for receipts issued before the execution package existed. Owner ruling
+ * 2026-07-31: keep them, never honour them.
+ */
+const PRE_IMPLEMENTATION_STATUS = 'SCOPE APPROVED — PRE-IMPLEMENTATION — NOT EXECUTABLE'
+
+/** Which packaged files differ from what the receipt pinned — so a refusal can name them. */
+function changedPackageFiles (receipt) {
+  const now = pkg.buildManifest().files
+  const was = new Map((receipt.executionPackageManifest || []).map((f) => [f.path, f.sha256]))
+  const changed = []
+  for (const f of now) {
+    if (!was.has(f.path)) changed.push({ path: f.path, change: 'added' })
+    else if (was.get(f.path) !== f.sha256) changed.push({ path: f.path, change: 'modified' })
+  }
+  for (const p of was.keys()) if (!now.find((f) => f.path === p)) changed.push({ path: p, change: 'removed' })
+  return changed
+}
 
 /** An id the builder cannot have chosen: 128 random bits, minted at the moment of consent. */
 function mintApprovalId (rng = crypto.randomBytes) {
@@ -85,10 +105,18 @@ function issue (opts = {}) {
   const bound = Object.assign({}, order, { approvalId })
   bound.orderHash = computeOrderHash(bound)
 
+  // The code that will run, pinned at the moment of consent. Without this the receipt binds
+  // WHAT will be done and nothing about WHAT DOES IT — see executionPackage.js.
+  const packageManifest = pkg.buildManifest()
+  const executionPackageManifestHash = pkg.computePackageHash()
+
   const receipt = {
     kind: 'owner-approval-receipt',
+    receiptVersion: 2,
     approvalId,
     workOrderHash: bound.orderHash,
+    executionPackageManifestHash,
+    executionPackageManifest: packageManifest.files,
     orderId: bound.orderId,
     // The receipt carries what was approved, so EXECUTE can render from it rather than from a
     // file that may have moved on.
@@ -143,6 +171,42 @@ function verify (opts = {}) {
   if (r.kind !== 'owner-approval-receipt') return { ok: false, refusal: 'bad_receipt', reason: 'not an approval receipt' }
   if (!r.approvalId || !r.workOrderHash) return { ok: false, refusal: 'bad_receipt', reason: 'receipt is missing its binding' }
 
+  // ── MIGRATION: receipts issued before the execution package existed ──────
+  // A v1 receipt approved a SCOPE — what would be done — and pinned nothing about the code
+  // that does it. It is kept for audit and it is not an execution authorisation, because the
+  // Owner who signed it could not have been shown an implementation that did not yet exist.
+  // Refused HERE, before the spent ledger is ever consulted, so it can never be admitted.
+  if (!r.executionPackageManifestHash) {
+    return {
+      ok: false,
+      refusal: 'pre_implementation_receipt',
+      status: PRE_IMPLEMENTATION_STATUS,
+      reason: 'approved before the execution package was pinned — retained for audit, never executable',
+      receipt: r,
+      file: found.file
+    }
+  }
+
+  // ── THE CODE, not just the intent ────────────────────────────────────────
+  // The receipt pinned the package that would run. If the package has moved, the Owner
+  // approved an implementation that is no longer the one on disk.
+  let currentPackageHash = null
+  try { currentPackageHash = pkg.computePackageHash() } catch (e) {
+    return { ok: false, refusal: 'execution_package_incomplete', reason: e.message, receipt: r, file: found.file }
+  }
+  if (currentPackageHash !== r.executionPackageManifestHash) {
+    return {
+      ok: false,
+      refusal: 'execution_package_changed',
+      reason: 'the code that would run is not the code that was approved',
+      approvedPackageHash: r.executionPackageManifestHash,
+      currentPackageHash,
+      changedFiles: changedPackageFiles(r),
+      receipt: r,
+      file: found.file
+    }
+  }
+
   // The receipt against itself: the order it carries must still hash to the hash it claims.
   const selfHash = computeOrderHash(r.approvedOrder)
   if (selfHash !== r.workOrderHash) {
@@ -167,7 +231,7 @@ function verify (opts = {}) {
     }
   }
 
-  return { ok: true, receipt: r, file: found.file, order: Object.assign({}, currentBound, { orderHash: r.workOrderHash }) }
+  return { ok: true, receipt: r, file: found.file, executionPackageManifestHash: r.executionPackageManifestHash, order: Object.assign({}, currentBound, { orderHash: r.workOrderHash }) }
 }
 
 /** Render the block the EXECUTE screen shows — FROM THE RECEIPT. */
@@ -192,7 +256,20 @@ if (require.main === module) {
       process.stdout.write(JSON.stringify({ ok: true, approvalId: out.receipt.approvalId, workOrderHash: out.receipt.workOrderHash, file: out.file }) + '\n')
     } else if (cmd === 'verify') {
       const v = verify({ orderFile: arg('--order'), receiptDir: arg('--receipts') })
-      if (!v.ok) { process.stdout.write(JSON.stringify({ ok: false, refusal: v.refusal, reason: v.reason, approvedHash: v.approvedHash || null, currentHash: v.currentHash || null }) + '\n'); process.exit(3) }
+      if (!v.ok) {
+        process.stdout.write(JSON.stringify({
+          ok: false,
+          refusal: v.refusal,
+          status: v.status || null,
+          reason: v.reason,
+          approvedHash: v.approvedHash || null,
+          currentHash: v.currentHash || null,
+          approvedPackageHash: v.approvedPackageHash || null,
+          currentPackageHash: v.currentPackageHash || null,
+          changedFiles: v.changedFiles || null
+        }) + '\n')
+        process.exit(3)
+      }
       process.stdout.write(JSON.stringify({ ok: true, approvalId: v.receipt.approvalId, workOrderHash: v.receipt.workOrderHash, approvedAt: v.receipt.approvedAt, file: v.file, summary: renderReceiptSummary(v.receipt) }) + '\n')
     } else {
       process.stderr.write('usage: ownerApproval.js summary|issue|verify\n'); process.exit(2)
@@ -205,5 +282,6 @@ if (require.main === module) {
 
 module.exports = {
   mintApprovalId, readOrder, summarise, renderSummary, issue, verify, latestReceipt, renderReceiptSummary,
+  changedPackageFiles, PRE_IMPLEMENTATION_STATUS,
   DRAFT, RECEIPT_DIR, ALLOWED_PATH
 }

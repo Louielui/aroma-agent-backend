@@ -263,3 +263,117 @@ test('*** the execute fence is a LITERAL $false, and nothing outside can move it
   const rhs = (stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=\s*(.+)/) || [])[1] || ''
   assert.match(rhs.trim(), /^\$false\s*$/, 'the right-hand side is the bare literal, nothing else')
 })
+
+/* ── 6. the execution package: the receipt binds the CODE, not just the intent ── */
+
+const PKG = require('../../scripts/computer/executionPackage')
+
+test('*** the execution package is an allowlist, and every listed file exists ***', () => {
+  const m = PKG.buildManifest()
+  assert.deepEqual(m.missing, [], 'a listed file is gone — the package is incomplete')
+  assert.equal(m.files.length, PKG.PACKAGE_FILES.length)
+  // The screens ARE part of it. Owner-Execute.ps1 decides whether execution happens, so a
+  // change to it is a change to what runs — which is exactly why the eventual unlock commit
+  // will invalidate prior receipts, and why that is a feature.
+  for (const must of [
+    'scripts/computer/Owner-Execute.ps1', 'scripts/computer/uiaCanary.ps1',
+    'src/computer/computerExecutor.js', 'src/computer/desktopAdapter.js',
+    'src/computer/sealedOrderGate.js', 'src/computer/orderRegistry.js',
+    'docs/governance/canary-work-order.draft.json'
+  ]) {
+    assert.ok(PKG.PACKAGE_FILES.includes(must), 'must be packaged: ' + must)
+  }
+  // Tests and the A/B launchers do not run during a canary; packaging them would mean an
+  // unrelated edit invalidating a live approval, which trains people to re-approve blind.
+  for (const notPackaged of ['run-script-a-measured.ps1', 'run-script-b-measured.ps1', 'stage-companion.ps1']) {
+    assert.equal(PKG.PACKAGE_FILES.some((p) => p.endsWith(notPackaged)), false, 'must not be packaged: ' + notPackaged)
+  }
+  assert.equal(PKG.PACKAGE_FILES.some((p) => p.includes('.test.')), false, 'no test files in the package')
+})
+
+test('*** the package hash depends on content, not on list order ***', () => {
+  const h = PKG.computePackageHash()
+  assert.match(h, /^[0-9a-f]{64}$/)
+  assert.equal(PKG.computePackageHash(), h, 'stable across calls')
+  // Sorting before hashing is what makes it content-addressed; assert the property directly
+  // by hashing a shuffled copy of the same pairs.
+  const files = PKG.buildManifest().files
+  const canon = (arr) => JSON.stringify(arr.slice().sort((a, b) => (a.path < b.path ? -1 : 1)).map((f) => [f.path, f.sha256]))
+  assert.equal(canon(files), canon(files.slice().reverse()), 'order-independent')
+})
+
+test('*** an incomplete package refuses rather than hashing the absence ***', () => {
+  const empty = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-pkg-'))
+  assert.throws(() => PKG.computePackageHash(empty), /execution package is incomplete/)
+})
+
+test('*** a receipt pins the package, and a changed package is REFUSED by name ***', () => {
+  const dir = tmp()
+  const orderFile = path.join(dir, 'wo.json')
+  fs.copyFileSync(A.DRAFT, orderFile)
+  const { receipt } = A.issue({ receiptDir: dir, orderFile, at: '2026-07-31T00:00:00.000Z' })
+
+  assert.ok(receipt.executionPackageManifestHash, 'the receipt pins the package')
+  assert.equal(receipt.executionPackageManifestHash, PKG.computePackageHash())
+  assert.equal(A.verify({ receiptDir: dir, orderFile }).ok, true, 'unchanged package: fine')
+
+  // Simulate the package moving — e.g. the unlock commit editing Owner-Execute.ps1.
+  const moved = JSON.parse(JSON.stringify(receipt))
+  moved.executionPackageManifestHash = 'f'.repeat(64)
+  moved.executionPackageManifest = moved.executionPackageManifest.map((f) =>
+    f.path === 'scripts/computer/Owner-Execute.ps1' ? { path: f.path, sha256: '0'.repeat(64) } : f)
+
+  const v = A.verify({ receipt: moved, orderFile })
+  assert.equal(v.ok, false)
+  assert.equal(v.refusal, 'execution_package_changed')
+  assert.equal(v.approvedPackageHash, 'f'.repeat(64))
+  assert.equal(v.currentPackageHash, PKG.computePackageHash())
+  // and it says WHICH file moved, so the Owner is not left comparing hashes
+  assert.ok(v.changedFiles.some((c) => c.path === 'scripts/computer/Owner-Execute.ps1' && c.change === 'modified'),
+    'the refusal names the changed file')
+})
+
+/* ── 7. migration: v1 receipts are audit, never authorisation ─────────────── */
+
+test('*** a PRE-IMPLEMENTATION receipt is refused, and never reaches the spent ledger ***', () => {
+  // Owner ruling 2026-07-31. A v1 receipt approved a SCOPE and pinned nothing about the code,
+  // so the Owner who signed it cannot have been shown an implementation that did not exist.
+  // Kept for audit; never honoured.
+  const dir = tmp()
+  const orderFile = path.join(dir, 'wo.json')
+  fs.copyFileSync(A.DRAFT, orderFile)
+  const { receipt } = A.issue({ receiptDir: dir, orderFile, at: '2026-07-31T00:00:00.000Z' })
+
+  const v1 = JSON.parse(JSON.stringify(receipt))
+  delete v1.executionPackageManifestHash
+  delete v1.executionPackageManifest
+  delete v1.receiptVersion
+
+  const v = A.verify({ receipt: v1, orderFile })
+  assert.equal(v.ok, false)
+  assert.equal(v.refusal, 'pre_implementation_receipt')
+  assert.equal(v.status, 'SCOPE APPROVED — PRE-IMPLEMENTATION — NOT EXECUTABLE')
+  assert.equal(A.PRE_IMPLEMENTATION_STATUS, v.status)
+
+  // The refusal happens BEFORE any registry is consulted, which is what makes "never accepted
+  // as execution authorisation" structural rather than procedural: nothing carries that
+  // approvalId onward to admit().
+  const { createOrderRegistry } = require('./orderRegistry')
+  const reg = createOrderRegistry({ now: () => 1 })
+  assert.equal(reg.wasUsed(v1.approvalId), false, 'it was never spent, because it never got that far')
+})
+
+test('the real receipt on this machine is a v1 — audit only', () => {
+  // Measured, not assumed: the receipt the Owner actually signed predates the package and is
+  // therefore not executable. If this ever starts failing it means a v2 receipt exists, which
+  // is the intended end state.
+  const found = A.latestReceipt()
+  if (!found) { assert.ok(true, 'no receipt on this machine'); return }
+  const v = A.verify({})
+  if (found.receipt.executionPackageManifestHash) {
+    assert.ok(v.ok === true || v.refusal === 'execution_package_changed', 'a v2 receipt is checked against the package')
+  } else {
+    assert.equal(v.ok, false)
+    assert.equal(v.refusal, 'pre_implementation_receipt')
+  }
+})

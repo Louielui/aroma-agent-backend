@@ -99,6 +99,35 @@ if ($verifyExit -ne 0 -or -not $v.ok) {
     'receipt_self_mismatch' {
       Say "  The approval record has been altered. It will not be used." 'Red'
     }
+    'pre_implementation_receipt' {
+      # A receipt from before the execution package existed. It recorded WHAT would be done
+      # and nothing about the code that does it, so it cannot authorise a run.
+      Say "  This approval is from before the program was finished." 'Red'
+      Say ""
+      Say "  You approved WHAT the task would do, at a time when the" 'White'
+      Say "  program that does it had not been written yet. It is kept" 'White'
+      Say "  as a record, but it cannot be used to run anything." 'White'
+      Say ""
+      Say "  Please approve again from Step 1." 'White'
+    }
+    'execution_package_changed' {
+      # The reason the package exists: the intent still matches, the CODE does not.
+      Say "  The program has CHANGED since you approved it." 'Red'
+      Say ""
+      Say "  The task itself is unchanged, but the program that would" 'White'
+      Say "  carry it out is not the one you approved. It will not run." 'White'
+      Say ""
+      Say "  Please approve again from Step 1." 'White'
+      Say ""
+      if ($v.changedFiles) {
+        Say "  what changed:" 'DarkGray'
+        $v.changedFiles | ForEach-Object { Say ("    " + $_.change + "  " + $_.path) 'DarkGray' }
+      }
+    }
+    'execution_package_incomplete' {
+      Say "  Part of the program is missing. Nothing will run." 'Red'
+      Say ("  " + $v.reason) 'DarkGray'
+    }
     default {
       Say ("  " + $v.reason) 'White'
     }
