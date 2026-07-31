@@ -324,6 +324,34 @@ $script:CX_NA_LINE3 = '影一張相，然後就可以停手。'
 #
 # This writes to the Owner's OWN profile, which needs no elevation to read, and shows a
 # MessageBox that depends on none of our scaffolding. 'OK' only, never a choice.
+# ═══════════════════════════════════════════════════════════════════════════
+# HOLD THE WINDOW OPEN. Use this everywhere instead of ShowDialog.
+#
+# MEASURED 2026-07-31, from the crash file the Owner could finally read:
+#   Form that is already visible cannot be displayed as a modal dialog box.
+#   Retention-Check-Launcher.ps1 line 133
+# CX-NewUI calls $form.Show() so the steps are visible AS THEY HAPPEN — that is the whole point
+# of the progress list. ShowDialog() then refuses, because a visible form cannot be made modal.
+#
+# Launchers 1 and 2 survived this only by accident: they end with Application::Run, so when a
+# ShowDialog threw, the catch still fell through to Run and the window stayed up. Launchers 3
+# and 4 `exit` straight after, so the same throw killed the process and the window vanished —
+# which is exactly what the Owner saw twice, and why one failure looked like nothing at all.
+#
+# Application::Run is the correct call for an already-visible form: it pumps messages until the
+# form closes. Wrapped, because a launcher must never die on the way to showing its result.
+function CX-Wait {
+  param($UI)
+  if (-not $UI) { return }
+  try {
+    $UI.Form.Add_FormClosed({ [Windows.Forms.Application]::ExitThread() })
+    [Windows.Forms.Application]::Run($UI.Form)
+  } catch {
+    # Last ditch: keep the process alive long enough for the result to be read and photographed.
+    try { Start-Sleep -Seconds 300 } catch { }
+  }
+}
+
 function CX-Crash {
   param([string]$Launcher, $ErrorRecord, $UI)
   $msg = 'unknown'

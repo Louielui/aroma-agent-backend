@@ -51,36 +51,45 @@ test('*** a changed Companion session id is refused ***', () => {
   assert.ok(r.problems.some((p) => /subjectSessionId/.test(p)), r.problems.join(' | '))
 })
 
-// ── 4. Active becomes Disconnected ─────────────────────────────────────────
-test('*** Active in one stage and Disconnected in another is refused ***', () => {
-  const r = adjudicate(chain({ lock3: { subjectState: 'Disc' } }))
-  assert.notEqual(r.verdict, VERDICT.PASS)
+// ── 4. Active / Disconnected — enforced WHERE THE MEASUREMENT HAPPENS ───────
+test('*** the MEASURING stage must be Active; a Disconnected Part B is refused ***', () => {
+  const r = adjudicate(chain({ 'part-b': { subjectState: 'Disc' } }))
+  assert.equal(r.verdict, VERDICT.UNUSABLE)
   assert.ok(r.problems.some((p) => /Active/.test(p)), r.problems.join(' | '))
 })
 
-test('*** a Disconnected subject is refused even when ALL stages agree ***', () => {
-  // The trap: a consistent chain is not automatically a usable one. A Disconnected session
-  // reports a BLANK name, so `protocol: console` about it is a guess rather than a reading —
-  // uniform agreement on an unknowable value is not evidence.
-  const r = adjudicate(chain({
-    'part-b': { subjectState: 'Disc' }, lock3: { subjectState: 'Disc' }, dod: { subjectState: 'Disc' }
-  }))
-  assert.equal(r.verdict, VERDICT.UNUSABLE)
-  assert.equal(r.problems.length >= 3, true, 'every stage must be named, not just the first')
+test('*** an adjudicating stage MAY find the session Disconnected — and that is not a defect ***', () => {
+  // CORRECTED 2026-07-31, at the machine, after the old rule blocked Lock 3 outright.
+  // Only ONE session is on the console at a time, so the Companion session is Active only while
+  // somebody is switched into it — and Lock 3 needs elevation, which that account does not have.
+  // Demanding Active of every stage was therefore UNSATISFIABLE: it looked strict and simply
+  // stopped the work. Part B measures the session; Lock 3 and the DoD adjudicate what Part B
+  // already produced, and the session's state at that later moment says nothing about it.
+  const r = adjudicate(chain({ lock3: { subjectState: 'Disc' }, dod: { subjectState: 'Disc' } }))
+  assert.equal(r.verdict, VERDICT.PASS, r.problems.join(' | '))
 })
 
-// ── 5. console becomes RDP ─────────────────────────────────────────────────
-test('*** console in one stage and RDP in another is refused ***', () => {
-  const r = adjudicate(chain({ dod: { subjectProtocol: 'rdp-tcp#0' } }))
+test('*** but if the Companion session is GONE, adjudication cannot attach to it ***', () => {
+  // The line that still has to hold: a different (or absent) session means the evidence is
+  // about something that no longer exists.
+  const r = adjudicate(chain({ lock3: { subjectState: 'NOT-SIGNED-IN' } }))
   assert.notEqual(r.verdict, VERDICT.PASS)
+  assert.ok(r.problems.some((p) => /no longer exists/.test(p)), r.problems.join(' | '))
+})
+
+// ── 5. console vs RDP — same principle ─────────────────────────────────────
+test('*** a Part B measured over RDP is refused ***', () => {
+  const r = adjudicate(chain({ 'part-b': { subjectProtocol: 'rdp-tcp#0' } }))
+  assert.equal(r.verdict, VERDICT.UNUSABLE)
   assert.ok(r.problems.some((p) => /console/.test(p)), r.problems.join(' | '))
 })
 
-test('*** an all-RDP chain is refused even though it is internally consistent ***', () => {
-  const r = adjudicate(chain({
-    'part-b': { subjectProtocol: 'rdp-tcp#0' }, lock3: { subjectProtocol: 'rdp-tcp#0' }, dod: { subjectProtocol: 'rdp-tcp#0' }
-  }))
-  assert.equal(r.verdict, VERDICT.UNUSABLE)
+test('*** the session id must still match, whatever its state ***', () => {
+  // This is what actually stops two different sessions being stitched together, and it keeps
+  // working after the state requirement was narrowed to the measuring stage.
+  const r = adjudicate(chain({ lock3: { subjectSessionId: 7, subjectState: 'Disc' } }))
+  assert.equal(r.verdict, VERDICT.MIXED)
+  assert.ok(r.problems.some((p) => /subjectSessionId/.test(p)), r.problems.join(' | '))
 })
 
 // ── 6. evidence from different runs cannot be spliced ──────────────────────

@@ -46,7 +46,28 @@ const REQUIRED_FIELDS = [
 ]
 
 // Identical across all three stages, or the results describe different things.
-const INVARIANT_FIELDS = ['runId', 'subjectSessionId', 'subjectState', 'subjectProtocol', 'subjectAccount']
+//
+// ── subjectState AND subjectProtocol WERE REMOVED FROM THIS LIST, 2026-07-31 ──
+// They were here, and it made Lock 3 UNSATISFIABLE. Measured at the machine: launcher 4 refused
+// with "the Companion session is Disc, not Active", and it was right to by the rule as written —
+// but the rule could never be met. Only ONE session is connected to the console at a time, so
+// the Companion session is Active only while somebody is switched INTO it; and Lock 3 needs
+// elevation, which that account does not have. Both conditions cannot hold at once. A rule that
+// cannot be satisfied is not a strict rule, it is a broken one, and it fails in the direction
+// that looks rigorous while blocking the work.
+//
+// What the invariant is actually protecting is that all three stages describe THE SAME
+// Companion session in THE SAME run — not that the session is in the same state while each one
+// runs. Part B MEASURES the session and must therefore be Active on the console. Lock 3 and the
+// DoD ADJUDICATE evidence Part B already produced; the session's state at that later moment
+// says nothing about the evidence.
+//
+// So identity stays invariant, condition-at-measurement is enforced where the measurement
+// happens, and every stage still records its own state so the report can show all three.
+const INVARIANT_FIELDS = ['runId', 'subjectSessionId', 'subjectAccount']
+
+// The stage that MEASURES the Companion session. Only this one requires Active + console.
+const MEASURING_STAGE = 'part-b'
 
 const VERDICT = {
   PASS: 'PASS',
@@ -70,13 +91,23 @@ function validateContext(ctx) {
 
   if (!STAGES.includes(ctx.stage)) problems.push(`unknown stage: ${ctx.stage}`)
 
-  // The two conditions the Owner named, in the order they matter. State first: while the
+  // The two conditions the Owner named, enforced AT THE MEASUREMENT. State first: while the
   // session is Disconnected its name is blank, so a protocol claim about it is a guess.
-  if (ctx.subjectState !== 'Active') {
-    problems.push(`the Companion session must be Active at measurement time, got: ${ctx.subjectState}`)
-  }
-  if (ctx.subjectProtocol !== 'console') {
-    problems.push(`the Companion session must be on the physical console, got: ${ctx.subjectProtocol}`)
+  if (ctx.stage === MEASURING_STAGE) {
+    if (ctx.subjectState !== 'Active') {
+      problems.push(`the Companion session must be Active while it is being measured, got: ${ctx.subjectState}`)
+    }
+    if (ctx.subjectProtocol !== 'console') {
+      problems.push(`the Companion session must be on the physical console while it is being measured, got: ${ctx.subjectProtocol}`)
+    }
+  } else {
+    // Adjudication stages: the session must still EXIST and be the same one. Its state may
+    // legitimately have changed — the Owner has to switch back to run these at all.
+    if (ctx.subjectState === 'NOT-SIGNED-IN') {
+      problems.push(
+        'the Companion session is gone: the thing the evidence describes no longer exists, ' +
+        'so this stage cannot be joined to it')
+    }
   }
   if (!Number.isInteger(ctx.subjectSessionId) || ctx.subjectSessionId < 0) {
     problems.push(`subjectSessionId must be a whole number, got: ${ctx.subjectSessionId}`)

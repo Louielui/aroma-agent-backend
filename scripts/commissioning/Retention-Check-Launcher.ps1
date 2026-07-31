@@ -112,7 +112,7 @@ try {
       -Detail @('保留期檢查只可以喺 Part B 通過之後行。',
                 'Part B 未通過之前，佢嘅結果冇嘢可以綁返去，DoD 亦唔應該封存。',
                 '冇跑過保留期掃描，冇刪過任何檔案，冇改過任何嘢。'))
-    $UI.Form.ShowDialog() | Out-Null
+    CX-Wait -UI $UI
     exit 0   # not a failure: nothing went wrong, and nothing was done
   }
   $UI.SetStep('gate', 'ok', 'Part B：通過')
@@ -130,7 +130,7 @@ try {
       -Reason '而家嘅量測條件，唔可以同 Part B 嘅結果合併' `
       -Detail (@('Lock 3 必須喺同一組條件下量度，否則份記錄就係混合條件。') + @($ctx.unusableBecause) +
                @('冇掃描過任何嘢，冇刪除過任何嘢。')) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('ctx', 'ok', ('session ' + $ctx.subjectSessionId + ' / ' + $ctx.subjectState + ' / ' + $ctx.subjectProtocol))
 
@@ -144,7 +144,7 @@ try {
   if (-not (Test-Path -LiteralPath $sweep)) {
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'sweep' -Reason '揾唔到保留期掃描腳本' `
       -Detail @($sweep) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $node = $null
   foreach ($cand in @((Get-Command node -ErrorAction SilentlyContinue).Source,
@@ -154,7 +154,7 @@ try {
   if (-not $node) {
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'sweep' -Reason '揾唔到 node' `
       -Detail @('保留期掃描係用 node 行，因為分類規則同保留期只可以有一份實作。') -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $log = CX-Marker -Nonce $round -Name 'lock3-sweep.log'
   $argl = @($sweep, '--evidence-dir', $script:CX_EvidenceRoot,
@@ -165,18 +165,18 @@ try {
   if (-not $p.HasExited) {
     try { Stop-Process -Id $p.Id -Force } catch { }
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'sweep' -Reason '保留期掃描逾時' -Detail @($log) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   if ($p.ExitCode -ne 0) {
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'sweep' -Reason ('保留期掃描結束碼 ' + $p.ExitCode) `
       -Detail @($log) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $res = CX-ReadJson -Path (CX-Marker -Nonce $round -Name 'lock3-result.json')
   if (-not $res) {
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'sweep' -Reason '掃描完成但冇寫低結果' `
       -Detail @($log) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('sweep', 'ok', ('檢視 ' + $res.examined + ' 個檔案，保留 ' + $res.retained + ' 個，' +
     $(if ($DRY) { '試跑冇刪' } else { '刪咗 ' + $res.deleted + ' 個' })))
@@ -209,7 +209,7 @@ try {
   if (-not $chain) {
     [void](CX-Fail -UI $UI -Nonce $round -Stage 'chain' -Reason '核對唔到三個階段嘅條件' `
       -Detail @($clog) -Launcher 'retention')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('chain', $(if ($chain.verdict -eq 'PASS') { 'ok' } else { 'fail' }), [string]$chain.verdict)
 
@@ -238,7 +238,7 @@ try {
   $kind = $(if ($res.ok -and $chain.verdict -eq 'PASS') { 'pass' } else { 'fail' })
   $UI.Banner2(($l3 + "`r`n" + $cv + "`r`n`r`n" + $rp + "`r`n" + 'SHA-256:' + $sha), $kind)
   $UI.SetFoot('可以閂咗呢個窗。')
-  $UI.Form.ShowDialog() | Out-Null
+  CX-Wait -UI $UI
   exit 0
 }
 catch {
@@ -254,7 +254,7 @@ catch {
     if ($UI) {
       [void](CX-Fail -UI $UI -Nonce $nonce -Stage 'unexpected' `
         -Reason $err.Exception.Message -Detail @($err.ScriptStackTrace) -Launcher 'retention')
-      $UI.Form.ShowDialog() | Out-Null
+      CX-Wait -UI $UI
       $reported = $true
     }
   } catch { $reported = $false }

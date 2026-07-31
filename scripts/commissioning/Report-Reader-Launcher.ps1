@@ -93,7 +93,7 @@ try {
       -Why '仲未有任何驗收報告可以攞。' `
       -Detail @('驗收未跑過，或者跑咗但未寫低任何嘢。',
                 '呢個圖示幾時撳都安全 —— 佢淨係抄出嚟，唔會改動任何證據。'))
-    $UI.Form.ShowDialog() | Out-Null
+    CX-Wait -UI $UI
     exit 0
   }
   $UI.SetStep('src', 'ok', ($rounds.Count.ToString() + ' 個回合，另有 ' + $loose.Count + ' 個檔案'))
@@ -119,7 +119,7 @@ try {
   } catch {
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'destination' -Reason '開唔到一個你讀得到嘅資料夾' `
       -Detail @($Destination, $_.Exception.Message) -Launcher 'reader')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('dest', 'ok', $Destination)
 
@@ -165,7 +165,7 @@ try {
   if ($copied -eq 0) {
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'copy' -Reason '一個檔案都抄唔到' `
       -Detail @($failedFiles) -Launcher 'reader')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('copy', 'ok', ($copied.ToString() + ' 個檔案' + $(if ($failedFiles.Count) { '，' + $failedFiles.Count + ' 個抄唔到' } else { '' })))
 
@@ -181,7 +181,7 @@ try {
                '共 ' + $copied + ' 個檔案，' + $rounds.Count + ' 個回合。' +
                $(if ($failedFiles.Count) { "`r`n" + $failedFiles.Count + ' 個抄唔到，已經列咗喺 INDEX.txt。' } else { '' })), 'pass')
   $UI.SetFoot('可以閂咗呢個窗。')
-  $UI.Form.ShowDialog() | Out-Null
+  CX-Wait -UI $UI
   exit 0
 }
 catch {
@@ -193,7 +193,7 @@ catch {
     if ($UI) {
       [void](CX-Fail -UI $UI -Nonce $null -Stage 'unexpected' -Reason $err.Exception.Message `
         -Detail @($err.ScriptStackTrace) -Launcher 'reader')
-      $UI.Form.ShowDialog() | Out-Null
+      CX-Wait -UI $UI
       $ok = $true
     }
   } catch { $ok = $false }

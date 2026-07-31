@@ -68,7 +68,7 @@ try {
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'identity' `
       -Reason ('呢個啟動器必須以 ' + $script:CX_Account + ' 身分執行，而唔係 ' + $me) `
       -Detail @('請切換 Windows 帳戶，再撳嗰個桌面上嘅圖示。','冇量度過任何嘢。') -Launcher 'operator')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('who', 'ok', ($me + '  session ' + (Get-Process -Id $PID).SessionId))
 
@@ -86,7 +86,7 @@ try {
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'handoff' `
       -Reason '冇任何驗收執行喺度等緊呢個帳戶' `
       -Detail @('請先喺另一個 Windows 帳戶撳擁有者啟動器，等佢叫你切換先。','冇量度過任何嘢。') -Launcher 'operator')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $NONCE = $round
   $DRY = $DRY -or [bool]$ready.dryRun
@@ -102,7 +102,7 @@ try {
   if (@($staged).Count -eq 0) {
     $UI.SetStep('files', 'fail', '探針資料夾係空嘅或者讀唔到')
     [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'staged-files' -Reason '呢個帳戶讀唔到探針資料夾' -Detail @($script:CX_ProbeDir) -Launcher 'operator')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'STAGED-FILES.json') -Object @{ marker='STAGED-FILES'; files=$staged; at=(Get-Date).ToString('o') })
   $UI.SetStep('files', 'ok', ('記錄咗 ' + @($staged).Count.ToString() + ' 個檔案'))
@@ -131,7 +131,7 @@ try {
                @('冇跑過任何探針。')) -Launcher 'operator')
     [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object @{
       marker='OPERATOR-DONE'; verdict='FAIL'; reason='measurement context unusable'; context=$ctx; at=(Get-Date).ToString('o') })
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
 
   # ── PART B ───────────────────────────────────────────────────────────────
@@ -160,7 +160,7 @@ try {
       # still tell the other side, so it stops waiting instead of timing out
       [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object @{
         marker='OPERATOR-DONE'; verdict='FAIL'; reason=$failed; results=$results; at=(Get-Date).ToString('o') })
-      $UI.Form.ShowDialog() | Out-Null; exit 1
+      CX-Wait -UI $UI; exit 1
     }
     $UI.SetStep('partb', 'ok', ('完成咗 ' + @($results).Count.ToString() + ' 個探針'))
   }
@@ -220,5 +220,4 @@ catch {
   if (-not $ok) { [void](CX-Crash -Launcher 'operator' -ErrorRecord $err -UI $UI); exit 1 }
 }
 
-$UI.Form.Add_FormClosed({ [Windows.Forms.Application]::ExitThread() })
-[Windows.Forms.Application]::Run($UI.Form)
+CX-Wait -UI $UI

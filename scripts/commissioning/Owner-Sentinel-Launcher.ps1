@@ -104,7 +104,7 @@ try {
     if (-not (Test-Path -LiteralPath $opIcon)) {
       $UI.SetStep('inst', 'fail', '放唔到第二個圖示')
       [void](CX-Fail -UI $UI -Nonce $null -Stage 'install' -Reason '放唔到操作員圖示落佢個桌面' -Detail @($inst) -Launcher 'owner')
-      $UI.Form.ShowDialog() | Out-Null; exit 1
+      CX-Wait -UI $UI; exit 1
     }
     $UI.SetStep('inst', 'ok', '第二個圖示已經放咗喺操作員桌面')
   }
@@ -119,7 +119,7 @@ try {
   if (-not $sc.ok) {
     $UI.SetStep('self', 'fail', $sc.summary)
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'self-check' -Reason '啟動器自己嘅機件冇通過自我檢查' -Detail $sc.detail -Launcher 'owner')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('self', 'ok', $sc.summary)
 
@@ -143,7 +143,7 @@ try {
   if ($problems.Count -gt 0) {
     $UI.SetStep('pre', 'fail', ($problems -join '; '))
     [void](CX-Fail -UI $UI -Nonce $null -Stage 'preflight' -Reason '部機而家嘅狀態，唔容許呢個啟動器繼續' -Detail $problems -Launcher 'owner')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('pre', 'ok', '旗標關閉、路徑齊全、證據資料夾寫得入')
 
@@ -163,7 +163,7 @@ try {
         '請去到 ' + $env:COMPUTERNAME + ' 機面前，喺主控台登入，然後再撳一次呢個圖示。',
         '呢部機冇任何嘢被改動過。',
         ('session name: ' + $rs.sessionName)) -Launcher 'owner')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
 
   # ── THE PRECONDITION THE OWNER NAMED: is session 5 still signed in? ──────
@@ -179,7 +179,7 @@ try {
         '切去嗰個帳戶會需要佢嘅密碼，而呢個啟動器唔可以問你攞。',
         '嗰個 session 必須喺驗收開始之前已經登入。',
         '呢部機冇任何嘢被改動過。') -Launcher 'owner')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
   $UI.SetStep('sess', 'ok', ('signed in, session ' + $op.sessionId + ' (' + $op.state + ') —— 切換過去只需要解鎖'))
 
@@ -192,7 +192,7 @@ try {
     if (-not $prepDetail.ok) {
       $UI.SetStep('prep', 'fail', $prepDetail.reason)
       [void](CX-Fail -UI $UI -Nonce $null -Stage 'prepare' -Reason $prepDetail.reason -Detail $prepDetail.detail -Launcher 'owner')
-      $UI.Form.ShowDialog() | Out-Null; exit 1
+      CX-Wait -UI $UI; exit 1
     }
     $UI.SetStep('prep', 'ok', $prepDetail.summary)
   }
@@ -226,7 +226,7 @@ try {
       if (-not $mf.ok) {
         $UI.SetStep('mint', 'fail', $mf.reason)
         [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'mint' -Reason $mf.reason -Detail $mf.detail -Launcher 'owner')
-        $UI.Form.ShowDialog() | Out-Null; exit 1
+        CX-Wait -UI $UI; exit 1
       }
       $UI.SetStep('mint', 'ok', ('round ' + $round + ' - ' + $NONCE + ' - ' + $mf.summary))
     } else {
@@ -257,7 +257,7 @@ try {
       $roundLog.Add([ordered]@{ round = $round; nonce = $NONCE; outcome = 'FAILED'; where = 'owner-sentinel'; detail = $sentinelDetail })
       if ($round -ge $ROUND_CAP) {
         [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'owner-sentinel' -Reason '驗證唔到擁有者標記視窗' -Detail $roundLog -Launcher 'owner')
-        $UI.Form.ShowDialog() | Out-Null; exit 1
+        CX-Wait -UI $UI; exit 1
       }
       continue
     }
@@ -287,7 +287,7 @@ try {
       $roundLog.Add([ordered]@{ round = $round; nonce = $NONCE; outcome = 'FAILED'; where = 'handoff'; detail = 'timeout' })
       if ($round -ge $ROUND_CAP) {
         [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'handoff' -Reason '操作員帳戶冇喺時限內回報' -Detail $roundLog -Launcher 'owner')
-        $UI.Form.ShowDialog() | Out-Null; exit 1
+        CX-Wait -UI $UI; exit 1
       }
       continue
     }
@@ -323,7 +323,7 @@ try {
     $UI.SetStep('report', 'run', '')
     [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'part-b' `
       -Reason ('Part B 喺 ' + $ROUND_CAP + ' 個回合內都冇通過，按裁決停止') -Detail $roundLog -Launcher 'owner')
-    $UI.Form.ShowDialog() | Out-Null; exit 1
+    CX-Wait -UI $UI; exit 1
   }
 
   # ── PHASE 7: LOCK 5 - ONLY NOW, AND IT CANNOT UNDO PART B ────────────────
@@ -379,5 +379,4 @@ catch {
   if (-not $ok) { [void](CX-Crash -Launcher 'owner' -ErrorRecord $err -UI $UI); exit 1 }
 }
 
-$UI.Form.Add_FormClosed({ [Windows.Forms.Application]::ExitThread() })
-[Windows.Forms.Application]::Run($UI.Form)
+CX-Wait -UI $UI

@@ -171,15 +171,33 @@ function New-MeasurementContext {
 
   # What this side refuses to pretend about. Recorded ON the context so the report says why,
   # rather than leaving the Owner to infer it from a verdict.
+  # ── ONLY THE MEASURING STAGE REQUIRES Active + console ──────────────────────
+  # Corrected 2026-07-31 at the machine. Requiring it of EVERY stage made Lock 3 unsatisfiable:
+  # only one session is connected to the console at a time, so the Companion session is Active
+  # only while somebody is switched into it — and Lock 3 needs elevation, which that account
+  # does not have. The two conditions cannot hold together, so the rule blocked the work while
+  # looking rigorous.
+  #
+  # Part B MEASURES the session, so it must be Active on the console. Lock 3 and the DoD
+  # ADJUDICATE evidence Part B already produced; the session's state at that later moment says
+  # nothing about that evidence. What they must prove is that it is the SAME session — checked
+  # by the adjudicator against Part B's recorded id.
   $usable = $true
   $why = New-Object System.Collections.Generic.List[string]
-  if ($ctx.subjectState -ne 'Active') {
-    $usable = $false
-    $why.Add('the Companion session is ' + $ctx.subjectState + ', not Active - while it is not Active its session name is blank and its protocol cannot be read at all')
-  }
-  if ($ctx.subjectProtocol -ne 'console') {
-    $usable = $false
-    $why.Add('the Companion session is not on the physical console - protocol reads as ' + $ctx.subjectProtocol)
+  if ($Stage -eq 'part-b') {
+    if ($ctx.subjectState -ne 'Active') {
+      $usable = $false
+      $why.Add('the Companion session is ' + $ctx.subjectState + ', not Active - while it is not Active its session name is blank and its protocol cannot be read at all')
+    }
+    if ($ctx.subjectProtocol -ne 'console') {
+      $usable = $false
+      $why.Add('the Companion session is not on the physical console - protocol reads as ' + $ctx.subjectProtocol)
+    }
+  } else {
+    if ($ctx.subjectState -eq 'NOT-SIGNED-IN') {
+      $usable = $false
+      $why.Add('the Companion session is gone - the thing the evidence describes no longer exists, so this stage cannot be joined to it')
+    }
   }
   $ctx.usable = $usable
   $ctx.unusableBecause = @($why)
