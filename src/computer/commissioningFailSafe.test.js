@@ -762,6 +762,34 @@ test('*** Write-MeasurementContext refuses to write nothing ***', () => {
   assert.match(mc, /IsNullOrWhiteSpace\(\$json\)/, 'and an empty serialisation must throw too')
 })
 
+test('*** the own sentinel is a separate process, like the owner sentinel ***', () => {
+  // MEASURED, round 8c019adcbe8a. The in-process WinForms form reported visible:True and all
+  // three instruments disagreed with it:
+  //     POS-list_windows-own   windowCount 11, foundOwnSentinel FALSE
+  //     POS-capture_screen     3840x1080, nonBlackRatio 0.996, ownSignatureSamples 0
+  //     POS-read_uia_tree-own  refusal: no_target_window
+  // Enumeration, capture and UIA all worked — they found 11 other windows and a real desktop.
+  // They simply could not find THIS window, because a form on a thread that never runs a
+  // message loop is not reliably realised on the interactive desktop.
+  //
+  // The OWNER sentinel is a separate process with its own loop and attests 1250/1250 every
+  // time. That asymmetry was the hypothesis; the three numbers above confirmed it.
+  const h = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'stage3-harness.ps1'), 'utf8')
+  const live = h.split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join('\n')
+
+  assert.equal(/New-Object System\.Windows\.Forms\.Form/.test(live), false,
+    'the harness must not build its own sentinel form in-process again')
+  assert.match(live, /'-Role','own','-Nonce'/, 'it must launch stage3-sentinel.ps1 -Role own')
+  assert.match(live, /stage3-sentinel-own-/, 'and wait for that sentinel to attest itself')
+  // attested, not assumed: no attestation means no positive control
+  assert.match(live, /\$sentinelOk = \(\$ownAttestation -and/,
+    'the positive control must depend on the attestation, not on a Visible property')
+  // and the process must be cleaned up, with residue reported rather than assumed away
+  assert.match(live, /Stop-Process -Id \$script:OwnSentinelProc\.Id/, 'the sentinel process must be stopped')
+  assert.match(live, /residue \+= \('own sentinel process/, 'and leftover residue reported')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

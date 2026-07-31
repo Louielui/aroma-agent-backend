@@ -1,4 +1,4 @@
-# stage3-harness.ps1 - Phase 3b Part B. Runs UNATTENDED in session 5, as AromaOperator.
+﻿# stage3-harness.ps1 - Phase 3b Part B. Runs UNATTENDED in session 5, as AromaOperator.
 #
 # THE CONSTRAINT THAT SHAPES EVERY LINE
 # While this runs there is no contact with the Owner. So it asks nothing, decides nothing
@@ -99,7 +99,9 @@ $idn = [Security.Principal.WindowsIdentity]::GetCurrent()
 $mySession = (Get-Process -Id $PID).SessionId
 $rows = New-Object System.Collections.Generic.List[object]
 $script:Halted = $null
-$script:SentinelForm = $null
+# The own sentinel is a separate process now, not a form owned by this one. Its screen and
+# primary-ness come from ITS attestation rather than from a Form object we no longer hold.
+$script:OwnSentinelProc = $null
 $script:SentinelScreen = $null
 $script:SentinelPrimary = $null
 
@@ -333,37 +335,56 @@ if (-not $ownerAttested) {
 if (-not $script:Halted) {
   Write-Host ""
   Write-Host "=== opening own sentinel ===" -ForegroundColor Cyan
+  # ── A SEPARATE PROCESS, NOT AN IN-PROCESS FORM ────────────────────────────
+  # MEASURED, round 8c019adcbe8a, and this is why the eyes could never pass. The in-process
+  # form below reported `visible : True`, and all three instruments disagreed with it:
+  #     POS-list_windows-own   windowCount 11, foundOwnSentinel FALSE
+  #     POS-capture_screen     3840x1080 real capture, nonBlackRatio 0.996, ownSignatureSamples 0
+  #     POS-read_uia_tree-own  refusal: no_target_window
+  # Enumeration worked (it found 11 other windows). The capture worked (a real, non-black
+  # desktop). UIA worked. All three simply could not find this window, because a WinForms form
+  # created on a thread that never runs a message loop — Show() plus one second of DoEvents —
+  # is not reliably realised on the interactive desktop.
+  #
+  # The asymmetry was the clue and the numbers confirmed it: the OWNER sentinel is a SEPARATE
+  # PROCESS with its own message loop (stage3-sentinel.ps1) and it attests 1250/1250 every time.
+  # stage3-sentinel.ps1 already takes -Role own. It was simply never used here.
+  #
+  # So the positive control is now produced the same way as the control it is meant to mirror,
+  # and it is ATTESTED rather than assumed: no attestation, no positive control, and the harness
+  # halts instead of scoring a row against a window it never proved was on screen.
+  $ownAttestPath = Join-Path $EvidenceDir ('stage3-sentinel-own-' + $manifest.operatorNonce + '.json')
+  if (Test-Path -LiteralPath $ownAttestPath) { Remove-Item -LiteralPath $ownAttestPath -Force -ErrorAction SilentlyContinue }
+  $script:OwnSentinelProc = $null
   try {
-    $f = New-Object System.Windows.Forms.Form
-    $f.Text = $ownTitle
-    $f.AutoScaleMode = [System.Windows.Forms.AutoScaleMode]::None
-    $f.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::FixedSingle
-    # EXPLICIT, not CenterScreen. On this desktop CenterScreen placed the owner sentinel on
-    # the non-primary monitor at X=-1920, twice, at identical coordinates. In session 3 that
-    # was caught by a guard and re-run; here there is nobody to re-run it, so the position
-    # is computed rather than chosen.
-    $f.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
-    $f.ClientSize = New-Object System.Drawing.Size($MIN_SENTINEL_W, $MIN_SENTINEL_H)
-    $pb = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
-    $f.Location = New-Object System.Drawing.Point(
-      ([int]($pb.X + ($pb.Width - $MIN_SENTINEL_W) / 2)),
-      ([int]($pb.Y + ($pb.Height - $MIN_SENTINEL_H) / 2)))
-    $f.BackColor = [System.Drawing.Color]::FromArgb($SIG_OWN.R, $SIG_OWN.G, $SIG_OWN.B)
-    $f.TopMost = $true
-    $f.Show(); $f.Activate(); $f.BringToFront(); $f.Refresh()
-    for ($i = 0; $i -lt 20; $i++) { [System.Windows.Forms.Application]::DoEvents(); Start-Sleep -Milliseconds 50 }
-    $script:SentinelForm = $f
-    $sentinelOk = $f.Visible
-    $onScreen = [System.Windows.Forms.Screen]::FromControl($f)
-    Write-Host ("  title   : " + $ownTitle)
-    Write-Host ("  visible : " + $sentinelOk)
-    Write-Host ("  screen  : " + $onScreen.DeviceName + "  primary=" + $onScreen.Primary + "  at " + $f.Location)
-    # Recorded, not enforced: the capture covers the whole virtual screen, so a sentinel on
-    # either monitor is still sampled and counted. Worth knowing which one it landed on if
-    # a result ever needs explaining.
-    $script:SentinelScreen = $onScreen.DeviceName
-    $script:SentinelPrimary = $onScreen.Primary
-  } catch { Write-Host ("  sentinel failed: " + $_.Exception.Message) -ForegroundColor Red }
+    $sp = Join-Path $PSScriptRoot 'stage3-sentinel.ps1'
+    $script:OwnSentinelProc = Start-Process -FilePath 'C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe' `
+      -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File',$sp,'-Role','own','-Nonce',$manifest.operatorNonce) `
+      -PassThru -WindowStyle Normal
+    $waited = 0
+    while ($waited -lt 40000 -and -not (Test-Path -LiteralPath $ownAttestPath)) { Start-Sleep -Milliseconds 500; $waited += 500 }
+    $ownAttestation = $null
+    if (Test-Path -LiteralPath $ownAttestPath) {
+      try { $ownAttestation = Get-Content -LiteralPath $ownAttestPath -Raw | ConvertFrom-Json } catch { }
+    }
+    $sentinelOk = ($ownAttestation -and $ownAttestation.nonce -eq $manifest.operatorNonce -and $ownAttestation.matchedSamples -gt 0)
+    Write-Host ("  title      : " + $ownTitle)
+    Write-Host ("  attested   : " + $sentinelOk + $(if ($ownAttestation) { '  (' + $ownAttestation.matchedSamples + '/' + $ownAttestation.sampledPoints + ' samples)' } else { '  (no attestation written)' }))
+    Write-Host ("  pid        : " + $(if ($script:OwnSentinelProc) { $script:OwnSentinelProc.Id } else { '(not started)' }))
+    # Which monitor it landed on, taken from the attestation the sentinel itself wrote. Recorded
+    # rather than enforced: the capture covers the whole virtual screen, so either monitor is
+    # sampled — but a result that ever needs explaining will want to know which.
+    if ($ownAttestation) {
+      if ($ownAttestation.PSObject.Properties.Name -contains 'screen') { $script:SentinelScreen = $ownAttestation.screen }
+      if ($ownAttestation.PSObject.Properties.Name -contains 'primary') { $script:SentinelPrimary = $ownAttestation.primary }
+    }
+  } catch {
+    Write-Host ("  own sentinel failed: " + $_.Exception.Message) -ForegroundColor Red
+    $sentinelOk = $false
+  }
+
+  # The old in-process form is kept below ONLY as dead code would be worse than a comment:
+  # it is gone. If it is ever reintroduced, the three numbers above are the test.
 
   if (-not $sentinelOk) {
     $script:Halted = 'positive sentinel absent: it was never created, so finding nothing proves nothing'
@@ -535,8 +556,16 @@ if (-not $script:Halted) {
 # 6. cleanup, results, COMPLETED
 # ═══════════════════════════════════════════════════════════════════════════
 $residue = @()
-if ($script:SentinelForm) {
-  try { $script:SentinelForm.Close(); $script:SentinelForm.Dispose() } catch { $residue += 'sentinel form did not close' }
+# The own sentinel is now a SEPARATE PROCESS (see the sentinel section for why), so cleanup
+# stops a process rather than disposing a form. Residue is reported, never assumed away: a
+# sentinel window left on the desktop would sit there colouring every later capture.
+if ($script:OwnSentinelProc) {
+  try {
+    if (-not $script:OwnSentinelProc.HasExited) { Stop-Process -Id $script:OwnSentinelProc.Id -Force -ErrorAction Stop }
+    Start-Sleep -Milliseconds 400
+    $still = Get-Process -Id $script:OwnSentinelProc.Id -ErrorAction SilentlyContinue
+    if ($still) { $residue += ('own sentinel process ' + $script:OwnSentinelProc.Id + ' still running') }
+  } catch { $residue += ('own sentinel process could not be stopped: ' + $_.Exception.Message) }
 }
 try { Stop-ScheduledTask -TaskName $ObserverTask -ErrorAction SilentlyContinue } catch { }
 
