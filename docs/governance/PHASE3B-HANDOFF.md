@@ -1232,3 +1232,41 @@ Final state of this round: suite **1704 / 1699 pass / 0 fail / 4 skipped**, 10 l
 redeployed to `C:\Aroma\Commissioning` all hash-identical to the repo, three owner-side icons
 placed and read back with correct targets. The operator-desktop icon still requires elevation and
 is placed by launcher 1 own self-install on the first press — nothing extra for the Owner.
+
+---
+
+## 16. STANDING RULE — re-measure before every merge. Never trust a zero on paper.
+
+*(Owner ruling 2026-07-30, arising from the persona rename on `chore/rename-agent-to-xiangxiang`.)*
+
+**The rule.** Before merging ANY branch, re-run the measurement that established it was safe.
+A previous result is a fact about the tips that existed when it was taken — never a property of
+the branches, and never a property of the merge you are about to perform.
+
+**Where it came from.** The rename branch and this one were checked for collision. The answer
+was clean: this branch introduces **zero** occurrences of the retired name; all of them are
+inherited from `main`, in files this branch never modified, so a three-way merge resolves them
+against an untouched ancestor and the renamed version wins in either order.
+
+**But that safety is ACCIDENTAL.** This branch simply happened not to mention her by name. One
+new file on any branch — a fixture, a comment that becomes a string, a doc — and the same
+measurement returns a different answer, while the note recording the old answer still reads
+"clear". The note is the hazard, not the merge.
+
+**What this generalises to.** This is the same defect as §0's quoted-not-measured test counts,
+the stale observer SHA pin, and the row count that propagated because nobody re-derived it: a
+record describing a state that has since moved, trusted because it is written down. It has now
+appeared often enough in this phase to be worth stating as a rule rather than re-learning.
+
+**In practice, before a merge:**
+
+- re-count on BOTH tips, not on the branch you happen to have checked out
+- state the measurement's date and the two commit ids beside the result
+- if either tip has moved since the last count, the last count is void — not stale, void
+
+**Known gap this rule does NOT close.** Nothing scans the repository for retired persona names;
+the guard in `src/persona/xiangxiang.test.js` reads `PERSONA_IDENTITY` and nothing else, so a
+retired name reintroduced anywhere else merges silently. A repo-wide scan is **proposed and
+deliberately deferred** to its own branch after the physical acceptance — see
+`docs/persona/RENAME-2026-07-30.md`. Until it exists, this rule is the only thing standing in
+that gap, and it is a procedure, not a control.
