@@ -37,8 +37,11 @@ $ErrorActionPreference = 'Stop'
 # ---------------------------------------------------------------------------
 $RepoDir      = 'C:\Aroma\aroma-3b'
 $ScriptA      = 'C:\Aroma\aroma-3b\scripts\computer\prepare-canary-testdir.ps1'
-$ExpectedHash = '8090c63a69ecd58395157d5f41106e374f7f5a64ec007abe880ccbc45df2fe3d'
-$ExpectedSha  = '29f401f38d3d1176f80aa112041c6f25ae3e4e48'
+# Re-pinned 2026-07-31 for the StrictMode fix. The previous pins
+# (8090c63a… / 29f401f…) are DEAD and must not be reused: they identify the
+# version whose verifier could not read its own result.
+$ExpectedHash = '4a1dd88c807248f9c8df182f538923f75e03f9977fb18456df6439cd3351f415'
+$ExpectedSha  = 'f7f64e6f5a1c87d894fae10366aeff5afc913390'
 $AromaRoot    = 'C:\Aroma'
 $TestDir      = 'C:\Aroma\ComputerOperator-Test'
 
@@ -69,7 +72,7 @@ $SECTIONS = [System.Security.AccessControl.AccessControlSections]::Owner -bor `
             [System.Security.AccessControl.AccessControlSections]::Group -bor `
             [System.Security.AccessControl.AccessControlSections]::Access
 
-function Get-ParentSnapshot {
+function Get-SdSnapshot {
   param([string] $Path)
   $di = New-Object System.IO.DirectoryInfo($Path)
   $sd = $di.GetAccessControl($SECTIONS)
@@ -89,10 +92,31 @@ Write-Host ("  evidence : " + $Evidence)
 # ===========================================================================
 Write-Rule "1. PRECONDITIONS"
 
-if (Test-Path -LiteralPath $TestDir) {
-  Stop-Closed "$TestDir already exists. This launcher is for the first, clean run only."
+# TWO LAWFUL STARTING STATES, and the run measures a different thing in each.
+#
+#   absent  -> Script A creates it. There is no CHILD_SDDL_BEFORE to compare.
+#   present -> Script A must take its verify-only path and change NOTHING. The
+#              child descriptor is captured before and after and must be
+#              ordinally identical, which is what turns "verify-only" from a
+#              code-reading claim into a measurement - the same move that was
+#              made for the parent.
+#
+# The first draft refused outright when the target existed. That was right for
+# a first run and wrong for a re-run, and a re-run after a fixed verifier is
+# exactly the case where "did it touch anything this time?" needs an answer.
+$childExistedBefore = Test-Path -LiteralPath $TestDir
+
+if ($childExistedBefore) {
+  if (-not (Test-Path -LiteralPath $TestDir -PathType Container)) { Stop-Closed "$TestDir exists but is not a directory" }
+  $existing = @(Get-ChildItem -LiteralPath $TestDir -Force -ErrorAction SilentlyContinue)
+  if ($existing.Count -gt 0) {
+    $existing | ForEach-Object { Write-Host ("    " + $_.Name) -ForegroundColor Red }
+    Stop-Closed "$TestDir is not empty - refusing to run against a directory with contents"
+  }
+  Write-Host "  target                   : EXISTS and is EMPTY -> expecting verify-only" -ForegroundColor Green
+} else {
+  Write-Host "  target                   : ABSENT -> expecting create" -ForegroundColor Green
 }
-Write-Host "  target absent            : OK" -ForegroundColor Green
 
 # The flag, in all three scopes. Any of them being on would mean the canary
 # could be armed by an environment nobody looked at.
@@ -144,7 +168,7 @@ New-Item -ItemType Directory -Path $Evidence -Force | Out-Null
 # ===========================================================================
 Write-Rule "2. PARENT_SDDL_BEFORE"
 
-$before = Get-ParentSnapshot -Path $AromaRoot
+$before = Get-SdSnapshot -Path $AromaRoot
 $before.Sddl  | Set-Content -LiteralPath (Join-Path $Evidence 'PARENT_SDDL_BEFORE.txt') -Encoding utf8 -NoNewline
 $before.Owner | Set-Content -LiteralPath (Join-Path $Evidence 'PARENT_OWNER_BEFORE.txt') -Encoding utf8 -NoNewline
 
@@ -153,6 +177,25 @@ Write-Host ("  owner : " + $before.Owner)
 Write-Host ("  group : " + $before.Group)
 Write-Host  "  sddl  :"
 Write-Host ("    " + $before.Sddl) -ForegroundColor Gray
+
+# ===========================================================================
+# 2b. CHILD_SDDL_BEFORE - same function, same sections, same serialisation
+# ===========================================================================
+Write-Rule "2b. CHILD_SDDL_BEFORE"
+
+$childBefore = $null
+if ($childExistedBefore) {
+  $childBefore = Get-SdSnapshot -Path $TestDir
+  $childBefore.Sddl  | Set-Content -LiteralPath (Join-Path $Evidence 'CHILD_SDDL_BEFORE.txt') -Encoding utf8 -NoNewline
+  $childBefore.Owner | Set-Content -LiteralPath (Join-Path $Evidence 'CHILD_OWNER_BEFORE.txt') -Encoding utf8 -NoNewline
+  Write-Host ("  path  : " + $TestDir)
+  Write-Host ("  owner : " + $childBefore.Owner)
+  Write-Host ("  group : " + $childBefore.Group)
+  Write-Host  "  sddl  :"
+  Write-Host ("    " + $childBefore.Sddl) -ForegroundColor Gray
+} else {
+  Write-Host "  (target absent - nothing to capture; A is expected to create it)" -ForegroundColor Gray
+}
 
 # ===========================================================================
 # 3. RUN SCRIPT A
@@ -183,7 +226,7 @@ if ($aExit -ne 0) { $Failed = $true }
 # ===========================================================================
 Write-Rule "4. PARENT_SDDL_AFTER"
 
-$after = Get-ParentSnapshot -Path $AromaRoot
+$after = Get-SdSnapshot -Path $AromaRoot
 $after.Sddl  | Set-Content -LiteralPath (Join-Path $Evidence 'PARENT_SDDL_AFTER.txt') -Encoding utf8 -NoNewline
 $after.Owner | Set-Content -LiteralPath (Join-Path $Evidence 'PARENT_OWNER_AFTER.txt') -Encoding utf8 -NoNewline
 
@@ -191,6 +234,24 @@ Write-Host ("  owner : " + $after.Owner)
 Write-Host ("  group : " + $after.Group)
 Write-Host  "  sddl  :"
 Write-Host ("    " + $after.Sddl) -ForegroundColor Gray
+
+# ===========================================================================
+# 4b. CHILD_SDDL_AFTER - also unconditional
+# ===========================================================================
+Write-Rule "4b. CHILD_SDDL_AFTER"
+
+$childAfter = $null
+if (Test-Path -LiteralPath $TestDir) {
+  $childAfter = Get-SdSnapshot -Path $TestDir
+  $childAfter.Sddl  | Set-Content -LiteralPath (Join-Path $Evidence 'CHILD_SDDL_AFTER.txt') -Encoding utf8 -NoNewline
+  $childAfter.Owner | Set-Content -LiteralPath (Join-Path $Evidence 'CHILD_OWNER_AFTER.txt') -Encoding utf8 -NoNewline
+  Write-Host ("  owner : " + $childAfter.Owner)
+  Write-Host ("  group : " + $childAfter.Group)
+  Write-Host  "  sddl  :"
+  Write-Host ("    " + $childAfter.Sddl) -ForegroundColor Gray
+} else {
+  Write-Host "  (target does not exist)" -ForegroundColor Yellow
+}
 
 # ===========================================================================
 # 5. ORDINAL COMPARISON
@@ -221,6 +282,51 @@ if (-not ($sddlSame -and $ownerSame -and $groupSame)) {
 }
 Write-Host ""
 Write-Host "  PARENT ACL UNCHANGED" -ForegroundColor Green
+
+# ===========================================================================
+# 5b. CHILD COMPARISON - the verify-only proof
+# ===========================================================================
+Write-Rule "5b. CHILD COMPARISON"
+
+if ($childExistedBefore) {
+  if ($null -eq $childAfter) { Stop-Closed "the child existed before the run and does not exist now" }
+
+  $cSddlSame  = [string]::Equals($childBefore.Sddl,  $childAfter.Sddl,  [System.StringComparison]::Ordinal)
+  $cOwnerSame = [string]::Equals($childBefore.Owner, $childAfter.Owner, [System.StringComparison]::Ordinal)
+  $cGroupSame = [string]::Equals($childBefore.Group, $childAfter.Group, [System.StringComparison]::Ordinal)
+
+  Write-Host ("  owner identical : " + $cOwnerSame) -ForegroundColor $(if ($cOwnerSame) { 'Green' } else { 'Red' })
+  Write-Host ("  group identical : " + $cGroupSame) -ForegroundColor $(if ($cGroupSame) { 'Green' } else { 'Red' })
+  Write-Host ("  SDDL  identical : " + $cSddlSame)  -ForegroundColor $(if ($cSddlSame)  { 'Green' } else { 'Red' })
+  Write-Host ("  SDDL length     : before " + $childBefore.Sddl.Length + ", after " + $childAfter.Sddl.Length)
+
+  if (-not ($cSddlSame -and $cOwnerSame -and $cGroupSame)) {
+    Write-Host ""
+    Write-Host "*** CHILD ACL CHANGED - INCIDENT ***" -ForegroundColor Red
+    Write-Host "  This run was supposed to be verify-only. It was not." -ForegroundColor Red
+    Write-Host ("  BEFORE: " + $childBefore.Sddl) -ForegroundColor Red
+    Write-Host ("  AFTER : " + $childAfter.Sddl) -ForegroundColor Red
+    Write-Host "  Nothing is being repaired. Both strings are in $Evidence." -ForegroundColor Yellow
+    Stop-Closed "the child security descriptor changed during a verify-only run"
+  }
+  Write-Host ""
+  Write-Host "  CHILD ACL UNCHANGED" -ForegroundColor Green
+
+  # And the claim that A took its verify-only branch is read from A's own
+  # output rather than inferred from the ACL being equal. An ACL can be
+  # rewritten with identical content; that would compare equal and would still
+  # mean Set-Acl ran. This line only appears on the branch that skips it.
+  $verifyOnlyLine = @($aOutput | Where-Object { $_ -match 'nothing applied - the directory already existed' })
+  if ($verifyOnlyLine.Count -ne 1) {
+    Stop-Closed "Script A did not report its verify-only branch (mustCreate=false) - it may have rewritten the ACL with identical content"
+  }
+  Write-Host "  mustCreate=false: CONFIRMED from Script A's own output" -ForegroundColor Green
+  Write-Host ("    | " + $verifyOnlyLine[0].Trim()) -ForegroundColor Gray
+} else {
+  Write-Host "  (the child was created by this run - there is no BEFORE to compare)" -ForegroundColor Gray
+  $createdLine = @($aOutput | Where-Object { $_ -match 'created C:\\Aroma\\ComputerOperator-Test' })
+  Write-Host ("  mustCreate=true : " + ($createdLine.Count -eq 1)) -ForegroundColor Gray
+}
 
 if ($Failed) {
   Write-Host ""
@@ -321,7 +427,11 @@ foreach ($scope in @('Process', 'User', 'Machine')) {
 }
 Write-Host "  COMPUTER_OPERATOR : still OFF in all three scopes" -ForegroundColor Green
 Write-Host "  PARENT ACL        : UNCHANGED (ordinal match)" -ForegroundColor Green
-Write-Host "  NEW CHILD         : created, three ACEs, least privilege verified" -ForegroundColor Green
+if ($childExistedBefore) {
+  Write-Host "  CHILD ACL         : UNCHANGED (ordinal match) - verify-only confirmed" -ForegroundColor Green
+} else {
+  Write-Host "  CHILD             : created by this run, three ACEs, least privilege verified" -ForegroundColor Green
+}
 Write-Host ""
 Write-Host "  Script B was NOT run. The canary was NOT run. No flag was set." -ForegroundColor Gray
 Write-Host ("  evidence files : " + $Evidence) -ForegroundColor Gray

@@ -53,10 +53,26 @@ test('*** the Supervisor has NO execute path — only a dry-run ***', () => {
   }
 })
 
-test('a dry-run creates nothing on disk — not even the approved root', () => {
+test('a dry-run changes nothing on disk — the approved root is untouched', () => {
+  // CHANGED 2026-07-31, and the reason matters more than the change. This used to assert
+  // `existsSync(ALLOWED_ROOT) === false`, which conflated two different claims: "a dry-run
+  // creates nothing" and "the folder does not exist". The Owner has now created the folder
+  // deliberately, elevated, out of band — so the second claim is false and the first is
+  // still exactly as true.
+  //
+  // Asserting the folder's absence would now fail for a reason that has nothing to do with
+  // the Supervisor, and deleting the test would lose a real guarantee. So it measures the
+  // guarantee instead: whatever state the folder is in, a dry-run leaves it in that state.
   const s = sup()
+  const before = { exists: fs.existsSync(ALLOWED_ROOT), entries: null }
+  if (before.exists) { try { before.entries = fs.readdirSync(ALLOWED_ROOT).sort() } catch (_) { before.entries = 'unreadable' } }
+
   s.dryRun(order())
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'the folder is still not created')
+
+  const after = { exists: fs.existsSync(ALLOWED_ROOT), entries: null }
+  if (after.exists) { try { after.entries = fs.readdirSync(ALLOWED_ROOT).sort() } catch (_) { after.entries = 'unreadable' } }
+
+  assert.deepEqual(after, before, 'a dry-run neither created, deleted nor wrote anything there')
 })
 
 /* ── THE ASSURANCE BOUNDARY ───────────────────────────────────────────────── */

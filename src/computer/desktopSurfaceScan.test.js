@@ -203,6 +203,42 @@ test('*** POSITIVE CONTROL — the comment stripper does not blind the scan ***'
   assert.ok(stripPs(read(path.join(SCRIPTS_COMPUTER, 'uiaCanary.ps1'))).trim().length > 1000, 'the ps1 vanished under stripping')
 })
 
+test('*** no PowerShell script reads .Count or [0] off an unwrapped call ***', () => {
+  // Added after the first elevated run of Script A died here. PowerShell unwraps a
+  // one-element array on return and yields $null for an empty one, so `(Get-Thing).Count`
+  // is a terminating error under StrictMode in exactly the two cases that are CORRECT —
+  // zero matches and one match. Two or more, the wrong answer, is the only shape that works.
+  //
+  // Same family as the $pid guard below: a language hazard that passes review, passes a
+  // parse check, and only fires in front of the Owner on an elevated machine.
+  const scripts = ['uiaCanary.ps1', 'prepare-canary-testdir.ps1', 'run-script-a-measured.ps1']
+  const offenders = []
+  for (const name of scripts) {
+    const p = path.join(SCRIPTS_COMPUTER, name)
+    if (!fs.existsSync(p)) { offenders.push(name + ': missing'); continue }
+    const code = stripPs(read(p))
+    // A parenthesised call — a bare word with arguments, not a variable — followed by
+    // .Count or an index. `($var).Count` and `@(...).Count` are both fine.
+    for (const m of code.matchAll(/(^|[^@\w])\(\s*([A-Za-z][\w-]*)\s[^()]*\)\s*(\.Count\b|\[\s*\d)/g)) {
+      offenders.push(`${name}: (${m[2]} …)${m[3]} — wrap the CALL SITE in @( )`)
+    }
+  }
+  assert.deepEqual(offenders, [], offenders.join('\n'))
+})
+
+test('*** POSITIVE CONTROL — that rule catches the real defect and permits the fix ***', () => {
+  const bad = 'if ((Get-AceFor -Sid $p).Count -gt 0) { }'
+  const alsoBad = '$m = (Get-AceFor -Sid $x)[0].FileSystemRights'
+  const fixed = 'if (@(Get-AceFor -Sid $p).Count -gt 0) { }'
+  const alsoFixed = '$m = @(Get-AceFor -Sid $x)[0].FileSystemRights'
+  const rule = () => /(^|[^@\w])\(\s*([A-Za-z][\w-]*)\s[^()]*\)\s*(\.Count\b|\[\s*\d)/g
+  assert.ok(rule().test(bad), 'must catch the exact line that failed')
+  assert.ok(rule().test(alsoBad), 'must catch the index form too')
+  assert.equal(rule().test(fixed), false, 'must permit the fix')
+  assert.equal(rule().test(alsoFixed), false, 'must permit the indexed fix')
+  assert.equal(rule().test('if ($existing.Count -gt 0) { }'), false, 'a plain variable is fine')
+})
+
 test('*** the PowerShell helper does not assign to $pid ***', () => {
   // A read-only automatic variable. Assigning to it is fatal under StrictMode, and this class
   // of bug — $args, $pid — has already cost this project a physical run.

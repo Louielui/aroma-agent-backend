@@ -141,9 +141,23 @@ test('*** the flag is still off and the launcher still does not mention it ***',
   assert.equal(appCode.includes('companion'), false)
 })
 
-test('*** the approved test folder still does not exist ***', () => {
+test('*** Phase 3a cannot create the approved test folder ***', () => {
+  // CHANGED 2026-07-31 for the same reason as its Phase 1 twin: the folder now exists,
+  // created elevated by the Owner via scripts/computer/prepare-canary-testdir.ps1. Its
+  // absence was never the guarantee — Phase 3a's inability to create it was, and that is
+  // what is asserted now. Weakening would have been to delete the test; this replaces a
+  // proxy with the real claim.
   const { ALLOWED_ROOT } = require('./computerWorkOrder')
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'Phase 3a must not create it')
+  assert.equal(ALLOWED_ROOT, 'C:\\Aroma\\ComputerOperator-Test')
+  // Narrow, and true: no module both knows this path and can create a directory.
+  // evidenceStore.js does mkdir its own evidence folder, so a blanket ban on mkdir would
+  // fail for a correct reason.
+  const MAKERS = ['mkdir', 'mkdirSync', 'ensureDir', 'CreateDirectory']
+  for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
+    const code = codeOf(f)
+    assert.equal(code.includes('ComputerOperator-Test') && MAKERS.some((m) => code.includes(m)), false,
+      f + ' both names the approved root and can create directories')
+  }
 })
 
 /* ── the account is the Owner's step, and the code says so honestly ───────── */

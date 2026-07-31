@@ -193,12 +193,32 @@ test('the computer-audit artifact kind is registered BEFORE anything can act', (
 
 /* ── Phase 1 created nothing on the machine ───────────────────────────────── */
 
-test('*** the allowedPath folder was NOT created, and nothing here would create it ***', () => {
+test('*** nothing in Phase 1 could create the allowedPath folder ***', () => {
   const { ALLOWED_ROOT } = require('./computerWorkOrder')
   assert.equal(ALLOWED_ROOT, 'C:\\Aroma\\ComputerOperator-Test')
-  // The constant exists to validate against. Phase 1 must not create the folder — and
-  // cannot, since no module imports fs at all (asserted above).
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'Phase 1 did not create the test folder')
+
+  // CHANGED 2026-07-31. This asserted `existsSync(...) === false`, which was a proxy for
+  // "Phase 1 did not create it" and stopped being one the moment the Owner created the
+  // folder himself under an approved elevated action. The proxy is replaced by the thing
+  // it was standing in for, which is stronger anyway: Phase 1 has no way to create a
+  // directory, whoever else does.
+  // "No module can create ANY directory" was the first attempt and it is simply false:
+  // evidenceStore.js legitimately mkdirs its own evidence directory. Asserting it would
+  // have been a test that fails for a correct reason, which is worse than no test.
+  //
+  // The true invariant is narrower and is the one that matters: no module both knows this
+  // path AND can create a directory. Whoever creates it, it is not this code.
+  const MAKERS = ['mkdir', 'mkdirSync', 'ensureDir', 'CreateDirectory']
+  for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
+    const code = codeOf(f)
+    const knowsPath = code.includes('ComputerOperator-Test')
+    const canMakeDirs = MAKERS.some((m) => code.includes(m))
+    assert.equal(knowsPath && canMakeDirs, false,
+      f + ' both names the approved root and can create directories')
+  }
+  // Recorded rather than asserted, so a future reader is not misled by the folder existing:
+  // it was created on 2026-07-31 by scripts/computer/prepare-canary-testdir.ps1, run
+  // elevated by the Owner. That is outside src/ and outside this test's claim.
 })
 
 test('*** no Windows account was created, and the definition says so as data ***', () => {
