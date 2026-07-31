@@ -95,6 +95,33 @@ $form.Location = New-Object System.Drawing.Point(
   ([int]($pb.Y + ($pb.Height - $MIN_H) / 2)))
 Write-Host ("primary bounds : " + $pb + "  -> placing at " + $form.Location)
 $form.BackColor = [System.Drawing.Color]::FromArgb($s.R, $s.G, $s.B)
+
+# ── A CHILD CONTROL, SO THE UIA TREE HAS SOMETHING TO ENUMERATE ─────────────
+# MEASURED across two rounds: POS-read_uia_tree-own came back nodeCount 0, refusal
+# uia_zero_nodes - and that was CORRECT. observer.ps1 walks
+#     $target.FindAll(TreeScope::Descendants, TrueCondition)
+# and a bare Form has no descendants, so a zero is the honest answer to the question asked.
+# Handoff section 3 already settled this once: the target was wrong, not the access. It stayed
+# wrong because the sentinel had nothing inside it.
+#
+# THE COLOUR MUST NOT MOVE. The sentinel is verified by sampling its client area - 1250/1250
+# points at the signature colour - so a child that painted anything else would break the very
+# control it is meant to complete. ForeColor is set EQUAL to BackColor: the text is rendered,
+# and every pixel it produces, including every anti-aliased edge pixel, blends the signature
+# colour with itself and comes out as the signature colour. Nothing to blend, nothing to drift.
+# The node is real to UIA and invisible to the camera.
+$label = New-Object System.Windows.Forms.Label
+$label.AutoSize = $false
+$label.Dock = [System.Windows.Forms.DockStyle]::Fill
+$label.BackColor = [System.Drawing.Color]::FromArgb($s.R, $s.G, $s.B)
+$label.ForeColor = [System.Drawing.Color]::FromArgb($s.R, $s.G, $s.B)
+$label.TextAlign = [System.Drawing.ContentAlignment]::MiddleCenter
+$label.Text = $title
+# What a UIA reader actually reports. Named explicitly rather than left to the control default,
+# so a future reader can tell this node is the sentinel and not incidental furniture.
+$label.AccessibleName = 'AROMA-SENTINEL-NODE-' + $Nonce
+$label.AccessibleDescription = 'Phase 3b sentinel body; present so read_uia_tree has a descendant to return'
+$form.Controls.Add($label)
 $form.TopMost = $true
 $form.MinimizeBox = $false
 $form.MaximizeBox = $false

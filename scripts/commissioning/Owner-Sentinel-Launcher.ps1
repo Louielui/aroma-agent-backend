@@ -204,6 +204,20 @@ try {
     $dir = CX-RoundDir -Nonce $NONCE
     New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
+    # ── RESET THE SCREEN AT THE START OF EVERY ROUND ────────────────────────
+    # MEASURED 2026-07-31: with round 2 running, one window showed round 1's "Part B FAIL ——
+    # 已封存" ABOVE round 2's sentinel step still turning, under a banner left over from round
+    # 1's handoff saying "waiting, 59 minutes left". Three states from two different rounds,
+    # all true when written, none true together. The Owner had to ask which one to believe.
+    #
+    # Nothing was resetting: SetStep overwrites one line at a time, so a step the new round has
+    # not reached yet keeps the OLD round's result. Steps that belong to this round are cleared
+    # back to pending, and the banner is cleared with them.
+    # ONLY the per-round steps. inst/self/pre/sess/prep happen once, before the loop, and they
+    # really did pass - blanking them would replace one misleading screen with another.
+    foreach ($k in @('mint', 'sent', 'handoff', 'partb', 'lock5', 'report')) { $UI.SetStep($k, 'pending', '') }
+    $UI.Banner2('回合 ' + $round + ' / ' + $ROUND_CAP + ' —— 開始緊……', 'info')
+    $UI.SetFoot('')
     $UI.SetStep('mint', 'run', ('round ' + $round + ' of ' + $ROUND_CAP))
     $manifest = [ordered]@{
       marker = 'COMMISSIONING-MANIFEST'; round = $round; roundNonce = $NONCE
@@ -337,9 +351,20 @@ try {
     $UI.SetStep('partb', $(if ($partBPass) { 'ok' } else { 'fail' }), ('Part B ' + $sealRec.verdict + ' —— 已封存'))
     $roundLog.Add([ordered]@{ round = $round; nonce = $NONCE; outcome = $sealRec.verdict; where = 'part-b'; sealSha256 = $sealSha })
 
+    # ── A SEALED FAIL IS A RESULT. IT IS NOT RETRIED. ───────────────────────
+    # OWNER RULING 2026-07-31. The 3-round cap exists to stop a CRASH - a run that ended in a
+    # state nobody can characterise - from being quietly retried into something clean-looking.
+    # A sealed FAIL is the opposite of that: it is a KNOWN, adjudicated, named conclusion.
+    # Retrying a known conclusion cannot change it, and on 2026-07-31 the retry did exactly
+    # three harmful things and no useful one: it burned a second nonce, it raced the Owner
+    # switching accounts (round 2's owner sentinel died on CopyFromScreen "handle is invalid"),
+    # and it left one window showing a mixture of two rounds.
+    #
+    # Crashes and timeouts still retry - those are handled by the `continue` paths above, which
+    # is where "we do not know what happened" actually lives.
     if (-not $partBPass) {
-      if ($round -ge $ROUND_CAP) { break }
-      continue   # a fresh round; the sealed record of this one stays on disk
+      $UI.Banner2('Part B：' + $sealRec.verdict + "`r`n`r`n" + '已經封存。呢個係結果，唔會重試。', 'fail')
+      break
     }
     $sealed = [pscustomobject]@{ nonce = $NONCE; round = $round; sha = $sealSha; rec = $sealRec }
   }

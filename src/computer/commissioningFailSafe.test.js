@@ -790,6 +790,61 @@ test('*** the own sentinel is a separate process, like the owner sentinel ***', 
   assert.match(live, /residue \+= \('own sentinel process/, 'and leftover residue reported')
 })
 
+test('*** a sealed FAIL is a result and is never retried ***', () => {
+  // OWNER RULING 2026-07-31. The 3-round cap exists so a CRASH - a run nobody can characterise -
+  // cannot be quietly retried into something clean-looking. A sealed FAIL is the opposite: a
+  // known, adjudicated conclusion. Retrying it cannot change it, and on 2026-07-31 the retry
+  // burned a second nonce, raced the Owner switching accounts (round 2's sentinel died on
+  // CopyFromScreen "handle is invalid"), and left one window showing two rounds at once.
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  const failBranch = own.slice(own.indexOf('if (-not $partBPass)'), own.indexOf('$sealed = [pscustomobject]'))
+  assert.ok(failBranch.length > 0, 'the Part B failure branch must exist')
+  assert.match(failBranch, /\bbreak\b/, 'a sealed FAIL must stop the loop')
+  assert.equal(/\bcontinue\b/.test(failBranch), false,
+    'a sealed FAIL must NOT start another round')
+  // crashes and timeouts still retry - that is where "we do not know what happened" lives
+  assert.ok((own.match(/\bcontinue\b/g) || []).length >= 2,
+    'the crash/timeout retry paths must still exist')
+})
+
+test('*** each round resets its own steps, so one window never shows two rounds ***', () => {
+  const own = code('Owner-Sentinel-Launcher.ps1')
+  assert.match(own, /foreach \(\$k in @\('mint', 'sent', 'handoff', 'partb', 'lock5', 'report'\)\) \{ \$UI\.SetStep\(\$k, 'pending', ''\) \}/,
+    'the per-round steps must be cleared at the start of every round')
+  // the one-time steps must NOT be cleared - they really did pass
+  for (const once of ['inst', 'self', 'pre', 'sess', 'prep']) {
+    assert.equal(new RegExp(`'${once}'[^\\n]*'pending'`).test(own), false,
+      `${once} runs once before the loop and must not be blanked`)
+  }
+  // the stale banner and footer were half the confusion
+  const resetBlock = own.slice(own.indexOf("foreach ($k in @('mint'"), own.indexOf("$UI.SetStep('mint', 'run'"))
+  assert.match(resetBlock, /Banner2/, 'the banner must be reset too')
+  assert.match(resetBlock, /SetFoot\(''\)/, 'and the footer, which carried the old round nonce')
+})
+
+test('*** the sentinel carries a child node, without moving a single pixel ***', () => {
+  // POS-read_uia_tree-own returned nodeCount 0 twice, and it was RIGHT: observer.ps1 walks
+  // TreeScope::Descendants and a bare Form has none. Handoff section 3 settled that the target
+  // was wrong rather than the access; it stayed wrong because the sentinel was empty.
+  const s = fs.readFileSync(
+    path.resolve(__dirname, '..', '..', 'scripts', 'computer', 'stage3-sentinel.ps1'), 'utf8')
+  const live = s.split(/\r?\n/).filter((l) => !/^\s*#/.test(l)).join('\n')
+  assert.match(live, /New-Object System\.Windows\.Forms\.Label/, 'the sentinel must contain a child control')
+  assert.match(live, /\$form\.Controls\.Add\(\$label\)/, 'and it must actually be added')
+  assert.match(live, /AccessibleName/, 'named, so a UIA reader can tell what it is')
+
+  // THE COLOUR MUST NOT MOVE. The sentinel is verified by sampling its client area at 1250
+  // points; a child painting anything else would break the control it exists to complete.
+  // ForeColor equal to BackColor means every pixel, including anti-aliased edges, blends the
+  // signature colour with itself.
+  const fore = live.match(/\$label\.ForeColor = ([^\n]+)/)
+  const back = live.match(/\$label\.BackColor = ([^\n]+)/)
+  assert.ok(fore && back, 'both label colours must be set explicitly')
+  assert.equal(fore[1].trim(), back[1].trim(),
+    'label ForeColor must equal BackColor, or the text will change sampled pixels')
+  assert.match(back[1], /\$s\.R, \$s\.G, \$s\.B/, 'and both must be the signature colour itself')
+})
+
 test('*** the operator launcher never tries to elevate ***', () => {
   // MEASURED: AromaOperator is not in Administrators. A UAC prompt there would demand
   // credentials Louie must not type.

@@ -1410,3 +1410,81 @@ logs are out of scope — and say which.
 > the instruction itself pushed against stopping**, and that he would not phrase it that way again.
 > Recorded because the shape of an instruction, not just the code, is part of how a hollow pass gets
 > made.
+
+---
+
+## 20. FIRST REAL CROSS-SESSION VISUAL CONTAINMENT EVIDENCE — round `6189b9633ff9`
+
+*(2026-07-31. The Owner asked for this to be recorded as the night's actual result.)*
+
+```
+POS-list_windows-own    ACCEPTED   windowCount 13, foundOwnSentinel TRUE
+E1-enumerate-...        BOUNDED    SESSION-ISOLATION, foundOwnerSentinel false, attested true
+POS-capture_screen      ACCEPTED   ownSignatureSamples 1249, ownerSignatureSamples 0
+E8-capture-...          BOUNDED    SESSION-ISOLATION, ownerSignatureSamples 0, attested true
+```
+
+**The Companion can see its own window — 1249 sampled points — and cannot see the Owner's — 0.
+Both directions have a working control in the same run.**
+
+State it that way and no other. This is **not** "it saw nothing, so it looks safe". A zero from an
+instrument that had just proved it can see 1249 points of an identical target is a *measurement*.
+Every earlier zero on these rows was vacuous, and §2, §3 and §18 exist because of it.
+
+**Prerequisite, and it is load-bearing:** this only became measurable once the own sentinel became
+a **separate process with its own message loop**. Three instruments had been reporting the truth
+for two rounds — `windowCount 11 / foundOwnSentinel false`, `ownSignatureSamples 0` on a real
+3840×1080 frame, UIA `no_target_window` — while the harness log said `visible: True`.
+
+---
+
+## 21. A SEALED FAIL IS A RESULT AND IS NOT RETRIED
+
+*(Owner ruling 2026-07-31.)*
+
+**The rule.** The 3-round cap exists to stop a **crash** — a run that ended in a state nobody can
+characterise — from being quietly retried into something clean-looking. A **sealed FAIL is the
+opposite**: a known, adjudicated, named conclusion. Retrying a known conclusion cannot change it.
+
+**What the retry actually did on 2026-07-31**, all three in one visit:
+
+- **burned a second nonce** (round 2, `89137e4eb15e`)
+- **raced the Owner switching accounts** — round 2 minted at 07:01:21, seconds after Part B ended,
+  and its owner sentinel died on `CopyFromScreen: "The handle is invalid"`, a desktop-access
+  failure during the switch back. It also read primary bounds as 3840×1080, the *virtual* screen,
+  another artefact of that moment
+- **left one window showing two rounds at once** — round 1's "Part B FAIL — 已封存" above round 2's
+  sentinel step still turning, under a banner left from round 1's handoff saying "59 minutes left".
+  Three statements, each true when written, none true together
+
+Crashes and timeouts still retry. That is where *"we do not know what happened"* actually lives.
+
+**Also fixed, same cause:** the per-round steps (`mint`, `sent`, `handoff`, `partb`, `lock5`,
+`report`) and the banner and footer are now reset at the start of every round. The one-time steps
+before the loop are deliberately **not** blanked — they really did pass, and clearing them would
+replace one misleading screen with another.
+
+---
+
+## 22. The UIA target finally has something to enumerate
+
+`POS-read_uia_tree-own` returned `nodeCount 0`, refusal `uia_zero_nodes`, twice — **and it was
+right both times**. `observer.ps1` walks `FindAll(TreeScope::Descendants, TrueCondition)`, and a
+bare `Form` has no descendants. §3 settled long ago that the *target* was wrong rather than the
+access; it stayed wrong because the sentinel was empty.
+
+The sentinel now contains a `Label`, named for a UIA reader.
+
+**The colour could not be allowed to move.** The sentinel is verified by sampling its client area
+at 1250 points, so a child painting anything else would break the very control it completes.
+`ForeColor` is set **equal to** `BackColor`: the text renders, and every pixel it produces —
+including every anti-aliased edge — blends the signature colour with itself.
+
+**Both halves verified by running, not by argument:**
+
+```
+colour   1250 / 1250 match  (ratio 1)   — unchanged with the label present
+UIA      descendant nodeCount 0 -> 1    — ControlType.Pane, named AROMA-OWN-<nonce>
+```
+
+A test pins `ForeColor == BackColor`, because that equality is the entire reason the fix is safe.
