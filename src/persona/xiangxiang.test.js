@@ -133,6 +133,31 @@ const RETIRED_NAMES = [
 // The FIRST name is deliberately absent: it is the current one again. Removing it here was a
 // governance act, not housekeeping \u2014 until it was removed, the assertions below correctly
 // refused the rename, because a name cannot be both current and retired.
+//
+// \u2500\u2500 WHAT THIS LIST GUARANTEES, AND WHAT IT NO LONGER DOES \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// Until 2026-07-30 retirement was a ONE-WAY DOOR: a name on this list was understood to mean
+// "never used again". Unlock 3 restored the first name, so that is no longer what it means.
+//
+//   IT DOES     guarantee that a retired name cannot come back SILENTLY. Reinstating one
+//               requires editing this list, which fails two tests until it is done \u2014 so the
+//               reversal has to be performed as a deliberate, reviewable act.
+//   IT DOES NOT guarantee that a retired name is gone for good. It is a speed bump with a
+//               receipt, not a lock.
+//
+// Read the difference literally. Anyone treating a name's presence here as proof it can never
+// return is relying on a promise this list stopped making.
+//
+// \u2500\u2500 COUNT THE REVERSALS \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// 2026-07-30 was the FIRST un-retirement. If there is ever a SECOND, re-evaluate whether this
+// guard still earns its place: a list that is edited every time it objects has stopped being a
+// constraint and become a formality, and a formality that reads like a control is worse than
+// no control \u2014 it spends the reader's trust without holding anything up.
+//
+// \u2500\u2500 ITS SCOPE IS NARROW, ON PURPOSE, AND THAT IS ALSO A GAP \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+// These assertions read PERSONA_IDENTITY and nothing else. They do NOT scan the repository, so
+// a retired name reintroduced in any other file \u2014 a new module, a fixture, a branch merged
+// later \u2014 passes unnoticed. See docs/persona/RENAME-2026-07-30.md for the proposed repo-wide
+// scan; it is deliberately not bundled into this rename.
 
 test('the retired-name list is intact and did not get rewritten by the rename', () => {
   // Guards the guard. If a future blanket rename ever collapses these onto the current
