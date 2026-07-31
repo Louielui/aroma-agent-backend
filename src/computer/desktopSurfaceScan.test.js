@@ -48,6 +48,7 @@ const JS_ALLOWLIST = Object.freeze({
   'computerWorkOrder.js': false,
   'desktopAdapter.js': 'may reach a desktop, through an injected runner only',
   'evidenceStore.js': false,
+  'identityAttestation.js': false,
   'ipcChannel.js': false,
   'killSwitch.js': false,
   'measurementContext.js': false,

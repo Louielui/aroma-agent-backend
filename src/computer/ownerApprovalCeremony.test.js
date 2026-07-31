@@ -295,7 +295,7 @@ test('the summary a person reads names every capability in plain words', () => {
 
 /* ── 5. the execute fence ─────────────────────────────────────────────────── */
 
-test('*** the execute fence is a LITERAL $true, and nothing outside can move it ***', () => {
+test('*** the execute fence is a LITERAL $false, and nothing outside can move it ***', () => {
   // FINAL UNLOCK, 2026-07-31 by Owner decision, and the last step of the sequence: wire and
   // test with the fence shut, review, unlock, re-seal the package, re-approve, execute.
   //
@@ -310,9 +310,9 @@ test('*** the execute fence is a LITERAL $true, and nothing outside can move it 
   const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
   const stripped = code.replace(/^\s*#.*$/gm, '')
 
-  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/, 'the fence is OPEN')
-  assert.doesNotMatch(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/,
-    'and nothing shuts it again further down')
+  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/, 'the fence is SHUT')
+  assert.doesNotMatch(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/,
+    'and nothing reopens it further down')
 
   // Exactly ONE assignment. A second one anywhere — a fallback, a re-assignment further down,
   // a branch that flips it — would make the first meaningless.
@@ -324,7 +324,7 @@ test('*** the execute fence is a LITERAL $true, and nothing outside can move it 
   assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'no script parameter can move it')
   assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'no environment variable can move it')
   const rhs = (stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=\s*(.+)/) || [])[1] || ''
-  assert.match(rhs.trim(), /^\$true\s*$/, 'the right-hand side is the bare literal, nothing else')
+  assert.match(rhs.trim(), /^\$false\s*$/, 'the right-hand side is the bare literal, nothing else')
 })
 
 /* ── 6. the execution package: the receipt binds the CODE, not just the intent ── */
@@ -428,19 +428,46 @@ test('*** a PRE-IMPLEMENTATION receipt is refused, and never reaches the spent l
   assert.equal(reg.wasUsed(v1.approvalId), false, 'it was never spent, because it never got that far')
 })
 
-test('the real receipt on this machine is a v1 — audit only', () => {
-  // Measured, not assumed: the receipt the Owner actually signed predates the package and is
-  // therefore not executable. If this ever starts failing it means a v2 receipt exists, which
-  // is the intended end state.
+test('*** no receipt on this machine is currently executable ***', () => {
+  // Measured, not assumed, and rewritten twice as the real state moved: first the Owner's
+  // receipt predated the package; then a v2 was signed; then the architecture ruling of
+  // 2026-07-31 superseded it, because the chain it approved would have run as the wrong
+  // identity. Whatever the reason, the invariant this test holds is the one that matters:
+  // right now, nothing is executable.
   const found = A.latestReceipt()
   if (!found) { assert.ok(true, 'no receipt on this machine'); return }
   const v = A.verify({})
-  if (found.receipt.executionPackageManifestHash) {
-    assert.ok(v.ok === true || v.refusal === 'execution_package_changed', 'a v2 receipt is checked against the package')
-  } else {
-    assert.equal(v.ok, false)
-    assert.equal(v.refusal, 'pre_implementation_receipt')
-  }
+  assert.equal(v.ok, false, 'no approval may currently authorise a run')
+  assert.ok(['receipt_superseded', 'pre_implementation_receipt', 'execution_package_changed'].includes(v.refusal),
+    'refused for a stated reason, not an unexplained one: ' + v.refusal)
+})
+
+test('*** a SUPERSEDED marking beats every other verdict, and never edits the receipt ***', () => {
+  // An Owner ruling about a specific approval cannot be overturned by hashes agreeing. And the
+  // marking is a SIDECAR: a signed record that gets amended afterwards is no longer the thing
+  // that was signed.
+  const dir = tmp()
+  const orderFile = path.join(dir, 'wo.json')
+  fs.copyFileSync(A.DRAFT, orderFile)
+  const { receipt } = A.issue({ receiptDir: dir, orderFile, at: new Date().toISOString() })
+  assert.equal(A.verify({ receiptDir: dir, orderFile }).ok, true, 'valid to begin with')
+
+  const rf = path.join(dir, 'receipt-' + receipt.approvalId + '.json')
+  const before = fs.readFileSync(rf)
+
+  fs.writeFileSync(path.join(dir, 'superseded-' + receipt.approvalId + '.json'), JSON.stringify({
+    kind: 'owner-approval-superseded',
+    approvalId: receipt.approvalId,
+    status: A.SUPERSEDED_STATUS,
+    reason: 'test ruling'
+  }))
+
+  const v = A.verify({ receiptDir: dir, orderFile })
+  assert.equal(v.ok, false)
+  assert.equal(v.refusal, 'receipt_superseded')
+  assert.equal(v.status, 'SUPERSEDED - WRONG EXECUTION IDENTITY - NOT EXECUTABLE')
+  assert.doesNotMatch(A.SUPERSEDED_STATUS, /[^\x00-\x7F]/, 'ASCII, like every other printed string')
+  assert.deepEqual(fs.readFileSync(rf), before, 'the receipt itself is byte-identical')
 })
 
 /* ── 8. the screen must be readable on a real console ─────────────────────── */

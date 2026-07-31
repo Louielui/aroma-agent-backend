@@ -42,6 +42,17 @@ const RECEIPT_DIR = path.join(REPO, '.aroma', 'owner-approvals')
  */
 const PRE_IMPLEMENTATION_STATUS = 'SCOPE APPROVED - PRE-IMPLEMENTATION - NOT EXECUTABLE'
 
+/**
+ * Owner ruling 2026-07-31: an approval whose execution path ran as the WRONG IDENTITY.
+ * The receipt is kept and its bytes are never touched - the Owner really did approve that
+ * scope - but it can never authorise a run, because the chain it approved would have acted
+ * as louis rather than as AromaOperator.
+ *
+ * Recorded in a SIDECAR file, not by editing the receipt. A signed record that gets amended
+ * afterwards is no longer the thing that was signed.
+ */
+const SUPERSEDED_STATUS = 'SUPERSEDED - WRONG EXECUTION IDENTITY - NOT EXECUTABLE'
+
 /** Which packaged files differ from what the receipt pinned — so a refusal can name them. */
 function changedPackageFiles (receipt) {
   const now = pkg.buildManifest().files
@@ -158,6 +169,12 @@ function issue (opts = {}) {
   return { receipt, file }
 }
 
+/** A sidecar marking for a receipt, if one was written. Never modifies the receipt itself. */
+function supersededMark (approvalId, dir) {
+  const f = path.join(dir || RECEIPT_DIR, 'superseded-' + approvalId + '.json')
+  try { return JSON.parse(fs.readFileSync(f, 'utf8')) } catch (_) { return null }
+}
+
 /** The most recent receipt, or null. */
 function latestReceipt (dir) {
   const d = dir || RECEIPT_DIR
@@ -186,6 +203,13 @@ function verify (opts = {}) {
   // that does it. It is kept for audit and it is not an execution authorisation, because the
   // Owner who signed it could not have been shown an implementation that did not yet exist.
   // Refused HERE, before the spent ledger is ever consulted, so it can never be admitted.
+  // A sidecar marking beats every other verdict: it is an Owner ruling about this specific
+  // approval, and no amount of hash agreement can overturn it.
+  const sup = supersededMark(r.approvalId, opts.receiptDir)
+  if (sup) {
+    return { ok: false, refusal: 'receipt_superseded', status: sup.status, reason: sup.reason, receipt: r, file: found.file }
+  }
+
   if (!r.executionPackageManifestHash) {
     return {
       ok: false,
@@ -292,6 +316,6 @@ if (require.main === module) {
 
 module.exports = {
   mintApprovalId, readOrder, summarise, renderSummary, issue, verify, latestReceipt, renderReceiptSummary,
-  changedPackageFiles, PRE_IMPLEMENTATION_STATUS,
+  changedPackageFiles, PRE_IMPLEMENTATION_STATUS, SUPERSEDED_STATUS, supersededMark,
   DRAFT, RECEIPT_DIR, ALLOWED_PATH
 }

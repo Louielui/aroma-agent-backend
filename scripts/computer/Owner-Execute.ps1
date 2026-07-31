@@ -51,7 +51,23 @@ $Helper  = Join-Path $RepoDir 'scripts\computer\ownerApproval.js'
 #
 # ownerApprovalCeremony.test.js asserts this literal and is the only test that
 # does, so a flip shows up in exactly two files — this one and that one.
-$CANARY_EXECUTE_AUTHORISED = $true
+# ── RE-LOCKED 2026-07-31 ON AN ARCHITECTURE RULING ──────────────────────
+# Pressing E revealed that this path runs the canary as whoever double-clicks
+# it — louis — never as AromaOperator. run-notepad-canary.js calls
+# executor.execute() directly; the Companion is constructed and then unused, so
+# every containment guarantee attached to it (separate account, separate
+# session, non-elevated token, the DENY around C:\Aroma) applies to nothing on
+# this path. Running it elevated would have "fixed" the ACL check by opening an
+# ELEVATED Notepad, which is worse than the failure it cured.
+#
+# Owner ruling: the canary must run as AromaOperator, non-elevated, inside its
+# own interactive session, THROUGH the Companion. The Owner reads, approves and
+# triggers; he never calls the executor or the adapter himself.
+#
+# So this stays shut until that chain exists. It is not a temporary
+# inconvenience — with the current wiring, opening it would authorise the wrong
+# identity to act.
+$CANARY_EXECUTE_AUTHORISED = $false
 
 function Say { param([string]$T, [string]$C = 'Gray') Write-Host $T -ForegroundColor $C }
 
