@@ -34,20 +34,24 @@ $Helper  = Join-Path $RepoDir 'scripts\computer\ownerApproval.js'
 # THE FENCE. Not a parameter, not an environment variable — a constant in the
 # file, so enabling it is a commit somebody can see.
 #
-# RE-LOCKED 2026-07-31, by Owner correction, BEFORE any real wiring is added.
+# FINAL UNLOCK, 2026-07-31, by Owner decision — the last step of the sequence:
 #
-# It was opened for one commit and closed again in the next, deliberately. The
-# reason is an ordering one: this file is inside the execution package, so the
-# eventual unlock commit necessarily changes the package and invalidates any
-# receipt bound to it. Wiring must therefore be built and reviewed while the
-# fence is SHUT, and the unlock left to the very last step — after which the
-# Owner approves again, against the package that will actually run.
+#   wire + test (fence shut) -> independent review -> THIS COMMIT
+#   -> recompute and seal the package -> Owner approves again -> Execute
 #
-# No commit in between may carry fence=true together with live wiring.
+# Opening this file changes the execution package, which is why it comes last:
+# every receipt bound to the previous package hash is now invalid, including the
+# one already signed. That is the design working, not a side effect. Nothing can
+# run until the Owner approves again against the package that will actually run.
 #
-# ownerApprovalCeremony.test.js asserts this literal, so either direction shows
-# up TWICE in a diff: here, and in the test.
-$CANARY_EXECUTE_AUTHORISED = $false
+# The fence is NOT the safety here, and should never be leaned on as if it were.
+# The real guarantees are: COMPUTER_OPERATOR defaults off and is set only in the
+# Process scope for the life of one child; the receipt binds both the work order
+# and the code; and the Owner's approval comes after this commit, not before.
+#
+# ownerApprovalCeremony.test.js asserts this literal and is the only test that
+# does, so a flip shows up in exactly two files — this one and that one.
+$CANARY_EXECUTE_AUTHORISED = $true
 
 function Say { param([string]$T, [string]$C = 'Gray') Write-Host $T -ForegroundColor $C }
 
