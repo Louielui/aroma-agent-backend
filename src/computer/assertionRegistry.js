@@ -506,32 +506,56 @@ const ENTRIES = [
     // NEW 2026-07-31. The object-manager route, mirroring E2a — and unlike E3 its positive
     // control makes the SAME CALL against our own session, so a failure on the other session
     // can be attributed to the target rather than to the route.
+    // RUN 2026-07-31, round 5de3635c8089. It FAILED, and that failure is the evidence the
+    // Owner required before E3a could be retired:
+    //     POS-open-own-desktop-object  \Sessions\5\...\Default  ntStatus 0xC000003A
+    //     E3a-open-other-session-...   \Sessions\3\...\Default  ntStatus 0xC000003A
+    // IDENTICAL status, same call, differing only in session number. 0xC000003A is
+    // STATUS_OBJECT_PATH_NOT_FOUND: a desktop is not a Directory object, so the object-manager
+    // lookup can never reach one - for ANY session, including our own. Route incapability,
+    // demonstrated rather than assumed, which is exactly what E2 had and E3 lacked.
+    //
+    // Kept in the register as unmeasurable rather than deleted: the id is the only place this
+    // evidence is written down, and deleting it would invite the same route to be tried again.
     id: 'POS-open-own-desktop-object',
-    title: 'open OUR OWN desktop by object-manager path (same call shape as E3a)',
+    title: 'open OUR OWN desktop by object-manager path (RETIRED — no route to a desktop leaf)',
     targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$',
     accessMask: MASK.DIRECTORY_QUERY,
     mechanism: ['PERMITTED'],
     expectedPermitted: true,
     positiveControlId: null,
     tier: 'B',
+    status: 'unmeasurable',
     implies: 'the object-manager route can reach a desktop leaf at this mask for this token',
     doesNotImply: 'nothing about another session; this is the control, not the measurement'
   },
   {
+    // RETIRED 2026-07-31 on its own evidence, under the Owner's standing authorisation: "if the
+    // object-manager route also cannot reach the desktop object, record it as route incapability
+    // and retire it — and that only counts with a same-shape control."
+    //
+    // The control was built and RUN. Both sides returned 0xC000003A STATUS_OBJECT_PATH_NOT_FOUND,
+    // ours and theirs, from the identical call. So the route reaches no desktop leaf at all and
+    // this id can never produce a measurement.
+    //
+    // CROSS-SESSION DESKTOP ACCESS IS THEREFORE **NOT PROVEN IN EITHER DIRECTION**, by any route
+    // this probe has. Two APIs were tried and both were refused before any security check ran:
+    // Win32 OpenDesktop parses a bare station-relative name (win32Error 161 on a qualified path)
+    // and NtOpenDirectoryObject only finds Directory objects. That is an honest gap in coverage,
+    // and it is written here so nobody reads the silence as a pass.
     id: 'E3a-open-other-session-desktop-object',
-    title: 'open another session desktop by object-manager path',
+    title: 'open another session desktop by object-manager path (RETIRED — no route to a desktop leaf)',
     targetPattern: '^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$',
     accessMask: MASK.DIRECTORY_QUERY,
     mechanism: ['ACL', 'NAMESPACE-ISOLATION'],
     expectedPermitted: false,
     positiveControlId: 'POS-open-own-desktop-object',
     tier: 'B',
-    implies: 'denial at this mask by this route — ONLY IF POS-open-own-desktop-object was ACCEPTED ' +
-      'in the same run, proving the route reaches a desktop leaf at all',
-    doesNotImply: 'if the control also fails, this row says nothing about containment and everything ' +
-      'about the route: a desktop is not a Directory object, so the lookup may never find one. ' +
-      'That outcome is route incapability, PROVEN by a same-shape control, and is grounds to retire ' +
-      'this id too — not grounds to call anything denied'
+    status: 'unmeasurable',
+    implies: 'NOTHING. The lookup never reaches a desktop object, so no DACL is ever consulted.',
+    doesNotImply: 'above all it does not imply that cross-session desktop access is DENIED. Both ' +
+      'routes were refused at the name, for our own session as well as the other one, so denial ' +
+      'was never tested. Cross-session desktop access remains NOT PROVEN in either direction'
   },
   {
     id: 'E4-read-other-session-clipboard',

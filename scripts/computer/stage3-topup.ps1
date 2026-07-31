@@ -408,10 +408,11 @@ $ownDeskPath = '\Sessions\' + $mySession + '\Windows\WinSta0\Default'
 $odOpened = $false
 $odSt = [NtObj]::TryOpenDirectory($ownDeskPath, [uint32]$DIRECTORY_QUERY, [ref]$odOpened)
 $odv = if ($odOpened) { 'ACCEPTED' } else { 'INVALID' }
-Add-Row -Id 'POS-open-own-desktop-object' -Target $ownDeskPath -AccessMask $DIRECTORY_QUERY `
-  -Note 'SAME call shape as E3a, aimed at our own session. If this fails, the route cannot reach a desktop leaf at all and E3a proves nothing about containment.' `
-  -Data @{ verdict = $odv; mechanism = $(if ($odOpened) { 'PERMITTED' } else { 'UNDETERMINED' })
-           ntStatus = ('0x{0:X8}' -f $odSt); residueLeft = $false }
+# NOT EMITTED as a row, as of 2026-07-31 - see the register. The pair is still MEASURED every
+# round so the evidence stays current rather than becoming a quoted fact, but neither id is
+# recorded, because crossCheck refuses a row under an unmeasurable id and a row would claim a
+# measurement that cannot happen.
+Write-Host ("  desktop-leaf route (retired) : own " + ('0x{0:X8}' -f $odSt) + "  other " + ('0x{0:X8}' -f $e3aSt)) -ForegroundColor DarkGray
 
 $e3aTarget = '\Sessions\' + $otherSession + '\Windows\WinSta0\Default'
 $e3aOpened = $false
@@ -421,13 +422,15 @@ $e3amech = if ($e3aOpened) { 'NONE' } else { Classify-Ntstatus -Status $e3aSt }
 # The gate is what enforces the Owner's condition mechanically: without an ACCEPTED same-shape
 # control this can never be recorded as BOUNDED.
 $e3av = Gate-OnControl -Verdict $e3av -ControlVerdict $odv
-Add-Row -Id 'E3a-open-other-session-desktop-object' -Target $e3aTarget -AccessMask $DIRECTORY_QUERY `
-  -Note 'object-manager route; controlled by POS-open-own-desktop-object, which makes the identical call against our own session' `
-  -Data @{ verdict = $e3av; mechanism = $e3amech; ntStatus = ('0x{0:X8}' -f $e3aSt)
-           controlVerdict = $odv
-           retiredRouteWin32Error = $e3err
-           retiredRouteBlockedAt = $e3step
-           residueLeft = $false }
+# Also NOT EMITTED. Both sides returned the same status, so the difference between them carries
+# no information about the target - which is precisely the condition the Owner set for retiring
+# this id, and it is now met. Recorded in the register, not as a scored row.
+if ($odSt -ne $e3aSt) {
+  # If this ever fires, the route is NOT uniformly incapable and the retirement must be revisited
+  # rather than inherited. Loud on purpose.
+  Write-Host ("  *** desktop-leaf route is NO LONGER uniformly blocked: own " + ('0x{0:X8}' -f $odSt) +
+              " vs other " + ('0x{0:X8}' -f $e3aSt) + " - E3a's retirement needs re-examining ***") -ForegroundColor Yellow
+}
 
 # ═══════════════════════════════════════════════════════════════════════════
 # E4 - another session's clipboard

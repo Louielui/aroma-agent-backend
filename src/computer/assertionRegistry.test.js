@@ -202,8 +202,26 @@ test('E3 is RETIRED, and E3a replaces it with a same-shape control', () => {
     'and the same access mask, for the same reason')
   assert.equal(e3a.expectedPermitted, false)
   assert.equal(pos.expectedPermitted, true)
-  // and the register must say plainly what a double failure would mean
-  assert.match(e3a.doesNotImply, /route incapability/)
+
+  // E3a WAS THEN RETIRED ON ITS OWN EVIDENCE, round 5de3635c8089. The control was built and run,
+  // and BOTH sides returned 0xC000003A STATUS_OBJECT_PATH_NOT_FOUND — ours and theirs, from the
+  // identical call. A desktop is not a Directory object, so the object-manager route reaches no
+  // desktop leaf for ANY session. Route incapability demonstrated, which is the condition the
+  // Owner set. Both ids stay in the register as unmeasurable: the id is where the evidence is
+  // written down, and deleting it would invite the same route to be tried again.
+  assert.equal(e3a.status, 'unmeasurable')
+  assert.equal(pos.status, 'unmeasurable', 'the control is retired with it — it cannot pass either')
+
+  // THE CONCLUSION THAT MUST NOT BE MISREAD, pinned in words: two APIs were refused at the NAME,
+  // for our own session as well as the other one, so denial was never tested.
+  assert.match(e3a.implies, /^NOTHING\b/)
+  assert.match(e3a.doesNotImply, /NOT PROVEN in either direction/)
+
+  // and neither id may be emitted as a row, exactly as E2 may not
+  for (const id of ['E3-open-other-session-desktop', 'E3a-open-other-session-desktop-object']) {
+    const r = R.crossCheck([{ id, target: '\\Sessions\\3\\Windows\\WinSta0\\Default', accessMask: 1, expectedPermitted: false, verdict: 'BOUNDED', mechanism: 'ACL' }])
+    assert.equal(r.ok, false, id + ' must not be emittable as a row')
+  }
 })
 
 /* ── the Observer task: a baseline nothing read ───────────────────────────── */
@@ -454,8 +472,8 @@ const PINNED = {
   "E2-open-other-session-winsta": "fb141c594ab3ef1815bcd547663d5ee560f12719fa88d802801672bd35f48bd7",
   "E2a-open-other-session-winsta-directory": "c7e224bf697fdddcf6229bf79675512818e812b287a324d4c5d36521d4e28d66",
   "E3-open-other-session-desktop": "2862dcfd798eec1cc3b662eebbd4eb0d429ac6b8501ea956899650035abb9b7d",
-  "POS-open-own-desktop-object": "6b37cdd03f7fd5ad8ceb4c331982df92e08d389db90317044f2182e6d1393f78",
-  "E3a-open-other-session-desktop-object": "7a8c6f13549e747f633f94260ef0ce06b0063d8186328781c3a438279645b3f5",
+  "POS-open-own-desktop-object": "da5e3267afa97ac944e84e1980053d84571122efad7691088a01994fd38a10f5",
+  "E3a-open-other-session-desktop-object": "0b737f50748c7b685053cab8a1fee5365ae8a32ea9d28d505806c9de5dd109ca",
   "E4-read-other-session-clipboard": "d07cb8ebdd6010a097163680d832895691830563f946c6c64282d0a4e92b17a3",
   "E6-open-other-session-process": "a8bd3c585b42396c878d0fe13bb30988ea91d05913692d0d57f7398889854bfc",
   "E6b-open-other-session-process-limited": "e5f0f5d8b48c8c38c9f51880337faf7c0bad99cacf44d61e4ed7251495dd6e48",

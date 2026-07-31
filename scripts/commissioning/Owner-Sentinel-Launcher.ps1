@@ -375,14 +375,32 @@ try {
     # design promises simply did not exist for a FAIL. A result you cannot hand to anyone is
     # half a result.
     $UI.SetStep('report', 'run', '')
-    $lastRound = if ($roundLog.Count) { $roundLog[$roundLog.Count - 1] } else { $null }
+    # EVERY VALUE IS COMPUTED BEFORE THE LITERAL IS ASSEMBLED.
+    # The first version put `if (...) {...} else {...}` subexpressions inside the nested
+    # [ordered]@{} literals. It threw "Argument types do not match" at run time - caught by the
+    # outermost handler, so the Owner got a red screen and STILL no final report, which is the
+    # exact failure this block was added to remove. Plain variables first, literal after: it is
+    # duller, it is debuggable, and it cannot fail in a way that only shows up on the machine.
+    $lastRound = $null
+    if ($roundLog.Count -gt 0) { $lastRound = $roundLog[$roundLog.Count - 1] }
+    $fNonce = $NONCE
+    $fVerdict = 'UNKNOWN'
+    $fSha = $null
+    if ($lastRound) {
+      # OrderedDictionary indexer: returns $null for a key that is not there, so the timeout and
+      # sentinel round shapes (which carry no sealSha256) pass through without a membership test.
+      if ($lastRound['nonce']) { $fNonce = [string]$lastRound['nonce'] }
+      if ($lastRound['outcome']) { $fVerdict = [string]$lastRound['outcome'] }
+      if ($lastRound['sealSha256']) { $fSha = [string]$lastRound['sealSha256'] }
+    }
     $failFinal = [ordered]@{
-      marker = 'FINAL-REPORT'; overall = 'PART-B-FAILED'
-      roundNonce = $(if ($lastRound) { $lastRound.nonce } else { $NONCE })
+      marker = 'FINAL-REPORT'
+      overall = 'PART-B-FAILED'
+      roundNonce = $fNonce
       roundsRun = $roundLog.Count
       partB = [ordered]@{
-        verdict = $(if ($lastRound) { $lastRound.outcome } else { 'UNKNOWN' })
-        sealedSha256 = $(if ($lastRound -and $lastRound.Contains('sealSha256')) { $lastRound.sealSha256 } else { $null })
+        verdict = $fVerdict
+        sealedSha256 = $fSha
         retried = $false
         whyNotRetried = 'Owner ruling 2026-07-31: a sealed FAIL is a known conclusion, not an unknown state. Only crashes and timeouts retry.'
       }
@@ -392,13 +410,13 @@ try {
       rounds = @($roundLog)
       at = (Get-Date).ToString('o')
     }
-    $fp = CX-WriteJson -Path (CX-Marker -Nonce $failFinal.roundNonce -Name 'FINAL-REPORT.json') -Object $failFinal
+    $fp = CX-WriteJson -Path (CX-Marker -Nonce $fNonce -Name 'FINAL-REPORT.json') -Object $failFinal
     $UI.SetStep('report', 'ok', 'FINAL-REPORT.json')
 
     # The failure belongs to PART B, and the partb step already says so. Marking the report step
     # red made it read as "writing the report failed" when the report was written fine.
-    $UI.SetStep('partb', 'fail', ('Part B ' + $failFinal.partB.verdict + ' —— 已封存，唔重試'))
-    [void](CX-Fail -UI $UI -Nonce $failFinal.roundNonce -Stage 'part-b' `
+    $UI.SetStep('partb', 'fail', ('Part B ' + $fVerdict + ' —— 已封存，唔重試'))
+    [void](CX-Fail -UI $UI -Nonce $fNonce -Stage 'part-b' `
       -Reason ('Part B 唔通過，結果已封存。按裁決唔重試（跑咗 ' + $roundLog.Count + ' 個回合）。') `
       -Detail (@('最終報告：' + $fp) + @($roundLog)) -Launcher 'owner')
     CX-Wait -UI $UI; exit 1

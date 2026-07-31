@@ -1,6 +1,6 @@
 {
   "schema": "aroma.assertionRegistry.v1",
-  "fingerprint": "7b2a7c4eac38becf9d3f259c9ecafc8b3f68d2e0b48f86033845f82e47c336c7",
+  "fingerprint": "4e8b913b56125cc9603decd615868419b651b55da580a58c882129f1f7148d4a",
   "count": 51,
   "assertions": [
     {
@@ -533,7 +533,7 @@
     },
     {
       "id": "POS-open-own-desktop-object",
-      "title": "open OUR OWN desktop by object-manager path (same call shape as E3a)",
+      "title": "open OUR OWN desktop by object-manager path (RETIRED — no route to a desktop leaf)",
       "target": null,
       "targetPattern": "^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$",
       "accessMask": 1,
@@ -543,14 +543,14 @@
       "expectedPermitted": true,
       "positiveControlId": null,
       "tier": "B",
-      "status": "active",
+      "status": "unmeasurable",
       "postRunVerification": null,
       "implies": "the object-manager route can reach a desktop leaf at this mask for this token",
       "doesNotImply": "nothing about another session; this is the control, not the measurement"
     },
     {
       "id": "E3a-open-other-session-desktop-object",
-      "title": "open another session desktop by object-manager path",
+      "title": "open another session desktop by object-manager path (RETIRED — no route to a desktop leaf)",
       "target": null,
       "targetPattern": "^\\\\Sessions\\\\\\d+\\\\Windows\\\\WinSta0\\\\Default$",
       "accessMask": 1,
@@ -561,10 +561,10 @@
       "expectedPermitted": false,
       "positiveControlId": "POS-open-own-desktop-object",
       "tier": "B",
-      "status": "active",
+      "status": "unmeasurable",
       "postRunVerification": null,
-      "implies": "denial at this mask by this route — ONLY IF POS-open-own-desktop-object was ACCEPTED in the same run, proving the route reaches a desktop leaf at all",
-      "doesNotImply": "if the control also fails, this row says nothing about containment and everything about the route: a desktop is not a Directory object, so the lookup may never find one. That outcome is route incapability, PROVEN by a same-shape control, and is grounds to retire this id too — not grounds to call anything denied"
+      "implies": "NOTHING. The lookup never reaches a desktop object, so no DACL is ever consulted.",
+      "doesNotImply": "above all it does not imply that cross-session desktop access is DENIED. Both routes were refused at the name, for our own session as well as the other one, so denial was never tested. Cross-session desktop access remains NOT PROVEN in either direction"
     },
     {
       "id": "E4-read-other-session-clipboard",
