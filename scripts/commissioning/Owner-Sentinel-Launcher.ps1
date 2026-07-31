@@ -367,8 +367,16 @@ try {
   $UI.SetFoot('SHA-256 ' + (CX-Sha256File -Path $txtPath) + '   —  可以閂咗呢個窗。')
 }
 catch {
-  [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'unexpected' -Reason $_.Exception.Message `
-    -Detail @($_.ScriptStackTrace, $roundLog) -Launcher 'owner')
+  # The handler itself must not be able to throw — see CX-Crash. If the ordinary fail-safe
+  # cannot run, the last resort writes to the Owner's own profile, which needs no elevation.
+  $err = $_
+  $ok = $false
+  try {
+    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'unexpected' -Reason $err.Exception.Message `
+      -Detail @($err.ScriptStackTrace, $roundLog) -Launcher 'owner')
+    $ok = $true
+  } catch { $ok = $false }
+  if (-not $ok) { [void](CX-Crash -Launcher 'owner' -ErrorRecord $err -UI $UI); exit 1 }
 }
 
 $UI.Form.Add_FormClosed({ [Windows.Forms.Application]::ExitThread() })

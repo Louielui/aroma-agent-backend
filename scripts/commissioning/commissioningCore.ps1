@@ -308,6 +308,51 @@ $script:CX_NA_LINE1 = 'Part B 未通過 —— 呢一步唔適用。'
 $script:CX_NA_LINE2 = '冇做過任何嘢，亦冇刪過任何嘢。'
 $script:CX_NA_LINE3 = '影一張相，然後就可以停手。'
 
+# ═══════════════════════════════════════════════════════════════════════════
+# THE LAST RESORT. Used when the ORDINARY failure path itself cannot run.
+#
+# MEASURED 2026-07-31: launcher 4 vanished with no screen at all. The outermost catch read a
+# variable that is only assigned inside the try, so when an exception arrived before that line
+# the CATCH threw too — unhandled — and the process died taking its already-shown window with
+# it. The Owner pressed, answered UAC, and watched the window close with nothing to photograph.
+#
+# Two things were wrong and both are fixed here:
+#   1. an error handler must not be able to throw. It runs at the worst possible moment, under
+#      Set-StrictMode, where touching an unassigned variable is fatal.
+#   2. the failure report went only into the evidence directory, which needs elevation to read —
+#      so a crash was invisible to everyone afterwards as well as at the time.
+#
+# This writes to the Owner's OWN profile, which needs no elevation to read, and shows a
+# MessageBox that depends on none of our scaffolding. 'OK' only, never a choice.
+function CX-Crash {
+  param([string]$Launcher, $ErrorRecord, $UI)
+  $msg = 'unknown'
+  $stack = ''
+  try { $msg = [string]$ErrorRecord.Exception.Message } catch { }
+  try { $stack = [string]$ErrorRecord.ScriptStackTrace } catch { }
+
+  $path = $null
+  try {
+    $dir = Join-Path $env:LOCALAPPDATA 'Aroma'
+    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+    $path = Join-Path $dir ('commissioning-crash-' + $Launcher + '-' + (Get-Date).ToString('yyyyMMdd-HHmmss') + '.txt')
+    $t = @('AROMA COMMISSIONING - CRASH (the ordinary failure path could not run)', '',
+           $script:CX_FAILSAFE_LINE1, $script:CX_FAILSAFE_LINE2, $script:CX_FAILSAFE_LINE3, '',
+           ('launcher : ' + $Launcher), ('when     : ' + (Get-Date).ToString('o')),
+           ('error    : ' + $msg), '', 'stack:', $stack)
+    [IO.File]::WriteAllText($path, (($t -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding($false)))
+  } catch { $path = '(could not write a crash file)' }
+
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    [Windows.Forms.MessageBox]::Show(
+      ($script:CX_FAILSAFE_LINE1 + "`r`n" + $script:CX_FAILSAFE_LINE2 + "`r`n" + $script:CX_FAILSAFE_LINE3 +
+       "`r`n`r`n" + $path + "`r`n`r`n" + $msg),
+      ('Aroma - ' + $Launcher), 'OK', 'Information') | Out-Null
+  } catch { }
+  $path
+}
+
 function CX-NotApplicableBanner {
   param([string]$Why, [string]$Path)
   ($script:CX_NA_LINE1 + "`r`n" + $script:CX_NA_LINE2 + "`r`n" + $script:CX_NA_LINE3 +

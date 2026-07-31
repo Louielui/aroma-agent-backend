@@ -185,9 +185,18 @@ try {
   exit 0
 }
 catch {
-  # The outermost catch. Anything unforeseen still ends on the one fail-safe screen.
-  [void](CX-Fail -UI $UI -Nonce $null -Stage 'unexpected' -Reason $_.Exception.Message `
-    -Detail @($_.ScriptStackTrace) -Launcher 'reader')
-  $UI.Form.ShowDialog() | Out-Null
+  # The outermost catch. Anything unforeseen still ends on a screen — and if the fail-safe
+  # screen itself cannot run, CX-Crash writes somewhere readable without elevation.
+  $err = $_
+  $ok = $false
+  try {
+    if ($UI) {
+      [void](CX-Fail -UI $UI -Nonce $null -Stage 'unexpected' -Reason $err.Exception.Message `
+        -Detail @($err.ScriptStackTrace) -Launcher 'reader')
+      $UI.Form.ShowDialog() | Out-Null
+      $ok = $true
+    }
+  } catch { $ok = $false }
+  if (-not $ok) { [void](CX-Crash -Launcher 'reader' -ErrorRecord $err -UI $UI) }
   exit 1
 }

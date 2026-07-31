@@ -82,9 +82,22 @@ test('*** every catch block in a launcher ends in CX-Fail ***', () => {
     const c = code(f)
     const catches = (c.match(/\bcatch\s*\{/g) || []).length
     assert.ok(catches >= 1, f + ' has a top-level catch')
-    // the outermost catch is the last one and must call CX-Fail
-    const tail = c.slice(c.lastIndexOf('catch'))
-    assert.match(tail, /CX-Fail/, f + ' outermost catch must produce the fail-safe report')
+    // The outermost handler must produce a REPORT AND A SCREEN. It may reach the ordinary
+    // fail-safe (CX-Fail) or, when that itself cannot run, the last resort (CX-Crash).
+    //
+    // WIDENED 2026-07-31, and only because the narrow form had just been proven insufficient:
+    // launcher 4 vanished with no screen because its outermost catch read a variable assigned
+    // inside the try, so under Set-StrictMode the HANDLER threw and the process died. Requiring
+    // "the last catch mentions CX-Fail" cannot see that — the text was there and the run still
+    // ended in silence. What matters is that SOME path out of the handler still reports.
+    const outer = c.slice(c.lastIndexOf('\ncatch {'))
+    assert.ok(/CX-Fail/.test(outer) || /CX-Crash/.test(outer),
+      f + ' outermost catch must produce a report by one route or the other')
+    assert.match(outer, /CX-Crash/,
+      f + ' outermost catch needs the last-resort path: the ordinary one can itself fail')
+    // and it must not read a bare variable that the try assigns — the defect itself
+    assert.equal(/-Nonce \$\(if \(\$round\)/.test(outer), false,
+      f + ' outermost catch dereferences a try-scoped variable; guard it with Get-Variable')
   }
 })
 

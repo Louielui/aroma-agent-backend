@@ -202,11 +202,22 @@ try {
   $UI.SetFoot('回合 ' + $NONCE + '  —  可以閂咗呢個窗。')
 }
 catch {
-  [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'unexpected' -Reason $_.Exception.Message -Detail @($_.ScriptStackTrace) -Launcher 'operator')
-  if ($NONCE) {
-    [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object @{
-      marker='OPERATOR-DONE'; verdict='FAIL'; reason=$_.Exception.Message; at=(Get-Date).ToString('o') })
-  }
+  # The handler itself must not be able to throw — see CX-Crash. Telling the OTHER side is done
+  # in its own try, because a failure to report back must not stop this side from showing a
+  # screen, and a failure to show a screen must not stop the other side being told.
+  $err = $_
+  $ok = $false
+  try {
+    [void](CX-Fail -UI $UI -Nonce $NONCE -Stage 'unexpected' -Reason $err.Exception.Message -Detail @($err.ScriptStackTrace) -Launcher 'operator')
+    $ok = $true
+  } catch { $ok = $false }
+  try {
+    if ($NONCE) {
+      [void](CX-WriteJson -Path (CX-Marker -Nonce $NONCE -Name 'OPERATOR-DONE.json') -Object @{
+        marker='OPERATOR-DONE'; verdict='FAIL'; reason=$err.Exception.Message; at=(Get-Date).ToString('o') })
+    }
+  } catch { }
+  if (-not $ok) { [void](CX-Crash -Launcher 'operator' -ErrorRecord $err -UI $UI); exit 1 }
 }
 
 $UI.Form.Add_FormClosed({ [Windows.Forms.Application]::ExitThread() })

@@ -242,8 +242,22 @@ try {
   exit 0
 }
 catch {
-  [void](CX-Fail -UI $UI -Nonce $(if ($round) { $round } else { $null }) -Stage 'unexpected' `
-    -Reason $_.Exception.Message -Detail @($_.ScriptStackTrace) -Launcher 'retention')
-  $UI.Form.ShowDialog() | Out-Null
+  # AN ERROR HANDLER MUST NOT BE ABLE TO THROW. This one did: it read $round, which is assigned
+  # inside the try, so an exception arriving before that line made the CATCH fail too — the
+  # process died and took its already-shown window with it. Every access here is now guarded,
+  # and the last resort writes somewhere readable without elevation.
+  $err = $_
+  $nonce = $null
+  try { $v = Get-Variable -Name 'round' -Scope 1 -ErrorAction SilentlyContinue; if ($v) { $nonce = [string]$v.Value } } catch { }
+  $reported = $false
+  try {
+    if ($UI) {
+      [void](CX-Fail -UI $UI -Nonce $nonce -Stage 'unexpected' `
+        -Reason $err.Exception.Message -Detail @($err.ScriptStackTrace) -Launcher 'retention')
+      $UI.Form.ShowDialog() | Out-Null
+      $reported = $true
+    }
+  } catch { $reported = $false }
+  if (-not $reported) { [void](CX-Crash -Launcher 'retention' -ErrorRecord $err -UI $UI) }
   exit 1
 }
