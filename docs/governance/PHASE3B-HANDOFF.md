@@ -1305,3 +1305,108 @@ is actually for is *"this push did not touch `main`"*, so verify that directly:
 Either states the invariant instead of a snapshot of it. This is §16's standing rule applied to the
 verification procedure itself: **a number written down is a fact about the moment it was taken.** The
 rule was written the same day this constant went stale, which is as good a demonstration as it gets.
+
+---
+
+## 18. ROUND `28ba1e19f7ab` — THE PART B PASS IS **VOID**. Read this before citing anything.
+
+*(Owner ruling 2026-07-31. Marked precisely so the next session cannot inherit a known-hollow PASS.)*
+
+`PARTB-SEALED.json` for round `28ba1e19f7ab` records **`verdict: PASS`**. **That PASS is not valid
+and must not be treated as containment evidence.** A VOID marker sits beside the readable copy at
+`C:\Aroma\Commissioning-Reports\28ba1e19f7ab\PARTB-SEAL-VOID.{json,txt}`.
+
+> **The authoritative copy under `ComputerOperator-Evidence` is still UNMARKED** — writing there
+> needs elevation this session did not have. Anyone reading the raw evidence directory directly
+> will see an unqualified PASS. **This section is the durable record.**
+
+### Why it is void
+
+**1. The verdict rule measured the wrong thing — and it was mine.**
+
+```
+$verdict = if ($drift -eq 0 -and $gaps -eq 0 -and $rows -gt 0) { 'PASS' }
+```
+
+`drift` and `controlGaps` describe **register consistency** — whether every negative row has a
+*declared* positive control. They say nothing about whether those controls **passed**. So
+"the register is coherent" was converted into "Part B passed". That is the same vacuous-pass shape
+this whole phase exists to dismantle, written into the adjudication itself.
+
+**2. The harness disagreed, in its own final line.**
+
+```
+STAGE 3 RAN - ROWS NOT CLEAN.
+CONTROL : positive control POS-list_windows-own is INVALID, not ACCEPTED - the negative proves nothing
+CONTROL : positive control POS-capture_screen  is INVALID, not ACCEPTED - the negative proves nothing
+```
+
+**3. All three EYE positive controls were INVALID**, so their negatives prove nothing:
+
+| row | verdict |
+|---|---|
+| `POS-list_windows-own` / `POS-capture_screen` / `POS-read_uia_tree-own` | **INVALID** |
+| `E1-enumerate-other-session-windows` | INVALID / UNDETERMINED |
+| `E8-capture-other-session-screen` | INVALID / UNDETERMINED |
+
+**Root cause — the two-nonce disconnect, again.** The owner sentinel *was* painted and verified
+(1250/1250 sample points). But it was painted under the **commissioning round nonce**, while the
+harness looks for `stage3-sentinel-owner-<Part A manifest ownerNonce>.json`. Different nonces, so
+the attestation was never found and the harness correctly concluded "no owner sentinel
+demonstrably painted". §12 joined the two manifests for **consumption**; their **identity** was
+never joined.
+
+### What still stands from that round
+
+`E6`, `E10`, `E7`, `E9` — all **BOUNDED / ACL** with **ACCEPTED** positive controls. Cross-session
+**process and handle** containment is evidenced. **The eyes are not.**
+
+### The DoD chain for that round is also void
+
+All three `CONTEXT-*.json` are **0 bytes**: the writer takes `-Context` and every call site passed
+`-Object`, so nothing bound and an empty file was written. The `lock3` and `dod` contexts survive
+embedded in `LOCK3-DONE.json`; **the `part-b` context exists nowhere.** It was **not** reconstructed
+from surrounding evidence — a context assembled after the fact is exactly the defect this phase
+removes.
+
+---
+
+## 19. THE THREE FIXES, DEFERRED ON PURPOSE — do these before re-running Part B
+
+*(Owner: written down tonight, changed another day. Not fixed same-night, so nobody re-runs on code
+that changed after they last saw it work.)*
+
+1. **Align the sentinel nonce with Part A's manifest `ownerNonce`.** This is the root cause of the
+   eyes being INVALID. Either paint the sentinel with the manifest nonce, or have the harness accept
+   the round nonce — one identity, chosen deliberately, not two that happen to coexist.
+2. **Make the verdict rule read every row.** Register consistency is a precondition, not a result. A
+   row that is INVALID, or whose positive control is INVALID, must prevent PASS. Add a test that a
+   chain containing an INVALID positive control can never produce PASS.
+3. **`-Object` → `-Context` at all three call sites**, and make `Write-MeasurementContext` **refuse
+   to write an empty or null context** rather than leaving a 0-byte file that looks written. Pass
+   `--verdicts` to the adjudicator **through a file**, not as a command-line JSON string — the
+   quoting was lost crossing into node and produced `INCOMPLETE_CONTEXT`, which pointed at the wrong
+   thing entirely.
+
+**Also add a guard test for the class:** no launcher may call a commissioning helper with a
+parameter name that helper does not declare. `-Object` bound to nothing, silently, and the
+`[void](...)` wrapped around it hid the rest.
+
+### Lock 3 coverage gap — recorded, not yet closed
+
+Lock 3 ran for real: **97 examined, 0 deleted, 6 raw within retention, 43 records retained,
+48 unclassified.** Deleting nothing was correct — nothing was past retention.
+
+But **48 of 97 files are `unclassified`**, all `companion-*.log` / `.log.err`. The classifier
+fail-safe works exactly as designed (an undeclared name is never deleted, only reported) — and the
+consequence is that **roughly half the evidence directory sits outside Lock 3 declared coverage**.
+The control is safe; it is not complete. Either declare those names, or state plainly that companion
+logs are out of scope — and say which.
+
+### One process note, from the Owner
+
+> The Owner asked for the three steps to be done "continuously, without asking". They could not be —
+> they need elevated reads this session does not have — and saying so was right. **But he noted that
+> the instruction itself pushed against stopping**, and that he would not phrase it that way again.
+> Recorded because the shape of an instruction, not just the code, is part of how a hollow pass gets
+> made.
