@@ -51,7 +51,24 @@ if (-not (CX-IsElevated)) {
   exit 0
 }
 
-$UI = CX-NewUI -Title 'Aroma 第一步 —— 擁有者標記' -Subtitle $(if ($DRY) { '試跑 —— 唔會改動呢部機任何嘢' } else { '實體機驗收，第 1 步，共 2 步' })
+# Building the window is itself protected. See Operator-Verification-Launcher.ps1 for the
+# incident: an unprotected preamble under $ErrorActionPreference='Stop' exits with NO window at
+# all, which leaves the person at the machine nothing to photograph and no way to tell a crash
+# from a mis-click. A launcher must always produce a window.
+$UI = $null
+try {
+  $UI = CX-NewUI -Title 'Aroma 第一步 —— 擁有者標記' -Subtitle $(if ($DRY) { '試跑 —— 唔會改動呢部機任何嘢' } else { '實體機驗收，第 1 步，共 2 步' })
+} catch {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    [Windows.Forms.MessageBox]::Show(
+      ('已經停止 —— 而且係安全咁停低咗。' + "`r`n" +
+       '呢一步連開始都未開始，部機冇被改動過。' + "`r`n" +
+       '影一張相，然後就可以停手。' + "`r`n`r`n" + $_.Exception.Message),
+      'Aroma 第一步', 'OK', 'Information') | Out-Null
+  } catch { }
+  exit 1
+}
 $UI.Banner2('開始緊……', 'info')
 
 foreach ($s in @(

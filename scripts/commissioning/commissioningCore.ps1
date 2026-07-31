@@ -48,7 +48,17 @@ function CX-ResolveRepo {
   # 2. known trees on this machine, most specific first
   foreach ($c in @('C:\Aroma\aroma-3b', 'C:\Aroma\aroma-agent-backend')) { $candidates.Add($c) }
   foreach ($c in $candidates) {
-    if ($c -and (Test-Path -LiteralPath (Join-Path $c $marker))) { return $c }
+    if (-not $c) { continue }
+    # try/catch is LOAD-BEARING, not defensive habit. Callers set $ErrorActionPreference='Stop'
+    # BEFORE dot-sourcing this file, and the Companion account is denied on parts of C:\Aroma by
+    # design (deploy-companion applies a Deny there — that IS the containment). An Access Denied
+    # from Test-Path is therefore a TERMINATING error raised while the core is still loading,
+    # i.e. before any launcher has created its window: the process dies showing NOTHING. That is
+    # the single worst outcome available here, and it is what the Owner hit on 2026-07-31.
+    # Unreadable simply means "not a usable candidate".
+    $ok = $false
+    try { $ok = Test-Path -LiteralPath (Join-Path $c $marker) -ErrorAction Stop } catch { $ok = $false }
+    if ($ok) { return $c }
   }
   $null
 }

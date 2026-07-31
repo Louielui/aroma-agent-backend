@@ -135,9 +135,13 @@ if ($needObs) {
 # Copy-Item INTO the probe directory still works under Gate B (creating a file needs write,
 # not read). Hashing the STAGED copy does not - so the verification is deferred to the probes
 # themselves, which print a staged-file table from the session that CAN read it.
+# measurementContext.ps1 was MISSING from this list when the context capture was added to
+# launcher 2. Launcher 2 runs as the Companion, which is denied on the Owner's tooling tree by
+# design — so loading it from the repo was asking that account to read exactly what the
+# containment forbids. It belongs here, with the other probes, and is read from the staged copy.
 $stageSet = @('observer.ps1','assertionRegistry.ps1','assertion-registry.json','probeIdentityGate.ps1',
               'tierA-probe.ps1','stage3-harness.ps1','stage3-topup.ps1','stage3-lock5.ps1',
-              'stage3-sentinel.ps1','stage3-baseline.ps1')
+              'stage3-sentinel.ps1','stage3-baseline.ps1','measurementContext.ps1')
 if (-not (Test-Path -LiteralPath $script:CX_ProbeDir)) {
   return @{ ok = $false; reason = 'the probe directory does not exist'; detail = @($script:CX_ProbeDir); summary = '' }
 }

@@ -1,4 +1,4 @@
-# commissioningSelfCheck.ps1 - the launcher checks its OWN machinery before it touches the
+﻿# commissioningSelfCheck.ps1 - the launcher checks its OWN machinery before it touches the
 # machine. Runs against a scratch directory: no state changed, no measurement taken.
 #
 # WHY THIS EXISTS RATHER THAN "the executor does a dry run first"

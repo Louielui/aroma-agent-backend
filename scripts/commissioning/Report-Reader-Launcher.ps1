@@ -45,7 +45,22 @@ if (-not (CX-IsElevated)) {
   exit 0
 }
 
-$UI = CX-NewUI -Title 'Aroma 報告 —— 攞返驗收報告' -Subtitle '把報告抄去一個唔使提權都讀得到嘅資料夾'
+# Protected: an unprotected preamble exits with NO window at all, which leaves the person at the
+# machine nothing to photograph. See Operator-Verification-Launcher.ps1 for the incident.
+$UI = $null
+try {
+  $UI = CX-NewUI -Title 'Aroma 報告 —— 攞返驗收報告' -Subtitle '把報告抄去一個唔使提權都讀得到嘅資料夾'
+} catch {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    [Windows.Forms.MessageBox]::Show(
+      ('已經停止 —— 而且係安全咁停低咗。' + "`r`n" +
+       '呢一步連開始都未開始，冇改動過任何證據。' + "`r`n" +
+       '影一張相，然後就可以停手。' + "`r`n`r`n" + $_.Exception.Message),
+      'Aroma 報告', 'OK', 'Information') | Out-Null
+  } catch { }
+  exit 1
+}
 $UI.Banner2('開始緊……', 'info')
 
 foreach ($s in @(

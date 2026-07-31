@@ -18,9 +18,34 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $DRY = ($PSBoundParameters.ContainsKey('DryRun') -and [bool]$PSBoundParameters['DryRun'])
-. (Join-Path $PSScriptRoot 'commissioningCore.ps1')
 
-$UI = CX-NewUI -Title 'Aroma 第二步 —— 操作員檢查' -Subtitle $(if ($DRY) { '試跑 —— 唔會量度任何嘢' } else { '實體機驗收，第 2 步，共 2 步' })
+# ── THE PREAMBLE IS NOW PROTECTED. A LAUNCHER MUST NEVER EXIT SILENTLY. ─────
+# MEASURED 2026-07-31: the Owner switched accounts, double-clicked this icon, and NOTHING
+# happened — no window, no report, nothing to photograph. Loading the core and building the
+# window both sat OUTSIDE the try below, with $ErrorActionPreference='Stop' already in force,
+# so any failure in those two lines killed the process before there was anything to show.
+#
+# "Nothing happened" is the worst possible failure of this design: it gives the person at the
+# machine no screen, no path, no SHA, and no way to tell a crash from a mis-click. Everything
+# else here is built so that a failure is legible; this hole made one class of failure invisible.
+#
+# The window is now the FIRST thing attempted, and if even that fails there is a MessageBox
+# fallback that needs no WinForms scaffolding of ours. 'OK' only — never a choice.
+$UI = $null
+try {
+  . (Join-Path $PSScriptRoot 'commissioningCore.ps1')
+  $UI = CX-NewUI -Title 'Aroma 第二步 —— 操作員檢查' -Subtitle $(if ($DRY) { '試跑 —— 唔會量度任何嘢' } else { '實體機驗收，第 2 步，共 2 步' })
+} catch {
+  try {
+    Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+    [Windows.Forms.MessageBox]::Show(
+      ('已經停止 —— 而且係安全咁停低咗。' + "`r`n" +
+       '呢一步連開始都未開始，冇量度過任何嘢。' + "`r`n" +
+       '影一張相，然後就可以停手。' + "`r`n`r`n" +
+       $_.Exception.Message), 'Aroma 第二步', 'OK', 'Information') | Out-Null
+  } catch { }
+  exit 1
+}
 $UI.Banner2('開始緊……', 'info')
 foreach ($s in @(
   @('who',   '檢查係唔係正確嘅 Windows 帳戶'),
@@ -91,7 +116,11 @@ try {
   # It REFUSES rather than annotates. A Part B measured while the Companion session is
   # Disconnected would produce numbers that cannot be combined with anything, and discovering
   # that at adjudication time means the visit is wasted instead of merely paused.
-  . (Join-Path $script:CX_Scripts 'measurementContext.ps1')
+  # From the STAGED copy, not the repo. This process runs as the Companion, and the Companion is
+  # denied on the Owner's tooling tree by design — reading it from there would be asking the
+  # account to do the one thing containment exists to stop. The probe directory is where this
+  # account is supposed to read from, and prepare stages the file into it.
+  . (Join-Path $script:CX_ProbeDir 'measurementContext.ps1')
   $ctx = New-MeasurementContext -Stage 'part-b' -RunId $NONCE
   [void](Write-MeasurementContext -Path (CX-Marker -Nonce $NONCE -Name 'CONTEXT-part-b.json') -Object $ctx)
   if (-not $ctx.usable) {
