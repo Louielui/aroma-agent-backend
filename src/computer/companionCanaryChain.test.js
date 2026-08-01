@@ -15,6 +15,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const R = require('./companionCanaryRunner')
+const { createArtifactStore } = require('../store/artifactStore')
 const RQ = require('./executeRequestStore')
 const osx = require('node:os')
 const fsx = require('node:fs')
@@ -101,7 +102,32 @@ function fakeExecutor (over = {}) {
   }
 }
 
-const fakeStore = () => { const w = []; return { w, write: (t, r) => { w.push({ t, kind: r.kind }); return r } } }
+/**
+ * THE REAL STORE, over a temp directory. There is no fake.
+ *
+ * There was one, and it looked like this:
+ *
+ *     const fakeStore = () => ({ w: [], write: (t, r) => { this.w.push(...); return r } })
+ *
+ * It accepted anything. The real store REQUIRES `id` and `createdAt` and throws TypeError
+ * without them — and every audit record on the Companion path was missing both. So every test
+ * asserting "the run was recorded" was asserting that write() had been CALLED, not that the
+ * record was acceptable, and the first real Companion died on its first audit write with a
+ * message about the identity check that read like a disk failure.
+ *
+ * A stricter fake would have been a hand-maintained copy of the real contract, which is the
+ * thing that drifts. artifactStore is pure filesystem — there is no reason to stand in for it.
+ */
+const realStore = () => {
+  const dir = fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'aroma-audit-'))
+  const store = createArtifactStore({ baseDir: dir })
+  return {
+    dir,
+    write: (kind, record) => store.write(kind, record),
+    // What the tests used to read off the fake, recomputed from what is actually on disk.
+    get w () { return store.list('computer-audit').map((r) => ({ t: 'computer-audit', kind: r.kind })) }
+  }
+}
 
 const receipt = (over = {}) => Object.assign({
   approvalId: 'appr_' + 'f'.repeat(32),
@@ -121,7 +147,7 @@ function chain (over = {}) {
     snapshot: snapshot(),
     ledger,
     executor: fx.executor,
-    artifactStore: fakeStore(),
+    artifactStore: realStore(),
     receipt: rec,
     receiptVerified: true,
     env: { COMPUTER_OPERATOR: 'on' },

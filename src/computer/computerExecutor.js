@@ -152,7 +152,22 @@ function createComputerExecutor (deps = {}) {
       const e = new Error('audit_not_configured'); e.kind = kind; throw e
     }
     try {
-      artifactStore.write('computer-audit', Object.assign({ kind, at: clock() }, record))
+      // ── id AND createdAt ARE REQUIRED BY THE STORE ────────────────────────
+      // This wrote `{ kind, at, ...record }` and the store demands `id` and `createdAt`. It
+      // threw TypeError before touching the filesystem, on every audit write, on any machine
+      // and as any user — so the whole audit chain was broken and the first attempt to use it
+      // reported "the identity check could not be recorded", which reads as a disk or
+      // permission problem and was neither.
+      //
+      // Generated HERE rather than inside the store: the store's contract is that the caller
+      // supplies both, so that a test can reproduce a run exactly. Moving the clock into the
+      // store would make every record depend on wall time and cost that property.
+      //
+      // `at` is kept as well as `createdAt`. They are the same instant, and `at` is what the
+      // existing records and tests read; dropping it to tidy up would rewrite history that is
+      // already on disk from earlier phases.
+      const createdAt = clock()
+      artifactStore.write('computer-audit', Object.assign({ kind, at: createdAt, id: newId(), createdAt }, record))
     } catch (err) {
       const e = new Error('audit_write_failed')
       e.kind = kind

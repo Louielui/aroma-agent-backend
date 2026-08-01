@@ -19,7 +19,19 @@ const SRC = path.resolve(__dirname, '..')
 const REPO = path.resolve(__dirname, '..', '..')
 const SCRIPTS = path.join(REPO, 'scripts', 'computer')
 
-const fakeStore = () => ({ w: [], write (t, r) { this.w.push({ t, kind: r.kind }); return r } })
+const os = require('node:os')
+const { createArtifactStore } = require('../store/artifactStore')
+
+/**
+ * THE REAL STORE, over a temp directory. The fake this replaces accepted any record; the real
+ * one requires `id` and `createdAt`, and nothing on the Companion path was supplying them.
+ * A fake that accepts what production rejects is a test that passes for the wrong reason.
+ */
+const fakeStore = () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-factory-'))
+  const store = createArtifactStore({ baseDir: dir })
+  return { dir, write: (k, r) => store.write(k, r), get w () { return store.list('computer-audit') } }
+}
 const fakeRunner = () => ({ calls: [], run (id, payload) { this.calls.push({ id, payload }); return { ok: true, result: { ok: true } } } })
 
 /* ── one runner, shared ───────────────────────────────────────────────────── */

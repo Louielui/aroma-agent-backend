@@ -91,6 +91,17 @@ const FORBIDDEN_RIGHTS = Object.freeze({
 const no = (refusal, human, detail) => ({ ok: false, refusal, human, detail: detail || null })
 
 /**
+ * A filename-safe fragment of the request id, so audit records from one run group together and
+ * two runs can never collide on a name. Falls back to a constant when there is no usable id —
+ * an audit record must never fail to be written because the thing it is recording was malformed.
+ */
+function kindSafe (request) {
+  const id = request && typeof request.requestId === 'string' ? request.requestId : ''
+  const cleaned = id.replace(/[^A-Za-z0-9_-]/g, '')
+  return cleaned || 'norequest'
+}
+
+/**
  * The machine preflight, run BY the Companion AS itself.
  *
  * `machine` is injected: on the real Companion it is backed by PowerShell running in the
@@ -232,8 +243,21 @@ function companionPreflight (machine, ctx = {}) {
  * @param {object} deps.artifactStore durable audit
  */
 function runCanaryAsCompanion (request, deps = {}) {
+  // ── THE STORE REQUIRES id AND createdAt, AND THIS SUPPLIED NEITHER ────────
+  // `toAuditRecord` builds a rich record with no `id` and no `createdAt`, so the store threw
+  // TypeError before reaching the filesystem — and the catch below turned that into
+  // "The identity check could not be recorded. Nothing will run." A schema error wearing the
+  // costume of a disk failure, on the one screen where the difference matters.
+  //
+  // Supplied by the caller, deliberately, because the store's contract is that the caller
+  // supplies them: that is what makes a recorded run reproducible in a test.
+  let auditSeq = 0
+  const auditId = () => 'ccr_' + String(++auditSeq).padStart(3, '0') + '_' + kindSafe(request)
   const audit = (kind, record) => {
-    try { deps.artifactStore.write('computer-audit', Object.assign({ kind }, record)) } catch (e) { return false }
+    try {
+      const createdAt = new Date(deps.now ? deps.now() : Date.now()).toISOString()
+      deps.artifactStore.write('computer-audit', Object.assign({ kind, id: auditId(), createdAt }, record))
+    } catch (e) { return false }
     return true
   }
   const fail = (res, phase) => {
