@@ -78,7 +78,7 @@ const goodMachine = (over = {}) => Object.assign({
       }),
   listDir: () => [],
   fileExists: () => false,
-  probeWritable: () => [{ path: R.ALLOWED_DIR, writable: true }, { path: 'C:\\Aroma', writable: false }],
+  probeWritable: () => ({ ok: true, paths: [{ path: 'C:\\Aroma', writable: false }], residue: [], notProbed: [{ path: R.ALLOWED_DIR, reason: 'in_scope_mask_asserted_by_acl_check' }] }),
   stagedClosure: () => ({ ok: true }),
   notepadCount: () => 0,
   auditWritable: () => true
@@ -282,7 +282,15 @@ test('*** 11. every Companion preflight failure gives 0 desktop actions ***', ()
     [{ readAcl: () => ({ ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: { [OP_SID]: 0x1F01FF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF } }) }, 'acl_mask_mismatch'],
     [{ listDir: () => ['leftover.txt'] }, 'folder_not_empty'],
     [{ fileExists: () => true }, 'file_exists'],
-    [{ probeWritable: () => [{ path: 'C:\\Windows', writable: true }] }, 'writable_outside_scope'],
+    [{ probeWritable: () => ({ ok: true, paths: [{ path: 'C:\\Windows', writable: true }], residue: [] }) }, 'writable_outside_scope'],
+    // A refusal from the probe now arrives WITH its reason instead of as a bare null, which is
+    // what made the operator's screen say "not measured" when the truth was that the probe could
+    // not delete the file it had written.
+    [{ probeWritable: () => ({ ok: false, reason: 'probe_file_not_removed', detail: 'C:\\Aroma\\x.tmp' }) }, 'write_scope_unmeasured'],
+    [{ probeWritable: () => ({ ok: true, paths: [], residue: ['C:\\Aroma\\.aroma-probe-x.tmp'] }) }, 'probe_residue_outside_scope'],
+    // Probe residue inside the approved folder is its own refusal, not a generic "not empty":
+    // the files are ours, and the operator cannot delete them by design.
+    [{ listDir: () => ['.aroma-probe-' + 'd'.repeat(32) + '.tmp'] }, 'probe_residue'],
     [{ stagedClosure: () => ({ ok: false, reason: 'hash mismatch' }) }, 'staging_unverified'],
     [{ notepadCount: () => 1 }, 'notepad_already_open'],
     [{ auditWritable: () => false }, 'audit_not_writable'],

@@ -146,6 +146,41 @@ const IDENTITY_ROWS = Object.freeze([
   }
 ])
 
+/**
+ * THE ONE MARKER RULE, used by every table on every screen.
+ *
+ * ── WHY IT IS A FUNCTION AND NOT A CONVENTION ──────────────────────────────
+ * The identity table and the machine table each computed their own markers, and each was fixed
+ * separately. The identity one was corrected first; the machine one was left, and the operator's
+ * next login showed exactly the same defect one table down — a PROBLEM marker on "can only write
+ * in scope" while the RESULT was about the folder not being empty. Two answers to one question,
+ * for the second time, in the same file.
+ *
+ * So the rule lives in one place and both tables call it. The judge stops at the first problem,
+ * so: rows before it were checked and passed, the row owning the refusal IS the problem, and
+ * rows after it were never reached. "Never reached" is printed as such, not as OK — an unasked
+ * question has no answer, and a tick would invent one.
+ *
+ * @param rows      [{label, owns:[refusal], value, unmeasured}]  in the judge's order
+ * @param verdictOk did the judge pass
+ * @param refusal   the judge's refusal, if it did not
+ */
+function markRows (rows, verdictOk, refusal) {
+  const failedAt = verdictOk ? rows.length : rows.findIndex((r) => (r.owns || []).includes(refusal))
+  return rows.map((r, i) => {
+    // A value that was never measured can never be OK, whatever the verdict says. This is the
+    // rule a blank "Account / OK" broke: value from one source, marker from another, so an
+    // absent value could still be ticked.
+    if (r.unmeasured) return { label: r.label, value: 'not measured', mark: false, note: null }
+    if (failedAt === -1) return { label: r.label, value: r.value, mark: null, note: null } // nothing judged
+    if (i < failedAt) return { label: r.label, value: r.value, mark: true, note: null }
+    if (i === failedAt) return { label: r.label, value: r.value, mark: false, note: null }
+    return { label: r.label, value: r.value, mark: null, note: 'not checked' }
+  })
+}
+
+const printRows = (marked) => { for (const m of marked) line(m.label, m.value, m.mark, m.note) }
+
 /** The identity result, as sentences. Shared by the identity tool and the Companion launcher. */
 function renderIdentity (res) {
   if (!res.snapshot) {
@@ -155,25 +190,12 @@ function renderIdentity (res) {
   }
   const s = res.snapshot
 
-  // Which row owns the refusal. -1 means the refusal belongs to no row — an incomplete or
-  // unreadable measurement — in which case NO row may be marked OK, because nothing was judged.
-  const failedAt = res.ok ? IDENTITY_ROWS.length : IDENTITY_ROWS.findIndex((r) => r.owns.includes(res.refusal))
-
-  IDENTITY_ROWS.forEach((r, i) => {
-    // A field the collector did not produce is never OK, whatever the verdict says. This is the
-    // rule that a blank "Account / OK" broke: the value came from one place and the marker from
-    // another, so an absent value could still be ticked.
-    const unmeasured = r.fields.some((f) => s[f] === undefined || s[f] === null)
-    if (unmeasured) { line(r.label, 'not measured', false); return }
-
-    const value = r.render(s)
-    if (failedAt === -1) { line(r.label, value, null); return }   // nothing was judged
-    if (i < failedAt) { line(r.label, value, true); return }      // checked, and passed
-    if (i === failedAt) { line(r.label, value, false); return }   // this is the problem
-    // After the first problem the judge stopped, so these were never reached. Reported as such
-    // rather than as OK: an unasked question has no answer, and a tick would invent one.
-    line(r.label, value, null, 'not checked')
-  })
+  printRows(markRows(IDENTITY_ROWS.map((r) => ({
+    label: r.label,
+    owns: r.owns,
+    unmeasured: r.fields.some((f) => s[f] === undefined || s[f] === null),
+    value: r.fields.some((f) => s[f] === undefined || s[f] === null) ? null : r.render(s)
+  })), res.ok === true, res.refusal))
 
   if (res.ok) {
     verdict(true, 'This session is the operator account, with no extra rights.')
@@ -203,14 +225,23 @@ function renderIdentity (res) {
 
 /* ── machine ──────────────────────────────────────────────────────────────── */
 
+/**
+ * The machine rows, in companionPreflight's own order, each owning the refusals it is about.
+ *
+ * `owns` is what makes the markers derivable from the verdict instead of measured a second time
+ * here — the same correction already made to the identity table, applied to this one after the
+ * operator's login showed the identical defect: a PROBLEM on the writable row while the RESULT
+ * was about the folder.
+ */
 const MACHINE_ROWS = Object.freeze([
-  { key: 'acl', label: 'Folder permissions' },
-  { key: 'listdir', label: 'Folder is empty' },
-  { key: 'fileexists', label: 'Nothing to overwrite' },
-  { key: 'writable', label: 'Can only write in scope' },
-  { key: 'staging', label: 'Program files staged' },
-  { key: 'notepads', label: 'Notepad closed' },
-  { key: 'auditwritable', label: 'Can record what happens' }
+  { key: 'acl', label: 'Folder permissions', owns: ['acl_unreadable', 'acl_not_protected', 'acl_inherited', 'acl_has_deny', 'acl_ace_set_mismatch', 'acl_mask_mismatch', 'operator_over_privileged'] },
+  { key: 'listdir', label: 'Folder is empty', owns: ['folder_unreadable', 'folder_not_empty', 'probe_residue'] },
+  { key: 'fileexists', label: 'Nothing to overwrite', owns: ['file_exists'] },
+  { key: 'writable', label: 'Can only write in scope', owns: ['write_scope_unmeasured', 'writable_outside_scope', 'probe_residue_outside_scope'] },
+  { key: 'requestdir', label: 'Task folder permissions', owns: ['request_dir_unreadable', 'request_dir_inherits', 'request_dir_has_deny', 'request_dir_unknown_identity', 'request_dir_rights_changed'] },
+  { key: 'staging', label: 'Program files staged', owns: ['staging_unverified'] },
+  { key: 'notepads', label: 'Notepad closed', owns: ['notepad_already_open'] },
+  { key: 'auditwritable', label: 'Can record what happens', owns: ['audit_not_writable'] }
 ])
 
 /**
@@ -222,34 +253,79 @@ const MACHINE_ROWS = Object.freeze([
 function checkMachine (deps = {}) {
   const runner = deps.runner || buildRunner()
   const { createMachineProbe } = require('../../src/computer/machineProbe')
-  const { companionPreflight } = require('../../src/computer/companionCanaryRunner')
+  const { companionPreflight, ALLOWED_DIR, REQUEST_DIR } = require('../../src/computer/companionCanaryRunner')
   const machine = deps.machine || createMachineProbe({ runner })
 
-  // Each row is measured for the screen; the VERDICT comes from the shared rules below.
+  // Each row is DESCRIBED here; none of them is judged here. The OK/PROBLEM markers come from
+  // the verdict below, through markRows — see MACHINE_ROWS for why.
   const rows = {}
-  const acl = machine.readAcl('C:\\Aroma\\ComputerOperator-Test')
-  rows.acl = acl && acl.ok === true ? { value: acl.protected ? 'as approved' : 'not as approved', ok: acl.protected === true && acl.inheritedCount === 0 && acl.denyCount === 0 } : { value: 'cannot be read', ok: false }
-  const entries = machine.listDir('C:\\Aroma\\ComputerOperator-Test')
-  rows.listdir = entries === null ? { value: 'cannot be read', ok: false } : { value: entries.length === 0 ? 'yes, empty' : entries.length + ' file(s) present', ok: entries.length === 0 }
-  const exists = machine.fileExists('C:\\Aroma\\ComputerOperator-Test\\canary-1.txt')
-  rows.fileexists = { value: exists ? 'the file already exists' : 'nothing there', ok: exists === false }
+
+  const acl = machine.readAcl(ALLOWED_DIR)
+  rows.acl = { value: acl && acl.ok === true ? (acl.protected ? 'as approved' : 'not as approved') : 'cannot be read' }
+
+  const entries = machine.listDir(ALLOWED_DIR)
+  if (entries === null || entries === undefined) {
+    rows.listdir = { value: 'cannot be read' }
+  } else {
+    const residue = entries.filter((e) => /^\.aroma-probe-[0-9a-f]{32}\.tmp$/i.test(String(e)))
+    rows.listdir = {
+      value: entries.length === 0
+        ? 'yes, empty'
+        : residue.length === entries.length
+          ? residue.length + ' leftover probe file(s)'
+          : entries.length + ' file(s) present'
+    }
+  }
+
+  rows.fileexists = { value: machine.fileExists(ALLOWED_DIR + '\\canary-1.txt') ? 'the file already exists' : 'nothing there' }
+
+  // The probe now answers with a reason of its own, so a refusal is shown as itself. This row
+  // read "not measured" on the operator's screen when the truth was "the probe could not delete
+  // the file it wrote" — a reason that existed and was discarded one layer down.
   const w = machine.probeWritable()
-  rows.writable = w === null ? { value: 'not measured', ok: false } : { value: w.filter((p) => p.writable && p.path !== 'C:\\Aroma\\ComputerOperator-Test').length === 0 ? 'yes' : 'NO - can write elsewhere', ok: w.filter((p) => p.writable && p.path !== 'C:\\Aroma\\ComputerOperator-Test').length === 0 }
+  if (!w || w.ok !== true) {
+    rows.writable = { value: w && w.reason ? w.reason.replace(/_/g, ' ') : 'not measured' }
+  } else {
+    const strays = (w.paths || []).filter((p) => p.writable && p.path !== ALLOWED_DIR)
+    rows.writable = {
+      value: strays.length > 0
+        ? 'NO - can write in ' + strays.length + ' place(s) outside'
+        : (w.residue || []).length > 0
+            ? 'a probe file was left outside the folder'
+            : 'yes'
+    }
+  }
+
+  const reqAcl = machine.readAcl(REQUEST_DIR)
+  rows.requestdir = { value: reqAcl && reqAcl.ok === true ? (reqAcl.protected ? 'as approved' : 'not as approved') : 'cannot be read' }
+
   const staged = machine.stagedClosure()
-  rows.staging = { value: staged && staged.ok === true ? 'complete' : 'not verified', ok: staged && staged.ok === true }
+  rows.staging = { value: staged && staged.ok === true ? 'complete' : 'not verified' }
+
   const n = machine.notepadCount()
-  rows.notepads = { value: n < 0 ? 'could not be counted' : n === 0 ? 'yes, none open' : n + ' open', ok: n === 0 }
-  rows.auditwritable = { value: machine.auditWritable() ? 'yes' : 'no', ok: machine.auditWritable() === true }
+  rows.notepads = { value: n < 0 ? 'could not be counted' : n === 0 ? 'yes, none open' : n + ' open' }
+
+  rows.auditwritable = { value: machine.auditWritable() ? 'yes' : 'no' }
 
   const pre = companionPreflight(machine)
   return { ok: pre.ok === true, refusal: pre.refusal || null, human: pre.human || null, detail: pre.detail || null, rows }
 }
 
 function renderMachine (res) {
-  for (const r of MACHINE_ROWS) {
-    const row = res.rows[r.key] || { value: 'not measured', ok: false }
-    line(r.label, row.value, row.ok)
-  }
+  // THE SAME RULE AS THE IDENTITY TABLE, from the same function. This loop used to read
+  // `row.ok` — a verdict this table had computed for itself — while the RESULT line came from
+  // companionPreflight. That is how a PROBLEM marker ended up on "can only write in scope"
+  // while the RESULT was about the folder not being empty.
+  printRows(markRows(MACHINE_ROWS.map((r) => {
+    const row = res.rows[r.key]
+    return {
+      label: r.label,
+      owns: r.owns,
+      unmeasured: !row || row.value === undefined || row.value === null,
+      value: row ? row.value : null
+    }
+  }), res.ok === true, res.refusal))
+
   if (res.ok) verdict(true, 'This machine is in the state the task was approved for.')
   else verdict(false, res.human || 'This machine is not ready.', res.detail)
 }
@@ -305,7 +381,7 @@ function ensureRequestDir () {
 
 module.exports = {
   out, title, line, verdict,
-  checkIdentity, renderIdentity, IDENTITY_ROWS,
+  checkIdentity, renderIdentity, IDENTITY_ROWS, markRows,
   checkMachine, renderMachine, MACHINE_ROWS,
   checkPackage, renderPackage,
   buildRunner, ensureRequestDir,

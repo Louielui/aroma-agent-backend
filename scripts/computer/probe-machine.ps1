@@ -75,30 +75,56 @@ switch ($op) {
   }
 
   'writable' {
-    # Measured by trying, not by reading permissions and reasoning. Each probe
-    # file is removed immediately; a probe that cannot be cleaned up reports
-    # the path as writable AND says so, rather than leaving a mystery file.
-    $paths = @($TestDir, 'C:\Aroma', 'C:\Aroma\ComputerOperator-Companion', 'C:\Windows\Temp', $env:USERPROFILE)
+    # ── THE ALLOWED PATH IS NOT PROBED BY WRITING. MEASURED, NOT PREFERRED ──
+    #
+    # It used to be. Every run left a file behind, and the file then failed the
+    # NEXT run's "folder is empty" check - a probe that broke the check after
+    # it. Two runs on the operator's first real login left two .tmp files and
+    # the canary could not start.
+    #
+    # The reason is structural, not a bug to patch: AromaOperator's mask on
+    # ComputerOperator-Test is 0x1201BF. That is Modify MINUS 0x10000, and
+    # 0x10000 is DELETE. FILE_DELETE_CHILD (0x40) is absent too. So the account
+    # can create a file there and can NEVER remove it, by either route.
+    #
+    # And that is deliberate: FORBIDDEN_RIGHTS in companionCanaryRunner refuses
+    # the run if the operator holds Delete, because the account that performs
+    # the canary must not be able to delete its own evidence. The write-then-
+    # delete measurement was therefore impossible from the day the ACL was set.
+    #
+    # So the paths split by what a success would MEAN:
+    #
+    #   in scope      a successful write proves nothing new - the exact mask is
+    #                 already asserted bit by bit against EXPECTED_ACES, Delete
+    #                 included - and is the only case that can leave residue.
+    #                 Not written to.
+    #   out of scope  a write is EXPECTED TO FAIL, and a failure creates
+    #                 nothing. If one succeeds, that is the finding this op
+    #                 exists for, and its residue is evidence rather than
+    #                 litter - reported, not silently cleaned.
+    $outOfScope = @('C:\Aroma', 'C:\Aroma\ComputerOperator-Companion', 'C:\Windows\Temp', $env:USERPROFILE)
     $out = @()
-    foreach ($dir in $paths) {
+    $residue = @()
+    foreach ($dir in $outOfScope) {
       $writable = $false
       $probe = Join-Path $dir ('.aroma-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
-      $strayLeft = $false
       try {
         [IO.File]::WriteAllText($probe, 'probe')
+        # Reaching this line IS the finding: the operator wrote outside its
+        # scope. Removal is attempted, and a failure is recorded rather than
+        # swallowed - but either way the caller is told the path is writable.
         $writable = $true
-        # A FAILED CLEANUP IS NOT COSMETIC HERE. One of the probed paths is
-        # ComputerOperator-Test, and the preflight immediately after this one
-        # refuses if that folder is not empty. A swallowed removal failure
-        # would leave a stray file and fail the NEXT check, with a message
-        # about the folder rather than about this line.
         try { Remove-Item -LiteralPath $probe -Force -ErrorAction Stop }
-        catch { $strayLeft = $true }
+        catch { $residue += $probe }
       } catch { $writable = $false }
-      if ($strayLeft) { Fail 'probe_file_not_removed' $probe }
       $out += @{ path = $dir; writable = $writable }
     }
-    Emit @{ ok = $true; paths = $out }
+    Emit @{
+      ok        = $true
+      paths     = $out
+      notProbed = @(@{ path = $TestDir; reason = 'in_scope_mask_asserted_by_acl_check' })
+      residue   = $residue
+    }
   }
 
   'staging' {

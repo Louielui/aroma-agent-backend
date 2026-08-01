@@ -130,17 +130,39 @@ function companionPreflight (machine, ctx = {}) {
   // ── the folder contents ─────────────────────────────────────────────────
   const entries = machine.listDir(ALLOWED_DIR)
   if (entries === null || entries === undefined) return no('folder_unreadable', 'The folder cannot be read.')
+
+  // PROBE RESIDUE GETS ITS OWN REFUSAL. These files are ours: an earlier run's write-probe that
+  // could not be removed, because the operator has no Delete on this folder by design. Reporting
+  // them as a generic "the folder is not empty" points the reader at the folder, when the cause
+  // is the probe — and leaves them looking for whoever put a file there.
+  const residue = entries.filter((e) => /^\.aroma-probe-[0-9a-f]{32}\.tmp$/i.test(String(e)))
+  if (residue.length > 0) {
+    return no('probe_residue',
+      'An earlier check left ' + residue.length + ' of its own temporary file(s) here, and the operator account cannot delete them.',
+      'Ask the Owner to empty ' + ALLOWED_DIR + ' from an elevated window. Files: ' + residue.join(', '))
+  }
   if (entries.length > 0) return no('folder_not_empty', 'The folder is not empty. It must be clean before a run.', entries.join(', '))
   if (machine.fileExists(ALLOWED_DIR + '\\' + EXPECTED_FILE)) {
     return no('file_exists', 'The file it would create already exists. Nothing will be overwritten.')
   }
 
   // ── nothing outside the approved path may be writable to the operator ───
+  // The result carries its own reason now, so a refusal is reported as itself rather than as
+  // "not measured" — which is what the operator was shown when the probe could not clean up.
   const outside = machine.probeWritable ? machine.probeWritable() : null
-  if (outside === null) return no('write_scope_unmeasured', 'It could not be checked which folders are writable.')
-  const strays = outside.filter((p) => p.writable && p.path !== ALLOWED_DIR)
+  if (!outside || outside.ok !== true) {
+    return no('write_scope_unmeasured', 'It could not be checked which folders are writable.',
+      outside ? (outside.reason + (outside.detail ? ': ' + outside.detail : '')) : 'no probe')
+  }
+  const strays = (outside.paths || []).filter((p) => p.writable && p.path !== ALLOWED_DIR)
   if (strays.length > 0) {
     return no('writable_outside_scope', 'The operator can write somewhere it should not.', strays.map((s) => s.path).join(', '))
+  }
+  // A probe that wrote outside its scope AND could not clean up has left evidence. Reported
+  // rather than tidied away: the file is the proof of the finding above it.
+  if ((outside.residue || []).length > 0) {
+    return no('probe_residue_outside_scope', 'A check wrote a file outside the approved folder and could not remove it.',
+      outside.residue.join(', '))
   }
 
   // ── the request directory, checked as itself ────────────────────────────

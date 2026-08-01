@@ -73,9 +73,35 @@ function createMachineProbe (deps = {}) {
     },
 
     /** Which of the probed paths the operator can actually write to. */
+    /**
+     * Which paths outside the approved one the operator can write to.
+     *
+     * ── IT NO LONGER RETURNS BARE null ─────────────────────────────────────
+     * It used to return the array on success and `null` on anything else, which
+     * flattened three different situations into one: the transport died, the script refused with
+     * a stated reason, or the answer was malformed. The probe was changed to refuse with
+     * `probe_file_not_removed` and a path — and that reason reached nothing, because this line
+     * threw it away. The operator's screen said "not measured", which is true and useless.
+     *
+     * The shape is now {ok, paths, residue, notProbed} or {ok:false, reason, transport}. A
+     * refusal keeps its name all the way to the person reading it.
+     */
     probeWritable () {
-      const r = call('writable', {})
-      return r.ok === true && Array.isArray(r.paths) ? r.paths : null
+      const env = runner.run(scriptPath, { op: 'writable' })
+      if (!env || typeof env !== 'object') return { ok: false, reason: 'probe_no_result', transport: true }
+      // TRANSPORT FAILURE AND PROBE REFUSAL ARE DIFFERENT FACTS. One means the question never
+      // reached the machine; the other means the machine answered and said no.
+      if (env.ok !== true) return { ok: false, reason: 'transport_' + (env.refusal || 'failed'), transport: true }
+      const r = env.result
+      if (!r || typeof r !== 'object') return { ok: false, reason: 'probe_no_result', transport: true }
+      if (r.ok !== true) return { ok: false, reason: r.reason || 'probe_refused', detail: r.detail || null, transport: false }
+      if (!Array.isArray(r.paths)) return { ok: false, reason: 'probe_malformed', transport: false }
+      return {
+        ok: true,
+        paths: r.paths,
+        residue: Array.isArray(r.residue) ? r.residue : [],
+        notProbed: Array.isArray(r.notProbed) ? r.notProbed : []
+      }
     },
 
     stagedClosure () {

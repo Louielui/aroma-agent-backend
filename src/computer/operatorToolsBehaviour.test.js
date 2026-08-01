@@ -286,7 +286,7 @@ test('*** checkMachine reports every row, and its verdict comes from companionPr
       : { ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: { [OP]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF } }),
     listDir: () => [],
     fileExists: () => false,
-    probeWritable: () => [{ path: 'C:\\Aroma\\ComputerOperator-Test', writable: true }],
+    probeWritable: () => ({ ok: true, paths: [], residue: [], notProbed: [{ path: 'C:\\Aroma\\ComputerOperator-Test', reason: 'in_scope_mask_asserted_by_acl_check' }] }),
     stagedClosure: () => ({ ok: true }),
     notepadCount: () => 0,
     auditWritable: () => true
@@ -307,15 +307,21 @@ test('*** a probe that could not look does not read as "nothing there" ***', () 
     readAcl: () => ({ ok: false, reason: 'denied' }),
     listDir: () => null,
     fileExists: () => true,
-    probeWritable: () => null,
+    probeWritable: () => ({ ok: false, reason: 'probe_file_not_removed', detail: 'C:\\Aroma\\x.tmp' }),
     stagedClosure: () => ({ ok: false, reason: 'unreadable' }),
     notepadCount: () => -1,
     auditWritable: () => false
   }
   const res = T.checkMachine({ machine })
   assert.equal(res.ok, false)
-  assert.equal(res.rows.notepads.ok, false, 'a -1 count is not a pass')
-  assert.match(String(res.rows.notepads.value), /could not be counted/)
-  assert.equal(res.rows.acl.ok, false)
+  // The rows no longer carry their own `ok`: that WAS the defect — a second verdict computed
+  // beside the real one. What a row carries is what it says; the marker comes from markRows.
+  assert.match(String(res.rows.notepads.value), /could not be counted/, 'a -1 count says so')
   assert.match(String(res.rows.acl.value), /cannot be read/)
+  assert.equal(res.rows.notepads.ok, undefined, 'a row does not judge itself any more')
+
+  // And nothing is ticked, because the judge stopped at the first problem.
+  const lines = captured(() => T.renderMachine(res))
+  assert.equal(lines.filter((l) => /OK$/.test(l)).length, 0, 'no row passes when the first check failed')
+  assert.equal(lines.filter((l) => /PROBLEM/.test(l)).length, 1, 'exactly one problem')
 })
