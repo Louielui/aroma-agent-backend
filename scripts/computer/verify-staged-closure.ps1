@@ -1,19 +1,29 @@
 # ===========================================================================
 #  verify-staged-closure.ps1 - check the staged folder INDEPENDENTLY.
 #
-#  WHY THIS EXISTS SEPARATELY FROM THE STAGER
-#  The stager verifies its own work, which is worth doing and is not the same
-#  as being checked. It knows what it meant to write. This reads the folder
-#  cold, from the repo's manifest, and compares.
+#  ── THE DEFECT THIS VERSION FIXES ─────────────────────────────────────────
+#  The first version identified files by NAME SUFFIX:
 #
-#  It also recomputes the PACKAGE HASH from the staged tree itself. That is the
-#  decisive number: executionPackage.js hashes the files beside it, so running
-#  the staged copy of it produces a hash of what is actually staged. If that
-#  equals the approved hash, the staged folder IS the approved package - no
-#  file-by-file argument required.
+#      if ($staged | Where-Object { $_ -like ('*' + $n) })       # WRONG
 #
-#  READ-ONLY. It writes nothing, changes no permission, and starts nothing.
-#  Run elevated, because the staged folder denies everyone else.
+#  In PowerShell `-like '*x'` means "ends with x". The manifest contains
+#  scripts/computer/tool-start-companion.js, whose path ends with the literal
+#  string "companion.js" - so a REQUIRED file was reported as a Phase 3a
+#  leftover, and the folder was fine the whole time.
+#
+#  A file's identity is its PATH. Not its basename, not a suffix of its path,
+#  not a substring. Every comparison below is against a full repo-relative
+#  path, and the banned forms are asserted absent from this file by a test in
+#  the ordinary suite - because the previous version's mistake read perfectly
+#  well as correct code.
+#
+#  ── IT VERIFIES ITS OWN COMPARISON FIRST ──────────────────────────────────
+#  Four controls run before any real check, on synthetic paths, every single
+#  time. A comparison this file cannot demonstrate on a known-answer case is a
+#  comparison nobody should read the output of.
+#
+#  READ-ONLY. It writes nothing, changes no permission, starts nothing.
+#  Run elevated: the staged folder denies everyone else.
 # ===========================================================================
 
 [CmdletBinding()]
@@ -27,13 +37,19 @@ $StageDir    = 'C:\Aroma\ComputerOperator-Companion'
 $Node        = 'C:\Program Files\nodejs\node.exe'
 $OperatorSid = 'S-1-5-21-2042659270-2029498691-2127769412-1009'
 
-# The seven Phase 3a names. Named individually, because "the old program is
-# gone" is the specific claim being checked.
-$Phase3a = @('companion-entry.js','companion.js','computerOperatorFlag.js','ipcChannel.js',
-             'observation.js','sealedOrderGate.js','sessionBoundary.js')
-# Two of those seven are ALSO canary files, so their presence is expected and
-# only the other five prove the old staging is gone.
-$Phase3aOnly = @('companion-entry.js','ipcChannel.js','observation.js','companion.js')
+# The manifest names this file and only this file as a permitted non-manifest
+# entry. It is the manifest itself, so it cannot be listed inside itself.
+$ManifestFile = 'STAGE-MANIFEST.json'
+
+# The Phase 3a pipe Companion, by FULL REPO-RELATIVE PATH. Four paths, not four
+# names: src/computer/companion.js is a different file from any other file whose
+# name happens to end the same way.
+$Phase3aPaths = @(
+  'src/computer/companion.js',
+  'src/computer/observation.js',
+  'src/computer/ipcChannel.js',
+  'scripts/computer/companion-entry.js'
+)
 
 function Say ([string]$T, [string]$C = 'Gray') { if ($C -eq 'Gray') { Write-Host $T } else { Write-Host $T -ForegroundColor $C } }
 $script:Fails = 0
@@ -42,8 +58,79 @@ function Check ([string]$Label, [bool]$Ok, [string]$Detail = '') {
   else { Say ("  FAIL  " + $Label + $(if ($Detail) { "   " + $Detail } else { '' })) 'Red'; $script:Fails = $script:Fails + 1 }
 }
 
+# ---------------------------------------------------------------------------
+#  CANONICALIZATION - fixed, and deliberately tiny.
+#
+#  Two operations only: separators to '/', and lowercase for comparison because
+#  NTFS is case-insensitive and two staged paths differing only in case are the
+#  same file to Windows and to anything that opens them.
+#
+#  Nothing is trimmed, nothing is stripped, no '..' is resolved. Every extra
+#  normalisation step is another way for two different files to be judged the
+#  same, which is the class of bug this file exists to stop repeating.
+# ---------------------------------------------------------------------------
+function ConvertTo-CanonicalPath ([string]$Path) {
+  return ($Path -replace '\\', '/').ToLowerInvariant()
+}
+
+# Exact identity. The ONLY comparison used anywhere below.
+function Test-PathInSet ([string]$Path, [string[]]$Set) {
+  $c = ConvertTo-CanonicalPath $Path
+  foreach ($s in $Set) { if ((ConvertTo-CanonicalPath $s) -eq $c) { return $true } }
+  return $false
+}
+
+# Canonicalization that collapses two distinct entries has hidden a file.
+# Refused rather than deduplicated: silently keeping one of two is how a stray
+# file rides along under a name something else already accounted for.
+function Assert-NoCanonicalDuplicates ([string[]]$Paths, [string]$What) {
+  $seen = @{}
+  $dupes = @()
+  foreach ($p in $Paths) {
+    $c = ConvertTo-CanonicalPath $p
+    if ($seen.ContainsKey($c)) { $dupes += ($seen[$c] + '  <->  ' + $p) } else { $seen[$c] = $p }
+  }
+  if ($dupes.Count -gt 0) {
+    Say ""
+    Say ("  REFUSED: two " + $What + " paths canonicalize to the same value:") 'Red'
+    foreach ($d in $dupes) { Say ("    " + $d) 'Red' }
+    Say ""
+    exit 2
+  }
+}
+
 Say ""
 Say "  VERIFY STAGED CLOSURE   (read-only)" 'Cyan'
+Say ""
+
+# ===========================================================================
+#  CONTROLS - the comparison proves itself before it is trusted.
+# ===========================================================================
+Say "  Self-check on the path comparison:" 'Cyan'
+
+# 1. The exact false positive that made the previous version wrong.
+$c1 = -not (Test-PathInSet 'scripts/computer/tool-start-companion.js' $Phase3aPaths)
+Check "tool-start-companion.js does NOT match companion.js" $c1 'scripts/computer/tool-start-companion.js'
+
+# 2. The true positive. Without this, (1) could pass by matching nothing at all.
+$c2 = (Test-PathInSet 'src/computer/companion.js' $Phase3aPaths)
+Check "the real src/computer/companion.js DOES match" $c2 'src/computer/companion.js'
+
+# 3. Same basename, different directory.
+$c3 = -not (Test-PathInSet 'scripts/computer/companion.js' $Phase3aPaths)
+Check "same basename in another directory does NOT match" $c3 'scripts/computer/companion.js vs src/computer/companion.js'
+
+# 4. Separator and case differences are the same file; a different path is not.
+$c4 = (Test-PathInSet 'src\computer\Companion.js' $Phase3aPaths) -and
+      (-not (Test-PathInSet 'src/computer/companionProductionFactory.js' $Phase3aPaths))
+Check "separators and case normalise; a longer name still does not match" $c4 'src\computer\Companion.js'
+
+if ($script:Fails -gt 0) {
+  Say ""
+  Say "  STOPPED: the comparison failed its own controls. Nothing else was checked." 'Red'
+  Say ""
+  exit 2
+}
 Say ""
 
 $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -57,52 +144,66 @@ if (-not $elevated) {
 }
 
 # ── the reference: the repo's manifest ─────────────────────────────────────
-$repoUri = $RepoDir -replace '\\','/'
+$repoUri = $RepoDir -replace '\\', '/'
 $listJson = & $Node -e "process.stdout.write(JSON.stringify(require('$repoUri/scripts/computer/executionPackage').PACKAGE_FILES))"
 $expected = @(($listJson | ConvertFrom-Json))
 $repoHash = & $Node -e "process.stdout.write(require('$repoUri/scripts/computer/executionPackage').computePackageHash())"
+Assert-NoCanonicalDuplicates $expected 'manifest'
 
 Say ""
 Say ("  Manifest (repo) : " + $expected.Count + " files")
 Say ("  Package  (repo) : " + $repoHash)
+
+# ── what is actually staged, as full relative paths ────────────────────────
+$staged = @(Get-ChildItem -LiteralPath $StageDir -Recurse -File | ForEach-Object {
+  ($_.FullName.Substring($StageDir.Length + 1)) -replace '\\', '/'
+})
+Assert-NoCanonicalDuplicates $staged 'staged'
+
+$stagedFiles = @($staged | Where-Object { -not (Test-PathInSet $_ @($ManifestFile)) })
+
+Say ""
+Say "  STAGED FILES (full repo-relative paths):" 'Cyan'
+foreach ($p in ($stagedFiles | Sort-Object)) { Say ("    " + $p) }
+$excluded = @($staged | Where-Object { Test-PathInSet $_ @($ManifestFile) })
+Say ""
+Say ("  By-design exclusions: " + $(if ($excluded.Count) { ($excluded | Sort-Object) -join ', ' } else { '(none)' }))
 Say ""
 
 # ── 1. exact file set ──────────────────────────────────────────────────────
-$staged = @(Get-ChildItem -LiteralPath $StageDir -Recurse -File | ForEach-Object {
-  $_.FullName.Substring($StageDir.Length + 1) -replace '\\','/'
-})
-$stagedSansManifest = @($staged | Where-Object { $_ -ne 'STAGE-MANIFEST.json' })
+$missing = @($expected | Where-Object { -not (Test-PathInSet $_ $stagedFiles) })
+$extra   = @($stagedFiles | Where-Object { -not (Test-PathInSet $_ $expected) })
 
-$missing = @($expected | Where-Object { $stagedSansManifest -notcontains $_ })
-$extra   = @($stagedSansManifest | Where-Object { $expected -notcontains $_ })
+Say "  Set comparison:" 'Cyan'
+Check "staged file count matches the manifest" ($stagedFiles.Count -eq $expected.Count) ($stagedFiles.Count.ToString() + " vs " + $expected.Count)
 
-Check "staged file count matches the manifest" ($stagedSansManifest.Count -eq $expected.Count) ($stagedSansManifest.Count.ToString() + " vs " + $expected.Count)
-Check "no MISSING files" ($missing.Count -eq 0) $(if ($missing.Count) { $missing -join ', ' } else { '' })
-Check "no EXTRA files"   ($extra.Count -eq 0)   $(if ($extra.Count) { $extra -join ', ' } else { '' })
+if ($missing.Count -gt 0) { Say "    MISSING (in manifest, not staged):" 'Red'; foreach ($p in $missing) { Say ("      " + $p) 'Red' } }
+Check "no MISSING files" ($missing.Count -eq 0) ($missing.Count.ToString())
+
+if ($extra.Count -gt 0) { Say "    EXTRA (staged, not in manifest):" 'Red'; foreach ($p in $extra) { Say ("      " + $p) 'Red' } }
+Check "no EXTRA files" ($extra.Count -eq 0) ($extra.Count.ToString())
 
 # ── 2. every file, by content ──────────────────────────────────────────────
 $changed = @()
 foreach ($rel in $expected) {
-  $s = Join-Path $StageDir ($rel -replace '/','\')
-  $r = Join-Path $RepoDir  ($rel -replace '/','\')
+  $s = Join-Path $StageDir ($rel -replace '/', '\')
+  $r = Join-Path $RepoDir  ($rel -replace '/', '\')
   if (-not (Test-Path -LiteralPath $s)) { continue }
-  $hs = (Get-FileHash -LiteralPath $s -Algorithm SHA256).Hash.ToLower()
-  $hr = (Get-FileHash -LiteralPath $r -Algorithm SHA256).Hash.ToLower()
-  if ($hs -ne $hr) { $changed += $rel }
+  if ((Get-FileHash -LiteralPath $s -Algorithm SHA256).Hash.ToLower() -ne
+      (Get-FileHash -LiteralPath $r -Algorithm SHA256).Hash.ToLower()) { $changed += $rel }
 }
-Check "every staged file matches the repo byte for byte" ($changed.Count -eq 0) $(if ($changed.Count) { $changed -join ', ' } else { $expected.Count.ToString() + " hashed" })
+if ($changed.Count -gt 0) { foreach ($p in $changed) { Say ("      CHANGED: " + $p) 'Red' } }
+Check "every staged file matches the repo byte for byte" ($changed.Count -eq 0) ($expected.Count.ToString() + " hashed")
 
 # ── 3. the decisive number: package hash OF THE STAGED TREE ────────────────
-$stageUri = $StageDir -replace '\\','/'
+$stageUri = $StageDir -replace '\\', '/'
 $stagedHash = & $Node -e "process.stdout.write(require('$stageUri/scripts/computer/executionPackage').computePackageHash())"
 Check "package hash computed FROM THE STAGED TREE equals the approved hash" ($stagedHash -eq $repoHash) $stagedHash
 
-# ── 4. the old Phase 3a staging is gone ────────────────────────────────────
-$leftovers = @()
-foreach ($n in $Phase3aOnly) {
-  if (@($staged | Where-Object { $_ -like ('*' + $n) }).Count -gt 0) { $leftovers += $n }
-}
-Check "the Phase 3a pipe Companion is gone from the staged folder" ($leftovers.Count -eq 0) $(if ($leftovers.Count) { $leftovers -join ', ' } else { 'none of: ' + ($Phase3aOnly -join ', ') })
+# ── 4. Phase 3a, by exact path ─────────────────────────────────────────────
+$leftovers = @($stagedFiles | Where-Object { Test-PathInSet $_ $Phase3aPaths })
+if ($leftovers.Count -gt 0) { foreach ($p in $leftovers) { Say ("      PHASE 3A REMNANT: " + $p) 'Red' } }
+Check "no Phase 3a remnant, by exact path" ($leftovers.Count -eq 0) ('checked: ' + ($Phase3aPaths -join ', '))
 
 # ── 5. the ACL ─────────────────────────────────────────────────────────────
 Say ""
@@ -112,45 +213,42 @@ Say ("    owner     : " + $acl.Owner)
 Say ("    protected : " + $acl.AreAccessRulesProtected)
 $opRules = @()
 $strangers = @()
-$denies = 0
 foreach ($r in @($acl.Access)) {
   $sid = '?'
   try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { }
-  if ($r.AccessControlType -eq 'Deny') { $denies = $denies + 1 }
   if ($sid -eq $OperatorSid) { $opRules += $r }
-  elseif ($sid -notin @('S-1-5-18','S-1-5-32-544') -and $r.IdentityReference.Value -notlike '*louis*') { $strangers += ($r.IdentityReference.Value + ' (' + $sid + ')') }
+  elseif ($sid -notin @('S-1-5-18', 'S-1-5-32-544') -and $r.IdentityReference.Value -notlike '*louis*') {
+    $strangers += ($r.IdentityReference.Value + ' (' + $sid + ')')
+  }
   Say ("    " + $r.AccessControlType + "  " + $r.IdentityReference.Value.PadRight(32) + $r.FileSystemRights)
 }
 Say ""
-
 Check "inheritance is OFF (the C:\Aroma tree does not decide this folder)" ($acl.AreAccessRulesProtected -eq $true)
 Check "the operator has an entry (it must be able to run what is staged)" ($opRules.Count -gt 0)
 
-$write = [Security.AccessControl.FileSystemRights]::Write
-$modify = [Security.AccessControl.FileSystemRights]::Modify
-$full = [Security.AccessControl.FileSystemRights]::FullControl
+$write  = [int][Security.AccessControl.FileSystemRights]::Write
+$modify = [int][Security.AccessControl.FileSystemRights]::Modify
+$full   = [int][Security.AccessControl.FileSystemRights]::FullControl
 $opCanWrite = $false
 foreach ($r in $opRules) {
   if ($r.AccessControlType -ne 'Allow') { continue }
-  if ((([int]$r.FileSystemRights) -band ([int]$write)) -ne 0) { $opCanWrite = $true }
-  if ((([int]$r.FileSystemRights) -band ([int]$modify)) -eq ([int]$modify)) { $opCanWrite = $true }
-  if ((([int]$r.FileSystemRights) -band ([int]$full)) -eq ([int]$full)) { $opCanWrite = $true }
+  $m = [int]$r.FileSystemRights
+  if (($m -band $write) -ne 0) { $opCanWrite = $true }
+  if (($m -band $modify) -eq $modify) { $opCanWrite = $true }
+  if (($m -band $full) -eq $full) { $opCanWrite = $true }
 }
-# THE ONE THAT MATTERS. A staged program the operator can edit is not a staged
-# program, it is a suggestion - the package hash would be verified against code
-# the same account could rewrite a moment later.
 Check "the operator CANNOT modify the staged program" (-not $opCanWrite) $(if ($opRules.Count) { [string]$opRules[0].FileSystemRights } else { '' })
 Check "no unknown identity has access" ($strangers.Count -eq 0) $(if ($strangers.Count) { $strangers -join ', ' } else { 'only SYSTEM, Administrators, louis, AromaOperator' })
 
 # ── 6. the staged manifest agrees with the staged files ────────────────────
-$mPath = Join-Path $StageDir 'STAGE-MANIFEST.json'
+$mPath = Join-Path $StageDir $ManifestFile
 if (Test-Path -LiteralPath $mPath) {
   $m = Get-Content -LiteralPath $mPath -Raw | ConvertFrom-Json
   Check "STAGE-MANIFEST records the approved package hash" ($m.packageHash -eq $repoHash) ([string]$m.packageHash)
   Check "STAGE-MANIFEST lists the same number of files" (@($m.files).Count -eq $expected.Count) (@($m.files).Count.ToString())
   Say ("    staged at : " + $m.stagedAt + "   by " + $m.stagedBy)
 } else {
-  Check "STAGE-MANIFEST.json exists" $false
+  Check ($ManifestFile + " exists") $false
 }
 
 Say ""

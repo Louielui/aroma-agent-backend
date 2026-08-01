@@ -78,15 +78,114 @@ if ($WhatIfOnly) {
   exit 0
 }
 
-# ── back up whatever is there now ──────────────────────────────────────────
-# Never a blind overwrite: what is in that folder today is what the last
-# verified state was built from, and it is the only way back if this goes wrong.
+# ===========================================================================
+#  INVENTORY, BACKUP, RECORD - and only then delete.
+#
+#  The previous version backed up the folder and then cleared it with a single
+#  Remove-Item. The backup was real and the ordering was right, but the
+#  deletion was SILENT: nothing said what had been removed, so a file that had
+#  no business being there left no trace of ever having been there. When a
+#  question was later asked about one, the only available answer was an
+#  inference from a passing check.
+#
+#  A deletion nobody can name is a deletion nobody can audit. So every file is
+#  inventoried and classified first, everything outside the manifest is printed
+#  by full path, the backup is VERIFIED by hash before anything is removed, and
+#  the removals are written to REMOVED-FILES.json inside the backup.
+#
+#  If the backup is incomplete or a hash disagrees, nothing is deleted at all.
+# ===========================================================================
 $stamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
 $BackupDir = Join-Path 'C:\Aroma\ComputerOperator-Backups' ("stage-" + $stamp)
+
+# Same identity rule as the verifier: a file IS its full repo-relative path.
+# No basename, no suffix, no wildcard - that comparison reported a required
+# file as a leftover once already.
+function ConvertTo-CanonicalPath ([string]$Path) { return ($Path -replace '\\', '/').ToLowerInvariant() }
+function Test-PathInSet ([string]$Path, [string[]]$Set) {
+  $c = ConvertTo-CanonicalPath $Path
+  foreach ($s in $Set) { if ((ConvertTo-CanonicalPath $s) -eq $c) { return $true } }
+  return $false
+}
+
+$inventory = @()
+$outsideManifest = @()
+
 if (Test-Path -LiteralPath $StageDir) {
+  # ── 1. inventory everything that is there now ───────────────────────────
+  foreach ($f in @(Get-ChildItem -LiteralPath $StageDir -Recurse -File -Force)) {
+    $rel = ($f.FullName.Substring($StageDir.Length + 1)) -replace '\\', '/'
+    $entry = [ordered]@{
+      repoRelativePath = $rel
+      sha256           = (Get-FileHash -LiteralPath $f.FullName -Algorithm SHA256).Hash.ToLower()
+      size             = [int64] $f.Length
+      inManifest       = (Test-PathInSet $rel $files)
+    }
+    $inventory += $entry
+    if (-not $entry.inManifest -and $rel -ne 'STAGE-MANIFEST.json') { $outsideManifest += $entry }
+  }
+
+  Say ""
+  Say ("  Present before staging : " + $inventory.Count + " files")
+  Say ("    in the manifest      : " + @($inventory | Where-Object { $_.inManifest }).Count)
+  Say ("    NOT in the manifest  : " + $outsideManifest.Count)
+
+  if ($outsideManifest.Count -gt 0) {
+    # ── 2. name every one of them, in full ────────────────────────────────
+    Say ""
+    Say "  These are NOT in the current manifest and will be removed:" 'Yellow'
+    foreach ($e in $outsideManifest) {
+      Say ("    " + $e.repoRelativePath + "   " + $e.size + " bytes   " + $e.sha256.Substring(0, 16) + "...") 'Yellow'
+    }
+  }
+
+  # ── 3. the backup, complete, before anything goes ───────────────────────
   New-Item -ItemType Directory -Path $BackupDir -Force | Out-Null
   Copy-Item -LiteralPath $StageDir -Destination $BackupDir -Recurse -Force
+  Say ""
   Say ("  Backed up to : " + $BackupDir) 'DarkGray'
+
+  # The backup is a copy of $StageDir INTO $BackupDir, so it lands one level
+  # down under the source folder's own name.
+  $BackupRoot = Join-Path $BackupDir (Split-Path $StageDir -Leaf)
+
+  # ── 4. verify the backup by hash before deleting anything ───────────────
+  $bad = @()
+  foreach ($e in $inventory) {
+    $b = Join-Path $BackupRoot ($e.repoRelativePath -replace '/', '\')
+    if (-not (Test-Path -LiteralPath $b)) { $bad += ($e.repoRelativePath + ' (absent from the backup)'); continue }
+    $h = (Get-FileHash -LiteralPath $b -Algorithm SHA256).Hash.ToLower()
+    if ($h -ne $e.sha256) { $bad += ($e.repoRelativePath + ' (hash differs in the backup)') }
+  }
+  if ($bad.Count -gt 0) {
+    Say ""
+    Say "  BACKUP VERIFICATION FAILED. Nothing has been deleted." 'Red'
+    foreach ($b in $bad) { Say ("    " + $b) 'Red' }
+    Say ""
+    Say "  The staged folder is untouched. Investigate before retrying." 'Yellow'
+    Say ""
+    exit 1
+  }
+  Say ("  Backup verified : " + $inventory.Count + " files, hash for hash") 'DarkGray'
+
+  # ── 5. record the removals, in the backup, before making them ───────────
+  if ($outsideManifest.Count -gt 0) {
+    $removed = @()
+    foreach ($e in $outsideManifest) {
+      $removed += [ordered]@{
+        repoRelativePath = $e.repoRelativePath
+        sha256           = $e.sha256
+        size             = $e.size
+        backupPath       = (Join-Path $BackupRoot ($e.repoRelativePath -replace '/', '\'))
+        recordedAt       = (Get-Date).ToUniversalTime().ToString('u')
+        reason           = 'not_in_current_manifest'
+      }
+    }
+    $removed | ConvertTo-Json -Depth 5 | Out-File -FilePath (Join-Path $BackupDir 'REMOVED-FILES.json') -Encoding utf8
+    Say ("  Removals recorded: " + (Join-Path $BackupDir 'REMOVED-FILES.json')) 'DarkGray'
+  } else {
+    Say "  Nothing outside the manifest - no removal record needed." 'DarkGray'
+  }
 } else {
   New-Item -ItemType Directory -Path $StageDir -Force | Out-Null
   Say "  Created the staged folder." 'DarkGray'
@@ -95,7 +194,10 @@ if (Test-Path -LiteralPath $StageDir) {
 # ── the ACL, captured before anything is written ───────────────────────────
 $sddlBefore = (Get-Acl -LiteralPath $StageDir).Sddl
 
-# ── clear, then copy, preserving the tree ──────────────────────────────────
+# ── 6. clear, then copy, preserving the tree ───────────────────────────────
+# Unchanged semantics: a full clear, so nothing survives by accident. What
+# changed is that by this line every file removed has been inventoried, backed
+# up, hash-verified in the backup, and named on screen.
 Get-ChildItem -LiteralPath $StageDir -Force | Remove-Item -Recurse -Force
 $copied = 0
 foreach ($rel in $files) {
