@@ -178,7 +178,37 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
               fallbackUsed: telemetry.fallbackUsed === true
             })
           : result
-        return res.status(200).json(answered)
+
+        // ── XIANGXIANG LAB — Conversation Persistence v0.1, WRITE ONLY ────────
+        // The only line the Lab adds to the live path. With XIANGXIANG_ARCHIVE off it returns
+        // immediately without loading the archive module at all, so the flag-off behaviour is
+        // structural rather than a promise.
+        //
+        // FAIL-OPEN, deliberately and unlike the Computer Operator's audit: the reply has
+        // already been produced, and a Lab write is not permitted to take it away. The outcome
+        // is attached so a failure is VISIBLE rather than silent — the whole point of the
+        // archive is defeated if nobody notices it stopped recording.
+        let labArchive = null
+        try {
+          const { recordExchange } = require('../lab/labArchiveHook')
+          labArchive = recordExchange({
+            conversationId: typeof req.body.conversationId === 'string' ? req.body.conversationId : null,
+            message,
+            reply: answered && typeof answered.reply === 'string' ? answered.reply : null,
+            turnIndex: Array.isArray(history) ? history.length : 0,
+            model: telemetry && telemetry.model ? telemetry.model : null,
+            provider: telemetry && telemetry.provider ? telemetry.provider : null,
+            lane: interactionMode,
+            requestId: correlationId
+          })
+        } catch (_) {
+          labArchive = { recorded: false, reason: 'hook_threw' }
+        }
+        const withLab = (labArchive && labArchive.reason !== 'flag_off' && answered && typeof answered === 'object' && !Array.isArray(answered))
+          ? Object.assign({}, answered, { labArchive })
+          : answered
+
+        return res.status(200).json(withLab)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped

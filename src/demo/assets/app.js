@@ -174,7 +174,14 @@
   /* ── conversations ────────────────────────────────────────────────────── */
   function newConversation (focus) {
     var thread = el('div', 'thread')
-    var c = { id: 'c' + (convs.length + 1), title: '新對話', history: [], thread: thread }
+    // A STABLE id for this conversation, for the Xiangxiang Lab archive.
+    // 'c1'/'c2' is a counter that restarts at 1 on every page load, so two different
+    // conversations on two different days would collide. This one does not collide, and it
+    // is the ONLY thing the archive can use to group turns - the server sees nothing else.
+    var cid = (window.crypto && window.crypto.randomUUID)
+      ? window.crypto.randomUUID()
+      : 'conv-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10)
+    var c = { id: 'c' + (convs.length + 1), cid: cid, title: '新對話', history: [], thread: thread }
     convs.unshift(c)
     selectConversation(c)
     renderConvList()
@@ -356,8 +363,8 @@
       // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
       // lane the Owner never chose would put the old upfront decision back, invisibly.
       body: JSON.stringify(forced
-        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane }
-        : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane })
+        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
+        : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid })
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {

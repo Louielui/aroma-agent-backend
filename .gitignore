@@ -8,3 +8,11 @@ data
 password.txt
 rclone-b2-config.txt
 *.creds
+
+# Xiangxiang Lab conversation archive. It holds verbatim conversation text and MUST NOT
+# be committed. Redaction is best-effort, so this is belt-and-braces: the real archive lives
+# OUTSIDE the repo (C:AromaXiangxiangLab), and this entry catches any local copy or
+# test root that ends up inside it.
+XiangxiangLab/
+conversation-archive/
+*.jsonl

@@ -1,0 +1,139 @@
+# Xiangxiang Lab — Conversation Persistence v0.1 (WRITE ONLY)
+
+**Status:** built, flag OFF, collecting nothing until the Owner turns it on.
+
+## What this is
+
+It records what was said, so that a **later** phase can decide whether anything should ever be
+read back. v0.1 gives the model **no readback at all**.
+
+It exists because an audit on 2026-08-01 established that Xiangxiang had **no persisted
+conversation history of any kind**:
+
+- the UI held conversations in a plain in-memory JavaScript array (`src/demo/assets/app.js:55`)
+  with no localStorage, sessionStorage, IndexedDB or cookie anywhere;
+- conversation ids were `c1`, `c2`… — a counter that restarts at 1 on every page load;
+- the model received `history.slice(-8)` (`src/intake/distillPrompt.js:84`) — the last 8 turns,
+  from browser memory;
+- chat replies wrote nothing (`src/intake/intakeService.js:496`);
+- `src/store/store.js:78` states outright: *message content / api key are intentionally never
+  accepted here*;
+- and the operational store held **0 decisions, 0 tasks, 0 events** against 33 model calls.
+
+Collecting first and reading later is deliberate. A reader designed before the data exists is a
+guess about what the data looks like.
+
+## Governance decisions (Owner, 2026-08-01)
+
+| | |
+|---|---|
+| Content | full verbatim user and assistant turns, not summaries |
+| Retention | permanent, until the Owner deletes |
+| Store | independent Lab store; production data is never written |
+| Readback | **none** in v0.1 — no prompt, persona, or Decision Recall change |
+| Auto-memory | none — no Memory, Decision or Task is created |
+| Delete | single turn, whole conversation, date range, everything |
+| Export | full JSON export |
+| Redaction | before write; best-effort |
+| Opt-out | 「這段不要記錄」 and equivalents |
+| Archive | append-only, except deletion, which is audited |
+| Flag | `XIANGXIANG_ARCHIVE`, default OFF |
+
+## Three things stated honestly
+
+### 1. Redaction is harm reduction, not a guarantee
+
+A password can be any string. `hunter2` is a password and is indistinguishable from a word.
+Pattern detection catches the shapes it knows and misses the rest, and what it misses is exactly
+what nobody wrote a pattern for.
+
+**The archive is therefore protected as if it contains secrets**, because it does:
+
+- its own directory, `C:\Aroma\XiangxiangLab\conversation-archive`, outside the repo
+- its own ACL: louis / SYSTEM / Administrators only, inheritance off
+- **AromaOperator has no access** — the Computer Operator account has no business reading the
+  Owner's conversations
+- gitignored, and the real path is outside the repo anyway
+- **not in any backup chain**
+
+No document, comment or screen may describe the archive as clean, and a test enforces that.
+
+### 2. Write failure is fail-OPEN — the opposite of the Computer Operator audit
+
+If an archive write fails, **the conversation still completes**. The failure is surfaced on the
+response (`labArchive`), never swallowed, and never allowed to become "Xiangxiang cannot answer
+you".
+
+This is the deliberate opposite of the Computer Operator's audit, which is fail-CLOSED:
+
+| | Computer Operator audit | Lab archive |
+|---|---|---|
+| Direction | fail-CLOSED — no record, no action | fail-OPEN — no record, reply anyway |
+| Why | the record is part of the **authorisation chain**; an unrecorded desktop action is one nobody can evidence afterwards, and the containment argument rests on being able to say what happened | it **authorises nothing**. It is an additional feature beside a conversation that was going to happen regardless |
+| Cost of the other choice | acting unrecorded | a full disk takes the assistant away |
+
+Both defaults are written down where they apply so neither gets "corrected" to match the other.
+
+### 3. Not durable storage yet
+
+v0.1 does **no backup**. Until the archive is in a backup chain **and a restore has been
+verified**, it must not be called durable.
+
+Precedent: **AromaTruthData-B2Sync** — a store is not backed up until a restore has been proven.
+Calling it backed up before that is how data gets lost politely.
+
+Backup is the next phase, not this one.
+
+## Where things are
+
+| | |
+|---|---|
+| `src/lab/redaction.js` | secret patterns + the opt-out phrases |
+| `src/lab/conversationArchive.js` | append-only writer, delete, export, audit |
+| `src/lab/labArchiveHook.js` | the single flag-gated entry point |
+| `src/routes/demoRouter.js` | **one** guarded block, after the reply exists |
+| `scripts/lab/xiangxiang-archive.js` | the Owner's stats / export / audit / delete CLI |
+| `scripts/lab/provision-lab-archive.ps1` | the directory and its ACL |
+| `C:\Aroma\XiangxiangLab\conversation-archive\archive.jsonl` | turns, one JSON per line |
+| `…\audit.jsonl` | skips, write failures, deletions — never content |
+
+## Append-only, with one named exception
+
+Turns are appended and never edited. **Deletion rewrites the file**, because the Owner asked to
+be able to remove data and a tombstone that leaves the text on disk is not removal. Each deletion
+writes an audit line naming the selector, the count and the remainder — **never the deleted
+text**. An audit that kept the text would defeat the deletion it records.
+
+## Owner commands
+
+```bash
+node scripts/lab/xiangxiang-archive.js stats
+node scripts/lab/xiangxiang-archive.js export > my-conversations.json
+node scripts/lab/xiangxiang-archive.js audit
+node scripts/lab/xiangxiang-archive.js delete --turn <turnId>
+node scripts/lab/xiangxiang-archive.js delete --conversation <conversationId>
+node scripts/lab/xiangxiang-archive.js delete --from 2026-08-01 --to 2026-08-31
+node scripts/lab/xiangxiang-archive.js delete --all
+```
+
+The export carries verbatim conversation text and is **exactly as sensitive as the archive**.
+
+## Turning it on
+
+```
+XIANGXIANG_ARCHIVE=on
+```
+
+With the flag off, `recordExchange` returns before requiring the archive module, so nothing is
+loaded, no directory is created and no byte is written. That is structural, not a promise, and
+it is asserted by a test.
+
+## What v0.1 explicitly does NOT do
+
+- does not read anything back to the model
+- does not modify persona, prompt, or Decision Recall
+- does not create Memory, Decision or Task
+- does not touch production stores
+- does not affect the Computer Operator
+- does not back itself up
+- does not claim to be clean, and does not claim to be durable
