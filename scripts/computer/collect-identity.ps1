@@ -72,7 +72,19 @@ $integrity = Try-Get {
   # Select-Object -First 1 yields nothing on an empty pipeline and cannot throw.
   $lvl = $sidList | Where-Object { $_ -like 'S-1-16-*' } | Select-Object -First 1
   if (-not $lvl) {
-    $lvl = (whoami /groups /fo csv | ConvertFrom-Csv | Where-Object { $_.SID -like 'S-1-16-*' } | Select-Object -First 1).SID
+    # ABSOLUTE PATH, never a bare 'whoami'. Measured: in a process whose PATH carries Git's
+    # usr\bin first, 'whoami' resolves to Git's Unix whoami, which rejects /groups as an
+    # operand and returns nothing - so integrityLevel came back null and the judge refused
+    # every snapshot. It worked when launched from one shell and not from another, and the
+    # only difference was the parent's PATH.
+    #
+    # PATH belongs to whoever launched us. Nothing this script measures may depend on it.
+    # Same rule the shared runner already applies to powershell.exe itself.
+    $whoamiExe = Join-Path $env:SystemRoot 'System32\whoami.exe'
+    if (Test-Path -LiteralPath $whoamiExe) {
+      $rows = @(& $whoamiExe /groups /fo csv | ConvertFrom-Csv | Where-Object { $_.SID -like 'S-1-16-*' })
+      if ($rows.Count -gt 0) { $lvl = $rows[0].SID }
+    }
   }
   switch ($lvl) {
     'S-1-16-4096'  { 'Low' }
