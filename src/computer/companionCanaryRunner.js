@@ -209,7 +209,13 @@ function runCanaryAsCompanion (request, deps = {}) {
   }
 
   // ── 1. WHO AM I ─────────────────────────────────────────────────────────
-  const verdict = attest(deps.snapshot, deps.expectedIdentity)
+  // ONE ARGUMENT. This forwarded `deps.expectedIdentity`, and tool-start-companion supplied
+  // { sid, name } — the same malformed object that broke Check Operator Identity. The Companion
+  // would have refused a correct session with identity_name_mismatch, one tool later.
+  //
+  // The permitted identity is pinned once, in identityAttestation.REQUIRED. A caller that can
+  // supply its own copy is a caller that can supply a wrong one, and this one did.
+  const verdict = attest(deps.snapshot)
   const attestation = toAuditRecord(deps.snapshot, verdict)
   if (!audit('identity-attestation', attestation)) {
     return fail(no('audit_not_writable', 'The identity check could not be recorded. Nothing will run.'), 'attestation')

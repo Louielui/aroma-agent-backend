@@ -113,7 +113,6 @@ function handle (file) {
     process.env.COMPUTER_OPERATOR = 'on'
     res = runCanaryAsCompanion(rec.request, {
       snapshot: who.snapshot,
-      expectedIdentity: { sid: T.EXPECTED_SID, name: T.EXPECTED_NAME },
       machine: built.machine,
       executor: built.executor,
       ledger,

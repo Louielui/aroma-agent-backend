@@ -70,7 +70,45 @@ const no = (refusal, reason, detail) => ({ ok: false, refusal, reason, detail: d
  * @param {object} snapshot  gathered by the Companion about ITSELF
  * @param {object} [expected] overrides for tests; production uses REQUIRED
  */
+/**
+ * Keys `attest` will compare against. Every one of them is consulted unconditionally, so an
+ * `expected` object missing any of them cannot produce a meaningful verdict.
+ */
+const EXPECTED_KEYS = Object.freeze(['account', 'sid', 'desktop'])
+
 function attest (snapshot, expected = REQUIRED) {
+  // ── A MALFORMED `expected` IS A THROW, NOT A REFUSAL ─────────────────────
+  // Measured on 2026-08-01, on the first real AromaOperator login: the operator tools called
+  // this as `attest(snap, { sid, name })`. There is no `name` key here — the field is `account`
+  // — so `expected.account` was undefined, `String(undefined).toUpperCase()` compared as
+  // 'UNDEFINED', and the function returned `identity_name_mismatch`.
+  //
+  // The Owner read that as "this machine is set up wrong". It was not: the collector had worked
+  // perfectly, the SID matched exactly, and the session was genuinely AromaOperator. A bug in
+  // OUR caller had been dressed up as a finding about HIS machine.
+  //
+  // That is the whole reason this throws. A refusal is a claim about the world — this identity
+  // is not permitted — and it goes on a screen the Owner acts on. A malformed `expected` is a
+  // claim about nothing at all; it is a programming error in the process doing the asking. If it
+  // returns a refusal, a caller bug becomes indistinguishable from a genuine containment failure,
+  // and the louder of the two lies wins. If it throws, the tool crashes with a stack trace at the
+  // line that got it wrong, which is what a programming error deserves.
+  //
+  // Note also which direction the failure went: it FAILED CLOSED. That is the only reason this
+  // was merely embarrassing rather than dangerous. A different key mismatch could as easily have
+  // made a comparison vacuously true.
+  if (expected !== REQUIRED) {
+    if (!expected || typeof expected !== 'object') {
+      throw new TypeError('attest: `expected` must be an object describing the permitted identity')
+    }
+    const missing = EXPECTED_KEYS.filter((k) => expected[k] === undefined || expected[k] === null)
+    if (missing.length > 0) {
+      throw new TypeError('attest: `expected` is missing required key(s): ' + missing.join(', ') +
+        ' — a partial expected identity cannot be compared, and silently comparing against undefined ' +
+        'turns a caller bug into a verdict about the machine')
+    }
+  }
+
   if (!snapshot || typeof snapshot !== 'object') return no('no_attestation', 'nothing was measured')
 
   // Completeness first. A partial attestation must never be scored on the fields it happens to
@@ -170,4 +208,4 @@ function toAuditRecord (snapshot, verdict) {
   }
 }
 
-module.exports = { attest, toAuditRecord, REQUIRED, FORBIDDEN_GROUPS, REQUIRED_FIELDS }
+module.exports = { attest, toAuditRecord, REQUIRED, FORBIDDEN_GROUPS, REQUIRED_FIELDS, EXPECTED_KEYS }

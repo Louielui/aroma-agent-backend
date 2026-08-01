@@ -48,10 +48,13 @@ function title (text) {
 }
 
 /** `label ......... value   OK` — one fact per line, verdict at the end where the eye lands. */
-function line (label, value, verdict) {
+function line (label, value, verdict, note) {
   const l = String(label).padEnd(PAD, ' ')
-  const v = String(value === undefined || value === null ? '-' : value).padEnd(28, ' ')
-  out('  ' + l + v + (verdict === true ? 'OK' : verdict === false ? '<-- PROBLEM' : ''))
+  const v = String(value === undefined || value === null ? 'not measured' : value).padEnd(28, ' ')
+  // A blank marker means NOT JUDGED. It is not a quiet pass, and the note says so where one
+  // applies - the previous version printed nothing at all in that column, which reads as fine.
+  const mark = verdict === true ? 'OK' : verdict === false ? '<-- PROBLEM' : (note || '(not judged)')
+  out('  ' + l + v + mark)
 }
 
 function verdict (ok, sentence, detail) {
@@ -83,23 +86,94 @@ function checkIdentity (deps = {}) {
   if (!snap || snap.ok === false) {
     return { ok: false, refusal: 'identity_unmeasured', human: 'The identity check did not complete.', detail: snap && snap.reason }
   }
-  const v = attest(snap, { sid: EXPECTED_SID, name: EXPECTED_NAME })
+  // NO `expected` ARGUMENT. This used to pass `{ sid: EXPECTED_SID, name: EXPECTED_NAME }` —
+  // wrong key (`name` for `account`), wrong value shape (bare name for DOMAIN\name), and missing
+  // `desktop` entirely. attest then compared the real account against `undefined` and refused
+  // with `identity_name_mismatch`, on a session that was correct in every respect.
+  //
+  // Omitting it uses REQUIRED, which is the single pinned definition of the permitted identity.
+  // A local copy of that definition is what created the divergence in the first place.
+  const v = attest(snap)
   return { ok: v.ok === true, refusal: v.refusal || null, snapshot: snap, verdict: v }
 }
+
+/**
+ * The rows, in the order the judge checks them, with the refusals each one owns.
+ *
+ * ── WHY THE ROWS AND THE RESULT NOW COME FROM ONE PLACE ────────────────────
+ * They used to come from two. The RESULT line was the judge's refusal; the per-row OK/PROBLEM
+ * markers were computed here, from the raw snapshot, by re-deriving the rules. On the first real
+ * operator login the two disagreed on screen: the RESULT said the account name was wrong while
+ * the PROBLEM marker sat on the desktop row, which was correct.
+ *
+ * Re-deriving a rule next to the rule is how two answers to one question get onto one screen. So
+ * the markers are now DERIVED FROM THE VERDICT: the judge stops at the first problem, so rows
+ * before it passed, the row that owns the refusal is the problem, and rows after it were never
+ * reached. Nothing here decides anything.
+ *
+ * `field` is what the row DISPLAYS, and the names are the collector's own — `account`,
+ * `isElevated`, `isInteractive`. Three of them were wrong before (`name`, `elevated`,
+ * `interactive`), which is why a correct session showed a blank account and a false problem.
+ */
+const IDENTITY_ROWS = Object.freeze([
+  {
+    key: 'account',
+    label: 'Account',
+    fields: ['account'],
+    render: (s) => s.account,
+    owns: ['wrong_identity', 'identity_name_mismatch']
+  },
+  {
+    key: 'elevation',
+    label: 'Administrator rights',
+    fields: ['isElevated', 'integrityLevel'],
+    render: (s) => (s.isElevated === true ? 'YES' : 'no'),
+    owns: ['elevated_token', 'wrong_integrity']
+  },
+  {
+    key: 'adminGroup',
+    label: 'In Administrators group',
+    fields: ['administratorsEnabled', 'administratorsPresent', 'groupSids'],
+    render: (s) => (s.administratorsEnabled === true ? 'YES, enabled' : s.administratorsPresent === true ? 'present, deny-only' : 'no'),
+    owns: ['privileged_group', 'administrators_enabled']
+  },
+  {
+    key: 'session',
+    label: 'Own desktop session',
+    fields: ['isInteractive', 'sessionId', 'desktop'],
+    render: (s) => (s.sessionId === 0 ? 'no (session 0)' : s.isInteractive === true ? 'yes (session ' + s.sessionId + ')' : 'not interactive'),
+    owns: ['bad_session', 'wrong_session', 'not_interactive', 'wrong_desktop']
+  }
+])
 
 /** The identity result, as sentences. Shared by the identity tool and the Companion launcher. */
 function renderIdentity (res) {
   if (!res.snapshot) {
-    line('Account', 'could not be read', false)
+    for (const r of IDENTITY_ROWS) line(r.label, 'not measured', null)
     verdict(false, res.human || 'This session could not be identified.', res.detail || null)
     return
   }
   const s = res.snapshot
-  const isOperator = s.sid === EXPECTED_SID
-  line('Account', s.name || '-', isOperator)
-  line('Administrator rights', s.elevated ? 'YES' : 'no', s.elevated !== true)
-  line('In Administrators group', s.administratorsEnabled ? 'YES' : 'no', s.administratorsEnabled !== true)
-  line('Own desktop session', s.sessionId === 0 ? 'no (session 0)' : 'yes', s.sessionId !== 0 && s.interactive === true)
+
+  // Which row owns the refusal. -1 means the refusal belongs to no row — an incomplete or
+  // unreadable measurement — in which case NO row may be marked OK, because nothing was judged.
+  const failedAt = res.ok ? IDENTITY_ROWS.length : IDENTITY_ROWS.findIndex((r) => r.owns.includes(res.refusal))
+
+  IDENTITY_ROWS.forEach((r, i) => {
+    // A field the collector did not produce is never OK, whatever the verdict says. This is the
+    // rule that a blank "Account / OK" broke: the value came from one place and the marker from
+    // another, so an absent value could still be ticked.
+    const unmeasured = r.fields.some((f) => s[f] === undefined || s[f] === null)
+    if (unmeasured) { line(r.label, 'not measured', false); return }
+
+    const value = r.render(s)
+    if (failedAt === -1) { line(r.label, value, null); return }   // nothing was judged
+    if (i < failedAt) { line(r.label, value, true); return }      // checked, and passed
+    if (i === failedAt) { line(r.label, value, false); return }   // this is the problem
+    // After the first problem the judge stopped, so these were never reached. Reported as such
+    // rather than as OK: an unasked question has no answer, and a tick would invent one.
+    line(r.label, value, null, 'not checked')
+  })
 
   if (res.ok) {
     verdict(true, 'This session is the operator account, with no extra rights.')
@@ -119,8 +193,10 @@ function renderIdentity (res) {
     incomplete_attestation: 'The identity check did not return everything it must.'
   }[res.refusal] || 'This session is not the one the canary may run in.'
 
-  const hint = res.refusal === 'wrong_identity' && s.name
-    ? 'It is running as "' + s.name + '". Sign in as ' + EXPECTED_NAME + ' and start this again.'
+  // s.account, not s.name. Reading the wrong field here meant this hint - the one line that
+  // tells the Owner WHICH account he is actually in - could never appear.
+  const hint = res.refusal === 'wrong_identity' && s.account
+    ? 'It is running as "' + s.account + '". Sign in as ' + EXPECTED_NAME + ' and start this again.'
     : null
   verdict(false, why, hint)
 }
@@ -229,7 +305,7 @@ function ensureRequestDir () {
 
 module.exports = {
   out, title, line, verdict,
-  checkIdentity, renderIdentity,
+  checkIdentity, renderIdentity, IDENTITY_ROWS,
   checkMachine, renderMachine, MACHINE_ROWS,
   checkPackage, renderPackage,
   buildRunner, ensureRequestDir,
