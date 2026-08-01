@@ -117,30 +117,36 @@ function preflight (opts = {}) {
     }
   }
 
-  // ── the folder ──────────────────────────────────────────────────────────
+  // ── the approved path, read from the RECEIPT ────────────────────────────
+  // This one stays, and the distinction is the whole point of the removals below it: it reads a
+  // field of the document the Owner signed and compares it to a constant. It touches no disk,
+  // so it is a question this session can actually answer.
   if (receipt.approvedOrder.allowedPath !== ALLOWED_DIR) {
     return fail('allowed_path_unexpected', 'The approved folder is not the one this canary uses.', receipt.approvedOrder.allowedPath)
   }
-  if (!io.dirExists(ALLOWED_DIR)) {
-    return fail('folder_missing', 'The folder it would save into does not exist.', ALLOWED_DIR)
-  }
-  const entries = io.listDir(ALLOWED_DIR)
-  if (entries === null) {
-    return fail('folder_unreadable', 'The folder cannot be read from here.', ALLOWED_DIR)
-  }
-  if (entries.length > 0) {
-    return fail('folder_not_empty', 'The folder is not empty. It must be clean before a canary run.', entries.join(', '))
-  }
-  if (io.fileExists(path.join(ALLOWED_DIR, EXPECTED_FILE))) {
-    return fail('file_exists', 'The file it would create already exists. Nothing will be overwritten.', EXPECTED_FILE)
-  }
 
-  // ── the audit sink ──────────────────────────────────────────────────────
-  // Checked BEFORE anything acts, because an unrecordable run must not begin — the same rule
-  // the executor enforces per step, applied one level earlier so it fails before the flag.
-  if (!io.auditWritable()) {
-    return fail('audit_not_writable', 'The record of what happens cannot be written. Nothing will run.')
-  }
+  // ── REMOVED 2026-08-01: dirExists, listDir, fileExists, auditWritable ───
+  //
+  // Four checks about the state of C:\Aroma\ComputerOperator-Test, run by a process that cannot
+  // read it. The folder is permissioned for AromaOperator, Administrators and SYSTEM; the Owner
+  // is none of those, so `listDir` returned null and the canary refused with `folder_unreadable`
+  // — a true statement about the reader, reported as a fact about the folder.
+  //
+  // Worse than useless, in a specific way: `io.listDir` catches its own error and returns null,
+  // and `io.fileExists` returns TRUE on failure so that "unknown" refuses rather than
+  // overwrites. Those are the right defaults for a reader that might legitimately be denied —
+  // but the honest conclusion from them is "I am the wrong process to ask", not a verdict about
+  // the machine.
+  //
+  // All four are performed by companionPreflight, as AromaOperator, where "can I read this" and
+  // "can I write here" mean what they say:
+  //   dirExists/listDir -> folder_unreadable, folder_not_empty
+  //   fileExists        -> file_exists
+  //   auditWritable     -> audit_not_writable
+  //
+  // What the Owner side still guarantees is stated plainly and is not nothing: a real person
+  // pressed E, there is a valid unspent approval, and the code on disk is the code that was
+  // approved. What it no longer claims is anything at all about the target folder.
 
   return { ok: true, receipt, packageHash: v.executionPackageManifestHash }
 }

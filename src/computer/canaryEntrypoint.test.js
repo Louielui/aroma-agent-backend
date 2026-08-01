@@ -220,29 +220,36 @@ test('*** 5. a changed work order -> 0 desktop actions ***', () => {
 
 /* ── 6-9. the machine state ───────────────────────────────────────────────── */
 
-test('*** 6. a non-empty folder -> 0 desktop actions ***', () => {
-  const a = approved()
-  const { spy, ledger } = fakeLedger()
-  const res = E.request(Object.assign(base(a), { io: fakeIo({ listDir: () => ['leftover.txt'] }), ledger }))
-  assert.equal(res.refusal, 'folder_not_empty')
-  assert.equal(spy.submits, 0, 'nothing was handed over')
-})
+test('*** 6-8. the folder and audit checks are NOT this side\'s, and are gone ***', () => {
+  // These three tests drove the Owner-side preflight with a non-empty folder, an existing
+  // canary-1.txt and an unwritable audit sink, and asserted a refusal each time. They passed
+  // for months. They were also asking a process that CANNOT READ THE FOLDER what was in it:
+  // C:\\Aroma\\ComputerOperator-Test is permissioned for AromaOperator, Administrators and
+  // SYSTEM, and `louis` is none of those.
+  //
+  // The fakes hid it perfectly. `fakeIo({ listDir: () => ['leftover.txt'] })` answers the
+  // question the real io could never answer, so the test proved the RULE was wired up while
+  // saying nothing about whether the process could apply it. On the real machine the same code
+  // returned null and refused with folder_unreadable — a true statement about the reader,
+  // delivered as a verdict about the folder.
+  //
+  // The rules now live in companionPreflight and are asserted there, in
+  // companionCanaryChain.test.js test 11, against the account that will act. What is asserted
+  // here is that this side no longer claims any of it.
+  const pre = fs.readFileSync(path.join(SCRIPTS, 'run-notepad-canary.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  for (const gone of ['io.dirExists', 'io.listDir', 'io.fileExists', 'io.auditWritable']) {
+    assert.equal(pre.includes(gone), false, 'the Owner side must not call: ' + gone)
+  }
+  for (const refusal of ['folder_not_empty', 'file_exists', 'audit_not_writable', 'folder_unreadable', 'folder_missing']) {
+    assert.equal(pre.includes(refusal), false, 'nor produce the refusal: ' + refusal)
+  }
 
-test('*** 7. canary-1.txt already there -> 0 desktop actions ***', () => {
-  const a = approved()
-  const { spy, ledger } = fakeLedger()
-  const res = E.request(Object.assign(base(a), { io: fakeIo({ fileExists: () => true }), ledger }))
-  assert.equal(res.refusal, 'file_exists')
-  assert.match(res.human, /Nothing will be overwritten/)
-  assert.equal(spy.submits, 0, 'nothing was handed over')
-})
-
-test('*** 8. an unwritable audit sink -> 0 desktop actions ***', () => {
-  const a = approved()
-  const { spy, ledger } = fakeLedger()
-  const res = E.request(Object.assign(base(a), { io: fakeIo({ auditWritable: () => false }), ledger }))
-  assert.equal(res.refusal, 'audit_not_writable')
-  assert.equal(spy.submits, 0, 'nothing was handed over')
+  // And they really are still enforced, one layer over. Named so a deletion there fails here.
+  const companion = fs.readFileSync(path.join(__dirname, 'companionCanaryRunner.js'), 'utf8')
+  for (const refusal of ['folder_not_empty', 'file_exists', 'audit_not_writable', 'folder_unreadable']) {
+    assert.ok(companion.includes(refusal), 'the Companion still enforces: ' + refusal)
+  }
 })
 
 test('*** 9. a ledger refusal is surfaced, and no second request exists ***', () => {
@@ -356,19 +363,23 @@ test('*** the Owner screen starts no process that could act ***', () => {
   for (const banned of ['Start-Process', 'Invoke-Expression', 'iex ']) {
     assert.equal(stripped.toLowerCase().includes(banned.toLowerCase()), false, 'must not use: ' + banned)
   }
-  // "notepad" is NOT banned here, and the first version of this test banned it and went red.
-  // The screen mentions Notepad because it COUNTS running copies before handing anything over.
-  // Reading how many exist is the opposite of starting one, and a rule that cannot tell those
-  // apart bans the check along with the capability.
-  // "notepad" is not bannable as a word here, and two attempts to ban it went red for two
-  // different innocent reasons: the entrypoint's own filename is run-notepad-canary.js, and the
-  // refusal message says "Notepad is already open". Both are the screen doing its job.
+  // NOTEPAD IS NOW ABSENT ENTIRELY, and the history of this assertion is worth keeping.
+  // Two earlier versions banned the word and went red for innocent reasons — the entrypoint is
+  // called run-notepad-canary.js, and the refusal message said "Notepad is already open". So the
+  // ban was narrowed to the executable and to invocation, with a positive control asserting the
+  // COUNTING line was still present.
   //
-  // So the ban is on the EXECUTABLE and on invocation, which is the capability. The screen may
-  // say the word and may count the processes; it may not start one.
+  // That counting line has since been deleted: it counted Notepad windows in the Owner's session
+  // while the canary runs in another, so zero here said nothing about there. The positive control
+  // therefore had to go with it — a control that pins a line which should no longer exist stops
+  // being evidence and becomes an obstacle to the fix.
   assert.doesNotMatch(stripped, /notepad\.exe/i, 'the binary is never named')
   assert.doesNotMatch(stripped, /&\s*['"]?notepad/i, 'and never invoked')
-  assert.match(stripped, /Get-Process -Name 'notepad'/, 'it counts them — the positive control')
+  assert.equal(/Get-Process/.test(stripped), false, 'and no process is enumerated on this side at all')
+  // The counting now happens in the probe, as the operator. Named here so its removal from
+  // BOTH places would fail rather than pass quietly.
+  const probe = fs.readFileSync(path.join(SCRIPTS, 'probe-machine.ps1'), 'utf8')
+  assert.match(probe, /'notepads' \{/, 'the operator side still counts them')
 })
 
 /* ── 17. no bypass ────────────────────────────────────────────────────────── */

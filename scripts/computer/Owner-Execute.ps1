@@ -268,26 +268,29 @@ if (-not $CANARY_EXECUTE_AUTHORISED) {
 # ===========================================================================
 $Entry = Join-Path $RepoDir 'scripts\computer\run-notepad-canary.js'
 
-# ── the checks PowerShell is the right tool for ──────────────────────────
-# ACLs, process lists and the staging directory. Node does the receipt, the
-# package, the folder state and the audit sink. Both run BEFORE the flag.
+# ── REMOVED 2026-08-01: the machine checks that were never this side's ───
+#
+# This block read the ACL of C:\Aroma\ComputerOperator-Test, counted Notepad
+# windows, and refused if either looked wrong. Every line of it was correct
+# code answering a question this session cannot answer:
+#
+#   . the folder is permissioned for AromaOperator, Administrators and SYSTEM.
+#     louis is none of those, so Get-Acl threw and the Owner was told to "run
+#     this as the Owner" - which he was.
+#   . the Notepad count was of session 3, the Owner's desktop. The canary runs
+#     on session 5. Counting zero here says nothing about there.
+#
+# It survived the architecture ruling because it sits AFTER the fence, and the
+# fence was shut: from the ruling until the unlock, this code was unreachable,
+# so no amount of pressing E could reach it and no test that stops at the fence
+# could see it. The unlock is what made it run for the first time.
+#
+# Every check removed here is performed by companionPreflight, in the operator's
+# own session, by the account that will act - readAcl, listDir, fileExists,
+# notepadCount, stagedClosure, auditWritable. A check run by the wrong principal
+# answers a question nobody asked.
 Say ""
 Say "  Checking..." 'Cyan'
-
-$notepads = @(Get-Process -Name 'notepad' -ErrorAction SilentlyContinue).Count
-if ($notepads -ne 0) { Cancel-Now ("Notepad is already open (" + $notepads + "). Please close it first.") }
-
-$testDir = 'C:\Aroma\ComputerOperator-Test'
-try {
-  $acl = Get-Acl -LiteralPath $testDir -ErrorAction Stop
-} catch {
-  Cancel-Now "The folder's permissions cannot be read from here. Run this as the Owner."
-}
-$rules = @($acl.Access)
-if (-not $acl.AreAccessRulesProtected) { Cancel-Now "The folder's permissions are not the approved ones." }
-if (@($rules | Where-Object { $_.IsInherited }).Count -ne 0) { Cancel-Now "The folder's permissions are not the approved ones." }
-if (@($rules | Where-Object { $_.AccessControlType -eq 'Deny' }).Count -ne 0) { Cancel-Now "The folder's permissions are not the approved ones." }
-if ($rules.Count -ne 3) { Cancel-Now "The folder's permissions are not the approved ones." }
 
 # ── the Node preflight, with the flag still off ─────────────────────────
 $preRaw = & $Node $Entry preflight

@@ -436,18 +436,57 @@ test('*** a PRE-IMPLEMENTATION receipt is refused, and never reaches the spent l
   assert.equal(reg.wasUsed(v1.approvalId), false, 'it was never spent, because it never got that far')
 })
 
-test('*** no receipt on this machine is currently executable ***', () => {
-  // Measured, not assumed, and rewritten twice as the real state moved: first the Owner's
-  // receipt predated the package; then a v2 was signed; then the architecture ruling of
-  // 2026-07-31 superseded it, because the chain it approved would have run as the wrong
-  // identity. Whatever the reason, the invariant this test holds is the one that matters:
-  // right now, nothing is executable.
+test('*** a receipt is executable ONLY if it binds the code on disk right now ***', () => {
+  // ── THIS TEST'S PREMISE EXPIRED, 2026-08-01 ──────────────────────────────
+  // It used to assert "no receipt on this machine is currently executable", and that was true
+  // for as long as the fence was shut and nobody had approved anything. Then the Owner unlocked
+  // the fence and approved, on purpose — and a build-time containment guard went red for the
+  // one reason that is not a defect: the state it was guarding had been deliberately left.
+  //
+  // Deleting it would have thrown away the property worth keeping. Weakening it to "or ok" would
+  // have made it assert nothing. What it holds now is the invariant that survives approval:
+  // a receipt may authorise a run ONLY while it binds the exact package on disk. The moment the
+  // code moves, every receipt made against the old code stops being executable — which is the
+  // reason the unlock invalidated the previous one, and the reason this one will not outlive the
+  // next change to a packaged file.
   const found = A.latestReceipt()
   if (!found) { assert.ok(true, 'no receipt on this machine'); return }
+
+  const PKG = require('../../scripts/computer/executionPackage')
   const v = A.verify({})
-  assert.equal(v.ok, false, 'no approval may currently authorise a run')
-  assert.ok(['receipt_superseded', 'pre_implementation_receipt', 'execution_package_changed'].includes(v.refusal),
-    'refused for a stated reason, not an unexplained one: ' + v.refusal)
+
+  if (v.ok) {
+    // A valid approval exists. It must be bound to the CURRENT package, not merely well-formed.
+    assert.equal(v.receipt.executionPackageManifestHash, PKG.computePackageHash(),
+      'an executable receipt binds the code that is on disk right now')
+    assert.ok(v.receipt.approvalId, 'and names the approval it belongs to')
+  } else {
+    assert.ok(['receipt_superseded', 'pre_implementation_receipt', 'execution_package_changed'].includes(v.refusal),
+      'refused for a stated reason, not an unexplained one: ' + v.refusal)
+  }
+})
+
+test('*** any change to a packaged file invalidates every existing receipt ***', () => {
+  // The mechanism the test above relies on, exercised rather than assumed — in a temp copy, so
+  // the real receipts are untouched. This is what makes an approval a statement about code and
+  // not just about intent.
+  const PKG = require('../../scripts/computer/executionPackage')
+  const dir = tmp()
+  const orderFile = path.join(dir, 'wo.json')
+  fs.copyFileSync(A.DRAFT, orderFile)
+  const { receipt } = A.issue({ receiptDir: dir, orderFile, at: new Date().toISOString() })
+
+  assert.equal(A.verify({ receiptDir: dir, orderFile }).ok, true, 'valid against the package it was made from')
+  assert.equal(receipt.executionPackageManifestHash, PKG.computePackageHash())
+
+  // Now pretend one packaged file moved: the receipt's binding no longer matches.
+  const rf = fs.readdirSync(dir).find((n) => n.startsWith('receipt-'))
+  const raw = JSON.parse(fs.readFileSync(path.join(dir, rf), 'utf8'))
+  raw.executionPackageManifestHash = 'a'.repeat(64)
+  fs.writeFileSync(path.join(dir, rf), JSON.stringify(raw))
+  const after = A.verify({ receiptDir: dir, orderFile })
+  assert.equal(after.ok, false)
+  assert.equal(after.refusal, 'execution_package_changed')
 })
 
 test('*** a SUPERSEDED marking beats every other verdict, and never edits the receipt ***', () => {

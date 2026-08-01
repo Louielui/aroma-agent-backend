@@ -111,6 +111,12 @@ if ($strangers.Count -gt 0) {
   Say "  unknown ids     : none - nobody outside the four named principals can read or write"
 }
 Say ""
-Say ("  files present   : " + @(Get-ChildItem -LiteralPath $RequestDir -File -ErrorAction SilentlyContinue).Count)
+# "0 files" and "I could not read the folder" must not print the same way.
+# -ErrorAction SilentlyContinue made them identical here, and a report that
+# cannot tell absence from blindness is how a containment number gets quoted
+# for several rounds before anyone notices it was never measured.
+$present = $null
+try { $present = @(Get-ChildItem -LiteralPath $RequestDir -File -ErrorAction Stop).Count } catch { $present = $null }
+Say ("  files present   : " + $(if ($null -eq $present) { 'COULD NOT BE READ' } else { [string]$present }))
 Say ""
 exit 0

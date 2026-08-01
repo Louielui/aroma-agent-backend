@@ -83,11 +83,19 @@ switch ($op) {
     foreach ($dir in $paths) {
       $writable = $false
       $probe = Join-Path $dir ('.aroma-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+      $strayLeft = $false
       try {
         [IO.File]::WriteAllText($probe, 'probe')
         $writable = $true
-        Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue
+        # A FAILED CLEANUP IS NOT COSMETIC HERE. One of the probed paths is
+        # ComputerOperator-Test, and the preflight immediately after this one
+        # refuses if that folder is not empty. A swallowed removal failure
+        # would leave a stray file and fail the NEXT check, with a message
+        # about the folder rather than about this line.
+        try { Remove-Item -LiteralPath $probe -Force -ErrorAction Stop }
+        catch { $strayLeft = $true }
       } catch { $writable = $false }
+      if ($strayLeft) { Fail 'probe_file_not_removed' $probe }
       $out += @{ path = $dir; writable = $writable }
     }
     Emit @{ ok = $true; paths = $out }
@@ -141,7 +149,27 @@ switch ($op) {
   }
 
   'notepads' {
-    Emit @{ ok = $true; count = @(Get-Process -Name 'notepad' -ErrorAction SilentlyContinue).Count }
+    # THE VACUOUS ZERO, and the most expensive place in this file to have it.
+    #
+    # This line was:
+    #     @(Get-Process -Name 'notepad' -ErrorAction SilentlyContinue).Count
+    #
+    # -ErrorAction SilentlyContinue was there for a real reason: Get-Process
+    # -Name errors when NOTHING matches, so without it a clean machine looks
+    # like a failure. But it swallows every other error the same way, and the
+    # result of a swallowed error is COUNT = 0 - "no Notepad is open", the
+    # exact answer that lets a canary proceed.
+    #
+    # So the two cases are separated instead of merged. Get-Process with no
+    # -Name never errors on "none found", so an empty list means empty and a
+    # thrown error means the question could not be answered. The caller's
+    # notepadCount() already returns -1 on transport failure precisely so that
+    # "unknown" can never equal 0; this closes the same hole one layer down,
+    # where the -1 could not reach.
+    $all = $null
+    try { $all = @(Get-Process -ErrorAction Stop) }
+    catch { Fail 'notepad_count_unavailable' $_.Exception.Message }
+    Emit @{ ok = $true; count = @($all | Where-Object { $_.ProcessName -eq 'notepad' }).Count }
   }
 
   'auditwritable' {
