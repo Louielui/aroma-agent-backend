@@ -53,6 +53,7 @@ const JS_ALLOWLIST = Object.freeze({
   'executeRequest.js': false,
   'executeRequestStore.js': false,
   'companionCanaryRunner.js': false,
+  'companionProductionFactory.js': false,
   'ipcChannel.js': false,
   'killSwitch.js': false,
   'measurementContext.js': false,

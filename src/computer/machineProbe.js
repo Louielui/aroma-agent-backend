@@ -19,7 +19,9 @@
 
 const REQUIRED_OPS = Object.freeze(['acl', 'listdir', 'fileexists', 'writable', 'staging', 'notepads', 'auditwritable'])
 
-const DEFAULT_SCRIPT = 'scripts/computer/probe-machine.ps1'
+// A SCRIPT ID, not a path. The shared runner owns the frozen id->path map, so nothing here
+// can name a file to execute.
+const DEFAULT_SCRIPT = 'machine-probe'
 
 /**
  * @param {{run:Function}} deps.runner  run(scriptPath, payload) -> parsed result
@@ -31,7 +33,13 @@ function createMachineProbe (deps = {}) {
 
   const call = (op, payload) => {
     if (!REQUIRED_OPS.includes(op)) throw new Error('unknown_probe_op: ' + op)
-    const r = runner.run(scriptPath, Object.assign({ op }, payload))
+    // The shared runner returns a TRANSPORT envelope: { ok, result }. A transport failure and
+    // a probe refusal are different facts, so they are unwrapped separately — reporting 'the
+    // probe said no' when the probe never ran would be a lie about what was measured.
+    const env = runner.run(scriptPath, Object.assign({ op }, payload))
+    if (!env || typeof env !== 'object') return { ok: false, reason: 'probe_no_result' }
+    if (env.ok !== true) return { ok: false, reason: 'transport_' + (env.refusal || 'failed') }
+    const r = env.result
     return (r && typeof r === 'object') ? r : { ok: false, reason: 'probe_no_result' }
   }
 

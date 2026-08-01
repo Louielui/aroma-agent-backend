@@ -207,12 +207,19 @@ function realArtifactStore () {
 }
 
 /**
- * The ONE PowerShell transport, shared by the adapter and the machine probe. There is no
- * second launcher in production: two had already drifted apart, and both were broken in ways
- * that only appeared when something real was driven through them.
+ * The runner is NOT built here.
+ *
+ * This file is the OWNER-side entrypoint, and the architecture ruling of 2026-07-31 is that the
+ * Owner side writes a request and stops. Constructing a PowerShell transport here would put the
+ * ability to start a process back on the wrong side of the boundary — which is precisely how
+ * this path ended up able to act as louis in the first place.
+ *
+ * The transport, the adapter and the executor are all assembled by companionProductionFactory,
+ * inside the Companion. companionProductionFactory.test.js asserts each has exactly one
+ * production importer, so a second door fails a test rather than going unnoticed.
  */
 function realRunner () {
-  return require('../../src/computer/powershellJsonRunner').buildProductionRunner()
+  throw new Error('the Owner side does not build a PowerShell runner - see companionProductionFactory')
 }
 
 /* ── CLI ──────────────────────────────────────────────────────────────────── */

@@ -327,7 +327,11 @@ test('*** 17. no production path reaches the adapter except through the wiring *
     }
   }
   walk(SRC)
-  assert.deepEqual(importers, ['computer/computerOperatorWiring.js'], 'one door in src/')
+  // The door MOVED on 2026-08-01 and did not multiply. It was computerOperatorWiring, which sits
+  // on the Owner side; the architecture ruling put assembly inside the Companion, so it is now
+  // companionProductionFactory. Still exactly one, which is the property this asserts — the
+  // filename changing is the design being followed, not the guard weakening.
+  assert.deepEqual(importers, ['computer/companionProductionFactory.js'], 'one door in src/')
 
   // And the entrypoint does not sneak around it.
   const entry = fs.readFileSync(path.join(SCRIPTS, 'run-notepad-canary.js'), 'utf8')

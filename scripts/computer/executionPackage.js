@@ -78,6 +78,11 @@ const PACKAGE_FILES = Object.freeze([
   'src/computer/desktopAdapter.js',
   // The ONE PowerShell transport, shared by the adapter and the machine probe.
   'src/computer/powershellJsonRunner.js',
+  'src/computer/identityAttestation.js',
+  'src/computer/companionCanaryRunner.js',
+  'src/computer/executeRequestStore.js',
+  'src/computer/machineProbe.js',
+  'src/computer/companionProductionFactory.js',
   // the fixed entrypoint: the only production caller of the wiring
   'scripts/computer/run-notepad-canary.js',
   // the hands

@@ -55,9 +55,11 @@ function buildComputerOperator (opts = {}) {
   }
 
   // ── enabled branch: the ONLY place these modules enter the process ───────
-  const { createDesktopAdapter } = require('./desktopAdapter')
-  const { createComputerExecutor } = require('./computerExecutor')
-  const { createOrderRegistry } = require('./orderRegistry')
+  // Delegated to the Companion factory. This file used to construct the adapter and the
+  // executor itself, which is exactly how the Owner path ended up able to act: two places
+  // could build the ability to touch a desktop. Now there is one, and it lives on the
+  // Companion side.
+  const { buildCompanionExecution } = require('./companionProductionFactory')
 
   if (!opts.artifactStore || typeof opts.artifactStore.write !== 'function') {
     // Fail-closed at composition, not at the first step. A build with no audit sink must not
@@ -68,13 +70,10 @@ function buildComputerOperator (opts = {}) {
     return { enabled: false, reason: 'no_runner', flag, executor: null, companion: createCompanion({ now: opts.now }) }
   }
 
-  const desktop = createDesktopAdapter({ runner: opts.runner, scriptPath: opts.scriptPath, timeoutSec: opts.timeoutSec })
-  // THE desktop slot. Exactly one registry instance governs it, it is single-use by
-  // default, and it is NOT the supervisor's — a dry-run must not be able to occupy or
-  // spend anything the real run depends on. computerOperatorWiring.test.js proves both
-  // halves: the two instances are distinct, and neither can see the other's state.
-  const executorRegistry = createOrderRegistry({ now: opts.now })
-  const executor = createComputerExecutor({ artifactStore: opts.artifactStore, desktop, orderRegistry: executorRegistry, now: opts.now })
+  const built = buildCompanionExecution({ artifactStore: opts.artifactStore, runner: opts.runner, now: opts.now })
+  if (!built.ok) return { enabled: false, reason: built.reason, flag, executor: null, companion: createCompanion({ now: opts.now }) }
+  const executorRegistry = built.registry
+  const executor = built.executor
 
   return {
     enabled: true,

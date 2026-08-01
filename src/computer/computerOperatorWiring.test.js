@@ -136,8 +136,11 @@ test('*** the acting modules are required INSIDE the enabled branch, not at the 
   const src = fs.readFileSync(path.join(__dirname, 'computerOperatorWiring.js'), 'utf8')
   const lines = src.split(/\r?\n/)
   const flagReturn = lines.findIndex((l) => l.includes("reason: 'flag_off'"))
-  const adapterRequire = lines.findIndex((l) => l.includes("require('./desktopAdapter')"))
-  const executorRequire = lines.findIndex((l) => l.includes("require('./computerExecutor')"))
+  // The wiring no longer constructs these itself — it delegates to the Companion factory, so
+  // the line that must sit inside the enabled branch is that one. The property is unchanged:
+  // with the flag off, nothing capable of acting is loaded into the process.
+  const adapterRequire = lines.findIndex((l) => l.includes("require('./companionProductionFactory')"))
+  const executorRequire = adapterRequire
 
   assert.ok(flagReturn > 0, 'the disabled path exists')
   assert.ok(adapterRequire > flagReturn, 'the adapter is required AFTER the flag-off return')
@@ -158,6 +161,6 @@ test('the wiring module is the only importer of the adapter in src/', () => {
     }
   }
   walk(SRC)
-  assert.deepEqual(importers, ['computer/computerOperatorWiring.js'],
-    'one door in, and it is behind the flag')
+  assert.deepEqual(importers, ['computer/companionProductionFactory.js'],
+    'one door in — it moved to the Companion side, and there is still exactly one')
 })

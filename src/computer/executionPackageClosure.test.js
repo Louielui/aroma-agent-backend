@@ -99,7 +99,17 @@ test('the manifest has no entries that are neither reachable nor a known non-JS 
     'scripts/computer/uiaCanary.ps1',
     'docs/governance/canary-work-order.draft.json',
     'scripts/computer/run-notepad-canary.js', // the entry itself, not a require target
-    'src/computer/killSwitch.js' // consulted through the gate's injected killSwitch option
+    'src/computer/killSwitch.js', // consulted through the gate's injected killSwitch option
+    // Reachable only from the COMPANION side. The Owner entrypoint cannot walk to these, which
+    // is the architecture ruling working — but they are packaged because they decide what runs.
+    //
+    // The first version of this list also named the adapter, the executor, the runner, the probe
+    // and the factory. That was WRONG: the walk shows all five ARE reachable from the entrypoint
+    // today, through the flag-gated wiring. Listing them here would have excused a genuine
+    // orphan later, so the list is trimmed to the three that are actually unreachable.
+    'src/computer/executeRequestStore.js',
+    'src/computer/companionCanaryRunner.js',
+    'src/computer/identityAttestation.js'
   ]
   const orphans = PKG.PACKAGE_FILES.filter((p) => !reachedRel.has(p) && !NON_JS_BY_DESIGN.includes(p))
   assert.deepEqual(orphans, [], 'listed but unreachable and undeclared: ' + orphans.join(', '))
