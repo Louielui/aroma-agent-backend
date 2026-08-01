@@ -37,7 +37,10 @@ function fakeDesktop (over = {}) {
     typeTextIntoControl ({ text }) { d.calls++; d.log.push('type:' + text); return { detail: text.length + ' chars' } },
     saveAsViaUi ({ dir, fileName }) { d.calls++; d.log.push('save:' + dir + fileName); return { detail: dir + fileName } },
     verifyBinding () { return { ok: true } },
-    cleanup () { d.cleanedUp++ }
+    // Returns what the REAL adapter returns: {ok:true} or {ok:false, reason}. It used to return
+    // undefined, which no longer matches the contract now that the executor records the outcome
+    // instead of the fact that it called.
+    cleanup () { d.cleanedUp++; return { ok: true } }
   }
   return Object.assign(d, over)
 }
@@ -189,7 +192,10 @@ test('*** step-outcome audit throws -> no FURTHER steps, and cleanup runs ***', 
   assert.equal(res.ok, false)
   assert.equal(res.refusal, 'audit_write_failed')
   assert.equal(res.phase, 'step-outcome')
-  assert.equal(res.cleanup, 'attempted')
+  // 'done', not 'attempted'. The field used to say 'attempted' whatever cleanup returned, so on
+  // the first real run it claimed a cleanup that had refused with `nothing_to_clean` while
+  // Notepad sat on screen. It now records the outcome.
+  assert.equal(res.cleanup, 'done')
   assert.equal(res.auditChainComplete, false)
 })
 

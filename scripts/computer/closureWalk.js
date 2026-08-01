@@ -73,7 +73,10 @@ const ROOTS = Object.freeze([
   'scripts/computer/Install-OperatorShortcuts.ps1',
   // The commissioning measurement. It judges nothing, but it decides what the Owner is told
   // about the machine, so a change to it is a change to what gets believed.
-  'scripts/computer/Operator-CommissioningBaseline.ps1'
+  'scripts/computer/Operator-CommissioningBaseline.ps1',
+  // The one-off launch measurement. It opens Notepad deliberately, outside any canary, so the
+  // Owner can learn how the packaged app behaves without burning an approval to find out.
+  'scripts/computer/Operator-MeasureNotepadLaunch.ps1'
 ])
 
 /** Extensions that count as code for this purpose. */

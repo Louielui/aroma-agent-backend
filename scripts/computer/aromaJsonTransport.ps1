@@ -1,4 +1,4 @@
-# aromaJsonTransport.ps1  -  the PowerShell half of the one transport.
+﻿# aromaJsonTransport.ps1  -  the PowerShell half of the one transport.
 #
 # ===========================================================================
 #  Dot-sourced by every script the shared runner may start. It reads the

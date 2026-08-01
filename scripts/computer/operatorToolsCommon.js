@@ -378,6 +378,39 @@ function renderPackage (res) {
 /* ── plumbing ─────────────────────────────────────────────────────────────── */
 
 /**
+ * What is still on the machine after a failed run — MEASURED, never assumed.
+ *
+ * The screen used to print "Nothing was left behind" unconditionally on every failure. On the
+ * first run that actually opened Notepad it was false: open_app threw before producing a
+ * binding, so cleanup had nothing to close, Notepad stayed on screen, and the Owner closed it
+ * by hand while being told nothing was left.
+ *
+ * Three things are checked, and each one that cannot be read says so rather than counting as
+ * clean — "I could not look" must never render as "there is nothing there".
+ */
+function leftovers (opts = {}) {
+  const { createMachineProbe } = require('../../src/computer/machineProbe')
+  const { ALLOWED_DIR } = require('../../src/computer/companionCanaryRunner')
+  const machine = opts.machine || createMachineProbe({ runner: opts.runner || buildRunner() })
+  const items = []
+
+  const n = machine.notepadCount()
+  if (n < 0) items.push('Notepad could not be counted — check by eye')
+  else if (n > 0) items.push(n + ' Notepad window(s) still open — please close them')
+
+  const entries = machine.listDir(ALLOWED_DIR)
+  if (entries === null || entries === undefined) items.push(ALLOWED_DIR + ' could not be read — check it by hand')
+  else if (entries.length > 0) items.push(entries.length + ' file(s) in ' + ALLOWED_DIR + ': ' + entries.join(', '))
+
+  // The executor's own account of what cleanup managed, carried through instead of assumed.
+  const c = opts.cleanup
+  if (typeof c === 'string' && c.startsWith('not_done')) items.push('the automatic cleanup did not run: ' + c.replace('not_done:', ''))
+  else if (c === 'no_result') items.push('the automatic cleanup gave no answer')
+
+  return { clean: items.length === 0, items }
+}
+
+/**
  * The ONE production transport — obtained from the Companion factory, never constructed here.
  *
  * A direct `require` of powershellJsonRunner would work perfectly and would quietly cost the
@@ -399,6 +432,6 @@ module.exports = {
   checkIdentity, renderIdentity, IDENTITY_ROWS, markRows,
   checkMachine, renderMachine, MACHINE_ROWS,
   checkPackage, renderPackage,
-  buildRunner, ensureRequestDir,
+  buildRunner, ensureRequestDir, leftovers,
   REPO, REQUEST_DIR, AUDIT_DIR, RECEIPTS_DIR, EXPECTED_SID, EXPECTED_NAME
 }

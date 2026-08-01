@@ -282,7 +282,12 @@ function createComputerExecutor (deps = {}) {
         approvalId: order.approvalId,
         orderHash: order.orderHash,
         plannedSteps: order.steps.map((s) => ({ n: s.n, action: s.action })),
-        limits: LIMITS
+        // BOTH, labelled. This recorded only LIMITS — the system hard ceilings — so a record
+        // of an order with maxSteps 3 read "maxSteps: 10", which is what the system would
+        // allow, not what was approved. A reader checking what was authorised would have been
+        // told the wrong number by a record that was otherwise accurate.
+        orderLimits: { maxSteps: order.maxSteps, timeoutSec: order.timeoutSec },
+        systemCeilings: LIMITS
       })
     } catch (err) {
       // Admitted but unrecordable. The approval is burnt: an order nobody can audit does
@@ -403,7 +408,15 @@ function createComputerExecutor (deps = {}) {
     function finishFailed (reason, detail, phase, n) {
       let cleanup = 'not_attempted'
       try {
-        if (desktop && typeof desktop.cleanup === 'function') { desktop.cleanup({ runId, bind: bindingFromOpen }); cleanup = 'attempted' }
+        // ── RECORD WHAT CLEANUP ACTUALLY DID, NOT THAT IT WAS CALLED ────────
+        // This ignored the return value and wrote 'attempted' every time. On the first real run
+        // open_app threw before producing a binding, so cleanup returned `nothing_to_clean`
+        // immediately and closed nothing — and the audit said "attempted", while Notepad stayed
+        // on screen until the Owner closed it by hand.
+        if (desktop && typeof desktop.cleanup === 'function') {
+          const c = desktop.cleanup({ runId, bind: bindingFromOpen })
+          cleanup = !c ? 'no_result' : c.ok === true ? 'done' : ('not_done:' + (c.reason || 'unknown'))
+        }
       } catch (_) { cleanup = 'failed' }
       // Best-effort: the run is already failing, and a second audit failure must not mask the first.
       try { auditOrThrow('aborted', { runId, reason, detail, phase, n, cleanup, stepsRun: done.length }) } catch (_) { }

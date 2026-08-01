@@ -84,6 +84,29 @@ function Get-SoleWindowForProcess {
   return $found[0]
 }
 
+# Every top-level window belonging to a Notepad process, as a list.
+#
+# Matched by the OWNING PROCESS NAME, not by window title. A title is text the
+# document can change - "Untitled" becomes the filename the moment anything is
+# saved, and a title match would then silently stop matching. The process name is
+# a property of the program.
+#
+# 'Notepad' covers the packaged app (Executable = Notepad\Notepad.exe) and the
+# classic binary alike; the comparison is case-insensitive.
+function Get-NotepadWindows {
+  $out = @()
+  $children = $AUTO::RootElement.FindAll($SCOPE_CHILD, [System.Windows.Automation.Condition]::TrueCondition)
+  foreach ($el in $children) {
+    $procId = 0
+    try { $procId = [int] $el.Current.ProcessId } catch { continue }
+    if ($procId -le 0) { continue }
+    $name = $null
+    try { $name = (Get-Process -Id $procId -ErrorAction Stop).ProcessName } catch { continue }
+    if ($name -and $name.ToLowerInvariant() -eq 'notepad') { $out += $el }
+  }
+  return $out
+}
+
 # The editable surface. Notepad's document area is the only control this
 # script will ever set text on.
 function Get-EditControl {
@@ -211,22 +234,87 @@ switch ($op) {
       # a machine nobody has looked at, and guessing is exactly what this fixes.
       Emit-Refusal 'app_binary_missing' $notepadExe
     }
-    $proc = Start-Process -FilePath $notepadExe -PassThru
-    Start-Sleep -Milliseconds 900
+    # ── THE STUB PID IS NOT THE APP. MEASURED FROM THE REGISTRY. ────────────
+    #
+    # On this machine Microsoft.WindowsNotepad 11.2605.34.0 is installed, and
+    # HKLM\...\Image File Execution Options\notepad.exe carries UseFilter=1 with
+    # three filter subkeys, each holding:
+    #
+    #     AppExecutionAliasRedirect         : 1
+    #     AppExecutionAliasRedirectPackages : *
+    #     FilterFullPath                    : C:\Windows\System32\notepad.exe
+    #
+    # So launching System32\notepad.exe is REDIRECTED to the packaged app, whose
+    # manifest declares Executable = Notepad\Notepad.exe - a different binary
+    # (3,298,152 bytes) from the 360,448-byte stub we start.
+    #
+    # The first real canary proved the consequence: Notepad opened on screen and
+    # FindAll(ProcessIdProperty == $proc.Id) returned nothing, so the run refused
+    # with window_not_found while a Notepad window sat there.
+    #
+    # THE STUB PID THEREFORE CANNOT IDENTIFY THE WINDOW, and this no longer tries.
+    #
+    # ── HOW "THE ONE WE STARTED" IS ESTABLISHED WITHOUT IT ──────────────────
+    # By difference, with refusals at both ends:
+    #
+    #   1. the Companion preflight has already proved notepadCount() == 0;
+    #   2. this re-measures immediately before launching, and REFUSES if it is
+    #      not still 0 - a window that appeared in between is not ours;
+    #   3. it launches, then waits for the set of Notepad top-level windows to
+    #      become EXACTLY ONE;
+    #   4. zero at timeout -> window_not_found. More than one -> window_ambiguous.
+    #
+    # That is not "find any Notepad window". The before-set is proven empty, and
+    # any count other than one is a refusal - it never chooses among candidates
+    # and never falls back to the focused window. What it binds to is the only
+    # Notepad window that came into existence between our own measurement and
+    # our own launch.
+    $before = @(Get-NotepadWindows)
+    if ($before.Count -ne 0) {
+      Emit-Refusal 'notepad_already_open' ("$($before.Count) Notepad window(s) existed before launch - refusing to guess which is ours")
+    }
 
-    $win = Get-SoleWindowForProcess -ProcessId $proc.Id
-    if ($null -eq $win) { Emit-Refusal 'window_not_found' 'no window for the launched process' }
-    if ($win -is [string]) { Emit-Refusal 'window_ambiguous' 'more than one candidate window - refusing to choose' }
+    $proc = Start-Process -FilePath $notepadExe -PassThru
+
+    $deadline = (Get-Date).AddMilliseconds(8000)
+    $after = @()
+    while ((Get-Date) -lt $deadline) {
+      Start-Sleep -Milliseconds 250
+      $after = @(Get-NotepadWindows)
+      if ($after.Count -ge 1) { break }
+    }
+
+    if ($after.Count -eq 0) {
+      Emit-Refusal 'window_not_found' 'no Notepad window appeared within 8s of launching'
+    }
+    if ($after.Count -gt 1) {
+      Emit-Refusal 'window_ambiguous' ("$($after.Count) Notepad windows appeared - refusing to choose between them")
+    }
+
+    $win = $after[0]
+    # The window's OWN process, read from the window rather than from what we
+    # started. Under the redirect these are different, and the window's answer is
+    # the one that describes what we are about to type into.
+    $realPid = [int] $win.Current.ProcessId
+    $realProc = $null
+    try { $realProc = Get-Process -Id $realPid -ErrorAction Stop } catch {
+      Emit-Refusal 'window_process_gone' "the window's process $realPid could not be read"
+    }
 
     $edit = Get-EditControl -Window $win
     if ($null -eq $edit) { Emit-Refusal 'uia_control_missing' 'no Document or Edit control in the new window' }
 
     Emit-Result @{
       ok = $true
-      processId = $proc.Id
-      sessionId = (Get-Process -Id $proc.Id).SessionId
+      processId = $realPid
+      sessionId = $realProc.SessionId
       windowHandle = [string] $win.Current.NativeWindowHandle
       uiaControlId = [string] $edit.Current.AutomationId
+      # Recorded so the first real run MEASURES the redirect instead of assuming
+      # it. If these are equal on some machine, the stub was not redirected there
+      # and that is worth knowing rather than silently depending on.
+      launchedStubPid = $proc.Id
+      stubPidWasTheWindow = ($proc.Id -eq $realPid)
     }
   }
 

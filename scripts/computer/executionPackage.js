@@ -95,6 +95,7 @@ const PACKAGE_FILES = Object.freeze([
   // about the machine before the first run, and a wrong belief there is what cost three logins.
   'scripts/computer/Operator-CommissioningBaseline.ps1',
   'scripts/computer/tool-commissioning-baseline.js',
+  'scripts/computer/Operator-MeasureNotepadLaunch.ps1',
   // ── REMOVED 2026-08-01: the Phase 3a pipe Companion ──────────────────────
   // companion-entry.js, ipcChannel.js, companion.js and observation.js were briefly listed
   // here, on the reasoning that they are staged where the operator can start them. Then the

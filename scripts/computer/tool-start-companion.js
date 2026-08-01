@@ -147,11 +147,31 @@ function handle (file) {
     T.out('  Please open it, check it, and delete it when you are satisfied.')
   } else {
     T.out('  IT DID NOT RUN.')
+    // The reason, and never a blank. If the runner somehow returns neither, that absence is
+    // itself reported — a silent failure screen is what sent the Owner back to the logs.
     if (res && res.human) T.out('  ' + res.human)
     if (res && res.detail) T.out('  ' + res.detail)
+    if (res && !res.human && !res.detail) {
+      T.out('  It gave no reason. That is a fault in this program, not in your machine.')
+      T.out('  The audit record in ' + T.AUDIT_DIR + ' will say what happened.')
+    }
     T.out('')
-    T.out('  Nothing was left behind. The task has been used up either way -')
-    T.out('  to try again, the Owner must approve again.')
+
+    // ── WHAT IS ACTUALLY LEFT BEHIND, MEASURED ────────────────────────────
+    // This printed "Nothing was left behind" unconditionally. On the first real run it was
+    // false: Notepad was still on screen and the Owner closed it by hand. A reassurance that
+    // checks nothing is worse than no reassurance, because it is believed.
+    const left = T.leftovers({ cleanup: res && res.result ? res.result.cleanup : null })
+    if (left.clean) {
+      T.out('  Checked: no Notepad left open, and the folder is empty.')
+    } else {
+      T.out('  SOMETHING IS LEFT BEHIND:')
+      for (const l of left.items) T.out('    - ' + l)
+      T.out('')
+      T.out('  Please close it / clear it before running again.')
+    }
+    T.out('')
+    T.out('  The task has been used up either way - to try again, the Owner must approve again.')
   }
   T.out('')
   T.out('  The switch is off. This window can be closed.')

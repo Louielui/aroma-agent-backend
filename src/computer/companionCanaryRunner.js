@@ -95,6 +95,35 @@ const no = (refusal, human, detail) => ({ ok: false, refusal, human, detail: det
  * two runs can never collide on a name. Falls back to a constant when there is no usable id —
  * an audit record must never fail to be written because the thing it is recording was malformed.
  */
+/**
+ * A sentence for an executor refusal, for the one screen the Owner reads.
+ *
+ * Unknown refusals fall through to the raw name rather than to nothing. A refusal this table has
+ * not heard of is exactly the case where the reader most needs to be told SOMETHING — and a
+ * table that silently swallows what it does not recognise is how the reason went missing.
+ */
+function humanForExecutorRefusal (refusal, reason) {
+  const table = {
+    step_failed: 'A step could not be carried out on the desktop.',
+    window_not_found: 'The application opened but its window could not be found.',
+    window_ambiguous: 'More than one candidate window appeared. It refused to choose between them.',
+    uia_control_missing: 'The window opened but its editable area could not be found.',
+    stale_binding: 'The window it was working with changed or disappeared part way through.',
+    missing_binding: 'Opening the application did not produce a usable window reference.',
+    bad_binding: 'The window reference the application produced was malformed.',
+    wrong_session: 'The window that opened belongs to a different session.',
+    unexpected_field: 'The task was rejected because it carries something it should not.',
+    audit_write_failed: 'The record of what happened could not be written, so it stopped.',
+    approval_id_already_used: 'This approval has already been used.',
+    refuse_overwrite: 'The file it would create already exists. Nothing was overwritten.',
+    flag_off: 'The computer operator switch is off in this process.'
+  }
+  const sentence = table[refusal]
+  if (sentence) return sentence
+  if (refusal) return 'It stopped with: ' + refusal + (reason ? ' (' + reason + ')' : '')
+  return 'It stopped without giving a reason, which is itself a fault worth reporting.'
+}
+
 function kindSafe (request) {
   const id = request && typeof request.requestId === 'string' ? request.requestId : ''
   const cleaned = id.replace(/[^A-Za-z0-9_-]/g, '')
@@ -324,7 +353,15 @@ function runCanaryAsCompanion (request, deps = {}) {
 
   // ── 6-8. hand to the executor, ONCE, with the frozen approved order ─────
   const approvedOrder = Object.freeze(deps.receipt.approvedOrder)
-  const result = deps.executor.execute(approvedOrder, { flagOn: flag === 'on', killSwitch: deps.killSwitch })
+  // attestedSessionId IS PASSED. The executor refuses a binding whose session is not the
+  // Companion's own — and until now this call did not send it, so that check compared against
+  // undefined and never fired. Second time a parameter existed, tests were green, and production
+  // was not wired to it; the first was attest(snap, {sid, name}).
+  const result = deps.executor.execute(approvedOrder, {
+    flagOn: flag === 'on',
+    killSwitch: deps.killSwitch,
+    attestedSessionId: deps.snapshot.sessionId
+  })
 
   deps.ledger.transition(request.requestId, result.ok === true ? 'SUCCEEDED' : 'FAILED',
     { refusal: result.refusal || null })
@@ -338,7 +375,27 @@ function runCanaryAsCompanion (request, deps = {}) {
     sessionId: deps.snapshot.sessionId
   })
 
-  return { ok: result.ok === true, refusal: result.refusal || null, result, attestation }
+  // ── THE REASON MUST TRAVEL. Sixth time. ──────────────────────────────────
+  // This returned { ok, refusal, result, attestation } and nothing else. `human` and `detail`
+  // are produced only by the no(...) refusal paths, so when the executor RAN and then failed,
+  // both were undefined — and the screen, which prints res.human and res.detail, printed
+  // nothing. The Owner watched Notepad open and was told only "IT DID NOT RUN."
+  //
+  // The reason existed the whole time. `window_not_found` was in result.reason and in the
+  // audit record on disk. Two places, neither of them read.
+  const human = result.ok === true
+    ? null
+    : humanForExecutorRefusal(result.refusal, result.reason)
+  return {
+    ok: result.ok === true,
+    refusal: result.refusal || null,
+    human,
+    // The executor's own words, always carried, even when there is no friendly sentence for
+    // this refusal — an unfamiliar reason printed raw beats a blank screen.
+    detail: result.reason || result.detail || (result.refusal ? 'refused at step ' + (result.failedStep || '?') : null),
+    result,
+    attestation
+  }
 }
 
 module.exports = {
