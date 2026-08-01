@@ -199,18 +199,12 @@ test('the manifest has no entries that are neither reachable nor declared', () =
     // are never even loaded" property is proven, and that evidence should not be thrown away as
     // a side effect of a wiring change.
     'src/computer/computerOperatorWiring.js',
-    // ALSO NEWLY ORPHANED, and this one is worth stating plainly rather than filing.
-    //
-    // sessionBoundary.js holds the message-type vocabulary, and `computer.canary.execute.v1` was
-    // registered in it so the new message would extend the existing SessionGate protocol rather
-    // than open a second channel. The canary's real channel turned out to be a directory of
-    // atomically-renamed files, which nothing in sessionBoundary touches — so the vocabulary
-    // entry is currently a declaration that no code consults.
-    //
-    // Kept in the package (a change to it still moves the hash) and recorded here as an open
-    // question for the Owner: either the request should travel over the SessionGate pipe, or the
-    // claim that it "extends the existing protocol" should be narrowed to what it really is —
-    // a shared name registry, not a shared transport.
+    // RESERVED, not orphaned by accident. sessionBoundary.js holds the legacy pipe vocabulary
+    // and its envelope contract. It reserves the names canary_execute / canary_outcome so the
+    // directory transport and the pipe cannot collide on one name -- a shared REGISTRY, not a
+    // shared wire. deprecationBoundaries.test.js asserts production producer count = 0 and
+    // consumer count = 0, so the reservation cannot become a channel. Scheduled for removal
+    // from the pipe vocabulary after G3 and before the final Owner Approval.
     'src/computer/sessionBoundary.js'
   ]
   const orphans = PKG.PACKAGE_FILES.filter((p) => !reached.has(p) && !DECLARED_UNREACHABLE.includes(p))

@@ -3,6 +3,26 @@
 /**
  * executeRequestStore.js — durable requests, written atomically, claimed exactly once.
  *
+ * ── WHAT THIS TRANSPORT IS, STATED CORRECTLY ───────────────────────────────
+ * It is an INDEPENDENT DIRECTORY TRANSPORT. It is not an extension of the SessionGate pipe
+ * protocol, and earlier comments in this repo that said otherwise were wrong.
+ *
+ * What it shares with the pipe is governance vocabulary — the message-type name is registered in
+ * the same closed list so two things cannot claim the same name. It shares no transport, no
+ * framing, no endpoint and no code path. `canary_execute` and `canary_outcome` appear in
+ * sessionBoundary.js as RESERVED names with no producer and no consumer; tests assert those
+ * counts are zero, so the registration cannot quietly become a second channel.
+ *
+ * ── WHY A DIRECTORY AND NOT THE PIPE ───────────────────────────────────────
+ * Because the property the canary needs is single-claim mutual exclusion ACROSS PROCESSES that
+ * share nothing, and `rename` on NTFS provides exactly that: it cannot half-succeed and cannot
+ * succeed twice. A pipe would have given us a message and left the mutual exclusion to be
+ * invented in application code, which is where it would have been got wrong.
+ *
+ * There is exactly ONE request channel in canary production. No pipe fallback, no secondary
+ * path, nothing to fail over to. A fallback is a second implementation of the rule, and the
+ * second implementation is the one nobody re-reads.
+ *
  * ── WHY ATOMIC MATTERS HERE ────────────────────────────────────────────────
  * The Owner writes a request in one process; a Companion in another session reads it. There is
  * no lock between them and no shared memory — only the filesystem. So a partially-written file
@@ -32,60 +52,27 @@ const crypto = require('node:crypto')
 const fs = require('node:fs')
 const path = require('node:path')
 
-const SCHEMA_VERSION = 1
-const MESSAGE_TYPE = 'computer.canary.execute.v1'
-const CANARY_TYPE = 'notepad-canary'
-
-/** Exactly these fields. An extra one is a refusal — that is how an instruction would arrive. */
-const REQUEST_FIELDS = Object.freeze([
-  'schemaVersion', 'messageType', 'requestId', 'approvalId', 'approvedOrderHash',
-  'executionPackageManifestHash', 'receiptHash', 'canaryType', 'createdAt', 'expiresAt'
-])
-
-/** Names that must NEVER appear, however the schema grows. Checked by name, not by shape. */
-const FORBIDDEN_FIELDS = Object.freeze([
-  'actions', 'action', 'text', 'fileName', 'filename', 'path', 'targetPath', 'command',
-  'executable', 'exe', 'scriptPath', 'script', 'args', 'arguments', 'module', 'moduleName',
-  'adapter', 'adapterName', 'env', 'environment', 'powershell', 'ps', 'payload'
-])
-
-const STATES = Object.freeze(['CREATED', 'CLAIMED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'ABORTED', 'EXPIRED'])
-const TERMINAL = Object.freeze(['SUCCEEDED', 'FAILED', 'ABORTED', 'EXPIRED'])
-
-/** Legal transitions. Absent from this table means impossible, not merely discouraged. */
-const TRANSITIONS = Object.freeze({
-  CREATED: Object.freeze(['CLAIMED', 'EXPIRED']),
-  CLAIMED: Object.freeze(['RUNNING', 'FAILED', 'ABORTED']),
-  RUNNING: Object.freeze(['SUCCEEDED', 'FAILED', 'ABORTED']),
-  SUCCEEDED: Object.freeze([]),
-  FAILED: Object.freeze([]),
-  ABORTED: Object.freeze([]),
-  EXPIRED: Object.freeze([])
-})
+/**
+ * THE SCHEMA IS NOT DEFINED HERE.
+ *
+ * It lives in executeRequestSchema.js, and the Owner's producer and the Companion's consumer
+ * both import that same file. Defining it in the store would put the definition on the side
+ * that stores requests rather than the side that agrees on them - which is how this repo ended
+ * up with two schemas, each green against its own fixture and unable to read the other's output.
+ */
+const SCHEMA = require('./executeRequestSchema')
+const {
+  SCHEMA_VERSION, MESSAGE_TYPE, CANARY_TYPE, REQUEST_FIELDS, FORBIDDEN_FIELDS,
+  STATES, TERMINAL, TRANSITIONS, MIN_TTL_MS, DEFAULT_TTL_MS, validateRequest, no
+} = SCHEMA
 
 /**
- * How long a request stays claimable.
+ * Build a request from a VERIFIED receipt and nothing else.
  *
- * Raised from 10 minutes to 30 on 2026-08-01, and the reason is a physical one rather than a
- * preference: in the first-canary procedure the Owner presses E in his own session and then
- * SWITCHES USER to the operator account, where the Companion is started by hand. That switch is
- * a logon — a profile load, a desktop, possibly a password typed wrong once. Ten minutes was set
- * when the request was expected to be claimed by an already-running Companion in the same
- * minute; it is not a budget for a human walking between two sessions.
- *
- * A TTL that expires mid-procedure does not fail safe in any useful sense. It fails at the point
- * where the Owner has already decided, and teaches him to hurry — and hurrying is the opposite
- * of what every other control here is buying.
- *
- * MIN_TTL_MS is the floor, asserted by a test, so a future edit cannot quietly shorten it back
- * below the switch window.
+ * Every field is copied out of the receipt or generated here. Not one of them comes from a
+ * caller, from argv, from stdin or from the draft order file on disk — the Owner did not approve
+ * a file, he approved a specific document, and that document is what the receipt carries.
  */
-const MIN_TTL_MS = 15 * 60 * 1000
-const DEFAULT_TTL_MS = 30 * 60 * 1000
-
-const no = (refusal, reason, detail) => ({ ok: false, refusal, reason, detail: detail === undefined ? null : detail })
-
-/** Build from a VERIFIED receipt and nothing else. */
 function buildRequest (receipt, opts = {}) {
   if (!receipt || !receipt.approvalId) throw new Error('a request may only be built from a verified receipt')
   if (!receipt.workOrderHash || !receipt.executionPackageManifestHash) {
@@ -97,6 +84,9 @@ function buildRequest (receipt, opts = {}) {
   // rather than clamped: silently substituting a different number is how a caller comes to
   // believe a value it never got.
   if (ttlMs < MIN_TTL_MS) throw new Error('ttl_below_floor: a request must stay claimable for at least ' + (MIN_TTL_MS / 60000) + ' minutes')
+
+  // FROZEN AT BIRTH. Nothing downstream decorates a request; a mutable one could be widened
+  // between validation and use, which is the oldest trick there is.
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     messageType: MESSAGE_TYPE,
@@ -107,34 +97,8 @@ function buildRequest (receipt, opts = {}) {
     receiptHash: opts.receiptHash || receipt.receiptHash || null,
     canaryType: CANARY_TYPE,
     createdAt: new Date(now).toISOString(),
-    expiresAt: new Date(now + (opts.ttlMs || DEFAULT_TTL_MS)).toISOString()
+    expiresAt: new Date(now + ttlMs).toISOString()
   })
-}
-
-function validateRequest (req) {
-  if (!req || typeof req !== 'object') return no('no_request', 'nothing was submitted')
-  if (req.messageType !== MESSAGE_TYPE) return no('unknown_message_type', 'not a canary execute request', String(req.messageType))
-  if (req.schemaVersion !== SCHEMA_VERSION) return no('wrong_schema_version', 'built for a different schema', String(req.schemaVersion))
-
-  for (const k of Object.keys(req)) {
-    if (FORBIDDEN_FIELDS.includes(k)) return no('forbidden_field', 'a request may never carry instructions', k)
-    if (!REQUEST_FIELDS.includes(k)) return no('unexpected_field', 'a request carries bindings only', k)
-  }
-  for (const k of REQUEST_FIELDS) {
-    if (req[k] === undefined) return no('missing_field', 'a binding is absent', k)
-    if (req[k] === null && k !== 'receiptHash') return no('missing_field', 'a binding is null', k)
-  }
-  if (req.canaryType !== CANARY_TYPE) return no('wrong_canary_type', 'not this canary', String(req.canaryType))
-  if (!/^req_[0-9a-f]{24}$/.test(String(req.requestId))) return no('bad_request_id', 'malformed request id')
-  if (!/^appr_[0-9a-f]{32}$/.test(String(req.approvalId))) return no('bad_approval_id', 'malformed approval id')
-  for (const h of ['approvedOrderHash', 'executionPackageManifestHash']) {
-    if (!/^[0-9a-f]{64}$/.test(String(req[h]))) return no('bad_hash', 'malformed hash', h)
-  }
-  if (!Number.isFinite(Date.parse(req.createdAt)) || !Number.isFinite(Date.parse(req.expiresAt))) {
-    return no('bad_timestamps', 'createdAt or expiresAt is not a time')
-  }
-  if (Date.parse(req.expiresAt) <= Date.parse(req.createdAt)) return no('bad_timestamps', 'it expires before it exists')
-  return { ok: true }
 }
 
 /**

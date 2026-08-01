@@ -80,10 +80,20 @@ const CAPABILITIES = Object.freeze({
 // ── THE IPC CONTRACT (shape only) ─────────────────────────────────────────────
 // A closed message vocabulary, in both directions. Same reasoning as the action enum:
 // if message types are a closed set, no text from a screen or a model can become one.
-// `canary_execute` carries AUTHORISATION BINDINGS ONLY — no action, no text, no path. The
-// Companion reads the work from the receipt itself. Added to THIS vocabulary rather than to a
-// second channel: a bypass channel is a second set of rules that eventually disagrees with the
-// first, and the disagreement is where things get through.
+//
+// ── `canary_execute` / `canary_outcome`: RESERVED — NOT IMPLEMENTED ─────────
+// These two names are REGISTERED here and carried by NOTHING. The canary's requests travel over
+// an independent directory transport (executeRequestStore.js), which shares no framing, no
+// endpoint and no code path with this pipe.
+//
+// An earlier comment in this file claimed they "extend the existing protocol". That was wrong,
+// and it was the convenient kind of wrong: it made a name registration sound like a shared
+// transport, so the architecture read as more unified than it was.
+//
+// They stay registered so the two systems cannot ever claim the same name, and sessionBoundary's
+// tests assert PRODUCER COUNT = 0 and CONSUMER COUNT = 0 in production — a reservation that
+// nothing can quietly start using. Scheduled for removal from this vocabulary after G3 and
+// before the final Owner Approval.
 const SERVICE_TO_COMPANION = Object.freeze(['execute_step', 'abort', 'ping', 'canary_execute'])
 const COMPANION_TO_SERVICE = Object.freeze(['step_result', 'heartbeat', 'aborted', 'pong', 'canary_outcome'])
 const MESSAGE_TYPES = Object.freeze([...SERVICE_TO_COMPANION, ...COMPANION_TO_SERVICE])

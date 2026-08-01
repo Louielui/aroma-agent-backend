@@ -57,6 +57,29 @@ const EXPECTED_ACES = Object.freeze({
   'S-1-5-18': 0x1F01FF // SYSTEM: FullControl
 })
 
+/**
+ * The request directory, and the exact permissions it must carry.
+ *
+ * Measured on the real folder rather than guessed. C:\Aroma carries an INHERIT-ONLY DENY
+ * FullControl for AromaOperator, so this folder must be PROTECTED — if inheritance were left on,
+ * the claimer could not read the request at all and the failure would look like a bug in the
+ * Companion rather than a permission the tree was always going to apply.
+ *
+ * The operator needs Modify, not Read: a claim is a RENAME, which needs delete on the source
+ * name and create in the directory. Read-only makes claiming impossible.
+ *
+ * That write right means the operator could FORGE a request file. It buys nothing: every request
+ * is re-verified against a receipt the Companion reads for itself, and the receipt lives in the
+ * repo, which this account is denied. A request is a pointer with an expiry, never a permission.
+ */
+const REQUEST_DIR = 'C:\\Aroma\\ComputerOperator-Requests'
+const EXPECTED_REQUEST_ACES = Object.freeze({
+  'S-1-5-18': 0x1F01FF, // SYSTEM
+  'S-1-5-32-544': 0x1F01FF, // Administrators
+  'S-1-5-21-2042659270-2029498691-2127769412-1002': 0x1301BF, // louis, who creates requests
+  'S-1-5-21-2042659270-2029498691-2127769412-1009': 0x1301BF // AromaOperator, who claims them
+})
+
 /** Rights the operator must NOT hold on the folder, each checked individually. */
 const FORBIDDEN_RIGHTS = Object.freeze({
   Delete: 0x10000,
@@ -118,6 +141,36 @@ function companionPreflight (machine, ctx = {}) {
   const strays = outside.filter((p) => p.writable && p.path !== ALLOWED_DIR)
   if (strays.length > 0) {
     return no('writable_outside_scope', 'The operator can write somewhere it should not.', strays.map((s) => s.path).join(', '))
+  }
+
+  // ── the request directory, checked as itself ────────────────────────────
+  // The transport is a directory, so the directory's permissions ARE the transport's security.
+  // Verified at run time rather than trusted from the day it was provisioned: "it was right when
+  // we set it up" is the same claim the staging check was making while it verified the wrong
+  // program entirely.
+  const reqAcl = machine.readAcl(REQUEST_DIR)
+  if (!reqAcl || reqAcl.ok !== true) {
+    return no('request_dir_unreadable', 'The folder tasks arrive in cannot be read.', reqAcl && reqAcl.reason)
+  }
+  if (reqAcl.protected !== true) {
+    // Not protected means it inherits, and what it inherits from C:\Aroma is a Deny FullControl
+    // aimed at this very account.
+    return no('request_dir_inherits', 'The task folder does not have its own permissions.')
+  }
+  if (reqAcl.inheritedCount !== 0) return no('request_dir_inherits', 'The task folder does not have its own permissions.', 'inherited=' + reqAcl.inheritedCount)
+  if (reqAcl.denyCount !== 0) return no('request_dir_has_deny', 'The task folder has a Deny rule, which would break claiming.')
+  {
+    const seen = Object.keys(reqAcl.aces || {}).sort()
+    const want = Object.keys(EXPECTED_REQUEST_ACES).sort()
+    if (seen.length !== want.length || seen.some((s, i) => s !== want[i])) {
+      // Anyone at all outside the four named principals is a stranger with access to the channel.
+      return no('request_dir_unknown_identity', 'Someone unexpected can reach the task folder.', seen.join(','))
+    }
+    for (const sid of want) {
+      if (reqAcl.aces[sid] !== EXPECTED_REQUEST_ACES[sid]) {
+        return no('request_dir_rights_changed', 'The task folder permissions are not the approved ones.', sid)
+      }
+    }
   }
 
   // ── the staged Companion closure ────────────────────────────────────────
@@ -223,5 +276,6 @@ function runCanaryAsCompanion (request, deps = {}) {
 
 module.exports = {
   runCanaryAsCompanion, companionPreflight, createRequestStore,
-  ALLOWED_DIR, EXPECTED_FILE, EXPECTED_ACES, FORBIDDEN_RIGHTS
+  ALLOWED_DIR, EXPECTED_FILE, EXPECTED_ACES, FORBIDDEN_RIGHTS,
+  REQUEST_DIR, EXPECTED_REQUEST_ACES
 }

@@ -120,6 +120,10 @@ const PACKAGE_FILES = Object.freeze([
   'src/computer/identityAttestation.js',
   'src/computer/companionCanaryRunner.js',
   'src/computer/executeRequestStore.js',
+  // The canonical request schema. The Owner's producer and the Companion's consumer both import
+  // THIS file; two copies of a definition is how the repo ended up with two schemas that each
+  // tested green and could not read the other's output.
+  'src/computer/executeRequestSchema.js',
   'src/computer/machineProbe.js',
   'src/computer/companionProductionFactory.js',
   // the fixed entrypoint: the only production caller of the wiring

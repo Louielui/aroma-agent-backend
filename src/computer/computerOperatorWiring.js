@@ -1,7 +1,22 @@
 'use strict'
 
 /**
- * computerOperatorWiring.js — the caller. The one place where the parts are joined up.
+ * computerOperatorWiring.js — DEPRECATED. NO PRODUCTION IMPORTERS.
+ *
+ * ── STATUS ─────────────────────────────────────────────────────────────────
+ * Nothing in production imports this file. The Owner's entrypoint no longer builds an operator
+ * — it writes a request and stops — and the Companion assembles its own parts through
+ * companionProductionFactory, in the operator's session. computerOperatorWiring.test.js asserts
+ * the importer count is ZERO, so this cannot quietly come back into service.
+ *
+ * It is kept for one round only, because this file's tests are where the property "with the flag
+ * off, the acting modules are never even LOADED into the process" is proven, and that evidence
+ * should not be discarded as a side effect of a wiring change. Scheduled for removal after G3
+ * and before the final Owner Approval.
+ *
+ * Everything below describes how it worked while it was in service.
+ *
+ * ── the caller. The one place where the parts were joined up ───────────────
  *
  * ── "STRUCTURALLY UNREACHABLE" MEANS WHAT IT SAYS ──────────────────────────
  * The Owner's requirement was that with COMPUTER_OPERATOR OFF the execution path is not merely

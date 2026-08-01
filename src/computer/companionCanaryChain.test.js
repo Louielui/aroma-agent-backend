@@ -50,14 +50,32 @@ const snapshot = (over = {}) => Object.assign({
   attestedAt: '2026-07-31T23:30:00.000Z'
 }, over)
 
+/** The approved answers, as separate builders so a case can mutate one without touching the other. */
+const goodAcl = () => ({
+  ok: true,
+  protected: true,
+  inheritedCount: 0,
+  denyCount: 0,
+  aces: { [OP_SID]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF }
+})
+const reqAcl = () => ({
+  ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: Object.assign({}, R.EXPECTED_REQUEST_ACES)
+})
+
 const goodMachine = (over = {}) => Object.assign({
-  readAcl: () => ({
-    ok: true,
-    protected: true,
-    inheritedCount: 0,
-    denyCount: 0,
-    aces: { [OP_SID]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF }
-  }),
+  // ANSWERS PER PATH. The first version of this fake returned the test folder's ACL for every
+  // path it was asked about, so the request directory's check was being satisfied by a
+  // measurement of a different folder — a fake that agrees with whatever it is asked is the
+  // testing equivalent of the bug this whole preflight exists to catch.
+  readAcl: (p) => (p === R.REQUEST_DIR
+    ? { ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: Object.assign({}, R.EXPECTED_REQUEST_ACES) }
+    : {
+        ok: true,
+        protected: true,
+        inheritedCount: 0,
+        denyCount: 0,
+        aces: { [OP_SID]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF }
+      }),
   listDir: () => [],
   fileExists: () => false,
   probeWritable: () => [{ path: R.ALLOWED_DIR, writable: true }, { path: 'C:\\Aroma', writable: false }],
@@ -267,7 +285,18 @@ test('*** 11. every Companion preflight failure gives 0 desktop actions ***', ()
     [{ probeWritable: () => [{ path: 'C:\\Windows', writable: true }] }, 'writable_outside_scope'],
     [{ stagedClosure: () => ({ ok: false, reason: 'hash mismatch' }) }, 'staging_unverified'],
     [{ notepadCount: () => 1 }, 'notepad_already_open'],
-    [{ auditWritable: () => false }, 'audit_not_writable']
+    [{ auditWritable: () => false }, 'audit_not_writable'],
+    // ── the request directory IS the transport, so its permissions are checked ──
+    // A directory transport whose folder anyone can read is a channel anyone can read. Each of
+    // these is measured at run time, not trusted from the day it was provisioned.
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? { ok: false, reason: 'denied' } : goodAcl()) }, 'request_dir_unreadable'],
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? Object.assign(reqAcl(), { protected: false }) : goodAcl()) }, 'request_dir_inherits'],
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? Object.assign(reqAcl(), { inheritedCount: 1 }) : goodAcl()) }, 'request_dir_inherits'],
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? Object.assign(reqAcl(), { denyCount: 1 }) : goodAcl()) }, 'request_dir_has_deny'],
+    // A stranger with access to the channel.
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? Object.assign(reqAcl(), { aces: Object.assign({}, R.EXPECTED_REQUEST_ACES, { 'S-1-1-0': 0x1301BF }) }) : goodAcl()) }, 'request_dir_unknown_identity'],
+    // One of the four, but holding more than it should.
+    [{ readAcl: (p) => (p === R.REQUEST_DIR ? Object.assign(reqAcl(), { aces: Object.assign({}, R.EXPECTED_REQUEST_ACES, { [OP_SID]: 0x1F01FF }) }) : goodAcl()) }, 'request_dir_rights_changed']
   ]
   for (const [over, refusal] of cases) {
     const c = chain({ deps: { machine: goodMachine(over) } })

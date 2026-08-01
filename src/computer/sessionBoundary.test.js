@@ -62,9 +62,11 @@ test('*** the Companion account holds no credential and no bank session ***', ()
 /* ── the IPC contract ─────────────────────────────────────────────────────── */
 
 test('*** the message vocabulary is CLOSED, like the action enum ***', () => {
-  // `canary_execute` / `canary_outcome` joined on 2026-08-01. They extend THIS vocabulary rather
-  // than opening a second channel — a bypass channel is a second set of rules that eventually
-  // disagrees with the first, and the disagreement is where things get through. The list stays
+  // `canary_execute` / `canary_outcome` are RESERVED here and IMPLEMENTED nowhere. They were
+  // described on 2026-08-01 as extending this protocol; they do not. The canary requests cross
+  // an independent directory transport that shares no framing and no endpoint with this pipe.
+  // The names stay registered so the two systems cannot collide on one name, and their producer
+  // and consumer counts are asserted to be zero in deprecationBoundaries.test.js. The list stays
   // exact, so a third addition is a decision somebody has to write down.
   assert.deepEqual([...SERVICE_TO_COMPANION], ['execute_step', 'abort', 'ping', 'canary_execute'])
   assert.deepEqual([...COMPANION_TO_SERVICE], ['step_result', 'heartbeat', 'aborted', 'pong', 'canary_outcome'])

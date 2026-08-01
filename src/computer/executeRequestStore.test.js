@@ -29,14 +29,20 @@ const receipt = (over = {}) => Object.assign({
 
 const store = (dir, t = T0) => S.createRequestStore({ dir, now: () => t })
 
-/* ── the message type lives in the EXISTING vocabulary ────────────────────── */
+/* ── the two names are RESERVED in the pipe vocabulary, and carried by it ── */
 
-test('*** the new type extends the existing closed vocabulary — no second channel ***', () => {
-  assert.ok(SERVICE_TO_COMPANION.includes('canary_execute'), 'the request rides the existing protocol')
-  assert.ok(COMPANION_TO_SERVICE.includes('canary_outcome'), 'and so does the answer')
+test('*** the names are RESERVED in the pipe vocabulary — not carried by it ***', () => {
+  // This test used to be called "the new type extends the existing closed vocabulary" and its
+  // message read "the request rides the existing protocol". That was wrong. The request rides an
+  // INDEPENDENT DIRECTORY TRANSPORT; what it shares with the pipe is a name registration, so that
+  // two systems cannot claim one name. Sharing a registry is not sharing a wire, and describing
+  // it as protocol extension made the architecture read as more unified than it is.
+  assert.ok(SERVICE_TO_COMPANION.includes('canary_execute'), 'the name is reserved')
+  assert.ok(COMPANION_TO_SERVICE.includes('canary_outcome'), 'and so is the answer name')
   assert.ok(MESSAGE_TYPES.includes('canary_execute'))
-  // A bypass channel would be a second set of rules that eventually disagrees with the first.
   assert.equal(MESSAGE_TYPES.length, SERVICE_TO_COMPANION.length + COMPANION_TO_SERVICE.length)
+  // Producer and consumer counts are asserted to be ZERO in deprecationBoundaries.test.js, which
+  // is what keeps a reservation from quietly becoming a channel.
 })
 
 /* ── shape ────────────────────────────────────────────────────────────────── */
