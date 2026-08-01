@@ -49,7 +49,10 @@ $id = [Security.Principal.WindowsIdentity]::GetCurrent()
 $elevated = (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 Say ("  Running as : " + $id.Name)
 Say ("  Elevated   : " + $elevated)
-if (-not $elevated) { Stop-Now "this needs administrator rights - the staged folder is protected." }
+# The elevation gate is checked AFTER the list is read, so -WhatIfOnly works
+# without it. A preview that itself needs administrator rights is a preview
+# nobody runs, and then the only way to see what will be staged is to stage it.
+if (-not $elevated -and -not $WhatIfOnly) { Stop-Now "this needs administrator rights - the staged folder is protected. Use -WhatIfOnly to preview." }
 
 foreach ($p in @($RepoDir, $Node)) { if (-not (Test-Path -LiteralPath $p)) { Stop-Now ("not found: " + $p) } }
 
