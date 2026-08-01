@@ -295,36 +295,44 @@ test('the summary a person reads names every capability in plain words', () => {
 
 /* ── 5. the execute fence ─────────────────────────────────────────────────── */
 
-test('*** the execute fence is a LITERAL $false, and nothing outside can move it ***', () => {
-  // FINAL UNLOCK, 2026-07-31 by Owner decision, and the last step of the sequence: wire and
-  // test with the fence shut, review, unlock, re-seal the package, re-approve, execute.
+test('*** the execute fence is a LITERAL $true, and nothing outside can move it ***', () => {
+  // FINAL UNLOCK, 2026-08-01 by Owner decision, after the staged closure was independently
+  // verified: 37/37, missing 0, extra 0, no Phase 3a remnant by exact path, operator
+  // ReadAndExecute only, and the package hash recomputed FROM THE STAGED TREE matching.
   //
   // THIS TEST IS THE SOLE OWNER OF THE VALUE. canaryEntrypoint.test.js used to assert it too,
   // which meant a flip touched three files and one of them would eventually be missed — and
   // missed silently, because the remaining assertion would still pass. Its subject is the
-  // ordering; the value is here and nowhere else.
+  // ordering; the value is here and nowhere else. That narrowing is why this flip is two files
+  // and not three.
   //
-  // Kept through all three flips rather than deleted and re-added: the fence's value must be
+  // Kept through all four flips rather than deleted and re-added: the fence's value must be
   // something a diff shows in two files, in either direction. A guard removed the moment it
-  // becomes inconvenient guards nothing.
+  // becomes inconvenient guards nothing — and an OPEN fence needs its guard more than a shut
+  // one did, because from here every other control is what stands between a keypress and a
+  // desktop.
   const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
   const stripped = code.replace(/^\s*#.*$/gm, '')
 
-  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/, 'the fence is SHUT')
-  assert.doesNotMatch(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/,
-    'and nothing reopens it further down')
+  assert.match(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$true/, 'the fence is OPEN')
+  assert.doesNotMatch(stripped, /\$CANARY_EXECUTE_AUTHORISED\s*=\s*\$false/,
+    'and nothing shuts it again further down — a later re-assignment would make this one a lie')
 
   // Exactly ONE assignment. A second one anywhere — a fallback, a re-assignment further down,
-  // a branch that flips it — would make the first meaningless.
+  // a branch that flips it — would make the first meaningless. This matters MORE now, not less:
+  // with the fence open, a second assignment is the only way the value could differ from what
+  // this test reads.
   const assignments = stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=/g) || []
   assert.equal(assignments.length, 1, 'exactly one assignment, no fallback path')
 
   // A literal, never a value from outside: not a parameter, not an environment variable, not
-  // a computed expression.
+  // a computed expression. Unchanged by the flip, and deliberately so — the direction of the
+  // fence is a decision, and where the value comes from is a property.
   assert.deepEqual(scriptParamNames(EXECUTE_PS1), [], 'no script parameter can move it')
   assert.doesNotMatch(stripped, /\$env:[A-Za-z_]*CANARY/i, 'no environment variable can move it')
+  assert.doesNotMatch(stripped, /Read-Host|\[Console\]::In\b/, 'and no stdin')
   const rhs = (stripped.match(/\$CANARY_EXECUTE_AUTHORISED\s*=\s*(.+)/) || [])[1] || ''
-  assert.match(rhs.trim(), /^\$false\s*$/, 'the right-hand side is the bare literal, nothing else')
+  assert.match(rhs.trim(), /^\$true\s*$/, 'the right-hand side is the bare literal, nothing else')
 })
 
 /* ── 6. the execution package: the receipt binds the CODE, not just the intent ── */
