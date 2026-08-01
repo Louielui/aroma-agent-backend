@@ -144,6 +144,47 @@ function Resolve-Binding {
 }
 
 # --- ops ------------------------------------------------------------------
+# ===========================================================================
+#  FIELD VALIDATION, BEFORE ANY PROPERTY IS TOUCHED
+#
+#  A type_text payload with no `bind` used to reach $payload.bind.processId and
+#  die with PropertyNotFoundStrict. That was still fail-closed - the runner saw
+#  a non-zero exit and refused, and no desktop action happened - but it is the
+#  wrong KIND of safe. A crash says "something went wrong somewhere"; a refusal
+#  says which field was missing, and the difference matters at 2am.
+#
+#  Relying on a crash also makes the safety accidental. It holds only while
+#  every path happens to touch a missing property before it touches a desktop,
+#  and nothing enforces that ordering. This does.
+#
+#  VALIDATION ONLY. No action logic is changed here, and nothing is added that
+#  could act without a validated order.
+# ===========================================================================
+$REQUIRED_FIELDS = @{
+  'open_app'       = @('appId')
+  'type_text'      = @('bind', 'text')
+  'save_as'        = @('bind', 'dir', 'fileName')
+  'verify_binding' = @('bind')
+  'cleanup'        = @('bind')
+}
+$BIND_FIELDS = @('processId', 'sessionId', 'windowHandle', 'uiaControlId')
+
+if (-not $REQUIRED_FIELDS.ContainsKey($op)) { Emit-Refusal 'unknown_op' $op }
+
+foreach ($f in $REQUIRED_FIELDS[$op]) {
+  if (-not $payload.PSObject.Properties.Match($f).Count) { Emit-Refusal 'missing_field' $f }
+  if ($null -eq $payload.$f) { Emit-Refusal 'missing_field' $f }
+}
+
+# A binding is all four fields or it is not a binding - a partial identity is a
+# guess, and a guess is what types into the wrong window.
+if ($REQUIRED_FIELDS[$op] -contains 'bind') {
+  foreach ($bf in $BIND_FIELDS) {
+    if (-not $payload.bind.PSObject.Properties.Match($bf).Count) { Emit-Refusal 'missing_field' ('bind.' + $bf) }
+    if ($null -eq $payload.bind.$bf -or '' -eq [string] $payload.bind.$bf) { Emit-Refusal 'missing_field' ('bind.' + $bf) }
+  }
+}
+
 switch ($op) {
 
   'open_app' {
