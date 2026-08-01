@@ -154,9 +154,24 @@ function companionPreflight (machine, ctx = {}) {
     return no('write_scope_unmeasured', 'It could not be checked which folders are writable.',
       outside ? (outside.reason + (outside.detail ? ': ' + outside.detail : '')) : 'no probe')
   }
-  const strays = (outside.paths || []).filter((p) => p.writable && p.path !== ALLOWED_DIR)
+  // ── ONLY `enforced` ENTRIES CAN REFUSE ──────────────────────────────────
+  // An entry is enforceable when WE set the permission and can name the script that set it.
+  // C:\Windows\Temp and the operator's own profile were treated as enforceable and are not:
+  // both are writable by design on every Windows machine, nobody had measured otherwise, and
+  // the expectation contradicted two other parts of this same system — the audit probe, which
+  // lives in %TEMP%, and the shortcut installer, which writes to the desktop.
+  //
+  // `observed` entries are measured and reported and never block. Asserting a permission you
+  // did not establish is guessing about someone else's system, and this one guessed wrong three
+  // logins in a row.
+  const enforced = (outside.paths || []).filter((p) => p.class === 'enforced')
+  if (enforced.length === 0) {
+    return no('write_scope_unmeasured', 'No folder with a known permission was checked.', 'no enforced entries')
+  }
+  const strays = enforced.filter((p) => p.writable === true && p.path !== ALLOWED_DIR)
   if (strays.length > 0) {
-    return no('writable_outside_scope', 'The operator can write somewhere it should not.', strays.map((s) => s.path).join(', '))
+    return no('writable_outside_scope', 'The operator can write somewhere it should not.',
+      strays.map((s) => s.path + (s.provenance ? ' [' + s.provenance + ']' : '')).join('; '))
   }
   // A probe that wrote outside its scope AND could not clean up has left evidence. Reported
   // rather than tidied away: the file is the proof of the finding above it.

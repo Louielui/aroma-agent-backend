@@ -66,7 +66,10 @@ if (!T.ensureRequestDir()) {
   process.exit(1)
 }
 
-const artifactStore = createArtifactStore({ baseDir: resolveArtifactDir(process.env, path.join(T.REPO, '.aroma')).dir })
+// NOT <stage>.aroma. The operator has ReadAndExecute on the staged tree by design, so the
+// artifact store could not have written a single record there — and it would have failed late,
+// inside the executor's first admission write, with the flag already on and every check passed.
+const artifactStore = createArtifactStore({ baseDir: resolveArtifactDir(process.env, T.AUDIT_DIR).dir })
 const built = buildCompanionExecution({ artifactStore, runner })
 if (!built.ok) {
   T.out('  The Companion could not be assembled: ' + built.reason)

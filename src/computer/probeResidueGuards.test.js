@@ -40,9 +40,17 @@ test('*** the writable probe never writes inside the allowed path ***', () => {
   assert.ok(op.length > 200, 'the op survived comment stripping — not a vacuous pass')
 
   // $TestDir must not be among the paths that get written to.
-  const probed = /\$outOfScope\s*=\s*@\(([^)]*)\)/.exec(op)
-  assert.ok(probed, 'the probed list is declared')
-  assert.equal(/\$TestDir/.test(probed[1]), false, 'the allowed path is not in the write list')
+  // The list the probe WRITES to is now the enforced one; $TestDir must not be in it.
+  const probed = /\$enforced\s*=\s*@\(([\s\S]*?)\n    \)/.exec(op)
+  assert.ok(probed, 'the enforced list is declared')
+  assert.equal(/\$TestDir/.test(probed[1]), false, 'the allowed path is not written to')
+  // And the two paths that were enforced on a guess are gone from it.
+  assert.equal(/Windows\\\\Temp/.test(probed[1]), false, 'C:\\Windows\\Temp is no longer enforced')
+  assert.equal(/USERPROFILE/.test(probed[1]), false, 'the operator profile is no longer enforced')
+  // Every enforced entry carries provenance — who set the permission being asserted.
+  const entries = probed[1].split('@{').slice(1)
+  assert.ok(entries.length >= 2, 'at least two enforced entries')
+  for (const e of entries) assert.match(e, /provenance\s*=/, 'each enforced entry names what set it')
 
   // And it is named as deliberately skipped, so the omission is a decision on the record rather
   // than something that fell out of a list.
@@ -52,13 +60,15 @@ test('*** the writable probe never writes inside the allowed path ***', () => {
 
 test('*** POSITIVE CONTROL — the scan catches an in-scope write ***', () => {
   // Without this, "not in the list" could mean the regex matched nothing at all.
-  const withTestDir = "$outOfScope = @($TestDir, 'C:\\Aroma')\n"
-  const m = /\$outOfScope\s*=\s*@\(([^)]*)\)/.exec(withTestDir)
+  const withTestDir = "$enforced = @(\n      @{ path = $TestDir }\n    )\n"
+  const m = /\$enforced\s*=\s*@\(([\s\S]*?)\n    \)/.exec(withTestDir)
   assert.ok(m, 'the pattern finds a declared list')
   assert.equal(/\$TestDir/.test(m[1]), true, 'and would flag the allowed path being written to')
 
   // The real one, for contrast.
-  const real = /\$outOfScope\s*=\s*@\(([^)]*)\)/.exec(psCode(PROBE))
+  const op = psCode(PROBE).slice(psCode(PROBE).indexOf("'writable' {"), psCode(PROBE).indexOf("'staging' {"))
+  const real = /\$enforced\s*=\s*@\(([\s\S]*?)\n    \)/.exec(op)
+  assert.ok(real, 'the real list parses')
   assert.equal(/\$TestDir/.test(real[1]), false)
 })
 
@@ -102,7 +112,7 @@ test('*** probe residue in the allowed folder gets its own refusal ***', () => {
       : { ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: { [R.EXPECTED_ACES && Object.keys(R.EXPECTED_ACES)[0]]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF } }),
     listDir: () => ['.aroma-probe-' + 'a'.repeat(32) + '.tmp', '.aroma-probe-' + 'b'.repeat(32) + '.tmp'],
     fileExists: () => false,
-    probeWritable: () => ({ ok: true, paths: [], residue: [] }),
+    probeWritable: () => ({ ok: true, paths: [{ path: 'C:\\Aroma', writable: false, class: 'enforced' }], residue: [] }),
     stagedClosure: () => ({ ok: true }),
     notepadCount: () => 0,
     auditWritable: () => true

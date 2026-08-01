@@ -70,7 +70,10 @@ const ROOTS = Object.freeze([
   'scripts/computer/Operator-StartCompanion.ps1',
   // and the one-off that puts those three on the desktop. It creates no capability, but it
   // decides what the icons point at, so a change to it is a change to what the operator starts.
-  'scripts/computer/Install-OperatorShortcuts.ps1'
+  'scripts/computer/Install-OperatorShortcuts.ps1',
+  // The commissioning measurement. It judges nothing, but it decides what the Owner is told
+  // about the machine, so a change to it is a change to what gets believed.
+  'scripts/computer/Operator-CommissioningBaseline.ps1'
 ])
 
 /** Extensions that count as code for this purpose. */

@@ -34,7 +34,19 @@ const pkg = require('./executionPackage')
 
 const REPO = path.resolve(__dirname, '..', '..')
 const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order.draft.json')
-const RECEIPT_DIR = path.join(REPO, '.aroma', 'owner-approvals')
+// ── A FIXED ABSOLUTE PATH, NOT ONE RELATIVE TO THE RUNNING TREE ───────────
+// This was path.join(REPO, '.aroma', 'owner-approvals'), and REPO is resolved from __dirname.
+// On the Owner's side that is the repo, which is right. On the COMPANION's side the same code
+// runs from the staged copy, so it resolved to <stage>.aromaowner-approvals — a directory
+// staging never creates, because a receipt is not a package file and must not be (it carries
+// the package hash; putting it inside the package would be circular).
+//
+// The Companion would therefore have found no approval at all and refused with `no_receipt`,
+// AFTER identity and machine both passed. That is the next thing the operator would have hit.
+//
+// One shared folder, readable by the Companion and writable only by the Owner, means an
+// approval survives re-staging and cannot be forged by the account that acts on it.
+const RECEIPT_DIR = 'C:\\Aroma\\ComputerOperator-Receipts'
 
 /**
  * The marking for receipts issued before the execution package existed. Owner ruling

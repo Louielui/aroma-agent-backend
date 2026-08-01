@@ -286,7 +286,7 @@ test('*** checkMachine reports every row, and its verdict comes from companionPr
       : { ok: true, protected: true, inheritedCount: 0, denyCount: 0, aces: { [OP]: 0x1201BF, 'S-1-5-32-544': 0x1F01FF, 'S-1-5-18': 0x1F01FF } }),
     listDir: () => [],
     fileExists: () => false,
-    probeWritable: () => ({ ok: true, paths: [], residue: [], notProbed: [{ path: 'C:\\Aroma\\ComputerOperator-Test', reason: 'in_scope_mask_asserted_by_acl_check' }] }),
+    probeWritable: () => ({ ok: true, paths: [{ path: 'C:\\Aroma', writable: false, class: 'enforced' }], residue: [], notProbed: [{ path: 'C:\\Aroma\\ComputerOperator-Test', reason: 'in_scope_mask_asserted_by_acl_check' }] }),
     stagedClosure: () => ({ ok: true }),
     notepadCount: () => 0,
     auditWritable: () => true

@@ -43,6 +43,11 @@ $op = [string] $p.op
 $TestDir  = 'C:\Aroma\ComputerOperator-Test'
 $StageDir = 'C:\Aroma\ComputerOperator-Companion'
 
+# The two shared folders the Companion needs at run time. Fixed absolute paths,
+# outside the staged tree because the operator has ReadAndExecute there.
+$AuditDir    = 'C:\Aroma\ComputerOperator-Audit'
+$ReceiptsDir = 'C:\Aroma\ComputerOperator-Receipts'
+
 switch ($op) {
 
   'acl' {
@@ -102,22 +107,58 @@ switch ($op) {
     #                 nothing. If one succeeds, that is the finding this op
     #                 exists for, and its residue is evidence rather than
     #                 litter - reported, not silently cleaned.
-    $outOfScope = @('C:\Aroma', 'C:\Aroma\ComputerOperator-Companion', 'C:\Windows\Temp', $env:USERPROFILE)
+    # ── ENFORCED vs OBSERVED ────────────────────────────────────────────────
+    #
+    # ENFORCED means WE set the permission, we can say when and with what
+    # script, and a violation is a real finding. OBSERVED means we measured it
+    # and have no standing to demand anything - it is printed, never blocking.
+    #
+    # C:\Windows\Temp and the operator's own profile were ENFORCED until
+    # 2026-08-01 and should never have been. Both are writable by design on
+    # every Windows machine; nobody had ever verified otherwise; and the
+    # expectation contradicted this same script twice over - `auditwritable`
+    # probes %TEMP%, which IS the profile, and Install-OperatorShortcuts writes
+    # the desktop icons into it. A preflight that demands the profile be
+    # unwritable cannot pass on a machine where the operator can log in.
+    #
+    # The rule that replaces the guesswork: ONLY ENFORCE AN ACL YOU SET
+    # YOURSELF. Microsoft's defaults are not ours to assert.
+    $enforced = @(
+      @{ path = 'C:\Aroma'
+         provenance = 'deploy-companion.ps1:119 - inherit-only DENY FullControl for the operator'
+         expect = $false },
+      @{ path = $StageDir
+         provenance = 'stage-canary-closure.ps1 / Owner ACL - operator ReadAndExecute only'
+         expect = $false }
+    )
+    # Measured for the record and for the commissioning baseline. Never blocks.
+    $observed = @('C:\Windows\Temp', $env:USERPROFILE)
+
     $out = @()
     $residue = @()
-    foreach ($dir in $outOfScope) {
+    foreach ($e in $enforced) {
+      $dir = $e.path
       $writable = $false
       $probe = Join-Path $dir ('.aroma-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
       try {
         [IO.File]::WriteAllText($probe, 'probe')
-        # Reaching this line IS the finding: the operator wrote outside its
-        # scope. Removal is attempted, and a failure is recorded rather than
-        # swallowed - but either way the caller is told the path is writable.
+        $writable = $true
+        try { Remove-Item -LiteralPath $probe -Force -ErrorAction Stop } catch { $residue += $probe }
+      } catch { $writable = $false }
+      $out += @{ path = $dir; writable = $writable; class = 'enforced'; provenance = $e.provenance; expect = $e.expect }
+    }
+    foreach ($dir in $observed) {
+      $writable = $false
+      $probe = Join-Path $dir ('.aroma-probe-' + [Guid]::NewGuid().ToString('N') + '.tmp')
+      try {
+        [IO.File]::WriteAllText($probe, 'probe')
         $writable = $true
         try { Remove-Item -LiteralPath $probe -Force -ErrorAction Stop }
         catch { $residue += $probe }
       } catch { $writable = $false }
-      $out += @{ path = $dir; writable = $writable }
+      # No `expect`. Nothing here is being asserted - the value is recorded so a
+      # commissioning baseline has real numbers in it instead of guesses.
+      $out += @{ path = $dir; writable = $writable; class = 'observed' }
     }
     Emit @{
       ok        = $true
@@ -199,14 +240,52 @@ switch ($op) {
   }
 
   'auditwritable' {
-    $dir = Join-Path $env:TEMP 'aroma-audit-probe'
-    try {
-      if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Path $dir | Out-Null }
-      $f = Join-Path $dir 'probe.txt'
-      [IO.File]::WriteAllText($f, 'probe')
-      Remove-Item -LiteralPath $f -Force
-      Emit @{ ok = $true; writable = $true }
-    } catch { Emit @{ ok = $true; writable = $false } }
+    # ── IT WAS CHECKING A DIRECTORY NOTHING WRITES TO ───────────────────────
+    #
+    # This probed %TEMP%. The Companion's artifact store writes to $AuditDir.
+    # Those are different places, so the preflight was confirming that a folder
+    # nobody uses was writable, and saying nothing about the folder every audit
+    # record actually goes to.
+    #
+    # Same shape as the staging check that verified the Phase 3a program: a
+    # green answer about the wrong object. And it would have failed LATE - past
+    # every other check, inside the executor's first admission write, with the
+    # flag already on.
+    #
+    # Note it also cannot use the staged tree: the operator has ReadAndExecute
+    # there, by design, so <stage>\.aroma is unwritable to it. Hence a separate
+    # folder with its own ACL.
+    # ── AND IT IS READ, NOT WRITTEN ─────────────────────────────────────────
+    # The operator has Write and NOT Delete here, for the same reason it has no
+    # Delete on the canary folder: it may create evidence and must never be able
+    # to destroy it. So a write-probe could not clean up after itself and would
+    # accumulate one file per run, forever - the exact defect just removed from
+    # the `writable` op.
+    #
+    # We set this ACL, so we assert it by reading it. That is the same rule the
+    # in-scope path now follows: only enforce what you established, and a
+    # permission you established is a fact you can read.
+    if (-not (Test-Path -LiteralPath $AuditDir)) {
+      Emit @{ ok = $true; writable = $false; reason = 'audit_dir_missing'; path = $AuditDir }
+    } else {
+      try {
+        $acl = Get-Acl -LiteralPath $AuditDir -ErrorAction Stop
+        $me = ([Security.Principal.WindowsIdentity]::GetCurrent()).User.Value
+        $write = [int][Security.AccessControl.FileSystemRights]::Write
+        $can = $false
+        $denied = $false
+        foreach ($r in @($acl.Access)) {
+          $sid = ''
+          try { $sid = $r.IdentityReference.Translate([Security.Principal.SecurityIdentifier]).Value } catch { continue }
+          if ($sid -ne $me) { continue }
+          if ($r.AccessControlType -eq 'Deny' -and (([int]$r.FileSystemRights) -band $write) -ne 0) { $denied = $true }
+          if ($r.AccessControlType -eq 'Allow' -and (([int]$r.FileSystemRights) -band $write) -eq $write) { $can = $true }
+        }
+        Emit @{ ok = $true; writable = ($can -and -not $denied); path = $AuditDir }
+      } catch {
+        Emit @{ ok = $true; writable = $false; reason = 'audit_dir_acl_unreadable'; path = $AuditDir }
+      }
+    }
   }
 
   default { Fail ('unknown_op:' + $op) }

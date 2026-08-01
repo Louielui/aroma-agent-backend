@@ -30,6 +30,21 @@ const REPO = path.resolve(__dirname, '..', '..')
 /** Where the Owner's side leaves requests. Fixed, absolute, and never taken from input. */
 const REQUEST_DIR = 'C:\\Aroma\\ComputerOperator-Requests'
 
+/**
+ * The two folders the Companion needs at run time, outside the staged tree.
+ *
+ * They cannot live under the staged copy: the operator has ReadAndExecute there, and that is
+ * exactly the property which makes the package hash mean anything at run time. So the audit sink
+ * and the receipt each need their own place, with their own ACL.
+ *
+ *   AUDIT_DIR     operator: ReadAndExecute + Write, NO Delete — it may create evidence and must
+ *                 never be able to destroy it, the same rule as the canary folder
+ *   RECEIPTS_DIR  operator: ReadAndExecute only — it must be able to READ the approval it acts
+ *                 under, and must not be able to write one
+ */
+const AUDIT_DIR = 'C:\\Aroma\\ComputerOperator-Audit'
+const RECEIPTS_DIR = 'C:\\Aroma\\ComputerOperator-Receipts'
+
 /** The account this must be. A name is not an identity, so the SID is the check. */
 const EXPECTED_SID = 'S-1-5-21-2042659270-2029498691-2127769412-1009'
 const EXPECTED_NAME = 'AromaOperator'
@@ -385,5 +400,5 @@ module.exports = {
   checkMachine, renderMachine, MACHINE_ROWS,
   checkPackage, renderPackage,
   buildRunner, ensureRequestDir,
-  REPO, REQUEST_DIR, EXPECTED_SID, EXPECTED_NAME
+  REPO, REQUEST_DIR, AUDIT_DIR, RECEIPTS_DIR, EXPECTED_SID, EXPECTED_NAME
 }
