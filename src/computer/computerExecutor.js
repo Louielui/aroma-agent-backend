@@ -95,14 +95,16 @@ function validateOrder (order, opts = {}) {
       const bad = fileNameProblem(s.fileName)
       if (bad) return refusal('bad_filename', bad)
     }
-    if (s.action === 'type_text' || s.action === 'save') {
-      if (!s.bind || typeof s.bind !== 'object') return refusal('missing_binding', `step ${s.n} must bind to the opened app`)
-      try { assertNoExtraKeys(s.bind, BIND_FIELDS, `step ${s.n} bind`) } catch (e) { return refusal('unexpected_field', e.message) }
-      for (const f of BIND_FIELDS) {
-        if (s.bind[f] === undefined || s.bind[f] === null || s.bind[f] === '') {
-          return refusal('missing_binding', `step ${s.n} bind.${f} is required`)
-        }
-      }
+    // ── AN ORDER MAY NOT CARRY A RUNTIME BINDING AT ALL ────────────────────
+    // This block used to REQUIRE one, which made the approved canary unrunnable: the values do
+    // not exist until open_app has run, and `bind` was inside the seal, so filling them in would
+    // have invalidated the approval.
+    //
+    // Refused rather than ignored. An order shaped like the old one was written against the old
+    // rules, and silently dropping the field would let it run under an approval that meant
+    // something different from what it says.
+    if (s.bind !== undefined) {
+      return refusal('unexpected_field', `step ${s.n} carries a runtime binding; bind is established by open_app, never approved`)
     }
   }
 
@@ -142,6 +144,74 @@ function createComputerExecutor (deps = {}) {
   // The registry is a REQUIRED collaborator, not an option. An executor without one has
   // no replay protection and no single-live-order guarantee, so it refuses to act.
   const orderRegistry = deps.orderRegistry || null
+  /**
+   * What open_app must hand back, checked before anything is allowed to use it.
+   *
+   * ── WHY THIS IS AS STRICT AS THE ORDER SCHEMA ──────────────────────────────
+   * The binding is now the ONLY thing that says which window the next two steps act on. It used
+   * to be in the sealed order, where the gate checked it; taking it out of the seal means the
+   * checking has to come with it, or the strictness was simply deleted.
+   *
+   * Exactly four fields. A missing one, a null, an empty string, or an extra one is a refusal —
+   * an extra field is how a second meaning gets attached to a binding, and a null is how
+   * "we could not determine the window" becomes "no window constraint".
+   *
+   * The session is checked against the Companion's OWN attested session. A binding to a window
+   * in another session is either a bug or the beginning of one: the whole containment argument
+   * rests on the canary acting inside the session whose identity was attested.
+   *
+   * The result is frozen and is a COPY. The adapter's object is never held: if the adapter kept
+   * a reference and later mutated it, the run's idea of what it bound to would change under it.
+   */
+  function validateRuntimeBinding (bind, attestedSessionId) {
+    if (!bind || typeof bind !== 'object' || Array.isArray(bind)) {
+      return { ok: false, refusal: 'missing_binding', reason: 'open_app returned no binding' }
+    }
+    const keys = Object.keys(bind)
+    for (const k of keys) {
+      if (!BIND_FIELDS.includes(k)) {
+        return { ok: false, refusal: 'unexpected_field', reason: 'binding carries an unknown field: ' + k }
+      }
+    }
+    for (const f of BIND_FIELDS) {
+      const v = bind[f]
+      if (v === undefined || v === null || v === '') {
+        return { ok: false, refusal: 'missing_binding', reason: 'binding.' + f + ' is missing' }
+      }
+    }
+    // Types and plausible values, not merely presence. A processId of 0 or a negative one is not
+    // a process; a blank handle is not a handle.
+    if (!Number.isInteger(bind.processId) || bind.processId <= 0) {
+      return { ok: false, refusal: 'bad_binding', reason: 'binding.processId is not a process id' }
+    }
+    if (!Number.isInteger(bind.sessionId) || bind.sessionId < 0) {
+      return { ok: false, refusal: 'bad_binding', reason: 'binding.sessionId is not a session id' }
+    }
+    for (const f of ['windowHandle', 'uiaControlId']) {
+      if (typeof bind[f] !== 'string' || bind[f].trim() === '') {
+        return { ok: false, refusal: 'bad_binding', reason: 'binding.' + f + ' is not a handle' }
+      }
+    }
+    if (attestedSessionId !== undefined && attestedSessionId !== null) {
+      if (bind.sessionId !== attestedSessionId) {
+        return {
+          ok: false,
+          refusal: 'wrong_session',
+          reason: 'open_app bound to session ' + bind.sessionId + ', attested session is ' + attestedSessionId
+        }
+      }
+    }
+    return {
+      ok: true,
+      bind: Object.freeze({
+        processId: bind.processId,
+        sessionId: bind.sessionId,
+        windowHandle: bind.windowHandle,
+        uiaControlId: bind.uiaControlId
+      })
+    }
+  }
+
   const now = typeof deps.now === 'function' ? deps.now : () => Date.now()
   const clock = () => new Date(now()).toISOString()
   const newId = typeof deps.newId === 'function' ? deps.newId : () => 'cexec_' + crypto.randomBytes(6).toString('hex')
@@ -254,18 +324,25 @@ function createComputerExecutor (deps = {}) {
         return finishFailed('nonce_' + burn.reason, 'step nonce refused: ' + burn.reason, 'nonce', step.n)
       }
 
-      // Stale identity is a refusal, never a re-bind. A handle that no longer names the thing we
-      // opened is the one situation where "try anyway" could act on someone else's window.
-      if (step.bind) {
-        if (!bindingFromOpen) return finishFailed('missing_binding', 'no open_app produced a binding', 'bind', step.n)
-        for (const f of BIND_FIELDS) {
-          if (String(step.bind[f]) !== String(bindingFromOpen[f])) {
-            return finishFailed('stale_binding', `bind.${f} does not match the opened app`, 'bind', step.n)
-          }
+      // ── EVERY STEP AFTER open_app ACTS ON THE RUNTIME BINDING ─────────────
+      // Not on anything in the order — the order carries no binding, and cannot. The binding is
+      // the one open_app produced, held in this run's local state, and verified live before each
+      // action. Stale identity is a refusal, never a re-bind: no fallback to the focused window,
+      // no search for another window, no re-binding. A handle that no longer names the thing we
+      // opened is the one situation where "try anyway" acts on someone else's window.
+      if (step.action !== 'open_app') {
+        if (!bindingFromOpen) {
+          return finishFailed('missing_binding', 'no open_app produced a usable binding', 'bind', step.n)
         }
         const live = desktop.verifyBinding ? desktop.verifyBinding(bindingFromOpen) : null
         if (!live || live.ok !== true) {
           return finishFailed('stale_binding', (live && live.reason) || 'binding no longer valid', 'bind', step.n)
+        }
+        // The live check must be about THE SAME thing we hold, not merely "something is there".
+        for (const f of BIND_FIELDS) {
+          if (live[f] !== undefined && String(live[f]) !== String(bindingFromOpen[f])) {
+            return finishFailed('stale_binding', `${f} changed since open_app`, 'bind', step.n)
+          }
         }
       }
 
@@ -276,7 +353,15 @@ function createComputerExecutor (deps = {}) {
       } catch (err) {
         return finishFailed('step_failed', err && err.message, 'action', step.n)
       }
-      if (step.action === 'open_app') bindingFromOpen = outcome.bind
+
+      if (step.action === 'open_app') {
+        const b = validateRuntimeBinding(outcome && outcome.bind, opts.attestedSessionId)
+        if (!b.ok) return finishFailed(b.refusal, b.reason, 'bind', step.n)
+        // FROZEN, and a copy. Nothing downstream can alter what open_app established, and
+        // nothing that alters it can reach the order, the receipt or the request — all three
+        // are inputs to this run and none of them is written to.
+        bindingFromOpen = b.bind
+      }
 
       // ── STEP-OUTCOME. Failure stops the run and cleans up. ────────────────
       try {
@@ -298,8 +383,10 @@ function createComputerExecutor (deps = {}) {
     return { ok: true, runId, stepsRun: done.length, steps: done, desktopActions, auditChainComplete: true, orderClosed: true }
 
     function runStep (step) {
+      // The binding passed to the adapter is ALWAYS the runtime one. It used to be `step.bind`,
+      // read straight out of the sealed order — a value that could not have been there.
       if (step.action === 'open_app') return desktop.openApp({ appId: step.appId })
-      if (step.action === 'type_text') return desktop.typeTextIntoControl({ bind: step.bind, text: step.text })
+      if (step.action === 'type_text') return desktop.typeTextIntoControl({ bind: bindingFromOpen, text: step.text })
       if (step.action === 'save') {
         // Built from the ORDER's allowedPath, which the gate has already proven equal to
         // ALLOWED_PATH and which the hash covers — so the directory that was approved is
@@ -308,7 +395,7 @@ function createComputerExecutor (deps = {}) {
         if (deps.fsProbe && deps.fsProbe.exists && deps.fsProbe.exists(target)) {
           throw new Error('refuse_overwrite: ' + target)
         }
-        return desktop.saveAsViaUi({ bind: step.bind, dir: order.allowedPath + '\\', fileName: step.fileName })
+        return desktop.saveAsViaUi({ bind: bindingFromOpen, dir: order.allowedPath + '\\', fileName: step.fileName })
       }
       throw new Error('unknown_action')
     }

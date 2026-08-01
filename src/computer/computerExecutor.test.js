@@ -78,8 +78,8 @@ function seal (over = {}) {
     timeoutSec: 300,
     steps: [
       { n: 1, action: 'open_app', appId: 'notepad' },
-      { n: 2, action: 'type_text', text: TEXT, bind: Object.assign({}, BIND) },
-      { n: 3, action: 'save', fileName: 'canary-1.txt', bind: Object.assign({}, BIND) }
+      { n: 2, action: 'type_text', text: TEXT },
+      { n: 3, action: 'save', fileName: 'canary-1.txt' }
     ]
   }, over)
   if (!o.orderHash) o.orderHash = computeOrderHash(o)
@@ -272,7 +272,7 @@ test('*** a filename that is a path, traversal or absolute is refused ***', () =
   ]
   for (const fileName of bad) {
     const d = fakeDesktop()
-    const res = mk(fakeStore(), d).execute(seal({ steps: [{ n: 1, action: 'save', fileName, bind: Object.assign({}, BIND) }] }), ON)
+    const res = mk(fakeStore(), d).execute(seal({ steps: [{ n: 1, action: 'save', fileName }] }), ON)
     assert.equal(d.calls, 0, 'nothing ran for: ' + fileName)
     assert.equal(res.refusal, 'bad_filename', 'refused: ' + JSON.stringify(fileName))
   }
@@ -297,13 +297,29 @@ test('*** an existing file is never overwritten ***', () => {
 
 /* ── 6. binding: stale identity is a refusal, never a re-bind ─────────────── */
 
-test('*** a binding that does not match the opened app is refused ***', () => {
+test('*** an order carrying a runtime binding is refused outright ***', () => {
+  // This test used to put a WRONG binding in the order and expect stale_binding. An order can no
+  // longer carry a binding at all: those values do not exist until open_app has run, and while
+  // they lived in the sealed order the approved canary could not execute by any route.
   for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
     const o = seal()
     o.steps[1].bind = Object.assign({}, BIND, { [field]: 'WRONG' })
     o.orderHash = computeOrderHash(o)
     const d = fakeDesktop()
     const res = mk(fakeStore(), d).execute(o, ON)
+    assert.equal(res.refusal, 'unexpected_field', 'refused on ' + field)
+    assert.equal(d.calls, 0, 'NOTHING ran — refused before the first action')
+  }
+})
+
+test('*** the binding the executor USES is the one open_app produced, changed = stale ***', () => {
+  // The property the old test was reaching for, relocated to where the binding now lives.
+  for (const field of ['processId', 'windowHandle', 'uiaControlId']) {
+    const d = fakeDesktop({
+      // verifyBinding reports a DIFFERENT identity than the one open_app handed back.
+      verifyBinding: () => ({ ok: true, [field]: field === 'processId' ? 9999 : 'CHANGED' })
+    })
+    const res = mk(fakeStore(), d).execute(seal(), ON)
     assert.equal(res.refusal, 'stale_binding', 'refused on ' + field)
     assert.equal(d.calls, 1, 'only the open ran; the typing did not')
   }
@@ -320,19 +336,51 @@ test('*** a missing UIA control is a refusal, not a fallback ***', () => {
 })
 
 test('a step that binds without any open_app before it is refused', () => {
-  const o = seal({ steps: [{ n: 1, action: 'type_text', text: TEXT, bind: Object.assign({}, BIND) }] })
+  const o = seal({ steps: [{ n: 1, action: 'type_text', text: TEXT }] })
   const d = fakeDesktop()
   const res = mk(fakeStore(), d).execute(o, ON)
   assert.equal(res.refusal, 'missing_binding')
   assert.equal(d.calls, 0)
 })
 
-test('type_text and save MUST carry a full binding', () => {
+test('*** open_app MUST return a full, well-formed binding ***', () => {
+  // The strictness moved with the binding. It used to be checked on the ORDER, where it could
+  // never legitimately be satisfied; it is now checked on what open_app actually returns, where
+  // it can be — and must be, because that binding is the only thing saying which window the next
+  // two steps act on.
   for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
     const bind = Object.assign({}, BIND); delete bind[field]
-    const res = validateOrder(seal({ steps: [{ n: 1, action: 'open_app', appId: 'notepad' }, { n: 2, action: 'type_text', text: TEXT, bind }] }), ON)
+    const d = fakeDesktop({ openApp: () => ({ bind, detail: 'notepad' }) })
+    const res = mk(fakeStore(), d).execute(seal(), ON)
     assert.equal(res.refusal, 'missing_binding', 'required: ' + field)
+    // The override replaces the counter-incrementing openApp, so the log is what shows that
+    // nothing AFTER the open ran.
+    assert.deepEqual(d.log, [], 'no type or save was logged: ' + JSON.stringify(d.log))
   }
+  // A null or empty value is missing, not present.
+  for (const v of [null, '']) {
+    const d = fakeDesktop({ openApp: () => ({ bind: Object.assign({}, BIND, { windowHandle: v }), detail: 'n' }) })
+    assert.equal(mk(fakeStore(), d).execute(seal(), ON).refusal, 'missing_binding', String(v))
+  }
+  // An EXTRA field is refused: it is how a second meaning gets attached to a binding.
+  const extra = fakeDesktop({ openApp: () => ({ bind: Object.assign({}, BIND, { tabId: 3 }), detail: 'n' }) })
+  assert.equal(mk(fakeStore(), extra).execute(seal(), ON).refusal, 'unexpected_field')
+  // And the values must be the right KIND of thing, not merely present.
+  for (const [f2, v] of [['processId', 0], ['processId', -1], ['processId', '4242'], ['windowHandle', 5], ['uiaControlId', '  ']]) {
+    const d = fakeDesktop({ openApp: () => ({ bind: Object.assign({}, BIND, { [f2]: v }), detail: 'n' }) })
+    assert.equal(mk(fakeStore(), d).execute(seal(), ON).refusal, 'bad_binding', f2 + '=' + String(v))
+  }
+})
+
+test('*** the binding must be in the Companion\'s OWN attested session ***', () => {
+  const d = fakeDesktop() // BIND.sessionId is 1
+  const res = mk(fakeStore(), d).execute(seal(), { flagOn: true, attestedSessionId: 4 })
+  assert.equal(res.refusal, 'wrong_session', 'a window in another session is not ours to drive')
+  assert.equal(d.calls, 1, 'nothing after the open ran')
+
+  // The matching case still runs, so the refusal above is the session check and not something else.
+  const ok = fakeDesktop()
+  assert.equal(mk(fakeStore(), ok).execute(seal(), { flagOn: true, attestedSessionId: 1 }).ok, true)
 })
 
 /* ── 7. the seal itself ───────────────────────────────────────────────────── */
@@ -360,7 +408,7 @@ test('*** editing a sealed step invalidates the hash ***', () => {
     ['fileName changed', (o) => { o.steps[2].fileName = 'other.txt' }, 'order_hash_mismatch'],
     // Caught by the order's OWN declared maxSteps of 3 before the hash is reached — the
     // bounds travel inside the seal, so smuggling in a fourth step trips the count first.
-    ['step appended', (o) => { o.steps.push({ n: 4, action: 'save', fileName: 'extra.txt', bind: Object.assign({}, BIND) }) }, 'too_many_steps'],
+    ['step appended', (o) => { o.steps.push({ n: 4, action: 'save', fileName: 'extra.txt' }) }, 'too_many_steps'],
     ['approvalId swapped', (o) => { o.approvalId = 'appr_other' }, 'order_hash_mismatch']
   ]
   for (const [label, mutate, expected] of mutations) {

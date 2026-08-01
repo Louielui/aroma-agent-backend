@@ -49,8 +49,8 @@ function seal (over = {}) {
     timeoutSec: 300,
     steps: [
       { n: 1, action: 'open_app', appId: 'notepad' },
-      { n: 2, action: 'type_text', text: TEXT, bind: Object.assign({}, BIND) },
-      { n: 3, action: 'save', fileName: 'canary-1.txt', bind: Object.assign({}, BIND) }
+      { n: 2, action: 'type_text', text: TEXT },
+      { n: 3, action: 'save', fileName: 'canary-1.txt' }
     ]
   }, over)
   if (!o.orderHash) o.orderHash = computeOrderHash(o)

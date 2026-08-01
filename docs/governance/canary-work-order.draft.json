@@ -8,18 +8,20 @@
   "timeoutSec": 300,
   "orderHash": "",
   "steps": [
-    { "n": 1, "action": "open_app", "appId": "notepad" },
+    {
+      "n": 1,
+      "action": "open_app",
+      "appId": "notepad"
+    },
     {
       "n": 2,
       "action": "type_text",
-      "text": "Aroma Computer Operator canary. Round 1.",
-      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null }
+      "text": "Aroma Computer Operator canary. Round 1."
     },
     {
       "n": 3,
       "action": "save",
-      "fileName": "canary-1.txt",
-      "bind": { "processId": null, "sessionId": null, "windowHandle": null, "uiaControlId": null }
+      "fileName": "canary-1.txt"
     }
   ]
 }

@@ -64,10 +64,33 @@ const ALLOWED_PATH = 'C:\\Aroma\\ComputerOperator-Test'
 const LIMITS = Object.freeze({ maxSteps: 10, timeoutSec: 300, oneStepInFlight: true })
 
 /** Exact per-action parameter sets. An unexpected field is a refusal, not an ignored key. */
+/**
+ * ── RUNTIME BINDING IS NOT PART OF A SEALED ORDER. Owner ruling, 2026-08-01. ──
+ *
+ * `bind` used to be here, on type_text and save. It could not work, and the contradiction was
+ * total:
+ *
+ *   . validateOrder REQUIRED every bind field to be non-null BEFORE execution;
+ *   . processId, sessionId, windowHandle and uiaControlId do not exist until open_app has run;
+ *   . `bind` was inside the hash, so filling it in would have invalidated the approval — measured:
+ *     the same order with binds filled hashes differently;
+ *   . and had it been pre-filled and re-approved, the executor compares each step's bind against
+ *     the binding the REAL open_app produced, so invented values would refuse as stale_binding.
+ *
+ * Both routes were closed. The approved canary could never have executed, and it would have
+ * failed at execute() with the operator flag already on.
+ *
+ * The seal protects WHAT THE OWNER APPROVED — which app, which text, which filename, which
+ * folder, which limits. A window handle is not something an Owner approves; it is a fact that
+ * comes into existence when the app opens. So it leaves the order entirely, and an incoming
+ * order that carries one is refused as `unexpected_field` rather than quietly ignored: an order
+ * shaped like the old one is an order written against the old rules, and it should be rejected
+ * loudly by whoever still produces it.
+ */
 const ACTION_FIELDS = Object.freeze({
   open_app: Object.freeze(['action', 'n', 'appId']),
-  type_text: Object.freeze(['action', 'n', 'text', 'bind']),
-  save: Object.freeze(['action', 'n', 'fileName', 'bind'])
+  type_text: Object.freeze(['action', 'n', 'text']),
+  save: Object.freeze(['action', 'n', 'fileName'])
 })
 
 const BIND_FIELDS = Object.freeze(['processId', 'sessionId', 'windowHandle', 'uiaControlId'])
