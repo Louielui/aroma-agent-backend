@@ -32,7 +32,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'aromaJsonTransport.ps1')
 
 function Emit { param([hashtable] $R) Write-AromaEnvelope $R; exit 0 }
-function Fail { param([string] $Reason) Write-AromaRefusal $Reason }
+# The detail is optional and carried through: "a file changed" without saying
+# WHICH file sends the reader to check twenty-odd of them by hand.
+function Fail { param([string] $Reason, [string] $Detail = $null) Write-AromaRefusal $Reason $Detail }
 
 $p = Read-AromaPayload
 if (-not $p.PSObject.Properties.Match('op').Count) { Fail 'no_op' }
@@ -92,16 +94,41 @@ switch ($op) {
   }
 
   'staging' {
+    # WHAT THIS USED TO CHECK, AND WHY IT WAS THE WRONG THING
+    #
+    # It compared the staged folder against seven hard-coded file names - the
+    # Phase 3a pipe Companion. None of those seven is the canary closure. So a
+    # preflight step called "the staged program is verified" was verifying a
+    # different program, and would have passed with the canary's own files
+    # missing, extra or altered.
+    #
+    # It now reads the manifest the staging script wrote and checks every file
+    # by CONTENT, plus refuses any file in the folder that the manifest does
+    # not name. An unexpected file in a folder the operator can execute from
+    # is exactly the thing this is for.
     if (-not (Test-Path -LiteralPath $StageDir)) { Fail 'staging_missing' }
-    try { $files = @(Get-ChildItem -LiteralPath $StageDir -File -ErrorAction Stop) } catch { Fail 'staging_unreadable' }
-    # Names only here. The closure HASHES are checked by the execution package
-    # verification on the Node side, which already owns that comparison - a
-    # second implementation would be a second source of truth.
-    $expected = @('companion-entry.js','companion.js','computerOperatorFlag.js','ipcChannel.js','observation.js','sealedOrderGate.js','sessionBoundary.js')
-    $names = @($files | ForEach-Object { $_.Name } | Sort-Object)
-    $diff = Compare-Object -ReferenceObject ($expected | Sort-Object) -DifferenceObject $names
-    if ($diff) { Fail 'staging_closure_mismatch' }
-    Emit @{ ok = $true; count = $names.Count }
+    $manifestPath = Join-Path $StageDir 'STAGE-MANIFEST.json'
+    if (-not (Test-Path -LiteralPath $manifestPath)) { Fail 'staging_manifest_missing' }
+    try { $m = Get-Content -LiteralPath $manifestPath -Raw -ErrorAction Stop | ConvertFrom-Json } catch { Fail 'staging_manifest_unreadable' }
+    if ($null -eq $m -or $null -eq $m.files) { Fail 'staging_manifest_malformed' }
+
+    try { $onDisk = @(Get-ChildItem -LiteralPath $StageDir -File -Recurse -ErrorAction Stop) } catch { Fail 'staging_unreadable' }
+
+    $listed = @{}
+    foreach ($entry in @($m.files)) {
+      $abs = Join-Path $StageDir ($entry.path -replace '/', '\')
+      $listed[$abs.ToLower()] = $true
+      if (-not (Test-Path -LiteralPath $abs)) { Fail 'staging_file_missing' $entry.path }
+      $h = (Get-FileHash -LiteralPath $abs -Algorithm SHA256).Hash.ToLower()
+      if ($h -ne ([string] $entry.sha256).ToLower()) { Fail 'staging_file_changed' $entry.path }
+    }
+    # The manifest itself is not in its own file list, so it is allowed; anything
+    # else present is not.
+    $listed[$manifestPath.ToLower()] = $true
+    foreach ($f in $onDisk) {
+      if (-not $listed.ContainsKey($f.FullName.ToLower())) { Fail 'staging_unexpected_file' $f.Name }
+    }
+    Emit @{ ok = $true; count = @($m.files).Count; packageHash = [string] $m.packageHash }
   }
 
   'echo' {

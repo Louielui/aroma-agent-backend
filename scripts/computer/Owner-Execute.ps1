@@ -307,70 +307,63 @@ if ($preExit -ne 0 -or -not $pre.ok) {
 Say "  All checks passed." 'Green'
 
 # ===========================================================================
-#  THE FLAG. Process scope ONLY, set as late as possible, restored always.
+#  HAND IT OVER. This screen does not run the task.
 # ===========================================================================
-#  User and Machine scopes are never touched — no setx, no registry, nothing
-#  that outlives this window. The Node child inherits the Process value, which
-#  is the entire reason the Process scope is the right one.
+#  It used to. It set COMPUTER_OPERATOR in this process and started the canary
+#  here — in the Owner's session, with the Owner's token. The preflight that
+#  finally asked WHO showed the whole chain would have acted as `louis`, which
+#  is not the account the folder, the permissions or the approval were built
+#  around. The fix is not a better check on this side; it is this side not
+#  being able to act at all.
 #
-#  The original value is captured BEFORE anything changes it, so the finally
-#  restores the exact prior state rather than assuming it was unset.
+#  So: the flag is never set here. No process is started. What happens is that
+#  a POINTER is written to a folder — which approval, which order hash, which
+#  program hash, when it expires — and this window stops.
+#
+#  The Companion, running as the operator in its own session, decides whether
+#  to pick it up. It re-checks everything with its own token, and it is the
+#  only thing in the system holding an executor.
 # ===========================================================================
-$flagWasSet = $null -ne $env:COMPUTER_OPERATOR
-$flagOriginal = $env:COMPUTER_OPERATOR
-$userBefore = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'User')
-$machineBefore = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'Machine')
+Say ""
+Say "  Handing the task over..." 'Cyan'
 
-$runExit = 1
-$runRaw = $null
-try {
-  $env:COMPUTER_OPERATOR = 'on'
-  Say ""
-  Say "  Running..." 'Cyan'
-  $runRaw = & $Node $Entry run
-  $runExit = $LASTEXITCODE
-} finally {
-  # Restore the EXACT prior state. Unset stays unset; a prior value comes back
-  # as itself. This runs on success, on failure and on Ctrl-C.
-  if ($flagWasSet) { $env:COMPUTER_OPERATOR = $flagOriginal }
-  else { Remove-Item Env:\COMPUTER_OPERATOR -ErrorAction SilentlyContinue }
-}
+$reqRaw = & $Node $Entry request
+$reqExit = $LASTEXITCODE
+$req = $null
+try { $req = $reqRaw | ConvertFrom-Json } catch { }
 
-# ── prove the restore, do not assume it ─────────────────────────────────
-$procAfter = $env:COMPUTER_OPERATOR
-$userAfter = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'User')
-$machineAfter = [Environment]::GetEnvironmentVariable('COMPUTER_OPERATOR', 'Machine')
-
-$restored = if ($flagWasSet) { $procAfter -eq $flagOriginal } else { $null -eq $procAfter }
-if (-not $restored -or $userAfter -ne $userBefore -or $machineAfter -ne $machineBefore) {
+# Nothing was set, so there is nothing to restore. Measured anyway: an unchanged
+# value is a fact worth having on the record, and a changed one would mean
+# something wrote a switch this screen is not allowed to touch.
+$procNow = $env:COMPUTER_OPERATOR
+if ($null -ne $procNow) {
   Say ""
-  Say "*** CONTAINMENT INCIDENT ***" -ForegroundColor Red
-  Say "  The computer operator switch did not return to how it was." 'Red'
-  Say ("  process before : " + $(if ($flagWasSet) { $flagOriginal } else { '<unset>' })) 'Red'
-  Say ("  process after  : " + $(if ($procAfter) { $procAfter } else { '<unset>' })) 'Red'
-  Say ("  user   before/after : " + $userBefore + " / " + $userAfter) 'Red'
-  Say ("  machine before/after: " + $machineBefore + " / " + $machineAfter) 'Red'
-  Say ""
-  Say "  Not retrying. Close this window and report it." 'Yellow'
+  Say "*** CONTAINMENT INCIDENT ***" 'Red'
+  Say "  The computer operator switch is set in this window. It never should be." 'Red'
+  Say "  Not continuing. Close this window and report it." 'Yellow'
   exit 9
 }
-Say "  Switch returned to off." 'Green'
 
-# ── report the run ──────────────────────────────────────────────────────
-$res = $null
-try { $res = $runRaw | ConvertFrom-Json } catch { }
 Say ""
-if ($runExit -eq 0 -and $res -and $res.ok) {
-  Say "  DONE." 'Green'
+if ($reqExit -eq 0 -and $req -and $req.ok) {
+  Say "  SENT." 'Green'
   Say ""
-  Say "  The file has been created. Please open it and check it, then" 'White'
-  Say "  delete it when you are satisfied." 'White'
+  Say "  Nothing has run yet, and nothing will run in this window." 'White'
+  Say ""
+  Say "  Now do this, at this computer:" 'White'
+  Say ""
+  Say "    1. Switch User, and sign in as AromaOperator." 'White'
+  Say "    2. Double-click 'Start Aroma Companion' on that desktop." 'White'
+  Say "    3. Watch it. It checks itself, then does the task." 'White'
+  Say ""
+  if ($req.expiresAt) { Say ("  The task waits until " + $req.expiresAt + " and then expires on its own.") 'DarkGray' }
+  Say "  If you change your mind, do nothing. It expires and is used up." 'DarkGray'
 } else {
-  Say "  IT DID NOT COMPLETE." 'Yellow'
-  if ($res -and $res.human) { Say ("  " + $res.human) 'White' }
-  elseif ($res -and $res.refusal) { Say ("  reason: " + $res.refusal) 'DarkGray' }
+  Say "  NOT SENT." 'Yellow'
+  if ($req -and $req.human) { Say ("  " + $req.human) 'White' }
+  elseif ($req -and $req.refusal) { Say ("  reason: " + $req.refusal) 'DarkGray' }
   Say ""
-  Say "  The switch is off and the approval has been used up." 'White'
+  Say "  Nothing was opened, nothing was written, the switch stayed off." 'White'
 }
 Say ""
-exit $runExit
+exit $reqExit

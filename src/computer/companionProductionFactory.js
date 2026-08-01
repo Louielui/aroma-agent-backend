@@ -61,4 +61,21 @@ function buildCompanionExecution (deps = {}) {
   return { ok: true, runner, machine, desktop, executor, registry }
 }
 
-module.exports = { buildCompanionExecution }
+/**
+ * A transport ALONE, for measuring without any ability to act.
+ *
+ * The two read-only operator tools — "who am I", "what state is this machine in" — need to run
+ * PowerShell and need nothing else. Handing them a full assembly would give a pure measurement
+ * an executor and an adapter it has no use for, and the shortest description of this system's
+ * central rule is that nothing holds a capability it does not need.
+ *
+ * It lives HERE rather than in the tools so that powershellJsonRunner keeps exactly one
+ * production importer. That is not bookkeeping: the one-importer property is what a graph scan
+ * can check, and a second `require` of the transport is how a second way to start a process
+ * would arrive.
+ */
+function createMeasurementRunner (opts = {}) {
+  return createPowershellJsonRunner({ timeoutMs: opts.timeoutMs })
+}
+
+module.exports = { buildCompanionExecution, createMeasurementRunner }

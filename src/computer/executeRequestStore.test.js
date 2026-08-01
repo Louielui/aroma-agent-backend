@@ -95,9 +95,9 @@ test('a request can only be built from a verified receipt', () => {
 /* ── expiry and mismatch ──────────────────────────────────────────────────── */
 
 test('*** an expired request is refused ***', () => {
-  const req = S.buildRequest(receipt(), { now: () => T0, ttlMs: 60000 })
-  assert.equal(S.verifyAgainst(req, { now: () => T0 + 30000 }).ok, true, 'inside the window')
-  assert.equal(S.verifyAgainst(req, { now: () => T0 + 61000 }).refusal, 'request_expired')
+  const req = S.buildRequest(receipt(), { now: () => T0, ttlMs: S.MIN_TTL_MS })
+  assert.equal(S.verifyAgainst(req, { now: () => T0 + S.MIN_TTL_MS / 2 }).ok, true, 'inside the window')
+  assert.equal(S.verifyAgainst(req, { now: () => T0 + S.MIN_TTL_MS + 1000 }).refusal, 'request_expired')
 })
 
 test('*** hash mismatches are each refused, and named ***', () => {
@@ -185,11 +185,26 @@ test('*** a claim survives a crash as CLAIMED, and cannot be replayed ***', () =
   assert.equal(restarted.claim(req.requestId, 'companion').ok, false, 'and not replayable')
 })
 
+test('*** the TTL floor covers a Switch User, and cannot be shortened ***', () => {
+  // The number is not a preference. In the first-canary procedure the Owner presses E in his own
+  // session and then switches user — a logon, a profile load, possibly a password typed wrong
+  // once. A TTL that expires mid-procedure fails at the point where he has already decided, and
+  // teaches him to hurry.
+  assert.ok(S.MIN_TTL_MS >= 15 * 60 * 1000, 'at least fifteen minutes')
+  assert.ok(S.DEFAULT_TTL_MS >= S.MIN_TTL_MS, 'and the default is not below its own floor')
+
+  // Lengthening is allowed; shortening is refused rather than clamped. A silently substituted
+  // value is how a caller comes to believe a number it never got.
+  assert.doesNotThrow(() => S.buildRequest(receipt(), { now: () => T0, ttlMs: S.MIN_TTL_MS * 4 }))
+  assert.throws(() => S.buildRequest(receipt(), { now: () => T0, ttlMs: S.MIN_TTL_MS - 1 }), /ttl_below_floor/)
+  assert.throws(() => S.buildRequest(receipt(), { now: () => T0, ttlMs: 1000 }), /ttl_below_floor/)
+})
+
 test('*** an expired request cannot be claimed, and is marked EXPIRED ***', () => {
   const dir = tmp()
-  const req = S.buildRequest(receipt(), { now: () => T0, ttlMs: 60000 })
+  const req = S.buildRequest(receipt(), { now: () => T0, ttlMs: S.MIN_TTL_MS })
   store(dir).submit(req)
-  const late = store(dir, T0 + 120000)
+  const late = store(dir, T0 + S.MIN_TTL_MS + 1000)
   assert.equal(late.claim(req.requestId, 'c').refusal, 'request_expired')
   assert.equal(late.stateOf(req.requestId), 'EXPIRED')
 })

@@ -63,7 +63,25 @@ const TRANSITIONS = Object.freeze({
   EXPIRED: Object.freeze([])
 })
 
-const DEFAULT_TTL_MS = 10 * 60 * 1000
+/**
+ * How long a request stays claimable.
+ *
+ * Raised from 10 minutes to 30 on 2026-08-01, and the reason is a physical one rather than a
+ * preference: in the first-canary procedure the Owner presses E in his own session and then
+ * SWITCHES USER to the operator account, where the Companion is started by hand. That switch is
+ * a logon — a profile load, a desktop, possibly a password typed wrong once. Ten minutes was set
+ * when the request was expected to be claimed by an already-running Companion in the same
+ * minute; it is not a budget for a human walking between two sessions.
+ *
+ * A TTL that expires mid-procedure does not fail safe in any useful sense. It fails at the point
+ * where the Owner has already decided, and teaches him to hurry — and hurrying is the opposite
+ * of what every other control here is buying.
+ *
+ * MIN_TTL_MS is the floor, asserted by a test, so a future edit cannot quietly shorten it back
+ * below the switch window.
+ */
+const MIN_TTL_MS = 15 * 60 * 1000
+const DEFAULT_TTL_MS = 30 * 60 * 1000
 
 const no = (refusal, reason, detail) => ({ ok: false, refusal, reason, detail: detail === undefined ? null : detail })
 
@@ -74,6 +92,11 @@ function buildRequest (receipt, opts = {}) {
     throw new Error('the receipt is missing its bindings')
   }
   const now = opts.now ? opts.now() : Date.now()
+  const ttlMs = opts.ttlMs || DEFAULT_TTL_MS
+  // A caller may lengthen the window; it may not shorten it below the switch floor. Refused
+  // rather than clamped: silently substituting a different number is how a caller comes to
+  // believe a value it never got.
+  if (ttlMs < MIN_TTL_MS) throw new Error('ttl_below_floor: a request must stay claimable for at least ' + (MIN_TTL_MS / 60000) + ' minutes')
   return Object.freeze({
     schemaVersion: SCHEMA_VERSION,
     messageType: MESSAGE_TYPE,
@@ -256,5 +279,5 @@ function createRequestStore (deps = {}) {
 module.exports = {
   buildRequest, validateRequest, verifyAgainst, createRequestStore,
   SCHEMA_VERSION, MESSAGE_TYPE, CANARY_TYPE, REQUEST_FIELDS, FORBIDDEN_FIELDS,
-  STATES, TERMINAL, TRANSITIONS, DEFAULT_TTL_MS
+  STATES, TERMINAL, TRANSITIONS, DEFAULT_TTL_MS, MIN_TTL_MS
 }

@@ -57,6 +57,28 @@ function fakeIo (over = {}) {
   return Object.assign(io, over)
 }
 
+/**
+ * Counts what was HANDED OVER. Zero is the assertion in most tests below.
+ *
+ * On this side of the boundary "0 desktop actions" is no longer the available measurement — the
+ * Owner side cannot reach a desktop at all, which is the point. What it can still do wrongly is
+ * hand over a request when it should have refused, so that is what is counted. The desktop
+ * counts live in companionCanaryChain.test.js, on the side that holds an executor.
+ */
+function fakeLedger (over = {}) {
+  const spy = { submits: 0, requests: [] }
+  return {
+    spy,
+    ledger: {
+      submit (req) {
+        spy.submits++
+        spy.requests.push(req)
+        return over.submit ? over.submit(req) : { ok: true, state: 'CREATED' }
+      }
+    }
+  }
+}
+
 /** Counts what reached a desktop. Zero is the assertion in most tests below. */
 function fakeOperator (over = {}) {
   const spy = { builds: 0, executes: 0, ordersSeen: [], flagAtExecute: [], desktopActions: 0 }
@@ -109,17 +131,23 @@ test('*** 1. the fence is checked BEFORE the flag and BEFORE the entrypoint ***'
   const fenceAt = stripped.indexOf('if (-not $CANARY_EXECUTE_AUTHORISED)')
   const flagAt = stripped.indexOf("$env:COMPUTER_OPERATOR = 'on'")
   const preflightAt = stripped.indexOf('& $Node $Entry preflight')
-  const runAt = stripped.indexOf('& $Node $Entry run')
+  const requestAt = stripped.indexOf('& $Node $Entry request')
 
   assert.ok(fenceAt > 0, 'the fence check exists')
-  assert.ok(flagAt > 0 && preflightAt > 0 && runAt > 0, 'the flag and both entrypoint calls exist')
-  assert.ok(flagAt > fenceAt, 'the flag is only ever set after the fence check')
+  assert.ok(preflightAt > 0 && requestAt > 0, 'both entrypoint calls exist')
   assert.ok(preflightAt > fenceAt, 'the entrypoint is only called after the fence check')
-  assert.ok(runAt > fenceAt, 'including the run phase')
+  assert.ok(requestAt > fenceAt, 'including the hand-off')
+
+  // THE FLAG IS NOT HERE AT ALL ANY MORE, and that is the stronger property. This screen used
+  // to set COMPUTER_OPERATOR and start the canary in the Owner's own session; the preflight
+  // that finally asked WHO showed it would have acted as louis. Asserting "the flag comes after
+  // the fence" would now be asserting an ordering between two things, one of which must not
+  // exist at all.
+  assert.equal(flagAt, -1, 'the Owner screen never sets the operator switch')
 
   // The failing branch must exit, not fall through into the code below it. A fence that is
   // checked and then ignored is decoration.
-  const fenceBlock = stripped.slice(fenceAt, flagAt)
+  const fenceBlock = stripped.slice(fenceAt, requestAt)
   assert.match(fenceBlock, /exit\s+4/, 'a shut fence exits rather than continuing')
 
   // Nothing outside the file can supply the value: not a parameter, not an environment
@@ -135,17 +163,17 @@ test('*** 1. the fence is checked BEFORE the flag and BEFORE the entrypoint ***'
   const r = spawnSync('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', EXECUTE_PS1],
     { encoding: 'utf8', timeout: 60000, input: 'E\n' })
   assert.notEqual(r.status, 0, 'a scripted run must not succeed')
-  assert.doesNotMatch(String(r.stdout), /Running\.\.\./, 'the flag was never set')
+  assert.doesNotMatch(String(r.stdout), /Handing the task over/, 'nothing was handed over')
   assert.doesNotMatch(String(r.stdout), /All checks passed/, 'the entrypoint was never called')
 })
 
 test('*** 2. no receipt -> 0 desktop actions ***', () => {
-  const { spy, build } = fakeOperator()
-  const res = E.run({ receiptDir: tmp(), io: fakeIo(), buildComputerOperator: build })
+  const { spy, ledger } = fakeLedger()
+  const res = E.request({ receiptDir: tmp(), io: fakeIo(), ledger })
   assert.equal(res.ok, false)
   assert.equal(res.refusal, 'no_receipt')
-  assert.equal(spy.executes, 0)
-  assert.equal(spy.desktopActions, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
+  assert.equal(spy.submits, 0, 'and no request exists to be picked up')
 })
 
 /* ── 3-5. the three bindings ──────────────────────────────────────────────── */
@@ -157,11 +185,11 @@ test('*** 3. a pre-implementation receipt is refused, 0 desktop actions ***', ()
   delete r.executionPackageManifestHash
   fs.writeFileSync(path.join(a.dir, rf), JSON.stringify(r))
 
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
   assert.equal(res.refusal, 'pre_implementation_receipt')
   assert.match(res.human, /before the program was finished/)
-  assert.equal(spy.executes, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
 })
 
 test('*** 4. a changed execution package -> 0 desktop actions ***', () => {
@@ -171,12 +199,12 @@ test('*** 4. a changed execution package -> 0 desktop actions ***', () => {
   r.executionPackageManifestHash = 'f'.repeat(64)
   fs.writeFileSync(path.join(a.dir, rf), JSON.stringify(r))
 
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
   assert.equal(res.refusal, 'execution_package_changed')
   assert.match(res.human, /program has changed/i)
-  assert.equal(spy.executes, 0)
-  assert.equal(spy.builds, 0, 'it did not even build the operator')
+  assert.equal(spy.submits, 0, 'nothing was handed over')
+  assert.equal(spy.submits, 0, 'and it never reached the hand-off')
 })
 
 test('*** 5. a changed work order -> 0 desktop actions ***', () => {
@@ -184,47 +212,50 @@ test('*** 5. a changed work order -> 0 desktop actions ***', () => {
   const t = A.readOrder(a.orderFile); t.steps[2].fileName = 'elsewhere.txt'
   fs.writeFileSync(a.orderFile, JSON.stringify(t))
 
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
   assert.equal(res.refusal, 'work_order_changed')
-  assert.equal(spy.executes, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
 })
 
 /* ── 6-9. the machine state ───────────────────────────────────────────────── */
 
 test('*** 6. a non-empty folder -> 0 desktop actions ***', () => {
   const a = approved()
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo({ listDir: () => ['leftover.txt'] }), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo({ listDir: () => ['leftover.txt'] }), ledger }))
   assert.equal(res.refusal, 'folder_not_empty')
-  assert.equal(spy.executes, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
 })
 
 test('*** 7. canary-1.txt already there -> 0 desktop actions ***', () => {
   const a = approved()
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo({ fileExists: () => true }), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo({ fileExists: () => true }), ledger }))
   assert.equal(res.refusal, 'file_exists')
   assert.match(res.human, /Nothing will be overwritten/)
-  assert.equal(spy.executes, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
 })
 
 test('*** 8. an unwritable audit sink -> 0 desktop actions ***', () => {
   const a = approved()
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo({ auditWritable: () => false }), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo({ auditWritable: () => false }), ledger }))
   assert.equal(res.refusal, 'audit_not_writable')
-  assert.equal(spy.executes, 0)
-  assert.equal(spy.builds, 0)
+  assert.equal(spy.submits, 0, 'nothing was handed over')
 })
 
-test('*** 9. a registry refusal is surfaced, and no desktop action follows ***', () => {
+test('*** 9. a ledger refusal is surfaced, and no second request exists ***', () => {
+  // One live request per approval. The Owner pressing E twice must not put two tasks in the
+  // folder for one decision — whichever the Companion picked up, the other would still be
+  // sitting there pointing at the same approval.
   const a = approved()
-  const { spy, build } = fakeOperator({ execute: () => ({ ok: false, refusal: 'approval_id_already_used', desktopActions: 0 }) })
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger({ submit: () => ({ ok: false, refusal: 'approval_already_live', reason: 'one is waiting' }) })
+  const res = E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
   assert.equal(res.ok, false)
-  assert.equal(res.refusal, 'approval_id_already_used')
-  assert.equal(spy.desktopActions, 0)
+  assert.equal(res.refusal, 'approval_already_live')
+  assert.match(res.human, /already waiting/)
+  assert.equal(spy.submits, 1, 'it tried exactly once and took no for an answer')
 })
 
 test('the flag scopes are checked in preflight, and any of them set refuses', () => {
@@ -237,35 +268,51 @@ test('the flag scopes are checked in preflight, and any of them set refuses', ()
   }
 })
 
-/* ── 10-12. exactly once, and exactly the approved order ──────────────────── */
+/* ── 10-12. exactly one request, carrying bindings and nothing else ───────── */
 
-test('*** 10+11. buildComputerOperator once, executor.execute once ***', () => {
+test('*** 10+11. one request per press, and it is submitted exactly once ***', () => {
   const a = approved()
-  const { spy, build } = fakeOperator()
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  const res = E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
   assert.equal(res.ok, true)
-  assert.equal(spy.builds, 1, 'built exactly once')
-  assert.equal(spy.executes, 1, 'executed exactly once')
+  assert.equal(spy.submits, 1, 'handed over exactly once')
+  assert.equal(spy.requests.length, 1, 'and there is exactly one request')
 })
 
-test('*** 12. the order handed to the executor is field-for-field the approved one ***', () => {
+test('*** 12. the request carries BINDINGS ONLY — it cannot describe the work ***', () => {
+  // This is the replacement for "the order handed to the executor is the approved one". The
+  // Owner side no longer hands over an order at all: if it could describe the work, a
+  // compromised Owner path could describe DIFFERENT work. It hands over a pointer, and the
+  // Companion reads the work from the receipt itself.
   const a = approved()
-  const { spy, build } = fakeOperator()
-  E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
+  const { spy, ledger } = fakeLedger()
+  E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
+  const req = spy.requests[0]
 
-  const passed = spy.ordersSeen[0]
-  assert.deepEqual(passed, a.receipt.approvedOrder, 'deep equality with what the Owner approved')
-  // And it is the receipt's object, not a reconstruction from the draft file.
-  assert.equal(passed.approvalId, a.receipt.approvalId)
-  assert.equal(passed.orderHash, a.receipt.workOrderHash)
-  assert.equal(Object.isFrozen(passed), true, 'frozen — nothing downstream can decorate it')
-  assert.equal(spy.flagAtExecute[0], true, 'and it is told the flag is on')
+  assert.equal(req.approvalId, a.receipt.approvalId, 'it points at the approval')
+  assert.equal(req.approvedOrderHash, a.receipt.workOrderHash, 'and at the exact order hash')
+  assert.equal(req.executionPackageManifestHash, a.receipt.executionPackageManifestHash)
+  assert.equal(Object.isFrozen(req), true, 'frozen at birth')
+
+  // Not "no steps happen to be present" — no field that could carry an instruction exists.
+  for (const banned of ['steps', 'actions', 'text', 'fileName', 'path', 'command', 'script', 'args', 'approvedOrder']) {
+    assert.equal(Object.prototype.hasOwnProperty.call(req, banned), false, 'a request may never carry: ' + banned)
+  }
+  const serialised = JSON.stringify(req)
+  // What must not cross is the WORK: a filename, a path, a step, a line of text. `canaryType`
+  // is allowed to say "notepad-canary" — that is a label naming which approved task is being
+  // pointed at, not an instruction to open anything. Banning the substring "notepad" outright
+  // failed here, and it would have been the fourth time in this project that a scan punished a
+  // word rather than a capability.
+  assert.doesNotMatch(serialised, /canary-1\.txt|open_app|type_text|save_as|C:\\\\/i,
+    'nothing about what to type or where to save it survives the crossing')
+  assert.equal(req.canaryType, 'notepad-canary', 'the only mention of Notepad is the label')
 })
 
 test('*** the order can NOT be influenced by argv, stdin or the environment ***', () => {
   // The strongest available form: the real CLI, fed hostile arguments and input.
   const r = spawnSync(process.execPath,
-    [path.join(SCRIPTS, 'run-notepad-canary.js'), 'run', '--text', 'PWNED', '--fileName', 'evil.txt', 'C:\\Windows'],
+    [path.join(SCRIPTS, 'run-notepad-canary.js'), 'request', '--text', 'PWNED', '--fileName', 'evil.txt', 'C:\\Windows'],
     { encoding: 'utf8', timeout: 30000, input: '{"steps":[{"action":"open_app","appId":"cmd"}]}', env: Object.assign({}, process.env, { CANARY_TEXT: 'PWNED', COMPUTER_OPERATOR: '' }) })
   assert.notEqual(r.status, 0, 'it refused')
   assert.doesNotMatch(String(r.stdout), /PWNED|evil\.txt|cmd/, 'none of the injected values appear anywhere')
@@ -275,42 +322,53 @@ test('*** the order can NOT be influenced by argv, stdin or the environment ***'
   assert.doesNotMatch(src, /process\.stdin/, 'stdin is never read')
 })
 
-/* ── 13-16. the flag lifecycle, asserted against the script ───────────────── */
+/* ── 13-16. the flag lifecycle — now proved by its ABSENCE here ───────── */
 
-test('*** 13+14. the flag is restored in a finally, on success AND on failure ***', () => {
-  const code = fs.readFileSync(EXECUTE_PS1, 'utf8')
-  const stripped = code.replace(/^\s*#.*$/gm, '')
-  assert.match(stripped, /try\s*\{[\s\S]*\$env:COMPUTER_OPERATOR\s*=\s*'on'[\s\S]*\}\s*finally\s*\{/,
-    'the set is inside a try whose finally restores')
-  assert.match(stripped, /finally\s*\{[\s\S]*Remove-Item\s+Env:\\COMPUTER_OPERATOR/,
-    'an originally-unset flag is REMOVED, not set to a string')
-})
-
-test('*** 15. an original value is restored exactly, not blanked ***', () => {
+test('*** 13-16. the Owner screen never touches the operator switch, in any scope ***', () => {
+  // These four tests used to assert that Owner-Execute.ps1 set COMPUTER_OPERATOR inside a try,
+  // restored it in a finally, restored a prior value exactly, and never wrote User or Machine.
+  // Every one of them passed. They were careful checks on a lifecycle that should not have been
+  // on this side of the boundary at all — the screen was setting the switch and running the
+  // canary as the Owner.
+  //
+  // The lifecycle now lives in the Companion, in the operator's own session, and is asserted in
+  // companionCanaryChain.test.js. What is asserted HERE is the stronger and simpler property:
+  // this screen has no lifecycle to get right.
   const stripped = fs.readFileSync(EXECUTE_PS1, 'utf8').replace(/^\s*#.*$/gm, '')
-  assert.match(stripped, /\$flagWasSet\s*=\s*\$null\s*-ne\s*\$env:COMPUTER_OPERATOR/, 'the prior state is captured')
-  assert.match(stripped, /\$flagOriginal\s*=\s*\$env:COMPUTER_OPERATOR/, 'and so is the prior value')
-  assert.match(stripped, /if\s*\(\$flagWasSet\)\s*\{\s*\$env:COMPUTER_OPERATOR\s*=\s*\$flagOriginal/, 'restored as itself')
-  // Captured BEFORE the assignment, or it would capture 'on'.
-  assert.ok(stripped.indexOf('$flagOriginal = $env:COMPUTER_OPERATOR') < stripped.indexOf("$env:COMPUTER_OPERATOR = 'on'"))
-})
 
-test('*** 16. User and Machine scopes are never written, by any mechanism ***', () => {
-  const stripped = fs.readFileSync(EXECUTE_PS1, 'utf8').replace(/^\s*#.*$/gm, '')
+  assert.equal(/\$env:COMPUTER_OPERATOR\s*=/.test(stripped), false, 'it never assigns the switch')
   for (const banned of ['setx', 'SetEnvironmentVariable', 'HKCU', 'HKLM', 'New-ItemProperty', 'Set-ItemProperty']) {
     assert.equal(stripped.includes(banned), false, 'must not use: ' + banned)
   }
-  // Both scopes are READ before and after, and compared — a silent change would be caught.
-  assert.match(stripped, /GetEnvironmentVariable\('COMPUTER_OPERATOR',\s*'User'\)/)
-  assert.match(stripped, /GetEnvironmentVariable\('COMPUTER_OPERATOR',\s*'Machine'\)/)
-  assert.match(stripped, /CONTAINMENT INCIDENT/, 'and a failure to restore is an incident, not a warning')
-  // Banning the WORD "retry" failed on the script's own sentence, "Not retrying." — a rule
-  // aimed at the behaviour tripped on the honest disclaimer about that behaviour. Assert the
-  // behaviour instead: the flag is turned on in exactly one place, so there is no loop that
-  // re-attempts it.
-  const sets = stripped.match(/\$env:COMPUTER_OPERATOR\s*=\s*'on'/g) || []
-  assert.equal(sets.length, 1, 'the flag is turned on in exactly one place — no retry loop')
-  assert.match(stripped, /Not retrying/, 'and the script says so to the Owner')
+
+  // It still READS the process scope after the hand-off and treats a set value as an incident:
+  // nothing here should have set it, so finding it set means something else did.
+  assert.match(stripped, /CONTAINMENT INCIDENT/, 'a switch that is on is an incident, not a warning')
+  assert.match(stripped, /Not continuing/, 'and it stops rather than carrying on')
+})
+
+test('*** the Owner screen starts no process that could act ***', () => {
+  const stripped = fs.readFileSync(EXECUTE_PS1, 'utf8').replace(/^\s*#.*$/gm, '')
+  // Node is started exactly twice — preflight and request. Both are a measurement or a
+  // hand-off. Anything else launching from this screen would be a third way to act.
+  const nodeCalls = stripped.match(/&\s+\$Node\s+\$Entry\s+\w+/g) || []
+  assert.deepEqual(nodeCalls.map((c) => c.split(/\s+/).pop()).sort(), ['preflight', 'request'])
+  for (const banned of ['Start-Process', 'Invoke-Expression', 'iex ']) {
+    assert.equal(stripped.toLowerCase().includes(banned.toLowerCase()), false, 'must not use: ' + banned)
+  }
+  // "notepad" is NOT banned here, and the first version of this test banned it and went red.
+  // The screen mentions Notepad because it COUNTS running copies before handing anything over.
+  // Reading how many exist is the opposite of starting one, and a rule that cannot tell those
+  // apart bans the check along with the capability.
+  // "notepad" is not bannable as a word here, and two attempts to ban it went red for two
+  // different innocent reasons: the entrypoint's own filename is run-notepad-canary.js, and the
+  // refusal message says "Notepad is already open". Both are the screen doing its job.
+  //
+  // So the ban is on the EXECUTABLE and on invocation, which is the capability. The screen may
+  // say the word and may count the processes; it may not start one.
+  assert.doesNotMatch(stripped, /notepad\.exe/i, 'the binary is never named')
+  assert.doesNotMatch(stripped, /&\s*['"]?notepad/i, 'and never invoked')
+  assert.match(stripped, /Get-Process -Name 'notepad'/, 'it counts them — the positive control')
 })
 
 /* ── 17. no bypass ────────────────────────────────────────────────────────── */
@@ -339,7 +397,12 @@ test('*** 17. no production path reaches the adapter except through the wiring *
   // imports it, and a scan of prose would punish saying so. The ban is on the require.
   const entryCode = entry.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
   assert.doesNotMatch(entryCode, /require\([^)]*desktopAdapter/, 'the entrypoint never imports the adapter')
-  assert.match(entry, /computerOperatorWiring/, 'it goes through the wiring')
+  // It used to reach the adapter THROUGH computerOperatorWiring. It now reaches it through
+  // nothing at all: the Owner side writes a request and stops, so there is no import whose
+  // shape needs checking. Asserted as an absence, which is what the ruling actually says.
+  assert.doesNotMatch(entryCode, /require\([^)]*computerOperatorWiring/, 'and no longer builds an operator')
+  assert.doesNotMatch(entryCode, /require\([^)]*computerExecutor/, 'nor an executor')
+  assert.doesNotMatch(entryCode, /require\([^)]*powershellJsonRunner/, 'nor a way to start a process')
 })
 
 /* ── 18-20. the rest ──────────────────────────────────────────────────────── */
@@ -352,37 +415,39 @@ test('*** 18. piped input to either screen is always Cancel ***', () => {
   }
 })
 
-test('*** 19. an outcome-audit failure stops later steps and cleans up ***', () => {
-  // Owned by the executor, and asserted end-to-end from the entrypoint so the wiring cannot
-  // quietly swallow it.
-  const a = approved()
-  const { spy, build } = fakeOperator({
-    execute: () => ({ ok: false, refusal: 'audit_write_failed', phase: 'step-outcome', stepsRun: 1, desktopActions: 1, cleanup: 'attempted', auditChainComplete: false })
-  })
-  const res = E.run(Object.assign(base(a), { io: fakeIo(), buildComputerOperator: build }))
-  assert.equal(res.ok, false)
-  assert.equal(res.result.phase, 'step-outcome')
-  assert.equal(res.result.cleanup, 'attempted')
-  assert.equal(res.result.desktopActions, 1, 'step 1 happened; nothing after it did')
+test('*** 19. an outcome-audit failure is owned where it happens, not here ***', () => {
+  // This used to drive a fake executor from this side. The Owner side has no executor to
+  // drive, and building one to test it would create the path this test exists to disprove.
+  // computerExecutor.test.js owns the behaviour; what is checked here is the absence of a way
+  // to reach it.
+  const entryCode = fs.readFileSync(path.join(SCRIPTS, 'run-notepad-canary.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  assert.doesNotMatch(entryCode, /\.execute\s*\(/, 'the Owner side never calls execute')
+  assert.deepEqual([...E.VERBS], ['preflight', 'request'], 'and there is no verb that would')
 })
 
 test('*** 20. a receipt cannot be reused against a NEW execution package ***', () => {
   const a = approved()
-  const { build } = fakeOperator()
-  const io = fakeIo()
-  assert.equal(E.run(Object.assign(base(a), { io, buildComputerOperator: build })).ok, true)
+  const { ledger } = fakeLedger()
+  assert.equal(E.request(Object.assign(base(a), { io: fakeIo(), ledger })).ok, true)
 
-  // Used once — the durable marker, not the in-memory registry, is what survives a restart.
-  const again = E.run(Object.assign(base(a), { io, buildComputerOperator: build }))
-  assert.equal(again.refusal, 'approval_already_executed')
-
-  // And on a fresh machine state, a package change refuses it too.
-  const io2 = fakeIo()
+  // A package change refuses it, even with a receipt that verified a moment ago.
   const rf = fs.readdirSync(a.dir).find((n) => n.startsWith('receipt-'))
   const r = JSON.parse(fs.readFileSync(path.join(a.dir, rf), 'utf8'))
   r.executionPackageManifestHash = 'a'.repeat(64)
   fs.writeFileSync(path.join(a.dir, rf), JSON.stringify(r))
-  assert.equal(E.run(Object.assign(base(a), { io: io2, buildComputerOperator: build })).refusal, 'execution_package_changed')
+  const second = fakeLedger()
+  assert.equal(E.request(Object.assign(base(a), { io: fakeIo(), ledger: second.ledger })).refusal, 'execution_package_changed')
+  assert.equal(second.spy.submits, 0, 'and nothing was handed over')
+})
+
+test('*** single use survives a restart: the durable marker, not memory ***', () => {
+  const a = approved()
+  const io = fakeIo()
+  io.records.set(a.receipt.approvalId, { ok: true })
+  const { ledger, spy } = fakeLedger()
+  assert.equal(E.request(Object.assign(base(a), { io, ledger })).refusal, 'approval_already_executed')
+  assert.equal(spy.submits, 0)
 })
 
 test('an approval older than its window is refused', () => {
@@ -392,13 +457,12 @@ test('an approval older than its window is refused', () => {
   assert.equal(E.APPROVAL_TTL_MS, 12 * 60 * 60 * 1000)
 })
 
-test('the execution record is written whatever the outcome', () => {
+test('the request expires on its own, with room for a Switch User', () => {
+  // The Owner presses E in his session and then switches user. The window has to cover a logon.
   const a = approved()
-  const io = fakeIo()
-  const { build } = fakeOperator({ execute: () => ({ ok: false, refusal: 'step_failed' }) })
-  E.run(Object.assign(base(a), { io, buildComputerOperator: build }))
-  const rec = io.records.get(a.receipt.approvalId)
-  assert.ok(rec, 'a failed run still consumes its authorisation')
-  assert.equal(rec.ok, false)
-  assert.equal(rec.executionPackageManifestHash, PKG.computePackageHash())
+  const { spy, ledger } = fakeLedger()
+  E.request(Object.assign(base(a), { io: fakeIo(), ledger }))
+  const req = spy.requests[0]
+  const ttl = Date.parse(req.expiresAt) - Date.parse(req.createdAt)
+  assert.ok(ttl >= 15 * 60 * 1000, 'at least fifteen minutes, measured: ' + Math.round(ttl / 60000))
 })

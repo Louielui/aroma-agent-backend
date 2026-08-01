@@ -38,8 +38,20 @@ const pkg = require('./executionPackage')
 
 const REPO = path.resolve(__dirname, '..', '..')
 
-/** The only verbs. Anything else is a refusal, and neither one touches the order. */
-const VERBS = Object.freeze(['preflight', 'run'])
+/**
+ * The only verbs.
+ *
+ * `run` is GONE, as of the architecture ruling of 2026-07-31. It used to execute the canary here,
+ * in the Owner's session, with the Owner's token — and a preflight that finally asked WHO showed
+ * that the whole chain would have acted as `louis`. Deleting the verb is the fix; leaving it
+ * behind a flag would have left a second door into the executor, and this project has already
+ * paid for the lesson that a second door is the one that gets used.
+ *
+ * What the Owner's side may do is `request`: write a pointer to an approval into a directory the
+ * Companion watches, and stop. It cannot start a process, cannot reach an adapter, and cannot
+ * name a file to run.
+ */
+const VERBS = Object.freeze(['preflight', 'request'])
 
 /**
  * How long an approval stays usable.
@@ -52,6 +64,9 @@ const APPROVAL_TTL_MS = 12 * 60 * 60 * 1000
 
 const ALLOWED_DIR = 'C:\\Aroma\\ComputerOperator-Test'
 const EXPECTED_FILE = 'canary-1.txt'
+
+/** Where a request is left for the Companion. A directory, not a channel: nothing is started. */
+const REQUEST_DIR = 'C:\\Aroma\\ComputerOperator-Requests'
 
 const fail = (refusal, human, detail) => ({ ok: false, refusal, human, detail: detail || null })
 
@@ -131,42 +146,49 @@ function preflight (opts = {}) {
 }
 
 /**
- * The run phase. Builds the operator ONCE and executes ONCE, with the order taken from the
- * receipt — never rebuilt, never merged with anything on disk.
+ * The request phase — everything the Owner's side is permitted to do.
+ *
+ * It runs the same preflight, then writes ONE pointer: which approval, which order hash, which
+ * package hash, when it dies. No text, no filename, no command, no path. If this file could
+ * describe the work, the Owner's side would be choosing the work, and a compromised Owner path
+ * could choose different work. The work lives in the receipt, and the Companion reads it for
+ * itself, in its own session, with its own token.
+ *
+ * Writing a request starts nothing. Whether anything happens next is a decision made by another
+ * process, as another user, after checks this side cannot perform and cannot fake.
  */
-function run (opts = {}) {
-  const pre = preflight(Object.assign({}, opts, { checkFlagScopes: false }))
+function request (opts = {}) {
+  const pre = preflight(opts)
   if (!pre.ok) return pre
 
+  const store = opts.store || require('../../src/computer/executeRequestStore')
   const receipt = pre.receipt
-  const build = opts.buildComputerOperator || require('../../src/computer/computerOperatorWiring').buildComputerOperator
 
-  const built = build({
-    env: opts.env || process.env,
-    artifactStore: opts.artifactStore || realArtifactStore(),
-    runner: opts.runner || realRunner()
-  })
-  if (!built.enabled) {
-    return fail('operator_not_enabled', 'The operator could not be started.', built.reason)
+  let req
+  try {
+    req = store.buildRequest(receipt, { now: opts.now, ttlMs: opts.ttlMs, receiptHash: receipt.receiptHash })
+  } catch (e) {
+    return fail('request_not_built', 'The task could not be prepared.', e.message)
   }
 
-  // THE ORDER, verbatim from the receipt. Frozen so nothing downstream can decorate it.
-  const approvedOrder = Object.freeze(receipt.approvedOrder)
+  const ledger = opts.ledger || store.createRequestStore({ dir: opts.requestDir || REQUEST_DIR })
+  const sub = ledger.submit(req)
+  if (!sub.ok) {
+    const human = sub.refusal === 'approval_already_live'
+      ? 'A task from this approval is already waiting. Let that one finish or expire.'
+      : sub.refusal === 'approval_already_used'
+        ? 'This approval has already been sent. Approve again to send another.'
+        : 'The task could not be handed over.'
+    return fail(sub.refusal, human, sub.reason)
+  }
 
-  const result = built.executor.execute(approvedOrder, { flagOn: true })
-
-  // Durable single-use marker, written whatever the outcome. A failed run has still consumed
-  // its authorisation — recovery is a new approval, not a retry.
-  ;(opts.io || realIo()).writeExecutionRecord(receipt.approvalId, {
-    approvalId: receipt.approvalId,
-    workOrderHash: receipt.workOrderHash,
-    executionPackageManifestHash: receipt.executionPackageManifestHash,
-    ok: result.ok === true,
-    refusal: result.refusal || null,
-    at: new Date(opts.now ? opts.now() : Date.now()).toISOString()
-  }, opts.receiptDir)
-
-  return { ok: result.ok === true, refusal: result.refusal || null, result, approvalId: receipt.approvalId }
+  return {
+    ok: true,
+    requestId: req.requestId,
+    approvalId: req.approvalId,
+    expiresAt: req.expiresAt,
+    requestDir: opts.requestDir || REQUEST_DIR
+  }
 }
 
 /* ── the real world, isolated so tests never touch it ─────────────────────── */
@@ -199,28 +221,16 @@ function realIo () {
   }
 }
 
-function realArtifactStore () {
-  const { createArtifactStore } = require('../../src/store/artifactStore')
-  const { resolveArtifactDir } = require('../../src/runtime/artifactDir')
-  const root = resolveArtifactDir(process.env, path.join(REPO, '.aroma'))
-  return createArtifactStore({ baseDir: root.dir })
-}
-
 /**
- * The runner is NOT built here.
+ * There is no `realRunner` and no `realArtifactStore` here any more.
  *
- * This file is the OWNER-side entrypoint, and the architecture ruling of 2026-07-31 is that the
- * Owner side writes a request and stops. Constructing a PowerShell transport here would put the
- * ability to start a process back on the wrong side of the boundary — which is precisely how
- * this path ended up able to act as louis in the first place.
- *
- * The transport, the adapter and the executor are all assembled by companionProductionFactory,
- * inside the Companion. companionProductionFactory.test.js asserts each has exactly one
- * production importer, so a second door fails a test rather than going unnoticed.
+ * Both existed to serve the `run` verb. With that verb gone, a transport constructor sitting in
+ * this file would be a loaded gun in a room nobody is supposed to be able to shoot from — and
+ * the previous version's stub, which threw when called, still put the NAME of the capability on
+ * the Owner's side. The transport, the adapter and the executor are assembled by
+ * companionProductionFactory, in the Companion, and its tests assert each has exactly one
+ * production importer.
  */
-function realRunner () {
-  throw new Error('the Owner side does not build a PowerShell runner - see companionProductionFactory')
-}
 
 /* ── CLI ──────────────────────────────────────────────────────────────────── */
 
@@ -232,9 +242,11 @@ if (require.main === module) {
   }
   // Deliberately: argv beyond the verb is IGNORED, not parsed. There is no shape in which a
   // caller can add a path, a filename or a line of text.
-  const out = verb === 'preflight' ? preflight({}) : run({})
-  process.stdout.write(JSON.stringify(out.ok ? { ok: true, verb } : out) + '\n')
+  const out = verb === 'preflight' ? preflight({}) : request({})
+  process.stdout.write(JSON.stringify(
+    out.ok ? Object.assign({ ok: true, verb }, verb === 'request' ? { requestId: out.requestId, expiresAt: out.expiresAt } : {}) : out
+  ) + '\n')
   process.exit(out.ok ? 0 : 3)
 }
 
-module.exports = { preflight, run, VERBS, APPROVAL_TTL_MS, ALLOWED_DIR, EXPECTED_FILE, realIo }
+module.exports = { preflight, request, VERBS, APPROVAL_TTL_MS, ALLOWED_DIR, EXPECTED_FILE, REQUEST_DIR, realIo }

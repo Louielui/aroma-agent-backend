@@ -33,7 +33,19 @@
  */
 
 const { attest, toAuditRecord } = require('./identityAttestation')
-const { verifyRequest } = require('./executeRequest')
+// THE G2 PROTOCOL, and only it.
+//
+// Until 2026-08-01 this line read `require('./executeRequest')` — a second, older request module
+// with its own field list (`kind: 'canary-execute-request'`) and its own in-memory ledger. The
+// Owner's side had been migrated to `computer.canary.execute.v1`; the Companion had not. Both
+// modules were correct, both were tested, and they would never have agreed on a single request:
+// the Owner would have written one schema and the Companion refused it as `unknown_message_type`.
+//
+// Two schemas for one wire is the same defect as two PowerShell launchers, which had already
+// cost this project a day. The older module is gone rather than deprecated, because a
+// second implementation that still parses is a second implementation somebody can reach.
+const { verifyAgainst, createRequestStore } = require('./executeRequestStore')
+const { resolveComputerOperator } = require('./computerOperatorFlag')
 
 const ALLOWED_DIR = 'C:\\Aroma\\ComputerOperator-Test'
 const EXPECTED_FILE = 'canary-1.txt'
@@ -136,10 +148,10 @@ function runCanaryAsCompanion (request, deps = {}) {
   }
   const fail = (res, phase) => {
     // A failed attempt CONSUMES the request. Not retryable, by design: nobody can evidence what
-    // a half-run did, so nobody may repeat it.
-    if (deps.ledger && deps.ledger.stateOf(request && request.requestId) === 'claimed') {
-      deps.ledger.settle(request.requestId, { ok: false, refusal: res.refusal, phase })
-    }
+    // a half-run did, so nobody may repeat it. Only a request this Companion actually holds is
+    // settled — a failure before the claim must not disturb a request somebody else owns.
+    const held = deps.ledger && ['CLAIMED', 'RUNNING'].includes(deps.ledger.stateOf(request && request.requestId))
+    if (held) deps.ledger.transition(request.requestId, 'FAILED', { refusal: res.refusal, phase })
     return Object.assign({}, res, { phase, desktopActions: 0 })
   }
 
@@ -154,10 +166,9 @@ function runCanaryAsCompanion (request, deps = {}) {
   }
 
   // ── 2-3. the request and what it points at ──────────────────────────────
-  const rv = verifyRequest(request, {
+  const rv = verifyAgainst(request, {
     now: deps.now,
     receipt: deps.receipt,
-    receiptSha256: deps.receiptSha256,
     currentPackageHash: deps.currentPackageHash
   })
   if (!rv.ok) return fail(no(rv.refusal, 'The request is not usable.', rv.reason), 'request')
@@ -174,11 +185,29 @@ function runCanaryAsCompanion (request, deps = {}) {
   const claimed = deps.ledger.claim(request.requestId, deps.snapshot.sid)
   if (!claimed.ok) return Object.assign({}, no(claimed.refusal, 'This request has already been used.', claimed.reason), { phase: 'claim', desktopActions: 0 })
 
+  // CLAIMED -> RUNNING before anything touches a desktop, so a crash mid-run is distinguishable
+  // on disk from a crash before it. Both are terminal for this request; only one of them may
+  // have moved a window, and the record has to be able to say which.
+  const running = deps.ledger.transition(request.requestId, 'RUNNING')
+  if (!running.ok) return fail(no(running.refusal, 'The request could not be marked as running.', running.reason), 'running')
+
+  // ── the flag, READ rather than asserted ─────────────────────────────────
+  // This line used to be `flagOn: true` — a literal, passed to the gate that exists to check it.
+  // The gate was then verifying a constant this file had written, which is not a check, and it
+  // meant the Companion's switch could be off while the gate was told it was on.
+  //
+  // It is read here, at the last possible moment, from the environment of the process that is
+  // about to act. The entrypoint sets it in the Process scope only, after every check above has
+  // passed, and restores it in a `finally`.
+  const flag = resolveComputerOperator(deps.env || process.env)
+  if (flag !== 'on') return fail(no('flag_off', 'The computer operator switch is off in this process.'), 'flag')
+
   // ── 6-8. hand to the executor, ONCE, with the frozen approved order ─────
   const approvedOrder = Object.freeze(deps.receipt.approvedOrder)
-  const result = deps.executor.execute(approvedOrder, { flagOn: true, killSwitch: deps.killSwitch })
+  const result = deps.executor.execute(approvedOrder, { flagOn: flag === 'on', killSwitch: deps.killSwitch })
 
-  deps.ledger.settle(request.requestId, { ok: result.ok === true, refusal: result.refusal || null })
+  deps.ledger.transition(request.requestId, result.ok === true ? 'SUCCEEDED' : 'FAILED',
+    { refusal: result.refusal || null })
   audit('canary-outcome', {
     requestId: request.requestId,
     approvalId: request.approvalId,
@@ -193,6 +222,6 @@ function runCanaryAsCompanion (request, deps = {}) {
 }
 
 module.exports = {
-  runCanaryAsCompanion, companionPreflight,
+  runCanaryAsCompanion, companionPreflight, createRequestStore,
   ALLOWED_DIR, EXPECTED_FILE, EXPECTED_ACES, FORBIDDEN_RIGHTS
 }

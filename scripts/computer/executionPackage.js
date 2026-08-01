@@ -63,6 +63,45 @@ const REPO = path.resolve(__dirname, '..', '..')
  * so the hash does not depend on the platform that computed it.
  */
 const PACKAGE_FILES = Object.freeze([
+  // ── ADDED 2026-08-01, by the CROSS-LANGUAGE walk ────────────────────────
+  // The previous list was produced by a walk that followed JavaScript `require` and nothing
+  // else. It reported zero gaps, and the report was true about the JS module graph — but a
+  // large part of what runs during a canary is PowerShell, and none of it was in that graph.
+  //
+  // What was uncovered: aromaJsonTransport.ps1, dot-sourced by all three production .ps1 files,
+  // decoding every payload and encoding every answer the Node side believes. probe-machine.ps1,
+  // which produces every preflight fact. collect-identity.ps1, which produces the identity
+  // attestation itself. uiaCanary.ps1 was IN the package while the transport library it
+  // dot-sources on line 41 was not: the hands were approved and the nerves were not.
+  //
+  // The walk now follows four kinds of edge — JS require, PS dot-source, the runner's frozen
+  // script-ID map, and a launcher naming the file it starts — and this list is what it checks.
+  'scripts/computer/closureWalk.js',
+  'scripts/computer/aromaJsonTransport.ps1',
+  'scripts/computer/probe-machine.ps1',
+  'scripts/computer/collect-identity.ps1',
+  // The operator's three fixed launchers, their shared body, and the one-off that puts them on
+  // the desktop. They start what runs, so a change to any of them is a change to what runs.
+  'scripts/computer/Operator-CheckIdentity.ps1',
+  'scripts/computer/Operator-CheckMachine.ps1',
+  'scripts/computer/Operator-StartCompanion.ps1',
+  'scripts/computer/Install-OperatorShortcuts.ps1',
+  'scripts/computer/operatorLauncher.ps1',
+  'scripts/computer/operatorToolsCommon.js',
+  'scripts/computer/tool-check-identity.js',
+  'scripts/computer/tool-check-machine.js',
+  'scripts/computer/tool-start-companion.js',
+  // ── REMOVED 2026-08-01: the Phase 3a pipe Companion ──────────────────────
+  // companion-entry.js, ipcChannel.js, companion.js and observation.js were briefly listed
+  // here, on the reasoning that they are staged where the operator can start them. Then the
+  // cross-language walk stopped reaching them, because the only thing that had named them was a
+  // hard-coded list inside probe-machine.ps1 that was checking the WRONG program.
+  //
+  // They are a different program: a named pipe, a message handler, and a Companion whose every
+  // capability is false. The canary does not use any of it. So they leave the package AND the
+  // staged folder — an operator account that cannot start them is contained a little further
+  // than one that can, and dead weight in the package is how re-approval becomes a reflex.
+
   // the two screens: they decide whether anything runs, and what the Owner is shown
   'scripts/computer/Owner-Approve.ps1',
   'scripts/computer/Owner-Execute.ps1',
@@ -107,9 +146,7 @@ const PACKAGE_FILES = Object.freeze([
   'src/store/artifactStore.js',
   'src/runtime/artifactDir.js',
   // Reached through computerOperatorWiring -> companion -> observation/sessionBoundary.
-  'src/computer/companion.js',
   'src/computer/sessionBoundary.js',
-  'src/computer/observation.js'
 ])
 
 const sha256File = (abs) => crypto.createHash('sha256').update(fs.readFileSync(abs)).digest('hex')

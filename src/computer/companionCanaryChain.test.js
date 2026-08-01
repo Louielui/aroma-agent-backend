@@ -15,7 +15,18 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const R = require('./companionCanaryRunner')
-const RQ = require('./executeRequest')
+const RQ = require('./executeRequestStore')
+const osx = require('node:os')
+const fsx = require('node:fs')
+const pathx = require('node:path')
+
+/** A real directory per chain: the store's mutual exclusion IS the filesystem's. */
+const tmpLedger = (now) => RQ.createRequestStore({
+  dir: fsx.mkdtempSync(pathx.join(osx.tmpdir(), 'aroma-chain-')),
+  // The store must share the test's clock. Left on the real one it read 'expired' for every
+  // request built at a fixed past instant - a green-looking refusal for the wrong reason.
+  now
+})
 const { REQUIRED } = require('./identityAttestation')
 
 /* ── fakes ────────────────────────────────────────────────────────────────── */
@@ -84,7 +95,7 @@ const receipt = (over = {}) => Object.assign({
 function chain (over = {}) {
   const rec = over.receipt || receipt()
   const req = over.request || RQ.buildRequest(rec, { now: () => Date.parse('2026-07-31T23:00:00Z') })
-  const ledger = over.ledger || RQ.createRequestLedger({ now: () => Date.parse('2026-07-31T23:05:00Z') })
+  const ledger = over.ledger || tmpLedger(() => Date.parse('2026-07-31T23:05:00Z'))
   if (!over.skipSubmit) ledger.submit(req)
   const fx = over.fx || fakeExecutor()
   const deps = Object.assign({
@@ -95,6 +106,7 @@ function chain (over = {}) {
     artifactStore: fakeStore(),
     receipt: rec,
     receiptVerified: true,
+    env: { COMPUTER_OPERATOR: 'on' },
     currentPackageHash: rec.executionPackageManifestHash,
     now: () => Date.parse('2026-07-31T23:05:00Z')
   }, over.deps)
@@ -206,12 +218,16 @@ test('*** a request may carry BINDINGS ONLY — an instruction field is refused 
   for (const extra of ['text', 'fileName', 'path', 'command', 'arguments', 'modulePath', 'script']) {
     const req = Object.assign({}, RQ.buildRequest(rec, { now: () => 1 }), { [extra]: 'x' })
     const v = RQ.validateRequest(req)
-    assert.equal(v.refusal, 'unexpected_field', extra)
+    // Named instruction fields are refused as `forbidden_field`; anything else the schema does
+    // not know about is refused as `unexpected_field`. Both are refusals — the distinction only
+    // says WHY, and the test asserts the name so a rename cannot silently widen the shape.
+    assert.equal(['forbidden_field', 'unexpected_field'].includes(v.refusal), true, extra + ' -> ' + v.refusal)
     assert.equal(v.detail, extra)
   }
   assert.deepEqual([...RQ.REQUEST_FIELDS].sort(), [
-    'approvalId', 'approvedOrderHash', 'canaryType', 'canaryVersion', 'createdAt',
-    'executionPackageManifestHash', 'expiresAt', 'kind', 'receiptSha256', 'requestId'
+    'approvalId', 'approvedOrderHash', 'canaryType', 'createdAt',
+    'executionPackageManifestHash', 'expiresAt', 'messageType', 'receiptHash',
+    'requestId', 'schemaVersion'
   ], 'the shape is closed and carries no instructions')
 })
 
@@ -266,7 +282,7 @@ test('*** 12. a claimed request cannot be replayed after a crash ***', () => {
   const c = chain()
   // Claim, then "crash" — nothing settles it.
   assert.equal(c.ledger.claim(c.req.requestId, OP_SID).ok, true)
-  assert.equal(c.ledger.stateOf(c.req.requestId), 'claimed')
+  assert.equal(c.ledger.stateOf(c.req.requestId), 'CLAIMED')
 
   const res = R.runCanaryAsCompanion(c.req, c.deps)
   assert.equal(res.ok, false)
@@ -277,18 +293,18 @@ test('*** 12. a claimed request cannot be replayed after a crash ***', () => {
 test('*** 13. both success and failure write a durable outcome ***', () => {
   const okChain = chain()
   R.runCanaryAsCompanion(okChain.req, okChain.deps)
-  assert.equal(okChain.ledger.stateOf(okChain.req.requestId), 'completed')
+  assert.equal(okChain.ledger.stateOf(okChain.req.requestId), 'SUCCEEDED')
   assert.ok(okChain.deps.artifactStore.w.some((r) => r.kind === 'canary-outcome'))
 
   const badChain = chain({ fx: fakeExecutor({ result: { ok: false, refusal: 'step_failed' } }) })
   R.runCanaryAsCompanion(badChain.req, badChain.deps)
-  assert.equal(badChain.ledger.stateOf(badChain.req.requestId), 'failed', 'a failure consumes it too')
+  assert.equal(badChain.ledger.stateOf(badChain.req.requestId), 'FAILED', 'a failure consumes it too')
 
   // A preflight refusal settles it as failed as well — no request is left dangling.
   const preChain = chain({ deps: { machine: goodMachine({ notepadCount: () => 1 }) } })
   preChain.ledger.claim(preChain.req.requestId, OP_SID)
   R.runCanaryAsCompanion(preChain.req, preChain.deps)
-  assert.equal(preChain.ledger.stateOf(preChain.req.requestId), 'failed')
+  assert.equal(preChain.ledger.stateOf(preChain.req.requestId), 'FAILED')
 })
 
 /* ── 14-16. the execution itself ──────────────────────────────────────────── */
@@ -315,6 +331,22 @@ test('*** 16. the identity attestation is audited BEFORE anything else, pass or 
   const good = chain()
   R.runCanaryAsCompanion(good.req, good.deps)
   assert.equal(good.deps.artifactStore.w[0].kind, 'identity-attestation')
+})
+
+test('*** the switch is READ from the environment, not asserted by the caller ***', () => {
+  // This line used to be `flagOn: true` — a literal handed to the gate whose whole job is to
+  // check it. The gate was verifying a constant the runner had written, which is not a check.
+  for (const env of [{}, { COMPUTER_OPERATOR: 'off' }, { COMPUTER_OPERATOR: 'ON' }, { COMPUTER_OPERATOR: '1' }]) {
+    const c = chain({ deps: { env } })
+    const res = R.runCanaryAsCompanion(c.req, c.deps)
+    assert.equal(res.refusal, 'flag_off', JSON.stringify(env))
+    assert.equal(c.fx.spy.calls, 0, 'nothing executed with the switch off')
+    assert.equal(c.ledger.stateOf(c.req.requestId), 'FAILED', 'and the request is consumed, not left waiting')
+  }
+  // The positive control: the same chain with the switch on really does run, so the four
+  // refusals above are the switch talking and not something else failing first.
+  const on = chain({ deps: { env: { COMPUTER_OPERATOR: 'on' } } })
+  assert.equal(R.runCanaryAsCompanion(on.req, on.deps).ok, true)
 })
 
 test('an unwritable audit sink stops the run before the identity is even trusted', () => {
