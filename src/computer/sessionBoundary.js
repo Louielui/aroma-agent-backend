@@ -80,8 +80,12 @@ const CAPABILITIES = Object.freeze({
 // ── THE IPC CONTRACT (shape only) ─────────────────────────────────────────────
 // A closed message vocabulary, in both directions. Same reasoning as the action enum:
 // if message types are a closed set, no text from a screen or a model can become one.
-const SERVICE_TO_COMPANION = Object.freeze(['execute_step', 'abort', 'ping'])
-const COMPANION_TO_SERVICE = Object.freeze(['step_result', 'heartbeat', 'aborted', 'pong'])
+// `canary_execute` carries AUTHORISATION BINDINGS ONLY — no action, no text, no path. The
+// Companion reads the work from the receipt itself. Added to THIS vocabulary rather than to a
+// second channel: a bypass channel is a second set of rules that eventually disagrees with the
+// first, and the disagreement is where things get through.
+const SERVICE_TO_COMPANION = Object.freeze(['execute_step', 'abort', 'ping', 'canary_execute'])
+const COMPANION_TO_SERVICE = Object.freeze(['step_result', 'heartbeat', 'aborted', 'pong', 'canary_outcome'])
 const MESSAGE_TYPES = Object.freeze([...SERVICE_TO_COMPANION, ...COMPANION_TO_SERVICE])
 
 /**

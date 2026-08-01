@@ -62,8 +62,12 @@ test('*** the Companion account holds no credential and no bank session ***', ()
 /* ── the IPC contract ─────────────────────────────────────────────────────── */
 
 test('*** the message vocabulary is CLOSED, like the action enum ***', () => {
-  assert.deepEqual([...SERVICE_TO_COMPANION], ['execute_step', 'abort', 'ping'])
-  assert.deepEqual([...COMPANION_TO_SERVICE], ['step_result', 'heartbeat', 'aborted', 'pong'])
+  // `canary_execute` / `canary_outcome` joined on 2026-08-01. They extend THIS vocabulary rather
+  // than opening a second channel — a bypass channel is a second set of rules that eventually
+  // disagrees with the first, and the disagreement is where things get through. The list stays
+  // exact, so a third addition is a decision somebody has to write down.
+  assert.deepEqual([...SERVICE_TO_COMPANION], ['execute_step', 'abort', 'ping', 'canary_execute'])
+  assert.deepEqual([...COMPANION_TO_SERVICE], ['step_result', 'heartbeat', 'aborted', 'pong', 'canary_outcome'])
   for (const bad of ['execute_plan', 'run', 'EXECUTE_STEP', 'execute_step ', '', null, {}, ['ping']]) {
     assert.equal(validateEnvelope(envelope({ type: bad })).ok, false, 'refused type: ' + String(bad))
   }
