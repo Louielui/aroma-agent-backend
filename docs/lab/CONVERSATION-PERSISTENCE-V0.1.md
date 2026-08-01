@@ -1,6 +1,7 @@
 # Xiangxiang Lab — Conversation Persistence v0.1 (WRITE ONLY)
 
-**Status:** built, flag OFF, collecting nothing until the Owner turns it on.
+**Status:** **ENABLED 2026-08-01**, collecting from the Owner's next real conversation onward.
+Still **not backed up and not durable** — see §3.
 
 ## What this is
 
@@ -118,15 +119,49 @@ node scripts/lab/xiangxiang-archive.js delete --all
 
 The export carries verbatim conversation text and is **exactly as sensitive as the archive**.
 
-## Turning it on
+## Turning it on and off
 
-```
-XIANGXIANG_ARCHIVE=on
-```
+Two double-clickable operations on `C:\Aroma\`:
+
+| | |
+|---|---|
+| `Enable Xiangxiang Archive.cmd` | → `scripts/lab/Enable-XiangxiangArchive.ps1` |
+| `Disable Xiangxiang Archive.cmd` | → `scripts/lab/Disable-XiangxiangArchive.ps1` |
+
+Each one backs up `C:\Aroma\xiangxiang.ps1` and verifies the backup by hash **before** editing,
+adds or removes exactly the one line `$env:XIANGXIANG_ARCHIVE = 'on'`, proves line-by-line that
+nothing else moved and that the encoding and line endings are unchanged, restarts **only** the
+8090 backend, and polls `/health`. Enable **restores the original launcher and restarts it
+automatically** if the new one is not healthy. Each writes a record — `activation-*.json` /
+`deactivation-*.json` in `C:\Aroma\XiangxiangLab\` — containing hashes, pids and the diff, and
+**no conversation content**.
+
+**Disable is not erase.** It stops new writes and keeps everything already collected. Removing
+data is the separate, deliberate `delete` command below.
 
 With the flag off, `recordExchange` returns before requiring the archive module, so nothing is
 loaded, no directory is created and no byte is written. That is structural, not a promise, and
 it is asserted by a test.
+
+### What enablement could not prove, and why
+
+An environment variable inside a running process cannot be read from outside it, and `/health`
+does not report flags. The only way to prove the flag took effect is a conversation turn — and
+manufacturing one would put fake text into the Owner's archive. So the scripts stop short and say
+so: **the next real message is the proof.** Its reply carries a `labArchive` field and
+`archive.jsonl` appears. If neither happens, the flag did not take.
+
+### Restarting the launcher from a script
+
+Use `Start-Process` **without** `-Wait`, and let the health poll be the wait:
+
+- `& powershell.exe -File $Launcher | Out-Null` hangs forever — the launcher's hidden `node`
+  child inherits the stdout handle, so the pipeline never sees end-of-stream;
+- `Start-Process -Wait` hangs forever too — it waits for the whole process *tree*, which now
+  includes the server that was just started successfully.
+
+Both were hit during this enablement. In both cases the restart had already **succeeded**; only
+the script was stuck, which is the kind of failure that looks like a broken deploy and is not.
 
 ## What v0.1 explicitly does NOT do
 
