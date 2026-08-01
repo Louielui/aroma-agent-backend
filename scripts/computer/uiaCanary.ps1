@@ -190,9 +190,28 @@ switch ($op) {
   'open_app' {
     if ([string] $payload.appId -ne 'notepad') { Emit-Refusal 'app_not_allowed' ([string] $payload.appId) }
 
-    # Bare app name, no path, no arguments. Anything else would be a command
-    # line assembled from data, which is the shape this whole design refuses.
-    $proc = Start-Process -FilePath 'notepad' -PassThru
+    # ── ABSOLUTE PATH, NOT A BARE NAME ───────────────────────────────────
+    # This was 'notepad', and the reasoning behind that was half right: no path
+    # assembled from DATA, because a command line built from a work order is the
+    # shape this design refuses. But a bare name is not "no path" - it is a path
+    # chosen by PATH, and PATH belongs to whoever started the Companion.
+    #
+    # The same exposure was measured for real one file over: a bare 'whoami'
+    # resolved to Git's Unix whoami and returned nothing. Here the consequence
+    # would be worse - a different 'notepad' earlier on PATH would be LAUNCHED,
+    # and every check upstream would still pass, because the order, the hashes
+    # and the attestation all describe the INTENT to open Notepad and none of
+    # them describes WHICH notepad.
+    #
+    # The path is built from $env:SystemRoot and is not derived from the payload
+    # in any way, so nothing a caller sends can influence it.
+    $notepadExe = Join-Path $env:SystemRoot 'System32\notepad.exe'
+    if (-not (Test-Path -LiteralPath $notepadExe)) {
+      # NO FALLBACK to the bare name. If the known-good binary is absent, that is
+      # a machine nobody has looked at, and guessing is exactly what this fixes.
+      Emit-Refusal 'app_binary_missing' $notepadExe
+    }
+    $proc = Start-Process -FilePath $notepadExe -PassThru
     Start-Sleep -Milliseconds 900
 
     $win = Get-SoleWindowForProcess -ProcessId $proc.Id

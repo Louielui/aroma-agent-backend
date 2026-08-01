@@ -228,3 +228,79 @@ test('*** transport-level refusals are STRUCTURED, and open no Notepad ***', () 
   assert.equal(npCount(), before, 'Notepad count unchanged')
   assert.equal(before, '0', 'and it was zero throughout')
 })
+
+/* ── bare-name external launches ──────────────────────────────────────────── */
+
+/**
+ * A bare program name is not "no path" — it is a path chosen by PATH, and PATH belongs to
+ * whoever started the process. Measured for real: a bare `whoami` resolved to Git's Unix whoami
+ * and returned nothing, so the identity attestation refused every snapshot.
+ *
+ * In uiaCanary the consequence would have been worse than a null field. A different `notepad`
+ * earlier on PATH would be LAUNCHED, and every check upstream would still pass — the order, the
+ * hashes and the attestation all describe the INTENT to open Notepad, and none of them describes
+ * WHICH notepad.
+ */
+const BARE_LAUNCH = [
+  // Start-Process -FilePath with a quoted literal that is not a rooted path
+  /Start-Process\s+(-FilePath\s+)?'(?![A-Za-z]:|\\)[^'\/]+'/g,
+  /Start-Process\s+(-FilePath\s+)?"(?![A-Za-z]:|\\)[^"\/]+"/g,
+  // & 'name' or & name — the call operator against something unrooted and unvariabled
+  /&\s+'(?![A-Za-z]:|\\|\$)[^'\/]+\.exe'/g,
+  /&\s+(?!\$|\()[A-Za-z][\w.-]*\.exe\b/g,
+  // a bare native command sitting at the start of a statement
+  /(^|[;{]\s*)(whoami|net|reg|sc|cmd|tasklist|taskkill|icacls|schtasks)\s/gm
+]
+
+test('*** no production PowerShell script launches an external program by bare name ***', () => {
+  const offenders = []
+  for (const name of OWNED) {
+    const code = stripPs(src(name))
+    for (const re of BARE_LAUNCH) {
+      for (const m of code.matchAll(re)) {
+        offenders.push(name + ': ' + m[0].trim().slice(0, 60))
+      }
+    }
+  }
+  assert.deepEqual(offenders, [],
+    'build the path from $env:SystemRoot and Test-Path it:\n  ' + offenders.join('\n  '))
+})
+
+test('*** POSITIVE CONTROL — the bare-name rule catches real samples and permits absolute ones ***', () => {
+  // Without this, "no offenders" could mean the patterns match nothing at all. Each caught
+  // sample is a shape that has actually appeared in this repo.
+  const caught = (s) => BARE_LAUNCH.some((re) => { re.lastIndex = 0; return re.test(s) })
+
+  for (const bad of [
+    "$proc = Start-Process -FilePath 'notepad' -PassThru",   // the exact line just fixed
+    'Start-Process -FilePath "calc" -PassThru',
+    "$r = & 'whoami.exe' /groups",
+    '$x = & tasklist.exe /fo csv',
+    'whoami /groups /fo csv | ConvertFrom-Csv'                // the exact shape that returned null
+  ]) {
+    assert.equal(caught(bad), true, 'must be caught: ' + bad)
+  }
+
+  for (const good of [
+    "$exe = Join-Path $env:SystemRoot 'System32\notepad.exe'",
+    '$proc = Start-Process -FilePath $notepadExe -PassThru',
+    "$rows = @(& $whoamiExe /groups /fo csv)",
+    "Start-Process -FilePath 'C:\Windows\System32\notepad.exe'"
+  ]) {
+    assert.equal(caught(good), false, 'must be permitted: ' + good)
+  }
+})
+
+test('*** uiaCanary resolves Notepad absolutely, and refuses rather than falling back ***', () => {
+  const code = stripPs(src('uiaCanary.ps1'))
+  // `\\n` here, not `\n`: in a regex literal `\notepad` is a NEWLINE followed by "otepad", so
+  // the first version searched for something that could never appear. Fourth backslash-eaten-by-
+  // a-layer bug this round — the transport had it, the fixture had it, and now the assertion.
+  assert.match(code, /Join-Path \$env:SystemRoot 'System32\\notepad\.exe'/, 'built from SystemRoot')
+  assert.match(code, /Test-Path -LiteralPath \$notepadExe/, 'existence is verified')
+  assert.match(code, /Emit-Refusal 'app_binary_missing'/, 'a missing binary is a structured refusal')
+  assert.doesNotMatch(code, /Start-Process\s+-FilePath\s+'notepad'/, 'no bare-name launch remains')
+  // And the path cannot be influenced by the payload.
+  const launchBlock = code.slice(code.indexOf('$notepadExe'), code.indexOf('-PassThru'))
+  assert.doesNotMatch(launchBlock, /\$payload/, 'the path is never derived from caller data')
+})
