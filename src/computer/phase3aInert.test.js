@@ -165,13 +165,26 @@ test('*** Phase 3a cannot create the approved test folder ***', () => {
 test('*** the Companion account has NOT been created by this code ***', () => {
   const { COMPANION_ACCOUNT } = require('./sessionBoundary')
   assert.equal(COMPANION_ACCOUNT.created, false)
-  // and nothing in this folder could create one: no module can run a process at all
+  // Nothing here can create an account. The `child_process` clause used to carry that on the
+  // back of a broader claim — "no module can run a process at all" — which stopped being true
+  // when the PowerShell transport was unified into one launcher. The narrower claim is the one
+  // that was always the point, and it still holds for every file including the launcher: it can
+  // start ONE interpreter against a frozen script map, and none of those scripts creates a user.
+  const LAUNCHER = 'powershellJsonRunner.js'
   for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
     const code = codeOf(f)
-    for (const cap of ['New-LocalUser', 'net user', 'child_process', 'ShellExecute']) {
+    for (const cap of ['New-LocalUser', 'net user', 'ShellExecute']) {
       assert.equal(code.includes(cap), false, f + ' must not be able to create an account: ' + cap)
     }
+    if (f !== LAUNCHER) {
+      assert.equal(code.includes('child_process'), false, f + ' must not be able to run a process at all')
+    }
   }
+  // And the exemption is exactly one file, named — not a category that can quietly grow.
+  const spawners = fs.readdirSync(DIR)
+    .filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))
+    .filter((n) => codeOf(n).includes('child_process'))
+  assert.deepEqual(spawners, [LAUNCHER], 'exactly one module may start a process')
 })
 
 test('the kill-switch register does not claim more than has been shown', () => {

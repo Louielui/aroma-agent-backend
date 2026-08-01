@@ -27,10 +27,10 @@ function fakeRunner (answers = {}) {
     calls,
     run (scriptPath, payload) {
       calls.push({ scriptPath, payload })
+      // The fakes speak the RUNNER'S envelope, because that is what the adapter now consumes.
       const a = answers[payload.op]
-      if (typeof a === 'function') return a(payload)
-      if (a) return a
-      return { ok: true }
+      const inner = typeof a === 'function' ? a(payload) : (a || { ok: true })
+      return { ok: true, result: inner }
     }
   }
 }
@@ -187,7 +187,9 @@ test('*** every call goes to the same fixed script, with data as a payload ***',
   a.openApp({ appId: 'notepad' })
   a.typeTextIntoControl({ bind: BIND, text: 'x' })
   for (const c of runner.calls) {
-    assert.equal(c.scriptPath, 'scripts/computer/uiaCanary.ps1', 'one script, fixed at construction')
+    // A SCRIPT ID now, not a path: the shared runner owns the frozen id->path map, so nothing
+    // in the adapter can name a file to execute.
+    assert.equal(c.scriptPath, 'uia-canary', 'one script ID, fixed at construction')
     assert.equal(typeof c.payload, 'object', 'arguments travel as data, never as a command string')
   }
 })

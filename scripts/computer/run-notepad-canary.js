@@ -207,21 +207,12 @@ function realArtifactStore () {
 }
 
 /**
- * The process runner the adapter uses. It runs ONE fixed script with a JSON payload, and the
- * script path is not a parameter of this function — it is the adapter's constant.
+ * The ONE PowerShell transport, shared by the adapter and the machine probe. There is no
+ * second launcher in production: two had already drifted apart, and both were broken in ways
+ * that only appeared when something real was driven through them.
  */
 function realRunner () {
-  const { spawnSync } = require('node:child_process')
-  return {
-    run (scriptPath, payload) {
-      const abs = path.join(REPO, scriptPath.split('/').join(path.sep))
-      const r = spawnSync('powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', abs, '-PayloadJson', JSON.stringify(payload)],
-        { encoding: 'utf8', timeout: (payload.timeoutSec || 300) * 1000 })
-      if (r.status !== 0 && !r.stdout) return { ok: false, reason: 'helper_failed', detail: (r.stderr || '').slice(0, 400) }
-      try { return JSON.parse(String(r.stdout).trim()) } catch (e) { return { ok: false, reason: 'helper_bad_output', detail: String(r.stdout).slice(0, 400) } }
-    }
-  }
+  return require('../../src/computer/powershellJsonRunner').buildProductionRunner()
 }
 
 /* ── CLI ──────────────────────────────────────────────────────────────────── */

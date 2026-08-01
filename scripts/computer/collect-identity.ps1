@@ -31,9 +31,11 @@ $ErrorActionPreference = 'Stop'
 
 $COLLECTOR_VERSION = 1
 
+. (Join-Path $PSScriptRoot 'aromaJsonTransport.ps1')
+
 function Emit {
   param([hashtable] $Snapshot)
-  $Snapshot | ConvertTo-Json -Depth 5 -Compress
+  Write-AromaEnvelope $Snapshot
   exit 0
 }
 

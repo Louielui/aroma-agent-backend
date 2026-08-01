@@ -33,24 +33,22 @@
 #  script REFUSES. It does not pick the first one.
 # ===========================================================================
 
-[CmdletBinding()]
-param(
-  [Parameter(Mandatory = $true)][string] $PayloadJson
-)
+# No command-line payload: the shared transport reads base64 from stdin.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+. (Join-Path $PSScriptRoot 'aromaJsonTransport.ps1')
+
 function Emit-Result {
   param([hashtable] $Result)
-  $Result | ConvertTo-Json -Depth 6 -Compress
+  Write-AromaEnvelope $Result
   exit 0
 }
 
 function Emit-Refusal {
   param([string] $Reason, [string] $Detail = $null)
-  @{ ok = $false; reason = $Reason; detail = $Detail } | ConvertTo-Json -Depth 4 -Compress
-  exit 0
+  Write-AromaRefusal $Reason $Detail
 }
 
 # --- UIA ------------------------------------------------------------------
@@ -61,7 +59,7 @@ try {
   Emit-Refusal 'uia_unavailable' $_.Exception.Message
 }
 
-try { $payload = $PayloadJson | ConvertFrom-Json } catch { Emit-Refusal 'bad_payload' $_.Exception.Message }
+$payload = Read-AromaPayload
 if (-not $payload.PSObject.Properties.Match('op').Count) { Emit-Refusal 'bad_payload' 'no op' }
 $op = [string] $payload.op
 

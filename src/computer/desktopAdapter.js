@@ -38,7 +38,9 @@
  * anything it was not built for. Growing it is a capability change and an Owner GO.
  */
 
-const DEFAULT_SCRIPT = 'scripts/computer/uiaCanary.ps1'
+// A SCRIPT ID, not a path. The shared runner owns the frozen id->path map, so nothing here
+// can name a file to execute.
+const DEFAULT_SCRIPT = 'uia-canary'
 
 /** The verbs the helper script accepts. It rejects anything else; so does this. */
 const OPS = Object.freeze(['open_app', 'type_text', 'save_as', 'verify_binding', 'cleanup'])
@@ -68,7 +70,14 @@ function createDesktopAdapter (deps = {}) {
   /** One call into the helper. Every op goes through here, so every op is bounded the same way. */
   function call (op, payload) {
     if (!OPS.includes(op)) throw fail('unknown_op', op)
-    const res = runner.run(scriptPath, Object.assign({ op, timeoutSec }, payload))
+    // The shared runner returns a TRANSPORT envelope: { ok, result } on success, or
+    // { ok:false, refusal } when the transport itself failed. Both layers are checked, and
+    // separately: a transport failure and a script refusal are different facts, and collapsing
+    // them would report 'the helper said no' when the helper never ran.
+    const env = runner.run(scriptPath, Object.assign({ op, timeoutSec }, payload))
+    if (!env || typeof env !== 'object') throw fail('adapter_no_result', 'the runner returned nothing')
+    if (env.ok !== true) throw fail('transport_' + (env.refusal || 'failed'), env.detail || null)
+    const res = env.result
     if (!res || typeof res !== 'object') throw fail('adapter_no_result', 'the helper returned nothing')
     if (res.ok !== true) throw fail(res.reason || 'adapter_failed', res.detail || null)
     return res

@@ -56,6 +56,9 @@ const JS_ALLOWLIST = Object.freeze({
   'killSwitch.js': false,
   'measurementContext.js': false,
   'observation.js': false,
+  // The ONE production PowerShell launcher. It may start a process; it cannot touch a desktop
+  // by itself, and every script it may start comes from a frozen id->path map.
+  'powershellJsonRunner.js': 'may start PowerShell, from a closed script-ID map only',
   'orderRegistry.js': false,
   'sealedOrderGate.js': false,
   'sessionBoundary.js': false
@@ -131,7 +134,10 @@ test('*** every non-test file in src/computer is on the allowlist ***', () => {
 
 test('*** exactly ONE module is allowed to reach a desktop ***', () => {
   const allowed = Object.entries(JS_ALLOWLIST).filter(([, v]) => v !== false).map(([k]) => k)
-  assert.deepEqual(allowed, ['desktopAdapter.js'],
+  // TWO now: the adapter reaches a desktop, and the shared runner is the only thing that may
+  // start PowerShell at all. Both were single-purpose before the runner was unified; keeping
+  // them named individually is what makes a third addition visible.
+  assert.deepEqual(allowed.sort(), ['desktopAdapter.js', 'powershellJsonRunner.js'],
     'widening this is a capability change and an Owner GO, not an edit')
 })
 
@@ -139,12 +145,26 @@ test('*** exactly ONE module is allowed to reach a desktop ***', () => {
 
 test('*** SOURCE-CONSTRAINED — no clipboard, SendKeys, exec( or spawn( anywhere in src/computer ***', () => {
   for (const name of Object.keys(JS_ALLOWLIST)) {
+    // The designated launcher is exempt from the SPAWN ban and from nothing else. That ban was
+    // written when no module could start a process; unifying the transport means exactly one
+    // now must. The guarantee is unchanged in force — 'nothing else can spawn' — and the
+    // exemption is named here rather than quietly widened, with a separate test asserting the
+    // list of exempt files is exactly this one.
+    const isLauncher = name === 'powershellJsonRunner.js'
     const code = stripJs(read(path.join(SRC_COMPUTER, name)))
     for (const banned of BANNED_SUBSTRINGS) {
       assert.equal(code.includes(banned), false, `${name} must not contain: ${banned}`)
     }
     for (const call of BANNED_CALLS) {
+      if (isLauncher && (call === 'spawn(' || call === 'spawnSync(')) continue
       assert.equal(code.includes(call), false, `${name} must not call: ${call}`)
+    }
+    if (isLauncher) {
+      // What the exemption does NOT cover. It may start a process; it may still not build a
+      // command string, run one through a shell, or go via cmd.
+      assert.equal(code.includes('shell: true'), false, name + ' must never use a shell')
+      assert.equal(code.includes('cmd.exe'), false, name + ' must never go through cmd')
+      assert.equal(code.includes('Invoke-Expression'), false, name + ' must never build a command')
     }
     assert.equal(CLIPBOARD_USE.test(code), false, `${name} must not touch a clipboard`)
   }

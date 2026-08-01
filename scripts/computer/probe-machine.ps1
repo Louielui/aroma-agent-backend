@@ -23,16 +23,18 @@
 #  those; they are not repeated here.
 # ===========================================================================
 
-[CmdletBinding()]
-param([Parameter(Mandatory = $true)][string] $PayloadJson)
+# No command-line payload: the shared transport reads base64 from stdin.
+# A JSON payload in argv was measurably destroyed by Windows quoting.
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Emit { param([hashtable] $R) $R | ConvertTo-Json -Depth 6 -Compress; exit 0 }
-function Fail { param([string] $Reason) @{ ok = $false; reason = $Reason } | ConvertTo-Json -Compress; exit 0 }
+. (Join-Path $PSScriptRoot 'aromaJsonTransport.ps1')
 
-try { $p = $PayloadJson | ConvertFrom-Json } catch { Fail 'bad_payload' }
+function Emit { param([hashtable] $R) Write-AromaEnvelope $R; exit 0 }
+function Fail { param([string] $Reason) Write-AromaRefusal $Reason }
+
+$p = Read-AromaPayload
 if (-not $p.PSObject.Properties.Match('op').Count) { Fail 'no_op' }
 $op = [string] $p.op
 
@@ -100,6 +102,15 @@ switch ($op) {
     $diff = Compare-Object -ReferenceObject ($expected | Sort-Object) -DifferenceObject $names
     if ($diff) { Fail 'staging_closure_mismatch' }
     Emit @{ ok = $true; count = $names.Count }
+  }
+
+  'echo' {
+    # TRANSPORT DIAGNOSTIC ONLY. It returns the payload's own string back so a
+    # caller can prove byte-equality through base64/stdin. It reads nothing,
+    # writes nothing, starts nothing, and lives in the PROBE rather than in
+    # uiaCanary - the canary must never grow a path that acts without a
+    # validated order.
+    Emit @{ ok = $true; echoed = [string] $p.text }
   }
 
   'notepads' {
