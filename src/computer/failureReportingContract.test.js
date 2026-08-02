@@ -58,7 +58,8 @@ function chain (executorResult) {
     approvalId: 'appr_' + 'b'.repeat(32),
     sealed: true,
     sealedText: TEXT,
-    allowedPath: R.ALLOWED_DIR,
+    // No allowedPath: this order has a single open_app step and nothing that saves, and
+    // verifySeal refuses a path with no save to bound (unexpected_field).
     maxSteps: 3,
     timeoutSec: 300,
     steps: [{ n: 1, action: 'open_app', appId: 'notepad' }]

@@ -181,8 +181,22 @@ function verifySeal (order) {
     return no('order_not_sealed', 'orderHash is required')
   }
 
-  if (order.allowedPath !== ALLOWED_PATH) {
-    return no('allowed_path_mismatch', `allowedPath must be exactly ${ALLOWED_PATH}`)
+  // ── allowedPath EXISTS TO BOUND A SAVE, SO IT TRACKS THE SAVE ────────────
+  // Owner decision 2026-08-02: the canary shrinks to open_app + type_text. With no save there
+  // is no file, no directory and nothing for allowedPath to bound — carrying it would be a
+  // field that describes a capability the order does not contain.
+  //
+  // BOTH directions are enforced, and the second is the one that matters. An order with a save
+  // MUST carry exactly the allowed path; an order WITHOUT a save must not carry one at all. A
+  // merely-optional field would let a two-step order keep a stale path and look like it had
+  // been scoped when it had not — and would leave a save-shaped order one edit away.
+  const declaresSave = Array.isArray(order.steps) && order.steps.some((s) => s && s.action === 'save')
+  if (declaresSave) {
+    if (order.allowedPath !== ALLOWED_PATH) {
+      return no('allowed_path_mismatch', `allowedPath must be exactly ${ALLOWED_PATH}`)
+    }
+  } else if (order.allowedPath !== undefined) {
+    return no('unexpected_field', 'allowedPath is present but no step saves — remove it or add the save it bounds')
   }
   if (!Number.isInteger(order.maxSteps) || order.maxSteps < 1 || order.maxSteps > LIMITS.maxSteps) {
     return no('limits_exceeded', `maxSteps must be 1..${LIMITS.maxSteps}`)

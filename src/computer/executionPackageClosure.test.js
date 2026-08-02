@@ -179,7 +179,7 @@ test('the manifest has no entries that are neither reachable nor declared', () =
   const reached = new Set([...W.walk({}).reached].map((f) => W.relOf(f)))
   const DECLARED_UNREACHABLE = [
     // Data, not code: the walk follows .js and .ps1 only.
-    'docs/governance/canary-work-order.draft.json',
+    'docs/governance/canary-work-order-2step.draft.json',
     // Consulted through the gate's injected killSwitch option rather than by name.
     'src/computer/killSwitch.js',
     // The two files that DEFINE what is covered. Neither is required by production, and leaving

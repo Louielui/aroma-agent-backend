@@ -66,6 +66,9 @@ function sealedOrder (approvalId) {
     timeoutSec: 300,
     steps: [{ n: 1, action: 'open_app', appId: 'notepad' }]
   }
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
   o.orderHash = computeOrderHash(o)
   return o
 }

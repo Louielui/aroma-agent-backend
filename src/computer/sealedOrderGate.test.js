@@ -33,6 +33,9 @@ function seal (over = {}) {
       { n: 3, action: 'save', fileName: 'canary-1.txt', bind: Object.assign({}, BIND) }
     ]
   }, over)
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
   if (!o.orderHash) o.orderHash = computeOrderHash(o)
   return o
 }
@@ -145,6 +148,9 @@ test('*** the limits are carried IN the order, and bounded ***', () => {
   for (const over of [{ maxSteps: 11 }, { maxSteps: 0 }, { maxSteps: 3.5 }, { maxSteps: '3' },
     { timeoutSec: 301 }, { timeoutSec: 0 }, { timeoutSec: null }]) {
     const o = seal(over)
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
     o.orderHash = computeOrderHash(o)
     assert.equal(verifyUnlock(Object.assign({ action: 'type_text', order: o }, ON)).refusal,
       'limits_exceeded', JSON.stringify(over))

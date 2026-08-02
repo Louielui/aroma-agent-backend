@@ -1,0 +1,21 @@
+{
+  "orderId": "wo_canary_notepad_2step_1",
+  "approvalId": "",
+  "sealed": true,
+  "sealedText": "Aroma Computer Operator canary. Two steps. Round 1.",
+  "maxSteps": 2,
+  "timeoutSec": 300,
+  "orderHash": "",
+  "steps": [
+    {
+      "n": 1,
+      "action": "open_app",
+      "appId": "notepad"
+    },
+    {
+      "n": 2,
+      "action": "type_text",
+      "text": "Aroma Computer Operator canary. Two steps. Round 1."
+    }
+  ]
+}

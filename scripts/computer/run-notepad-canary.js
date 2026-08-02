@@ -121,8 +121,18 @@ function preflight (opts = {}) {
   // This one stays, and the distinction is the whole point of the removals below it: it reads a
   // field of the document the Owner signed and compares it to a constant. It touches no disk,
   // so it is a question this session can actually answer.
-  if (receipt.approvedOrder.allowedPath !== ALLOWED_DIR) {
-    return fail('allowed_path_unexpected', 'The approved folder is not the one this canary uses.', receipt.approvedOrder.allowedPath)
+  // TWO-STEP SCOPE, 2026-08-02: it tracks the SAVE, exactly as the seal does. An order with a
+  // save must name this folder; an order without one must not name a folder at all, because
+  // there is nothing to bound. Checking both directions here means the Owner screen cannot
+  // approve a save-shaped scope and execute a two-step one, or the reverse.
+  const approvedSaves = Array.isArray(receipt.approvedOrder.steps) &&
+    receipt.approvedOrder.steps.some((s) => s && s.action === 'save')
+  if (approvedSaves) {
+    if (receipt.approvedOrder.allowedPath !== ALLOWED_DIR) {
+      return fail('allowed_path_unexpected', 'The approved folder is not the one this canary uses.', receipt.approvedOrder.allowedPath)
+    }
+  } else if (receipt.approvedOrder.allowedPath !== undefined) {
+    return fail('allowed_path_unexpected', 'The approval names a folder but writes no file.', receipt.approvedOrder.allowedPath)
   }
 
   // ── REMOVED 2026-08-01: dirExists, listDir, fileExists, auditWritable ───

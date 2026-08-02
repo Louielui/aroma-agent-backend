@@ -53,6 +53,9 @@ function seal (over = {}) {
       { n: 3, action: 'save', fileName: 'canary-1.txt' }
     ]
   }, over)
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
   if (!o.orderHash) o.orderHash = computeOrderHash(o)
   return o
 }

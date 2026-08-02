@@ -141,7 +141,9 @@ const PACKAGE_FILES = Object.freeze([
   // the hands
   'scripts/computer/uiaCanary.ps1',
   // the work order itself travels with the package: it is what the code will be pointed at
-  'docs/governance/canary-work-order.draft.json',
+  // The TWO-STEP order. The superseded three-step one is deliberately NOT packaged: dead
+  // weight in the package is how re-approval becomes a reflex, and it can no longer be run.
+  'docs/governance/canary-work-order-2step.draft.json',
 
   // ── ADDED 2026-07-31, after a transitive require walk found them ────────
   // The first list was written by hand from what seemed relevant, and a walk from the

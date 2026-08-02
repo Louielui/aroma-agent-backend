@@ -209,7 +209,7 @@ test('*** 4. a changed execution package -> 0 desktop actions ***', () => {
 
 test('*** 5. a changed work order -> 0 desktop actions ***', () => {
   const a = approved()
-  const t = A.readOrder(a.orderFile); t.steps[2].fileName = 'elsewhere.txt'
+  const t = A.readOrder(a.orderFile); t.steps[1].text = t.steps[1].text + ' TAMPERED'
   fs.writeFileSync(a.orderFile, JSON.stringify(t))
 
   const { spy, ledger } = fakeLedger()

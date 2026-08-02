@@ -133,8 +133,12 @@ test('*** no action, no text, no path, no command survives the crossing ***', ()
 
   // Not just absent keys: the approved order's actual CONTENT must not appear anywhere in the
   // bytes, under any key. The order says open Notepad, type a sealed string, save canary-1.txt.
+  // TWO-STEP SCOPE, 2026-08-02: 'canary-1.txt' and the folder are gone from the leak list. Not
+  // because leaking them became acceptable, but because the order no longer contains them — and
+  // an assertion that nothing leaked a string nothing has is a pass that means nothing. The
+  // sealed text takes their place: it is the longest, most distinctive thing the order carries.
   const text = c.bytes.toString('utf8')
-  for (const leak of ['canary-1.txt', 'open_app', 'type_text', 'save_as', 'C:\\\\Aroma', 'ComputerOperator-Test']) {
+  for (const leak of ['open_app', 'type_text', 'save_as', 'Aroma Computer Operator canary', 'C:\\\\Aroma', 'ComputerOperator-Test']) {
     assert.equal(text.includes(leak), false, 'the work leaked into the request: ' + leak)
   }
   // The one permitted mention of the app is the label naming WHICH approved task is pointed at.
@@ -143,8 +147,8 @@ test('*** no action, no text, no path, no command survives the crossing ***', ()
   // Positive control: the order really does contain those things, so their absence above means
   // something. Without this the assertions could be passing over an empty order.
   const order = JSON.stringify(c.a.receipt.approvedOrder)
-  assert.ok(order.includes('canary-1.txt'), 'the approved order does specify a filename')
-  assert.ok(/open_app|type_text/.test(order), 'and does specify actions')
+  assert.ok(order.includes('Aroma Computer Operator canary'), 'the approved order does carry the sealed text')
+  assert.ok(/open_app/.test(order) && /type_text/.test(order), 'and does specify both actions')
 })
 
 test('*** the consumer accepts what the producer wrote, byte for byte ***', () => {

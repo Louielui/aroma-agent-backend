@@ -33,7 +33,10 @@ const { computeOrderHash, ALLOWED_PATH, LIMITS } = require('../../src/computer/s
 const pkg = require('./executionPackage')
 
 const REPO = path.resolve(__dirname, '..', '..')
-const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order.draft.json')
+// THE TWO-STEP ORDER. The three-step one is superseded and never executed under final scope —
+// see canary-work-order.SUPERSEDED.md. It is deliberately NOT reachable from here, so an old
+// order cannot be approved by habit.
+const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order-2step.draft.json')
 // ── A FIXED ABSOLUTE PATH, NOT ONE RELATIVE TO THE RUNNING TREE ───────────
 // This was path.join(REPO, '.aroma', 'owner-approvals'), and REPO is resolved from __dirname.
 // On the Owner's side that is the repo, which is right. On the COMPANION's side the same code
@@ -108,14 +111,25 @@ function summarise (order) {
   const type = order.steps.find((s) => s.action === 'type_text')
   const open = order.steps.find((s) => s.action === 'open_app')
 
+  // ── THE SCREEN TRACKS THE ORDER. Owner decision 2026-08-02. ──────────────
+  // The canary shrank to open_app + type_text. A screen that still said "File written" and
+  // named a folder would be asking for consent to something the order cannot do — and with
+  // allowedPath now absent it would literally have printed "undefined\canary-1.txt". The lines
+  // about files exist only when there is a save.
   lines.push(['Application', open ? 'Notepad only - nothing else is opened' : '(none)'])
   lines.push(['Text typed', type ? JSON.stringify(type.text) : '(none)'])
-  lines.push(['File written', save ? order.allowedPath + '\\' + save.fileName : '(none)'])
-  lines.push(['Folder', order.allowedPath + '  (nowhere else)'])
-  lines.push(['Overwrite', 'never - refuses if the file already exists'])
+  if (save) {
+    lines.push(['File written', order.allowedPath + '\\' + save.fileName])
+    lines.push(['Folder', order.allowedPath + '  (nowhere else)'])
+    lines.push(['Overwrite', 'never - refuses if the file already exists'])
+  } else {
+    lines.push(['File written', 'NOTHING - this order does not save and creates no file'])
+  }
   lines.push(['Steps', order.steps.map((s) => s.n + '. ' + s.action).join('   ')])
   lines.push(['Time limit', order.timeoutSec + ' seconds, then it stops'])
-  lines.push(['Afterwards', 'Notepad is closed; the file stays for you to check and delete'])
+  lines.push(['Afterwards', save
+    ? 'Notepad is closed; the file stays for you to check and delete'
+    : 'Notepad is closed and nothing is left behind'])
   lines.push(['Not allowed', 'internet, other windows, other folders, deleting anything'])
   return lines
 }

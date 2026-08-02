@@ -489,15 +489,63 @@ switch ($op) {
   'cleanup' {
     # Bounded to the process we recorded. A cleanup that could close anything
     # else would be a worse failure than the one it is cleaning up after.
+    #
+    # ---- WHY THIS NO LONGER JUST SAYS closed = true -------------------
+    # It used to call CloseMainWindow and report closed:true without looking.
+    # MEASURED 2026-08-02: on a DIRTY document CloseMainWindow raises a save
+    # confirmation dialog and the process does NOT exit. type_text makes the
+    # document dirty, so in the two-step canary that is the NORMAL case, not an
+    # edge one - the old code would have reported a clean shutdown with Notepad
+    # still on screen, a dialog open, and the Owner told it was finished.
+    #
+    # So every claim below is measured after the fact, and Stop-Process is the
+    # bounded guarantee: our own pid, session checked twice, and it cannot write
+    # a file or press anything.
     $procId = [int] $payload.bind.processId
-    try {
-      $proc = Get-Process -Id $procId -ErrorAction Stop
-      if ($proc.SessionId -ne [int] $payload.bind.sessionId) { Emit-Refusal 'session_changed' 'refusing to close a process in another session' }
-      $proc.CloseMainWindow() | Out-Null
-      Start-Sleep -Milliseconds 500
-      Emit-Result @{ ok = $true; closed = $true }
-    } catch {
-      Emit-Result @{ ok = $true; closed = $false; note = 'process already gone' }
+    $sessionId = [int] $payload.bind.sessionId
+
+    $proc = $null
+    try { $proc = Get-Process -Id $procId -ErrorAction Stop } catch { $proc = $null }
+    if ($null -eq $proc) {
+      Emit-Result @{ ok = $true; closed = $true; method = 'already_gone'; processExited = $true; notepadWindowsAfter = @(Get-NotepadWindows).Count; forced = $false }
+    }
+    if ($proc.SessionId -ne $sessionId) { Emit-Refusal 'session_changed' 'refusing to close a process in another session' }
+
+    $method = 'CloseMainWindow'
+    $forced = $false
+    $null = $proc.CloseMainWindow()
+    Start-Sleep -Milliseconds 1200
+
+    $still = $null
+    try { $still = Get-Process -Id $procId -ErrorAction Stop } catch { $still = $null }
+
+    if ($null -ne $still) {
+      # The confirmation dialog is up, or the app declined to close. NOTHING is
+      # pressed to get past it: a "Don't save" button is exactly as unreachable
+      # as the Save button was, and guessing at one would be the same mistake.
+      # Terminate the bound process instead. It cannot save, and it is ours.
+      if ($still.SessionId -ne $sessionId) { Emit-Refusal 'session_changed' 'process changed session during cleanup' }
+      Stop-Process -Id $procId -Force
+      $forced = $true
+      $method = 'Stop-Process after CloseMainWindow did not exit'
+      Start-Sleep -Milliseconds 800
+    }
+
+    $exited = $false
+    try { $null = Get-Process -Id $procId -ErrorAction Stop } catch { $exited = $true }
+
+    # MEASURED, not asserted. Every one of these is read after the fact, and a
+    # cleanup that did not clean up reports ok = false.
+    $winsAfter = @(Get-NotepadWindows).Count
+    $procsAfter = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.ProcessName -ieq 'notepad' }).Count
+    Emit-Result @{
+      ok = ($exited -and $winsAfter -eq 0)
+      closed = $exited
+      processExited = $exited
+      forced = $forced
+      method = $method
+      notepadWindowsAfter = $winsAfter
+      notepadProcessesAfter = $procsAfter
     }
   }
 

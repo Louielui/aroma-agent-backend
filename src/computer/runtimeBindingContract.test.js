@@ -54,6 +54,9 @@ function seal (over = {}) {
       { n: 3, action: 'save', fileName: 'canary-1.txt' }
     ]
   }, over)
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
   if (!o.orderHash) o.orderHash = computeOrderHash(o)
   return o
 }
@@ -83,6 +86,9 @@ test('*** 1. an order carrying a bind is refused, with ZERO desktop actions ***'
   for (const idx of [1, 2]) {
     const o = seal()
     o.steps[idx].bind = Object.assign({}, BIND)
+    // allowedPath bounds a SAVE. An order without one must not carry it (verifySeal refuses
+    // it as unexpected_field), so overrides that drop the save drop the path with it.
+    if (!o.steps.some((s) => s && s.action === 'save')) delete o.allowedPath
     o.orderHash = computeOrderHash(o)
     const d = fakeDesktop()
     const res = mk(d).execute(o, ON)
