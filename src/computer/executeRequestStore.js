@@ -236,7 +236,87 @@ function createRequestStore (deps = {}) {
     },
 
     stateOf (requestId) { const f = findFile(requestId); return f ? f.state : null },
-    recordOf (requestId) { const f = findFile(requestId); return f ? readRecord(f.file) : null }
+    recordOf (requestId) { const f = findFile(requestId); return f ? readRecord(f.file) : null },
+
+    /**
+     * WHICH REQUEST A COMPANION SHOULD PICK UP — and the retirement of the ones it should not.
+     *
+     * ── THE DEFECT THIS REPLACES ──────────────────────────────────────────
+     * The Companion used to do `readdirSync(dir).filter(CREATED__).sort()[0]`. Filenames are
+     * `CREATED__req_<random hex>.json`, so that sorted on RANDOMNESS, not on time. It read like
+     * "take the oldest" and was "take whichever random id happens to sort first".
+     *
+     * On the Owner's machine that was `req_1edf3e52…` from the previous day, expired for 20.6
+     * hours. It won every sort ('1' < 'b' < 'f'), so every fresh approval was shadowed by one
+     * dead file and failed with "too old to use" — deterministically, not intermittently, and
+     * for as long as that file stayed on disk.
+     *
+     * ── THE RULE, STATED ONCE ─────────────────────────────────────────────
+     *   1. expired requests are RETIRED and never considered;
+     *   2. among what remains, the one with the NEWEST request.createdAt wins;
+     *   3. exact ties break on requestId, ascending, so the choice is total and repeatable.
+     *
+     * NEWEST, because a request records an intention the Owner has just expressed. If two are
+     * live, the later one is what he most recently asked for; picking the older would act on a
+     * decision he has already replaced. One at a time stays the design — this only makes WHICH
+     * one an answer instead of an accident.
+     *
+     * Ordering uses `request.createdAt`, the same field `request.expiresAt` is derived from, so
+     * "newest" and "still alive" are measured against the same clock and cannot disagree.
+     *
+     * ── RETIREMENT MUST NOT BECOME A NEW WAY TO FAIL ──────────────────────
+     * Every rename is individually caught. A retirement that fails is COUNTED and reported, and
+     * the scan carries on: a valid request must not be held hostage by a stale file that cannot
+     * be renamed because something else has it open. Nothing is deleted — the record keeps its
+     * content and only the state prefix changes, which is the same move `claim()` makes and
+     * leaves the history readable.
+     */
+    selectPending () {
+      ensure()
+      let names = []
+      try { names = fsx.readdirSync(dir) } catch (_) { return { ok: false, reason: 'no_request_dir', candidates: 0, expiredRetired: 0, retireFailures: 0 } }
+
+      const t = now()
+      const live = []
+      let expiredSeen = 0
+      let retired = 0
+      let retireFailures = 0
+      let unreadable = 0
+
+      for (const n of names) {
+        if (!n.startsWith('CREATED__') || !n.endsWith('.json')) continue
+        const file = path.join(dir, n)
+        const rec = readRecord(file)
+        // A file that cannot be parsed is not silently skipped into oblivion: it is counted and
+        // reported, so "nothing to do" can never mean "everything here is broken".
+        if (!rec || !rec.request || !rec.request.requestId) { unreadable++; continue }
+
+        const exp = Date.parse(rec.request.expiresAt)
+        if (!Number.isFinite(exp) || t >= exp) {
+          expiredSeen++
+          try {
+            fsx.renameSync(file, nameFor('EXPIRED', rec.request.requestId))
+            retired++
+          } catch (_) {
+            // Best effort, by design. It stays CREATED and will be skipped again next time.
+            retireFailures++
+          }
+          continue
+        }
+        live.push({ file, record: rec, createdAt: Date.parse(rec.request.createdAt), requestId: rec.request.requestId })
+      }
+
+      live.sort((a, b) => (b.createdAt - a.createdAt) || (a.requestId < b.requestId ? -1 : a.requestId > b.requestId ? 1 : 0))
+
+      const base = { candidates: live.length, expiredSeen, expiredRetired: retired, retireFailures, unreadable }
+      if (live.length === 0) {
+        // Deliberately NOT 'too old to use'. That sentence describes a request; this is the
+        // absence of one, and telling the Owner his fresh approval expired when it did not is
+        // exactly how four rounds were spent looking at the wrong thing.
+        return Object.assign({ ok: false, reason: 'no_pending_request' }, base)
+      }
+      return Object.assign({ ok: true, file: live[0].file, record: live[0].record, requestId: live[0].requestId }, base)
+    }
   }
 }
 

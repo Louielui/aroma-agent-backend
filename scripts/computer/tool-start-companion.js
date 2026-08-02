@@ -89,12 +89,22 @@ T.out('')
 T.out('  To stop waiting, close this window.')
 T.out('')
 
-/** The one request this process will ever handle. After it, the Companion stops. */
-function pendingRequestFile () {
-  let names = []
-  try { names = fs.readdirSync(T.REQUEST_DIR) } catch (_) { return null }
-  const created = names.filter((n) => n.startsWith('CREATED__') && n.endsWith('.json')).sort()
-  return created.length ? path.join(T.REQUEST_DIR, created[0]) : null
+/**
+ * The one request this process will ever handle. After it, the Companion stops.
+ *
+ * WHICH one is decided by the store — see selectPending(). It used to be decided here, by
+ * `readdirSync(...).sort()[0]`, which sorted filenames whose distinguishing part is random hex.
+ * That is not "the oldest" and not "the newest"; it is whichever random id sorts first, and a
+ * single expired file from the previous day won it every time and shadowed every fresh approval.
+ *
+ * The rule now lives with the naming convention it depends on, in one place, and it is: retire
+ * anything expired, then take the NEWEST live request by request.createdAt.
+ */
+function selectPending () {
+  const rs = store.createRequestStore({ dir: T.REQUEST_DIR })
+  try { return rs.selectPending() } catch (e) {
+    return { ok: false, reason: 'select_failed', detail: (e && e.message) || String(e), candidates: 0, expiredRetired: 0, retireFailures: 0 }
+  }
 }
 
 function handle (file) {
@@ -180,8 +190,22 @@ function handle (file) {
 }
 
 const timer = setInterval(() => {
-  const file = pendingRequestFile()
-  if (!file) return
+  const sel = selectPending()
+
+  // RETIREMENT IS REPORTED WHEN IT HAPPENS, not buried. A dead file being cleared away is the
+  // difference between "nothing has arrived yet" and "something arrived and was too old", and
+  // the Owner spent two account switches unable to tell those two apart.
+  if (sel.expiredRetired > 0) {
+    T.out('  Cleared ' + sel.expiredRetired + ' expired request(s) that were waiting here.')
+  }
+  if (sel.retireFailures > 0) {
+    T.out('  ' + sel.retireFailures + ' expired request(s) could not be filed away; they are being ignored.')
+  }
+  if (sel.unreadable > 0) {
+    T.out('  ' + sel.unreadable + ' request file(s) could not be read; they are being ignored.')
+  }
+
+  if (!sel.ok) return
   clearInterval(timer)
-  process.exitCode = handle(file)
+  process.exitCode = handle(sel.file)
 }, POLL_MS)
