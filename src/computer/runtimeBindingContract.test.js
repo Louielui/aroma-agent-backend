@@ -8,7 +8,7 @@
  * route:
  *
  *   . validateOrder REQUIRED every bind field to be non-null before execution;
- *   . processId, sessionId, windowHandle and uiaControlId do not exist until open_app has run;
+ *   . processId, sessionId, windowHandle and the control identity do not exist until open_app has run;
  *   . bind was inside the hash — filling it changed the order hash and invalidated the approval;
  *   . and a pre-filled, re-approved order would then be refused as stale_binding, because the
  *     executor compares each step's bind against the binding the REAL open_app produced.
@@ -36,7 +36,7 @@ const A = require('../../scripts/computer/ownerApproval')
 
 const TEXT = 'Aroma Computer Operator canary. Round 1.'
 const ALLOWED = 'C:\\Aroma\\ComputerOperator-Test'
-const BIND = Object.freeze({ processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' })
+const BIND = Object.freeze({ processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' })
 const ON = { flagOn: true }
 
 function seal (over = {}) {
@@ -133,7 +133,7 @@ test('*** 4. open_app succeeds with NO binding -> zero further actions ***', () 
 })
 
 test('*** 5. a binding missing ANY field -> zero further actions ***', () => {
-  for (const f of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
+  for (const f of ['processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     for (const v of [undefined, null, '']) {
       const bind = Object.assign({}, BIND)
       if (v === undefined) delete bind[f]; else bind[f] = v
@@ -175,7 +175,7 @@ test('*** 8. verifyBinding failing is stale_binding, and stops the run ***', () 
 })
 
 test('*** 9. process, window or control changing is stale_binding ***', () => {
-  for (const [f, v] of [['processId', 9999], ['windowHandle', '0xDEAD'], ['uiaControlId', 'Edit9']]) {
+  for (const [f, v] of [['processId', 9999], ['windowHandle', '0xDEAD'], ['uiaRuntimeId', '42.9.9.9']]) {
     const d = fakeDesktop({ verifyBinding: () => ({ ok: true, [f]: v }) })
     const res = mk(d).execute(seal(), ON)
     assert.equal(res.refusal, 'stale_binding', f)

@@ -37,7 +37,7 @@
 const crypto = require('node:crypto')
 const gate = require('./sealedOrderGate')
 
-const { ACTION_FIELDS, BIND_FIELDS, LIMITS, ALLOWED_PATH, computeOrderHash } = gate
+const { ACTION_FIELDS, BIND_FIELDS, BIND_REQUIRED, LIMITS, ALLOWED_PATH, computeOrderHash } = gate
 
 /** The only actions that exist. Anything else is a refusal, not an extension point. */
 const ACTIONS = Object.freeze(['open_app', 'type_text', 'save'])
@@ -173,11 +173,17 @@ function createComputerExecutor (deps = {}) {
         return { ok: false, refusal: 'unexpected_field', reason: 'binding carries an unknown field: ' + k }
       }
     }
-    for (const f of BIND_FIELDS) {
+    // BIND_REQUIRED, not BIND_FIELDS. uiaAutomationId is an allowed key that may legitimately be
+    // empty: the packaged Notepad's document has no AutomationId, and requiring one was requiring
+    // something Windows does not provide. It is recorded, not depended on.
+    for (const f of BIND_REQUIRED) {
       const v = bind[f]
       if (v === undefined || v === null || v === '') {
         return { ok: false, refusal: 'missing_binding', reason: 'binding.' + f + ' is missing' }
       }
+    }
+    if (bind.uiaAutomationId !== undefined && typeof bind.uiaAutomationId !== 'string') {
+      return { ok: false, refusal: 'bad_binding', reason: 'binding.uiaAutomationId must be a string when present' }
     }
     // Types and plausible values, not merely presence. A processId of 0 or a negative one is not
     // a process; a blank handle is not a handle.
@@ -187,7 +193,7 @@ function createComputerExecutor (deps = {}) {
     if (!Number.isInteger(bind.sessionId) || bind.sessionId < 0) {
       return { ok: false, refusal: 'bad_binding', reason: 'binding.sessionId is not a session id' }
     }
-    for (const f of ['windowHandle', 'uiaControlId']) {
+    for (const f of ['windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
       if (typeof bind[f] !== 'string' || bind[f].trim() === '') {
         return { ok: false, refusal: 'bad_binding', reason: 'binding.' + f + ' is not a handle' }
       }
@@ -207,7 +213,10 @@ function createComputerExecutor (deps = {}) {
         processId: bind.processId,
         sessionId: bind.sessionId,
         windowHandle: bind.windowHandle,
-        uiaControlId: bind.uiaControlId
+        uiaRuntimeId: bind.uiaRuntimeId,
+        uiaControlType: bind.uiaControlType,
+        uiaClassName: bind.uiaClassName,
+        uiaAutomationId: bind.uiaAutomationId === undefined ? '' : bind.uiaAutomationId
       })
     }
   }

@@ -124,7 +124,7 @@ test('*** it measures the canary\'s OWN logic, not a paraphrase of it ***', () =
   for (const shared of [
     'ControlType]::Document',                 // Get-EditControl tries Document first
     'ControlType]::Edit',                     // then Edit
-    "Name 'File name:'",                      // the filename field lookup
+    'System.ItemNameDisplay',                 // the filename field, by AutomationId
     'ProcessIdProperty'                       // Get-SoleWindowForProcess's condition
   ]) {
     assert.ok(canary.includes(shared), 'canary uses: ' + shared)

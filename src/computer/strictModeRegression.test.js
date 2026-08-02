@@ -383,7 +383,7 @@ test('*** uiaCanary validates required fields BEFORE touching any property ***',
   assert.ok(dispatchAt > validateAt, 'validation runs BEFORE the op dispatch')
   assert.match(code, /Emit-Refusal 'missing_field'/, 'a missing field is a named refusal')
   // A binding is all four fields or none.
-  for (const f of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
+  for (const f of ['processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     assert.ok(code.includes(f), 'bind.' + f + ' is checked')
   }
 })

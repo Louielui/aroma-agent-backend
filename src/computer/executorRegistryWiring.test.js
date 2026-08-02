@@ -19,7 +19,7 @@ const { createOrderRegistry } = require('./orderRegistry')
 const { createComputerSupervisor } = require('./computerSupervisor')
 const { computeOrderHash, ALLOWED_PATH } = require('./sealedOrderGate')
 
-const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' }
+const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' }
 const TEXT = 'Aroma Computer Operator canary. Round 1.'
 const ON = { flagOn: true }
 

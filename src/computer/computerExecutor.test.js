@@ -24,7 +24,7 @@ const {
 
 /* ── fakes ────────────────────────────────────────────────────────────────── */
 
-const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' }
+const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' }
 const TEXT = 'Aroma Computer Operator canary. Round 1.'
 
 /** Counts every desktop call. `calls` is the number the fail-closed tests assert on. */
@@ -307,7 +307,7 @@ test('*** an order carrying a runtime binding is refused outright ***', () => {
   // This test used to put a WRONG binding in the order and expect stale_binding. An order can no
   // longer carry a binding at all: those values do not exist until open_app has run, and while
   // they lived in the sealed order the approved canary could not execute by any route.
-  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
+  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     const o = seal()
     o.steps[1].bind = Object.assign({}, BIND, { [field]: 'WRONG' })
     o.orderHash = computeOrderHash(o)
@@ -320,7 +320,7 @@ test('*** an order carrying a runtime binding is refused outright ***', () => {
 
 test('*** the binding the executor USES is the one open_app produced, changed = stale ***', () => {
   // The property the old test was reaching for, relocated to where the binding now lives.
-  for (const field of ['processId', 'windowHandle', 'uiaControlId']) {
+  for (const field of ['processId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     const d = fakeDesktop({
       // verifyBinding reports a DIFFERENT identity than the one open_app handed back.
       verifyBinding: () => ({ ok: true, [field]: field === 'processId' ? 9999 : 'CHANGED' })
@@ -354,7 +354,7 @@ test('*** open_app MUST return a full, well-formed binding ***', () => {
   // never legitimately be satisfied; it is now checked on what open_app actually returns, where
   // it can be — and must be, because that binding is the only thing saying which window the next
   // two steps act on.
-  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
+  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     const bind = Object.assign({}, BIND); delete bind[field]
     const d = fakeDesktop({ openApp: () => ({ bind, detail: 'notepad' }) })
     const res = mk(fakeStore(), d).execute(seal(), ON)
@@ -372,7 +372,7 @@ test('*** open_app MUST return a full, well-formed binding ***', () => {
   const extra = fakeDesktop({ openApp: () => ({ bind: Object.assign({}, BIND, { tabId: 3 }), detail: 'n' }) })
   assert.equal(mk(fakeStore(), extra).execute(seal(), ON).refusal, 'unexpected_field')
   // And the values must be the right KIND of thing, not merely present.
-  for (const [f2, v] of [['processId', 0], ['processId', -1], ['processId', '4242'], ['windowHandle', 5], ['uiaControlId', '  ']]) {
+  for (const [f2, v] of [['processId', 0], ['processId', -1], ['processId', '4242'], ['windowHandle', 5], ['uiaRuntimeId', '  '], ['uiaControlType', '  '], ['uiaClassName', '  ']]) {
     const d = fakeDesktop({ openApp: () => ({ bind: Object.assign({}, BIND, { [f2]: v }), detail: 'n' }) })
     assert.equal(mk(fakeStore(), d).execute(seal(), ON).refusal, 'bad_binding', f2 + '=' + String(v))
   }

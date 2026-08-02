@@ -83,15 +83,25 @@ function createDesktopAdapter (deps = {}) {
     return res
   }
 
-  /** Every field must come back, or we do not have a binding — we have a guess. */
+  /**
+   * Every REQUIRED field must come back, or we do not have a binding — we have a guess.
+   *
+   * uiaAutomationId is carried but not required: the packaged Notepad's document has none, and
+   * demanding one was demanding something Windows does not supply. It is recorded so that a
+   * machine which DOES supply one shows up in the audit rather than going unnoticed.
+   */
   function bindingFrom (res) {
     const bind = {
       processId: res.processId,
       sessionId: res.sessionId,
       windowHandle: res.windowHandle,
-      uiaControlId: res.uiaControlId
+      uiaRuntimeId: res.uiaRuntimeId,
+      uiaControlType: res.uiaControlType,
+      uiaClassName: res.uiaClassName,
+      uiaAutomationId: res.uiaAutomationId === undefined || res.uiaAutomationId === null ? '' : res.uiaAutomationId
     }
     for (const k of Object.keys(bind)) {
+      if (k === 'uiaAutomationId') continue
       if (bind[k] === undefined || bind[k] === null || bind[k] === '') {
         throw fail('incomplete_binding', 'the helper did not return ' + k)
       }

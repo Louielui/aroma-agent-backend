@@ -16,7 +16,7 @@ const gate = require('./sealedOrderGate')
 const { verifyUnlock, verifySeal, computeOrderHash, ALLOWED_PATH, LIMITS, RESTRICTED_ACTIONS, NEVER_ACTIONS, CAP } = gate
 
 const TEXT = 'Aroma Computer Operator canary. Round 1.'
-const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' }
+const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' }
 
 function seal (over = {}) {
   const o = Object.assign({

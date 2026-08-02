@@ -145,6 +145,18 @@ function Show-Element {
   Say ($Indent + '  ClassName    : ' + (Fmt $cls))
 }
 
+# RuntimeId is what the binding now uses for "is this the same control".
+# Whether it SURVIVES a SetValue and a Save As has never been measured, and the
+# canary depends on it across three steps, so it is captured at three points.
+function Get-RuntimeIdString {
+  param($El)
+  if ($null -eq $El) { return '<null element>' }
+  $rt = ''
+  try { $rt = (@($El.GetRuntimeId()) -join '.') } catch { $rt = '' }
+  if ($rt -eq '') { return '<empty>' }
+  return $rt
+}
+
 function Test-ValuePattern {
   param($El)
   if ($null -eq $El) { return @{ supported = $false; readOnly = $null; value = $null; pattern = $null } }
@@ -305,6 +317,7 @@ Say ('     matched as               : ' + $editFound.matchedAs + '   (Document i
 Show-Element -El $edit -Label 'the control:' -Indent '     '
 
 $vpInfo = Test-ValuePattern -El $edit
+Say ('       RuntimeId    : ' + (Get-RuntimeIdString -El $edit))
 Say ('       ValuePattern : ' + $vpInfo.supported)
 Say ('       IsReadOnly   : ' + $(if ($null -eq $vpInfo.readOnly) { '<n/a>' } else { [string]$vpInfo.readOnly }))
 Say ''
@@ -331,8 +344,13 @@ if (-not $vpInfo.supported) {
 } elseif ($vpInfo.readOnly -eq $true) {
   Say '     the control is read-only -- type_text would refuse (control_read_only).' 'Red'
 } else {
+  $rtBefore = Get-RuntimeIdString -El $edit
   $vpInfo.pattern.SetValue($PROBE_TEXT)
   Start-Sleep -Milliseconds 250
+  $rtAfter = Get-RuntimeIdString -El $edit
+  Say ('     RuntimeId before SetValue : ' + $rtBefore)
+  Say ('     RuntimeId after  SetValue : ' + $rtAfter)
+  Say ('     RuntimeId SURVIVED        : ' + ($rtBefore -eq $rtAfter)) $(if ($rtBefore -eq $rtAfter) { 'Green' } else { 'Red' })
   $readBack = $null
   try { $readBack = [string] $vpInfo.pattern.Current.Value } catch { $readBack = $null }
   Say ('     wrote     : ' + (Fmt $PROBE_TEXT) + '   (' + $PROBE_TEXT.Length + ' chars)')
@@ -457,10 +475,67 @@ if ($menuOpened) {
          $(if ($null -eq $nvp.readOnly) { '<n/a>' } else { [string]$nvp.readOnly }))
     Say '         (NOT set -- this tool never puts a path in this box)'
 
+    # ---- THE UNRESOLVED QUESTION: WHAT IS THE SAVE CONTROL? -----------
+    # Name='Save' + ControlType=Button found NOTHING last time. Rather than
+    # guess which of the three plausible causes it is, every button-like control
+    # in the dialog is listed with its real Name, ControlType and AutomationId.
+    # Nothing here is invoked.
+    Say ''
+    Say '       EVERY BUTTON-LIKE CONTROL IN THE DIALOG:' 'Yellow'
+    $btnTypes = @(
+      @{ n = 'Button';      t = [System.Windows.Automation.ControlType]::Button },
+      @{ n = 'SplitButton'; t = [System.Windows.Automation.ControlType]::SplitButton },
+      @{ n = 'MenuItem';    t = [System.Windows.Automation.ControlType]::MenuItem },
+      @{ n = 'Hyperlink';   t = [System.Windows.Automation.ControlType]::Hyperlink }
+    )
+    $btnTotal = 0
+    foreach ($bt in $btnTypes) {
+      $els = $dlg.FindAll($SCOPE_DESC, (New-PropCondition $AUTO::ControlTypeProperty $bt.t))
+      if ($els.Count -eq 0) { continue }
+      Say ('         -- ' + $bt.n + ' (' + $els.Count + ') --')
+      foreach ($e in $els) {
+        $en = ''; try { $en = [string] $e.Current.Name } catch { }
+        $ea = ''; try { $ea = [string] $e.Current.AutomationId } catch { }
+        $ec = ''; try { $ec = [string] $e.Current.ClassName } catch { }
+        Say ('            Name ' + (Fmt $en).PadRight(28) + ' AutomationId ' + (Fmt $ea).PadRight(26) + ' Class ' + (Fmt $ec))
+        $btnTotal++
+      }
+    }
+    if ($btnTotal -eq 0) {
+      Say '         NONE FOUND IN THIS SUBTREE.' 'Red'
+      Say '         That points at the third cause: the dialog element being searched'
+      Say '         is not the whole dialog. The top-level list below is then the place'
+      Say '         to look.'
+    }
+
+    # If the buttons are not under $dlg, they are somewhere else in the tree.
+    # Enumerate the WHOLE desktop for button-like controls owned by this pid, so
+    # the answer exists either way and no third run is needed.
+    Say ''
+    Say '       BUTTON-LIKE CONTROLS ANYWHERE IN THIS PROCESS:' 'Yellow'
+    $anyBtns = $AUTO::RootElement.FindAll($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
+      (New-PropCondition $AUTO::ProcessIdProperty $realPid),
+      (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Button)))))
+    Say ('         Buttons with pid ' + $realPid + ' : ' + $anyBtns.Count)
+    foreach ($e in $anyBtns) {
+      $en = ''; try { $en = [string] $e.Current.Name } catch { }
+      $ea = ''; try { $ea = [string] $e.Current.AutomationId } catch { }
+      Say ('            Name ' + (Fmt $en).PadRight(28) + ' AutomationId ' + (Fmt $ea))
+    }
+
     $saveBtn = Get-ByName -Root $dlg -Name 'Save' ([System.Windows.Automation.ControlType]::Button)
     Say ''
-    Show-Element -El $saveBtn -Label 'the Save button:' -Indent '       '
+    Show-Element -El $saveBtn -Label 'what uiaCanary looks for (Name=Save, ControlType=Button):' -Indent '       '
     Say '         (NOT invoked)'
+
+    # And the filename field by the AutomationId the canary now uses, so the
+    # change made this round is confirmed by the same run that motivated it.
+    $byAutoId = $dlg.FindFirst($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
+      (New-PropCondition $AUTO::AutomationIdProperty 'System.ItemNameDisplay'),
+      (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))))
+    Say ''
+    Say ('       filename field by AutomationId System.ItemNameDisplay : ' + ($null -ne $byAutoId)) $(if ($null -ne $byAutoId) { 'Green' } else { 'Red' })
+    Say '         (this is what uiaCanary now uses as its ONLY lookup)'
 
     # ===================================================================
     #  4. Get-SoleWindowForProcess WHILE THE DIALOG IS OPEN

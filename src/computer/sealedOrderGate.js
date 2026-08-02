@@ -93,7 +93,54 @@ const ACTION_FIELDS = Object.freeze({
   save: Object.freeze(['action', 'n', 'fileName'])
 })
 
-const BIND_FIELDS = Object.freeze(['processId', 'sessionId', 'windowHandle', 'uiaControlId'])
+/**
+ * THE RUNTIME BINDING — what identifies the thing we are about to act on.
+ *
+ * ── WHY uiaControlId IS GONE (measured 2026-08-02) ────────────────────────
+ * It was `$edit.Current.AutomationId`, required non-empty. On this machine the packaged
+ * Notepad's document is:
+ *
+ *     ControlType  ControlType.Document
+ *     AutomationId <empty>
+ *     Name         'Text editor'
+ *     ClassName    'RichEditD2DPT'
+ *
+ * The AutomationId is empty because Windows did not give it one. Requiring it non-empty was
+ * enforcing somebody else's invariant — and one that is simply false here, so the canary would
+ * have refused every run, after opening Notepad, forever. We may only enforce invariants we
+ * create.
+ *
+ * ── WHAT REPLACES IT, AND WHY IT IS NOT "ANY DOCUMENT" ────────────────────
+ * Identity now comes from two things we DO establish:
+ *
+ *   1. UNIQUENESS INSIDE A WINDOW WE ALREADY IDENTIFIED. The window is pinned by pid +
+ *      native handle. Inside it there must be EXACTLY ONE Document (or, failing that, exactly
+ *      one Edit). Two would be `uia_control_ambiguous` and a refusal — never a choice. So
+ *      "the editable control of THAT window" is a description with exactly one referent, and
+ *      the uniqueness is a rule we impose rather than a property we hope for.
+ *
+ *   2. UIA's OWN RuntimeId, recorded at open_app and compared on every later step. It is the
+ *      identity UIA itself uses for "is this the same element", it is not localised, and it is
+ *      not something we invented — but unlike AutomationId it is always produced.
+ *
+ * ClassName and ControlType travel too. They are not identity on their own; they make a
+ * mismatch DIAGNOSABLE — "the RuntimeId changed and it is still a RichEditD2DPT Document" is a
+ * different problem from "the control is now something else".
+ *
+ * `uiaAutomationId` is still carried and is ALLOWED TO BE EMPTY. Recording what Windows says,
+ * without depending on it, is how the next machine's difference becomes visible instead of fatal.
+ */
+const BIND_FIELDS = Object.freeze([
+  'processId', 'sessionId', 'windowHandle',
+  'uiaRuntimeId', 'uiaControlType', 'uiaClassName',
+  'uiaAutomationId'
+])
+
+/** The subset that must be present AND non-empty. uiaAutomationId is deliberately not here. */
+const BIND_REQUIRED = Object.freeze([
+  'processId', 'sessionId', 'windowHandle',
+  'uiaRuntimeId', 'uiaControlType', 'uiaClassName'
+])
 
 /**
  * The seal covers everything the executor will act on, INCLUDING the limits and the allowed
@@ -198,6 +245,7 @@ module.exports = {
   LIMITS,
   ACTION_FIELDS,
   BIND_FIELDS,
+  BIND_REQUIRED,
   computeOrderHash,
   verifySeal,
   verifyUnlock

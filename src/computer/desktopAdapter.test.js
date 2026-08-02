@@ -18,7 +18,7 @@ const assert = require('node:assert/strict')
 
 const { createDesktopAdapter, OPS } = require('./desktopAdapter')
 
-const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' }
+const BIND = { processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' }
 
 /** Records every call, and answers whatever the test tells it to. */
 function fakeRunner (answers = {}) {
@@ -35,7 +35,7 @@ function fakeRunner (answers = {}) {
   }
 }
 
-const OPEN_OK = { ok: true, processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaControlId: 'Edit1' }
+const OPEN_OK = { ok: true, processId: 4242, sessionId: 1, windowHandle: '0x9001', uiaRuntimeId: '42.1234567.4.1', uiaControlType: 'ControlType.Document', uiaClassName: 'RichEditD2DPT', uiaAutomationId: '' }
 
 const mk = (answers, over = {}) => createDesktopAdapter(Object.assign({ runner: fakeRunner(answers) }, over))
 
@@ -65,7 +65,7 @@ test('*** only notepad, and it is launched by NAME, never by path ***', () => {
 })
 
 test('*** an incomplete binding is refused — a partial identity is not an identity ***', () => {
-  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaControlId']) {
+  for (const field of ['processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName']) {
     const res = Object.assign({}, OPEN_OK); delete res[field]
     assert.throws(() => mk({ open_app: res }).openApp({ appId: 'notepad' }), /incomplete_binding/, field)
   }

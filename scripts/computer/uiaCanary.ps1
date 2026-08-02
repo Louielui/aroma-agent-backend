@@ -109,15 +109,54 @@ function Get-NotepadWindows {
 
 # The editable surface. Notepad's document area is the only control this
 # script will ever set text on.
-function Get-EditControl {
+# THE EDITABLE SURFACE, AND WHY IT IS FOUND BY UNIQUENESS RATHER THAN BY ID.
+#
+# It used to be FindFirst - "the first Document in this window" - and its
+# AutomationId was the binding's identity. Measured 2026-08-02 on this machine:
+#
+#     ControlType  ControlType.Document
+#     AutomationId <empty>
+#     Name         'Text editor'
+#     ClassName    'RichEditD2DPT'
+#
+# The AutomationId is empty because Windows does not give it one, so requiring
+# it non-empty would refuse every run. And FindFirst is not identity either: it
+# answers "a Document", not "the Document".
+#
+# So the rule is EXACTLY ONE. The window is already pinned by pid and native
+# handle; inside it there must be exactly one Document, or failing that exactly
+# one Edit. Two is a refusal, never a choice. That makes "the editable control
+# of THAT window" a description with one referent - an invariant we impose,
+# rather than a property we hope Windows supplies.
+function Get-SoleEditControl {
   param($Window)
-  $cond = New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Document)
-  $el = $Window.FindFirst($SCOPE_DESC, $cond)
-  if ($null -eq $el) {
-    $cond2 = New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)
-    $el = $Window.FindFirst($SCOPE_DESC, $cond2)
-  }
-  return $el
+  $docs = $Window.FindAll($SCOPE_DESC, (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Document)))
+  if ($docs.Count -eq 1) { return @{ ok = $true; element = $docs[0]; matchedAs = 'Document' } }
+  if ($docs.Count -gt 1) { return @{ ok = $false; reason = 'uia_control_ambiguous'; detail = "$($docs.Count) Document controls" } }
+  $edits = $Window.FindAll($SCOPE_DESC, (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))
+  if ($edits.Count -eq 1) { return @{ ok = $true; element = $edits[0]; matchedAs = 'Edit' } }
+  if ($edits.Count -gt 1) { return @{ ok = $false; reason = 'uia_control_ambiguous'; detail = "$($edits.Count) Edit controls" } }
+  return @{ ok = $false; reason = 'uia_control_missing'; detail = 'no Document or Edit control' }
+}
+
+# The control's identity, as UIA itself expresses it.
+#
+# RuntimeId is what UIA uses for "is this the same element": produced by the
+# framework, not localised, and - unlike AutomationId - always present.
+# ControlType and ClassName travel alongside so that a mismatch is DIAGNOSABLE:
+# "the RuntimeId changed and it is still a RichEditD2DPT Document" is a
+# different problem from "the control is now something else".
+#
+# AutomationId is recorded and never depended on. Writing down what Windows says
+# is how the next machine's difference becomes visible instead of fatal.
+function Get-ControlIdentity {
+  param($El)
+  $rt = ''
+  try { $rt = (@($El.GetRuntimeId()) -join '.') } catch { $rt = '' }
+  $ct = ''; try { $ct = [string] $El.Current.ControlType.ProgrammaticName } catch { }
+  $cn = ''; try { $cn = [string] $El.Current.ClassName } catch { }
+  $ai = ''; try { $ai = [string] $El.Current.AutomationId } catch { }
+  return @{ runtimeId = $rt; controlType = $ct; className = $cn; automationId = $ai }
 }
 
 function Get-ByName {
@@ -160,10 +199,19 @@ function Resolve-Binding {
   $handle = [string] $win.Current.NativeWindowHandle
   if ($handle -ne [string] $Bind.windowHandle) { return @{ ok = $false; reason = 'window_changed' } }
 
-  $edit = Get-EditControl -Window $win
-  if ($null -eq $edit) { return @{ ok = $false; reason = 'uia_control_missing' } }
+  $sole = Get-SoleEditControl -Window $win
+  if (-not $sole.ok) { return @{ ok = $false; reason = $sole.reason } }
 
-  return @{ ok = $true; window = $win; edit = $edit; processId = $procId; sessionId = $proc.SessionId; windowHandle = $handle }
+  # THE CONTROL MUST BE THE SAME CONTROL, not merely the same kind of control.
+  # Uniqueness above says there is only one candidate; this says the candidate is
+  # the one open_app bound. Without it, a window that rebuilt its document would
+  # be typed into as though nothing had happened.
+  $id = Get-ControlIdentity -El $sole.element
+  if ($id.runtimeId -ne [string] $Bind.uiaRuntimeId) { return @{ ok = $false; reason = 'uia_control_changed' } }
+  if ($id.controlType -ne [string] $Bind.uiaControlType) { return @{ ok = $false; reason = 'uia_control_changed' } }
+  if ($id.className -ne [string] $Bind.uiaClassName) { return @{ ok = $false; reason = 'uia_control_changed' } }
+
+  return @{ ok = $true; window = $win; edit = $sole.element; processId = $procId; sessionId = $proc.SessionId; windowHandle = $handle }
 }
 
 # --- ops ------------------------------------------------------------------
@@ -190,7 +238,9 @@ $REQUIRED_FIELDS = @{
   'verify_binding' = @('bind')
   'cleanup'        = @('bind')
 }
-$BIND_FIELDS = @('processId', 'sessionId', 'windowHandle', 'uiaControlId')
+# uiaAutomationId is NOT here: it is carried in the binding and may be empty,
+# because the packaged Notepad's document has none. Required fields only.
+$BIND_FIELDS = @('processId', 'sessionId', 'windowHandle', 'uiaRuntimeId', 'uiaControlType', 'uiaClassName')
 
 if (-not $REQUIRED_FIELDS.ContainsKey($op)) { Emit-Refusal 'unknown_op' $op }
 
@@ -301,15 +351,23 @@ switch ($op) {
       Emit-Refusal 'window_process_gone' "the window's process $realPid could not be read"
     }
 
-    $edit = Get-EditControl -Window $win
-    if ($null -eq $edit) { Emit-Refusal 'uia_control_missing' 'no Document or Edit control in the new window' }
+    $sole = Get-SoleEditControl -Window $win
+    if (-not $sole.ok) { Emit-Refusal $sole.reason $sole.detail }
+    $ctlId = Get-ControlIdentity -El $sole.element
+    if ($ctlId.runtimeId -eq '') { Emit-Refusal 'uia_runtime_id_missing' 'UIA returned no RuntimeId for the document control' }
 
     Emit-Result @{
       ok = $true
       processId = $realPid
       sessionId = $realProc.SessionId
       windowHandle = [string] $win.Current.NativeWindowHandle
-      uiaControlId = [string] $edit.Current.AutomationId
+      uiaRuntimeId = $ctlId.runtimeId
+      uiaControlType = $ctlId.controlType
+      uiaClassName = $ctlId.className
+      # Recorded, never required. <empty> on this machine, and that is a fact
+      # about Windows rather than a fault to refuse on.
+      uiaAutomationId = $ctlId.automationId
+      uiaControlMatchedAs = $sole.matchedAs
       # Recorded so the first real run MEASURES the redirect instead of assuming
       # it. If these are equal on some machine, the stub was not redirected there
       # and that is worth knowing rather than silently depending on.
@@ -379,12 +437,24 @@ switch ($op) {
     if ($null -eq $dlg) { $dlg = $AUTO::RootElement.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::ProcessIdProperty $r.processId)) }
     if ($null -eq $dlg) { Emit-Refusal 'save_dialog_not_found' 'no Save As dialog' }
 
-    # The filename box: set by ValuePattern, same rule as the document.
-    $nameBox = Get-ByName -Root $dlg -Name 'File name:' ([System.Windows.Automation.ControlType]::Edit)
-    if ($null -eq $nameBox) {
-      $nameBox = $dlg.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))
-    }
-    if ($null -eq $nameBox) { Emit-Refusal 'filename_field_not_found' 'no Edit control in the dialog' }
+    # THE FILENAME BOX, BY AutomationId.
+    #
+    # It was Name = 'File name:' with a fallback to "the first Edit in the
+    # dialog". Measured 2026-08-02: the Name lookup FAILS and the fallback
+    # happened to be right. "The first Edit" is not an identity - the dialog also
+    # contains a search box and the file-type combo, and being first is an
+    # accident of tree order that could change with a Windows update.
+    #
+    # The measured AutomationId is 'System.ItemNameDisplay': a Windows property-
+    # system canonical name, so it is NOT localised, unlike 'File name:'.
+    #
+    # The fallback is REMOVED rather than reordered. If this ever fails, refusing
+    # is correct - the alternative is typing a full path into whichever Edit
+    # happened to come first.
+    $nameBox = $dlg.FindFirst($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
+      (New-PropCondition $AUTO::AutomationIdProperty 'System.ItemNameDisplay'),
+      (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))))
+    if ($null -eq $nameBox) { Emit-Refusal 'filename_field_not_found' 'no Edit with AutomationId System.ItemNameDisplay' }
 
     try {
       $nvp = $nameBox.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)
@@ -395,8 +465,20 @@ switch ($op) {
     # happens to be showing.
     $nvp.SetValue($target)
 
+    # ---- KNOWN UNRESOLVED, 2026-08-02 -----------------------------------
+    # This lookup was MEASURED TO FAIL: Name='Save' + ControlType=Button found
+    # nothing in the real dialog. What the control actually is has NOT been
+    # determined, and it is not guessed at here. Three candidates are plausible -
+    # a different Name, ControlType.SplitButton rather than Button, or the button
+    # living outside the descendant subtree this searches - and picking one
+    # without measuring is how a canary presses something nobody identified.
+    #
+    # Operator-MeasureNotepadUia.ps1 now enumerates every button-like control in
+    # the dialog. Until that has been run, save_as REFUSES here, which is the
+    # correct outcome: it is the last step, nothing has been written, and the
+    # refusal names exactly what is missing.
     $saveBtn = Get-ByName -Root $dlg -Name 'Save' ([System.Windows.Automation.ControlType]::Button)
-    if ($null -eq $saveBtn) { Emit-Refusal 'save_button_not_found' 'Save' }
+    if ($null -eq $saveBtn) { Emit-Refusal 'save_button_not_found' 'Name=Save + ControlType=Button found nothing; the real control is not yet identified - run Operator-MeasureNotepadUia.ps1' }
     Invoke-Element -Element $saveBtn -What 'Save button'
     Start-Sleep -Milliseconds 900
 
