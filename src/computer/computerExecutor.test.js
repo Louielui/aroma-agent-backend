@@ -153,8 +153,13 @@ test('the admission record lands BEFORE the first step-start, in that order', ()
     'step-start', 'step-outcome',
     'step-start', 'step-outcome',
     'step-start', 'step-outcome',
+    // CLEANUP LANDS BEFORE 'completed', 2026-08-02. The desktop is tidied while the run is still
+    // the run, so 'completed' describes a finished job rather than one still on screen. Cleanup
+    // used to happen only on the failure path, and the first successful canary duly ended with
+    // Notepad open and no record that anything had been attempted.
+    'cleanup',
     'completed'
-  ], 'the chain interleaves start/outcome per step and opens with admission')
+  ], 'the chain interleaves start/outcome per step, opens with admission and tidies before completing')
 })
 
 /* ── 2. step-start: the record comes before EACH step ─────────────────────── */
@@ -518,6 +523,6 @@ test('*** the canary sequence, when everything is right ***', () => {
     'type:' + TEXT,
     'save:C:\\Aroma\\ComputerOperator-Test\\canary-1.txt'
   ])
-  assert.equal(store.written.length, 8, 'admission + 3x(start,outcome) + completed')
+  assert.equal(store.written.length, 9, 'admission + 3x(start,outcome) + cleanup + completed')
   assert.ok(store.written.every((w) => w.type === 'computer-audit'), 'all under one audit kind')
 })

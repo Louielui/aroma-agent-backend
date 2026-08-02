@@ -168,9 +168,19 @@ test('a helper failure during verification answers no, rather than throwing into
 /* ── cleanup: bounded, and never louder than the failure it follows ───────── */
 
 test('*** cleanup never throws — it must not replace the original failure ***', () => {
+  // The MEASURED fields come back on every outcome now, including the ones where there was
+  // nothing to measure — as nulls, so "not measured" is distinguishable from "measured zero".
   const a = mk({ cleanup: () => { throw new Error('boom') } })
-  assert.deepEqual(a.cleanup({ bind: BIND }), { ok: false, reason: 'cleanup_failed' })
-  assert.deepEqual(mk({}).cleanup({ bind: null }), { ok: false, reason: 'nothing_to_clean' })
+  const thrown = a.cleanup({ bind: BIND })
+  assert.equal(thrown.ok, false)
+  assert.equal(thrown.measured, false)
+  assert.ok(thrown.reason, 'it still names a reason')
+  assert.equal(thrown.processExited, null, 'and reports the measurement as absent, not as false')
+
+  const nothing = mk({}).cleanup({ bind: null })
+  assert.equal(nothing.ok, false)
+  assert.equal(nothing.reason, 'nothing_to_clean')
+  assert.equal(nothing.measured, false)
 })
 
 test('cleanup is bounded to the recorded binding', () => {

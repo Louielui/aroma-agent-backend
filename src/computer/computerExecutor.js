@@ -315,13 +315,86 @@ function createComputerExecutor (deps = {}) {
     const done = []
     let desktopActions = 0
     let bindingFromOpen = null
+    let bindingFromStep = null
+
+    /**
+     * THE BINDING, AS AUDITABLE VALUES.
+     *
+     * step-start and step-outcome used to record only n/action/outcome/detail. "Both steps used
+     * the same binding" was then a STRUCTURAL argument — true, provable from the code, and
+     * impossible for anyone to check from the record. After the first successful canary the
+     * Owner asked exactly that question and the honest answer was "I can infer it, I cannot show
+     * you". Now the record carries the values.
+     *
+     * NOT SENSITIVE, and worth saying why rather than assuming it: a pid, a window handle and a
+     * UIA RuntimeId are ephemeral OS-local identifiers. They are meaningless once the process
+     * exits, they name no file, no person and no content, and none of them is user text or
+     * third-party data. What they do reveal is that a Notepad existed in a session at a time —
+     * which the audit already says in plain words. The audit directory's existing ACL (operator
+     * may write and not delete; Owner, Administrators and SYSTEM may read) is sufficient, and no
+     * new protection is introduced for them.
+     */
+    function bindFields () {
+      if (!bindingFromOpen) return { bindProcessId: null, bindWindowHandle: null, bindUiaRuntimeId: null, bindSource: 'not_yet_bound' }
+      return {
+        bindProcessId: bindingFromOpen.processId,
+        bindWindowHandle: bindingFromOpen.windowHandle,
+        bindUiaRuntimeId: bindingFromOpen.uiaRuntimeId,
+        // WHICH step produced it, so a reader can see that step 2 used step 1's binding without
+        // having to trust that the code passes it along.
+        bindSource: 'open_app@step' + bindingFromStep
+      }
+    }
+
+    /**
+     * CLEANUP RUNS ON EVERY PATH — success, failure and refusal alike.
+     *
+     * It used to run only inside finishFailed(). That shape is backwards on its face: tidy up
+     * when something went wrong, and leave the window open when everything went right. The first
+     * successful two-step canary duly finished with Notepad still on screen, and the Owner closed
+     * it by hand — the executor never even tried.
+     *
+     * A cleanup that cannot be done does NOT overturn a run that succeeded. The steps happened,
+     * they are audited, and pretending otherwise would throw away a true result to punish an
+     * untidy desk. It is recorded as cleanup_failed, carried on the result, and shown on screen.
+     */
+    function runCleanup (phase) {
+      let c = null
+      try {
+        if (desktop && typeof desktop.cleanup === 'function') {
+          c = desktop.cleanup({ runId, bind: bindingFromOpen })
+        } else {
+          c = { ok: false, measured: false, reason: 'no_cleanup_capability' }
+        }
+      } catch (err) {
+        c = { ok: false, measured: false, reason: (err && err.reason) || 'cleanup_threw' }
+      }
+      if (!c || typeof c !== 'object') c = { ok: false, measured: false, reason: 'no_result' }
+
+      const record = {
+        runId,
+        phase,
+        cleanupOk: c.ok === true,
+        measured: c.measured === true,
+        processExited: c.processExited === undefined ? null : c.processExited,
+        notepadWindowsAfter: c.notepadWindowsAfter === undefined ? null : c.notepadWindowsAfter,
+        notepadProcessesAfter: c.notepadProcessesAfter === undefined ? null : c.notepadProcessesAfter,
+        forced: c.forced === undefined ? null : c.forced,
+        method: c.method === undefined ? null : c.method,
+        reason: c.ok === true ? null : (c.reason || 'cleanup_failed')
+      }
+      // Best-effort audit: a cleanup record that cannot be written must not be the thing that
+      // fails an otherwise complete run, and on the failure path it must not mask the first error.
+      try { auditOrThrow('cleanup', record) } catch (_) { }
+      return record
+    }
 
     for (let idx = 0; idx < order.steps.length; idx++) {
       const step = order.steps[idx]
 
       // ── STEP-START. DURABLE, BEFORE THE STEP. ─────────────────────────────
       try {
-        auditOrThrow('step-start', { runId, n: step.n, action: step.action })
+        auditOrThrow('step-start', Object.assign({ runId, n: step.n, action: step.action }, bindFields()))
       } catch (err) {
         return finishFailed('audit_write_failed', err.cause || err.message, 'step-start', step.n)
       }
@@ -375,26 +448,46 @@ function createComputerExecutor (deps = {}) {
         // nothing that alters it can reach the order, the receipt or the request — all three
         // are inputs to this run and none of them is written to.
         bindingFromOpen = b.bind
+        bindingFromStep = step.n
       }
 
       // ── STEP-OUTCOME. Failure stops the run and cleans up. ────────────────
       try {
-        auditOrThrow('step-outcome', { runId, n: step.n, action: step.action, outcome: 'ok', detail: outcome.detail || null })
+        auditOrThrow('step-outcome', Object.assign({ runId, n: step.n, action: step.action, outcome: 'ok', detail: outcome.detail || null }, bindFields()))
       } catch (err) {
         return finishFailed('audit_write_failed', err.cause || err.message, 'step-outcome', step.n)
       }
       done.push({ n: step.n, action: step.action })
     }
 
+    // Every step succeeded. Close what we opened BEFORE declaring the run complete, so that
+    // 'completed' describes a finished job rather than one still on screen.
+    const cleanupRecord = runCleanup('success')
+
     try {
-      auditOrThrow('completed', { runId, stepsRun: done.length, steps: done })
+      auditOrThrow('completed', { runId, stepsRun: done.length, steps: done, cleanup: cleanupRecord.cleanupOk ? 'done' : ('cleanup_failed:' + cleanupRecord.reason) })
     } catch (err) {
       return finishFailed('audit_write_failed', err.cause || err.message, 'completed', null)
     }
     // A PASS exists only once the whole chain is on disk AND the order is closed. Closing
     // is what frees the single live slot, so it happens on the success path too.
+    //
+    // THE ORDER IS CLOSED EITHER WAY. A failed cleanup leaves an untidy desktop, not an open
+    // authorisation: the approved steps all ran, the approval is spent, and the request is
+    // SUCCEEDED. Leaving the order live so someone could "retry the cleanup" would mean an
+    // approval to type into a window outliving the typing it authorised.
     orderRegistry.close(order.approvalId)
-    return { ok: true, runId, stepsRun: done.length, steps: done, desktopActions, auditChainComplete: true, orderClosed: true }
+    return {
+      ok: true,
+      runId,
+      stepsRun: done.length,
+      steps: done,
+      desktopActions,
+      auditChainComplete: true,
+      orderClosed: true,
+      cleanup: cleanupRecord.cleanupOk ? 'done' : 'cleanup_failed',
+      cleanupDetail: cleanupRecord
+    }
 
     function runStep (step) {
       // The binding passed to the adapter is ALWAYS the runtime one. It used to be `step.bind`,
@@ -415,24 +508,16 @@ function createComputerExecutor (deps = {}) {
     }
 
     function finishFailed (reason, detail, phase, n) {
-      let cleanup = 'not_attempted'
-      try {
-        // ── RECORD WHAT CLEANUP ACTUALLY DID, NOT THAT IT WAS CALLED ────────
-        // This ignored the return value and wrote 'attempted' every time. On the first real run
-        // open_app threw before producing a binding, so cleanup returned `nothing_to_clean`
-        // immediately and closed nothing — and the audit said "attempted", while Notepad stayed
-        // on screen until the Owner closed it by hand.
-        if (desktop && typeof desktop.cleanup === 'function') {
-          const c = desktop.cleanup({ runId, bind: bindingFromOpen })
-          cleanup = !c ? 'no_result' : c.ok === true ? 'done' : ('not_done:' + (c.reason || 'unknown'))
-        }
-      } catch (_) { cleanup = 'failed' }
+      // The SAME cleanup the success path runs. One implementation, so the two can never drift
+      // into "the failure path tidies up and the success path does not" a second time.
+      const cleanupRecord = runCleanup('failed:' + phase)
+      const cleanup = cleanupRecord.cleanupOk ? 'done' : ('not_done:' + cleanupRecord.reason)
       // Best-effort: the run is already failing, and a second audit failure must not mask the first.
       try { auditOrThrow('aborted', { runId, reason, detail, phase, n, cleanup, stepsRun: done.length }) } catch (_) { }
       // TERMINAL. Cleanup tidies a desktop; it does NOT reopen an order. Invalidate runs
       // after cleanup precisely so that no cleanup path can be mistaken for a resume.
       orderRegistry.invalidate(order.approvalId, reason)
-      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, auditChainComplete: false, orderClosed: true }
+      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, cleanupDetail: cleanupRecord, auditChainComplete: false, orderClosed: true }
     }
   }
 

@@ -185,13 +185,45 @@ function createDesktopAdapter (deps = {}) {
      * failing run cannot take down a window it did not create. Never throws — cleanup running
      * during a failure must not replace the original reason with its own.
      */
+    /**
+     * Close what this run opened, and REPORT WHAT WAS MEASURED.
+     *
+     * ── WHY THIS DOES NOT GO THROUGH call() ───────────────────────────────
+     * `call()` throws when the helper returns ok:false, which is right for an action — a
+     * type_text that did not type is a failure and the detail belongs in the exception. It is
+     * wrong here. The cleanup helper returns ok:false precisely WHEN it has something to say:
+     * the process did not exit, or windows remain. Routing that through `call()` would turn the
+     * measurement into an exception and throw the numbers away, which is the exact shape of the
+     * bug being fixed — cleanup reporting a word instead of a fact.
+     *
+     * So the envelope is unwrapped here, and the measured fields come back on BOTH outcomes.
+     */
     cleanup ({ bind }) {
-      if (!bind) return { ok: false, reason: 'nothing_to_clean' }
+      const empty = { processExited: null, notepadWindowsAfter: null, notepadProcessesAfter: null, forced: null, method: null }
+      if (!bind) return Object.assign({ ok: false, measured: false, reason: 'nothing_to_clean' }, empty)
+      let res = null
       try {
-        call('cleanup', { bind })
-        return { ok: true }
+        const env = runner.run(scriptPath, { op: 'cleanup', timeoutSec, bind })
+        if (!env || env.ok !== true) {
+          return Object.assign({ ok: false, measured: false, reason: 'transport_' + ((env && env.refusal) || 'failed') }, empty)
+        }
+        res = env.result
       } catch (err) {
-        return { ok: false, reason: err.reason || 'cleanup_failed' }
+        return Object.assign({ ok: false, measured: false, reason: err.reason || 'cleanup_failed' }, empty)
+      }
+      if (!res || typeof res !== 'object') {
+        return Object.assign({ ok: false, measured: false, reason: 'adapter_no_result' }, empty)
+      }
+      return {
+        // DERIVED, not asserted: the helper computes ok from ($exited -and $winsAfter -eq 0).
+        ok: res.ok === true,
+        measured: true,
+        processExited: res.processExited === undefined ? null : res.processExited,
+        notepadWindowsAfter: res.notepadWindowsAfter === undefined ? null : res.notepadWindowsAfter,
+        notepadProcessesAfter: res.notepadProcessesAfter === undefined ? null : res.notepadProcessesAfter,
+        forced: res.forced === undefined ? null : res.forced,
+        method: res.method === undefined ? null : res.method,
+        reason: res.ok === true ? null : (res.reason || 'cleanup_incomplete')
       }
     }
   }
