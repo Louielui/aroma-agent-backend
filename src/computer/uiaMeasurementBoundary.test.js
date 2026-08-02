@@ -136,3 +136,73 @@ test('*** it measures the canary\'s OWN logic, not a paraphrase of it ***', () =
     assert.ok(c.includes(spelling), 'the measurement tries ' + spelling)
   }
 })
+
+/* ── the seven-point diagnostic stays a diagnostic ────────────────────────── */
+
+test('*** the ONLY things ever invoked are File, Save as, and Cancel ***', () => {
+  // The diagnostic prints candidates including anything Save- or OK-shaped. Printing them is
+  // the job; pressing one would turn a measurement into an unapproved canary that writes a file.
+  const c = code()
+  const calls = []
+  c.split('\n').forEach((l, i) => {
+    // Quoted text is stripped first. A CALL and a STRING THAT NAMES A CALL are different
+    // things, and the branch label the Owner reads — "WindowPattern.Close() on the DIALOG" —
+    // is one of the latter. Conflating them would force the output to be written worse to
+    // keep a test quiet, which is how a rule starts costing more than it protects. Nothing is
+    // hidden by this: a real call cannot be inside quotes.
+    const bare = l.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""')
+    if (/\.Invoke\(\)|\.Close\(\)|DoDefaultAction\(\)/.test(bare)) calls.push({ line: i + 1, text: l.trim() })
+  })
+  assert.equal(calls.length, 4, 'exactly four: File menu, Save as item, Cancel button, window Close — got:\n' +
+    calls.map((x) => '  ' + x.line + ': ' + x.text).join('\n'))
+
+  // And none of them is reached from a Save/OK candidate.
+  for (const bad of [/\$saveBtn[\s\S]{0,120}\.Invoke\(\)/, /\$c\.element[\s\S]{0,120}\.Invoke\(\)/, /Candidates[\s\S]{0,200}\.Invoke\(\)/]) {
+    assert.equal(bad.test(c), false, 'a candidate is invoked: ' + bad)
+  }
+  // DefaultAction is read and printed, never executed.
+  assert.equal(/DoDefaultAction\(\)/.test(c), false, 'LegacyIAccessible DefaultAction must not be executed')
+  assert.match(c, /DefaultAction is NOT executed here/, 'and that is stated where it is read')
+})
+
+test('*** the cancel branch is reported, not merely the outcome ***', () => {
+  // Three rounds could not answer "was Cancel findable as a Button" because both branches
+  // printed the same line. That single fact decides whether the dialog's bottom bar is visible.
+  const c = code()
+  assert.match(c, /CANCEL BRANCH TAKEN/, 'the branch is printed')
+  assert.match(c, /InvokePattern on the Cancel BUTTON/, 'branch 1 is named')
+  assert.match(c, /WindowPattern\.Close\(\) on the DIALOG/, 'branch 2 is named')
+  assert.match(c, /Cancel found as Name=Cancel \+ ControlType=Button/, 'and the lookup result itself is printed')
+})
+
+test('*** all seven diagnostic points are present ***', () => {
+  const c = code()
+  for (const [label, re] of [
+    ['6.1 raw view, unfiltered', /RAW VIEW of the dialog subtree - EVERY element, unfiltered/],
+    ['6.2 control view comparison', /CONTROL VIEW of the same subtree/],
+    ['6.3 by AutomationId, no type filter', /BY AutomationId, with NO ControlType filter/],
+    ['6.4 candidates + patterns', /EVERY CANDIDATE FOUND, AND WHAT IT SUPPORTS/],
+    ['6.5 the dialog itself', /THE DIALOG ELEMENT ITSELF/],
+    ['6.6 filename field patterns', /THE FILENAME FIELD - EVERY PATTERN IT SUPPORTS/],
+    ['6.7 native handles', /native window handles are printed inline/]
+  ]) {
+    assert.match(c, re, 'missing diagnostic: ' + label)
+  }
+  // Both tree views are really walked, not just described.
+  assert.match(c, /TreeWalker\]::RawViewWalker/, 'raw walker used')
+  assert.match(c, /TreeWalker\]::ControlViewWalker/, 'control walker used')
+  // Truncation is announced rather than silent.
+  assert.match(c, /CAP REACHED - OUTPUT TRUNCATED/, 'a truncated walk says so')
+})
+
+test('*** candidates are always printed in full, never summarised away ***', () => {
+  const c = code()
+  // "found: true" with no detail is what made the last three rounds unresolvable.
+  assert.match(c, /candidates collected during the walks/, 'the count is shown')
+  assert.match(c, /Show-Patterns -El \$c\.element/, 'and every candidate gets its pattern list')
+  assert.match(c, /Show-LegacyInfo -El \$c\.element/, 'and its legacy info')
+  // Empty AutomationId must never render as blank.
+  assert.match(c, /function Fmt/, 'the <empty> formatter exists')
+  assert.equal(/AutoId ' \+ \$ai\b/.test(c) && !/AutoId ' \+ \(Fmt \$ai\)/.test(c), false,
+    'AutomationId is always printed through Fmt')
+})

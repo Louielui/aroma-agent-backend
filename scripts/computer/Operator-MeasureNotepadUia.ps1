@@ -145,6 +145,110 @@ function Show-Element {
   Say ($Indent + '  ClassName    : ' + (Fmt $cls))
 }
 
+# ---- READ-ONLY INSPECTION HELPERS ---------------------------------------
+# Nothing in this block invokes anything. The whole point of the seven-point
+# diagnostic is to LOOK at the dialog: the Save button, if it is found, is
+# printed and left alone.
+$script:NodeCount = 0
+$script:NodeCap = 400
+$script:Candidates = New-Object System.Collections.ArrayList
+
+# Every pattern the managed UIA client can actually use on this element.
+# ProgrammaticName, because that is the name a later fix would have to write.
+function Show-Patterns {
+  param($El, [string]$Indent = '           ')
+  if ($null -eq $El) { Say ($Indent + 'patterns : <no element>'); return }
+  $names = @()
+  try { foreach ($p in @($El.GetSupportedPatterns())) { $names += [string] $p.ProgrammaticName } } catch { }
+  if ($names.Count -eq 0) { Say ($Indent + 'patterns : <none reported>') }
+  else { Say ($Indent + 'patterns : ' + ($names -join ', ')) }
+  # Asked separately, because a pattern can be advertised by property even when
+  # GetSupportedPatterns is unhelpful.
+  $inv = '<unreadable>'
+  try { $inv = [string] $El.GetCurrentPropertyValue($AUTO::IsInvokePatternAvailableProperty) } catch { }
+  Say ($Indent + 'InvokePattern available : ' + $inv + '   (NOT invoked here)')
+}
+
+# LegacyIAccessible is the MSAA bridge. It is the second candidate route to a
+# Save that UIA does not expose as a Button -- but the MANAGED client may not
+# carry the type at all, which is itself the answer to whether that route is
+# open. Checked by reflection so a missing type is a finding, not a crash.
+function Show-LegacyInfo {
+  param($El, [string]$Indent = '           ')
+  $t = $null
+  try { $t = [Type]::GetType('System.Windows.Automation.LegacyIAccessiblePattern, UIAutomationClient') } catch { }
+  if ($null -eq $t) {
+    Say ($Indent + 'LegacyIAccessiblePattern : NOT AVAILABLE in the managed UIA client')
+    Say ($Indent + '                           (route 2 would need the COM API)')
+    return
+  }
+  Say ($Indent + 'LegacyIAccessiblePattern : type exists in this client')
+  if ($null -eq $El) { return }
+  try {
+    $pat = $t::Pattern
+    $lp = $El.GetCurrentPattern($pat)
+    if ($null -eq $lp) { Say ($Indent + '  element does not support it'); return }
+    $cur = $lp.Current
+    Say ($Indent + '  DefaultAction : ' + (Fmt $cur.DefaultAction))
+    Say ($Indent + '  Role          : ' + $cur.Role)
+    Say ($Indent + '  State         : ' + $cur.State)
+    Say ($Indent + '  Name          : ' + (Fmt $cur.Name))
+    Say ($Indent + '  (DefaultAction is NOT executed here)')
+  } catch {
+    Say ($Indent + '  element does not support it')
+  }
+}
+
+# Is this element worth reporting as a possible Save/submit control?
+# Matched on shape, never invoked.
+function Test-Candidate {
+  param([string]$Name, [string]$AutoId, [string]$Class)
+  $n = $Name.ToLowerInvariant()
+  if ($n -eq 'save' -or $n -eq 'open' -or $n -eq 'ok' -or $n -eq 'cancel') { return $true }
+  if ($AutoId -eq '1' -or $AutoId -eq '2') { return $true }
+  if ($Class -eq 'Button') { return $true }
+  return $false
+}
+
+# One node of a tree walk, printed. Recursion, not array building, so nothing
+# here can trip the @() rule.
+function Show-TreeNode {
+  param($Walker, $El, [int]$Depth, [int]$MaxDepth, [string]$Tag)
+  if ($null -eq $El) { return }
+  if ($script:NodeCount -ge $script:NodeCap) { return }
+  $script:NodeCount++
+
+  $ct = '<unreadable>'; try { $ct = [string] $El.Current.ControlType.ProgrammaticName } catch { }
+  $nm = ''; try { $nm = [string] $El.Current.Name } catch { }
+  $ai = ''; try { $ai = [string] $El.Current.AutomationId } catch { }
+  $cl = ''; try { $cl = [string] $El.Current.ClassName } catch { }
+  $ice = '?'; try { $ice = [string] $El.Current.IsControlElement } catch { }
+  $ico = '?'; try { $ico = [string] $El.Current.IsContentElement } catch { }
+  $off = '?'; try { $off = [string] $El.Current.IsOffscreen } catch { }
+  $en = '?'; try { $en = [string] $El.Current.IsEnabled } catch { }
+  $hw = ''; try { $hw = [string] $El.Current.NativeWindowHandle } catch { }
+
+  $pad = '  ' * $Depth
+  Say ('       ' + $pad + ($ct -replace '^ControlType.', '') +
+       '  Name ' + (Fmt $nm) + '  AutoId ' + (Fmt $ai) + '  Class ' + (Fmt $cl))
+  Say ('       ' + $pad + '   ctrl=' + $ice + ' content=' + $ico + ' offscreen=' + $off + ' enabled=' + $en +
+       $(if ($hw -ne '' -and $hw -ne '0') { '  hwnd=' + $hw } else { '' }))
+
+  if (Test-Candidate -Name $nm -AutoId $ai -Class $cl) {
+    $null = $script:Candidates.Add(@{ element = $El; name = $nm; autoId = $ai; class = $cl; ctype = $ct; view = $Tag })
+  }
+
+  $child = $null
+  try { $child = $Walker.GetFirstChild($El) } catch { $child = $null }
+  while ($null -ne $child) {
+    Show-TreeNode -Walker $Walker -El $child -Depth ($Depth + 1) -MaxDepth $MaxDepth -Tag $Tag
+    if ($script:NodeCount -ge $script:NodeCap) { break }
+    $next = $null
+    try { $next = $Walker.GetNextSibling($child) } catch { $next = $null }
+    $child = $next
+  }
+}
+
 # RuntimeId is what the binding now uses for "is this the same control".
 # Whether it SURVIVES a SetValue and a Save As has never been measured, and the
 # canary depends on it across three steps, so it is captured at three points.
@@ -552,27 +656,143 @@ if ($menuOpened) {
       Say '     of the same process, so re-binding still resolves.' 'Green'
     }
 
+    # ===================================================================
+    #  THE SEVEN-POINT DIAGNOSTIC
+    #
+    #  Save AND Cancel both went missing from the last enumeration, which points
+    #  at the WALK rather than at the button: if Save were special, only Save
+    #  would be absent. Everything below is read-only. No Save, OK or submit
+    #  control is invoked anywhere in this block - candidates are printed and
+    #  left alone. The only Invoke in the whole file after this point is Cancel.
+    # ===================================================================
+    Say ''
+    Say '  6. SEVEN-POINT DIAGNOSTIC' 'Cyan'
+    Say ('     dialog ClassName : ' + (Fmt $(try { [string] $dlg.Current.ClassName } catch { '' })) +
+         '   (#32770 is the classic Win32 dialog class)')
+
+    # -- 6.1 RAW VIEW: every element, no ControlType filter at all ------
+    Say ''
+    Say '     6.1 RAW VIEW of the dialog subtree - EVERY element, unfiltered' 'Yellow'
+    Say '         The previous enumerations all filtered on ControlType. If the Save'
+    Say '         control is exposed as anything else, they could not have seen it.'
+    $script:NodeCount = 0
+    Show-TreeNode -Walker ([System.Windows.Automation.TreeWalker]::RawViewWalker) -El $dlg -Depth 0 -MaxDepth 10 -Tag 'raw'
+    Say ('         raw nodes printed : ' + $script:NodeCount +
+         $(if ($script:NodeCount -ge $script:NodeCap) { '   *** CAP REACHED - OUTPUT TRUNCATED ***' } else { '' }))
+
+    # -- 6.2 CONTROL VIEW, for comparison ------------------------------
+    Say ''
+    Say '     6.2 CONTROL VIEW of the same subtree' 'Yellow'
+    Say '         If an element appears in raw but not here, FindAll/FindFirst cannot'
+    Say '         reach it and THAT is why the button bar disappeared.'
+    $rawCount = $script:NodeCount
+    $script:NodeCount = 0
+    Show-TreeNode -Walker ([System.Windows.Automation.TreeWalker]::ControlViewWalker) -El $dlg -Depth 0 -MaxDepth 10 -Tag 'control'
+    Say ('         control-view nodes printed : ' + $script:NodeCount)
+    Say ('         raw = ' + $rawCount + ' , control = ' + $script:NodeCount +
+         '   difference = ' + ($rawCount - $script:NodeCount))
+
+    # -- 6.3 By AutomationId, NO ControlType filter --------------------
+    Say ''
+    Say '     6.3 BY AutomationId, with NO ControlType filter' 'Yellow'
+    Say "         IDOK is normally AutomationId '1' and IDCANCEL '2' in a #32770."
+    foreach ($wanted in '1', '2') {
+      $inDlg = $dlg.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::AutomationIdProperty $wanted))
+      Say ('         AutomationId ' + (Fmt $wanted) + ' under the dialog : ' + ($null -ne $inDlg))
+      if ($null -ne $inDlg) { Show-Element -El $inDlg -Label ('AutomationId ' + $wanted + ':') -Indent '           ' }
+      $inProc = $AUTO::RootElement.FindFirst($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
+        (New-PropCondition $AUTO::ProcessIdProperty $realPid),
+        (New-PropCondition $AUTO::AutomationIdProperty $wanted))))
+      Say ('         AutomationId ' + (Fmt $wanted) + ' anywhere in the process : ' + ($null -ne $inProc))
+    }
+
+    # -- 6.4 Every candidate, with its patterns ------------------------
+    Say ''
+    Say '     6.4 EVERY CANDIDATE FOUND, AND WHAT IT SUPPORTS' 'Yellow'
+    Say ('         candidates collected during the walks : ' + $script:Candidates.Count)
+    if ($script:Candidates.Count -eq 0) {
+      Say '         NONE. No Save/OK/Cancel-shaped element and no ClassName Button' 'Red'
+      Say '         anywhere in the dialog subtree, in either view.' 'Red'
+    }
+    $shownIdx = 0
+    foreach ($c in $script:Candidates) {
+      $shownIdx++
+      Say ('         [' + $shownIdx + '] view=' + $c.view + '  ' + ($c.ctype -replace '^ControlType\.', '') +
+           '  Name ' + (Fmt $c.name) + '  AutoId ' + (Fmt $c.autoId) + '  Class ' + (Fmt $c.class))
+      Show-Patterns -El $c.element
+      Show-LegacyInfo -El $c.element
+    }
+
+    # -- 6.5 The dialog element itself ---------------------------------
+    Say ''
+    Say '     6.5 THE DIALOG ELEMENT ITSELF' 'Yellow'
+    Show-Patterns -El $dlg -Indent '         '
+    Show-LegacyInfo -El $dlg -Indent '         '
+    Say '         raw DIRECT children of the dialog (depth 1 only):'
+    $rw = [System.Windows.Automation.TreeWalker]::RawViewWalker
+    $kid = $null
+    try { $kid = $rw.GetFirstChild($dlg) } catch { }
+    $kidN = 0
+    while ($null -ne $kid) {
+      $kidN++
+      $kct = ''; try { $kct = [string] $kid.Current.ControlType.ProgrammaticName } catch { }
+      $knm = ''; try { $knm = [string] $kid.Current.Name } catch { }
+      $kai = ''; try { $kai = [string] $kid.Current.AutomationId } catch { }
+      $kcl = ''; try { $kcl = [string] $kid.Current.ClassName } catch { }
+      Say ('           ' + ($kct -replace '^ControlType\.', '') + '  Name ' + (Fmt $knm) +
+           '  AutoId ' + (Fmt $kai) + '  Class ' + (Fmt $kcl))
+      $nx = $null; try { $nx = $rw.GetNextSibling($kid) } catch { }
+      $kid = $nx
+    }
+    Say ('           direct children : ' + $kidN)
+
+    # -- 6.6 The filename Edit's full pattern list ---------------------
+    Say ''
+    Say '     6.6 THE FILENAME FIELD - EVERY PATTERN IT SUPPORTS' 'Yellow'
+    Say '         Answers by measurement whether anything on this field can SUBMIT'
+    Say '         the dialog. ValuePattern sets a value; it does not press anything.'
+    Show-Patterns -El $nameBox -Indent '         '
+    Show-LegacyInfo -El $nameBox -Indent '         '
+
+    # -- 6.7 was folded into 6.1: hwnd is printed for every node that has one.
+    Say ''
+    Say '     6.7 native window handles are printed inline in 6.1 (hwnd=...)' 'DarkGray'
+
     # ---- CANCEL. NOTHING IS SAVED. ------------------------------------
     Say ''
     Say '     cancelling the dialog (nothing is saved)...' 'DarkGray'
+    # WHICH BRANCH CANCELLED IS ITSELF A MEASUREMENT.
+    #
+    # Last time this printed only "cancelled : True" and the two branches looked
+    # identical from outside. If Cancel is findable as a Button then the dialog's
+    # bottom bar IS visible and Save's absence needs another explanation; if it
+    # is not, the whole bar is missing and the walk is the problem. That single
+    # fact was unobtainable for three rounds because of this line.
     $cancelBtn = Get-ByName -Root $dlg -Name 'Cancel' ([System.Windows.Automation.ControlType]::Button)
+    Say ('     Cancel found as Name=Cancel + ControlType=Button : ' + ($null -ne $cancelBtn)) $(if ($null -ne $cancelBtn) { 'Green' } else { 'Yellow' })
+    if ($null -ne $cancelBtn) { Show-Element -El $cancelBtn -Label 'the Cancel button:' -Indent '       ' }
+
     $cancelled = $false
+    $cancelBranch = 'none'
     if ($null -ne $cancelBtn) {
       try {
         $cp = $cancelBtn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
         $cp.Invoke()
         $cancelled = $true
-      } catch { }
+        $cancelBranch = 'InvokePattern on the Cancel BUTTON'
+      } catch { $cancelBranch = 'Cancel button found but Invoke threw' }
     }
     if (-not $cancelled) {
       try {
         $wp = $dlg.GetCurrentPattern([System.Windows.Automation.WindowPattern]::Pattern)
         $wp.Close()
         $cancelled = $true
-      } catch { }
+        $cancelBranch = 'WindowPattern.Close() on the DIALOG (the Cancel button was NOT usable)'
+      } catch { $cancelBranch = 'both branches failed' }
     }
     Start-Sleep -Milliseconds 800
     Say ('     dialog cancelled : ' + $cancelled) $(if ($cancelled) { 'Green' } else { 'Red' })
+    Say ('     CANCEL BRANCH TAKEN : ' + $cancelBranch) 'Cyan'
     $afterCancel = Get-SoleWindowForProcess -ProcessId $realPid
     Say ('     Get-SoleWindowForProcess after cancel : ' + $afterCancel)
   }
