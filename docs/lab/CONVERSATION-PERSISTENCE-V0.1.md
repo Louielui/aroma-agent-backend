@@ -1,7 +1,7 @@
 # Xiangxiang Lab — Conversation Persistence v0.1 (WRITE ONLY)
 
-**Status:** **ENABLED 2026-08-01**, collecting from the Owner's next real conversation onward.
-Still **not backed up and not durable** — see §3.
+**Status:** **ENABLED 2026-08-01.** Third-party scope narrowed by Owner decision **A′** on
+2026-08-02, and **backed up locally with a proven restore** the same day. **Not off-site** — see §3.
 
 ## What this is
 
@@ -130,15 +130,46 @@ This is the deliberate opposite of the Computer Operator's audit, which is fail-
 
 Both defaults are written down where they apply so neither gets "corrected" to match the other.
 
-### 3. Not durable storage yet
+### 3. Backed up locally, with a proven restore — but NOT off-site
 
-v0.1 does **no backup**. Until the archive is in a backup chain **and a restore has been
-verified**, it must not be called durable.
+**Built 2026-08-02.** `scripts/lab/Backup-XiangxiangArchive.ps1`, plus the scheduled task
+`XiangxiangArchive-LocalBackup` (daily 02:30, runs as `louis`, verified by an on-demand run that
+returned 0).
 
-Precedent: **AromaTruthData-B2Sync** — a store is not backed up until a restore has been proven.
-Calling it backed up before that is how data gets lost politely.
+Each run snapshots the archive to `D:\XiangxiangArchiveBackups\snapshot-<UTC>\`, writes a manifest
+of sha256/size/record-count, then **restores that snapshot into a scratch directory and compares
+the bytes** — against the manifest *and* against the live source. A snapshot whose restore does
+not match is **deleted**, and the run fails. A backup that cannot be restored is worse than none,
+because it is trusted. (Precedent: **AromaTruthData-B2Sync** — a store is not backed up until a
+restore has been proven.) Retention: 30 snapshots.
 
-Backup is the next phase, not this one.
+**It has its own directory with its own ACL, and that is not fussiness.** `D:\AromaCoreBackups` —
+the existing chain — grants **Everyone: FullControl**. The archive is protected to
+louis/SYSTEM/Administrators only. Copying it into the existing chain would take a locked store of
+conversations and drop it somewhere anybody on the machine can read. The script **refuses** to
+write to a destination that is inherited, or that grants Everyone / Authenticated Users / Users /
+AromaOperator, and it re-checks on every run rather than trusting what it set once.
+
+**What this still does not protect against**, stated rather than implied:
+
+- **Not off-site.** Both copies are in the same room. A fire or a burglary takes both. Sending
+  conversation text to Backblaze is a decision about publishing the Owner's conversations — and
+  any third-party data still in them — to an outside company, and it has not been made.
+- **D: is a removable disk.** NTFS permissions do not travel with it. Anyone who walks off with
+  the drive can read the snapshots on another machine. Encryption would fix that and would add a
+  key to lose; no decision yet.
+
+### Backups and the delete button are in conflict
+
+`delete` removes a turn from the live archive — and every snapshot taken before that moment still
+holds it. The Owner would be told the turn was deleted while it still existed on D:. Snapshots are
+whole-file copies, so there is no way to reach into one and remove a line without rewriting it,
+and a rewritten snapshot no longer matches the manifest that proves it intact.
+
+The honest resolution is blunt: **after deleting anything, run
+`Purge Xiangxiang Archive Backups.cmd`**, which removes the entire chain. The next backup starts
+fresh. The cost — losing snapshot history — is the price of a delete button that means what it
+says, and it is printed on the screen before it happens.
 
 ## Where things are
 
@@ -185,6 +216,8 @@ Two double-clickable operations on `C:\Aroma\`:
 |---|---|
 | `Enable Xiangxiang Archive.cmd` | → `scripts/lab/Enable-XiangxiangArchive.ps1` |
 | `Disable Xiangxiang Archive.cmd` | → `scripts/lab/Disable-XiangxiangArchive.ps1` |
+| `Backup Xiangxiang Archive.cmd` | → `scripts/lab/Backup-XiangxiangArchive.ps1` |
+| `Purge Xiangxiang Archive Backups.cmd` | → `scripts/lab/Purge-XiangxiangArchiveBackups.ps1` |
 
 Each one backs up `C:\Aroma\xiangxiang.ps1` and verifies the backup by hash **before** editing,
 adds or removes exactly the one line `$env:XIANGXIANG_ARCHIVE = 'on'`, proves line-by-line that
