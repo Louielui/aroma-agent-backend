@@ -50,7 +50,16 @@ const FORBIDDEN_FIELDS = Object.freeze([
   'actions', 'action', 'text', 'fileName', 'filename', 'path', 'targetPath', 'command',
   'executable', 'exe', 'scriptPath', 'script', 'args', 'arguments', 'module', 'moduleName',
   'adapter', 'adapterName', 'env', 'environment', 'powershell', 'ps', 'payload', 'steps',
-  'approvedOrder', 'order'
+  'approvedOrder', 'order',
+  // ── NATIVE ACTIVATION, added 2026-08-02 with DESIGN-001 ─────────────────
+  // A window is a target and a message is an instruction. Naming either here is what makes
+  // "an untrusted caller cannot say which window, and cannot say what to send" a property of
+  // the schema rather than a property of the current code. They are also absent from
+  // REQUEST_FIELDS above — two rules, deliberately, so that widening the allowlist still has
+  // to argue with the denylist.
+  'hwnd', 'parentHwnd', 'windowHandle', 'windowHandleSelector',
+  'message', 'messageId', 'wParam', 'lParam',
+  'automationId', 'className', 'nativeOperation', 'sendMessage'
 ])
 
 const STATES = Object.freeze(['CREATED', 'CLAIMED', 'RUNNING', 'SUCCEEDED', 'FAILED', 'ABORTED', 'EXPIRED'])
