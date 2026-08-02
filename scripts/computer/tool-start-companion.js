@@ -107,6 +107,50 @@ function selectPending () {
   }
 }
 
+/**
+ * WHAT CLEANUP MEASURED — printed on BOTH outcomes, and never replaced by a sentence.
+ *
+ * The executor now measures the close: whether the process really exited, how many Notepad
+ * windows and processes are left, whether it had to force it, and by which method. Those numbers
+ * existed only in the audit file; the person watching the window saw nothing.
+ */
+function reportCleanup (res) {
+  const d = res && res.result ? res.result.cleanupDetail : null
+  if (!d) {
+    T.out('  Cleanup: no measurement was reported. That is a fault in this program.')
+    T.out('')
+    return
+  }
+  // Nulls are shown as "not measured", never as 0 or false. "I could not look" and "I looked
+  // and there was nothing" are different facts and the screen must not merge them.
+  const show = (v) => (v === null || v === undefined ? 'not measured' : String(v))
+  T.out('  Cleanup, measured:')
+  T.out('    Notepad process ended  : ' + show(d.processExited))
+  T.out('    Notepad windows left   : ' + show(d.notepadWindowsAfter))
+  T.out('    Notepad processes left : ' + show(d.notepadProcessesAfter))
+  T.out('    had to force it        : ' + show(d.forced))
+  T.out('    how                    : ' + show(d.method))
+  if (d.cleanupOk !== true) {
+    T.out('  THE CLEANUP DID NOT FINISH: ' + (d.reason || 'no reason given'))
+    T.out('  The steps still ran and are recorded; the desktop may need closing by hand.')
+  }
+  T.out('')
+}
+
+/** What is still on the machine, measured — on success as well as on failure. */
+function reportLeftovers (res) {
+  const left = T.leftovers({ cleanup: res && res.result ? res.result.cleanup : null })
+  if (left.clean) {
+    T.out('  Checked: no Notepad left open, and the folder is empty.')
+  } else {
+    T.out('  SOMETHING IS LEFT BEHIND:')
+    for (const l of left.items) T.out('    - ' + l)
+    T.out('')
+    T.out('  Please close it / clear it before running again.')
+  }
+  T.out('')
+}
+
 function handle (file) {
   let rec = null
   try { rec = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (_) { rec = null }
@@ -153,8 +197,31 @@ function handle (file) {
 
   T.out('')
   if (res && res.ok) {
-    T.out('  DONE. The file has been created.')
-    T.out('  Please open it, check it, and delete it when you are satisfied.')
+    // ── WHAT THIS ORDER ACTUALLY DID ──────────────────────────────────────
+    // It said "DONE. The file has been created. Please open it, check it, and delete it" —
+    // left over from the three-step order. The canary shrank to open_app + type_text on
+    // 2026-08-02 and creates no file, so the screen was sending the Owner to look for
+    // something that does not exist.
+    //
+    // It survived that round because nothing pointed at it: it is a hardcoded string with no
+    // test asserting its content, it reads no allowedPath so it did not start rendering
+    // "undefined", and it lives on the COMPANION screen while the shrink was being done on the
+    // two Owner screens. I fixed what the failing test and the undefined value pointed at, and
+    // never asked where else the code promises a file. Hence the guard in
+    // displayLayerHonesty.test.js.
+    //
+    // The step list is read from the RESULT, not written out here, so it cannot go stale again.
+    const did = (res.result && Array.isArray(res.result.steps) ? res.result.steps : []).map((s) => s.action)
+    T.out('  DONE. ' + (did.length ? did.join(' then ') : 'the approved steps') + ' completed.')
+    T.out('  No file was created - this task does not save anything.')
+    T.out('')
+
+    // ── THE SAME MEASUREMENT THE FAILURE PATH GETS ────────────────────────
+    // The leftovers check used to live only in the `else`. So a failure was told the truth
+    // about the machine and a success was told nothing at all — the same backwards shape as
+    // cleanup itself, which ran only when something went wrong.
+    reportCleanup(res)
+    reportLeftovers(res)
   } else {
     T.out('  IT DID NOT RUN.')
     // The reason, and never a blank. If the runner somehow returns neither, that absence is
@@ -167,20 +234,8 @@ function handle (file) {
     }
     T.out('')
 
-    // ── WHAT IS ACTUALLY LEFT BEHIND, MEASURED ────────────────────────────
-    // This printed "Nothing was left behind" unconditionally. On the first real run it was
-    // false: Notepad was still on screen and the Owner closed it by hand. A reassurance that
-    // checks nothing is worse than no reassurance, because it is believed.
-    const left = T.leftovers({ cleanup: res && res.result ? res.result.cleanup : null })
-    if (left.clean) {
-      T.out('  Checked: no Notepad left open, and the folder is empty.')
-    } else {
-      T.out('  SOMETHING IS LEFT BEHIND:')
-      for (const l of left.items) T.out('    - ' + l)
-      T.out('')
-      T.out('  Please close it / clear it before running again.')
-    }
-    T.out('')
+    reportCleanup(res)
+    reportLeftovers(res)
     T.out('  The task has been used up either way - to try again, the Owner must approve again.')
   }
   T.out('')
