@@ -191,22 +191,68 @@ function createDesktopAdapter (deps = {}) {
       // Deliberately NOT through call(): call() throws on ok:false and would discard sendCount,
       // and sendCount is the evidence that a refusal refused BEFORE sending. Same reasoning as
       // cleanup(), and the same mistake if it were routed the easy way.
+      //
+      // WHEN THE HELPER DOES NOT ANSWER, WE DO NOT KNOW WHAT IT DID.
+      //
+      // This block used to write `sendCount: 0, activated: false` into the transport-failure and
+      // catch paths, and then return `save_refused` with the words "refused before sending". That
+      // is not an incomplete answer, it is a WRONG one, in the dangerous direction: it asserts
+      // that nothing happened to the machine. The path is reachable exactly when the runner times
+      // out — which kills the helper process — and a helper killed after posting BM_CLICK looks
+      // identical from here to one killed before. The helper's own catch is careful about this
+      // (sendCount = $script:SendCount, activated = SendCount -gt 0); the layer above it threw
+      // that care away.
+      //
+      // So: a structured answer is used, and anything else becomes an explicit unknown.
       let act = null
+      let unreachable = null
       try {
         const env = runner.run('native-save-activation', { op: 'activate_bound_save', bind, dir, fileName, timeoutSec })
-        act = (env && env.ok === true) ? env.result : { ok: false, reason: 'transport_' + ((env && env.refusal) || 'failed'), sendCount: 0, activated: false }
+        if (env && env.ok === true && env.result && typeof env.result === 'object') act = env.result
+        else unreachable = 'transport_' + ((env && env.refusal) || 'failed')
       } catch (err) {
-        act = { ok: false, reason: (err && err.reason) || 'activation_failed', sendCount: 0, activated: false }
+        unreachable = (err && err.reason) || 'activation_failed'
       }
-      if (!act || typeof act !== 'object') act = { ok: false, reason: 'adapter_no_result', sendCount: 0, activated: false }
+
+      if (unreachable) {
+        // No count is claimed. `null` is the honest value and the ONLY honest value.
+        return {
+          outcome: 'activation_outcome_unknown',
+          refusal: null,
+          sendCount: null,
+          activated: null,
+          target,
+          verified: null,
+          dialogPresent: null,
+          errorTextSeen: null,
+          detail: 'the activation helper did not answer (' + unreachable + '); whether BM_CLICK was posted is UNKNOWN'
+        }
+      }
 
       const sendCount = Number.isFinite(act.sendCount) ? act.sendCount : null
       if (act.ok !== true) {
-        // Nothing was sent, so nothing happened. This is an ordinary refusal, not an unknown.
+        // A refusal is only a refusal if the helper MEASURED that it sent nothing. It reports
+        // sendCount on every outcome including a throw, so `0` here is an observation. Anything
+        // else — a missing count, or a count above zero — means a message may have gone out, and
+        // that is an unknown wearing a refusal's clothes.
+        if (sendCount !== 0) {
+          return {
+            outcome: 'activation_outcome_unknown',
+            refusal: null,
+            sendCount,
+            activated: act.activated === true ? true : null,
+            target,
+            verified: act.verified || null,
+            dialogPresent: null,
+            errorTextSeen: null,
+            detail: 'the helper refused with ' + (act.reason || 'no reason') + ' but reported sendCount=' +
+              (sendCount === null ? 'unknown' : sendCount) + '; whether BM_CLICK was posted is UNKNOWN'
+          }
+        }
         return {
           outcome: 'save_refused',
           refusal: act.reason || 'activation_refused',
-          sendCount,
+          sendCount: 0,
           activated: false,
           target,
           verified: act.verified || null,

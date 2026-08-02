@@ -530,8 +530,14 @@ function createComputerExecutor (deps = {}) {
         }
 
         try {
+          // `activated: sv.activated === true` collapsed null to false — the same false claim the
+          // adapter was just cured of, one layer up. Unknown stays unknown all the way into the
+          // record; a reader must be able to tell "we saw it not happen" from "we could not tell".
           auditOrThrow('activation_attempted', {
-            runId, n: step.n, sendCount: sv.sendCount === undefined ? null : sv.sendCount, activated: sv.activated === true
+            runId,
+            n: step.n,
+            sendCount: sv.sendCount === undefined ? null : sv.sendCount,
+            activated: sv.activated === true ? true : (sv.activated === false ? false : null)
           })
         } catch (err) {
           // The message HAS been sent and we cannot record that it was. Stopping here is the

@@ -192,3 +192,53 @@ commit as the evidence fix, making it impossible to attribute the change to eith
 
 The line endings this round's stash disturbed have been **restored**, and the hash is back to the
 value the code change alone produces.
+
+### RESOLVED 2026-08-02 — pinned, renormalised, and guarded
+
+`.gitattributes` now pins every packaged type to `text eol=lf`, with `* text=auto eol=lf` as the
+default so a newly added file cannot reintroduce the problem, and explicit `binary` for image and
+archive types so adding one cannot corrupt it. The repository was renormalised; all 43 packaged
+files are LF and **no packaged file contains a CR byte**.
+
+**Effect on the BOM: none, and this is measured rather than reasoned.** The `text`/`eol` attributes
+rewrite CR and LF bytes only. A UTF-8 BOM is `EF BB BF` and contains neither, so it cannot be
+touched. After renormalising, all 10 BOM-bearing packaged `.ps1` still carry their BOM; the other
+6 are pure ASCII, where ANSI and UTF-8 are byte-identical and the BOM is not needed. All 16 parse
+clean under PS 5.1 with LF-only endings — the BOM, not the line ending, is what makes PowerShell
+read a file as UTF-8.
+
+`packageHashStability.test.js` guards it **by measurement, not by claim**: it clones the repo twice
+with `core.autocrlf` on and off, re-materialises each working tree, and asserts the two agree; it
+performs the exact stash push/pop that moved the hash and asserts it does not; it asserts no
+packaged file holds a CR byte; and its positive control flips one file to CRLF and requires the
+hash to move. The clone comparison is deliberately **between the two clones** rather than against
+the working tree — comparing against the tree would go red on every uncommitted edit, and a guard
+that cries wolf during ordinary work is how a real hash change gets waved through.
+
+### What this means for hashes the Owner has already approved
+
+| | |
+|---|---|
+| `0b0f6801…` | the state before the evidence fix |
+| `167b15cb…` | after the evidence fix, mixed line endings — **superseded, do not use** |
+| `2bc85c7d…` | after renormalising, before the activation fix |
+| **`7ea1703a…`** | **current, and the first hash that is reproducible on any machine** |
+
+**No previously approved hash is retroactively invalidated as a record of what was approved.** Each
+one correctly identified the bytes that existed in *that* checkout at *that* moment, and the staged
+package that was verified against it was verified correctly. Nothing that was executed was executed
+on unapproved bytes.
+
+What those earlier hashes were **never able to do** is what a reader would reasonably have assumed
+they did: identify the same source on another machine, or after a branch switch. An approval
+recorded against `0b0f6801` or `167b15cb` should be read as *"these bytes, in that working tree"* —
+sound as an approval, but not portable, and not something to re-derive later and expect to match.
+
+From `7ea1703a…` onward the value means what it appears to mean: the same commit produces the same
+package hash in any checkout. Approvals from here are portable; earlier ones are historical records
+that should not be re-verified against a fresh checkout, because they will not match and the
+mismatch will not mean what it looks like.
+
+**This does not require re-staging by itself.** The staged package is verified against the recorded
+hash at execution time, and that check is unchanged. The next stage — whenever one is authorised —
+will simply record `7ea1703a…`.
