@@ -22,13 +22,19 @@ const { buildReadContext } = require('../context/readContext')
 const { createLiveReadConnector, enabledSources } = require('../context/liveClients')
 const { buildMorningBriefing } = require('../coo/morningBriefing')
 const { createBriefStore, hashBrief } = require('../coo/briefStore')
+const { validateBriefForDelivery, OUTCOME } = require('../coo/briefDelivery')
+const { scrubReason } = require('../utils/readContextLog')
 const { BRIEFING_HTML } = require('../demo/briefingHtml')
+
+/** Sentinel so a validator crash is distinguishable from a validator refusal. */
+const VALIDATOR_THREW = Symbol('validator_threw')
 
 function createBriefingRouter (deps = {}) {
   const router = express.Router()
   const buildConnector = deps.buildConnector || ((env) => createLiveReadConnector({ env }))
   const buildBrief = deps.buildMorningBriefingFn || buildMorningBriefing
-  const store = deps.briefStore || createBriefStore()
+  const validate = deps.validateBriefForDeliveryFn || validateBriefForDelivery
+  const store = deps.briefStore || createBriefStore({ persist: true })
   const listProposals = deps.listPendingProposals || defaultListProposals
   const recall = deps.buildDecisionRecall || defaultDecisionRecall
 
@@ -44,7 +50,7 @@ function createBriefingRouter (deps = {}) {
     }
     inFlight = (async () => {
       const { connector } = buildConnector(process.env)
-      const { brief, audit } = await buildBrief({
+      const { brief: draft, audit } = await buildBrief({
         buildReadContextFn: buildReadContext,
         connector,
         sources: enabledSources(process.env),
@@ -53,9 +59,15 @@ function createBriefingRouter (deps = {}) {
         env: process.env
       })
 
-      // METADATA ONLY. The brief body is represented by its hash and nothing else; if this
-      // record is ever rejected the brief is still returned, because a storage rule must
-      // not cost the Owner the answer he asked for.
+      // ── THE ONE GATE ────────────────────────────────────────────────────
+      // Everything the Owner will see passes through here, and what it removes is GONE
+      // from the payload. It runs BEFORE the hash, so the hash attests to what was
+      // delivered rather than to a draft nobody saw. A throw here is fail-closed: the
+      // catch below sends no payload at all.
+      const verdict = validate(draft)
+      const brief = verdict.brief
+
+      // METADATA ONLY, and the outcome is the VALIDATOR'S, not the builder's.
       const stored = store.write({
         briefId: audit.briefId,
         generatedAt: audit.generatedAt,
@@ -63,10 +75,10 @@ function createBriefingRouter (deps = {}) {
         provider: 'none',
         model: 'none',
         sourceStatuses: audit.sourceStatuses,
-        itemCounts: audit.itemCounts,
+        itemCounts: countItems(brief),
         durationMs: audit.durationMs,
         contentHash: hashBrief(brief),
-        outcome: audit.outcome
+        outcome: verdict.outcome
       })
 
       return { ok: true, brief, stored: stored.ok === true, storeRefusal: stored.ok ? null : stored.reason }
@@ -76,11 +88,48 @@ function createBriefingRouter (deps = {}) {
       const out = await inFlight
       res.json(out)
     } catch (err) {
-      res.status(500).json({ ok: false, error: 'briefing_failed', detail: (err && err.message) || 'unknown' })
+      // FAIL CLOSED, AND SAY NOTHING ABOUT WHY.
+      //
+      // An adapter's error text is written for developers: it cheerfully includes URLs,
+      // ids and sometimes the query. None of that belongs in a browser response, so the
+      // browser gets a fixed code and nothing else. The reason is scrubbed before it
+      // reaches the log, through the same projector the read layer uses.
+      const failed = isValidationFailure(err)
+      recordFailure(failed ? OUTCOME.FAILED : 'briefing_failed', err)
+      res.status(500).json({ ok: false, error: failed ? 'delivery_validation_failed' : 'briefing_failed' })
     } finally {
       inFlight = null
     }
   })
+
+  /** Item counts taken from the DELIVERED brief, so the audit counts what was sent. */
+  function countItems (brief) {
+    const out = {}
+    for (const [k, v] of Object.entries(brief.sections)) out[k] = Array.isArray(v) ? v.length : 0
+    return out
+  }
+
+  /** A validator throw is a different failure from a read failure, and is named as such. */
+  function isValidationFailure (err) {
+    const m = (err && err.message) || ''
+    return m === 'not_a_brief' || m.startsWith('missing_section:') || err === VALIDATOR_THREW
+  }
+
+  /**
+   * One scrubbed line, and only when there is something to say. The raw message never
+   * reaches console: scrubReason strips URLs, paths, addresses and opaque ids and caps
+   * the length, exactly as the read layer does for adapter errors.
+   */
+  function recordFailure (outcome, err) {
+    try {
+      console.log('[AROMA-BRIEFING]', JSON.stringify({
+        event: 'BRIEFING_FAILED',
+        timestamp: new Date().toISOString(),
+        outcome,
+        reason: scrubReason((err && err.message) || 'unknown')
+      }))
+    } catch (_) { /* a diagnostic must never break the response */ }
+  }
 
   return router
 }

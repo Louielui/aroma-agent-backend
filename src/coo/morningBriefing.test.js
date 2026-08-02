@@ -13,9 +13,10 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 
 const {
-  buildMorningBriefing, makeItem, assertNoOperationalClaim, localDay, stamp,
+  buildMorningBriefing, makeItem, localDay, stamp,
   TIMEZONE, AROMA_SYSTEM_COVERAGE, SECOND_REPO
 } = require('./morningBriefing')
+const { narrativeAssertsBusinessState, scopeForSource } = require('./statementScope')
 
 const NOW = '2026-08-02T14:00:00.000Z' // 09:00 in Winnipeg (CDT)
 
@@ -155,7 +156,7 @@ test('*** every emitted fact in a real brief carries provenance ***', async () =
     items: [item('calendar', 'c1', '2026-08-02T16:00:00.000Z', 'Service prep')],
     listPendingProposals: async () => [{ id: 'p1', status: 'pending', task: 'Decide X', createdAt: NOW }]
   })
-  const facts = ['today', 'importantUpdates', 'risks', 'decisionsNeeded']
+  const facts = ['today', 'recentActivity', 'risks', 'decisionsNeeded']
     .flatMap((k) => brief.sections[k]).filter((i) => i.kind === 'fact')
   assert.ok(facts.length > 0, 'there are facts to check')
   for (const f of facts) assert.ok(f.provenance && f.provenance.source, f.id + ' has provenance')
@@ -181,7 +182,7 @@ test('*** Top Priorities never exceeds three, and each cites a real fact ***', a
   const { brief } = await run({ listPendingProposals: async () => pending })
   assert.equal(brief.sections.topPriorities.length, 3, 'three is the ceiling')
 
-  const ids = new Set(['today', 'importantUpdates', 'risks', 'decisionsNeeded']
+  const ids = new Set(['today', 'recentActivity', 'risks', 'decisionsNeeded']
     .flatMap((k) => brief.sections[k]).map((i) => i.id))
   for (const p of brief.sections.topPriorities) {
     for (const cited of p.basedOnFactIds) assert.ok(ids.has(cited), 'cites a fact that is IN this brief: ' + cited)
@@ -192,7 +193,7 @@ test('*** an empty brief says "none" with empty arrays, and invents nothing ***'
   const { brief } = await run({ items: [] })
   assert.deepEqual(brief.sections.today, [], 'empty array, not a placeholder sentence')
   assert.deepEqual(brief.sections.decisionsNeeded, [])
-  assert.equal(Array.isArray(brief.sections.importantUpdates), true)
+  assert.equal(Array.isArray(brief.sections.recentActivity), true)
 })
 
 /* ── 5. the operational wall ──────────────────────────────────────────────── */
@@ -207,22 +208,50 @@ test('*** Aroma System is ALWAYS present and ALWAYS unavailable ***', async () =
   assert.equal(AROMA_SYSTEM_COVERAGE.trust, 'unavailable', 'it is a constant, not a probe result')
 })
 
-test('*** no operational claim can be built from the connected sources ***', async () => {
+test('*** a gmail subject about stock is SHOWN as a source_record, not hidden ***', async () => {
+  // The Owner's ruling: do not hide an item just because its title says "stock". The
+  // subject IS the email's title and the Owner wants to see it. What must never happen
+  // is the brief presenting it as the state of the restaurant.
   const { brief, audit } = await run({
     items: [item('gmail', 'g9', NOW, 'Invoice: 40 cases stock delivered, sales up 12%')]
   })
-  // The subject line is quoted verbatim as a gmail fact — that is legitimate, it IS the
-  // email's title. What must never happen is the brief asserting it as an operational
-  // truth about the restaurant. The guard reports any fact whose text touches those terms.
-  const flagged = assertNoOperationalClaim(
-    ['today', 'importantUpdates', 'risks', 'decisionsNeeded'].flatMap((k) => brief.sections[k]))
-  assert.ok(flagged.length > 0, 'the guard SEES the operational vocabulary')
-  assert.equal(audit.outcome, 'operational_claim_blocked', 'and the brief is marked, not silently shipped')
+  const found = brief.sections.recentActivity.find((i) => i.provenance && i.provenance.sourceId === 'g9')
+  assert.ok(found, 'the record is present — it was not suppressed')
+  assert.equal(found.scope, 'source_record', 'and its scope came from the SOURCE, not the words')
+  assert.match(found.text, /^gmail contains a record: "/, 'the wording is containment, not assertion')
+  assert.match(found.text, /40 cases stock delivered/, 'with the subject quoted verbatim')
+
+  // The backstop sees only OUR words. The quoted subject is invisible to it.
+  assert.equal(narrativeAssertsBusinessState(found.text), null,
+    'a quoted subject is not a narrative claim')
+  assert.equal(audit.outcome, undefined, 'the builder no longer names an outcome it cannot know')
 })
 
-test('*** POSITIVE CONTROL — ordinary text is not flagged ***', () => {
-  const clean = [{ id: 'a', kind: 'fact', text: 'Team meeting at 10:00', provenance: { source: 'calendar' } }]
-  assert.deepEqual(assertNoOperationalClaim(clean), [], 'no false positive on a normal item')
+test('*** POSITIVE CONTROL — the backstop DOES fire on an unquoted claim ***', () => {
+  // Without this, "returns null" could mean the scan matches nothing at all.
+  assert.equal(narrativeAssertsBusinessState('Inventory is down to 4 cases'), 'inventory')
+  assert.equal(narrativeAssertsBusinessState('gmail contains a record: "Team meeting"'), null,
+    'and it does not fire on ordinary text')
+})
+
+test('*** scope is decided by SOURCE, and an unknown source has none ***', () => {
+  assert.equal(scopeForSource('gmail'), 'source_record')
+  assert.equal(scopeForSource('proposals'), 'owner_work_item')
+  assert.equal(scopeForSource('coverage:drive'), 'coverage_state')
+  assert.equal(scopeForSource('aroma-system'), 'business_state')
+  assert.equal(scopeForSource('something-invented'), null, 'closed, not open')
+})
+
+test('*** permanent gaps are coverage, NOT daily risks ***', async () => {
+  const { brief } = await run({})
+  const riskSources = brief.sections.risks.map((r) => r.provenance.source)
+  for (const gap of ['coverage:aroma-system', 'coverage:deadlines', 'coverage:awaiting-reply']) {
+    assert.equal(riskSources.includes(gap), false, gap + ' must not be reported as a fresh blocker')
+  }
+  // But they ARE fully visible where a standing gap belongs.
+  for (const s of ['aroma-system', 'deadlines', 'awaiting-reply']) {
+    assert.equal(cov(brief, s).state, 'unavailable', s + ' is still on the coverage list')
+  }
 })
 
 /* ── 6. the second GitHub repo degrades alone ─────────────────────────────── */

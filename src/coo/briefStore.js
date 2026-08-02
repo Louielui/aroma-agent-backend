@@ -97,12 +97,67 @@ function validateRecord (rec) {
 }
 
 /**
- * @param {{ sink?: (rec) => void }} deps — sink defaults to in-memory, so nothing is
- *   written to disk unless a caller deliberately supplies somewhere to write.
+ * WHERE THE AUDIT LIVES.
+ *
+ * The first version defaulted to an in-memory array, so every record died with the
+ * process — an audit that a restart erases is not an audit. It is now an append-only
+ * JSONL file under a directory with its OWN ACL, provisioned by
+ * scripts/coo/provision-brief-audit.ps1 on the same model the conversation archive uses:
+ * inheritance broken, and exactly SYSTEM + Administrators + the Owner account.
+ * AromaOperator is deliberately absent — the Computer Operator account has no business
+ * reading what the Owner was briefed about.
+ *
+ * Records are metadata only, so even a reader who has access learns counts and hashes,
+ * never content.
+ */
+const DEFAULT_AUDIT_DIR = 'C:\\Aroma\\BriefAudit'
+const AUDIT_FILE = 'brief-audit.jsonl'
+
+/** Append one line, durably. Creates the directory if the provisioner has not run. */
+function createFileSink (dir) {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const file = path.join(dir, AUDIT_FILE)
+  return (rec) => {
+    fs.mkdirSync(dir, { recursive: true })
+    // fsync the DATA. An audit line that is only in the page cache is not on disk, and
+    // the crash that loses it is exactly the event you would want the record of.
+    const fd = fs.openSync(file, 'a')
+    try {
+      fs.writeSync(fd, JSON.stringify(rec) + '\n')
+      fs.fsyncSync(fd)
+    } finally { fs.closeSync(fd) }
+  }
+}
+
+function readAll (dir) {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const file = path.join(dir, AUDIT_FILE)
+  if (!fs.existsSync(file)) return []
+  return fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim())
+    .map((l) => { try { return JSON.parse(l) } catch (_) { return null } }).filter(Boolean)
+}
+
+/**
+ * @param {{ sink?: (rec) => void, dir?: string, persist?: boolean }} deps
+ *
+ * PERSISTENCE IS OPT-IN, and that is not a style choice. The first version defaulted to
+ * writing, so `createBriefStore()` with no arguments appended to a hard-coded absolute
+ * path — and three existing tests, which had every reason to think they were using a
+ * throwaway store, wrote records into the real audit file. An audit is evidence; a
+ * default that lets anything write to it by omission is the wrong way round.
+ *
+ * Production wiring says `{ persist: true }` explicitly. Anything that has not thought
+ * about it gets memory. A `dir` is honoured only together with persist.
  */
 function createBriefStore (deps = {}) {
   const records = []
-  const sink = typeof deps.sink === 'function' ? deps.sink : (rec) => { records.push(rec) }
+  const dir = deps.dir || DEFAULT_AUDIT_DIR
+  const persist = deps.persist === true || (deps.persist !== false && typeof deps.dir === 'string')
+  const sink = typeof deps.sink === 'function'
+    ? deps.sink
+    : (persist ? createFileSink(dir) : (rec) => { records.push(rec) })
 
   /** Refuses rather than trimming. Returns { ok, id } or { ok:false, reason, field }. */
   function write (rec) {
@@ -113,15 +168,23 @@ function createBriefStore (deps = {}) {
     return { ok: true, id: rec.briefId }
   }
 
-  function list () { return records.slice() }
+  /** Everything on record. Reads from disk when persisting, so a FRESH process sees it. */
+  function list () {
+    if (typeof deps.sink === 'function' || !persist) return records.slice()
+    return readAll(dir)
+  }
 
-  return { write, list, validateRecord }
+  return { write, list, validateRecord, dir, persist }
 }
 
 module.exports = {
   createBriefStore,
   validateRecord,
   hashBrief,
+  createFileSink,
+  readAll,
+  DEFAULT_AUDIT_DIR,
+  AUDIT_FILE,
   ALLOWED_FIELDS,
   FORBIDDEN_FIELDS,
   STATUS_FIELDS,

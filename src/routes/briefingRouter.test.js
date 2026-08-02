@@ -60,7 +60,7 @@ function countingBuilder (counter, delayMs) {
         generatedAt: { iso: NOW, display: 'Aug 02, 2026' },
         sections: {
           today: [{ id: 'i1', kind: 'fact', text: 'Dinner service prep', provenance: { source: 'calendar', sourceId: 'c1' }, basedOnFactIds: [] }],
-          importantUpdates: [], risks: [], topPriorities: [], decisionsNeeded: [],
+          recentActivity: [], risks: [], topPriorities: [], decisionsNeeded: [],
           dataCoverage: [{ source: 'gmail', state: 'live', count: 1, error: null, usedFallback: false, retrievedAt: { iso: NOW } }]
         }
       },
@@ -77,7 +77,11 @@ function router (opts = {}) {
   return createBriefingRouter(Object.assign({
     buildConnector: () => ({ connector: { read: async () => ({ results: [] }) } }),
     listPendingProposals: async () => [],
-    buildDecisionRecall: async () => ({ count: 0 })
+    buildDecisionRecall: async () => ({ count: 0 }),
+    // A NON-PERSISTING STORE, ALWAYS. Without this the router falls back to its
+    // production default and the suite appends to the real audit file — which is exactly
+    // what happened once, and an audit that a test run can write to is not an audit.
+    briefStore: createBriefStore({ persist: false })
   }, opts))
 }
 

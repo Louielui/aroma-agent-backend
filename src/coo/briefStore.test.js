@@ -37,10 +37,10 @@ test('*** the audit-metadata record is accepted ***', () => {
 })
 
 test('*** contentHash proves the brief existed without keeping a word of it ***', () => {
-  const brief = { sections: { today: [{ text: 'Dinner with Wong Tai Sin at 19:00' }] } }
+  const brief = { sections: { today: [{ text: 'Dinner with SYNTHETIC-NAME-A at 19:00' }] } }
   const h = hashBrief(brief)
   assert.match(h, /^[0-9a-f]{64}$/)
-  assert.equal(h.includes('Wong'), false, 'the digest carries no plaintext')
+  assert.equal(h.includes('SYNTHETIC'), false, 'the digest carries no plaintext')
   assert.equal(hashBrief(brief), h, 'and it is stable')
 })
 

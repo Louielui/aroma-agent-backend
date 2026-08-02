@@ -4,7 +4,7 @@
 
   var SECTIONS = [
     { key: 'today', title: 'Today' },
-    { key: 'importantUpdates', title: 'Important Updates' },
+    { key: 'recentActivity', title: 'Recent Activity' },
     { key: 'risks', title: 'Risks / Blockers' },
     { key: 'topPriorities', title: 'Top Priorities' },
     { key: 'decisionsNeeded', title: 'Decisions Needed' }
@@ -60,11 +60,16 @@
     return d
   }
 
-  function renderSection (spec, items, alwaysOpen) {
+  function renderSection (spec, items, alwaysOpen, withheld) {
     var s = el('section', alwaysOpen ? 'always' : '')
     var head = el('div', 'head')
     head.appendChild(el('h2', null, spec.title))
-    head.appendChild(el('span', 'summary', items.length === 0 ? '沒有' : items.length + ' 項'))
+    var summary = items.length === 0 ? '沒有' : items.length + ' 項'
+    /* A COUNT, NEVER THE CONTENT. Withheld items were removed by the delivery validator
+       because their evidence did not hold up. Their text is precisely what must not be
+       shown, so only how many were withheld appears — never what they said. */
+    if (withheld > 0) summary += ' · ' + withheld + ' 項因證據不足未有顯示'
+    head.appendChild(el('span', 'summary', summary))
     head.appendChild(el('span', 'chev', '▸'))
     s.appendChild(head)
 
@@ -112,8 +117,9 @@
 
   function render (brief) {
     out.textContent = ''
+    var withheld = brief.withheldCounts || {}
     SECTIONS.forEach(function (spec) {
-      out.appendChild(renderSection(spec, brief.sections[spec.key] || [], false))
+      out.appendChild(renderSection(spec, brief.sections[spec.key] || [], false, withheld[spec.key] || 0))
     })
     out.appendChild(renderCoverage(brief.sections.dataCoverage || []))
     sub.textContent = 'Generated ' + when(brief.generatedAt) + ' · ' + brief.briefId
@@ -126,7 +132,9 @@
     fetch('/api/v1/briefing/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'same-origin' })
       .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j } }) })
       .then(function (res) {
-        if (res.status !== 200 || !res.body.ok) throw new Error((res.body && res.body.detail) || ('HTTP ' + res.status))
+        /* The server sends a fixed error code and no detail -- an adapter's message is
+           written for developers and can carry URLs, ids and queries. */
+        if (res.status !== 200 || !res.body.ok) throw new Error((res.body && res.body.error) || ('HTTP ' + res.status))
         render(res.body.brief)
       })
       .catch(function (e) {

@@ -19,19 +19,20 @@
  *     read-only connection configured. Its absence must be visible, not implied.
  *  6. Nothing about sales, stock, production, cost, purchasing or attendance may be
  *     inferred from Gmail/Drive/GitHub. There is no code path that produces such an
- *     item, and `assertNoOperationalClaim` proves it for the text that IS produced.
+ *     item; scope is decided by SOURCE (statementScope.js), never by the text.
  *
  * Times are rendered in America/Winnipeg for the Owner, and every rendered time keeps
  * its original ISO string beside it as the evidence.
  */
 
 const crypto = require('node:crypto')
+const { scopeForSource, sourceRecordText, ownerWorkItemText } = require('./statementScope')
 
 const SCHEMA_VERSION = 1
 const TIMEZONE = 'America/Winnipeg'
 const KINDS = Object.freeze(['fact', 'inference', 'recommendation'])
 const SECTIONS = Object.freeze([
-  'today', 'importantUpdates', 'risks', 'topPriorities', 'decisionsNeeded', 'dataCoverage'
+  'today', 'recentActivity', 'risks', 'topPriorities', 'decisionsNeeded', 'dataCoverage'
 ])
 
 /** The four external sources, plus the two internal ones and the known gap. */
@@ -50,13 +51,21 @@ const AROMA_SYSTEM_COVERAGE = Object.freeze({
   trust: 'unavailable',
   count: 0,
   error: 'read-only connection not configured',
-  usedFallback: false
+  usedFallback: false,
+  permanentGap: true
 })
 
-/** Operational facts that CANNOT be known from the connected sources. */
-const FORBIDDEN_OPERATIONAL = Object.freeze([
-  'sales', 'revenue', 'stock', 'inventory', 'on hand', 'production', 'covers',
-  'food cost', 'purchasing', 'purchase order', 'attendance', 'shift', 'payroll'
+/**
+ * QUESTIONS THE BRIEF IS ASKED BUT HAS NO SOURCE FOR.
+ *
+ * Data Coverage listed SOURCES, so a question with no source at all was invisible: the
+ * brief answered "today's schedule" and silently dropped "and deadlines", because no
+ * source was missing — there was simply never one to miss. Coverage now names the
+ * QUESTION too, so the gap is on screen instead of implied by an absence.
+ */
+const UNSOURCED_QUESTIONS = Object.freeze([
+  Object.freeze({ source: 'deadlines', trust: 'unavailable', count: 0, permanentGap: true, error: 'no source configured', usedFallback: false }),
+  Object.freeze({ source: 'awaiting-reply', trust: 'unavailable', count: 0, permanentGap: true, error: 'no source configured — gmail is read for records, not for reply state', usedFallback: false })
 ])
 
 /* ── time ─────────────────────────────────────────────────────────────────── */
@@ -101,7 +110,7 @@ function provenanceOf (r) {
  * Build one item, or return null if it breaks a rule. Returning null rather than
  * throwing is deliberate: one malformed item must not cost the Owner the whole brief.
  */
-function makeItem ({ id, kind, text, provenance = null, basedOnFactIds = [] }, rejected) {
+function makeItem ({ id, kind, text, provenance = null, basedOnFactIds = [], scope = null }, rejected) {
   const note = (why) => { if (rejected) rejected.push({ id, kind, why }); return null }
 
   if (!KINDS.includes(kind)) return note('unknown kind')
@@ -114,23 +123,27 @@ function makeItem ({ id, kind, text, provenance = null, basedOnFactIds = [] }, r
   const cites = Array.isArray(basedOnFactIds) ? basedOnFactIds.filter((x) => typeof x === 'string' && x) : []
   if (kind !== 'fact' && cites.length === 0) return note(kind + ' without a cited fact')
 
-  return { id, kind, text: text.trim(), provenance, basedOnFactIds: cites }
+  // SCOPE COMES FROM THE SOURCE, never from the text and never from the caller's opinion.
+  // A derived item inherits the scope it was given (topPriorities are owner_work_item),
+  // and a fact's scope is looked up from where it came from. An unknown source yields
+  // null, which the delivery validator treats as "remove".
+  const resolved = kind === 'fact' ? scopeForSource(provenance && provenance.source) : scope
+  return { id, kind, text: text.trim(), provenance, basedOnFactIds: cites, scope: resolved }
 }
 
-/** No item may assert an operational fact the connected sources cannot know. */
-function assertNoOperationalClaim (items) {
-  const offenders = []
-  for (const it of items) {
-    if (it.kind !== 'fact') continue
-    const src = it.provenance && it.provenance.source
-    if (src === 'aroma-system') continue // would be legitimate, and is unreachable in v0.1
-    const low = it.text.toLowerCase()
-    for (const term of FORBIDDEN_OPERATIONAL) {
-      if (low.includes(term)) { offenders.push({ id: it.id, term, source: src }); break }
-    }
-  }
-  return offenders
-}
+/**
+ * REPLACED BY SCOPE — deliberately deleted rather than left as a second opinion.
+ *
+ * This scanned every item's raw text for words like "stock", and it was wrong twice
+ * over. It could not stop anything (it only set an audit field, and the text shipped
+ * regardless), and as a semantic model it treated a QUOTED email subject as though the
+ * brief itself were asserting it — so the only way it could have "worked" was by hiding
+ * a real, citable record the Owner wanted to see.
+ *
+ * What an item may claim is now decided by its SOURCE, in statementScope.js. The
+ * vocabulary scan survives only as a narrative-only backstop inside the delivery
+ * validator, where it can actually remove something.
+ */
 
 /* ── section builders ─────────────────────────────────────────────────────── */
 
@@ -145,13 +158,13 @@ function buildToday (calendarItems, nowIso, mk) {
     if (r.usedFallback === true) continue
     if (!r.originalDate || localDay(r.originalDate) !== today) continue
     const s = stamp(r.originalDate)
-    const it = mk({ id: null, kind: 'fact', text: titleOf(r) + ' — ' + (s.display || s.iso), provenance: provenanceOf(r) })
+    const it = mk({ id: null, kind: 'fact', text: sourceRecordText(r.source, r.title, s.display || s.iso), provenance: provenanceOf(r) })
     if (it) out.push(it)
   }
   return out
 }
 
-function buildImportantUpdates (items, nowIso, mk, windowHours) {
+function buildRecentActivity (items, nowIso, mk, windowHours) {
   const cutoff = new Date(nowIso).getTime() - windowHours * 3600 * 1000
   const out = []
   for (const r of items) {
@@ -159,7 +172,10 @@ function buildImportantUpdates (items, nowIso, mk, windowHours) {
     const t = r.originalDate ? new Date(r.originalDate).getTime() : NaN
     if (!Number.isFinite(t) || t < cutoff) continue
     const s = stamp(r.originalDate)
-    const it = mk({ id: null, kind: 'fact', text: '[' + r.source + '] ' + titleOf(r) + ' — ' + (s.display || s.iso), provenance: provenanceOf(r) })
+    // "gmail contains a record: <title>" -- what the source HOLDS, never what is true of
+    // the business. The title is quoted, which is also what keeps the narrative backstop
+    // precise: it scans only the words this system wrote.
+    const it = mk({ id: null, kind: 'fact', text: sourceRecordText(r.source, r.title, s.display || s.iso), provenance: provenanceOf(r) })
     if (it) out.push(it)
   }
   return out
@@ -174,11 +190,17 @@ function buildRisks (coverage, mk) {
   const out = []
   for (const c of coverage) {
     if (c.trust !== 'unavailable') continue
+    // A PERMANENT GAP IS NOT TODAY'S NEWS. Aroma System has never been connected and
+    // deadlines have never had a source. Reporting them as fresh blockers every morning
+    // buries the one source that actually broke today — and because Risks feeds Top
+    // Priorities, it would fill the Owner's three slots with the same three lines
+    // forever. They stay fully visible in Data Coverage, where a standing gap belongs.
+    if (c.permanentGap === true) continue
     const f = mk({
       id: null,
       kind: 'fact',
       text: c.source + ' could not be read: ' + (c.error || 'unavailable'),
-      provenance: { source: c.source, sourceId: 'coverage:' + c.source, originalDate: { iso: null, display: null }, link: null, retrievedAt: stamp(c.retrievedAt || null), usedFallback: false }
+      provenance: { source: 'coverage:' + c.source, sourceId: 'coverage:' + c.source, originalDate: { iso: null, display: null }, link: null, retrievedAt: stamp(c.retrievedAt || null), usedFallback: false }
     })
     if (f) out.push(f)
   }
@@ -192,7 +214,7 @@ function buildDecisionsNeeded (pending, mk) {
     const it = mk({
       id: null,
       kind: 'fact',
-      text: 'Pending proposal: ' + String(p.task || '(no task text)') + (p.targetProject ? ' [' + p.targetProject + ']' : '') + (s.display ? ' — raised ' + s.display : ''),
+      text: ownerWorkItemText(String(p.task || '(no task text)') + (p.targetProject ? ' [' + p.targetProject + ']' : ''), s.display),
       provenance: { source: 'proposals', sourceId: String(p.id), originalDate: s, link: null, retrievedAt: stamp(p.retrievedAt || null), usedFallback: false }
     })
     if (it) out.push(it)
@@ -213,7 +235,7 @@ function buildTopPriorities (sections, mk) {
   pool.sort((a, b) => b.weight - a.weight)
   const out = []
   for (const { f, why } of pool.slice(0, 3)) {
-    const it = mk({ id: null, kind: 'recommendation', text: f.text + ' — ' + why, provenance: null, basedOnFactIds: [f.id] })
+    const it = mk({ id: null, kind: 'recommendation', text: f.text + ' — ' + why, provenance: null, basedOnFactIds: [f.id], scope: 'owner_work_item' })
     if (it) out.push(it)
   }
   return out
@@ -305,6 +327,7 @@ async function buildMorningBriefing (deps = {}) {
 
   // ── 4. the gap that must always be visible ────────────────────────────────
   coverage.push(Object.assign({ retrievedAt: nowIso }, AROMA_SYSTEM_COVERAGE))
+  for (const q of UNSOURCED_QUESTIONS) coverage.push(Object.assign({ retrievedAt: nowIso }, q))
 
   // ── 5. sections ───────────────────────────────────────────────────────────
   const calendarItems = readItems.filter((r) => r.source === 'calendar')
@@ -312,14 +335,11 @@ async function buildMorningBriefing (deps = {}) {
 
   const sections = {
     today: buildToday(calendarItems, nowIso, mk),
-    importantUpdates: buildImportantUpdates(updateSource, nowIso, mk, windowHours),
+    recentActivity: buildRecentActivity(updateSource, nowIso, mk, windowHours),
     risks: buildRisks(coverage, mk),
     decisionsNeeded: buildDecisionsNeeded(pending, mk)
   }
   sections.topPriorities = buildTopPriorities(sections, mk)
-
-  const allItems = SECTIONS.filter((s) => s !== 'dataCoverage').flatMap((s) => sections[s] || [])
-  const operational = assertNoOperationalClaim(allItems)
 
   const brief = {
     briefId: 'brf_' + crypto.randomBytes(6).toString('hex'),
@@ -328,7 +348,7 @@ async function buildMorningBriefing (deps = {}) {
     timezone: TIMEZONE,
     sections: {
       today: sections.today,
-      importantUpdates: sections.importantUpdates,
+      recentActivity: sections.recentActivity,
       risks: sections.risks,
       topPriorities: sections.topPriorities,
       decisionsNeeded: sections.decisionsNeeded,
@@ -342,8 +362,10 @@ async function buildMorningBriefing (deps = {}) {
         retrievedAt: stamp(c.retrievedAt)
       }))
     },
-    rejectedItems: rejected,
-    operationalClaimViolations: operational
+    // DRAFT-TIME BOOKKEEPING ONLY. validateBriefForDelivery strips this before the brief
+    // leaves the process. `operationalClaimViolations` is gone entirely: it was a field
+    // that recorded a danger and then shipped it, which is worse than not looking.
+    rejectedItems: rejected
   }
 
   const itemCounts = {}
@@ -358,8 +380,11 @@ async function buildMorningBriefing (deps = {}) {
       sourceStatuses: brief.sections.dataCoverage.map((c) => ({ source: c.source, state: c.state, count: c.count })),
       itemCounts,
       rejectedCount: rejected.length,
-      durationMs: Date.now() - startedAt,
-      outcome: operational.length > 0 ? 'operational_claim_blocked' : 'ok'
+      durationMs: Date.now() - startedAt
+      // NO `outcome` HERE. The builder does not know what was delivered — only the
+      // delivery validator does, and it is the one that sets it. A builder that named
+      // the outcome is exactly how `operational_claim_blocked` came to describe
+      // something that had not been blocked.
     }
   }
 }
@@ -367,7 +392,6 @@ async function buildMorningBriefing (deps = {}) {
 module.exports = {
   buildMorningBriefing,
   makeItem,
-  assertNoOperationalClaim,
   stamp,
   localDay,
   SCHEMA_VERSION,
@@ -377,5 +401,5 @@ module.exports = {
   CONTEXT_SOURCES,
   SECOND_REPO,
   AROMA_SYSTEM_COVERAGE,
-  FORBIDDEN_OPERATIONAL
+  UNSOURCED_QUESTIONS
 }
