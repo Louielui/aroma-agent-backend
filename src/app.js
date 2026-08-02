@@ -24,6 +24,7 @@ const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
 const { createContextRouter } = require('./routes/contextRouter') // Read Context v1 (guarded; 403 when READ_ACCESS OFF)
+const { createBriefingRouter } = require('./routes/briefingRouter') // Morning Briefing v0.1 (owner session; read-only)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
 const { listWorkers, getExecutive } = require('./workers/registry')
@@ -854,6 +855,17 @@ function createApp (options = {}) {
   // READ_ACCESS === 'on'. Read-only; no parameterised method endpoint exists.
   app.use('/api/v1/context', requireOwner)
   app.use(createContextRouter())
+
+  // Aroma Morning Briefing v0.1 — GET /briefing (page) and POST
+  // /api/v1/briefing/generate. Gated by the SAME owner session as /demo, so the Owner
+  // is never asked to authenticate twice.
+  //
+  // The read happens in-process: the route calls buildReadContext itself and hands the
+  // page a finished brief. The browser is given no way to name a source, a method or a
+  // query, so /api/v1/context/* stays exactly as private as it was.
+  app.use('/briefing', requireOwner)
+  app.use('/api/v1/briefing', requireOwner)
+  app.use(createBriefingRouter())
 
   // Local Owner approval card — POST /api/v1/owner/work-orders (seal + surface) and
   // POST /api/v1/owner/approve (four fields only). Not token-gated: it is gated by

@@ -235,11 +235,12 @@ async function runStep (connector, source, step, caps) {
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
-    return { block: null, status: 'NO_SOURCES', perSource: [] }
+    return { block: null, status: 'NO_SOURCES', perSource: [], items: [] }
   }
   const keywords = extractKeywords(message, caps.maxKeywords)
   const perSource = []
   const lines = []
+  const items = []
   let truncated = false
 
   // ── ONE SOURCE, START TO FINISH ────────────────────────────────────────────
@@ -271,11 +272,15 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       const overflow = step.results.length > kept.length
 
       if (kept.length === 0) { // read succeeded, nothing matched — NOT unavailable
-        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], overflow }
+        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], items: [], overflow }
       }
       return {
         entry: { source, trust: 'live', count: kept.length, error: null, usedFallback },
         lines: kept.map((r) => renderItem(r, caps, { recent: usedFallback })),
+        // THE SAME RESULTS, UNRENDERED. `lines` are for a prompt; a caller that needs to
+        // cite an item needs its fields, not a sentence about it. Additive: existing
+        // callers destructure { block, status, perSource } and are unaffected.
+        items: kept.map((r) => Object.assign({}, r, { usedFallback })),
         overflow
       }
     } catch (err) {
@@ -301,6 +306,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       : { entry: { source: sources[i], trust: 'unavailable', count: 0, error: 'read failed', usedFallback: false }, lines: [unavailableLine(sources[i], 'read failed')], overflow: false }
     perSource.push(got.entry)
     for (const l of got.lines) lines.push(l)
+    for (const it of (Array.isArray(got.items) ? got.items : [])) items.push(it)
     if (got.overflow) truncated = true
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
@@ -327,7 +333,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   const block = `${body}\n${CLOSE}`
   const anyLive = perSource.some((p) => p.trust === 'live' && p.count > 0)
   const status = truncated ? 'TRUNCATED' : (anyLive ? 'READY' : 'PARTIAL')
-  return { block, status, perSource }
+  return { block, status, perSource, items }
 }
 
 module.exports = {
