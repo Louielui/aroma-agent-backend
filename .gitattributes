@@ -1,0 +1,55 @@
+# ─────────────────────────────────────────────────────────────────────────────
+#  LINE ENDINGS ARE PART OF AN INTEGRITY CONTROL HERE, NOT A STYLE PREFERENCE.
+#
+#  computePackageHash() sha256s the RAW BYTES of every file in the execution
+#  package. This repo previously had core.autocrlf=true and no .gitattributes,
+#  so git rewrote line endings whenever it materialised a file — and the hash
+#  moved for reasons that had nothing to do with content.
+#
+#  Measured on 2026-08-02: a `git stash push` / `git stash pop` round-trip over
+#  five packaged files, with `git diff` showing not one textual change, moved
+#  the package hash 167b15cb… -> 57f24d25…, and turned a guard test red because
+#  it slices uiaCanary.ps1 on '\n}\n', which stops matching under CRLF.
+#
+#  An integrity value that moves for reasons unrelated to content trains its
+#  readers to wave it through. So: ONE byte sequence, on every machine, in
+#  every checkout, forever. LF, chosen because it is what the repository has
+#  always stored — CRLF was only ever a checkout artefact.
+#
+#  BOM: the text/eol attributes convert CR and LF bytes and nothing else. A
+#  UTF-8 BOM is EF BB BF, which contains neither, so the BOM-bearing packaged
+#  .ps1 files are unaffected. This is asserted, not assumed, by
+#  packageHashStability.test.js. PowerShell 5.1 parses LF-only scripts without
+#  complaint; the BOM, not the line ending, is what makes it read UTF-8.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Everything text, normalised to LF in the repository and on checkout.
+* text=auto eol=lf
+
+# The execution package's own types, stated explicitly rather than left to the
+# text=auto heuristic — these are the files whose bytes are hashed.
+*.js    text eol=lf
+*.ps1   text eol=lf
+*.json  text eol=lf
+
+# Documentation and the rest, same rule, so a doc edit can never be the thing
+# that makes a checkout differ from another checkout.
+*.md    text eol=lf
+*.txt   text eol=lf
+*.html  text eol=lf
+*.css   text eol=lf
+*.svg   text eol=lf
+.gitignore  text eol=lf
+*.example   text eol=lf
+
+# Binaries: never touched, never guessed at. None are tracked today; this is
+# here so that adding one cannot silently corrupt it.
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.pdf   binary
+*.zip   binary
+*.gz    binary
+*.exe   binary
+*.dll   binary
