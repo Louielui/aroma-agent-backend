@@ -9,6 +9,30 @@ recorded per item.
 
 ---
 
+## M-2 — re-evaluate encrypted off-site backup for the Xiangxiang archive
+
+**Status:** scheduled · **Opened:** 2026-08-02 · **Re-evaluate on: 2026-11-02** · **Blocks:** nothing
+
+**Owner decision, 2026-08-02:** off-site backup of the conversation archive is **deliberately not
+done**. Uploading it would publish the Owner's conversations — and any third-party content still
+in them — to an outside company. He has instead **accepted the residual risk**:
+
+- D: is removable media, and NTFS permissions do not travel with the disk; offline or
+  administrator access on another machine reads it;
+- fire, theft and hardware failure hit both copies, because both are in one place.
+
+**Mitigations in force:** D: does not leave the controlled location · the archive backup directory
+re-verifies its own ACL on every run · nothing goes to B2 or any other cloud.
+
+**On 2026-11-02**, with roughly three months of real conversations accumulated, decide whether
+encrypted off-site backup is then worth its cost — principally a key that can be lost, which
+turns a backup into nothing at all.
+
+This is a **decision with a review date, not an omission.** Do not "fix" it by enabling a cloud
+sync; that would reverse an Owner decision without asking him.
+
+---
+
 ## M-1 — three Computer Operator inertness tests assert a folder that now legitimately exists
 
 **Status:** open · **Opened:** 2026-08-01 · **Blocks:** nothing · **Severity:** low (test-only)

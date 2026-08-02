@@ -159,6 +159,21 @@ AromaOperator, and it re-checks on every run rather than trusting what it set on
   the drive can read the snapshots on another machine. Encryption would fix that and would add a
   key to lose; no decision yet.
 
+### Off-site: deliberately not done (Owner decision, 2026-08-02)
+
+Not an oversight, not a missing step. The Owner has **accepted the residual risk** rather than
+publish his conversations to an outside company:
+
+- D: is removable media, and NTFS permissions do not travel with the disk — offline or
+  administrator access on another machine reads it.
+- fire, theft and hardware failure all still hit both copies, because both are in one place.
+
+Mitigations in force meanwhile: **D: does not leave the controlled location**; the archive backup
+directory re-verifies its own ACL on every run; **nothing is uploaded to B2 or any other cloud**.
+
+**Re-evaluate on 2026-11-02** — after roughly three months of real data — whether encrypted
+off-site backup is then worth it. Recorded as M-2 in [MAINTENANCE-BACKLOG.md](../MAINTENANCE-BACKLOG.md).
+
 ### Backups and the delete button are in conflict
 
 `delete` removes a turn from the live archive — and every snapshot taken before that moment still
@@ -170,6 +185,45 @@ The honest resolution is blunt: **after deleting anything, run
 `Purge Xiangxiang Archive Backups.cmd`**, which removes the entire chain. The next backup starts
 fresh. The cost — losing snapshot history — is the price of a delete button that means what it
 says, and it is printed on the screen before it happens.
+
+**Owner decision, 2026-08-02 — this trade-off is ACCEPTED and is not a defect.** Written here so
+that nobody later reads it as an oversight or a missing feature and "fixes" it. When the Owner
+asks for a conversation to be deleted:
+
+1. existing snapshots are **not edited** — a rewritten snapshot no longer matches the manifest
+   that proves it intact, and a repaired backup is an untrustworthy backup;
+2. **every backup chain that could contain it is purged whole**;
+3. a **new baseline** is taken from the cleaned active archive;
+4. the Owner is **told plainly** that the entire backup history at earlier points in time is
+   gone with it.
+
+Immutable backups and a real delete button cannot both be had. This system chooses the delete
+button, knowingly.
+
+### Purging records that are already stored
+
+`scripts/lab/purge-records.js` does the three separable things and reports each, because
+"deleted" has to survive a harder question than *is it still in the active file?*
+
+| | |
+|---|---|
+| **Logical** | an audit line naming ids, counts, hashes, time and the Owner's reason — and **no deleted text, name, subject or summary**. An audit that kept them would defeat the deletion it records. |
+| **Physical** | the active archive is rebuilt from the **original line bytes** of the records that stay, written to a temp file, **fsync'd**, closed, and moved into place by atomic rename. No `.bak`, no `.old`, no copy of the previous file under any name — keeping one would be keeping the thing being deleted. |
+| **Snapshots** | every snapshot holding a target is **removed whole**, never edited. |
+
+The scan for leftovers runs **in the same process**, because to look for the deleted text you
+need the deleted text, and writing it to a needle file would create a fresh copy of exactly what
+was being removed. It is held in memory and only counts are printed.
+
+Needles are split into **distinctive** (the whole turn, multi-word capitalised sequences, 6-character
+CJK windows) and **generic** (single Latin words). Only distinctive hits decide the verdict. The
+first version failed that: every Latin word of 4+ characters was a needle, so the scan reported
+"residue" in ten files — the launcher, a batch file, some JSON — because a reply about somebody's
+mail contains ordinary English and so does everything else. A scanner that cries wolf gets ignored.
+
+**What may be claimed:** zero readable residue in the active archive and in every snapshot.
+**What may not:** forensic unrecoverability. A rename unlinks bytes; it does not scrub the sectors
+that held them, and nothing here has evidence about the state of the disk.
 
 ## Where things are
 
