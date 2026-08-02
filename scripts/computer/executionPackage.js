@@ -96,6 +96,11 @@ const PACKAGE_FILES = Object.freeze([
   'scripts/computer/Operator-CommissioningBaseline.ps1',
   'scripts/computer/tool-commissioning-baseline.js',
   'scripts/computer/Operator-MeasureNotepadLaunch.ps1',
+  // The second measurement. In the package for the same reason as the first: staging copies
+  // exactly PACKAGE_FILES, so a tool that is not listed here cannot reach the operator account
+  // at all. It judges nothing and approves nothing — but it is code that will run in the
+  // operator session, and the Owner re-approves against the package that will really run.
+  'scripts/computer/Operator-MeasureNotepadUia.ps1',
   // ── REMOVED 2026-08-01: the Phase 3a pipe Companion ──────────────────────
   // companion-entry.js, ipcChannel.js, companion.js and observation.js were briefly listed
   // here, on the reasoning that they are staged where the operator can start them. Then the

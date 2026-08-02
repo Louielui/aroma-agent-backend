@@ -101,6 +101,18 @@ function unrollingRhs (rhs) {
  * `.Length` is deliberately NOT checked: on a string it is the correct property and wrapping
  * would break it (`@('abcd').Length` is 1, not 4). A rule that produces a wrong fix is worse
  * than no rule.
+ *
+ * KNOWN LIMITATION — IT IS FILE-SCOPED, NOT SCOPE-AWARE. Variables are tracked by name across
+ * the whole file, so the same name used for different things in different function bodies is
+ * conflated, and a safe `.Count` can be attributed to an unsafe assignment elsewhere. It found
+ * exactly that in Operator-MeasureNotepadUia.ps1: `$found` was an AutomationElementCollection
+ * inside one function and a hashtable at top level.
+ *
+ * Kept deliberately, and the SCRIPT was renamed rather than the rule loosened. A real parser
+ * would be scope-aware and would also be a second implementation of PowerShell's semantics to
+ * maintain. Reusing one name for two kinds of thing in one file is worth a rename on its own,
+ * so the false positive asks for something that should happen anyway — which is the only kind
+ * of false positive worth keeping.
  */
 function findUnrollHazards (source) {
   const lines = blankComments(source)

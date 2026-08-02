@@ -76,7 +76,13 @@ const ROOTS = Object.freeze([
   'scripts/computer/Operator-CommissioningBaseline.ps1',
   // The one-off launch measurement. It opens Notepad deliberately, outside any canary, so the
   // Owner can learn how the packaged app behaves without burning an approval to find out.
-  'scripts/computer/Operator-MeasureNotepadLaunch.ps1'
+  'scripts/computer/Operator-MeasureNotepadLaunch.ps1',
+  // The second one-off measurement: the document control's AutomationId and the Save As dialog's
+  // real shape. Same reasoning as its sibling — it opens Notepad deliberately, outside any
+  // canary, so that two failures which would otherwise be discovered mid-run are discovered for
+  // free instead. A root rather than a declared orphan, because nothing requires it and it is
+  // meant to be started by a person.
+  'scripts/computer/Operator-MeasureNotepadUia.ps1'
 ])
 
 /** Extensions that count as code for this purpose. */

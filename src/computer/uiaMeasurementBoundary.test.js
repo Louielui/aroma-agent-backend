@@ -1,0 +1,138 @@
+'use strict'
+
+/**
+ * uiaMeasurementBoundary.test.js — the second measurement tool stays a measurement.
+ *
+ * Operator-MeasureNotepadUia.ps1 exists to answer two blockers that would otherwise be found
+ * the expensive way: after the canary has opened Notepad, with an approval already spent. To be
+ * worth running it has to do real things — open the app, set text, open the Save As dialog — and
+ * that is exactly the shape of a tool that could quietly become a canary that nobody approved.
+ *
+ * So the boundary is asserted rather than described:
+ *
+ *   . it refuses any session that is not AromaOperator
+ *   . it never writes a byte, anywhere
+ *   . the canary's sealed text does not appear in it at all
+ *   . it opens the Save As dialog and CANCELS it; it never invokes Save
+ *   . it is clean under the PowerShell hazard rules that cost this project four rounds
+ */
+
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const path = require('node:path')
+
+const REPO = path.resolve(__dirname, '..', '..')
+const TOOL = path.join(REPO, 'scripts', 'computer', 'Operator-MeasureNotepadUia.ps1')
+const { findUnrollHazards, findIndexHazards, findAutomaticAssignments, blankComments } = require('./powershellHazards')
+const { PACKAGE_FILES } = require('../../scripts/computer/executionPackage')
+
+const raw = () => fs.readFileSync(TOOL, 'utf8')
+const code = () => blankComments(raw()).join('\n')
+
+test('*** it refuses any session that is not AromaOperator, before measuring anything ***', () => {
+  const c = code()
+  const sid = 'S-1-5-21-2042659270-2029498691-2127769412-1009'
+  assert.ok(c.includes(sid), 'the expected SID is pinned')
+  // By SID, not by name: an account can be renamed, a SID cannot.
+  assert.match(c, /\$me\.User\.Value -ne \$EXPECTED_SID/, 'compared by SID')
+  assert.match(c, /exit 1/, 'and it exits')
+
+  // The gate must come BEFORE anything is launched, or a wrong session still opens Notepad.
+  const gateAt = c.indexOf('$me.User.Value -ne $EXPECTED_SID')
+  const launchAt = c.indexOf('Start-Process')
+  assert.ok(gateAt > 0 && launchAt > gateAt, 'the identity gate precedes the launch')
+})
+
+test('*** it writes nothing, anywhere ***', () => {
+  const c = code()
+  // Any shape that puts bytes on disk. `>>` is included because a redirect is the easiest way
+  // for a "measurement" to start leaving artefacts behind.
+  for (const re of [/Out-File/, /Set-Content/, /Add-Content/, /New-Item/, /Copy-Item/, /Move-Item/, /Remove-Item/, /\[IO\.File\]::Write/, /\bExport-\w+/, />>/]) {
+    assert.equal(re.test(c), false, 'writes to disk: ' + re)
+  }
+})
+
+test('*** ComputerOperator-Test is READ and never written ***', () => {
+  const c = code()
+  const lines = c.split('\n').filter((l) => l.includes('ComputerOperator-Test') || l.includes('$testDir'))
+  assert.ok(lines.length > 0, 'the directory is referenced')
+  for (const l of lines) {
+    assert.match(l, /Test-Path|Get-ChildItem|\$testDir = |Say |\+ \$inTest|files in/, 'read-only reference: ' + l.trim())
+  }
+})
+
+test('*** the canary sealed text does not appear in the tool at all ***', () => {
+  const wo = require('../../docs/governance/canary-work-order.draft.json')
+  const sealed = wo.sealedText
+  assert.ok(typeof sealed === 'string' && sealed.length > 0)
+  assert.equal(raw().includes(sealed), false, 'the sealed text must not appear, even in a comment')
+
+  // And what it DOES type is a probe that could not be mistaken for the canary.
+  const m = raw().match(/\$PROBE_TEXT = '([^']+)'/)
+  assert.ok(m, '$PROBE_TEXT is a literal')
+  assert.notEqual(m[1], sealed)
+  assert.equal(m[1], 'UIA probe 12345')
+
+  // The only thing ever handed to SetValue on the document is that probe.
+  const setValues = code().match(/\.SetValue\([^)]*\)/g) || []
+  assert.deepEqual(setValues, ['.SetValue($PROBE_TEXT)'], 'exactly one SetValue, and it is the probe')
+})
+
+test('*** the Save As dialog is opened, inspected and CANCELLED — never saved ***', () => {
+  const c = code()
+  assert.match(c, /Name 'Cancel'/, 'it looks for Cancel')
+  assert.match(c, /WindowPattern.*\n?.*Close\(\)|\$wp\.Close\(\)/, 'with a Close() fallback')
+
+  // The Save button is located so its Name and AutomationId can be reported — and must not be
+  // invoked. Invoke-Element/Invoke() calls are enumerated and checked one by one.
+  assert.match(c, /\$saveBtn = Get-ByName/, 'the Save button is found')
+  const saveBtnUse = c.slice(c.indexOf('$saveBtn = Get-ByName'))
+  const upToCancel = saveBtnUse.slice(0, saveBtnUse.indexOf('Name \'Cancel\''))
+  assert.equal(/\$saveBtn[\s\S]{0,80}Invoke\(\)/.test(upToCancel), false, 'the Save button is never invoked')
+
+  // The filename field is inspected, never filled: filling it is what would create a file.
+  assert.match(c, /\$nameBox = /, 'the filename field is found')
+  assert.equal(/\$nvp\.pattern\.SetValue|\$nameBox[\s\S]{0,120}SetValue/.test(c), false, 'the filename field is never set')
+})
+
+test('*** clean under every PowerShell hazard rule ***', () => {
+  const source = raw()
+  assert.deepEqual(findUnrollHazards(source), [], 'no assign-then-.Count hazard')
+  assert.deepEqual(findIndexHazards(source), [], 'no [0] into a pipeline')
+  assert.deepEqual(findAutomaticAssignments(source), [], 'no read-only automatic assigned')
+
+  // UTF-8 with a BOM: without it PowerShell 5.1 reads the file as ANSI, and this repo has
+  // already lost a run to a dash that decoded into a quote character.
+  const bytes = fs.readFileSync(TOOL)
+  assert.ok(bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF, 'BOM present')
+})
+
+test('*** it is in the execution package, because staging copies only that list ***', () => {
+  // stage-canary-closure.ps1 copies exactly PACKAGE_FILES. A tool that is not listed cannot
+  // reach the operator account at all, so "prepared but unstageable" would look like a working
+  // deliverable and be nothing of the kind.
+  assert.ok(PACKAGE_FILES.includes('scripts/computer/Operator-MeasureNotepadUia.ps1'),
+    'the tool is packaged, and the package hash therefore moves')
+})
+
+test('*** it measures the canary\'s OWN logic, not a paraphrase of it ***', () => {
+  // The whole value of the measurement is that it exercises what uiaCanary will do. If the two
+  // drift, the tool reports on a program that does not exist.
+  const canary = blankComments(fs.readFileSync(path.join(REPO, 'scripts', 'computer', 'uiaCanary.ps1'), 'utf8')).join('\n')
+  const c = code()
+  for (const shared of [
+    'ControlType]::Document',                 // Get-EditControl tries Document first
+    'ControlType]::Edit',                     // then Edit
+    "Name 'File name:'",                      // the filename field lookup
+    'ProcessIdProperty'                       // Get-SoleWindowForProcess's condition
+  ]) {
+    assert.ok(canary.includes(shared), 'canary uses: ' + shared)
+    assert.ok(c.includes(shared), 'the measurement uses the same: ' + shared)
+  }
+  // Both spellings of the menu item, because the canary tries both and a third would refuse.
+  for (const spelling of ["'Save as'", "'Save As'"]) {
+    assert.ok(canary.includes(spelling), 'canary tries ' + spelling)
+    assert.ok(c.includes(spelling), 'the measurement tries ' + spelling)
+  }
+})
