@@ -50,6 +50,11 @@ const JS_ALLOWLIST = Object.freeze({
   'evidenceStore.js': false,
   'identityAttestation.js': false,
   'machineProbe.js': false,
+  // A static analyser over .ps1 TEXT. It reads script files and returns line numbers; it starts
+  // nothing, spawns nothing and has no runner. Decided false deliberately — and worth noting
+  // that THIS allowlist is the mechanism that caught it: it fails CLOSED on an unknown file,
+  // which is exactly what the strict-mode guard's hand-written OWNED list did not do.
+  'powershellHazards.js': false,
   'executeRequestStore.js': false,
   'executeRequestSchema.js': false,
   'companionCanaryRunner.js': false,

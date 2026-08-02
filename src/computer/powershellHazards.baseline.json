@@ -1,0 +1,32 @@
+{
+  "_comment": [
+    "PRE-EXISTING hazards in scripts that are NOT in the execution package, recorded 2026-08-02",
+    "when the guard's coverage went from 4 hand-listed files to all 50 in the directory.",
+    "",
+    "WHY A BASELINE AND NOT A FIX. These are staging, provisioning and probe scripts that the",
+    "Owner runs elevated, by hand, one at a time. Editing twelve of them in a round whose stated",
+    "scope was one measurement tool would be changing code nobody asked about, in scripts whose",
+    "failure modes are the Owner's session rather than a canary. They are recorded instead, with",
+    "exact file and line, so the decision to spend a round on them is his.",
+    "",
+    "WHAT THIS FILE CANNOT DO. It cannot hide a NEW hazard: the test asserts current findings are",
+    "a SUBSET of this list. Fixing one keeps the test green; adding one turns it red. It also",
+    "cannot cover a packaged script - a hazard in any of the 13 files a canary actually runs is a",
+    "hard failure and can never be baselined, which is asserted separately.",
+    "",
+    "Keys are kind:line[:variable:operation] so a line number that moves shows up as new."
+  ],
+  "recordedAt": "2026-08-02",
+  "recordedBecause": "guard coverage widened from 4 files to the whole directory after Operator-MeasureNotepadLaunch.ps1 died at line 65 on a hazard the guard never scanned for",
+  "findings": {
+    "deploy-companion.ps1": ["bare:422"],
+    "prepare-canary-testdir.ps1": ["index0:260"],
+    "register-observer-task.ps1": ["bare:133"],
+    "restrict-probe-dir.ps1": ["unroll:137:deny:Count"],
+    "run-script-a-measured.ps1": ["bare:210"],
+    "run-script-b-measured.ps1": ["bare:122"],
+    "stage-companion.ps1": ["index0:394"],
+    "stage3-harness.ps1": ["unroll:406:titles:Count", "unroll:408:titles:Count"],
+    "tierA-probe.ps1": ["unroll:530:a:index", "unroll:692:autostartHave:Count", "unroll:692:storageHave:Count"]
+  }
+}
