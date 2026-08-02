@@ -134,10 +134,28 @@ function createBriefingRouter (deps = {}) {
   return router
 }
 
-/** Pending proposals, read straight from the persisted store. Read-only. */
+/**
+ * Pending proposals, read straight from the persisted store. Read-only.
+ *
+ * ── THE DEFECT THIS FIXES ─────────────────────────────────────────────────
+ * This called `load()` with no argument. `load(filePath)` takes a path, so it reached
+ * `fs.readFileSync(undefined)` and threw a TypeError, which the builder turned into
+ * `proposals: unavailable` — every time, in production as well as in staging. Decisions
+ * Needed could never populate, and the one pending proposal that was the whole point of
+ * the section was invisible. Every test injected a `listPendingProposals` double, so this
+ * line — the production default — had never once been executed.
+ *
+ * The path comes from the SHARED resolver, so this reader and the Proposal Store writer
+ * can never disagree about which file that is.
+ *
+ * ERRORS ARE NOT SWALLOWED. A missing file is an empty list (the store's own ENOENT
+ * behaviour) and shows as `live_zero` — read successfully, nothing pending. Corrupt JSON,
+ * a wrong envelope shape or EACCES propagate, and the source degrades to `unavailable`.
+ * A damaged store must never be reported as "nothing to decide".
+ */
 function defaultListProposals () {
-  const { load } = require('../coo/proposalPersistence')
-  const db = load()
+  const { load, resolveProposalFilePath } = require('../coo/proposalPersistence')
+  const db = load(resolveProposalFilePath(process.env))
   const all = db && db.proposals ? Object.values(db.proposals) : []
   return all.filter((p) => p && p.status === 'pending')
 }

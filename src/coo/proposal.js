@@ -34,12 +34,12 @@
 const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const { classifyIntent } = require('./intent')
-const { load: loadStoreFile, save: saveStoreFile } = require('./proposalPersistence')
+const { load: loadStoreFile, save: saveStoreFile, resolveProposalFilePath } = require('./proposalPersistence')
 
-// The durable store file, mirroring store.js's data dir (and its AROMA_DATA_DIR
-// override) so both truth files live together. `data/` is gitignored.
-const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
-const DEFAULT_PROPOSALS_FILE = path.join(DATA_DIR, 'aroma-proposals.json')
+// The durable store file. The rule now lives in ONE place (proposalPersistence.js) so the
+// Proposal Store and the Morning Briefing cannot drift onto two path rules. Resolved once
+// at module load, exactly as before.
+const DEFAULT_PROPOSALS_FILE = resolveProposalFilePath(process.env)
 
 // Every Proposal (and the Run it may become) is a Develop@1. These are fixed
 // here, server-side — a caller or model can never choose the capability.

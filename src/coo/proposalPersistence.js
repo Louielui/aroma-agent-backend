@@ -123,4 +123,26 @@ function save (filePath, data) {
   fs.renameSync(tmp, filePath) // atomic on the same filesystem
 }
 
-module.exports = { load, save, emptyShape, ProposalStoreCorruptError }
+/**
+ * WHERE THE PROPOSAL STORE LIVES — ONE ANSWER, FOR EVERY READER.
+ *
+ * The Proposal Store computed this itself, and when the Morning Briefing needed the same
+ * file the obvious move was to copy the two lines across. That is how two path rules
+ * start, and how they later disagree: one honours a new env var, the other does not, and
+ * the symptom is a reader that finds nothing while the writer is perfectly happy.
+ *
+ * The rule mirrors store.js so both truth files live together: AROMA_DATA_DIR when it is
+ * set, otherwise the repo's `data/`, and the filename is fixed here rather than passed in
+ * — a caller that could name the file could name a different one.
+ *
+ * `env` is a parameter so a caller may resolve at call time; proposal.js resolves once at
+ * module load, which is the behaviour it has always had.
+ */
+const PROPOSALS_FILENAME = 'aroma-proposals.json'
+
+function resolveProposalFilePath (env = process.env) {
+  const dir = (env && env.AROMA_DATA_DIR) || path.resolve(__dirname, '../../data')
+  return path.join(dir, PROPOSALS_FILENAME)
+}
+
+module.exports = { load, save, emptyShape, ProposalStoreCorruptError, resolveProposalFilePath, PROPOSALS_FILENAME }
