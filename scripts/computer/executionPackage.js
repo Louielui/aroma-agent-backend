@@ -140,6 +140,10 @@ const PACKAGE_FILES = Object.freeze([
   'scripts/computer/run-notepad-canary.js',
   // the hands
   'scripts/computer/uiaCanary.ps1',
+  // THE SHARED SAVE-UI LOOKUPS. In the package because production dot-sources it during a
+  // canary, so a change to how the dialog is found is a change to what runs -- and because the
+  // measurement tool loads the SAME bytes, an approval now covers both.
+  'scripts/computer/uiaLookups.ps1',
   // The ONE file allowed a native Windows message, wired 2026-08-02. In the package because it
   // now runs during a canary: its bytes are pinned by the hash the Owner approves, so the
   // constant that decides WHICH message, and the twenty checks that decide whether to send it,

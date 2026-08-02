@@ -50,6 +50,10 @@ $AUTO = [System.Windows.Automation.AutomationElement]
 $SCOPE_CHILD = [System.Windows.Automation.TreeScope]::Children
 $SCOPE_DESC = [System.Windows.Automation.TreeScope]::Descendants
 
+# THE SAME FILE THE CANARY DOT-SOURCES, by the same package-local path. This tool no longer
+# has a save-UI lookup of its own: it calls the production resolver and prints what it said.
+. (Join-Path $PSScriptRoot 'uiaLookups.ps1')
+
 $EXPECTED_SID = 'S-1-5-21-2042659270-2029498691-2127769412-1009'
 $EXPECTED_NAME = 'AromaOperator'
 
@@ -522,40 +526,48 @@ if ($menuOpened) {
     }
   }
 
-  # ---- WHERE IS THE DIALOG, ACTUALLY? ----------------------------------
+  # ---- THE PRODUCTION RESOLVER, CALLED AS ITSELF ----------------------
+  # This tool used to find the dialog its OWN way: a different wait, a different
+  # selection rule, and its lookup ran after seven diagnostics had already kept
+  # the dialog open for seconds. It reported System.ItemNameDisplay : True while
+  # the canary refused filename_field_not_found, and both were telling the truth
+  # about different moments.
+  #
+  # It now calls Resolve-SaveUiBinding -- the same function, from the same
+  # package-local file, with the same deadline, root, scope and refusal policy.
+  # It may NOT wait longer, retry, or substitute its own answer. What it prints
+  # below is the production result verbatim.
   Say ''
-  Say '     WHERE THE DIALOG LIVES IN THE TREE:'
+  Say '     PRODUCTION RESOLVER RESULT (Resolve-SaveUiBinding)' 'Yellow'
+  $ui = Resolve-SaveUiBinding -MainWindow $win -ProcessId $realPid -BoundWindowHandle ([string] $win.Current.NativeWindowHandle)
+  Say ('       ok                    : ' + $ui.ok) $(if ($ui.ok) { 'Green' } else { 'Red' })
+  Say ('       stage                 : ' + $ui.stage)
+  Say ('       refusal               : ' + (Fmt $ui.refusal))
+  Say ('       detail                : ' + (Fmt $ui.detail))
+  Say ('       candidatesObserved    : ' + $ui.candidatesObserved)
+  Say ('       elapsedMs             : ' + $ui.elapsedMs)
+  Say ('       dialogVerified        : ' + $ui.dialogVerified)
+  Say ('       filenameFieldVerified : ' + $ui.filenameFieldVerified)
+  Say ('       saveButtonVerified    : ' + $ui.saveButtonVerified)
+  Say '       evidence:'
+  foreach ($k in $ui.evidence.Keys) { Say ('         ' + $k + ' = ' + (Fmt $ui.evidence[$k])) }
 
-  $asDescendant = $win.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Window)))
-  Say ('       (i)  descendant Window of the Notepad window : ' + ($null -ne $asDescendant) +
-       '   <-- uiaCanary tries this FIRST')
+  $dlg = $ui.dialog
 
-  $topLevel = @()
-  $rootKids = $AUTO::RootElement.FindAll($SCOPE_CHILD, (New-PropCondition $AUTO::ProcessIdProperty $realPid))
-  foreach ($k in $rootKids) { $topLevel += $k }
-  Say ('       (ii) top-level windows owned by pid ' + $realPid + ' : ' + $topLevel.Count)
-  foreach ($k in $topLevel) {
-    $kn = ''; try { $kn = [string] $k.Current.Name } catch { }
-    $kh = ''; try { $kh = [string] $k.Current.NativeWindowHandle } catch { }
-    Say ('            ' + (Fmt $kn) + '   handle ' + $kh)
+  Say ''
+  if ($ui.ok) {
+    Say '     ---- POST-SUCCESS DIAGNOSTICS ----' 'DarkGray'
+    Say '     The production lookup SUCCEEDED. Everything below is extra detail about'
+    Say '     the same elements it resolved; none of it changes the result above.'
+  } else {
+    Say '     ---- POST-FAILURE DIAGNOSTICS ----' 'DarkGray'
+    Say '     THE PRODUCTION LOOKUP FAILED, and the result above stands. Everything'
+    Say '     below runs AFTER that failure, with no time limit, purely to explain it.'
+    Say '     Nothing below may be read as evidence that the production lookup works:'
+    Say '     if a diagnostic finds an element here, that means it appeared LATER or'
+    Say '     under a looser rule, which is exactly the confusion this tool caused'
+    Say '     last time.' 'Yellow'
   }
-
-  $fallback = $AUTO::RootElement.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::ProcessIdProperty $realPid))
-  $fallbackName = ''
-  if ($null -ne $fallback) { try { $fallbackName = [string] $fallback.Current.Name } catch { } }
-  Say ('       (iii) uiaCanary FALLBACK returns : ' + (Fmt $fallbackName))
-  Say '             (RootElement.FindFirst by pid -- if this is the Notepad window'
-  Say '              rather than the dialog, the filename box is searched in the'
-  Say '              wrong window and save_as fails as filename_field_not_found)'
-
-  # Pick the real dialog for inspection: a top-level window that is not the one we bound.
-  $boundHandle = [string] $win.Current.NativeWindowHandle
-  foreach ($k in $topLevel) {
-    $kh = ''
-    try { $kh = [string] $k.Current.NativeWindowHandle } catch { }
-    if ($kh -ne $boundHandle) { $dlg = $k }
-  }
-  if ($null -eq $dlg -and $null -ne $asDescendant) { $dlg = $asDescendant }
 
   if ($null -eq $dlg) {
     Say '       NO SEPARATE DIALOG WINDOW FOUND.' 'Red'
@@ -632,14 +644,10 @@ if ($menuOpened) {
     Show-Element -El $saveBtn -Label 'what uiaCanary looks for (Name=Save, ControlType=Button):' -Indent '       '
     Say '         (NOT invoked)'
 
-    # And the filename field by the AutomationId the canary now uses, so the
-    # change made this round is confirmed by the same run that motivated it.
-    $byAutoId = $dlg.FindFirst($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
-      (New-PropCondition $AUTO::AutomationIdProperty 'System.ItemNameDisplay'),
-      (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))))
-    Say ''
-    Say ('       filename field by AutomationId System.ItemNameDisplay : ' + ($null -ne $byAutoId)) $(if ($null -ne $byAutoId) { 'Green' } else { 'Red' })
-    Say '         (this is what uiaCanary now uses as its ONLY lookup)'
+    # The filename field is NOT re-looked-up here. The production resolver above
+    # already answered that question, and asking it a second time -- later, and
+    # from a different starting point -- is precisely how this tool once printed
+    # True for something the canary could not find.
 
     # ===================================================================
     #  4. Get-SoleWindowForProcess WHILE THE DIALOG IS OPEN

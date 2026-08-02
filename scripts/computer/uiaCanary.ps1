@@ -39,6 +39,10 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'aromaJsonTransport.ps1')
+# THE SHARED SAVE-UI LOOKUPS. Package-local, dot-sourced by the exact same path the
+# measurement tool uses. Not a copy: the same file, entered through the same function, so
+# production and measurement cannot answer different questions about the same dialog.
+. (Join-Path $PSScriptRoot 'uiaLookups.ps1')
 
 function Emit-Result {
   param([hashtable] $Result)
@@ -431,31 +435,24 @@ switch ($op) {
     if ($null -eq $saveAs) { $saveAs = Get-ByName -Root $r.window -Name 'Save As' }
     if ($null -eq $saveAs) { Emit-Refusal 'menu_item_not_found' 'Save as' }
     Invoke-Element -Element $saveAs -What 'Save as item'
-    Start-Sleep -Milliseconds 900
 
-    $dlgCond = New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Window)
-    $dlg = $r.window.FindFirst($SCOPE_DESC, $dlgCond)
-    if ($null -eq $dlg) { $dlg = $AUTO::RootElement.FindFirst($SCOPE_DESC, (New-PropCondition $AUTO::ProcessIdProperty $r.processId)) }
-    if ($null -eq $dlg) { Emit-Refusal 'save_dialog_not_found' 'no Save As dialog' }
-
-    # THE FILENAME BOX, BY AutomationId.
+    # ---- ONE RESOLVER, ONE DEADLINE, ONE POLICY -------------------------
+    # This used to be: sleep 900 ms, FindFirst a descendant Window, and IF THAT
+    # FAILED fall back to "the first element anywhere in the tree with this pid"
+    # -- which is the Notepad main window. The filename field was then searched
+    # inside the wrong window and the run refused with filename_field_not_found:
+    # technically true, and about the wrong layer entirely.
     #
-    # It was Name = 'File name:' with a fallback to "the first Edit in the
-    # dialog". Measured 2026-08-02: the Name lookup FAILS and the fallback
-    # happened to be right. "The first Edit" is not an identity - the dialog also
-    # contains a search box and the file-type combo, and being first is an
-    # accident of tree order that could change with a Windows update.
-    #
-    # The measured AutomationId is 'System.ItemNameDisplay': a Windows property-
-    # system canonical name, so it is NOT localised, unlike 'File name:'.
-    #
-    # The fallback is REMOVED rather than reordered. If this ever fails, refusing
-    # is correct - the alternative is typing a full path into whichever Edit
-    # happened to come first.
-    $nameBox = $dlg.FindFirst($SCOPE_DESC, (New-Object System.Windows.Automation.AndCondition(
-      (New-PropCondition $AUTO::AutomationIdProperty 'System.ItemNameDisplay'),
-      (New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Edit)))))
-    if ($null -eq $nameBox) { Emit-Refusal 'filename_field_not_found' 'no Edit with AutomationId System.ItemNameDisplay' }
+    # Both the fallback and the fixed sleep are gone. Resolve-SaveUiBinding owns
+    # the deadline, the root, the scope and the refusal policy, and the
+    # measurement tool calls this same function so the two cannot drift again.
+    $ui = Resolve-SaveUiBinding -MainWindow $r.window -ProcessId $r.processId -BoundWindowHandle $r.windowHandle
+    if (-not $ui.ok) {
+      # The refusal names the stage that actually failed, not the last thing tried.
+      Emit-Refusal $ui.refusal ("stage=" + $ui.stage + " elapsedMs=" + $ui.elapsedMs + " candidates=" + $ui.candidatesObserved + " :: " + $ui.detail)
+    }
+    $dlg = $ui.dialog
+    $nameBox = $ui.filenameField
 
     try {
       $nvp = $nameBox.GetCurrentPattern([System.Windows.Automation.ValuePattern]::Pattern)

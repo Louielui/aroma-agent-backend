@@ -131,15 +131,24 @@ test('*** every later step re-checks that it is the SAME control ***', () => {
   }
 })
 
-test('*** the filename field is found by AutomationId, with NO first-Edit fallback ***', () => {
-  assert.match(CANARY, /System\.ItemNameDisplay/, 'the measured, non-localised AutomationId')
+test('*** the filename field is found by AutomationId — now in the SHARED module ***', () => {
+  // The lookup moved out of uiaCanary on 2026-08-02, because keeping a copy in the measurement
+  // tool as well is what produced "the tool says True, the canary says not_found". uiaCanary
+  // now delegates; the selector and the no-fallback rule live in one file.
+  const mod = fs.readFileSync(path.join(__dirname, '..', '..', 'scripts', 'computer', 'uiaLookups.ps1'), 'utf8')
+  assert.match(mod, /System\.ItemNameDisplay/, 'the measured, non-localised AutomationId lives in the module')
+  assert.equal(CANARY.includes('System.ItemNameDisplay'), false, 'and no longer in the canary')
+
+  // No first-Edit fallback anywhere: the module requires exactly one match on BOTH the
+  // AutomationId and the control type, and returns nothing rather than a near match.
+  assert.match(mod, /if \(\$found\.Count -eq 0\) \{ return @\{ observed = 0; element = \$null \} \}/,
+    'zero matches yields nothing, never a substitute')
+  assert.match(mod, /if \(\$found\.Count -gt 1\) \{ return @\{ observed = \$found\.Count; element = \$null \} \}/,
+    'and more than one is refused rather than chosen between')
+
   const sa = CANARY.slice(CANARY.indexOf("'save_as' {"))
-  const upToSave = sa.slice(0, sa.indexOf('$saveBtn'))
-  // The old fallback took whatever Edit came first in tree order. Being first is an accident,
-  // and the dialog also contains a search box and the file-type combo.
-  assert.equal(/\$nameBox = \$dlg\.FindFirst\(\$SCOPE_DESC, \(New-PropCondition \$AUTO::ControlTypeProperty \(\[System\.Windows\.Automation\.ControlType\]::Edit\)\)\)/.test(upToSave), false,
-    'the "first Edit in the dialog" fallback is removed, not merely reordered')
-  assert.match(upToSave, /filename_field_not_found/, 'and not finding it refuses')
+  assert.match(sa, /Resolve-SaveUiBinding/, 'the canary asks the shared resolver')
+  assert.match(sa, /Emit-Refusal \$ui\.refusal/, 'and surfaces the refusal the resolver chose')
 })
 
 test('*** the Save button was RESOLVED — save_as prepares and presses nothing ***', () => {

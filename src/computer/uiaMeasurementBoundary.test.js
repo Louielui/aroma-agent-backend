@@ -116,25 +116,27 @@ test('*** it is in the execution package, because staging copies only that list 
     'the tool is packaged, and the package hash therefore moves')
 })
 
-test('*** it measures the canary\'s OWN logic, not a paraphrase of it ***', () => {
-  // The whole value of the measurement is that it exercises what uiaCanary will do. If the two
-  // drift, the tool reports on a program that does not exist.
+test('*** it CALLS the canary\'s own lookup rather than resembling it ***', () => {
+  // ── THIS TEST REPLACES A DRIFT TEST THAT PASSED WHILE THE BUG WAS LIVE ──
+  // The old version asserted that BOTH files contained the same string constants —
+  // 'System.ItemNameDisplay', 'ControlType]::Edit', "'Save as'". Both did, throughout, and the
+  // behaviour still diverged: different waits, different dialog-selection rules, and a fallback
+  // in only one of them. The tool printed True for a field the canary could not find.
+  //
+  // Shared constants do not make shared behaviour. There is now ONE implementation
+  // (uiaLookups.ps1) and the only thing worth asserting is that both files enter it. The
+  // structural guards live in sharedUiaLookups.test.js; this is the boundary-side check.
   const canary = blankComments(fs.readFileSync(path.join(REPO, 'scripts', 'computer', 'uiaCanary.ps1'), 'utf8')).join('\n')
   const c = code()
-  for (const shared of [
-    'ControlType]::Document',                 // Get-EditControl tries Document first
-    'ControlType]::Edit',                     // then Edit
-    'System.ItemNameDisplay',                 // the filename field, by AutomationId
-    'ProcessIdProperty'                       // Get-SoleWindowForProcess's condition
-  ]) {
-    assert.ok(canary.includes(shared), 'canary uses: ' + shared)
-    assert.ok(c.includes(shared), 'the measurement uses the same: ' + shared)
+
+  for (const [label, text] of [['canary', canary], ['measurement tool', c]]) {
+    assert.ok(text.includes(". (Join-Path $PSScriptRoot 'uiaLookups.ps1')"), label + ' dot-sources the shared module')
+    assert.ok(text.includes('Resolve-SaveUiBinding'), label + ' enters through the one public function')
   }
-  // Both spellings of the menu item, because the canary tries both and a third would refuse.
-  for (const spelling of ["'Save as'", "'Save As'"]) {
-    assert.ok(canary.includes(spelling), 'canary tries ' + spelling)
-    assert.ok(c.includes(spelling), 'the measurement tries ' + spelling)
-  }
+
+  // And the tool no longer carries a lookup of its own for any of it.
+  assert.equal(c.includes('System.ItemNameDisplay'), false, 'the field selector is the module\'s, not the tool\'s')
+  assert.equal(/\$asDescendant\s*=/.test(c), false, 'the tool no longer selects the dialog itself')
 })
 
 /* ── the seven-point diagnostic stays a diagnostic ────────────────────────── */
