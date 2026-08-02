@@ -86,9 +86,9 @@ test('*** live_zero and unavailable are DIFFERENT states ***', async () => {
   const { brief } = await run({ readContextFn: readContext(perSource, []) })
 
   assert.equal(cov(brief, 'drive').state, 'live_zero', 'read OK with nothing is NOT unavailable')
-  assert.equal(cov(brief, 'drive').error, null, 'and it has no error, because nothing failed')
+  assert.equal(cov(brief, 'drive').errorCode, null, 'and it has no error, because nothing failed')
   assert.equal(cov(brief, 'gmail').state, 'unavailable', 'a failed read is unavailable')
-  assert.equal(cov(brief, 'gmail').error, 'token expired', 'with its reason kept')
+  assert.equal(cov(brief, 'gmail').errorCode, 'credential_unavailable', 'projected to a fixed code, not the raw message')
   assert.notEqual(cov(brief, 'drive').state, cov(brief, 'gmail').state, 'the two must never collapse')
   assert.equal(cov(brief, 'calendar').usedFallback, true, 'a fallback read is flagged as such')
 })
@@ -123,7 +123,7 @@ test('*** the read layer throwing entirely still yields a brief ***', async () =
   const { brief } = await run({ readContextFn: async () => { throw new Error('total failure') } })
   assert.ok(brief.briefId)
   assert.equal(cov(brief, 'gmail').state, 'unavailable')
-  assert.match(String(cov(brief, 'gmail').error), /total failure/)
+  assert.equal(cov(brief, 'gmail').errorCode, 'read_failed', 'a code, never the adapter sentence')
 })
 
 /* ── 3. provenance rules — refuse, do not emit ────────────────────────────── */
@@ -203,8 +203,8 @@ test('*** Aroma System is ALWAYS present and ALWAYS unavailable ***', async () =
   const row = cov(brief, 'aroma-system')
   assert.ok(row, 'the gap is reported, not omitted')
   assert.equal(row.state, 'unavailable')
-  assert.equal(row.error, 'read-only connection not configured',
-    'and in the exact words the Owner specified')
+  assert.equal(row.errorCode, 'configured_off',
+    'projected to the fixed code — the UI supplies the Owner-facing wording')
   assert.equal(AROMA_SYSTEM_COVERAGE.trust, 'unavailable', 'it is a constant, not a probe result')
 })
 
@@ -266,7 +266,7 @@ test('*** the second repo gets its OWN coverage row, never merged into github **
 test('*** no permission on the second repo degrades safely and blocks nothing ***', async () => {
   const { brief } = await run({ connector: connector('forbidden'), items: [item('drive', 'd1', NOW, 'A file')] })
   assert.equal(cov(brief, SECOND_REPO.key).state, 'unavailable')
-  assert.match(String(cov(brief, SECOND_REPO.key).error), /Not Found/)
+  assert.equal(cov(brief, SECOND_REPO.key).errorCode, 'permission_denied', 'a 404 on a repo is a permission answer')
   assert.equal(cov(brief, 'github').state, 'live', 'the first repo is unaffected')
   assert.ok(brief.briefId, 'and the brief was still produced')
 })
@@ -274,7 +274,7 @@ test('*** no permission on the second repo degrades safely and blocks nothing **
 test('*** the second-repo read THROWING is caught, not propagated ***', async () => {
   const { brief } = await run({ connector: connector('throws') })
   assert.equal(cov(brief, SECOND_REPO.key).state, 'unavailable')
-  assert.match(String(cov(brief, SECOND_REPO.key).error), /boom/)
+  assert.equal(cov(brief, SECOND_REPO.key).errorCode, 'read_failed')
 })
 
 /* ── 7. proposals and Decision Recall stay separate sources ───────────────── */

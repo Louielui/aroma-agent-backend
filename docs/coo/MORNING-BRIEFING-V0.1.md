@@ -90,6 +90,25 @@ and tests that believed they held a throwaway store appended to the real audit f
 Errors: the browser receives a fixed code and no detail; the log line is scrubbed of URLs,
 paths, addresses and opaque ids before it is written.
 
+## Coverage errors are a fixed vocabulary
+
+`src/coo/coverageError.js`. An adapter's message is written for developers and carries the
+endpoint URL, the query, a secrets path, an account address or a bearer token. It is
+projected to one of six codes — `configured_off`, `credential_unavailable`,
+`permission_denied`, `timeout`, `read_failed`, `source_unavailable` — plus an optional
+scrubbed, 80-character detail. The raw string is discarded at that line and exists nowhere
+downstream: not in the response, not in the Risks text, not in a log, not in the audit
+(whose `sourceStatuses` rows carry source/state/count only).
+
+## Derived items may not dress as facts
+
+An `inference` or `recommendation` is the system's own reasoning: it carries **no
+provenance of its own** — its evidence is the facts it cites — and its scope may only be
+`owner_work_item`. `business_state` is fact-only, and only from `aroma-system`, so a
+recommendation can never reach it. A provenance `link` is accepted only as a parsing
+**https** URL or `null`; `javascript:`, `data:`, `file:`, `http:` and unparseable strings
+are removed before delivery.
+
 ## Audit store ACL
 
 `C:\Aroma\BriefAudit\brief-audit.jsonl`, provisioned by
@@ -100,6 +119,21 @@ inheritance **broken**, and exactly `SYSTEM` + `BUILTIN\Administrators` + the Ow
 work order; it has no business reading what the Owner was briefed about, when, or how many
 items were withheld. The provisioner verifies this by SID and exits non-zero if that
 account appears.
+
+**The runtime never creates this directory.** A directory created at runtime inherits its
+parent's ACL, so the store would have quietly existed with whatever `C:\Aroma` grants — the
+protection would have looked present while being absent, and nothing would have said so.
+Provisioning is a **deployment prerequisite**; before the first write the store verifies
+that the directory exists, that inheritance is broken, that SYSTEM, Administrators and the
+Owner are present, and that AromaOperator is not. Any defect is a fixed refusal enum
+(`audit_dir_not_provisioned`, `audit_acl_inheritance_not_broken`,
+`audit_acl_operator_present`, …).
+
+**An audit failure never costs the Owner the brief.** A missing directory, a wrong ACL, a
+full disk or a failed fsync all yield HTTP 200 with the validated brief, `stored: false`
+and a fixed `storeRefusal`. Only a *delivery validation* failure is fail-closed. The two
+are deliberately opposite: one is about whether the answer is safe to show, the other about
+whether the note about it was filed.
 
 ## Limits of v0.1
 

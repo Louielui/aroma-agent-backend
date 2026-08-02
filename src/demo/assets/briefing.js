@@ -92,6 +92,17 @@
 
   var STATE_TEXT = { live: 'live', live_zero: 'read OK — no results', unavailable: 'UNAVAILABLE' }
 
+  /* The six coverage failure codes, in words. The Owner needs to know which KIND of
+     failure it was — a credential to fix, a permission to grant, a blip to ignore. */
+  var REASON_TEXT = {
+    configured_off: 'not configured',
+    credential_unavailable: 'credential unavailable',
+    permission_denied: 'permission denied',
+    timeout: 'timed out',
+    read_failed: 'read failed',
+    source_unavailable: 'source unavailable'
+  }
+
   function renderCoverage (rows) {
     var s = el('section', 'always')
     var head = el('div', 'head')
@@ -105,9 +116,15 @@
       var row = el('div', 'cov')
       row.appendChild(el('span', 'name', r.source))
       row.appendChild(el('span', 'state ' + r.state, STATE_TEXT[r.state] || r.state))
+      /* A FIXED CODE, plus a scrubbed detail if the server had one. The adapter's own
+         message never arrives here — it carried URLs, paths, addresses and queries. */
       var why = ''
-      if (r.state === 'unavailable') why = r.error || 'unavailable'
-      else if (r.state === 'live') why = r.count + ' item(s)' + (r.usedFallback ? ' · recent items' : '')
+      if (r.state === 'unavailable') {
+        why = REASON_TEXT[r.errorCode] || r.errorCode || 'unavailable'
+        if (r.errorDetail) why += ' (' + r.errorDetail + ')'
+      } else if (r.state === 'live') {
+        why = r.count + ' item(s)' + (r.usedFallback ? ' · recent items' : '')
+      }
       row.appendChild(el('span', 'why', why))
       body.appendChild(row)
     })

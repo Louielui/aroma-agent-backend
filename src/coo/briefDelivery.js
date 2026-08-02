@@ -48,8 +48,36 @@ const REASON = Object.freeze({
   SCOPE_MISMATCH: 'scope_does_not_match_source',
   BUSINESS_STATE: 'business_state_from_non_aroma_system_source',
   NARRATIVE_CLAIM: 'narrative_asserts_business_state',
-  DANGLING_CITATION: 'cites_a_fact_that_is_not_present'
+  DANGLING_CITATION: 'cites_a_fact_that_is_not_present',
+  BAD_PROVENANCE: 'incomplete_provenance',
+  UNSAFE_LINK: 'unsafe_provenance_link',
+  DERIVED_HAS_PROVENANCE: 'derived_item_carries_provenance',
+  DERIVED_SCOPE: 'derived_item_scope_must_be_owner_work_item'
 })
+
+/**
+ * A provenance link is rendered as an anchor the Owner may click. Only https, and only a
+ * URL that actually parses. `javascript:`, `data:` and `file:` are the obvious three, but
+ * an allowlist is what makes the fourth one — whatever it turns out to be — safe too.
+ */
+function linkIsSafe (link) {
+  if (link === null || link === undefined) return true
+  if (typeof link !== 'string' || link === '') return false
+  let u
+  try { u = new URL(link) } catch (_) { return false }
+  return u.protocol === 'https:'
+}
+
+/** Provenance must be complete, not merely present: a citation with holes is not one. */
+function provenanceShapeOk (p) {
+  if (!isPlainObject(p)) return false
+  if (typeof p.source !== 'string' || p.source === '') return false
+  if (typeof p.sourceId !== 'string' || p.sourceId === '') return false
+  if (!isPlainObject(p.originalDate) || !('iso' in p.originalDate)) return false
+  if (!isPlainObject(p.retrievedAt) || !('iso' in p.retrievedAt)) return false
+  if (!linkIsSafe(p.link)) return false
+  return true
+}
 
 /** One item's legality, independent of the rest of the brief. */
 function checkItemShape (it) {
@@ -63,6 +91,9 @@ function checkItemShape (it) {
 
   if (it.kind === 'fact') {
     if (!it.provenance || typeof it.provenance.source !== 'string' || it.provenance.source === '') return REASON.NO_PROVENANCE
+    if (!provenanceShapeOk(it.provenance)) {
+      return linkIsSafe(it.provenance.link) ? REASON.BAD_PROVENANCE : REASON.UNSAFE_LINK
+    }
 
     // SCOPE IS THE SOURCE'S, NOT THE ITEM'S CLAIM ABOUT ITSELF.
     const allowed = scopeForSource(it.provenance.source)
@@ -72,6 +103,18 @@ function checkItemShape (it) {
     // The invariant: only Aroma System may state the state of the business. It has no
     // connector, so in v0.1 this can never legitimately be reached.
     if (it.scope === 'business_state' && !mayAssertBusinessState(it.provenance.source)) return REASON.BUSINESS_STATE
+  } else {
+    // DERIVED ITEMS ARE NOT FACTS AND MAY NOT DRESS AS THEM.
+    //
+    // An inference or recommendation is this system's own reasoning. It carries no
+    // provenance of its own — its evidence is the facts it cites — and it may only ever
+    // speak as owner_work_item. A recommendation wearing `business_state` would be the
+    // original defect wearing a different hat: an assertion about the restaurant with no
+    // source behind it, and `business_state` is a fact-only scope precisely so that a
+    // derived item can never reach it.
+    if (it.provenance !== null) return REASON.DERIVED_HAS_PROVENANCE
+    if (it.scope !== 'owner_work_item') return REASON.DERIVED_SCOPE
+    if (it.basedOnFactIds.length === 0) return REASON.DANGLING_CITATION
   }
 
   // Backstop, narrative only — quoted external text is invisible to it by construction.
@@ -179,4 +222,4 @@ function validateBriefForDelivery (brief) {
   }
 }
 
-module.exports = { validateBriefForDelivery, checkItemShape, ITEM_SECTIONS, KINDS, COVERAGE_STATES, OUTCOME, REASON }
+module.exports = { validateBriefForDelivery, checkItemShape, linkIsSafe, provenanceShapeOk, ITEM_SECTIONS, KINDS, COVERAGE_STATES, OUTCOME, REASON }

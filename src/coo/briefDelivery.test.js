@@ -171,7 +171,9 @@ test('*** draft-time bookkeeping never leaves the process ***', () => {
 test('*** CONTROL 5 — audit metadata survives a FRESH store instance ***', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'brief-audit-'))
   try {
-    const store = createBriefStore({ dir })
+    // The ACL check is exercised in briefHardening.test.js; here the subject is
+    // PERSISTENCE, so provisioning is stubbed as satisfied rather than half-faked.
+    const store = createBriefStore({ dir, verifyAuditDir: () => ({ ok: true }) })
     const bad = fact('i1', 'gmail', 'Inventory of ' + SECRET, 'business_state')
     const good = fact('i2', 'gmail', 'gmail contains a record: "' + SECRET + '"', 'source_record')
     const built = async () => ({
@@ -183,7 +185,7 @@ test('*** CONTROL 5 — audit metadata survives a FRESH store instance ***', asy
     assert.equal(res.body.stored, true)
 
     // A DIFFERENT store object, as a restarted process would have.
-    const fresh = createBriefStore({ dir })
+    const fresh = createBriefStore({ dir, verifyAuditDir: () => ({ ok: true }) })
     const rows = fresh.list()
     assert.equal(rows.length, 1, 'the record is on disk, not in a dead process')
     assert.equal(rows[0].briefId, 'brf_persist')

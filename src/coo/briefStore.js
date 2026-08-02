@@ -113,13 +113,97 @@ function validateRecord (rec) {
 const DEFAULT_AUDIT_DIR = 'C:\\Aroma\\BriefAudit'
 const AUDIT_FILE = 'brief-audit.jsonl'
 
-/** Append one line, durably. Creates the directory if the provisioner has not run. */
+/**
+ * WHY THE RUNTIME DOES NOT CREATE THIS DIRECTORY.
+ *
+ * The first version called mkdirSync. A directory created at runtime inherits its parent's
+ * ACL, so the audit store would have quietly existed with whatever `C:\Aroma` grants —
+ * which includes accounts that must never read it. The protection would have looked
+ * present (there is a provisioner, it is documented) while being absent in fact, and
+ * nothing would have said so.
+ *
+ * Provisioning is therefore a DEPLOYMENT PREREQUISITE, and the runtime's job is to refuse
+ * when it has not been met. `scripts/coo/provision-brief-audit.ps1` is run once, elevated,
+ * by the Owner.
+ */
+const PROVISION_FAILURE = Object.freeze({
+  MISSING: 'audit_dir_not_provisioned',
+  ACL_UNREADABLE: 'audit_acl_unreadable',
+  INHERITED: 'audit_acl_inheritance_not_broken',
+  NO_SYSTEM: 'audit_acl_missing_system',
+  NO_ADMINS: 'audit_acl_missing_administrators',
+  NO_OWNER: 'audit_acl_missing_owner',
+  OPERATOR_PRESENT: 'audit_acl_operator_present',
+  WRITE_FAILED: 'audit_write_failed'
+})
+
+/** AromaOperator. Matched by SID, because a display name can be anything. */
+const OPERATOR_SID = 'S-1-5-21-2042659270-2029498691-2127769412-1009'
+
+/**
+ * Verify the directory is provisioned as the ACL model requires. Read-only; it never
+ * creates, never repairs. Returns { ok } or { ok:false, reason } with a fixed enum.
+ */
+function verifyAuditDir (dir, deps = {}) {
+  const fs = deps.fs || require('node:fs')
+  const run = deps.icacls || defaultIcacls
+
+  if (!fs.existsSync(dir)) return { ok: false, reason: PROVISION_FAILURE.MISSING }
+
+  let out
+  try { out = run(dir) } catch (_) { return { ok: false, reason: PROVISION_FAILURE.ACL_UNREADABLE } }
+  if (typeof out !== 'string' || out.trim() === '') return { ok: false, reason: PROVISION_FAILURE.ACL_UNREADABLE }
+
+  // `(I)` marks an INHERITED ace. The provisioner breaks inheritance without copying, so
+  // a single inherited entry means it has not run — or something re-enabled inheritance.
+  if (/\(I\)/.test(out)) return { ok: false, reason: PROVISION_FAILURE.INHERITED }
+
+  if (/\bS-1-5-21-\d+-\d+-\d+-\d+\b/.test(out) && out.includes(OPERATOR_SID)) {
+    return { ok: false, reason: PROVISION_FAILURE.OPERATOR_PRESENT }
+  }
+  if (/AromaOperator/i.test(out)) return { ok: false, reason: PROVISION_FAILURE.OPERATOR_PRESENT }
+
+  if (!/NT AUTHORITY\\SYSTEM|\bSYSTEM:/i.test(out)) return { ok: false, reason: PROVISION_FAILURE.NO_SYSTEM }
+  if (!/BUILTIN\\Administrators|\bAdministrators:/i.test(out)) return { ok: false, reason: PROVISION_FAILURE.NO_ADMINS }
+
+  // THE OWNER: a principal that is neither of the two machine ones.
+  //
+  // icacls prints `<path> PRINCIPAL:(FLAGS)` on the first line and `    PRINCIPAL:(FLAGS)`
+  // on the rest, and a principal may contain a backslash and a space ("NT AUTHORITY\
+  // SYSTEM"). So each line is taken up to its `:(`, the leading path is dropped from the
+  // first, and what remains is the name. Counting entries would not do — an ACL of SYSTEM
+  // + Administrators + Everyone has three and no human on it.
+  const MACHINE = /^(NT AUTHORITY\\SYSTEM|BUILTIN\\Administrators|CREATOR OWNER|Everyone|BUILTIN\\Users|NT AUTHORITY\\Authenticated Users)$/i
+  const principals = []
+  for (const line of out.split(/\r?\n/)) {
+    const m = /^(.*?):\([^)]*\)/.exec(line.trim())
+    if (!m) continue
+    let name = m[1].trim()
+    // Drop the directory path that precedes the principal on the first line.
+    const idx = name.search(/\s(?=[^\s]*(\\|$))/)
+    if (name.toLowerCase().startsWith(String(dir).toLowerCase())) name = name.slice(String(dir).length).trim()
+    else if (idx > 0 && /^[A-Za-z]:\\/.test(name)) name = name.slice(idx).trim()
+    if (name) principals.push(name)
+  }
+  if (!principals.some((p) => !MACHINE.test(p))) return { ok: false, reason: PROVISION_FAILURE.NO_OWNER }
+
+  return { ok: true }
+}
+
+function defaultIcacls (dir) {
+  const { execFileSync } = require('node:child_process')
+  return execFileSync('icacls', [dir], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+/**
+ * Append one line, durably. NEVER creates the directory: an unprovisioned store refuses.
+ * Throws on any write failure so the caller can report `stored:false` without guessing.
+ */
 function createFileSink (dir) {
   const fs = require('node:fs')
   const path = require('node:path')
   const file = path.join(dir, AUDIT_FILE)
   return (rec) => {
-    fs.mkdirSync(dir, { recursive: true })
     // fsync the DATA. An audit line that is only in the page cache is not on disk, and
     // the crash that loses it is exactly the event you would want the record of.
     const fd = fs.openSync(file, 'a')
@@ -155,16 +239,37 @@ function createBriefStore (deps = {}) {
   const records = []
   const dir = deps.dir || DEFAULT_AUDIT_DIR
   const persist = deps.persist === true || (deps.persist !== false && typeof deps.dir === 'string')
+  const verify = deps.verifyAuditDir || ((d) => verifyAuditDir(d, deps))
   const sink = typeof deps.sink === 'function'
     ? deps.sink
     : (persist ? createFileSink(dir) : (rec) => { records.push(rec) })
 
-  /** Refuses rather than trimming. Returns { ok, id } or { ok:false, reason, field }. */
+  /**
+   * Refuses rather than trimming. Returns { ok, id } or { ok:false, reason, field }.
+   *
+   * A STORAGE FAILURE IS NEVER THE OWNER'S PROBLEM. Provisioning is checked before the
+   * first write and a write error is caught, so a missing directory, a wrong ACL, a full
+   * disk or a failed fsync all become `stored:false` with a fixed reason — and the brief,
+   * which has already passed delivery validation, still reaches the Owner. The audit
+   * exists to record what happened; refusing to answer because it could not be recorded
+   * would trade the thing the Owner asked for against the note about it.
+   */
   function write (rec) {
     const v = validateRecord(rec)
     if (!v.ok) return { ok: false, reason: v.reason, field: v.field }
+
+    if (persist) {
+      const p = verify(dir)
+      if (!p.ok) return { ok: false, reason: p.reason, field: null }
+    }
+
     const frozen = Object.freeze(Object.assign({}, rec))
-    sink(frozen)
+    try {
+      sink(frozen)
+    } catch (_) {
+      // The message is deliberately not kept: it is an fs error carrying a full path.
+      return { ok: false, reason: PROVISION_FAILURE.WRITE_FAILED, field: null }
+    }
     return { ok: true, id: rec.briefId }
   }
 
@@ -182,7 +287,10 @@ module.exports = {
   validateRecord,
   hashBrief,
   createFileSink,
+  verifyAuditDir,
   readAll,
+  PROVISION_FAILURE,
+  OPERATOR_SID,
   DEFAULT_AUDIT_DIR,
   AUDIT_FILE,
   ALLOWED_FIELDS,

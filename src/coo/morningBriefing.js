@@ -27,6 +27,7 @@
 
 const crypto = require('node:crypto')
 const { scopeForSource, sourceRecordText, ownerWorkItemText } = require('./statementScope')
+const { projectCoverageError } = require('./coverageError')
 
 const SCHEMA_VERSION = 1
 const TIMEZONE = 'America/Winnipeg'
@@ -199,7 +200,9 @@ function buildRisks (coverage, mk) {
     const f = mk({
       id: null,
       kind: 'fact',
-      text: c.source + ' could not be read: ' + (c.error || 'unavailable'),
+      // THE PROJECTED CODE, not the adapter's sentence. A Risks line is rendered in the
+      // browser exactly like any other, so it is the same leak as Data Coverage was.
+      text: c.source + ' could not be read: ' + (projectCoverageError(c.error).code || 'read_failed'),
       provenance: { source: 'coverage:' + c.source, sourceId: 'coverage:' + c.source, originalDate: { iso: null, display: null }, link: null, retrievedAt: stamp(c.retrievedAt || null), usedFallback: false }
     })
     if (f) out.push(f)
@@ -352,15 +355,22 @@ async function buildMorningBriefing (deps = {}) {
       risks: sections.risks,
       topPriorities: sections.topPriorities,
       decisionsNeeded: sections.decisionsNeeded,
-      dataCoverage: coverage.map((c) => ({
-        source: c.source,
-        // The three states, kept apart: read and found / read and empty / not read.
-        state: c.trust === 'unavailable' ? 'unavailable' : (c.count > 0 ? 'live' : 'live_zero'),
-        count: c.count || 0,
-        error: c.error || null,
-        usedFallback: c.usedFallback === true,
-        retrievedAt: stamp(c.retrievedAt)
-      }))
+      dataCoverage: coverage.map((c) => {
+        // THE ADAPTER'S MESSAGE NEVER LEAVES THIS LINE. It is projected to a fixed code
+        // plus a scrubbed, bounded detail; the raw string is discarded here and exists
+        // nowhere downstream — not in the response, not in the audit, not in a log.
+        const e = projectCoverageError(c.error)
+        return {
+          source: c.source,
+          // The three states, kept apart: read and found / read and empty / not read.
+          state: c.trust === 'unavailable' ? 'unavailable' : (c.count > 0 ? 'live' : 'live_zero'),
+          count: c.count || 0,
+          errorCode: e.code,
+          errorDetail: e.detail,
+          usedFallback: c.usedFallback === true,
+          retrievedAt: stamp(c.retrievedAt)
+        }
+      })
     },
     // DRAFT-TIME BOOKKEEPING ONLY. validateBriefForDelivery strips this before the brief
     // leaves the process. `operationalClaimViolations` is gone entirely: it was a field
