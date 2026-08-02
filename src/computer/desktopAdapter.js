@@ -43,7 +43,7 @@
 const DEFAULT_SCRIPT = 'uia-canary'
 
 /** The verbs the helper script accepts. It rejects anything else; so does this. */
-const OPS = Object.freeze(['open_app', 'type_text', 'save_as', 'verify_binding', 'cleanup'])
+const OPS = Object.freeze(['open_app', 'type_text', 'save_as', 'save_outcome', 'verify_binding', 'cleanup'])
 
 /** appId -> the ONLY thing the helper is allowed to launch for it. No paths, no arguments. */
 const APP_LAUNCH = Object.freeze({ notepad: 'notepad' })
@@ -66,6 +66,10 @@ function createDesktopAdapter (deps = {}) {
   if (!runner || typeof runner.run !== 'function') throw fail('no_runner', 'the adapter cannot reach a desktop without an injected runner')
   const scriptPath = typeof deps.scriptPath === 'string' ? deps.scriptPath : DEFAULT_SCRIPT
   const timeoutSec = Number.isInteger(deps.timeoutSec) ? deps.timeoutSec : 300
+  // READ-ONLY existence probe. The save adjudication needs a fact from disk, and a fact from
+  // disk is the one thing no UIA reading can supply. Injected, so the adapter still spawns
+  // nothing and still tests without a desktop.
+  const fsProbe = deps.fsProbe || null
 
   /** One call into the helper. Every op goes through here, so every op is bounded the same way. */
   function call (op, payload) {
@@ -153,13 +157,79 @@ function createDesktopAdapter (deps = {}) {
      * single approved path is that the decision was made in advance by someone else.
      * Overwriting is refused for the same reason: a canary that can overwrite is not a canary.
      */
+    /**
+     * THE SAVE, IN THREE PHASES, WITH THE JUDGEMENT LAST.
+     *
+     * 1. PREPARE  uiaCanary opens the dialog and sets the destination. It cannot press anything.
+     * 2. ACTIVATE nativeSaveActivation verifies twenty things and sends exactly one BM_CLICK.
+     *             It cannot choose a target.
+     * 3. OBSERVE  uiaCanary reports whether the dialog is gone and whether an error surface
+     *             appeared. It decides nothing.
+     *
+     * Neither helper alone can save a file, and the adjudication belongs to neither of them:
+     * this method combines their observations with facts on disk. A call returning is not
+     * evidence that a file exists — that is the whole point of DESIGN-001 section 7.
+     *
+     * THIS IS THE ONLY CALLER of the native activation, and it is the only place the script id
+     * appears outside the runner's own map.
+     */
     saveAsViaUi ({ bind, dir, fileName }) {
       if (!bind) throw fail('missing_binding', 'no binding supplied')
       if (typeof dir !== 'string' || typeof fileName !== 'string') throw fail('bad_save_target', 'dir and fileName are required')
-      const res = call('save_as', { bind, dir, fileName })
-      if (res.method !== 'SaveAsDialog') throw fail('wrong_save_method', 'expected SaveAsDialog, got ' + String(res.method))
-      if (res.created !== true) throw fail('save_not_confirmed', 'the helper did not confirm a new file')
-      return { detail: res.path || (dir + fileName) }
+
+      // -- 1. PREPARE -------------------------------------------------------
+      const prep = call('save_as', { bind, dir, fileName })
+      if (prep.method !== 'SaveAsDialogPrepared') throw fail('wrong_save_method', 'expected SaveAsDialogPrepared, got ' + String(prep.method))
+      if (prep.prepared !== true) throw fail('save_dialog_not_prepared', 'the dialog was not made ready')
+      const target = prep.path || (dir + fileName)
+
+      // -- 2. ACTIVATE ------------------------------------------------------
+      // Deliberately NOT through call(): call() throws on ok:false and would discard sendCount,
+      // and sendCount is the evidence that a refusal refused BEFORE sending. Same reasoning as
+      // cleanup(), and the same mistake if it were routed the easy way.
+      let act = null
+      try {
+        const env = runner.run('native-save-activation', { op: 'activate_bound_save', bind, dir, fileName, timeoutSec })
+        act = (env && env.ok === true) ? env.result : { ok: false, reason: 'transport_' + ((env && env.refusal) || 'failed'), sendCount: 0, activated: false }
+      } catch (err) {
+        act = { ok: false, reason: (err && err.reason) || 'activation_failed', sendCount: 0, activated: false }
+      }
+      if (!act || typeof act !== 'object') act = { ok: false, reason: 'adapter_no_result', sendCount: 0, activated: false }
+
+      const sendCount = Number.isFinite(act.sendCount) ? act.sendCount : null
+      if (act.ok !== true) {
+        // Nothing was sent, so nothing happened. This is an ordinary refusal, not an unknown.
+        return {
+          outcome: 'save_refused',
+          refusal: act.reason || 'activation_refused',
+          sendCount,
+          activated: false,
+          target,
+          verified: act.verified || null,
+          detail: 'refused before sending: ' + (act.reason || 'unknown')
+        }
+      }
+
+      // -- 3. OBSERVE, then adjudicate from disk ----------------------------
+      let obs = null
+      try { obs = call('save_outcome', { bind }) } catch (_) { obs = null }
+      const fileThere = fsProbe && typeof fsProbe.exists === 'function' ? fsProbe.exists(target) === true : null
+
+      const base = { sendCount, activated: true, target, verified: act.verified || null, dialogPresent: obs ? obs.dialogPresent : null, errorTextSeen: obs ? obs.errorTextSeen : null }
+
+      if (obs && obs.dialogPresent === false && fileThere === true) {
+        return Object.assign({ outcome: 'save_verified', detail: target }, base)
+      }
+      if (obs && obs.dialogPresent === true && obs.errorTextSeen) {
+        // POSITIVE evidence, and only that: a named message on a dialog that is still up.
+        return Object.assign({ outcome: 'save_rejected', detail: String(obs.errorTextSeen).slice(0, 200) }, base)
+      }
+      // Everything else. The message was sent and what it did cannot be established. Saying
+      // "failed" would be as much a guess as saying "worked".
+      return Object.assign({
+        outcome: 'activation_outcome_unknown',
+        detail: 'dialogPresent=' + (obs ? String(obs.dialogPresent) : 'unreadable') + ' fileExists=' + String(fileThere)
+      }, base)
     },
 
     /**

@@ -33,10 +33,10 @@ const { computeOrderHash, ALLOWED_PATH, LIMITS } = require('../../src/computer/s
 const pkg = require('./executionPackage')
 
 const REPO = path.resolve(__dirname, '..', '..')
-// THE TWO-STEP ORDER. The three-step one is superseded and never executed under final scope —
-// see canary-work-order.SUPERSEDED.md. It is deliberately NOT reachable from here, so an old
-// order cannot be approved by habit.
-const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order-2step.draft.json')
+// THE THREE-STEP ORDER WITH SAVE, from 2026-08-02. The original three-step order and the
+// two-step one are both superseded and neither is reachable from here, so an old order cannot
+// be approved by habit. See canary-work-order.SUPERSEDED.md.
+const DRAFT = path.join(REPO, 'docs', 'governance', 'canary-work-order-3step.draft.json')
 // ── A FIXED ABSOLUTE PATH, NOT ONE RELATIVE TO THE RUNNING TREE ───────────
 // This was path.join(REPO, '.aroma', 'owner-approvals'), and REPO is resolved from __dirname.
 // On the Owner's side that is the repo, which is right. On the COMPANION's side the same code

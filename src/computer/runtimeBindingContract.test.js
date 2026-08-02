@@ -69,7 +69,7 @@ function fakeDesktop (over = {}) {
     cleanedUp: 0,
     openApp ({ appId }) { d.calls++; d.log.push('open'); return { bind: Object.assign({}, BIND), detail: appId } },
     typeTextIntoControl (a) { d.calls++; d.log.push('type'); d.seen.push({ op: 'type', bind: a.bind, text: a.text }); return { detail: 'typed' } },
-    saveAsViaUi (a) { d.calls++; d.log.push('save'); d.seen.push({ op: 'save', bind: a.bind, dir: a.dir, fileName: a.fileName }); return { detail: 'saved' } },
+    saveAsViaUi (a) { d.calls++; d.log.push('save'); d.seen.push({ op: 'save', bind: a.bind, dir: a.dir, fileName: a.fileName }); return { outcome: 'save_verified', sendCount: 1, activated: true, target: 'saved', detail: 'saved' } },
     verifyBinding () { return { ok: true } },
     cleanup () { d.cleanedUp++ }
   }

@@ -224,43 +224,98 @@ test('*** an order step carrying a window or a message is refused before anythin
   }
 })
 
-/* ── 6. the capability is INERT until a deliberate act wires it ───────────── */
+/* ── 6. WIRED — and reachable by exactly one path ─────────────────────────── */
 
 /**
- * v0.1 ends at a review checkpoint. The helper exists, is reviewable and is tested — and cannot
- * be reached by anything: it is absent from the runner's script-id map (so `run()` refuses
- * `unknown_script_id`), absent from the execution package (so staging cannot copy it to the
- * operator account), and referenced by no production JavaScript.
+ * These four tests were the INERT assertions: not in the script map, not in the package, not
+ * referenced, no save step. The Owner wired the capability on 2026-08-02, so they are REWRITTEN
+ * rather than deleted — the same four questions, now asking whether the wiring is the narrow one
+ * that was designed rather than whether it exists.
  *
- * Asserted rather than described, because "nothing calls it yet" is a fact about today that
- * quietly stops being true. Wiring it turns these three red, which is the point: it becomes a
- * visible, deliberate act with an Owner approval attached, not a side effect of some other change.
+ * Deleting them would have removed the only place that says how many callers there are supposed
+ * to be.
  */
-test('*** the native helper is UNREACHABLE — not in the runner script map ***', () => {
+
+test('*** WIRED: the helper is reachable by SCRIPT ID ONLY, never by path ***', () => {
   const { SCRIPTS } = require('./powershellJsonRunner')
-  const values = Object.values(SCRIPTS)
-  assert.equal(values.includes('scripts/computer/nativeSaveActivation.ps1'), false,
-    'wiring this is a separate act needing its own Owner GO — see DESIGN-001 §11')
+  assert.equal(SCRIPTS['native-save-activation'], 'scripts/computer/nativeSaveActivation.ps1',
+    'registered under one id')
+  // run() takes an id and looks it up in this frozen table. A caller cannot hand it a path, so
+  // "which script" is not something an input can decide.
+  const runnerSrc = stripJs(fs.readFileSync(path.join(SRC, 'computer', 'powershellJsonRunner.js'), 'utf8'))
+  assert.ok(runnerSrc.includes('const rel = SCRIPTS[scriptId]'), 'the id is looked up, not used as a path')
+  assert.ok(runnerSrc.includes("if (!rel) return fail('unknown_script_id'"), 'an unknown id refuses')
+  assert.ok(Object.isFrozen(SCRIPTS), 'and the table cannot be extended at runtime')
 })
 
-test('*** the native helper is NOT in the execution package ***', () => {
+test('*** WIRED: it is in the execution package, so its bytes are pinned by the approval ***', () => {
   const { PACKAGE_FILES } = require('../../scripts/computer/executionPackage')
-  assert.equal(PACKAGE_FILES.includes('scripts/computer/nativeSaveActivation.ps1'), false,
-    'staging copies exactly PACKAGE_FILES, so an unpackaged helper cannot reach the operator account')
+  assert.ok(PACKAGE_FILES.includes('scripts/computer/nativeSaveActivation.ps1'),
+    'the constant that decides WHICH message, and the checks that decide whether to send it, ' +
+    'cannot change under an existing approval')
 })
 
-test('*** no production JavaScript references the helper or its op ***', () => {
-  const offenders = []
+test('*** WIRED: exactly ONE production caller, and it is the desktop adapter ***', () => {
+  // The narrowness that DESIGN-001 promised is a count. If a second caller appears, the claim
+  // "one designated caller" is no longer true and this goes red.
+  const callers = []
   for (const f of walk(SRC).concat(walk(SCRIPTS))) {
     if (!f.endsWith('.js') || f.endsWith('.test.js')) continue
     const code = stripJs(fs.readFileSync(f, 'utf8'))
-    if (/nativeSaveActivation|activate_bound_save|activateBoundSave/.test(code)) offenders.push(path.relative(REPO, f))
+    if (/'native-save-activation'/.test(code)) callers.push(path.basename(f))
   }
-  assert.deepEqual(offenders, [], 'nothing calls it yet, and that is the v0.1 end state:\n  ' + offenders.join('\n  '))
+  // The runner's own map names it too — that is the registration, not a call.
+  assert.deepEqual(callers.sort(), ['desktopAdapter.js', 'powershellJsonRunner.js'],
+    'one caller and one registry, nothing else: ' + callers.join(', '))
+
+  const adapter = stripJs(fs.readFileSync(path.join(SRC, 'computer', 'desktopAdapter.js'), 'utf8'))
+  const uses = adapter.match(/'native-save-activation'/g) || []
+  assert.equal(uses.length, 1, 'the adapter names it exactly once')
+  // And that one use is inside the save path, not a general escape hatch.
+  const at = adapter.indexOf("'native-save-activation'")
+  const fn = adapter.lastIndexOf('saveAsViaUi', at)
+  assert.ok(fn > 0 && fn < at, 'the only call site is inside saveAsViaUi')
 })
 
-test('*** and the save action still cannot run — the live order has no save step ***', () => {
-  const order = require('../../docs/governance/canary-work-order-2step.draft.json')
-  assert.equal(order.steps.some((s) => s.action === 'save'), false,
-    'a real save needs a new order, a new hash and a fresh Owner approval')
+test('*** WIRED: only a SAVE step can reach it — no other action leads there ***', () => {
+  const ex = stripJs(fs.readFileSync(path.join(SRC, 'computer', 'computerExecutor.js'), 'utf8'))
+  // Counted by substring, not regex: the strings being looked for are full of parentheses and
+  // dots, and an escaping slip in the RULE would quietly weaken it rather than fail loudly.
+  const countOf = (hay, needle) => hay.split(needle).length - 1
+
+  assert.equal(countOf(ex, 'desktop.saveAsViaUi('), 1, 'one call site in the executor')
+  const at = ex.indexOf('desktop.saveAsViaUi(')
+  const guard = ex.lastIndexOf("if (step.action === 'save')", at)
+  assert.ok(guard > 0 && guard < at, 'and it sits inside the save branch')
+
+  // open_app and type_text reach their own adapter methods and nothing else.
+  assert.ok(ex.includes("if (step.action === 'open_app') return desktop.openApp("))
+  assert.ok(ex.includes("if (step.action === 'type_text') return desktop.typeTextIntoControl("))
+})
+
+test('*** WIRED: the live order now HAS a save step, and it is the approved shape ***', () => {
+  const order = require('../../docs/governance/canary-work-order-3step.draft.json')
+  const save = order.steps.find((s) => s.action === 'save')
+  assert.ok(save, 'the three-step order carries a save')
+  assert.deepEqual(Object.keys(save).sort(), ['action', 'fileName', 'n'], 'and nothing else')
+  assert.equal(save.fileName, 'canary-save-1.txt')
+  assert.equal(/[\\/]/.test(save.fileName), false, 'a bare name, never a path')
+  assert.equal(order.maxSteps, 3)
+  assert.equal(order.allowedPath, 'C:\\Aroma\\ComputerOperator-Test', 'the save is bounded')
+  assert.equal(order.approvalId, '', 'and it carries NO approval — a fresh one is required')
+})
+
+test('*** the reachable path is exactly one chain, end to end ***', () => {
+  // Stated as a test so the chain cannot quietly grow a branch:
+  //   order.save -> executor save branch -> adapter.saveAsViaUi -> runner('native-save-activation')
+  //   -> the one op -> the one send
+  const ex = stripJs(fs.readFileSync(path.join(SRC, 'computer', 'computerExecutor.js'), 'utf8'))
+  const adapter = stripJs(fs.readFileSync(path.join(SRC, 'computer', 'desktopAdapter.js'), 'utf8'))
+  const helper = stripPs(fs.readFileSync(path.join(SCRIPTS, NATIVE_HELPER), 'utf8'))
+
+  const countOf = (hay, needle) => hay.split(needle).length - 1
+  assert.equal(countOf(ex, 'desktop.saveAsViaUi('), 1, 'executor -> adapter: one link')
+  assert.equal(countOf(adapter, "'native-save-activation'"), 1, 'adapter -> runner id: one link')
+  assert.equal(countOf(helper, "if ($op -ne 'activate_bound_save')"), 1, 'helper: one op gate')
+  assert.equal(countOf(helper, 'ClickButtonOnly($btnHandle)'), 1, 'helper: one send')
 })

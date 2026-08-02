@@ -48,7 +48,9 @@ test('*** no runner, no adapter — it refuses to be constructed ***', () => {
 })
 
 test('the op set is closed', () => {
-  assert.deepEqual([...OPS].sort(), ['cleanup', 'open_app', 'save_as', 'type_text', 'verify_binding'])
+  // save_outcome joined when the save split into prepare / activate / observe. It reads the
+  // dialog after the click and decides nothing.
+  assert.deepEqual([...OPS].sort(), ['cleanup', 'open_app', 'save_as', 'save_outcome', 'type_text', 'verify_binding'])
 })
 
 /* ── open_app ─────────────────────────────────────────────────────────────── */
@@ -118,9 +120,19 @@ test('there is no parameter that could ask for a different input method', () => 
 
 /* ── save: the application saves, we do not ───────────────────────────────── */
 
-test('*** a save is only a success if the helper says SaveAsDialog AND created ***', () => {
-  const a = mk({ save_as: { ok: true, method: 'SaveAsDialog', created: true, path: 'C:\\Aroma\\ComputerOperator-Test\\c.txt' } })
-  assert.match(a.saveAsViaUi({ bind: BIND, dir: 'C:\\Aroma\\ComputerOperator-Test\\', fileName: 'c.txt' }).detail, /c\.txt/)
+test('*** a save is only a success if the dialog PREPARED, the click landed and a file exists ***', () => {
+  // THREE PHASES NOW (DESIGN-001 s7). The helper prepares and cannot press; the native helper
+  // presses and cannot choose a target; the file on disk decides. A fake that answers only the
+  // first phase must NOT produce a save.
+  const a = mk({
+    save_as: { ok: true, method: 'SaveAsDialogPrepared', prepared: true, dialogOpen: true, filenameSet: 'C:\\Aroma\\ComputerOperator-Test\\c.txt', path: 'C:\\Aroma\\ComputerOperator-Test\\c.txt' },
+    activate_bound_save: { ok: true, activated: true, sendCount: 1 },
+    save_outcome: { ok: true, observed: true, dialogPresent: false, errorTextSeen: null }
+  }, { fsProbe: { exists: () => true } })
+  const r = a.saveAsViaUi({ bind: BIND, dir: 'C:\\Aroma\\ComputerOperator-Test\\', fileName: 'c.txt' })
+  assert.equal(r.outcome, 'save_verified')
+  assert.equal(r.sendCount, 1)
+  assert.match(r.detail, /c\.txt/)
 
   for (const res of [
     { ok: true, method: 'WriteAllText', created: true },

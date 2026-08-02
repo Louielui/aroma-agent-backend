@@ -99,9 +99,14 @@ test('*** the Companion reports cleanup and leftovers on BOTH outcomes ***', () 
   const at = code.indexOf('if (res && res.ok) {')
   assert.ok(at > 0, 'the outcome branch exists')
 
-  const elseAt = code.indexOf('} else {', at)
-  const successBranch = code.slice(at, elseAt)
-  const failureBranch = code.slice(elseAt, code.indexOf('The switch is off', elseAt))
+  // Located by CONTENT, not by the next '} else {'. The success branch grew an if/else of its
+  // own when the save came back — "did this order save?" — and a brace-counting heuristic
+  // silently sliced the branch short and reported a missing measurement that was there. The
+  // failure branch is the one that says IT DID NOT RUN; everything before it is the success one.
+  const failAt = code.indexOf("T.out('  IT DID NOT RUN.')")
+  assert.ok(failAt > at, 'the failure branch is found by what it says')
+  const successBranch = code.slice(at, failAt)
+  const failureBranch = code.slice(failAt, code.indexOf('The switch is off', failAt))
 
   for (const [label, branch] of [['success', successBranch], ['failure', failureBranch]]) {
     assert.match(branch, /reportCleanup\(res\)/, label + ' branch reports the cleanup measurement')

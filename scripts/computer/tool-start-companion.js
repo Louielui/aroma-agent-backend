@@ -137,6 +137,61 @@ function reportCleanup (res) {
   T.out('')
 }
 
+/**
+ * THE SAVE HAS THREE ENDINGS AND THEY ARE NOT THE SAME NEWS.
+ *
+ * DESIGN-001 section 7. A BM_CLICK returning proves a message was posted and proves nothing
+ * else, so the Owner must be told which of three things happened — and above all must never be
+ * told "it failed" when the truth is "nobody knows".
+ */
+function reportSaveOutcome (res) {
+  const reason = String((res && res.result && res.result.reason) || (res && res.detail) || '')
+
+  if (reason.includes('activation_outcome_unknown')) {
+    T.out('')
+    T.out('  THE RESULT OF THE SAVE IS UNKNOWN.')
+    T.out('')
+    T.out('  What happened: the Save button was found, checked, and clicked once. What that')
+    T.out('  click did could not be established - the dialog did not close in the way a')
+    T.out('  successful save closes it, and no file appeared at the approved path.')
+    T.out('')
+    T.out('  This is NOT "the save failed". It is "nobody can say". Reporting either')
+    T.out('  answer would be a guess, and a guess is what this system exists to avoid.')
+    T.out('')
+    T.out('  The machine right now:')
+    T.out('    - Notepad and any Save dialog may still be on screen. The measured')
+    T.out('      cleanup figures above say exactly what was closed.')
+    T.out('    - The approved folder may or may not contain a file. Look at it yourself.')
+    T.out('')
+    T.out('  What you need to do:')
+    T.out('    1. Look at C:\\Aroma\\ComputerOperator-Test and see whether a file is there.')
+    T.out('    2. Close any Notepad or Save dialog still open, by hand.')
+    T.out('    3. Delete any file you find, unless you want to keep it.')
+    T.out('')
+    T.out('  The task will NOT be retried automatically, and the button will NOT be')
+    T.out('  clicked a second time. To try again you must approve again, from the start.')
+    T.out('')
+    return
+  }
+
+  if (reason.includes('save_rejected')) {
+    T.out('')
+    T.out('  THE SAVE WAS REFUSED BY THE DIALOG.')
+    T.out('  The click landed and the dialog answered with a message of its own, which is')
+    T.out('  positive evidence that the save did not happen - not an assumption.')
+    T.out('  No file was created. Nothing needs cleaning up beyond closing the dialog.')
+    T.out('')
+    return
+  }
+
+  if (/save_refused|filename_field_altered|current_folder_altered|save_control_|dialog_|refuse_overwrite|activation_window_expired|already_activated/.test(reason)) {
+    T.out('')
+    T.out('  THE SAVE WAS NOT ATTEMPTED. Nothing was clicked and nothing was written.')
+    T.out('  One of the checks before the click did not hold, and the reason is named above.')
+    T.out('')
+  }
+}
+
 /** What is still on the machine, measured — on success as well as on failure. */
 function reportLeftovers (res) {
   const left = T.leftovers({ cleanup: res && res.result ? res.result.cleanup : null })
@@ -213,7 +268,15 @@ function handle (file) {
     // The step list is read from the RESULT, not written out here, so it cannot go stale again.
     const did = (res.result && Array.isArray(res.result.steps) ? res.result.steps : []).map((s) => s.action)
     T.out('  DONE. ' + (did.length ? did.join(' then ') : 'the approved steps') + ' completed.')
-    T.out('  No file was created - this task does not save anything.')
+    if (did.includes('save')) {
+      // MEASURED FACTS, not a creation claim. save_verified is only reached when the dialog
+      // closed AND a file exists at the approved path, so the screen states what was checked
+      // rather than asserting what happened. The display guard bans the latter, correctly.
+      T.out('  Checked: a file exists at the approved path and its contents match the')
+      T.out('  approved text. Please look at it and delete it when you are satisfied.')
+    } else {
+      T.out('  No file was created - this task does not save anything.')
+    }
     T.out('')
 
     // ── THE SAME MEASUREMENT THE FAILURE PATH GETS ────────────────────────
@@ -234,6 +297,9 @@ function handle (file) {
     }
     T.out('')
 
+    // WHICH of the three save endings, before the machine state, because it decides what the
+    // Owner should do with what he is about to be told.
+    reportSaveOutcome(res)
     reportCleanup(res)
     reportLeftovers(res)
     T.out('  The task has been used up either way - to try again, the Owner must approve again.')

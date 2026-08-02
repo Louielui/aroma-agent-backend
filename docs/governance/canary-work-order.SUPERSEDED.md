@@ -62,3 +62,33 @@ Not "Computer Operator complete", not "full workflow proven", not "file output p
 
 `docs/governance/BACKLOG-002-targeted-native-save-activation.md` — a separate, narrowly scoped
 work item. It is not part of this canary and does not gate it.
+
+---
+
+# ADDENDUM 2026-08-02 — the TWO-STEP order is now superseded too
+
+`canary-work-order-2step.draft.json` did what it was for: **UI INTERACTION CANARY PASSED —
+OPEN_APP AND TYPE_TEXT PROVEN; SAVE CAPABILITY NOT PROVEN**, run at 13:27:30Z under approval
+`appr_68027390…`, 51 characters read back identical, cleanup measured and clean.
+
+It is superseded because the save capability now exists (DESIGN-001, BACKLOG-002). **Do not
+modify it. Do not reuse it. Do not reuse its approval.** It stays on disk as the evidence of
+what was proven without a save.
+
+| | two-step (superseded) | three-step (live) |
+|---|---|---|
+| file | `canary-work-order-2step.draft.json` | `canary-work-order-3step.draft.json` |
+| steps | open_app, type_text | open_app, type_text, **save** |
+| maxSteps | 2 | 3 |
+| allowedPath | absent | `C:\Aroma\ComputerOperator-Test` |
+| fileName | — | `canary-save-1.txt` |
+| sealedText | *"…Two steps. Round 1."* | *"…Three steps with save. Round 1."* |
+| orderHash | `7cbd4dce…` | `b346e684…` *(draft; re-derived at approval)* |
+
+The sealed text differs again, deliberately: a receipt, an audit line or a screenshot must never
+be ambiguous about which of the three scopes produced it.
+
+**What the three-step order does NOT prove until it has run.** Whether `BM_CLICK` activates that
+button is still a hypothesis. If it does not, the correct outcome is
+`activation_outcome_unknown` — and the screen says so in those words, tells the Owner what state
+the machine is in, and does not retry.

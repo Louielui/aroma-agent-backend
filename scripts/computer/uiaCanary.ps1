@@ -235,6 +235,7 @@ $REQUIRED_FIELDS = @{
   'open_app'       = @('appId')
   'type_text'      = @('bind', 'text')
   'save_as'        = @('bind', 'dir', 'fileName')
+  'save_outcome'   = @('bind')
   'verify_binding' = @('bind')
   'cleanup'        = @('bind')
 }
@@ -465,25 +466,69 @@ switch ($op) {
     # happens to be showing.
     $nvp.SetValue($target)
 
-    # ---- KNOWN UNRESOLVED, 2026-08-02 -----------------------------------
-    # This lookup was MEASURED TO FAIL: Name='Save' + ControlType=Button found
-    # nothing in the real dialog. What the control actually is has NOT been
-    # determined, and it is not guessed at here. Three candidates are plausible -
-    # a different Name, ControlType.SplitButton rather than Button, or the button
-    # living outside the descendant subtree this searches - and picking one
-    # without measuring is how a canary presses something nobody identified.
+    # ---- THIS OP PREPARES. IT DOES NOT PRESS. ---------------------------
+    # It used to look for a Save button here and Invoke it. That lookup was
+    # MEASURED TO FAIL - the control has no InvokePattern and no
+    # LegacyIAccessible - so pressing it moved to nativeSaveActivation.ps1,
+    # the one file allowed a native message.
     #
-    # Operator-MeasureNotepadUia.ps1 now enumerates every button-like control in
-    # the dialog. Until that has been run, save_as REFUSES here, which is the
-    # correct outcome: it is the last step, nothing has been written, and the
-    # refusal names exactly what is missing.
-    $saveBtn = Get-ByName -Root $dlg -Name 'Save' ([System.Windows.Automation.ControlType]::Button)
-    if ($null -eq $saveBtn) { Emit-Refusal 'save_button_not_found' 'Name=Save + ControlType=Button found nothing; the real control is not yet identified - run Operator-MeasureNotepadUia.ps1' }
-    Invoke-Element -Element $saveBtn -What 'Save button'
-    Start-Sleep -Milliseconds 900
+    # The split is not only mechanical. It keeps each helper single-purpose:
+    # this one opens the dialog and sets the destination, and CANNOT press
+    # anything; the other verifies and presses, and CANNOT choose a target.
+    # Neither file alone can save a file.
+    #
+    # Read back what was actually set, so the caller knows the exact string the
+    # dialog now holds rather than the string we hoped it would.
+    $setTo = ''
+    try { $setTo = [string] $nvp.Current.Value } catch { $setTo = '' }
+    if ($setTo -cne $target) { Emit-Refusal 'filename_not_set' 'the field did not take the approved path' }
 
-    if (-not (Test-Path -LiteralPath $target)) { Emit-Refusal 'save_not_confirmed' $target }
-    Emit-Result @{ ok = $true; method = 'SaveAsDialog'; created = $true; path = $target }
+    Emit-Result @{
+      ok = $true
+      method = 'SaveAsDialogPrepared'
+      prepared = $true
+      dialogOpen = $true
+      filenameSet = $setTo
+      path = $target
+    }
+  }
+
+  # ---- WHAT HAPPENED AFTER THE ACTIVATION -----------------------------
+  # Observations only. This op decides NOTHING: it reports whether the dialog
+  # is still there and whether an error surface appeared, and the caller
+  # combines that with facts on disk. Putting the judgement here would let one
+  # UIA reading declare a save that no file supports.
+  'save_outcome' {
+    $r = Resolve-Binding -Bind $payload.bind
+    if (-not $r.ok) {
+      # The window going away is itself an observation, not a failure of this op.
+      Emit-Result @{ ok = $true; observed = $true; windowResolvable = $false; dialogPresent = $false; errorTextSeen = $null; note = $r.reason }
+    }
+
+    $dlgCond = New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Window)
+    $dlg = $r.window.FindFirst($SCOPE_DESC, $dlgCond)
+    $dialogPresent = ($null -ne $dlg)
+
+    # If a dialog is still up, is it saying something? Only a NAMED, readable
+    # message counts as evidence of rejection; silence is not evidence.
+    $errorText = $null
+    if ($dialogPresent) {
+      $textCond = New-PropCondition $AUTO::ControlTypeProperty ([System.Windows.Automation.ControlType]::Text)
+      $texts = $dlg.FindAll($SCOPE_DESC, $textCond)
+      foreach ($t in $texts) {
+        $tn = ''
+        try { $tn = [string] $t.Current.Name } catch { }
+        if ($tn -and $tn.Length -gt 8) { $errorText = $tn; break }
+      }
+    }
+
+    Emit-Result @{
+      ok = $true
+      observed = $true
+      windowResolvable = $true
+      dialogPresent = $dialogPresent
+      errorTextSeen = $errorText
+    }
   }
 
   'cleanup' {

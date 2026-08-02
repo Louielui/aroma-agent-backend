@@ -39,6 +39,13 @@ const REPO = path.resolve(__dirname, '..', '..')
 const SCRIPTS = Object.freeze({
   'machine-probe': 'scripts/computer/probe-machine.ps1',
   'uia-canary': 'scripts/computer/uiaCanary.ps1',
+  // THE NATIVE ACTIVATION HELPER, wired 2026-08-02 by Owner GO on DESIGN-001.
+  //
+  // Reachable ONLY through this map, and only by the script id below. A caller cannot pass a
+  // path: run() takes an id and refuses anything not in this frozen table with
+  // 'unknown_script_id'. That is what makes "one designated caller" checkable rather than
+  // conventional.
+  'native-save-activation': 'scripts/computer/nativeSaveActivation.ps1',
   'collect-identity': 'scripts/computer/collect-identity.ps1'
 })
 

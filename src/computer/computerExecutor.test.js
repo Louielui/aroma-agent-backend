@@ -35,7 +35,10 @@ function fakeDesktop (over = {}) {
     cleanedUp: 0,
     openApp ({ appId }) { d.calls++; d.log.push('open:' + appId); return { bind: Object.assign({}, BIND), detail: appId } },
     typeTextIntoControl ({ text }) { d.calls++; d.log.push('type:' + text); return { detail: text.length + ' chars' } },
-    saveAsViaUi ({ dir, fileName }) { d.calls++; d.log.push('save:' + dir + fileName); return { detail: dir + fileName } },
+    // Returns an OUTCOME now, not just a detail: the adapter adjudicates save_verified /
+    // save_rejected / activation_outcome_unknown, and a double that returns only a detail would
+    // be simulating a contract that no longer exists.
+    saveAsViaUi ({ dir, fileName }) { d.calls++; d.log.push('save:' + dir + fileName); return { outcome: 'save_verified', sendCount: 1, activated: true, target: dir + fileName, detail: dir + fileName } },
     verifyBinding () { return { ok: true } },
     // Returns what the REAL adapter returns: {ok:true} or {ok:false, reason}. It used to return
     // undefined, which no longer matches the contract now that the executor records the outcome
@@ -152,14 +155,15 @@ test('the admission record lands BEFORE the first step-start, in that order', ()
     'admission',
     'step-start', 'step-outcome',
     'step-start', 'step-outcome',
-    'step-start', 'step-outcome',
-    // CLEANUP LANDS BEFORE 'completed', 2026-08-02. The desktop is tidied while the run is still
-    // the run, so 'completed' describes a finished job rather than one still on screen. Cleanup
-    // used to happen only on the failure path, and the first successful canary duly ended with
-    // Notepad open and no record that anything had been attempted.
+    // THE SAVE STEP WRITES THREE RECORDS OF ITS OWN, 2026-08-02. DESIGN-001 s7: a BM_CLICK
+    // returning proves a message was posted and nothing else, so the target verification, the
+    // attempt and the OUTCOME are three separate facts and only one of them is a save.
+    'step-start', 'native_target_verified', 'activation_attempted', 'save_verified', 'step-outcome',
+    // Cleanup lands before 'completed' so that 'completed' describes a finished job rather than
+    // one still on screen.
     'cleanup',
     'completed'
-  ], 'the chain interleaves start/outcome per step, opens with admission and tidies before completing')
+  ], 'admission, per-step start/outcome, the save adjudication, then tidy, then complete')
 })
 
 /* ── 2. step-start: the record comes before EACH step ─────────────────────── */
@@ -523,6 +527,6 @@ test('*** the canary sequence, when everything is right ***', () => {
     'type:' + TEXT,
     'save:C:\\Aroma\\ComputerOperator-Test\\canary-1.txt'
   ])
-  assert.equal(store.written.length, 9, 'admission + 3x(start,outcome) + cleanup + completed')
+  assert.equal(store.written.length, 12, 'admission + 3x(start,outcome) + 3 save records + cleanup + completed')
   assert.ok(store.written.every((w) => w.type === 'computer-audit'), 'all under one audit kind')
 })

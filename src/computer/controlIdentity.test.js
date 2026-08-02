@@ -142,13 +142,28 @@ test('*** the filename field is found by AutomationId, with NO first-Edit fallba
   assert.match(upToSave, /filename_field_not_found/, 'and not finding it refuses')
 })
 
-test('*** the Save button is NOT guessed at — it is recorded as unresolved ***', () => {
-  // Measured: Name='Save' + ControlType=Button found nothing. What it really is has not been
-  // determined, and inventing a lookup would mean the canary presses something nobody identified.
+test('*** the Save button was RESOLVED — save_as prepares and presses nothing ***', () => {
+  // It refused here with save_button_not_found for four rounds, because the control has no
+  // InvokePattern and no LegacyIAccessible. DESIGN-001 moved the press to
+  // nativeSaveActivation.ps1 — the one file allowed a native message — and this op keeps only
+  // the half it can do honestly: open the dialog, set the destination, press nothing.
   const sa = CANARY.slice(CANARY.indexOf("'save_as' {"))
-  assert.match(sa, /KNOWN UNRESOLVED/, 'the gap is stated in the code that has it')
-  assert.match(sa, /save_button_not_found/, 'and it still refuses rather than pressing something else')
-  assert.match(sa, /Operator-MeasureNotepadUia\.ps1/, 'pointing at what will answer it')
+  const body = sa.slice(0, sa.indexOf("'save_outcome' {"))
+  assert.match(body, /SaveAsDialogPrepared/, 'it reports a PREPARED dialog, never a saved file')
+  assert.equal(/save_button_not_found/.test(body), false, 'the dead lookup is gone')
+  // It DOES still invoke two things, and both are correct: the File menu and the "Save as" item
+  // are what OPEN the dialog. What it must never invoke is the Save button itself — the whole
+  // reason the press moved to a different file. So the rule names the two permitted targets
+  // rather than banning Invoke-Element outright, which would have been the lazy version and
+  // would have failed on code doing exactly the right thing.
+  const invocations = body.match(/Invoke-Element -Element \$\w+ -What '[^']*'/g) || []
+  assert.deepEqual(invocations.map((i) => i.replace(/.*-What '/, '').replace(/'$/, '')).sort(),
+    ['File menu', 'Save as item'], 'exactly two invocations, and neither is the Save button')
+  assert.equal(/\$saveBtn/.test(body), false, 'no Save button is even located here')
+  assert.match(body, /filename_not_set/, 'it verifies the destination really took')
+
+  // The press lives in exactly one other file, and this one cannot reach it.
+  assert.equal(/SendMessage|BM_CLICK/.test(CANARY), false, 'uiaCanary holds no native primitive')
 })
 
 /* ── the measurement tool will answer the remaining question ──────────────── */

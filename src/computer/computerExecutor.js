@@ -502,7 +502,55 @@ function createComputerExecutor (deps = {}) {
         if (deps.fsProbe && deps.fsProbe.exists && deps.fsProbe.exists(target)) {
           throw new Error('refuse_overwrite: ' + target)
         }
-        return desktop.saveAsViaUi({ bind: bindingFromOpen, dir: order.allowedPath + '\\', fileName: step.fileName })
+        const sv = desktop.saveAsViaUi({ bind: bindingFromOpen, dir: order.allowedPath + '\\', fileName: step.fileName })
+
+        // ── TRIGGERING AND SUCCEEDING ARE DIFFERENT FACTS ──────────────────
+        // DESIGN-001 section 7. A BM_CLICK call returning proves a message was posted and
+        // proves nothing else, so the three outcomes get three different records and only one
+        // of them is a save.
+        //
+        // These are written HERE rather than inside the adapter because the audit is the
+        // executor's responsibility and because an adapter that could write its own verdict
+        // would be a component grading its own work.
+        try {
+          auditOrThrow('native_target_verified', Object.assign({
+            runId, n: step.n, target: sv.target || null, sendCount: sv.sendCount === undefined ? null : sv.sendCount
+          }, sv.verified ? { verified: sv.verified } : {}))
+        } catch (_) { /* best effort; the outcome record below is the one that must land */ }
+
+        if (sv.outcome === 'save_refused') {
+          // Nothing was sent. An ordinary refusal, named, and NOT an unknown.
+          throw new Error((sv.refusal || 'save_refused') + ': ' + (sv.detail || 'refused before sending'))
+        }
+
+        try {
+          auditOrThrow('activation_attempted', {
+            runId, n: step.n, sendCount: sv.sendCount === undefined ? null : sv.sendCount, activated: sv.activated === true
+          })
+        } catch (err) {
+          // The message HAS been sent and we cannot record that it was. Stopping here is the
+          // honest move: an unrecorded activation is exactly the thing this system exists to
+          // prevent, and continuing would build a success on top of a gap.
+          throw new Error('activation_unrecorded: ' + (err.cause || err.message))
+        }
+
+        const outcomeRecord = {
+          runId,
+          n: step.n,
+          target: sv.target || null,
+          sendCount: sv.sendCount === undefined ? null : sv.sendCount,
+          dialogPresent: sv.dialogPresent === undefined ? null : sv.dialogPresent,
+          errorTextSeen: sv.errorTextSeen || null,
+          detail: sv.detail || null
+        }
+        try { auditOrThrow(sv.outcome, outcomeRecord) } catch (_) { }
+
+        if (sv.outcome === 'save_verified') return { detail: sv.detail || sv.target }
+        if (sv.outcome === 'save_rejected') throw new Error('save_rejected: ' + (sv.detail || 'the dialog reported a problem'))
+
+        // activation_outcome_unknown. TERMINAL, by the Owner's ruling: no second BM_CLICK, no
+        // inference from elapsed time, no guess in either direction. Recovery is a new approval.
+        throw new Error('activation_outcome_unknown: ' + (sv.detail || 'the result of the activation could not be established'))
       }
       throw new Error('unknown_action')
     }

@@ -29,7 +29,7 @@ function fakeDesktop (over = {}) {
     log: [],
     openApp ({ appId }) { d.calls++; d.log.push('open'); return { bind: Object.assign({}, BIND) } },
     typeTextIntoControl () { d.calls++; d.log.push('type'); return {} },
-    saveAsViaUi ({ dir, fileName }) { d.calls++; d.log.push('save'); return { detail: dir + fileName } },
+    saveAsViaUi ({ dir, fileName }) { d.calls++; d.log.push('save'); return { outcome: 'save_verified', sendCount: 1, activated: true, target: dir + fileName, detail: dir + fileName } },
     verifyBinding () { return { ok: true } },
     cleanup () {}
   }

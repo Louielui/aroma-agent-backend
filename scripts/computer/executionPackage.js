@@ -140,10 +140,15 @@ const PACKAGE_FILES = Object.freeze([
   'scripts/computer/run-notepad-canary.js',
   // the hands
   'scripts/computer/uiaCanary.ps1',
+  // The ONE file allowed a native Windows message, wired 2026-08-02. In the package because it
+  // now runs during a canary: its bytes are pinned by the hash the Owner approves, so the
+  // constant that decides WHICH message, and the twenty checks that decide whether to send it,
+  // cannot change under an existing approval.
+  'scripts/computer/nativeSaveActivation.ps1',
   // the work order itself travels with the package: it is what the code will be pointed at
   // The TWO-STEP order. The superseded three-step one is deliberately NOT packaged: dead
   // weight in the package is how re-approval becomes a reflex, and it can no longer be run.
-  'docs/governance/canary-work-order-2step.draft.json',
+  'docs/governance/canary-work-order-3step.draft.json',
 
   // ── ADDED 2026-07-31, after a transitive require walk found them ────────
   // The first list was written by hand from what seemed relevant, and a walk from the

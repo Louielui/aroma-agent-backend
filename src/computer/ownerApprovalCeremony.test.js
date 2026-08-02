@@ -243,7 +243,7 @@ test('*** the EXECUTE summary comes from the receipt, not from the current order
   fs.writeFileSync(orderFile, JSON.stringify(tampered))
 
   assert.equal(A.renderReceiptSummary(receipt), approvedRender, 'the receipt renders what it always did')
-  assert.match(approvedRender, /Aroma Computer Operator canary\. Two steps\. Round 1\./)
+  assert.match(approvedRender, /Aroma Computer Operator canary\. Three steps with save\. Round 1\./)
   assert.doesNotMatch(approvedRender, /never saw/, 'the tampered text cannot appear on the screen')
 })
 
@@ -280,23 +280,24 @@ test('*** the receipt records everything the Owner would otherwise have to keep 
   // TWO-STEP SCOPE, 2026-08-02. The receipt records what was actually approved, and what was
   // approved no longer includes a save — so allowedPath and fileName are absent rather than
   // carrying values from a scope the Owner did not consent to.
-  assert.deepEqual(receipt.scope.actions, ['open_app', 'type_text'])
-  assert.equal(receipt.scope.allowedPath, undefined, 'no path, because nothing is written')
-  assert.equal(receipt.scope.fileName, null, 'and no filename')
+  // THE SAVE IS BACK, 2026-08-02. allowedPath and fileName travel with it again, because
+  // there is now a file to bound and to name.
+  assert.deepEqual(receipt.scope.actions, ['open_app', 'type_text', 'save'])
+  assert.equal(receipt.scope.allowedPath, 'C:\\Aroma\\ComputerOperator-Test')
+  assert.equal(receipt.scope.fileName, 'canary-save-1.txt')
   assert.equal(receipt.scope.timeoutSec, 300)
 })
 
 test('the summary a person reads names every capability in plain words', () => {
   const s = A.renderSummary(A.readOrder())
-  for (const must of ['Notepad only', '300 seconds', 'open_app', 'type_text']) {
+  for (const must of ['Notepad only', '300 seconds', 'open_app', 'type_text', 'save', 'canary-save-1.txt', 'ComputerOperator-Test']) {
     assert.ok(s.includes(must), 'the summary must state: ' + must)
   }
-  // TWO-STEP SCOPE, 2026-08-02: the screen must say plainly that nothing is written. It used
-  // to name canary-1.txt and a folder; with no save in the order that would be asking for
-  // consent to something the order cannot do, and allowedPath is now absent so it would have
-  // rendered as 'undefined\canary-1.txt'.
-  assert.ok(s.includes('NOTHING - this order does not save and creates no file'), 'the screen says no file is written')
-  assert.equal(s.includes('canary-1.txt'), false, 'no filename is promised')
+  // THE SAVE IS BACK, 2026-08-02. The screen must name the exact file and folder — and must
+  // still never render an "undefined". Both directions are asserted, because the two-step round
+  // proved this screen can promise a file the order cannot create AND print 'undefined' doing it.
+  assert.ok(s.includes('C:\\Aroma\\ComputerOperator-Test\\canary-save-1.txt'), 'the exact file is named')
+  assert.equal(s.includes('NOTHING - this order does not save'), false, 'it no longer claims nothing is written')
   assert.equal(s.includes('undefined'), false, 'and nothing renders as undefined')
   // No hashes, no ids, no JSON on the screen a person has to check.
   assert.doesNotMatch(s, /[0-9a-f]{32}/, 'no hash is shown to the Owner')
@@ -360,7 +361,7 @@ test('*** the execution package is an allowlist, and every listed file exists **
     'scripts/computer/Owner-Execute.ps1', 'scripts/computer/uiaCanary.ps1',
     'src/computer/computerExecutor.js', 'src/computer/desktopAdapter.js',
     'src/computer/sealedOrderGate.js', 'src/computer/orderRegistry.js',
-    'docs/governance/canary-work-order-2step.draft.json'
+    'docs/governance/canary-work-order-3step.draft.json'
   ]) {
     assert.ok(PKG.PACKAGE_FILES.includes(must), 'must be packaged: ' + must)
   }
@@ -546,9 +547,8 @@ test('*** the approval summary is pure ASCII — no mojibake is possible ***', (
 
   // The two lines that were broken, now stated exactly.
   assert.ok(rendered.includes('Notepad only - nothing else is opened'))
-  // The overwrite line exists only when there IS a save. Two-step scope: the screen says
-  // plainly that nothing is written instead of promising a rule about a file.
-  assert.ok(rendered.includes('NOTHING - this order does not save and creates no file'))
+  // The overwrite line exists only when there IS a save, and there is one again.
+  assert.ok(rendered.includes('never - refuses if the file already exists'))
   assert.equal(rendered.includes('—'), false, 'no em dash anywhere')
   assert.equal(rendered.includes('─'), false, 'no box-drawing dash anywhere')
 })
@@ -605,5 +605,5 @@ test('the sealed text itself is ASCII, so it survives any console', () => {
   assert.doesNotMatch(d.sealedText, NON_ASCII)
   // Deliberately DIFFERENT from the superseded three-step order's text, so no receipt, audit
   // line or screenshot is ever ambiguous about which scope produced it.
-  assert.equal(d.sealedText, 'Aroma Computer Operator canary. Two steps. Round 1.')
+  assert.equal(d.sealedText, 'Aroma Computer Operator canary. Three steps with save. Round 1.')
 })
