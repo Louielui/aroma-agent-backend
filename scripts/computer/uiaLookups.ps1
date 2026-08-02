@@ -245,6 +245,19 @@ function Resolve-SaveUiBinding {
     $d = Find-SaveDialog -MainWindow $MainWindow -ProcessId $ProcessId -BoundHandle $boundHandle
     $result.candidatesObserved = $d.observed
 
+    # WHY EACH CANDIDATE WAS TURNED AWAY, not merely how many there were.
+    #
+    # Find-SaveDialog has always built this list and it has never left the function. It is the
+    # one piece of evidence that separates "no dialog existed" from "a dialog existed and was
+    # rejected for a stated reason" -- and, for the multi-layer #32770 question now open, it is
+    # the difference between knowing and guessing: a second '#32770' appearing here under
+    # not_visible or pid answers it outright.
+    #
+    # Recorded on every pass, so the LAST poll's reasons are what the audit shows. Joined into a
+    # string rather than left an array, because @() does not survive a PowerShell return.
+    $result.evidence.dialogsVerified = $d.verifiedCount
+    $result.evidence.dialogsRejected = (@($d.rejected) -join ', ')
+
     if ($d.verifiedCount -gt 1) {
       $result.stage = 'save_dialog'; $result.refusal = 'save_dialog_ambiguous'
       $result.detail = "$($d.verifiedCount) verified dialogs"; $result.elapsedMs = [int] $sw.ElapsedMilliseconds

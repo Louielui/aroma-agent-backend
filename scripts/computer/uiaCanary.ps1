@@ -51,8 +51,8 @@ function Emit-Result {
 }
 
 function Emit-Refusal {
-  param([string] $Reason, [string] $Detail = $null)
-  Write-AromaRefusal $Reason $Detail
+  param([string] $Reason, [string] $Detail = $null, [hashtable] $Evidence = $null)
+  Write-AromaRefusal $Reason $Detail $Evidence
 }
 
 # --- UIA ------------------------------------------------------------------
@@ -448,8 +448,25 @@ switch ($op) {
     # measurement tool calls this same function so the two cannot drift again.
     $ui = Resolve-SaveUiBinding -MainWindow $r.window -ProcessId $r.processId -BoundWindowHandle $r.windowHandle
     if (-not $ui.ok) {
-      # The refusal names the stage that actually failed, not the last thing tried.
-      Emit-Refusal $ui.refusal ("stage=" + $ui.stage + " elapsedMs=" + $ui.elapsedMs + " candidates=" + $ui.candidatesObserved + " :: " + $ui.detail)
+      # THE WHOLE STRUCTURED RESULT, not a sentence made out of four of its fields.
+      #
+      # The first version built a string from stage/elapsedMs/candidates and left the evidence
+      # hashtable behind entirely -- so dialogOwnership and dialogHandle, the two values that
+      # would have told us WHICH dialog was verified, never existed outside this function. The
+      # run then failed with a refusal that named a layer and explained nothing.
+      #
+      # Elements are dropped (they are live UIA objects and cannot be serialised); every
+      # measured field goes.
+      $ev = @{
+        stage = $ui.stage
+        candidatesObserved = $ui.candidatesObserved
+        elapsedMs = $ui.elapsedMs
+        dialogVerified = $ui.dialogVerified
+        filenameFieldVerified = $ui.filenameFieldVerified
+        saveButtonVerified = $ui.saveButtonVerified
+      }
+      foreach ($k in $ui.evidence.Keys) { $ev[$k] = $ui.evidence[$k] }
+      Emit-Refusal $ui.refusal $ui.detail $ev
     }
     $dlg = $ui.dialog
     $nameBox = $ui.filenameField

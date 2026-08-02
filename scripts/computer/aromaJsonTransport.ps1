@@ -30,8 +30,17 @@ function Write-AromaEnvelope {
 }
 
 function Write-AromaRefusal {
-  param([string] $Reason, [string] $Detail = $null)
-  Write-AromaEnvelope @{ ok = $false; reason = $Reason; detail = $Detail }
+  param([string] $Reason, [string] $Detail = $null, [hashtable] $Evidence = $null)
+  # EVIDENCE TRAVELS WITH THE REFUSAL.
+  #
+  # This used to carry a reason and a one-line string, and nothing else. A resolver that had
+  # measured candidatesObserved, elapsedMs, dialogOwnership and dialogHandle had nowhere to put
+  # any of it, so the run that failed on 2026-08-02 produced a refusal naming a layer and not
+  # one fact about why. The envelope now has a place for the structure; whether a caller fills
+  # it is that caller's business, and absent stays absent rather than becoming an empty object.
+  $env = @{ ok = $false; reason = $Reason; detail = $Detail }
+  if ($null -ne $Evidence) { $env.evidence = $Evidence }
+  Write-AromaEnvelope $env
   exit 0
 }
 

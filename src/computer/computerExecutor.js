@@ -438,7 +438,13 @@ function createComputerExecutor (deps = {}) {
         outcome = runStep(step)
         desktopActions++
       } catch (err) {
-        return finishFailed('step_failed', err && err.message, 'action', step.n)
+        // THE DETAIL AND THE EVIDENCE, NOT JUST THE CODE. This recorded err.message, which is
+        // the reason string alone -- so a helper that had measured why it refused had that
+        // measurement dropped one layer above the audit it was meant to reach.
+        return finishFailed(
+          'step_failed',
+          (err && (err.reason || err.message)) + (err && err.detail ? ': ' + err.detail : ''),
+          'action', step.n, err && err.evidence)
       }
 
       if (step.action === 'open_app') {
@@ -555,17 +561,21 @@ function createComputerExecutor (deps = {}) {
       throw new Error('unknown_action')
     }
 
-    function finishFailed (reason, detail, phase, n) {
+    function finishFailed (reason, detail, phase, n, evidence) {
       // The SAME cleanup the success path runs. One implementation, so the two can never drift
       // into "the failure path tidies up and the success path does not" a second time.
       const cleanupRecord = runCleanup('failed:' + phase)
       const cleanup = cleanupRecord.cleanupOk ? 'done' : ('not_done:' + cleanupRecord.reason)
       // Best-effort: the run is already failing, and a second audit failure must not mask the first.
-      try { auditOrThrow('aborted', { runId, reason, detail, phase, n, cleanup, stepsRun: done.length }) } catch (_) { }
+      // Evidence is spread into the record rather than nested under a key, so a reader looking
+      // for candidatesObserved finds candidatesObserved.
+      const abortRecord = { runId, reason, detail, phase, n, cleanup, stepsRun: done.length }
+      if (evidence && typeof evidence === 'object') Object.assign(abortRecord, evidence)
+      try { auditOrThrow('aborted', abortRecord) } catch (_) { }
       // TERMINAL. Cleanup tidies a desktop; it does NOT reopen an order. Invalidate runs
       // after cleanup precisely so that no cleanup path can be mistaken for a resume.
       orderRegistry.invalidate(order.approvalId, reason)
-      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, cleanupDetail: cleanupRecord, auditChainComplete: false, orderClosed: true }
+      return { ok: false, runId, refusal: reason, reason: detail || null, phase, failedStep: n, stepsRun: done.length, steps: done, desktopActions, cleanup, cleanupDetail: cleanupRecord, evidence: evidence || null, auditChainComplete: false, orderClosed: true }
     }
   }
 

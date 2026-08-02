@@ -48,10 +48,14 @@ const OPS = Object.freeze(['open_app', 'type_text', 'save_as', 'save_outcome', '
 /** appId -> the ONLY thing the helper is allowed to launch for it. No paths, no arguments. */
 const APP_LAUNCH = Object.freeze({ notepad: 'notepad' })
 
-function fail (reason, detail) {
+function fail (reason, detail, evidence) {
   const e = new Error(reason)
   e.reason = reason
   e.detail = detail || null
+  // STRUCTURED EVIDENCE SURVIVES THE THROW. Twice now, measurements have been destroyed by
+  // being turned into an exception: cleanup's numbers went into call()'s throw, and the save
+  // resolver's evidence went into a string. An Error is allowed to carry more than a sentence.
+  e.evidence = evidence || null
   return e
 }
 
@@ -83,7 +87,7 @@ function createDesktopAdapter (deps = {}) {
     if (env.ok !== true) throw fail('transport_' + (env.refusal || 'failed'), env.detail || null)
     const res = env.result
     if (!res || typeof res !== 'object') throw fail('adapter_no_result', 'the helper returned nothing')
-    if (res.ok !== true) throw fail(res.reason || 'adapter_failed', res.detail || null)
+    if (res.ok !== true) throw fail(res.reason || 'adapter_failed', res.detail || null, res.evidence || null)
     return res
   }
 
