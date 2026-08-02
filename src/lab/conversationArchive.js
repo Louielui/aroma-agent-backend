@@ -61,7 +61,12 @@ const DEFAULT_ROOT = 'C:\\Aroma\\XiangxiangLab\\conversation-archive'
 const ARCHIVE_FILE = 'archive.jsonl'
 const AUDIT_FILE = 'audit.jsonl'
 
-const SCHEMA_VERSION = 1
+// v2 adds the OMISSION RECORD: a turn whose body was deliberately not stored. v1 records
+// (written before 2026-08-02) remain readable and are simply turns that carry text.
+const SCHEMA_VERSION = 2
+
+/** Why a body was not stored. Closed, so a caller cannot invent a reason. */
+const OMISSION_REASONS = Object.freeze(['external_read_context'])
 
 /** Roles a turn may carry. Closed, so a future caller cannot invent one. */
 const ROLES = Object.freeze(['user', 'assistant'])
@@ -137,27 +142,56 @@ function createConversationArchive (opts = {}) {
         return { ok: true, written: false, reason: 'owner_asked_not_to_record' }
       }
 
-      const { text, hits } = redact(t.text)
-
-      const record = {
+      const common = {
         schemaVersion: SCHEMA_VERSION,
         id: 'turn_' + newId(),
         conversationId: t.conversationId,
         turnIndex: Number.isInteger(t.turnIndex) ? t.turnIndex : null,
         role: t.role,
-        text,
         at: stamp(),
         model: t.model || null,
         provider: t.provider || null,
         lane: t.lane || null,
-        requestId: t.requestId || null,
-        // WHAT WAS REMOVED, BY KIND ONLY. The kinds make a redaction auditable; the values
-        // would put the secret back into the file it was removed from.
-        redactedKinds: hits.length ? [...new Set(hits)] : []
+        requestId: t.requestId || null
+      }
+
+      let record
+      if (t.omitBody === true) {
+        // ── OMISSION RECORD (Owner decision A′, 2026-08-02) ───────────────────
+        // The turn's PLACE is kept; its BODY is not. Order and auditability survive: you can
+        // still see that an answer existed, when, from which provider and model, and why it
+        // was not kept — without keeping a word of it.
+        //
+        // `t.text` IS DELIBERATELY NOT READ ON THIS PATH. Not read, not redacted, not
+        // truncated, not hashed. A caller that passes it anyway gets a record with no text in
+        // it, and a test proves that. The safest handling of third-party data is code that
+        // never touches it.
+        record = Object.assign({}, common, {
+          text: null,
+          omitted: true,
+          omissionReason: OMISSION_REASONS.includes(t.omissionReason) ? t.omissionReason : 'external_read_context',
+          // SOURCE KINDS ONLY — a closed enum ('drive'|'gmail'|'calendar'|'github'). Which
+          // connector was consulted is a fact about the Owner's own setup, not about any third
+          // party: no subject, no sender, no title, no snippet, no count of items.
+          readContextSources: Array.isArray(t.readContextSources) ? t.readContextSources.slice() : [],
+          // NULL, NOT []. An empty array would assert "redaction ran and found nothing", which
+          // is a claim about text this code never examined. Null says what is true: not
+          // applicable, because there was nothing stored to redact.
+          redactedKinds: null
+        })
+      } else {
+        const { text, hits } = redact(t.text)
+        record = Object.assign({}, common, {
+          text,
+          omitted: false,
+          // WHAT WAS REMOVED, BY KIND ONLY. The kinds make a redaction auditable; the values
+          // would put the secret back into the file it was removed from.
+          redactedKinds: hits.length ? [...new Set(hits)] : []
+        })
       }
 
       appendLine(archivePath, record)
-      return { ok: true, written: true, id: record.id, redactedKinds: record.redactedKinds }
+      return { ok: true, written: true, id: record.id, omitted: record.omitted, redactedKinds: record.redactedKinds }
     } catch (err) {
       // FAIL-OPEN. The caller completes the conversation; the failure is reported, not thrown.
       audit('write_failed', { conversationId: t && t.conversationId, turnIndex: t && t.turnIndex, error: err && err.code ? err.code : 'unknown' })
@@ -268,6 +302,9 @@ function createConversationArchive (opts = {}) {
     return {
       root,
       turnCount: turns.length,
+      // How much of the archive is a placeholder rather than a conversation. Worth seeing at a
+      // glance: an archive that is mostly omission records is not the record it looks like.
+      omittedCount: turns.filter((t) => t.omitted === true).length,
       conversationCount: ids.size,
       firstAt: turns.length ? turns[0].at : null,
       lastAt: turns.length ? turns[turns.length - 1].at : null,
@@ -284,5 +321,6 @@ module.exports = {
   ARCHIVE_FILE,
   AUDIT_FILE,
   SCHEMA_VERSION,
-  ROLES
+  ROLES,
+  OMISSION_REASONS
 }

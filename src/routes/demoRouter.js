@@ -196,8 +196,17 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
             message,
             reply: answered && typeof answered.reply === 'string' ? answered.reply : null,
             turnIndex: Array.isArray(history) ? history.length : 0,
+            // PROVENANCE FROM THE CALL THAT HAPPENED. Both are set by noteProvider() in the
+            // intake pipeline, from the adapter's own result, for the provider that actually
+            // produced this reply. Neither is inferred here and neither has a default.
             model: telemetry && telemetry.model ? telemetry.model : null,
             provider: telemetry && telemetry.provider ? telemetry.provider : null,
+            // A′ third-party scope. Passed through UNTOUCHED — no `|| false`, because
+            // coercing an absent value to false would silently convert "we do not know"
+            // into "it is safe to keep", which is the one direction that must never be
+            // guessed. The hook omits on anything that is not an explicit false.
+            readContextUsed: telemetry ? telemetry.readContextUsed : undefined,
+            readContextSources: (telemetry && Array.isArray(telemetry.readContextSources)) ? telemetry.readContextSources : [],
             lane: interactionMode,
             requestId: correlationId
           })

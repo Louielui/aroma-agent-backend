@@ -17,6 +17,28 @@
  * Every path returns a value. Nothing throws. The caller is expected to attach the result to its
  * response for visibility and to carry on regardless — see the fail-OPEN reasoning in
  * conversationArchive.js.
+ *
+ * ── THIRD-PARTY DATA: OWNER DECISION A′ (2026-08-02) ──────────────────────
+ * The first real conversation was a Gmail lookup. The retrieved mail never entered the archive —
+ * the context card and the read block are not passed here and never were — but the ASSISTANT'S
+ * REPLY quoted it, and a reply is stored verbatim. So other people's names and business landed
+ * in the Owner's archive through the answer rather than through the data.
+ *
+ * A′: when a turn actually used external read context, the user's own words are kept and the
+ * assistant's body is NOT stored. In its place goes an omission record — same position, same
+ * order, same provenance, no content. The archive stays honest about the shape of the
+ * conversation without holding a third party's information.
+ *
+ * ── TWO OPPOSITE DEFAULTS, ON PURPOSE ─────────────────────────────────────
+ * Writing is fail-OPEN: if the archive cannot be written, the conversation still completes.
+ * Third-party data is fail-SAFE: if we cannot tell whether external context was used, the body
+ * is OMITTED.
+ *
+ * They point opposite ways because the costs are not symmetric. A missing record costs a note
+ * nobody can read later. A wrongly-kept record puts someone else's mail on a disk that has no
+ * backup, no readback design and no consent — and unlike a missing note, it cannot be undone by
+ * noticing. So: never let the archive break a conversation, and never let a doubt keep a
+ * stranger's data.
  */
 
 /** The flag, resolved the same strict way the Computer Operator flag is: exactly 'on'. */
@@ -34,8 +56,12 @@ function archiveEnabled (env) {
  * @param {string} [input.reply]      the assistant's text, verbatim
  * @param {number} input.turnIndex    index of the USER turn; the reply takes turnIndex + 1
  * @param {string} [input.model] [input.provider] [input.lane] [input.requestId]
+ * @param {boolean} [input.readContextUsed]      MUST be a real boolean from the pipeline.
+ *                                               Anything else (undefined, null, 'false') is
+ *                                               treated as UNKNOWN and the body is omitted.
+ * @param {string[]} [input.readContextSources]  source KINDS only
  * @param {object} [input.env] [input.archive] injected for tests
- * @returns {{recorded:boolean, reason?:string, ids?:string[], failures?:object[]}}
+ * @returns {{recorded:boolean, reason?:string, ids?:string[], failures?:object[], assistantOmitted?:boolean}}
  */
 function recordExchange (input = {}) {
   try {
@@ -60,14 +86,33 @@ function recordExchange (input = {}) {
       userAskedNotToRecord: optOut
     }
 
+    // A′ — FAIL-SAFE. The body is kept ONLY on an explicit `false`. `undefined` means the
+    // pipeline did not report, which is a doubt, and a doubt omits. Note that this is a
+    // one-way default: a pipeline that stops reporting quietly loses assistant bodies, which
+    // is visible in the archive; the opposite mistake would be invisible.
+    const omitAssistantBody = input.readContextUsed !== false
+
     const results = []
+    // THE USER'S OWN WORDS ARE ALWAYS KEPT. The Owner asking about his mail is the Owner's
+    // data; it is the ANSWER that carries other people's.
     results.push(archive.appendTurn(Object.assign({}, base, {
       role: 'user', text: input.message, turnIndex: input.turnIndex
     })))
     if (typeof input.reply === 'string' && input.reply.length > 0) {
-      results.push(archive.appendTurn(Object.assign({}, base, {
-        role: 'assistant', text: input.reply, turnIndex: (Number.isInteger(input.turnIndex) ? input.turnIndex + 1 : null)
-      })))
+      const assistantTurn = Object.assign({}, base, {
+        role: 'assistant',
+        turnIndex: (Number.isInteger(input.turnIndex) ? input.turnIndex + 1 : null)
+      })
+      if (omitAssistantBody) {
+        // input.reply IS NOT PASSED. The omission is structural, not a promise made by the
+        // writer: the text never reaches the function that writes files.
+        assistantTurn.omitBody = true
+        assistantTurn.omissionReason = 'external_read_context'
+        assistantTurn.readContextSources = Array.isArray(input.readContextSources) ? input.readContextSources : []
+      } else {
+        assistantTurn.text = input.reply
+      }
+      results.push(archive.appendTurn(assistantTurn))
     }
 
     const failures = results.filter((r) => r.ok === false)
@@ -77,7 +122,9 @@ function recordExchange (input = {}) {
     if (failures.length > 0) {
       return { recorded: false, reason: failures[0].reason, failures: failures.map((f) => ({ reason: f.reason, error: f.error || null })) }
     }
-    return { recorded: true, ids }
+    // assistantOmitted travels back to the response so the Owner can see, per turn, that a
+    // reply was not kept — the same visibility rule as a write failure.
+    return { recorded: true, ids, assistantOmitted: omitAssistantBody }
   } catch (err) {
     // The last net. Nothing about the Lab may reach the conversation as an exception.
     return { recorded: false, reason: 'hook_failed', failures: [{ reason: 'hook_failed', error: err && err.message ? err.message : String(err) }] }

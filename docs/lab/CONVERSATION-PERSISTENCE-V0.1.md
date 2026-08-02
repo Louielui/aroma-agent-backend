@@ -39,6 +39,61 @@ guess about what the data looks like.
 | Opt-out | 「這段不要記錄」 and equivalents |
 | Archive | append-only, except deletion, which is audited |
 | Flag | `XIANGXIANG_ARCHIVE`, default OFF |
+| Third-party data (A′, 2026-08-02) | a turn that used external read context keeps the **user's words** and omits the **assistant's body** |
+
+## Third-party data — Owner decision A′ (2026-08-02)
+
+The first real conversation was a Gmail lookup, and it exposed a gap nobody had decided on. The
+governance table above was written about **the Owner's own** secrets. Other people's data was
+never separately considered — and it arrived anyway.
+
+Not through the retrieved mail: the read block and the context card are not passed to the Lab and
+never were. It arrived through the **assistant's reply**, which quoted the mail and is stored
+verbatim. A verbatim assistant turn was in scope; a supplier's name landing on an unbacked disk
+was not something anyone had agreed to.
+
+**A′:** when a turn *actually used* external read context —
+
+- the **user turn is stored in full**. The Owner asking about his mail is the Owner's data.
+- the **assistant body is not stored at all**. Not summarised, not redacted, not hashed.
+- an **omission record** takes its place, holding position, order, timestamp, model, provider,
+  lane, requestId, the reason, and the **source kinds** (`drive`|`gmail`|`calendar`|`github`) —
+  and nothing else. No card, no snippet, no subject, no name, no count, not even a length.
+- `redactedKinds` is **`null`**, not `[]`. An empty array would assert that redaction ran and
+  found nothing, which is a claim about text this code never examined.
+
+The omission is **structural, not a promise**: on that path the reply is never passed to the
+function that writes files. A caller that passes it anyway still produces a record with no text
+in it, and a test proves it by searching the file's raw bytes.
+
+### Two opposite defaults, on purpose
+
+| | Direction | Why |
+|---|---|---|
+| Write failure | fail-**OPEN** — reply anyway | a missing note costs something nobody could read later |
+| Third-party data | fail-**SAFE** — omit the body | a wrongly-kept reply puts someone else's business on a disk with no backup and no consent, and cannot be undone by noticing |
+
+So `readContextUsed` must be an explicit `false` for a body to be kept. `undefined`, `null`,
+`'false'`, `0` and `{}` all omit. If the pipeline ever stops reporting, bodies quietly stop being
+stored — visible in the archive. The opposite mistake would have been invisible.
+
+### What "actually used" means
+
+Recorded at the one line that prepends the block to a prompt, per provider, and resolved for the
+provider that **actually answered** — not inferred from flags. `READ_ACCESS=on` is not the same
+claim as "this answer was built on somebody's mailbox": the flag can be on while the fetch returns
+nothing, and a fallback from GPT to Claude changes the answer. A flags-based guess is wrong in
+both directions.
+
+## Model and provider provenance
+
+The first live record stored `model: null` — because `telemetry.model` was never assigned
+**anywhere in the codebase**. The archive was faithfully writing down a value nothing produced.
+
+Provenance now comes from the **adapter's own result** for the call that actually happened
+(`noteProvider`), never from a config default read back and never inferred from the provider
+name. Tests use two adapters returning *different* model ids, so "the right model" is a claim
+that can fail; one adapter would make any id look correct.
 
 ## Three things stated honestly
 
@@ -90,6 +145,9 @@ Backup is the next phase, not this one.
 | | |
 |---|---|
 | `src/lab/redaction.js` | secret patterns + the opt-out phrases |
+| `src/lab/thirdPartyScope.test.js` | A′ — proven against the file's raw bytes |
+| `src/lab/archiveEndToEnd.test.js` | HTTP → real pipeline → real file, in one test |
+| `src/intake/provenanceTelemetry.test.js` | model/provider/read-context signal from the real pipeline |
 | `src/lab/conversationArchive.js` | append-only writer, delete, export, audit |
 | `src/lab/labArchiveHook.js` | the single flag-gated entry point |
 | `src/routes/demoRouter.js` | **one** guarded block, after the reply exists |

@@ -208,6 +208,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // afterwards is the exact bug class that has already cost three rounds.
   const turnPerSource = new Map()
 
+  // WHICH PROVIDER ACTUALLY RECEIVED EXTERNAL READ CONTEXT, recorded AT the injection —
+  // provider -> the source kinds that were really in the prompt sent to it.
+  //
+  // Recorded here, at the only line that prepends the block, rather than inferred later from
+  // flags. "READ_ACCESS is on" is not the same claim as "this answer was built on somebody's
+  // mailbox": the flag can be on while the fetch returns nothing, and the block is per-provider
+  // (GPT is never given it), so a flags-based guess would be wrong in both directions. The Lab
+  // archive uses this to decide whether an assistant turn may be stored, so a wrong value here
+  // means either third-party data kept that should not be, or an answer discarded for nothing.
+  const readContextUsedBy = new Map()
+
   async function buildPromptFor (providerName) {
     if (promptCache.has(providerName)) return promptCache.get(providerName)
     let effPrompt = baseEffPrompt
@@ -256,7 +267,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             }
           }
           const block = readBlockCache.get(key)
-          if (block) effPrompt = block + '\n\n' + effPrompt
+          if (block) {
+            effPrompt = block + '\n\n' + effPrompt
+            // The block is really in this provider's prompt. Source KINDS only — a closed
+            // enum from ALL_SOURCES. No snippet, no subject, no name, no count.
+            readContextUsedBy.set(providerName, sources.slice())
+          }
         }
       } catch (err) {
         // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
@@ -319,6 +335,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   tel.interactionMode = (opts && typeof opts.interactionMode === 'string') ? opts.interactionMode : null
   function noteProvider (name, result) {
     tel.provider = name
+    // MODEL PROVENANCE — the id the ADAPTER returned for the call that actually happened,
+    // never a config default read back, never inferred from the provider name. Every adapter
+    // returns it (ClaudeAdapter/OpenAIAdapter echo the API's own `data.model` and fall back to
+    // the configured id; MockAdapter returns 'mock'), so an absent value here means the result
+    // shape changed and is recorded as absent rather than filled in with a plausible guess.
+    tel.model = (result && typeof result.model === 'string' && result.model) ? result.model : null
+    // EXTERNAL READ CONTEXT, resolved for the provider that produced THIS answer. noteProvider
+    // is called once per provider that returned, so the last call — the one whose reply is
+    // used — is the one that lands here. A GPT answer is correctly false (GPT is never sent
+    // the block); a Claude fallback after GPT is correctly true.
+    const used = readContextUsedBy.get(name)
+    tel.readContextUsed = Array.isArray(used) && used.length > 0
+    tel.readContextSources = tel.readContextUsed ? used.slice() : []
     if (result && result.usage) {
       tel.inputTokens = Number.isFinite(result.usage.inputTokens) ? result.usage.inputTokens : null
       tel.outputTokens = Number.isFinite(result.usage.outputTokens) ? result.usage.outputTokens : null
