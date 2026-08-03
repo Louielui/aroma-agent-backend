@@ -522,13 +522,40 @@
     var card = el('div', 'order')
     card.appendChild(el('h2', null, c.heading))
 
+    /* THE FACE: only what the decision needs — which file, what change, what is the worst
+       case. A section with no title is one of those three and is rendered bare; eight
+       labelled boxes to approve a one-line edit is a card nobody reads, and a card nobody
+       reads is an approval that is not really being given. */
     var secs = Array.isArray(c.sections) ? c.sections : []
     for (var i = 0; i < secs.length; i++) {
-      var s = el('div', 'sec')
-      s.appendChild(el('div', 'sec-t', secs[i].title))
-      var isExcerpt = secs[i].title.indexOf('現時內容') === 0
-      s.appendChild(el('div', 'sec-b' + (isExcerpt ? ' mono' : ''), secs[i].body))
+      var s = el('div', 'sec' + (secs[i].title ? '' : ' bare'))
+      if (secs[i].title) {
+        s.appendChild(el('div', 'sec-t', secs[i].title))
+        var isExcerpt = secs[i].title.indexOf('現時內容') === 0
+        s.appendChild(el('div', 'sec-b' + (isExcerpt ? ' mono' : ''), secs[i].body))
+      } else {
+        s.appendChild(el('div', 'sec-b', secs[i].body))
+      }
       card.appendChild(s)
+    }
+
+    /* ▸ 詳細 — everything that was on the old face. Collapsed, not deleted: the Owner can
+       still read all of it, it just no longer stands between him and the decision. */
+    var dets = Array.isArray(c.details) ? c.details : []
+    if (dets.length) {
+      var dd = document.createElement('details')
+      dd.className = 'tech'
+      var ds = document.createElement('summary')
+      ds.textContent = c.detailsTitle || '詳細'
+      dd.appendChild(ds)
+      for (var j = 0; j < dets.length; j++) {
+        var d = el('div', 'sec')
+        d.appendChild(el('div', 'sec-t', dets[j].title))
+        var mono = dets[j].title.indexOf('現時內容') === 0 || dets[j].title.indexOf('打算改成') >= 0
+        d.appendChild(el('div', 'sec-b' + (mono ? ' mono' : ''), dets[j].body))
+        dd.appendChild(d)
+      }
+      card.appendChild(dd)
     }
 
     // ▸ 技術細節 — collapsed by default. Presentation only: the same sealed values,

@@ -131,7 +131,7 @@ test('the display states the consequence in plain language (diff only, worst cas
   // visible face states the consequence as a decision, not as a field dump.
   assert.ok(v.display.whatWillHappen.includes('不會提交、不會上傳、不會合併、不會部署。'))
   assert.ok(v.display.whatWillHappen.includes('丟棄式副本'))
-  assert.ok(v.display.worstCase.includes('你的真實程式庫不受影響'))
+  assert.ok(v.display.worstCase.includes('你的程式庫不受影響'))
   const tech = v.technicalLines.join('\n')
   assert.ok(tech.includes('已移除所有 remote'), 'the isolation mechanism is still disclosed')
   assert.ok(tech.includes('無法回到 main'))

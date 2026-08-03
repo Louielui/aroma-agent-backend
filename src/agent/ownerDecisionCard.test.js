@@ -191,7 +191,9 @@ test('a directory, an unreadable file and a path outside the repo all refuse', (
 
 test('打算改成 is labelled INTENT — the card never claims it as a result', () => {
   const v = buildApprovalView(sealReal().workOrder)
-  const beforeAfter = v.card.sections.find((s) => s.title === '現時內容 / 打算改成')
+  // The before/after moved into the collapsed 詳細 by Owner decision — the FACE now
+  // carries only file / change / worst case. The honest labelling is unchanged.
+  const beforeAfter = v.card.details.find((s) => s.title === '現時內容 / 打算改成')
   assert.ok(beforeAfter, 'the before/after section exists')
 
   // the intent label must say, in the Owner's language, that this has NOT happened yet
@@ -212,7 +214,7 @@ test('打算改成 is labelled INTENT — the card never claims it as a result',
 test('a truncated excerpt is disclosed on the card', () => {
   const wo = Object.assign({}, sealReal().workOrder, { currentExcerpt: 'abc', currentExcerptTruncated: true })
   const v = buildApprovalView(wo)
-  const ba = v.card.sections.find((s) => s.title === '現時內容 / 打算改成')
+  const ba = v.card.details.find((s) => s.title === '現時內容 / 打算改成')
   assert.ok(ba.body.includes('已截斷'), 'truncation is stated, not hidden')
   assert.ok(v.technicalLines.join('\n').includes('現時內容是否截斷  : 是'))
 })
@@ -221,19 +223,33 @@ test('a truncated excerpt is disclosed on the card', () => {
 
 test('the visible face follows the Owner-specified structure, in plain Chinese', () => {
   const v = buildApprovalView(sealReal().workOrder)
-  assert.equal(v.card.heading, '香香想進行一項安全測試')
-  assert.deepEqual(v.card.sections.map((s) => s.title), [
-    '要修改的內容', '影響範圍', '現時內容 / 打算改成', '最壞情況', '不會發生', '上限'
-  ])
-  assert.deepEqual(v.card.actions, ['批准測試', '拒絕'])
+
+  // HOUSE RULE: the face shows only what the decision needs. The Owner judges three
+  // things — which file, what change, what is the worst case — so the face is those three
+  // and nothing else. The heading says what she WANTS, not what category of exercise it is.
+  assert.equal(v.card.heading, '香香想改一個檔案')
+  assert.equal(v.card.sections.length, 3, 'three facts, no more')
+  assert.deepEqual(v.card.sections.map((s) => s.title), [null, null, null], 'the face needs no labels')
+  assert.equal(v.card.sections[0].body, 'docs/canary/agent-canary.md', 'which file')
+  assert.ok(v.card.sections[1].body.length > 0, 'what change')
+  assert.ok(v.card.sections[2].body.includes('你的程式庫不受影響'), 'what is the worst case')
+  assert.deepEqual(v.card.actions, ['批准', '拒絕'])
+  assert.equal(v.card.detailsTitle, '詳細')
   assert.equal(v.card.technicalTitle, '技術細節')
 
-  // the promises the Owner is relying on
-  assert.ok(v.card.sections[1].body.includes('丟棄式副本'))
-  assert.ok(v.card.sections[1].body.includes('真實程式庫不會被改動'))
-  assert.ok(v.card.sections[3].body.includes('你的真實程式庫不受影響'))
-  assert.equal(v.card.sections[4].body, '不會提交、不會上傳、不會合併、不會部署。')
-  assert.equal(v.card.sections[5].body, '最長 2 分鐘 · 最多 US$0.50', 'money reads as money')
+  // NOTHING WAS DELETED — every promise the Owner relies on is still there, collapsed.
+  const details = v.card.details
+  const byTitle = (t) => details.find((d) => d.title === t)
+  assert.ok(byTitle('影響範圍').body.includes('丟棄式副本'))
+  assert.ok(byTitle('影響範圍').body.includes('真實程式庫不會被改動'))
+  assert.equal(byTitle('不會發生').body, '不會提交、不會上傳、不會合併、不會部署。')
+  assert.equal(byTitle('上限').body, '最長 2 分鐘 · 最多 US$0.50', 'money reads as money')
+  assert.ok(byTitle('要修改的內容'), 'the goal is still readable')
+
+  // The face does NOT repeat the epistemic disclaimer: 「香香想改」 already says it, and
+  // saying it twice is how a page starts sounding anxious rather than clear.
+  const faceBodies = v.card.sections.map((s) => s.body).join('\n')
+  assert.equal(/不是已完成的結果|仍未執行/.test(faceBodies), false, 'the face says it once, in the heading')
 
   // the front face carries NO machine noise: no 64-char hash, no English constants, no ids
   const face = [v.card.heading].concat(v.card.sections.map((s) => s.title + '\n' + s.body)).join('\n')

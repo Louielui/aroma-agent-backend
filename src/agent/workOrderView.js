@@ -52,7 +52,9 @@ function buildApprovalView (workOrder) {
   const test = canonical.allowedTestCommand
 
   // ── the visible face — plain Chinese, one decision ────────────────────────
-  const heading = '香香想進行一項安全測試'
+  // The Owner needs to know WHAT SHE WANTS TO DO, not what category of exercise it is.
+  // 「安全測試」 described the machinery; this describes the request.
+  const heading = '香香想改一個檔案'
 
   const whatChanges = canonical.goal || NOT_PROVIDED
 
@@ -72,7 +74,7 @@ function buildApprovalView (workOrder) {
   // is backwards: the intent is hers to state, not his to supply.
   const hasIntent = typeof after === 'string' && after.trim() !== ''
 
-  const worstCase = '任務失敗或超時,測試副本會被丟棄。你的真實程式庫不受影響。'
+  const worstCase = '改壞了?只改副本,你的程式庫不受影響。'
 
   const willNotHappen = '不會提交、不會上傳、不會合併、不會部署。'
 
@@ -110,19 +112,40 @@ function buildApprovalView (workOrder) {
     '隔離方式          : 丟棄式副本,已移除所有 remote,改動無法回到 main'
   ]
 
+  /**
+   * ── HOUSE RULE: A CARD SHOWS ONLY WHAT THE DECISION NEEDS ────────────────
+   * Before adding a section, ask: would the Owner make a WRONG decision without it?
+   * If not, it collapses. Everything else is available, one click away, and nothing has
+   * been deleted — but eight sections to approve a one-line edit is a card nobody reads,
+   * and a card nobody reads is an approval that is not really being given.
+   *
+   * The Owner judges three things: which file, what change, what is the worst case. So
+   * the face carries exactly those, and the heading already says 「香香想改」 — the card
+   * does not additionally explain that an intention is not a result, because saying it
+   * twice is how a page starts sounding anxious rather than clear.
+   */
   const card = {
     heading,
     sections: [
-      { title: '要修改的內容', body: whatChanges },
-      { title: '影響範圍', body: scope.join('\n') },
+      { title: null, body: file },
+      { title: null, body: hasIntent ? after : whatChanges },
+      { title: null, body: worstCase }
+    ],
+    details: [
+      // The before/after keeps its FULL honest labelling here. The Owner asked that the
+      // face stop explaining that an intention is not a result — 「香香想改」 already says
+      // it — but where the two texts sit side by side the distinction still has to be
+      // spelled out, and collapsed it costs him nothing.
       hasIntent
         ? { title: '現時內容 / 打算改成', body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
         : { title: '現時內容', body: `${beforeLabel}：\n${indent(before)}` },
-      { title: '最壞情況', body: worstCase },
+      { title: '要修改的內容', body: whatChanges },
+      { title: '影響範圍', body: scope.join('\n') },
       { title: '不會發生', body: willNotHappen },
       { title: '上限', body: caps }
     ],
-    actions: ['批准測試', '拒絕'],
+    actions: ['批准', '拒絕'],
+    detailsTitle: '詳細',
     technicalTitle: '技術細節'
   }
 
@@ -130,11 +153,16 @@ function buildApprovalView (workOrder) {
   // by the WYSIWYA tests. The collapsed section is included after its ▸ marker.
   const lines = [card.heading, '']
   for (const s of card.sections) {
-    lines.push(s.title)
+    if (s.title) lines.push(s.title)
     lines.push(indent(s.body, '  '))
     lines.push('')
   }
-  lines.push(`[${card.actions[0]}]  [${card.actions[1]}]`, '', `▸ ${card.technicalTitle}`)
+  lines.push(`[${card.actions[0]}]  [${card.actions[1]}]`, '', `▸ ${card.detailsTitle}`)
+  for (const d of card.details) {
+    lines.push('  ' + d.title)
+    lines.push(indent(d.body, '    '))
+  }
+  lines.push('', `▸ ${card.technicalTitle}`)
   for (const t of technicalLines) lines.push('  ' + t)
 
   // `display` keeps the v1 field-parity contract (each value mirrors canonical) so the

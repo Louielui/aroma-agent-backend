@@ -605,8 +605,11 @@ test('v2: the sealed response carries the Owner card, and it matches the sealed 
     const { res } = await sealCanary(ctx)
     assert.equal(res.status, 201, JSON.stringify(res.json))
     const b = res.json
-    assert.equal(b.card.heading, '香香想進行一項安全測試')
-    assert.deepEqual(b.card.sections.map((s) => s.title), ['要修改的內容', '影響範圍', '現時內容 / 打算改成', '最壞情況', '不會發生', '上限'])
+    // The face carries the three facts the decision needs; everything else is collapsed
+    // but still delivered, so the browser never has to ask for a second payload.
+    assert.equal(b.card.heading, '香香想改一個檔案')
+    assert.equal(b.card.sections.length, 3)
+    assert.ok(b.card.details.some((d) => d.title === '影響範圍'), 'the rest still travels, collapsed')
 
     // WYSIWYA over HTTP: rebuild the view from the SEALED record and compare byte-for-byte
     const sealed = ctx.app.locals.ownerApprovalStore.loadSealed(b.approvalId).record.workOrder
