@@ -19,6 +19,7 @@ const { v4: uuidv4 } = require('uuid')
 const { checkRedLine } = require('./redlinePolicy')
 const { buildDistillPrompt, parseDistillResponse } = require('./distillPrompt')
 const { buildDecisionRecallContext } = require('../coo/decisionRecall')       // Decision Recall v1 (chat-lane only)
+const { buildConversationRecall } = require('../lab/conversationRecall')      // Conversation Recall v0.1 (chat-lane only, flag-gated)
 const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
 // Read Context Wiring v1 (chat-lane only, flag-gated OFF by default, fail-soft).
 const { buildReadContext } = require('../context/readContext')
@@ -89,6 +90,10 @@ const CHAT_MAX_TOKENS = 2048
 // DECISION_RECALL runtime flag (same env-flag style as CONVERSATION_DEMO): only exact 'on'
 // enables; unset/empty/any other value → fail-closed OFF.
 function resolveDecisionRecall () { return process.env.DECISION_RECALL === 'on' ? 'on' : 'off' }
+
+// CONVERSATION_RECALL runtime flag — same fail-closed style. OFF is the default and, with
+// it off, nothing is read and the prompt is byte-identical to today's.
+function resolveConversationRecall () { return process.env.CONVERSATION_RECALL === 'on' ? 'on' : 'off' }
 
 async function processIntake (message, adapter, history = [], opts = {}) {
   // Correlation id: a caller-supplied requestId is honoured ONLY when it is a valid
@@ -201,6 +206,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const promptCache = new Map()   // provider -> assembled prompt
   const readBlockCache = new Map() // source-set key -> read-context block (one fetch per set)
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
+  let convRecallBlockCache // same three-state contract, for Conversation Recall
 
   // THE TURN'S REAL READ OUTCOME, recorded AT the read — source -> {source,trust,count,
   // usedFallback}. Keyed by source so the same source fetched for a second provider does
@@ -241,6 +247,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // identical to there being none.
         recallBlockCache = null
         logReadSource({ source: 'decisions', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
+      }
+    }
+
+    // CONVERSATION RECALL v0.1 — chat-lane only, opt-in, FAIL-SOFT. The archive has been
+    // written since 2026-08-01 and never read, so every conversation began from nothing.
+    // This injects the most recent PREVIOUS conversations as memory.
+    //
+    // Injected AFTER Decision Recall so that, when both are on, decisions sit closer to the
+    // system prompt than chat history does — a decision outranks a conversation, and the
+    // order should say so.
+    //
+    // Turns whose assistant body was omitted under A′ are rendered as an explicit
+    // "[reply not retained]" statement, never as a gap. See conversationRecall.js.
+    if (isChat && resolveConversationRecall() === 'on') {
+      try {
+        if (convRecallBlockCache === undefined) {
+          const deps = (opts && opts.conversationRecallDeps) || {}
+          const cr = buildConversationRecall(Object.assign({ currentConversationId: opts && opts.conversationId }, deps))
+          convRecallBlockCache = (cr && cr.block) ? cr.block : null
+        }
+        if (convRecallBlockCache) effPrompt = convRecallBlockCache + '\n\n' + effPrompt
+      } catch (err) {
+        // Fail soft, never silently — the same rule as the two blocks around it. Losing
+        // memory must not look identical to having none.
+        convRecallBlockCache = null
+        logReadSource({ source: 'conversation-archive', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
       }
     }
 
