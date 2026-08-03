@@ -406,3 +406,124 @@ test('an invoice question reaches the invoices endpoint end to end', async () =>
   assert.equal(r.perSource[0].trust, 'live')
   assert.equal(r.perSource[0].usedFallback, false)
 })
+
+// ── ASSEMBLY UNDER PRESSURE — THE MULTI-SOURCE PATH ───────────────────────────
+// Every truncation test before this ran ONE source, and one source can never be crowded
+// out by another, so the defect that mattered was structurally untestable. These run all
+// five at realistic measured sizes: github renders ~620-char lines, drive ~230, and
+// aroma_system is LAST in ALL_SOURCES — the position that used to be fatal.
+
+const FIVE = ['drive', 'gmail', 'calendar', 'github', 'aroma_system']
+const bulk = (src, n, chars) => okList(src, Array.from({ length: n }, (_, i) =>
+  live({ source: src, sourceId: `${src}-${i}`, title: `${src} item ${i}`, content: 'x'.repeat(chars) })))
+
+function fiveSourceConnector (aromaRows = 4) {
+  return fakeConnector({
+    'drive.searchFiles': bulk('drive', 4, 180),
+    'gmail.searchMessages': bulk('gmail', 4, 330),
+    'gmail.getMessage': bulk('gmail', 1, 330),
+    'calendar.listEvents': bulk('calendar', 4, 300),
+    'github.listPullRequests': bulk('github', 4, 620),
+    'aroma_system.listInvoices': bulk('aroma_system', aromaRows, 200),
+    'aroma_system.listInventory': bulk('aroma_system', aromaRows, 200)
+  })
+}
+
+test('*** every source that returned rows gets a line — order does not decide survival ***', async () => {
+  const c = fiveSourceConnector()
+  const r = await buildReadContext({ connector: c, message: '最近有咩發票？', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW })
+  for (const s of FIVE) {
+    // Built from a plain string: inside a template literal `\[` collapses to `[` and the
+    // pattern silently becomes a character class that matches nothing at line start.
+    assert.ok(new RegExp('^\\[' + s + '\\]', 'm').test(r.block), `${s} returned rows and must appear in the block`)
+  }
+  assert.ok(r.block.length <= CAPS.maxTotalChars)
+})
+
+test('the LAST source survives even when the earlier ones would fill the budget', async () => {
+  // github alone would eat the block if it were spent in order.
+  const c = fakeConnector({
+    'drive.searchFiles': bulk('drive', 4, 900),
+    'gmail.searchMessages': bulk('gmail', 4, 900),
+    'gmail.getMessage': bulk('gmail', 1, 900),
+    'calendar.listEvents': bulk('calendar', 4, 900),
+    'github.listPullRequests': bulk('github', 4, 900),
+    'aroma_system.listInvoices': bulk('aroma_system', 4, 900)
+  })
+  const r = await buildReadContext({ connector: c, message: '最近有咩發票？', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW })
+  assert.ok(/^\[aroma_system\]/m.test(r.block), 'the last source must not be the one that pays')
+  assert.equal(r.status, 'TRUNCATED')
+  assert.ok(r.block.length <= CAPS.maxTotalChars)
+})
+
+test('round-robin: no source gets a second line while another has none', async () => {
+  const c = fakeConnector({
+    'drive.searchFiles': bulk('drive', 4, 1200), // would take the whole budget first
+    'gmail.searchMessages': bulk('gmail', 1, 100),
+    'gmail.getMessage': bulk('gmail', 1, 100),
+    'calendar.listEvents': bulk('calendar', 1, 100),
+    'github.listPullRequests': bulk('github', 1, 100),
+    'aroma_system.listInvoices': bulk('aroma_system', 1, 100)
+  })
+  const r = await buildReadContext({ connector: c, message: '發票', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW })
+  const tags = r.block.split('\n').filter((l) => l.startsWith('[')).map((l) => l.match(/^\[(\w+)\]/)[1])
+  const firstRound = tags.slice(0, 5)
+  assert.equal(new Set(firstRound).size, firstRound.length, 'the first line of each source comes before any second line')
+})
+
+test('an oversized line is CAPPED, not allowed to price out a source', async () => {
+  const { capLine } = require('./readContext')
+  assert.equal(capLine('x'.repeat(100), 500).length, 100) // short lines untouched
+  const capped = capLine('[github] ' + 'x'.repeat(5000), 500)
+  assert.ok(capped.length < 600)
+  assert.ok(capped.startsWith('[github]')) // the source tag always survives
+  assert.ok(capped.includes('capped'))
+  const c = fiveSourceConnector()
+  const r = await buildReadContext({ connector: c, message: '發票', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW })
+  for (const l of r.block.split('\n').filter((x) => x.startsWith('['))) {
+    assert.ok(l.length <= CAPS.maxLineChars + 20, `no rendered line may exceed the per-line cap: ${l.length}`)
+  }
+})
+
+test('one unfittable line does not end the block — later sources still land', async () => {
+  const c = fakeConnector({
+    'drive.searchFiles': bulk('drive', 1, 120),
+    'gmail.searchMessages': bulk('gmail', 1, 120),
+    'gmail.getMessage': bulk('gmail', 1, 120),
+    'calendar.listEvents': bulk('calendar', 1, 120),
+    'github.listPullRequests': bulk('github', 1, 120),
+    'aroma_system.listInvoices': bulk('aroma_system', 1, 120)
+  })
+  // A budget that fits the header plus only a couple of lines.
+  const caps = Object.assign({}, CAPS, { maxTotalChars: SAFETY_HEADER.length + 700 })
+  const r = await buildReadContext({ connector: c, message: '發票', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW, caps })
+  assert.ok(r.block.length <= caps.maxTotalChars)
+  assert.equal(r.status, 'TRUNCATED')
+})
+
+// ── THE HEADER MAY NOT OVER-CLAIM ─────────────────────────────────────────────
+
+test('*** the header never asserts that a listed source appears below ***', () => {
+  const { buildSafetyHeader } = require('./readContext')
+  const h = buildSafetyHeader(FIVE)
+  assert.equal(/appears below|all of them below|every one of them appears/i.test(h), false)
+})
+
+test('when items are dropped the header says so, and not otherwise', async () => {
+  const roomy = await buildReadContext({ connector: fakeConnector({ 'drive.searchFiles': bulk('drive', 1, 50) }), message: 'x', sources: ['drive'], env: {}, now: NOW })
+  assert.equal(roomy.status === 'TRUNCATED', false)
+  assert.equal(/NOT every retrieved item is shown/.test(roomy.block), false)
+
+  const c = fakeConnector({
+    'drive.searchFiles': bulk('drive', 4, 900),
+    'gmail.searchMessages': bulk('gmail', 4, 900),
+    'gmail.getMessage': bulk('gmail', 1, 900),
+    'calendar.listEvents': bulk('calendar', 4, 900),
+    'github.listPullRequests': bulk('github', 4, 900),
+    'aroma_system.listInvoices': bulk('aroma_system', 4, 900)
+  })
+  const tight = await buildReadContext({ connector: c, message: '發票', sources: FIVE, env: { GITHUB_READ_REPO: 'o/r' }, now: NOW })
+  assert.equal(tight.status, 'TRUNCATED')
+  assert.ok(/NOT every retrieved item is shown/.test(tight.block))
+  assert.ok(tight.block.length <= CAPS.maxTotalChars) // the note is inside the budget
+})

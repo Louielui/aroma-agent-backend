@@ -26,6 +26,10 @@ const CAPS = Object.freeze({
   maxItemsPerSource: 4, // items kept per source
   maxItemChars: 400, // per-item content cap (metadata/snippets preferred)
   maxTotalChars: 6000, // hard cap on the WHOLE serialized block
+  // Per-LINE cap. maxItemChars bounds the content excerpt, but a rendered line also
+  // carries title, date, id and link — measured, a GitHub line reaches 622 chars, and
+  // three of them took half the block. One item must not be able to price out a source.
+  maxLineChars: 500,
   maxKeywords: 6, // terms kept from the user's message
   maxTermsPerQuery: 3, // terms actually OR-ed into a source query
   maxTermChars: 8, // a CJK "term" longer than this is a clause, not a term
@@ -52,11 +56,28 @@ const SAFETY_HEADER = 'These are read-only excerpts just retrieved from connecte
  * The names are the source KEYS themselves — the same tokens that label every rendered
  * line ([drive], [aroma_system]) — so there is no display-name map to drift out of date
  * and nothing to update when a source is added or removed.
+ *
+ * IT STATES WHAT WAS READ, NEVER WHAT IS PRESENT. The first version of this line promised
+ * that every source listed "appears below" — which the assembler cannot guarantee and
+ * which was, under truncation, simply false: the list named five sources while the block
+ * carried four. A header that over-claims is worse than the hardcoded list it replaced,
+ * because the model believes it either way. When items were dropped the header says so,
+ * so absence is never read as evidence.
  */
-function buildSafetyHeader (sources = []) {
+function buildSafetyHeader (sources = [], opts = {}) {
   const list = (Array.isArray(sources) ? sources : []).filter((s) => typeof s === 'string' && s)
   if (list.length === 0) return SAFETY_HEADER
-  return `Sources read this turn (this list is complete — there are no others, and every one of them appears below): ${list.join(', ')}. ${SAFETY_HEADER}`
+  const note = opts && opts.truncated
+    ? ' The block was capped, so NOT every retrieved item is shown below — if you cannot find something here, say it was not shown rather than that it does not exist.'
+    : ''
+  return `Sources read this turn: ${list.join(', ')}.${note} ${SAFETY_HEADER}`
+}
+
+/** One rendered line, bounded. The source tag leads the line, so it always survives. */
+function capLine (line, max = CAPS.maxLineChars) {
+  const s = String(line == null ? '' : line)
+  const limit = Number.isFinite(max) ? max : CAPS.maxLineChars
+  return s.length <= limit ? s : s.slice(0, limit) + ' […line capped]'
 }
 
 // Latin tokens that name a source/tool rather than content — they poison queries
@@ -311,7 +332,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   }
   const keywords = extractKeywords(message, caps.maxKeywords)
   const perSource = []
-  const lines = []
+  const lineGroups = [] // one array of rendered lines PER SOURCE, in source order
   let truncated = false
 
   // ── ONE SOURCE, START TO FINISH ────────────────────────────────────────────
@@ -372,7 +393,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       ? r.value
       : { entry: { source: sources[i], trust: 'unavailable', count: 0, error: 'read failed', usedFallback: false }, lines: [unavailableLine(sources[i], 'read failed')], overflow: false }
     perSource.push(got.entry)
-    for (const l of got.lines) lines.push(l)
+    lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
     if (got.overflow) truncated = true
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
@@ -389,16 +410,45 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     }, logSink)
   }
 
-  // Total cap on the COMPLETE serialized block; stop at a whole-line boundary.
-  // The list is the sources actually READ this turn — including any that came back
-  // unavailable, because "I tried it and could not read it" is also true of the turn.
-  let body = `${OPEN}\nRetrieved at: ${asOf}\n${buildSafetyHeader(perSource.map((p) => p.source))}`
-  for (const line of lines) {
-    const candidate = `${body}\n${line}`
-    if ((candidate + '\n' + CLOSE).length > caps.maxTotalChars) { truncated = true; break }
-    body = candidate
+  // ── ASSEMBLY: ROUND-ROBIN, NOT SEQUENTIAL ──────────────────────────────────
+  // This used to walk one flat list and `break` at the first line that did not fit, so
+  // the char cap was spent in SOURCE ORDER and one oversized line killed everything after
+  // it. aroma_system is last in ALL_SOURCES, and github renders 622-char lines, so the
+  // block filled at 5,707/6,000 with twelve lines and the restaurant's own rows — read
+  // live, count in the log — never reached the model at all. The header said it was read;
+  // the model could not see it; the answer came from Gmail instead. Ordering must not
+  // decide who survives.
+  //
+  // Now every source lands its FIRST line before any source lands its second, an
+  // over-long line is capped rather than allowed to eat the budget, and a line that does
+  // not fit is SKIPPED, not treated as the end of the block.
+  const usedSources = perSource.map((p) => p.source)
+
+  function assemble (headerText) {
+    let out = `${OPEN}\nRetrieved at: ${asOf}\n${headerText}`
+    let used = out.length + 1 + CLOSE.length // the closing tag is part of the budget
+    let dropped = false
+    const rounds = lineGroups.reduce((m, g) => Math.max(m, g.length), 0)
+    for (let round = 0; round < rounds; round++) {
+      for (const group of lineGroups) {
+        if (round >= group.length) continue
+        const line = capLine(group[round], caps.maxLineChars)
+        if (used + line.length + 1 > caps.maxTotalChars) { dropped = true; continue } // NOT break
+        out += '\n' + line
+        used += line.length + 1
+      }
+    }
+    return { body: out, dropped }
   }
-  const block = `${body}\n${CLOSE}`
+
+  // Two passes, because the honesty note is itself part of the budget: assemble once to
+  // learn whether anything was dropped, and if it was, rebuild with the note included.
+  // The second pass can only drop MORE, never less, so it cannot make the note untrue.
+  let built = assemble(buildSafetyHeader(usedSources, { truncated }))
+  if (built.dropped) truncated = true
+  if (truncated) built = assemble(buildSafetyHeader(usedSources, { truncated: true }))
+  if (built.dropped) truncated = true
+  const block = `${built.body}\n${CLOSE}`
   const anyLive = perSource.some((p) => p.trust === 'live' && p.count > 0)
   const status = truncated ? 'TRUNCATED' : (anyLive ? 'READY' : 'PARTIAL')
   return { block, status, perSource }
@@ -408,6 +458,7 @@ module.exports = {
   CAPS,
   SAFETY_HEADER,
   buildSafetyHeader,
+  capLine,
   AROMA_INTENTS,
   aromaMethodFor,
   OPEN,

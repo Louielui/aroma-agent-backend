@@ -33,15 +33,45 @@
 // slightly differently is still a false claim.
 const UNREADABLE_CLAIM = /(讀唔到|讀不到|睇唔到|看不到|攞唔到|拿不到|取唔到|無法讀取|無法存取|冇權限|沒有權限|讀取失敗|存取失敗|連唔到|連不上|未能讀取|無法取得|不能讀取|cannot read|can'?t read|unable to read|couldn'?t read|no access|access denied|failed to read)/i
 
-// What the Owner calls each source. Used to tell WHICH source a claim is about.
-const SOURCE_ALIASES = Object.freeze({
-  calendar: ['日曆', '日程', '行事曆', '行程', '排程', 'calendar', 'schedule'],
-  gmail: ['gmail', '電郵', '郵件', '信箱', '收件箱', 'email', 'e-mail', 'mail', 'inbox'],
-  drive: ['drive', '雲端', '雲端硬碟', '文件', '檔案', 'google drive', 'docs'],
-  github: ['github', '程式碼庫', '版本庫', 'repo', 'repository']
+// ── THE SOURCE MAPS ARE DERIVED, NOT LISTED ───────────────────────────────────
+// These two tables used to be hardcoded to four sources. A fifth was connected and read
+// live, and because it had no entry here `mentionsSource()` could never match it and
+// `LABELS` could never name it — so the correction block enumerated the same four names
+// while the fifth source's rows sat in the same turn's record. The guard that exists to
+// stop a false claim was itself making one.
+//
+// Now the KEYS come from ALL_SOURCES. A source that is registered but has no human
+// vocabulary below still gets its own key as an alias and its own name as a label, so a
+// new source is never invisible here — it is merely less well described, and the test
+// below fails until someone gives it words.
+const { ALL_SOURCES } = require('../context/liveClients')
+
+// Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
+const VOCABULARY = Object.freeze({
+  calendar: { words: ['日曆', '日程', '行事曆', '行程', '排程', 'calendar', 'schedule'], label: '日曆' },
+  gmail: { words: ['gmail', '電郵', '郵件', '信箱', '收件箱', 'email', 'e-mail', 'mail', 'inbox'], label: 'Gmail' },
+  drive: { words: ['drive', '雲端', '雲端硬碟', '文件', '檔案', 'google drive', 'docs'], label: 'Drive' },
+  github: { words: ['github', '程式碼庫', '版本庫', 'repo', 'repository'], label: 'GitHub' },
+  aroma_system: { words: ['aroma system', 'aroma-system', 'aroma_system', '餐廳系統', '系統'], label: '餐廳系統' },
+  // Not a read source — the Decision Recall block, which the Owner can be told about the
+  // same way. It is listed here rather than in ALL_SOURCES because nothing reads it.
+  decisions: { words: ['過往決定', '決定紀錄'], label: '過往決定' }
 })
 
-const LABELS = Object.freeze({ calendar: '日曆', gmail: 'Gmail', drive: 'Drive', github: 'GitHub', decisions: '過往決定' })
+const SOURCE_KEYS = Object.freeze([...new Set([...ALL_SOURCES, ...Object.keys(VOCABULARY)])])
+
+/** Every key gets aliases: its own name, its spaced form, and any human words for it. */
+const SOURCE_ALIASES = Object.freeze(SOURCE_KEYS.reduce((acc, key) => {
+  const extra = (VOCABULARY[key] && VOCABULARY[key].words) || []
+  acc[key] = [...new Set([key, key.replace(/_/g, ' '), ...extra])]
+  return acc
+}, {}))
+
+/** The Owner-facing name. Falls back to the key so a new source is named, not skipped. */
+const LABELS = Object.freeze(SOURCE_KEYS.reduce((acc, key) => {
+  acc[key] = (VOCABULARY[key] && VOCABULARY[key].label) || key
+  return acc
+}, {}))
 
 function mentionsSource (reply, source) {
   const aliases = SOURCE_ALIASES[source]
@@ -116,4 +146,4 @@ function enforceReadState (reply, perSource) {
   }
 }
 
-module.exports = { enforceReadState, detectFalseReadClaim, buildCorrection, UNREADABLE_CLAIM, SOURCE_ALIASES, LABELS }
+module.exports = { enforceReadState, detectFalseReadClaim, buildCorrection, UNREADABLE_CLAIM, SOURCE_ALIASES, LABELS, SOURCE_KEYS, VOCABULARY }

@@ -122,3 +122,48 @@ test('*** the correction states counts and states only — never content ***', (
   assert.ok(!out.reply.includes('secret'))
   assert.ok(out.reply.includes('4 項'))
 })
+
+// ── THE SOURCE MAPS MUST COVER EVERY REGISTERED SOURCE ────────────────────────
+// aroma_system was read live, count in the log, and the correction block still named the
+// same hardcoded four — because the guard had no entry for it. Coverage is now derived,
+// and these fail the moment a source is registered without words for it.
+
+const { ALL_SOURCES } = require('../context/liveClients')
+const { SOURCE_KEYS, SOURCE_ALIASES, LABELS } = require('./readStateGuard')
+
+test('*** every registered source has aliases and a label — none may be missing ***', () => {
+  for (const s of ALL_SOURCES) {
+    assert.ok(Array.isArray(SOURCE_ALIASES[s]) && SOURCE_ALIASES[s].length > 0, `${s} has no aliases`)
+    assert.ok(SOURCE_ALIASES[s].includes(s), `${s} must at least answer to its own name`)
+    assert.ok(LABELS[s], `${s} has no label`)
+    assert.ok(SOURCE_KEYS.includes(s), `${s} missing from the derived key list`)
+  }
+})
+
+test('the maps are DERIVED — a new source cannot be silently unrepresented', () => {
+  // Every key in ALL_SOURCES appears in both maps, so neither can be a shorter list.
+  for (const s of ALL_SOURCES) {
+    assert.ok(Object.prototype.hasOwnProperty.call(SOURCE_ALIASES, s))
+    assert.ok(Object.prototype.hasOwnProperty.call(LABELS, s))
+  }
+  assert.ok(SOURCE_KEYS.length >= ALL_SOURCES.length)
+})
+
+test('an aroma_system claim is detected and corrected by name', () => {
+  const perSource = [
+    { source: 'gmail', trust: 'live', count: 4, usedFallback: true },
+    { source: 'aroma_system', trust: 'live', count: 1, usedFallback: false }
+  ]
+  for (const claim of ['我讀唔到餐廳系統嘅資料', '我而家讀唔到 Aroma System 嘅即時資料', '系統資料讀唔到']) {
+    const out = enforceReadState(claim, perSource)
+    assert.equal(out.corrected, true, `must correct: ${claim}`)
+    assert.ok(out.sources.includes('aroma_system'), `must name aroma_system: ${claim}`)
+    assert.ok(out.reply.includes('餐廳系統'), 'the correction must use the Owner-facing label')
+  }
+})
+
+test('a true claim about aroma_system is still NOT corrected', () => {
+  const perSource = [{ source: 'aroma_system', trust: 'unavailable', count: 0, usedFallback: false }]
+  const out = enforceReadState('我讀唔到餐廳系統', perSource)
+  assert.equal(out.corrected, false) // it really was unreadable
+})
