@@ -110,6 +110,27 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
   }
 })
 
+/**
+ * THE WHOLE ENVELOPE, when a turn read something.
+ *
+ * The distill envelope and the Answer Plan travel together in ONE call — the model reasons
+ * about the question and returns its answer in the same response, so there is no second
+ * paid round trip and no added latency. `answerPlan` is required by the schema when this
+ * format is used at all, which is the point: with strict json_schema the provider will not
+ * return a response without it, so "the model forgot" stops being a failure mode.
+ */
+const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['intent', 'mode', 'reply', 'answerPlan'],
+  properties: {
+    intent: { type: 'string' },
+    mode: { type: 'string', enum: ['commit', 'recommend', 'ask', 'chat'] },
+    reply: { type: 'string', description: '一句自然嘅說話。逐項清單由系統渲染,唔好喺呢度覆述。' },
+    answerPlan: ANSWER_PLAN_SCHEMA
+  }
+})
+
 /** One countable line per fallback. Reason enums only — never the plan, never a row. */
 function logAnswerPlan (entry, sink) {
   const line = {
@@ -290,6 +311,7 @@ function parsePlan (text) {
 
 module.exports = {
   ANSWER_PLAN_SCHEMA,
+  DISTILL_WITH_PLAN_SCHEMA,
   STATUS_LABELS,
   ENTITY_LABELS,
   SOURCE_LABELS,

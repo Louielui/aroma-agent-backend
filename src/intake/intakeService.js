@@ -46,6 +46,7 @@ const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
+const { DISTILL_WITH_PLAN_SCHEMA, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -234,6 +235,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // turnPerSource and for the same reason: the presentation is built from what this turn
   // really retrieved, never reconstructed from the reply afterwards.
   const turnItems = new Map() // source -> items[]
+  const turnEvidence = new Map() // source -> what that read IS (kind, totals, meaning)
   let turnTruncated = false
 
   // WHICH PROVIDER ACTUALLY RECEIVED EXTERNAL READ CONTEXT, recorded AT the injection —
@@ -322,6 +324,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
               if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
             }
+            for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) {
+              if (e && e.source) turnEvidence.set(e.source, e)
+            }
             if (rc && rc.status === 'TRUNCATED') turnTruncated = true
           }
           const block = readBlockCache.get(key)
@@ -376,6 +381,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // and fall back to Claude EXACTLY ONCE with the full, unchanged prompt. If Claude
   // also fails, the existing safe error propagates. Never loops.
   const primaryProvider = selectPrimaryProvider(process.env, opts)
+  // ── THE ANSWER PLAN IS REQUESTED WHENEVER THIS TURN READ SOMETHING ──────────────
+  // Enforced by the provider (json_schema, strict), not asked for in prose. The model was
+  // told three times to emit two markdown headings and wrote neither, in three real turns;
+  // that is why shape is bought at the API layer here and facts are checked afterwards.
+  const wantsAnswerPlan = turnItems.size > 0
+  const planFormat = wantsAnswerPlan
+    ? { type: 'json_schema', name: 'distill_with_answer_plan', schema: DISTILL_WITH_PLAN_SCHEMA }
+    : undefined
   let llmResult = null
   let distilled = null
   let routerFallbackReason = null
@@ -453,7 +466,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } else {
       let gptResult = null
       try {
-        gptResult = await gpt.complete(await buildPromptFor(OPENAI), { system: effSystem, maxTokens, temperature: 0.3 })
+        gptResult = await gpt.complete(await buildPromptFor(OPENAI), { system: effSystem, maxTokens, temperature: 0.3, ...(planFormat ? { responseFormat: planFormat } : {}) })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
         // (HTTP status + provider error type/code/param) are appended so a failure is
@@ -488,7 +501,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       llmResult = await adapter.complete(await buildPromptFor(CLAUDE), {
         system: effSystem,
         maxTokens,
-        temperature: 0.3
+        temperature: 0.3,
+        ...(planFormat ? { responseFormat: planFormat } : {})
       })
     } catch (err) {
       // Upstream provider/adapter failure → typed, safe error. Provider message is
@@ -573,6 +587,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       reply: guarded.reply,
       correction: guarded.correction || null,
       message,
+      // The model's own plan, when it sent one. answerPlan.js validates it against the
+      // evidence; nothing here trusts it, and every fall-through is logged.
+      answerPlan: distilled.answerPlan || null,
+      evidenceSets: Array.from(turnEvidence.values()),
+      provider: (llmResult && llmResult.provider) || null,
+      requestId,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated
@@ -622,6 +642,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       reply: guarded.reply,
       correction: guarded.correction || null,
       message,
+      // The model's own plan, when it sent one. answerPlan.js validates it against the
+      // evidence; nothing here trusts it, and every fall-through is logged.
+      answerPlan: distilled.answerPlan || null,
+      evidenceSets: Array.from(turnEvidence.values()),
+      provider: (llmResult && llmResult.provider) || null,
+      requestId,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated

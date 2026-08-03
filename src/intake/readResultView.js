@@ -291,6 +291,48 @@ function oneQuestion (next, intent) {
 }
 
 /**
+ * RENDER A VALIDATED PLAN. Nothing here decides business meaning: the model chose the
+ * answer, the validator removed anything the evidence did not support, and this turns
+ * what survived into text.
+ *
+ * The fallback is a true, smaller answer — a count and provenance — never arbitrary rows,
+ * and it is always logged, so a degradation cannot pass for a working turn.
+ */
+function renderValidatedPlan (input) {
+  const { validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan')
+  const evidenceSets = Array.isArray(input.evidenceSets) ? input.evidenceSets : []
+  const itemsBySource = Array.isArray(input.itemsBySource) ? input.itemsBySource : []
+
+  const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource })
+  const out = []
+
+  if (!v.answerSurvived) {
+    // Every sentence of the answer failed its evidence check. That is a fallback, and it
+    // says so out loud rather than quietly showing the sections underneath it.
+    logAnswerPlan({ outcome: 'fallback', reason: 'answer_unsupported', provider: input.provider || null, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences, requestId: input.requestId || null })
+    out.push(minimalAnswer(evidenceSets))
+  } else {
+    logAnswerPlan({ outcome: 'validated', reason: null, provider: input.provider || null, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences, requestId: input.requestId || null })
+    out.push(v.plan.directAnswer)
+  }
+
+  for (const sec of v.plan.sections) {
+    const lines = [`### ${sec.heading}`]
+    for (const it of sec.items) {
+      const facts = it.facts.map((f) => `${f.field} ${f.value}`).join('｜')
+      lines.push(facts ? `**${it.title}**\n${facts}` : `**${it.title}**`)
+    }
+    out.push(lines.join('\n\n'))
+  }
+
+  if (v.plan.limitations.length) out.push(`### ${H.limits}\n\n` + v.plan.limitations.join('\n'))
+  if (v.plan.followUp) out.push(`### ${H.next}\n\n${v.plan.followUp}`)
+  if (typeof input.correction === 'string' && input.correction.trim()) out.push(input.correction.trim())
+
+  return { reply: out.join('\n\n'), applied: true, intent: null, validated: true, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences }
+}
+
+/**
  * Build the whole Owner-facing reply.
  *
  * @param {{ reply, message, itemsBySource, perSource, truncated? }} input
@@ -298,6 +340,15 @@ function oneQuestion (next, intent) {
  */
 function buildReadResultReply (input = {}) {
   const original = String(input.reply == null ? '' : input.reply)
+
+  // ── THE HYBRID PATH ─────────────────────────────────────────────────────────
+  // When the model returned an Answer Plan, IT decides what the answer is and which rows
+  // matter; this module's job narrows to proving and rendering. The template path below
+  // stays only as the fallback for turns with no plan, and every fall-through is logged.
+  if (input.answerPlan && typeof input.answerPlan === 'object') {
+    return renderValidatedPlan(input)
+  }
+
   const intent = intentFor(input.message)
 
   // NO INTENT, NO RESTRUCTURING. An ordinary conversation that happens to have context
