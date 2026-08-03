@@ -23,13 +23,17 @@ const path = require('node:path')
 
 const { createDemoRouter } = require('../routes/demoRouter')
 
-const CHAT_ENVELOPE = JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'REPLY_SENTINEL 你有兩封新郵件。' })
+// A′ NARROWED (Owner decision 2026-08-02): the omission now turns on whether the REPLY
+// drew on the context, not on whether the turn read any. So there are two envelopes:
+// one that quotes the mail title, and one that answers without touching it.
+const CHAT_ENVELOPE = JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'REPLY_SENTINEL 你有一封 MAIL_TITLE_SENTINEL 嘅郵件。' })
+const CHAT_ENVELOPE_NO_CITE = JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'REPLY_SENTINEL 我建議你先做 X。' })
 const MODEL_ID = 'claude-haiku-4-5-20251001'
 
-function fakeAdapter () {
+function fakeAdapter (envelope) {
   return {
     async complete () {
-      return { text: CHAT_ENVELOPE, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, model: MODEL_ID, latencyMs: 3 }
+      return { text: envelope || CHAT_ENVELOPE, usage: { inputTokens: 10, outputTokens: 5, totalTokens: 15 }, model: MODEL_ID, latencyMs: 3 }
     }
   }
 }
@@ -60,11 +64,11 @@ function realPipelineWith (deps) {
     processIntake(message, adapter, history, Object.assign({}, opts, { readContextDeps: deps }))
 }
 
-function makeApp (processIntakeFn) {
+function makeApp (processIntakeFn, envelope) {
   const app = express()
   app.use(express.json())
   app.locals.conversationDemo = true
-  app.use(createDemoRouter({ getAdapterFn: fakeAdapter, processIntakeFn }))
+  app.use(createDemoRouter({ getAdapterFn: () => fakeAdapter(envelope), processIntakeFn }))
   return app
 }
 
@@ -92,7 +96,7 @@ async function withEnv (vars, fn) {
 
 const lines = (root) => fs.readFileSync(path.join(root, 'archive.jsonl'), 'utf8')
 
-test('*** END TO END: a Gmail turn stores the question, omits the answer, and names the real model ***', async () => {
+test('*** END TO END: a Gmail turn whose reply CITES the mail stores the question and omits the answer ***', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-'))
   await withEnv({
     XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
@@ -139,6 +143,44 @@ test('*** END TO END: a Gmail turn stores the question, omits the answer, and na
       assert.equal(typeof r.requestId, 'string')
     }
     assert.equal(recs[0].requestId, recs[1].requestId, 'one request, one correlation id')
+  })
+})
+
+/**
+ * THE CASE A′ USED TO THROW AWAY. Gmail is read, the reply answers without touching any of
+ * it, and the answer survives — while the mail's title and body still never reach the file.
+ * Under the old rule this reply was omitted purely because a read had happened, which is
+ * five of five turns in the real archive and the reason 香香 could not remember her own
+ * advice.
+ */
+test('*** END TO END: read happened, reply CITES NOTHING → the answer is kept, mail still absent ***', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-nocite-'))
+  await withEnv({
+    XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
+    READ_ACCESS: 'on', CONTEXT_GMAIL: 'on', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off'
+  }, async () => {
+    const app = makeApp(realPipelineWith(readDeps(['gmail'])), CHAT_ENVELOPE_NO_CITE)
+    const { status, json } = await post(app, {
+      message: '有咩要跟進？', interactionMode: 'chat', conversationId: 'e2e-conv-nocite', history: []
+    })
+
+    assert.equal(status, 200)
+    assert.equal(json.labArchive.recorded, true)
+    assert.equal(json.labArchive.assistantOmitted, false, 'the reply drew on nothing, so it is kept')
+
+    const raw = lines(root)
+    assert.equal(raw.includes('有咩要跟進？'), true, 'the Owner\'s words, as always')
+    assert.equal(raw.includes('REPLY_SENTINEL'), true, 'AND her own answer — the memory survives')
+
+    // The promise A′ exists for is untouched: read context still never lands on disk.
+    assert.equal(raw.includes('MAIL_TITLE_SENTINEL'), false, 'no mail TITLE reached the archive')
+    assert.equal(raw.includes('MAIL_BODY_SENTINEL'), false, 'no mail CONTENT reached the archive')
+
+    const recs = raw.trim().split('\n').map((l) => JSON.parse(l))
+    const assistant = recs.find((r) => r.role === 'assistant')
+    assert.equal(assistant.omitted, false)
+    assert.equal(assistant.omissionReason, undefined, 'not an omission record at all')
+    assert.ok(typeof assistant.text === 'string' && assistant.text.length > 0)
   })
 })
 

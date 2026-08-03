@@ -59,6 +59,9 @@ function archiveEnabled (env) {
  * @param {boolean} [input.readContextUsed]      MUST be a real boolean from the pipeline.
  *                                               Anything else (undefined, null, 'false') is
  *                                               treated as UNKNOWN and the body is omitted.
+ * @param {boolean} [input.replyCitesContext]    Whether the REPLY drew on that context.
+ *                                               Same fail-safe contract: only an explicit
+ *                                               `false` keeps the body. See citationDetector.
  * @param {string[]} [input.readContextSources]  source KINDS only
  * @param {object} [input.env] [input.archive] injected for tests
  * @returns {{recorded:boolean, reason?:string, ids?:string[], failures?:object[], assistantOmitted?:boolean}}
@@ -86,11 +89,20 @@ function recordExchange (input = {}) {
       userAskedNotToRecord: optOut
     }
 
-    // A′ — FAIL-SAFE. The body is kept ONLY on an explicit `false`. `undefined` means the
-    // pipeline did not report, which is a doubt, and a doubt omits. Note that this is a
-    // one-way default: a pipeline that stops reporting quietly loses assistant bodies, which
-    // is visible in the archive; the opposite mistake would be invisible.
-    const omitAssistantBody = input.readContextUsed !== false
+    // A′ — NARROWED, Owner decision 2026-08-02. Two conditions, BOTH fail-safe.
+    //
+    // The rule used to be "this turn read external context, so drop the answer". That threw
+    // away every reply — five of five in the real archive — including ones that contained
+    // nothing of anyone else's. What A′ exists to prevent is 香香 transcribing other
+    // people's mail onto disk, not her forgetting that she said "do X first".
+    //
+    // So the body is omitted only when the turn read context AND the reply actually drew on
+    // it. Each half keeps its own fail-safe: `!== false` means an absent or unknown value
+    // omits. A pipeline that stops reporting either signal quietly loses bodies — visible in
+    // the archive — while the opposite mistake would be invisible.
+    const readContext = input.readContextUsed !== false
+    const citesContext = input.replyCitesContext !== false
+    const omitAssistantBody = readContext && citesContext
 
     const results = []
     // THE USER'S OWN WORDS ARE ALWAYS KEPT. The Owner asking about his mail is the Owner's

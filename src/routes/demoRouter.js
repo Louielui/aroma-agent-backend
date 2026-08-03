@@ -206,6 +206,10 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
             // into "it is safe to keep", which is the one direction that must never be
             // guessed. The hook omits on anything that is not an explicit false.
             readContextUsed: telemetry ? telemetry.readContextUsed : undefined,
+            // A′ NARROWED — same passthrough discipline, same fail-safe. Only an explicit
+            // `false` (this reply drew on nothing) keeps the body; absent stays undefined
+            // and the hook omits.
+            replyCitesContext: telemetry ? telemetry.replyCitesContext : undefined,
             readContextSources: (telemetry && Array.isArray(telemetry.readContextSources)) ? telemetry.readContextSources : [],
             lane: interactionMode,
             requestId: correlationId

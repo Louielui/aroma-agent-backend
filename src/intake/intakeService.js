@@ -20,6 +20,7 @@ const { checkRedLine } = require('./redlinePolicy')
 const { buildDistillPrompt, parseDistillResponse } = require('./distillPrompt')
 const { buildDecisionRecallContext } = require('../coo/decisionRecall')       // Decision Recall v1 (chat-lane only)
 const { buildConversationRecall } = require('../lab/conversationRecall')      // Conversation Recall v0.1 (chat-lane only, flag-gated)
+const { replyCitesContext } = require('../lab/citationDetector')              // A′ narrowed: omit only when the REPLY drew on the context
 const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
 // Read Context Wiring v1 (chat-lane only, flag-gated OFF by default, fail-soft).
 const { buildReadContext } = require('../context/readContext')
@@ -380,6 +381,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const used = readContextUsedBy.get(name)
     tel.readContextUsed = Array.isArray(used) && used.length > 0
     tel.readContextSources = tel.readContextUsed ? used.slice() : []
+
+    // DID THE REPLY ACTUALLY DRAW ON IT? (A′ narrowed, Owner decision 2026-08-02.)
+    //
+    // The decision is made HERE, where the block already exists, and only a BOOLEAN travels
+    // onward. The block is third-party content; passing it to the archive hook so the hook
+    // could decide would spread that content one layer further for no gain.
+    //
+    // Fail-safe in both directions: no block, no reply, or an error all yield `true`, so the
+    // body is omitted. Only a confident "this reply cites nothing" keeps it.
+    if (!tel.readContextUsed) {
+      tel.replyCitesContext = false
+    } else {
+      // `result.text` is the model's RAW output — the whole envelope, not just the parsed
+      // reply. That is deliberate: if a subject line was quoted anywhere in what the model
+      // produced, it is caught, including in fields the parser would drop.
+      // The cache is keyed by the joined source list, exactly as it was written.
+      const blockForProvider = readBlockCache.get(used.join(','))
+      tel.replyCitesContext = replyCitesContext(
+        result && typeof result.text === 'string' ? result.text : null,
+        blockForProvider || null)
+    }
     if (result && result.usage) {
       tel.inputTokens = Number.isFinite(result.usage.inputTokens) ? result.usage.inputTokens : null
       tel.outputTokens = Number.isFinite(result.usage.outputTokens) ? result.usage.outputTokens : null
