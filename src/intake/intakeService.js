@@ -45,6 +45,7 @@ const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice 
 const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
+const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -229,6 +230,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // afterwards is the exact bug class that has already cost three rounds.
   const turnPerSource = new Map()
 
+  // THE ROWS THEMSELVES, for the Owner-facing view. Recorded at the same instant as
+  // turnPerSource and for the same reason: the presentation is built from what this turn
+  // really retrieved, never reconstructed from the reply afterwards.
+  const turnItems = new Map() // source -> items[]
+  let turnTruncated = false
+
   // WHICH PROVIDER ACTUALLY RECEIVED EXTERNAL READ CONTEXT, recorded AT the injection —
   // provider -> the source kinds that were really in the prompt sent to it.
   //
@@ -312,6 +319,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
               if (row && row.source) turnPerSource.set(row.source, row)
             }
+            for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
+              if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
+            }
+            if (rc && rc.status === 'TRUNCATED') turnTruncated = true
           }
           const block = readBlockCache.get(key)
           if (block) {
@@ -556,9 +567,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
     const guarded = enforceReadState(reply, Array.from(turnPerSource.values()))
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
+    // With nothing retrieved it is a no-op and the reply passes through untouched.
+    const view = buildReadResultReply({
+      reply: guarded.reply,
+      itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
+      perSource: Array.from(turnPerSource.values()),
+      truncated: turnTruncated
+    })
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
-      reply: guarded.reply, readClaimCorrected: guarded.corrected,
+      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: guarded.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }
@@ -597,9 +616,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // while the calendar telemetry said trust:'live'.
     const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()))
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    const view = buildReadResultReply({
+      reply: guarded.reply,
+      itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
+      perSource: Array.from(turnPerSource.values()),
+      truncated: turnTruncated
+    })
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
-      reply: guarded.reply, readClaimCorrected: guarded.corrected,
+      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: guarded.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 

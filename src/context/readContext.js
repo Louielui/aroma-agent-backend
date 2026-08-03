@@ -328,11 +328,12 @@ async function runStep (connector, source, step, caps) {
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
-    return { block: null, status: 'NO_SOURCES', perSource: [] }
+    return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [] }
   }
   const keywords = extractKeywords(message, caps.maxKeywords)
   const perSource = []
   const lineGroups = [] // one array of rendered lines PER SOURCE, in source order
+  const itemsBySource = [] // the same rows, unrendered, for the Owner-facing view
   let truncated = false
 
   // ── ONE SOURCE, START TO FINISH ────────────────────────────────────────────
@@ -369,6 +370,10 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       return {
         entry: { source, trust: 'live', count: kept.length, error: null, usedFallback },
         lines: kept.map((r) => renderItem(r, caps, { recent: usedFallback })),
+        // The rows themselves, carried out unchanged for the Owner-facing view. Returning
+        // what was already computed — this changes nothing about what is read or sent to
+        // the model; the block above is still the only thing that reaches the prompt.
+        items: kept,
         overflow
       }
     } catch (err) {
@@ -394,6 +399,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       : { entry: { source: sources[i], trust: 'unavailable', count: 0, error: 'read failed', usedFallback: false }, lines: [unavailableLine(sources[i], 'read failed')], overflow: false }
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
+    itemsBySource.push({ source: got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
     if (got.overflow) truncated = true
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
@@ -451,7 +457,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   const block = `${built.body}\n${CLOSE}`
   const anyLive = perSource.some((p) => p.trust === 'live' && p.count > 0)
   const status = truncated ? 'TRUNCATED' : (anyLive ? 'READY' : 'PARTIAL')
-  return { block, status, perSource }
+  return { block, status, perSource, itemsBySource }
 }
 
 module.exports = {

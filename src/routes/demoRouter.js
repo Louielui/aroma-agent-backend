@@ -205,7 +205,16 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           labArchive = recordExchange({
             conversationId: typeof req.body.conversationId === 'string' ? req.body.conversationId : null,
             message,
-            reply: answered && typeof answered.reply === 'string' ? answered.reply : null,
+            // WHAT SHE SAID, NOT WHAT WAS RENDERED AROUND IT. The Owner-facing view
+            // appends deterministic per-item sections built from retrieved rows, so the
+            // displayed reply now contains third-party titles and amounts BY
+            // CONSTRUCTION — archiving that would put other people's business into
+            // permanent storage on every read turn, which is exactly what A′ exists to
+            // prevent. `replyForArchive` is her own words, the same text A′ has always
+            // judged; the sections are presentation and are regenerable from the source.
+            reply: answered && typeof answered.replyForArchive === 'string'
+              ? answered.replyForArchive
+              : (answered && typeof answered.reply === 'string' ? answered.reply : null),
             turnIndex: Array.isArray(history) ? history.length : 0,
             // PROVENANCE FROM THE CALL THAT HAPPENED. Both are set by noteProvider() in the
             // intake pipeline, from the adapter's own result, for the provider that actually

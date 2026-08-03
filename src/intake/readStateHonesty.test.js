@@ -75,7 +75,10 @@ test('*** a live calendar + a reply claiming 讀唔到 is corrected before it le
     assert.equal(res.readClaimCorrected, true, 'the turn is flagged, so the failure is countable')
     assert.ok(res.reply.includes('系統更正'), 'and the correction is on screen, not only in a log')
     assert.ok(res.reply.includes('2 項'), 'stating the count that was actually read')
-    assert.ok(res.reply.startsWith('我目前讀唔到'), 'her own words are preserved, not rewritten')
+    // The Owner-facing view now wraps a read reply in sections, so her sentence is no
+    // longer the first thing in the string — but it must still be present VERBATIM. The
+    // invariant was never "nothing may be added"; it is "her words are not rewritten".
+    assert.ok(res.reply.includes('我目前讀唔到'), 'her own words are preserved, not rewritten')
   })
 })
 
@@ -85,7 +88,11 @@ test('an honest reply over the same live read is untouched', async () => {
       demo: true, interactionMode: 'chat', providerHint: 'claude', readContextDeps: liveCalendar()
     })
     assert.equal(res.readClaimCorrected, false)
-    assert.equal(res.reply, '你今個星期有兩件事。')
+    // Untouched BY THE GUARD: no correction is appended. The presentation view still
+    // renders the retrieved rows into their own section, which is its whole purpose.
+    assert.equal(res.reply.includes('系統更正'), false)
+    assert.ok(res.reply.includes('你今個星期有兩件事。'))
+    assert.ok(res.reply.includes('### 日曆'))
   })
 })
 
