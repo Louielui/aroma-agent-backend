@@ -87,17 +87,62 @@ function pick (row, names) {
 }
 
 /**
+ * THE CANDIDATE FIELD NAMES, camelCase AND snake_case.
+ *
+ * The API is not consistent, and assuming it was cost a whole round: order planning
+ * returns ingredient_id / ingredient_name while every other endpoint returns id / name,
+ * so against the camelCase-only lists that used to live here EVERY order-planning row
+ * mapped to no id, no title and no date. The model was handed four rows reading
+ * "(untitled) (no date)" and reasonably reported that it could not read anything.
+ *
+ * Both spellings are listed explicitly rather than derived by transforming the key,
+ * because a name is either a field this API returns or it is not — and a list can be
+ * checked against a captured response, which a transformation cannot.
+ */
+const ID_FIELDS = Object.freeze([
+  'id', 'ingredientId', 'ingredient_id', 'supplierId', 'supplier_id',
+  'poId', 'po_id', 'invoiceId', 'invoice_id', 'submissionId', 'submission_id'
+])
+// ORDER IS MEANING. What NAMES the record comes first: a purchase order is known by its
+// PO number, not by its supplier — that field is on the row too, and putting it earlier
+// would title every PO with the counterparty instead. An identifier that is present but
+// EMPTY (real invoice rows carry invoiceNumber: '') is skipped by pick(), so the next
+// candidate answers and the row is still recognisable.
+const TITLE_FIELDS = Object.freeze([
+  'name', 'title', 'ingredientName', 'ingredient_name',
+  'poNumber', 'po_number', 'invoiceNumber', 'invoice_number',
+  'rawVendorName', 'raw_vendor_name', 'supplierName', 'supplier_name',
+  'locationName', 'location_name'
+])
+// DATES ONLY — no dueDate/due_date. A due date is when something is EXPECTED, not when the
+// record happened; citing it as the row's date would date the row to the future.
+// ORDER IS MEANING here too. The BUSINESS date wins over the row's insert timestamp: an
+// invoice dated the 28th that was scanned into the system on the 3rd is an invoice from
+// the 28th, and citing the 3rd would date the Owner's own record to when we happened to
+// read it. createdAt/updatedAt are the last resort, for rows that carry nothing better.
+const DATE_FIELDS = Object.freeze([
+  'date', 'invoiceDate', 'invoice_date', 'orderDate', 'order_date', 'orderedAt', 'ordered_at',
+  'submittedAt', 'submitted_at', 'countedAt', 'counted_at',
+  'createdAt', 'created_at', 'updatedAt', 'updated_at'
+])
+
+/**
  * One API row → one context result.
  *
  * SOURCE AND DATE COME FROM THE DATA. `originalDate` is only ever a field the API returned;
  * when the row carries no date the value is null and the citation says so. Nothing here
  * infers, defaults to "today", or lets a model supply a date.
+ *
+ * `index` exists only to keep ids DISTINCT. When a row carries no id field the sourceId
+ * used to be the endpoint name — so all four rendered rows cited the same id, which reads
+ * as one row repeated. The position is appended so two rows can never collide, and the
+ * '#' marks it as a position within this response, not an identifier the API issued.
  */
-function toResult (endpointKey, row, retrievedAt) {
+function toResult (endpointKey, row, retrievedAt, index = 0) {
   const r = isPlainObject(row) ? row : {}
-  const id = pick(r, ['id', 'ingredientId', 'supplierId', 'poId', 'invoiceId', 'submissionId'])
-  const title = pick(r, ['name', 'title', 'ingredientName', 'supplierName', 'poNumber', 'invoiceNumber'])
-  const date = pick(r, ['date', 'createdAt', 'created_at', 'updatedAt', 'updated_at', 'orderedAt', 'invoiceDate', 'submittedAt', 'countedAt'])
+  const id = pick(r, ID_FIELDS)
+  const title = pick(r, TITLE_FIELDS)
+  const date = pick(r, DATE_FIELDS)
 
   // A compact, human-readable line — the row's own fields, never a re-description of them.
   const bits = []
@@ -110,7 +155,7 @@ function toResult (endpointKey, row, retrievedAt) {
 
   return makeContextResult({
     source: 'aroma_system',
-    sourceId: id === null ? endpointKey : String(id),
+    sourceId: id === null ? endpointKey + '#' + index : String(id),
     title: title === null ? null : String(title),
     originalDate: date === null ? null : String(date),
     content: bits.join(' · '),
@@ -200,7 +245,7 @@ function createAromaSystemReadAdapter (options = {}) {
 
     return {
       readState: READ_STATE.FOUND,
-      results: rows.slice(0, MAX_ITEMS).map((row) => toResult(endpointKey, row, retrievedAt))
+      results: rows.slice(0, MAX_ITEMS).map((row, i) => toResult(endpointKey, row, retrievedAt, i))
     }
   }
 
@@ -236,5 +281,8 @@ module.exports = {
   METHOD,
   KEY_ENV,
   DEFAULT_BASE_URL,
-  MAX_ITEMS
+  MAX_ITEMS,
+  ID_FIELDS,
+  TITLE_FIELDS,
+  DATE_FIELDS
 }

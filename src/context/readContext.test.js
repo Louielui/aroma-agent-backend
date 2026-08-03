@@ -305,3 +305,104 @@ test('an email body ordering an action is injected verbatim as reference only', 
   assert.ok(!Object.keys(c.calls[0]).includes('write'))
   for (const call of c.calls) assert.ok(/^(search|get|list|read)/.test(call.method), `${call.method} must be a read`)
 })
+
+// ── THE HEADER IS GENERATED, NOT WRITTEN ──────────────────────────────────────
+// A fifth source was connected, read successfully, and reported as absent — because the
+// header said there were four. These tests exist so a sixth cannot repeat it.
+
+test('SAFETY_HEADER prose names NO source — the list is data, not text', () => {
+  const { SAFETY_HEADER: H } = require('./readContext')
+  const low = H.toLowerCase()
+  for (const s of ALL_SOURCES) {
+    assert.equal(low.includes(s), false, `header must not hardcode ${s}`)
+    assert.equal(low.includes(s.replace(/_/g, ' ')), false, `header must not hardcode ${s} as words`)
+  }
+})
+
+test('buildSafetyHeader lists exactly the sources given, and nothing else', () => {
+  const { buildSafetyHeader } = require('./readContext')
+  const one = buildSafetyHeader(['drive'])
+  assert.ok(one.includes('drive'))
+  for (const s of ALL_SOURCES.filter((x) => x !== 'drive')) assert.equal(one.includes(s), false)
+  const all = buildSafetyHeader(ALL_SOURCES)
+  for (const s of ALL_SOURCES) assert.ok(all.includes(s), `${s} must be listed when it was read`)
+  assert.ok(all.includes(SAFETY_HEADER)) // the untrusted-reference prose is intact
+  assert.equal(buildSafetyHeader([]), SAFETY_HEADER) // no sources → no list, no claim
+})
+
+test('the shipped block lists a source that was read, including aroma_system', async () => {
+  const row = live({ source: 'aroma_system', sourceId: 'i1', title: null, originalDate: null })
+  const c = fakeConnector({ 'aroma_system.listInventory': okList('aroma_system', [row]) })
+  const r = await buildReadContext({ connector: c, message: '而家倉存入面有咩？', sources: ['aroma_system'], env: {}, now: NOW })
+  assert.ok(r.block.includes('aroma_system'))
+  for (const s of ['drive', 'gmail', 'calendar', 'github']) {
+    assert.equal(r.block.includes(s), false, `${s} was not read this turn and must not be named`)
+  }
+})
+
+test('a source that could not be read is still listed as attempted', async () => {
+  const c = fakeConnector({ 'aroma_system.listInventory': { trust: 'unavailable', error: 'timeout' } })
+  const r = await buildReadContext({ connector: c, message: '倉存', sources: ['aroma_system'], env: {}, now: NOW })
+  assert.ok(r.block.includes('aroma_system'))
+  assert.ok(/^\[aroma_system\] UNAVAILABLE/m.test(r.block))
+})
+
+// ── INTENT ROUTING ────────────────────────────────────────────────────────────
+// Every keyworded question used to go to order planning, so invoices, suppliers,
+// daily counts and purchase orders were unreachable from chat.
+
+test('每個意圖去啱嘅 endpoint — Cantonese and English both route', () => {
+  const { aromaMethodFor } = require('./readContext')
+  const cases = [
+    ['而家倉存入面有咩？', 'listInventory'], ['庫存夠唔夠', 'listInventory'],
+    ['存貨點', 'listInventory'], ['what is in inventory', 'listInventory'],
+    ['stock level', 'listInventory'],
+    ['邊個供應商', 'listSuppliers'], ['供貨商電話', 'listSuppliers'],
+    ['supplier list', 'listSuppliers'], ['which vendors', 'listSuppliers'],
+    ['今日盤點', 'listDailyCounts'], ['點存做咗未', 'listDailyCounts'],
+    ['daily count', 'listDailyCounts'], ['stocktake done?', 'listDailyCounts'],
+    ['要訂貨未', 'listOrderPlanning'], ['補貨清單', 'listOrderPlanning'],
+    ['order planning', 'listOrderPlanning'], ['what to reorder', 'listOrderPlanning'],
+    ['採購單去咗邊', 'listPurchaseOrders'], ['訂單狀態', 'listPurchaseOrders'],
+    ['open purchase orders', 'listPurchaseOrders'], ['any PO today', 'listPurchaseOrders'],
+    ['最近有咩發票？', 'listInvoices'], ['發票總數', 'listInvoices'],
+    ['recent invoices', 'listInvoices'], ['latest invoice', 'listInvoices']
+  ]
+  for (const [msg, method] of cases) assert.equal(aromaMethodFor(msg), method, `"${msg}" must route to ${method}`)
+})
+
+test('no match falls back to inventory, and latin terms match whole words only', () => {
+  const { aromaMethodFor } = require('./readContext')
+  assert.equal(aromaMethodFor(''), 'listInventory')
+  assert.equal(aromaMethodFor('今日天氣點'), 'listInventory')
+  assert.equal(aromaMethodFor('how are we doing'), 'listInventory')
+  // 'po' must not fire inside another word
+  assert.equal(aromaMethodFor('what is the position'), 'listInventory')
+  assert.equal(aromaMethodFor('the point of this'), 'listInventory')
+})
+
+test('routing reads the RAW MESSAGE — the extractor never emits the term itself', () => {
+  // 「而家倉存入面」 segments to 而家倉存 / 入面; the word 倉存 is never a keyword.
+  const kw = extractKeywords('而家倉存入面有咩？')
+  assert.equal(kw.includes('倉存'), false) // the regression, pinned
+  const p = planFor('aroma_system', { keywords: kw, message: '而家倉存入面有咩？', now: NOW, env: {}, caps: CAPS })
+  assert.equal(p.method, 'listInventory')
+})
+
+test('aroma_system sends no q and has no fallback — the API ignores q, zero rows is an answer', () => {
+  const p = planFor('aroma_system', { keywords: ['發票'], message: '最近有咩發票？', now: NOW, env: {}, caps: CAPS })
+  assert.equal(p.method, 'listInvoices')
+  assert.equal('q' in p.params, false)
+  assert.equal(p.fallback, undefined)
+  assert.equal(p.params.limit, CAPS.maxItemsPerSource)
+})
+
+test('an invoice question reaches the invoices endpoint end to end', async () => {
+  const inv = live({ source: 'aroma_system', sourceId: '9', title: null, originalDate: '2026-08-01T00:00:00Z' })
+  const c = fakeConnector({ 'aroma_system.listInvoices': okList('aroma_system', [inv]) })
+  const r = await buildReadContext({ connector: c, message: '最近有咩發票？', sources: ['aroma_system'], env: {}, now: NOW })
+  assert.equal(c.calls.length, 1)
+  assert.equal(c.calls[0].method, 'listInvoices') // NOT listOrderPlanning
+  assert.equal(r.perSource[0].trust, 'live')
+  assert.equal(r.perSource[0].usedFallback, false)
+})
