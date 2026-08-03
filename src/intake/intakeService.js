@@ -34,6 +34,7 @@ const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
 const { buildPersonaSystemFromPersona, ACTION_HONESTY_GUARD } = require('../persona/xiangxiang') // B2-2 slice 2 hook (+ R2 pure composer) + honesty frame
 const { CONVERSATION_CONTRACT, resolveConversationContract } = require('../persona/conversationContract') // Conversation Experience Contract v1 (flag-gated, OFF by default)
+const { load: loadOwnerSettings, buildSettingsBlock } = require('../persona/ownerSettings') // Owner-editable style + preferences (no code change, no restart)
 // Multi-AI Router v0 (flag-gated OFF; Claude stays default + one-shot fallback).
 const { selectPrimaryProvider, OPENAI, CLAUDE } = require('../routing/modelRouter')
 const { sourcesForProvider, decisionRecallSharedWith, withheldFrom } = require('../context/providerSharing') // per-source, per-provider sharing policy
@@ -185,6 +186,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // exactly [ACTION_HONESTY_GUARD], so the system string is byte-identical to today.
     const guards = [ACTION_HONESTY_GUARD]
     if (resolveConversationContract(process.env) === 'on') guards.push(CONVERSATION_CONTRACT)
+    // OWNER SETTINGS — the Owner's own style + preferences, written on his settings page.
+    //
+    // Placed LAST in the guard list, which puts it after ACTION_HONESTY_GUARD and the
+    // Conversation Contract and still before the classifier. Position is not the defence
+    // though: the block frames its own scope, the save path refuses boundary-removing text,
+    // and the guards that actually matter (red-line, read-state, grounded action prose,
+    // archive redaction) are CODE and never read this string.
+    //
+    // Absent or empty settings push nothing, so the system string stays byte-identical.
+    try {
+      const ownerBlock = buildSettingsBlock(loadOwnerSettings())
+      if (ownerBlock) guards.push(ownerBlock)
+    } catch (_) { /* settings must never be able to break a conversation */ }
     effSystem = buildPersonaSystemFromPersona(rp.personaText, system, { extraGuards: guards })
   } else {
     effSystem = system

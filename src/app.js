@@ -23,6 +23,7 @@ const path = require('node:path')
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
+const { createSettingsRouter } = require('./routes/settingsRouter') // 香香 settings (owner session; style + preferences + switches)
 const { createContextRouter } = require('./routes/contextRouter') // Read Context v1 (guarded; 403 when READ_ACCESS OFF)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
@@ -852,6 +853,14 @@ function createApp (options = {}) {
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
   // READ_ACCESS === 'on'. Read-only; no parameterised method endpoint exists.
+  // 香香 SETTINGS — GET /settings (page), GET/POST /api/v1/settings.
+  // Gated by the SAME owner session as /demo, so the Owner is never asked to log in twice.
+  // The write path accepts exactly three keys and a closed list of switch names; nothing
+  // the browser invents can become a setting.
+  app.use('/settings', requireOwner)
+  app.use('/api/v1/settings', requireOwner)
+  app.use(createSettingsRouter())
+
   app.use('/api/v1/context', requireOwner)
   app.use(createContextRouter())
 

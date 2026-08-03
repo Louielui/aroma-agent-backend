@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>香香 設定</title>
+<link rel="icon" href="__ICON__">
+<style>__CSS__</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>香香 設定</h1>
+    <p class="sub" id="sub">改完儲存，下次對話即時生效。不需要重啟。</p>
+  </header>
+
+  <section>
+    <h2>說話風格</h2>
+    <p class="hint">你想她點樣講嘢。例如：「講嘢簡短啲，一段一件事，唔好每次都反問我」</p>
+    <textarea id="style" rows="5" placeholder="（留空即沿用預設）"></textarea>
+    <div class="count"><span id="styleCount">0</span> / <span id="styleCap">—</span></div>
+  </section>
+
+  <section>
+    <h2>要她記住的事</h2>
+    <p class="hint">你寫低要佢長期記住嘅嘢。你親手寫嘅，優先於對話記憶。</p>
+    <textarea id="prefs" rows="8" placeholder="每行一件事"></textarea>
+    <div class="count"><span id="prefsCount">0</span> / <span id="prefsCap">—</span></div>
+  </section>
+
+  <section>
+    <h2>記憶與讀取</h2>
+    <p class="hint">關咗就係關咗——佢會照直講讀唔到，唔會扮知道。</p>
+    <div id="flags"></div>
+  </section>
+
+  <div class="bar">
+    <button class="cta" id="save">儲存</button>
+    <span class="msg" id="msg"></span>
+  </div>
+
+  <p class="foot">呢頁只改風格、記憶同開關。身分（PERSONA_IDENTITY）係凍結嘅，唔喺呢度改。<br>
+  誠實守則、紅線政策、讀取狀態守衛係程式碼，唔係文字——寫喺呢度嘅嘢改變唔到佢哋。</p>
+</div>
+<script>__JS__</script>
+</body>
+</html>
