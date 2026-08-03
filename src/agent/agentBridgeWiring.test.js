@@ -174,7 +174,7 @@ test('ISOLATION: the agent runner has EXACTLY ONE call site, in the ONE shared c
 /* ── the eight caps still enforced after wiring ───────────────────────────── */
 test('CAP 5: a Work Order naming a forbidden file is rejected BEFORE anything runs', async () => {
   let workspaceCalls = 0; let workerCalls = 0
-  const runner = createAgentRunner({
+  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }), 
     workspace: { prepare: () => { workspaceCalls++; return { dir: '/tmp/x', branch: 'agent/x' } }, containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => [], diffStat: () => '', remotes: () => [], currentBranch: () => 'agent/x', cleanup: () => {} },
     worker: { invoke: async () => { workerCalls++; return { ok: true, output: {} } } }
   })
@@ -205,9 +205,9 @@ test('CAP 7: an append-only audit record is written for BOTH success and failure
   const written = []
   const auditLog = { append: (e) => { written.push(e); return e } }
   const ws = { prepare: () => ({ dir: '/tmp/aroma-sandbox-agent-y', branch: 'agent/appr_canary1' }), containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/foo.js'], diffStat: () => ' src/foo.js | 1 +', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
-  const okRunner = createAgentRunner({ workspace: ws, auditLog, worker: { invoke: async () => ({ ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/foo.js'], risks: [] } }) } })
+  const okRunner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: ws, auditLog, worker: { invoke: async () => ({ ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/foo.js'], risks: [] } }) } })
   await okRunner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
-  const badRunner = createAgentRunner({ workspace: ws, auditLog, worker: { invoke: async () => { throw new Error('worker exploded') } } })
+  const badRunner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: ws, auditLog, worker: { invoke: async () => { throw new Error('worker exploded') } } })
   const bad = await badRunner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
   assert.equal(written.length, 2, 'both attempts audited')
   assert.equal(written[0].approvalId, 'appr_canary1')
@@ -218,7 +218,7 @@ test('CAP 7: an append-only audit record is written for BOTH success and failure
 
 test('CAP 3: a workspace that refuses (not under tmpdir / remote survives) stops the run and is audited', async () => {
   const written = []
-  const runner = createAgentRunner({
+  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }), 
     workspace: { prepare: () => { throw new Error('refuse: sandbox target is not under os.tmpdir()') }, cleanup: () => {} },
     auditLog: { append: (e) => written.push(e) },
     worker: { invoke: async () => { throw new Error('must not be reached') } }

@@ -27,6 +27,8 @@ const { validateWorkOrder, hashWorkOrder } = require('./workOrder')
 const { createAgentBridgeWorker, resolveAgentCliCommand } = require('./agentBridgeWorker')
 const { createFeatureBranchWorkspace } = require('./featureBranchWorkspace')
 const { createAuditLog } = require('./audit')
+const { checkCredentialHealth } = require('./credentialHealth')
+const { writePatch, applyHint } = require('./patchStore')
 
 function fail (reason, extra = {}) {
   return Object.assign({ ok: false, error: reason, output: { risks: [reason], warnings: [], branch: null, filesChanged: [], diffSummary: null, testResults: null, exit: null } }, extra)
@@ -64,6 +66,9 @@ function createAgentRunner (options = {}) {
   // vocabulary and nothing else — no path, no output, no file content — and a throwing or
   // absent sink can never affect the run.
   const onPhase = typeof options.onPhase === 'function' ? options.onPhase : null
+  // Injectable so tests never read the real credentials file and never write a real patch.
+  const checkCredentials = typeof options.checkCredentials === 'function' ? options.checkCredentials : checkCredentialHealth
+  const writePatchFn = typeof options.writePatch === 'function' ? options.writePatch : writePatch
   const emitPhase = (approvalId, phase) => {
     if (!onPhase) return
     try { onPhase(approvalId, phase) } catch (_) {}
@@ -105,6 +110,20 @@ function createAgentRunner (options = {}) {
       return result
     }
 
+    // CREDENTIAL HEALTH — after the order is proven sealed and matching, before any clone
+    // or spawn. An expired login then costs nothing and produces a sentence the Owner can
+    // act on, instead of an opaque spawn failure three days from now. Only the two expiry
+    // timestamps are read; the tokens themselves are never touched.
+    const health = checkCredentials({ cliPath: cli.ok ? cli.command : null })
+    if (health.canRun !== true) {
+      const result = fail('login_expired')
+      result.output.warnings = [health.refusal]
+      result.output.credential = publicCredentialFacts(health)
+      emitPhase(approvalId, 'failed')
+      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      return result
+    }
+
     let prepared
     try {
       emitPhase(approvalId, 'preparing')
@@ -126,10 +145,45 @@ function createAgentRunner (options = {}) {
     }
     emitPhase(approvalId, result && result.ok === true ? 'done' : 'failed')
 
+    // ── THE PATCH ─────────────────────────────────────────────────────────
+    // Written BEFORE cleanup, because the clone is the only place the change exists.
+    // The patch text is then REMOVED from the result: it is third-party-sized source
+    // material with no business in the audit record or the Owner's card, both of which
+    // want the stat. A failure to write is reported, never thrown — the run already
+    // happened, and losing the file is a smaller loss than losing the report of it.
+    let patch = null
+    try {
+      const text = (result && result.output && typeof result.output.patchText === 'string') ? result.output.patchText : ''
+      patch = writePatchFn(approvalId, text, { now: () => new Date().toISOString() })
+    } catch (_) { patch = { ok: false, reason: 'write_failed' } }
+
+    if (result && result.output) {
+      delete result.output.patchText
+      result.output.patchFile = patch && patch.ok ? patch.path : null
+      result.output.patchBytes = patch && patch.ok ? patch.bytes : 0
+      result.output.patchStatus = patch && patch.ok ? 'written' : (patch ? patch.reason : 'write_failed')
+      result.output.applyHint = patch && patch.ok ? applyHint(patch.path, repoRoot) : null
+      // A warning close to expiry rides back with the result, so the card can show it
+      // without the Owner having to ask.
+      if (health.warning) result.output.warnings = (result.output.warnings || []).concat([health.warning])
+      result.output.credential = publicCredentialFacts(health)
+    }
+
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
     if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
     try { workspace.cleanup(prepared.dir) } catch (_) {}
     return result
+  }
+
+  /** Expiry facts only — never a token, never a token length, never a prefix. */
+  function publicCredentialFacts (h) {
+    return {
+      state: h.state,
+      refreshExpiresAt: h.refreshExpiresAt,
+      daysLeft: h.daysLeft,
+      accessTokenValid: h.accessTokenValid,
+      subscription: h.subscription
+    }
   }
 
   // Observable so the composition root can be ASSERTED, not assumed. The first canary

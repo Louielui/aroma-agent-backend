@@ -269,6 +269,10 @@ function createAgentBridgeWorker (options = {}) {
     if (curBranch === 'main' || curBranch === '') { risks.push('branch_violation'); warnings.push(`unexpected branch: '${curBranch}'`) }
     if (branch && curBranch !== branch) { risks.push('branch_mismatch'); warnings.push(`expected ${branch}, on ${curBranch}`) }
     const diffSummary = workspace.diffStat(safeClone)
+    // THE PATCH ITSELF, captured before the clone is reaped. Taken here, next to the
+    // stat, so the two can never describe different states of the tree. Written to a
+    // file by the runner; the card shows the stat only.
+    const patchText = typeof workspace.diffPatch === 'function' ? workspace.diffPatch(safeClone) : ''
 
     // Cap 1: the approved test is run by US, not the agent.
     let testResults = null
@@ -286,6 +290,9 @@ function createAgentBridgeWorker (options = {}) {
         branch: curBranch,
         filesChanged: changed,
         diffSummary,
+        // Carried on the OUTPUT so the runner can persist it, and stripped from the
+        // Owner-facing view — the card shows the stat, the file holds the patch.
+        patchText,
         testResults,
         exit: run.status,
         result: parsed && typeof parsed.result === 'string' ? parsed.result : null,
