@@ -193,7 +193,23 @@ function parseDistillResponse (text) {
   const intent = typeof p.intent === 'string' ? p.intent : 'unclear'
   const reply = (typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。'
   const mode = ['commit', 'recommend', 'ask', 'chat'].includes(p.mode) ? p.mode : 'chat'
+  // ── answerPlan — ADDITIVE, and only when the model actually sent one ──────────────
+  // The projection is closed, which is correct and stays correct: an unknown key is still
+  // dropped. This is one NAMED key, carried through unvalidated on purpose — answerPlan.js
+  // owns its validation, against the evidence, which this parser has no access to. Passing
+  // it verbatim keeps that responsibility in one place.
+  //
+  // It is `undefined` when absent, not null and not {}, so every existing lane's object is
+  // byte-identical to before: `'answerPlan' in out` is false unless the model sent one.
+  // distillEnvelopeBaseline.test.js pins that for chat, ask, commit/proposal, email-draft
+  // and legacy, and u1DraftBehaviourFreeze.test.js pins the U1 path, which uses a
+  // different parser entirely and cannot be reached from here.
+  const answerPlan = (p.answerPlan && typeof p.answerPlan === 'object' && !Array.isArray(p.answerPlan))
+    ? p.answerPlan
+    : undefined
+
   const base = { intent, mode, reply, understanding: reply, judgment: '', decision: null, tasks: [], risks: [], next_step: '', reasons: [], offer: '' }
+  if (answerPlan !== undefined) base.answerPlan = answerPlan
 
   if (mode === 'recommend') {
     return { ...base,

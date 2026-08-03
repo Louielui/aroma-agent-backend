@@ -81,12 +81,31 @@ test('*** an EMAIL-DRAFT-shaped envelope is projected the same way ***', () => {
   assert.deepEqual(out.tasks, [{ title: 'draft the email', note: '', capability: 'product' }])
 })
 
-test('*** an UNKNOWN key is dropped — today, before any change ***', () => {
-  // This is precisely why commit 4 cannot simply add a field to the model output and
-  // expect it to arrive: the projection is closed, and answerPlan would vanish silently.
-  const out = parse({ intent: 'chit_chat', mode: 'chat', reply: 'x', answerPlan: { directAnswer: 'a' } })
-  assert.equal('answerPlan' in out, false)
-  assert.deepEqual(Object.keys(out), PROJECTED_KEYS)
+test('*** the projection stays CLOSED — answerPlan is the one named exception ***', () => {
+  // This test originally recorded why commit 4 was needed: the projection was closed, so
+  // `answerPlan` vanished silently. That is now deliberately no longer true, and this is
+  // the ONE assertion in this file that changed — which is itself the proof of blast
+  // radius, because every other lane assertion above stayed green untouched.
+  //
+  // What it pins now is narrower and stronger: exactly one key was added, it arrives only
+  // when the model sent it, and the projection is otherwise still closed to everything.
+  const withPlan = parse({ intent: 'chit_chat', mode: 'chat', reply: 'x', answerPlan: { directAnswer: 'a' } })
+  assert.deepEqual(Object.keys(withPlan), PROJECTED_KEYS.concat(['answerPlan']))
+  assert.deepEqual(withPlan.answerPlan, { directAnswer: 'a' }, 'carried verbatim — answerPlan.js validates it, this parser cannot')
+
+  // ABSENT means absent: not null, not {}. Every existing lane's object is byte-identical.
+  const without = parse({ intent: 'chit_chat', mode: 'chat', reply: 'x' })
+  assert.equal('answerPlan' in without, false)
+  assert.deepEqual(Object.keys(without), PROJECTED_KEYS)
+
+  // and any OTHER unknown key is still dropped, including near-misses
+  const others = parse({ intent: 'chit_chat', mode: 'chat', reply: 'x', answer_plan: { a: 1 }, plan: { a: 1 }, answerPlanX: 1 })
+  assert.deepEqual(Object.keys(others), PROJECTED_KEYS)
+
+  // a non-object answerPlan is not a plan and does not arrive
+  for (const bad of ['a string', 42, true, ['a'], null]) {
+    assert.equal('answerPlan' in parse({ intent: 'chit_chat', mode: 'chat', reply: 'x', answerPlan: bad }), false, `${JSON.stringify(bad)} is not a plan`)
+  }
 })
 
 test('*** rejection behaviour is frozen: malformed input still throws ***', () => {
