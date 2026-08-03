@@ -21,7 +21,7 @@ const assert = require('node:assert/strict')
 
 const {
   buildReadResultReply, renderItem, renderSection, renderLimits, selectRelevant,
-  splitModelReply, oneQuestion, statusSegment, fieldOf, dayOf, STATUS_LABELS, CAPS
+  splitModelReply, oneQuestion, statusSegment, fieldOf, dayOf, extractOpinion, sanitizeOpinion, STATUS_LABELS, CAPS
 } = require('./readResultView')
 const { intentFor, aromaMethodFor, AROMA_INTENTS } = require('../context/readContext')
 
@@ -285,4 +285,70 @@ test('*** two sources never share a paragraph, and the order is fixed ***', () =
 test('an unavailable in-scope source is reported, not hidden', () => {
   const l = renderLimits(intentFor('發票'), [{ source: 'aroma_system', trust: 'unavailable', count: 0, error: 'timeout' }], 0, {})
   assert.ok(l.includes('餐廳系統：讀唔到（timeout）'))
+})
+
+/* ── 9. 香香睇法 — her judgement, without the numbers ──────────────────────── */
+// A rendered table cannot say "this one has been sitting a month". She gets one short
+// section for that, after the data and before the question. The numbers stay the
+// server's: any sentence carrying a digit is either restating what is already rendered
+// or inventing something, and both are dropped.
+
+const withOpinion = (text) => Object.assign({}, INVOICE_TURN, {
+  reply: `### 香香睇法\n${text}\n\n### 下一步\n要唔要我開審批？`
+})
+
+test('*** her section lands AFTER the data and BEFORE 下一步 ***', () => {
+  const { reply } = buildReadResultReply(withOpinion('呢張拖咗成個月,值得先處理。'))
+  assert.ok(reply.includes('### 香香睇法'))
+  assert.ok(reply.includes('呢張拖咗成個月,值得先處理。'))
+  assert.ok(reply.indexOf('### 餐廳系統') < reply.indexOf('### 香香睇法'))
+  assert.ok(reply.indexOf('### 資料限制') < reply.indexOf('### 香香睇法'))
+  assert.ok(reply.indexOf('### 香香睇法') < reply.indexOf('### 下一步'))
+})
+
+test('*** a sentence carrying a number is dropped — the server owns the figures ***', () => {
+  for (const bad of ['佢欠 $191.10。', '單號 #74284 嗰張要跟。', '2026-07-06 嗰張最舊。', '總共有 13 項未處理。']) {
+    assert.equal(sanitizeOpinion(bad), null, `must drop: ${bad}`)
+  }
+  // a mixed paragraph keeps only the digit-free judgement
+  assert.equal(sanitizeOpinion('呢間供應商成日遲。佢欠 $191.10。'), '呢間供應商成日遲。')
+})
+
+test('nothing worth saying → the section is omitted, never padded', () => {
+  assert.equal(sanitizeOpinion(''), null)
+  assert.equal(sanitizeOpinion('   \n  '), null)
+  assert.equal(extractOpinion('### 下一步\n要唔要我開審批？'), null) // she wrote no such section
+  const { reply } = buildReadResultReply(withOpinion('$100 全部都係數字。'))
+  assert.equal(reply.includes('### 香香睇法'), false)
+  assert.ok(reply.includes('### 下一步')) // the rest is unaffected
+})
+
+test('at most three sentences survive', () => {
+  const five = '一。二。三。四。五。'
+  assert.equal(sanitizeOpinion(five), '一。二。三。')
+  const { reply } = buildReadResultReply(withOpinion(five))
+  const sec = reply.split('### 香香睇法\n\n')[1].split('\n\n')[0]
+  assert.equal((sec.match(/。/g) || []).length, 3)
+})
+
+test('her section is bounded by the next heading, not by the end of the reply', () => {
+  const r = buildReadResultReply(Object.assign({}, INVOICE_TURN, {
+    reply: '### 香香睇法\n值得留意。\n\n### 下一步\n要唔要我開審批？'
+  }))
+  const sec = r.reply.split('### 香香睇法\n\n')[1].split('\n\n')[0]
+  assert.equal(sec, '值得留意。')
+  assert.equal(sec.includes('要唔要'), false) // the question did not bleed into her section
+})
+
+test('*** her words never carry item detail into a multi-source turn ***', () => {
+  const turn = Object.assign({}, withOpinion('有一批舊嘅未清,建議今個星期掃一次。'), {
+    perSource: INVOICE_TURN.perSource.map((r) => (r.source === 'gmail' ? Object.assign({}, r, { usedFallback: false }) : r))
+  })
+  const { reply } = buildReadResultReply(turn)
+  const sec = reply.split('### 香香睇法\n\n')[1].split('\n\n')[0]
+  assert.equal(/\d/.test(sec), false, 'no digit may appear in her section')
+  for (const detail of ['191.10', '#74284', '2026-07-06']) assert.equal(sec.includes(detail), false)
+  // and the rendered data above is untouched by her presence
+  assert.ok(reply.includes('$191.10｜2026-07-06｜需要審批'))
+  assert.ok(reply.includes('### Gmail') && reply.includes('### 餐廳系統'))
 })
