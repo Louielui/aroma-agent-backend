@@ -12,7 +12,7 @@ const { test, afterEach } = require('node:test')
 const assert = require('node:assert/strict')
 
 const { CAPS, SAFETY_HEADER, OPEN, CLOSE, extractKeywords, planFor, buildReadContext, weekdayOf, zeroResultLine, unavailableLine } = require('./readContext')
-const { createLiveReadConnector, enabledSources } = require('./liveClients')
+const { createLiveReadConnector, enabledSources, ALL_SOURCES } = require('./liveClients')
 const { processIntake } = require('../intake/intakeService')
 
 const FLAGS_ON = { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on' }
@@ -239,7 +239,8 @@ test('broken Google creds → those sources skipped, github still registered; NE
 test('READ_ACCESS off → nothing built at all; enabledSources empty', () => {
   const { registered, skipped } = createLiveReadConnector({ env: { CONTEXT_DRIVE: 'on' } })
   assert.deepEqual(registered, [])
-  assert.equal(skipped.length, 4)
+  // Derived, not a literal: adding a source must not break a test about the master flag.
+  assert.equal(skipped.length, ALL_SOURCES.length, "every source is skipped when the master flag is off")
   assert.deepEqual(enabledSources({ CONTEXT_DRIVE: 'on' }), []) // master off
   assert.deepEqual(enabledSources(FLAGS_ON).sort(), ['calendar', 'drive', 'github', 'gmail'])
 })

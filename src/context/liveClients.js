@@ -24,8 +24,9 @@ const { createGithubReadAdapter } = require('./adapters/githubRead')
 const { createDriveReadAdapter } = require('./adapters/driveRead')
 const { createGmailReadAdapter } = require('./adapters/gmailRead')
 const { createCalendarReadAdapter } = require('./adapters/calendarRead')
+const { createAromaSystemReadAdapter, KEY_ENV: AROMA_KEY_ENV } = require('./adapters/aromaSystemRead')
 
-const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github'])
+const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system'])
 
 /** Sources whose master+per-source flags are both exactly 'on'. */
 function enabledSources (env = process.env) {
@@ -62,6 +63,16 @@ function createLiveReadConnector (options = {}) {
       return options.githubAdapterFactory
         ? options.githubAdapterFactory({ token, clock: options.clock })
         : createGithubReadAdapter({ token, clock: options.clock })
+    },
+    aroma_system: () => {
+      // Same shape as github: the reason names the MISSING VARIABLE, never a value. With
+      // no key the source is simply not registered — it reports unavailable when asked,
+      // startup is unaffected, and the other four sources do not notice.
+      const key = env[AROMA_KEY_ENV]
+      if (!key) throw new Error(AROMA_KEY_ENV + ' not set')
+      return options.aromaSystemAdapterFactory
+        ? options.aromaSystemAdapterFactory({ env, clock: options.clock })
+        : createAromaSystemReadAdapter({ env, clock: options.clock })
     }
   }
 

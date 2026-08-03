@@ -157,6 +157,17 @@ function planFor (source, { keywords = [], now, env = {}, caps = CAPS } = {}) {
     }
   }
 
+  if (source === 'aroma_system') {
+    // The restaurant's own numbers. With no keywords the two that answer "how are we
+    // doing right now" are inventory and order planning; a keyword search narrows to the
+    // records most likely to carry it. The fallback is the same recent-items rule every
+    // other source uses, so a keyword miss still yields real, dated rows.
+    const recent = { method: 'listInventory', params: { limit: n } }
+    if (terms.length === 0) return recent
+    const q = capQuery(terms.join(' '))
+    return { method: 'listOrderPlanning', params: { limit: n, q }, fallback: recent }
+  }
+
   if (source === 'github') {
     const repo = env.GITHUB_READ_REPO
     if (!repo || !repo.includes('/')) return { unavailable: 'no GITHUB_READ_REPO configured (owner/repo)' }
