@@ -427,3 +427,90 @@ button[disabled] { opacity: .45; cursor: default; }
   .body { max-width: 100%; }
   .lane-hint { display: none; }
 }
+
+/* ── settings: sidebar entry + in-page overlay ─────────────────────────────
+   Everything here reads the tokens above, so dark mode follows automatically and no
+   colour is restated. The overlay is a sheet over the app, not a new page: the
+   conversation is still mounted behind it and comes straight back on close. */
+
+.side-item {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; text-align: left;
+  background: transparent; border: 0; cursor: pointer;
+  color: var(--muted);
+  font: inherit; font-size: var(--ui-size); line-height: var(--ui-line);
+  padding: 7px 8px; border-radius: 8px;
+}
+.side-item:hover { background: var(--divider); color: var(--ink); }
+.side-item-icon { font-size: var(--ui-size); line-height: 1; }
+
+.overlay { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.overlay.hidden { display: none; }
+.overlay-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, .28); }
+
+.sheet {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: min(620px, 100%); max-height: min(760px, 88vh);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, .18);
+  overflow: hidden;
+}
+.sheet-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--divider);
+}
+.sheet-head h2 { margin: 0; font-size: var(--title-size); font-weight: var(--weight-medium); }
+.sheet-body { overflow-y: auto; padding: 4px 18px 8px; }
+.sheet-foot {
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 18px; border-top: 1px solid var(--divider);
+}
+
+.set-sec { padding: 16px 0; border-top: 1px solid var(--divider); }
+.set-sec:first-child { border-top: 0; }
+.set-sec h3 { margin: 0 0 4px; font-size: var(--ui-size); font-weight: var(--weight-medium); }
+.set-hint { margin: 0 0 10px; font-size: var(--small-size); color: var(--soft); }
+
+.sheet textarea {
+  width: 100%; box-sizing: border-box;
+  background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px;
+  padding: 9px 11px; font: inherit; font-size: var(--ui-size); resize: vertical;
+}
+.sheet textarea:focus { outline: none; border-color: var(--focus); }
+
+.set-count { text-align: right; font-size: var(--small-size); color: var(--faint); margin-top: 5px; }
+.set-count.over { color: var(--bad); font-weight: var(--weight-medium); }
+
+.set-flag {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  padding: 8px 0; border-top: 1px solid var(--divider); font-size: var(--ui-size);
+}
+.set-flag:first-child { border-top: 0; }
+.set-flag .set-name { flex: 1 1 auto; }
+.set-flag .set-who { font-size: var(--small-size); color: var(--faint); }
+.set-flag button {
+  min-width: 58px; padding: 4px 12px;
+  border: 1px solid var(--line); border-radius: 999px;
+  background: var(--card); color: var(--faint);
+  font: inherit; font-size: var(--small-size); cursor: pointer;
+}
+.set-flag button[data-state="on"] { color: var(--ok); font-weight: var(--weight-medium); }
+.set-flag .set-note { flex: 1 1 100%; font-size: var(--small-size); color: var(--bad); }
+
+.set-save {
+  padding: 8px 20px; border: 0; border-radius: 8px;
+  background: var(--accent); color: #fff;
+  font: inherit; font-weight: var(--weight-medium); cursor: pointer;
+}
+.set-save:hover { background: var(--accent-hover); }
+.set-save[disabled] { opacity: .55; cursor: default; }
+
+.set-msg { font-size: var(--small-size); color: var(--muted); }
+.set-msg.ok { color: var(--ok); }
+.set-msg.bad { color: var(--bad); }
+
+.set-foot { margin: 14px 0 4px; font-size: var(--small-size); color: var(--faint); }

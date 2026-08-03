@@ -709,6 +709,148 @@
     document.getElementById('expand').className = 'icon-btn hidden'
   })
 
+  /* ── SETTINGS SHEET ────────────────────────────────────────────────────────
+   * The same three settings as /settings, opened in this window over the conversation.
+   * Closing returns to the chat with nothing lost: the conversation was never unmounted.
+   *
+   * The switch rows are the only part built here, because they are data-driven; every node
+   * is createElement + textContent, and the labels are literals in this file — no markup is
+   * assembled from a string and nothing the server sends becomes markup.
+   *
+   * No browser-side persistence: values are read from the server on open and written back
+   * on save. A refresh keeps nothing. */
+  var SET_LABELS = {
+    CONVERSATION_RECALL: '對話記憶',
+    DECISION_RECALL: '決定記憶',
+    CONTEXT_DRIVE: '讀取 Drive',
+    CONTEXT_GMAIL: '讀取 Gmail',
+    CONTEXT_CALENDAR: '讀取 Calendar',
+    CONTEXT_GITHUB: '讀取 GitHub'
+  }
+  var SET_READ_SOURCES = ['CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR', 'CONTEXT_GITHUB']
+
+  var setOverlay = document.getElementById('settings-overlay')
+  var setOpenBtn = document.getElementById('open-settings')
+  var setStyle = document.getElementById('set-style')
+  var setPrefs = document.getElementById('set-prefs')
+  var setMsg = document.getElementById('set-msg')
+  var setState = { flags: {}, caps: {}, readAccess: 'off' }
+
+  function setSay (text, kind) {
+    setMsg.textContent = text || ''
+    setMsg.className = 'set-msg' + (kind ? ' ' + kind : '')
+  }
+
+  function setCounts () {
+    var rows = [[setStyle, 'set-style-n', 'set-style-cap', 'style'], [setPrefs, 'set-prefs-n', 'set-prefs-cap', 'preferences']]
+    rows.forEach(function (r) {
+      var cap = setState.caps[r[3]]
+      var n = r[0].value.length
+      document.getElementById(r[1]).textContent = String(n)
+      document.getElementById(r[2]).textContent = cap ? String(cap) : '—'
+      document.getElementById(r[1]).parentNode.className = 'set-count' + (cap && n > cap ? ' over' : '')
+    })
+  }
+
+  function renderSetFlags () {
+    var box = document.getElementById('set-flags')
+    box.textContent = ''
+    Object.keys(SET_LABELS).forEach(function (key) {
+      var f = setState.flags[key] || { effective: 'off', setByOwner: false }
+      var row = el('div', 'set-flag')
+      row.appendChild(el('span', 'set-name', SET_LABELS[key]))
+      row.appendChild(el('span', 'set-who', f.setByOwner ? '你設定' : '啟動時設定'))
+
+      var btn = el('button', null, f.effective === 'on' ? '開' : '關')
+      btn.type = 'button'
+      btn.setAttribute('data-state', f.effective)
+      btn.addEventListener('click', function () {
+        var next = btn.getAttribute('data-state') === 'on' ? 'off' : 'on'
+        btn.setAttribute('data-state', next)
+        btn.textContent = next === 'on' ? '開' : '關'
+        setState.flags[key] = { effective: next, setByOwner: true }
+        row.querySelector('.set-who').textContent = '你設定'
+      })
+      row.appendChild(btn)
+
+      /* A source shown as "on" while the master READ_ACCESS is off would be a lie on the
+         screen, so the gap is stated rather than hidden. */
+      if (SET_READ_SOURCES.indexOf(key) >= 0 && setState.readAccess !== 'on') {
+        row.appendChild(el('span', 'set-note', '總開關 READ_ACCESS 係關嘅，所以呢個開咗都唔會讀到'))
+      }
+      box.appendChild(row)
+    })
+  }
+
+  function openSettings () {
+    setOverlay.className = 'overlay'
+    setOpenBtn.setAttribute('aria-expanded', 'true')
+    setSay('讀取中…')
+    fetch('/api/v1/settings', { credentials: 'same-origin' })
+      .then(function (r) { return r.json() })
+      .then(function (j) {
+        if (!j.ok) throw new Error('read failed')
+        setStyle.value = j.style || ''
+        setPrefs.value = j.preferences || ''
+        setState.caps = j.caps || {}
+        setState.flags = j.flags || {}
+        setState.readAccess = (j.flags && j.flags.READ_ACCESS && j.flags.READ_ACCESS.effective) || 'off'
+        setCounts()
+        renderSetFlags()
+        setSay(j.updatedAt ? '上次儲存 ' + String(j.updatedAt).replace('T', ' ').slice(0, 16) : '')
+      })
+      .catch(function () { setSay('讀取設定失敗', 'bad') })
+    setStyle.focus()
+  }
+
+  function closeSettings () {
+    setOverlay.className = 'overlay hidden'
+    setOpenBtn.setAttribute('aria-expanded', 'false')
+    setSay('')
+    msg.focus() // straight back to the conversation
+  }
+
+  setOpenBtn.addEventListener('click', openSettings)
+  document.getElementById('close-settings').addEventListener('click', closeSettings)
+  document.getElementById('settings-backdrop').addEventListener('click', closeSettings)
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && setOverlay.className.indexOf('hidden') < 0) closeSettings()
+  })
+  setStyle.addEventListener('input', setCounts)
+  setPrefs.addEventListener('input', setCounts)
+
+  document.getElementById('save-settings').addEventListener('click', function () {
+    var btn = document.getElementById('save-settings')
+    btn.disabled = true
+    setSay('儲存中…')
+
+    var flags = {}
+    Object.keys(SET_LABELS).forEach(function (k) {
+      if (setState.flags[k]) flags[k] = setState.flags[k].effective
+    })
+
+    fetch('/api/v1/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ style: setStyle.value, preferences: setPrefs.value, flags: flags })
+    })
+      .then(function (r) { return r.json().then(function (j) { return { status: r.status, body: j } }) })
+      .then(function (res) {
+        if (res.status === 200 && res.body.ok) {
+          setState.flags = res.body.flags || setState.flags
+          renderSetFlags()
+          setSay('已儲存。下一句即時生效。', 'ok')
+          return
+        }
+        /* A refusal is shown in full — it names what was rejected and why, and says nothing
+           was saved. The page never silently edits what the Owner typed. */
+        setSay(res.body.detail || '儲存失敗', 'bad')
+      })
+      .catch(function () { setSay('儲存失敗', 'bad') })
+      .finally(function () { btn.disabled = false })
+  })
+
   send.disabled = true
   autoGrow()
   newConversation(false)

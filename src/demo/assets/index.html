@@ -20,6 +20,9 @@
       </div>
       <button id="new-chat" class="new-chat" type="button">＋ 開新對話</button>
       <nav id="convs" class="convs" aria-label="歷史對話"></nav>
+      <button id="open-settings" class="side-item" type="button" aria-haspopup="dialog" aria-expanded="false">
+        <span class="side-item-icon" aria-hidden="true">⚙</span><span>設定</span>
+      </button>
       <div class="side-foot">
         <span class="dot" id="conn-dot" aria-hidden="true"></span>
         <span id="conn-text">本機 · 127.0.0.1</span>
@@ -60,6 +63,50 @@
         </div>
       </div>
     </main>
+  </div>
+
+  <!-- SETTINGS OVERLAY. Real markup, hidden until asked for — the page is forbidden to
+       assemble markup from strings, so the shell lives here and only the switch rows (which
+       are data-driven) are built with createElement + textContent in app.js.
+       Same window, same session: opening it does not leave the conversation. -->
+  <div id="settings-overlay" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="overlay-backdrop" id="settings-backdrop"></div>
+    <div class="sheet" role="document">
+      <div class="sheet-head">
+        <h2 id="settings-title">設定</h2>
+        <button id="close-settings" class="icon-btn" type="button" aria-label="關閉" title="關閉">✕</button>
+      </div>
+
+      <div class="sheet-body">
+        <section class="set-sec">
+          <h3>說話風格</h3>
+          <p class="set-hint">你想她點樣講嘢。例如：「講嘢簡短啲，一段一件事，唔好每次都反問我」</p>
+          <textarea id="set-style" rows="4" placeholder="（留空即沿用預設）"></textarea>
+          <div class="set-count"><span id="set-style-n">0</span> / <span id="set-style-cap">—</span></div>
+        </section>
+
+        <section class="set-sec">
+          <h3>要她記住的事</h3>
+          <p class="set-hint">你寫低要佢長期記住嘅嘢。你親手寫嘅，優先於對話記憶。</p>
+          <textarea id="set-prefs" rows="6" placeholder="每行一件事"></textarea>
+          <div class="set-count"><span id="set-prefs-n">0</span> / <span id="set-prefs-cap">—</span></div>
+        </section>
+
+        <section class="set-sec">
+          <h3>記憶與讀取</h3>
+          <p class="set-hint">關咗就係關咗——佢會照直講讀唔到，唔會扮知道。</p>
+          <div id="set-flags"></div>
+        </section>
+
+        <p class="set-foot">呢度只改風格、記憶同開關。身分係凍結嘅，唔喺呢度改。<br>
+        誠實守則、紅線政策、讀取狀態守衛係程式碼，唔係文字——寫喺呢度嘅嘢改變唔到佢哋。</p>
+      </div>
+
+      <div class="sheet-foot">
+        <button id="save-settings" class="set-save" type="button">儲存</button>
+        <span class="set-msg" id="set-msg"></span>
+      </div>
+    </div>
   </div>
 
   <!-- The chat avatar. It lives here as real markup and is cloned per turn: the page is
