@@ -523,3 +523,8 @@ button[disabled] { opacity: .45; cursor: default; }
 }
 .inferred-note { margin-top: 5px; color: var(--faint); font-size: var(--small-size); }
 .ask { margin: 10px 0 6px; color: var(--muted); font-size: var(--ui-size); }
+
+/* The card's face: three bare lines, because that is the whole decision. */
+.order .sec.bare { padding: 2px 0; }
+.order .sec.bare .sec-b { color: var(--ink); }
+.order .sec.bare:first-of-type .sec-b { font-family: var(--font-mono); }
