@@ -157,26 +157,53 @@ const capQuery = (q) => (q.length <= CAPS.maxQueryChars ? q : q.slice(0, CAPS.ma
  * 而家倉存 / 入面 and never the word 倉存 itself — routing on keywords would miss the
  * very term the Owner typed. `cjk` entries are substrings; `latin` entries are matched
  * whole-word so "po" cannot fire inside "point" or "position".
+ *
+ * ONE TABLE, TWO JOBS. It answers both "which Aroma endpoint does this question want" and
+ * "which sources could possibly answer it" — because two tables would drift, and a
+ * presentation layer that classified intent differently from the read layer would show a
+ * section the reader never fetched, or hide one it did.
+ *
+ * THE FIRST SIX ENTRIES ARE FROZEN IN ORDER AND CONTENT. They are the Aroma routing, and
+ * `planFor` depends on their precedence (「採購單」 before 「採購」, "stocktake" before
+ * "stock"). The non-Aroma intents are APPENDED, so they cannot take a match away from
+ * them; a test asserts the six still route exactly as before.
+ *
+ * `method: null` means "this intent asks nothing of Aroma System" — aromaMethodFor then
+ * falls through to inventory, exactly as an unmatched message always has.
  */
-const AROMA_INTENTS = Object.freeze([
-  { method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'] },
-  { method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'] },
-  { method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'] },
-  { method: 'listSuppliers', cjk: ['供應商', '供貨商', '批發商', '貨商'], latin: ['supplier', 'suppliers', 'vendor', 'vendors'] },
-  { method: 'listOrderPlanning', cjk: ['訂貨', '補貨', '落單', '要訂', '叫貨'], latin: ['order planning', 'replenish', 'replenishment', 'reorder', 'restock'] },
-  { method: 'listInventory', cjk: ['倉存', '庫存', '存貨', '存量', '現貨', '貨存'], latin: ['inventory', 'stock', 'on hand', 'onhand'] }
+const INTENTS = Object.freeze([
+  { key: 'invoice', method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'], sources: ['aroma_system', 'gmail'], heading: '最近發票', unit: '張', noun: '發票', defaultQuestion: '要我整理餐廳系統內全部待審批發票嗎？' },
+  { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system', 'gmail'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
+  { key: 'daily_count', method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'], sources: ['aroma_system'], heading: '盤點紀錄', unit: '次', noun: '盤點', defaultQuestion: '要我睇邊個位置嘅盤點？' },
+  { key: 'supplier', method: 'listSuppliers', cjk: ['供應商', '供貨商', '批發商', '貨商'], latin: ['supplier', 'suppliers', 'vendor', 'vendors'], sources: ['aroma_system', 'gmail'], heading: '供應商', unit: '個', noun: '供應商', defaultQuestion: '要我列出邊一間嘅落單資料？' },
+  { key: 'order_planning', method: 'listOrderPlanning', cjk: ['訂貨', '補貨', '落單', '要訂', '叫貨'], latin: ['order planning', 'replenish', 'replenishment', 'reorder', 'restock'], sources: ['aroma_system'], heading: '訂貨建議', unit: '項', noun: '建議', defaultQuestion: '要我按供應商分開列嗎？' },
+  { key: 'inventory', method: 'listInventory', cjk: ['倉存', '庫存', '存貨', '存量', '現貨', '貨存'], latin: ['inventory', 'stock', 'on hand', 'onhand'], sources: ['aroma_system'], heading: '倉存', unit: '項', noun: '存貨', defaultQuestion: '要我列出低過安全存量嗰啲嗎？' },
+  // ── APPENDED: intents that ask nothing of Aroma System ──────────────────────
+  { key: 'schedule', method: null, cjk: ['安排', '日程', '行程', '會議', '約咗', '排程', '日曆'], latin: ['schedule', 'calendar', 'meeting', 'meetings', 'appointment'], sources: ['calendar'], heading: '行程', unit: '件', noun: '安排', defaultQuestion: '要我幫你排邊一件先？' },
+  { key: 'mail', method: null, cjk: ['郵件', '電郵', '信箱', '收件'], latin: ['email', 'e-mail', 'mail', 'inbox'], sources: ['gmail'], heading: '郵件', unit: '封', noun: '郵件', defaultQuestion: '要我幫你回邊一封？' },
+  { key: 'document', method: null, cjk: ['文件', '檔案', '雲端', '試算表'], latin: ['document', 'documents', 'file', 'files', 'drive', 'spreadsheet'], sources: ['drive'], heading: '文件', unit: '份', noun: '文件', defaultQuestion: '要我開邊一份？' },
+  { key: 'code', method: null, cjk: ['程式碼', '版本庫', '改動'], latin: ['github', 'repo', 'repository', 'pull request', 'pr', 'commit', 'commits'], sources: ['github'], heading: '程式碼改動', unit: '項', noun: '改動', defaultQuestion: '要我講吓邊一個改動？' }
 ])
+
+/** The Aroma routing subset, in its original order — what planFor has always used. */
+const AROMA_INTENTS = Object.freeze(INTENTS.filter((i) => i.method !== null))
+
+/** The intent a message expresses, or null when nothing matched. */
+function intentFor (text) {
+  const s = String(text == null ? '' : text)
+  const low = s.toLowerCase()
+  for (const intent of INTENTS) {
+    if (intent.cjk.some((t) => s.includes(t))) return intent
+    // Whole-word for latin: a word inside a longer word is not a mention of it.
+    if (intent.latin.some((w) => new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])', 'i').test(low))) return intent
+  }
+  return null
+}
 
 /** The endpoint an Aroma System question is asking about. No match => inventory. */
 function aromaMethodFor (text) {
-  const s = String(text == null ? '' : text)
-  const low = s.toLowerCase()
-  for (const intent of AROMA_INTENTS) {
-    if (intent.cjk.some((t) => s.includes(t))) return intent.method
-    // Whole-word for latin: a word inside a longer word is not a mention of it.
-    if (intent.latin.some((w) => new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])', 'i').test(low))) return intent.method
-  }
-  return 'listInventory'
+  const hit = intentFor(text)
+  return (hit && hit.method) || 'listInventory'
 }
 
 /**
@@ -465,7 +492,9 @@ module.exports = {
   SAFETY_HEADER,
   buildSafetyHeader,
   capLine,
+  INTENTS,
   AROMA_INTENTS,
+  intentFor,
   aromaMethodFor,
   OPEN,
   CLOSE,

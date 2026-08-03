@@ -10,19 +10,28 @@
  * a written record of what happens when prose is trusted to restate a fact: groundedReply
  * exists because a reply claimed a proposal that was never created, and readStateGuard
  * exists because an explicit contract rule about read state failed five times in a row.
- * Formatting is a weaker rule than either, held over a longer output, and the chat lane
- * now runs two providers with different habits.
  *
- * So the model writes only the two things that need judgement — 結果摘要 and 下一步 — and
- * every fact-bearing line below is produced here, deterministically. A rendered amount
- * cannot be mistyped, and a status value this module does not recognise cannot be quietly
- * dropped: it renders as 狀態未確認 WITH the raw value attached.
+ * WHAT IS SHOWN IS DECIDED BY THE QUESTION, NOT BY WHAT ANSWERED.
+ * The first version grouped EVERY source that returned rows, so an invoice question came
+ * back carrying architecture documents, a television advertisement, an eye appointment and
+ * three commits. A connector returning data is not a reason to show it. Relevance is now
+ * decided by two facts that are already known, and by nothing else:
  *
- * PRESENTATION ONLY. Pure, no I/O. It reads what the turn already retrieved and returns
- * markdown text. It never fetches, never writes, never decides what was read.
+ *   1. the source is one the question could be about        (INTENTS[].sources)
+ *   2. the rows were selected BY that question, not by recency (usedFallback === false)
+ *
+ * There is deliberately NO second, text-level filter on top. Rows that came back from a
+ * keyword query were already chosen by the question; re-judging them here would mean
+ * overruling the search with my own guess, and silently dropping a genuinely relevant
+ * record is the worse failure. Everything not shown is COUNTED in 資料限制, so a wrong
+ * exclusion is visible as a number rather than as an absence.
+ *
+ * PRESENTATION ONLY. Pure, no I/O. It never fetches, never writes, never decides what was
+ * read — only what, of what was read, answers the question that was asked.
  */
 
 const { LABELS } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
+const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 
 /** Owner-facing status words. The keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
@@ -50,11 +59,7 @@ const CAPS = Object.freeze({
   maxRawStatusChars: 24
 })
 
-const H = Object.freeze({
-  summary: '結果摘要',
-  limits: '資料限制',
-  next: '下一步'
-})
+const H = Object.freeze({ limits: '資料限制', next: '下一步' })
 
 /**
  * Pull one `name=value` out of the compact content string the adapters build
@@ -74,9 +79,26 @@ function fieldOf (content, name) {
 }
 
 /**
- * The status segment, or null when there should not be one.
- * Returns null for every source that has no status concept.
+ * A COMPLETE calendar day, or the value untouched.
+ *
+ * This used to be `slice(0, 10)`, which assumes ISO-8601. Four sources are ISO, but Gmail
+ * carries the mail's own `Date:` header — RFC 5322 — so slicing produced "03 Aug 202":
+ * not a truncated date, a WRONG one. The origin was here, in the renderer's assumption,
+ * not in the adapter and not in the data; both formats are legitimate. A value that parses
+ * is formatted; a value that does not is shown AS IT IS, never cut.
  */
+const pad = (n) => String(n).padStart(2, '0')
+function dayOf (value) {
+  const s = String(value == null ? '' : value).trim()
+  if (!s) return null
+  const iso = /^(\d{4}-\d{2}-\d{2})/.exec(s)
+  if (iso) return iso[1]
+  const d = new Date(s)
+  if (!Number.isNaN(d.getTime())) return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+  return s // unparseable: the Owner sees the real value rather than a mangled one
+}
+
+/** The status segment, or null when there should not be one. */
 function statusSegment (item) {
   if (!item || !STATUS_BEARING_SOURCES.includes(item.source)) return null
   const raw = fieldOf(item.content, 'status')
@@ -108,10 +130,11 @@ const cap = (s, n) => (String(s).length <= n ? String(s) : String(s).slice(0, n)
 
 /**
  * ONE ITEM, AT MOST TWO LINES.
- *   **Miller's Meats — #74284**
- *   $461.30｜2026-08-03｜需要審批｜來源：餐廳系統
- * A segment that has no value is omitted rather than filled in. The date is the row's own
- * date or the explicit words 冇日期 — never today, never guessed.
+ *   **A-1 Environmental Services Ltd.**
+ *   $191.10｜2026-07-06｜需要審批
+ * No 來源 segment: the section heading above it already names the source. A segment with
+ * no value is omitted rather than filled in, and the date is the row's own or the explicit
+ * words 冇日期 — never today, never guessed.
  */
 function renderItem (item) {
   const title = item.title ? cap(item.title, CAPS.maxTitleChars) : '(未命名)'
@@ -121,18 +144,14 @@ function renderItem (item) {
   const segs = []
   const amount = amountOf(item)
   if (amount) segs.push(amount)
-  segs.push(item.originalDate ? String(item.originalDate).slice(0, 10) : '冇日期')
+  segs.push(dayOf(item.originalDate) || '冇日期')
   const status = statusSegment(item)
   if (status) segs.push(status)
-  segs.push(`來源：${LABELS[item.source] || item.source}`)
 
   return `${head}\n${segs.join('｜')}`
 }
 
-/**
- * ONE SECTION PER SOURCE. Gmail and Aroma System can never share a paragraph because a
- * section is generated per source key, from the source's own rows.
- */
+/** ONE SECTION PER SOURCE — so two sources can never share a paragraph. */
 function renderSection (source, items) {
   const label = LABELS[source] || source
   const shown = items.slice(0, CAPS.maxItemsPerSection)
@@ -144,84 +163,135 @@ function renderSection (source, items) {
 }
 
 /**
- * 資料限制 — ONLY what could not be retrieved or proven this turn. When everything was
- * read and everything is shown, the section is omitted entirely rather than padded with
- * a reassurance.
+ * WHAT ANSWERS THIS QUESTION. Returns the groups to render and the count of everything
+ * retrieved that will not be shown.
  */
-function renderLimits (perSource, opts = {}) {
+function selectRelevant (intent, itemsBySource, perSource) {
+  const rows = new Map((Array.isArray(perSource) ? perSource : []).map((r) => [r.source, r]))
+  const groups = []
+  let hidden = 0
+  for (const g of (Array.isArray(itemsBySource) ? itemsBySource : [])) {
+    if (!g || !g.source || !Array.isArray(g.items) || g.items.length === 0) continue
+    const row = rows.get(g.source)
+    const inScope = intent.sources.includes(g.source)
+    // A FALLBACK IS NOT AN ANSWER. Recent-items rows were selected because they are
+    // recent, not because they match; showing them as the result is how a television
+    // advertisement ended up under an invoice question.
+    const bySearch = !(row && row.usedFallback === true)
+    if (inScope && bySearch) groups.push(g)
+    else hidden += g.items.length
+  }
+  return { groups, hidden }
+}
+
+/**
+ * 結果摘要 — generated here, one sentence, counts only.
+ *
+ * The model used to write this and restated the whole list inside it, which was the single
+ * prompt dependency left in the design. It is now a fact about the turn, so it is computed
+ * from the turn: no item detail can leak into it because no item detail is available to it.
+ */
+function renderSummary (intent, groups) {
+  const parts = groups.map((g) => `${LABELS[g.source] || g.source} ${g.items.length} ${intent.unit}${intent.noun}`)
+  const body = parts.length === 0
+    ? `暫時搵唔到同「${intent.noun}」直接相符嘅記錄。`
+    : `目前確認到${parts.join('、')}。`
+  return `### ${intent.heading}\n\n${body}`
+}
+
+/**
+ * 資料限制 — ONLY what could not be retrieved or proven this turn, plus the count of what
+ * was hidden. The count is the whole reason hiding is safe: a wrongly excluded record is
+ * visible as a number the Owner can challenge, instead of an absence nobody can see.
+ */
+function renderLimits (intent, perSource, hidden, opts = {}) {
   const rows = Array.isArray(perSource) ? perSource : []
   const parts = []
   for (const r of rows) {
+    if (!intent.sources.includes(r.source)) continue // out of scope: covered by the count
     const label = LABELS[r.source] || r.source
     if (r.trust !== 'live') parts.push(`${label}：讀唔到${r.error ? `（${cap(r.error, 60)}）` : ''}`)
+    else if (r.usedFallback) parts.push(`${label}：搵唔到直接相符嘅${intent.noun}（最近項目 ${r.count} 項未列出）`)
     else if (!r.count) parts.push(`${label}：讀到，但冇相關結果`)
-    else if (r.usedFallback) parts.push(`${label}：搵唔到直接相符嘅，顯示緊最近嘅項目`)
   }
+  if (hidden > 0) parts.push(`另有 ${hidden} 項未列出（判斷為與此問題無關）`)
   if (opts.truncated) parts.push('部分項目因長度上限未顯示 —— 見唔到唔代表冇。')
   if (parts.length === 0) return null
   return `### ${H.limits}\n\n` + parts.join('\n')
 }
 
-/**
- * Split the model's reply at 下一步 so the deterministic sections land BETWEEN the summary
- * and the single next question.
- *
- * FAIL-SOFT AND VISIBLE. If the model did not write the headings — the one prompt-level
- * dependency left in this design — nothing is lost: its whole reply is kept as the
- * summary and the sections follow. A malformed reply degrades to a slightly worse
- * ordering, never to missing data.
- */
+/** Split the model's reply at 下一步 — everything before it is discarded, see below. */
 function splitModelReply (reply) {
   const text = String(reply == null ? '' : reply).trim()
   const m = /(^|\n)#{0,3}\s*【?下一步】?\s*\n?/.exec(text)
-  if (!m) return { summary: text, next: null }
-  return {
-    summary: text.slice(0, m.index).trim(),
-    next: text.slice(m.index + m[0].length).trim() || null
-  }
+  if (!m) return { before: text, next: null }
+  return { before: text.slice(0, m.index).trim(), next: text.slice(m.index + m[0].length).trim() || null }
+}
+
+/**
+ * EXACTLY ONE QUESTION. The contract asks for one; when it arrives as 「A 定 B？」 or as
+ * three options, only the first question survives. A reply with no question at all falls
+ * back to the intent's own — never to silence, and never to an invented offer.
+ */
+function oneQuestion (next, intent) {
+  const s = String(next == null ? '' : next).trim()
+  if (!s) return intent.defaultQuestion
+  const at = s.search(/[？?]/)
+  if (at === -1) return intent.defaultQuestion
+  const first = s.slice(0, at + 1).trim()
+  // 「A 定 B？」 is two options in one sentence — the contract's own example of what not
+  // to do. It cannot be split reliably, so the intent's single question replaces it.
+  return /定|定係|或者|\bor\b/.test(first) ? intent.defaultQuestion : first
 }
 
 /**
  * Build the whole Owner-facing reply.
  *
- * @param {{ reply: string, itemsBySource: Array<{source, items}>, perSource: Array, truncated?: boolean }} input
- * @returns {{ reply: string, applied: boolean, sections: string[] }}
+ * @param {{ reply, message, itemsBySource, perSource, truncated? }} input
+ * @returns {{ reply, applied, intent }}
  */
 function buildReadResultReply (input = {}) {
-  const groups = (Array.isArray(input.itemsBySource) ? input.itemsBySource : [])
-    .filter((g) => g && g.source && Array.isArray(g.items) && g.items.length > 0)
+  const original = String(input.reply == null ? '' : input.reply)
+  const intent = intentFor(input.message)
 
-  // Nothing was retrieved → this view has nothing to say, and the reply is left exactly
-  // as the model wrote it. Presentation must never manufacture a result.
-  if (groups.length === 0) return { reply: String(input.reply == null ? '' : input.reply), applied: false, sections: [] }
+  // NO INTENT, NO RESTRUCTURING. An ordinary conversation that happens to have context
+  // attached is not a read result, and dressing it up as one is the over-showing this
+  // module exists to stop.
+  if (!intent) return { reply: original, applied: false, intent: null }
 
-  const { summary, next } = splitModelReply(input.reply)
-  const out = []
-  if (summary) out.push(summary.startsWith('#') ? summary : `### ${H.summary}\n\n${summary}`)
+  const { groups, hidden } = selectRelevant(intent, input.itemsBySource, input.perSource)
+  const limits = renderLimits(intent, input.perSource, hidden, { truncated: input.truncated === true })
 
-  const sections = []
-  for (const g of groups) {
-    const s = renderSection(g.source, g.items)
-    sections.push(s)
-    out.push(s)
-  }
+  // Nothing relevant AND nothing to report about why: leave the reply alone.
+  if (groups.length === 0 && !limits) return { reply: original, applied: false, intent }
 
-  const limits = renderLimits(input.perSource, { truncated: input.truncated === true })
+  const out = [renderSummary(intent, groups)]
+  for (const g of groups) out.push(renderSection(g.source, g.items))
   if (limits) out.push(limits)
+  out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
 
-  if (next) out.push(`### ${H.next}\n\n${next}`)
+  // A CORRECTION SURVIVES THE RESTRUCTURING. readStateGuard's note is a safety control,
+  // not prose, so it is carried through rather than discarded with the model's text. In
+  // practice the false sentence it corrects is now REMOVED here rather than merely
+  // corrected — but the note stays on screen, because a failure that leaves no trace on
+  // screen is the thing the guard was built to stop.
+  if (typeof input.correction === 'string' && input.correction.trim()) out.push(input.correction.trim())
 
-  return { reply: out.join('\n\n'), applied: true, sections }
+  return { reply: out.join('\n\n'), applied: true, intent }
 }
 
 module.exports = {
   buildReadResultReply,
   renderItem,
   renderSection,
+  renderSummary,
   renderLimits,
+  selectRelevant,
   splitModelReply,
+  oneQuestion,
   statusSegment,
   fieldOf,
+  dayOf,
   STATUS_LABELS,
   STATUS_BEARING_SOURCES,
   CAPS,

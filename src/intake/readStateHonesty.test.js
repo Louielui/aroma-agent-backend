@@ -75,10 +75,12 @@ test('*** a live calendar + a reply claiming 讀唔到 is corrected before it le
     assert.equal(res.readClaimCorrected, true, 'the turn is flagged, so the failure is countable')
     assert.ok(res.reply.includes('系統更正'), 'and the correction is on screen, not only in a log')
     assert.ok(res.reply.includes('2 項'), 'stating the count that was actually read')
-    // The Owner-facing view now wraps a read reply in sections, so her sentence is no
-    // longer the first thing in the string — but it must still be present VERBATIM. The
-    // invariant was never "nothing may be added"; it is "her words are not rewritten".
-    assert.ok(res.reply.includes('我目前讀唔到'), 'her own words are preserved, not rewritten')
+    // STRONGER THAN A CORRECTION. The presentation layer rebuilds a read reply from the
+    // rows that were actually retrieved and keeps only her closing question, so the false
+    // sentence never reaches the screen at all. The correction note is still carried
+    // through, because the failure has to stay visible and countable.
+    assert.equal(res.reply.includes('我目前讀唔到'), false, 'the false claim is removed, not merely annotated')
+    assert.ok(res.reply.includes('### 日曆'), 'and what WAS read is shown in its place')
   })
 })
 
@@ -88,11 +90,11 @@ test('an honest reply over the same live read is untouched', async () => {
       demo: true, interactionMode: 'chat', providerHint: 'claude', readContextDeps: liveCalendar()
     })
     assert.equal(res.readClaimCorrected, false)
-    // Untouched BY THE GUARD: no correction is appended. The presentation view still
-    // renders the retrieved rows into their own section, which is its whole purpose.
+    // Untouched BY THE GUARD: no correction is appended. Her prose is replaced by the
+    // rendered rows — that is the presentation contract, not a guard action.
     assert.equal(res.reply.includes('系統更正'), false)
-    assert.ok(res.reply.includes('你今個星期有兩件事。'))
     assert.ok(res.reply.includes('### 日曆'))
+    assert.ok(res.reply.includes('Supplier call') && res.reply.includes('Stock count'))
   })
 })
 
@@ -135,7 +137,10 @@ test('*** 「幫我睇 Calendar」 gets the answer, NOT 「我未有建立提案
       demo: true, interactionMode: 'chat', providerHint: 'claude', readContextDeps: liveCalendar()
     })
     assert.ok(!res.reply.includes('我未有建立提案'), 'a lookup is not an attempt to make her act')
-    assert.ok(res.reply.includes('星期三'), 'her real answer is returned')
+    // The ANSWER is returned — now as the rows themselves rather than her sentence about
+    // them, which is the point of rendering it here instead of asking her to retype it.
+    assert.ok(res.reply.includes('Supplier call'), 'her real answer is returned')
+    assert.ok(res.reply.includes('2026-08-04'))
   })
 })
 
