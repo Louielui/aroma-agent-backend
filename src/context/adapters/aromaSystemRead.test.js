@@ -237,3 +237,76 @@ test('*** no new dependency was introduced ***', () => {
   const requires = [...src.matchAll(/require\('([^']+)'\)/g)].map((m) => m[1])
   assert.deepEqual(requires, ['../contextResult'], 'built-in fetch only — nothing added to package.json')
 })
+
+/* ── 5. FIELD MAPPING — measured against real captured shapes ──────────────── */
+// Every row shape below was captured from the live API on 2026-08-03 (field NAMES only).
+// The camelCase-only lists that used to live here mapped EVERY order-planning row to no
+// id, no title and no date, so the model was handed "(untitled) (no date)" four times.
+
+const SHAPES = {
+  inventory: { id: 1, name: 'x', unit: 'kg', currentStock: 2, parLevel: 3, isPurchasable: 1, lifecycleStatus: 'active', category: 'c', subCategory: 's' },
+  suppliers: { id: 2, name: 'y', status: 'active', deliveryDays: 'Mon', orderLeadDays: 1, cutoffTime: '10:00', minimumOrderValue: 0, preferredOrderMethod: 'email', email: 'a@b.c', phone: '1' },
+  dailyCounts: { id: 3, submittedAt: '2026-08-01T00:00:00Z', locationCode: 'L1', locationName: 'Kitchen', itemCount: 5, dueDate: '2026-08-09', items: [] },
+  orderPlanning: { ingredient_id: 4, ingredient_name: 'z', unit: 'kg', par_level: 1, live_qty: 0, incoming_qty: 0, projected_qty: 0, suggested_order_qty: 1, supplier_id: 7, supplier_name: 'S', delivery_days: 'Tue', order_lead_days: 2, supplier_product_name: 'P', purchase_unit: 'case', pack_size: '6', latest_price: '1.00' },
+  purchaseOrders: { id: 5, poNumber: 'PO-1', supplierId: 7, supplierName: 'S', status: 'sent', orderDate: '2026-07-30', itemCount: 2, source: 'app', createdAt: '2026-07-30T00:00:00Z', items: [] },
+  invoices: { id: 6, status: 'approved', rawVendorName: 'V', supplierId: 7, invoiceNumber: '', invoiceDate: '2026-07-28', subtotal: '1', tax: '0', total: '1', currency: 'CAD', source: 'drive', createdAt: '2026-07-28T00:00:00Z', lineItems: [] }
+}
+
+test('every captured shape maps to a usable id — snake_case included', async () => {
+  for (const [key, row] of Object.entries(SHAPES)) {
+    const a = adapter(jsonOk({ success: true, count: 1, data: [row] }))
+    const [r] = await a.readWithState(key).then((x) => x.results)
+    assert.ok(r.sourceId, `${key}: id must not be empty`)
+    assert.equal(r.sourceId.includes('#'), false, `${key}: a real id field exists, so no position marker`)
+  }
+})
+
+test('order planning maps snake_case to id and title — the captured defect', async () => {
+  const a = adapter(jsonOk({ success: true, count: 1, data: [SHAPES.orderPlanning] }))
+  const [r] = await a.readWithState('orderPlanning').then((x) => x.results)
+  assert.equal(r.sourceId, '4') // ingredient_id
+  assert.equal(r.title, 'z') // ingredient_name
+  assert.equal(r.originalDate, null) // this endpoint carries no date — and none is invented
+})
+
+test('titles and dates come from the row, and a missing date stays missing', async () => {
+  const expect = {
+    inventory: { title: 'x', date: null },
+    suppliers: { title: 'y', date: null },
+    dailyCounts: { title: 'Kitchen', date: '2026-08-01T00:00:00Z' },
+    orderPlanning: { title: 'z', date: null },
+    purchaseOrders: { title: 'PO-1', date: '2026-07-30' },
+    invoices: { title: 'V', date: '2026-07-28' } // invoiceNumber is empty on real rows
+  }
+  for (const [key, want] of Object.entries(expect)) {
+    const a = adapter(jsonOk({ success: true, count: 1, data: [SHAPES[key]] }))
+    const [r] = await a.readWithState(key).then((x) => x.results)
+    assert.equal(r.title, want.title, `${key}: title`)
+    assert.equal(r.originalDate, want.date, `${key}: date`)
+  }
+})
+
+test('a due date is never used as the row date', async () => {
+  const a = adapter(jsonOk({ success: true, count: 1, data: [{ dueDate: '2027-01-01', due_date: '2027-01-01' }] }))
+  const [r] = await a.readWithState('dailyCounts').then((x) => x.results)
+  assert.equal(r.originalDate, null) // a future expectation is not when this happened
+})
+
+test('*** no two rows may share an id ***', async () => {
+  // Rows with no id field at all — the case that used to reuse the endpoint name.
+  const rows = [{ a: 1 }, { a: 2 }, { a: 3 }, { a: 4 }]
+  const a = adapter(jsonOk({ success: true, count: rows.length, data: rows }))
+  const res = await a.readWithState('orderPlanning').then((x) => x.results)
+  const ids = res.map((r) => r.sourceId)
+  assert.equal(new Set(ids).size, ids.length, 'ids must be distinct')
+  assert.equal(ids.includes('orderPlanning'), false, 'the bare endpoint name is not an id')
+  // and real ids are still preferred over positions
+  const b = adapter(jsonOk({ success: true, count: 2, data: [{ id: 'A' }, { ingredient_id: 'B' }] }))
+  assert.deepEqual(await b.readWithState('inventory').then((x) => x.results.map((r) => r.sourceId)), ['A', 'B'])
+})
+
+test('the business date beats the row insert timestamp', async () => {
+  const a = adapter(jsonOk({ success: true, count: 1, data: [{ id: 1, invoiceDate: '2026-07-28', createdAt: '2026-08-03T00:00:00Z' }] }))
+  const [r] = await a.readWithState('invoices').then((x) => x.results)
+  assert.equal(r.originalDate, '2026-07-28') // when the invoice is from, not when we scanned it
+})
