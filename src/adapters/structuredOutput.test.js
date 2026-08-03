@@ -113,3 +113,64 @@ test('MockAdapter({supportsStructuredOutput:false}) fails closed on responseForm
     () => m.complete('x', { responseFormat: RF }),
     (e) => e instanceof UnsupportedCapabilityError && e.code === 'STRUCTURED_OUTPUT_UNSUPPORTED');
 });
+
+/* ── THE OPENAI ADAPTER HONOURS THE CONTRACT (it used to ignore it) ────────── */
+// The chat lane runs GPT as primary. This adapter had no responseFormat branch at all —
+// no support, and no error either — so a schema-dependent feature would have degraded to
+// unconstrained prose for the provider answering most turns, silently. These pin the fix.
+
+const { OpenAIAdapter } = require('./OpenAIAdapter');
+
+function capturingOpenAI (captured) {
+  const a = new OpenAIAdapter({ apiKey: 'k', model: 'gpt-test' });
+  a._post = async (url, body) => {
+    captured.body = body;
+    return { status: 200, data: { output: [{ content: [{ type: 'output_text', text: '{"ok":true}' }] }], usage: { input_tokens: 1, output_tokens: 1 } } };
+  };
+  return a;
+}
+
+const PLAN_SCHEMA = {
+  type: 'object', additionalProperties: false,
+  properties: { directAnswer: { type: 'string' } }, required: ['directAnswer']
+};
+
+test('*** OpenAI: responseFormat becomes text.format with strict:true ***', async () => {
+  const captured = {};
+  await capturingOpenAI(captured).complete('hi', {
+    responseFormat: { type: 'json_schema', name: 'answer_plan', schema: PLAN_SCHEMA }
+  });
+  assert.ok(captured.body.text, 'the request must carry a format instruction');
+  assert.strictEqual(captured.body.text.format.type, 'json_schema');
+  assert.strictEqual(captured.body.text.format.name, 'answer_plan');
+  assert.strictEqual(captured.body.text.format.strict, true, 'strict is the API-layer guarantee');
+  assert.deepStrictEqual(captured.body.text.format.schema, PLAN_SCHEMA);
+});
+
+test('*** OpenAI: no responseFormat → nothing is sent "just in case" ***', async () => {
+  const captured = {};
+  await capturingOpenAI(captured).complete('hi', {});
+  assert.strictEqual('text' in captured.body, false);
+});
+
+test('*** OpenAI: a malformed responseFormat throws BEFORE any network call ***', async () => {
+  const captured = {};
+  const a = capturingOpenAI(captured);
+  for (const bad of [{}, { type: 'json' }, { type: 'json_schema', name: '', schema: {} }, { type: 'json_schema', name: 'n' }]) {
+    await assert.rejects(() => a.complete('hi', { responseFormat: bad }),
+      (e) => e instanceof AdapterOptionError && e.code === 'MALFORMED_RESPONSE_FORMAT');
+  }
+  assert.strictEqual(captured.body, undefined, 'nothing may reach the network');
+});
+
+test('*** no adapter may silently ignore responseFormat ***', async () => {
+  // The contract's own words. Every adapter either honours it or fails closed; passing it
+  // and getting unconstrained prose back is the one outcome that must be impossible.
+  const captured = {};
+  const rf = { type: 'json_schema', name: 'n', schema: PLAN_SCHEMA };
+  await capturingOpenAI(captured).complete('hi', { responseFormat: rf });
+  assert.ok(captured.body.text && captured.body.text.format, 'OpenAI honours it');
+  const mock = new (require('./MockAdapter').MockAdapter)({ supportsStructuredOutput: false });
+  await assert.rejects(() => mock.complete('hi', { responseFormat: rf }),
+    (e) => e instanceof UnsupportedCapabilityError, 'an adapter that cannot honour it fails closed');
+});

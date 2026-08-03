@@ -38,6 +38,7 @@
 
 const axios = require('axios')
 const { LLMAdapter } = require('./LLMAdapter')
+const { assertResponseFormat } = require('./adapterErrors')
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_TIMEOUT_MS = 60000
@@ -123,6 +124,21 @@ class OpenAIAdapter extends LLMAdapter {
       store: false // never create retrievable Application State
     }
     if (opts.system) body.instructions = opts.system
+
+    // ── STRUCTURED OUTPUT — the vendor-neutral contract, honoured here at last ────────
+    // This adapter used to IGNORE opts.responseFormat entirely: no branch, no error, just
+    // unconstrained prose. The LLMAdapter contract forbids exactly that — "it must NEVER
+    // silently ignore it and return unconstrained text" — and the chat lane runs GPT as
+    // primary, so a schema-dependent feature would have degraded silently for the
+    // provider that answers most turns. That is the failure mode this whole round exists
+    // to remove, so the defect is fixed rather than routed around.
+    //
+    // Responses API shape: text.format = { type:'json_schema', name, schema, strict }.
+    // `strict: true` is the point — it is the API-layer guarantee, not a request.
+    if (opts.responseFormat !== undefined && opts.responseFormat !== null) {
+      const rf = assertResponseFormat(opts.responseFormat)
+      body.text = { format: { type: 'json_schema', name: rf.name, schema: rf.schema, strict: true } }
+    }
     // REASONING BUDGET GUARD (GPT-5.6 family). Verified from the docs: reasoning tokens
     // are billed as output tokens AND count against max_output_tokens, and effort
     // defaults to 'medium' when omitted — so on a 2048-token chat budget the reasoning

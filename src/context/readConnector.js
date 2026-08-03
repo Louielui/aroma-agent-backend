@@ -79,9 +79,22 @@ function createReadConnector (options = {}) {
       return makeUnavailable({ source, reason: `read failed: ${(e && e.message) || String(e)}`, retrievedAt: asOf })
     }
 
-    const arr = Array.isArray(out) ? out : [out]
+    // AN ADAPTER MAY DESCRIBE ITS OWN READ. Returning `{ results, evidence }` instead of a
+    // bare array lets a source say how many rows exist in total, what its numbers mean and
+    // how they were ordered — facts the composer needs in order not to present four rows
+    // out of two hundred as the answer. Bare arrays remain valid and simply carry no
+    // description; nothing about the read path or the caps changes either way.
+    const enveloped = out && !Array.isArray(out) && Array.isArray(out.results)
+    const arr = enveloped ? out.results : (Array.isArray(out) ? out : [out])
     const capped = arr.slice(0, caps.maxResults).map((r) => capItem(r, caps.maxItemBytes))
-    return { asOf, source, count: capped.length, truncatedCount: Math.max(0, arr.length - caps.maxResults), results: capped }
+    return {
+      asOf,
+      source,
+      count: capped.length,
+      truncatedCount: Math.max(0, arr.length - caps.maxResults),
+      results: capped,
+      evidence: enveloped && out.evidence ? out.evidence : null
+    }
   }
 
   return { register, read, sources, hasWriteMethod, caps }

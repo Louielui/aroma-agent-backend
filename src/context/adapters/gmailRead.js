@@ -8,7 +8,7 @@
  * bounded. Fails-closed to 'unavailable' when the service is absent.
  */
 
-const { makeContextResult } = require('../contextResult')
+const { makeContextResult, ENTITY_TYPES } = require('../contextResult')
 
 function createGmailReadAdapter (options = {}) {
   const now = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
@@ -24,18 +24,18 @@ function createGmailReadAdapter (options = {}) {
   const methods = {
     async searchMessages ({ q, maxResults = 25 } = {}) {
       const r = await ensure().users.messages.list({ userId: 'me', q, maxResults })
-      return ((r.data && r.data.messages) || []).map((m) => makeContextResult({ source: 'gmail', sourceId: m.id, title: null, content: '', link: linkFor(m.id), retrievedAt: now() }))
+      return ((r.data && r.data.messages) || []).map((m) => makeContextResult({ source: 'gmail', sourceId: m.id, title: null, content: '', link: linkFor(m.id), retrievedAt: now(), entityType: ENTITY_TYPES.MAIL, fields: {} }))
     },
     async getMessage ({ id } = {}) {
       const r = await ensure().users.messages.get({ userId: 'me', id, format: 'metadata', metadataHeaders: ['Subject', 'From', 'Date'] })
       const m = r.data
-      return makeContextResult({ source: 'gmail', sourceId: m.id, title: header(m, 'Subject'), originalDate: header(m, 'Date'), content: m.snippet || '', link: linkFor(m.id), retrievedAt: now() })
+      return makeContextResult({ source: 'gmail', sourceId: m.id, title: header(m, 'Subject'), originalDate: header(m, 'Date'), content: m.snippet || '', link: linkFor(m.id), retrievedAt: now(), entityType: ENTITY_TYPES.MAIL, fields: { subject: header(m, 'Subject'), from: header(m, 'From'), date: header(m, 'Date') } })
     },
     async getThread ({ id } = {}) {
       const r = await ensure().users.threads.get({ userId: 'me', id, format: 'metadata' })
       const t = r.data
       const count = (t.messages || []).length
-      return makeContextResult({ source: 'gmail', sourceId: t.id, title: null, content: `${count} message(s) in thread`, link: linkFor(t.id), retrievedAt: now() })
+      return makeContextResult({ source: 'gmail', sourceId: t.id, title: null, content: `${count} message(s) in thread`, link: linkFor(t.id), retrievedAt: now(), entityType: ENTITY_TYPES.THREAD, fields: { messageCount: count } })
     }
   }
 

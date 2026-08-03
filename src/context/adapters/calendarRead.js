@@ -7,7 +7,7 @@
  * when the service is absent.
  */
 
-const { makeContextResult } = require('../contextResult')
+const { makeContextResult, ENTITY_TYPES } = require('../contextResult')
 
 function createCalendarReadAdapter (options = {}) {
   const now = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
@@ -18,12 +18,12 @@ function createCalendarReadAdapter (options = {}) {
   const methods = {
     async listEvents ({ calendarId = 'primary', timeMin, timeMax, maxResults = 25 } = {}) {
       const r = await ensure().events.list({ calendarId, timeMin, timeMax, maxResults, singleEvents: true, orderBy: 'startTime' })
-      return ((r.data && r.data.items) || []).map((e) => makeContextResult({ source: 'calendar', sourceId: e.id, title: e.summary || null, originalDate: startOf(e), content: e.description || '', link: e.htmlLink, retrievedAt: now() }))
+      return ((r.data && r.data.items) || []).map((e) => makeContextResult({ source: 'calendar', sourceId: e.id, title: e.summary || null, originalDate: startOf(e), content: e.description || '', link: e.htmlLink, retrievedAt: now(), entityType: ENTITY_TYPES.EVENT, fields: { summary: e.summary || null, start: startOf(e), location: (e.location || null) } }))
     },
     async getEvent ({ calendarId = 'primary', eventId } = {}) {
       const r = await ensure().events.get({ calendarId, eventId })
       const e = r.data
-      return makeContextResult({ source: 'calendar', sourceId: e.id, title: e.summary || null, originalDate: startOf(e), content: e.description || '', link: e.htmlLink, retrievedAt: now() })
+      return makeContextResult({ source: 'calendar', sourceId: e.id, title: e.summary || null, originalDate: startOf(e), content: e.description || '', link: e.htmlLink, retrievedAt: now(), entityType: ENTITY_TYPES.EVENT, fields: { summary: e.summary || null, start: startOf(e), location: (e.location || null) } })
     }
   }
 

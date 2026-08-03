@@ -30,7 +30,73 @@
  * code and a short reason — never a response body, never a row.
  */
 
-const { makeContextResult, makeUnavailable } = require('../contextResult')
+const { makeContextResult, makeUnavailable, ENTITY_TYPES } = require('../contextResult')
+
+/**
+ * WHAT EACH ENDPOINT ACTUALLY RETURNS, and what its numbers MEAN.
+ *
+ * Measured against the live API on 2026-08-03, because the difference decides whether an
+ * answer is true. `/ai/inventory` returns 199 rows carrying `currentStock` and `parLevel`
+ * — real quantities — but NO location field and NO as-of timestamp of any kind. So it is
+ * neither a bare item list nor a stock count: it is a per-item recorded quantity with no
+ * place and no time attached. Rendering four of those rows as 「確認到 4 項存貨」 was two
+ * false claims at once (a sample presented as the whole, and an untimed unplaced number
+ * presented as stock on hand).
+ *
+ * These descriptors travel WITH the rows so the layer that composes the answer cannot
+ * mistake one kind of record for another, and cannot quietly acquire a dimension the
+ * data does not have. Location and as-of DO exist — on /ai/daily-counts, 11 locations
+ * with submittedAt — which is why the honest answer offers that view instead.
+ */
+const ENTITY_OF = Object.freeze({
+  inventory: ENTITY_TYPES.INVENTORY_ITEM,
+  suppliers: ENTITY_TYPES.SUPPLIER,
+  dailyCounts: ENTITY_TYPES.DAILY_COUNT,
+  orderPlanning: ENTITY_TYPES.ORDER_SUGGESTION,
+  purchaseOrders: ENTITY_TYPES.PURCHASE_ORDER,
+  invoices: ENTITY_TYPES.INVOICE
+})
+
+const SCOPE_OF = Object.freeze({
+  inventory: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅' },
+  suppliers: { hasLocation: false, hasAsOf: false, note: null },
+  dailyCounts: { hasLocation: true, hasAsOf: true, note: null },
+  orderPlanning: { hasLocation: false, hasAsOf: false, note: null },
+  purchaseOrders: { hasLocation: false, hasAsOf: true, note: null },
+  invoices: { hasLocation: false, hasAsOf: true, note: null }
+})
+
+/** What a numeric field MEANS, in the Owner's words. Only fields that carry meaning. */
+const METRICS_OF = Object.freeze({
+  inventory: {
+    currentStock: { label: '現有存量', meaning: '記錄存量,無地點、無時間戳' },
+    parLevel: { label: '安全存量', meaning: '應該保持嘅水平' }
+  },
+  orderPlanning: {
+    live_qty: { label: '現有', meaning: '記錄存量' },
+    par_level: { label: '安全存量', meaning: '應該保持嘅水平' },
+    suggested_order_qty: { label: '建議訂量', meaning: '系統計出嘅補貨量' }
+  },
+  invoices: { total: { label: '總額', meaning: '發票總額' } },
+  purchaseOrders: { itemCount: { label: '項目數', meaning: '單內項目數量' } },
+  dailyCounts: { itemCount: { label: '點咗幾多項', meaning: '該次盤點嘅項目數' } },
+  suppliers: {}
+})
+
+/**
+ * RANKING SIGNAL, or none. Inventory can be ranked by how far below par a thing is —
+ * that is what makes a row worth showing. Suppliers and invoices have no such signal, and
+ * saying so is better than presenting whichever four rows the API happened to return
+ * first, which is exactly what used to happen.
+ */
+const RANKING_OF = Object.freeze({
+  inventory: { by: 'parLevel - currentStock desc', fn: (r) => Number(r.parLevel || 0) - Number(r.currentStock || 0) },
+  orderPlanning: { by: 'suggested_order_qty desc', fn: (r) => Number(r.suggested_order_qty || 0) },
+  suppliers: null,
+  invoices: null,
+  purchaseOrders: null,
+  dailyCounts: null
+})
 
 const DEFAULT_BASE_URL = 'https://system.aromabistro741.com'
 const KEY_ENV = 'AROMA_SYSTEM_KEY'
@@ -153,6 +219,16 @@ function toResult (endpointKey, row, retrievedAt, index = 0) {
     bits.push(k + '=' + String(v))
   }
 
+  // THE ROW'S OWN SCALAR VALUES, unflattened. `content` stays for the prompt block and
+  // for citations; `fields` is what a renderer reads when it needs a quantity rather than
+  // a sentence about one.
+  const fields = {}
+  for (const [k, v] of Object.entries(r)) {
+    if (v === null || v === undefined || v === '') continue
+    if (typeof v === 'object') continue
+    fields[k] = v
+  }
+
   return makeContextResult({
     source: 'aroma_system',
     sourceId: id === null ? endpointKey + '#' + index : String(id),
@@ -160,7 +236,9 @@ function toResult (endpointKey, row, retrievedAt, index = 0) {
     originalDate: date === null ? null : String(date),
     content: bits.join(' · '),
     link: null, // the API returns no canonical URL; inventing one would be a fabricated citation
-    retrievedAt
+    retrievedAt,
+    entityType: ENTITY_OF[endpointKey] || null,
+    fields
   })
 }
 
@@ -168,6 +246,29 @@ function toResult (endpointKey, row, retrievedAt, index = 0) {
  * @param {{ env?, baseUrl?, apiKey?, fetchFn?, timeoutMs?, clock? }} options
  *   fetchFn is injected in tests so no test ever reaches the network.
  */
+/**
+ * The EvidenceSet descriptor for one read: what kind of thing, how many exist, how many
+ * are here, whether that is a sample, what the numbers mean, and how they were ordered.
+ * Everything a composer needs in order NOT to over-claim.
+ */
+function describe (endpointKey, retrievedAt, totalCount, shownCount, isSample) {
+  const rank = RANKING_OF[endpointKey]
+  return {
+    source: 'aroma_system',
+    entityType: ENTITY_OF[endpointKey] || null,
+    endpoint: endpointKey,
+    scope: SCOPE_OF[endpointKey] || { hasLocation: false, hasAsOf: false, note: null },
+    metrics: METRICS_OF[endpointKey] || {},
+    totalCount,
+    shownCount,
+    completeness: isSample ? 'sample' : 'complete',
+    rankedBy: rank ? rank.by : null,
+    retrievedAt,
+    trust: 'live',
+    provenance: 'Aroma System ' + PATHS[endpointKey]
+  }
+}
+
 function createAromaSystemReadAdapter (options = {}) {
   const env = options.env || process.env
   const now = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
@@ -239,13 +340,28 @@ function createAromaSystemReadAdapter (options = {}) {
       : (Array.isArray(body && body.data) ? body.data
           : (Array.isArray(body && body.items) ? body.items : []))
 
+    // THE REAL TOTAL, from the API's own header — not the number of rows we kept. These
+    // are different numbers and conflating them is how 4 of 199 became 「4 項存貨」.
+    const totalCount = Number.isFinite(body && body.count) ? body.count : rows.length
+
     // READ OK WITH NOTHING IN IT IS NOT A FAILURE. The two are different answers and are
     // never merged — the same distinction the whole read layer is built around.
-    if (rows.length === 0) return { readState: READ_STATE.NONE, results: [] }
+    if (rows.length === 0) {
+      return { readState: READ_STATE.NONE, results: [], evidence: describe(endpointKey, retrievedAt, 0, 0, false) }
+    }
+
+    // RANKED WHERE A SIGNAL EXISTS. The API ignores `limit`, so the whole table arrives
+    // and something must choose. Sorting by the largest shortfall puts the rows worth
+    // acting on first; where no signal exists the order is left alone AND declared, so
+    // the answer can say it is an arbitrary sample rather than implying it is a top-N.
+    const rank = RANKING_OF[endpointKey]
+    const ordered = rank ? [...rows].sort((a, b) => rank.fn(b) - rank.fn(a)) : rows
+    const kept = ordered.slice(0, MAX_ITEMS)
 
     return {
       readState: READ_STATE.FOUND,
-      results: rows.slice(0, MAX_ITEMS).map((row, i) => toResult(endpointKey, row, retrievedAt, i))
+      results: kept.map((row, i) => toResult(endpointKey, row, retrievedAt, i)),
+      evidence: describe(endpointKey, retrievedAt, totalCount, kept.length, totalCount > kept.length)
     }
   }
 
@@ -254,13 +370,19 @@ function createAromaSystemReadAdapter (options = {}) {
    * at registration and re-checks them at call time. Each takes only query options — none
    * takes a path, a URL or a method.
    */
+  // Each returns `{ results, evidence }` — the rows plus what they are, how many exist and
+  // how they were ordered. readConnector understands both this and a bare array.
+  const enveloped = async (key, opts) => {
+    const r = await request(key, opts)
+    return { results: r.results, evidence: r.evidence || null }
+  }
   const methods = {
-    async listInventory (opts = {}) { return (await request('inventory', opts)).results },
-    async listSuppliers (opts = {}) { return (await request('suppliers', opts)).results },
-    async listDailyCounts (opts = {}) { return (await request('dailyCounts', opts)).results },
-    async listOrderPlanning (opts = {}) { return (await request('orderPlanning', opts)).results },
-    async listPurchaseOrders (opts = {}) { return (await request('purchaseOrders', opts)).results },
-    async listInvoices (opts = {}) { return (await request('invoices', opts)).results }
+    async listInventory (opts = {}) { return enveloped('inventory', opts) },
+    async listSuppliers (opts = {}) { return enveloped('suppliers', opts) },
+    async listDailyCounts (opts = {}) { return enveloped('dailyCounts', opts) },
+    async listOrderPlanning (opts = {}) { return enveloped('orderPlanning', opts) },
+    async listPurchaseOrders (opts = {}) { return enveloped('purchaseOrders', opts) },
+    async listInvoices (opts = {}) { return enveloped('invoices', opts) }
   }
 
   return {
