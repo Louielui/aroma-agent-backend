@@ -59,7 +59,10 @@ const CAPS = Object.freeze({
   maxRawStatusChars: 24
 })
 
-const H = Object.freeze({ limits: '資料限制', next: '下一步' })
+const H = Object.freeze({ limits: '資料限制', opinion: '香香睇法', next: '下一步' })
+
+/** Sentences kept from her reading of the rows. */
+const MAX_OPINION_SENTENCES = 3
 
 /**
  * Pull one `name=value` out of the compact content string the adapters build
@@ -220,6 +223,49 @@ function renderLimits (intent, perSource, hidden, opts = {}) {
   return `### ${H.limits}\n\n` + parts.join('\n')
 }
 
+/**
+ * 香香睇法 — THE ONE PLACE HER OWN WORDS SURVIVE.
+ *
+ * A rendered table cannot say "this one has been sitting a month", and her judgement is
+ * the reason there is a 香香 at all. So she gets a short section of her own, after the
+ * data and before the question — but the numbers stay the server's.
+ *
+ * WHAT IS ENFORCED, AND WHAT IS NOT. Any sentence containing a digit is dropped. That is
+ * blunt on purpose: an amount, an invoice number, a date and a count are all digits, and
+ * the summary above is the single source for every one of them, so a digit in her prose
+ * is either a restatement or an invention. It costs her nothing she needs — 「其中一張拖
+ * 咗成個月」 carries no digit.
+ *
+ * It does NOT verify that a non-numeric claim is supported by the rows. 「呢間供應商成日
+ *遲」 cannot be checked mechanically, and pretending otherwise would be the same
+ * over-claiming this module was built to stop. The contract asks her not to; the
+ * structural guarantee here covers numbers only, and this comment is where that limit is
+ * written down rather than implied.
+ */
+function extractOpinion (reply) {
+  const text = String(reply == null ? '' : reply)
+  const start = new RegExp('(^|\\n)#{0,3}\\s*【?' + H.opinion + '】?\\s*\\n?').exec(text)
+  if (!start) return null
+  const after = text.slice(start.index + start[0].length)
+  const end = /(^|\n)#{0,3}\s*【?(下一步|資料限制)】?/.exec(after)
+  return sanitizeOpinion(end ? after.slice(0, end.index) : after)
+}
+
+/** Keep at most three digit-free sentences; nothing left means no section at all. */
+function sanitizeOpinion (raw) {
+  const text = String(raw == null ? '' : raw).replace(/^[#\s]*/, '').trim()
+  if (!text) return null
+  const kept = text
+    .split(/(?<=[。！？!?])\s*|\n+/)
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0)
+    .filter((s) => !/\d/.test(s)) // a number here is either a restatement or an invention
+    .slice(0, MAX_OPINION_SENTENCES)
+  const joined = kept.join('').trim()
+  // Padding is worse than silence: if she had nothing to add, say nothing.
+  return joined.length > 0 ? joined : null
+}
+
 /** Split the model's reply at 下一步 — everything before it is discarded, see below. */
 function splitModelReply (reply) {
   const text = String(reply == null ? '' : reply).trim()
@@ -268,6 +314,9 @@ function buildReadResultReply (input = {}) {
   const out = [renderSummary(intent, groups)]
   for (const g of groups) out.push(renderSection(g.source, g.items))
   if (limits) out.push(limits)
+  // Her reading of what is above — after the data, before the question.
+  const opinion = extractOpinion(original)
+  if (opinion) out.push(`### ${H.opinion}\n\n${opinion}`)
   out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
 
   // A CORRECTION SURVIVES THE RESTRUCTURING. readStateGuard's note is a safety control,
@@ -287,6 +336,8 @@ module.exports = {
   renderSummary,
   renderLimits,
   selectRelevant,
+  extractOpinion,
+  sanitizeOpinion,
   splitModelReply,
   oneQuestion,
   statusSegment,
