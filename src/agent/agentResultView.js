@@ -103,7 +103,15 @@ function buildAgentResultView (input = {}) {
           warnings: Array.isArray(out.warnings) ? out.warnings : [],
           testPassed: (out.testResults && typeof out.testResults.ok === 'boolean') ? out.testResults.ok : null,
           costUsd: Number.isFinite(raw.cost) ? raw.cost : null,
-          durationMs: Number.isFinite(raw.latencyMs) ? raw.latencyMs : null
+          durationMs: Number.isFinite(raw.latencyMs) ? raw.latencyMs : null,
+          // THE PATCH, AS A POINTER — never its contents. The Owner reads the stat here
+          // and the patch in an editor; a full diff pasted into a chat card is something
+          // nobody reads, which is the same as not showing it while pretending otherwise.
+          patchFile: typeof out.patchFile === 'string' ? out.patchFile : null,
+          patchStatus: typeof out.patchStatus === 'string' ? out.patchStatus : null,
+          applyHint: typeof out.applyHint === 'string' ? out.applyHint : null,
+          // Expiry facts only. publicCredentialFacts already stripped everything else.
+          credential: (out.credential && typeof out.credential === 'object') ? out.credential : null
         }
       })()
 
@@ -158,6 +166,25 @@ function buildAgentResultView (input = {}) {
     : `（上限 ${money(canonical.costCapUsd)} / ${canonical.timeoutSec == null ? UNKNOWN : canonical.timeoutSec + ' 秒'}）`
   const cost = costParts.length ? `${costParts.join(' · ')}${capsText}` : UNKNOWN
 
+  /**
+   * WHERE THE WORK WENT. The clone is thrown away, so without a file the Owner is told
+   * what changed and has nothing to apply. The path and the apply command go here; the
+   * patch body never does.
+   */
+  // ABSENT STAYS ABSENT. A result carrying no patch fields at all — a run from before this
+  // existed, or one that never reached the worker — has nothing to say about a patch, and
+  // a section reading "資料不明" would claim we looked and could not tell. The section is
+  // omitted instead.
+  const patchLine = (r && r.patchStatus)
+    ? (r.patchStatus === 'written' && r.applyHint
+        ? r.applyHint
+        : (r.patchStatus === 'no_changes'
+            ? '冇改動，所以冇 patch。'
+            : (r.patchStatus === 'patch_too_large'
+                ? 'patch 太大，冇寫入 —— 改動範圍超出咗預期，請重新出一張更窄嘅工作單。'
+                : 'patch 寫唔到（' + r.patchStatus + '）。改動已經隨副本刪除，要重新跑。')))
+    : null
+
   const sections = [
     { title: '結果', body: headline },
     { title: '實際改動了甚麼', body: changed },
@@ -165,8 +192,12 @@ function buildAgentResultView (input = {}) {
     { title: '測試', body: testLine },
     { title: '改動內容（diff）', body: diff },
     { title: '用了多少', body: cost },
+    { title: '改動去咗邊', body: patchLine },
     { title: '你的真實程式庫', body: '完全沒有被改動。這次操作只發生在丟棄式副本裡，副本已經(或即將)被刪除。' }
   ]
+  // Inserted only when there is something to say (see patchLine).
+  if (patchLine) sections.splice(sections.length - 1, 0, { title: '改動去咗邊', body: patchLine })
+
   if (status === 'refused' && r && r.reason) {
     sections.splice(1, 0, { title: '拒絕原因', body: String(r.reason) })
   }

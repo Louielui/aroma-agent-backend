@@ -149,7 +149,7 @@ test('approved hash === executed hash -> the run proceeds', async () => {
   const calls = { prep: 0, invoke: 0 }
   const audit = []
   const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/context/contextResult.js'], risks: [] } } } } })
+  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/context/contextResult.js'], risks: [] } } } } })
   const r = await runner.run({ workOrder, approvedHash: hash, who: 'louie' })
   assert.equal(r.ok, true)
   assert.equal(calls.invoke, 1)
@@ -161,7 +161,7 @@ test('approved hash !== executed hash -> REFUSED, audited, ZERO workspace prep a
   const calls = { prep: 0, invoke: 0 }
   const audit = []
   const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, output: {} } } } })
+  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, output: {} } } } })
 
   // the classic attack: a SECOND file smuggled in after approval
   const widened = Object.assign({}, workOrder, { allowedFiles: [workOrder.allowedFiles[0], 'src/context/flags.js'] })
@@ -181,7 +181,7 @@ test('approved hash !== executed hash -> REFUSED, audited, ZERO workspace prep a
 test('a missing approved hash is refused (execution always requires an explicit approval)', async () => {
   const calls = { prep: 0, invoke: 0 }
   const { workOrder } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ workspace: fakeWorkspace(calls), worker: { invoke: async () => { calls.invoke++; return {} } } })
+  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), worker: { invoke: async () => { calls.invoke++; return {} } } })
   assert.equal((await runner.run({ workOrder })).error, 'missing_approved_hash')
   assert.equal(calls.prep, 0); assert.equal(calls.invoke, 0)
 })

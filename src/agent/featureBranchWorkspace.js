@@ -83,10 +83,25 @@ function createFeatureBranchWorkspace (options = {}) {
     if (r.status !== 0) return []
     return String(r.stdout || '').split(/\r?\n/).map((s) => s.trim().replace(/\\/g, '/')).filter(Boolean)
   }
-  /** A human-readable diff stat (never a raw patch; no secrets projected upstream). */
+  /** A human-readable diff stat. This is what the card shows. */
   function diffStat (dir) {
     const r = git(['diff', '--stat', 'HEAD'], dir)
     return r.status === 0 ? String(r.stdout || '').trim() : ''
+  }
+  /**
+   * THE FULL PATCH — the whole point of v1.
+   *
+   * Without this the clone is thrown away and the Owner is told "3 files changed" with
+   * nothing to apply, which would turn three copy-pastes into four. The patch is written
+   * to a file the Owner can `git apply`; it is deliberately NOT shown in the card, which
+   * carries the stat only.
+   *
+   * `--no-color` and `--no-ext-diff` so the bytes are a real patch and not a rendering,
+   * and no external diff driver can be invoked from inside the clone.
+   */
+  function diffPatch (dir) {
+    const r = git(['diff', '--no-color', '--no-ext-diff', 'HEAD'], dir)
+    return r.status === 0 ? String(r.stdout || '') : ''
   }
   /** Current remotes (post-run verification — must stay empty). */
   function remotes (dir) {
@@ -101,7 +116,7 @@ function createFeatureBranchWorkspace (options = {}) {
   /** NO-OP: the B2-12 startup sweep reaps aged aroma-sandbox-* dirs. */
   function cleanup (_dir) { /* logged residual, reaped at startup */ }
 
-  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, diffStat, remotes, currentBranch, cleanup }
+  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, diffStat, diffPatch, remotes, currentBranch, cleanup }
 }
 
 module.exports = { createFeatureBranchWorkspace, defaultGitRunner, AGENT_SANDBOX_PREFIX }
