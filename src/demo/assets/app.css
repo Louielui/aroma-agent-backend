@@ -514,3 +514,12 @@ button[disabled] { opacity: .45; cursor: default; }
 .set-msg.bad { color: var(--bad); }
 
 .set-foot { margin: 14px 0 4px; font-size: var(--small-size); color: var(--faint); }
+
+/* What she read out of the Owner's own words, shown before he approves. */
+.inferred {
+  margin: 8px 0 4px; padding: 9px 12px;
+  background: var(--bubble-user); border: 1px solid var(--line); border-radius: 8px;
+  font-size: var(--ui-size); line-height: var(--ui-line); color: var(--ink);
+}
+.inferred-note { margin-top: 5px; color: var(--faint); font-size: var(--small-size); }
+.ask { margin: 10px 0 6px; color: var(--muted); font-size: var(--ui-size); }

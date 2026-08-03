@@ -180,12 +180,24 @@ for (const [label, envelope] of [
       // The chat lane additionally reports WHICH provider answered — the model picker
       // needs it, because a fallback means the reply may not come from the chosen one.
       // The engine envelope itself must still pass through untouched.
-      const { servedBy, fallbackUsed, lane, ...rest } = r.json
+      const { servedBy, fallbackUsed, lane, inferred, ...rest } = r.json
       assert.deepEqual(rest, envelope, 'the engine envelope is passed through unchanged')
       assert.ok(servedBy === null || typeof servedBy === 'string')
       assert.equal(typeof fallbackUsed, 'boolean')
     } else {
-      assert.deepEqual(r.json, envelope, 'non-chat lanes stay byte-identical')
+      // `inferred` is a TRANSPORT field, added the same way servedBy/fallbackUsed/lane are:
+      // it reports what the server read out of the Owner's own words, so the page can stop
+      // asking him to retype the file path he just gave. The ENGINE envelope underneath
+      // must still be untouched, which is what this assertion actually protects.
+      const { inferred, ...rest2 } = r.json
+      assert.deepEqual(rest2, envelope, 'the engine envelope is passed through unchanged')
+      // …and it rides ONLY on a response that carries a proposal, because that is the only
+      // turn that renders the work-order affordance. draft_proposal and ask gain nothing.
+      if (Array.isArray(envelope.proposals) && envelope.proposals.length) {
+        assert.equal(typeof inferred, 'object', 'the proposal turn carries the inference')
+      } else {
+        assert.equal(inferred, undefined, 'other lanes stay byte-identical')
+      }
     }
   })
 }
@@ -274,14 +286,24 @@ test('DEMO_HTML: the approval card is a viewer + four fields of intent, and hold
 test('DEFECT (a): no input uses its required value as the placeholder, and submits are gated', () => {
   // The walkthrough cost two attempts and burned a nonce because an empty field LOOKED
   // filled: the placeholder WAS the required value. Placeholders are now instructions.
-  assert.ok(DEMO_HTML.includes("setAttribute('placeholder', '請輸入要改的檔案路徑')"), 'file path placeholder is an instruction')
+  // Pinned to the RULE, not to one call's syntax: the placeholder must be an instruction.
+  // (It is now set through a ternary, because only the missing field is ever asked for.)
+  assert.ok(DEMO_HTML.includes("'請輸入要改的檔案路徑'"), 'file path placeholder is an instruction')
+  assert.ok(DEMO_HTML.includes("'請輸入想改成甚麼'"), 'the change placeholder is an instruction too')
+  // Stronger than before: a SAMPLE PATH as ghost text would be the same defect wearing a
+  // different hat — an empty field that looks filled.
+  assert.ok(!/placeholder',\s*'[a-z0-9_.-]+\/[a-z0-9_.\-/]+'/i.test(DEMO_HTML),
+    'no example file path is ever used as ghost text')
   assert.ok(DEMO_HTML.includes("'請輸入 ' + sealed.typedConfirmationRequired + ' 以確認'"), 'confirmation placeholder is an instruction')
   assert.ok(!/placeholder',\s*sealed\.typedConfirmationRequired\)/.test(DEMO_HTML), 'the required value is never the placeholder')
   assert.ok(!/placeholder',\s*'EXECUTE'/.test(DEMO_HTML), 'EXECUTE is never shown as ghost text')
 
   // gating: both buttons start disabled and are enabled only by real input
   assert.ok(DEMO_HTML.includes('mk.disabled = true'), 'the seal button starts disabled')
-  assert.ok(DEMO_HTML.includes("mk.disabled = fileIn.value.trim() === ''"), 'seal enabled only on a non-empty path')
+  // The two-field form became one question asked only when something is genuinely
+  // missing, so the gate now hangs off that single input. Same guarantee, new name.
+  assert.ok(DEMO_HTML.includes("mk.disabled = askIn.value.trim() === ''"), 'seal enabled only on a non-empty answer')
+  assert.ok(DEMO_HTML.includes('mk.disabled = !!askIn'), 'and it starts disabled whenever a question is being asked')
   assert.ok(DEMO_HTML.includes("setAttribute('placeholder', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認')") ||
             DEMO_HTML.includes("'請輸入 ' + sealed.typedConfirmationRequired + ' 以確認'"), 'confirmation placeholder is an instruction')
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'the approve button starts disabled')
