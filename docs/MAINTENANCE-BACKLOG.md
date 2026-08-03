@@ -102,3 +102,34 @@ needs its own GO and its own measurement — a wider query also costs relevance.
 **Related, same round:** the Gmail adapter fetches `format:'metadata'` + snippet only, so an
 aggregate figure that lives further down a report body is not retrievable at all. Reading
 the body is a separate GO with its own privacy weight.
+
+---
+
+## Three tests flake under parallel load (temp-file contention)
+
+**Recorded 2026-08-03. Owner decision: note it, do not fix this round.**
+
+`src/persona/ownerSettings.test.js`, `src/coo/proposal.persistence.test.js` and
+`src/run/recovery.store.test.js` fail intermittently in a full `node --test "src/**/*.test.js"`
+run and pass **every time in isolation**. Observed across four consecutive full runs: 3 fail,
+then 5, then 3, then 4 — a different member of the set each time, never the same one twice
+in a row.
+
+**What it is NOT.** Not caused by the read layer or the answer-plan work: these three share
+no module, no flag and no code path with it, and the failures predate and postdate those
+commits without correlation. Not the three known Computer Operator environment failures
+either — those fail deterministically, every run, for a documented reason.
+
+**What it looks like.** All three write real files, and at least two derive their working
+directory from the process rather than from a per-test temp root. Under the parallel runner
+two files land on the same path and whichever loses reports a state it did not write. That
+is the same class of defect as the Computer Operator tests noted above: asserting on shared
+state rather than on state the test owns.
+
+**The fix (when picked up).** Give each of the three its own `mkdtemp` root and point the
+code under test at it, so no two tests can address the same file. Do not serialise the
+runner to hide it — that trades a visible flake for a slow suite and leaves the shared-state
+assumption in place.
+
+**Impact meanwhile.** A full-suite red must be read carefully: check whether the failing
+file is one of these three and re-run it alone before treating it as a regression.
