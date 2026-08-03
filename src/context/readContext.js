@@ -324,7 +324,40 @@ function renderItem (r, caps = CAPS, opts = {}) {
 const zeroResultLine = (source) => `[${source}] read OK — no matching results for this query`
 const unavailableLine = (source, reason) => `[${source}] UNAVAILABLE: ${reason}`
 
-/** Run one plan step; returns { results, unavailable }. Never throws. */
+/**
+ * THE EVIDENCE DESCRIPTOR FOR ONE SOURCE'S READ.
+ *
+ * An adapter that describes itself wins — it knows its endpoint's real total, what its
+ * numbers mean and how it ordered them. For the others the honest minimum is built here:
+ * the entity kind from the rows themselves, and `totalCount: null` for "we do not know",
+ * never the shown count wearing a total's clothes.
+ *
+ * `usedFallback` is carried because a recent-items read answers a different question from
+ * the one asked, and a composer must be able to say so rather than present it as a match.
+ */
+function describeRead (source, adapterEvidence, kept, usedFallback, asOf) {
+  const base = adapterEvidence || {
+    source,
+    entityType: (kept[0] && kept[0].entityType) || null,
+    endpoint: null,
+    scope: { hasLocation: false, hasAsOf: false, note: null },
+    metrics: {},
+    totalCount: null, // unknown is unknown
+    shownCount: kept.length,
+    completeness: 'unknown',
+    rankedBy: null,
+    retrievedAt: asOf,
+    trust: 'live',
+    provenance: source
+  }
+  return Object.assign({}, base, {
+    shownCount: kept.length,
+    usedFallback: usedFallback === true,
+    selectedBy: usedFallback ? 'recency' : (base.rankedBy ? 'ranked' : 'api_order')
+  })
+}
+
+/** Run one plan step; returns { results, unavailable, evidence }. Never throws. */
 async function runStep (connector, source, step, caps) {
   let out
   try {
@@ -345,7 +378,7 @@ async function runStep (connector, source, step, caps) {
     }
     results = hydrated
   }
-  return { results, unavailable: null }
+  return { results, unavailable: null, evidence: (out && out.evidence) || null }
 }
 
 /**
@@ -355,12 +388,13 @@ async function runStep (connector, source, step, caps) {
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
-    return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [] }
+    return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], evidenceSets: [] }
   }
   const keywords = extractKeywords(message, caps.maxKeywords)
   const perSource = []
   const lineGroups = [] // one array of rendered lines PER SOURCE, in source order
   const itemsBySource = [] // the same rows, unrendered, for the Owner-facing view
+  const evidenceSets = [] // what each read IS: kind, totals, meaning, ordering, trust
   let truncated = false
 
   // ── ONE SOURCE, START TO FINISH ────────────────────────────────────────────
@@ -401,6 +435,11 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
         // what was already computed — this changes nothing about what is read or sent to
         // the model; the block above is still the only thing that reaches the prompt.
         items: kept,
+        // WHAT THIS READ IS. From the adapter when it describes itself; otherwise the
+        // honest minimum, where an unknown total is NULL rather than the number we happen
+        // to hold — a shown count standing in for a total is the exact false claim this
+        // whole descriptor exists to prevent.
+        evidence: describeRead(source, step.evidence, kept, usedFallback, asOf),
         overflow
       }
     } catch (err) {
@@ -427,6 +466,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
     itemsBySource.push({ source: got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
+    evidenceSets.push(got.evidence || describeRead(got.entry.source, null, [], got.entry.usedFallback === true, asOf))
     if (got.overflow) truncated = true
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
@@ -484,7 +524,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   const block = `${built.body}\n${CLOSE}`
   const anyLive = perSource.some((p) => p.trust === 'live' && p.count > 0)
   const status = truncated ? 'TRUNCATED' : (anyLive ? 'READY' : 'PARTIAL')
-  return { block, status, perSource, itemsBySource }
+  return { block, status, perSource, itemsBySource, evidenceSets }
 }
 
 module.exports = {
@@ -492,6 +532,7 @@ module.exports = {
   SAFETY_HEADER,
   buildSafetyHeader,
   capLine,
+  describeRead,
   INTENTS,
   AROMA_INTENTS,
   intentFor,
