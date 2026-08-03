@@ -29,6 +29,7 @@ const { processIntake } = require('../intake/intakeService')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
+const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
@@ -59,6 +60,16 @@ function optsForMode (interactionMode, { requestId, contextCard, promoteToPropos
   }
   // proposal — proposal-only via the existing demo path + injected domain seam.
   return { requestId, interactionMode: 'proposal', demo: true, contextCard, promoteToProposal }
+}
+
+/** The conversation as plain text, for path extraction only. */
+function historyTextOf (history) {
+  if (!Array.isArray(history)) return ''
+  const parts = history.map((h) => {
+    if (h && typeof h.content === 'string') return h.content
+    return typeof h === 'string' ? h : ''
+  })
+  return parts.join('\n')
 }
 
 function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake } = {}) {
@@ -221,7 +232,25 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           ? Object.assign({}, answered, { labArchive })
           : answered
 
-        return res.status(200).json(withLab)
+        // WHAT SHE READ OUT OF THE OWNER'S OWN WORDS. Computed HERE, server-side, from the
+        // same path extractor the Work Order producer validates with — so the thing that
+        // guesses and the thing that checks can never drift into two implementations.
+        // It changes only what she ASKS; the Work Order, its hash and the typed EXECUTE are
+        // untouched, and every inference is printed on the card before approval.
+        // ONLY WHERE IT IS USED. The inference exists so the work-order affordance can stop
+        // asking for the path the Owner just typed — so it rides only on a response that
+        // actually carries a proposal. Chat and email_draft envelopes stay byte-identical,
+        // because a consumer of those must not gain a field for a reason that has nothing
+        // to do with them.
+        const carriesProposal = withLab && typeof withLab === 'object' && !Array.isArray(withLab) &&
+          Array.isArray(withLab.proposals) && withLab.proposals.length > 0
+        const withInference = carriesProposal
+          ? Object.assign({}, withLab, {
+              inferred: inferWorkRequest({ message, conversation: historyTextOf(history) })
+            })
+          : withLab
+
+        return res.status(200).json(withInference)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped

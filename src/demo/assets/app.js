@@ -434,26 +434,58 @@
     var goal = proposals[0].task || res.reply || ''
     addMeta(t.body, '提案 ' + pid + ' · 只是提案，未執行')
 
+    /* WHAT SHE READ OUT OF WHAT YOU ALREADY SAID.
+     *
+     * This used to be two empty text boxes asking for the file path and the intended
+     * change — both of which the Owner had just typed in his message. Being asked to
+     * retype what you just said is the interface admitting it was not listening.
+     *
+     * The server infers both (requestInference.js, sharing the Work Order producer's own
+     * path extractor so the guess and the check cannot drift). What it read is SHOWN, so
+     * a wrong reading is visible and can be corrected by typing another sentence — never
+     * silently assumed. Only what is genuinely missing is asked for, in one line. */
+    var inf = (res && res.inferred) || {}
+    var missing = Array.isArray(inf.missing) ? inf.missing : ['file', 'intent']
+
+    if (inf.file || inf.intent) {
+      var read = el('div', 'inferred')
+      if (inf.file) read.appendChild(el('div', null, '檔案：' + inf.file))
+      if (inf.intent) read.appendChild(el('div', null, '改動：' + inf.intent))
+      read.appendChild(el('div', 'inferred-note', '睇錯咗？直接打多句話講清楚就得，唔使填表。'))
+      t.body.appendChild(read)
+    }
+
     var row = el('div', 'act')
-    var fileIn = el('input', 'typed')
-    fileIn.setAttribute('type', 'text')
-    fileIn.setAttribute('placeholder', '請輸入要改的檔案路徑')
-    fileIn.setAttribute('aria-label', '要改的單一檔案路徑')
-    var intentIn = el('input', 'typed')
-    intentIn.setAttribute('type', 'text')
-    intentIn.setAttribute('placeholder', '想改成甚麼（可留空）')
-    intentIn.setAttribute('aria-label', '打算改成甚麼')
+    var askIn = null
+
+    if (missing.length) {
+      // ONE question, about the one thing missing. Never two boxes, never a question
+      // about something already answered.
+      t.body.appendChild(el('p', 'ask', inf.question || '你想改邊個檔？'))
+      askIn = el('input', 'typed')
+      askIn.setAttribute('type', 'text')
+      askIn.setAttribute('aria-label', missing.indexOf('file') >= 0 ? '要改的單一檔案路徑' : '打算改成甚麼')
+      /* THE PLACEHOLDER IS AN INSTRUCTION, NEVER A PLAUSIBLE ANSWER. An earlier walkthrough
+         cost two attempts and burned a nonce because an empty field LOOKED filled — the
+         placeholder was the value. A sample path here would repeat exactly that. */
+      askIn.setAttribute('placeholder', missing.indexOf('file') >= 0 ? '請輸入要改的檔案路徑' : '請輸入想改成甚麼')
+      row.appendChild(askIn)
+    }
+
     var mk = el('button', 'primary', '產生工作單')
     mk.setAttribute('type', 'button')
-    mk.disabled = true
-    fileIn.addEventListener('input', function () { mk.disabled = fileIn.value.trim() === '' })
-    row.appendChild(fileIn); row.appendChild(intentIn); row.appendChild(mk)
+    mk.disabled = !!askIn
+    if (askIn) askIn.addEventListener('input', function () { mk.disabled = askIn.value.trim() === '' })
+    row.appendChild(mk)
     t.body.appendChild(row)
 
     mk.addEventListener('click', function () {
       if (mk.disabled) return
       mk.disabled = true
-      requestWorkOrder(goal, fileIn.value.trim(), null, pid, intentIn.value.trim(), conv)
+      var typedAnswer = askIn ? askIn.value.trim() : ''
+      var file = inf.file || (missing.indexOf('file') >= 0 ? typedAnswer : '')
+      var intent = inf.intent || (missing.indexOf('file') < 0 ? typedAnswer : '')
+      requestWorkOrder(goal, file, null, pid, intent, conv)
     })
   }
 
