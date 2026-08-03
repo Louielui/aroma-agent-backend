@@ -44,7 +44,10 @@
   --font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --msg-size: 16px;       /* EXACT — the conversation itself */
-  --msg-line: 1.5;        /* EXACT */
+  /* Body leading. 1.5 was tight for a wider column: the longer the line, the more the eye
+     needs vertical separation to find the next one. 1.6 is the usual pairing at this
+     measure and is what makes the extra width readable rather than merely bigger. */
+  --msg-line: 1.6;
   --ui-size: 14px;        /* sidebar items, buttons, controls */
   --ui-line: 1.5;
   --small-size: 12px;     /* footer, served-by, timestamps */
@@ -69,7 +72,16 @@
   /* ── geometry ─────────────────────────────────────────────────────────── */
   --radius: 14px;
   --side-w: 264px;
-  --col: 634px;           /* EXACT — the message column. .thread and .composer-col share it. */
+  /* The user bubble stays narrower than the column — a bubble spanning the full width
+     stops reading as a bubble. The assistant has no bubble and uses all of it. */
+  --user-bubble-max: 86%;
+  /* THE MESSAGE COLUMN. Widened 634 -> 768 because the page read as mostly margin.
+     Chosen from LINE LENGTH, not from a competitor pixel value: at --msg-size 16px a
+     768px column runs ~95 Latin characters, and the assistant body no longer shrinks
+     inside it, so ~90 is the working measure — the upper end of the comfortable 45-95
+     band, and ~48 full-width CJK characters, which is where Chinese still scans well.
+     One token: if it is still too narrow (or now too wide), this line is the only edit. */
+  --col: 768px;
   --msg-gap: 28px;        /* vertical space BETWEEN messages — the reference is generous */
   /* THE ONE KNOB FOR THE CHAT AVATAR. Change this number and nothing else: the dot's
      width, height, flex-basis and its vertical alignment with the first line of the reply
@@ -172,7 +184,7 @@ body {
 #conv-title { font-size: var(--title-size); font-weight: var(--weight-medium); margin: 0; flex: 1; color: var(--muted);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-#log { flex: 1; overflow-y: auto; padding: 28px 20px 8px; }
+#log { flex: 1; overflow-y: auto; padding: 28px 24px 8px; }
 .thread { max-width: var(--col); margin: 0 auto; display: flex; flex-direction: column; gap: var(--msg-gap); }
 
 /* ── messages ────────────────────────────────────────────────────────────── */
@@ -206,7 +218,13 @@ body {
 .brand-mark { display: inline-flex; align-items: center; flex: 0 0 auto; }
 .brand-mark svg { width: 20px; height: 20px; display: block; }
 
-.body { min-width: 0; max-width: 86%; }
+/* THE ASSISTANT'S TEXT USES THE WHOLE COLUMN.
+   It used to be capped at 86%, which shrank the reply INSIDE an already-narrow column —
+   two separate squeezes stacked, and the reason the page read as mostly margin. The user
+   keeps a narrower bubble, because a bubble that spans the full width stops looking like
+   one; that is the only reason for the difference. */
+.body { min-width: 0; max-width: 100%; }
+.turn.user .body { max-width: var(--user-bubble-max); }
 /* ONLY THE USER GETS A BUBBLE. The assistant's reply is plain text on the page
    background — checked against the reference, and this was already how it worked, so the
    only change here is the bubble's own tint. */

@@ -31,15 +31,29 @@ function token (name, block = ROOT) {
 test('*** EXACT values, read from Manus computed styles ***', () => {
   // These came from the reference's own computed styles, so they are not judgement calls.
   assert.equal(token('msg-size'), '16px')
-  assert.equal(token('msg-line'), '1.5')
   assert.equal(token('line'), '#e5e7eb', 'border colour')
   assert.equal(token('divider'), '#e5e7eb', 'divider is the same value in the reference')
-  assert.equal(token('col'), '634px', 'message column width')
   assert.equal(
     token('font-sans').replace(/\s+/g, ' '),
     '-apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Helvetica, "Apple Color Emoji", Arial, sans-serif, "Segoe UI Emoji", "Segoe UI Symbol"',
     'the stack is used verbatim, in order'
   )
+})
+
+test('*** OWNER-DIRECTED layout — deliberate departures from the Manus reference ***', () => {
+  // `col` and `msg-line` used to sit in the EXACT group above, because they were read from
+  // Manus's computed styles. They are no longer that: the Owner asked for a wider column
+  // with less margin (2026-08-03), so their provenance is now a decision, not a
+  // measurement, and pretending otherwise would make the group above a lie.
+  assert.equal(token('col'), '768px', 'the message column — widened on Owner direction')
+  assert.equal(token('msg-line'), '1.6', 'leading raised to suit the longer measure')
+  assert.equal(token('user-bubble-max'), '86%', 'only the USER bubble stays narrow')
+
+  // The assistant's text must NOT be squeezed a second time inside the column. Two stacked
+  // caps — a 634px column and an 86% body — were what made the page read as mostly margin.
+  assert.match(CSS, /\.body \{[^}]*max-width: 100%/, 'the reply uses the whole column')
+  assert.match(CSS, /\.turn\.user \.body \{[^}]*max-width: var\(--user-bubble-max\)/,
+    'and the narrower cap applies to the user bubble only')
 })
 
 test('*** APPROXIMATE values, sampled from a screenshot — flagged as such in the source ***', () => {
