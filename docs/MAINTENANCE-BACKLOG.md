@@ -71,3 +71,34 @@ the Lab.
 
 **Owner decision needed:** none. This is ordinary test maintenance, to be picked up with the next
 Computer Operator round.
+
+---
+
+## Gmail keyword search misses English mailboxes (read logic, NOT presentation)
+
+**Recorded 2026-08-03. Owner decision: note it, do not fix this round.**
+
+**The measurement.** For 「最近有咩發票？」 the Gmail plan issues
+`("發票") newer_than:90d` and returns **zero** messages. The invoice report email the Owner
+expected to see does exist and was retrieved — but only through the recent-items FALLBACK
+(`newer_than:7d`), i.e. because it was recent, not because it matched. Its subject and body
+are English; the query term is Chinese.
+
+**Why it matters.** The Owner asks in Cantonese; the mailbox is largely English. Every
+Chinese-only search term therefore has the same failure mode: a genuinely relevant message
+is unreachable by search and can only appear by accident, through a fallback that the
+presentation layer is now required to exclude from the main result. The two rules combine
+into a silent miss: correct behaviour at each step, nothing found overall.
+
+**What this is NOT.** Not a presentation defect. The renderer is right to hide fallback
+items — they were not selected for relevance. The gap is upstream, in how the query is built.
+
+**Sketch of a fix (not approved, not designed).** Extend the term extractor so a CJK term
+carries its common English equivalents into the query for latin-language sources
+(發票→invoice, 供應商→supplier, 訂單→purchase order …), OR issue the source's own query in
+both languages and merge. Either changes `planFor`/`extractKeywords`, i.e. read logic, and
+needs its own GO and its own measurement — a wider query also costs relevance.
+
+**Related, same round:** the Gmail adapter fetches `format:'metadata'` + snippet only, so an
+aggregate figure that lives further down a report body is not retrievable at all. Reading
+the body is a separate GO with its own privacy weight.

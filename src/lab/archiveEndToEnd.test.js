@@ -109,7 +109,11 @@ test('*** END TO END: a Gmail turn whose reply CITES the mail stores the questio
 
     // the conversation itself is unaffected
     assert.equal(status, 200)
-    assert.ok(json.reply.includes('REPLY_SENTINEL'), 'the Owner still got his answer')
+    // The Owner still gets his answer — as the retrieved row itself. A mail question now
+    // renders the mail rather than her sentence about it, so the sentinel that stands for
+    // her prose is gone from the screen while the ANSWER is more present than before.
+    assert.ok(json.reply.includes('MAIL_TITLE_SENTINEL'), 'the Owner still got his answer')
+    assert.ok(json.reply.includes('### Gmail'))
     assert.equal(json.labArchive.recorded, true)
     assert.equal(json.labArchive.assistantOmitted, true, 'the omission is visible on the response')
 

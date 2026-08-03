@@ -571,6 +571,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // With nothing retrieved it is a no-op and the reply passes through untouched.
     const view = buildReadResultReply({
       reply: guarded.reply,
+      correction: guarded.correction || null,
+      message,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated
@@ -618,6 +620,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     const view = buildReadResultReply({
       reply: guarded.reply,
+      correction: guarded.correction || null,
+      message,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated

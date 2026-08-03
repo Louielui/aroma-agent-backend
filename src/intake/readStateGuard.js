@@ -138,8 +138,15 @@ function buildCorrection (perSource, sources) {
 function enforceReadState (reply, perSource) {
   const found = detectFalseReadClaim(reply, perSource)
   if (!found.violated) return { reply, corrected: false, sources: [], kind: null }
+  const correction = buildCorrection(perSource, found.sources)
   return {
-    reply: String(reply) + buildCorrection(perSource, found.sources),
+    reply: String(reply) + correction,
+    // THE CORRECTION ON ITS OWN. The presentation layer rebuilds a read reply from the
+    // retrieved rows and keeps only the model's final question, so a correction appended
+    // to the end of her prose would be discarded with the prose. Returning it separately
+    // lets the renderer carry it through — a safety control may not be lost to a layout
+    // change, and this is cheaper and less fragile than searching the text for it again.
+    correction,
     corrected: true,
     sources: found.sources,
     kind: found.kind
