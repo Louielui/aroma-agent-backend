@@ -56,7 +56,27 @@ function inlineSvg (name) {
   return readAsset(name).replace(XMLNS_ATTR, '').trim()
 }
 
-const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/']
+/**
+ * ORDER MATTERS. INLINE_JS must be substituted before READ_SOURCE_LABELS, because the
+ * source list lives inside app.js and only exists in `out` once the script has been
+ * inlined. The loop below walks this array in order, so the new key belongs at the end.
+ */
+const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/']
+
+/**
+ * THE READ SOURCES, AS THE OWNER NAMES THEM — generated from the registry, not typed.
+ *
+ * The page held its own list of four: Drive, Gmail, Calendar, GitHub. aroma_system, the
+ * restaurant's own system and the one he reads most, was missing from the settings
+ * switches AND from the sentence describing what each model can see. That is the third
+ * time a hardcoded four has gone stale in this codebase, so the page is now handed the
+ * real list at build time and cannot disagree with the read layer about what exists.
+ */
+function readSourceLabelsJson () {
+  const { ALL_SOURCES } = require('../context/liveClients')
+  const { LABELS } = require('../intake/readStateGuard')
+  return JSON.stringify(ALL_SOURCES.map((s) => LABELS[s] || s))
+}
 
 /**
  * Inline the CSS/JS/artwork into their placeholder comments. `split/join` is used rather
@@ -72,7 +92,8 @@ function buildDemoHtml () {
     '/*INLINE_DOT*/': inlineSvg('dot.svg'),
     // The favicon is the padded SQUARE form, shared with the installed app icon so the
     // tab and the taskbar show the same thing. appManifest owns that geometry.
-    '/*FAVICON_URI*/': iconDataUri()
+    '/*FAVICON_URI*/': iconDataUri(),
+    '/*READ_SOURCE_LABELS*/': readSourceLabelsJson()
   }
   let out = readAsset('index.html')
   for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])

@@ -15,7 +15,7 @@
 
 const express = require('express')
 const {
-  load, save, effectiveFlags, CAPS, FLAGS
+  load, save, effectiveFlags, CAPS, FLAGS, sourceFlagLabels
 } = require('../persona/ownerSettings')
 const { SETTINGS_HTML } = require('../demo/settingsHtml')
 
@@ -36,7 +36,10 @@ function createSettingsRouter (deps = {}) {
         preferences: s.preferences,
         updatedAt: s.updatedAt,
         caps: CAPS,
-        flags: flagsFn(process.env)
+        flags: flagsFn(process.env),
+        // The Owner-facing switch names, DERIVED from the registered source list. The page
+        // used to hold its own copy of four, so a fifth source had no row and no name.
+        flagLabels: sourceFlagLabels()
       })
     } catch (_) {
       res.status(500).json({ ok: false, error: 'settings_read_failed' })

@@ -275,7 +275,12 @@ test('the composer bar holds the shortcuts and the picker — and no lane switch
 })
 
 test('an empty conversation is not also listed in the sidebar', () => {
-  assert.ok(DEMO_HTML.includes('function isListed (c) { return c.history.length > 0 }'), 'listing requires content')
+  // The RULE, not the exact line. Conversation History v1 added a second way to be listed
+  // — the server says it has turns — so pinning the old one-liner pinned the wrong thing.
+  // What must stay true is that CONTENT is required: a brand-new empty conversation has
+  // neither an empty history nor a stored flag, so it is still not history.
+  assert.ok(DEMO_HTML.includes('function isListed (c) { return c.stored === true || c.history.length > 0 }'),
+    'listing requires content, or a server-stored conversation that has some')
   assert.ok(DEMO_HTML.includes('if (!isListed(convs[i])) continue'), 'empty ones are skipped')
   assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '香香'"), 'the header does not repeat an empty title')
 })
@@ -295,10 +300,19 @@ test('*** what the picker CLAIMS about each provider must be TRUE, and stated on
   // data goes is worse than no claim at all. The note must now state the real trade-off:
   // the same context, but a second vendor receives it. contextAsymmetry.test.js pins the
   // behaviour; this pins what the interface says about it.
+  // AND THE LIST IS NOW GENERATED. These assertions used to spell out four sources, which
+  // is how the note went stale a second time: aroma_system was connected, read live, and
+  // named nowhere on this screen. The expectation is now built from the registry, so a
+  // sixth source fails this test until the interface names it.
+  const { ALL_SOURCES } = require('../context/liveClients')
+  const { LABELS } = require('../intake/readStateGuard')
+  const sources = ALL_SOURCES.map((s) => LABELS[s] || s).join('／') + '同過往決定'
   assert.ok(!DEMO_HTML.includes('睇唔到 Drive'), 'the stale "GPT is blind" claim is gone from the interface')
-  assert.ok(DEMO_HTML.includes('一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定'), 'GPT is stated to see the same context')
+  assert.ok(DEMO_HTML.includes(JSON.stringify(ALL_SOURCES.map((s) => LABELS[s] || s))), 'the source list is injected from the registry')
+  assert.ok(DEMO_HTML.includes("'一樣睇到 ' + SOURCE_TEXT"), 'GPT is stated to see the same context')
   assert.ok(DEMO_HTML.includes('會送去 OpenAI'), 'and that the data goes to a second vendor')
-  assert.ok(DEMO_HTML.includes('睇到 Drive／Gmail／日曆／GitHub 同過往決定'), 'the Claude capability, for contrast')
+  assert.ok(DEMO_HTML.includes("'睇到 ' + SOURCE_TEXT"), 'the Claude capability, for contrast')
+  assert.ok(sources.includes('餐廳系統'), 'and the restaurant\'s own system is part of that list')
   assert.ok(DEMO_HTML.includes("el('div', 'opt-note'"), 'rendered as a visible note element')
   assert.ok(!/title="[^"]*OpenAI/.test(DEMO_HTML), 'not a tooltip-only disclosure')
   assert.ok(/\.opt-note\s*\{/.test(DEMO_HTML), 'and it is styled to be read')
