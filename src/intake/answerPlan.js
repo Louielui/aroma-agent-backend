@@ -200,6 +200,8 @@ function logAnswerPlan (entry, sink) {
     dropped: drops.map((d) => {
       const out = { kind: String(d && d.kind ? d.kind : 'unknown'), sourceId: String(d && d.sourceId != null ? d.sourceId : '').slice(0, LIMITS.maxDropIdChars) }
       if (d && d.field != null) out.field = String(d.field).slice(0, LIMITS.maxDropIdChars)
+      // The rejection REASON — an enum, so it says why without saying what.
+      if (d && d.why != null) out.why = String(d.why).slice(0, LIMITS.maxDropIdChars)
       return out
     }),
     requestId: entry.requestId == null ? null : String(entry.requestId)
@@ -372,20 +374,53 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
  * after the number is removed must ITSELF be a real value: 「18 ea」 survives because the
  * row carries 'ea', and 「18 apples」 does not, because no row ever said apples.
  */
-function valueMatches (raw, index) {
+function matchValue (raw, index) {
   const s = String(raw).trim()
-  if (index.values.has(s)) return true
-  if (index.values.has(translate(s))) return true
+  if (index.values.has(s)) return { ok: true }
+  if (index.values.has(translate(s))) return { ok: true }
+
+  // WHY it failed, as an enum. Diagnosing the 2026-08-04 six-drop turn meant replaying the
+  // live API by hand, because the record said only "this field was dropped" — and the drop
+  // record may not carry the value itself. A reason costs nothing and leaks nothing.
+  const tokens = s.match(/-?\d+(?:[.,]\d+)*/g)
+  if (!tokens) return { ok: false, why: 'not_a_value' }
+  if (tokens.length > 1) return { ok: false, why: 'multiple_numbers' }
 
   const n = numericOf(s)
-  if (n === null || !index.numericValues.has(n)) return false
+  if (n === null || !index.numericValues.has(n)) return { ok: false, why: 'number_not_in_row' }
 
   // The number is real. Whatever else is in the string has to be real too.
   const rest = s
     .replace(/-?\d+(?:[.,]\d+)*/g, ' ')
     .replace(/[$¥€£%,、｜|()（）]/g, ' ')
     .trim()
-  return rest === '' || index.values.has(rest)
+  if (rest === '' || index.values.has(rest)) return { ok: true }
+  return { ok: false, why: 'residue_not_a_value' }
+}
+
+/** The boolean form. The rule is unchanged; matchValue just also says why not. */
+function valueMatches (raw, index) { return matchValue(raw, index).ok === true }
+
+/**
+ * WHICH ROW FIELD A MODEL-WRITTEN FACT LABEL REFERS TO.
+ *
+ * The EvidenceSet already carries the metric labels — currentStock=現有存量,
+ * parLevel=安全存量 — and the SCOPE block puts them in the prompt, which is exactly where
+ * the model got its field names on the live turn. So a label can be resolved back to the
+ * field it names, per source, with no guessing.
+ */
+function metricLabelMap (evidenceSets = []) {
+  const bySource = new Map()
+  for (const e of evidenceSets) {
+    if (!e || !e.source || !e.metrics || typeof e.metrics !== 'object') continue
+    const m = bySource.get(e.source) || new Map()
+    for (const [field, meta] of Object.entries(e.metrics)) {
+      const label = meta && meta.label
+      if (typeof label === 'string' && label) m.set(label, field)
+    }
+    bySource.set(e.source, m)
+  }
+  return bySource
 }
 
 /** Translate a status-looking value; leave anything else alone. */
@@ -466,8 +501,11 @@ const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/)
  * VALIDATE. Returns the plan with unsupported material removed, plus what was dropped.
  * Nothing here rewrites meaning: a claim is kept as written or removed entirely.
  */
+const EMPTY_LABELS = new Map()
+
 function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
   const index = evidenceIndex(evidenceSets, itemsBySource)
+  const metrics = metricLabelMap(evidenceSets)
   // TWO COUNTERS, BECAUSE THEY ARE TWO FAILURES. They used to share one, and the shared
   // number sent a live diagnosis after the wrong defect: `droppedFacts:3` was read as three
   // deleted values when it was three deleted ITEMS, which is why the screen was empty
@@ -511,15 +549,35 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
         continue
       }
       const facts = []
+      const labels = metrics.get(row.source) || EMPTY_LABELS
       for (const f of (Array.isArray(it.facts) ? it.facts : []).slice(0, LIMITS.maxFactsPerItem)) {
-        // The value must be a real one — verbatim, the translation of one, or the same
-        // quantity written differently. See valueMatches: never a substring.
-        if (!valueMatches(f.value, index)) {
-          droppedFacts++
-          drops.push({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: String(f.field).slice(0, LIMITS.maxDropIdChars) })
+        const field = String(f.field)
+
+        // ── A QUANTITY IS THE SERVER'S, NOT THE MODEL'S ─────────────────────────
+        // The title already works this way and a number deserves it more: it is the fact
+        // most likely to be re-typed, and re-typing is what this pipeline exists to stop.
+        // When the model names a known metric, the value is looked up in the ROW — so a
+        // mistyped or wrong number is CORRECTED rather than deleted, and the Owner keeps
+        // the most useful thing on the screen. On 2026-08-04 six quantities were dropped
+        // for exactly this and he was left with three category labels.
+        //
+        // A label is NOT permission to produce a number: if the row does not carry that
+        // field, this falls through and the fact is checked (and dropped) as before.
+        const metricField = labels.get(field)
+        if (metricField !== undefined && row.fields && row.fields[metricField] !== undefined && row.fields[metricField] !== null && row.fields[metricField] !== '') {
+          facts.push({ field, value: translate(row.fields[metricField]) })
           continue
         }
-        facts.push({ field: String(f.field), value: translate(f.value) })
+
+        // Everything else: unchanged. Verbatim, the translation of one, or the same
+        // quantity written differently — never a substring, never fuzzy.
+        const m = matchValue(f.value, index)
+        if (!m.ok) {
+          droppedFacts++
+          drops.push({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why })
+          continue
+        }
+        facts.push({ field, value: translate(f.value) })
       }
       // The title is the server's, not the model's: it cannot be edited into something else.
       items.push({ sourceId, title: row.title || String(it.title || ''), facts })
@@ -648,6 +706,8 @@ module.exports = {
   minimalAnswer,
   translate,
   valueMatches,
+  matchValue,
+  metricLabelMap,
   numericOf,
   cjkToNumber,
   sentenceIsSupported,
