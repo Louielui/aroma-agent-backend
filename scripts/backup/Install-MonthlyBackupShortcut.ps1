@@ -25,14 +25,30 @@ $desktop = [Environment]::GetFolderPath('Desktop')
 $lnk     = Join-Path $desktop $ShortcutName
 $ps      = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
 
+# ── WHY THE SHORTCUT IS BUILT UNDER AN ASCII NAME AND THEN RENAMED ────────────────────────
+# WScript.Shell is an ANSI COM API. This machine's ANSI codepage is 1252 (Western European),
+# which cannot represent Chinese, so passing the real name straight to CreateShortcut turned
+# 「每月離線備份」 into "??????" — and '?' is an ILLEGAL filename character, so the save died
+# with a FileNotFoundException that named a path nobody asked for.
+#
+# So the .lnk is created under a plain-ASCII name, which COM handles, and then renamed with
+# [System.IO.File]::Move, which is Unicode-native. The Owner sees the Chinese name; COM never
+# sees a character it cannot encode.
+$tmpLnk = Join-Path $desktop ('_installing-monthly-backup-' + [guid]::NewGuid().ToString('N') + '.lnk')
+
 $shell = New-Object -ComObject WScript.Shell
-$s = $shell.CreateShortcut($lnk)
+$s = $shell.CreateShortcut($tmpLnk)
 $s.TargetPath       = $ps
 $s.Arguments        = '-NoProfile -ExecutionPolicy Bypass -File "' + $target + '"'
 $s.WorkingDirectory = $PSScriptRoot
 $s.IconLocation     = "$env:WINDIR\System32\imageres.dll,166"   # a drive icon
-$s.Description      = '每月一次:將備份同程式碼複製落 Seagate 並逐個檔核對。唔會自動執行。'
+$s.Description      = 'Monthly: copy backups + code to the Seagate and verify every file.'
 $s.Save()
+if (-not (Test-Path -LiteralPath $tmpLnk)) { throw "could not create the shortcut at $tmpLnk" }
+
+if (Test-Path -LiteralPath $lnk) { [System.IO.File]::Delete($lnk) }   # re-running is safe
+[System.IO.File]::Move($tmpLnk, $lnk)
+if (-not (Test-Path -LiteralPath $lnk)) { throw "could not rename the shortcut to $lnk" }
 
 Write-Host ''
 Write-Host '  ✔ 桌面捷徑已建立' -ForegroundColor Green
