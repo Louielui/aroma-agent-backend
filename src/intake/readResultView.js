@@ -306,17 +306,41 @@ function renderValidatedPlan (input) {
   const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource })
   const out = []
 
+  // THE ANSWER OFFERED ROWS AND NONE OF THEM WERE REAL. Distinct from an unsupported
+  // directAnswer, and previously invisible: the sections simply vanished, headings and all,
+  // while the log still read "validated" and the Owner saw a confident sentence over an
+  // empty screen. An answer that lost all of its content is a fallback, whatever survived
+  // of its opening line.
+  const contentLost = v.modelItemCount > 0 && v.keptItemCount === 0
+  const lostSomething = v.droppedItems > 0 || v.droppedFacts > 0 || v.droppedSentences > 0
+  const common = {
+    provider: input.provider || null,
+    droppedItems: v.droppedItems,
+    droppedFacts: v.droppedFacts,
+    droppedSentences: v.droppedSentences,
+    drops: v.drops,
+    requestId: input.requestId || null
+  }
+
   if (!v.answerSurvived) {
     // Every sentence of the answer failed its evidence check. That is a fallback, and it
     // says so out loud rather than quietly showing the sections underneath it.
-    logAnswerPlan({ outcome: 'fallback', reason: 'answer_unsupported', provider: input.provider || null, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences, requestId: input.requestId || null })
+    logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'answer_unsupported' }, common))
+    out.push(minimalAnswer(evidenceSets))
+  } else if (contentLost) {
+    logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'items_unsupported' }, common))
     out.push(minimalAnswer(evidenceSets))
   } else {
-    logAnswerPlan({ outcome: 'validated', reason: null, provider: input.provider || null, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences, requestId: input.requestId || null })
+    // 'degraded', not 'validated', when anything was deleted. The two used to log
+    // identically, so a turn that lost most of its content was indistinguishable from a
+    // clean one at a glance — the exact silent degradation this layer exists to end.
+    logAnswerPlan(Object.assign({ outcome: lostSomething ? 'degraded' : 'validated', reason: lostSomething ? 'partial_drop' : null }, common))
     out.push(v.plan.directAnswer)
   }
 
-  for (const sec of v.plan.sections) {
+  // A fallback replaced the whole answer; its sections are not shown underneath it.
+  const sections = (!v.answerSurvived || contentLost) ? [] : v.plan.sections
+  for (const sec of sections) {
     const lines = [`### ${sec.heading}`]
     for (const it of sec.items) {
       const facts = it.facts.map((f) => `${f.field} ${f.value}`).join('｜')
@@ -325,11 +349,27 @@ function renderValidatedPlan (input) {
     out.push(lines.join('\n\n'))
   }
 
-  if (v.plan.limitations.length) out.push(`### ${H.limits}\n\n` + v.plan.limitations.join('\n'))
+  // WHAT WAS REMOVED IS SAID ON SCREEN, not only in a log the Owner never reads. A silently
+  // shorter answer looks exactly like a complete one; a stated omission is a number he can
+  // challenge. Server-authored, so no model prose can be laundered through it.
+  const omissions = []
+  if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統核對唔到,冇顯示。`)
+  if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值核對唔到,冇顯示。`)
+  const limitations = v.plan.limitations.concat(omissions)
+
+  if (limitations.length) out.push(`### ${H.limits}\n\n` + limitations.join('\n'))
   if (v.plan.followUp) out.push(`### ${H.next}\n\n${v.plan.followUp}`)
   if (typeof input.correction === 'string' && input.correction.trim()) out.push(input.correction.trim())
 
-  return { reply: out.join('\n\n'), applied: true, intent: null, validated: true, droppedFacts: v.droppedFacts, droppedSentences: v.droppedSentences }
+  return {
+    reply: out.join('\n\n'),
+    applied: true,
+    intent: null,
+    validated: !lostSomething && !contentLost,
+    droppedItems: v.droppedItems,
+    droppedFacts: v.droppedFacts,
+    droppedSentences: v.droppedSentences
+  }
 }
 
 /**

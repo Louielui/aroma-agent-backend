@@ -89,9 +89,20 @@ test('*** shownCount may never be presented as totalCount ***', () => {
   const i = evidenceIndex([INVENTORY_EVIDENCE], [INVENTORY_ITEMS])
   assert.ok(i.numbers.has('199'), 'the real total is stateable')
   assert.ok(i.numbers.has('2'), 'so is the shown count')
-  // a number that is neither cannot be stated
+
+  // THE CASE THAT ACTUALLY SHIPPED. This test used to assert the ASCII form ONLY, so it
+  // passed while the live failure walked straight through: 「系統讀到三項倉存記錄」 reached
+  // the Owner against a real total of 199, and droppedSentences was 0. A count written in
+  // Chinese numerals is the NORMAL way this assistant writes one — the digit form is the
+  // exception, and pinning only the exception is what gave three rounds of false confidence.
+  assert.equal(sentenceIsSupported('系統讀到三項倉存記錄。', i), false, 'THE LIVE FAILURE')
+  assert.equal(sentenceIsSupported('有四項存貨。', i), false)
+  assert.equal(sentenceIsSupported('有兩張發票。', i), true, 'shownCount is 2 — that one is measured')
+
+  // and the ASCII form stays pinned, because both spellings must be checked
   assert.equal(sentenceIsSupported('有 4 項存貨。', i), false)
   assert.equal(sentenceIsSupported('有 199 項存貨記錄。', i), true)
+  assert.equal(sentenceIsSupported('有一百九十九項存貨記錄。', i), true, 'the same number, the other spelling')
 })
 
 /* ── 3. supplier status translation ───────────────────────────────────────── */
@@ -143,7 +154,14 @@ test('an item that was never retrieved is an invention and is dropped', () => {
     limitations: [], followUp: null, unanswerable: false
   }, ctx(INVENTORY_EVIDENCE, INVENTORY_ITEMS))
   assert.deepEqual(r.plan.sections, [], 'a section with no real items is not a section')
-  assert.equal(r.droppedFacts, 1)
+  // COUNTED AS AN ITEM, NOT AS A FACT. This assertion used to read `droppedFacts, 1`, and
+  // that conflation is what sent the live diagnosis after the wrong defect: the screen was
+  // empty because whole ITEMS were inventions, not because their values failed a check.
+  assert.equal(r.droppedItems, 1)
+  assert.equal(r.droppedFacts, 0, 'no fact was even reached — the row did not exist')
+  assert.deepEqual(r.drops, [{ kind: 'item', sourceId: 'ghost' }], 'and WHICH item is on the record')
+  assert.equal(r.keptItemCount, 0)
+  assert.equal(r.modelItemCount, 1, 'the model offered content; none of it was real')
 })
 
 test('the title comes from the row, not from the model', () => {
@@ -222,13 +240,39 @@ test('*** a fallback CANNOT occur without a log line ***', () => {
   assert.deepEqual(lines.map((l) => l.reason), REASONS)
 })
 
-test('the log carries counts and enums only — never content', () => {
+test('the log carries counts, enums and drop IDENTITY — never a value', () => {
   const lines = []
-  logAnswerPlan({ outcome: 'validated', reason: null, provider: 'claude', droppedFacts: 2, droppedSentences: 1, requestId: 'r2' }, (l) => lines.push(l))
+  logAnswerPlan({
+    outcome: 'degraded',
+    reason: 'partial_drop',
+    provider: 'claude',
+    droppedItems: 1,
+    droppedFacts: 2,
+    droppedSentences: 1,
+    // A drop record as the validator emits it, plus a value-shaped key that must NOT ride
+    // through: the projection is explicit, not a spread.
+    drops: [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有', value: '18.000' }],
+    requestId: 'r2'
+  }, (l) => lines.push(l))
   const l = lines[0]
-  assert.deepEqual(Object.keys(l).sort(), ['droppedFacts', 'droppedSentences', 'event', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+  assert.deepEqual(Object.keys(l).sort(),
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedSentences', 'event', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+  assert.equal(l.droppedItems, 1)
   assert.equal(l.droppedFacts, 2)
   assert.equal(l.droppedSentences, 1)
+  assert.deepEqual(l.dropped, [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有' }])
+  // THE WIDENING IS BOUNDED. Identity travels; row content still does not.
+  assert.equal(JSON.stringify(l).includes('18.000'), false, 'a VALUE must never reach the log')
+})
+
+test('the drop record cannot be turned into a payload by a long or repetitive plan', () => {
+  const lines = []
+  const many = Array.from({ length: 40 }, (_, i) => ({ kind: 'fact', sourceId: 'x'.repeat(200), field: 'f'.repeat(200) + i }))
+  logAnswerPlan({ outcome: 'degraded', droppedFacts: 40, drops: many }, (l) => lines.push(l))
+  const l = lines[0]
+  assert.equal(l.dropped.length, LIMITS.maxDropsLogged, 'the array is bounded')
+  assert.equal(l.dropped[0].sourceId.length, LIMITS.maxDropIdChars, 'and so is each identifier')
+  assert.equal(l.dropped[0].field.length, LIMITS.maxDropIdChars)
 })
 
 test('a directAnswer that loses every sentence does not stand as an answer', () => {
