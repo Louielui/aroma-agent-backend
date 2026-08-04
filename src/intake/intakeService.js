@@ -47,7 +47,8 @@ const { isShortReply, isReadRequest } = require('./laneRouter') // a short confi
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
-const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router — SHADOW ONLY in Step 1
+const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
+const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -164,6 +165,49 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const runtimePersona = src.runtimePersona()
     return await runU1DraftShadow({ instruction: message, adapter, history, requestId, personaText: runtimePersona.personaText })
   }
+  // ── STEP 1b: THE UTILITY ROUTE — LIVE, and it answers before anything else ─
+  //
+  // Placed AFTER the red-line check (which must stay first — a message carrying a bank
+  // number is refused whatever it is asking) and BEFORE the distillation, the recall
+  // injection and every connector read. That ordering IS the fix: 「現在是幾點？」 read Drive,
+  // Gmail, Calendar and the inventory because nothing had yet decided that a clock question
+  // needs none of them.
+  //
+  // A UTILITY turn therefore performs NO connector read, builds NO EvidenceSet, requests NO
+  // Answer Plan (there is no model call at all, so there is no responseFormat to request),
+  // and costs nothing.
+  //
+  // IT DECLINES RATHER THAN GUESSING. `answerUtility` returns null when it cannot answer
+  // deterministically — an expression it cannot parse, a unit it does not know, a timezone
+  // it cannot resolve — and this falls through to the ordinary path. A worse answer, never a
+  // wrong one, and never a sentence implying something was looked up.
+  //
+  // Every other route still only observes: the shadow log below is unchanged for them.
+  if (resolveTurnRouter(process.env) !== 'off') {
+    const decision = routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
+    if (decision.route === 'UTILITY') {
+      const answered = answerUtility(decision.utility, message, {})
+      if (answered) {
+        try {
+          logTurnRoute({
+            decision, lane: (opts && opts.interactionMode === 'chat') ? 'chat' : 'other',
+            sourcesRead: [], rowsRetrieved: 0, answerPlanForced: false, requestId
+          })
+        } catch (_) { /* telemetry is never load-bearing */ }
+        // The SAME chat shape every other talking turn returns, so the conversation store,
+        // the Lab archive hook and the envelope all treat it as the ordinary turn it is.
+        return {
+          blocked: false, mode: 'chat', intent: 'question', talkOnly: true, interactionMode: 'chat',
+          reply: answered.text, replyForArchive: answered.text, readClaimCorrected: false,
+          utility: answered.kind,
+          decision: null, tasks: [], risks: [], next_step: '', requestId
+        }
+      }
+      // Fell through: the utility could not answer. The ordinary path takes the turn, and
+      // the shadow line for it is written after the model call as usual.
+    }
+  }
+
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
   const { system, prompt } = buildDistillPrompt(message, history)
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
