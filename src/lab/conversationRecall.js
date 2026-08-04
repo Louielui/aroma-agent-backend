@@ -35,6 +35,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const { DEFAULT_ROOT, ARCHIVE_FILE } = require('./conversationArchive')
+const { formatLocal } = require('../utils/localTime') // THE single source of the Owner's clock
 
 const OPEN = '<conversation_recall>'
 const CLOSE = '</conversation_recall>'
@@ -69,21 +70,24 @@ const CAPS = Object.freeze({
 
 function isPlainObject (v) { return v !== null && typeof v === 'object' && !Array.isArray(v) }
 
-/** YYYY-MM-DD HH:MM in the Owner's zone, from the record's own ISO stamp. */
+/**
+ * YYYY-MM-DD HH:MM in the Owner's zone, from the record's own ISO stamp.
+ *
+ * THE ZONE IS NO LONGER WRITTEN HERE. This held `timeZone: 'America/Winnipeg'` as a literal
+ * while readContext derived its 「今日」 from the process's OS zone. The two agreed only
+ * because the machine happens to be set that way — move the process and the archive would
+ * render one clock while the calendar asked about a different day. Both now read
+ * localTime.js, which is the single source and which refuses to guess.
+ *
+ * An unreadable or malformed setting THROWS rather than degrading to UTC. That is
+ * deliberate: this function is called inside intakeService's fail-soft-but-never-silent
+ * wrapper, so the failure becomes `trust:'unavailable'` WITH its reason on the record, and
+ * the Owner still gets his turn — loud in the log, not loud as a dead reply.
+ */
 function when (iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return String(iso || 'undated')
-  const f = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Winnipeg',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  })
-  // en-CA yields "2026-08-01, 10:00"; the comma buys nothing in a dense block.
-  return f.format(d).replace(', ', ' ')
+  return formatLocal(d)
 }
 
 function cap (s, n) {

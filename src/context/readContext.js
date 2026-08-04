@@ -1,6 +1,7 @@
 'use strict'
 
 const { logReadSource } = require('../utils/readContextLog') // one allowlisted line per source
+const { startOfLocalDay: ownerStartOfLocalDay } = require('../utils/localTime') // THE single source of the Owner's clock
 
 /**
  * readContext.js — builds ONE bounded, cited, dated context block from the connected
@@ -376,12 +377,22 @@ function capContent (s, max) {
 }
 
 /** One rendered reference line — always source + date (+ weekday) + link. */
-/** Midnight today in the local zone — the Owner's 「今日」, not a UTC boundary. */
+/**
+ * Midnight today in the OWNER'S zone — his 「今日」, not a UTC boundary and not the
+ * machine's.
+ *
+ * This used to be `setHours(0,0,0,0)`, which is midnight in whatever zone the PROCESS
+ * happens to run in. It gave the right answer only because the host is set to the Owner's
+ * zone; on a VPS in another region it would silently ask the calendar about a different
+ * day. The zone now comes from Owner Settings via localTime.js — one source, shared with
+ * the conversation archive, which had its own hardcoded copy of the same literal.
+ *
+ * It THROWS on an unreadable or malformed setting rather than falling back. The caller is
+ * inside intakeService's fail-soft-but-never-silent wrapper, so that surfaces as the
+ * calendar being `unavailable` with a reason, never as a wrong day presented as right.
+ */
 function startOfLocalDay (isoOrDate) {
-  const d = new Date(isoOrDate)
-  const local = new Date(d.getTime())
-  local.setHours(0, 0, 0, 0)
-  return local
+  return ownerStartOfLocalDay(isoOrDate)
 }
 
 function renderItem (r, caps = CAPS, opts = {}) {

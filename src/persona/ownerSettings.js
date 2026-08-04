@@ -113,7 +113,34 @@ const BOUNDARY_PATTERNS = Object.freeze([
 function isPlainObject (v) { return v !== null && typeof v === 'object' && !Array.isArray(v) }
 
 function emptySettings () {
-  return { schemaVersion: SCHEMA_VERSION, style: '', preferences: '', flags: {}, updatedAt: null }
+  return { schemaVersion: SCHEMA_VERSION, style: '', preferences: '', flags: {}, timezone: null, updatedAt: null }
+}
+
+/**
+ * THE TIMEZONE, CHECKED AT SAVE TIME TOO.
+ *
+ * localTime.js throws on a bad value at READ time, which is the Owner's rule and the thing
+ * that stops a wrong clock working silently. But a settings page that accepts a value and
+ * then breaks the next turn is a worse experience than one that says no immediately, so the
+ * same validity test runs here and refuses the save with a readable reason.
+ *
+ * `null` clears the field back to the default; it is not a malformed value.
+ */
+function checkTimezone (tz) {
+  if (tz === undefined || tz === null) return { ok: true }
+  const { isValidZone, DEFAULT_TIMEZONE } = require('../utils/localTime')
+  if (typeof tz !== 'string' || tz.trim() === '') {
+    return { ok: false, reason: 'bad_timezone', detail: 'Timezone must be an IANA name such as "' + DEFAULT_TIMEZONE + '", or empty to use the default. Nothing was saved.' }
+  }
+  if (!isValidZone(tz)) {
+    return {
+      ok: false,
+      reason: 'bad_timezone',
+      detail: 'Not a recognised timezone: “' + tz.slice(0, 60) + '”. It must be a full IANA name like "' + DEFAULT_TIMEZONE +
+        '" — abbreviations such as "CST" and offsets such as "GMT-6" are ambiguous and are refused rather than guessed at. Nothing was saved.'
+    }
+  }
+  return { ok: true }
 }
 
 function settingsPath (opts = {}) {
@@ -132,6 +159,10 @@ function load (opts = {}) {
       style: typeof d.style === 'string' ? d.style : '',
       preferences: typeof d.preferences === 'string' ? d.preferences : '',
       flags: isPlainObject(d.flags) ? d.flags : {},
+      // Carried through AS WRITTEN. This function must never throw (a corrupt file is 'no
+      // settings yet' for style and preferences), so it does not validate the zone — localTime.js
+      // owns that, and it is the one that must be loud.
+      timezone: typeof d.timezone === 'string' ? d.timezone : null,
       updatedAt: typeof d.updatedAt === 'string' ? d.updatedAt : null
     }
   } catch (_) { return emptySettings() }
@@ -190,6 +221,7 @@ function save (input = {}, opts = {}) {
     style: typeof input.style === 'string' ? input.style : current.style,
     preferences: typeof input.preferences === 'string' ? input.preferences : current.preferences,
     flags: input.flags === undefined ? current.flags : input.flags,
+    timezone: input.timezone === undefined ? current.timezone : (input.timezone === null || input.timezone === '' ? null : input.timezone),
     updatedAt: (typeof opts.now === 'function' ? opts.now() : new Date().toISOString())
   }
 
@@ -197,6 +229,9 @@ function save (input = {}, opts = {}) {
     const v = checkField(f, next[f])
     if (!v.ok) return { ok: false, field: f, reason: v.reason, detail: v.detail }
   }
+  const tzv = checkTimezone(next.timezone)
+  if (!tzv.ok) return { ok: false, field: 'timezone', reason: tzv.reason, detail: tzv.detail }
+
   const fv = checkFlags(next.flags)
   if (!fv.ok) return { ok: false, field: 'flags', reason: fv.reason, detail: fv.detail }
 
@@ -277,6 +312,6 @@ function buildSettingsBlock (settings) {
 }
 
 module.exports = {
-  load, save, applyFlags, effectiveFlags, buildSettingsBlock, checkField, checkFlags,
+  load, save, applyFlags, effectiveFlags, buildSettingsBlock, checkField, checkFlags, checkTimezone,
   settingsPath, emptySettings, CAPS, FLAGS, SOURCE_FLAGS, sourceFlagLabels, BOUNDARY_PATTERNS, SETTINGS_FILE, DEFAULT_ROOT, SCHEMA_VERSION
 }
