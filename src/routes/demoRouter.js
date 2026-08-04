@@ -334,7 +334,32 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
                 servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null
               })
             }
-          } catch (_) { /* fail-open: never lose a reply to a disk problem */ }
+          } catch (err) {
+            // FAIL-OPEN FOR THE REPLY, BUT NEVER SILENT.
+            //
+            // The fail-open half is right and stays: the answer already exists and a disk
+            // problem must not take it away. The SILENT half was the defect — this was a
+            // bare `catch (_) {}`, so an unwired store, a full disk and a perfect save all
+            // looked identical from outside. The inert store's appendTurn now throws
+            // precisely so a wiring regression is detectable; swallowing it here would
+            // discard that one line later.
+            //
+            // ENUM, NOT THE ERROR TEXT. An error message is not a closed vocabulary — it
+            // carries whatever it was handed, including a path or a value. Counts, enums
+            // and ids only, like every other log in this pipeline.
+            const m = (err && err.message) || ''
+            const reason = m === 'conversation_store_not_wired'
+              ? 'store_not_wired'
+              : (m === 'invalid_conversation_id' ? 'invalid_id' : 'write_failed')
+            try {
+              console.log('[AROMA-CONVERSATION]', JSON.stringify({
+                event: 'CONVERSATION_APPEND_FAILED',
+                timestamp: new Date().toISOString(),
+                conversationId,
+                reason
+              }))
+            } catch (_) {}
+          }
         }
 
         return res.status(200).json(withInference)

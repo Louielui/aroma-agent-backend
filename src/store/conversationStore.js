@@ -179,15 +179,25 @@ const conversationStore = createConversationStore()
 /**
  * THE INERT STORE — what a caller gets when it did not ask for persistence.
  *
- * It answers every question truthfully for a store that holds nothing, and its append does
- * nothing at all. This is the default in createDemoRouter, so a test that drives the real
- * route cannot reach the disk: writing to real data is no longer discouraged, it is
- * unreachable without passing the real store by name.
+ * READS answer truthfully for a store that holds nothing: an empty list, nothing found,
+ * nothing removed. It is not broken, it is empty, and the routes surface that honestly
+ * (a 404 rather than an error page).
+ *
+ * THE WRITE THROWS, and that is the correction this file needed. It used to return
+ * `{ id: null, messageCount: 0 }` — a SUCCESS SHAPE. Had the production wiring in app.js
+ * ever regressed to the default, conversations would have stopped being saved and nothing
+ * anywhere would have said so: the exact silent degradation this inversion was introduced
+ * to prevent, reintroduced by the fix for it.
+ *
+ * `INERT_SAVE` in settingsRouter got this right in the same commit. Two inert
+ * implementations in one codebase must not disagree about whether silence is acceptable,
+ * and inertStoresAreLoud.test.js now enforces that across every INERT_* export rather than
+ * trusting either of them to stay correct on its own.
  */
 const INERT_CONVERSATION_STORE = Object.freeze({
   list: () => [],
   get: () => null,
-  appendTurn: () => ({ id: null, messageCount: 0 }),
+  appendTurn: () => { throw new Error('conversation_store_not_wired') },
   remove: () => false,
   dir: null,
   inert: true

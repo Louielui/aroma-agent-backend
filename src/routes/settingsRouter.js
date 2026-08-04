@@ -89,4 +89,8 @@ function createSettingsRouter (deps = {}) {
   return router
 }
 
-module.exports = { createSettingsRouter }
+// INERT_LOAD / INERT_SAVE are exported for ONE reason: inertStoresAreLoud.test.js scans
+// every INERT_* declaration in src/ and asserts the writes throw. An invariant that cannot
+// be inspected cannot be guaranteed, so that guard fails on any inert implementation it
+// cannot reach — including this one.
+module.exports = { createSettingsRouter, INERT_LOAD, INERT_SAVE }
