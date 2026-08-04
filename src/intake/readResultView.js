@@ -303,7 +303,9 @@ function renderValidatedPlan (input) {
   const evidenceSets = Array.isArray(input.evidenceSets) ? input.evidenceSets : []
   const itemsBySource = Array.isArray(input.itemsBySource) ? input.itemsBySource : []
 
-  const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource })
+  // `message` travels so rule 7 can honour the Owner's carve-out: a row title HE typed is
+  // not laundering, so it is not barred from her prose.
+  const v = validatePlan(input.answerPlan, { evidenceSets, itemsBySource, message: input.message })
   const out = []
 
   // THE ANSWER OFFERED ROWS AND NONE OF THEM WERE REAL. Distinct from an unsupported
@@ -336,7 +338,13 @@ function renderValidatedPlan (input) {
     // 'degraded', not 'validated', when anything was deleted. The two used to log
     // identically, so a turn that lost most of its content was indistinguishable from a
     // clean one at a glance — the exact silent degradation this layer exists to end.
-    logAnswerPlan(Object.assign({ outcome: lostSomething ? 'degraded' : 'validated', reason: lostSomething ? 'partial_drop' : null }, common))
+    //
+    // A plan that declared citesEvidence:false and then supplied rows is its own reason:
+    // nothing was unprovable, the answer simply contradicted itself, and that reads very
+    // differently in a log from a value that failed its evidence check.
+    const degraded = lostSomething || v.sectionsNotDeclared
+    const reason = v.sectionsNotDeclared ? 'sections_not_declared' : (lostSomething ? 'partial_drop' : null)
+    logAnswerPlan(Object.assign({ outcome: degraded ? 'degraded' : 'validated', reason }, common))
     out.push(v.plan.directAnswer)
   }
 
@@ -356,9 +364,17 @@ function renderValidatedPlan (input) {
   // WHAT WAS REMOVED IS SAID ON SCREEN, not only in a log the Owner never reads. A silently
   // shorter answer looks exactly like a complete one; a stated omission is a number he can
   // challenge. Server-authored, so no model prose can be laundered through it.
+  //
+  // ONLY WHEN SOMETHING WAS ACTUALLY SHOWN. 「有 3 個數值核對唔到,冇顯示。」 reached the
+  // Owner on a turn that displayed no data at all — it is a note about what is missing
+  // BESIDE something, and with nothing on screen it says nothing he can act on. When no
+  // item survived, the answer is either a fallback (which speaks for itself) or a turn
+  // that legitimately cites nothing.
   const omissions = []
-  if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統核對唔到,冇顯示。`)
-  if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值核對唔到,冇顯示。`)
+  if (v.keptItemCount > 0) {
+    if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統核對唔到,冇顯示。`)
+    if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值核對唔到,冇顯示。`)
+  }
   const limitations = v.plan.limitations.concat(omissions)
 
   if (limitations.length) out.push(`### ${H.limits}\n\n` + limitations.join('\n'))

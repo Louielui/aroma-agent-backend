@@ -220,17 +220,22 @@ test('the recall header itself carries the rule, so it cannot drift out of the b
 
 /* ═══ 1. STRUCTURE IS MANDATORY WHEN ROWS WERE READ ═══════════════════════════ */
 
-test('*** the schema REQUIRES at least one item when this turn read rows ***', async () => {
+test('*** a section that EXISTS must carry an item, and the choice is declared ***', async () => {
   await withEnv(async () => {
     const spy = spyAdapter(envelope(plan()))
     await run(spy)
     const schema = spy.calls[0].opts.responseFormat.schema
     const sections = schema.properties.answerPlan.properties.sections
-    // Prompt rules do not hold here — the shape is bought at the API layer instead, the
-    // same way the plan's existence is. Item detail cannot stay in prose if prose is not
-    // where the model is allowed to put it.
-    assert.equal(sections.minItems, 1, 'at least one section')
-    assert.equal(sections.items.properties.items.minItems, 1, 'and at least one item in it')
+
+    // THIS TEST USED TO ASSERT `sections.minItems === 1`, and that assertion shipped a bug.
+    // The read layer reads on every chat turn regardless of the question, so a mandatory
+    // section meant 「你好, 你可以幫我做什麼?」 forced the model to describe itself in the
+    // fields of a cabbage. The guarantee it was protecting — item detail cannot hide in
+    // prose — now rests on proseIsGrounded, sentenceIsSupported and rule 7 instead.
+    assert.equal(sections.minItems, undefined, 'evidence is no longer mandatory for every question')
+    assert.equal(sections.items.properties.items.minItems, 1, 'but a section that exists is never an empty heading')
+    assert.ok(schema.properties.answerPlan.required.includes('citesEvidence'),
+      'and "no sections" must be declared rather than silently empty')
   })
 })
 

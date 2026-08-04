@@ -73,19 +73,26 @@ const TELEMETRY_RE = /(未列出|長度上限|判斷為與此問題無關|fallba
 const ANSWER_PLAN_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  required: ['directAnswer', 'sections', 'limitations', 'followUp', 'unanswerable'],
+  required: ['directAnswer', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
   properties: {
     directAnswer: { type: 'string', description: '一至兩句,直接答到問題。唔好覆述逐項細節。' },
     unanswerable: { type: 'boolean', description: '資料答唔到呢條問題時 true —— 呢個係誠實,唔係失敗。' },
+    // ── THE DECLARATION THAT REPLACED A FORCED SECTION ───────────────────────────────
+    // `sections.minItems: 1` used to sit below. It was added because item detail had been
+    // hiding in prose where nothing could check it — but it made evidence MANDATORY, and
+    // the read layer reads on every chat turn regardless of what was asked. So
+    // 「你好, 你可以幫我做什麼?」 retrieved inventory, the schema demanded a row, and the
+    // model described ITSELF in the fields of Napa Cabbage. Every layer obeyed; the schema
+    // was the defect.
+    //
+    // Now the model DECLARES which kind of answer this is, so "no sections" is a stated
+    // choice rather than a silent empty array the server cannot distinguish from a failure.
+    citesEvidence: {
+      type: 'boolean',
+      description: 'true = 呢個答案引用咗下面讀到嘅記錄,sections 至少要有一節、每節至少一項。false = 呢條問題唔使引用任何記錄(例如打招呼、問你識做乜、或者資料根本答唔到),sections 必須留空。'
+    },
     sections: {
       type: 'array',
-      // STRUCTURE IS MANDATORY WHEN THIS TURN READ ROWS — and this schema is only ever
-      // sent when it did (intakeService gates responseFormat on turnItems.size > 0). The
-      // model was told to put item detail in sections and put it in prose instead, where
-      // nothing could check it; prompt-level rules have failed here too often to be the
-      // control. So the provider refuses a plan with no items, and the detail has nowhere
-      // to go but the channel that is verified against the evidence.
-      minItems: 1,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -278,9 +285,20 @@ const PROSE_ALLOWED = Object.freeze(new Set([
  *
  * IT DOES NOT VERIFY PROSE. A fabricated CJK item name still passes, and so does a wrong
  * judgement about a real one. Prose cannot be fully validated and this function does not
- * pretend to; it closes the one channel the live failure actually used. The structural
- * answer to the rest is to keep prose THIN and make the sections mandatory, which is
- * enforced at the schema layer, not here.
+ * pretend to; it closes the one channel the live failure actually used.
+ *
+ * ── READ THIS BEFORE WEAKENING OR REMOVING THIS CHECK ────────────────────────
+ * THE "ITEM DETAIL CANNOT HIDE IN PROSE" GUARANTEE NOW RESTS HERE, on this function and on
+ * sentenceIsSupported. It used to rest on `sections.minItems: 1` in the schema, which made
+ * at least one evidence row MANDATORY — but the read layer reads on every chat turn
+ * regardless of the question, so on 2026-08-04 「你好, 你可以幫我做什麼?」 forced the model
+ * to describe itself in the fields of a cabbage. minItems was removed and replaced by the
+ * `citesEvidence` declaration, plus rule 7 in validatePlan (a plan that cites nothing may
+ * not name a retrieved row in prose, unless the Owner named it first).
+ *
+ * So: this check and sentenceIsSupported are no longer belt-and-braces over a schema
+ * guarantee — they ARE the guarantee. Weakening either one reopens the original defect
+ * (「2lb portioning bag」 recited from memory as current stock) with nothing behind it.
  */
 function proseIsGrounded (text, index) {
   for (const t of latinTokens(text)) {
@@ -503,9 +521,27 @@ const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/)
  */
 const EMPTY_LABELS = new Map()
 
-function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
+function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = '' } = {}) {
   const index = evidenceIndex(evidenceSets, itemsBySource)
   const metrics = metricLabelMap(evidenceSets)
+
+  // ── THE DECLARATION ──────────────────────────────────────────────────────────
+  // Absent is treated as TRUE, so a provider that ignores the field behaves exactly as it
+  // did before this change: sections are validated, not silently discarded.
+  const citesEvidence = plan.citesEvidence !== false
+
+  // RULE 7 AND THE OWNER'S CARVE-OUT. When the answer does not cite evidence, it may not
+  // name a retrieved row either — otherwise "no sections" becomes the new hiding place for
+  // the detail that sections exist to verify. But a title the OWNER HIMSELF TYPED is not
+  // laundering: he already knows the name, and deleting her sentence for echoing his own
+  // words would make 「Napa Cabbage 點解咁少?」 unanswerable. So only titles that appear
+  // SOLELY in the retrieved rows are barred.
+  const askedText = String(message == null ? '' : message)
+  const barredTitles = citesEvidence
+    ? []
+    : [...index.byId.values()]
+        .map((r) => String(r && r.title ? r.title : ''))
+        .filter((t) => t.length >= 3 && !askedText.includes(t))
   // TWO COUNTERS, BECAUSE THEY ARE TWO FAILURES. They used to share one, and the shared
   // number sent a live diagnosis after the wrong defect: `droppedFacts:3` was read as three
   // deleted values when it was three deleted ITEMS, which is why the screen was empty
@@ -531,13 +567,20 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
     // RECALL IS NOT EVIDENCE. A name this turn did not retrieve does not reach the Owner,
     // whatever the model believes it remembers.
     if (!proseIsGrounded(s, index)) { droppedSentences++; continue }
+    // RULE 7: not citing evidence means not naming rows — unless the Owner named it first.
+    if (barredTitles.some((t) => s.includes(t))) { droppedSentences++; continue }
     kept.push(s)
   }
   let directAnswer = kept.join('').slice(0, LIMITS.maxDirectAnswerChars)
 
   // ── sections: an item must be a row we actually retrieved ───────────────────
+  // THE DECLARATION GOVERNS. A plan that said it cites nothing does not get to render rows
+  // anyway: the sections are discarded whole and the contradiction is reported, rather than
+  // quietly honouring whichever half of the plan happens to be more convenient.
   const sections = []
-  for (const sec of (Array.isArray(plan.sections) ? plan.sections : []).slice(0, LIMITS.maxSections)) {
+  const declaredSections = Array.isArray(plan.sections) ? plan.sections : []
+  const sectionsNotDeclared = !citesEvidence && declaredSections.length > 0
+  for (const sec of (sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)) {
     const items = []
     for (const it of (Array.isArray(sec.items) ? sec.items : []).slice(0, LIMITS.maxItemsPerSection)) {
       modelItemCount++
@@ -617,10 +660,13 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
   if (!answerSurvived) directAnswer = ''
 
   return {
-    plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true },
+    plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence },
     droppedFacts,
     droppedItems,
     droppedSentences,
+    // The model said it cites nothing and then supplied rows. The rows are gone; the
+    // contradiction is not, because a caller must be able to tell this from a clean turn.
+    sectionsNotDeclared,
     drops: drops.slice(0, LIMITS.maxDropsLogged),
     // How much content the model offered, and how much of it was real. The pair is what
     // lets the caller tell "a thin answer" from "an answer with nothing left in it".

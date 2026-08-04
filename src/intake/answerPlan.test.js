@@ -309,7 +309,10 @@ test('the schema closes every object so nothing can be smuggled past the validat
     return true
   }
   closed(ANSWER_PLAN_SCHEMA)
-  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.sort(), ['directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'])
+  // `citesEvidence` joined the required set on 2026-08-04, when `sections.minItems: 1` was
+  // removed. The declaration is REQUIRED precisely so that "no sections" is a stated choice
+  // the server can act on, rather than an empty array indistinguishable from a failure.
+  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.sort(), ['citesEvidence', 'directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'])
 })
 
 test('length rules are bounded by the server, not by the model behaving', () => {
