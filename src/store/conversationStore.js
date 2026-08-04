@@ -76,24 +76,45 @@ function createConversationStore (options = {}) {
 
   const fileFor = (id) => path.join(dir, id + '.json')
 
-  function readOne (id) {
+  /**
+   * @param {boolean} strict — whether an UNREADABLE file is an error or merely skipped.
+   *
+   * This used to be one lenient path: any failure returned null, so a file that could not
+   * be read was reported as a file that does not exist. The route turned that into a 404
+   * and the sidebar into a permanently blank pane, with nothing anywhere saying a read had
+   * failed — measured at 13 false absences in 9,315 reads while a writer was appending.
+   *
+   * MISSING and UNREADABLE are different answers, and the right answer depends on the
+   * question: `get` is a request for one named conversation, so it must be loud; `list` is
+   * a directory scan, where one bad entry must not blank every other conversation.
+   */
+  function readOne (id, strict) {
+    let raw
     try {
-      const raw = fs.readFileSync(fileFor(id), 'utf8')
+      raw = fs.readFileSync(fileFor(id), 'utf8')
+    } catch (err) {
+      if (err && err.code === 'ENOENT') return null      // genuinely not there
+      if (strict) throw err
+      return null
+    }
+    try {
       const c = JSON.parse(raw)
-      if (!c || typeof c !== 'object' || Array.isArray(c)) return null
-      if (!Array.isArray(c.messages)) return null
+      if (!c || typeof c !== 'object' || Array.isArray(c)) throw new Error('not an object')
+      if (!Array.isArray(c.messages)) throw new Error('no messages array')
       return c
-    } catch (_) {
-      // Missing OR corrupt. One unreadable file must never take the others down with it,
-      // and must never be reported as an empty conversation either — null is "not there".
+    } catch (err) {
+      if (strict) {
+        throw new Error('conversation ' + id + ' is unreadable (' + ((err && err.message) || 'invalid') +
+          ') — refusing to report it as missing')
+      }
       return null
     }
   }
 
-  /** The full transcript, or null. */
+  /** The full transcript, or null when it genuinely does not exist. Throws if unreadable. */
   function get (id) {
     if (!isValidId(id)) return null
-    return readOne(id)
+    return readOne(id, true)
   }
 
   /**
@@ -109,7 +130,7 @@ function createConversationStore (options = {}) {
       if (!name.endsWith('.json')) continue
       const id = name.slice(0, -5)
       if (!isValidId(id)) continue // a stray file is not a conversation
-      const c = readOne(id)
+      const c = readOne(id, false)   // lenient: one bad file may not hide the rest
       if (!c) continue
       out.push({
         id: c.id,
@@ -133,7 +154,11 @@ function createConversationStore (options = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const ts = now || new Date().toISOString()
 
-    const existing = readOne(id)
+    // STRICT, and this is the important one. Lenient here would mean: cannot read the
+    // existing conversation → treat it as new → overwrite it with a single turn. That is
+    // precisely the erasure ac77ae1 removed from the truth store, and it would apply to
+    // the Owner's transcripts rather than to metering.
+    const existing = readOne(id, true)
     const conversation = existing || {
       id,
       title: titleFrom(userText),
@@ -150,8 +175,34 @@ function createConversationStore (options = {}) {
     conversation.messages.push({ role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts })
     conversation.updatedAt = ts
 
+    // ATOMIC REPLACE — temp file, fsync, rename.
+    //
+    // writeFileSync truncates and THEN writes, so a reader can see a partial document. That
+    // is not theoretical here: with a writer appending, a reader saw an existing
+    // conversation as absent 13 times in 9,315 reads, which the route answers as 404 and
+    // the sidebar draws as a permanently blank pane. rename is atomic on NTFS and POSIX, so
+    // a reader now sees the complete old file or the complete new one and never a half.
+    //
+    // NO LOCK, deliberately: conversations have exactly one writer (the live server),
+    // appends are synchronous within that process, and tests inject the inert store. The
+    // truth store next door needed a lock because many processes write it; symmetry with it
+    // is not a reason to add one here.
     fs.mkdirSync(dir, { recursive: true })
-    fs.writeFileSync(fileFor(id), JSON.stringify(conversation, null, 2))
+    const target = fileFor(id)
+    const tmp = target + '.tmp-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
+    const fd = fs.openSync(tmp, 'w')
+    try {
+      fs.writeFileSync(fd, JSON.stringify(conversation, null, 2))
+      fs.fsyncSync(fd)
+    } finally {
+      fs.closeSync(fd)
+    }
+    try {
+      fs.renameSync(tmp, target)
+    } catch (err) {
+      try { fs.unlinkSync(tmp) } catch (_) {}
+      throw err
+    }
     return { id, messageCount: conversation.messages.length }
   }
 

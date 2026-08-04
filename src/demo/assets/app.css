@@ -170,6 +170,19 @@ body {
 .conv:hover { background: var(--divider); color: var(--ink); }
 .conv.active { background: var(--card); color: var(--ink); font-weight: var(--weight-medium); }
 
+/* CONVERSATION ROWS — added 2026-08-04 with the Owner lifting the app.css freeze for this
+   one change, on existing tokens only. Two of his conversations had byte-identical titles
+   (a title is just the first message), so the list was three rows reading the same. Time
+   and turn count are what separate them; delete stops being a list item of its own. */
+.conv-group { font-size: var(--small-size); color: var(--faint); padding: 10px 10px 4px; }
+.conv-row { display: flex; align-items: center; gap: 6px; border-radius: 8px; }
+.conv-row .conv { flex: 1; min-width: 0; }
+.conv-meta { display: flex; align-items: center; gap: 6px; flex: none;
+             font-size: var(--small-size); color: var(--faint); }
+.conv-del { opacity: 0; flex: none; }
+.conv-row:hover .conv-del, .conv-del:focus { opacity: 1; }
+.conv-row:hover { background: var(--divider); }
+
 .side-foot { display: flex; align-items: center; gap: 7px; font-size: var(--small-size); color: var(--faint); padding: 4px 2px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }
 .dot.off { background: var(--bad); }

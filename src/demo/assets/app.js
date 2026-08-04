@@ -215,24 +215,48 @@
   }
   function renderConvList () {
     clear(convsEl)
+    var lastGroup = null
     for (var i = 0; i < convs.length; i++) {
       if (!isListed(convs[i])) continue
       (function (c) {
+        // 今日 / 尋日 / 更早 — a quiet label, only when the group changes.
+        var g = groupLabel(convWhen(c))
+        if (g !== lastGroup) {
+          convsEl.appendChild(el('div', 'conv-group', g))
+          lastGroup = g
+        }
+
+        var row = el('div', 'conv-row')
+
         var b = el('button', 'conv' + (c === active ? ' active' : ''), c.title)
         b.setAttribute('type', 'button')
+        b.setAttribute('title', c.title)
         b.addEventListener('click', function () { selectConversation(c) })
-        convsEl.appendChild(b)
-        // DELETE BELONGS TO THE OPEN CONVERSATION ONLY. One destructive control on screen
-        // at a time, under the row it acts on, so it cannot be hit while aiming at a
-        // neighbour. It reuses the sidebar's own button style — this change adds no CSS.
-        if (c === active && c.stored) {
-          var d = el('button', 'side-item')
+        row.appendChild(b)
+
+        var meta = el('div', 'conv-meta')
+        var when = whenLabel(convWhen(c))
+        if (when) meta.appendChild(el('span', null, when))
+        var n = convCount(c)
+        if (n > 0) meta.appendChild(el('span', null, String(n)))
+        row.appendChild(meta)
+
+        // DELETE, REVEALED ON HOVER OR KEYBOARD FOCUS. It used to sit inline in the list
+        // looking like a list item of its own. It is still one confirm away from acting,
+        // and it is focusable so it is reachable without a mouse.
+        if (c.stored) {
+          var d = el('button', 'icon-btn conv-del', '✕')
           d.setAttribute('type', 'button')
-          d.appendChild(el('span', 'side-item-icon', '🗑'))
-          d.appendChild(el('span', null, '刪除呢個對話'))
-          d.addEventListener('click', function () { deleteConversation(c) })
-          convsEl.appendChild(d)
+          d.setAttribute('aria-label', '刪除「' + c.title + '」')
+          d.setAttribute('title', '刪除')
+          d.addEventListener('click', function (e) {
+            if (e && e.stopPropagation) e.stopPropagation()
+            deleteConversation(c)
+          })
+          row.appendChild(d)
         }
+
+        convsEl.appendChild(row)
       })(convs[i])
     }
   }
@@ -259,9 +283,40 @@
   function stubFor (row) {
     return {
       id: 'h-' + row.id, cid: row.id, title: row.title || '新對話',
+      updatedAt: row.updatedAt || row.createdAt || null,
+      messageCount: row.messageCount || 0,
       history: [], thread: el('div', 'thread'), stored: true, loaded: false
     }
   }
+
+  /* ── telling one conversation from another ────────────────────────────────
+   * Two of the Owner's conversations had BYTE-IDENTICAL titles, because a title is just
+   * the first message and he opened both the same way. The list showed three rows that
+   * read the same, so "which one am I looking at" had no answer — and a transcript that
+   * correctly showed him asking the same question twice looked like a duplication bug.
+   * Time and turn count are what actually separate them. */
+  function startOfDay (d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x.getTime() }
+
+  function whenLabel (iso) {
+    if (!iso) return ''
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return ''
+    var days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
+    if (days === 0) return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+    return (d.getMonth() + 1) + '月' + d.getDate() + '日'
+  }
+
+  function groupLabel (iso) {
+    if (!iso) return '更早'
+    var d = new Date(iso)
+    if (isNaN(d.getTime())) return '更早'
+    var days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
+    return days === 0 ? '今日' : (days === 1 ? '尋日' : '更早')
+  }
+
+  /** The live conversation knows its own count; a stub is told by the server. */
+  function convWhen (c) { return c.updatedAt || null }
+  function convCount (c) { return c.history.length > 0 ? c.history.length : (c.messageCount || 0) }
 
   function bootHistory () {
     fetch('/api/v1/conversations', { credentials: 'same-origin' })
@@ -280,33 +335,48 @@
       .catch(function () { /* history is an addition; losing it must not break the page */ })
   }
 
+  // `loaded` MEANS LOADED, and it used to mean "a fetch was started".
+  //
+  // It was set before the request, and the handler bailed out when the Owner had clicked
+  // elsewhere — leaving that conversation marked loaded with an empty thread, so clicking
+  // it again did nothing at all until a refresh. `inflight` is what stops a double fetch;
+  // `loaded` is now set only once a transcript is actually in the thread.
+  //
+  // And the transcript is rendered whatever is on screen: it is THIS conversation's data
+  // regardless of which pane the Owner is reading. Only the scroll is conditional, which
+  // turn() already handles.
   function loadConversation (c) {
-    if (c.loaded) return
-    c.loaded = true // set FIRST: a double click must not fetch and append twice
+    if (c.loaded || c.inflight) return
+    c.inflight = true
     fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { credentials: 'same-origin' })
       .then(function (r) { return r.json() })
       .then(function (j) {
-        if (!j || !j.ok || !j.conversation || active !== c) return
+        c.inflight = false
+        if (!j || !j.ok || !j.conversation) {
+          addError('讀唔到呢個對話，可以再撳一次。', c)
+          return
+        }
         var m = j.conversation.messages || []
         clear(c.thread)
         c.history = []
         for (var i = 0; i < m.length; i++) {
           var text = String(m[i] && m[i].content != null ? m[i].content : '')
           if (m[i] && m[i].role === 'user') {
-            addUser(text)
+            addUser(text, c)
             c.history.push({ role: 'user', text: text })
           } else {
-            var t = addBot(text)
+            var t = addBot(text, c)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(t, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
           }
         }
-        scroll()
+        c.loaded = true
+        if (c === active) scroll()
       })
       .catch(function () {
-        c.loaded = false // a failed load may be retried by clicking again
-        addError('讀唔到呢個對話，可以再撳一次。')
+        c.inflight = false   // a failed load may be retried by clicking again
+        addError('讀唔到呢個對話，可以再撳一次。', c)
       })
   }
 
@@ -336,17 +406,27 @@
     return box
   }
 
-  function turn (who) {
+  // A TURN BELONGS TO A CONVERSATION, NOT TO WHATEVER IS ON SCREEN.
+  //
+  // This appended to the global `active`, while `render(status, body, conv)` received the
+  // conversation and dropped it. Switch conversations while a reply is in flight and the
+  // reply landed in whichever pane happened to be open — so the conversation that asked the
+  // question showed the question and no answer, which is exactly what the Owner saw.
+  //
+  // `conv` defaults to active, so every existing call site behaves as before; the ones that
+  // can outlive a click now pass it explicitly.
+  function turn (who, conv) {
+    var c = conv || active
     var t = el('div', 'turn ' + who)
     if (who === 'bot') t.appendChild(avatar())
     var body = el('div', 'body')
     t.appendChild(body)
-    active.thread.appendChild(t)
-    scroll()
+    c.thread.appendChild(t)
+    if (c === active) scroll()   // never yank the view to a conversation he is not reading
     return { root: t, body: body }
   }
-  function addUser (text) {
-    var t = turn('user')
+  function addUser (text, conv) {
+    var t = turn('user', conv)
     t.body.appendChild(el('div', null, text))
     return t
   }
@@ -387,8 +467,8 @@
     return b
   }
 
-  function addBot (text) {
-    var t = turn('bot')
+  function addBot (text, conv) {
+    var t = turn('bot', conv)
     t.body.appendChild(renderMarkdown(text))
     // ONE FOOTER ROW PER MESSAGE, built here so it rides on the message rather than on a
     // call site. The copy control is always in it; labelServedBy drops the attribution in
@@ -400,16 +480,16 @@
     t.body.appendChild(t.foot)
     return t
   }
-  function addError (text) {
-    var t = turn('bot')
+  function addError (text, conv) {
+    var t = turn('bot', conv)
     t.body.appendChild(el('div', 'err-note', text))
     return t
   }
   function addMeta (host, text) { host.appendChild(el('div', 'meta', text)) }
 
   // A typing indicator the moment a message is sent — never a silent wait.
-  function addTyping () {
-    var t = turn('bot')
+  function addTyping (conv) {
+    var t = turn('bot', conv)
     var dots = el('div', 'typing')
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
     t.body.appendChild(dots)
@@ -495,13 +575,13 @@
       titleEl.textContent = active.title
       renderConvList()
     }
-    addUser(text)
-    active.history.push({ role: 'user', text: text })
+    var conv = active   // captured BEFORE anything renders: a click must not steal this turn
+    addUser(text, conv)
+    conv.history.push({ role: 'user', text: text })
     msg.value = ''
     autoGrow()
     setPending(true)
-    var typing = addTyping()
-    var conv = active
+    var typing = addTyping(conv)
     // ONE-SHOT: a shortcut applies to THIS message and is cleared immediately. A forced
     // lane that quietly persisted would be the old upfront mode choice returning by
     // stealth — worse than the buttons, because nothing on screen would say so.
@@ -534,30 +614,32 @@
       // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
       // screen IS the transcript, so re-selecting this conversation must not re-fetch and
       // repaint what the Owner is already looking at.
-      if (o.status === 200) { conv.stored = true; conv.loaded = true }
+      // updatedAt is set here too, so a live conversation sorts and groups beside the
+      // stored ones instead of falling into 更早 with no time at all.
+      if (o.status === 200) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
-      addError('連線失敗，可以重新送出。')
+      addError('連線失敗，可以重新送出。', conv)
     }).then(function () { setPending(false); scroll() })
   }
 
   function render (status, res, conv) {
     res = res || {}
-    if (status === 403) return addError('示範功能未啟用（demo_disabled）。')
-    if (status === 400) return addError('輸入無效，請檢查訊息或模式。')
+    if (status === 403) return addError('示範功能未啟用（demo_disabled）。', conv)
+    if (status === 400) return addError('輸入無效，請檢查訊息或模式。', conv)
     if (status >= 500 || (res.error && !res.blocked)) {
-      return addError((res.error && res.error.message ? res.error.message : '系統暫時無法處理這個請求。') + '（可重新送出）')
+      return addError((res.error && res.error.message ? res.error.message : '系統暫時無法處理這個請求。') + '（可重新送出）', conv)
     }
     if (res.blocked === true) {
-      var b = addBot(res.reply || '')
+      var b = addBot(res.reply || '', conv)
       addMeta(b.body, '未送外部模型，未執行任何動作')
       return b
     }
     if (res.stage === 'SHADOW_ONLY') return renderDraft(res)
     if (res.demoOutcome === 'execution_proposal' || res.demoOutcome === 'clarification') return renderProposal(res, conv)
-    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '')
-    return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'))
+    if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
+    return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'), conv)
   }
 
   // A pick is not a promise: if the chosen provider fails, the orchestrator falls back to
