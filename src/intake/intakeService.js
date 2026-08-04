@@ -771,7 +771,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     reply: distilled.reply,
     understanding: distilled.understanding,
     judgment: distilled.judgment,
-    decision: stored ? stored.decision : distilled.decision,
+    // A DECISION THAT WAS NOT PERSISTED IS NOT A DECISION.
+    // This used to fall back to `distilled.decision` — the model's own proposed text —
+    // so a turn whose write failed looked, to the Owner, exactly like one that succeeded.
+    // Null is the honest answer, and `decisionPersisted` below says so out loud.
+    decision: stored ? stored.decision : null,
+    decisionPersisted: !!(persisted && persisted.durable),
     tasks: enrichedTasks,
     risks: distilled.risks,
     next_step: distilled.next_step,

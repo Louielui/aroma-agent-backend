@@ -12,13 +12,29 @@
 
 const store = require('../store/store')
 
+/**
+ * THE ASYMMETRY, MADE EXPLICIT RATHER THAN LEFT INCIDENTAL.
+ *
+ * A lost llm_usage record is an accounting gap. A lost Decision is the thing this whole
+ * system exists to preserve. Both used to swallow their error identically and return
+ * `{ ok: false }`, and downstream nobody looked — a turn whose Decision was never written
+ * still answered the Owner as though it had been.
+ *
+ * `durable` is the field that carries the difference. It is present ONLY on the Decision
+ * path, it is never inferred, and `false` means the Decision is not on disk.
+ */
 async function persistIntake (payload) {
   try {
     const data = store.persistIntake(payload)
-    return { ok: true, data }
+    return { ok: true, durable: true, data }
   } catch (err) {
-    console.warn('[AROMA-HUB] persist failed:', err.message)
-    return { ok: false, error: err.message }
+    // NOT fail-open. The caller must surface this to the Owner; see intakeService.
+    try {
+      console.log('[AROMA-HUB]', JSON.stringify({
+        event: 'DECISION_NOT_PERSISTED', timestamp: new Date().toISOString(), durable: false
+      }))
+    } catch (_) {}
+    return { ok: false, durable: false, error: err.message }
   }
 }
 
@@ -27,7 +43,13 @@ async function recordLLMUsage (metrics) {
     store.recordLLMUsage(metrics)
     return { ok: true }
   } catch (err) {
-    console.warn('[AROMA-HUB] llm-usage record failed:', err.message)
+    // FAIL-OPEN, deliberately: metering must never cost the Owner a reply. Counted, not
+    // silent — a metering gap you can see beats a turn that died over accounting.
+    try {
+      console.log('[AROMA-HUB]', JSON.stringify({
+        event: 'USAGE_NOT_RECORDED', timestamp: new Date().toISOString()
+      }))
+    } catch (_) {}
     return { ok: false, error: err.message }
   }
 }
