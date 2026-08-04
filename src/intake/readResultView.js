@@ -319,6 +319,8 @@ function renderValidatedPlan (input) {
     droppedFacts: v.droppedFacts,
     droppedSentences: v.droppedSentences,
     drops: v.drops,
+    modelItemCount: v.modelItemCount,
+    keptItemCount: v.keptItemCount,
     requestId: input.requestId || null
   }
 
@@ -341,7 +343,9 @@ function renderValidatedPlan (input) {
   // A fallback replaced the whole answer; its sections are not shown underneath it.
   const sections = (!v.answerSurvived || contentLost) ? [] : v.plan.sections
   for (const sec of sections) {
-    const lines = [`### ${sec.heading}`]
+    // A blanked heading (one the validator would not stand behind) is omitted, not
+    // printed as a bare '###'.
+    const lines = sec.heading ? [`### ${sec.heading}`] : []
     for (const it of sec.items) {
       const facts = it.facts.map((f) => `${f.field} ${f.value}`).join('｜')
       lines.push(facts ? `**${it.title}**\n${facts}` : `**${it.title}**`)
