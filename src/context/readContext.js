@@ -73,6 +73,69 @@ function buildSafetyHeader (sources = [], opts = {}) {
   return `Sources read this turn: ${list.join(', ')}.${note} ${SAFETY_HEADER}`
 }
 
+/**
+ * THE SCOPE BLOCK — what each read IS, in the prompt, where the model can read it.
+ *
+ * WHY THIS EXISTS. The EvidenceSet has been computed since the read layer was built, and
+ * the answer validator has been JUDGING the model against it — but it was never serialized
+ * into the prompt. So on 2026-08-03 the model was handed four inventory lines, no total,
+ * and no scope; it wrote 「系統讀到三項倉存記錄」 against a real 199, and then listed
+ * 「無法確認呢啲係唯一嘅倉存項目」 as a limitation. Both were the best it could do with what
+ * it was given: it could only count the lines it could see, and the sentence that says this
+ * data has no location and no timestamp was sitting in SCOPE_OF, inside the process.
+ *
+ * Judging a model against a number it was never shown is not a guardrail, it is a trap.
+ * These lines close that gap: the total, the shown count, whether this is a sample, what
+ * the numeric fields MEAN, and which dimensions the rows do NOT have.
+ */
+const SCOPE_PREAMBLE = 'SCOPE — how much of each source exists, and how much of it is below. When you state how many of something there are, take the number from these lines. NEVER from the number of lines you can count below: what is shown is a sample unless a line says otherwise.'
+
+/** A scope line is bounded like any other, but generously — it carries meaning, not content. */
+const MAX_SCOPE_LINE_CHARS = 320
+
+/**
+ * ONE SOURCE'S SCOPE, or null when there is nothing true to say.
+ *
+ * ORDER IS MEANING. Counts first, then how the rows were chosen, then the dimensions the
+ * data does NOT have, then the source's own note, and the field meanings last — so that if
+ * the cap ever bites, what survives is the part that stops an over-claim.
+ *
+ * An unknown total is written 'total unknown', NEVER as the shown count. That substitution
+ * is the exact false claim the EvidenceSet was built to prevent, and writing it here would
+ * reintroduce it at the last possible moment.
+ */
+function renderScopeLine (e) {
+  if (!e || !e.source || e.trust !== 'live') return null
+  const shown = Number.isFinite(e.shownCount) ? e.shownCount : 0
+  const total = Number.isFinite(e.totalCount) ? `${e.totalCount} records exist` : 'total unknown'
+  const completeness = typeof e.completeness === 'string' && e.completeness ? ` (${e.completeness})` : ''
+  // 'SCOPE ' LEADS THE LINE, and the source tag follows it. A scope line is ABOUT a read;
+  // an item line IS one, and they must not be confusable — by the model, or by anything
+  // that reads the block. Without the prefix both begin '[calendar]', which is one string
+  // match away from a scope line being counted as an event.
+  const parts = [`SCOPE [${e.source}] ${total}; ${shown} shown${completeness}`]
+
+  if (e.usedFallback === true) parts.push('selected by RECENCY, not by the question asked')
+  else if (e.rankedBy) parts.push(`ranked by ${e.rankedBy}`)
+
+  const scope = (e.scope && typeof e.scope === 'object') ? e.scope : {}
+  const missing = []
+  if (scope.hasLocation === false) missing.push('NO location')
+  if (scope.hasAsOf === false) missing.push('NO as-of timestamp')
+  if (missing.length) parts.push(`${missing.join(', ')} on these rows`)
+  if (scope.note) parts.push(String(scope.note))
+
+  const metrics = (e.metrics && typeof e.metrics === 'object') ? Object.entries(e.metrics) : []
+  if (metrics.length) {
+    parts.push('fields: ' + metrics
+      .map(([k, m]) => `${k}=${(m && m.label) || k}${(m && m.meaning) ? ` (${m.meaning})` : ''}`)
+      .join(', '))
+  }
+
+  const line = parts.join(' · ')
+  return line.length <= MAX_SCOPE_LINE_CHARS ? line : line.slice(0, MAX_SCOPE_LINE_CHARS) + '…'
+}
+
 /** One rendered line, bounded. The source tag leads the line, so it always survives. */
 function capLine (line, max = CAPS.maxLineChars) {
   const s = String(line == null ? '' : line)
@@ -497,10 +560,39 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   // not fit is SKIPPED, not treated as the end of the block.
   const usedSources = perSource.map((p) => p.source)
 
+  // THE SCOPE LINES ARE NOT NEGOTIABLE FOR BUDGET. They are part of the block's opening,
+  // before the round-robin, so a busy turn can never spend the cap on rows and leave the
+  // model to guess the totals. They are bounded (one short line per source, ≤320 chars),
+  // so the cost is small and fixed, and it buys the one thing rows cannot say about
+  // themselves: how many more of them there are.
+  const scopeLines = evidenceSets.map(renderScopeLine).filter(Boolean)
+
   function assemble (headerText) {
     let out = `${OPEN}\nRetrieved at: ${asOf}\n${headerText}`
     let used = out.length + 1 + CLOSE.length // the closing tag is part of the budget
     let dropped = false
+
+    // SCOPE OUTRANKS ROWS FOR BUDGET, BUT IS NOT EXEMPT FROM IT. It is claimed before the
+    // round-robin, so a turn full of long rows can never spend the cap and leave the model
+    // to guess the totals — that ordering is the point. It is still measured, because a
+    // block that overruns maxTotalChars gets cut by the provider instead, which is the same
+    // loss with none of the honesty. Anything that does not fit sets `dropped`, so the
+    // header says the block was capped rather than going quiet.
+    if (scopeLines.length) {
+      const kept = []
+      let cost = 1 + SCOPE_PREAMBLE.length
+      for (const line of scopeLines) {
+        if (used + cost + line.length + 1 > caps.maxTotalChars) { dropped = true; continue }
+        kept.push(line)
+        cost += line.length + 1
+      }
+      if (kept.length > 0) {
+        out += `\n${SCOPE_PREAMBLE}\n` + kept.join('\n')
+        used += cost
+      } else {
+        dropped = true
+      }
+    }
     const rounds = lineGroups.reduce((m, g) => Math.max(m, g.length), 0)
     for (let round = 0; round < rounds; round++) {
       for (const group of lineGroups) {
@@ -530,7 +622,9 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 module.exports = {
   CAPS,
   SAFETY_HEADER,
+  SCOPE_PREAMBLE,
   buildSafetyHeader,
+  renderScopeLine,
   capLine,
   describeRead,
   INTENTS,

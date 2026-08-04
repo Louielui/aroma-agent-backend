@@ -56,7 +56,11 @@ const LIMITS = Object.freeze({
   maxDirectAnswerChars: 200,
   maxLimitations: 3,
   maxLimitationChars: 120,
-  maxFollowUpChars: 120
+  maxFollowUpChars: 120,
+  // Drop records are identifiers, and identifiers are short. Both bounds exist so a model
+  // cannot turn the log line into a payload by inventing long ids or many of them.
+  maxDropIdChars: 40,
+  maxDropsLogged: 12
 })
 
 /** Words that mean the system is talking about itself. They are telemetry, not an answer. */
@@ -131,20 +135,59 @@ const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
   }
 })
 
-/** One countable line per fallback. Reason enums only — never the plan, never a row. */
+/**
+ * One countable line per turn. Reason enums, counts, and — since 2026-08-03 — the IDENTITY
+ * of whatever was deleted.
+ *
+ * THE ONE DELIBERATE WIDENING OF THIS LOG'S CONTRACT. Every other projection here carries
+ * counts and short enums only, and content never reaches it. `dropped` carries two
+ * model-authored strings: a sourceId and a field NAME. Never a field VALUE — the row's
+ * content still cannot reach the log. Both are truncated at maxDropIdChars and the array at
+ * maxDropsLogged, so a long or repetitive plan cannot turn a log line into a payload.
+ *
+ * It is here because the alternative was demonstrated: a validator that deleted three items
+ * and recorded only the number 3 cost three rounds of diagnosis, and the deletions were of
+ * a DIFFERENT KIND than the number implied.
+ */
 function logAnswerPlan (entry, sink) {
+  const drops = Array.isArray(entry.drops) ? entry.drops.slice(0, LIMITS.maxDropsLogged) : []
   const line = {
     event: 'ANSWER_PLAN',
     timestamp: new Date().toISOString(),
     outcome: String(entry.outcome || 'unknown'),
     reason: entry.reason == null ? null : String(entry.reason).slice(0, 80),
     provider: entry.provider == null ? null : String(entry.provider),
+    droppedItems: Number.isFinite(entry.droppedItems) ? entry.droppedItems : 0,
     droppedFacts: Number.isFinite(entry.droppedFacts) ? entry.droppedFacts : 0,
     droppedSentences: Number.isFinite(entry.droppedSentences) ? entry.droppedSentences : 0,
+    // Identifiers only. The projection is explicit rather than a spread, so a new key on a
+    // drop record cannot ride into the log unnoticed.
+    dropped: drops.map((d) => {
+      const out = { kind: String(d && d.kind ? d.kind : 'unknown'), sourceId: String(d && d.sourceId != null ? d.sourceId : '').slice(0, LIMITS.maxDropIdChars) }
+      if (d && d.field != null) out.field = String(d.field).slice(0, LIMITS.maxDropIdChars)
+      return out
+    }),
     requestId: entry.requestId == null ? null : String(entry.requestId)
   }
   try { (sink || ((l) => console.log('[AROMA-ANSWER-PLAN]', JSON.stringify(l))))(line) } catch (_) {}
   return line
+}
+
+/**
+ * THE ONE NUMBER IN A STRING, normalized — or null when there is not exactly one.
+ *
+ * '18.000' → 18 · '18' → 18 · '$191.10' → 191.1 · '1,250' → 1250
+ * '2026-08-03' → null (three tokens: a date is not a quantity)
+ *
+ * Exactly one, deliberately: a string carrying two numbers is a sentence, not a value, and
+ * guessing which of them the model meant would be the kind of inference this file exists
+ * to refuse.
+ */
+function numericOf (raw) {
+  const m = String(raw).match(/-?\d+(?:[.,]\d+)*/g)
+  if (!m || m.length !== 1) return null
+  const n = Number(m[0].replace(/,/g, ''))
+  return Number.isFinite(n) ? n : null
 }
 
 /** Every scalar value in the evidence, as strings — the universe of provable values. */
@@ -152,12 +195,23 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   const byId = new Map()
   const values = new Set()
   const numbers = new Set()
+  // THE SAME VALUES AS QUANTITIES. MySQL hands back '18.000' where the model writes '18';
+  // those are one number and the string comparison called them two, deleting a correct
+  // fact. Note what this set does NOT contain: the evidence COUNTS. A count is a fact
+  // about the read, not a value any row carried, and admitting it here would let a row
+  // claim the shown count as its own quantity.
+  const numericValues = new Set()
   const addNum = (s) => { for (const n of String(s).match(/\d+(?:[.,]\d+)*/g) || []) numbers.add(n.replace(/,/g, '')) }
 
   for (const g of itemsBySource) {
     for (const row of (g.items || [])) {
       byId.set(String(row.sourceId), row)
-      for (const v of Object.values(row.fields || {})) { values.add(String(v)); addNum(v) }
+      for (const v of Object.values(row.fields || {})) {
+        values.add(String(v))
+        addNum(v)
+        const n = numericOf(v)
+        if (n !== null) numericValues.add(n)
+      }
       if (row.title) values.add(String(row.title))
       if (row.originalDate) { values.add(String(row.originalDate)); addNum(row.originalDate) }
     }
@@ -167,7 +221,38 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.totalCount)) numbers.add(String(e.totalCount))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, values, numbers }
+  return { byId, values, numbers, numericValues }
+}
+
+/**
+ * IS THIS RENDERED VALUE A REAL ONE?
+ *
+ * Three ways to be real, and no fourth:
+ *   1. it is a value the evidence carries, verbatim;
+ *   2. it is the translation of one (an enum → the Owner's word);
+ *   3. it is the SAME QUANTITY as one, written differently — 「18」 and 「18 ea」 against a
+ *      stored '18.000'.
+ *
+ * SUBSTRING MATCHING IS NOT ONE OF THEM, and this is the whole care of the third rule.
+ * '8.0' and '1' are both substrings of '18.000' and neither is that number, so the
+ * comparison is numeric — parse both sides, compare as quantities. Anything left over
+ * after the number is removed must ITSELF be a real value: 「18 ea」 survives because the
+ * row carries 'ea', and 「18 apples」 does not, because no row ever said apples.
+ */
+function valueMatches (raw, index) {
+  const s = String(raw).trim()
+  if (index.values.has(s)) return true
+  if (index.values.has(translate(s))) return true
+
+  const n = numericOf(s)
+  if (n === null || !index.numericValues.has(n)) return false
+
+  // The number is real. Whatever else is in the string has to be real too.
+  const rest = s
+    .replace(/-?\d+(?:[.,]\d+)*/g, ' ')
+    .replace(/[$¥€£%,、｜|()（）]/g, ' ')
+    .trim()
+  return rest === '' || index.values.has(rest)
 }
 
 /** Translate a status-looking value; leave anything else alone. */
@@ -184,9 +269,62 @@ function translate (value) {
  * does the damage: 「291 張待審批」 and 「4 項存貨」 are both numbers that were never
  * measured. Non-numeric prose passes — see the note at the top about what is not checked.
  */
+const CJK_DIGITS = Object.freeze({ 零: 0, 〇: 0, 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 })
+const CJK_UNITS = Object.freeze({ 十: 10, 百: 100, 千: 1000, 萬: 10000 })
+
+/**
+ * A Chinese numeral → a number. 三 → 3 · 十五 → 15 · 一百九十九 → 199 · 兩千 → 2000.
+ * Returns null for anything that is not purely numeric characters.
+ */
+function cjkToNumber (s) {
+  let total = 0
+  let section = 0
+  let digit = 0
+  for (const ch of String(s)) {
+    if (Object.prototype.hasOwnProperty.call(CJK_DIGITS, ch)) { digit = CJK_DIGITS[ch]; continue }
+    if (!Object.prototype.hasOwnProperty.call(CJK_UNITS, ch)) return null
+    const unit = CJK_UNITS[ch]
+    if (unit === 10000) { section = (section + digit) * unit; total += section; section = 0 } else { section += (digit || 1) * unit }
+    digit = 0
+  }
+  return total + section + digit
+}
+
+/**
+ * WHICH CHINESE NUMERALS ARE A COUNT CLAIM.
+ *
+ * A numeral ALONE cannot be checked: 一 lives inside 一齊, 一定, 一啲 and a dozen other
+ * ordinary words, and dropping honest prose over a particle would be a worse failure than
+ * the one being fixed here. So a numeral counts as a claim only when a MEASURE WORD follows
+ * it — 「三項」, 「兩張」, 「四封」 — which is how a count is actually written.
+ *
+ * 個 IS DELIBERATELY ABSENT WHEN THE NUMERAL IS 一. 「一個問題」 is prose, not arithmetic,
+ * while 「三個供應商」 is a count; the rule below keeps the second and lets the first pass.
+ * That boundary is written here rather than implied, and it means a bare 「一個」 over-claim
+ * is NOT caught. The digit spelling of every one of these is still checked.
+ */
+const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項張封份件次條間位樣款種批個])/g
+
+/**
+ * Does every number in this sentence exist in the evidence?
+ *
+ * BOTH SPELLINGS. This used to match /\d+/ only, so 「系統讀到三項倉存記錄」 contained no
+ * digit, had nothing to check, and passed vacuously against a real total of 199 — while the
+ * test that claimed to pin the behaviour asserted the ASCII form. Cantonese writes counts in
+ * Chinese numerals by default; checking only the exception is checking nothing.
+ */
 function sentenceIsSupported (sentence, index) {
-  const nums = String(sentence).match(/\d+(?:[.,]\d+)*/g) || []
-  return nums.every((n) => index.numbers.has(n.replace(/,/g, '')))
+  const s = String(sentence)
+  const nums = s.match(/\d+(?:[.,]\d+)*/g) || []
+  if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
+
+  for (const m of s.matchAll(CJK_COUNT_RE)) {
+    if (m[2] === '個' && m[1] === '一') continue // 「一個」 is a classifier, not a count
+    const n = cjkToNumber(m[1])
+    if (n === null) continue
+    if (!index.numbers.has(String(n))) return false
+  }
+  return true
 }
 
 const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/).map((s) => s.trim()).filter(Boolean)
@@ -197,8 +335,20 @@ const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/)
  */
 function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
   const index = evidenceIndex(evidenceSets, itemsBySource)
+  // TWO COUNTERS, BECAUSE THEY ARE TWO FAILURES. They used to share one, and the shared
+  // number sent a live diagnosis after the wrong defect: `droppedFacts:3` was read as three
+  // deleted values when it was three deleted ITEMS, which is why the screen was empty
+  // rather than merely thin. An unprovable value and a row that does not exist are not the
+  // same event and no longer report as one.
   let droppedFacts = 0
+  let droppedItems = 0
   let droppedSentences = 0
+  // WHAT was dropped, not just how much. IDENTIFIERS ONLY — a sourceId and a field name.
+  // Never a value: the log is not allowed to carry row content, and a validator that
+  // deletes without leaving a record is how this defect survived three rounds.
+  const drops = []
+  let modelItemCount = 0
+  let keptItemCount = 0
 
   // ── directAnswer: sentence by sentence ──────────────────────────────────────
   const kept = []
@@ -214,18 +364,32 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
   for (const sec of (Array.isArray(plan.sections) ? plan.sections : []).slice(0, LIMITS.maxSections)) {
     const items = []
     for (const it of (Array.isArray(sec.items) ? sec.items : []).slice(0, LIMITS.maxItemsPerSection)) {
-      const row = index.byId.get(String(it.sourceId))
-      if (!row) { droppedFacts++; continue } // an item that was never retrieved is an invention
+      modelItemCount++
+      const sourceId = String(it.sourceId)
+      const row = index.byId.get(sourceId)
+      if (!row) { // an item that was never retrieved is an invention
+        droppedItems++
+        drops.push({ kind: 'item', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars) })
+        continue
+      }
       const facts = []
       for (const f of (Array.isArray(it.facts) ? it.facts : []).slice(0, LIMITS.maxFactsPerItem)) {
-        const value = translate(f.value)
-        // The value must be a real one — either verbatim, or the translation of one.
-        if (!index.values.has(String(f.value)) && !index.values.has(value)) { droppedFacts++; continue }
-        facts.push({ field: String(f.field), value })
+        // The value must be a real one — verbatim, the translation of one, or the same
+        // quantity written differently. See valueMatches: never a substring.
+        if (!valueMatches(f.value, index)) {
+          droppedFacts++
+          drops.push({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: String(f.field).slice(0, LIMITS.maxDropIdChars) })
+          continue
+        }
+        facts.push({ field: String(f.field), value: translate(f.value) })
       }
       // The title is the server's, not the model's: it cannot be edited into something else.
-      items.push({ sourceId: String(it.sourceId), title: row.title || String(it.title || ''), facts })
+      items.push({ sourceId, title: row.title || String(it.title || ''), facts })
+      keptItemCount++
     }
+    // A SECTION WITH NOTHING LEFT IS STILL NEWS. It is not rendered — a bare heading over
+    // nothing is worse than no heading — but the count above travels out with it, and
+    // readResultView states the omission on screen instead of quietly shrinking.
     if (items.length > 0) sections.push({ heading: String(sec.heading || ''), items })
   }
 
@@ -250,7 +414,13 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
   return {
     plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true },
     droppedFacts,
+    droppedItems,
     droppedSentences,
+    drops: drops.slice(0, LIMITS.maxDropsLogged),
+    // How much content the model offered, and how much of it was real. The pair is what
+    // lets the caller tell "a thin answer" from "an answer with nothing left in it".
+    modelItemCount,
+    keptItemCount,
     answerSurvived
   }
 }
@@ -323,6 +493,9 @@ module.exports = {
   parsePlan,
   minimalAnswer,
   translate,
+  valueMatches,
+  numericOf,
+  cjkToNumber,
   sentenceIsSupported,
   splitSentences
 }
