@@ -531,8 +531,10 @@
       labelServedBy(render(o.status, o.body, conv), o.body)
       if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
       // The server has just written this turn, so the conversation is now history: it
-      // survives a refresh and it can be deleted.
-      if (o.status === 200) conv.stored = true
+      // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
+      // screen IS the transcript, so re-selecting this conversation must not re-fetch and
+      // repaint what the Owner is already looking at.
+      if (o.status === 200) { conv.stored = true; conv.loaded = true }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
