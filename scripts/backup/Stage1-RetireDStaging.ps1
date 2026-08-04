@@ -1,4 +1,4 @@
-<#
+﻿<#
 ================================================================================================
  Stage1-RetireDStaging.ps1 — move the truth-data and release-records STAGING root off D:.
 
@@ -93,6 +93,15 @@ $Plan = @(
 
 $StagingDirs = @('C:\AromaBackupStaging\TruthData', 'C:\AromaBackupStaging\ReleaseRecords')
 
+# ── THE PRECONDITION: refuse unless the files are EXACTLY the ones reviewed ────────────────
+# These are the hashes of the two installed scripts as restored from .bak after the first
+# attempt. If either file differs — a half-applied edit, a hand fix, a newer version — the
+# reviewed edit no longer describes reality and this script must not touch it.
+$ExpectedSha = @{
+  'aroma-truthdata-backup.ps1'      = '812689396FC2217BF6092D44E660D3FD02E49C76BC4EA69A1C9DD3646234C112'
+  'aroma-releaserecords-backup.ps1' = '1327801D8E876AF921C9CDE40EA18CA93EAC0B4E651D8BC0CE8707D88509E1C0'
+}
+
 # ── helpers ────────────────────────────────────────────────────────────────────────────────
 
 function Assert-Edit {
@@ -149,6 +158,15 @@ foreach ($f in $Plan) {
   if (-not (Test-Path -LiteralPath $f.Path)) { throw "missing target: $($f.Path)" }
   $name   = Split-Path $f.Path -Leaf
   $before = Read-Text -Path $f.Path
+
+  # PRECONDITION FIRST — before any edit is even simulated.
+  $shaNow = Get-TextSha256 -Text $before
+  if (-not $ExpectedSha.ContainsKey($name)) { throw "$name : no expected hash recorded - refusing" }
+  if ($shaNow -ne $ExpectedSha[$name]) {
+    throw ("$name : file is not the reviewed version.`n    expected {0}`n    found    {1}`n    Refusing: the reviewed edit no longer describes this file." -f $ExpectedSha[$name], $shaNow)
+  }
+  Write-Host ("  precondition ok : {0}" -f $name) -ForegroundColor Green
+
   $after  = Apply-Edits -Text $before -Edits $f.Edits -Where $name
 
   $changed = Get-ChangedLineCount -Before $before -After $after
