@@ -33,6 +33,8 @@ const { inferWorkRequest } = require('../agent/requestInference') // read the re
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
+// Conversation History v1 — the durable sidebar. READ+APPEND+DELETE, UI path only.
+const { conversationStore: defaultConversationStore, isValidId: isValidConversationId } = require('../store/conversationStore')
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -72,8 +74,46 @@ function historyTextOf (history) {
   return parts.join('\n')
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = defaultConversationStore } = {}) {
   const router = express.Router()
+
+  // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
+  // Behind the SAME demo guard and the same owner session as the page that calls them.
+  // Three routes, no update and no rename: the store is deliberately small because it
+  // holds verbatim conversation text.
+  //
+  // The id is minted by the browser and becomes a FILE NAME, so the store refuses
+  // anything that is not a plain id — 400 here rather than a sanitised path there.
+
+  router.get('/api/v1/conversations', demoGuard, (req, res) => {
+    try {
+      res.json({ ok: true, conversations: conversationStore.list() })
+    } catch (_) {
+      res.status(500).json({ ok: false, error: 'conversation_list_failed' })
+    }
+  })
+
+  router.get('/api/v1/conversations/:id', demoGuard, (req, res) => {
+    if (!isValidConversationId(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_conversation_id' })
+    let conversation
+    try { conversation = conversationStore.get(req.params.id) } catch (_) {
+      return res.status(500).json({ ok: false, error: 'conversation_read_failed' })
+    }
+    if (!conversation) return res.status(404).json({ ok: false, error: 'not_found' })
+    res.json({ ok: true, conversation })
+  })
+
+  router.delete('/api/v1/conversations/:id', demoGuard, (req, res) => {
+    if (!isValidConversationId(req.params.id)) return res.status(400).json({ ok: false, error: 'invalid_conversation_id' })
+    let removed
+    try { removed = conversationStore.remove(req.params.id) } catch (_) {
+      return res.status(500).json({ ok: false, error: 'conversation_delete_failed' })
+    }
+    if (!removed) return res.status(404).json({ ok: false, error: 'not_found' })
+    // COUNTS AND IDS ONLY, like every other log here. A conversation title is content.
+    try { console.log('[AROMA-CONVERSATION]', JSON.stringify({ event: 'CONVERSATION_DELETED', timestamp: new Date().toISOString(), conversationId: req.params.id })) } catch (_) {}
+    res.json({ ok: true })
+  })
 
   // GET /demo — serve the single-file UI (guarded).
   router.get('/demo', demoGuard, (req, res) => {
@@ -258,6 +298,34 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
               inferred: inferWorkRequest({ message, conversation: historyTextOf(history) })
             })
           : withLab
+
+        // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
+        // One completed turn, written after the reply exists, so a failed turn leaves no
+        // half-conversation behind. FAIL-OPEN for the same reason the Lab hook beside it
+        // is: the answer has already been produced and a write must not be able to take
+        // it away. Nothing is added to the response — a consumer of this envelope must not
+        // gain a field because the sidebar learned to remember.
+        //
+        // WHAT IS STORED IS WHAT WAS SHOWN. Unlike the Lab archive, which keeps only her
+        // own words under A′, this is the transcript the Owner clicks back into, so it
+        // holds the rendered reply — retrieved rows and all. That is a deliberate
+        // widening of what sits on disk and is reported to the Owner as such.
+        const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null
+        if (conversationId && isValidConversationId(conversationId)) {
+          try {
+            const shown = (withInference && typeof withInference === 'object' && typeof withInference.reply === 'string')
+              ? withInference.reply
+              : null
+            if (shown !== null) {
+              conversationStore.appendTurn({
+                id: conversationId,
+                userText: message,
+                replyText: shown,
+                servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null
+              })
+            }
+          } catch (_) { /* fail-open: never lose a reply to a disk problem */ }
+        }
 
         return res.status(200).json(withInference)
       } catch (err) {

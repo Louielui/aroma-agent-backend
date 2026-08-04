@@ -1,4 +1,4 @@
-/* 心燈 UI — Stage A client.
+/* 香香 UI — Stage A client.
  *
  * SECURITY INVARIANTS (asserted by demoRouter.test.js — do not weaken).
  * The test scans this file as raw text for the forbidden APIs, so the rules below are
@@ -8,8 +8,9 @@
  *     every node is built with createElement + textContent, so nothing a model or a
  *     read-lane document says can become markup
  *   - no external URL, CDN, font or image; same-origin fetch only
- *   - no browser-side persistence of any kind; conversations live in memory and a
- *     refresh clears them (the safe direction)
+ *   - no browser-side persistence of any kind: no storage API is touched in this file.
+ *     Since 2026-08-04 conversations DO survive a refresh, but they are held SERVER-side,
+ *     behind the same owner session as this page — the browser itself still stores nothing
  *   - the approval POST carries EXACTLY four fields; no Work Order field ever travels
  *     from the browser, and the collapsed technical section is presentation only
  *   - progress comes from the server's fixed phase vocabulary — raw agent output is
@@ -41,9 +42,16 @@
   // data goes is worse than no claim at all. The note now states the thing that actually
   // matters when choosing: the same data, but a second vendor receives it.
   // contextAsymmetry.test.js pins that this stays true.
+  // THE SOURCE NAMES ARE GENERATED, NOT TYPED. Injected at build time from the same
+  // ALL_SOURCES the read layer uses (see demoHtml.js). The note used to list four by hand
+  // and had gone stale: aroma_system — the restaurant's own system, the one he reads most —
+  // was missing from a sentence whose whole job is to say where his data goes.
+  var READ_SOURCES = /*READ_SOURCE_LABELS*/
+  var SOURCE_TEXT = READ_SOURCES.join('／') + '同過往決定'
+
   var PROVIDERS = [
-    { id: 'claude', name: '香香（Claude）', note: '睇到 Drive／Gmail／日曆／GitHub 同過往決定', warn: false },
-    { id: 'openai', name: '香香（GPT）', note: '一樣睇到 Drive／Gmail／日曆／GitHub 同過往決定 —— 但呢啲資料會送去 OpenAI', warn: true }
+    { id: 'claude', name: '香香（Claude）', note: '睇到 ' + SOURCE_TEXT, warn: false },
+    { id: 'openai', name: '香香（GPT）', note: '一樣睇到 ' + SOURCE_TEXT + ' —— 但呢啲資料會送去 OpenAI', warn: true }
   ]
   var provider = 'claude'
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
@@ -191,13 +199,18 @@
   // An EMPTY conversation is not history yet. Listing it produced the duplicate the Owner
   // saw — 「新對話」 as the header and 「新對話」 again as a list entry, naming the same
   // nothing twice. A conversation joins the list once it actually holds a turn.
-  function isListed (c) { return c.history.length > 0 }
+  // A conversation joins the list once it holds a turn — or once the server says it has
+  // one. An EMPTY new conversation is still not history: listing it produced the duplicate
+  // the Owner saw, 「新對話」 as the header and 「新對話」 again as a list entry.
+  function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
     active = c
     clear(log)
     log.appendChild(c.thread)
     titleEl.textContent = isListed(c) ? c.title : '香香'
     renderConvList()
+    // A stored conversation is a title until it is opened; the transcript arrives here.
+    if (c.stored && !c.loaded) loadConversation(c)
     scroll()
   }
   function renderConvList () {
@@ -209,12 +222,106 @@
         b.setAttribute('type', 'button')
         b.addEventListener('click', function () { selectConversation(c) })
         convsEl.appendChild(b)
+        // DELETE BELONGS TO THE OPEN CONVERSATION ONLY. One destructive control on screen
+        // at a time, under the row it acts on, so it cannot be hit while aiming at a
+        // neighbour. It reuses the sidebar's own button style — this change adds no CSS.
+        if (c === active && c.stored) {
+          var d = el('button', 'side-item')
+          d.setAttribute('type', 'button')
+          d.appendChild(el('span', 'side-item-icon', '🗑'))
+          d.appendChild(el('span', null, '刪除呢個對話'))
+          d.addEventListener('click', function () { deleteConversation(c) })
+          convsEl.appendChild(d)
+        }
       })(convs[i])
     }
   }
   function titleFrom (text) {
     var t = String(text).replace(/\s+/g, ' ').trim()
-    return t.length > 24 ? t.slice(0, 24) + '…' : (t || '新對話')
+    return t.length > 30 ? t.slice(0, 30) + '…' : (t || '新對話')
+  }
+
+  /* ── history, from the server ─────────────────────────────────────────────
+   * The sidebar had 「開新對話」 and nothing to go back to: a refresh or a new chat threw
+   * the conversation away, because it only ever existed in this page. The transcripts now
+   * live on the server (one file per conversation) and the page reads them.
+   *
+   * STILL NO BROWSER-SIDE PERSISTENCE. Nothing is written to the browser — no storage API
+   * is touched anywhere in this file, and demoRouter.test.js scans for exactly that. The
+   * durability is entirely server-side, behind the same owner session as this page. */
+  function findConv (cid) {
+    for (var i = 0; i < convs.length; i++) if (convs[i].cid === cid) return convs[i]
+    return null
+  }
+
+  // A row in the list before its transcript has been fetched. `loaded` is what stops a
+  // second click from appending the same transcript underneath the first.
+  function stubFor (row) {
+    return {
+      id: 'h-' + row.id, cid: row.id, title: row.title || '新對話',
+      history: [], thread: el('div', 'thread'), stored: true, loaded: false
+    }
+  }
+
+  function bootHistory () {
+    fetch('/api/v1/conversations', { credentials: 'same-origin' })
+      .then(function (r) { return r.json() })
+      .then(function (j) {
+        if (!j || !j.ok || !j.conversations) return
+        for (var i = 0; i < j.conversations.length; i++) {
+          var row = j.conversations[i]
+          if (!row || !row.id || findConv(row.id)) continue
+          // APPENDED, not unshifted: the server already sorted newest-first, and the empty
+          // conversation the page opened with stays at the top where the Owner left it.
+          convs.push(stubFor(row))
+        }
+        renderConvList()
+      })
+      .catch(function () { /* history is an addition; losing it must not break the page */ })
+  }
+
+  function loadConversation (c) {
+    if (c.loaded) return
+    c.loaded = true // set FIRST: a double click must not fetch and append twice
+    fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { credentials: 'same-origin' })
+      .then(function (r) { return r.json() })
+      .then(function (j) {
+        if (!j || !j.ok || !j.conversation || active !== c) return
+        var m = j.conversation.messages || []
+        clear(c.thread)
+        c.history = []
+        for (var i = 0; i < m.length; i++) {
+          var text = String(m[i] && m[i].content != null ? m[i].content : '')
+          if (m[i] && m[i].role === 'user') {
+            addUser(text)
+            c.history.push({ role: 'user', text: text })
+          } else {
+            var t = addBot(text)
+            // The same disclosure a live turn carries: who actually answered.
+            if (m[i] && m[i].servedBy) labelServedBy(t, { servedBy: m[i].servedBy })
+            c.history.push({ role: 'assistant', text: text })
+          }
+        }
+        scroll()
+      })
+      .catch(function () {
+        c.loaded = false // a failed load may be retried by clicking again
+        addError('讀唔到呢個對話，可以再撳一次。')
+      })
+  }
+
+  function deleteConversation (c) {
+    // ASKS FIRST. A conversation is not deleted on a stray click, and there is no undo.
+    if (!window.confirm('刪除「' + c.title + '」？呢個係永久嘅，冇得復原。')) return
+    fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { method: 'DELETE', credentials: 'same-origin' })
+      .then(function () {
+        for (var i = 0; i < convs.length; i++) {
+          if (convs[i] === c) { convs.splice(i, 1); break }
+        }
+        if (active === c) newConversation(false)
+        else renderConvList()
+      })
+      .catch(function () { addError('刪唔到，可以再試一次。') })
   }
 
   /* ── message rendering ────────────────────────────────────────────────── */
@@ -274,7 +381,7 @@
   }
 
   /* ── the "+" shortcuts ────────────────────────────────────────────────────
-   * ONE composer. 心燈 routes internally, so there is no lane to pick before typing.
+   * ONE composer. 香香 routes internally, so there is no lane to pick before typing.
    * These two remain as SHORTCUTS for when the Owner wants to force a lane — never as a
    * required upfront choice. A shortcut applies to the NEXT message only and then clears
    * itself, so a forced lane can never quietly persist into later turns. */
@@ -378,6 +485,9 @@
             : previousLane
       labelServedBy(render(o.status, o.body, conv), o.body)
       if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
+      // The server has just written this turn, so the conversation is now history: it
+      // survives a refresh and it can be deleted.
+      if (o.status === 200) conv.stored = true
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
@@ -778,22 +888,23 @@
    *
    * No browser-side persistence: values are read from the server on open and written back
    * on save. A refresh keeps nothing. */
+  // THE MEMORY SWITCHES ARE NAMED HERE; THE SOURCE SWITCHES COME FROM THE SERVER.
+  // This map used to hold four sources by hand, so aroma_system had no row on the page at
+  // all — the switch existed nowhere and the Owner could not turn it off. The server sends
+  // `flagLabels`, derived from the registered source list, and any flag it reports that is
+  // not named here is rendered with that label.
   var SET_LABELS = {
     CONVERSATION_RECALL: '對話記憶',
-    DECISION_RECALL: '決定記憶',
-    CONTEXT_DRIVE: '讀取 Drive',
-    CONTEXT_GMAIL: '讀取 Gmail',
-    CONTEXT_CALENDAR: '讀取 Calendar',
-    CONTEXT_GITHUB: '讀取 GitHub'
+    DECISION_RECALL: '決定記憶'
   }
-  var SET_READ_SOURCES = ['CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR', 'CONTEXT_GITHUB']
+  var SET_READ_SOURCES = []
 
   var setOverlay = document.getElementById('settings-overlay')
   var setOpenBtn = document.getElementById('open-settings')
   var setStyle = document.getElementById('set-style')
   var setPrefs = document.getElementById('set-prefs')
   var setMsg = document.getElementById('set-msg')
-  var setState = { flags: {}, caps: {}, readAccess: 'off' }
+  var setState = { flags: {}, flagLabels: {}, caps: {}, readAccess: 'off' }
 
   function setSay (text, kind) {
     setMsg.textContent = text || ''
@@ -814,10 +925,15 @@
   function renderSetFlags () {
     var box = document.getElementById('set-flags')
     box.textContent = ''
-    Object.keys(SET_LABELS).forEach(function (key) {
+    // Every switch the SERVER reports, in its order — the memory pair first, then the
+    // sources it actually has. A source the server knows about can no longer be missing
+    // from this page because the page forgot to list it.
+    var keys = Object.keys(setState.flags).length ? Object.keys(setState.flags) : Object.keys(SET_LABELS)
+    keys.forEach(function (key) {
       var f = setState.flags[key] || { effective: 'off', setByOwner: false }
+      if (key === 'READ_ACCESS') return // the master switch is reported, not offered here
       var row = el('div', 'set-flag')
-      row.appendChild(el('span', 'set-name', SET_LABELS[key]))
+      row.appendChild(el('span', 'set-name', SET_LABELS[key] || setState.flagLabels[key] || key))
       row.appendChild(el('span', 'set-who', f.setByOwner ? '你設定' : '啟動時設定'))
 
       var btn = el('button', null, f.effective === 'on' ? '開' : '關')
@@ -834,7 +950,7 @@
 
       /* A source shown as "on" while the master READ_ACCESS is off would be a lie on the
          screen, so the gap is stated rather than hidden. */
-      if (SET_READ_SOURCES.indexOf(key) >= 0 && setState.readAccess !== 'on') {
+      if (key.indexOf('CONTEXT_') === 0 && setState.readAccess !== 'on') {
         row.appendChild(el('span', 'set-note', '總開關 READ_ACCESS 係關嘅，所以呢個開咗都唔會讀到'))
       }
       box.appendChild(row)
@@ -913,5 +1029,8 @@
   send.disabled = true
   autoGrow()
   newConversation(false)
+  // The sidebar reads its history from the server. Done after the page is already usable,
+  // so a slow or failed fetch delays nothing and breaks nothing.
+  bootHistory()
   addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
 })()

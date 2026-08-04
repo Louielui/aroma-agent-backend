@@ -848,6 +848,10 @@ function createApp (options = {}) {
   // gating it would break installing the app for no gain.
   app.use('/demo', requireOwner)
   app.use('/api/v1/demo', requireOwner)
+  // Conversation History v1 lives on the demo router and is gated the same way — same
+  // owner session, same loopback. It holds conversation text, so it is never less
+  // protected than the page that draws it.
+  app.use('/api/v1/conversations', requireOwner)
   app.use(createDemoRouter())
 
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.

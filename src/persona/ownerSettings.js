@@ -49,11 +49,34 @@ const SCHEMA_VERSION = 1
 /** Paid for on EVERY turn, so bounded. Refused above these, never truncated. */
 const CAPS = Object.freeze({ style: 1500, preferences: 3000 })
 
-/** The six switches the page exposes. Nothing else may be written through it. */
-const FLAGS = Object.freeze([
-  'CONVERSATION_RECALL', 'DECISION_RECALL',
-  'CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR', 'CONTEXT_GITHUB'
-])
+/**
+ * THE SWITCHES THE PAGE EXPOSES — the memory pair by hand, the source list DERIVED.
+ *
+ * The four source switches used to be written out here, and aroma_system — the
+ * restaurant's OWN system, and the source the Owner reads most — therefore had no switch
+ * at all. That is the third time this project has been bitten by a hardcoded list of four
+ * sources: readContext's safety header froze it into prose, readStateGuard's LABELS was a
+ * hand-written table, and both are now generated from ALL_SOURCES. So is this.
+ *
+ * A source added to ALL_SOURCES gets a switch with no edit here, and cannot be silently
+ * missing from the page that claims to control what she reads.
+ */
+const { ALL_SOURCES } = require('../context/liveClients')
+
+const SOURCE_FLAGS = Object.freeze(ALL_SOURCES.map((s) => 'CONTEXT_' + s.toUpperCase()))
+const FLAGS = Object.freeze(['CONVERSATION_RECALL', 'DECISION_RECALL', ...SOURCE_FLAGS])
+
+/**
+ * The Owner-facing name of each source switch, from the ONE label table the read-state
+ * guard already derives from ALL_SOURCES. The page renders these rather than holding its
+ * own copy, so 「餐廳系統」 cannot become 「Aroma System」 on one screen and not another.
+ */
+function sourceFlagLabels () {
+  const { LABELS } = require('../intake/readStateGuard')
+  const out = {}
+  for (const s of ALL_SOURCES) out['CONTEXT_' + s.toUpperCase()] = '讀取 ' + (LABELS[s] || s)
+  return out
+}
 
 /**
  * BOUNDARY LANGUAGE. Narrow on purpose: it targets text whose object is a rule, a guard or
@@ -255,5 +278,5 @@ function buildSettingsBlock (settings) {
 
 module.exports = {
   load, save, applyFlags, effectiveFlags, buildSettingsBlock, checkField, checkFlags,
-  settingsPath, emptySettings, CAPS, FLAGS, BOUNDARY_PATTERNS, SETTINGS_FILE, DEFAULT_ROOT, SCHEMA_VERSION
+  settingsPath, emptySettings, CAPS, FLAGS, SOURCE_FLAGS, sourceFlagLabels, BOUNDARY_PATTERNS, SETTINGS_FILE, DEFAULT_ROOT, SCHEMA_VERSION
 }
