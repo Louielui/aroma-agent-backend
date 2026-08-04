@@ -78,11 +78,29 @@ mode="commit"（decision / task / reminder —— 操作型):
 - 每個 task 標一個 capability(給哪種能力做)。
 - reply 自然口語;judgment 只給結論式判斷。tasks 至少 1;risks 可為 []。`
 
+// ── WHOSE WORDS WERE THOSE ───────────────────────────────────────────────────
+// This branched on `h.role === 'louie'`. The client sends `role: 'user'`, and NOTHING in
+// this codebase has ever sent 'louie' as a chat role — that string is an owner id in the
+// proposal and confirm layers, borrowed here for a field that never carries it. So the
+// test was false on every line and the whole history came through as:
+//
+//     香香: <his question>
+//     香香: <her answer>
+//
+// She read his questions as her own monologue for the life of the feature. A prior
+// exchange that looks like something she already said gives her no reason to answer
+// differently — which is what two near-identical replies a minute apart actually were.
+//
+// The branch is now on 'assistant', the role the client emits for her turns, and the
+// DEFAULT IS THE OWNER: an unknown or missing role is his. Mislabelling her words as his
+// costs a little context; mislabelling his as hers is the defect above.
+// Machine-verified against the client's own role literals by historyAttribution.test.js —
+// a hardcoded role name that nothing produces is how this survived.
 function buildDistillPrompt (message, history = []) {
   let convo = ''
   if (Array.isArray(history) && history.length) {
     convo = '對話歷史(舊到新):\n' + history.slice(-8)
-      .map(h => `${h.role === 'louie' ? 'Louie' : '香香'}: ${h.text}`).join('\n') + '\n\n'
+      .map(h => `${h.role === 'assistant' ? '香香' : 'Louie'}: ${h.text}`).join('\n') + '\n\n'
   }
   return { system: SYSTEM_PROMPT, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }

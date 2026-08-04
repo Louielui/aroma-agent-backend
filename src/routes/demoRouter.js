@@ -74,14 +74,23 @@ function optsForMode (interactionMode, { requestId, contextCard, promoteToPropos
   return { requestId, interactionMode: 'proposal', demo: true, contextCard, promoteToProposal }
 }
 
-/** The conversation as plain text, for path extraction only. */
+/**
+ * The conversation as plain text, for path extraction only.
+ *
+ * SAME FAMILY AS THE ATTRIBUTION BUG. This read `h.content` while the client pushes
+ * `{ role, text }`, so every entry mapped to '' and inferWorkRequest was handed an empty
+ * conversation on every turn — a feature that has been reading nothing since it shipped.
+ * Both shapes are accepted now: `text` is what the wire carries, `content` is what the
+ * stored transcript shape uses, and neither should be able to silently win.
+ */
 function historyTextOf (history) {
   if (!Array.isArray(history)) return ''
   const parts = history.map((h) => {
-    if (h && typeof h.content === 'string') return h.content
-    return typeof h === 'string' ? h : ''
+    if (typeof h === 'string') return h
+    if (!h) return ''
+    return [h.text, h.content].filter((v) => typeof v === 'string' && v).join('\n')
   })
-  return parts.join('\n')
+  return parts.filter(Boolean).join('\n')
 }
 
 function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE } = {}) {
@@ -382,4 +391,4 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
   return router
 }
 
-module.exports = { createDemoRouter, INTERACTION_MODES }
+module.exports = { createDemoRouter, INTERACTION_MODES, historyTextOf }

@@ -622,7 +622,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       requestId,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
-      truncated: turnTruncated
+      truncated: turnTruncated,
+      // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope
+      // properties are stated once rather than every turn (scopeNotes.js). It is never a
+      // source of business facts, and recall-is-not-evidence is unchanged by it.
+      history
     })
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
@@ -677,7 +681,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       requestId,
       itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
       perSource: Array.from(turnPerSource.values()),
-      truncated: turnTruncated
+      truncated: turnTruncated,
+      // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope
+      // properties are stated once rather than every turn (scopeNotes.js). It is never a
+      // source of business facts, and recall-is-not-evidence is unchanged by it.
+      history
     })
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),

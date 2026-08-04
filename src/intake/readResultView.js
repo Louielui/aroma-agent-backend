@@ -32,6 +32,7 @@
 
 const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
+const { pruneRepeatedScopeNotes } = require('./scopeNotes') // a source's fixed properties: once per conversation
 
 /** Owner-facing status words. The keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
@@ -315,6 +316,17 @@ function renderValidatedPlan (input) {
   // of its opening line.
   const contentLost = v.modelItemCount > 0 && v.keptItemCount === 0
   const lostSomething = v.droppedItems > 0 || v.droppedFacts > 0 || v.droppedSentences > 0
+
+  // Computed here so WHICH fixed property was suppressed reaches the log line below with
+  // everything else this turn dropped. The property KEY, never the text — a suppression is
+  // still a removal, and a removal this layer cannot account for is the failure mode it
+  // exists to prevent. It is deliberately not counted as a degradation: nothing unprovable
+  // happened, he was simply not told the same thing twice.
+  const scopePrune = pruneRepeatedScopeNotes(v.plan.limitations, {
+    evidenceSets,
+    history: Array.isArray(input.history) ? input.history : []
+  })
+
   const common = {
     provider: input.provider || null,
     droppedItems: v.droppedItems,
@@ -323,6 +335,7 @@ function renderValidatedPlan (input) {
     drops: v.drops,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
+    scopeNotesSuppressed: scopePrune.concepts.length ? scopePrune.concepts : null,
     requestId: input.requestId || null
   }
 
@@ -375,7 +388,14 @@ function renderValidatedPlan (input) {
     if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統核對唔到,冇顯示。`)
     if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值核對唔到,冇顯示。`)
   }
-  const limitations = v.plan.limitations.concat(omissions)
+
+  // A SOURCE'S FIXED PROPERTIES ARE SAID ONCE PER CONVERSATION, NOT ONCE PER TURN.
+  // The model re-derives them from the SCOPE block every turn and writes them back out
+  // every turn, reworded; over seven live turns he read the same three facts seven times.
+  // Only the MODEL's limitations are eligible — the omission counts below are about THIS
+  // turn and are appended afterwards, where nothing can reach them. See scopeNotes.js for
+  // what is proven here and what is keyword-anchored.
+  const limitations = scopePrune.kept.concat(omissions)
 
   if (limitations.length) out.push(`### ${H.limits}\n\n` + limitations.join('\n'))
   if (v.plan.followUp) out.push(`### ${H.next}\n\n${v.plan.followUp}`)
