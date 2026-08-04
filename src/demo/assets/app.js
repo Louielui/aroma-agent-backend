@@ -350,9 +350,54 @@
     t.body.appendChild(el('div', null, text))
     return t
   }
+  /* ── copy one message ─────────────────────────────────────────────────────
+   * WHAT IT COPIES IS THE POINT. The Owner pastes her answers into invoices, notes and
+   * messages to staff. A DOM-text copy arrives as one flat run — headings stop being
+   * headings, item lines stop being items — so this copies the MARKDOWN SOURCE the
+   * message was rendered from: the same string the server sent, structure intact.
+   *
+   * The attribution is NOT part of it. 「由 香香（Claude）回答」 is a fact about the turn,
+   * not part of the answer, and it is a separate node in the footer rather than text
+   * appended to the source, so it cannot travel to the clipboard by accident.
+   *
+   * 127.0.0.1 IS a secure context, so navigator.clipboard should be there — but "should
+   * be" is not "is", and a write that quietly does nothing looks exactly like one that
+   * worked. Both the missing-API case and the rejected-write case say so on the button.
+   * The message text is never logged. */
+  function copyButton (source) {
+    var IDLE = '⧉'
+    var b = el('button', 'icon-btn', IDLE)
+    b.setAttribute('type', 'button')
+    b.setAttribute('aria-label', '複製呢個回覆')
+    b.setAttribute('title', '複製')
+    var busy = false
+    function flash (label) {
+      b.textContent = label
+      setTimeout(function () { b.textContent = IDLE; busy = false }, 2000)
+    }
+    b.addEventListener('click', function () {
+      if (busy) return
+      busy = true
+      var clip = window.navigator && window.navigator.clipboard
+      if (!clip || typeof clip.writeText !== 'function') { flash('複製唔到'); return }
+      try {
+        clip.writeText(source).then(function () { flash('已複製') }).catch(function () { flash('複製唔到') })
+      } catch (e) { flash('複製唔到') }
+    })
+    return b
+  }
+
   function addBot (text) {
     var t = turn('bot')
     t.body.appendChild(renderMarkdown(text))
+    // ONE FOOTER ROW PER MESSAGE, built here so it rides on the message rather than on a
+    // call site. The copy control is always in it; labelServedBy drops the attribution in
+    // beside it when the server reported who answered. Both reuse styles app.css already
+    // defines — this change adds no CSS.
+    t.source = String(text == null ? '' : text)
+    t.foot = el('div', 'served')
+    t.foot.appendChild(copyButton(t.source))
+    t.body.appendChild(t.foot)
     return t
   }
   function addError (text) {
@@ -519,8 +564,18 @@
   function labelServedBy (t, res) {
     if (!t || !t.body || !res || typeof res.servedBy !== 'string') return
     var name = res.servedBy === 'openai' ? '香香（GPT）' : '香香（Claude）'
-    t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''),
-      res.fallbackUsed ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）') : ('由 ' + name + ' 回答')))
+    var text = res.fallbackUsed
+      ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）')
+      : ('由 ' + name + ' 回答')
+    // INTO the message's own footer when it has one, so the attribution and the copy
+    // control read as one row. A turn that is not a plain markdown message (a draft, a
+    // proposal card) has no footer, and still gets its own line exactly as before.
+    if (t.foot) {
+      if (res.fallbackUsed) t.foot.className = 'served fallback'
+      t.foot.appendChild(el('span', null, text))
+      return
+    }
+    t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''), text))
   }
 
   function renderDraft (res) {
