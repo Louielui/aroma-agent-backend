@@ -47,6 +47,7 @@ const { isShortReply, isReadRequest } = require('./laneRouter') // a short confi
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router — SHADOW ONLY in Step 1
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -540,6 +541,34 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     noteProvider('claude', llmResult)
     tel.fallbackUsed = (primaryProvider === OPENAI)
     await recordProviderUsage(llmResult)
+  }
+
+  // ── TURN ROUTER — SHADOW ONLY (Step 1). It decides NOTHING. ────────────────
+  // Computed here, AFTER the reads and the call, because the whole point is to record the
+  // router's verdict beside what the pipeline actually did on the same turn — a list of
+  // classifications would answer the wrong question. With TURN_ROUTER unset (the default)
+  // this block does not run at all and the turn is byte-identical to before.
+  //
+  // Wrapped whole: a shadow observation may never be able to break a live turn.
+  if (resolveTurnRouter(process.env) !== 'off') {
+    try {
+      let rows = 0
+      for (const items of turnItems.values()) rows += Array.isArray(items) ? items.length : 0
+      logTurnRoute({
+        decision: routeTurn(message, { previousLane: (opts && opts.previousLane) || null }),
+        // Read from `opts`, NOT from `isChat`/`interactionMode`: both of those live in the
+        // per-provider closure above and are out of scope here. The first draft used them,
+        // and because the block is wrapped in a catch it would have thrown silently every
+        // turn and produced no shadow data at all — a telemetry feature that logs nothing
+        // while appearing to work.
+        lane: (opts && opts.interactionMode === 'proposal') ? 'proposal' : ((opts && opts.interactionMode === 'chat') ? 'chat' : 'other'),
+        sourcesRead: Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source),
+        rowsRetrieved: rows,
+        // THE EXACT CONDITION at intakeService.js:401 that makes the plan mandatory today.
+        answerPlanForced: turnItems.size > 0,
+        requestId
+      })
+    } catch (_) { /* shadow telemetry is never load-bearing */ }
   }
 
   // Parse the structured JSON response. DistillParseError (Slice A) propagates

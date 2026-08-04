@@ -263,7 +263,23 @@ function intentFor (text) {
   return null
 }
 
-/** The endpoint an Aroma System question is asking about. No match => inventory. */
+/**
+ * The endpoint an Aroma System question is asking about. No match => inventory.
+ *
+ * ⚠ THIS DEFAULT IS THE OTHER HALF OF THE 「現在是幾點？」 DEFECT, and it is scheduled to be
+ * DELETED — Owner instruction, 2026-08-04.
+ *
+ * A question with no business intent at all does not become a stock question. It became one
+ * here: 「現在是幾點？」 matched no intent, fell through to 'listInventory', and that is where
+ * the inventory records in that turn came from. The read was never wrong about what it was
+ * asked for — it was asked for the wrong thing.
+ *
+ * It survives only because nothing upstream decides whether a source should be read at all.
+ * Once turnRouter governs reads (Step 3), a no-intent turn will name no source, and this
+ * fallback must STOP EXISTING rather than sit dormant behind a guard: a dormant default is
+ * one refactor away from being reachable again, and this one is silent when it fires.
+ * Replace it with a null return and let the caller skip the source.
+ */
 function aromaMethodFor (text) {
   const hit = intentFor(text)
   return (hit && hit.method) || 'listInventory'
