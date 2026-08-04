@@ -376,7 +376,20 @@ function renderItem (r, caps = CAPS, opts = {}) {
     opts.recent ? (r.source === 'calendar' ? '(next scheduled, beyond the window asked about)' : '(recent items)') : null,
     r.title ? `"${r.title}"` : '(untitled)',
     r.originalDate ? `(dated ${r.originalDate}${wd ? `, ${wd}` : ''})` : '(no date)',
-    r.sourceId ? `id=${r.sourceId}` : null,
+    // THE ROW'S REFERENCE, and the only token an answer may cite a row by.
+    //
+    // This used to render `id=2`, which was true and not enough. The line also LEADS with
+    // `[aroma_system]`, the row's own content carries a second `id=` of its own, and the
+    // answer schema asked only for "an id that really exists in the evidence" — so a live
+    // turn cited "aroma_system", the SOURCE NAME, for both of its items and lost them
+    // both. That is not a model guessing badly; it is a field with no contract picking the
+    // most identifier-looking token on the line.
+    //
+    // `ref=` names itself, appears exactly once per line, and carries the source, so it
+    // cannot collide across sources either. The schema pins the answer's sourceId to an
+    // enum of exactly these values, so echoing it is enforced by the provider rather than
+    // requested in prose.
+    r.sourceId ? `ref=${r.source}#${r.sourceId}` : null,
     r.link || null,
     c.text ? `— ${c.text}` : null,
     c.truncated ? '[truncated]' : null

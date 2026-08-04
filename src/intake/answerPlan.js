@@ -144,6 +144,28 @@ const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
 })
 
 /**
+ * THE SAME ENVELOPE, WITH THIS TURN'S ROW REFERENCES PINNED INTO IT.
+ *
+ * The static schema can say "a real id"; only a per-turn schema can say WHICH. Given the
+ * refs actually retrieved, `sourceId` becomes an enum of exactly those strings, so a
+ * provider honouring the schema cannot return "aroma_system", a title, or an invented id —
+ * the failure mode stops being POSSIBLE rather than being caught after the fact. The
+ * validator still checks, because "the provider promised" is not "the bytes are valid".
+ *
+ * With no refs the schema is returned UNCHANGED: an empty enum is not a valid schema, and
+ * a turn that retrieved nothing is never sent this format anyway.
+ */
+function withRowRefs (schema, refs) {
+  const list = [...new Set((Array.isArray(refs) ? refs : []).map(String).filter(Boolean))]
+  if (list.length === 0) return schema
+  const out = structuredClone(schema)
+  const node = out.properties.answerPlan.properties.sections.items.properties.items.items.properties.sourceId
+  node.enum = list
+  node.description = '必須逐字抄自證據入面該行嘅 ref= 值(例如 ref=aroma_system#2 就寫 aroma_system#2)。唔係來源名,唔係標題。'
+  return out
+}
+
+/**
  * One countable line per turn. Reason enums, counts, and — since 2026-08-03 — the IDENTITY
  * of whatever was deleted.
  *
@@ -311,7 +333,11 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
 
   for (const g of itemsBySource) {
     for (const row of (g.items || [])) {
+      // TWO KEYS FOR ONE ROW, and neither is a relaxation. `ref` (source#id) is what the
+      // prompt shows and what the schema pins; the bare id is what the old contract
+      // accepted and still does. A SOURCE NAME is a key to nothing, which is the point.
       byId.set(String(row.sourceId), row)
+      if (row.source) byId.set(`${row.source}#${row.sourceId}`, row)
       for (const v of Object.values(row.fields || {})) {
         values.add(String(v))
         addNum(v)
@@ -559,7 +585,13 @@ function minimalAnswer (evidenceSets = []) {
     const kind = ENTITY_LABELS[e.entityType] || '項記錄'
     return `${SOURCE_LABELS[e.source] || e.source} ${n} ${kind}`
   })
-  return `我讀到 ${parts.join('、')},但今次組唔到一個可靠嘅答案,所以唔會亂講。`
+  // A SUCCESSFUL READ AND A FAILED COMPOSITION ARE DIFFERENT EVENTS.
+  // The Owner saw this sentence sitting above a correction that read 「上面講『讀唔到』係
+  // 唔啱嘅」 — two subsystems asserting opposite things in one message. The read had in
+  // fact succeeded; only the composing failed. So this says both, in that order, and it
+  // deliberately contains NO read-failure phrase for the guard to catch: an answer and its
+  // safety control must not be able to argue with each other.
+  return `我讀到 ${parts.join('、')}。資料讀取成功,但我今次砌唔出一個可靠嘅答案,所以唔會亂講。`
 }
 
 const ENTITY_LABELS = Object.freeze({
@@ -603,6 +635,7 @@ function parsePlan (text) {
 module.exports = {
   ANSWER_PLAN_SCHEMA,
   DISTILL_WITH_PLAN_SCHEMA,
+  withRowRefs,
   STATUS_LABELS,
   ENTITY_LABELS,
   SOURCE_LABELS,
