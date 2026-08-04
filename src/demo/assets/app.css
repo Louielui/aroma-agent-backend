@@ -60,6 +60,11 @@
   /* ── accents & status ─────────────────────────────────────────────────── */
   --accent: #d97757;
   --accent-hover: #c96a47;
+  /* HER OWN ORANGE, the avatar's. It already existed as a literal in dot.svg; promoting it
+     to a token centralises it rather than adding a second copy. Deliberately NOT overridden
+     in the dark block below — the note there says this colour is identical in both themes
+     by construction, and an override would quietly make that untrue. */
+  --dot: #FFA02E;
   /* Focus for the composer: NEUTRAL, not the accent. #8E9196 is the lightest grey that
      still clears WCAG 2.2's 3:1 for a focus indicator against both the composer's white
      interior (3.16:1) and the page behind it (3.08:1) — measured, not eyeballed. Anything
@@ -182,6 +187,15 @@ body {
 .conv-del { opacity: 0; flex: none; }
 .conv-row:hover .conv-del, .conv-del:focus { opacity: 1; }
 .conv-row:hover { background: var(--divider); }
+
+/* WORKING — which conversation still has a reply coming. A reply lands in its own
+   conversation now, so this is the only thing that says which one is waiting. Quiet on
+   purpose: her own orange, 6px, reusing the blink the typing dots already define. Always
+   in the DOM at opacity 0 so titles do not shift sideways when one starts or stops. */
+.conv-working { width: 6px; height: 6px; border-radius: 50%; background: var(--dot);
+                flex: none; opacity: 0; }
+.conv-working.on { opacity: 1; animation: blink 1.6s infinite ease-in-out; }
+@media (prefers-reduced-motion: reduce) { .conv-working.on { animation: none; opacity: .7; } }
 
 .side-foot { display: flex; align-items: center; gap: 7px; font-size: var(--small-size); color: var(--faint); padding: 4px 2px; }
 .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); display: inline-block; }

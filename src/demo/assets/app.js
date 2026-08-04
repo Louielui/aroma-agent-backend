@@ -228,6 +228,12 @@
 
         var row = el('div', 'conv-row')
 
+        // ALWAYS RENDERED, only the `on` class is conditional. A dot that appears and
+        // disappears would shift every title sideways as replies come and go.
+        var dot = el('span', 'conv-working' + (c.working ? ' on' : ''))
+        dot.setAttribute('aria-hidden', 'true')
+        row.appendChild(dot)
+
         var b = el('button', 'conv' + (c === active ? ' active' : ''), c.title)
         b.setAttribute('type', 'button')
         b.setAttribute('title', c.title)
@@ -581,6 +587,12 @@
     msg.value = ''
     autoGrow()
     setPending(true)
+    // WHICH conversation is still working. Since a reply now lands in its own conversation
+    // while the Owner reads another, nothing on screen said which one was still waiting.
+    // It is a property of the CONVERSATION, not of the page: two can be in flight at once,
+    // and a page-level flag would be a second source of truth that disagrees with this one.
+    conv.working = true
+    renderConvList()
     var typing = addTyping(conv)
     // ONE-SHOT: a shortcut applies to THIS message and is cleared immediately. A forced
     // lane that quietly persisted would be the old upfront mode choice returning by
@@ -621,7 +633,16 @@
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       addError('連線失敗，可以重新送出。', conv)
-    }).then(function () { setPending(false); scroll() })
+    }).then(function () {
+      // THE ONE PLACE THAT RUNS ON EVERY OUTCOME. Clearing this in the success handler and
+      // again in the catch would work today and rot the first time someone adds a third
+      // branch. A stuck indicator is worse than no indicator: it promises an answer that
+      // is never coming.
+      conv.working = false
+      renderConvList()
+      setPending(false)
+      scroll()
+    })
   }
 
   function render (status, res, conv) {
