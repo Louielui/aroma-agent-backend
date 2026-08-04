@@ -349,6 +349,23 @@ function buildReadResultReply (input = {}) {
     return renderValidatedPlan(input)
   }
 
+  // ── THE PATH WAS NOT TAKEN, AND THAT IS NEWS ────────────────────────────────
+  // The old promise was "a fallback cannot happen without a log line", which was true and
+  // far too narrow: it covered failures INSIDE this path and said nothing about the path
+  // being skipped. So when a sequencing defect meant no plan was ever requested, three
+  // live turns fell back to the template in complete silence — no line, no fallback, no
+  // trace. A read turn that reaches here without a plan is now recorded with a reason,
+  // because "the layer did not run" must be as visible as "the layer ran and failed".
+  if (Array.isArray(input.itemsBySource) && input.itemsBySource.some((g) => g && Array.isArray(g.items) && g.items.length > 0)) {
+    const { logAnswerPlan } = require('./answerPlan')
+    logAnswerPlan({
+      outcome: 'fallback',
+      reason: 'no_plan_returned',
+      provider: input.provider || null,
+      requestId: input.requestId || null
+    })
+  }
+
   const intent = intentFor(input.message)
 
   // NO INTENT, NO RESTRUCTURING. An ordinary conversation that happens to have context

@@ -383,12 +383,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const primaryProvider = selectPrimaryProvider(process.env, opts)
   // ── THE ANSWER PLAN IS REQUESTED WHENEVER THIS TURN READ SOMETHING ──────────────
   // Enforced by the provider (json_schema, strict), not asked for in prose. The model was
-  // told three times to emit two markdown headings and wrote neither, in three real turns;
-  // that is why shape is bought at the API layer here and facts are checked afterwards.
-  const wantsAnswerPlan = turnItems.size > 0
-  const planFormat = wantsAnswerPlan
+  // told to emit two markdown headings and wrote neither, in three real turns; that is why
+  // shape is bought at the API layer here and facts are checked afterwards.
+  //
+  // A FUNCTION, NOT A VALUE, AND THIS IS THE WHOLE POINT. It used to be computed here, at
+  // the top — before buildPromptFor had ever run, and buildPromptFor is what performs the
+  // read and fills turnItems. So the condition was evaluated against an empty map on every
+  // single turn: responseFormat was never sent, no plan ever came back, and every live turn
+  // silently used the old renderer while the tests passed. Evaluating it AT the call site,
+  // after the prompt (and therefore the read) is built, is the fix.
+  const answerPlanFormat = () => (turnItems.size > 0
     ? { type: 'json_schema', name: 'distill_with_answer_plan', schema: DISTILL_WITH_PLAN_SCHEMA }
-    : undefined
+    : undefined)
   let llmResult = null
   let distilled = null
   let routerFallbackReason = null
@@ -466,7 +472,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } else {
       let gptResult = null
       try {
-        gptResult = await gpt.complete(await buildPromptFor(OPENAI), { system: effSystem, maxTokens, temperature: 0.3, ...(planFormat ? { responseFormat: planFormat } : {}) })
+        // The prompt is built first on purpose: building it performs the read, and the
+        // read is what decides whether a plan is wanted.
+        const gptPrompt = await buildPromptFor(OPENAI)
+        const gptFormat = answerPlanFormat()
+        gptResult = await gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
         // (HTTP status + provider error type/code/param) are appended so a failure is
@@ -498,11 +508,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // Built HERE, on the Claude path only — whether this is the primary attempt or the
       // one-shot fallback after GPT. Either way Claude receives the full, unchanged
       // prompt, so the fallback answer is exactly as informed as it has always been.
-      llmResult = await adapter.complete(await buildPromptFor(CLAUDE), {
+      // The prompt is built FIRST and held in a variable on purpose: building it performs
+      // the read, and the read is what decides whether an Answer Plan is wanted. Asking
+      // that question before this line is what made the whole layer unreachable.
+      const claudePrompt = await buildPromptFor(CLAUDE)
+      const claudeFormat = answerPlanFormat()
+      llmResult = await adapter.complete(claudePrompt, {
         system: effSystem,
         maxTokens,
         temperature: 0.3,
-        ...(planFormat ? { responseFormat: planFormat } : {})
+        ...(claudeFormat ? { responseFormat: claudeFormat } : {})
       })
     } catch (err) {
       // Upstream provider/adapter failure → typed, safe error. Provider message is
