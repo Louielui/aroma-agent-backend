@@ -249,6 +249,8 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
     droppedItems: 1,
     droppedFacts: 2,
     droppedSentences: 1,
+    modelItemCount: 3,
+    keptItemCount: 2,
     // A drop record as the validator emits it, plus a value-shaped key that must NOT ride
     // through: the projection is explicit, not a spread.
     drops: [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有', value: '18.000' }],
@@ -256,7 +258,9 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
   }, (l) => lines.push(l))
   const l = lines[0]
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedSentences', 'event', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+  assert.equal(l.modelItemCount, 3)
+  assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)
   assert.equal(l.droppedFacts, 2)
   assert.equal(l.droppedSentences, 1)

@@ -79,6 +79,13 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
     unanswerable: { type: 'boolean', description: '資料答唔到呢條問題時 true —— 呢個係誠實,唔係失敗。' },
     sections: {
       type: 'array',
+      // STRUCTURE IS MANDATORY WHEN THIS TURN READ ROWS — and this schema is only ever
+      // sent when it did (intakeService gates responseFormat on turnItems.size > 0). The
+      // model was told to put item detail in sections and put it in prose instead, where
+      // nothing could check it; prompt-level rules have failed here too often to be the
+      // control. So the provider refuses a plan with no items, and the detail has nowhere
+      // to go but the channel that is verified against the evidence.
+      minItems: 1,
       items: {
         type: 'object',
         additionalProperties: false,
@@ -87,6 +94,7 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
           heading: { type: 'string' },
           items: {
             type: 'array',
+            minItems: 1,
             items: {
               type: 'object',
               additionalProperties: false,
@@ -160,6 +168,11 @@ function logAnswerPlan (entry, sink) {
     droppedItems: Number.isFinite(entry.droppedItems) ? entry.droppedItems : 0,
     droppedFacts: Number.isFinite(entry.droppedFacts) ? entry.droppedFacts : 0,
     droppedSentences: Number.isFinite(entry.droppedSentences) ? entry.droppedSentences : 0,
+    // WHAT THE MODEL OFFERED, beside what survived. Without the pair, "it sent no sections"
+    // and "it sent items with no facts" look identical from the log — and telling them
+    // apart cost a hand investigation across the archive and the live API.
+    modelItemCount: Number.isFinite(entry.modelItemCount) ? entry.modelItemCount : 0,
+    keptItemCount: Number.isFinite(entry.keptItemCount) ? entry.keptItemCount : 0,
     // Identifiers only. The projection is explicit rather than a spread, so a new key on a
     // drop record cannot ride into the log unnoticed.
     dropped: drops.map((d) => {
@@ -190,6 +203,95 @@ function numericOf (raw) {
   return Number.isFinite(n) ? n : null
 }
 
+/**
+ * LATIN-SCRIPT WORDS IN A STRING, normalized. The unit the prose check works in.
+ * One-letter runs are ignored: 'A' and 'B' carry no business fact, and 「A 定 B」 is a
+ * sentence shape, not a claim about the restaurant.
+ */
+const LATIN_RUN = /[A-Za-z][A-Za-z'’.-]*/g
+function latinTokens (text) {
+  const out = []
+  for (const m of String(text).match(LATIN_RUN) || []) {
+    const t = m.replace(/[.'’-]+$/, '').toLowerCase()
+    if (t.length >= 2) out.push(t)
+  }
+  return out
+}
+
+/**
+ * THE ORDINARY LATIN WORDS PROSE MAY CARRY WITHOUT EVIDENCE.
+ *
+ * Deliberately tiny and enumerable: source names (which are not business facts about the
+ * restaurant, they are names of the places we read) and a few format words. Everything
+ * else in Latin script has to have been retrieved THIS TURN. A large allowlist would
+ * quietly defeat the rule, so this list is meant to be argued with, not grown by habit.
+ */
+const PROSE_ALLOWED = Object.freeze(new Set([
+  'gmail', 'drive', 'github', 'calendar', 'google', 'aroma', 'system', 'bistro',
+  'ok', 'no', 'yes', 'email', 'e-mail', 'mail', 'pdf', 'csv', 'doc', 'docs', 'api', 'url', 'app', 'pos', 'ai'
+]))
+
+/**
+ * IS THIS OWNER-FACING SENTENCE GROUNDED IN THIS TURN'S EVIDENCE?
+ *
+ * ── WHY THIS EXISTS, AND WHAT IT IS NOT ──────────────────────────────────────
+ * On 2026-08-04 an answer named 「2lb portioning bag」 and 「8oz Spice Jar With Lids」 as
+ * current inventory. Neither was in the read. Both came verbatim from HER OWN archived
+ * reply in an earlier conversation — the original broken turn — which conversation recall
+ * had injected as memory. The validator logged droppedItems:0, droppedFacts:0 and was
+ * telling the truth: every claim was in PROSE, and prose names were never checked. A
+ * refuted answer made itself permanent by being repeated.
+ *
+ * THE RULE: a name, quantity, amount, date or status in an Owner-facing answer must come
+ * from THIS turn's EvidenceSet. Recall may inform tone, context and continuity; it may
+ * never supply a business fact.
+ *
+ * THE MECHANISM, and its limit, stated plainly. This restaurant's items, suppliers, files
+ * and repositories are named in LATIN script, while her prose is Cantonese — so a Latin
+ * word is almost always a name, and a Latin word that was not retrieved is almost always
+ * a name from somewhere other than this turn. That asymmetry is what makes a deterministic
+ * check possible at all.
+ *
+ * IT DOES NOT VERIFY PROSE. A fabricated CJK item name still passes, and so does a wrong
+ * judgement about a real one. Prose cannot be fully validated and this function does not
+ * pretend to; it closes the one channel the live failure actually used. The structural
+ * answer to the rest is to keep prose THIN and make the sections mandatory, which is
+ * enforced at the schema layer, not here.
+ */
+function proseIsGrounded (text, index) {
+  for (const t of latinTokens(text)) {
+    if (PROSE_ALLOWED.has(t)) continue
+    if (index.latin.has(t)) continue
+    return false
+  }
+  return true
+}
+
+/**
+ * OWNER-FACING SOURCE NAMES. 「Aroma System」 is what the API calls itself; 「餐廳系統」 is
+ * what the Owner calls it. The label map already existed and only minimalAnswer used it,
+ * so the model's own prose reached the screen in English. A pure lookup, like translate()
+ * for status enums — no judgement, nothing inferred.
+ */
+const SOURCE_NAME_REWRITES = Object.freeze([
+  [/\bAroma\s+System\b/gi, '餐廳系統'],
+  [/\bAroma\s+Bistro\b/gi, '餐廳']
+])
+function relabel (text) {
+  let s = String(text == null ? '' : text)
+  for (const [re, to] of SOURCE_NAME_REWRITES) s = s.replace(re, to)
+  return s
+}
+
+/**
+ * 「A 定 B？」 IS TWO QUESTIONS. The contract asks for exactly one, and the old template
+ * path has rejected this shape for as long as it has existed — the plan path never
+ * inherited the rule, so 「想睇完整倉存報告,定係查特定物料？」 shipped. When it fires the
+ * follow-up becomes NOTHING: the plan path has no intent to fall back to, and inventing a
+ * question the model did not ask would be the same over-claiming everything here prevents.
+ */
+const TWO_OPTION_RE = /定係|定|或者|\bor\b/
+
 /** Every scalar value in the evidence, as strings — the universe of provable values. */
 function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   const byId = new Map()
@@ -201,7 +303,11 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   // about the read, not a value any row carried, and admitting it here would let a row
   // claim the shown count as its own quantity.
   const numericValues = new Set()
+  // Every Latin word this turn actually retrieved. The universe of names an Owner-facing
+  // sentence is allowed to contain — see proseIsGrounded.
+  const latin = new Set()
   const addNum = (s) => { for (const n of String(s).match(/\d+(?:[.,]\d+)*/g) || []) numbers.add(n.replace(/,/g, '')) }
+  const addText = (s) => { for (const t of latinTokens(s)) latin.add(t) }
 
   for (const g of itemsBySource) {
     for (const row of (g.items || [])) {
@@ -209,10 +315,11 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
       for (const v of Object.values(row.fields || {})) {
         values.add(String(v))
         addNum(v)
+        addText(v)
         const n = numericOf(v)
         if (n !== null) numericValues.add(n)
       }
-      if (row.title) values.add(String(row.title))
+      if (row.title) { values.add(String(row.title)); addText(row.title) }
       if (row.originalDate) { values.add(String(row.originalDate)); addNum(row.originalDate) }
     }
   }
@@ -221,7 +328,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.totalCount)) numbers.add(String(e.totalCount))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, values, numbers, numericValues }
+  return { byId, values, numbers, numericValues, latin }
 }
 
 /**
@@ -352,9 +459,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
 
   // ── directAnswer: sentence by sentence ──────────────────────────────────────
   const kept = []
-  for (const s of splitSentences(plan.directAnswer || '')) {
+  for (const raw of splitSentences(plan.directAnswer || '')) {
+    // Relabel FIRST, so the check runs on the text the Owner will actually read.
+    const s = relabel(raw)
     if (!sentenceIsSupported(s, index)) { droppedSentences++; continue }
     if (TELEMETRY_RE.test(s)) { droppedSentences++; continue }
+    // RECALL IS NOT EVIDENCE. A name this turn did not retrieve does not reach the Owner,
+    // whatever the model believes it remembers.
+    if (!proseIsGrounded(s, index)) { droppedSentences++; continue }
     kept.push(s)
   }
   let directAnswer = kept.join('').slice(0, LIMITS.maxDirectAnswerChars)
@@ -390,22 +502,31 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [] } = {}) {
     // A SECTION WITH NOTHING LEFT IS STILL NEWS. It is not rendered — a bare heading over
     // nothing is worse than no heading — but the count above travels out with it, and
     // readResultView states the omission on screen instead of quietly shrinking.
-    if (items.length > 0) sections.push({ heading: String(sec.heading || ''), items })
+    // The heading is Owner-facing too: relabelled, and blanked rather than allowed to
+    // carry a name this turn did not retrieve. renderValidatedPlan omits an empty heading
+    // instead of printing a bare '###'.
+    let heading = relabel(String(sec.heading || ''))
+    if (heading && !proseIsGrounded(heading, index)) heading = ''
+    if (items.length > 0) sections.push({ heading, items })
   }
 
   // ── limitations: real ones only, never telemetry ────────────────────────────
   const limitations = (Array.isArray(plan.limitations) ? plan.limitations : [])
-    .map((l) => String(l).trim())
-    .filter((l) => l && !TELEMETRY_RE.test(l) && sentenceIsSupported(l, index))
+    .map((l) => relabel(String(l).trim()))
+    .filter((l) => l && !TELEMETRY_RE.test(l) && sentenceIsSupported(l, index) && proseIsGrounded(l, index))
     .slice(0, LIMITS.maxLimitations)
     .map((l) => l.slice(0, LIMITS.maxLimitationChars))
 
   // ── followUp: zero or one, never two options ────────────────────────────────
-  let followUp = typeof plan.followUp === 'string' ? plan.followUp.trim() : null
+  let followUp = typeof plan.followUp === 'string' ? relabel(plan.followUp.trim()) : null
   if (followUp) {
     const at = followUp.search(/[？?]/)
     followUp = at === -1 ? null : followUp.slice(0, at + 1).slice(0, LIMITS.maxFollowUpChars)
   }
+  // 「A 定 B？」 — the rule the plan path never inherited. No question beats two.
+  if (followUp && TWO_OPTION_RE.test(followUp)) followUp = null
+  // A question is Owner-facing text: it may not smuggle in a name either.
+  if (followUp && !(sentenceIsSupported(followUp, index) && proseIsGrounded(followUp, index))) followUp = null
 
   // A directAnswer that lost every sentence cannot stand in for one.
   const answerSurvived = directAnswer.trim().length > 0
