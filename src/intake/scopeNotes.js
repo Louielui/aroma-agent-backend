@@ -52,15 +52,25 @@ const { cjkToNumber } = require('./answerPlan')
  * about this turn".
  */
 const CONCEPTS = Object.freeze([
+  // ── BOTH SPELLINGS, ALWAYS ───────────────────────────────────────────────
+  // The Owner Language Policy switches her output to written Traditional Chinese from the
+  // next turn onward, so the written forms are ADDED here in the same round — otherwise the
+  // duplicate suppression stops matching the moment she stops writing 淨係顯示 and starts
+  // writing 僅顯示. Nothing is SWAPPED: every conversation already on disk is Cantonese, and
+  // a conversation spanning the change will contain both, so both must resolve to the same
+  // concept. cantoneseComprehension.test.js fails if a Cantonese form is ever removed.
   {
     key: 'location',
     asserted: (e) => e.scope.hasLocation === false,
-    words: ['地點', '位置', '倉庫', '分倉', '邊個倉', '門市', '分店', 'location']
+    words: ['地點', '位置', '倉庫', '分倉', '邊個倉', '哪個倉', '門市', '分店', 'location']
   },
   {
     key: 'asOf',
     asserted: (e) => e.scope.hasAsOf === false,
-    words: ['時間戳', '幾時更新', '更新時間', '更新日期', '幾時嘅', '幾時的', '時效', 'timestamp', 'as-of', 'as of']
+    // 什麼時候 is the broadest entry here. It is acceptable because this table is only
+    // consulted for the `asOf` concept when the EvidenceSet asserts hasAsOf === false, it
+    // only ever runs over limitation lines, and the number gate still protects per-turn ones.
+    words: ['時間戳', '幾時更新', '何時更新', '什麼時候', '更新時間', '更新日期', '幾時嘅', '幾時的', '時效', 'timestamp', 'as-of', 'as of']
   },
   {
     key: 'sample',
@@ -68,7 +78,7 @@ const CONCEPTS = Object.freeze([
     // 只/淨係顯示 is how she states sampling in practice, without ever writing 「樣本」.
     // Narrow on purpose, and still behind the number gate: a line pairing it with a count
     // the evidence does not own ('只顯示咗 17 項') is per-turn and survives.
-    words: ['樣本', '抽樣', '只顯示', '淨係顯示', '部分記錄', '部份記錄', '唔係全部', '不是全部', '並非全部', 'sample']
+    words: ['樣本', '抽樣', '只顯示', '僅顯示', '淨係顯示', '部分記錄', '部份記錄', '唔係全部', '不是全部', '並非全部', 'sample']
   }
 ])
 

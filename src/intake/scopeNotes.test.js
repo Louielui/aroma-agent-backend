@@ -143,6 +143,57 @@ test('*** it never rewrites a line and never adds one ***', () => {
   assert.ok(kept.length <= lines.length)
 })
 
+/* ═══ 7. THE LANGUAGE POLICY LANDED — BOTH SPELLINGS MUST MATCH ════════════ */
+
+/**
+ * The Owner Language Policy switches her output to written Traditional Chinese from the
+ * next turn onward. These keyword tables detect HER OWN scope wording, so the moment she
+ * stops writing 「淨係顯示」 and starts writing 「僅顯示」, suppression stops matching and the
+ * repetition this module was built to end comes straight back.
+ *
+ * The written forms are ADDED, never swapped. Every conversation already on disk is
+ * Cantonese, and a conversation that spans the change will contain both.
+ */
+test('*** a written-Chinese scope note is suppressed on repeat, same as the Cantonese one ***', () => {
+  const cases = [
+    ['庫存資料沒有分地點。', '這些數字沒有地點維度。'],
+    ['沒有記錄更新時間。', '沒有時間戳。'],
+    ['這是 199 項中的樣本。', '只顯示了部分記錄。']
+  ]
+  for (const [first, second] of cases) {
+    assert.deepEqual(prune([second], said(first)).kept, [], 'not suppressed: ' + second)
+  }
+})
+
+test('*** the written forms that NOTHING else covers ***', () => {
+  // The three cases above pass on keywords the tables already held (地點 / 更新時間 / 樣本),
+  // so they prove nothing about the written forms she is about to start using. These
+  // sentences contain the new form and NOTHING else the tables know — 哪個倉 without 倉庫,
+  // 什麼時候 without 更新時間, 僅顯示 without 樣本 or 部分記錄. If the additions are missing,
+  // these fail and the ones above still pass, which is exactly the trap being closed.
+  const cases = [
+    ['庫存資料沒有分地點。', '看不出是哪個倉。'],
+    ['沒有記錄更新時間。', '不知道是什麼時候的。'],
+    ['這是 199 項中的樣本。', '僅顯示了其中一部分。']
+  ]
+  for (const [first, second] of cases) {
+    assert.deepEqual(prune([second], said(first)).kept, [], 'the written form is not recognised: ' + second)
+  }
+})
+
+test('*** a conversation that SPANS the change still matches across spellings ***', () => {
+  // She said it in Cantonese before the policy; she restates it in written Chinese after.
+  // Same fact, two spellings, one conversation — it must still count as already said.
+  assert.deepEqual(prune(['沒有記錄更新時間。'], said('冇記錄係幾時更新。')).kept, [], 'Cantonese first, written second')
+  assert.deepEqual(prune(['冇地點維度。'], said('庫存資料沒有分地點。')).kept, [], 'written first, Cantonese second')
+})
+
+test('the number gate still holds for written-Chinese lines', () => {
+  // 4 is neither the total nor the shown count: per-turn, and it survives.
+  const line = '有 4 項沒有地點資料，已排除。'
+  assert.deepEqual(prune([line], said('庫存資料沒有分地點。')).kept, [line])
+})
+
 test('bad input degrades to keeping everything, never to throwing', () => {
   for (const bad of [null, undefined, 'not an array', 42]) {
     assert.deepEqual(pruneRepeatedScopeNotes(['x'], { evidenceSets: bad, history: bad }).kept, ['x'])

@@ -297,18 +297,37 @@ test('no question is invented when the model offered none', () => {
 
 /* ═══ 3b. OWNER-FACING SOURCE NAMES ══════════════════════════════════════════ */
 
-test('*** 「Aroma System」 reaches the Owner as 「餐廳系統」 ***', () => {
+/**
+ * INVERTED 2026-08-04 by Owner decision, with the Language Policy.
+ *
+ * This test used to require the opposite: that 「Aroma System」 was rewritten to 「餐廳系統」
+ * in prose, headings, limitations and the follow-up. That was itself an Owner instruction,
+ * from the round that also asked for the 「A 定 B」 follow-up fix.
+ *
+ * The Language Policy lists Aroma System among the proper nouns to PRESERVE, and the Owner
+ * chose the policy over the exception: "one rule holds better than two exceptions." So
+ * SOURCE_NAME_REWRITES is now empty and `relabel` is an identity function.
+ *
+ * The test is kept rather than deleted, pointing the other way, because the behaviour is
+ * still worth pinning — and because a reader who finds only a deleted test has no way to
+ * learn that the old behaviour was deliberate before it was deliberately withdrawn.
+ *
+ * NOT YET CHANGED, and visible on screen: SOURCE_LABELS (answerPlan.js) and VOCABULARY /
+ * LABELS (readStateGuard.js) still render this source as 餐廳系統, so one reply can show
+ * 'Aroma System' in prose beside 餐廳系統 as a label. Round 2/3 decides those.
+ */
+test('*** 「Aroma System」 now reaches the Owner AS 「Aroma System」 ***', () => {
   const v = validatePlan(plan({
     directAnswer: 'Aroma System 有 199 項存貨記錄。',
     sections: [{ heading: 'Aroma System 缺口', items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] }] }],
     limitations: ['Aroma System 冇記錄地點。'],
     followUp: 'Aroma System 要唔要再查？'
   }), ctx())
-  assert.equal(v.plan.directAnswer.includes('Aroma System'), false)
-  assert.ok(v.plan.directAnswer.includes('餐廳系統'))
-  assert.ok(v.plan.sections[0].heading.includes('餐廳系統'), 'headings are Owner-facing too')
-  assert.ok(v.plan.limitations[0].includes('餐廳系統'))
-  assert.ok(v.plan.followUp.includes('餐廳系統'))
+  assert.ok(v.plan.directAnswer.includes('Aroma System'), 'the proper noun survives in prose')
+  assert.equal(v.plan.directAnswer.includes('餐廳系統'), false, 'and is NOT rewritten')
+  assert.ok(v.plan.sections[0].heading.includes('Aroma System'), 'headings too')
+  assert.ok(v.plan.limitations[0].includes('Aroma System'))
+  assert.ok(v.plan.followUp.includes('Aroma System'))
 })
 
 test('the substitution is the label map, not a guess', () => {

@@ -315,10 +315,27 @@ function proseIsGrounded (text, index) {
  * so the model's own prose reached the screen in English. A pure lookup, like translate()
  * for status enums — no judgement, nothing inferred.
  */
-const SOURCE_NAME_REWRITES = Object.freeze([
-  [/\bAroma\s+System\b/gi, '餐廳系統'],
-  [/\bAroma\s+Bistro\b/gi, '餐廳']
-])
+/**
+ * WITHDRAWN — Owner decision, 2026-08-04, with the Language Policy.
+ *
+ * This held two entries: Aroma System → 餐廳系統 and Aroma Bistro → 餐廳. The policy lists
+ * Aroma System among the names to PRESERVE, and one rule holds better than two exceptions,
+ * so the entries are gone and proper nouns now reach the Owner as written.
+ *
+ * THE MECHANISM IS KEPT DELIBERATELY EMPTY, NOT DELETED. With no entries `relabel` is an
+ * identity function applied at four call sites (directAnswer sentences, section headings,
+ * limitations, followUp) and changes nothing. It has NO other user in the codebase — I
+ * checked, and there is none — so it should go entirely, together with those four call
+ * sites, in the round that next touches this file's presentation. Removing it now would
+ * mean editing four more places in a round the Owner scoped to one variable.
+ *
+ * NOTE FOR WHOEVER READS THIS NEXT: 餐廳系統 has NOT disappeared from the screen. Two other
+ * tables still map the source that way — SOURCE_LABELS below, and VOCABULARY/LABELS in
+ * readStateGuard.js — so until those are decided (Round 2/3) a reply can show 'Aroma System'
+ * in prose and 餐廳系統 as a section label. That inconsistency is a known, temporary
+ * consequence of changing one variable at a time, not a bug to be patched around.
+ */
+const SOURCE_NAME_REWRITES = Object.freeze([])
 function relabel (text) {
   let s = String(text == null ? '' : text)
   for (const [re, to] of SOURCE_NAME_REWRITES) s = s.replace(re, to)
@@ -695,6 +712,10 @@ function minimalAnswer (evidenceSets = []) {
   // fact succeeded; only the composing failed. So this says both, in that order, and it
   // deliberately contains NO read-failure phrase for the guard to catch: an answer and its
   // safety control must not be able to argue with each other.
+  // ⚠ WHEN THIS WORDING IS REWRITTEN INTO WRITTEN CHINESE (Round 2/3 of the Language
+  // Policy), WIDEN answerPlan.test.js's /讀唔到|睇唔到|攞唔到/ NEGATIVE ASSERTION IN THE SAME
+  // COMMIT. It lists Cantonese spellings only; rewrite this line to 讀不到 and that guard
+  // silently stops protecting anything while still passing. Owner instruction, 2026-08-04.
   return `我讀到 ${parts.join('、')}。資料讀取成功,但我今次砌唔出一個可靠嘅答案,所以唔會亂講。`
 }
 
@@ -743,6 +764,7 @@ module.exports = {
   STATUS_LABELS,
   ENTITY_LABELS,
   SOURCE_LABELS,
+  SOURCE_NAME_REWRITES, // exported so languagePolicy.test.js can prove it stays empty
   LIMITS,
   TELEMETRY_RE,
   logAnswerPlan,

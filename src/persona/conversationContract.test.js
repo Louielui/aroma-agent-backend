@@ -143,7 +143,17 @@ test('contract is a static constant within the agreed size budget', () => {
   // Budget: the brief targeted ~500-900 chars. Every required clause is present (see the
   // clause test above) and the plain-text Chinese rendering costs 464 chars; the 500 floor
   // came from a markdown-formatted draft. Padding to reach it would spend tokens on
-  // whitespace, so the floor is set at a sane 400 and the ceiling kept at 900.
-  assert.ok(CONVERSATION_CONTRACT.length >= 400 && CONVERSATION_CONTRACT.length <= 900, `char count ${CONVERSATION_CONTRACT.length} outside 400-900`)
+  // whitespace, so the floor is set at a sane 400.
+  //
+  // CEILING RAISED 900 → 1700, 2026-08-04, and NOT quietly. The Owner Language Policy adds a
+  // permanent 語言 / 專有名詞 / 人稱 section of ~680 chars. The pre-existing contract was 870
+  // chars — already 30 short of the old ceiling — so the policy could not have fitted under
+  // it at any reasonable wording. The budget existed to stop this block bloating and
+  // diluting the classifier that follows it, which is still the right concern; squeezing
+  // an Owner-specified policy to fit a number set for a different purpose is not the right
+  // answer to it. 1700 leaves headroom for wording fixes without another budget change, and
+  // the ceiling remains a real constraint: a second section this size would break it again,
+  // which is when someone should ask whether the contract needs restructuring.
+  assert.ok(CONVERSATION_CONTRACT.length >= 400 && CONVERSATION_CONTRACT.length <= 1700, `char count ${CONVERSATION_CONTRACT.length} outside 400-1700`)
   assert.equal(CONVERSATION_CONTRACT, require('./conversationContract').CONVERSATION_CONTRACT) // same object each call
 })

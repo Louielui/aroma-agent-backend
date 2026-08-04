@@ -225,6 +225,16 @@ test('*** the minimal answer is a count and provenance — NEVER arbitrary rows 
   // 「上面講『讀唔到』係唔啱嘅」. The read HAD succeeded; only the composing failed.
   assert.ok(m.includes('讀取成功'), 'the read succeeded and the answer must say so')
   assert.ok(m.includes('砌唔出'), 'and name the composition as the thing that failed')
+  // ⚠ CARRY-FORWARD, Owner instruction 2026-08-04 — READ BEFORE CHANGING ANY WORDING BELOW.
+  // This is a NEGATIVE assertion, and negative assertions die quietly. It lists only the
+  // CANTONESE spellings. The Language Policy moves her output to written Traditional
+  // Chinese, so the moment minimalAnswer (or any read-failure wording) is rewritten to
+  // 讀不到／看不到／無法讀取, this regex stops matching anything, KEEPS PASSING, and protects
+  // nothing — while the defect it guards against (an answer arguing with its own safety
+  // correction) becomes possible again.
+  // RULE: widen this regex in the SAME round that changes any read-failure wording, never
+  // in a later one. UNREADABLE_CLAIM in readStateGuard.js already carries both spellings and
+  // is the list to mirror.
   assert.equal(/讀唔到|睇唔到|攞唔到/.test(m), false, 'no read-failure phrase for the guard to contradict')
 
   // When nothing was read at all, 讀唔到 is simply true — and the guard agrees, because it
