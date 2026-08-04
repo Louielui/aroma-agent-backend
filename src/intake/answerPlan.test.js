@@ -218,7 +218,17 @@ test('*** the minimal answer is a count and provenance — NEVER arbitrary rows 
   assert.ok(m.includes('餐廳系統'))
   assert.equal(m.includes('Onion'), false, 'no rows may leak into a fallback')
   assert.equal(m.includes('Aioli'), false)
-  assert.ok(/組唔到|讀唔到/.test(m), 'it says plainly that it could not answer')
+
+  // A SUCCESSFUL READ AND A FAILED COMPOSITION ARE DIFFERENT EVENTS. This used to accept
+  // 「組唔到」 OR 「讀唔到」 as equally good, and the looser word is how the Owner ended up
+  // reading 「今次組唔到一個可靠嘅答案」 directly above a system correction insisting
+  // 「上面講『讀唔到』係唔啱嘅」. The read HAD succeeded; only the composing failed.
+  assert.ok(m.includes('讀取成功'), 'the read succeeded and the answer must say so')
+  assert.ok(m.includes('砌唔出'), 'and name the composition as the thing that failed')
+  assert.equal(/讀唔到|睇唔到|攞唔到/.test(m), false, 'no read-failure phrase for the guard to contradict')
+
+  // When nothing was read at all, 讀唔到 is simply true — and the guard agrees, because it
+  // never fires when no source came back live.
   assert.equal(minimalAnswer([]), '我今次讀唔到可以用嚟答呢條問題嘅資料。')
 })
 

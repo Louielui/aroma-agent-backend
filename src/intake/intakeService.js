@@ -46,7 +46,7 @@ const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -392,9 +392,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // single turn: responseFormat was never sent, no plan ever came back, and every live turn
   // silently used the old renderer while the tests passed. Evaluating it AT the call site,
   // after the prompt (and therefore the read) is built, is the fix.
-  const answerPlanFormat = () => (turnItems.size > 0
-    ? { type: 'json_schema', name: 'distill_with_answer_plan', schema: DISTILL_WITH_PLAN_SCHEMA }
-    : undefined)
+  // THE ROW REFERENCES GO OUT WITH THE SCHEMA. A live turn cited "aroma_system" — the
+  // source NAME — as the sourceId of both its items and lost them both; the field asked
+  // for "a real id" and never said which token that was. Pinning the enum to exactly the
+  // rows this turn retrieved makes the wrong answer unrepresentable rather than merely
+  // detectable, which is the same reason the plan itself is bought at the API layer.
+  const answerPlanFormat = () => {
+    if (turnItems.size === 0) return undefined
+    const refs = []
+    for (const [source, items] of turnItems) {
+      for (const it of (Array.isArray(items) ? items : [])) {
+        if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${source}#${it.sourceId}`)
+      }
+    }
+    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs) }
+  }
   let llmResult = null
   let distilled = null
   let routerFallbackReason = null

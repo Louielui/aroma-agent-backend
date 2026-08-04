@@ -30,7 +30,7 @@
  * read — only what, of what was read, answers the question that was asked.
  */
 
-const { LABELS } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
+const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 
 /** Owner-facing status words. The keys are the API's own values. */
@@ -363,7 +363,22 @@ function renderValidatedPlan (input) {
 
   if (limitations.length) out.push(`### ${H.limits}\n\n` + limitations.join('\n'))
   if (v.plan.followUp) out.push(`### ${H.next}\n\n${v.plan.followUp}`)
-  if (typeof input.correction === 'string' && input.correction.trim()) out.push(input.correction.trim())
+
+  // ── THE GUARD JUDGES WHAT IS SHOWN ──────────────────────────────────────────
+  // `input.correction` was produced by running the guard over the model's `reply` prose —
+  // and in THIS path that prose is never rendered at all: the answer is built from the
+  // plan. So the correction was always about text the Owner cannot see, and above a
+  // fallback it read as a flat contradiction: 「今次組唔到一個可靠嘅答案」 with
+  // 「上面講『讀唔到』係唔啱嘅」 underneath it. Both subsystems were right about the read;
+  // the correction's premise was what was false.
+  //
+  // Running it here instead fixes the mirror-image hole in the same move: directAnswer was
+  // never checked by the guard, so a false read claim INSIDE the plan reached the Owner
+  // unchallenged. The safety control still cannot be lost — it is applied to the finished
+  // text rather than carried from an earlier draft of it.
+  const composed = out.join('\n\n')
+  const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [])
+  if (guarded.corrected && guarded.correction) out.push(guarded.correction.trim())
 
   return {
     reply: out.join('\n\n'),
