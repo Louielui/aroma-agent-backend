@@ -16,3 +16,11 @@ rclone-b2-config.txt
 XiangxiangLab/
 conversation-archive/
 *.jsonl
+
+# SECOND LINE OF DEFENCE, NOT THE FIX. A file named "AI API Key created successfully.txt"
+# appeared at this root; the fix was moving it out of the repo entirely (secrets live under
+# C:\Aroma\secrets, never here). This rule only stops the NEXT one being staged by accident.
+# Root only — a .txt inside src/ or docs/ is ordinary project content and stays visible.
+# It covers nothing already tracked, so it is protection against a future mistake, not a
+# cleanup of a past one.
+/*.txt
