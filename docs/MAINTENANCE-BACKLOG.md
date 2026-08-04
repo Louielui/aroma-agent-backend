@@ -9,6 +9,57 @@ recorded per item.
 
 ---
 
+## M-3 — `AROMA_DATA_DIR` defaults to the real store, so tests write to production data
+
+**Status:** open · **Opened:** 2026-08-04 · **Blocks:** cleaning `llm_usage` · **Severity:** medium
+
+**The default:**
+
+```js
+// src/store/store.js:18
+const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+```
+
+Anything that calls the store without setting `AROMA_DATA_DIR` writes to the Owner's real
+`data/aroma-truth.json`. Most tests do not set it.
+
+**Measured 2026-08-04** — `llm_usage` holds **2,171 records**, of which **~92% were written by
+tests**:
+
+| Records | `model` | |
+|---:|---|---|
+| 757 | `f` | test |
+| 593 | `spy` | test |
+| 519 | `fake` | test |
+| 182 | `claude-haiku-4-5-20251001` | **real** |
+| 57 | `m` | test |
+| 25 | `fake-model` | test — a differential harness, same day, same defect |
+| 19 | `gpt-test-model` | test |
+| 19 | `claude-sonnet-5-some-other-build` | test |
+
+**This is the third instance of one shape this week:** a default that points at production.
+The other two were the conversation store and the inert route factories, both fixed by
+inverting the default so the safe value is what you get when you say nothing. This one is
+the same defect and should get the same fix.
+
+**Owner decision, 2026-08-04 — ORDER MATTERS. Do NOT clean first.**
+> "Clean before fixing means cleaning twice, and rewriting a store to tidy metering is not
+> worth risking the 182 real records."
+
+So: **fix the default in its own round, THEN decide about cleaning.** The 182 real records are
+the only thing of value in that table and a filtering pass is the operation most likely to
+lose them.
+
+**The fix (when picked up).** Make the real data directory something a caller must ask for
+rather than something it gets by omission — the same inversion as the two fixes above — and
+give the suite a per-run temp root. Note that this interacts with **"Three tests flake under
+parallel load (temp-file contention)"** at the end of this file: those intermittent failures
+are shared-state collisions for the same underlying reason, and one fix should close both.
+
+**Do not** clean `llm_usage` before this lands.
+
+---
+
 ## M-2 — re-evaluate encrypted off-site backup for the Xiangxiang archive
 
 **Status:** scheduled · **Opened:** 2026-08-02 · **Re-evaluate on: 2026-11-02** · **Blocks:** nothing
