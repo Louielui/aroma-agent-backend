@@ -23,6 +23,10 @@ const path = require('node:path')
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
+// THE REAL WRITERS, NAMED AT THE COMPOSITION ROOT. Both routers now default to inert, so
+// this file is the only place that hands either of them something that can touch disk.
+const { conversationStore: realConversationStore } = require('./store/conversationStore')
+const { load: loadOwnerSettingsReal, save: saveOwnerSettingsReal } = require('./persona/ownerSettings')
 const { createSettingsRouter } = require('./routes/settingsRouter') // 香香 settings (owner session; style + preferences + switches)
 const { createContextRouter } = require('./routes/contextRouter') // Read Context v1 (guarded; 403 when READ_ACCESS OFF)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
@@ -852,7 +856,10 @@ function createApp (options = {}) {
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
   app.use('/api/v1/conversations', requireOwner)
-  app.use(createDemoRouter())
+  // THE REAL STORE IS PASSED HERE, BY NAME, AND NOWHERE ELSE. The router's default is
+  // inert, so production is the only place that gets a writer — a test driving this route
+  // cannot reach the Owner's data directory even by forgetting to inject.
+  app.use(createDemoRouter({ conversationStore: realConversationStore }))
 
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
@@ -863,7 +870,7 @@ function createApp (options = {}) {
   // the browser invents can become a setting.
   app.use('/settings', requireOwner)
   app.use('/api/v1/settings', requireOwner)
-  app.use(createSettingsRouter())
+  app.use(createSettingsRouter({ load: loadOwnerSettingsReal, save: saveOwnerSettingsReal }))
 
   app.use('/api/v1/context', requireOwner)
   app.use(createContextRouter())

@@ -34,7 +34,17 @@ const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app meta
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
 // Conversation History v1 — the durable sidebar. READ+APPEND+DELETE, UI path only.
-const { conversationStore: defaultConversationStore, isValidId: isValidConversationId } = require('../store/conversationStore')
+//
+// THE DEFAULT IS INERT, AND THAT IS THE WHOLE POINT. This used to default to the real
+// process-wide store, so the six existing test files that drive this route inherited a
+// writer they never asked for — and one of them posts a conversationId, so every full
+// suite run wrote fixture conversations into the Owner's real data directory and
+// 「MAIL_TITLE_SENTINEL」 turned up in his sidebar as a Gmail subject. Nothing real was
+// overwritten, but only because the fixture ids happened not to collide.
+//
+// Persistence is now something a caller must ASK for by name. app.js passes the real store;
+// anyone who does not gets a store that holds nothing and writes nothing.
+const { INERT_CONVERSATION_STORE, isValidId: isValidConversationId } = require('../store/conversationStore')
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -74,7 +84,7 @@ function historyTextOf (history) {
   return parts.join('\n')
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = defaultConversationStore } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE } = {}) {
   const router = express.Router()
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────

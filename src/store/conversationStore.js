@@ -169,12 +169,34 @@ function createConversationStore (options = {}) {
   return { list, get, appendTurn, remove, dir }
 }
 
-/** The process-wide instance the routes use. */
+/**
+ * The process-wide REAL instance. app.js injects it into the demo router explicitly; it is
+ * deliberately NOT a default anywhere, because a default writer is how a test suite wrote
+ * four fixture conversations into the Owner's data directory.
+ */
 const conversationStore = createConversationStore()
+
+/**
+ * THE INERT STORE — what a caller gets when it did not ask for persistence.
+ *
+ * It answers every question truthfully for a store that holds nothing, and its append does
+ * nothing at all. This is the default in createDemoRouter, so a test that drives the real
+ * route cannot reach the disk: writing to real data is no longer discouraged, it is
+ * unreachable without passing the real store by name.
+ */
+const INERT_CONVERSATION_STORE = Object.freeze({
+  list: () => [],
+  get: () => null,
+  appendTurn: () => ({ id: null, messageCount: 0 }),
+  remove: () => false,
+  dir: null,
+  inert: true
+})
 
 module.exports = {
   createConversationStore,
   conversationStore,
+  INERT_CONVERSATION_STORE,
   isValidId,
   titleFrom,
   CONVERSATION_DIR_NAME,

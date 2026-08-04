@@ -19,10 +19,25 @@ const {
 } = require('../persona/ownerSettings')
 const { SETTINGS_HTML } = require('../demo/settingsHtml')
 
+/**
+ * THE DEFAULTS ARE INERT, for the same reason the demo router's are.
+ *
+ * These used to fall back to the real `load`/`save`, so any caller that built this router
+ * without dependencies — including a test — was handed a writer to the Owner's real
+ * settings file. That is not hypothetical: proving the demo-route defect with a probe POST
+ * CREATED a real owner-settings.json that had never existed, and would have set his
+ * 「說話風格」 to a test string had it not been caught.
+ *
+ * A save that was never wired REFUSES rather than pretending, so a caller relying on the
+ * default fails loudly instead of believing it saved. app.js passes the real pair.
+ */
+const INERT_LOAD = () => ({ style: '', preferences: '', updatedAt: null })
+const INERT_SAVE = () => { throw new Error('settings_store_not_wired') }
+
 function createSettingsRouter (deps = {}) {
   const router = express.Router()
-  const loadFn = deps.load || load
-  const saveFn = deps.save || save
+  const loadFn = deps.load || INERT_LOAD
+  const saveFn = deps.save || INERT_SAVE
   const flagsFn = deps.effectiveFlags || effectiveFlags
 
   router.get('/settings', (req, res) => { res.type('html').send(SETTINGS_HTML) })
