@@ -83,6 +83,40 @@ function createOwnerApprovalRouter (deps = {}) {
     return sid
   }
 
+  // ── THE GATE, OBSERVABLE FROM THE PROCESS THAT IS ACTUALLY RUNNING ────────
+  //
+  // After the first canary the audit store was not wired in real assembly, the one real
+  // execution left no record, and the defect was invisible because the only way to check
+  // was to READ app.js — where it looked correct. The execution gate is open today, and
+  // its last cell could still only be checked that way.
+  //
+  // AN ENDPOINT, NOT A STARTUP LOG LINE. A log line survives a restart but is a
+  // point-in-time claim in a file that rotates; it says what was true at boot, not what is
+  // true now. This can be asked at any moment.
+  //
+  // CANNOT DRIFT is a property of WHAT is read, not of the shape. It FORWARDS a value the
+  // composition root already computed from the runner's own answer — it never recomputes
+  // the question, which is the thing that drifts. A test fails if this handler derives
+  // anything itself.
+  //
+  // NULL IS NOT FALSE. 「nothing was constructed」 and 「it was constructed without an audit」
+  // are different states and collapsing them is the fault this exists to prevent.
+  //
+  // IT LIVES HERE, NOT ON THE CHAT SURFACE. The first version sat in demoRouter and turned
+  // the bridge-isolation invariant red — demo/context/intake must remain unaware of the
+  // bridge. That invariant is right, so the route moved to the surface that already owns
+  // approval and execution, rather than the invariant being weakened to fit it.
+  //
+  // MEASUREMENT, NOT REPAIR: it changes no execution behaviour and fixes nothing. Read-only,
+  // GET-only, and behind the same loopback + owner-session transport check as its siblings.
+  router.get('/api/v1/owner/execution-state', (req, res) => {
+    const bad = transportRefusal(req)
+    if (bad) return refuse(res, 403, bad, null, 'owner_local')
+    ensureSession(req, res)
+    const v = (req.app || {}).agentAuditConfigured
+    res.json({ agentAuditConfigured: typeof v === 'boolean' ? v : null })
+  })
+
   // ── SEAL + SURFACE ────────────────────────────────────────────────────────
   // router.all, not router.post: a GET/HEAD/PUT must produce an EXPLICIT, audited
   // method refusal rather than falling through to the generic 404, so "POST only" is
