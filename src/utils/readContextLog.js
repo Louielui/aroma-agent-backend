@@ -23,7 +23,7 @@
 
 const FIELDS = Object.freeze([
   'source', // 'drive' | 'gmail' | 'calendar' | 'github'
-  'trust', // 'live' | 'unavailable'
+  'trust', // 'live' | 'unavailable' | 'not_asked' (no business intent — the source was never queried)
   'count', // number of items KEPT (never the items)
   'usedFallback', // boolean — keyword miss fell back to recent/next items
   'error', // scrubbed short reason, or null

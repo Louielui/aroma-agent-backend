@@ -56,16 +56,18 @@ test('*** the six Aroma routes are byte-identical after the table was extended *
     ['而家倉存入面有咩？', 'listInventory'], ['庫存夠唔夠', 'listInventory'],
     ['存貨點', 'listInventory'], ['what is in inventory', 'listInventory'],
     ['stock level', 'listInventory'],
-    // and the no-match default is still inventory
-    ['', 'listInventory'], ['今日天氣點', 'listInventory'], ['how are we doing', 'listInventory'],
-    ['what is the position', 'listInventory'], ['the point of this', 'listInventory']
+    // The five no-match entries that used to sit here are GONE — they asserted the
+    // inventory default, which was deleted 2026-08-04. The SIX real routes above are the
+    // byte-identical guarantee, and they are untouched. See noIntentNoRead.test.js.
   ]
   for (const [msg, method] of FROZEN) assert.equal(aromaMethodFor(msg), method, `"${msg}" must still route to ${method}`)
 })
 
-test('a NON-Aroma intent still leaves aromaMethodFor at its unmatched default', () => {
+test('*** a NON-Aroma intent asks Aroma System for NOTHING ***', () => {
+  // INVERTED. A calendar question used to fall through method:null to listInventory, so
+  // 「今個星期有咩安排」 read stock levels. It now asks the restaurant system for nothing.
   assert.equal(intentFor('今個星期有咩安排').key, 'schedule')
-  assert.equal(aromaMethodFor('今個星期有咩安排'), 'listInventory') // method: null → unchanged behaviour
+  assert.equal(aromaMethodFor('今個星期有咩安排'), null)
   assert.equal(AROMA_INTENTS.length, 6)
   for (const i of AROMA_INTENTS) assert.ok(i.method, 'the Aroma subset is exactly the entries that route')
 })

@@ -283,7 +283,7 @@ function intentFor (text) {
  */
 function aromaMethodFor (text) {
   const hit = intentFor(text)
-  return (hit && hit.method) || 'listInventory'
+  return (hit && hit.method) || null
 }
 
 /**
@@ -354,7 +354,20 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
     // No fallback: these tables are the restaurant's own records, so zero rows means the
     // table is empty — a true answer. Falling back to inventory would answer a question
     // about invoices with stock levels, which is how this defect looked from outside.
-    return { method: aromaMethodFor(matchText), params: { limit: n } }
+    // ── NO INTENT MATCH MEANS READ NOTHING ──────────────────────────────────
+    // `notAsked` is a THIRD outcome, and it is not `unavailable`. That distinction is the
+    // whole point: `unavailable` sets trust:'unavailable', renders an UNAVAILABLE line, and
+    // the safety header instructs the model to answer those with 目前讀不到 — so returning
+    // it here would have her tell the Owner she could not read the restaurant's own system,
+    // when the truth is nobody asked it anything. A false read-failure claim is exactly what
+    // readStateGuard exists to catch, and this would have manufactured them.
+    //
+    // The source is therefore ABSENT from the turn: no row in perSource, no line in the
+    // block, no EvidenceSet. Logged as trust:'not_asked' so it is visible and distinct from
+    // both of the other two states — fail soft, but never silent.
+    const method = aromaMethodFor(matchText)
+    if (!method) return { notAsked: 'no business intent in the message' }
+    return { method, params: { limit: n } }
   }
 
   if (source === 'github') {
@@ -509,6 +522,11 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     const startedAt = Date.now()
     try {
       const plan = planFor(source, { keywords, message, now: asOf, env, caps })
+      // NOT ASKED is not NOT AVAILABLE. Checked first so it can never fall into the branch
+      // below and become a false read-failure claim.
+      if (plan.notAsked) {
+        return { durationMs: Date.now() - startedAt, skipped: true, source, reason: plan.notAsked }
+      }
       if (plan.unavailable) {
         return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(source, plan.unavailable)], overflow: false }
       }
@@ -566,6 +584,13 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     const got = r.status === 'fulfilled'
       ? r.value
       : { entry: { source: sources[i], trust: 'unavailable', count: 0, error: 'read failed', usedFallback: false }, lines: [unavailableLine(sources[i], 'read failed')], overflow: false }
+    // A source nobody asked contributes NOTHING — no perSource row, no line, no
+    // EvidenceSet. It is logged so the decision is visible, never silent.
+    if (got.skipped) {
+      logReadSource({ source: got.source, trust: 'not_asked', count: 0, usedFallback: false, error: null, durationMs: Number.isFinite(got.durationMs) ? got.durationMs : null }, logSink)
+      continue
+    }
+
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
     itemsBySource.push({ source: got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
@@ -656,6 +681,16 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   const block = `${built.body}\n${CLOSE}`
   const anyLive = perSource.some((p) => p.trust === 'live' && p.count > 0)
   const status = truncated ? 'TRUNCATED' : (anyLive ? 'READY' : 'PARTIAL')
+
+  // ── A BLOCK WITH NOTHING IN IT IS NOT A BLOCK ──────────────────────────────
+  // Before `notAsked` existed every source produced a line — a result, a zero-result note or
+  // an UNAVAILABLE — so the block always had content. A skipped source produces none, so a
+  // turn where nothing was asked would have prepended a header-only shell: ~350 tokens of
+  // prose announcing excerpts that are not there, on every unmatched chat turn. Returning
+  // null instead is what "read nothing" actually means, and intakeService already treats a
+  // null block as "no context to inject".
+  if (perSource.length === 0) return { block: null, status, perSource, itemsBySource, evidenceSets }
+
   return { block, status, perSource, itemsBySource, evidenceSets }
 }
 

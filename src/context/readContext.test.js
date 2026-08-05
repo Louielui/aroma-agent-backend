@@ -371,14 +371,21 @@ test('每個意圖去啱嘅 endpoint — Cantonese and English both route', () =
   for (const [msg, method] of cases) assert.equal(aromaMethodFor(msg), method, `"${msg}" must route to ${method}`)
 })
 
-test('no match falls back to inventory, and latin terms match whole words only', () => {
+test('*** no match reads NOTHING, and latin terms match whole words only ***', () => {
+  // INVERTED 2026-08-04, Owner GO. This used to assert the fallback to `listInventory` —
+  // the default that made 「現在是幾點？」 return 199 stock rows. A message about nothing the
+  // business vocabulary knows is not a stock question; it is a question the read layer has
+  // no business answering. See noIntentNoRead.test.js for the full contract.
   const { aromaMethodFor } = require('./readContext')
-  assert.equal(aromaMethodFor(''), 'listInventory')
-  assert.equal(aromaMethodFor('今日天氣點'), 'listInventory')
-  assert.equal(aromaMethodFor('how are we doing'), 'listInventory')
-  // 'po' must not fire inside another word
-  assert.equal(aromaMethodFor('what is the position'), 'listInventory')
-  assert.equal(aromaMethodFor('the point of this'), 'listInventory')
+  assert.equal(aromaMethodFor(''), null)
+  assert.equal(aromaMethodFor('今日天氣點'), null)
+  assert.equal(aromaMethodFor('how are we doing'), null)
+  // 'po' must not fire inside another word — still null, but now for the right reason:
+  // no intent matched at all, rather than a fallback quietly covering it up.
+  assert.equal(aromaMethodFor('what is the position'), null)
+  assert.equal(aromaMethodFor('the point of this'), null)
+  // and a real PO question still routes
+  assert.equal(aromaMethodFor('any PO today'), 'listPurchaseOrders')
 })
 
 test('routing reads the RAW MESSAGE — the extractor never emits the term itself', () => {

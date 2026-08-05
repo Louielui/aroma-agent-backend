@@ -118,7 +118,12 @@ const run = (adapter, message) => processIntake(message, adapter, [], {
 test('*** the schema no longer demands a section, and declares the choice instead ***', async () => {
   await withEnv(async () => {
     const spy = spyAdapter(envelope({ directAnswer: '我係你嘅 AI 營運長。', citesEvidence: false, sections: [], limitations: [], followUp: null, unanswerable: false }))
-    await run(spy, '你好, 你可以幫我做什麼?')
+    // A BUSINESS question, deliberately. This used to be 「你好, 你可以幫我做什麼?」 and worked
+    // only because the deleted inventory default made a capability question read 199 stock
+    // rows — the test was resting on the very defect. The schema shape is what is under test
+    // here, and a schema is only requested when rows exist, so the message must be one that
+    // legitimately retrieves some. The capability-question behaviour has its own test below.
+    await run(spy, '而家倉存入面有咩?')
     const sections = spy.calls[0].opts.responseFormat.schema.properties.answerPlan.properties.sections
     assert.equal(sections.minItems, undefined, 'THE DEFECT: a section was mandatory even when the question needed none')
     assert.equal(sections.items.properties.items.minItems, 1, 'but a section that EXISTS still may not be an empty heading')
