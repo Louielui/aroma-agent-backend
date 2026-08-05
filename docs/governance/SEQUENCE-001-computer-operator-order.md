@@ -131,8 +131,8 @@ Owner's and is not implied by finishing the work above.**
 **Recorded on Owner instruction, 2026-08-05, because it is exactly the kind of thing that
 later reads as proven.**
 
- enforces, in code, that the MEASURING stage runs with the Companion
-session  on the . The note beside it, dated 2026-07-31, records what
+`measurementContext.js` enforces, in code, that the MEASURING stage runs with the Companion
+session `Active` on the `console`. The note beside it, dated 2026-07-31, records what
 happened when the rule was stricter:
 
 > launcher 4 refused with 「the Companion session is Disc, not Active」, and it was right to
@@ -144,7 +144,7 @@ happened when the rule was stricter:
 It was resolved by **narrowing what must be simultaneous** — identity stays invariant, state
 is enforced only where the measurement happens. That was the right fix for the problem it
 faced. **But it means concurrent operation was never tested.** The commissioning path
-() has the Owner switching INTO the operator account, so at no
+(`NEXT-PHYSICAL-STEPS.txt`) has the Owner switching INTO the operator account, so at no
 point did both sessions do work at the same time.
 
 Nothing in the record is false about this. The risk is subtler: a reader arriving later sees
@@ -156,19 +156,34 @@ was validated. **It was avoided.**
 The question was always posed as 「the operator works DISCONNECTED in the background」. On
 this machine that is not the interesting configuration, because measured 2026-08-05:
 
-
+```
+console                20  Conn      <- exists, UNOCCUPIED
+rdp-tcp#0   louis      22  Active    <- the Owner, over RDP
+```
 
 The Owner is not on the console. So the configuration to test is **AromaOperator Active on
 the CONSOLE while the Owner is Active over RDP** — two Active sessions, neither disconnected.
-That **satisfies** the existing  requirement instead of fighting it, and no
+That **satisfies** the existing `Active + console` requirement instead of fighting it, and no
 part of the record considered it because the commissioning path assumed the Owner would be at
 the console himself.
 
 **Still not established.** A console session with no human at it may be locked, and a locked
 session's rendering behaviour is the same open question. See
- — three primitives, three states, nine results,
+`scripts/probes/Test-SessionPrimitives.ps1` — three primitives, three states, nine results,
 and it needs no flag enabled because it is a Windows question rather than a Computer Operator
 one.
+
+### And the browser is not merely untested — it is unbuilt
+
+Measured 2026-08-05: `computerExecutor.js` declares
+`ACTIONS = ['open_app', 'type_text', 'save']`. There is no navigate, no click, no form fill,
+no page read anywhere in `src/computer/`. `sessionBoundary.js:50` carries
+`browserProfile: 'new'`, but that file's own header says DEFINITION ONLY — it opens no pipe
+and spawns no process.
+
+The canary was Notepad. The Owner's intended use — Costco, supplier portals — is browser
+work end to end. **Asking whether the browser drives in a disconnected session is a question
+one layer above what exists.**
 
 ---
 
