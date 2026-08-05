@@ -406,3 +406,118 @@ only version of this that ends.
 **Not done. Proposed.** The Owner has ruled three times on lists I produced; this is the
 fourth, and it should be the last one, because it is the only one whose completeness does not
 depend on my pattern-matching.
+
+---
+---
+
+# ✅ THE INVERSION — executed 2026-08-05. Permissions closed.
+
+Backup before this pass: `scratchpad/settings.local.json.bak4-pre-inversion`.
+
+> **Owner: 「An allow list should be able to say when it is finished, and only the inversion
+> can.」**
+
+| | |
+|---|---|
+| allow | **399 → 31** over four passes (**202 → 31** in this one) |
+| deny | 20 |
+| ask | 0 |
+
+## The kept list, in full — 31 entries
+
+**Read, not counted.** The Owner asked to see it because 「a list I have read once is worth
+more than a list I approved a count for」.
+
+**Test & check (6)**
+```
+Bash(npx vitest *)        Bash(npm test *)
+Bash(npm run check*)      Bash(npm run test*)
+Bash(pnpm -s check)       Bash(pnpm check *)
+```
+**Build & run (7)**
+```
+Bash(npm run build*)      Bash(npm run dev*)      Bash(pnpm dev *)
+Bash(timeout 45 pnpm dev) Bash(pnpm exec *)
+Bash(pnpm install)        Bash(pnpm install --frozen-lockfile)
+```
+**This repo's own script (1)**
+```
+Bash(node --check scripts/postbuild.mjs)
+```
+**Health checks against the local dev server (3)**
+```
+Bash(curl … http://localhost:3001/api/health)
+Bash(curl … http://localhost:3001/api/v1/health)
+Bash(curl … http://localhost:3001/api/v1/__nope__)
+```
+**Git — reads, refs and creates. No push, no checkout, no reset (8)**
+```
+Bash(git switch *)   Bash(git show *)    Bash(git add *)     Bash(git commit *)
+Bash(git stash *)    Bash(git pull *)    Bash(git check-ignore *)
+Bash(git -c core.safecrlf=false diff package.json)
+```
+**Port hygiene — the narrowed pair (2)**
+```
+Bash(netstat -ano)        Bash(taskkill //F //PID *)
+```
+**Network (4)**
+```
+WebFetch(domain:github.com)  WebFetch(domain:raw.githubusercontent.com)
+WebFetch(domain:docs.claude.com)  WebSearch
+```
+
+## Reading the list caught nine more that the pattern kept
+
+The candidate set was **42**. Going entry by entry — which is what the Owner asked for and
+what a count would have skipped — dropped nine:
+
+| dropped | why |
+|---|---|
+| `gh pr create --base main --head fix/windows-cross-platform-dev …` | a spent one-off for a branch merged 2026-07-06, and `gh` is not installed |
+| `gh api *` | very broad, can **write** to GitHub (releases, refs), and unused |
+| `WebFetch` × 7 — openai.com, platform/developers.openai.com, developer.chrome.com, wicg.github.io, chromestatus.com, groups.google.com | model and browser research: **other work**, not this repo |
+| `Read(//c/Users/louis/Projects/aroma-frontend/src/data/**)` | a different project directory, outside this repo |
+| `Bash(git commit -m ' *)` | duplicate of `Bash(git commit *)` |
+
+**That is the argument for reading a list, made by the list itself.** A pattern that keeps
+「anything WebFetch」 keeps browser research in a restaurant repo's config.
+
+## What is deliberately absent
+
+No `push`. No `checkout`/`reset`/`clean`. No `add`/`install <package>`. No `npm run` wildcard.
+No reads outside the repo. **The list will rebuild from actual use, and each addition will be
+a decision someone made once, on purpose.**
+
+---
+
+# TWO ILLUSTRATIONS WORTH MORE THAN THE COUNTS
+
+**Owner instruction: record these beside the method finding.**
+
+## 1. `LocalPort 8090` — the third spelling of one contamination
+
+Pass two removed every `curl` to `127.0.0.1:8090`. Pass three found
+`PowerShell(Get-NetTCPConnection -LocalPort 8090 …)` — **the same process, reached by another
+route, surviving because it did not look like the pattern.** One contamination, three
+spellings, two passes apart.
+
+## 2. The `mkdir` that was the other half of the `rm -rf`
+
+`Bash(rm -rf __TRACKED_VAR__/stagetest/*)` was removed by ruling. Its partner,
+`Bash(mkdir -p __TRACKED_VAR__/stagetest)`, carrying the **same unexpanded placeholder**,
+sat untouched two passes later because only one half matched.
+
+> ### A dangerous pair surviving because one half matched a pattern is how the method fails.
+> Better than any count: the cleanup was *correct* both times, and the hazard still had a
+> half left standing.
+
+## And the permission-file version of the standing finding
+
+> **`pnpm install *` was the ruling degrading into decoration.**
+>
+> The Owner ruled 「keep `pnpm install` only」 — but the wildcard admits
+> `pnpm install <package>`, which is `add` under another name. Left in place, the ruling
+> would have read as enforced while permitting exactly what it forbade.
+>
+> **That is `forbiddenActions` degrading from mechanism to intention, in a permission file.**
+> Same shape as the remote, the browser and the typed EXECUTE. Fourth instance.
