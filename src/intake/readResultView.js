@@ -332,6 +332,11 @@ function renderValidatedPlan (input) {
     droppedItems: v.droppedItems,
     droppedFacts: v.droppedFacts,
     droppedSentences: v.droppedSentences,
+    // ADDED 2026-08-05. validatePlan has counted this since the day the silent
+    // limitation drop was closed; the log projection has read it since the same day; it
+    // was never put in between, so every line read lims:0 while carrying limitation drop
+    // records in the SAME entry. A counter added to end a silent drop, itself dropped.
+    droppedLimitations: v.droppedLimitations,
     drops: v.drops,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
@@ -438,7 +443,7 @@ function renderValidatedPlan (input) {
   // unchallenged. The safety control still cannot be lost — it is applied to the finished
   // text rather than carried from an earlier draft of it.
   const composed = out.join('\n\n')
-  const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [])
+  const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [], input.message)
   if (guarded.corrected && guarded.correction) out.push(guarded.correction.trim())
 
   return {

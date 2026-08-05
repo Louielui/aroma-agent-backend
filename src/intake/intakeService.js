@@ -715,7 +715,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // rather than pointing at the mode button that no longer exists.
       : '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。'
 
-    const guarded = enforceReadState(reply, Array.from(turnPerSource.values()))
+    const guarded = enforceReadState(reply, Array.from(turnPerSource.values()), message)
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
@@ -776,7 +776,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     // The ordinary chat path — this is the one the 「我目前讀唔到你的日程」 turn came down
     // while the calendar telemetry said trust:'live'.
-    const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()))
+    const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()), message)
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     const view = buildReadResultReply({
       reply: guarded.reply,

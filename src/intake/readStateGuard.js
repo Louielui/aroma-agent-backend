@@ -45,6 +45,7 @@ const UNREADABLE_CLAIM = /(讀唔到|讀不到|睇唔到|看不到|攞唔到|拿
 // new source is never invisible here — it is merely less well described, and the test
 // below fails until someone gives it words.
 const { ALL_SOURCES } = require('../context/liveClients')
+const { intentFor } = require('../context/readContext') // THE one intent table — the entity a turn is about
 
 // Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
 const VOCABULARY = Object.freeze({
@@ -163,7 +164,27 @@ function isModifierNotSubject (clause, source, failIndex) {
  *
  * @returns {{ violated: boolean, sources: string[], kind: 'named'|null }}
  */
-function detectFalseReadClaim (reply, perSource) {
+/**
+ * WHAT THIS TURN WAS ABOUT — the intent's own noun, when the message names one.
+ *
+ * 「今日的安排目前讀不到」 named no SOURCE, so the clause rule left it alone — and the calendar
+ * had returned a row. The thing she made a claim about was 安排, which is exactly what the
+ * intent table already calls the entity a schedule question is about.
+ *
+ * This is a BACKSTOP, not the fix. The fix is upstream, in the header that now names the
+ * state she was in; a guard cannot make her say the right thing, only argue afterwards.
+ *
+ * It costs no new vocabulary and reopens nothing: the modifier rule already separates
+ * 「今日的安排目前讀不到」 (安排 directly before the failure — the subject) from
+ * 「發票的具體服務項目內容無法讀取」 (發票 separated by 的 + another noun — a modifier).
+ */
+function entityAnchorOf (message) {
+  const hit = intentFor(typeof message === 'string' ? message : '')
+  if (!hit || !hit.noun || !Array.isArray(hit.sources)) return null
+  return { noun: String(hit.noun), sources: hit.sources.slice() }
+}
+
+function detectFalseReadClaim (reply, perSource, message) {
   const text = typeof reply === 'string' ? reply : ''
   const rows = Array.isArray(perSource) ? perSource : []
   if (!text || rows.length === 0) return { violated: false, sources: [], kind: null }
@@ -173,13 +194,22 @@ function detectFalseReadClaim (reply, perSource) {
   if (live.length === 0) return { violated: false, sources: [], kind: null } // nothing was read; the claim is true
 
   // Only clauses that actually carry a failure phrase can attribute one.
+  const entity = entityAnchorOf(message)
   const named = new Set()
   for (const clause of clausesOf(text)) {
     const fail = UNREADABLE_CLAIM.exec(clause)
     if (!fail) continue
     for (const r of live) {
-      if (!mentionsSource(clause, r.source)) continue
-      if (isModifierNotSubject(clause, r.source, fail.index)) continue
+      if (mentionsSource(clause, r.source) && !isModifierNotSubject(clause, r.source, fail.index)) {
+        named.add(r.source)
+        continue
+      }
+      // THE ENTITY THIS TURN WAS ABOUT anchors a claim the same way a source name does,
+      // and is held to the same modifier test.
+      if (!entity || !entity.sources.includes(r.source)) continue
+      const at = clause.indexOf(entity.noun)
+      if (at === -1) continue
+      if (at < fail.index && clause.slice(at + entity.noun.length, fail.index).includes('的')) continue
       named.add(r.source)
     }
   }
@@ -212,8 +242,8 @@ function buildCorrection (perSource, sources) {
  *
  * @returns {{ reply: string, corrected: boolean, sources: string[], kind: string|null }}
  */
-function enforceReadState (reply, perSource) {
-  const found = detectFalseReadClaim(reply, perSource)
+function enforceReadState (reply, perSource, message) {
+  const found = detectFalseReadClaim(reply, perSource, message)
   if (!found.violated) return { reply, corrected: false, sources: [], kind: null }
   const correction = buildCorrection(perSource, found.sources)
   return {

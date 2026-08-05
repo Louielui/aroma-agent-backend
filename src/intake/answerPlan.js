@@ -238,6 +238,9 @@ function logAnswerPlan (entry, sink) {
       if (d && d.shape != null) out.shape = String(d.shape).slice(0, 20)
       if (d && Number.isFinite(d.length)) out.length = d.length
       if (d && typeof d.value === 'string') out.value = d.value.slice(0, MAX_DROP_VALUE_CHARS)
+      // HOW WRONG, when WHAT is withheld. A score cannot carry content.
+      if (d && Number.isFinite(d.score)) out.score = d.score
+      if (d && d.nearness != null) out.nearness = String(d.nearness).slice(0, 20)
       return out
     }),
     requestId: entry.requestId == null ? null : String(entry.requestId)
@@ -601,7 +604,73 @@ function matchValue (raw, index) {
 const MAX_DROP_VALUE_CHARS = 12
 const UNSAFE_VALUE_RE = /[@\s]|https?:|[\\/]{1,2}[A-Za-z0-9_.-]+[\\/]|^[A-Za-z]:\\/
 
-function describeValue (raw) {
+/**
+ * HOW CLOSE A REJECTED VALUE WAS TO SOMETHING THE EVIDENCE ACTUALLY HELD.
+ *
+ * Three rounds running, the drop record answered 「was this a paraphrase or an
+ * invention?」 with 「withheld at 13 characters」 — and the long values are precisely the
+ * ones a question is usually about. The rule that withholds them is right and stays.
+ *
+ * So the COMPARISON happens here, on the server, on the full value, and only the RESULT
+ * leaves. A score is not content: it cannot carry an email address, a URL or a third
+ * party&apos;s sentence, so the 12-character limit has nothing to bite on.
+ *
+ * Dice coefficient over character bigrams — no dependency, and it works on CJK, where
+ * there are no word boundaries to tokenise on.
+ *
+ *   提供保險資訊 vs 需要提供保險資料  → 0.67  paraphrase  (one character apart)
+ *   請帶同轉介信及診金               → 0.00  unrelated   (nothing in evidence)
+ *
+ * THIS DOES NOT ADMIT ANYTHING. matchValue stays exact equality on normalised forms;
+ * a score of 0.99 is still a drop. It only lets the log say which kind of wrong it was.
+ */
+const NEAR_PARAPHRASE = 0.6
+const NEAR_PARTIAL = 0.25
+const NEAR_MAX_CHARS = 200 // bounded: a score is cheap, but not at any length
+const NEAR_MAX_VALUES = 400
+
+function bigramsOf (s) {
+  const t = String(s).toLowerCase().replace(/\s+/g, '')
+  const out = new Map()
+  for (let i = 0; i + 1 < t.length; i++) {
+    const g = t.slice(i, i + 2)
+    out.set(g, (out.get(g) || 0) + 1)
+  }
+  return out
+}
+
+function dice (a, b) {
+  if (a.size === 0 || b.size === 0) return 0
+  let shared = 0
+  let na = 0
+  let nb = 0
+  for (const n of a.values()) na += n
+  for (const [g, n] of b) { nb += n; const m = a.get(g); if (m) shared += Math.min(m, n) }
+  return (2 * shared) / (na + nb)
+}
+
+function nearnessOf (raw, index) {
+  const v = raw === undefined || raw === null ? '' : String(raw).slice(0, NEAR_MAX_CHARS)
+  const empty = { score: 0, nearness: 'unrelated' }
+  if (v.trim() === '' || !index || !index.values || typeof index.values[Symbol.iterator] !== 'function') return empty
+  const mine = bigramsOf(v)
+  if (mine.size === 0) return empty
+  let best = 0
+  let seen = 0
+  for (const candidate of index.values) {
+    if (++seen > NEAR_MAX_VALUES) break
+    const s = dice(mine, bigramsOf(String(candidate).slice(0, NEAR_MAX_CHARS)))
+    if (s > best) best = s
+    if (best >= 0.999) break
+  }
+  const score = Math.round(best * 100) / 100
+  return {
+    score,
+    nearness: score >= NEAR_PARAPHRASE ? 'paraphrase' : score >= NEAR_PARTIAL ? 'partial' : 'unrelated'
+  }
+}
+
+function describeValue (raw, index) {
   const v = raw === undefined || raw === null ? '' : String(raw)
   const out = { shape: 'text', length: v.length }
   if (v.trim() === '') { out.shape = 'empty'; return out }
@@ -610,6 +679,8 @@ function describeValue (raw) {
   else if (v.length <= MAX_DROP_VALUE_CHARS && !/\s/.test(v)) out.shape = 'short_token'
   // Carried ONLY when short, spaceless and not address/URL/path shaped.
   if (v.length <= MAX_DROP_VALUE_CHARS && !UNSAFE_VALUE_RE.test(v)) out.value = v
+  // The score travels WHETHER OR NOT the value did — that is the whole point of it.
+  if (index) Object.assign(out, nearnessOf(v, index))
   return out
 }
 
@@ -977,7 +1048,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         const m = matchValue(f.value, index)
         if (!m.ok) {
           droppedFacts++
-          drops.push(Object.assign({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why }, describeValue(f.value)))
+          drops.push(Object.assign({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why }, describeValue(f.value, index)))
           continue
         }
         facts.push({ field, value: translate(f.value) })
@@ -1014,14 +1085,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     else if (!proseIsGrounded(l, index)) why = 'name_not_in_evidence'
     if (why) {
       droppedLimitations++
-      drops.push(Object.assign({ kind: 'limitation', why }, describeValue(l)))
+      drops.push(Object.assign({ kind: 'limitation', why }, describeValue(l, index)))
       continue
     }
     if (limitations.length >= LIMITS.maxLimitations) {
       // Over the cap is not a rejection of the sentence, but it is still a removal, so it
       // is counted rather than allowed to vanish.
       droppedLimitations++
-      drops.push(Object.assign({ kind: 'limitation', why: 'over_cap' }, describeValue(l)))
+      drops.push(Object.assign({ kind: 'limitation', why: 'over_cap' }, describeValue(l, index)))
       continue
     }
     limitations.push(l.slice(0, LIMITS.maxLimitationChars))
@@ -1141,6 +1212,7 @@ module.exports = {
   TELEMETRY_RE,
   logAnswerPlan,
   evidenceIndex,
+  nearnessOf,
   validatePlan,
   parsePlan,
   minimalAnswer,
