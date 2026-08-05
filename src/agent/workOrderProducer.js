@@ -65,8 +65,8 @@ function readCurrentExcerptFromDisk (repoRoot, relPath) {
 
 const EXCERPT_REFUSALS = Object.freeze({
   not_found: (f) => `「${f}」在程式庫中不存在。我不會為一個不存在的檔案建立工作單`,
-  not_a_file: (f) => `「${f}」不是一個檔案(可能是資料夾)`,
-  unreadable: (f) => `「${f}」無法讀取,所以我無法向你顯示它現時的內容`,
+  not_a_file: (f) => `「${f}」不是一個檔案（可能是資料夾）`,
+  unreadable: (f) => `「${f}」無法讀取，所以我無法向你顯示它現時的內容`,
   outside_repo: (f) => `「${f}」不在程式庫範圍內`
 })
 
@@ -116,8 +116,8 @@ function reject (errors) {
     errors,
     // Plain-language explanation the Owner sees instead of a Work Order. It carries its own
     // "未能建立工作單" opener, so no caller should prefix that again (the demo page used to,
-    // producing "未能建立工作單：未能建立工作單:").
-    reasonForOwner: '未能建立工作單:' + errors.join(';') + '。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。'
+    // producing "未能建立工作單：未能建立工作單：").
+    reasonForOwner: '未能建立工作單：' + errors.join('；') + '。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。'
   }
 }
 
@@ -142,14 +142,14 @@ function proposeWorkOrder (input = {}) {
   candidates = candidates.filter((x) => typeof x === 'string' && x.trim() !== '')
 
   if (candidates.length === 0) errors.push('必須指定一個檔案')
-  if (candidates.length > MAX_ALLOWED_FILES) errors.push(`一次只可以改一個檔案(收到 ${candidates.length} 個)`)
+  if (candidates.length > MAX_ALLOWED_FILES) errors.push(`一次只可以改一個檔案（收到 ${candidates.length} 個）`)
 
   const raw = candidates[0]
   if (raw) {
     const posix = raw.replace(/\\/g, '/')
-    if (WILDCARD_RE.test(posix)) errors.push('不接受通用字元(wildcard/glob)')
-    if (posix.endsWith('/')) errors.push('不接受資料夾,必須是單一檔案')
-    if (!/\.[A-Za-z0-9]{1,6}$/.test(posix)) errors.push('必須是明確的檔案路徑(要有副檔名)')
+    if (WILDCARD_RE.test(posix)) errors.push('不接受通用字元（wildcard／glob）')
+    if (posix.endsWith('/')) errors.push('不接受資料夾，必須是單一檔案')
+    if (!/\.[A-Za-z0-9]{1,6}$/.test(posix)) errors.push('必須是明確的檔案路徑（要有副檔名）')
     if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix)) errors.push('必須是相對路徑')
     if (posix.includes('..')) errors.push('路徑不可包含 ..')
   }
@@ -158,7 +158,7 @@ function proposeWorkOrder (input = {}) {
   const file = raw.replace(/\\/g, '/')
 
   // ── L1: the HARD boundary — reuse the existing validator, never a parallel one ──
-  if (isForbiddenFile(file)) errors.push(`「${file}」屬於受保護範圍(憑證/環境/授權閘/稽核/治理),不可修改`)
+  if (isForbiddenFile(file)) errors.push(`「${file}」屬於受保護範圍（憑證／環境／授權閘／稽核／治理），不可修改`)
   if (errors.length) return reject(errors)
 
   // ── L2: provenance — option B, the file must already be in the conversation ──
@@ -184,7 +184,7 @@ function proposeWorkOrder (input = {}) {
   const defaults = Object.assign({}, DEFAULTS, input.defaults || {})
   const newId = typeof input.newId === 'function' ? input.newId : () => `appr_${crypto.randomUUID().slice(0, 8)}`
   const approvalId = newId()
-  if (!SAFE_ID.test(approvalId)) return reject(['內部錯誤:approvalId 格式不正確'])
+  if (!SAFE_ID.test(approvalId)) return reject(['內部錯誤：approvalId 格式不正確'])
 
   const workOrder = {
     goal,

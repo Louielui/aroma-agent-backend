@@ -242,7 +242,18 @@ test('the visible face follows the Owner-specified structure, in plain Chinese',
   const byTitle = (t) => details.find((d) => d.title === t)
   assert.ok(byTitle('影響範圍').body.includes('丟棄式副本'))
   assert.ok(byTitle('影響範圍').body.includes('真實程式庫不會被改動'))
-  assert.equal(byTitle('不會發生').body, '不會提交、不會上傳、不會合併、不會部署。')
+  // UPDATED 2026-08-05 with the string it pins. It asserted the four-item sentence and so
+  // it was ALSO asserting the defect: MUST_FORBID has five, and 開 PR never reached the
+  // Owner. It now checks every declared action by name, so the card cannot quietly
+  // under-report again — an equality against a literal could not have caught the omission
+  // in the first place, because it was equal to the wrong thing.
+  const { MUST_FORBID } = require('./workOrder')
+  const { WILL_NOT_LABELS } = require('./workOrderView')
+  const willNot = byTitle('不會發生').body
+  for (const a of MUST_FORBID) {
+    assert.ok(willNot.includes(WILL_NOT_LABELS[a]), 'the card must name ' + a + ': ' + willNot)
+  }
+  assert.ok(willNot.includes('開 PR'), 'THE ONE THAT WAS MISSING')
   assert.equal(byTitle('上限').body, '最長 2 分鐘 · 最多 US$0.50', 'money reads as money')
   assert.ok(byTitle('要修改的內容'), 'the goal is still readable')
 

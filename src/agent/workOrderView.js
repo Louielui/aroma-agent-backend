@@ -21,13 +21,66 @@
  * 2. DETERMINISTIC — pure. No I/O, no clock, no randomness, and above all NO model call at
  *    render time. The same sealed order always renders the same card.
  * 3. HONEST BEFORE/AFTER — 「現時內容」 is a bounded read of the real file taken at seal
- *    time (a fact). 「心燈打算改成」 is INTENT: the agent has not run and may produce
+ *    time (a fact). 「香香打算改成」 is INTENT: the agent has not run and may produce
  *    something else. The card labels it as intent and never states it as a result.
  */
 
 const { canonicalWorkOrder, canonicalWorkOrderJson, hashWorkOrder } = require('./workOrder')
 
 const NOT_PROVIDED = '（未提供）'
+
+/**
+ * ── 「不會發生」, DERIVED FROM THE SEALED ORDER ───────────────────────────────
+ *
+ * This sentence used to be a hardcoded string: 「不會提交、不會上傳、不會合併、不會部署。」
+ * Two things were wrong with that, and only the second was visible.
+ *
+ * It broke property #1 above. Every other value on this card is read from
+ * canonicalWorkOrder; the one sentence whose entire job is to say WHAT CANNOT HAPPEN was
+ * retyped by hand — the second projection the header says does not exist.
+ *
+ * And because it was retyped, it UNDER-REPORTED. MUST_FORBID is five actions: commit, push,
+ * PR, merge, deploy. The card named four. **開 PR — the one that would publish his code
+ * somewhere he did not choose — was never shown to the Owner at all.**
+ *
+ * A promise that is retyped drifts. This one is now generated from the order's own
+ * forbiddenActions, so the card cannot claim less than the order enforces.
+ */
+const WILL_NOT_LABELS = Object.freeze({
+  commit: '提交',
+  push: '上傳',
+  PR: '開 PR',
+  merge: '合併',
+  deploy: '部署',
+  'cred-edit': '改憑證',
+  'env-edit': '改環境設定',
+  'gate-edit': '改授權閘',
+  'audit-edit': '改稽核紀錄'
+})
+
+/** Execution actions lead, because they are what the Owner is deciding about. */
+const EXECUTION = Object.freeze(['commit', 'push', 'PR', 'merge', 'deploy'])
+
+/**
+ * @param {string[]} actions  the sealed order's own forbiddenActions
+ * @returns {string} one or two sentences naming every one of them
+ */
+function willNotHappenFrom (actions) {
+  const list = Array.isArray(actions) ? actions.filter((a) => typeof a === 'string') : []
+  const exec = EXECUTION.filter((a) => list.includes(a)).map((a) => WILL_NOT_LABELS[a])
+  const rest = list.filter((a) => !EXECUTION.includes(a) && WILL_NOT_LABELS[a]).map((a) => WILL_NOT_LABELS[a])
+  // AN ACTION THIS MAP DOES NOT KNOW IS COUNTED, NEVER DROPPED. A sentence that reads
+  // complete while quietly omitting a term is the exact failure this project has spent
+  // weeks removing — and here the omission would be a safety guarantee.
+  const unknown = list.filter((a) => !WILL_NOT_LABELS[a])
+
+  const parts = []
+  if (exec.length) parts.push(exec.map((w) => '不會' + w).join('、') + '。')
+  if (rest.length) parts.push('亦不會' + rest.join('、') + '。')
+  if (!parts.length) parts.push('這張工作單沒有宣告任何禁止動作。')
+  if (unknown.length) parts.push(`另有 ${unknown.length} 項禁止動作未能顯示名稱（${unknown.join('、')}）。`)
+  return parts.join('')
+}
 
 /** 120 -> "2 分鐘"; 90 -> "90 秒". Deterministic, no locale lookup. */
 function humanDuration (sec) {
@@ -60,23 +113,23 @@ function buildApprovalView (workOrder) {
 
   const scope = [
     `只修改 ${file} 一個檔案。`,
-    '只在丟棄式副本內操作,真實程式庫不會被改動。'
+    '只在丟棄式副本內操作，真實程式庫不會被改動。'
   ]
 
   // Before/after. The labels carry the epistemic status, so the Owner cannot mistake the
   // intended text for something that has already happened.
-  const beforeLabel = `現時內容（讀自真實檔案${canonical.currentExcerptTruncated ? ',已截斷,下面還有' : ''}）`
-  const afterLabel = '香香打算改成（這是香香的打算,不是已完成的結果 —— 它仍未執行,實際結果可能不同）'
+  const beforeLabel = `現時內容（讀自真實檔案${canonical.currentExcerptTruncated ? '，已截斷，下面還有' : ''}）`
+  const afterLabel = '香香打算改成（這是香香的打算，不是已完成的結果 —— 它仍未執行，實際結果可能不同）'
   const before = canonical.currentExcerpt == null ? NOT_PROVIDED : canonical.currentExcerpt
   const after = canonical.intendedChange // may be null — see below
-  // If 心燈 stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
+  // If she stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
   // promise box reads as a broken form and invites the Owner to fill it in himself, which
   // is backwards: the intent is hers to state, not his to supply.
   const hasIntent = typeof after === 'string' && after.trim() !== ''
 
-  const worstCase = '改壞了?只改副本,你的程式庫不受影響。'
+  const worstCase = '改壞了？只改副本，你的程式庫不受影響。'
 
-  const willNotHappen = '不會提交、不會上傳、不會合併、不會部署。'
+  const willNotHappen = willNotHappenFrom(canonical.forbiddenActions)
 
   // Money reads as money: 0.5 -> US$0.50, never US$0.5.
   const money = (n) => (n == null ? NOT_PROVIDED : `US$${Number(n).toFixed(2)}`)
@@ -103,13 +156,13 @@ function buildApprovalView (workOrder) {
     `可改檔案          : ${technical.allowedFiles.join(', ') || NOT_PROVIDED}`,
     `測試指令          : ${test == null || test === '' ? '（無）' : test}`,
     `禁止動作          : ${technical.forbiddenActions.join(', ') || NOT_PROVIDED}`,
-    `上限(原始值)      : ${technical.timeoutSec}s / ${money(technical.costCapUsd)}`,
-    `工作單有效時間    : ${humanDuration(technical.approvalTtlSec)}（逾時自動失效,需重新產生）`,
+    `上限（原始值）    : ${technical.timeoutSec}s / ${money(technical.costCapUsd)}`,
+    `工作單有效時間    : ${humanDuration(technical.approvalTtlSec)}（逾時自動失效，需重新產生）`,
     `現時內容是否截斷  : ${technical.currentExcerptTruncated ? '是' : '否'}`,
     // The no-amend rule. It was on v1's front face; it is a real guarantee but it is not
     // part of the Owner's decision, so it lives here rather than crowding the card.
     '如需改第二個檔案  : 必須重新建立一張新的工作單（沒有中途加檔案的機制）',
-    '隔離方式          : 丟棄式副本,已移除所有 remote,改動無法回到 main'
+    '隔離方式          : 丟棄式副本，已移除所有 remote，改動無法回到 main'
   ]
 
   /**
@@ -184,10 +237,13 @@ function buildApprovalView (workOrder) {
     approvalTtlSec: canonical.approvalTtlSec,
     // kept for continuity with v1 callers; both are now derived from the card above
     whatWillHappen: [scope.join('\n'), willNotHappen, caps].join('\n'),
+    // The ACTIONS the sentence was generated from, so a caller can check coverage
+    // against the sealed order without parsing prose.
+    willNotHappenActions: [...canonical.forbiddenActions],
     worstCase
   }
 
   return { canonical, canonicalJson, hash, display, card, technical, lines, technicalLines }
 }
 
-module.exports = { buildApprovalView, humanDuration, NOT_PROVIDED }
+module.exports = { buildApprovalView, humanDuration, willNotHappenFrom, WILL_NOT_LABELS, NOT_PROVIDED }

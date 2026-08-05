@@ -129,7 +129,11 @@ test('the display states the consequence in plain language (diff only, worst cas
   // Owner Decision Card v2 says the same things in the Owner's own language. The English
   // constants ("不會 commit", "remote") moved into the collapsed technical section; the
   // visible face states the consequence as a decision, not as a field dump.
-  assert.ok(v.display.whatWillHappen.includes('不會提交、不會上傳、不會合併、不會部署。'))
+  // UPDATED 2026-08-05: the sentence is now DERIVED from the sealed order's own
+  // forbiddenActions rather than retyped, and it names all five — 開 PR was missing.
+  assert.ok(v.display.whatWillHappen.includes('不會提交、不會上傳、不會開 PR、不會合併、不會部署。'))
+  assert.deepEqual(v.display.willNotHappenActions, v.canonical.forbiddenActions,
+    'and the card declares exactly what the order forbids — no more, no less')
   assert.ok(v.display.whatWillHappen.includes('丟棄式副本'))
   assert.ok(v.display.worstCase.includes('你的程式庫不受影響'))
   const tech = v.technicalLines.join('\n')
