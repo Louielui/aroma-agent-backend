@@ -126,6 +126,52 @@ Owner's and is not implied by finishing the work above.**
 
 ---
 
+## 4. CONCURRENCY WAS DESIGNED AROUND, NEVER DEMONSTRATED
+
+**Recorded on Owner instruction, 2026-08-05, because it is exactly the kind of thing that
+later reads as proven.**
+
+ enforces, in code, that the MEASURING stage runs with the Companion
+session  on the . The note beside it, dated 2026-07-31, records what
+happened when the rule was stricter:
+
+> launcher 4 refused with 「the Companion session is Disc, not Active」, and it was right to
+> by the rule as written — but **the rule could never be met. Only ONE session is connected
+> to the console at a time**, so the Companion session is Active only while somebody is
+> switched INTO it; and Lock 3 needs elevation, which that account does not have. Both
+> conditions cannot hold at once.
+
+It was resolved by **narrowing what must be simultaneous** — identity stays invariant, state
+is enforced only where the measurement happens. That was the right fix for the problem it
+faced. **But it means concurrent operation was never tested.** The commissioning path
+() has the Owner switching INTO the operator account, so at no
+point did both sessions do work at the same time.
+
+Nothing in the record is false about this. The risk is subtler: a reader arriving later sees
+a session-state precondition, sees stages passing under it, and concludes the arrangement
+was validated. **It was avoided.**
+
+### The framing that was missing from both sides
+
+The question was always posed as 「the operator works DISCONNECTED in the background」. On
+this machine that is not the interesting configuration, because measured 2026-08-05:
+
+
+
+The Owner is not on the console. So the configuration to test is **AromaOperator Active on
+the CONSOLE while the Owner is Active over RDP** — two Active sessions, neither disconnected.
+That **satisfies** the existing  requirement instead of fighting it, and no
+part of the record considered it because the commissioning path assumed the Owner would be at
+the console himself.
+
+**Still not established.** A console session with no human at it may be locked, and a locked
+session's rendering behaviour is the same open question. See
+ — three primitives, three states, nine results,
+and it needs no flag enabled because it is a Windows question rather than a Computer Operator
+one.
+
+---
+
 ## What must NOT happen
 
 - Do not turn `COMPUTER_OPERATOR` on to "see what happens". With `AGENT_BRIDGE=on` the result
