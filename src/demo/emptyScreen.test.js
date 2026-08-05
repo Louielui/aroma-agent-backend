@@ -179,3 +179,58 @@ test('*** the greeting route sits under a prefix the owner gate already covers *
   assert.deepEqual(ungated, [], 'these demo routes are not behind the owner gate')
   assert.ok(routes.includes('/api/v1/demo/greeting'), 'and the greeting is one of them')
 })
+
+/* ═══ 7. THE HEADER ROW IS SCAFFOLDING ON A BLANK SCREEN ═══════════════════ */
+
+test('*** the title and the dot are hidden while the conversation is empty ***', () => {
+  assert.ok(/#main\.empty[^{]*#conv-title/.test(APP_CSS) || /#main\.empty #conv-title/.test(APP_CSS), 'the title is hidden')
+  assert.ok(/#main\.empty[^{]*\.brand-mark/.test(APP_CSS), 'and the avatar dot with it')
+  assert.ok(/#main\.empty #topbar\s*\{[^}]*border-bottom:\s*none/.test(APP_CSS), 'and the divider line')
+})
+
+test('*** but ☰ SURVIVES — it is the only way back to a collapsed sidebar ***', () => {
+  // THE FUNCTIONAL REASON THE WHOLE ROW IS NOT HIDDEN. #expand lives inside #topbar and is
+  // the only control that reopens a collapsed sidebar. Hiding the row would strand the Owner
+  // on a blank screen with no way to reach his conversations — which is exactly when he
+  // would want them.
+  const empty = APP_CSS.slice(APP_CSS.indexOf('#main.empty #topbar'), APP_CSS.indexOf('#main.empty #topbar') + 300)
+  assert.equal(/#expand/.test(empty), false, '#expand is never hidden by the empty state')
+  assert.equal(/#main\.empty #topbar\s*\{[^}]*display:\s*none/.test(APP_CSS), false, 'the row itself is not removed')
+})
+
+test('hiding uses visibility, so the row keeps its height and nothing jumps', () => {
+  const rule = APP_CSS.slice(APP_CSS.indexOf('#main.empty .brand-mark'), APP_CSS.indexOf('#main.empty .brand-mark') + 160)
+  assert.ok(/visibility:\s*hidden/.test(rule), 'visibility, not display: ' + rule)
+})
+
+test('the header returns with the first message — it is the same class and nothing else', () => {
+  // No JS involved: the empty class is already added and removed by renderEmptyScreen /
+  // clearEmptyScreen, so the header comes back unchanged with the first turn.
+  assert.equal(/conv-title[^\n]*(hidden|display)/.test(APP_JS), false, 'the client does not touch the header')
+})
+
+/* ═══ 8. THE FOOTER NOTE ═══════════════════════════════════════════════════ */
+
+test('*** the footer keeps the LOCAL-DEMO fact, which nothing else states ***', () => {
+  const m = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)
+  assert.ok(m, 'the note still exists')
+  const note = m[1]
+  assert.ok(/本機示範/.test(note), 'the one thing the placeholder does not say: ' + note)
+  assert.equal(/唔會|冇|嘢|咩/.test(note), false, 'written Traditional Chinese now: ' + note)
+})
+
+test('*** and it keeps the BROADER approval claim — the placeholder\'s is narrower ***', () => {
+  // NOT the same statement, which is why this was not deleted. The placeholder promises
+  // approval for FILE CHANGES; this promises it for ANY action. Dropping it to tidy the
+  // screen would have narrowed a governance claim without saying so.
+  const note = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)[1]
+  const placeholder = /<textarea id="msg"[^>]*placeholder="([^"]+)"/.exec(INDEX)[1]
+  assert.ok(/改檔案/.test(placeholder), 'the placeholder is scoped to file changes: ' + placeholder)
+  assert.ok(/任何動作|所有動作/.test(note), 'the note is scoped to every action: ' + note)
+  assert.ok(/批准/.test(note))
+})
+
+test('the note is short enough to read as one line', () => {
+  const note = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)[1]
+  assert.ok(note.length <= 22, note.length + ' chars — ' + note)
+})

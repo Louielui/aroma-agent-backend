@@ -581,6 +581,15 @@ button[disabled] { opacity: .45; cursor: default; }
 #main.empty { justify-content: center; }
 #main.empty #log { flex: 0 0 auto; overflow: visible; padding-bottom: 0; }
 #main.empty #composer { position: static; background: none; }
+/* THE HEADER ROW IS SCAFFOLDING ON A BLANK SCREEN — but the ROW stays.
+   #expand (☰) lives in #topbar and is the ONLY control that reopens a collapsed sidebar,
+   so hiding the row would strand the Owner on an empty screen with no way back to his
+   conversations. The title, the dot and the divider go; the row and its button remain.
+   visibility, not display: the row keeps its height, so nothing jumps when the first
+   message arrives and the header returns. */
+#main.empty #topbar { border-bottom: none; }
+#main.empty .brand-mark, #main.empty #conv-title { visibility: hidden; }
+
 .empty-greeting {
   text-align: center;
   font-size: var(--greeting-size);
