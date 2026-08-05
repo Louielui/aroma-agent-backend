@@ -30,6 +30,7 @@ the finding belongs in a real test under `src/`, not here.
 |---|---|---|---|
 | `contractVariable.js` | Does `CONVERSATION_CONTRACT` cause an explicit change request to be classified as non-commit? | **No.** `mode='ask'` with the contract both on and off. Candidate eliminated. | 2026-08-05 |
 | `commitExample.js` | Does the classifier prompt's OWN commit example produce `mode='commit'`, and if so do steps 3–5 hold? | **`commit` — with ZERO tasks.** Refused at `no_actionable_task`. Steps 3–5 still unexercised. | 2026-08-05 |
+| `auditWiring.js` | Is the agent audit store wired in the REAL assembly under the launcher's env — not merely where `app.js` is read? | **Yes.** `agentAuditConfigured: true`, artifact root resolves, one real record on disk. No model call. | 2026-08-05 |
 
 ### What the two probes together establish
 
