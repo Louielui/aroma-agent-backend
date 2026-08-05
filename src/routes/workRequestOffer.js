@@ -99,17 +99,34 @@ function refusesChange (message) {
  *          null whenever anything at all is uncertain — see the asymmetry note in
  *          requestShape.js: a missed offer costs exactly what today costs.
  */
-function offerFor (input = {}) {
+/**
+ * THE DECISION, WITH ITS REASON. Firing and declining are both recorded.
+ *
+ * The first version returned an offer or null and logged nothing either way. It fired
+ * correctly on the Owner's message, reached the browser, and was discarded by a dispatch
+ * ordering defect — and because nothing was traced, finding that took reasoning about the
+ * code rather than reading a line. The classifier's verdict was in the log for that exact
+ * turn; the offer's was not.
+ *
+ * That is the shape this project has removed five times. Reintroducing it in new code, by
+ * the same hand that removed it, is why every branch below now names itself.
+ *
+ * The reason is a SHORT ENUM. It travels to the outcome log, which can never carry content.
+ *
+ * @returns {{ offer: object|null, reason: string|null }}
+ */
+function explainOffer (input = {}) {
   // The model path owns the turn when it worked. Not two offers for one sentence.
-  if (input.hasProposal === true) return null
+  if (input.hasProposal === true) return { offer: null, reason: 'model_path_owns_turn' }
 
   const message = typeof input.message === 'string' ? input.message : ''
 
   // 1. IS IT A REQUEST? The judgement the classifier used to make silently.
-  if (!isChangeRequest(message).ok) return null
+  const shape = isChangeRequest(message)
+  if (!shape.ok) return { offer: null, reason: shape.reason }
   // 1b. AND AGAIN, INDEPENDENTLY, FOR NEGATION ONLY. See the header for why this one
   //     concept deliberately has two implementations.
-  if (refusesChange(message)) return null
+  if (refusesChange(message)) return { offer: null, reason: 'negated_proximity' }
 
   // 2. WHAT IS THE REQUEST? The existing reader, with the CONVERSATION DELIBERATELY EMPTY.
   //    The existing path may fall back to a path named earlier in the conversation, because
@@ -120,10 +137,15 @@ function offerFor (input = {}) {
 
   // 3. NOTHING LEFT TO ASK. If inferWorkRequest still has a question, that question belongs
   //    to the conversational path; an offer is for a request that is already complete.
-  if (read.question !== null) return null
-  if (!read.file || !read.intent) return null
+  //    A protected path lands here too — it leaves a question, by design.
+  if (read.question !== null || !read.file || !read.intent) return { offer: null, reason: 'incomplete' }
 
-  return { file: read.file, intent: read.intent, source: 'deterministic' }
+  return { offer: { file: read.file, intent: read.intent, source: 'deterministic' }, reason: null }
 }
 
-module.exports = { offerFor, refusesChange }
+/** The thin form the callers already use. */
+function offerFor (input = {}) {
+  return explainOffer(input).offer
+}
+
+module.exports = { offerFor, explainOffer, refusesChange }

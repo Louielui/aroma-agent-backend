@@ -695,14 +695,25 @@
       return b
     }
     if (res.stage === 'SHADOW_ONLY') return renderDraft(res)
-    if (res.demoOutcome === 'execution_proposal' || res.demoOutcome === 'clarification') return renderProposal(res, conv)
+    /* A REAL PROPOSAL WINS. The model path produced one and a card is coming; the offer
+       must not pre-empt it. offerFor already declines when a proposal exists, and this
+       ordering agrees rather than relying on that alone. */
+    if (res.demoOutcome === 'execution_proposal') return renderProposal(res, conv)
+
     /* THE DETERMINISTIC ENTRANCE — one sentence and a button, never a filled-in card.
+     *
+     * ORDER IS THE WHOLE FIX. This sat BELOW the clarification branch, so it was dead code
+     * on exactly the turn it exists for: `clarification` IS the model declining to produce
+     * a task, which is the case the deterministic entrance rescues. The offer was computed
+     * correctly, travelled to the browser, and was thrown away here.
      *
      * The Owner's condition, treated as necessary: a false trigger must cost one glance. A
      * rendered card invites a reflex approval, and he has said plainly that he had been
      * approving from memory rather than from what was on the screen. Nothing exists at this
      * point — no Task, no Proposal, no sealed order. Pressing the button is what creates. */
     if (res.workRequestOffer) return renderOffer(res.workRequestOffer, conv)
+
+    if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
     return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'), conv)
   }

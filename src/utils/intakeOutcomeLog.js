@@ -43,14 +43,21 @@ const FIELDS = Object.freeze([
   // classifier now logs its own.
   'mode', // 'commit' | 'recommend' | 'ask' | 'chat' — what the MODEL returned
   'clarificationReason', // short enum: 'not_a_commit_intent' | 'multiple_tasks_narrow_to_one' | 'no_actionable_task'
-  'modeCoerced' // boolean — the model sent a value we do not recognise; see distillPrompt
+  'modeCoerced', // boolean — the model sent a value we do not recognise; see distillPrompt
+  // ── THE DETERMINISTIC ENTRANCE — added 2026-08-05 ───────────────────────────────
+  // The offer fired correctly, reached the browser, and was discarded by a client
+  // ordering defect — and it logged nothing either way, so finding that took reasoning
+  // about the code rather than reading a line. The classifier logs its verdict; so does
+  // the offer now.
+  'workRequestOffer', // boolean — did an offer travel with this turn
+  'offerDeclined' // short enum — which check declined it, when one did
 ])
 
 const NUMERIC = new Set(['httpStatus', 'latencyMs', 'inputTokens', 'outputTokens'])
 // `modeCoerced` is a BOOLEAN on purpose. The raw string the model sent is model output, and
 // the discipline above is that this record can never contain model output. Whether it was
 // recognised is a fact about our parser; what it said goes to console.warn instead.
-const BOOLEAN = new Set(['fallbackUsed', 'modeCoerced'])
+const BOOLEAN = new Set(['fallbackUsed', 'modeCoerced', 'workRequestOffer'])
 const MAX_ENUM_CHARS = 64 // a short enum can never smuggle content
 
 function project (input) {

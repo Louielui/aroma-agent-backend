@@ -30,7 +30,7 @@ const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
-const { offerFor } = require('./workRequestOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
+const { explainOffer } = require('./workRequestOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
@@ -357,7 +357,12 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         // THE FIELD APPEARS ONLY WHEN IT FIRES, so a turn that is not a change request is
         // byte-identical to before — the rule that a consumer must not gain a field for a
         // reason unrelated to it is narrowed here, not abandoned.
-        const offer = offerFor({ message, hasProposal: carriesProposal })
+        const offerDecision = explainOffer({ message, hasProposal: carriesProposal })
+        const offer = offerDecision.offer
+        // RECORDED EITHER WAY. A decision that leaves no trace is not observable, and this
+        // one fired, reached the browser and was thrown away without a single log line.
+        telemetry.workRequestOffer = offer !== null
+        telemetry.offerDeclined = offerDecision.reason
         const withOffer = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
 
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
