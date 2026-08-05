@@ -308,3 +308,101 @@ domain-scoped `WebFetch` list, and the test-runner entries. They are ordinary de
 **A 399-entry allow list is not reviewable, and an unreviewable list is where a `git push *`
 hides for months.** The durable fix is not a shorter list — it is that the clone carries no
 list at all and the fence is environmental. See `AROMA-SYSTEM-WORKING-MODEL.md` Part 2.
+
+---
+---
+
+# THIRD PASS — the 72 removed, group D ruled, and a FOURTH pocket found
+
+Backup before this pass: `scratchpad/settings.local.json.bak3-pre-72-and-D`.
+
+## Executed
+
+| | |
+|---|---|
+| removed as "the 72" | **73** — one more than reported, because the pattern was widened to `decisionRecall`/`bindConfig`/`artifactDir`, which are agent-repo modules under the same definition |
+| removed by group D ruling | **7** |
+| added by group D ruling | **9** |
+| **allow** | **273 → 202** |
+| deny / ask | 20 / 0, unchanged |
+
+### Group D, as ruled
+
+| removed | replaced with | why |
+|---|---|---|
+| `Bash(git checkout *)` | `Bash(git switch *)` · `Bash(git show *)` | refs and reads only; **the discard case now prompts**, which is the moment to ask |
+| `Bash(npm run *)` | `npm run check*` · `build*` · `dev*` · `test*` | a new script in `package.json` no longer arrives pre-approved |
+| `Bash(taskkill //F //IM node.exe //T)` | `Bash(taskkill //F //PID *)` | kill the port's PID, not every `node.exe`. `netstat -ano` (already allowed) is how the PID is found |
+| `Bash(pnpm add *)` · `Bash(npm install *)` · `Bash(pnpm install *)` | `Bash(pnpm install)` · `Bash(pnpm install --frozen-lockfile)` | **`pnpm install *` was removed too**: the wildcard admits `pnpm install <package>`, which is `add` under another name and would have defeated the ruling |
+| `Bash(rm -rf __TRACKED_VAR__/stagetest/*)` | — | no current use |
+
+---
+
+# ⚠ ANSWER TO 「does any category remain?」 — YES. 57 more, in three pockets
+
+**Not removed.** Reported, as instructed.
+
+## Pocket 4 — release-records, backup and disk automation · **17**
+
+```
+Bash(powershell.exe … Start-ScheduledTask -TaskName 'AromaReleaseRecords-B2Sync')
+Bash(cmd //c "C:\Users\louis\AppData\Local\Aroma\aroma-releaserecords-sync.cmd")
+Bash(RCLONE="/c/Users/louis/AppData/Local/Aroma/bin/rclone.exe" *)
+Bash(powershell.exe … -File "C:\Aroma\diagnostics\query-events.ps1")
+Bash(powershell.exe … Get-Disk / Get-Volume / Win32_DiskDrive / Get-PnpDevice)
+```
+
+The offsite-backup and scheduler work. Nothing to do with this repo.
+
+## Pocket 5 — agent-backend source, flags, ports and PRs · **34**
+
+```
+Bash(node -e "…require('./src/context/googleAuth')…")     ← agent repo module
+Bash(node -e "…require('./src/agent/agentAuthorization')…")
+Bash(node -e "…require('./src/routing/modelRouter')…")
+Bash(unset ANTHROPIC_API_KEY LLM_PROVIDER DECISION_RECALL WORKER_INVOCATION …)   ← ×8 variants
+Bash(gh pr create --base main --head feat/agent-bridge-v0 …)                     ← an Agent Bridge PR
+PowerShell(Get-NetTCPConnection -LocalPort 8090 …)                               ← 香香's port
+Bash(where.exe claude *) · Bash(claude --version) · Bash([ -d "$HOME/.claude" ])
+```
+
+The `curl` calls to `:8090` were removed in pass two; **these reach the same process by a
+different route.** Same defect, third spelling.
+
+## Pocket 6 — fragments and a dead placeholder · **6**
+
+```
+Bash(break)   Bash(r?)   Bash(echo)   Bash(exit 0)   Bash(system)
+Bash(mkdir -p __TRACKED_VAR__/stagetest)
+```
+
+Not commands — fragments captured by the approval prompt. **And the `mkdir` is the partner of
+the `rm -rf` just removed, with the same unexpanded `__TRACKED_VAR__` placeholder.** Deleting
+one of a pair is how a hazard survives a cleanup.
+
+---
+
+# THE REAL FINDING — the method is wrong, not the count
+
+**Three passes, three answers, and each pattern only found what the previous one missed.**
+The Owner asked whether a fourth pocket exists. It does — and the important part is that
+**this method cannot tell him when it is done.** Classifying by what should *not* be there
+means the next pass depends on imagining a spelling nobody has thought of yet.
+
+> ## The inverse is bounded, and this one is not.
+> **Keep only what is provably `aroma-system` development. Everything else re-prompts.**
+
+Measured against the current 202:
+
+| | |
+|---|---|
+| provably aroma-system development | **~45** — `localhost:3001`, vitest, `client/`, `server/`, drizzle, `package.json`, the git verbs, domain-scoped `WebFetch` |
+| everything else | ~157, of which 57 are already identified above and the rest are generic shell (`echo "exit: $?"`, `xargs wc -l`) that costs nothing to re-approve |
+
+**A permission that is genuinely needed is re-approved in seconds. One that is not never
+comes back.** That converts an unbounded audit into a single bounded decision — and it is the
+only version of this that ends.
+
+**Not done. Proposed.** The Owner has ruled three times on lists I produced; this is the
+fourth, and it should be the last one, because it is the only one whose completeness does not
+depend on my pattern-matching.
