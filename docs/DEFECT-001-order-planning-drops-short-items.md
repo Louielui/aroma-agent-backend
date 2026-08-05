@@ -1,8 +1,27 @@
 # DEFECT-001 — `/api/v1/ai/order-planning` silently omits short items
 
+> # ⛔ CAUSE DISPROVEN 2026-08-05. DO NOT DEPLOY THE PATCH.
+>
+> The cause stated below — **an INNER JOIN dropping ingredients absent from
+> `inventory_projected_state`** — **is wrong.** Disproven by the Owner's own read-only
+> measurement on the VPS:
+>
+> - the view has **199 rows**, the same as the active ingredient count, so **no ingredient is
+>   missing from it** and the INNER JOIN dropped nothing;
+> - `null_projected = 0`, and the view coalesces, so `projected_qty` **cannot** be NULL.
+>
+> **The planned fix therefore changes nothing.** `COALESCE(ips.projected_qty,
+> ri.current_stock)` never falls back when the left side is never NULL, and a LEFT JOIN adds
+> no row that an INNER JOIN never removed.
+>
+> **Still standing:** the two endpoints disagree about 18 items and neither response says so.
+> **No longer standing:** the cause, and with it the severity. Until the re-derivation at the
+> end of this file is settled, 「the kitchen is short 18 items」 is **NOT ESTABLISHED**.
+
 **Repo: `aroma-system` (production). NOT this repo. NOT fixed here — reported only.**
 **Found: 2026-08-05, by read-only measurement against live production.**
-**Severity: operational. It can cost stock, and it does so today, independent of any new build.**
+**~~Severity: operational. It can cost stock, and it does so today.~~ — severity WITHDRAWN
+pending the re-derivation; see the banner above.**
 
 ---
 
@@ -278,3 +297,101 @@ measurement.
 
 To be settled by `SHOW CREATE VIEW inventory_projected_state` and a `COUNT(*) … IS NULL`,
 read-only, on the VPS, before the fix is applied.
+
+---
+---
+
+# RE-DERIVATION — the cause is not a JOIN. It is two different stock numbers.
+
+**Owner measurement on the VPS, 2026-08-05, read-only:**
+
+```
+total_rows 199 | null_projected 0 | null_live 0 | null_incoming 0
+
+VIEW inventory_projected_state:
+  projected_qty       = ls.live_qty + coalesce(inc.incoming_qty, 0)
+  incoming_qty        = coalesce(inc.incoming_qty, 0)
+  suggested_order_qty = greatest(0, par_level - (live_qty + coalesce(incoming_qty,0)))
+  FROM inventory_live_state ls
+  LEFT JOIN inventory_incoming_state inc ON inc.ingredient_id = ls.ingredient_id
+```
+
+## Step 1 — the INNER JOIN is exonerated
+
+199 view rows against 199 active ingredients. Nothing to drop. **The original diagnosis was
+wrong**, and every conclusion resting on it goes with it.
+
+## Step 2 — so the 18 were excluded by the WHERE, not by the JOIN
+
+Old clause: `WHERE ips.projected_qty < ri.par_level`. Measured, `incoming_qty` is 0 on every
+row, so `projected_qty = live_qty`. The 18 therefore satisfy:
+
+```
+raw_ingredients.current_stock  <  par_level      ← /ai/inventory says SHORT
+inventory_live_state.live_qty  >=  par_level      ← /ai/order-planning says FINE
+```
+
+## Step 3 — the actual defect
+
+> ## `current_stock` and `live_qty` are two different numbers for the same thing, and they disagree for 18 items.
+
+`raw_ingredients.current_stock` is a **column on the master**. `inventory_live_state.live_qty`
+is **`SUM(ledger movements)`**. One is a stored figure; the other is derived from the movement
+ledger. Nothing reconciles them, and **no response says which one it used.**
+
+Six of the 18 are at `current_stock = 0` — Red Onion, Nestea, Ginger, Sealing Bags, Baking
+Powder, Dishwashing Liquid — while the ledger believes there is at least a par level of each.
+
+## Step 4 — WHICH ONE IS RIGHT IS UNKNOWN, and that decides everything
+
+| if authoritative | then |
+|---|---|
+| **the ledger** (`live_qty`) | `/ai/order-planning` was **right all along**. The kitchen is **not** short those 18. The wrong number is the 61, and `/ai/inventory` is the defective endpoint. |
+| **the master** (`current_stock`) | the ledger has drifted, order planning under-orders, and the original severity was right — **for a completely different reason**. |
+
+**This is a data question, not a code question**, and it is the Owner's to answer.
+
+## What survives from the original report
+
+- The two endpoints **do** disagree about 18 items — that measurement stands.
+- **Neither response says which stock source it used** — the silent-drop class, still true,
+  and now the more important half.
+- The `:256` fallback is still an untargeted `catch` returning plausible rows. Independent of
+  all this, still worth removing.
+
+## What `basis` is worth now — its premise is gone
+
+| value | status |
+|---|---|
+| `projected` | every row |
+| `projection_incomplete` | **structurally unreachable** — the view coalesces, so `projected_qty` cannot be NULL. Not「zero today」: impossible. |
+| `no_projection` | unreachable if the view is 1:1 with active ingredients, which 199 = 199 suggests but does not prove |
+
+**A branch that can never be taken is a positive control that could not have failed.** Shipping
+it would install something that reads as a safeguard and can never fire. `basis` as designed
+should not ship.
+
+**What the field should have distinguished, now that the real defect is known, is which STOCK
+SOURCE a row's number came from** — `master` or `ledger`. That is a genuine, reachable, and
+currently invisible distinction. But it belongs to a fix that has not been designed, because
+the question it depends on — which source is authoritative — is unanswered.
+
+## The one query that settles the remaining ambiguity
+
+Read-only. Returns the 61 with both numbers side by side, and shows whether any of them is
+genuinely missing a view row:
+
+```sql
+SELECT ri.name, ri.unit, ri.par_level, ri.current_stock,
+       ips.live_qty, ips.incoming_qty, ips.projected_qty,
+       (ips.ingredient_id IS NULL) AS missing_from_view
+FROM raw_ingredients ri
+LEFT JOIN inventory_projected_state ips ON ips.ingredient_id = ri.id
+WHERE ri.is_active = 1 AND ri.is_purchasable = 1
+  AND ri.current_stock < ri.par_level
+ORDER BY (ri.par_level - ri.current_stock) DESC;
+```
+
+`missing_from_view = 1` anywhere would revive part of the original diagnosis. All zeros
+confirms the re-derivation above, and the `live_qty` column shows the size of the
+disagreement item by item.
