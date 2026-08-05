@@ -169,7 +169,20 @@ function calcSentence (message) {
  * A converter that answers 「2 kg 等於幾多毫升？」 is worse than no converter at all: a
  * kilogram of flour is not a litre of flour, and the number would look authoritative.
  */
+/**
+ * CHINESE UNITS ARE THE NORMAL CASE, NOT AN EDGE CASE. Owner instruction, 2026-08-04, after
+ * 「5磅是多少公斤？」 fell through and read all five sources.
+ *
+ * `per` is the amount in the dimension's base unit (g, ml, cm). Temperature is NOT here —
+ * it is an offset scale, not a ratio, and multiplying it would be wrong. See TEMPERATURE.
+ *
+ * `note` marks a unit whose size is genuinely ambiguous. A cup is 236.588 ml in US
+ * customary and 250 ml metric; the answer states which one it used rather than picking one
+ * silently, because a recipe scaled with the wrong cup is a real loss and an unlabelled
+ * number hides it.
+ */
 const UNITS = Object.freeze({
+  // ── mass, base g ──
   g: { dim: 'mass', per: 1, name: 'g' },
   克: { dim: 'mass', per: 1, name: 'g' },
   kg: { dim: 'mass', per: 1000, name: 'kg' },
@@ -180,42 +193,132 @@ const UNITS = Object.freeze({
   磅: { dim: 'mass', per: 453.59237, name: 'lb' },
   oz: { dim: 'mass', per: 28.349523125, name: 'oz' },
   安士: { dim: 'mass', per: 28.349523125, name: 'oz' },
+  盎司: { dim: 'mass', per: 28.349523125, name: 'oz' },
+  // ── volume, base ml ──
   ml: { dim: 'volume', per: 1, name: 'ml' },
   毫升: { dim: 'volume', per: 1, name: 'ml' },
   l: { dim: 'volume', per: 1000, name: 'L' },
   公升: { dim: 'volume', per: 1000, name: 'L' },
-  升: { dim: 'volume', per: 1000, name: 'L' }
+  升: { dim: 'volume', per: 1000, name: 'L' },
+  cup: { dim: 'volume', per: 236.5882365, name: 'cup', note: 'US' },
+  cups: { dim: 'volume', per: 236.5882365, name: 'cup', note: 'US' },
+  杯: { dim: 'volume', per: 236.5882365, name: 'cup', note: 'US' },
+  tsp: { dim: 'volume', per: 4.92892159375, name: 'tsp', note: 'US' },
+  茶匙: { dim: 'volume', per: 4.92892159375, name: 'tsp', note: 'US' },
+  tbsp: { dim: 'volume', per: 14.78676478125, name: 'tbsp', note: 'US' },
+  湯匙: { dim: 'volume', per: 14.78676478125, name: 'tbsp', note: 'US' },
+  gallon: { dim: 'volume', per: 3785.411784, name: 'gallon', note: 'US' },
+  gallons: { dim: 'volume', per: 3785.411784, name: 'gallon', note: 'US' },
+  加侖: { dim: 'volume', per: 3785.411784, name: 'gallon', note: 'US' },
+  // ── length, base cm ──
+  cm: { dim: 'length', per: 1, name: 'cm' },
+  厘米: { dim: 'length', per: 1, name: 'cm' },
+  公分: { dim: 'length', per: 1, name: 'cm' },
+  m: { dim: 'length', per: 100, name: 'm' },
+  米: { dim: 'length', per: 100, name: 'm' },
+  ft: { dim: 'length', per: 30.48, name: 'ft' },
+  feet: { dim: 'length', per: 30.48, name: 'ft' },
+  呎: { dim: 'length', per: 30.48, name: 'ft' },
+  英尺: { dim: 'length', per: 30.48, name: 'ft' },
+  inch: { dim: 'length', per: 2.54, name: 'inch' },
+  inches: { dim: 'length', per: 2.54, name: 'inch' },
+  吋: { dim: 'length', per: 2.54, name: 'inch' },
+  英寸: { dim: 'length', per: 2.54, name: 'inch' }
 })
 
-const UNIT_RE = new RegExp('(' + Object.keys(UNITS).sort((a, b) => b.length - a.length).join('|') + ')', 'gi')
+/**
+ * TEMPERATURE IS SEPARATE, because it is an offset scale: 0 °C is not 0 °F, so `per` cannot
+ * express it. 度 on its own is AMBIGUOUS and is resolved only when the other side of the
+ * question names a scale — 「180度是多少華氏度？」 has an explicit target, so the source is
+ * Celsius. If BOTH sides are bare 度, this declines rather than guessing which scale the
+ * Owner meant.
+ */
+const TEMPERATURE = Object.freeze({
+  '°c': 'C', '℃': 'C', 攝氏: 'C', celsius: 'C',
+  '°f': 'F', '℉': 'F', 華氏: 'F', fahrenheit: 'F',
+  度: '?', 度數: '?', degrees: '?', degree: '?'
+})
+
+/** Every token either table knows, longest first so 公斤 wins over 斤-like prefixes. */
+const UNIT_TOKENS = Object.freeze(
+  [...Object.keys(UNITS), ...Object.keys(TEMPERATURE)].sort((a, b) => b.length - a.length)
+)
+
+const isCjk = (s) => /[^\x00-\x7F]/.test(s)
+
+/**
+ * ONE VOCABULARY, SHARED. turnRouter builds its convert pattern from this rather than
+ * keeping its own list — the router had its own hand-written units and its own connector
+ * words, so 磅 and 公斤 were known to the answerer and invisible to the router, and every
+ * conversion the Owner typed fell through. Two tables for one feature is the same defect
+ * shape as a role string nothing sends.
+ *
+ * Latin tokens get a word boundary (so `m` does not match inside "minutes"); CJK tokens
+ * must NOT (磅 and 是 are both non-word characters, so there is no boundary between them —
+ * the `\b` that used to be here is precisely why nothing matched).
+ */
+function unitAlternation () {
+  const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const latin = UNIT_TOKENS.filter((t) => !isCjk(t)).map(esc)
+  const cjk = UNIT_TOKENS.filter(isCjk).map(esc)
+  return '(?:' + cjk.join('|') + '|(?:' + latin.join('|') + ')\\b)'
+}
+
+const UNIT_RE = new RegExp('(' + UNIT_TOKENS.map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|') + ')', 'gi')
+
+const lookup = (tok) => UNITS[String(tok).toLowerCase()] || UNITS[tok] || null
+const tempOf = (tok) => TEMPERATURE[String(tok).toLowerCase()] || TEMPERATURE[tok] || null
+
+/** C↔F, the one conversion that is not a ratio. */
+function temperatureSentence (amount, fromScale, toScale) {
+  // 度 on its own is resolved ONLY by the other side naming a scale. Both bare → decline.
+  let f = fromScale
+  let t = toScale
+  if (f === '?' && t === '?') return null
+  if (f === '?') f = t === 'C' ? 'F' : 'C'
+  if (t === '?') t = f === 'C' ? 'F' : 'C'
+  if (f === t) return null
+  const value = f === 'C' ? (amount * 9 / 5) + 32 : (amount - 32) * 5 / 9
+  if (!Number.isFinite(value)) return null
+  return `${tidy(amount)} °${f} = ${tidy(Math.round(value * 100) / 100)} °${t}。`
+}
 
 function convertSentence (message) {
   const s = String(message)
-  // The source: a number immediately followed by a known unit.
-  // NO `\b` HERE. A word boundary is a zero-width assertion and `\b?` — a quantifier on an
-  // assertion — silently stopped the whole pattern matching, so every conversion declined.
-  // A boundary would be wrong anyway: 磅 and 公斤 are not \w characters, so there is no
-  // boundary to find between 「磅」 and 「等」.
-  const src = new RegExp('(\\d[\\d,.]*)\\s*(' + Object.keys(UNITS).sort((a, b) => b.length - a.length).join('|') + ')', 'i').exec(s)
+  // The source: a number followed by a known token. Latin tokens carry a word boundary,
+  // CJK tokens must not — see unitAlternation().
+  const src = new RegExp('(\\d[\\d,.]*)\\s*' + unitAlternation(), 'i').exec(s)
   if (!src) return null
   const amount = Number(src[1].replace(/,/g, ''))
-  const from = UNITS[src[2].toLowerCase()] || UNITS[src[2]]
-  if (!Number.isFinite(amount) || !from) return null
+  if (!Number.isFinite(amount)) return null
+  const srcTok = src[0].slice(String(src[1]).length).trim()
 
-  // The target: a known unit appearing AFTER the source, not attached to a number.
+  // The target: the first known token appearing AFTER the source.
   const after = s.slice(src.index + src[0].length)
-  let to = null
-  for (const m of after.matchAll(UNIT_RE)) {
-    const u = UNITS[m[1].toLowerCase()] || UNITS[m[1]]
-    if (u) { to = u; break }
+  let toTok = null
+  for (const m of after.matchAll(UNIT_RE)) { toTok = m[1]; break }
+  if (!toTok) return null // nothing to convert into → decline
+
+  // Temperature first: it is a different kind of arithmetic, not a ratio.
+  const fs = tempOf(srcTok)
+  const ts = tempOf(toTok)
+  if (fs || ts) {
+    if (!fs || !ts) return null // 「5磅是多少度」 is not a conversion → decline
+    return temperatureSentence(amount, fs, ts)
   }
-  if (!to) return null                       // nothing to convert into → decline
-  if (to.dim !== from.dim) return null       // mass ↔ volume is not a conversion → decline
+
+  const from = lookup(srcTok)
+  const to = lookup(toTok)
+  if (!from || !to) return null
+  if (to.dim !== from.dim) return null       // mass ↔ volume ↔ length → decline
   if (to.name === from.name) return null     // nothing was asked
 
   const value = (amount * from.per) / to.per
   if (!Number.isFinite(value)) return null
-  return `${tidy(amount)} ${from.name} = ${tidy(Math.round(value * 1000) / 1000)} ${to.name}。`
+  // A unit whose size is ambiguous says which one was used, on either side of the sum.
+  const notes = [...new Set([from.note, to.note].filter(Boolean))]
+  const suffix = notes.length ? `（${notes.join('/')} 量度）` : ''
+  return `${tidy(amount)} ${from.name} = ${tidy(Math.round(value * 1000) / 1000)} ${to.name}${suffix}。`
 }
 
 /* ── the entry point ──────────────────────────────────────────────────────── */
@@ -242,4 +345,4 @@ function answerUtility (kind, message, opts = {}) {
   }
 }
 
-module.exports = { answerUtility, zoneLabel, UNITS }
+module.exports = { answerUtility, zoneLabel, UNITS, TEMPERATURE, UNIT_TOKENS, unitAlternation }

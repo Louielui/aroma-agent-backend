@@ -54,6 +54,7 @@
 const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { resolveFlag } = require('../context/flags')
+const { unitAlternation } = require('./utilityAnswer') // THE one unit vocabulary — never a second list
 
 /** Priority order, and the Owner's. Highest first; CONVERSATION is the fallback. */
 const ROUTES = Object.freeze(['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATION'])
@@ -68,6 +69,39 @@ const ROUTES = Object.freeze(['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATI
  * collide the confidence drops to 'low' (see below) rather than the router pretending to
  * be sure — and the shadow log is where the Owner will see whether that judgement holds.
  */
+/**
+ * THE CONVERSION PATTERN, BUILT FROM THE ANSWERER'S OWN VOCABULARY.
+ *
+ * ── THE DEFECT THIS REPLACES ─────────────────────────────────────────────────
+ * This used to be a hand-written list — `kg|g|lb|lbs|oz|ml|l|L|磅|公斤|克|安士|毫升|公升` —
+ * followed by `\b` and then a list of connector words (等於|換算|轉|to|in). Every part of
+ * that was wrong for how the Owner types:
+ *
+ *   • the `\b` after a CJK unit can never match: 磅 and 是 are both non-word characters, so
+ *     there is no boundary between 「磅」 and 「是」;
+ *   • the connector list assumed 等於/換算/轉, so 「5磅是多少公斤？」 and 「5磅幾多kg？」 —
+ *     his normal phrasings — matched nothing;
+ *   • and it was a SECOND vocabulary. utilityAnswer already knew 磅 and 公斤 and answered
+ *     them correctly; the router simply never handed them over. Every conversion he typed
+ *     fell through and read all five sources.
+ *
+ * My unit test passed throughout, because it called answerUtility('convert', …) directly
+ * and never crossed the router. It proved the answerer worked and said nothing about
+ * whether anything would ever call it — a false green of exactly the class this project has
+ * spent the week removing.
+ *
+ * ── THE SHAPE NOW ────────────────────────────────────────────────────────────
+ * STRUCTURAL, not connector-word based: a number, a unit, then ANOTHER unit within a short
+ * distance. That matches 是多少 / 等於幾多 / 幾多 / to / = without enumerating any of them,
+ * so a phrasing nobody thought of still works. Same-unit and cross-dimension pairs are
+ * matched here and DECLINED by the answerer, which is the right division: the router asks
+ * "is this a conversion question", the answerer decides whether it can be answered.
+ */
+function convertPattern () {
+  const u = unitAlternation() // THE one vocabulary — never a second list here
+  return new RegExp('\\d[\\d,.]*\\s*' + u + '[\\s\\S]{0,14}?' + u + '|換算|單位轉換', 'i')
+}
+
 const UTILITY_PATTERNS = Object.freeze([
   // 係 AND 是. The very question the Owner reported — 「現在是幾點？」 — used the written
   // form, and the first draft of this table only had the Cantonese one, so it missed the
@@ -77,7 +111,7 @@ const UTILITY_PATTERNS = Object.freeze([
   // A bare arithmetic expression: '12*34', '1,200 + 340'. Requires an operator between two
   // numbers, so a date, a version and an invoice number are all untouched.
   { kind: 'calc', re: /(?:^|[\s（(])\d[\d,.]*\s*[+\-*/×÷]\s*\d[\d,.]*(?:\s*[+\-*/×÷]\s*\d[\d,.]*)*\s*(?:=|\s*$|[?？])/ },
-  { kind: 'convert', re: /(\d[\d,.]*\s*(?:kg|g|lb|lbs|oz|ml|l|L|磅|公斤|克|安士|毫升|公升)\b.{0,12}(?:等於|換算|轉|=|\bto\b|\bin\b))|換算|單位轉換/i }
+  { kind: 'convert', re: convertPattern() }
 ])
 
 /** Does this message name a business entity the intent table knows? */

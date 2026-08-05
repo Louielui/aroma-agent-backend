@@ -159,3 +159,59 @@ test('an unknown kind returns null', () => {
   assert.equal(answerUtility('weather', '今日天氣點？', WPG()), null)
   assert.equal(answerUtility(null, 'x', WPG()), null)
 })
+
+/* ═══ 6. THE OWNER'S UNITS — CHINESE IS THE NORMAL CASE ════════════════════ */
+
+test('*** every unit the Owner named converts within its own dimension ***', () => {
+  const cases = [
+    ['5磅是多少公斤？', '5 lb = 2.268 kg。'],
+    ['2公斤等於幾多磅', '2 kg = 4.409 lb。'],
+    ['500克等於幾多安士', '500 g = 17.637 oz。'],
+    ['500克等於幾多盎司', '500 g = 17.637 oz。'],
+    ['6呎等於幾多米', '6 ft = 1.829 m。'],
+    ['6英尺等於幾多米', '6 ft = 1.829 m。'],
+    ['10吋幾多厘米', '10 inch = 25.4 cm。'],
+    ['10英寸幾多公分', '10 inch = 25.4 cm。'],
+    ['1加侖等於幾多公升', '1 gallon = 3.785 L（US 量度）。'],
+    ['3茶匙係幾多毫升', '3 tsp = 14.787 ml（US 量度）。'],
+    ['2湯匙係幾多毫升', '2 tbsp = 29.574 ml（US 量度）。'],
+    ['1杯等於幾多毫升', '1 cup = 236.588 ml（US 量度）。']
+  ]
+  for (const [q, want] of cases) {
+    const r = answerUtility('convert', q, WPG())
+    assert.equal(r && r.text, want, q)
+  }
+})
+
+test('*** an ambiguous unit says WHICH one it used ***', () => {
+  // A cup is 236.588 ml US and 250 ml metric. A recipe scaled with the wrong one is a real
+  // loss, and an unlabelled number hides it.
+  assert.ok(answerUtility('convert', '1杯等於幾多毫升', WPG()).text.includes('US 量度'))
+  assert.equal(answerUtility('convert', '2公斤等於幾多磅', WPG()).text.includes('量度'), false,
+    'a kilogram is not ambiguous and needs no note')
+})
+
+test('*** temperature converts, and 度 alone is resolved only by the other side ***', () => {
+  assert.equal(answerUtility('convert', '180度是多少華氏度？', WPG()).text, '180 °C = 356 °F。')
+  assert.equal(answerUtility('convert', '350華氏度係幾多攝氏度', WPG()).text, '350 °F = 176.67 °C。')
+  assert.equal(answerUtility('convert', '180攝氏度等於幾多華氏度', WPG()).text, '180 °C = 356 °F。')
+  // Both sides bare: nothing disambiguates them, so it declines rather than picking a scale.
+  assert.equal(answerUtility('convert', '180度等於幾多度', WPG()), null)
+})
+
+test('*** a DENSITY question is refused — a cup of flour is not a cup of water ***', () => {
+  // 杯 is supported, and 杯→毫升 works. 杯→克 crosses volume into mass and depends on what
+  // is in the cup, so it declines and the turn falls to CONVERSATION.
+  for (const q of ['1杯麵粉幾多克', '1杯水幾多克', '2公斤等於幾多毫升', '500毫升等於幾多克']) {
+    assert.equal(answerUtility('convert', q, WPG()), null, q)
+  }
+})
+
+test('length does not cross into mass either', () => {
+  assert.equal(answerUtility('convert', '10米等於幾多公斤', WPG()), null)
+})
+
+test('mixed script and no connector word at all still work', () => {
+  assert.equal(answerUtility('convert', '5磅是多少kg', WPG()).text, '5 lb = 2.268 kg。')
+  assert.equal(answerUtility('convert', '5磅幾多kg？', WPG()).text, '5 lb = 2.268 kg。')
+})

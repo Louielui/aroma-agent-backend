@@ -186,3 +186,65 @@ test('*** a utility turn is stored in conversation history like any other ***', 
   assert.equal(typeof t.res.replyForArchive, 'string', 'the Lab archive path sees it too')
   assert.equal(t.res.requestId != null, true, 'and it is a turn with an id, not a side effect')
 })
+
+/* ═══ 6. THE OWNER'S OWN PHRASINGS — ROUTER AND ANSWERER TOGETHER ══════════ */
+
+/**
+ * THE GAP THAT LET 「5磅是多少公斤？」 THROUGH.
+ *
+ * `answerUtility` handled that question correctly from the first commit. The ROUTER never
+ * classified it as UTILITY, so the answerer was never reached and the turn fell through to
+ * the old path — five sources read, then 「讀取成功但砌唔出可靠嘅答案」.
+ *
+ * MY UNIT TEST "PASSED" THE WHOLE TIME because it called answerUtility('convert', …)
+ * DIRECTLY, bypassing the router. It proved the answerer worked and said nothing about
+ * whether anything would ever call it. Two vocabularies for one feature — one in the router,
+ * one in the answerer — is the same defect shape as the 'louie' role string that nothing
+ * ever sent.
+ *
+ * These tests therefore go through `routeTurn`, and the end-to-end ones through
+ * `processIntake`. A conversion test that does not cross the router proves nothing.
+ */
+
+const { routeTurn } = require('./turnRouter')
+
+test('*** the Owner\'s conversion phrasings all reach UTILITY ***', () => {
+  const mine = [
+    '5磅是多少公斤？', '5磅等於幾多公斤？', '5磅幾多kg？', '5磅是多少kg',
+    '2公斤等於幾多磅', '500克等於幾多安士', '1杯麵粉幾多克', '3茶匙係幾多毫升',
+    '6呎等於幾多米', '10吋幾多厘米', '1加侖等於幾多公升', '180度是多少華氏度？'
+  ]
+  const missed = mine.filter((q) => routeTurn(q).route !== 'UTILITY')
+  assert.deepEqual(missed, [], 'the router must reach the answerer for these')
+})
+
+test('*** and end to end, 「5磅是多少公斤？」 reads nothing ***', async () => {
+  const t = await turn('5磅是多少公斤？')
+  assert.deepEqual(t.reads, [], 'THE REPORTED DEFECT: this read all five sources')
+  assert.equal(t.modelCalls.length, 0, 'and produced the composition fallback')
+  assert.equal(t.res.reply, '5 lb = 2.268 kg。', 'got: ' + t.res.reply)
+})
+
+test('mixed script is the normal case, not an edge case', async () => {
+  const t = await turn('5磅是多少kg')
+  assert.deepEqual(t.reads, [])
+  assert.equal(t.res.reply, '5 lb = 2.268 kg。')
+})
+
+test('*** the refusals all survive the wider vocabulary ***', async () => {
+  // Every one of these must still fall through rather than answer.
+  for (const q of ['2公斤等於幾多毫升', '500毫升等於幾多克', '5桶等於幾多公斤', '5磅']) {
+    const t = await turn(q)
+    assert.equal(t.modelCalls.length, 1, q + ' must NOT be answered by the utility')
+  }
+})
+
+test('*** the router and the answerer share ONE unit vocabulary ***', () => {
+  // The structural fix, not just the symptom. If the router builds its own list again, a
+  // unit can be known to one half and invisible to the other — which is exactly what
+  // happened.
+  const src = fs.readFileSync(path.join(__dirname, 'turnRouter.js'), 'utf8')
+  assert.ok(/require\(['"]\.\/utilityAnswer['"]\)/.test(src), 'the router derives its units from the answerer')
+  assert.equal(/磅|公斤|毫升|安士/.test(src.replace(/\/\*[\s\S]*?\*\//g, '').split('\n').filter((l) => !/^\s*\/\//.test(l)).join('\n')),
+    false, 'no second hand-written unit list in the router')
+})
