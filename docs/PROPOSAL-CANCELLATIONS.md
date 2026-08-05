@@ -49,3 +49,39 @@ is not durable storage, and the artifact store's kinds (`tasks`, `results`, `age
 `computer-audit`) have no place for a proposal-lifecycle record. So the audit trail for an
 approval decision survives only as long as the log file does. That is a real gap and it is
 larger than this cleanup.
+
+---
+
+## 2026-08-05 — one proposal cancelled as residue of a stale browser tab
+
+**Owner instruction, verbatim:** 「it is residue from the stale-tab session where the reject
+never reached the server, not a decision I made. Same treatment as the three from before.」
+
+| id | created | cancelled |
+|---|---|---|
+| `prop_fed3ca71` | 2026-08-05T17:11:45Z | 2026-08-05, same day |
+
+**Why it existed — a different cause from the four above.** The reject button had already
+been fixed to call the server (`9da8f4c`), and the running process was serving the fixed
+code. But `demoHtml.js` inlines `app.js` **at require() time**, and the Owner's browser tab
+had been loaded before that restart. Sealing a Work Order still worked, because that path was
+unchanged; the reject handler in his tab was the old one that called nothing.
+
+So: he rejected the card, the screen said so, and nothing reached the server. The proposal
+stayed pending and no `approval.rejected` event was written. Confirmed at the time from the
+store and the log — only `approval.sealed` was present.
+
+**Cancelled through the governed route**, `POST /api/v1/proposals/:id/cancel`, service-token
+guarded, `cancelledBy` server-supplied. Returned 200 `status=cancelled cancelledBy=louie`.
+Afterwards: **0 pending**, 5 cancelled, 4 confirmed.
+
+### The operational trap this exposed, which is not fixed
+
+**A client change requires a hard reload, and nothing tells the Owner that.** The demo page
+sends `Cache-Control: no-cache`, and the assets are inlined at require() time, so a restart
+updates what the SERVER would send — but a tab already open keeps running the old script
+indefinitely. Every path that did not change keeps working, which is what makes it
+convincing: the card sealed, the button appeared, only the fixed behaviour was missing.
+
+Not fixed, deliberately, and not proposed as part of this cleanup. A version stamp the page
+compares against the server would close it. Raised with the Owner; no decision yet.
