@@ -257,6 +257,18 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         opts.telemetry = telemetry
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
         const result = await processIntakeFn(message, adapter, history || [], opts)
+
+        // ── THE OFFER DECISION, COMPUTED BEFORE THE LINE IS WRITTEN ───────────
+        // It used to be computed a hundred lines below, AFTER emit() had already written
+        // the outcome record — so the two fields were correct, allowlisted, and could
+        // never appear. Correct instrumentation written after the thing that reads it is
+        // not instrumentation; it is a variable. (HR-8, second instance.)
+        const hasProposalAlready = !!(result && typeof result === 'object' && !Array.isArray(result) &&
+          Array.isArray(result.proposals) && result.proposals.length > 0)
+        const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready })
+        telemetry.workRequestOffer = offerDecision.offer !== null
+        telemetry.offerDeclined = offerDecision.reason
+
         emit('success', 200, null)
         // WHO ACTUALLY ANSWERED. The Owner can pick a provider, but a failed attempt
         // falls back, so the pick is not a promise. `servedBy` is read from the
@@ -357,12 +369,9 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         // THE FIELD APPEARS ONLY WHEN IT FIRES, so a turn that is not a change request is
         // byte-identical to before — the rule that a consumer must not gain a field for a
         // reason unrelated to it is narrowed here, not abandoned.
-        const offerDecision = explainOffer({ message, hasProposal: carriesProposal })
+        // Decided and recorded above, before emit(). carriesProposal is recomputed there
+        // from the same result, so the two cannot disagree.
         const offer = offerDecision.offer
-        // RECORDED EITHER WAY. A decision that leaves no trace is not observable, and this
-        // one fired, reached the browser and was thrown away without a single log line.
-        telemetry.workRequestOffer = offer !== null
-        telemetry.offerDeclined = offerDecision.reason
         const withOffer = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
 
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────

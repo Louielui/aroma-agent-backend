@@ -253,3 +253,56 @@ so the boundary is exercised under the configuration that actually runs. Keep th
 Do **not** widen an intent's declared sources to make a test convenient — the Owner's Step 3
 ruling stands: declared sources are a hint about where an answer might live, not an
 authorisation to read.
+
+---
+
+## M-5 — THE CLASSIFIER IS NON-DETERMINISTIC ON THE SAME SENTENCE
+
+**Opened 2026-08-05. This is the finding of the day, above everything else in that round.**
+
+Two turns, twenty-six minutes apart, the same message —
+「幫我改 docs/canary/agent-canary.md，第二行改成 line 3」 — same model
+(`claude-haiku-4-5-20251001`), same prompt, same flags:
+
+```
+2026-08-05T18:01:24.318Z  mode=ask     clarificationReason=not_a_commit_intent
+2026-08-05T18:27:35.064Z  mode=commit  clarificationReason=null
+```
+
+The first produced nothing. The second produced `prop_c5755867`, a Work Order card, and a
+clean rejection.
+
+### Why this matters more than any of the phrasing work
+
+**It is not 「this phrasing fails」. It is 「this phrasing sometimes fails」.**
+
+The Owner's framing, recorded because it is the useful half: *that explains why she has felt
+unreliable rather than broken.* A phrasing that fails every time is a bug you find and fix.
+One that fails half the time is experienced as a system that cannot be trusted, with no
+reproducible defect to point at.
+
+**And it invalidates the method, not just a conclusion.** Every phrasing result recorded on
+2026-08-05 — including the two paid probes and the conclusion that 「幫我改」 fails while
+「幫我把…改成」 works — is a SINGLE SAMPLE of a non-deterministic process. They were reported
+as findings about phrasing. They are findings about one draw each.
+
+The probes in `scripts/probes/` say what they measured, and they measured honestly. What
+none of them said is that one sample cannot distinguish a phrasing effect from variance.
+
+### What is NOT known
+
+- the rate. Two samples, one each way, is not a measurement.
+- whether temperature, prompt caching, context length or something else drives it.
+- whether it varies by phrasing at all, once variance is accounted for.
+
+### What would settle it, if it is ever worth paying for
+
+The same message N times in one sitting, nothing else changed, counting the modes. At ~6.2k
+input tokens per call, ten samples is roughly 62k tokens. **Not approved and not proposed —
+recorded so the question is askable later.**
+
+### What it does NOT block
+
+The deterministic entrance exists precisely so the card does not depend on this. Its value
+went UP with this finding, not down: an unreliable classifier is a worse thing to depend on
+than a merely wrong one.

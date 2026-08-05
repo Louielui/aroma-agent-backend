@@ -112,3 +112,25 @@ test('the reason is a short enum — never the message, never a path', () => {
   assert.equal(/private|secret|幫我/.test(json), false, 'content rode in the reason: ' + json)
   assert.ok(d.reason === null || d.reason.length <= 32)
 })
+
+/* ═══ 4. THE RECORD MUST BE WRITTEN BEFORE THE LINE IS EMITTED ═══════════ */
+
+test('*** the offer telemetry is set BEFORE emit() writes the line ***', () => {
+  // The second instance of HR-8, inside the fix for the first. The fields were on the
+  // allowlist and correctly named, and set at line 364 while emit() wrote the record at
+  // line 260 — so they could never appear. Correct instrumentation, written after the thing
+  // that reads it, is not instrumentation; it is a variable.
+  const setAt = ROUTER.indexOf('telemetry.workRequestOffer')
+  const emitAt = ROUTER.indexOf("emit('success'")
+  assert.ok(setAt > 0 && emitAt > 0, 'markers not found')
+  assert.ok(setAt < emitAt,
+    'the offer decision is recorded after the outcome line is written — it can never appear')
+})
+
+test('the decision is computed from the result the turn actually produced', () => {
+  // Moving it earlier must not change WHAT it decides: a turn that already carries a
+  // proposal still declines with model_path_owns_turn.
+  const at = ROUTER.indexOf('explainOffer(')
+  const body = ROUTER.slice(at, at + 300)
+  assert.ok(/hasProposal:/.test(body), 'the proposal check was dropped in the move')
+})
