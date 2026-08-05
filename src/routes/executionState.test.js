@@ -63,11 +63,24 @@ test('*** NULL IS NOT FALSE — the two states must not collapse ***', () => {
 
 /* ═══ 2. IT IS GUARDED LIKE ITS SIBLINGS ═════════════════════════════════ */
 
-test('*** it goes through the same transport refusal as every other owner route ***', () => {
+test('*** it is loopback-gated — and the WRITE surface still refuses anything but POST ***', () => {
+  // My first version reused transportRefusal, which opens by refusing any method that is not
+  // POST. It 403d on every call: an observability route that could not be observed. The fix
+  // is a read-side check BESIDE it, never a relaxation of the write-side one.
   const at = SRC.indexOf("router.get('/api/v1/owner/execution-state'")
   const body = SRC.slice(at, SRC.indexOf('})', SRC.indexOf('res.json', at)))
-  assert.ok(/transportRefusal\(req\)/.test(body), 'not behind the loopback/CSRF check')
+  assert.ok(/readTransportRefusal\(req\)/.test(body), 'not behind the read-side check')
   assert.ok(/refuse\(res, 403/.test(body), 'and it refuses rather than falling through')
+
+  // THE WRITE SURFACE IS UNTOUCHED. If this ever stops holding, a read-side relaxation has
+  // leaked into the surface that seals and executes.
+  const write = SRC.slice(SRC.indexOf('function transportRefusal'))
+  assert.ok(/method !== 'POST'/.test(write.slice(0, 300)), 'the write check must still be POST-only')
+
+  // The read check keeps the rules that are the actual protection.
+  const read = SRC.slice(SRC.indexOf('function readTransportRefusal')).slice(0, 500)
+  assert.ok(/LOOPBACK\.includes\(peer\)/.test(read), 'loopback is still required')
+  assert.ok(/EXPECTED_HOSTS\.includes\(host\)/.test(read), 'the host allowlist is still required')
 })
 
 test('it leaks nothing — one boolean-or-null, and no path', () => {

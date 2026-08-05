@@ -56,6 +56,40 @@ function transportRefusal (req) {
   return null
 }
 
+/**
+ * THE READ-SIDE TRANSPORT CHECK.
+ *
+ * transportRefusal() opens by refusing any method that is not POST, because it was written
+ * for a surface
+ * that only writes. Reusing it on a GET refuses every request — my first version of the
+ * execution-state route 403d on every call, which would have made an observability route
+ * observably nothing.
+ *
+ * WHAT IS KEPT: the peer must be loopback, and the Host must be one this service answers
+ * to. Those are the actual protection, and they are the same rules.
+ *
+ * WHAT IS DROPPED, AND WHY: Origin and Sec-Fetch-Site. Both exist only on
+ * BROWSER-originated requests, and requiring them would mean the Owner could not ask this
+ * question from a terminal — which is the situation the route exists to end. They defend
+ * against cross-site WRITES; this returns one boolean and changes nothing, so there is
+ * nothing to forge.
+ *
+ * RESIDUAL EXPOSURE, stated rather than waved away: a page open in a browser on this
+ * machine could read it. What it would learn is whether agent execution writes an audit
+ * record. No path, no token, no state.
+ *
+ * transportRefusal itself is UNTOUCHED — a test pins that the write surface still refuses
+ * anything that is not a POST.
+ */
+function readTransportRefusal (req) {
+  if (req.method !== 'GET') return 'method_not_allowed'
+  const host = req.headers.host
+  if (!EXPECTED_HOSTS.includes(host)) return 'bad_host'
+  const peer = (req.socket && (req.socket.remoteAddress || '')) || ''
+  if (!LOOPBACK.includes(peer)) return 'not_loopback'
+  return null
+}
+
 function createOwnerApprovalRouter (deps = {}) {
   const store = deps.store
   const confirmService = deps.confirmService
@@ -110,7 +144,7 @@ function createOwnerApprovalRouter (deps = {}) {
   // MEASUREMENT, NOT REPAIR: it changes no execution behaviour and fixes nothing. Read-only,
   // GET-only, and behind the same loopback + owner-session transport check as its siblings.
   router.get('/api/v1/owner/execution-state', (req, res) => {
-    const bad = transportRefusal(req)
+    const bad = readTransportRefusal(req)
     if (bad) return refuse(res, 403, bad, null, 'owner_local')
     ensureSession(req, res)
     const v = (req.app || {}).agentAuditConfigured
