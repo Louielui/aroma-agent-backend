@@ -230,9 +230,15 @@ test('the visible face follows the Owner-specified structure, in plain Chinese',
   assert.equal(v.card.heading, '香香想改一個檔案')
   assert.equal(v.card.sections.length, 3, 'three facts, no more')
   assert.deepEqual(v.card.sections.map((s) => s.title), [null, null, null], 'the face needs no labels')
-  assert.equal(v.card.sections[0].body, 'docs/canary/agent-canary.md', 'which file')
+  // UPDATED 2026-08-05, Owner decision. Section 1 printed the bare path; a filename is data,
+  // 「只修改 X 一個檔案」 is the promise — and it is what covers the file-scope forbidden
+  // actions, so the face can be complete about all nine while naming five.
+  assert.equal(v.card.sections[0].body, '只修改 docs/canary/agent-canary.md 一個檔案。', 'which file, as a promise')
   assert.ok(v.card.sections[1].body.length > 0, 'what change')
   assert.ok(v.card.sections[2].body.includes('你的程式庫不受影響'), 'what is the worst case')
+  // Section 3 now also carries the execution negations. Three sections still — the Owner's
+  // ruling stands; the face grew by one line, not by five sections.
+  assert.ok(v.card.sections[2].body.includes('不會開 PR'), 'the negations are no longer behind 詳細')
   assert.deepEqual(v.card.actions, ['批准', '拒絕'])
   assert.equal(v.card.detailsTitle, '詳細')
   assert.equal(v.card.technicalTitle, '技術細節')

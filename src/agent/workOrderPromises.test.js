@@ -84,19 +84,23 @@ test('*** an action with no Chinese label is REPORTED, never dropped ***', () =>
 
 /* ═══ 2. WHAT THE OWNER ACTUALLY SEES — reported, not silently changed ════ */
 
-test('*** the four negations and the isolation scope are NOT on the visible face ***', () => {
-  // RECORDED AS A FINDING, NOT FIXED. The Owner described this card as carrying "four
-  // negations plus the isolation scope in one screen". Today `card.sections` — the visible
-  // face — holds only the file, the intent and the worst case; 不會發生, 影響範圍 and 上限
-  // sit inside `card.details`, behind the 詳細 disclosure in app.js.
+test('*** INVERTED: the negations and the isolation scope ARE on the visible face ***', () => {
+  // This test was written one round earlier to PIN TODAY'S TRUTH — that the negations sat
+  // behind 詳細 — and to fail loudly if anyone moved them quietly. It has now fired, for the
+  // right reason: the Owner read the finding and ruled that they move.
   //
-  // Moving them is a card-design decision that belongs to the Owner, not a wording fix, so
-  // this test PINS TODAY'S TRUTH and will fail loudly if anyone changes it quietly.
+  // 「I described the card from memory as 'four negations plus isolation on one screen' and
+  //  I was wrong, which tells me I have been approving on a belief rather than on what is
+  //  in front of me. That is the failure the card exists to prevent.」
+  //
+  // Kept and inverted rather than deleted: the assertion is still the same question, and the
+  // answer changed by decision rather than by drift. See cardFace.test.js for the full shape.
   const v = buildApprovalView(ORDER())
   const faceText = v.card.sections.map((s) => s.body).join('\n')
-  assert.equal(/不會提交/.test(faceText), false, 'if this now passes, the card was redesigned — update the audit')
-  assert.ok(v.card.details.some((d) => d.title === '不會發生'), 'it lives in details')
-  assert.ok(v.card.details.some((d) => d.title === '影響範圍'), 'so does the isolation scope')
+  assert.ok(/不會提交/.test(faceText), 'the negations are on the face')
+  assert.ok(/只修改 .* 一個檔案/.test(faceText), 'and so is the one-file scope')
+  assert.ok(faceText.includes('只改副本'), 'and the isolation statement')
+  assert.ok(v.card.details.some((d) => d.title === '不會發生'), 'the full nine-action list is still in details')
 })
 
 /* ═══ 3. WRITTEN CHINESE — punctuation, the actual language defect here ═══ */

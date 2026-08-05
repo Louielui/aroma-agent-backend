@@ -58,8 +58,21 @@ const WILL_NOT_LABELS = Object.freeze({
   'audit-edit': '改稽核紀錄'
 })
 
-/** Execution actions lead, because they are what the Owner is deciding about. */
+/**
+ * THE TWO KINDS OF FORBIDDEN ACTION, and why the card face can be complete without
+ * listing all nine.
+ *
+ * EXECUTION is not implied by anything else on the face, so it goes ON the face.
+ * FILE_SCOPE is exactly what 「只修改 X 一個檔案」 already promises, so repeating it on the
+ * face would state one guarantee twice — which is how the card became unreadable the
+ * first time. It stays in 詳細, stated in full.
+ *
+ * A test asserts these two sets COVER FORBIDDEN_ACTIONS. Add a tenth action belonging to
+ * neither and it fails, forcing a decision about where the Owner sees it, rather than
+ * letting the face quietly promise less than the order enforces.
+ */
 const EXECUTION = Object.freeze(['commit', 'push', 'PR', 'merge', 'deploy'])
+const FILE_SCOPE = Object.freeze(['cred-edit', 'env-edit', 'gate-edit', 'audit-edit'])
 
 /**
  * @param {string[]} actions  the sealed order's own forbiddenActions
@@ -130,6 +143,10 @@ function buildApprovalView (workOrder) {
   const worstCase = '改壞了？只改副本，你的程式庫不受影響。'
 
   const willNotHappen = willNotHappenFrom(canonical.forbiddenActions)
+  // The face carries the EXECUTION half, derived the same way — drop an action from the
+  // order and the face stops claiming it.
+  const willNotHappenFace = EXECUTION.filter((a) => canonical.forbiddenActions.includes(a))
+    .map((a) => '不會' + WILL_NOT_LABELS[a]).join('、')
 
   // Money reads as money: 0.5 -> US$0.50, never US$0.5.
   const money = (n) => (n == null ? NOT_PROVIDED : `US$${Number(n).toFixed(2)}`)
@@ -180,9 +197,15 @@ function buildApprovalView (workOrder) {
   const card = {
     heading,
     sections: [
-      { title: null, body: file },
+      // A FILENAME IS DATA; 「只修改 X 一個檔案」 IS THE PROMISE. Printing the bare path left
+      // the one-file guarantee to be inferred — and it is what covers FILE_SCOPE.
+      { title: null, body: scope[0] },
       { title: null, body: hasIntent ? after : whatChanges },
-      { title: null, body: worstCase }
+      // 2026-08-05, Owner decision. He described this card from memory as carrying the
+      // negations and the isolation scope on one screen. It did not — they were behind
+      // 詳細, and he had been approving on a belief about the card rather than on the card.
+      // The face grows by ONE line, not by five sections; see EXECUTION / FILE_SCOPE above.
+      { title: null, body: willNotHappenFace ? `${worstCase}\n${willNotHappenFace}。` : worstCase }
     ],
     details: [
       // The before/after keeps its FULL honest labelling here. The Owner asked that the
@@ -246,4 +269,4 @@ function buildApprovalView (workOrder) {
   return { canonical, canonicalJson, hash, display, card, technical, lines, technicalLines }
 }
 
-module.exports = { buildApprovalView, humanDuration, willNotHappenFrom, WILL_NOT_LABELS, NOT_PROVIDED }
+module.exports = { buildApprovalView, humanDuration, willNotHappenFrom, WILL_NOT_LABELS, EXECUTION, FILE_SCOPE, NOT_PROVIDED }
