@@ -252,3 +252,46 @@ confidence is not. This is the 「unknown answered as a fact」 failure wearing 
 command into a verified one before the next depends on it. Without it, a single wrong
 assumption in step 1 propagates silently through everything after it — and the output still
 looks like a successful run.
+
+---
+
+## HR-12 — A check run on a filtered set cannot rule out what the filter removed
+
+**2026-08-05. The sharpest error of the two days, and it was mine.**
+
+`DEFECT-001` opened with this, presented as settled:
+
+> 「Ruled out: 'they were already ordered' — **it is false, measured, not assumed**:
+> `incoming_qty > 0` on **0 of the 43 returned rows**.」
+
+The 43 were the rows that had passed `WHERE projected_qty < par_level` — that is, **precisely
+the rows whose incoming stock did not cover the shortfall**. Every row that would have
+answered 「yes, already ordered」 had been removed by the filter *before the check ran*. The
+true answer, 18, was sitting in the excluded set, which is the only place it could ever have
+been.
+
+> ## The check was run on a sample the check itself had already filtered.
+
+**And because that check appeared to eliminate the true cause, three false ones had to be
+invented to explain what was left** — an INNER JOIN, a NULL comparison, and string coercion.
+Each was plausible, each was written up with confidence, each was removed by one read-only
+query. **One bad measurement cost three wrong diagnoses.**
+
+### The rule
+
+Before reporting that a hypothesis is ruled out, ask **where a positive result would have
+appeared** — and check that the set actually examined includes that place. If the observed set
+was produced by a filter, name the filter and ask whether it correlates with the hypothesis.
+When it does, the check has no power at all: it is not weak evidence, it is **none**.
+
+This is `probe_never_failed` (`DESIGN-WORKER-ADAPTER.md`) turned inside out. That rule says a
+check that has never returned negative is not a check. This one says a check that **could not**
+have returned positive is not a check either.
+
+### And the label is part of the defect
+
+「measured, not assumed」 is the exact phrase this project uses to mark a claim as trustworthy.
+Attaching it to a structurally powerless check did more damage than the check itself — it
+converted an open question into a closed one for two days. **Reserve the phrase for a
+measurement whose failure mode you have identified**, and when using it, say what set was
+examined and how that set was chosen.

@@ -1,22 +1,22 @@
 # DEFECT-001 — `/api/v1/ai/order-planning` silently omits short items
 
-> # ⛔ CAUSE DISPROVEN 2026-08-05. DO NOT DEPLOY THE PATCH.
+> # ⛔ DISPROVEN — 2026-08-05. THERE IS NO DEFECT HERE.
 >
-> The cause stated below — **an INNER JOIN dropping ingredients absent from
-> `inventory_projected_state`** — **is wrong.** Disproven by the Owner's own read-only
-> measurement on the VPS:
+> ## `/api/v1/ai/order-planning` was correct throughout. The kitchen is not short 18 items.
 >
-> - the view has **199 rows**, the same as the active ingredient count, so **no ingredient is
->   missing from it** and the INNER JOIN dropped nothing;
-> - `null_projected = 0`, and the view coalesces, so `projected_qty` **cannot** be NULL.
+> **The 18 have open purchase orders covering the shortfall.** Measured:
+> `has_incoming 18 | no_incoming 43 | excluded_and_incoming 18`, and `61 − 18 = 43`.
 >
-> **The planned fix therefore changes nothing.** `COALESCE(ips.projected_qty,
-> ri.current_stock)` never falls back when the left side is never NULL, and a LEFT JOIN adds
-> no row that an INNER JOIN never removed.
+> `projected_qty = live_qty + incoming_qty`, `live_qty` equals `current_stock` on all 61 rows,
+> and the 18 clear par **only because of stock already on order**. That is the endpoint doing
+> exactly what it says it does.
 >
-> **Still standing:** the two endpoints disagree about 18 items and neither response says so.
-> **No longer standing:** the cause, and with it the severity. Until the re-derivation at the
-> end of this file is settled, 「the kitchen is short 18 items」 is **NOT ESTABLISHED**.
+> **Everything below this banner is superseded** — the cause, the patch, the `basis` field,
+> the severity, and the intermediate re-derivation near the end of the file, which was built
+> on the same bad measurement. **Read the closing section, 「THREE CAUSES, THREE REMOVED BY
+> MEASUREMENT」, before planning anything from this file.**
+>
+> **DISPROVEN, not deferred.** Nothing was deployed. `aroma-system` was never edited.
 
 **Repo: `aroma-system` (production). NOT this repo. NOT fixed here — reported only.**
 **Found: 2026-08-05, by read-only measurement against live production.**
@@ -395,3 +395,68 @@ ORDER BY (ri.par_level - ri.current_stock) DESC;
 `missing_from_view = 1` anywhere would revive part of the original diagnosis. All zeros
 confirms the re-derivation above, and the `live_qty` column shows the size of the
 disagreement item by item.
+
+---
+---
+
+# THREE CAUSES, THREE REMOVED BY MEASUREMENT
+
+**Read this before planning a fix from anything above. 2026-08-05.**
+
+Every section above proposed a cause. Each was plausible, each was written up with confidence,
+and **each was wrong**. All three died the same way: the Owner went to the machine instead of
+letting me reason from the file.
+
+| # | proposed cause | how it died |
+|---|---|---|
+| 1 | **INNER JOIN** drops ingredients absent from `inventory_projected_state` | the view has **199 rows** against 199 active ingredients. Nothing was ever dropped. |
+| 2 | **NULL comparison** — `projected_qty` NULL, so `NULL < par_level` silently excludes | the view **coalesces**; `null_projected = 0`. Structurally impossible. |
+| 3 | **String coercion** — `decimal`-as-`varchar`, so `<` compares lexically | both columns are `decimal(10,3)`; `as_written 61 = forced_numeric 61`. |
+
+**And the actual answer was never a defect at all:** `has_incoming 18`, and `61 − 18 = 43`.
+The 18 have open POs covering the shortfall.
+
+## ⚠ THE ERROR THAT MADE ALL THREE POSSIBLE
+
+The very first write-up contained this, under a heading claiming it was settled:
+
+> **「Ruled out: 'they were already ordered' — it is false, measured, not assumed:
+> `incoming_qty > 0` on 0 of the 43 returned rows.」**
+
+**That was the right question, asked of a set that could not answer it.** The 43 are the rows
+that passed `WHERE projected_qty < par_level` — that is, precisely the rows whose incoming
+stock did *not* cover the shortfall. **Every row that would have said 「yes, already ordered」
+had been removed by the filter before the check ran.**
+
+> ## The check was run on a sample the check itself had already filtered.
+
+The correct answer — 18 — was sitting in the rows that had been excluded, which is the only
+place it could ever have been. And because that first check appeared to rule out the true
+cause, three false ones had to be invented to explain what was left.
+
+**The label made it worse than the mistake.** 「measured, not assumed」 is exactly the phrase
+this project uses to mark a claim as trustworthy. It was attached to a check that was
+structurally incapable of finding what it looked for. See **HR-12**.
+
+## What actually remains — all three are real, none is this defect
+
+1. **Two endpoints answer different questions and neither says which.**
+   `/ai/inventory` → 「below par **now**」. `/ai/order-planning` → 「below par **after
+   everything on order arrives**」. Both correct; the difference is undisclosed, and that is
+   what made 61 vs 43 read as a defect for two days. **A naming and disclosure problem, not a
+   data problem.** The honest fix is that each response states which question it answers —
+   which is the one idea from the discarded patch worth keeping.
+2. **The `:256` `catch`** — untargeted, swallows syntax/permission/timeout/disconnect alike
+   and answers with plausible rows. Unchanged by any of this and still worth removing.
+3. **`DEFECT-005`** — 77 of 199 rows carry `0000-00-00 00:00:00` in
+   `inventory_live_state.last_movement_at`. Data hygiene, unrelated to the arithmetic, and the
+   source of every one of the 77 warnings.
+
+## The pattern worth carrying forward
+
+Three causes, three refutations, **one afternoon, zero production changes**. The cost of being
+wrong three times was a patch that never shipped. The cost of being wrong once with a deploy
+would have been a restaurant ordering 18 items it already had on the way.
+
+**Nothing here was caught by review. All of it was caught by measurement**, and every
+measurement was one read-only query away the whole time.
