@@ -84,6 +84,39 @@ before case 3 is built, not after.**
 
 ---
 
+## A SECOND LIVE INSTANCE OF CASE 3, found the same day
+
+**Owner instruction: record this here rather than as a separate thread.**
+
+Case 3 was found in a browser logged into a retailer. It turned up again hours later
+somewhere nobody was looking for it:
+
+> ### An automated deployment to `aroma-system` is case 3.
+
+It acts **as the Owner** toward the restaurant system. The VPS, the users, and the record all
+see a change made under his authority — and no counterparty can tell whether he typed it or a
+machine did, which is the definition of the case.
+
+And the `who` defect lands in exactly the same place:
+
+| what the record must say | today's field |
+|---|---|
+| **`approvedBy`** — who signed the release | `who: 'louie'` |
+| **`actedAs`** — a machine, at time T, under that signature | *(same field)* |
+
+**One field, two meanings, again.** This is now the *second* independent place where the
+overload surfaces, which settles that it is a defect in the shape rather than a quirk of the
+browser case. It also raises the cost of leaving it: a deploy record that cannot distinguish
+signer from actor is the record consulted after an incident.
+
+The structural answer designed for the deploy path is the same one this document argues for
+generally: **the signing key exists only where the Owner types, and nowhere an agent can
+reach.** That is not a rule about who may sign — it makes signing-as-him unavailable to the
+agent, which is the case-3 lever ("remove the capability from the environment") in its first
+concrete form. See `AROMA-SYSTEM-WORKING-MODEL.md` Part 3.
+
+---
+
 ## Which of the three can the current governance honestly carry
 
 > ## Only the first.

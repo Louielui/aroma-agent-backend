@@ -86,7 +86,19 @@ for, and staging is currently broken (`DEFECT-003`).
 
 ---
 
-# PART 3 — DEPLOY, EVENTUALLY OFF THE MANUS MACHINE (design only)
+# PART 3 — DEPLOY, EVENTUALLY OFF THE MANUS MACHINE
+
+> ## ⚠ THIS IS A DESIGN, NOT A PLAN.
+> **Owner, 2026-08-05: 「I am not building a deploy path this week.」** Recorded so a later
+> reader does not find a worked-out design and mistake it for scheduled work.
+
+## The question that was actually being asked, and its answer
+
+> **Does removing the Manus step necessarily degrade the wall?**
+>
+> ### No — conditional on replacing it with something structural rather than with a button.
+> **That is the whole finding. It was enough for now, and nothing follows from it
+> automatically.**
 
 > **Owner:** 「today the manual step through Manus is slow, but it is the only physical wall
 > between the restaurant system and anything automated. Removing it converts 『cannot deploy
@@ -94,23 +106,38 @@ for, and staging is currently broken (`DEFECT-003`).
 
 Correct, and it is the same degradation as the remote.
 
-## The instinct, and where it falls short
+## The correction to the proposed shape — the Owner's own words
 
-The proposed shape was: sealed order → typed EXECUTE → audit both sides → nothing reaches the
-VPS without that.
+The proposal was: sealed order → typed EXECUTE → audit both sides → nothing reaches the VPS
+without that.
 
-**Right in shape, insufficient in kind.** The work-order flow's guarantee was always two
-things, and only one of them was load-bearing:
+> ### 「I offered the gate and left the fence behind, and the fence was always what carried the weight.」
+
+That is the finding, and it is the same one as the remote in a third place:
 
 | | | |
 |---|---|---|
 | **the gate** | sealed order, nonce, TTL, typed EXECUTE | an authorisation |
-| **the containment** | disposable clone, no remote | **the structural half** |
+| **the fence** | disposable clone, no remote | **the structural half — the one that carried it** |
 
 Port only the gate to production and you have taken the decorative half. And a typed EXECUTE
 is a **client event** — this project has already measured two cases where one never reached
 the server (the stale-tab reject; the offer discarded by dispatch ordering). A UI event
 cannot be the wall.
+
+## ACCEPTED AS THE SHAPE
+
+> **Owner:** 「VPS pulls, never receives; deploys only a ref I signed; the signing key lives
+> where I type and nowhere an agent can reach; migrations cannot ride the automated line at
+> all.」
+
+### The sentence to keep
+
+> ## 「三樣都係『唔可能』，唔係『唔准』。」
+> **All three are "impossible", not "not permitted".**
+>
+> That is the test any replacement for the Manus step has to pass. A button passes none of
+> it.
 
 ## What would keep the wall structural
 

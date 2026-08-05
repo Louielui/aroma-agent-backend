@@ -133,3 +133,98 @@ The defect is in `aroma-system` production, which is governed by its own deploy 
 was read-only `GET` against the AI read endpoints, which are structurally read-only on this
 side: one constant `method: 'GET'`, a frozen path list, and no write route reachable from
 the adapter.
+
+---
+---
+
+# FURTHER DEFECTS IN THE SAME CLASS
+
+**Owner instruction, 2026-08-05:** 「Add both to DEFECT-001's file as separate entries — same
+class, same repo, same 'record, do not fix'.」
+
+Same repo (`aroma-system`, production), same treatment: **recorded, not fixed.** Same class
+too — in every one of them a step reads as performed because the machinery for it exists.
+
+DEFECT-002 and DEFECT-003 were written up in full before this instruction and keep their own
+files; they are summarised here so the register is complete in one place. **DEFECT-004 is
+new and is written in full below.**
+
+---
+
+## DEFECT-004 — the deploy reloads BEFORE it tests, so a bad build stays live
+
+**This is true today, with or without automation.** It is not a property of a future
+automated path.
+
+`scripts/deploy.sh`, in order:
+
+```bash
+pm2 reload ecosystem.config.cjs --only "$PM2_PROC"    # ← the new build goes LIVE here
+sleep 2
+"$CHECK_SCRIPT" "$REGRESSION_ENV"                      # ← it is tested here
+REGRESSION_STATUS=$?
+...
+if [ $REGRESSION_STATUS -ne 0 ]; then
+  echo "❌ REGRESSION FAILED — deploy completed but tests failed"
+  echo "To rollback, run:"                             # ← it PRINTS the command
+  echo "  CONFIRM=YES $0 $ENV rollback"
+  exit 1
+fi
+```
+
+**The regression check is a post-mortem, not a gate.** On failure the script tells the truth —
+「deploy completed but tests failed」 — and then does nothing about it. The failing build is
+serving customers, and it keeps serving them until a human reads that line and types the
+rollback command themselves.
+
+### Why it matters
+
+- **Today:** it is survivable only because the Owner is watching the terminal when he
+  deploys. The safety depends on a human being present, not on the script.
+- **If the run is unattended for any reason** — a long build, a distraction, a deploy started
+  and walked away from — the window is unbounded.
+- **It becomes the primary risk the moment anything is automated** (see
+  `AROMA-SYSTEM-WORKING-MODEL.md` Part 3), because then nobody is watching by design.
+
+There is a second, quieter problem in the same block:
+
+```bash
+if [ ! -f "$CHECK_SCRIPT" ]; then
+  echo "WARNING: Regression script not found at $CHECK_SCRIPT — skipping"
+  exit 0
+fi
+```
+
+**A missing regression script exits 0 — a successful deploy.** The deploy that ran no tests
+at all reports the same status as the deploy that passed them. The warning scrolls past; the
+exit code does not carry it. That is the same shape as `count: 43` in DEFECT-001: a result
+that reads as an answer while omitting what it did not do.
+
+### Suggested direction — NOT APPLIED
+
+- On regression failure, **invoke the rollback path** rather than printing it, then exit
+  non-zero. Printing a command is a suggestion; the script already contains the mechanism.
+- Make a missing regression script a **failure**, not a skip — or at minimum a distinct
+  non-zero exit so "not tested" and "tested and passed" are different outcomes.
+- Longer term the ordering itself is the defect: verification after `pm2 reload` can only
+  ever detect, never prevent.
+
+### How to verify a fix
+
+Deliberately deploy a ref that fails regression, to **staging**. Today the site stays broken
+and the script exits 1. After a fix it should return to the prior version by itself.
+
+---
+
+## DEFECT-002 — rollback points exist only on the VPS *(full write-up: `DEFECT-002-rollback-points-invisible.md`)*
+
+`deploy.sh` creates `safety/pre-deploy-<env>-<ts>` with a bare `git tag` and never pushes it.
+Local and GitHub tags **both stop at 2026-07-04**; today is 2026-08-05. The Owner cannot see
+his own rollback points from where he works, and the rollback point shares a single point of
+failure with the thing it protects against.
+
+## DEFECT-003 — `staging` is a frozen snapshot *(full write-up: `DEFECT-003-staging-branch-stale.md`)*
+
+`origin/staging` is **18 commits behind `main` and 0 ahead**, pointing at the July baseline.
+Deploying staging today would move the site backwards, and 「approved on staging」 has no
+artefact behind it.
