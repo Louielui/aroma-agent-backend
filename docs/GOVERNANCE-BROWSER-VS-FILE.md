@@ -90,6 +90,9 @@ Measured separately. Until that is answered, this rule is a design intent, not a
 
 - **Identity.** A worker acting as itself and a worker acting as the Owner are different risk
   objects, and the sealed work order has no field for which — it assumes one kind, an agent
-  with no identity at all in a disposable environment. See SEQUENCE-001.
+  with no identity at all in a disposable environment.
 - **`costCapUsd`.** Calibrated for CLI tokens. Against a browser that can transact, the words
   "cost cap" mean something entirely different and the number is not transferable.
+
+**Both are now designed out in `DESIGN-IDENTITY-DIMENSION.md`** — identity as the third class
+of risk object, and the Owner's ruling that it comes *before* generalising the Agent Bridge.
