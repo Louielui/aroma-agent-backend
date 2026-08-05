@@ -235,11 +235,29 @@ const capQuery = (q) => (q.length <= CAPS.maxQueryChars ? q : q.slice(0, CAPS.ma
  * `method: null` means "this intent asks nothing of Aroma System" — aromaMethodFor then
  * falls through to inventory, exactly as an unmatched message always has.
  */
+/**
+ * ── DECLARED SOURCES ARE A HINT, NOT AN AUTHORISATION (Owner ruling, 2026-08-04) ──
+ *
+ * Each intent names AT MOST THE ONE SOURCE that authoritatively holds that entity.
+ *
+ * invoice, purchase_order and supplier used to name gmail as a second source. Gmail is the
+ * most sensitive connector here, an invoice report EMAIL is not the invoice RECORD, and she
+ * has already been seen citing a Gmail summary as though it were data. If the restaurant
+ * system cannot answer, the honest reply is that it could not — the Owner can then ask her
+ * to check mail explicitly. Reaching into mail on a hunch is the wrong default for the most
+ * sensitive connector.
+ *
+ * schedule/mail/document/code name calendar/gmail/drive/github: those ARE the authoritative
+ * holders of those entities, which is a domain fact rather than a guess.
+ *
+ * ADDING A SECOND SOURCE TO ANY INTENT REOPENS THIS RULING.
+ * routingGovernsReads.test.js fails if one ever does.
+ */
 const INTENTS = Object.freeze([
-  { key: 'invoice', method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'], sources: ['aroma_system', 'gmail'], heading: '最近發票', unit: '張', noun: '發票', defaultQuestion: '要我整理餐廳系統內全部待審批發票嗎？' },
-  { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system', 'gmail'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
+  { key: 'invoice', method: 'listInvoices', cjk: ['發票', 'invoice'], latin: ['invoice', 'invoices', 'bill', 'bills'], sources: ['aroma_system'], heading: '最近發票', unit: '張', noun: '發票', defaultQuestion: '要我整理餐廳系統內全部待審批發票嗎？' },
+  { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
   { key: 'daily_count', method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'], sources: ['aroma_system'], heading: '盤點紀錄', unit: '次', noun: '盤點', defaultQuestion: '要我睇邊個位置嘅盤點？' },
-  { key: 'supplier', method: 'listSuppliers', cjk: ['供應商', '供貨商', '批發商', '貨商'], latin: ['supplier', 'suppliers', 'vendor', 'vendors'], sources: ['aroma_system', 'gmail'], heading: '供應商', unit: '個', noun: '供應商', defaultQuestion: '要我列出邊一間嘅落單資料？' },
+  { key: 'supplier', method: 'listSuppliers', cjk: ['供應商', '供貨商', '批發商', '貨商'], latin: ['supplier', 'suppliers', 'vendor', 'vendors'], sources: ['aroma_system'], heading: '供應商', unit: '個', noun: '供應商', defaultQuestion: '要我列出邊一間嘅落單資料？' },
   { key: 'order_planning', method: 'listOrderPlanning', cjk: ['訂貨', '補貨', '落單', '要訂', '叫貨'], latin: ['order planning', 'replenish', 'replenishment', 'reorder', 'restock'], sources: ['aroma_system'], heading: '訂貨建議', unit: '項', noun: '建議', defaultQuestion: '要我按供應商分開列嗎？' },
   { key: 'inventory', method: 'listInventory', cjk: ['倉存', '庫存', '存貨', '存量', '現貨', '貨存'], latin: ['inventory', 'stock', 'on hand', 'onhand'], sources: ['aroma_system'], heading: '倉存', unit: '項', noun: '存貨', defaultQuestion: '要我列出低過安全存量嗰啲嗎？' },
   // ── APPENDED: intents that ask nothing of Aroma System ──────────────────────

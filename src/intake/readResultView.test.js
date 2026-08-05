@@ -109,11 +109,16 @@ test('*** an invoice question shows ONLY invoice evidence — five sources in, o
   }
 })
 
-test('*** a FALLBACK never reaches the main result, only 資料限制 ***', () => {
+test('*** a FALLBACK never reaches the main result — and Gmail is now wholly out of scope ***', () => {
+  // NARROWED 2026-08-04 by the Owner's ruling: an intent may name at most the ONE source
+  // that authoritatively holds the entity, so invoice no longer names gmail. The render
+  // layer reads the SAME intent.sources as the read layer, so Gmail is not merely unread —
+  // it cannot be SHOWN for an invoice question even if rows for it arrived. This test used
+  // to assert its per-source fallback note appeared under 資料限制; that note is gone with
+  // the source, and the rows it stood for are still counted as hidden below.
   const { reply } = buildReadResultReply(INVOICE_TURN)
-  assert.equal(reply.includes('### Gmail'), false, 'gmail was recent-items, not a match')
-  assert.ok(reply.includes('Gmail：搵唔到直接相符嘅發票'))
-  assert.ok(reply.includes('最近項目 2 項未列出'))
+  assert.equal(reply.includes('### Gmail'), false, 'not a section')
+  assert.equal(reply.includes('Gmail'), false, 'and not a 資料限制 line either: ' + reply)
 })
 
 test('*** nothing disappears silently — the hidden count is real ***', () => {
@@ -125,15 +130,18 @@ test('*** nothing disappears silently — the hidden count is real ***', () => {
   assert.deepEqual(groups.map((g) => g.source), ['aroma_system'])
 })
 
-test('an in-scope source found BY SEARCH is shown alongside Aroma System', () => {
+test('*** INVERTED: Gmail is NOT shown for an invoice question, even when it matched by search ***', () => {
+  // This asserted the opposite while invoice named gmail as a second source. The Owner's
+  // ruling is that a declared source is a hint about where an answer might live, never an
+  // authorisation — and an invoice report EMAIL is not the invoice RECORD. So even a
+  // genuine keyword match in mail stays out of an invoice answer.
   const turn = Object.assign({}, INVOICE_TURN, {
     perSource: INVOICE_TURN.perSource.map((r) => (r.source === 'gmail' ? Object.assign({}, r, { usedFallback: false }) : r))
   })
   const { reply } = buildReadResultReply(turn)
-  assert.ok(reply.includes('### Gmail'))
-  assert.ok(reply.includes('### 餐廳系統'))
-  assert.equal(reply.includes('### Drive'), false) // still out of scope
-  assert.ok(reply.includes('另有 5 項未列出'))
+  assert.equal(reply.includes('### Gmail'), false, 'the ruling, at the render layer')
+  assert.ok(reply.includes('### 餐廳系統'), 'the authoritative source still answers')
+  assert.equal(reply.includes('### Drive'), false)
 })
 
 test('a schedule question shows the calendar and nothing else', () => {
@@ -271,15 +279,19 @@ test('the model reply splits at 下一步, and its prose above is discarded', ()
 
 /* ── 8. section ordering and separation ───────────────────────────────────── */
 
-test('*** two sources never share a paragraph, and the order is fixed ***', () => {
+test('*** each source keeps its own paragraph, and the order is fixed ***', () => {
+  // A TWO-SOURCE ANSWER CANNOT CURRENTLY ARISE: every intent names exactly one source
+  // after the 2026-08-04 ruling. The separation and ordering logic is still worth pinning
+  // for the day one legitimately names two, so this asserts the single-source shape and
+  // that no heading is ever concatenated onto another line.
   const turn = Object.assign({}, INVOICE_TURN, {
     perSource: INVOICE_TURN.perSource.map((r) => (r.source === 'gmail' ? Object.assign({}, r, { usedFallback: false }) : r))
   })
   const { reply } = buildReadResultReply(turn)
   for (const line of reply.split('\n')) {
-    assert.equal(line.includes('### Gmail') && line.includes('### 餐廳系統'), false)
+    assert.equal((line.match(/###/g) || []).length > 1, false, 'one heading per line: ' + line)
   }
-  assert.ok(reply.indexOf('### 最近發票') < reply.indexOf('### Gmail'))
+  assert.ok(reply.indexOf('### 最近發票') >= 0, 'the in-scope section is rendered')
   assert.ok(reply.indexOf('### Gmail') < reply.indexOf('### 資料限制'))
   assert.ok(reply.indexOf('### 資料限制') < reply.indexOf('### 下一步'))
 })
@@ -342,7 +354,10 @@ test('her section is bounded by the next heading, not by the end of the reply', 
   assert.equal(sec.includes('要唔要'), false) // the question did not bleed into her section
 })
 
-test('*** her words never carry item detail into a multi-source turn ***', () => {
+// The premise "multi-source" no longer arises (one source per intent, 2026-08-04 ruling),
+// but the substance — no digit and no item detail may appear in her own section — is
+// unchanged and is what this actually tests.
+test('*** her words never carry item detail ***', () => {
   const turn = Object.assign({}, withOpinion('有一批舊嘅未清,建議今個星期掃一次。'), {
     perSource: INVOICE_TURN.perSource.map((r) => (r.source === 'gmail' ? Object.assign({}, r, { usedFallback: false }) : r))
   })
@@ -352,5 +367,9 @@ test('*** her words never carry item detail into a multi-source turn ***', () =>
   for (const detail of ['191.10', '#74284', '2026-07-06']) assert.equal(sec.includes(detail), false)
   // and the rendered data above is untouched by her presence
   assert.ok(reply.includes('$191.10｜2026-07-06｜需要審批'))
-  assert.ok(reply.includes('### Gmail') && reply.includes('### 餐廳系統'))
+  // Gmail is out of scope for an invoice question since the 2026-08-04 ruling; the point of
+  // this line is that the DATA above her section is untouched by her presence, which the
+  // authoritative source alone demonstrates.
+  assert.ok(reply.includes('### 餐廳系統'))
+  assert.equal(reply.includes('### Gmail'), false)
 })

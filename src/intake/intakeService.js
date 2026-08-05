@@ -165,6 +165,20 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const runtimePersona = src.runtimePersona()
     return await runU1DraftShadow({ instruction: message, adapter, history, requestId, personaText: runtimePersona.personaText })
   }
+  // ── THE TURN'S ROUTE, decided ONCE ────────────────────────────────────────
+  // Computed here and reused by the utility answer, the read guard and the Answer Plan
+  // gate. Routing the same message three times would be three chances to disagree.
+  //
+  // `routerMode` distinguishes the two live steps and gives two real rollback points:
+  //   off    — the router does not act at all (pre-Step-2 behaviour)
+  //   shadow — UTILITY answers; reads and the plan gate are UNCHANGED (Step 2)
+  //   on     — routing GOVERNS reads and the Answer Plan gate (Step 3)
+  const routerMode = resolveTurnRouter(process.env)
+  const routeDecision = routerMode === 'off'
+    ? null
+    : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
+  const routeGoverns = routerMode === 'on' && routeDecision !== null
+
   // ── STEP 1b: THE UTILITY ROUTE — LIVE, and it answers before anything else ─
   //
   // Placed AFTER the red-line check (which must stay first — a message carrying a bank
@@ -183,8 +197,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // wrong one, and never a sentence implying something was looked up.
   //
   // Every other route still only observes: the shadow log below is unchanged for them.
-  if (resolveTurnRouter(process.env) !== 'off') {
-    const decision = routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
+  if (routeDecision) {
+    const decision = routeDecision
     if (decision.route === 'UTILITY') {
       const answered = answerUtility(decision.utility, message, {})
       if (answered) {
@@ -353,7 +367,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (isChat && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
       try {
         const deps = (opts && opts.readContextDeps) || null
-        const all = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+        const enabled = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
+        // ── STEP 3: THE ROUTE DECIDES WHAT IS READ ────────────────────────
+        // Before this, the only conditions were "chat lane" and "READ_ACCESS on", so every
+        // enabled source was read on every chat turn — 「你可以幫我做什麼？」 paid for four
+        // connectors and thirteen rows, and those rows then forced an Answer Plan.
+        //
+        // CONVERSATION and UTILITY name no source, so they read nothing. BUSINESS_QUERY
+        // names exactly one: the source that AUTHORITATIVELY holds that entity. A declared
+        // source is a hint about where an answer might live, never an authorisation to read
+        // — see the ruling above INTENTS in readContext.js.
+        //
+        // INTERSECTED with what is enabled, never unioned: the route can only ever narrow
+        // what the Owner's own switches already allow.
+        const forced = deps && deps.forceSources === true // tests only, to prove the plan gate
+        const all = (routeGoverns && !forced)
+          ? enabled.filter((s) => routeDecision.sources.includes(s))
+          : enabled
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
         // gets that minus anything the Owner has withheld from it.
         const sources = sourcesForProvider(providerName, all, process.env)
@@ -443,6 +473,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // rows this turn retrieved makes the wrong answer unrepresentable rather than merely
   // detectable, which is the same reason the plan itself is bought at the API layer.
   const answerPlanFormat = () => {
+    // TWO INDEPENDENT CONDITIONS, and the Owner asked for exactly that. Rows can no longer
+    // force a plan on a route that did not ask for data — and the gate does NOT lean on
+    // reads being governed. With reads governed there should be no rows on a CONVERSATION
+    // turn anyway; if a future change ever puts some there, the schema still must not
+    // appear. Proven by a test that injects rows onto a conversational route.
+    if (routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) return undefined
     if (turnItems.size === 0) return undefined
     const refs = []
     for (const [source, items] of turnItems) {
@@ -594,12 +630,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // this block does not run at all and the turn is byte-identical to before.
   //
   // Wrapped whole: a shadow observation may never be able to break a live turn.
-  if (resolveTurnRouter(process.env) !== 'off') {
+  if (routeDecision) {
     try {
       let rows = 0
       for (const items of turnItems.values()) rows += Array.isArray(items) ? items.length : 0
       logTurnRoute({
-        decision: routeTurn(message, { previousLane: (opts && opts.previousLane) || null }),
+        decision: routeDecision,
         // Read from `opts`, NOT from `isChat`/`interactionMode`: both of those live in the
         // per-provider closure above and are out of scope here. The first draft used them,
         // and because the block is wrapped in a catch it would have thrown silently every
