@@ -224,3 +224,31 @@ nothing or was never performed.
 recording everything. It applies where the distinction is **real now and cheap now**, and
 where reconstructing it later is **impossible** rather than merely tedious. If it can be
 re-derived from what is already stored, it can wait.
+
+---
+
+## HR-11 — A command composed from a file is a hypothesis about a machine
+
+**Owner, 2026-08-05:** 「I have been burned this week by commands that looked authoritative and
+were composed from a file rather than from the machine.」
+
+Reconstructing a command from `deploy.sh`, a config, or a doc produces something that **looks
+exactly like a command someone verified on the machine**. The formatting is identical; the
+confidence is not. This is the 「unknown answered as a fact」 failure wearing shell syntax.
+
+**The rule.** When handing the Owner commands for a machine that has never been observed:
+
+1. **Say so, unprompted**, in the same message as the commands — 「I have never seen that
+   machine; every step is reconstructed from `deploy.sh` and CLAUDE.md」.
+2. **One step at a time, each pasted back before the next is given.** Not a script to run
+   start to finish.
+3. **Name the specific unknowns rather than smoothing over them** — e.g. `scripts/deploy.sh`
+   is not on `main`, so whether it exists in the VPS working copy is genuinely unknown, and
+   that is discovered in step 1 rather than in the middle of step 3.
+4. **Do not compose a command that needs a fact not yet in hand.** The `mysqldump` line waits
+   until the machine has said how it authenticates, rather than being guessed at plausibly.
+
+**Why paste-back is the mechanism and not the courtesy.** It converts each reconstructed
+command into a verified one before the next depends on it. Without it, a single wrong
+assumption in step 1 propagates silently through everything after it — and the output still
+looks like a successful run.

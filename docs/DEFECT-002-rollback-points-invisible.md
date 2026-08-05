@@ -67,3 +67,26 @@ git ls-remote --tags origin | grep safety/pre-deploy
 ```
 
 Today that returns nothing.
+
+---
+
+## Partial compensation, found while planning the DEFECT-001 deploy
+
+Landing a production change **through a merged pull request** rather than a direct push gives
+the Owner **a Revert button visible from his own desk** — in the browser, on GitHub, without
+VPS access.
+
+It does not fix DEFECT-002. The `safety/pre-deploy-*` tag is still created locally on the VPS
+and still never pushed, so the deploy-time rollback point remains invisible. But the PR route
+means there is **at least one rollback path the Owner can see and operate himself**, which is
+more than the tag offers today.
+
+Two further mitigations, specific to a single deploy rather than to the defect:
+
+```bash
+git rev-parse HEAD          # BEFORE deploying — the SHA, written down, is the real safety net
+git push origin --tags      # AFTER  deploying — makes that deploy's safety tag visible anywhere
+```
+
+**Recorded as compensation, not as a fix.** The defect is still open: nothing here makes tags
+travel by default, and the next deploy that skips these two commands is invisible again.
