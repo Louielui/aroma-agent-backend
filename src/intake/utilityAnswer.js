@@ -24,7 +24,7 @@
  * save forty lines. A test asserts the string does not appear in this file.
  */
 
-const { resolveTimeZone, formatLocal, startOfLocalDay } = require('../utils/localTime')
+const { resolveTimeZone, formatLocal, startOfLocalDay, localParts } = require('../utils/localTime')
 
 /* ── time and date ────────────────────────────────────────────────────────── */
 
@@ -59,19 +59,15 @@ function zoneLabel (tz) {
   return last.replace(/_/g, ' ')
 }
 
-/** The Owner's wall clock, as numbers, in his zone. */
-function wallClock (now, opts) {
-  const tz = resolveTimeZone(opts) // throws on malformed — the caller turns that into a decline
-  const f = new Intl.DateTimeFormat('en-US', {
-    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short'
-  })
-  const p = {}
-  for (const part of f.formatToParts(now)) if (part.type !== 'literal') p[part.type] = part.value
-  // The weekday index comes from the formatted local date, never from getDay() on the
-  // instant — those disagree either side of midnight.
-  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday)
-  return { tz, year: Number(p.year), month: Number(p.month), day: Number(p.day), hour: Number(p.hour), minute: Number(p.minute), weekday: wd }
-}
+/**
+ * The Owner's wall clock. ONE clock — localTime owns it.
+ *
+ * This used to build its own Intl.DateTimeFormat here, a second implementation of the
+ * same thing. That is precisely how a second unit table and a second routing vocabulary
+ * started, and both of those shipped bugs. It throws on a malformed timezone; the caller
+ * turns that into a decline.
+ */
+function wallClock (now, opts) { return localParts(now, opts) }
 
 function timeSentence (now, opts) {
   const c = wallClock(now, opts)

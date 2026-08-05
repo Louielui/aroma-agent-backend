@@ -182,7 +182,35 @@ function formatLocal (isoOrDate, opts = {}) {
   return `${p.year}-${pad(p.month)}-${pad(p.day)} ${pad(p.hour)}:${pad(p.minute)}`
 }
 
+/**
+ * The Owner's wall clock as numbers — year, month, day, hour, minute, weekday (0=Sunday).
+ *
+ * ONE CLOCK, exported so nothing has to build a second one. utilityAnswer had its own
+ * `Intl.DateTimeFormat` doing exactly this, which is how a second unit table and a second
+ * routing vocabulary started too. The weekday comes from the FORMATTED local date, never
+ * from getDay() on the instant — those disagree either side of midnight.
+ *
+ * Throws on an unresolvable timezone, like everything else here.
+ */
+function localParts (isoOrDate, opts = {}) {
+  const tz = resolveTimeZone(opts)
+  const f = new Intl.DateTimeFormat('en-US', {
+    timeZone: tz, hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', weekday: 'short'
+  })
+  const p = {}
+  for (const part of f.formatToParts(toDate(isoOrDate))) if (part.type !== 'literal') p[part.type] = part.value
+  return {
+    tz,
+    year: Number(p.year),
+    month: Number(p.month),
+    day: Number(p.day),
+    hour: Number(p.hour),
+    minute: Number(p.minute),
+    weekday: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].indexOf(p.weekday)
+  }
+}
+
 /** "Now", in one place, so a future test clock has a single seam to replace. */
 function now () { return new Date() }
 
-module.exports = { resolveTimeZone, startOfLocalDay, formatLocal, now, isValidZone, DEFAULT_TIMEZONE, TimezoneError }
+module.exports = { resolveTimeZone, startOfLocalDay, formatLocal, localParts, now, isValidZone, DEFAULT_TIMEZONE, TimezoneError }

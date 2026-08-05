@@ -242,7 +242,11 @@ test('DEMO_HTML: safety labels + unknown fallback + Enter/Shift+Enter', () => {
   // confirmation + single-use nonce. Asserted below.
   assert.ok(!DEMO_HTML.includes('確認執行（尚未開放）'), 'the disabled placeholder is retired')
   assert.ok(DEMO_HTML.includes('產生工作單'), 'the chat card only requests a Work Order')
-  assert.ok(DEMO_HTML.includes('你批准咗我先會做'), 'the page states up front that nothing runs unapproved')
+  // RE-POINTED, NOT DELETED. This promise used to live in the opening assistant bubble,
+  // which the empty-screen redesign retired. Owner decision: it moves to the composer
+  // placeholder — the one place he looks before typing. The ASSERTION is the same one it
+  // always was: the page must state, before he types, that a file change needs his approval.
+  assert.ok(/改檔案要你批准才會執行/.test(DEMO_HTML), 'the page still states up front that nothing runs unapproved')
   assert.ok(DEMO_HTML.includes('格式未知'), 'unknown-shape safe fallback')
   assert.ok(DEMO_HTML.includes("e.key === 'Enter'") && DEMO_HTML.includes('shiftKey'), 'Enter sends, Shift+Enter newline')
 })

@@ -258,7 +258,11 @@ test('send is disabled until there is real input, and while a reply is in flight
 test('the placeholder is short enough not to be clipped', () => {
   const m = DEMO_HTML.match(/id="msg"[^>]*placeholder="([^"]*)"/)
   assert.ok(m, 'the textarea has a placeholder')
-  assert.ok(m[1].length <= 12, 'placeholder is short: ' + m[1])
+  // CAP RAISED 12 -> 20, and not quietly. Owner decision, 2026-08-04: the placeholder now
+  // carries the approval affordance retired from the opening bubble, because it is the one
+  // place he looks before typing and it costs no screen. 16 chars at the composer width is
+  // nowhere near wrapping; the cap still exists so it cannot grow into a paragraph.
+  assert.ok(m[1].length <= 20, 'placeholder is short: ' + m[1].length + ' — ' + m[1])
   assert.ok(!m[1].includes('Enter'), 'the Enter/Shift+Enter hint is no longer crammed into it')
 })
 

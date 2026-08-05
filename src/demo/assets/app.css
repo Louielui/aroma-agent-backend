@@ -52,6 +52,7 @@
   --ui-line: 1.5;
   --small-size: 12px;     /* footer, served-by, timestamps */
   --title-size: 15px;     /* top-bar title */
+  --greeting-size: 30px;   /* the empty screen only — large, but quiet */
   --brand-size: 16px;     /* sidebar wordmark */
 
   --weight-normal: 400;   /* running text is NEVER bold */
@@ -573,3 +574,18 @@ button[disabled] { opacity: .45; cursor: default; }
 .order .sec.bare { padding: 2px 0; }
 .order .sec.bare .sec-b { color: var(--ink); }
 .order .sec.bare:first-of-type .sec-b { font-family: var(--font-mono); }
+
+/* ── the empty screen ─────────────────────────────────────────────────────── */
+/* Greeting and composer as ONE centred group. #log stops growing so the pair sits in
+   the middle of the pane rather than the greeting floating at the top. */
+#main.empty { justify-content: center; }
+#main.empty #log { flex: 0 0 auto; overflow: visible; padding-bottom: 0; }
+#main.empty #composer { position: static; background: none; }
+.empty-greeting {
+  text-align: center;
+  font-size: var(--greeting-size);
+  font-weight: var(--weight-medium);
+  color: var(--muted);
+  padding: 8px 0 22px;
+  min-height: 1.4em;            /* reserved, so the composer does not jump when it lands */
+}

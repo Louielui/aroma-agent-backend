@@ -20,6 +20,7 @@
   'use strict'
 
   var log = document.getElementById('log')
+  var mainEl = document.getElementById('main')
   var msg = document.getElementById('msg')
   var send = document.getElementById('send')
   var convsEl = document.getElementById('convs')
@@ -202,6 +203,37 @@
   // A conversation joins the list once it holds a turn — or once the server says it has
   // one. An EMPTY new conversation is still not history: listing it produced the duplicate
   // the Owner saw, 「新對話」 as the header and 「新對話」 again as a list entry.
+  /**
+   * THE EMPTY SCREEN — a greeting, the composer, and nothing else.
+   *
+   * It replaces a canned assistant bubble that fired on every page load: an avatar, a copy
+   * button and two paragraphs of instructions, presented as though she had already spoken.
+   *
+   * THE GREETING COMES FROM THE SERVER. 早晨/午安/晚安 depends on the hour and the hour
+   * depends on the OWNER'S timezone, not this device's — so the band words are not written
+   * in this file at all. A failed fetch shows nothing rather than guessing.
+   */
+  function renderEmptyScreen (c) {
+    if (!mainEl || isListed(c) || c.history.length > 0) return
+    mainEl.classList.add('empty')
+    var box = el('div', 'empty-greeting')
+    c.thread.appendChild(box)
+    fetch('/api/v1/greeting', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (j) {
+        // Still the same empty conversation? He may have typed while this was in flight.
+        if (!j || !j.line || active !== c || c.history.length > 0) return
+        box.textContent = j.line
+      })
+      .catch(function () { /* no greeting is better than a wrong one */ })
+  }
+
+  /** The moment he sends, the greeting is gone — and the pane stops being centred. */
+  function clearEmptyScreen (c) {
+    if (mainEl) mainEl.classList.remove('empty')
+    var box = (c && c.thread) ? c.thread.querySelector('.empty-greeting') : null
+    if (box && box.parentNode) box.parentNode.removeChild(box)
+  }
   function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
     active = c
@@ -211,6 +243,7 @@
     renderConvList()
     // A stored conversation is a title until it is opened; the transcript arrives here.
     if (c.stored && !c.loaded) loadConversation(c)
+    else renderEmptyScreen(c)
     scroll()
   }
   function renderConvList () {
@@ -518,7 +551,10 @@
    * itself, so a forced lane can never quietly persist into later turns. */
   var SHORTCUTS = [
     { mode: 'email_draft', name: '寫 Email', note: '直接走 Email 草稿通道' },
-    { mode: 'proposal', name: '建立提案', note: '直接出一張提案（唔會執行）' }
+    // THE HOW-TO HALF of the retired opening bubble lives here. The composer
+    // placeholder carries the approval promise; naming the file and the change needs more
+    // room than a placeholder has, and this is where someone already comes to ask for one.
+    { mode: 'proposal', name: '建立提案', note: '講明改哪個檔案、改什麼；批准後才執行' }
   ]
   var forcedMode = null
 
@@ -581,7 +617,8 @@
       titleEl.textContent = active.title
       renderConvList()
     }
-    var conv = active   // captured BEFORE anything renders: a click must not steal this turn
+    var conv = active
+    clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
     addUser(text, conv)
     conv.history.push({ role: 'user', text: text })
     msg.value = ''
@@ -1191,6 +1228,4 @@
   newConversation(false)
   // The sidebar reads its history from the server. Done after the page is already usable,
   // so a slow or failed fetch delays nothing and breaks nothing.
-  bootHistory()
-  addBot('我係香香。有咩想傾，或者想我幫你做啲咩？\n\n想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。')
-})()
+  bootHistory()})()

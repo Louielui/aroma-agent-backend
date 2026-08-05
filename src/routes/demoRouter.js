@@ -45,6 +45,7 @@ const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1
 // Persistence is now something a caller must ASK for by name. app.js passes the real store;
 // anyone who does not gets a store that holds nothing and writes nothing.
 const { INERT_CONVERSATION_STORE, isValidId: isValidConversationId } = require('../store/conversationStore')
+const { greetingFor } = require('../demo/greeting') // the empty screen's line — the Owner's clock, not the browser's
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -103,6 +104,25 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
   //
   // The id is minted by the browser and becomes a FILE NAME, so the store refuses
   // anything that is not a plain id — 400 here rather than a sanitised path there.
+
+  /**
+   * THE EMPTY-SCREEN GREETING, decided here rather than in the browser.
+   *
+   * 早晨 / 午安 / 晚安 depends on the hour, and the hour depends on the OWNER'S timezone —
+   * the Owner Settings field, never the clock of whatever device the page is open on. It is
+   * fetched per empty screen rather than baked into the page, so a tab left open across noon
+   * greets him correctly when he starts a new conversation.
+   *
+   * It carries no data of any kind: a band word and a proper noun.
+   */
+  router.get('/api/v1/greeting', demoGuard, (req, res) => {
+    try {
+      res.json({ ok: true, ...greetingFor(new Date()) })
+    } catch (_) {
+      // Never load-bearing: the empty screen simply shows nothing rather than failing.
+      res.status(500).json({ ok: false, error: 'greeting_failed' })
+    }
+  })
 
   router.get('/api/v1/conversations', demoGuard, (req, res) => {
     try {
