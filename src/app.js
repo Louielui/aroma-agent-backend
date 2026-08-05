@@ -889,6 +889,7 @@ function createApp (options = {}) {
     buildAgentResultView,
     sealedHashOf: confirmService.sealedHashOf,
     getProposal: (id) => proposalStore.getProposal(id),
+    cancelProposal: (id) => proposalStore.cancelProposal(id, LOCAL_OWNER),
     auditFn: approvalAudit
   }))
 

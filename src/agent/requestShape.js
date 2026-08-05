@@ -39,6 +39,24 @@
  *
  * PURE: no I/O, no clock, no randomness, no model call.
  *
+ * ── DELIBERATELY SEPARATE: NEGATION IS CHECKED TWICE ────────────────────────
+ * Owner ruling, 2026-08-05. This codebase's rule is ONE CONCEPT, ONE IMPLEMENTATION, and
+ * negation breaks it on purpose. IF YOU ARE HERE TO CONSOLIDATE THESE TWO, READ THIS FIRST.
+ *
+ * requestShape.NEGATED is a flat alternation over the whole sentence.
+ * workRequestOffer.refusesChange is proximity-based: a refusal marker BEFORE the verb it
+ * governs. Different construction on purpose — two copies of one regex would fail together.
+ * EITHER refusing stops the offer.
+ *
+ * The Owner's reasoning, recorded because it is what justifies the exception: every other
+ * misread costs him an unwanted offer, but asking 「要唔要」 after he said 「唔好」 is
+ * offensive regardless of how inert the button is.
+ *
+ * It also compensates for a measured gap: the corpus has FIVE real samples of him asking
+ * for a change and ZERO of him refusing one, so the negation branch is tested entirely
+ * against phrasings I wrote (requestShapeCorpus.test.js states this). Two independent
+ * implementations are the answer to that, not more sentences of my own invention.
+ *
  * ── NOT WIRED YET (2026-08-05) ──────────────────────────────────────────────
  * Nothing in production calls this. Building the deterministic entrance hit a
  * governance boundary discovered mid-build: /api/v1/owner/work-orders BINDS every Work

@@ -32,8 +32,20 @@
 const { mentionedFilesFrom } = require('./workOrderProducer')
 const { isForbiddenFile } = require('./workOrder')
 
-/** Verbs that mean "change this file", in both languages the Owner writes in. */
-const CHANGE_VERB = /(改|修|加|刪|移除|換|更新|寫|補|fix|change|edit|update|add|remove|rename|refactor)/i
+/**
+ * Verbs that mean "change this", in both languages the Owner writes in.
+ *
+ * 停 and 建立 ADDED 2026-08-05, and the way they were found is the point: the requestShape
+ * corpus was built from sentences the Owner ACTUALLY typed rather than from phrasings I
+ * invented, and two of the five real samples failed immediately —
+ *
+ *   「幫我把 Timeline 的輪詢在終止狀態後停掉」
+ *   「建立一個新的供應商資料表」
+ *
+ * both from distillPrompt.js, both carrying his 2026-07-15 sign-off as canonical examples
+ * of an action request. A list written from imagination would have agreed with itself.
+ */
+const CHANGE_VERB = /(改|修|加|刪|移除|換|更新|寫|補|停|建立|fix|change|edit|update|add|remove|rename|refactor)/i
 
 /**
  * The instruction, minus the parts that are addressing 香香 rather than describing work.

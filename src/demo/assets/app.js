@@ -892,9 +892,39 @@
     t.body.appendChild(card)
     scroll()
 
+    /* REJECT IS A GOVERNANCE ACTION, SO IT GOES TO THE SERVER.
+     *
+     * This used to disable three controls and print 「你拒絕了這張工作單。甚麼都沒有執行。」
+     * without calling anything. The second sentence was true. The FIRST was recorded
+     * nowhere: the sealed order expired on its own, but the PROPOSAL stayed pending
+     * forever — three of them were sitting in the store when this was fixed.
+     *
+     * The message now waits for the server, and a failure says so instead of reading as a
+     * successful rejection. */
     no.addEventListener('click', function () {
-      go.disabled = true; typed.disabled = true; no.disabled = true
-      out.textContent = '你拒絕了這張工作單。甚麼都沒有執行。'
+      if (no.disabled) return
+      no.disabled = true; go.disabled = true; typed.disabled = true
+      out.textContent = '正在取消…'
+      fetch('/api/v1/owner/reject', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({
+          approvalId: sealed.approvalId,
+          workOrderHash: sealed.workOrderHash,
+          nonce: sealed.nonce
+        })
+      }).then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
+      }).then(function (o) {
+        if (o.status === 200) {
+          out.textContent = '你拒絕了這張工作單。提案已取消，甚麼都沒有執行。'
+          return
+        }
+        out.textContent = '未能取消這張工作單（' + (o.body.reason || o.body.error || '未知原因') + '）。甚麼都沒有執行，但提案仍然存在。'
+      }).catch(function () {
+        out.textContent = '連線失敗，未能取消。甚麼都沒有執行，但提案仍然存在。'
+      })
     })
 
     go.addEventListener('click', function () {

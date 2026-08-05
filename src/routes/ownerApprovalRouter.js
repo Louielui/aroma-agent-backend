@@ -100,6 +100,8 @@ function createOwnerApprovalRouter (deps = {}) {
   const sealedHashOf = deps.sealedHashOf
   const getProposal = typeof deps.getProposal === 'function' ? deps.getProposal : () => null
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
+  // The proposal store's own mutator, injected — this router never reaches into the store.
+  const cancelProposalFn = typeof deps.cancelProposal === 'function' ? deps.cancelProposal : () => { throw new Error('cancelProposal not injected') }
   const router = express.Router()
 
   const refuse = (res, status, reason, approvalId, entryPoint) => {
@@ -264,6 +266,64 @@ function createOwnerApprovalRouter (deps = {}) {
       elapsedMs: durationMs,
       capSec: facts && Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
       finished: got.ok
+    })
+  })
+
+  // ── REJECT ────────────────────────────────────────────────────────────────
+  //
+  // The 拒絕 button used to disable three controls and print 「你拒絕了這張工作單。甚麼都沒
+  // 有執行。」 — and call nothing. The second sentence was true. The FIRST was not recorded
+  // anywhere: no request, no cancel, no audit line. The sealed order and its nonce expire on
+  // their own after APPROVAL_TTL_MS, but the PROPOSAL stayed pending forever. Three such
+  // proposals were sitting in the live store when this was written, the oldest from
+  // 2026-07-24.
+  //
+  // Owner ruling, 2026-08-05: 「A reject button that only greys out the screen while the
+  // proposal stays pending forever is a lie about a governance action, and it is the same
+  // class as everything else this week: the record and the reality disagreeing.」
+  //
+  // AUTHORITY SOURCE IS THE SEALED RECORD. The proposalId is read from the record the
+  // approvalId identifies, NEVER from the request body — otherwise reject becomes a way to
+  // cancel any proposal by id.
+  //
+  // The nonce is consumed exactly as approve consumes it, so a rejection is not replayable
+  // and cannot be followed by an approval of the same card.
+  router.all('/api/v1/owner/reject', (req, res) => {
+    const b = req.body || {}
+    const approvalId = typeof b.approvalId === 'string' ? b.approvalId : null
+
+    const bad = transportRefusal(req)
+    if (bad) return refuse(res, 403, bad, approvalId, 'owner_local')
+
+    const extras = FORBIDDEN_BODY_FIELDS.filter((k) => Object.prototype.hasOwnProperty.call(b, k))
+    if (extras.length) return refuse(res, 400, 'forbidden_body_fields', approvalId, 'owner_local')
+
+    const sid = readCookie(req, SESSION_COOKIE)
+    if (!store.validSession(sid)) return refuse(res, 403, 'no_session', approvalId, 'owner_local')
+
+    const n = store.consumeNonce({ nonce: b.nonce, approvalId, displayedHash: b.workOrderHash, sessionId: sid })
+    if (!n.ok) return refuse(res, 403, n.reason, approvalId, 'owner_local')
+
+    const loaded = store.loadSealed(approvalId)
+    if (!loaded.ok) return refuse(res, 409, loaded.reason, approvalId, 'owner_local')
+
+    // NOTHING RAN, AND NOW THAT IS RECORDED. cancelProposal is the store's own mutator; a
+    // failure to cancel is reported rather than swallowed, because a rejection the Owner
+    // believes happened and the record does not is the exact fault being fixed.
+    let cancelled = null
+    try {
+      cancelled = cancelProposalFn(loaded.record.proposalId)
+    } catch (err) {
+      auditFn({ approvalId, outcome: 'refused', reason: 'cancel_failed', entryPoint: 'owner_local' })
+      return res.status(409).json({ error: 'reject_failed', reason: 'cancel_failed' })
+    }
+
+    auditFn({ approvalId, outcome: 'rejected', reason: 'owner_rejected', entryPoint: 'owner_local' })
+    return res.status(200).json({
+      ok: true,
+      approvalId,
+      proposalId: loaded.record.proposalId,
+      proposalStatus: (cancelled && cancelled.status) || 'cancelled'
     })
   })
 

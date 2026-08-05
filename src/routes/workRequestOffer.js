@@ -35,15 +35,56 @@
  * So a false trigger costs one glance: nothing is sealed, no hash exists, no approvalId is
  * minted, nothing is persisted and the runner is not touched.
  *
- * ── NOT WIRED YET (2026-08-05). SEE requestShape.js FOR WHY. ────────────────
- * The envelope wiring was written and then REVERTED in the same session: a Work Order
- * cannot be sealed without a pending Proposal, so an offer button would have led to a 404.
- * An affordance that leads nowhere is worse than no affordance, and a field nothing
- * consumes is the dormant-default pattern the Owner has already ruled against once.
+ * ── DELIBERATELY SEPARATE: NEGATION IS CHECKED TWICE ────────────────────────
+ * Owner ruling, 2026-08-05. This codebase's rule is ONE CONCEPT, ONE IMPLEMENTATION, and
+ * negation breaks it on purpose. IF YOU ARE HERE TO CONSOLIDATE THESE TWO, READ THIS FIRST.
+ *
+ * requestShape.NEGATED is a flat alternation over the whole sentence.
+ * refusesChange below is proximity-based: a refusal marker BEFORE the verb it governs.
+ * Different construction on purpose — two copies of one regex would fail together.
+ * EITHER refusing stops the offer.
+ *
+ * The Owner's reasoning, recorded because it is what justifies the exception: every other
+ * misread costs him an unwanted offer, but asking 「要唔要」 after he said 「唔好」 is
+ * offensive regardless of how inert the button is.
+ *
+ * It also compensates for a measured gap: the corpus has FIVE real samples of him asking
+ * for a change and ZERO of him refusing one, so the negation branch is tested entirely
+ * against phrasings I wrote (requestShapeCorpus.test.js states this). Two independent
+ * implementations are the answer to that, not more sentences of my own invention.
  */
 
-const { inferWorkRequest } = require('../agent/requestInference')
+const { inferWorkRequest, CHANGE_VERB } = require('../agent/requestInference')
 const { isChangeRequest } = require('../agent/requestShape')
+
+/**
+ * THE SECOND NEGATION CHECK. Independent by construction — see the header.
+ *
+ * Rather than one alternation over the sentence, this asks a different question: does a
+ * REFUSAL MARKER sit immediately before the change verb it governs? That catches markers
+ * the first list does not carry (千祈唔好, 咪住) without either file knowing the other's
+ * vocabulary.
+ *
+ * 唔該 IS NOT A REFUSAL. It opens with the same character as 唔好 and is the most ordinary
+ * politeness the Owner types; reading it as a refusal would reject his plainest requests.
+ * It is excluded explicitly rather than by hoping the marker list never happens to match it.
+ */
+const POLITENESS = /^(唔該|請|麻煩)/
+const REFUSAL_MARK = /(唔好|唔使|唔准|唔制|咪住|咪|千祈|暫時|先唔|唔想|唔要|不要|不用|不准|別|勿|毋須)/g
+const NEAR = 6 // a refusal governs what FOLLOWS it, within a short window
+
+function refusesChange (message) {
+  const s = typeof message === 'string' ? message.trim() : ''
+  if (!s) return false
+  for (const m of s.matchAll(REFUSAL_MARK)) {
+    const at = m.index
+    if (at === 0 && POLITENESS.test(s)) continue
+    if (POLITENESS.test(s.slice(at, at + 2))) continue
+    const after = s.slice(at + m[0].length, at + m[0].length + NEAR)
+    if (CHANGE_VERB.test(after)) return true
+  }
+  return false
+}
 
 /**
  * @param {{ message: string, conversation?: string|string[], hasProposal?: boolean }} input
@@ -59,6 +100,9 @@ function offerFor (input = {}) {
 
   // 1. IS IT A REQUEST? The judgement the classifier used to make silently.
   if (!isChangeRequest(message).ok) return null
+  // 1b. AND AGAIN, INDEPENDENTLY, FOR NEGATION ONLY. See the header for why this one
+  //     concept deliberately has two implementations.
+  if (refusesChange(message)) return null
 
   // 2. WHAT IS THE REQUEST? The existing reader, with the CONVERSATION DELIBERATELY EMPTY.
   //    The existing path may fall back to a path named earlier in the conversation, because
@@ -75,4 +119,4 @@ function offerFor (input = {}) {
   return { file: read.file, intent: read.intent, source: 'deterministic' }
 }
 
-module.exports = { offerFor }
+module.exports = { offerFor, refusesChange }
