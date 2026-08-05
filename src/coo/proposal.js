@@ -38,7 +38,9 @@ const { load: loadStoreFile, save: saveStoreFile } = require('./proposalPersiste
 
 // The durable store file, mirroring store.js's data dir (and its AROMA_DATA_DIR
 // override) so both truth files live together. `data/` is gitignored.
-const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+// ONE resolver for all four stores — see store/dataDir.js (backlog M-3).
+const { resolveDataDir } = require('../store/dataDir')
+const DATA_DIR = resolveDataDir()
 const DEFAULT_PROPOSALS_FILE = path.join(DATA_DIR, 'aroma-proposals.json')
 
 // Every Proposal (and the Run it may become) is a Develop@1. These are fixed

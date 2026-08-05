@@ -15,7 +15,9 @@ const fs = require('fs')
 const path = require('path')
 const { v4: uuidv4 } = require('uuid')
 
-const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+// ONE resolver for all four stores — see store/dataDir.js (backlog M-3).
+const { resolveDataDir } = require('./dataDir')
+const DATA_DIR = resolveDataDir()
 const DATA_FILE = path.join(DATA_DIR, 'aroma-truth.json')
 
 const LOCK_FILE = DATA_FILE + '.lock'

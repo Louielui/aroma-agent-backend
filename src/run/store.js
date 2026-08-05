@@ -48,7 +48,9 @@ const LOCAL_OWNER = 'louie'
 
 // B2-10 durable Run store. The file mirrors store.js's data dir (and its
 // AROMA_DATA_DIR override) so all truth files live together. `data/` is gitignored.
-const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+// ONE resolver for all four stores — see store/dataDir.js (backlog M-3).
+const { resolveDataDir } = require('../store/dataDir')
+const DATA_DIR = resolveDataDir()
 const DEFAULT_RUNS_FILE = path.join(DATA_DIR, 'aroma-runs.json')
 
 /** Build an Error carrying an HTTP-appropriate statusCode for the router. */

@@ -11,7 +11,37 @@ recorded per item.
 
 ## M-3 — `AROMA_DATA_DIR` defaults to the real store, so tests write to production data
 
-**Status:** open · **Opened:** 2026-08-04 · **Blocks:** cleaning `llm_usage` · **Severity:** medium
+**Status: FIXED 2026-08-05** · **Opened:** 2026-08-04 · **Still blocks:** cleaning `llm_usage`
+
+> **THE CAUSE IS FIXED. THE HISTORY IS NOT CLEANED** — the Owner's ruling, twice: fix the
+> default first, decide about the history separately. The contaminated rows are still there.
+>
+> **The fix.** One resolver, `src/store/dataDir.js`, now used by all four modules that had
+> the line copied into them (`store/store.js`, `store/conversationStore.js`,
+> `coo/proposal.js`, `run/store.js`). A test process with no `AROMA_DATA_DIR` gets a
+> per-process temp directory and one loud warning; the live server matches none of the test
+> signals and still gets production. Detection is `NODE_TEST_CONTEXT`, which the node:test
+> runner sets itself — verified empirically as `'child-v8'`, not taken from documentation —
+> plus `--test` in argv and a `*.test.js` main file.
+>
+> **Redirect rather than throw**, deliberately: throwing is more fail-closed but breaks every
+> test that merely requires a store module without writing, turning a safety fix into a suite
+> rewrite. The dangerous operation is the write, and there is now nowhere for a test write to
+> land.
+>
+> **PROVEN, not asserted.** `data/aroma-truth.json` was hashed before and after a full
+> 1,897-test run:
+>
+> ```
+> before  sha256=5cfc2445…  rows=12125  bytes=2499605  mtime=2026-08-05T15:48:06.774Z
+> after   sha256=5cfc2445…  rows=12125  bytes=2499605  mtime=2026-08-05T15:48:06.774Z
+> ```
+>
+> Identical hash, zero rows added, mtime untouched.
+>
+> **Why it was fixed on this day and not later:** approval decisions are about to become
+> durable records in this same store. Owner ruling: a test suite that manufactures fake
+> governance decisions is worse than one that manufactures fake metering.
 
 **The default:**
 

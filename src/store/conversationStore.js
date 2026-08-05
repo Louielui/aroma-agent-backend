@@ -40,7 +40,9 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 /** Same data directory as store.js, same override, so the truth files live together. */
-const DATA_DIR = process.env.AROMA_DATA_DIR || path.resolve(__dirname, '../../data')
+// ONE resolver for all four stores — see store/dataDir.js (backlog M-3).
+const { resolveDataDir } = require('./dataDir')
+const DATA_DIR = resolveDataDir()
 const CONVERSATION_DIR_NAME = 'conversations'
 
 /** The title is the first user message, trimmed. No model call: a title is not worth one. */
