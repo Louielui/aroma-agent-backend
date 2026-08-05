@@ -228,3 +228,53 @@ failure with the thing it protects against.
 `origin/staging` is **18 commits behind `main` and 0 ahead**, pointing at the July baseline.
 Deploying staging today would move the site backwards, and 「approved on staging」 has no
 artefact behind it.
+
+---
+
+## ⚠ THE MEASUREMENT THAT FOUND THIS DEFECT HAD A BLIND SPOT OF THE SAME SHAPE
+
+**Owner instruction, 2026-08-05: record this. 「The measurement that found the defect had a
+blind spot of the same shape as the defect.」**
+
+The original query filters `WHERE ips.projected_qty < ri.par_level`. In SQL, **`NULL < x`
+evaluates to NULL, not TRUE** — so any projection row carrying a NULL `projected_qty` was
+**already excluded from the 43** before anything was counted.
+
+**Which means the probe could not have seen them either.** Every number in this write-up was
+taken through that same endpoint.
+
+### What that does to the finding above
+
+The 18 missing items were attributed, in full, to **「no row in `inventory_projected_state`」**.
+That attribution is now known to be **unverified**. The 18 may contain a **fourth class**:
+
+| class | what it is |
+|---|---|
+| no projection row | the cause originally claimed for all 18 |
+| **projection row with a NULL number** | **never distinguishable from outside — the endpoint filters it out before anyone can count it** |
+
+The defect and the instrument that measured it fail the same way: **a row that cannot satisfy
+a predicate disappears rather than being reported.** One dropped rows through an INNER JOIN,
+the other through NULL comparison semantics — the same class in two spellings, and the second
+was mine.
+
+### And it strengthens the case for `basis`
+
+After the fix, the split is visible for the first time: `projection_incomplete` names exactly
+the class that could never be counted. **The field is not only for trusting the number — it
+is the only way the fourth class will ever be seen.**
+
+### Not resolved by reasoning
+
+Whether the class is populated **today** is unmeasured. `inventory_projected_state` is a
+**VIEW** (`purchaseOrders.ts:789`) whose definition exists only in the live database — no
+`CREATE VIEW` exists anywhere in the repo, and it is not in the Drizzle schema. A view carries
+no `NOT NULL` of its own, so nullability is whatever its SELECT produces.
+
+Circumstantial only, and marked as such: **four separate consumers** defensively write
+`parseFloat(row.projected_qty ?? "0")` — `inventoryProjected.ts:531`, `purchaseOrders.ts:811`
+and `:2215`, `replenishmentSuggestions.ts:108`. That is a belief held by four authors, not a
+measurement.
+
+To be settled by `SHOW CREATE VIEW inventory_projected_state` and a `COUNT(*) … IS NULL`,
+read-only, on the VPS, before the fix is applied.
