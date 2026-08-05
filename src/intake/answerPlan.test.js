@@ -271,8 +271,9 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
     droppedSentences: 1,
     modelItemCount: 3,
     keptItemCount: 2,
-    // A drop record as the validator emits it, plus a value-shaped key that must NOT ride
-    // through: the projection is explicit, not a spread.
+    // A drop record as the validator emits it. Since 2026-08-05 a SHORT token value is
+    // carried deliberately; the projection is still explicit, not a spread, so a key the
+    // describer did not put there cannot ride through.
     drops: [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有', value: '18.000' }],
     requestId: 'r2'
   }, (l) => lines.push(l))
@@ -284,9 +285,19 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
   assert.equal(l.droppedItems, 1)
   assert.equal(l.droppedFacts, 2)
   assert.equal(l.droppedSentences, 1)
-  assert.deepEqual(l.dropped, [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有' }])
-  // THE WIDENING IS BOUNDED. Identity travels; row content still does not.
-  assert.equal(JSON.stringify(l).includes('18.000'), false, 'a VALUE must never reach the log')
+  assert.deepEqual(l.dropped, [{ kind: 'item', sourceId: 'ghost' }, { kind: 'fact', sourceId: '2', field: '現有', value: '18.000' }])
+  // THE WIDENING IS BOUNDED — and it was widened again on 2026-08-05, deliberately.
+  // A SHORT, SPACELESS TOKEN now travels, because the reason alone left two diagnoses
+  // unanswerable. What still cannot travel is anything longer, anything with a space, and
+  // anything address/URL/path shaped — describeValue withholds those and the projection
+  // has no other way to obtain one.
+  const long = []
+  logAnswerPlan({
+    outcome: 'degraded',
+    drops: [{ kind: 'fact', sourceId: '2', field: '備註', why: 'not_a_value', shape: 'text', length: 40 }]
+  }, (x) => long.push(x))
+  assert.equal('value' in long[0].dropped[0], false, 'content still never reaches the log')
+  assert.equal(long[0].dropped[0].shape, 'text')
 })
 
 test('the drop record cannot be turned into a payload by a long or repetitive plan', () => {

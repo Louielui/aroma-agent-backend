@@ -75,8 +75,8 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
   additionalProperties: false,
   required: ['directAnswer', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
   properties: {
-    directAnswer: { type: 'string', description: '一至兩句,直接答到問題。唔好覆述逐項細節。' },
-    unanswerable: { type: 'boolean', description: '資料答唔到呢條問題時 true —— 呢個係誠實,唔係失敗。' },
+    directAnswer: { type: 'string', description: '一至兩句，直接回答問題。不要覆述逐項細節。' },
+    unanswerable: { type: 'boolean', description: '資料無法回答這個問題時填 true —— 這是誠實，不是失敗。' },
     // ── THE DECLARATION THAT REPLACED A FORCED SECTION ───────────────────────────────
     // `sections.minItems: 1` used to sit below. It was added because item detail had been
     // hiding in prose where nothing could check it — but it made evidence MANDATORY, and
@@ -89,7 +89,7 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
     // choice rather than a silent empty array the server cannot distinguish from a failure.
     citesEvidence: {
       type: 'boolean',
-      description: 'true = 呢個答案引用咗下面讀到嘅記錄,sections 至少要有一節、每節至少一項。false = 呢條問題唔使引用任何記錄(例如打招呼、問你識做乜、或者資料根本答唔到),sections 必須留空。'
+      description: 'true = 這個答案引用了下面讀到的記錄，sections 至少要有一節、每節至少一項。false = 這個問題不需要引用任何記錄（例如打招呼、問你會做什麼、或者資料根本無法回答），sections 必須留空。'
     },
     sections: {
       type: 'array',
@@ -107,7 +107,7 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
               additionalProperties: false,
               required: ['sourceId', 'title', 'facts'],
               properties: {
-                sourceId: { type: 'string', description: '必須係證據入面真實存在嘅 id。' },
+                sourceId: { type: 'string', description: '必須是證據中真實存在的 id。' },
                 title: { type: 'string' },
                 facts: {
                   type: 'array',
@@ -125,7 +125,7 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
       }
     },
     limitations: { type: 'array', items: { type: 'string' } },
-    followUp: { type: ['string', 'null'], description: '最多一個問題;冇必要就 null。' }
+    followUp: { type: ['string', 'null'], description: '最多一個問題；沒有必要就填 null。' }
   }
 })
 
@@ -145,7 +145,7 @@ const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
   properties: {
     intent: { type: 'string' },
     mode: { type: 'string', enum: ['commit', 'recommend', 'ask', 'chat'] },
-    reply: { type: 'string', description: '一句自然嘅說話。逐項清單由系統渲染,唔好喺呢度覆述。' },
+    reply: { type: 'string', description: '一句自然的說話。逐項清單由系統渲染，不要在這裡覆述。' },
     answerPlan: ANSWER_PLAN_SCHEMA
   }
 })
@@ -168,7 +168,7 @@ function withRowRefs (schema, refs) {
   const out = structuredClone(schema)
   const node = out.properties.answerPlan.properties.sections.items.properties.items.items.properties.sourceId
   node.enum = list
-  node.description = '必須逐字抄自證據入面該行嘅 ref= 值(例如 ref=aroma_system#2 就寫 aroma_system#2)。唔係來源名,唔係標題。'
+  node.description = '必須逐字抄自證據中該行的 ref= 值（例如 ref=aroma_system#2 就寫 aroma_system#2）。不是來源名，不是標題。'
   return out
 }
 
@@ -209,6 +209,11 @@ function logAnswerPlan (entry, sink) {
       if (d && d.field != null) out.field = String(d.field).slice(0, LIMITS.maxDropIdChars)
       // The rejection REASON — an enum, so it says why without saying what.
       if (d && d.why != null) out.why = String(d.why).slice(0, LIMITS.maxDropIdChars)
+      // WHAT was rejected. describeValue() already decided whether the value itself may
+      // travel; this projection is explicit so a new key on a drop record cannot ride in.
+      if (d && d.shape != null) out.shape = String(d.shape).slice(0, 20)
+      if (d && Number.isFinite(d.length)) out.length = d.length
+      if (d && typeof d.value === 'string') out.value = d.value.slice(0, MAX_DROP_VALUE_CHARS)
       return out
     }),
     requestId: entry.requestId == null ? null : String(entry.requestId)
@@ -362,6 +367,10 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   // about the read, not a value any row carried, and admitting it here would let a row
   // claim the shown count as its own quantity.
   const numericValues = new Set()
+  // The same values, normalised the two ways matchValue can compare them. Built HERE so
+  // the candidate and the evidence are normalised by identical code.
+  const dateKeys = new Set()
+  const digitKeys = new Set()
   // Every Latin word this turn actually retrieved. The universe of names an Owner-facing
   // sentence is allowed to contain — see proseIsGrounded.
   const latin = new Set()
@@ -381,9 +390,12 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
         addText(v)
         const n = numericOf(v)
         if (n !== null) numericValues.add(n)
+        const dk = dateKeyOf(v); if (dk) dateKeys.add(dk)
+        const gk = digitsKeyOf(v); if (gk) digitKeys.add(gk)
       }
       if (row.title) { values.add(String(row.title)); addText(row.title) }
       if (row.originalDate) { values.add(String(row.originalDate)); addNum(row.originalDate) }
+      if (row.originalDate) { const dk = dateKeyOf(row.originalDate); if (dk) dateKeys.add(dk) }
     }
   }
   // Counts the model is allowed to state, because the server measured them.
@@ -391,7 +403,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.totalCount)) numbers.add(String(e.totalCount))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, values, numbers, numericValues, latin }
+  return { byId, values, numbers, numericValues, latin, dateKeys, digitKeys }
 }
 
 /**
@@ -409,10 +421,65 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
  * after the number is removed must ITSELF be a real value: 「18 ea」 survives because the
  * row carries 'ea', and 「18 apples」 does not, because no row ever said apples.
  */
+/**
+ * A DATE, NORMALISED — or null when the string is not an unambiguous full date.
+ *
+ * Accepts 2026-07-06 · 2026/07/06 · 2026年7月6日 · and any of those carrying a time. A
+ * partial date (「7 月 6 日」, no year) is NOT a date here: two different years would collapse
+ * onto one, which is the kind of relaxation this file exists to refuse.
+ */
+const DATE_RE = /^(\d{4})\s*[-/年]\s*(\d{1,2})\s*[-/月]\s*(\d{1,2})\s*日?(?:[T\s].*)?$/
+function dateKeyOf (s) {
+  const m = DATE_RE.exec(String(s).trim())
+  if (!m) return null
+  const y = Number(m[1]); const mo = Number(m[2]); const d = Number(m[3])
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return null
+  return `${y}-${String(mo).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+}
+
+/**
+ * A SEPARATED DIGIT SEQUENCE — a phone number and nothing else.
+ *
+ * Only when the string is digits and SEPARATORS ONLY, and carries at least two digit
+ * groups. `.` is deliberately NOT a separator: stripping it would make 191.10 and 19110 the
+ * same string, and collapsing a decimal onto an integer is exactly the failure this must
+ * never produce.
+ */
+const SEPARATED_RE = /^[\d\s\-()+]+$/
+function digitsKeyOf (s) {
+  const t = String(s).trim()
+  if (!SEPARATED_RE.test(t)) return null
+  const groups = t.match(/\d+/g) || []
+  if (groups.length < 2) return null
+  return groups.join('')
+}
+
+/**
+ * Compare a model-written value against the evidence.
+ *
+ * ── WHY THIS GREW TWO NORMALISATIONS (2026-08-05) ────────────────────────────
+ * This is a QUANTITY checker, and it was being applied to every field. It rejected any
+ * string carrying more than one number BEFORE attempting any comparison, so a date could
+ * only pass by byte-identical string match — and the row stores a timestamp while the model
+ * writes the date. Every business turn therefore carried an omission note.
+ *
+ * The invoice turn proved it against itself: 「7 月 6 日開立」 passed in PROSE, because
+ * sentenceIsSupported checks number tokens individually, while the SAME date dropped as a
+ * field. Two checkers, one date, opposite verdicts.
+ *
+ * BOTH NEW PATHS ARE EXACT EQUALITY OF A NORMALISED FORM. Neither is substring matching and
+ * neither is fuzzy: a different date fails, a different phone number fails, a fragment fails.
+ */
 function matchValue (raw, index) {
   const s = String(raw).trim()
   if (index.values.has(s)) return { ok: true }
   if (index.values.has(translate(s))) return { ok: true }
+
+  const dk = dateKeyOf(s)
+  if (dk && index.dateKeys.has(dk)) return { ok: true }
+
+  const gk = digitsKeyOf(s)
+  if (gk && index.digitKeys.has(gk)) return { ok: true }
 
   // WHY it failed, as an enum. Diagnosing the 2026-08-04 six-drop turn meant replaying the
   // live API by hand, because the record said only "this field was dropped" — and the drop
@@ -433,6 +500,36 @@ function matchValue (raw, index) {
   return { ok: false, why: 'residue_not_a_value' }
 }
 
+/**
+ * WHAT WAS REJECTED — enough to diagnose, never enough to leak.
+ *
+ * The drop record used to carry the field and the reason and NOT the value, so twice this
+ * week the honest answer to "did she invent it or write a variant?" was "I cannot tell you".
+ * A record that cannot explain its own rejection is not a record.
+ *
+ * THE VALUE IS CARRIED ONLY WHEN IT IS A SHORT, SPACELESS TOKEN — kg, 公斤, 30.000, a
+ * status word. That is the case where knowing the exact string is the whole diagnosis.
+ * Anything longer, anything with a space, and anything shaped like an address, a URL or a
+ * path is described by SHAPE and LENGTH only: a field value can be third-party content —
+ * an event description, a mail subject — and this log is not a place that content may
+ * reach. The limit is stated rather than implied: a short token could still be a name, and
+ * 12 characters is the smallest window that answers the question it exists to answer.
+ */
+const MAX_DROP_VALUE_CHARS = 12
+const UNSAFE_VALUE_RE = /[@\s]|https?:|[\\/]{1,2}[A-Za-z0-9_.-]+[\\/]|^[A-Za-z]:\\/
+
+function describeValue (raw) {
+  const v = raw === undefined || raw === null ? '' : String(raw)
+  const out = { shape: 'text', length: v.length }
+  if (v.trim() === '') { out.shape = 'empty'; return out }
+  if (dateKeyOf(v)) out.shape = 'date'
+  else if (/^-?\d+(?:[.,]\d+)*$/.test(v.trim())) out.shape = 'number'
+  else if (v.length <= MAX_DROP_VALUE_CHARS && !/\s/.test(v)) out.shape = 'short_token'
+  // Carried ONLY when short, spaceless and not address/URL/path shaped.
+  if (v.length <= MAX_DROP_VALUE_CHARS && !UNSAFE_VALUE_RE.test(v)) out.value = v
+  return out
+}
+
 /** The boolean form. The rule is unchanged; matchValue just also says why not. */
 function valueMatches (raw, index) { return matchValue(raw, index).ok === true }
 
@@ -444,6 +541,38 @@ function valueMatches (raw, index) { return matchValue(raw, index).ok === true }
  * the model got its field names on the live turn. So a label can be resolved back to the
  * field it names, per source, with no guessing.
  */
+/**
+ * label -> { minus: [fieldA, fieldB] } per source, from what each read DECLARED.
+ * Same shape and same discipline as metricLabelMap: opt-in per source, never inferred.
+ */
+function derivationMap (evidenceSets = []) {
+  const out = new Map()
+  for (const e of evidenceSets) {
+    if (!e || !e.source || typeof e.derivations !== 'object' || !e.derivations) continue
+    const m = new Map()
+    for (const [label, spec] of Object.entries(e.derivations)) {
+      if (spec && Array.isArray(spec.minus) && spec.minus.length === 2) m.set(label, spec)
+    }
+    out.set(e.source, m)
+  }
+  return out
+}
+
+/**
+ * THE SERVER DOES THE ARITHMETIC. Both inputs must be present on THIS row and both must
+ * be numbers; anything else returns null and the fact drops as before. Nothing is rounded
+ * or reformatted beyond removing trailing zeros — the result is a real subtraction of two
+ * measured values, not an approximation of one.
+ */
+function computeDerivation (spec, row) {
+  const f = (row && row.fields) || {}
+  const a = numericOf(f[spec.minus[0]])
+  const b = numericOf(f[spec.minus[1]])
+  if (a === null || b === null) return null
+  const v = a - b
+  return Number.isFinite(v) ? String(Math.round(v * 1e10) / 1e10) : null
+}
+
 function metricLabelMap (evidenceSets = []) {
   const bySource = new Map()
   for (const e of evidenceSets) {
@@ -541,6 +670,7 @@ const EMPTY_LABELS = new Map()
 function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = '' } = {}) {
   const index = evidenceIndex(evidenceSets, itemsBySource)
   const metrics = metricLabelMap(evidenceSets)
+  const derivations = derivationMap(evidenceSets)
 
   // ── THE DECLARATION ──────────────────────────────────────────────────────────
   // Absent is treated as TRUE, so a provider that ignores the field behaves exactly as it
@@ -623,6 +753,15 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         //
         // A label is NOT permission to produce a number: if the row does not carry that
         // field, this falls through and the fact is checked (and dropped) as before.
+        // ── A DECLARED DERIVATION IS THE SERVER'S TOO ──────────────────────────
+        // Checked BEFORE the metric lookup: she names 缺口, the server subtracts the two
+        // declared fields on this row, and whatever number she wrote is discarded. An
+        // undeclared label falls through and is checked (and dropped) exactly as before.
+        const derived = (derivations.get(row.source) || EMPTY_LABELS).get(field)
+        if (derived) {
+          const value = computeDerivation(derived, row)
+          if (value !== null) { facts.push({ field, value }); continue }
+        }
         const metricField = labels.get(field)
         if (metricField !== undefined && row.fields && row.fields[metricField] !== undefined && row.fields[metricField] !== null && row.fields[metricField] !== '') {
           facts.push({ field, value: translate(row.fields[metricField]) })
@@ -634,7 +773,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         const m = matchValue(f.value, index)
         if (!m.ok) {
           droppedFacts++
-          drops.push({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why })
+          drops.push(Object.assign({ kind: 'fact', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars), field: field.slice(0, LIMITS.maxDropIdChars), why: m.why }, describeValue(f.value)))
           continue
         }
         facts.push({ field, value: translate(f.value) })

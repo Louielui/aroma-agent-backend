@@ -66,6 +66,23 @@ const SCOPE_OF = Object.freeze({
   invoices: { hasLocation: false, hasAsOf: true, note: null }
 })
 
+/**
+ * ── DECLARED DERIVATIONS (Owner ruling, 2026-08-05) ─────────────────────────
+ *
+ * 缺口 = 安全存量 − 現有存量 was being DROPPED, correctly by the old rule and wrongly by
+ * intent: refusing it made her list rows instead of reading them. The ruling allows
+ * derivations on the same terms metric values already work — SHE NAMES IT, THE SERVER
+ * COMPUTES IT — so a wrong subtraction is impossible rather than merely detectable.
+ *
+ * ONLY WHAT IS DECLARED HERE. Two declared metrics, same row, subtraction. A derivation
+ * that is not in this table stays dropped, so she cannot invent arithmetic and have it
+ * rendered as fact.
+ */
+const DERIVATIONS_OF = Object.freeze({
+  inventory: { '缺口': { minus: ['parLevel', 'currentStock'] } },
+  orderPlanning: { '缺口': { minus: ['par_level', 'live_qty'] } }
+})
+
 /** What a numeric field MEANS, in the Owner's words. Only fields that carry meaning. */
 const METRICS_OF = Object.freeze({
   inventory: {
@@ -259,6 +276,7 @@ function describe (endpointKey, retrievedAt, totalCount, shownCount, isSample) {
     endpoint: endpointKey,
     scope: SCOPE_OF[endpointKey] || { hasLocation: false, hasAsOf: false, note: null },
     metrics: METRICS_OF[endpointKey] || {},
+    derivations: DERIVATIONS_OF[endpointKey] || {},
     totalCount,
     shownCount,
     completeness: isSample ? 'sample' : 'complete',
@@ -396,6 +414,7 @@ function createAromaSystemReadAdapter (options = {}) {
 }
 
 module.exports = {
+  DERIVATIONS_OF,
   createAromaSystemReadAdapter,
   PATHS,
   READ_STATE,

@@ -88,7 +88,7 @@ test('*** the per-turn omission notes are untouched by any of this ***', () => {
     reply: '', message: '睇下庫存', answerPlan: p, evidenceSets: EV, itemsBySource: ITEMS,
     perSource: [], history: HER('庫存資料冇分地點，睇唔到邊個倉。')
   }).reply
-  assert.ok(/有 1 個數值核對唔到/.test(reply), 'the per-turn count still reaches him: ' + reply)
+  assert.ok(/有 1 個數值無法核對/.test(reply), 'the per-turn count still reaches him: ' + reply)
   assert.equal(reply.includes('冇分地點'), false, 'while the repeat does not')
 })
 

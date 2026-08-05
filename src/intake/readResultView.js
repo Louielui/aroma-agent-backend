@@ -385,8 +385,8 @@ function renderValidatedPlan (input) {
   // that legitimately cites nothing.
   const omissions = []
   if (v.keptItemCount > 0) {
-    if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統核對唔到,冇顯示。`)
-    if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值核對唔到,冇顯示。`)
+    if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統無法核對，未顯示。`)
+    if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值無法核對，未顯示。`)
   }
 
   // A SOURCE'S FIXED PROPERTIES ARE SAID ONCE PER CONVERSATION, NOT ONCE PER TURN.

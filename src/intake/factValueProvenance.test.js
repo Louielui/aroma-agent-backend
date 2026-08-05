@@ -167,17 +167,26 @@ test('a status enum still translates on the unchanged path', () => {
 
 /* ═══ THE DROP RECORD SAYS WHY, WITHOUT SAYING WHAT ══════════════════════════ */
 
-test('*** a dropped fact records a value-free REASON ***', () => {
-  // Diagnosing this round meant replaying the live API by hand because the record said
-  // only "this field was dropped". The reason is an enum, so it costs nothing and leaks
-  // nothing.
+test('*** a dropped fact records a REASON, and now the value too ***', () => {
+  // NARROWED, NOT REVERSED — Owner ruling 2026-08-05. The reason alone was not enough:
+  // twice the honest answer to "did she invent it or write a variant?" was "I cannot tell
+  // you", because the record described the rejection without describing what was rejected.
+  // A SHORT, SPACELESS TOKEN now travels; anything longer or address/URL/path-shaped is
+  // still described by shape and length only, so content cannot reach this record.
   const r = factsOf([{ field: '分類', value: 'Frozen' }])
   assert.equal(r.drops.length, 1)
   assert.equal(r.drops[0].kind, 'fact')
   assert.equal(r.drops[0].field, '分類')
   assert.ok(typeof r.drops[0].why === 'string' && r.drops[0].why.length > 0, 'why the match failed')
-  assert.equal(JSON.stringify(r.drops), JSON.stringify(r.drops).replace('Frozen', 'Frozen'), 'sanity')
-  assert.equal(JSON.stringify(r.drops).includes('Frozen'), false, 'the VALUE still never travels')
+  assert.equal(r.drops[0].value, 'Frozen', 'the short token is what makes this diagnosable')
+  assert.equal(r.drops[0].shape, 'short_token')
+})
+
+test('*** a long or spaced value is still shaped, never reproduced ***', () => {
+  const r = factsOf([{ field: '備註', value: 'Frozen goods held at the back door' }])
+  assert.equal(r.drops[0].value, undefined, 'no content in the record')
+  assert.equal(r.drops[0].shape, 'text')
+  assert.ok(Number.isFinite(r.drops[0].length))
 })
 
 test('the reason distinguishes the failure modes', () => {
@@ -188,15 +197,29 @@ test('the reason distinguishes the failure modes', () => {
   assert.equal(why('18 到 75'), 'multiple_numbers', 'a sentence, not a value')
 })
 
-test('the reason reaches the log line, and no value does', () => {
+test('*** the log line carries the reason, the shape, and a short value only ***', () => {
   const lines = []
   logAnswerPlan({
     outcome: 'degraded',
     droppedFacts: 1,
-    drops: [{ kind: 'fact', sourceId: 'aroma_system#2786', field: '現有存量', why: 'residue_not_a_value', value: '18 個' }]
+    drops: [{ kind: 'fact', sourceId: 'aroma_system#2786', field: '現有存量', why: 'residue_not_a_value', shape: 'short_token', length: 4, value: '18個' }]
   }, (l) => lines.push(l))
-  assert.deepEqual(lines[0].dropped, [{ kind: 'fact', sourceId: 'aroma_system#2786', field: '現有存量', why: 'residue_not_a_value' }])
-  assert.equal(JSON.stringify(lines[0]).includes('18 個'), false)
+  const d = lines[0].dropped[0]
+  assert.equal(d.why, 'residue_not_a_value')
+  assert.equal(d.shape, 'short_token')
+  assert.equal(d.value, '18個')
+})
+
+test('*** a value the describer refused never appears in the log either ***', () => {
+  const lines = []
+  logAnswerPlan({
+    outcome: 'degraded',
+    droppedFacts: 1,
+    // No `value` key: describeValue withheld it. The projection must not invent one.
+    drops: [{ kind: 'fact', sourceId: 'x', field: '備註', why: 'not_a_value', shape: 'text', length: 40 }]
+  }, (l) => lines.push(l))
+  assert.equal('value' in lines[0].dropped[0], false)
+  assert.equal(lines[0].dropped[0].shape, 'text')
 })
 
 /* ═══ THROUGH THE REAL PIPELINE ══════════════════════════════════════════════ */
