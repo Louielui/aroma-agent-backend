@@ -259,6 +259,82 @@ function recordLLMUsage (metrics = {}) {
   })
 }
 
+/**
+ * ── APPROVAL LIFECYCLE EVENTS — durable, uncapped, in the stream that already exists ──
+ *
+ * WHY THEY MOVED HERE. `approvalAudit` in app.js is an in-memory array capped at 500 plus
+ * one console.log line. The Owner's first principle is that operational truth is permanent
+ * and conversations are temporary; approval decisions were on the wrong side of that line —
+ * they survived only as long as a log file.
+ *
+ * What the rotation actually destroyed, as opposed to what could be reconstructed:
+ *   RECONSTRUCTABLE  approved / cancelled — the proposal record carries status and who.
+ *   GONE FOREVER     every REFUSED attempt. A bad nonce, a dead session, an expired order,
+ *                    a displayed-hash mismatch — nothing else in this system records that
+ *                    someone tried and was turned away.
+ *
+ * NOT A SECOND DECISION STORE, which was the Owner's explicit constraint: two records of
+ * what was decided is how they start disagreeing. This adds TYPES to `events`, the stream
+ * that already carries decision.created / task.created / dispatch.*. The proposal record
+ * stays the only statement of a proposal's STATUS; these are the record of what HAPPENED.
+ *
+ * NO CAP. Owner ruling: a limit that silently drops the oldest decision contradicts the
+ * thing the record exists for. The numbers make it easy — real approvals are a handful a
+ * week, and even 100 proposals a week across seven types is roughly 7 MB a year.
+ *
+ * IDS AND SHORT ENUMS ONLY. Same discipline as the metrics writer beside it: no goal, no
+ * file path, no reply, no token. The reason is bounded so a long provider string cannot
+ * smuggle content in through a field meant for an enum.
+ */
+const APPROVAL_EVENT_TYPES = Object.freeze([
+  'sealed', // a card was put in front of the Owner — 「I never saw it」 vs 「I saw it and did nothing」
+  'approved',
+  'rejected',
+  'cancelled',
+  'expired', // NEW EMISSION: nothing emitted this before; a TTL simply lapsed in silence
+  'executed',
+  'refused' // an attempt that was turned away — the class with no other record anywhere
+])
+const MAX_ENUM = 64
+
+function recordApprovalEvent (input = {}) {
+  const type = String(input.type || '')
+  if (!APPROVAL_EVENT_TYPES.includes(type)) {
+    // REFUSED, NOT WRITTEN. A typo'd type would create a category nothing queries and
+    // nothing counts — a silent hole in the one record that exists to have no holes.
+    return { ok: false, error: `unknown approval event type: ${type.slice(0, MAX_ENUM)}` }
+  }
+  const short = (v) => (typeof v === 'string' && v ? v.slice(0, MAX_ENUM) : null)
+
+  // SERIALISED ACROSS PROCESSES, exactly as recordLLMUsage is. load->mutate->save is one
+  // critical section; without the lock two writers each save their own snapshot and one
+  // set of records disappears leaving no corruption anywhere to notice. That is the defect
+  // this trail must not have — it matters more here than it did for metering.
+  return withLock(() => {
+    const db = load()
+    db.events.push({
+      id: 'evt_' + uuidv4().slice(0, 8),
+      type: 'approval.' + type,
+      entity_id: short(input.approvalId),
+      actor: short(input.actor) || 'louie',
+      at: new Date().toISOString(),
+      approval_id: short(input.approvalId),
+      proposal_id: short(input.proposalId),
+      work_order_hash: short(input.workOrderHash),
+      reason: short(input.reason),
+      entry_point: short(input.entryPoint)
+      // Deliberately absent: goal, file paths, replies, tokens. See the header.
+    })
+    save(db)
+    return { ok: true }
+  })
+}
+
+/** EVERY approval event, oldest first. Not a tail — see the no-cap note above. */
+function listApprovalEvents () {
+  return load().events.filter((e) => typeof e.type === 'string' && e.type.startsWith('approval.'))
+}
+
 function listDecisions () { return load().decisions }
 function listTasks () { return load().tasks }
 
@@ -355,4 +431,4 @@ function updateDispatch (id, patch) {
 function listDispatches () { return (load().dispatches || []).slice().reverse() }
 function getDispatch (id) { return (load().dispatches || []).find(x => x.id === id) || null }
 
-module.exports = { persistIntake, recordLLMUsage, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }
+module.exports = { persistIntake, recordLLMUsage, recordApprovalEvent, listApprovalEvents, APPROVAL_EVENT_TYPES, listDecisions, listTasks, getTask, setTaskProposalId, listEvents, usageSummary, createDispatch, updateDispatch, listDispatches, getDispatch }

@@ -31,6 +31,7 @@ const { createSettingsRouter } = require('./routes/settingsRouter') // 香香 se
 const { createContextRouter } = require('./routes/contextRouter') // Read Context v1 (guarded; 403 when READ_ACCESS OFF)
 const { createProposalBridgeRouter, promoteTaskToProposal } = require('./intake/proposalBridge')
 const store = require('./store/store')
+const { recordApprovalEvent } = require('./store/store') // approval decisions are durable — not a 500-entry buffer
 const { listWorkers, getExecutive } = require('./workers/registry')
 const { statusLabel } = require('./dispatch/dispatcher')
 
@@ -667,6 +668,47 @@ function createApp (options = {}) {
     approvalAuditLog.push(rec)
     if (approvalAuditLog.length > 500) approvalAuditLog.shift()
     console.log('[owner-approval] ' + JSON.stringify(rec))
+
+    // ── AND DURABLY, IN THE TRUTH STORE ───────────────────────────────────
+    //
+    // The array above is a convenience buffer: it answers 「what happened just now」 cheaply
+    // and is what /approvalAuditLog serves. It is NOT the record. It caps at 500, it dies
+    // with the process, and the console line dies with the log file — so an approval
+    // decision survived only as long as a rotation. The Owner's first principle is that
+    // operational truth is permanent and conversations are temporary; this was on the wrong
+    // side of that line, and the REFUSED attempts had no other record anywhere at all.
+    //
+    // WRAPPED, AND DELIBERATELY SO. The trail must not become a new way for an approval to
+    // fail. If the store cannot be written, the failure is reported here and the Owner's
+    // decision still completes — a lost audit line is bad, an approval that throws in his
+    // face mid-decision is worse.
+    try {
+      // The router speaks in OUTCOMES; the store speaks in lifecycle TYPES. Mapped here,
+      // explicitly, so a new outcome does not silently land in the durable record under a
+      // type nobody queries — an unmapped outcome is refused by the store and warned about.
+      const TYPE_OF = {
+        sealed: 'sealed',
+        approved: 'approved',
+        approved_not_dispatched: 'approved',
+        rejected: 'rejected',
+        cancelled: 'cancelled',
+        expired: 'expired',
+        executed: 'executed',
+        refused: 'refused'
+      }
+      const written = recordApprovalEvent({
+        type: TYPE_OF[rec.outcome] || rec.outcome,
+        approvalId: rec.approvalId,
+        proposalId: (entry && entry.proposalId) || null,
+        workOrderHash: (entry && entry.workOrderHash) || null,
+        actor: LOCAL_OWNER,
+        reason: rec.reason,
+        entryPoint: rec.entryPoint
+      })
+      if (!written.ok) console.warn('[owner-approval] durable write refused: ' + written.error)
+    } catch (err) {
+      console.warn('[owner-approval] durable write FAILED: ' + ((err && err.message) || String(err)))
+    }
   }
   app.locals.approvalAuditLog = approvalAuditLog
 

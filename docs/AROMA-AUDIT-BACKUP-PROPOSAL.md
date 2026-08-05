@@ -56,6 +56,24 @@ It is the only field in either kind that can carry text originating outside this
 is not present today, and Computer Operator is off, so nothing is currently at risk. Stated
 now rather than discovered later.
 
+> ### 🔒 CONDITION ON ENABLING COMPUTER OPERATOR — Owner ruling, 2026-08-05
+>
+> **Before `COMPUTER_OPERATOR` is ever turned on, `windowTitle` must be either OMITTED from
+> the audit record or REDACTED before it is written.**
+>
+> The Owner's reasoning, recorded because it is what makes this a condition rather than a
+> preference: *a window title can carry a customer name or an email subject, and once it is
+> in an offsite backup it is out.*
+>
+> Redaction has to happen **at write time**, not at backup time. `.aroma/agent-audit/` and
+> `.aroma/computer-audit/` are append-only and are about to be replicated to Backblaze
+> nightly; a title written once is copied offsite that night and cannot be recalled from a
+> backup afterwards.
+>
+> This is **not built** — deliberately, on the Owner's instruction, because building it now
+> would be building for a flag that is off. It is written here so whoever enables the flag
+> hits the condition first. `computerSupervisor.js` is where the record is assembled.
+
 ---
 
 ## 3. What should go, and what should NOT

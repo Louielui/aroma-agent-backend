@@ -318,7 +318,7 @@ function createOwnerApprovalRouter (deps = {}) {
       return res.status(409).json({ error: 'reject_failed', reason: 'cancel_failed' })
     }
 
-    auditFn({ approvalId, outcome: 'rejected', reason: 'owner_rejected', entryPoint: 'owner_local' })
+    auditFn({ approvalId, outcome: 'rejected', reason: 'owner_rejected', entryPoint: 'owner_local', proposalId: loaded.record.proposalId, workOrderHash: loaded.record.workOrderHash || null })
     return res.status(200).json({
       ok: true,
       approvalId,
@@ -374,7 +374,10 @@ function createOwnerApprovalRouter (deps = {}) {
     } catch (err) {
       return refuse(res, 400, 'confirm_failed', approvalId, 'owner_local')
     }
-    auditFn({ approvalId, outcome: out.agentHandedOff ? 'approved' : 'approved_not_dispatched', reason: out.body.dispatchStatus, entryPoint: 'owner_local' })
+    // The HASH travels with the decision — the old audit line carried ids and enums but
+    // never said WHICH work order was approved. It is the recomputed one, so the record
+    // names exactly what the Owner was looking at.
+    auditFn({ approvalId, outcome: out.agentHandedOff ? 'approved' : 'approved_not_dispatched', reason: out.body.dispatchStatus, entryPoint: 'owner_local', proposalId: loaded.record.proposalId, workOrderHash: recomputed })
     return res.status(out.status).json(out.body)
   })
 
