@@ -248,6 +248,28 @@ into a VM arrangement unchanged in concept.
 > The container is not the constraint. What she can *do* is Notepad-shaped, and a VM does not
 > change that. **Do not read a completed VM as progress toward the Costco and supplier work.**
 
+### ⚠ AND LATER THE SAME DAY, THE TARGET ITSELF WAS RETIRED
+
+Browser automation was the destination this whole line of work was pointed at. **It is no
+longer the destination.** Owner conclusion, 2026-08-05, after measuring the live Costco flow:
+
+> **「The value was never the clicking; it was knowing what to order. That is judgement, and
+> judgement is what she is for — the browser was only how I imagined it reaching me.」**
+>
+> **「The gap was never the browser.」**
+
+Four actions to Add to Cart, against **six classes of judgement a selector cannot make**, per
+line, across dozens of lines — plus the finding that **a cart is session-bound**, so the
+"she prepares, I commit" shape had no reachable cart in the first place. Full record in
+`aroma-agent-backend/docs/GOVERNANCE-BROWSER-VS-FILE.md`.
+
+**Consequence for this document:** nothing above is retracted — the wire-in scope, the ten
+divergences, the `windowTitle` hard condition and the R-item classification all still hold if
+Computer Operator is ever picked up. But the *reason* to pick it up has weakened
+considerably. **Do not treat browser automation as a pending item on this list.** The
+reframed work — she reports *what* to buy from inventory she already reads — needs no
+desktop, no VM and no browser.
+
 ### Why this section exists at all
 
 Owner instruction: *something that reads as current while being superseded is how a week gets
