@@ -160,14 +160,16 @@ test('a date-shaped business question is not a date question', async () => {
 /* ═══ 4. THE FLAG, AND WHAT SHADOW NOW MEANS ═══════════════════════════════ */
 
 test('*** with TURN_ROUTER off, a clock question behaves exactly as before ***', async () => {
-  const t = await turn('現在是幾點？', { TURN_ROUTER: undefined })
+  // WAS `TURN_ROUTER: undefined`. The default flipped to 'on' on 2026-08-05; this now
+  // names the value it tests. Kept: 'off' is a supported rollback and stays provable.
+  const t = await turn('現在是幾點？', { TURN_ROUTER: 'off' })
   assert.equal(t.modelCalls.length, 1, 'off means off — the router does not act')
   assert.ok(t.res.reply.includes('MODEL_WAS_CALLED'))
 })
 
 test('*** shadow still changes nothing for a NON-utility turn ***', async () => {
   // The Step 1 guarantee, correctly narrowed rather than quietly dropped.
-  const off = await turn('你可以幫我做什麼？', { TURN_ROUTER: undefined })
+  const off = await turn('你可以幫我做什麼？', { TURN_ROUTER: 'off' })
   const shadow = await turn('你可以幫我做什麼？')
   assert.equal(shadow.res.reply, off.res.reply)
   assert.equal(shadow.modelCalls.length, off.modelCalls.length)

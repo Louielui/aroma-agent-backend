@@ -45,15 +45,18 @@
  *     CONVERSATION; the Route/Evidence Guard (Step 4) is what stops it answering anyway.
  *   - one message, one route: 「而家幾點？順便睇下發票」 yields UTILITY only.
  *
- * ── STATUS: SHADOW. This decides NOTHING yet. ────────────────────────────────
- * TURN_ROUTER defaults to 'off'. At 'shadow' the decision is computed and logged beside what
- * the pipeline really did, and no read, schema or reply changes. Steps 2-4 each need their
- * own Owner GO.
+ * ── STATUS: LIVE. This decides which sources a turn may read. ────────────────
+ * All four migration steps shipped 2026-08-04/05 (tag `turn-router-complete-20260805`;
+ * docs/TURN-ROUTER-MIGRATION.md is the record, including the open items).
+ *
+ * TURN_ROUTER defaults to 'on'. 'shadow' computes and logs the decision beside what the
+ * pipeline really did, changing nothing. 'off' is the legacy path and is still a supported
+ * rollback target — but it is NOT "the old behaviour" any more: with it, the UTILITY route
+ * never runs and every enabled source is read on every chat turn. See resolveFlagValue.
  */
 
 const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
-const { resolveFlag } = require('../context/flags')
 const { UTILITY_PATTERNS } = require('./utilityAnswer') // THE one utility vocabulary — this file holds none
 
 /** Priority order, and the Owner's. Highest first; CONVERSATION is the fallback. */
@@ -135,18 +138,37 @@ function routeTurn (message, opts) {
   return none('CONVERSATION', lane.reason === 'question' ? 'question' : 'default', 'high')
 }
 
-/** Strict, fail-closed, default off. Same shape as READ_ACCESS / DECISION_RECALL. */
+/** Strict and exact-match, default ON — and NOT the same shape as READ_ACCESS; see below. */
 function resolveTurnRouter (env = process.env) {
   const v = resolveFlagValue(env)
   return v
 }
 
+/**
+ * DEFAULT 'on' SINCE 2026-08-05, AND THE FALLBACK DIRECTION INVERTED WITH IT.
+ *
+ * This flag deliberately does NOT go through resolveFlag() any more, and the difference is
+ * not stylistic. For READ_ACCESS and its siblings, 'off' is the cautious direction: an
+ * unreadable value resolves to touching nothing. Here the meanings are the other way round.
+ *
+ * Once Step 2 DELETED the inventory default and Step 3 made reads follow the route, 'off'
+ * stopped meaning "the old behaviour". What it means is: the UTILITY route never runs, and
+ * EVERY ENABLED SOURCE IS READ ON EVERY CHAT TURN — the exact defect this router was built
+ * to remove. Falling back to that on a typo would be the reckless direction, not the safe one.
+ *
+ * So: 'off' and 'shadow' require an exact spelling, and everything else resolves to 'on' —
+ * toward reading LESS. A rollback to the legacy path is still fully supported; it simply has
+ * to be meant. Four tests exercise it explicitly rather than by inheriting a default.
+ */
 function resolveFlagValue (env) {
   const raw = env && typeof env.TURN_ROUTER === 'string' ? env.TURN_ROUTER : ''
   if (raw === 'shadow') return 'shadow'
-  // 'on' and 'off' reuse the existing strict resolver so this flag cannot drift from the
-  // others in what it accepts.
-  return resolveFlag({ TURN_ROUTER: raw }, 'TURN_ROUTER') === 'on' ? 'on' : 'off'
+  if (raw === 'off') return 'off'
+  if (raw === 'on' || raw === '') return 'on'
+  // A typo is a mistake, not a preference: it is honoured in the narrow direction AND said
+  // out loud, so it cannot sit unnoticed in a launcher for weeks.
+  console.warn(`[AROMA-HUB] Invalid TURN_ROUTER="${raw}" — falling back to 'on' (the safe direction for this flag).`)
+  return 'on'
 }
 
 const KINDS = (v) => (Array.isArray(v) ? v.filter((s) => typeof s === 'string' && s).map(String) : [])

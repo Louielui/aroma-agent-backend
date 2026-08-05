@@ -233,7 +233,10 @@ test('*** TURN_ROUTER=shadow keeps Step 2 behaviour — reads are NOT governed *
   assert.ok(t.reads.length > 0, 'shadow still reads everything; only UTILITY acts')
 })
 
-test('*** TURN_ROUTER=off keeps pre-router behaviour ***', async () => {
-  const t = await turn('現在是幾點？', { TURN_ROUTER: undefined })
+test('*** TURN_ROUTER=off keeps pre-router behaviour — a live rollback target ***', async () => {
+  // WAS `{ TURN_ROUTER: undefined }`, i.e. it inherited the default. The default flipped to
+  // 'on' on 2026-08-05, so this now says what it means instead of borrowing it. Kept, not
+  // deleted: 'off' is still a supported rollback and has to stay provable.
+  const t = await turn('現在是幾點？', { TURN_ROUTER: 'off' })
   assert.ok(t.model.length === 1, 'off means the utility does not act either')
 })

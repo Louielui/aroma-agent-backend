@@ -190,6 +190,10 @@ test('GPT receives persona+guards+contract+classifier AND the same recall/read-c
   ON()
   process.env.CONVERSATION_CONTRACT = 'on'
   process.env.DECISION_RECALL = 'on'
+  // TURN_ROUTER:'off' — this asserts WHICH BLOCKS each provider receives, not routing.
+  // Under routing a turn with no business intent reads nothing and there are no blocks to
+  // compare. Legacy path pinned deliberately; see MAINTENANCE-BACKLOG.md M-4.
+  process.env.TURN_ROUTER = 'off'
   process.env.READ_ACCESS = 'on'; process.env.CONTEXT_DRIVE = 'on'
   const recallDeps = { listDecisionsFn: () => [{ id: 'dec_SECRET', statement: 'RECALL_SENTINEL', rationale: '', status: 'active', provenance: { proposed_by: 'louie', source: 's', approved_by: null, decided_at: '2026-07-20T00:00:00Z' } }], listTasksFn: () => [] }
   const readDeps = { sources: ['drive'], connector: { read: async () => ({ asOf: 'now', source: 'drive', count: 1, results: [{ source: 'drive', sourceId: 'd1', title: 'READCTX_SENTINEL', retrievedAt: 'now', originalDate: '2026-07-01', content: 'x', link: 'l', trust: 'live', error: null }] }) } }
@@ -224,6 +228,10 @@ test('GPT receives persona+guards+contract+classifier AND the same recall/read-c
 
 test('Claude still receives recall + read-context on its own lane (unchanged)', async () => {
   process.env.DECISION_RECALL = 'on'
+  // TURN_ROUTER:'off' — this asserts WHICH BLOCKS each provider receives, not routing.
+  // Under routing a turn with no business intent reads nothing and there are no blocks to
+  // compare. Legacy path pinned deliberately; see MAINTENANCE-BACKLOG.md M-4.
+  process.env.TURN_ROUTER = 'off'
   process.env.READ_ACCESS = 'on'; process.env.CONTEXT_DRIVE = 'on'
   const recallDeps = { listDecisionsFn: () => [{ id: 'd1', statement: 'RECALL_SENTINEL', rationale: '', status: 'active', provenance: { proposed_by: 'l', source: 's', approved_by: null, decided_at: '2026-07-20T00:00:00Z' } }], listTasksFn: () => [] }
   const readDeps = { sources: ['drive'], connector: { read: async () => ({ asOf: 'now', source: 'drive', count: 1, results: [{ source: 'drive', sourceId: 'd1', title: 'READCTX_SENTINEL', retrievedAt: 'now', originalDate: '2026-07-01', content: 'x', link: 'l', trust: 'live', error: null }] }) } }

@@ -184,3 +184,42 @@ assumption in place.
 
 **Impact meanwhile.** A full-suite red must be read carefully: check whether the failing
 file is one of these three and re-run it alone before treating it as a regression.
+
+---
+
+## M-4 — the provider-boundary guarantees are proven on the LEGACY path only
+
+**Opened 2026-08-05**, when `TURN_ROUTER`'s repo default flipped from `off` to `on`.
+
+Flipping the default turned **20 tests red**, in five files. None of them was testing the
+router; all of them were **inheriting** the old default. Their subject is the context-assembly
+boundary — which blocks each provider receives, whether a withheld source is even read, whether
+one bounded block is assembled — and every one of them needs a turn that actually reads. Under
+routing, a message with no business intent reads nothing, so there is nothing to compare.
+
+They were pinned to `TURN_ROUTER: 'off'` **explicitly**, per Owner instruction: the legacy path
+is still a supported rollback and has to stay provable, and a test that names its configuration
+is better than one that borrows it.
+
+**THE COST, which is the reason this entry exists.** These guarantees are now proven on a path
+that is no longer the default:
+
+| File | Tests | What is now legacy-only |
+|---|---|---|
+| `src/intake/contextAsymmetry.test.js` | 11 | per-provider withholding; the untrusted-data framing; one-fetch-two-providers |
+| `src/context/parallelReadContext.test.js` | 3 | a source withheld from OpenAI is never READ on a GPT turn |
+| `src/routing/modelRouter.test.js` | 2 | which blocks each provider receives |
+| `src/context/readContext.test.js` | 1 | exactly ONE bounded context block |
+| `src/intake/laneRouter.test.js` | 1 | hostile content that HAS arrived is inert |
+
+**Already covered, so do not redo it:** the last row's live-path counterpart was added in the
+same commit — under routing a CONVERSATION turn performs **zero** connector reads, so hostile
+content never arrives at all. That is the stronger guarantee, and both are now pinned. The
+other four rows have no live-path equivalent yet.
+
+**The fix (when picked up).** Add a routed counterpart for each: use a message whose intent
+declares the source under test (`invoice`→`aroma_system`, `mail`→`gmail`, `document`→`drive`),
+so the boundary is exercised under the configuration that actually runs. Keep the legacy tests.
+Do **not** widen an intent's declared sources to make a test convenient — the Owner's Step 3
+ruling stands: declared sources are a hint about where an answer might live, not an
+authorisation to read.

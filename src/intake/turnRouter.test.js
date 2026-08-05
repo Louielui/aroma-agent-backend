@@ -126,16 +126,18 @@ test('*** the router adds no paid model call ***', () => {
   }
 })
 
-/* ═══ 4. THE FLAG — STRICT, FAIL-CLOSED, DEFAULT OFF ═══════════════════════ */
+/* ═══ 4. THE FLAG — STRICT AND EXACT-MATCH, DEFAULT ON SINCE 2026-08-05 ════ */
 
-test('*** TURN_ROUTER defaults to off, and only exact values are honoured ***', () => {
-  assert.equal(resolveTurnRouter({}), 'off', 'unset → off')
-  for (const bad of ['', ' ', 'ON', 'true', '1', 'yes', 'shadow ', 'Shadow', 'enabled']) {
-    assert.equal(resolveTurnRouter({ TURN_ROUTER: bad }), 'off', `"${bad}" must be off`)
-  }
+test('*** only exact values are honoured — three states, no near misses ***', () => {
+  // The DEFAULT and its direction moved to turnRouterDefault.test.js, which owns the
+  // reasoning. What this test still owns is the exact-match rule: 'off' and 'shadow' are
+  // never reached by a typo, so the legacy path can only be entered on purpose.
   assert.equal(resolveTurnRouter({ TURN_ROUTER: 'off' }), 'off')
   assert.equal(resolveTurnRouter({ TURN_ROUTER: 'shadow' }), 'shadow')
   assert.equal(resolveTurnRouter({ TURN_ROUTER: 'on' }), 'on')
+  for (const bad of ['OFF', 'Off', 'off ', ' off', 'shadow ', 'Shadow', 'false', '0', 'no']) {
+    assert.notEqual(resolveTurnRouter({ TURN_ROUTER: bad }), 'off', `"${bad}" must not reach the legacy path`)
+  }
 })
 
 /* ═══ 5. THE SHADOW LOG — DISAGREEMENTS, NOT JUST VERDICTS ═════════════════ */

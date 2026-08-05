@@ -264,6 +264,15 @@ test('FLAGS OFF → adapter input BYTE-IDENTICAL to today and ZERO source reads'
   assert.equal(spy.calls.length, 0) // NO source was read
 })
 test('flags ON + chat → exactly ONE bounded context block in the adapter input', async () => {
+  // TURN_ROUTER:'off' ADDED 2026-08-05, when the default flipped to 'on'. These tests are
+  // about the CONTEXT-ASSEMBLY BOUNDARY, not about routing: they need a turn that actually
+  // reads, and under routing a message with no business intent reads nothing. Pinning the
+  // legacy path here keeps them proving what they were written to prove — and keeps that
+  // path provable, since it is still a supported rollback.
+  //
+  // THE COST, recorded rather than left implicit: this guarantee is now proven on the
+  // legacy path only. See MAINTENANCE-BACKLOG.md M-4.
+  process.env.TURN_ROUTER = 'off'
   process.env.READ_ACCESS = 'on'; process.env.CONTEXT_DRIVE = 'on'
   const c = fakeConnector({ 'drive.searchFiles': okList('drive', [live({ title: 'Invoice 88' })]) })
   const a = recAdapter(CHAT)

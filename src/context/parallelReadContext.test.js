@@ -108,7 +108,15 @@ async function withEnv (vars, fn) {
     for (const k of Object.keys(vars)) { if (saved[k] === undefined) delete process.env[k]; else process.env[k] = saved[k] }
   }
 }
-const ENV = { DECISION_RECALL: 'off', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', MULTI_AI_ROUTER: 'off' }
+// TURN_ROUTER:'off' ADDED 2026-08-05, when the default flipped to 'on'. These tests are
+// about the CONTEXT-ASSEMBLY BOUNDARY, not about routing: they need a turn that actually
+// reads, and under routing a message with no business intent reads nothing. Pinning the
+// legacy path here keeps them proving what they were written to prove — and keeps that
+// path provable, since it is still a supported rollback.
+//
+// THE COST, recorded rather than left implicit: this guarantee is now proven on the
+// legacy path only. See MAINTENANCE-BACKLOG.md M-4.
+const ENV = { DECISION_RECALL: 'off', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', MULTI_AI_ROUTER: 'off', TURN_ROUTER: 'off' }
 
 test('a GPT-served turn fetches only what it is PERMITTED — and nothing when all is withheld', async () => {
   // INVERTED by a later Owner decision: GPT now receives the same context as Claude, so

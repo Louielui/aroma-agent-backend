@@ -56,22 +56,29 @@ function captureRouteLog () {
 
 /* ═══ 1. OFF IS OFF ═════════════════════════════════════════════════════════ */
 
-test('*** TURN_ROUTER unset → not a single shadow line ***', async () => {
+test('*** TURN_ROUTER=off → not a single shadow line ***', async () => {
+  // WAS `TURN_ROUTER: undefined`. The default flipped to 'on' on 2026-08-05, so this now
+  // names the value it is testing instead of inheriting it. What it asserts is unchanged:
+  // the legacy path is silent AND inert, and it is still a supported rollback.
   const cap = captureRouteLog()
   try {
-    await withEnv({ TURN_ROUTER: undefined, READ_ACCESS: 'off' }, () =>
+    await withEnv({ TURN_ROUTER: 'off', READ_ACCESS: 'off' }, () =>
       processIntake('現在是幾點？', fakeAdapter(), [], { interactionMode: 'chat', demo: false }))
   } finally { cap.restore() }
-  assert.equal(cap.lines.length, 0, 'the default must be silent AND inert')
+  assert.equal(cap.lines.length, 0, 'off must be silent AND inert')
 })
 
-test('an invalid value is off, not on', async () => {
+test('*** INVERTED: an invalid value is ON, not off ***', async () => {
+  // The fallback direction moved with the default, and this is the test that would have
+  // kept passing while protecting nothing. For READ_ACCESS, 'off' is the cautious
+  // direction; here 'off' means read every connector on every turn, so a typo must
+  // resolve toward reading LESS. A shadow line now PROVES the router ran.
   const cap = captureRouteLog()
   try {
     await withEnv({ TURN_ROUTER: 'true', READ_ACCESS: 'off' }, () =>
       processIntake('現在是幾點？', fakeAdapter(), [], { interactionMode: 'chat', demo: false }))
   } finally { cap.restore() }
-  assert.equal(cap.lines.length, 0)
+  assert.equal(cap.lines.length, 1, 'a typo must not silently reach the legacy path')
 })
 
 /* ═══ 2. SHADOW REALLY OBSERVES ════════════════════════════════════════════ */
