@@ -37,6 +37,22 @@
 
 const { ENTITY_TYPES } = require('../context/contextResult')
 
+/**
+ * THE OWNER-FACING UNIT WORDS. Keys are the codes the LIVE rows carry.
+ *
+ * Measured 2026-08-05 by reading one live inventory page, read-only: ea · cs · pal · box ·
+ * bag · bottle · pack. She was writing 件 and 箱 — translating the code herself — and the
+ * translated word is not in the row, so every unit dropped as not_a_value. That is exactly
+ * the `active → 啟用中` case, which statuses have always had a table for and units did not.
+ *
+ * cs and box are kept DISTINCT (箱 / 盒). The source draws that line and collapsing it here
+ * would lose a distinction the Owner's own data makes. A code with no entry renders as
+ * itself — never guessed.
+ */
+const UNIT_LABELS = Object.freeze({
+  ea: '件', cs: '箱', box: '盒', pal: '卡板', bag: '袋', bottle: '支', pack: '包'
+})
+
 /** The Owner-facing status words. Keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
   needs_review: '需要審批',
@@ -53,6 +69,12 @@ const LIMITS = Object.freeze({
   maxSections: 4,
   maxItemsPerSection: 5,
   maxFactsPerItem: 4,
+  // DERIVATIONS DO NOT COMPETE FOR THE FOUR ABOVE (Owner ruling, 2026-08-05). She spent
+  // all four slots on ordinary fields and 缺口 — the whole reason derivations were
+  // approved — lost to 分類. TWO, because only one derivation is declared today and a
+  // second is the most any single row plausibly warrants; a larger allowance would let
+  // computed values crowd out the measured ones they are computed from.
+  maxDerivationsPerItem: 2,
   maxDirectAnswerChars: 200,
   maxLimitations: 3,
   maxLimitationChars: 120,
@@ -197,6 +219,8 @@ function logAnswerPlan (entry, sink) {
     droppedItems: Number.isFinite(entry.droppedItems) ? entry.droppedItems : 0,
     droppedFacts: Number.isFinite(entry.droppedFacts) ? entry.droppedFacts : 0,
     droppedSentences: Number.isFinite(entry.droppedSentences) ? entry.droppedSentences : 0,
+    // Counted since 2026-08-05: a limitation removed by the filter used to leave no trace.
+    droppedLimitations: Number.isFinite(entry.droppedLimitations) ? entry.droppedLimitations : 0,
     // WHAT THE MODEL OFFERED, beside what survived. Without the pair, "it sent no sections"
     // and "it sent items with no facts" look identical from the log — and telling them
     // apart cost a hand investigation across the archive and the live API.
@@ -386,6 +410,11 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
       if (row.source) byId.set(`${row.source}#${row.sourceId}`, row)
       for (const v of Object.values(row.fields || {})) {
         values.add(String(v))
+        // BOTH FORMS. The row carries `cs`; she writes 箱. Indexing only the raw code made
+        // every translated unit and status unverifiable — she has to guess which spelling
+        // the validator wants, and guessing wrong deleted a correct fact.
+        const tv = translate(v)
+        if (tv !== String(v)) values.add(tv)
         addNum(v)
         addText(v)
         const n = numericOf(v)
@@ -395,6 +424,35 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
       }
       if (row.title) { values.add(String(row.title)); addText(row.title) }
       if (row.originalDate) { values.add(String(row.originalDate)); addNum(row.originalDate) }
+      // ── CONTENT IS EVIDENCE ────────────────────────────────────────────────
+      // A calendar row carries only summary/start/location in `fields`; the doctor, the
+      // phone number and the to-do live in the event DESCRIPTION, which the adapter puts
+      // in `content`. That was never indexed, so anything she read out of a description
+      // could never be verified in any format — the only safe calendar answer was a title.
+      //
+      // The description is ALREADY in the prompt. Not indexing it did not withhold it from
+      // her; it only stopped her citing it verifiably.
+      //
+      // Indexed WHOLE and in SEGMENTS, because either granularity may be what she quotes.
+      // Still exact equality: a name that is not in the description does not match.
+      if (row.content) {
+        const whole = String(row.content)
+        // HIERARCHICAL, not one flat split. Splitting on coarse and fine separators at once
+        // loses the middle granularity: 「確認郵件、提供保險資料」 is ONE chunk between two ·
+        // and ALSO two items between 、, and she may quote either. All three levels are added.
+        const coarse = whole.split(/[·;；\n]/)
+        const fine = coarse.flatMap((c) => c.split(/[,，、]/))
+        for (const seg of [whole, ...coarse, ...fine]) {
+          const t = seg.trim()
+          if (!t) continue
+          values.add(t)
+          addNum(t)
+          addText(t)
+          const n = numericOf(t); if (n !== null) numericValues.add(n)
+          const dk = dateKeyOf(t); if (dk) dateKeys.add(dk)
+          const gk = digitsKeyOf(t); if (gk) digitKeys.add(gk)
+        }
+      }
       if (row.originalDate) { const dk = dateKeyOf(row.originalDate); if (dk) dateKeys.add(dk) }
     }
   }
@@ -591,6 +649,8 @@ function metricLabelMap (evidenceSets = []) {
 function translate (value) {
   const raw = String(value)
   if (Object.prototype.hasOwnProperty.call(STATUS_LABELS, raw)) return STATUS_LABELS[raw]
+  // Units join statuses on the same terms: a declared table, applied by the server.
+  if (Object.prototype.hasOwnProperty.call(UNIT_LABELS, raw)) return UNIT_LABELS[raw]
   return raw
 }
 
@@ -740,7 +800,15 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
       }
       const facts = []
       const labels = metrics.get(row.source) || EMPTY_LABELS
-      for (const f of (Array.isArray(it.facts) ? it.facts : []).slice(0, LIMITS.maxFactsPerItem)) {
+      // TWO ALLOWANCES, COUNTED SEPARATELY. The ordinary cap is unchanged; a declared
+      // derivation is taken from its own budget so it can never be squeezed out by a
+      // field she happened to list first.
+      const derivMap = derivations.get(row.source) || EMPTY_LABELS
+      let ordinaryUsed = 0
+      let derivedUsed = 0
+      for (const f of (Array.isArray(it.facts) ? it.facts : [])) {
+        const isDerived = derivMap.has(String(f.field))
+        if (isDerived) { if (derivedUsed >= LIMITS.maxDerivationsPerItem) continue; derivedUsed++ } else { if (ordinaryUsed >= LIMITS.maxFactsPerItem) continue; ordinaryUsed++ }
         const field = String(f.field)
 
         // ── A QUANTITY IS THE SERVER'S, NOT THE MODEL'S ─────────────────────────
@@ -794,11 +862,34 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   }
 
   // ── limitations: real ones only, never telemetry ────────────────────────────
-  const limitations = (Array.isArray(plan.limitations) ? plan.limitations : [])
-    .map((l) => relabel(String(l).trim()))
-    .filter((l) => l && !TELEMETRY_RE.test(l) && sentenceIsSupported(l, index) && proseIsGrounded(l, index))
-    .slice(0, LIMITS.maxLimitations)
-    .map((l) => l.slice(0, LIMITS.maxLimitationChars))
+  // ── A FILTERED LIMITATION IS COUNTED AND RECORDED ─────────────────────────
+  // This filter removed limitations silently: droppedSentences counts directAnswer only,
+  // and nothing counted these. Diagnosing 2026-08-05 I could not tell the Owner whether the
+  // calendar limitations had been filtered or simply not written — the fifth silent drop
+  // this week, and the only one still in place. Same scrubbed record a fact drop carries.
+  let droppedLimitations = 0
+  const limitations = []
+  for (const raw of (Array.isArray(plan.limitations) ? plan.limitations : [])) {
+    const l = relabel(String(raw).trim())
+    if (!l) continue
+    let why = null
+    if (TELEMETRY_RE.test(l)) why = 'telemetry'
+    else if (!sentenceIsSupported(l, index)) why = 'number_not_in_evidence'
+    else if (!proseIsGrounded(l, index)) why = 'name_not_in_evidence'
+    if (why) {
+      droppedLimitations++
+      drops.push(Object.assign({ kind: 'limitation', why }, describeValue(l)))
+      continue
+    }
+    if (limitations.length >= LIMITS.maxLimitations) {
+      // Over the cap is not a rejection of the sentence, but it is still a removal, so it
+      // is counted rather than allowed to vanish.
+      droppedLimitations++
+      drops.push(Object.assign({ kind: 'limitation', why: 'over_cap' }, describeValue(l)))
+      continue
+    }
+    limitations.push(l.slice(0, LIMITS.maxLimitationChars))
+  }
 
   // ── followUp: zero or one, never two options ────────────────────────────────
   let followUp = typeof plan.followUp === 'string' ? relabel(plan.followUp.trim()) : null
@@ -820,6 +911,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     droppedFacts,
     droppedItems,
     droppedSentences,
+    droppedLimitations,
     // The model said it cites nothing and then supplied rows. The rows are gone; the
     // contradiction is not, because a caller must be able to tell this from a clean turn.
     sectionsNotDeclared,
@@ -904,6 +996,7 @@ module.exports = {
   ENTITY_LABELS,
   SOURCE_LABELS,
   SOURCE_NAME_REWRITES, // exported so languagePolicy.test.js can prove it stays empty
+  UNIT_LABELS,
   LIMITS,
   TELEMETRY_RE,
   logAnswerPlan,

@@ -77,7 +77,17 @@ const CONVERSATION_CONTRACT = [
   '- 你必須聽得懂廣東話、繁體中文與英文。',
   '- 預設一律用「書面繁體中文」回覆 —— 無論 Louie 用哪一種語言書寫。他慣用廣東話,這很正常,不要請他轉用其他語言。',
   '- 書面繁體中文指自然、現代、清楚的書面語,不是公文腔,也不是生硬的翻譯腔。',
-  '- 不要把廣東話口語字當成預設書面形式:而家→目前、冇→沒有、搵到→找到、啲→一些／這些、喺→在、咩→什麼、邊啲→哪些。',
+  // ── THE RULE NO LONGER SPELLS THE FORMS IT BANS ───────────────────────────
+  // HYPOTHESIS UNDER TEST, NOT A DIAGNOSIS. After Round 1 the ONLY Cantonese left anywhere
+  // in the composed system string was this line — the mapping examples inside the rule that
+  // forbids them. 「今日冇特別安排」 then appeared in a field whose own schema description had
+  // been rewritten and verifiably reached the model, which disproved the explanation I gave
+  // for it. This changes the one remaining variable so the next 冇 tells us something real.
+  //
+  // MEANING PRESERVED: the prohibition is unchanged and the WRITTEN targets are still named.
+  // Only the banned spellings are gone — she is told what to write, not shown what to avoid
+  // writing.
+  '- 不要使用廣東話口語字。口語的否定詞改用「沒有」，時間副詞改用「目前」，指示詞改用「這些」「哪些」，方位詞改用「在」，疑問詞改用「什麼」，尋找、觀看等動詞改用「找到」「看」。',
   '- 只有在 Louie 明確要求時才用廣東話回覆。',
   '- 訊息以廣東話或中文為主、但夾雜英文名稱、產品或技術詞時:仍然用書面繁體中文回覆,並保留那些英文原文。不要因為出現英文字就整段改用英文。',
   '- 只有在 Louie 明確要求英文,或訊息本身以英文為主時,才全篇用英文回覆。',

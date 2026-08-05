@@ -193,7 +193,11 @@ test('*** the validated plan reaches the Owner — no template wording survives 
     const res = await run(spyAdapter(ENVELOPE_WITH_PLAN))
     assert.ok(res.reply.includes('餐廳系統有 199 項存貨記錄。'))
     assert.ok(res.reply.includes('現有 18.000'), 'currentStock must be shown')
-    assert.ok(res.reply.includes('單位 ea'), 'unit must be shown')
+    // THE OWNER-FACING WORD, not the raw code. Units joined statuses on 2026-08-05: the
+    // rows carry ea/cs/pal/box/bag/bottle/pack and she was writing 件/箱 herself, so the
+    // translated word was never in the row and every unit dropped. Now the server renders
+    // it, exactly as it has always rendered active → 啟用中.
+    assert.ok(res.reply.includes('單位 件'), 'unit must be shown, in the Owner-facing word: ' + res.reply)
     // the old template's wording and telemetry must all be gone
     for (const gone of ['目前確認到', '冇日期', '狀態未確認', '未列出', '長度上限']) {
       assert.equal(res.reply.includes(gone), false, `old renderer wording must not survive: ${gone}`)

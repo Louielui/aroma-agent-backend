@@ -143,7 +143,13 @@ test('a correctly transcribed metric is unchanged', () => {
 })
 
 test('a metric the ROW does not carry is still dropped — nothing is invented', () => {
-  const bare = Object.assign({}, ROW, { fields: { name: 'Napa Cabbage', unit: 'ea' } })
+  // `content` IS STRIPPED TOO, and that is the point. This fixture used to replace `fields`
+  // and leave `content` behind still reading currentStock=18.000 — a state the adapter
+  // cannot produce, because toResult() builds `bits` and `fields` from the same
+  // Object.entries(row). Once content became indexed evidence (2026-08-05, so a calendar
+  // description could be cited at all) the stale content made the value verifiable and the
+  // test failed. The rule is unchanged; the fixture was describing an impossible row.
+  const bare = Object.assign({}, ROW, { fields: { name: 'Napa Cabbage', unit: 'ea' }, content: 'name=Napa Cabbage · unit=ea' })
   const v = validatePlan(planWithFacts([{ field: '現有存量', value: '18.000' }]),
     { evidenceSets: [EVIDENCE], itemsBySource: [{ source: 'aroma_system', items: [bare] }] })
   assert.equal(v.droppedFacts, 1, 'a label is not permission to produce a number')
