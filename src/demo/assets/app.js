@@ -218,7 +218,7 @@
     mainEl.classList.add('empty')
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)
-    fetch('/api/v1/greeting', { headers: { Accept: 'application/json' } })
+    fetch('/api/v1/demo/greeting', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (j) {
         // Still the same empty conversation? He may have typed while this was in flight.

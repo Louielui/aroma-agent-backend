@@ -156,3 +156,26 @@ test('all of it is in the served page', () => {
   }
   assert.equal(/innerHTML|eval\(|new Function/.test(DEMO_HTML), false, 'still no markup from strings')
 })
+
+/* ═══ 6. IT IS GATED LIKE EVERY OTHER ROUTE THAT SERVES THE OWNER ══════════ */
+
+test('*** the greeting route sits under a prefix the owner gate already covers ***', () => {
+  // MY DEFECT, caught by probing the live server rather than by a test. The gate in app.js is
+  // an ENUMERATED path list — '/demo', '/api/v1/demo', '/api/v1/conversations' — so a route
+  // on a NEW prefix is unauthenticated until someone remembers to add it. The first version
+  // of this route sat at /api/v1/greeting and answered 200 to an unauthenticated request
+  // while every sibling answered 401.
+  const router = fs.readFileSync(path.join(__dirname, '..', 'routes', 'demoRouter.js'), 'utf8')
+  const app = fs.readFileSync(path.join(__dirname, '..', 'app.js'), 'utf8')
+
+  const gated = [...app.matchAll(/app\.use\('([^']+)',\s*requireOwner\)/g)].map((m) => m[1])
+  assert.ok(gated.includes('/api/v1/demo'), 'the demo prefix is gated: ' + gated)
+
+  // EVERY route this router defines must fall under one of those prefixes — except the
+  // manifest, which app.js documents as deliberately ungated (Chrome fetches it without
+  // credentials and it holds no secret).
+  const routes = [...router.matchAll(/router\.(?:get|post|delete)\('([^']+)'/g)].map((m) => m[1])
+  const ungated = routes.filter((r) => r !== '/manifest.webmanifest' && !gated.some((g) => r === g || r.startsWith(g + '/')))
+  assert.deepEqual(ungated, [], 'these demo routes are not behind the owner gate')
+  assert.ok(routes.includes('/api/v1/demo/greeting'), 'and the greeting is one of them')
+})

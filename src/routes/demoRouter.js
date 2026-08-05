@@ -113,9 +113,14 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
    * fetched per empty screen rather than baked into the page, so a tab left open across noon
    * greets him correctly when he starts a new conversation.
    *
+   * UNDER /api/v1/demo ON PURPOSE. The owner gate in app.js is an ENUMERATED path list, so a
+   * route on a new prefix is unauthenticated until someone remembers to add it — my first
+   * version sat at /api/v1/greeting and answered 200 to an unauthenticated request while every
+   * sibling answered 401. Mounted here it inherits the existing gate and cannot be forgotten.
+   *
    * It carries no data of any kind: a band word and a proper noun.
    */
-  router.get('/api/v1/greeting', demoGuard, (req, res) => {
+  router.get('/api/v1/demo/greeting', demoGuard, (req, res) => {
     try {
       res.json({ ok: true, ...greetingFor(new Date()) })
     } catch (_) {
