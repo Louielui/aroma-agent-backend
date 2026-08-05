@@ -32,6 +32,7 @@
 
 const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
+const { enforceRouteEvidence } = require('./routeEvidenceGuard') // STEP 4: an answer with nothing behind it
 const { pruneRepeatedScopeNotes } = require('./scopeNotes') // a source's fixed properties: once per conversation
 
 /** Owner-facing status words. The keys are the API's own values. */
@@ -463,7 +464,37 @@ function renderValidatedPlan (input) {
  * @param {{ reply, message, itemsBySource, perSource, truncated? }} input
  * @returns {{ reply, applied, intent }}
  */
+/**
+ * STEP 4 — THE ROUTE/EVIDENCE GUARD, wrapped around every exit rather than placed at one.
+ *
+ * buildReadResultReplyInner returns from three different points, and the read-state guard
+ * already taught us what happens when a safety control sits on one path: directAnswer went
+ * unchecked for weeks because the guard was applied to a draft rather than to the finished
+ * text. A wrapper cannot be bypassed by a future early return.
+ *
+ * It is INERT unless the turn read nothing AND the router called it CONVERSATION, so every
+ * retrieval path passes through byte-identical.
+ */
 function buildReadResultReply (input = {}) {
+  const out = buildReadResultReplyInner(input)
+  const routed = enforceRouteEvidence({
+    reply: out && typeof out.reply === 'string' ? out.reply : '',
+    message: input.message,
+    evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : []
+  })
+  if (!routed.violated) return out
+  // COUNTS ONLY. The withheld sentences are exactly the content that must not be logged.
+  try {
+    console.log('[AROMA-ROUTE-EVIDENCE]', JSON.stringify({
+      withheld: routed.withheld.length,
+      sources: routed.sources,
+      requestId: input.requestId == null ? null : String(input.requestId)
+    }))
+  } catch (_) {}
+  return Object.assign({}, out, { reply: routed.reply, routeEvidenceWithheld: routed.withheld.length })
+}
+
+function buildReadResultReplyInner (input = {}) {
   const original = String(input.reply == null ? '' : input.reply)
 
   // ── THE HYBRID PATH ─────────────────────────────────────────────────────────
