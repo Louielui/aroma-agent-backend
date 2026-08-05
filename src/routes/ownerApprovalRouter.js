@@ -318,7 +318,12 @@ function createOwnerApprovalRouter (deps = {}) {
       return res.status(409).json({ error: 'reject_failed', reason: 'cancel_failed' })
     }
 
-    auditFn({ approvalId, outcome: 'rejected', reason: 'owner_rejected', entryPoint: 'owner_local', proposalId: loaded.record.proposalId, workOrderHash: loaded.record.workOrderHash || null })
+    // COMPUTED, not read. The sealed record holds { workOrder, proposalId, sealedAt,
+    // expiresAt } — there is no workOrderHash field on it, so the first live rejection was
+    // recorded with a null hash. The approve path had this right (it uses `recomputed`);
+    // this one did not, and the test that was supposed to cover it only asserted that the
+    // route MENTIONS workOrderHash — a key, not a value.
+    auditFn({ approvalId, outcome: 'rejected', reason: 'owner_rejected', entryPoint: 'owner_local', proposalId: loaded.record.proposalId, workOrderHash: sealedHashOf(loaded.record.workOrder) })
     return res.status(200).json({
       ok: true,
       approvalId,

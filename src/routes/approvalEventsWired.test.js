@@ -72,3 +72,21 @@ test('*** no 500-entry cap on the durable trail ***', () => {
   const body = store.slice(at, store.indexOf('\nfunction ', at + 10))
   assert.equal(/shift\(\)|slice\(-|splice\(/.test(body), false, 'the durable writer discards: ' + body)
 })
+
+/* ═══ 4. THE HASH MUST BE A HASH, NOT JUST A KEY ═════════════════════════ */
+
+test('*** the reject path passes a COMPUTED hash, not a field that does not exist ***', () => {
+  // MEASURED FROM A REAL RECORD. The first live approval.rejected event came back with
+  // work_order_hash: null, because the wiring read `loaded.record.workOrderHash` — and the
+  // sealed record has no such field. It stores { workOrder, proposalId, sealedAt,
+  // expiresAt }; the hash is ALWAYS computed, which is why the approve path uses
+  // `recomputed`.
+  //
+  // MY OWN TEST DID NOT CATCH IT, and that is the more useful lesson: it asserted the route
+  // MENTIONS workOrderHash, so it passed on a key whose value was always null. A test that
+  // pins the presence of a key is not a test that the key carries anything.
+  assert.ok(/outcome: 'rejected'[^\n]*workOrderHash: sealedHashOf\(/.test(ROUTER),
+    'the reject path must COMPUTE the hash from the sealed order, as approve does')
+  assert.equal(/workOrderHash: loaded\.record\.workOrderHash/.test(ROUTER), false,
+    'reading a field the sealed record does not have — it is always null')
+})
