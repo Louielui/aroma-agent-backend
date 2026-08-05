@@ -80,3 +80,32 @@ comment that was telling the truth.
 Where something was not measured, not recorded or not attempted, say so. Do not fill the
 gap with a default, an empty object, or a plausible value. `null` means unknown; `[]` means
 measured-and-empty; they are different claims and must never be swapped.
+
+---
+
+## HR-6 — Assert the VALUE, not that the key was mentioned
+
+A test that a field is *present* is not a test that the field *carries anything*. This one
+looked like coverage and was not:
+
+```js
+// what it asserted — the route MENTIONS workOrderHash
+assert.ok(/outcome: 'rejected'[^\n]*workOrderHash:/.test(ROUTER))
+```
+
+It passed for as long as the wiring existed. The wiring read
+`loaded.record.workOrderHash` — a field the sealed record has never had, because the hash is
+always computed — so every rejection was written to the durable audit trail with
+`work_order_hash: null`, and the test agreed with it the whole time.
+
+**It was caught by the Owner asking to look at a real record**, not by the suite. That is the
+measure of the failure: the assertion could not tell a correct wiring from a permanently
+null one, so it could only ever confirm what was already assumed.
+
+**The rule.** Where a test can reach the value, assert the value. Where it can only read
+source — as a structural test does — assert the *shape that produces* a value
+(`workOrderHash: sealedHashOf(...)`), never the bare presence of the identifier. And prefer
+one test that exercises the path over any number that read the file it lives in.
+
+Sibling of HR-5: `null` and "a key exists" are different claims, and a test that conflates
+them turns an unknown into a fact — which is the thing this project keeps finding.
