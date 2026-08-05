@@ -295,3 +295,34 @@ Attaching it to a structurally powerless check did more damage than the check it
 converted an open question into a closed one for two days. **Reserve the phrase for a
 measurement whose failure mode you have identified**, and when using it, say what set was
 examined and how that set was chosen.
+
+### HR-12 addendum — the rule fired the day after it was written, in my own work
+
+**Owner instruction: 「record 4a beside HR-12 … That is worth knowing about how a rule behaves
+once it exists.」**
+
+`count: 43` was diagnosed on 2026-08-05 and HR-12 was written the same evening. **The next
+day, reviewing the other endpoints, `count: 50` from `/ai/daily-counts` was found sitting in
+this project's own earlier measurement, recorded as a fact about how many stock-takes
+exist.** It is the `LIMIT`. The set was silently truncated and the cap was reported as a
+count.
+
+**Same shape, one day later, with the lesson already written down.**
+
+### What that says about rules
+
+A written rule did not prevent the second instance, because **HR-12 was filed as a lesson
+about a specific investigation** rather than as a thing to check. Nobody re-read it while
+looking at a different endpoint.
+
+**So a rule of this class is not finished when it is written.** It is finished when something
+mechanical applies it:
+
+| the rule | the mechanism that makes it fire |
+|---|---|
+| a check on a filtered set proves nothing | **`truncated`, computed** from `rows.length >= limit` in the response itself — the reader is told, and nobody has to remember |
+| a declaration can go stale | **a boundary-case test** that fails when the predicate changes |
+
+**A rule that relies on being remembered will be forgotten by the person who wrote it, within
+a day.** That is not a criticism of the rule — it is the measurement of what rules are worth,
+and the argument for spending the effort on the mechanism instead.
