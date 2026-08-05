@@ -57,7 +57,96 @@ missing:
 | deliverable | a patch | a pushed branch | **a patch** |
 | worst case | a diff nobody applied | a ref production resets to | **a diff nobody applied** |
 
-## Design questions to settle BEFORE building
+## THE ANSWERS — Owner ruling: answer the last one FIRST, because it decides the rest
+
+### Q6 (FIRST) — does the clone inherit the 399 permissions?
+
+> **Owner: 「If the clone inherits those 399 permissions, the fence is decorative. That one
+> decides whether the rest is worth designing.」**
+
+> ## Measured answer: NO. It does not inherit — by construction.
+
+| check | result |
+|---|---|
+| `git ls-files .claude/` | **empty** — nothing under `.claude/` is tracked |
+| `git ls-tree -r main` under `.claude/` | **0 files** |
+| `git check-ignore -v` | matched by `**/.claude/settings.local.json` |
+
+So `git clone` cannot carry it. **The fence is not decorative.** The rest is worth designing.
+
+**Two caveats that matter more than the answer:**
+
+1. **The ignore rule lives in the MACHINE-GLOBAL git ignore** (`~/.config/git/ignore`), not in
+   the repo's own `.gitignore`. It is a property of this computer, not of the repository. On
+   any other machine the file could be committed and would then travel. **One-line fix
+   available: put the rule in the repo's `.gitignore` so the protection belongs to the repo.**
+2. **The clone inherits neither the allows NOR the denies.** The 20 deny entries added today
+   do not travel either. A fresh clone starts with no policy at all — and then accumulates a
+   new list, exactly as this one did.
+
+> **The conclusion those two force:** the clone's safety must come from **the environment
+> (no remote)**, never from a config file — because the config does not travel and the
+> environment does. Which is the whole argument, arriving from a direction I did not expect.
+>
+> If policy *should* travel, it belongs in a **tracked** `.claude/settings.json` — not
+> `settings.local.json`. That is a separate decision.
+
+### Q1 — where the clone lives
+
+**Not a sibling of the real repo.** `C:\Users\louis\Projects\aroma-system-work\` sitting
+beside `aroma-system\` is the single most likely path confusion, and HR-9 exists because that
+class of confusion already happened once.
+
+Proposal: **`C:\Aroma\worktrees\aroma-system-<approvalId>\`** — under the agent's own root,
+never under `C:\Users\louis\Projects\`, with the approval id in the name so two dispatches
+cannot collide and a stale clone identifies which order left it behind.
+
+### Q2 — how it is made, and where the fence verdict comes from
+
+```
+git clone --no-hardlinks <local repo> <dest>
+git -C <dest> remote remove origin
+```
+
+- **Clone from the LOCAL repo, not from GitHub** — no credential is used, so the clone has no
+  network path for git at all.
+- **`--no-hardlinks` is not cosmetic.** A default local clone hardlinks the object store, so
+  the clone's `.git` shares storage with the real repo. Disposability should not depend on
+  that being harmless.
+- **The assertion is the control; the removal is only a step.** Verify with *two* checks,
+  because a malformed entry can sit in config without listing:
+  `git remote` returns empty **and** `git config --get-regexp '^remote\.'` returns nothing.
+  Fail closed on either.
+- That result is the **fence verdict**, and it is **sealed into the order** — verified at
+  dispatch, not at registration. A fence checked once and assumed after is not a fence.
+
+### Q3 — what the sealed order gains
+
+`targetRepo` · `worker` · `identityCase` · `fence { claim, probe, verdict, verifiedAt }`.
+
+Plus one easy thing to get wrong: **`allowedFiles` paths must be re-anchored to the clone
+root**, not copied across verbatim. A path list that still points at the real repo is a
+whitelist aimed at the wrong tree.
+
+### Q4 — what the patch is
+
+**`git format-patch` against the base commit recorded in the order**, not a bare `git diff`.
+A diff with no base can be applied to the wrong tree and look like it worked; format-patch
+pins the base and carries the message. The Owner applies it. **The agent never touches the
+repo that has the remote** — that is the point, not a precaution.
+
+### Q5 — is the clone destroyed afterwards
+
+**Yes, and deletion is the default with an explicit retention flag — not the reverse.** A
+clone kept "for next time" quietly stops being disposable, and the throwaway clone's other
+half was always that deletion ended the consequence.
+
+Retention, if used, lasts only until the patch is applied or rejected. **A fence verdict is
+valid for one clone instance only**; a retained clone must be re-verified, never assumed.
+
+---
+
+## The original questions, for reference
 
 1. **Where the clone lives.** Not inside `C:\Users\louis\Projects\` — a sibling of the real
    repo is the single most likely path confusion. A scratch root, named so it cannot be
