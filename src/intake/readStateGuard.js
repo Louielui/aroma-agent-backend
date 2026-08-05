@@ -95,6 +95,74 @@ function mentionsSource (reply, source) {
  * @param {Array<{source, trust, count, usedFallback}>} perSource  the turn's real outcome
  * @returns {{ violated: boolean, sources: string[], kind: 'named'|'generic'|null }}
  */
+/**
+ * THE CLAUSE IS THE UNIT OF ATTRIBUTION.
+ *
+ * A claim is read in relation to what it NAMES, and a name in a different clause names
+ * nothing here: 「日曆有 3 件安排；發票的服務項目內容無法讀取」 must not be corrected because
+ * the calendar appears earlier in the sentence.
+ */
+const CLAUSE_SPLIT = /[。！？!?；;\n]|(?<=[，,])/
+
+function clausesOf (text) {
+  return String(text).split(CLAUSE_SPLIT).map((c) => (c || '').trim()).filter(Boolean)
+}
+
+/**
+ * IS THE SOURCE THE THING THAT COULD NOT BE READ, OR JUST WHAT IT BELONGS TO?
+ *
+ * 「行事曆項目的與會者名單看不到」 names the calendar and is NOT about the calendar: the
+ * alias is a modifier and the head noun is 與會者名單. My own test caught this after the
+ * clause rule was already in — naming a source is not the same as being the subject of the
+ * failure.
+ *
+ * The signal is 的 standing BETWEEN the alias and the failure phrase, which in Chinese marks
+ * everything before it as a modifier of what follows. It applies only when the alias comes
+ * FIRST: 「讀唔到你的日程」 puts the failure before the alias, so the alias is its object and
+ * the 的 belongs to 你, not to a competing head noun.
+ *
+ * COST, STATED: 「日曆的資料讀唔到」 is arguably a source claim and is now left alone. That is
+ * the asymmetry the Owner ruled for — silence when it cannot tell.
+ */
+function isModifierNotSubject (clause, source, failIndex) {
+  const low = String(clause).toLowerCase()
+  for (const alias of SOURCE_ALIASES[source] || []) {
+    const at = low.indexOf(String(alias).toLowerCase())
+    if (at === -1) continue
+    if (at > failIndex) return false // the failure names it: 讀唔到…日程
+    const between = clause.slice(at + alias.length, failIndex)
+    if (!between.includes('的')) return false // nothing stands between them
+  }
+  return true
+}
+
+/**
+ * Did this reply claim a SOURCE was unreadable when that source was, in fact, read?
+ *
+ * ── WHY THIS WAS REWRITTEN, 2026-08-05 ───────────────────────────────────────
+ * The old rule fired whenever the text matched UNREADABLE_CLAIM and either named a live
+ * source OR named nothing at all while nothing was unavailable. That second branch —
+ * `kind: 'generic'` — is the shape of a TRUE statement about a missing field, and it
+ * produced exactly that: 「發票的具體服務項目內容無法讀取」 is correct (the invoice record
+ * carries no line items) and was contradicted with 「餐廳系統：讀到咗（1 項）」.
+ *
+ * The distinction the old rule could not make is between a claim about a SOURCE and a claim
+ * about a FIELD INSIDE a record. Narrowing the regex would not have fixed it: the line
+ * between 無法讀取 and 無法確認 was arbitrary — the first fired, the second did not, for no
+ * defensible reason.
+ *
+ * NOW: the claim must be ATTRIBUTABLE. It fires only when the clause carrying the failure
+ * phrase also names a source that was read live. Anything it cannot attribute, it leaves
+ * alone.
+ *
+ * ── THE ASYMMETRY IS DELIBERATE, AND IT COSTS SOMETHING ──────────────────────
+ * A bare 「我讀唔到」 with everything live is now NOT corrected. That is a real loss and the
+ * Owner ruled on it directly: a missed correction is recoverable, a wrong one teaches him to
+ * ignore the control. A safety control that argues with a true statement is worse than one
+ * that stays quiet.
+ *
+ * @returns {{ violated: boolean, sources: string[], kind: 'named'|null }}
+ */
 function detectFalseReadClaim (reply, perSource) {
   const text = typeof reply === 'string' ? reply : ''
   const rows = Array.isArray(perSource) ? perSource : []
@@ -102,13 +170,22 @@ function detectFalseReadClaim (reply, perSource) {
   if (!UNREADABLE_CLAIM.test(text)) return { violated: false, sources: [], kind: null }
 
   const live = rows.filter((r) => r && r.trust === 'live')
-  const unavailable = rows.filter((r) => r && r.trust !== 'live')
   if (live.length === 0) return { violated: false, sources: [], kind: null } // nothing was read; the claim is true
 
-  const namedLive = live.filter((r) => mentionsSource(text, r.source)).map((r) => r.source)
-  if (namedLive.length > 0) return { violated: true, sources: namedLive, kind: 'named' }
-  if (unavailable.length === 0) return { violated: true, sources: live.map((r) => r.source), kind: 'generic' }
-  return { violated: false, sources: [], kind: null }
+  // Only clauses that actually carry a failure phrase can attribute one.
+  const named = new Set()
+  for (const clause of clausesOf(text)) {
+    const fail = UNREADABLE_CLAIM.exec(clause)
+    if (!fail) continue
+    for (const r of live) {
+      if (!mentionsSource(clause, r.source)) continue
+      if (isModifierNotSubject(clause, r.source, fail.index)) continue
+      named.add(r.source)
+    }
+  }
+
+  if (named.size === 0) return { violated: false, sources: [], kind: null } // unattributable → silent
+  return { violated: true, sources: [...named], kind: 'named' }
 }
 
 /**

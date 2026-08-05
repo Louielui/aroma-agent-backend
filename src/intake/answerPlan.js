@@ -394,6 +394,8 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   // The same values, normalised the two ways matchValue can compare them. Built HERE so
   // the candidate and the evidence are normalised by identical code.
   const dateKeys = new Set()
+  const monthDayKeys = new Set()
+  const timeKeys = new Set()
   const digitKeys = new Set()
   // Every Latin word this turn actually retrieved. The universe of names an Owner-facing
   // sentence is allowed to contain — see proseIsGrounded.
@@ -420,6 +422,8 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
         const n = numericOf(v)
         if (n !== null) numericValues.add(n)
         const dk = dateKeyOf(v); if (dk) dateKeys.add(dk)
+        if (dk) monthDayKeys.add(dk.slice(5))
+        for (const tk of timeKeysIn(v)) timeKeys.add(tk)
         const gk = digitsKeyOf(v); if (gk) digitKeys.add(gk)
       }
       if (row.title) { values.add(String(row.title)); addText(row.title) }
@@ -450,6 +454,8 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
           addText(t)
           const n = numericOf(t); if (n !== null) numericValues.add(n)
           const dk = dateKeyOf(t); if (dk) dateKeys.add(dk)
+          if (dk) monthDayKeys.add(dk.slice(5))
+          for (const tk of timeKeysIn(t)) timeKeys.add(tk)
           const gk = digitsKeyOf(t); if (gk) digitKeys.add(gk)
           // and any digit run embedded in the segment
           for (const run of t.match(DIGIT_RUN_RE) || []) {
@@ -457,7 +463,11 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
           }
         }
       }
-      if (row.originalDate) { const dk = dateKeyOf(row.originalDate); if (dk) dateKeys.add(dk) }
+      if (row.originalDate) {
+        const dk = dateKeyOf(row.originalDate)
+        if (dk) { dateKeys.add(dk); monthDayKeys.add(dk.slice(5)) }
+        for (const tk of timeKeysIn(row.originalDate)) timeKeys.add(tk)
+      }
     }
   }
   // Counts the model is allowed to state, because the server measured them.
@@ -465,7 +475,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.totalCount)) numbers.add(String(e.totalCount))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, values, numbers, numericValues, latin, dateKeys, digitKeys }
+  return { byId, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys }
 }
 
 /**
@@ -732,6 +742,76 @@ function cjkToNumber (s) {
  * That boundary is written here rather than implied, and it means a bare 「一個」 over-claim
  * is NOT caught. The digit spelling of every one of these is still checked.
  */
+/**
+ * A CLOCK TIME, NORMALISED to HH:MM — or null.
+ *
+ * 下午 4 時 · 下午4點 · 16:00 · 4pm. Where the meridiem is absent BOTH readings are returned,
+ * because 「4 時」 in a sentence about an afternoon appointment is not a claim about 04:00
+ * and refusing it would delete a correct statement. Each candidate is still compared by
+ * exact equality against a time the evidence actually holds.
+ */
+const MERIDIEM = { 上午: 'am', 早上: 'am', 凌晨: 'am', 中午: 'pm', 下午: 'pm', 晚上: 'pm', 夜晚: 'pm', am: 'am', pm: 'pm' }
+const TIME_RE = /(上午|早上|凌晨|中午|下午|晚上|夜晚)?\s*(\d{1,2})\s*(?:[:：]\s*(\d{1,2})|\s*[時点點]\s*(?:(\d{1,2})\s*分)?)\s*(am|pm)?/gi
+
+function timeKeysOf (h, m, mer) {
+  const out = new Set()
+  const mm = String(m || 0).padStart(2, '0')
+  const add = (hh) => { if (hh >= 0 && hh <= 23) out.add(String(hh).padStart(2, '0') + ':' + mm) }
+  if (mer === 'pm') add(h === 12 ? 12 : h + 12)
+  else if (mer === 'am') add(h === 12 ? 0 : h)
+  else { add(h); if (h < 12) add(h + 12) } // no meridiem: both readings
+  return out
+}
+
+/** Every clock time an evidence value states, as HH:MM. */
+function timeKeysIn (value) {
+  const out = new Set()
+  const iso = /(?:^|[T\s])(\d{1,2}):(\d{2})/.exec(String(value))
+  if (iso) out.add(String(Number(iso[1])).padStart(2, '0') + ':' + iso[2])
+  return out
+}
+
+/**
+ * Consume date and time expressions this sentence states that the EVIDENCE also states,
+ * so the number rule below never sees their digits.
+ *
+ * WHY THIS EXISTS. matchValue learned two rounds ago that a date is a date; this checker
+ * did not, so the SAME instant passed as a fact and failed in prose — 下午 4 時 against a
+ * stored 16:00. Two checkers disagreeing about one instant is the defect the Owner ruled
+ * on; it does not get a second life in the prose channel.
+ *
+ * Only a MATCHING expression is consumed. A different time or a different day keeps its
+ * digits and fails exactly as before.
+ */
+function consumeVerifiedMoments (sentence, index) {
+  let s = String(sentence)
+
+  // full dates: 2026-08-11 · 2026/08/11 · 2026年8月11日
+  s = s.replace(/(\d{4})\s*[-/年]\s*(\d{1,2})\s*[-/月]\s*(\d{1,2})\s*日?/g, (m, y, mo, d) => {
+    const key = `${y}-${String(Number(mo)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}`
+    return index.dateKeys.has(key) ? ' ' : m
+  })
+
+  // month-day without a year: 8 月 11 日. Matched against the month-day of a date the
+  // evidence holds — the year is not invented, it is simply not part of what she wrote.
+  s = s.replace(/(\d{1,2})\s*月\s*(\d{1,2})\s*日/g, (m, mo, d) => {
+    const md = `${String(Number(mo)).padStart(2, '0')}-${String(Number(d)).padStart(2, '0')}`
+    return index.monthDayKeys.has(md) ? ' ' : m
+  })
+
+  // clock times
+  s = s.replace(TIME_RE, (m, mer, h, min1, min2, ampm) => {
+    const hour = Number(h)
+    if (!Number.isFinite(hour)) return m
+    const minute = Number(min1 !== undefined ? min1 : (min2 !== undefined ? min2 : 0))
+    const key = MERIDIEM[(mer || ampm || '').toLowerCase()] || MERIDIEM[mer] || null
+    for (const k of timeKeysOf(hour, minute, key)) if (index.timeKeys.has(k)) return ' '
+    return m
+  })
+
+  return s
+}
+
 const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項張封份件次條間位樣款種批個])/g
 
 /**
@@ -743,7 +823,8 @@ const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項
  * Chinese numerals by default; checking only the exception is checking nothing.
  */
 function sentenceIsSupported (sentence, index) {
-  const s = String(sentence)
+  // Dates and times the evidence agrees with are consumed BEFORE the digit rule sees them.
+  const s = consumeVerifiedMoments(sentence, index)
   const nums = s.match(/\d+(?:[.,]\d+)*/g) || []
   if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
 
@@ -986,7 +1067,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
  */
 function minimalAnswer (evidenceSets = []) {
   const live = evidenceSets.filter((e) => e && e.trust === 'live' && (e.shownCount > 0 || e.totalCount > 0))
-  if (live.length === 0) return '我今次讀唔到可以用嚟答呢條問題嘅資料。'
+  if (live.length === 0) return '我這次讀不到可以用來回答這個問題的資料。'
   const parts = live.map((e) => {
     const n = Number.isFinite(e.totalCount) ? e.totalCount : e.shownCount
     const kind = ENTITY_LABELS[e.entityType] || '項記錄'
@@ -1002,7 +1083,11 @@ function minimalAnswer (evidenceSets = []) {
   // Policy), WIDEN answerPlan.test.js's /讀唔到|睇唔到|攞唔到/ NEGATIVE ASSERTION IN THE SAME
   // COMMIT. It lists Cantonese spellings only; rewrite this line to 讀不到 and that guard
   // silently stops protecting anything while still passing. Owner instruction, 2026-08-04.
-  return `我讀到 ${parts.join('、')}。資料讀取成功,但我今次砌唔出一個可靠嘅答案,所以唔會亂講。`
+  // WRITTEN CHINESE, and deliberately free of every phrase in UNREADABLE_CLAIM — 組不出 is
+  // chosen over 無法組出 because 無法讀取/無法取得 are IN that list and a near neighbour is
+  // an invitation to the same argument. The test asserts against UNREADABLE_CLAIM itself,
+  // not against a hand-copied list of spellings.
+  return `我讀到 ${parts.join('、')}。資料讀取成功，但這一次我組不出一個可靠的答案，所以不會亂說。`
 }
 
 const ENTITY_LABELS = Object.freeze({

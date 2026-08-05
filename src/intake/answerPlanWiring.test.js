@@ -180,10 +180,14 @@ test('*** the line is emitted for a FALLBACK too, with its reason ***', async ()
   })
   const { captured, result } = await withEnv(() => withLogCapture(() => run(spyAdapter(bad))))
   assert.equal(captured.length, 1)
-  assert.equal(captured[0].outcome, 'fallback')
+  // DEGRADED, NOT FALLBACK — since 2026-08-05 a failed sentence no longer discards verified
+  // rows, and PLAN's row survives here. 'fallback' is now reserved for a turn where nothing
+  // survived at all. What this test is really about is unchanged and still asserted below:
+  // the line is emitted, it carries its reason, and the unsupported claim never reaches him.
+  assert.equal(captured[0].outcome, 'degraded')
   assert.equal(captured[0].reason, 'answer_unsupported')
   assert.equal(result.reply.includes('4 項存貨'), false, 'the unsupported claim never reaches the Owner')
-  assert.ok(result.reply.includes('199'), 'the fallback states a measured count instead')
+  assert.ok(/有 2 句無法核對/.test(result.reply), 'and the loss is stated on screen: ' + result.reply)
 })
 
 /* ── 3. THE RENDERED RESULT, through the real pipeline ────────────────────── */

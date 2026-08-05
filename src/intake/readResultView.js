@@ -339,11 +339,25 @@ function renderValidatedPlan (input) {
     requestId: input.requestId || null
   }
 
-  if (!v.answerSurvived) {
-    // Every sentence of the answer failed its evidence check. That is a fallback, and it
-    // says so out loud rather than quietly showing the sections underneath it.
+  // ── A FAILED SENTENCE NO LONGER DISCARDS VERIFIED ROWS ─────────────────────
+  // This used to fall back whenever the opening sentence failed, whatever else had passed.
+  // On 2026-08-05 a calendar answer lost a checked appointment because she wrote the time
+  // as 下午 4 時 against a stored 16:00 — one unverifiable sentence, and the whole answer
+  // became 「組不出一個可靠的答案」 with the appointment sitting validated behind it.
+  //
+  // Owner ruling: drop the sentence, keep the rows. The rows were checked and passed; they
+  // earned their place, and a narrow failure escalating into a total one is the shape of
+  // every defect removed this week.
+  const rowsSurvived = v.keptItemCount > 0
+  if (!v.answerSurvived && !rowsSurvived) {
+    // Nothing survived at all — no sentence AND no row. There is genuinely nothing to show,
+    // so the fallback still speaks, and it still says so out loud.
     logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'answer_unsupported' }, common))
     out.push(minimalAnswer(evidenceSets))
+  } else if (!v.answerSurvived) {
+    // The sentence went; the rows stay. DEGRADED, never "validated" — and the loss is
+    // stated on screen below, not only in the log.
+    logAnswerPlan(Object.assign({ outcome: 'degraded', reason: 'answer_unsupported' }, common))
   } else if (contentLost) {
     logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'items_unsupported' }, common))
     out.push(minimalAnswer(evidenceSets))
@@ -362,7 +376,13 @@ function renderValidatedPlan (input) {
   }
 
   // A fallback replaced the whole answer; its sections are not shown underneath it.
-  const sections = (!v.answerSurvived || contentLost) ? [] : v.plan.sections
+  //
+  // THE CONDITION MUST MATCH THE ONE ABOVE. It used to read `!v.answerSurvived || contentLost`
+  // and so suppressed the rows on exactly the turns the new rule keeps them — the fallback was
+  // gone and the appointment still did not appear, because the decision to fall back and the
+  // decision to render sections had drifted into two different tests of the same thing.
+  const fellBack = (!v.answerSurvived && !rowsSurvived) || contentLost
+  const sections = fellBack ? [] : v.plan.sections
   for (const sec of sections) {
     // A blanked heading (one the validator would not stand behind) is omitted, not
     // printed as a bare '###'.
@@ -387,6 +407,11 @@ function renderValidatedPlan (input) {
   if (v.keptItemCount > 0) {
     if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統無法核對，未顯示。`)
     if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值無法核對，未顯示。`)
+    // A DROPPED SENTENCE IS ALSO A REMOVAL. Before the rows were allowed to survive one,
+    // a failed sentence produced a fallback that announced itself; now it produces an
+    // answer that simply starts at the heading. Said out loud rather than left to be
+    // noticed — the same rule as the two counts above.
+    if (v.droppedSentences > 0) omissions.push(`有 ${v.droppedSentences} 句無法核對，未顯示。`)
   }
 
   // A SOURCE'S FIXED PROPERTIES ARE SAID ONCE PER CONVERSATION, NOT ONCE PER TURN.

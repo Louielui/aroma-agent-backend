@@ -77,11 +77,18 @@ test('but naming the LIVE source while another failed is still caught', () => {
   assert.deepEqual(out.sources, ['calendar'])
 })
 
-test('an unnamed 讀唔到 with everything live is caught as generic', () => {
+test('*** INVERTED: an unattributed 讀唔到 is now left alone ***', () => {
+  // Owner ruling 2026-08-05. The generic branch fired whenever nothing was unavailable and
+  // no source was named — which is the exact shape of a TRUE statement about a missing
+  // FIELD. It produced 「上面講「讀唔到」係唔啱嘅」 under a correct invoice answer whose only
+  // sin was 「發票的具體服務項目內容無法讀取」.
+  //
+  // A missed correction is recoverable; a wrong one teaches the Owner to ignore the
+  // control. So an unattributable claim is now silence.
   const rows = [{ source: 'calendar', trust: 'live', count: 1, usedFallback: false }]
   const found = detectFalseReadClaim('呢樣嘢我讀唔到,你話我知好嗎?', rows)
-  assert.equal(found.violated, true)
-  assert.equal(found.kind, 'generic', 'nothing was unavailable, so any such claim is false')
+  assert.equal(found.violated, false)
+  assert.equal(found.kind, null)
 })
 
 test('an unnamed 讀唔到 with a genuinely failed source is left alone', () => {
@@ -106,11 +113,21 @@ test('no read happened at all this turn ⇒ nothing to enforce', () => {
 
 /* ── phrasing coverage: a false claim in other words is still a false claim ─ */
 
-test('the common phrasings are all caught', () => {
-  for (const claim of ['我睇唔到你個日程', '我無法讀取日曆', '日曆冇權限', '讀取失敗,日曆嗰邊', 'I cannot read your calendar', "I couldn't read the calendar"]) {
+test('the common phrasings are all caught — where the claim NAMES the source', () => {
+  for (const claim of ['我睇唔到你個日程', '我無法讀取日曆', '日曆冇權限', 'I cannot read your calendar', "I couldn't read the calendar"]) {
     const found = detectFalseReadClaim(claim, LIVE_CALENDAR_FALLBACK)
     assert.equal(found.violated, true, 'must catch: ' + claim)
   }
+})
+
+test('*** THE COST OF CLAUSE-SCOPING, recorded rather than hidden ***', () => {
+  // 「讀取失敗,日曆嗰邊」 is a genuine source claim and is now MISSED: the comma puts the
+  // failure and the name in different clauses. That is a real loss, and it is the side the
+  // Owner chose — a missed correction is recoverable, a wrong one is not. Dropping the
+  // comma from the clause split would recover this one and reopen comma-joined false
+  // positives, which is the trade that was refused.
+  const found = detectFalseReadClaim('讀取失敗,日曆嗰邊', LIVE_CALENDAR_FALLBACK)
+  assert.equal(found.violated, false)
 })
 
 /* ── the correction never leaks content ───────────────────────────────────── */

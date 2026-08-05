@@ -224,7 +224,7 @@ test('*** the minimal answer is a count and provenance — NEVER arbitrary rows 
   // reading 「今次組唔到一個可靠嘅答案」 directly above a system correction insisting
   // 「上面講『讀唔到』係唔啱嘅」. The read HAD succeeded; only the composing failed.
   assert.ok(m.includes('讀取成功'), 'the read succeeded and the answer must say so')
-  assert.ok(m.includes('砌唔出'), 'and name the composition as the thing that failed')
+  assert.ok(m.includes('組不出'), 'and name the composition as the thing that failed')
   // ⚠ CARRY-FORWARD, Owner instruction 2026-08-04 — READ BEFORE CHANGING ANY WORDING BELOW.
   // This is a NEGATIVE assertion, and negative assertions die quietly. It lists only the
   // CANTONESE spellings. The Language Policy moves her output to written Traditional
@@ -235,11 +235,16 @@ test('*** the minimal answer is a count and provenance — NEVER arbitrary rows 
   // RULE: widen this regex in the SAME round that changes any read-failure wording, never
   // in a later one. UNREADABLE_CLAIM in readStateGuard.js already carries both spellings and
   // is the list to mirror.
-  assert.equal(/讀唔到|睇唔到|攞唔到/.test(m), false, 'no read-failure phrase for the guard to contradict')
+  // THE CARRY-FORWARD FROM 2026-08-04, HONOURED. This listed Cantonese spellings only and
+  // would have kept passing while protecting nothing the moment the wording changed — which
+  // is exactly what happened this round. It now tests against UNREADABLE_CLAIM itself, the
+  // one list the guard actually uses, so the two can never drift apart again.
+  const { UNREADABLE_CLAIM } = require('./readStateGuard')
+  assert.equal(UNREADABLE_CLAIM.test(m), false, 'no read-failure phrase for the guard to contradict: ' + m)
 
   // When nothing was read at all, 讀唔到 is simply true — and the guard agrees, because it
   // never fires when no source came back live.
-  assert.equal(minimalAnswer([]), '我今次讀唔到可以用嚟答呢條問題嘅資料。')
+  assert.equal(minimalAnswer([]), '我這次讀不到可以用來回答這個問題的資料。')
 })
 
 test('*** a fallback CANNOT occur without a log line ***', () => {

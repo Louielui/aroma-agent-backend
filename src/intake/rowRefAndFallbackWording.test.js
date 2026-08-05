@@ -201,7 +201,10 @@ test('a ref from another source does not validate an aroma_system claim', () => 
 test('*** the fallback distinguishes a successful READ from a failed COMPOSITION ***', () => {
   const text = minimalAnswer([EVIDENCE])
   assert.ok(text.includes('讀取成功'), 'the read succeeded and must say so')
-  assert.ok(text.includes('砌唔出'), 'and the failure was to compose, which is a different event')
+  // REWRITTEN 2026-08-05 to written Chinese, per the Owner language policy. What is
+  // asserted is the DISTINCTION — a successful read and a failed composition are
+  // different events — not the Cantonese spelling that used to carry it.
+  assert.ok(text.includes('組不出'), 'and the failure was to compose, which is a different event')
   assert.ok(text.includes('199'), 'with the measured count')
 })
 
@@ -216,7 +219,11 @@ test('*** the fallback text cannot itself trip the read-state guard ***', () => 
 })
 
 test('a genuine total read failure still says so plainly', () => {
-  assert.ok(minimalAnswer([]).includes('讀唔到'), 'when nothing was read, 讀唔到 is the true word')
+  // The ONE fallback that SHOULD claim a read failure, because there was one. Written
+  // Chinese now; the guard never fires here because no source was live.
+  const m = minimalAnswer([])
+  assert.ok(m.includes('讀不到'), 'when nothing was read, saying so is the true word: ' + m)
+  assert.equal(/唔到|嘅|今次/.test(m), false, 'but not in Cantonese: ' + m)
 })
 
 test('*** no stale correction: the guard judges what is SHOWN, not discarded prose ***', async () => {
