@@ -109,3 +109,49 @@ one test that exercises the path over any number that read the file it lives in.
 
 Sibling of HR-5: `null` and "a key exists" are different claims, and a test that conflates
 them turns an unknown into a fact — which is the thing this project keeps finding.
+
+---
+
+## HR-7 — Correct server-side and absent to the Owner is a whole failure
+
+A feature can be computed correctly, serialised correctly, and delivered correctly, and still
+not exist. Nothing errors. Every test passes. The Owner sees no change and reasonably
+concludes it was not built.
+
+The deterministic work-order offer was measured firing on the exact message the Owner typed —
+right file, right intent, attached to the response — and the client discarded it:
+
+```js
+if (res.demoOutcome === 'clarification') return renderProposal(...)   // returns first
+if (res.workRequestOffer) return renderOffer(...)                     // dead code
+```
+
+**The branch that ate it was `clarification`, which is precisely the case the offer exists
+for** — the model declining to produce a task. Placed after it, the offer could only ever
+render on turns that did not need it.
+
+**The rule.** A delivery path is part of the feature. "The server returns it" is not
+evidence the Owner can see it, and neither is a green suite — every test here asserted the
+server side. Where a change ends at a screen, verify at the screen, or say plainly that you
+have not.
+
+---
+
+## HR-8 — Instrumentation does not travel to the thing built next to it
+
+On 2026-08-05 the classifier was given `mode`, `clarificationReason` and `modeCoerced`
+because a work-order failure could not be diagnosed from the log. Hours later, on the same
+day, a NEW entry point to the same feature was built beside it **with no logging at all** —
+so its first failure again had to be diagnosed by reasoning about code rather than reading a
+line.
+
+Then the fix for that logged nothing either, in a subtler way: the fields were added to the
+allowlist and set on the telemetry object at line 364, while `emit()` writes the record at
+line 260. Correct fields, correct names, written after the line they belong to. **The second
+instance was inside the fix for the first.**
+
+**The rule.** Instrumentation is not a property of a subsystem that neighbours inherit. When
+building beside something that was just given visibility, ask what this new thing will look
+like when it fails, and answer it before shipping — including WHEN the record is written, not
+only what it contains. A field that is set after the log line is emitted is not
+instrumentation; it is a variable.
