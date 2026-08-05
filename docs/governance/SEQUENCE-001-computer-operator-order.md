@@ -187,6 +187,75 @@ one layer above what exists.**
 
 ---
 
+---
+
+## 5. IF COMPUTER OPERATOR MOVES INTO A VM — what survives and what retires
+
+**Owner direction, 2026-08-05: Computer Operator moves into a VM rather than a second Windows
+account.** His reasoning, recorded because it is the part that does not survive otherwise:
+
+> A session owns all attached displays, so Windows cannot give two accounts a monitor each. A
+> VM window sits on the second monitor while I keep my desktop, and one keyboard serves both
+> because switching is a window focus, not a session switch. Beyond the monitor: isolation by
+> separate OS rather than by ACL, snapshot rollback, and no exclusivity with `AGENT_BRIDGE`
+> because the VM is a different environment entirely.
+
+**The cost he stated up front, so nobody rediscovers it:** she cannot see `C:\Users\louis`.
+The VM is a clean machine. Anything she must work on has to be put somewhere she can reach —
+**that is its own piece of work, not this one.**
+
+### KEEPS — the governance half, entirely
+
+| module | why it survives |
+|---|---|
+| `computerWorkOrder.js` | what may be done, declared and validated |
+| `sealedOrderGate.js` | whether this order is authorised |
+| `computerAudit.js` | what happened, recorded |
+| `orderRegistry.js` · `evidenceStore.js` · `killSwitch.js` | order identity, evidence, stop |
+| the four-flag matrix | which lanes may execute at all |
+
+These are about **authorisation and record**. They do not care where the desktop is, and move
+into a VM arrangement unchanged in concept.
+
+### RETIRES — the session-isolation half
+
+| module | why it is superseded |
+|---|---|
+| `sessionBoundary.js` | Its whole premise is that Session 0 isolation forces a Service/Companion split across two **accounts**. In a VM the isolation is the VM boundary. A two-process split may still be useful, but **the reason changes**, and a rationale that no longer holds is worse than none. |
+| `measurementContext.js` | Exists solely to prove, under fast user switching, that the Companion sees only its own desktop. **The VM boundary is that proof.** |
+
+### The seven R items, reclassified
+
+| # | fate |
+|---|---|
+| R1 cross-session desktop object | **RETIRES** — there is no cross-session question in a VM |
+| R6 gate-script hash (ACL) | **CHANGES SHAPE** — the ACL problem was an artefact of the two-account model |
+| R2 · R3 · R7 | **RETIRE** — artefacts of the fast-user-switching commissioning protocol |
+| R4 Lock 3 retention deletion | **KEEPS** — about evidence retention, not sessions |
+| R5 37 unclassified evidence files | **KEEPS** — a coverage question, environment-independent |
+
+### NOT superseded, and not solved, by any of this
+
+- **`BACKLOG-002` (Targeted Notepad Save)** — a Windows UIA problem, identical inside a VM.
+- **Browser automation does not exist.** Measured 2026-08-05:
+  `computerExecutor.js` declares `ACTIONS = ['open_app', 'type_text', 'save']`. No navigate,
+  no click, no form fill, no page read anywhere in `src/computer/`.
+
+> ### THE FINDING, in the Owner's words
+>
+> **「The VM buys isolation, snapshots and my second monitor. It buys no capability.」**
+>
+> The container is not the constraint. What she can *do* is Notepad-shaped, and a VM does not
+> change that. **Do not read a completed VM as progress toward the Costco and supplier work.**
+
+### Why this section exists at all
+
+Owner instruction: *something that reads as current while being superseded is how a week gets
+spent on it.* `sessionBoundary.js` and `measurementContext.js` are careful, well-reasoned
+files that pass their tests. Nothing about them looks retired. That is precisely the risk.
+
+---
+
 ## What must NOT happen
 
 - Do not turn `COMPUTER_OPERATOR` on to "see what happens". With `AGENT_BRIDGE=on` the result
