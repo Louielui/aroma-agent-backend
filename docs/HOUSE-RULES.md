@@ -184,3 +184,43 @@ one is only a guard rail. The mechanism is that an agent working on `aroma-syste
 clone with `origin` removed and delivers a patch — so a misdirected edit has nowhere to go.
 See `AROMA-SYSTEM-WORKING-MODEL.md`. **HR-9 reduces the frequency; the no-remote clone removes
 the consequence. Do not treat the rule as a substitute for the clone.**
+
+---
+
+## HR-10 — Record a distinction while it is still redundant
+
+**Owner ruling, 2026-08-05:** 「The day it stops being redundant is the day nobody can
+reconstruct which rows were which — that argument generalises and I want it recorded as
+such, not as a note about this field.」
+
+**The instance it came from.** The `basis` field in the DEFECT-001 fix says, per row, whether
+a quantity can see inbound stock — `projected` or `current_stock`. Measured on the day it was
+designed, `incoming_qty` was **0 on all 43 rows** that had projections, so both values produce
+identical numbers and the field looks like decoration.
+
+**The rule.** A distinction that is real but currently invisible in the data must still be
+recorded, at the moment the record is written.
+
+**Why, and this is the whole of it:** the day the two cases diverge is the day the distinction
+starts to matter — and on that day **the history is already written without it**. Nobody can
+go back and say which rows were which, because the only thing that knew is the code that ran
+at the time. A field added later describes only the future; a field added now describes
+everything from now on.
+
+**The test to apply.** Not 「does this field tell me anything today?」 but:
+
+> **「If these two cases diverge later, will anyone be able to tell them apart in what we have
+> already stored?」**
+>
+> If the answer is no, the field is not redundant. It is early.
+
+**Where else this bites, so it is not read as being about one column:** whether a number was
+observed or attested by a worker; whether a deploy was signed by the Owner or executed by a
+machine under his signature (`approvedBy` vs `actedAs` — the same argument, which is why one
+overloaded `who` field is a defect and not a tidiness complaint); whether a read returned
+nothing or was never performed.
+
+**The counterweight, so this does not become a licence.** This is not an argument for
+recording everything. It applies where the distinction is **real now and cheap now**, and
+where reconstructing it later is **impossible** rather than merely tedious. If it can be
+re-derived from what is already stored, it can wait.
