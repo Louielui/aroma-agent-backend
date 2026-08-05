@@ -199,7 +199,16 @@ function assertNoDuplicateKeys (json, rawText) {
   }
 }
 
-function parseDistillResponse (text) {
+/**
+ * @param {string} text
+ * @param {object} [diag]  OPTIONAL out-parameter for facts ABOUT the parse.
+ *
+ * The returned envelope is a CLOSED projection and stays closed — distillEnvelopeBaseline
+ * freezes its key set, deliberately, and answerPlan is its one named exception. Coercion
+ * is not envelope content; it is a fact about how the envelope was produced. So it is
+ * written here instead of smuggled into the shape every consumer reads.
+ */
+function parseDistillResponse (text, diag) {
   const content = validateEnvelope(text) // bare/single-fence → inner string; else empty/fence_malformed
   let p
   try {
@@ -210,7 +219,26 @@ function parseDistillResponse (text) {
 
   const intent = typeof p.intent === 'string' ? p.intent : 'unclear'
   const reply = (typeof p.reply === 'string' && p.reply.trim()) ? p.reply.trim() : '我在,你說。'
-  const mode = ['commit', 'recommend', 'ask', 'chat'].includes(p.mode) ? p.mode : 'chat'
+  // ── THE COERCION IS UNCHANGED. IT IS NO LONGER SILENT. ───────────────────────────
+  // Anything unrecognised — a value we do not know, or no value at all — becomes 'chat'.
+  // That is still what happens; the Owner ruled the behaviour stays this round.
+  //
+  // What changed is that 「the model said chat」 and 「the model said something we cannot
+  // read」 were INDISTINGUISHABLE, and one of them means the classifier is answering a
+  // different question than we think it is. On a proposal turn the difference decides
+  // whether a work-order card can exist at all, so it must be visible.
+  //
+  // The RAW value is warned about, never put in the outcome record: that line's discipline
+  // is that it can never carry model output, and a mode string is model output. What
+  // travels there is the boolean.
+  const MODES = ['commit', 'recommend', 'ask', 'chat']
+  const modeCoerced = !MODES.includes(p.mode)
+  const mode = modeCoerced ? 'chat' : p.mode
+  if (modeCoerced) {
+    const shown = typeof p.mode === 'string' ? JSON.stringify(p.mode.slice(0, 32)) : String(p.mode)
+    console.warn(`[AROMA-HUB] Unrecognised distill mode=${shown} — coerced to 'chat'.`)
+  }
+  if (diag && typeof diag === 'object') diag.modeCoerced = modeCoerced
   // ── answerPlan — ADDITIVE, and only when the model actually sent one ──────────────
   // The projection is closed, which is correct and stays correct: an unknown key is still
   // dropped. This is one NAMED key, carried through unvalidated on purpose — answerPlan.js

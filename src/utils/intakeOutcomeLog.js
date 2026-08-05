@@ -34,11 +34,23 @@ const FIELDS = Object.freeze([
   // Unified Conversation v1. The Owner no longer picks a lane, so the log must record
   // which one the router chose and WHY — otherwise a mis-routed turn is invisible.
   'lane', // 'chat' | 'proposal' | 'email_draft' — the lane actually used
-  'laneReason' // short enum: 'explicit' | 'write_act' | 'change_act' | 'question' | 'capability_question' | 'default' | 'empty'
+  'laneReason', // short enum: 'explicit' | 'write_act' | 'change_act' | 'question' | 'capability_question' | 'default' | 'empty'
+  // ── THE CLASSIFIER'S OWN VERDICT — added 2026-08-05 ──────────────────────────────
+  // A work-order card needs six links: router → mode==='commit' → exactly one task → the
+  // task persists → promoteToProposal → the card. Only the FIRST had a log line, so when
+  // an explicit change request produced no card, the model's verdict had to be inferred
+  // from a reply string and an output-token count. The router logs its decision; the
+  // classifier now logs its own.
+  'mode', // 'commit' | 'recommend' | 'ask' | 'chat' — what the MODEL returned
+  'clarificationReason', // short enum: 'not_a_commit_intent' | 'multiple_tasks_narrow_to_one' | 'no_actionable_task'
+  'modeCoerced' // boolean — the model sent a value we do not recognise; see distillPrompt
 ])
 
 const NUMERIC = new Set(['httpStatus', 'latencyMs', 'inputTokens', 'outputTokens'])
-const BOOLEAN = new Set(['fallbackUsed'])
+// `modeCoerced` is a BOOLEAN on purpose. The raw string the model sent is model output, and
+// the discipline above is that this record can never contain model output. Whether it was
+// recognised is a fact about our parser; what it said goes to console.warn instead.
+const BOOLEAN = new Set(['fallbackUsed', 'modeCoerced'])
 const MAX_ENUM_CHARS = 64 // a short enum can never smuggle content
 
 function project (input) {

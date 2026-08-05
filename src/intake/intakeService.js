@@ -502,6 +502,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // fills with NUMBERS and SHORT ENUMS only. It is never part of the HTTP response, so
   // the response contract is unchanged; the router reads it to emit one outcome line.
   const tel = (opts && opts.telemetry && typeof opts.telemetry === 'object') ? opts.telemetry : {}
+  // Recorded once, at the single place the reason is decided, so a new clarification branch
+  // cannot be added that returns a reason without recording it.
+  const recordClarification = (t, reason) => { t.clarificationReason = reason; return reason }
   tel.interactionMode = (opts && typeof opts.interactionMode === 'string') ? opts.interactionMode : null
   function noteProvider (name, result) {
     tel.provider = name
@@ -584,7 +587,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         noteProvider('openai', gptResult)
         await recordProviderUsage(gptResult)
         try {
-          distilled = parseDistillResponse(gptResult.text)
+          distilled = parseDistillResponse(gptResult.text, tel)
           llmResult = gptResult
         } catch (err) {
           routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
@@ -658,8 +661,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // the TRUE output size. The model output itself, the prompts and the user's message
   // are never attached — the existing rawSample (capped at 200) remains the only text.
   try {
-    if (!distilled) distilled = parseDistillResponse(llmResult.text)
+    if (!distilled) distilled = parseDistillResponse(llmResult.text, tel)
     tel.parseResult = 'ok'
+    // THE CLASSIFIER LOGS ITS OWN VERDICT. The router has logged its decision since Step 1;
+    // this one decided whether a work-order card could exist and left no trace at all.
+    tel.mode = distilled && typeof distilled.mode === 'string' ? distilled.mode : null
+    // modeCoerced is written by parseDistillResponse through the diag channel above.
   } catch (err) {
     tel.parseResult = 'failed'
     tel.parseErrorReason = (err && typeof err.reason === 'string') ? err.reason : null
@@ -749,7 +756,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
     return {
       blocked: false, mode: distilled.mode, interactionMode: 'proposal',
-      demoOutcome: 'clarification', clarificationReason: 'not_a_commit_intent',
+      demoOutcome: 'clarification', clarificationReason: recordClarification(tel, 'not_a_commit_intent'),
       reply: '這看起來不是一個可執行的任務，尚未建立任何提案。請描述你想執行的具體任務。',
       decision: null, tasks: [], proposals: [], requestId
     }
@@ -760,7 +767,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //    clarification; do NOT persist and do NOT promote. ──────────────────────
   if (demo && distilled.mode === 'commit' && (!Array.isArray(distilled.tasks) || distilled.tasks.length !== 1)) {
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse
-    const clarificationReason = (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task'
+    const clarificationReason = recordClarification(tel, (Array.isArray(distilled.tasks) && distilled.tasks.length > 1) ? 'multiple_tasks_narrow_to_one' : 'no_actionable_task')
     return {
       blocked: false, mode: 'commit', intent: distilled.intent, demoOutcome: 'clarification',
       // Change B: ground the reply — narrowing created NO proposal; never echo the
