@@ -327,6 +327,19 @@ looking like progress, because the deploy would still be gated by a rule someone
 
 **The test, from the same day:** 「三樣都係『唔可能』,唔係『唔准』。」
 
+## The four missing pieces — the Owner's own list, 2026-08-05
+
+| # | missing | why it is the blocker it is |
+|---|---|---|
+| 1 | **a trigger he can reach without Manus** | the only genuine gap; everything else on the VPS already exists |
+| 2 | **a signature the VPS can verify** | today **nothing** distinguishes a commit he approved from any commit on `main` |
+| 3 | **automatic rollback on regression failure** | today the script reloads first, tests second, and merely *prints* the rollback command (`DEFECT-004`) |
+| 4 | **the DB checkpoint inside the script** | today `mysqldump` lives in the ritual, i.e. in a human's memory, not in `deploy.sh` |
+
+Pieces 3 and 4 matter more once nobody is watching: an unattended deploy has no human to read
+a warning or remember a step. The fuller inventory — migration exclusion, pushed tags, a
+two-sided audit, `deploy.sh` merged to `main` — is in Part 3.
+
 ## Sequence
 
 | # | item | state |
