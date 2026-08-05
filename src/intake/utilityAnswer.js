@@ -24,11 +24,33 @@
  * save forty lines. A test asserts the string does not appear in this file.
  */
 
-const { resolveTimeZone, formatLocal } = require('../utils/localTime')
+const { resolveTimeZone, formatLocal, startOfLocalDay } = require('../utils/localTime')
 
 /* ── time and date ────────────────────────────────────────────────────────── */
 
 const WEEKDAYS = Object.freeze(['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'])
+
+/**
+ * ── THE TIME AND DATE VOCABULARY LIVES HERE, WITH THE CODE THAT ANSWERS IT ──
+ *
+ * It used to live in turnRouter, written out a second time. That is what actually broke the
+ * conversions — 磅 and 公斤 were known to this file and invisible to the router — and it
+ * would have broken these the same way. The module that knows how to answer a concept owns
+ * the words for recognising it; the router iterates UTILITY_PATTERNS and holds none.
+ */
+
+/** 而家 / 今日 / 聽日 / 琴日 → an offset in days from today. */
+const DAY_WORDS = Object.freeze([
+  { re: /聽日|明日|明天/, offset: 1, label: '明天' },
+  { re: /琴日|尋日|昨日|昨天/, offset: -1, label: '昨天' },
+  { re: /今日|今天|而家|依家|家陣|現在|目前|宜家/, offset: 0, label: '今天' }
+])
+
+/** The ways he asks for a date. 幾月幾號 is listed so the anchor window can stay tight. */
+const DATE_ASK = '幾月幾號|幾多號|幾號|星期幾|禮拜幾|咩日子|什麼日子|邊日|日期'
+
+/** The ways he asks for the clock. 時間 excludes 時間表 — a timetable is not a time. */
+const NOW_WORDS = '而家|依家|家陣|現在|目前|宜家'
 
 /** 'America/Argentina/Buenos_Aires' → 'Buenos Aires'. The city, not the whole path. */
 function zoneLabel (tz) {
@@ -58,9 +80,25 @@ function timeSentence (now, opts) {
   return `現在是${meridiem} ${h12} 時 ${c.minute} 分（${zoneLabel(c.tz)}）。`
 }
 
-function dateSentence (now, opts) {
-  const c = wallClock(now, opts)
-  return `今天是 ${c.year} 年 ${c.month} 月 ${c.day} 日，${WEEKDAYS[c.weekday] || ''}（${zoneLabel(c.tz)}）。`
+/**
+ * Today, tomorrow or yesterday — computed, not refused.
+ *
+ * THE OFFSET IS APPLIED TO THE OWNER'S DAY, NOT TO THE INSTANT. Adding 24h to `now` and
+ * reformatting would land on the wrong date across a DST change; this takes his local
+ * midnight, steps a whole day, and re-reads the wall clock in his zone. A relative date
+ * therefore carries the timezone for exactly the same reason today does — the day depends
+ * on the zone whichever day is being asked about.
+ */
+function dateSentence (now, opts, message) {
+  const hit = DAY_WORDS.find((d) => d.re.test(String(message || ''))) || DAY_WORDS[2]
+  let at = now
+  if (hit.offset !== 0) {
+    const start = startOfLocalDay(now, opts)
+    // Noon of the shifted day: far from either DST boundary, so the calendar date is stable.
+    at = new Date(start.getTime() + (hit.offset * 24 + 12) * 60 * 60 * 1000)
+  }
+  const c = wallClock(at, opts)
+  return `${hit.label}是 ${c.year} 年 ${c.month} 月 ${c.day} 日，${WEEKDAYS[c.weekday] || ''}（${zoneLabel(c.tz)}）。`
 }
 
 /* ── arithmetic ───────────────────────────────────────────────────────────── */
@@ -149,17 +187,77 @@ function tidy (n) {
   return String(r)
 }
 
+/* ── Chinese arithmetic ──────────────────────────────────────────────────── */
+
+/**
+ * CHINESE OPERATORS AND NUMERALS ARE THE NORMAL CASE. 「12乘34係幾多？」 「三加四」 「100除以4」
+ *
+ * 除以 is listed before 除 and 乘以 before 乘: the longer form must win, or 「100除以4」
+ * tokenizes as 100 ÷ 以4 and declines.
+ */
+const CJK_OPS = Object.freeze([
+  [/除以|除/g, '/'], [/乘以|乘/g, '*'], [/加/g, '+'], [/減|扣/g, '-']
+])
+
+/** The numeral run this borrows from answerPlan — ONE Chinese-numeral reader, not a second. */
+const { cjkToNumber } = require('./answerPlan')
+const CJK_NUM_RE = /[零〇一二兩三四五六七八九十百千萬]+/g
+
+/**
+ * Rewrite the Owner's arithmetic into ASCII, so ONE parser handles both scripts.
+ * Nothing here evaluates: it only substitutes tokens the grammar already understands.
+ */
+function normalizeArithmetic (message) {
+  let s = String(message)
+  for (const [re, op] of CJK_OPS) s = s.replace(re, op)
+  s = s.replace(/[xX](?=\s*\d)/g, '*')     // 「12 x 34」
+  s = s.replace(/[×]/g, '*').replace(/[÷]/g, '/')
+  s = s.replace(CJK_NUM_RE, (run) => {
+    const n = cjkToNumber(run)
+    return n === null ? run : String(n)     // unreadable numeral is left alone → declines
+  })
+  return s
+}
+
+/** How the expression is shown back, so 12*34 reads as 12 × 34. */
+function prettyExpression (ascii) {
+  return ascii.trim()
+    .replace(/\*/g, ' × ').replace(/\//g, ' ÷ ')
+    .replace(/\+/g, ' + ').replace(/-/g, ' − ')
+    .replace(/\s+/g, ' ')
+    .replace(/\(\s+/g, '(').replace(/\s+\)/g, ')')
+}
+
+/**
+ * A DATE IS NOT A SUBTRACTION. 「發票 2026-08-04」 was computed as 2026 − 08 − 04 = 2014 —
+ * a wrong number, produced confidently, from an invoice date. Caught by the test that asks
+ * whether an invoice number can be mistaken for an expression.
+ *
+ * Two guards, because either alone leaks: the ISO shape catches 2026-08-04 and 04/08/2026,
+ * and the leading-zero rule catches the rest — nobody writes 「08 + 5」 when they mean
+ * arithmetic, but every date does.
+ */
+const DATE_LIKE = /\d{4}\s*[-/]\s*\d{1,2}\s*[-/]\s*\d{1,2}|\d{1,2}\s*\/\s*\d{1,2}\s*\/\s*\d{2,4}/
+const LEADING_ZERO = /(^|[^\d.])0\d/
+
 function calcSentence (message) {
-  // Only the arithmetic part of the message is parsed; a sentence wrapped around it is not
-  // an expression and is declined rather than stripped by guesswork.
-  const m = String(message).match(/[-+*/×÷().,\d\s]+/g)
+  if (DATE_LIKE.test(String(message))) return null
+
+  // Only the arithmetic part is parsed; the sentence wrapped around it (係幾多？) is not an
+  // expression and is dropped by taking the longest arithmetic run, never by guesswork.
+  const normalized = normalizeArithmetic(message)
+  const m = normalized.match(/[-+*/().,\d\s]+/g)
   if (!m) return null
   const candidate = m.sort((a, b) => b.length - a.length)[0]
+  if (LEADING_ZERO.test(candidate)) return null // 08 is a month, not a number
   const tokens = tokenize(candidate)
   if (!tokens) return null
   const v = parseExpression(tokens)
   if (v === null) return null
-  return `${candidate.trim()} = ${tidy(v)}。`
+  // An expression with no operator at all is not a calculation — 「第 3 張」 must not become
+  // 「3 = 3」. parseExpression accepts a bare number, so the check belongs here.
+  if (!/[-+*/]/.test(candidate.replace(/^\s*-/, ''))) return null
+  return `${prettyExpression(candidate)} = ${tidy(v)}。`
 }
 
 /* ── unit conversion ──────────────────────────────────────────────────────── */
@@ -334,7 +432,7 @@ function answerUtility (kind, message, opts = {}) {
   try {
     let text = null
     if (kind === 'time') text = timeSentence(now, opts)
-    else if (kind === 'date') text = dateSentence(now, opts)
+    else if (kind === 'date') text = dateSentence(now, opts, message)
     else if (kind === 'calc') text = calcSentence(message)
     else if (kind === 'convert') text = convertSentence(message)
     return text ? { text, kind } : null
@@ -345,4 +443,50 @@ function answerUtility (kind, message, opts = {}) {
   }
 }
 
-module.exports = { answerUtility, zoneLabel, UNITS, TEMPERATURE, UNIT_TOKENS, unitAlternation }
+/**
+ * ── THE ONE PUBLISHED TABLE ──────────────────────────────────────────────────
+ * turnRouter iterates this and holds NO utility vocabulary of its own. The order is the
+ * priority order and is published with it, so the router cannot reorder the concepts by
+ * accident either.
+ *
+ * Every pattern is built from the same constants the answering code above uses, so a word
+ * cannot be known to one half and invisible to the other. That asymmetry — not the missing
+ * words — is what made every Chinese conversion fall through and read five sources.
+ */
+const UTILITY_PATTERNS = Object.freeze([
+  {
+    kind: 'time',
+    // 時間(?!表): a timetable is not a clock.
+    re: new RegExp(`(?:${NOW_WORDS})\\s*(?:係|是)?\\s*幾(?:多)?點|幾點鐘|(?:${NOW_WORDS})[^。？?]{0,3}時間(?!表)` +
+      '|\\bwhat(?:\'s| is) the time\\b|\\bwhat time is it\\b|\\bcurrent time\\b', 'i')
+  },
+  {
+    kind: 'date',
+    // The anchor window is {0,2} ON PURPOSE: 「今日幾月幾號」 fits, 「今日張發票幾號到期」 does
+    // not, so a business question with a date word in it stays a business question.
+    re: new RegExp(`(?:${DAY_WORDS.map((d) => d.re.source).join('|')})[^。？?]{0,2}(?:${DATE_ASK})` +
+      '|\\bwhat(?:\'s| is) (?:the |today\'?s )?date\\b|\\btoday\'?s date\\b', 'i')
+  },
+  {
+    kind: 'calc',
+    // A number, an operator and a number — in either script. Requiring the operator between
+    // two numbers is what keeps 「12月3號」 and 「加拿大」 out.
+    re: (() => {
+      const NUM = '(?:\\d[\\d,.]*|[零〇一二兩三四五六七八九十百千萬]+)'
+      const OP = '(?:[+\\-*/×÷]|[xX]|加|減|扣|乘以|乘|除以|除)'
+      return new RegExp(`${NUM}\\s*${OP}\\s*${NUM}`)
+    })()
+  },
+  { kind: 'convert', re: new RegExp('\\d[\\d,.]*\\s*' + unitAlternation() + '[\\s\\S]{0,14}?' + unitAlternation() + '|換算|單位轉換', 'i') }
+])
+
+module.exports = {
+  answerUtility,
+  zoneLabel,
+  UNITS,
+  TEMPERATURE,
+  UNIT_TOKENS,
+  unitAlternation,
+  UTILITY_PATTERNS,
+  DAY_WORDS
+}

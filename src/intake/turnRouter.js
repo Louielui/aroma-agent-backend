@@ -54,7 +54,7 @@
 const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { resolveFlag } = require('../context/flags')
-const { unitAlternation } = require('./utilityAnswer') // THE one unit vocabulary — never a second list
+const { UTILITY_PATTERNS } = require('./utilityAnswer') // THE one utility vocabulary — this file holds none
 
 /** Priority order, and the Owner's. Highest first; CONVERSATION is the fallback. */
 const ROUTES = Object.freeze(['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATION'])
@@ -63,57 +63,22 @@ const ROUTES = Object.freeze(['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATI
  * UTILITY — deterministic, self-contained questions the server can answer from its own
  * clock or arithmetic.
  *
- * NARROW ON PURPOSE. The patterns require the question to be ABOUT the time or date, not
- * merely to contain a time word. A bare 幾號 would swallow 「發票幾號到期？」, which is a
- * business question; anchoring on 現在/而家/今日/今天 keeps the two apart. Where they still
- * collide the confidence drops to 'low' (see below) rather than the router pretending to
- * be sure — and the shadow log is where the Owner will see whether that judgement holds.
+ * ── THIS FILE HOLDS NO UTILITY VOCABULARY, AND THAT IS THE POINT ─────────────
+ * It used to hold its own units, its own connector words and its own time/date patterns,
+ * written a second time beside utilityAnswer's. That asymmetry — not any missing word — is
+ * what made every Chinese conversion the Owner typed fall through and read five sources:
+ * 磅 and 公斤 were known to the answerer and invisible here, so the answerer was never
+ * called. The module that knows how to ANSWER a concept now owns the words for RECOGNISING
+ * it, and this file iterates what it publishes.
+ *
+ * A test fails if a utility word ever reappears in this file.
+ *
+ * NARROW ON PURPOSE, still. The patterns require the question to be ABOUT the time or date,
+ * not merely to contain a time word: the date anchor window is two characters, so
+ * 「今日幾月幾號」 fits and 「今日張發票幾號到期」 does not. Where a utility and a business
+ * word still collide the confidence drops to 'low' rather than the router pretending to be
+ * sure, and the shadow log is where the Owner sees whether that judgement holds.
  */
-/**
- * THE CONVERSION PATTERN, BUILT FROM THE ANSWERER'S OWN VOCABULARY.
- *
- * ── THE DEFECT THIS REPLACES ─────────────────────────────────────────────────
- * This used to be a hand-written list — `kg|g|lb|lbs|oz|ml|l|L|磅|公斤|克|安士|毫升|公升` —
- * followed by `\b` and then a list of connector words (等於|換算|轉|to|in). Every part of
- * that was wrong for how the Owner types:
- *
- *   • the `\b` after a CJK unit can never match: 磅 and 是 are both non-word characters, so
- *     there is no boundary between 「磅」 and 「是」;
- *   • the connector list assumed 等於/換算/轉, so 「5磅是多少公斤？」 and 「5磅幾多kg？」 —
- *     his normal phrasings — matched nothing;
- *   • and it was a SECOND vocabulary. utilityAnswer already knew 磅 and 公斤 and answered
- *     them correctly; the router simply never handed them over. Every conversion he typed
- *     fell through and read all five sources.
- *
- * My unit test passed throughout, because it called answerUtility('convert', …) directly
- * and never crossed the router. It proved the answerer worked and said nothing about
- * whether anything would ever call it — a false green of exactly the class this project has
- * spent the week removing.
- *
- * ── THE SHAPE NOW ────────────────────────────────────────────────────────────
- * STRUCTURAL, not connector-word based: a number, a unit, then ANOTHER unit within a short
- * distance. That matches 是多少 / 等於幾多 / 幾多 / to / = without enumerating any of them,
- * so a phrasing nobody thought of still works. Same-unit and cross-dimension pairs are
- * matched here and DECLINED by the answerer, which is the right division: the router asks
- * "is this a conversion question", the answerer decides whether it can be answered.
- */
-function convertPattern () {
-  const u = unitAlternation() // THE one vocabulary — never a second list here
-  return new RegExp('\\d[\\d,.]*\\s*' + u + '[\\s\\S]{0,14}?' + u + '|換算|單位轉換', 'i')
-}
-
-const UTILITY_PATTERNS = Object.freeze([
-  // 係 AND 是. The very question the Owner reported — 「現在是幾點？」 — used the written
-  // form, and the first draft of this table only had the Cantonese one, so it missed the
-  // one turn it was written for. Every pattern here accepts both copulas for that reason.
-  { kind: 'time', re: /(?:而家|依家|家陣|現在|目前|宜家)\s*(?:係|是)?\s*幾(?:多)?點|幾點鐘|\bwhat(?:'s| is) the time\b|\bwhat time is it\b|\bcurrent time\b|現在時間|目前時間/i },
-  { kind: 'date', re: /(?:今日|今天)\s*(?:係|是)?\s*(?:幾號|幾多號|星期幾|禮拜幾|咩日子|什麼日子)|\bwhat(?:'s| is) (?:the |today'?s )?date\b|\btoday'?s date\b|今日日期|今天日期/i },
-  // A bare arithmetic expression: '12*34', '1,200 + 340'. Requires an operator between two
-  // numbers, so a date, a version and an invoice number are all untouched.
-  { kind: 'calc', re: /(?:^|[\s（(])\d[\d,.]*\s*[+\-*/×÷]\s*\d[\d,.]*(?:\s*[+\-*/×÷]\s*\d[\d,.]*)*\s*(?:=|\s*$|[?？])/ },
-  { kind: 'convert', re: convertPattern() }
-])
-
 /** Does this message name a business entity the intent table knows? */
 function businessIntentOf (text) {
   const hit = intentFor(text)
