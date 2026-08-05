@@ -217,7 +217,9 @@ test('*** the language policy no longer spells the forms it forbids ***', () => 
 
 test('*** and the rule still means what it meant ***', () => {
   const { CONVERSATION_CONTRACT: C } = require('../persona/conversationContract')
-  assert.ok(/不(要|得)使用廣東話口語/.test(C), 'the prohibition survives')
+  // WORDING TIGHTENED 2026-08-05: 「不要使用廣東話口語字」 became 「廣東話口語字一律不用」 when the
+  // experiment restored the specificity. The PROHIBITION is what this asserts, not the phrasing.
+  assert.ok(/廣東話口語字一律不用|不(要|得)使用廣東話口語/.test(C), 'the prohibition survives')
   assert.ok(/沒有/.test(C) && /目前/.test(C) && /什麼/.test(C), 'the WRITTEN targets are still named')
   assert.ok(C.includes('書面繁體中文'), 'and the default is unchanged')
 })

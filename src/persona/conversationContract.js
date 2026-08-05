@@ -87,7 +87,12 @@ const CONVERSATION_CONTRACT = [
   // MEANING PRESERVED: the prohibition is unchanged and the WRITTEN targets are still named.
   // Only the banned spellings are gone — she is told what to write, not shown what to avoid
   // writing.
-  '- 不要使用廣東話口語字。口語的否定詞改用「沒有」，時間副詞改用「目前」，指示詞改用「這些」「哪些」，方位詞改用「在」，疑問詞改用「什麼」，尋找、觀看等動詞改用「找到」「看」。',
+  // ── ONE VARIABLE, SECOND ATTEMPT ──────────────────────────────────────────
+  // The first attempt removed the banned characters AND turned the rule into a class
+  // description at the same time — two changes, so a surviving 冇 proved nothing. This
+  // restores the specificity (一律寫 X, not 改用 X) while still spelling none of the banned
+  // forms. If 冇 survives THIS, the remaining candidate is the model's own prior.
+  '- 廣東話口語字一律不用。否定詞一律寫「沒有」，時間副詞一律寫「目前」，指示詞一律寫「這些」「哪些」，方位詞一律寫「在」，疑問詞一律寫「什麼」，尋找與觀看的動詞一律寫「找到」「看」。',
   '- 只有在 Louie 明確要求時才用廣東話回覆。',
   '- 訊息以廣東話或中文為主、但夾雜英文名稱、產品或技術詞時:仍然用書面繁體中文回覆,並保留那些英文原文。不要因為出現英文字就整段改用英文。',
   '- 只有在 Louie 明確要求英文,或訊息本身以英文為主時,才全篇用英文回覆。',

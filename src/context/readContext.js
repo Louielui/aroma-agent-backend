@@ -126,6 +126,22 @@ function renderScopeLine (e) {
   if (missing.length) parts.push(`${missing.join(', ')} on these rows`)
   if (scope.note) parts.push(String(scope.note))
 
+  // ── WHAT THE SERVER WILL COMPUTE FOR HER ──────────────────────────────────
+  // DERIVATIONS_OF reached the VALIDATOR and never reached the PROMPT: 缺口 was computed
+  // correctly by a server she had no way of knowing would compute it. She named it once,
+  // was rejected, and stopped. That is the mirror of the EvidenceSet defect — one judged
+  // her against a number she was never shown, this offered her one she was never shown.
+  //
+  // It says SYSTEM-COMPUTED explicitly. A line that read like an invitation to supply the
+  // number would undo the guarantee that a wrong subtraction is impossible.
+  const derivations = (e.derivations && typeof e.derivations === 'object') ? Object.entries(e.derivations) : []
+  if (derivations.length) {
+    const names = (e.metrics && typeof e.metrics === 'object') ? e.metrics : {}
+    const nameOf = (f) => (names[f] && names[f].label) || f
+    parts.push('derived (系統計算,你只需命名,不要自己填數字): ' + derivations
+      .map(([label, spec]) => `${label} = ${nameOf(spec.minus[0])} − ${nameOf(spec.minus[1])}`).join(', '))
+  }
+
   const metrics = (e.metrics && typeof e.metrics === 'object') ? Object.entries(e.metrics) : []
   if (metrics.length) {
     parts.push('fields: ' + metrics

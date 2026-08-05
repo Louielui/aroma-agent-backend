@@ -451,6 +451,10 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
           const n = numericOf(t); if (n !== null) numericValues.add(n)
           const dk = dateKeyOf(t); if (dk) dateKeys.add(dk)
           const gk = digitsKeyOf(t); if (gk) digitKeys.add(gk)
+          // and any digit run embedded in the segment
+          for (const run of t.match(DIGIT_RUN_RE) || []) {
+            const rk = digitsKeyOf(run); if (rk) digitKeys.add(rk)
+          }
         }
       }
       if (row.originalDate) { const dk = dateKeyOf(row.originalDate); if (dk) dateKeys.add(dk) }
@@ -504,6 +508,17 @@ function dateKeyOf (s) {
  * never produce.
  */
 const SEPARATED_RE = /^[\d\s\-()+]+$/
+
+/**
+ * Digit runs found INSIDE prose — 「電話：204-555-1234 請提前十分鐘到達」.
+ *
+ * digitsKeyOf only accepted a segment that was ENTIRELY digits and separators, so a number
+ * embedded in a sentence indexed nothing and could never be cited. Starts and ends on a
+ * digit and needs at least six characters, so a lone number is not a "run"; digitsKeyOf
+ * still requires two groups, so a partial number fails exactly as before.
+ */
+const DIGIT_RUN_RE = /\d[\d\s\-()+]{4,}\d/g
+
 function digitsKeyOf (s) {
   const t = String(s).trim()
   if (!SEPARATED_RE.test(t)) return null
@@ -603,6 +618,28 @@ function valueMatches (raw, index) { return matchValue(raw, index).ok === true }
  * label -> { minus: [fieldA, fieldB] } per source, from what each read DECLARED.
  * Same shape and same discipline as metricLabelMap: opt-in per source, never inferred.
  */
+/**
+ * Owner-facing names for columns that are not metrics, per source.
+ * Keyed by BOTH the raw column name and the declared label, so whichever she writes is
+ * recognised and the rendered one is always the Owner-facing form.
+ */
+function fieldLabelMap (evidenceSets = []) {
+  const out = new Map()
+  for (const e of evidenceSets) {
+    if (!e || !e.source || typeof e.fieldLabels !== 'object' || !e.fieldLabels) continue
+    const m = new Map()
+    for (const [column, spec] of Object.entries(e.fieldLabels)) {
+      if (!spec || typeof spec.label !== 'string') continue
+      const entry = { column, label: spec.label, values: spec.values || {} }
+      m.set(column, entry)
+      m.set(spec.label, entry)
+      for (const alias of (Array.isArray(spec.aliases) ? spec.aliases : [])) m.set(String(alias), entry)
+    }
+    out.set(e.source, m)
+  }
+  return out
+}
+
 function derivationMap (evidenceSets = []) {
   const out = new Map()
   for (const e of evidenceSets) {
@@ -731,6 +768,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const index = evidenceIndex(evidenceSets, itemsBySource)
   const metrics = metricLabelMap(evidenceSets)
   const derivations = derivationMap(evidenceSets)
+  const fieldLabels = fieldLabelMap(evidenceSets)
 
   // ── THE DECLARATION ──────────────────────────────────────────────────────────
   // Absent is treated as TRUE, so a provider that ignores the field behaves exactly as it
@@ -821,6 +859,23 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         //
         // A label is NOT permission to produce a number: if the row does not carry that
         // field, this falls through and the fact is checked (and dropped) as before.
+        // ── A DECLARED COLUMN GETS ITS OWNER-FACING NAME AND VALUE ─────────────
+        // 「來源 drive」 was a TRUE fact rendered in the row's own vocabulary. The label is
+        // normalised and the code is rendered through a declared table, exactly as units
+        // and statuses already are. An undeclared code renders as itself.
+        const fl = (fieldLabels.get(row.source) || EMPTY_LABELS).get(field)
+        if (fl) {
+          const raw = row.fields ? row.fields[fl.column] : undefined
+          if (raw !== undefined && raw !== null && raw !== '') {
+            const shown = fl.values[String(raw)] || String(raw)
+            const wrote = String(f.value)
+            if (wrote === String(raw) || wrote === shown) {
+              facts.push({ field: fl.label, value: shown })
+              continue
+            }
+          }
+        }
+
         // ── A DECLARED DERIVATION IS THE SERVER'S TOO ──────────────────────────
         // Checked BEFORE the metric lookup: she names 缺口, the server subtracts the two
         // declared fields on this row, and whatever number she wrote is discarded. An

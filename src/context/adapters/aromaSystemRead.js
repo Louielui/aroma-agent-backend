@@ -78,6 +78,27 @@ const SCOPE_OF = Object.freeze({
  * that is not in this table stays dropped, so she cannot invent arithmetic and have it
  * rendered as fact.
  */
+/**
+ * ── OWNER-FACING NAMES FOR COLUMNS THAT ARE NOT METRICS ────────────────────
+ *
+ * The invoice record carries `source`, and for the one live invoice it reads "drive" —
+ * meaning the DOCUMENT arrived via Drive. She rendered it faithfully as 「來源 drive」, which
+ * on a page where every section heading is a connector name reads as though the Drive
+ * connector had been queried. It had not: the route read aroma_system alone. The collision
+ * was between the row's own column name and my display vocabulary, not her doing.
+ *
+ * `values` is a label table on the same terms as UNIT_LABELS and STATUS_LABELS: measured
+ * from live data, and a code with no entry renders as ITSELF rather than being guessed.
+ * Only "drive" has been observed — there is one invoice in the system — so the table
+ * declares what was measured and nothing more.
+ */
+const FIELD_LABELS_OF = Object.freeze({
+  // ALIASES are declared, not inferred. She writes 來源 — the natural Chinese for the
+  // column name — which is neither the raw column nor the Owner-facing label, so without
+  // this the normalisation never fires and the collision stays.
+  invoices: { source: { label: '文件來源', aliases: ['來源', 'source'], values: Object.freeze({ drive: 'Drive 上載' }) } }
+})
+
 const DERIVATIONS_OF = Object.freeze({
   inventory: { '缺口': { minus: ['parLevel', 'currentStock'] } },
   orderPlanning: { '缺口': { minus: ['par_level', 'live_qty'] } }
@@ -277,6 +298,7 @@ function describe (endpointKey, retrievedAt, totalCount, shownCount, isSample) {
     scope: SCOPE_OF[endpointKey] || { hasLocation: false, hasAsOf: false, note: null },
     metrics: METRICS_OF[endpointKey] || {},
     derivations: DERIVATIONS_OF[endpointKey] || {},
+    fieldLabels: FIELD_LABELS_OF[endpointKey] || {},
     totalCount,
     shownCount,
     completeness: isSample ? 'sample' : 'complete',
@@ -415,6 +437,7 @@ function createAromaSystemReadAdapter (options = {}) {
 
 module.exports = {
   DERIVATIONS_OF,
+  FIELD_LABELS_OF,
   createAromaSystemReadAdapter,
   PATHS,
   READ_STATE,
