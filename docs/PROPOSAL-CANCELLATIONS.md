@@ -85,3 +85,33 @@ convincing: the card sealed, the button appeared, only the fixed behaviour was m
 
 Not fixed, deliberately, and not proposed as part of this cleanup. A version stamp the page
 compares against the server would close it. Raised with the Owner; no decision yet.
+
+---
+
+## 2026-08-05 — one proposal cancelled as residue of the deterministic-entrance test
+
+**Owner instruction, verbatim:** 「Clear prop_80897e17 through the governed route with a note
+— it is residue from the deterministic entrance test, not a decision.」
+
+| id | created | cancelled |
+|---|---|---|
+| `prop_80897e17` | 2026-08-05T18:41:13Z | 2026-08-05T20:55:07Z |
+
+**Why it existed.** It is the proposal raised by the FIRST successful firing of the
+deterministic entrance (`source: deterministic_entry`, decision `dec_6cca1056`, task
+`task_c5ac815d`). The purpose of that turn was to prove the entrance fired at all and to read
+back which path had produced it — not to make a change. The proposal was correct output from
+a working path; it was never a decision to modify a file.
+
+Distinct from the five before it: those existed because a reject **failed to reach the
+server**. This one exists because a **test succeeded** and nothing followed it.
+
+**Cancelled through the governed route**, `POST /api/v1/proposals/:id/cancel`, service-token
+guarded, `cancelledBy` server-supplied. Returned 200 `status=cancelled cancelledBy=louie`.
+Afterwards: **0 pending**, 7 cancelled, 4 confirmed.
+
+**Worth noting for the entrance itself.** A deterministic entrance that works leaves a
+pending proposal behind every time it is exercised. That is correct behaviour — a proposal
+awaiting a decision is exactly what it should produce — but it means **proving the path
+costs a cleanup each time**, and the cleanup is manual. Not a defect; recorded so the next
+person exercising it is not surprised by residue.
