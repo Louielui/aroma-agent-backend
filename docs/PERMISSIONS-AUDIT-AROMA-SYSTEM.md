@@ -153,6 +153,43 @@ consequence.
 
 ---
 
+# ✅ SECOND RULING EXECUTED — groups A, B, C removed 2026-08-05
+
+Backup before this pass: `scratchpad/settings.local.json.bak2-pre-groupABC`.
+
+| | |
+|---|---|
+| allow | **396 → 273** (removed **123**; the three groups overlap by 16) |
+| deny | 20, unchanged |
+| ask | 0 |
+| group D | **verified intact** — every entry still present, including the `taskkill` and the `__TRACKED_VAR__` `rm -rf` |
+| residual `8090`/`8081`, `m1`, dead-session entries | **0** |
+
+**No false positives.** 33 entries in the removal set contain the literal string
+`aroma-system` — but only because the expired temp-session directory is named
+`C--Users-louis-Projects-aroma-system`. Every one was verified to be group B, not
+development work.
+
+## ⚠ MY 「69」 WAS LOW — 72 MORE OF GROUP A REMAIN, AND I HAVE NOT TOUCHED THEM
+
+The first count used a narrower pattern than the Owner's own definition. Group A is
+「香香's work leaked into production's config」, and by that definition **72 entries remain**:
+
+| kind | count | example |
+|---|---|---|
+| `node --test` runner invocations | 26 | `Bash(node --test test/runtime/bindConfig.test.js)` — `aroma-system` uses **vitest**; `node --test` is the agent repo's runner |
+| core-memory / `AromaCore` | 23 | `Bash(export AROMA_CORE_DIR="C:/Users/louis/AromaCore/core-data")` |
+| intake & distill | 19 | `Bash(node --test src/intake/distillPrompt.test.js)` |
+| truth store / cli | 4 | `Bash(node -e "…require('./data/aroma-truth.json')…")` |
+
+**Not removed, deliberately.** The Owner authorised 「group A — all 69」 against a number I
+gave him; removing 72 more on the same authority would be quiet scope-widening, which is the
+habit this project exists to remove. **They are listed here for a ruling.**
+
+`node --test` is the cleanest signal in the whole file: this repo does not use it.
+
+---
+
 # WHAT ELSE I WOULD REMOVE — proposal only, NOTHING TOUCHED
 
 **Owner: 「I want to see the list before shrinking it further — a permission I do not
@@ -190,18 +227,76 @@ All naming a single expired temp session (`cbe7b6c4-f4e5-…`), including five g
 The `m1` evaluation (`Read(//c/Users/louis/Downloads/m1/**)` and four variants, plus a long
 `cd ~/Downloads/m1/... && cat README.md …` one-liner). The task is over.
 
-## Group D — genuinely broad, and I would narrow rather than delete · **~8 entries**
+## Group D — KEPT by ruling. What each is actually for, and a narrower form where one exists
 
-These are the ones worth a decision rather than a sweep:
+**Owner: 「do not remove, but report each with what it is actually needed for. If a narrower
+form covers the real use, propose it.」** Nothing here has been touched.
 
-| entry | what it actually permits | suggestion |
-|---|---|---|
-| `Bash(git checkout *)` | **silently discards uncommitted work** in a working copy | remove; it is the same loss class as `reset --hard` |
-| `Bash(pnpm add *)` · `Bash(npm install *)` | installs **arbitrary packages** from the public registry into production's tree | keep `pnpm install` (lockfile-driven, no args), drop `add` |
-| `Bash(npm run *)` | runs **any** script in `package.json`, including `build` | narrow to the scripts actually used |
-| `Bash(taskkill //F //IM node.exe //T)` | kills **every** node process on the machine, including 8090 | remove — nothing in aroma-system dev needs it |
-| `Bash(rm -rf __TRACKED_VAR__/stagetest/*)` | a granted `rm -rf` containing an **unexpanded placeholder** | remove |
-| `Bash(git stash *)` · `Bash(git commit *)` | wildcard forms of writes | narrow or leave; lower risk than the above |
+### `Bash(git checkout *)` — **convenience that outlived its reason**
+
+**Asked about specifically.** Its real daily uses are three, and each has a narrower form:
+
+| the actual use | narrower form |
+|---|---|
+| switch branch | `Bash(git switch *)` — cannot touch files, only refs |
+| inspect another branch's file | `Bash(git show *)` — writes nothing at all |
+| discard a file's changes | *(this is the dangerous one, and it is the rarest)* |
+
+`git checkout -- <path>` **silently discards uncommitted work with no undo and no
+confirmation** — the same loss class as `reset --hard`. Under the no-remote clone design, the
+agent will not be editing a working copy the Owner also uses, which removes the last argument
+for keeping the broad form.
+
+> **Proposal: replace with `Bash(git switch *)` + `Bash(git show *)`.** The discard case
+> should prompt, because that is precisely the moment someone should be asked.
+
+### `Bash(npm run *)` — **legitimate daily purpose, but broader than the purpose**
+
+**Asked about specifically.** This one is genuinely used: `check`, `build`, `dev`, `test`
+are the everyday loop of this repo, and the Owner's own deploy ritual runs
+`pnpm --filter client build`. So it is **not** convenience that outlived its reason.
+
+But `npm run *` grants **every** script in `package.json`, including any added later —
+a permission that silently widens whenever the file changes.
+
+> **Proposal: enumerate.** `Bash(npm run check*)`, `Bash(npm run build*)`,
+> `Bash(npm run dev*)`, `Bash(npm run test*)`. Same daily loop, and a new script does not
+> arrive pre-approved. Note `npm run db:push *` is already in the **deny** list, and a deny
+> beats an allow — that combination stays correct either way.
+
+### `Bash(taskkill //F //IM node.exe //T)` — **the clearest case for narrowing**
+
+**The Owner named this one, and he is right.** `//IM node.exe //T` matches *every* node
+process on the machine — **including 香香 on 8090**, including any editor language server.
+Its real purpose was freeing port 3001 when a dev server was left running.
+
+> **Proposal: narrow to the port, not the image name.** Kill by PID resolved from the port
+> (`netstat -ano` is already allowed and is how the PID is found), rather than by process
+> name. Killing everything named `node.exe` to free one port is a sledgehammer that has
+> already been pointed at 8090 without anyone intending it.
+
+### `Bash(pnpm add *)` · `Bash(npm install *)` — supply chain
+
+Installs **arbitrary packages** from the public registry into production's tree. The real
+daily need is restoring dependencies, which is lockfile-driven.
+
+> **Proposal: keep `pnpm install` (no args, lockfile-driven), drop `add`.** Adding a
+> dependency to production should be a decision, not a pre-approval.
+
+### `Bash(rm -rf __TRACKED_VAR__/stagetest/*)` — a placeholder in a granted `rm -rf`
+
+The variable was never expanded, so what this actually grants depends on how the matcher
+treats the literal. Its target no longer exists — **and that is the Owner's own point: a
+permission whose target could be recreated later by something else.**
+
+> **Proposal: remove.** This is the one group D entry with no legitimate current use.
+
+### `Bash(git stash *)` · `Bash(git commit *)`
+
+Wildcard write forms, materially lower risk than the above: `stash` is recoverable,
+`commit` creates rather than destroys.
+
+> **Proposal: leave.** Not worth spending a decision on.
 
 ## What I would NOT remove without being told
 
