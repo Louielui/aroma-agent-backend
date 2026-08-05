@@ -306,3 +306,36 @@ recorded so the question is askable later.**
 The deterministic entrance exists precisely so the card does not depend on this. Its value
 went UP with this finding, not down: an unreliable classifier is a worse thing to depend on
 than a merely wrong one.
+
+---
+
+## M-6 — Computer Operator: the sequence, and the divergence it exposed
+
+**Opened 2026-08-05 by Owner ruling. Nothing started.**
+
+The full order lives in **`C:\Aroma\aroma-3b\docs\governance\SEQUENCE-001-computer-operator-order.md`**
+— a DIFFERENT REPO, which is itself part of the finding. This entry exists so the sequence is
+discoverable from the repo the work actually happens in.
+
+**The ruling:** not now. Agent Bridge went live on 2026-08-05 and has not been used in anger.
+The four-flag gate makes this a genuine either/or — measured live, `AGENT_BRIDGE=on` plus
+`COMPUTER_OPERATOR=on` returns `configuration_conflict` and **both** channels stop. Turning
+Computer Operator on today would not add a capability; it would remove the working one.
+
+**The order:** 1) wire-in · 2) the seven remaining 3b items, R6 first · 3) the exclusivity
+decision, only when there is something real to weigh.
+
+### What this repo needs to know
+
+`COMPUTER_OPERATOR` means nothing here: `src/app.js` has **0** references to it, and
+`computerOperatorFlag.js` says so itself. The working code is in `aroma-3b`.
+
+**Of 24 non-test modules in `aroma-3b/src/computer/`, this repo has 10 — and ALL TEN
+DIFFER between the two copies.** Wire-in is therefore a merge of two versions of ten
+safety-relevant modules, not a copy.
+
+> ⚠️ **A live instance of that divergence.** The `windowTitle` removal in `32fbebf` was
+> applied to THIS repo's `computerAudit.js`. **`aroma-3b`'s copy still has `windowTitle` as a
+> live evidence field.** Whichever copy wins the merge, it must not come back — the audit
+> mirror sends `.aroma/computer-audit/` to Backblaze nightly, and a window title can carry a
+> customer name or an email subject.
