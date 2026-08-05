@@ -8,8 +8,9 @@ that differed from the plan.
 Origin: 「現在是幾點？」 read Drive, Gmail, Calendar and the Aroma System inventory, then
 reported it could not reliably answer. Three correct mechanisms in the wrong order.
 
-**Status: all four steps done and live.** Closed 2026-08-05 at `8c6a75b`, tag
-`turn-router-complete-20260805`.
+**Status: all four steps done and live.** Tag `turn-router-complete-20260805`. The last code
+commit is `8c6a75b` (Step 4, verified live by the Owner); the tag sits one docs-only commit
+later so that checking it out gives the code **and** this record together.
 
 | Step | Shipped | Commit |
 |---|---|---|
