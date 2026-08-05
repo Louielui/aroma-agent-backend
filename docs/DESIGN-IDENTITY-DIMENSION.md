@@ -124,5 +124,16 @@ not his cart.** Reaching it requires one of:
 - the same profile → same problem;
 - **she hands him a list, not a cart** → he builds the cart himself.
 
-**Only the third keeps the rule intact**, and it is a materially smaller prize than "she fills
-the cart". Recorded before anything is built on the larger assumption.
+**Only the third keeps the rule intact.** Recorded before anything was built on the larger
+assumption — which is the point: this would have been discovered *after* building.
+
+> ### ⬆ RESOLVED THE SAME DAY, and not as a smaller prize
+>
+> The Owner's conclusion is that the list **is** the plan, not a reduced version of it:
+> filling a cart is not the thing to build, because the value was never the clicking — it
+> was knowing what to order, and that is judgement. See
+> `GOVERNANCE-BROWSER-VS-FILE.md` §「THE CONCLUSION」.
+>
+> **This does not weaken the identity design above.** Case 3 (acting as the Owner) is a
+> general problem about any worker holding his identity. Costco was one instance of it, and
+> dropping the instance retires none of the analysis.

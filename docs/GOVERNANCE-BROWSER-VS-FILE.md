@@ -82,7 +82,87 @@ requires a card on file, the profile is not payment-free and the structural clai
 "she prepares, I commit" would then rest on the agent not clicking, which is exactly the
 intention-not-mechanism failure above.
 
-Measured separately. Until that is answered, this rule is a design intent, not a guarantee.
+> ### ❌ SUPERSEDED, SAME DAY — see §「Two measurements closed this branch」 below.
+> **The payment-method question is closed as MOOT, not deferred.** "She prepares, I commit"
+> was resting on a cart the Owner could reach, and that cart does not exist. No authenticated
+> look was ever taken and none is needed now.
+
+---
+
+# Two measurements closed this branch
+
+**Owner conclusion, 2026-08-05, stated so it survives.** Both measurements are read-only,
+unauthenticated, on costco.ca. Nothing was added to any cart.
+
+## 1. A cart is session-bound — so 「she prepares」 could not have meant a cart
+
+This is the most consequential thing measured, **and it would have been discovered after
+building rather than before.** The whole "she prepares, I commit" shape assumed a cart she
+fills and he finishes. A cart belongs to a session. So reaching it needs one of:
+
+| route | what it costs |
+|---|---|
+| same account in both browsers | her profile carries **his identity** — excluded by the standing rule |
+| same profile | same problem |
+| **she hands him a LIST, not a cart** | **the only one that keeps the rule intact** |
+
+The third is not a smaller version of the plan. **It is a different plan**, and it does not
+need a browser at all.
+
+## 2. Four actions, six judgements — the clicking was never the hard part
+
+Measured on the live 「paper towel」 result set:
+
+- **4 actions** from opening the site to Add to Cart. That is the entire automation problem.
+- **6 classes of judgement a selector cannot make** — wrong category (101 results across 7
+  categories, including Automotive & Tires), **wrong product** (result #4 was facial tissue,
+  #7 was disinfecting wipes), fulfilment channel, stock at the specific warehouse, price
+  ("After $6 OFF", and the cart page warns pricing may change at checkout), pack size.
+
+> ### The Owner's reading, which is the finding
+>
+> **「A selector cannot decide that tissue is not a towel, and a real order is dozens of
+> lines.」**
+
+Four actions against six judgements per line, times dozens of lines. **The ratio is the
+answer.** This was never an automation problem wearing a governance problem; it was a
+judgement problem wearing an automation problem.
+
+---
+
+# THE CONCLUSION — recorded to survive the conversation
+
+> ## Filling a Costco cart is not the thing to build.
+
+> **「The value was never the clicking; it was knowing what to order. That is judgement, and
+> judgement is what she is for — the browser was only how I imagined it reaching me.」**
+
+> ### **「The gap was never the browser.」**
+
+## What this reframes into
+
+> **She tells him WHAT to buy, from the inventory she can already read.**
+>
+> 「Napa Cabbage 缺 45, Beef Plate 見底, 這是清單」 — and he does the ordering.
+
+She already reads the restaurant system. **The output is a list, not a cart** — which is
+exactly what measurement 1 said was the only route that keeps the standing rule intact. The
+two measurements converge on the same shape from opposite directions.
+
+**NOT STARTED. Owner: record the conclusion and stop.** The next session looks at the restock
+list — par levels and computed 缺口 — as a shorter path to something he would actually use
+than any amount of browser work.
+
+## What is now closed, and what is not
+
+| | |
+|---|---|
+| Costco cart automation | **CLOSED** — not the thing to build |
+| "she prepares, I commit" (cart form) | **CLOSED** — rests on a cart he cannot reach |
+| Costco payment-method question | **CLOSED as moot** — never measured, no longer needed |
+| the standing rule 「nothing that pays, nothing that signs」 | **STANDS** — untouched by any of this |
+| the order-vs-file table and 「forbiddenActions 由機制退化成意向」 | **STANDS** — a general finding about browsers, not about Costco |
+| identity as the third class of risk object | **STANDS** — see `DESIGN-IDENTITY-DIMENSION.md` |
 
 ---
 
