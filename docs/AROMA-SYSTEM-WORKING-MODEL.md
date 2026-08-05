@@ -280,3 +280,63 @@ An automated deploy acts **as the Owner** toward the restaurant system — case 
 `DESIGN-IDENTITY-DIMENSION.md`. The audit must separate **`approvedBy`** (who signed) from
 **`actedAs`** (a machine, at time T, under that signature). Today's single `who` field cannot
 carry both, and this is a second concrete place where that defect surfaces.
+
+---
+
+# PART 4 — GETTING DEPLOYMENT OFF THE MANUS MACHINE
+
+**Owner, 2026-08-05. NOT THIS WEEK.** Sequenced as **the next infrastructure item after
+`DEFECT-003`** (staging). Recorded now because the shape was established today and would
+otherwise have to be re-derived.
+
+## The state today, stated precisely — the two are not the same claim
+
+> **「We still use Manus」 and 「we use Manus for four commands」 are different states, and the
+> second one is nearly done.**
+
+| | status |
+|---|---|
+| **Development** | ✅ **off Manus as of 2026-08-05.** Code is written on AromaBrain, pushed to GitHub, merged by the Owner in the browser. |
+| **Deployment** | **four commands remain**, and the Owner is running them tonight for `DEFECT-001`: `hostname` · `cd` + `git rev-parse HEAD` · the `mysqldump` save point · `CONFIRM=YES ./scripts/deploy.sh production origin/main` (plus `git push origin --tags`). |
+
+That is the whole remaining dependency. Not a workflow — **four commands**.
+
+## The shape, established today
+
+1. **The VPS pulls; it is never pushed to.** It already can — the VPS→GitHub deploy key
+   exists. No inbound endpoint, no webhook, no listening socket, no SSH from AromaBrain.
+2. **It deploys only a ref the Owner signed.**
+3. **The signing key lives where the Owner types, and nowhere an agent can reach.**
+
+Then **Manus becomes optional rather than required**, which is the actual goal — not
+"automated deployment".
+
+## ⛔ WHAT THIS IS NOT
+
+> ### It is NOT 「give AromaBrain an SSH key」.
+
+**The absence of a key on this machine is the wall.** `~/.ssh` holds `known_hosts` and one
+host, `github.com`; no private key exists under the user profile; this machine has never
+connected to the VPS. Replacing that with a credential — or with a button — **is exactly the
+degradation this project spent 2026-08-05 naming**:
+
+> 「forbiddenActions 由機制退化成意向」 · 「I offered the gate and left the fence behind」
+
+A signature the agent cannot produce keeps the property. A key on AromaBrain destroys it while
+looking like progress, because the deploy would still be gated by a rule someone follows.
+
+**The test, from the same day:** 「三樣都係『唔可能』,唔係『唔准』。」
+
+## Sequence
+
+| # | item | state |
+|---|---|---|
+| 1 | `DEFECT-001` | patch written, awaiting the Owner's GO |
+| 2 | `DEFECT-003` — staging | Owner is fixing it himself |
+| 3 | **this** — signed-ref deploy | **not started, not this week** |
+| 4 | `DEFECT-004` — regression before reload | after 3 |
+
+Design detail is in Part 3 above, including what already exists on the VPS (pull, build,
+reload, save point, regression, rollback, `CONFIRM=YES`) versus what is missing (a trigger,
+a verifiable signature, auto-rollback, a DB save point in the script, migration exclusion,
+pushed tags, a two-sided audit, and `deploy.sh` merged to `main`).
