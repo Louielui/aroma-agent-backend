@@ -60,6 +60,15 @@ same words with no environment behind them are an intention.
 > browser is logged in, or whether **a working copy has a remote**. See
 > `docs/GOVERNANCE-BROWSER-VS-FILE.md`.
 
+> ### 「危險嗰個唔似危險嗰個。」
+> ### **The dangerous one is the one that does not look dangerous.**
+>
+> A browser logged into a retailer announces itself; nobody mistakes it for contained. **A
+> git repo on disk looks identical whether or not it has a remote** — and the reassuring
+> words (sandbox, working copy, local edit, just a diff) read exactly the same in both cases.
+> That is why the browser felt obviously risky and production sitting in a working directory
+> did not. **Before any file operation, ask what path to consequence exists from here.**
+
 Identity is the third class of risk object — no identity / own identity / the Owner's
 identity — and only the first is honestly carried today. See
 `docs/DESIGN-IDENTITY-DIMENSION.md`. **`who` in the audit means the APPROVER, not the actor.**
