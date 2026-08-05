@@ -36,12 +36,35 @@ const OUTCOME_SET = new Set(OUTCOMES)
 // Every field the Supervisor may write into a step record. Anything not on this list
 // cannot enter, by construction.
 const STEP_FIELDS = Object.freeze([
-  'n', 'action', 'targetApp', 'startedAt', 'durationMs', 'outcome', 'refusalReason'
+  'n', 'action', 'targetApp', 'startedAt', 'durationMs', 'outcome', 'refusalReason',
+  // DERIVED, NEVER ACCEPTED. See the windowTitle note below: the title itself is gone and
+  // this one bit is what it was actually for.
+  'windowChanged'
 ])
 
 // Evidence is metadata ABOUT content, never content. These are the only keys allowed
 // inside a before/after block.
-const EVIDENCE_FIELDS = Object.freeze(['screenshotSha256', 'fileSha256', 'fileBytes', 'windowTitle', 'exists'])
+// ── windowTitle REMOVED 2026-08-05, BEFORE COMPUTER_OPERATOR IS EVER ENABLED ─────────
+//
+// Owner ruling: 「a window title can carry a customer name or an email subject, and once
+// it is in an offsite backup it is out.」 The audit mirror wired the same day replicates
+// .aroma/computer-audit/ to Backblaze nightly, so this was the last moment it could be
+// fixed cheaply — a title written once is offsite that night and cannot be recalled from
+// a backup.
+//
+// A HASH WAS THE OBVIOUS ANSWER AND IS THE WRONG ONE. screenshotSha256 and fileSha256 sit
+// right here, so windowTitleSha256 looks consistent — but a screenshot has enormous
+// entropy and a window title has almost none. 「Inbox - Gmail」, 「Invoice 88.pdf - Adobe
+// Acrobat」, 「陳先生 - WhatsApp」 are guessable strings; anyone holding the offsite backup
+// brute-forces a dictionary of plausible titles against the hash. That is obfuscation
+// wearing the word redaction, which is worse than the title itself because it looks
+// solved. A salted HMAC resists it and buys a key that can be lost, excluded from its own
+// backup, and restored — to protect one field.
+//
+// WHAT THE TITLE WAS ACTUALLY FOR is one question: did the focused window change between
+// before and after — did the agent type into the window it was supposed to? That is ONE
+// BIT, derived at write time from the two titles, and neither title is kept.
+const EVIDENCE_FIELDS = Object.freeze(['screenshotSha256', 'fileSha256', 'fileBytes', 'exists'])
 
 // Keys that must never appear anywhere in a record, at any depth. If one is present the
 // record is refused outright rather than silently stripped — a caller trying to write
@@ -98,6 +121,18 @@ function projectStep (input) {
     if (k === 'outcome') { out[k] = OUTCOME_SET.has(v) ? v : null; continue }
     out[k] = (typeof v === 'string' && v.length <= 120) ? v : null
   }
+  // DERIVED HERE, from the raw input, BEFORE the titles are dropped by projectEvidence.
+  // A caller-supplied windowChanged is ignored — the loop above cannot set it because the
+  // branch below overwrites it unconditionally, and a test proves a supplied value loses.
+  //
+  // TRI-STATE, per HR-5: null means one or both titles were absent. 「both present and
+  // identical」 and 「we could not see one of them」 are different claims, and collapsing
+  // them would let a missing observation read as a safe one.
+  const bt = src.before && typeof src.before === 'object' ? src.before.windowTitle : undefined
+  const at = src.after && typeof src.after === 'object' ? src.after.windowTitle : undefined
+  out.windowChanged = (typeof bt === 'string' && bt !== '' && typeof at === 'string' && at !== '')
+    ? (bt !== at)
+    : null
   out.before = projectEvidence(src.before)
   out.after = projectEvidence(src.after)
   return out

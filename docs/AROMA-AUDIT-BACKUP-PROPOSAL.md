@@ -70,9 +70,29 @@ now rather than discovered later.
 > nightly; a title written once is copied offsite that night and cannot be recalled from a
 > backup afterwards.
 >
-> This is **not built** — deliberately, on the Owner's instruction, because building it now
-> would be building for a flag that is off. It is written here so whoever enables the flag
-> hits the condition first. `computerSupervisor.js` is where the record is assembled.
+> ### ✅ DONE 2026-08-05, before anything was enabled
+>
+> **`windowTitle` is gone from the record entirely.** It is no longer an evidence field, so
+> there is nothing to redact and nothing to leak — verified by a test that passes a customer
+> name and a document filename through the builder and asserts neither survives.
+>
+> **A hash was the obvious answer and was rejected.** `screenshotSha256` and `fileSha256` sit
+> in the same list, so `windowTitleSha256` looked consistent — but a screenshot has enormous
+> entropy and a window title has almost none. 「Inbox - Gmail」, 「Invoice 88.pdf - Adobe
+> Acrobat」, 「陳先生 - WhatsApp」 are guessable; anyone holding the offsite backup
+> brute-forces a dictionary of plausible titles against the hash. That is obfuscation wearing
+> the word redaction — **worse than the title itself, because it looks solved.** A salted
+> HMAC resists it and buys a key that can be lost, must be excluded from its own backup, and
+> must survive a restore, to protect one field.
+>
+> **What the title was actually for is kept.** The audit question it answered is: did the
+> focused window change between before and after — did the agent type into the window it was
+> supposed to? That is **one bit**, `windowChanged`, derived at write time from the two
+> titles, with neither title stored. Tri-state per HR-5: `null` means one or both titles were
+> absent, which is a different claim from `false`.
+>
+> The builder is `src/computer/computerAudit.js`; a caller-supplied `windowChanged` is
+> ignored, so it can only ever be derived.
 
 ---
 

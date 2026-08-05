@@ -82,15 +82,19 @@ test('a banned key hidden deep inside the input is still caught', () => {
 })
 
 test('*** evidence is metadata ABOUT content, never content ***', () => {
-  assert.deepEqual([...EVIDENCE_FIELDS], ['screenshotSha256', 'fileSha256', 'fileBytes', 'windowTitle', 'exists'])
+  // windowTitle REMOVED 2026-08-05, before COMPUTER_OPERATOR was ever enabled. It was the
+  // one free-text field, it was capped rather than excluded, and the audit mirror now sends
+  // this record to Backblaze nightly — so a customer name or an email subject in a window
+  // title would have gone offsite and could not be recalled. See windowTitleRedaction.test.js
+  // for why a hash was rejected: a window title has almost no entropy and a hash of one is
+  // brute-forceable from a dictionary of plausible titles.
+  assert.deepEqual([...EVIDENCE_FIELDS], ['screenshotSha256', 'fileSha256', 'fileBytes', 'exists'])
   const ev = projectEvidence({ screenshotSha256: SHA, fileSha256: SHA, fileBytes: 12, windowTitle: 'note.txt', exists: true })
   assert.equal(ev.screenshotSha256, SHA)
-  assert.equal(ev.windowTitle, 'note.txt')
+  assert.equal('windowTitle' in ev, false, 'the field must not survive even when supplied')
   // a non-hash where a hash belongs is dropped, so a caller cannot smuggle a payload in
   assert.equal(projectEvidence({ screenshotSha256: 'data:image/png;base64,iVBOR...' }).screenshotSha256, null)
   assert.equal(projectEvidence({ fileSha256: 'not-a-hash' }).fileSha256, null)
-  // a window TITLE is short by nature; an essay in that field is a content channel
-  assert.equal(projectEvidence({ windowTitle: 'x'.repeat(200) }).windowTitle, null)
 })
 
 test('screenshots are retained for 7 days on the Companion account only', () => {
