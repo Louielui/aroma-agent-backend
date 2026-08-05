@@ -35,6 +35,13 @@
  * So a false trigger costs one glance: nothing is sealed, no hash exists, no approvalId is
  * minted, nothing is persisted and the runner is not touched.
  *
+ * ── WIRED 2026-08-05 ────────────────────────────────────────────────────────
+ * Attached to the chat envelope by demoRouter.js, and re-derived server-side by
+ * routes/workRequestRoute.js when the Owner presses the button. An earlier revert of this
+ * wiring stands corrected: a Work Order cannot be sealed without a pending Proposal — that
+ * boundary is real and untouched — so the Owner approved creating one deterministically,
+ * and ONLY on the press.
+ *
  * ── DELIBERATELY SEPARATE: NEGATION IS CHECKED TWICE ────────────────────────
  * Owner ruling, 2026-08-05. This codebase's rule is ONE CONCEPT, ONE IMPLEMENTATION, and
  * negation breaks it on purpose. IF YOU ARE HERE TO CONSOLIDATE THESE TWO, READ THIS FIRST.

@@ -696,6 +696,13 @@
     }
     if (res.stage === 'SHADOW_ONLY') return renderDraft(res)
     if (res.demoOutcome === 'execution_proposal' || res.demoOutcome === 'clarification') return renderProposal(res, conv)
+    /* THE DETERMINISTIC ENTRANCE — one sentence and a button, never a filled-in card.
+     *
+     * The Owner's condition, treated as necessary: a false trigger must cost one glance. A
+     * rendered card invites a reflex approval, and he has said plainly that he had been
+     * approving from memory rather than from what was on the screen. Nothing exists at this
+     * point — no Task, no Proposal, no sealed order. Pressing the button is what creates. */
+    if (res.workRequestOffer) return renderOffer(res.workRequestOffer, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
     return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'), conv)
   }
@@ -794,6 +801,54 @@
       var intent = inf.intent || (missing.indexOf('file') < 0 ? typedAnswer : '')
       requestWorkOrder(goal, file, null, pid, intent, conv)
     })
+  }
+
+  /* ── the deterministic offer: ONE SENTENCE AND A BUTTON ──────────────── */
+  function renderOffer (offer, conv) {
+    var t = turn('bot')
+    var box = el('div', 'offer')
+    box.appendChild(el('p', null, '要我出一張工作單改 ' + offer.file + '？'))
+    var row = el('div', 'act')
+    var go = el('button', 'primary', '出工作單')
+    go.setAttribute('type', 'button')
+    var out = el('div', 'meta')
+    row.appendChild(go)
+    box.appendChild(row); box.appendChild(out)
+    t.body.appendChild(box)
+    scroll()
+
+    go.addEventListener('click', function () {
+      if (go.disabled) return
+      go.disabled = true
+      out.textContent = '正在出工作單…'
+      /* THE MESSAGE, NOT THE TARGET. The server re-derives the file and the change from
+         the Owner's own words; a file named here would be ignored. */
+      fetch('/api/v1/owner/work-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ message: lastOwnerMessage(conv) })
+      }).then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
+      }).then(function (o) {
+        if (o.status === 201 && o.body.proposalId) {
+          out.textContent = ''
+          requestWorkOrder(o.body.goal, o.body.file, null, o.body.proposalId, o.body.intent, conv)
+          return
+        }
+        out.textContent = '未能出工作單（' + (o.body.reason || o.body.error || '未知原因') + '）。甚麼都沒有建立。'
+      }).catch(function () {
+        out.textContent = '連線失敗，未能出工作單。甚麼都沒有建立。'
+      })
+    })
+  }
+
+  /* The Owner's own latest words — what the server re-derives from. */
+  function lastOwnerMessage (conv) {
+    for (var i = conv.history.length - 1; i >= 0; i--) {
+      if (conv.history[i] && conv.history[i].role !== 'assistant') return String(conv.history[i].text || '')
+    }
+    return ''
   }
 
   /* ── the Owner decision card ──────────────────────────────────────────── */

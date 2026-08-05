@@ -57,16 +57,14 @@
  * against phrasings I wrote (requestShapeCorpus.test.js states this). Two independent
  * implementations are the answer to that, not more sentences of my own invention.
  *
- * ── NOT WIRED YET (2026-08-05) ──────────────────────────────────────────────
- * Nothing in production calls this. Building the deterministic entrance hit a
- * governance boundary discovered mid-build: /api/v1/owner/work-orders BINDS every Work
- * Order to a real, still-pending Proposal, and the EXECUTE path drives
- * confirmProposalAction THROUGH that proposalId. A deterministic entrance therefore
- * cannot reach a card without also creating a Proposal deterministically.
+ * ── WIRED 2026-08-05 ────────────────────────────────────────────────────────
+ * THIS IS LOAD-BEARING NOW, not supplementary. Until the deterministic entrance existed the
+ * model was the first filter and this judgement had an owner. For a message that takes that
+ * entrance, this module is the only thing standing between 「唔好改 docs/notes.md」 and an
+ * offer to change it — which is exactly why negation is checked twice.
  *
- * That is an Owner decision, not mine, so this and workRequestOffer.js are committed as
- * TESTED GROUNDWORK and left uncalled rather than wired to a path that would 404. If the
- * Owner rules against the approach, delete both — do not leave them dormant.
+ * Called by routes/workRequestOffer.js, which is reached from the chat envelope in
+ * demoRouter.js and from routes/workRequestRoute.js when the Owner presses the button.
  */
 
 /** Why a sentence was refused. Short enums — they reach the Owner only as behaviour. */

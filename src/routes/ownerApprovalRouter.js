@@ -22,6 +22,7 @@
  */
 
 const express = require('express')
+const { createWorkRequest } = require('./workRequestRoute') // the deterministic entrance
 
 const EXPECTED_ORIGIN = 'http://127.0.0.1:8090'
 const EXPECTED_HOSTS = Object.freeze(['127.0.0.1:8090'])
@@ -267,6 +268,34 @@ function createOwnerApprovalRouter (deps = {}) {
       capSec: facts && Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
       finished: got.ok
     })
+  })
+
+  // ── THE DETERMINISTIC ENTRANCE ────────────────────────────────────────────
+  //
+  // What the offer button calls. It is the FIRST thing in the chain that creates anything:
+  // the chat turn produced only a sentence and a button, so a false trigger cost one glance.
+  //
+  // THE BROWSER SUPPLIES THE MESSAGE, NEVER THE TARGET. file and intent are re-derived
+  // server-side from the Owner's own words; a body-supplied file is ignored, not honoured.
+  // Same discipline as the work-order surface loading the sealed order rather than trusting
+  // the request.
+  router.all('/api/v1/owner/work-requests', async (req, res) => {
+    const bad = transportRefusal(req)
+    if (bad) return refuse(res, 403, bad, null, 'deterministic_entry')
+    ensureSession(req, res)
+    const b = req.body || {}
+    let out
+    try {
+      out = await createWorkRequest({ message: b.message }, { promoteToProposal: (req.app && req.app.locals && req.app.locals.promoteToProposal) })
+    } catch (err) {
+      return refuse(res, 500, 'work_request_failed', null, 'deterministic_entry')
+    }
+    if (!out.ok) {
+      // NOTHING WAS CREATED, and the reason says which check declined.
+      auditFn({ approvalId: null, outcome: 'refused', reason: out.reason, entryPoint: 'deterministic_entry' })
+      return res.status(422).json({ error: 'work_request_refused', reason: out.reason })
+    }
+    return res.status(201).json(out)
   })
 
   // ── REJECT ────────────────────────────────────────────────────────────────

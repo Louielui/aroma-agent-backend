@@ -63,14 +63,20 @@ test('*** an approval event records who, when, and the work order hash ***', () 
   assert.ok(/^\d{4}-\d{2}-\d{2}T/.test(ev.at), 'no timestamp: ' + ev.at)
 })
 
-test('*** all seven lifecycle types are accepted ***', () => {
+test('*** all EIGHT lifecycle types are accepted ***', () => {
   // The Owner's list, plus the three additions he accepted: sealed, refused, expired.
-  for (const t of ['sealed', 'approved', 'rejected', 'cancelled', 'expired', 'executed', 'refused']) {
+  //
+  // 'proposed' ADDED LATER, and the miss is the lesson: his list opened with 「proposal
+  // created」 and I did not implement it — then wrote this test enumerating MY seven, so it
+  // passed while the first item of his list was missing. A test written from the same list
+  // as the code cannot find what both of them dropped. It was caught only when the
+  // deterministic entrance tried to record a proposal being created and was refused.
+  for (const t of ['proposed', 'sealed', 'approved', 'rejected', 'cancelled', 'expired', 'executed', 'refused']) {
     const r = store.recordApprovalEvent({ type: t, approvalId: 'appr_' + t, actor: 'louie' })
     assert.equal(r.ok, true, t)
   }
   const types = store.listApprovalEvents().map((e) => e.type)
-  for (const t of ['sealed', 'approved', 'rejected', 'cancelled', 'expired', 'executed', 'refused']) {
+  for (const t of ['proposed', 'sealed', 'approved', 'rejected', 'cancelled', 'expired', 'executed', 'refused']) {
     assert.ok(types.includes('approval.' + t), 'missing: ' + t)
   }
 })

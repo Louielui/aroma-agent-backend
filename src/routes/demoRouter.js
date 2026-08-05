@@ -30,6 +30,7 @@ const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
+const { offerFor } = require('./workRequestOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
@@ -343,6 +344,22 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
             })
           : withLab
 
+        // ── THE DETERMINISTIC ENTRANCE (2026-08-05, Owner ruling) ───────────────
+        // The card used to be reachable ONLY through the model classifying the turn as
+        // commit with exactly one task. Measured: an explicit change request returned
+        // ask, and one character of difference produced a proposal. The Owner: 「I am not
+        // going to learn a magic sentence.」
+        //
+        // THIS CREATES NOTHING. It attaches the makings of one sentence and a button;
+        // only pressing it reaches /api/v1/owner/work-requests, which is the first thing
+        // in the chain that creates a Task or a Proposal.
+        //
+        // THE FIELD APPEARS ONLY WHEN IT FIRES, so a turn that is not a change request is
+        // byte-identical to before — the rule that a consumer must not gain a field for a
+        // reason unrelated to it is narrowed here, not abandoned.
+        const offer = offerFor({ message, hasProposal: carriesProposal })
+        const withOffer = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
+
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
         // One completed turn, written after the reply exists, so a failed turn leaves no
         // half-conversation behind. FAIL-OPEN for the same reason the Lab hook beside it
@@ -357,8 +374,8 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         const conversationId = typeof req.body.conversationId === 'string' ? req.body.conversationId : null
         if (conversationId && isValidConversationId(conversationId)) {
           try {
-            const shown = (withInference && typeof withInference === 'object' && typeof withInference.reply === 'string')
-              ? withInference.reply
+            const shown = (withOffer && typeof withOffer === 'object' && typeof withOffer.reply === 'string')
+              ? withOffer.reply
               : null
             if (shown !== null) {
               conversationStore.appendTurn({
@@ -396,7 +413,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           }
         }
 
-        return res.status(200).json(withInference)
+        return res.status(200).json(withOffer)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped

@@ -287,6 +287,12 @@ function recordLLMUsage (metrics = {}) {
  * smuggle content in through a field meant for an enum.
  */
 const APPROVAL_EVENT_TYPES = Object.freeze([
+  // ADDED 2026-08-05, and the omission is worth recording. The Owner's list opened with
+  // 「proposal created」 and I did not implement it — then wrote a test called 「all seven
+  // lifecycle types are accepted」 that enumerated MY seven. The test agreed with my own
+  // omission because it was written from the same list, which is the same shape as a corpus
+  // of invented phrasings agreeing with the regex that produced it.
+  'proposed', // a proposal came to exist, and by which entrance
   'sealed', // a card was put in front of the Owner — 「I never saw it」 vs 「I saw it and did nothing」
   'approved',
   'rejected',
