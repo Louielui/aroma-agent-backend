@@ -355,3 +355,172 @@ the model is given. **Owner ruling required:** the neutral 「佢」 throughout,
 `readResultView.js`, `readStateGuard.js` and the `.ps1` scripts were scanned for Cantonese but
 **not re-indexed for promises** (§10b). Until that is done, §5 must be read as a floor, exactly
 as §7 says of §4.
+
+---
+
+## 11. CATEGORY B, RE-INDEXED BY PROMISE — the surface is roughly **twice** what §5 said
+
+Owner instruction 2026-08-05: index by *"does this state what the system will or will not do"*,
+regardless of the language it is already in.
+
+**Result: ~46 lines → ~102 Owner-facing lines.** §5 was not 20% short; it was **half**.
+
+Method: all 818 CJK-bearing string literals across 45 non-test files were enumerated, then each
+was read for a promise. §5's nine sections stand unchanged. Everything below is **new** — and
+almost all of it is **already written Chinese**, which is exactly why a Cantonese index could
+not see it.
+
+### B-10 THE WORK-ORDER CARD — `src/agent/workOrderView.js` (12 lines) ⚠️
+
+**The approval screen itself.** The densest governance surface in the product, and it was
+absent from the audit entirely.
+
+| Line | String | Promise |
+|---|---|---|
+| 79 | 「不會提交、不會上傳、不會合併、不會部署。」 | **four explicit negatives** — no commit, push, merge, deploy |
+| 63 | 「只在丟棄式副本內操作，真實程式庫不會被改動。」 | isolation |
+| 112 | 「隔離方式：丟棄式副本，已移除所有 remote，改動無法回到 main」 | isolation, mechanically — remotes removed |
+| 69 | 「香香打算改成（這是香香的打算，不是已完成的結果 —— 它仍未執行，實際結果可能不同）」 | **intent ≠ result** |
+| 77 | 「改壞了？只改副本，你的程式庫不受影響。」 | blast radius |
+| 62 | 「只修改 X 一個檔案。」 | scope is one file |
+| 111 | 「如需改第二個檔案：必須重新建立一張新的工作單（沒有中途加檔案的機制）」 | **no mid-flight scope growth** |
+| 107 | 「工作單有效時間 …（逾時自動失效，需重新產生）」 | approval expires |
+| 83 | 「最長 X · 最多 $Y」 | time and cost caps |
+| 68, 108 | 「（讀自真實檔案，已截斷…）」/「現時內容是否截斷」 | **what you are shown may be partial** |
+| 144 | 「不會發生」 (section heading) | the negatives have their own section |
+
+### B-11 WORK-ORDER REFUSALS — `src/agent/workOrderProducer.js` (15 lines) ⚠️
+
+Every one states **no work order was created**, and why.
+
+| Line | Promise |
+|---|---|
+| 169 | 「未在對話中提及過。我不會自行搜尋或推測檔案路徑」 — **will not infer paths** |
+| 161 | protected scope (credentials/env/auth gate/audit/governance) is unmodifiable |
+| 67 | will not create a work order for a file that does not exist |
+| 68, 69, 70 | not a file / unreadable / outside the repo |
+| 144, 145 | exactly one file — 「一次只可以改一個檔案」 |
+| 150–154 | no wildcards, no folders, must have an extension, relative only, no `..` |
+| 120 | 「未能建立工作單：…」 — the umbrella statement that nothing was created |
+| 135, 187 | empty goal / malformed approvalId |
+
+### B-12 PROPOSAL GROUNDING — `src/intake/groundedReply.js` (4 lines)
+
+All four end in 「尚未執行」 or 「目前尚未建立任何提案」.
+Line 41: 「尚未執行，也尚未派給任何 Worker；等你批准我才會往下走。」
+
+**Promise:** approval gates execution, and nothing was dispatched.
+
+### B-13 DATA-EGRESS REFUSAL — `dispatcher.js:54`, `intakeService.js:150` (2 lines)
+
+> 「含敏感資訊，需人工處理，未送外部模型」
+> 「這句話含敏感資訊（可能涉及銀行、報稅或密鑰）。依政策，我不會把它送給外部模型，只在本機記錄。」
+
+**Promise:** the red line held and **the text did not leave the machine.** Sibling of B-6 —
+B-6 warns egress *will* happen; these assert it *did not*.
+
+### B-14 ROUTE/EVIDENCE WITHHOLDING — `routeEvidenceGuard.js:155-156` (2 lines)
+
+> 「有 N 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。」
+
+**Promise:** something was withheld, how much, and that **no source was consulted**. Written
+2026-08-05 in Step 4 — new since the original audit.
+
+### B-15 UI GOVERNANCE ALREADY IN WRITTEN CHINESE (16 lines)
+
+The §10b list, now formally part of Category B: `app.js` 557, 694, 726, 729, 737, 742, 897,
+926, 927, 960, 996; `index.html` 11, 16, 27; `settings.html` 3; `settings.js` 110.
+
+### B-16 AUTHENTICATION STATE — `ownerAuthRouter.js:58, 122` (2 lines)
+
+> 「尚未設定登入密碼。請在 .env 設定 AROMA_OWNER_PASSWORD 後重啟。」
+
+**Promise:** why the gate is not protecting anything yet. Must never read as "logged in".
+
+### B-17 INCONCLUSIVE OUTCOMES — `intakeDiagnostics.js:26-28` (3 lines, borderline)
+
+「香香未能產生有效回應」/「暫時無法連接服務」/「系統暫時無法處理這個請求」. Classified as
+governance because each must stay **distinguishable from a completed turn**, but they are the
+weakest members of the category. Owner may rule them into A.
+
+### B-MODEL — a class that was never categorised at all
+
+These state what the system will or will not do, but are addressed **to the model**, not to the
+Owner. Not a style pass under any reading. Listed so nobody treats them as copy:
+
+| File | Scale | Note |
+|---|---|---|
+| `src/persona/xiangxiang.js` | 6 | **PERSONA_IDENTITY — FROZEN. Do not touch.** |
+| `src/context/readContext.js` | 112 | `SAFETY_HEADER` + the intent table; the read-state vocabulary lives here |
+| `src/persona/conversationContract.js` | 47 | includes the pronoun instruction — see §13 |
+| `src/intake/answerPlan.js` | 46 | schema descriptions, rewritten to written Chinese in an earlier round |
+| `src/intake/distillPrompt.js` | 20 | 「不得在尚未發生時宣稱它們已經發生」 |
+
+### Addition to CATEGORY C
+
+`src/lab/citationDetector.js:51` — a CJK noise-word list used for **detection**, not display.
+Input-matching. **Must not change.** Missed by the Cantonese index because every word in it is
+standard written Chinese.
+
+---
+
+## 12. `index.html:16` — AN OWNER DECISION, RECORDED SO IT CANNOT BE DELETED BY ACCIDENT
+
+The composer placeholder: 「跟香香說…改檔案要你批准才會執行」
+
+**This placeholder carries a ruling. It is not decoration.**
+
+- **Decided:** 2026-08-04, ruled again 2026-08-05 (Turn Router Step 2d).
+- **What it replaced:** the second paragraph of the empty-screen bubble at the old
+  `app.js:1195` —
+  > 「想我改嘢，直接講明改邊個檔案同改乜就得 —— 我會出一張工作單畀你過目，**你批准咗我先會做**。」
+- **The ruling, in the Owner's words:** "Do NOT delete the ACTION-path explanation outright",
+  and "Do not silently delete a governance statement to tidy a screen." When the empty screen
+  was redesigned the affordance was **relocated to the composer placeholder**, not removed.
+- **What it promises:** it is the only remaining place on the empty screen that tells the Owner
+  (a) the ACTION path exists and (b) **approval gates execution**.
+
+> **It nearly vanished from this audit's own list**, because it contains no Cantonese and reads
+> like placeholder text. A "tidy the placeholder" change would silently undo an explicit ruling.
+> **Do not shorten, merge, or remove it without a fresh Owner decision.**
+
+---
+
+## 13. PRONOUNS — OWNER RULING 2026-08-05: use 「佢」 throughout for 香香
+
+Neutral, no gender claim, and consistent with the contract that forbids mechanical substitution.
+
+### The violation — fixed in the presentation round, flagged now so nobody tidies it wrong
+
+**Four instances of 「她」 referring to 香香**, all in the settings copy:
+
+| File | Lines |
+|---|---|
+| `src/demo/assets/index.html` | 83 「你想**她**點樣講嘢」 · 89 「要**她**記住的事」 |
+| `src/demo/assets/settings.html` | 19 (same) · 25 (same) |
+
+They sit **beside** 「佢」 on the same screens (`index.html` 90, 97; `settings.html` 26, 33) —
+inconsistent as well as gendered.
+
+> ⚠️ `src/routes/settingsRouter.test.js:69` asserts `/要她記住的事/`. **Same commit**, per the
+> standing rule on assertions.
+
+> ⚠️ **THE WRONG FIX IS TO REGULARISE TO 「她」.**
+> `src/persona/conversationContract.js:104` instructs: 「不要機械地把「佢」換成「他」「她」「它」。」
+> Standardising the interface on 「她」 would put it in direct contradiction with the contract
+> the model is given. **The ruling is 「佢」.**
+
+### Everything else with a gendered pronoun — full scan, reported not changed
+
+**Nothing else in the codebase refers to 香香 with a gendered pronoun.**
+
+- **`PERSONA_IDENTITY` (`src/persona/xiangxiang.js`) assigns her NO gender.** She is addressed
+  throughout as 「你」. The frozen constant is already neutral, which means the four 「她」 in the
+  HTML contradict the identity as well as the policy. **Reported only — not changed.**
+- 「他」 appears in `xiangxiang.js` (36, 38, 51, 56), `conversationContract.js:78` and
+  `distillPrompt.js` (45, 49) — **all referring to Louie, not to 香香.** Outside this ruling's
+  scope; flagged in case the Owner wants a separate ruling. `xiangxiang.js` is frozen either way.
+- 「它」 appears in `workOrderView.js:69`, `workOrderProducer.js:69`, `groundedReply.js`,
+  `routeEvidenceGuard.js`, `intakeService.js:150`, `xiangxiang.js` — **all referring to files,
+  changes, sentences or the Aroma System.** Correct usage; no change needed.
+- `MockAdapter.js:57` 「它是後續其他工作的資料來源」 — refers to a task. Demo fixture.
