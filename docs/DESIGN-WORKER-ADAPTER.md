@@ -11,6 +11,45 @@ comes first, and the fence insight comes from the remote.
 
 ---
 
+# THE ENTRY RULE — Owner-accepted 2026-08-05, and it comes before everything below
+
+> ## It is not about identity.
+> ## **It is about whether the fence sits in an environment WE BUILD AND CAN VERIFY.**
+
+Deployment is case 3 — acting as the Owner — and it **passes**. The browser is refused **not
+because it spends money** but because its fence lives on someone else's side.
+
+> **Owner: 「That reframing makes the rule teachable, which mine was not.」**
+
+That is the test. Identity still selects the order body; it does not decide admission.
+
+## And a permanent refusal is not a pending gap
+
+`effect`-shaped work through an external worker is refused **permanently** — not 「until
+something we cannot control changes」. The earlier wording was wrong and is retracted here,
+for a specific reason the Owner named:
+
+> **A permanent refusal must not read as a pending gap, or someone later treats it as a
+> backlog item.**
+
+Their side is theirs. That is a property of the arrangement, not an unfinished piece of work.
+**Manus is admissible today for `assertion`-shaped work**, where the whole bad-outcome space
+is bounded by what we transmit — which is on our side, and therefore verifiable.
+
+## Scope, decided: ONE schema
+
+> **Owner ruling: case 1 now; the case-3 deployment variant when deployment is actually
+> built; case 2 never on spec.**
+>
+> **「A schema built to be refused is a schema built for nothing.」**
+
+## The honest scope, recorded so it is not rediscovered later
+
+> **A class of workers whose box we own, plus a wall, plus a mechanised refusal.**
+> **Less than three workers — and worth having.**
+
+---
+
 # THREE PRINCIPLES — kept prominent because they are principles, not details
 
 > ## 1. A fence is a property of the DISPATCH, not of the worker.
