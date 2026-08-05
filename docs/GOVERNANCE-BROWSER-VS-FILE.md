@@ -23,7 +23,65 @@ environment making the forbidden thing impossible:
 **`push` is not forbidden. There is nowhere to push.** Delete the clone and the consequence
 ceases to exist. Every reassuring property of the Agent Bridge descends from that one fact.
 
-## What a logged-in browser does to it
+---
+
+# ⚠ CORRECTED 2026-08-05 — THE CONDITION IS THE REMOTE, NOT THE BROWSER
+
+**Owner ruling, and it supersedes how the rest of this document was originally framed.**
+
+> ### 「forbiddenActions degrades from mechanism to intention」 is not about browsers.
+> ### **It is about `origin`. The browser was only the first instance.**
+
+This document was written as though the file world were the safe world and the browser were
+the exception. **That is wrong, and it was measured wrong the same day.** The real condition
+is one line:
+
+> ## THE CONDITION
+> ### **Does the working copy have a remote?**
+>
+> If yes, `push` is a rule the agent follows. If no, it is a fact about the world.
+> **Nothing about being "a file edit" grants the exemption. The file world is not exempt.**
+
+## What the measurement was
+
+`aroma-system` — production, the restaurant runs on it daily — sitting on this machine at
+`C:\Users\louis\Projects\aroma-system`:
+
+| | disposable clone | `aroma-system` on AromaBrain |
+|---|---|---|
+| remote | **removed** | `origin` → `github.com/Louielui/aroma-system` |
+| credential | none | `git:https://github.com` in Windows Credential Manager; fetch **verified working** |
+| where the pushed ref lands | nowhere | `origin/main` — **the exact ref `deploy.sh` resets production to** |
+| `push` is… | **impossible** | **permitted, and pre-approved in `.claude/settings.local.json` as `Bash(git push *)`** |
+
+Same tool, same file type, same agent. **The only thing that changed is that one working
+copy has an `origin` and the other does not** — and the entire safety story turns over on
+exactly that.
+
+## Why this correction matters more than the browser one
+
+The browser case at least *announces itself*. Nobody mistakes "log into Costco" for a
+contained action. **A git repo on disk looks identical whether or not it has a remote**, and
+the reassuring language — sandbox, working copy, local edit, just a diff — reads the same in
+both cases. The dangerous one is the one that does not look dangerous.
+
+So the generalised rule, replacing the browser-specific framing:
+
+> **Isolation is not a property of the medium. It is a property of whether a path to
+> consequence exists from where the work happens.**
+>
+> A browser has one because it is logged in. A repo has one because it has a remote. A file
+> edit in a clone with no remote has none — and that, not its being a file edit, is the
+> whole of why it was safe.
+
+**Practical consequence, recorded as the shape of any future aroma-system work:** restore the
+missing property rather than add a rule. The agent works in a clone with `origin` removed and
+delivers a **patch**; the push is the Owner's, because the agent has nowhere to push — not
+because it was told not to. See `AROMA-SYSTEM-WORKING-MODEL.md`.
+
+---
+
+## What a logged-in browser does to it — the FIRST instance, not the only one
 
 | | file edit | browser logged into a retailer |
 |---|---|---|

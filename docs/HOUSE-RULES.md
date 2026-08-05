@@ -155,3 +155,32 @@ building beside something that was just given visibility, ask what this new thin
 like when it fails, and answer it before shipping — including WHEN the record is written, not
 only what it contains. A field that is set after the log line is emitted is not
 instrumentation; it is a variable.
+
+---
+
+## HR-9 — Absolute paths only; cwd is not a statement of intent
+
+Three repos live on this machine and one of them is production:
+
+| path | risk |
+|---|---|
+| `C:\Aroma\aroma-agent-backend` | local (this one) |
+| `C:\Users\louis\Projects\aroma-system` | **PRODUCTION** — has `origin`, and its `main` is what `deploy.sh` resets the live system to |
+| `C:\Aroma\aroma-3b` | local |
+
+**The measured defect.** The session's primary working directory is the PRODUCTION repo, and
+until 2026-08-05 `CLAUDE.md` existed only there. So an agent working on 香香 loaded
+production's project instructions, and once proposed production files while working in this
+repo. The cause was not carelessness about which repo was meant — it was that a relative path
+resolves against a cwd nobody restated, and the wrong resolution looks exactly like the right
+one.
+
+**The rule.** Every file operation names an ABSOLUTE path. Never a bare relative path, never
+`./`, never a path whose meaning depends on where the shell happens to be. Before writing,
+confirm the absolute path is under the repo you intend.
+
+**Why a rule at all, when the project's own principle is to prefer mechanisms.** Because this
+one is only a guard rail. The mechanism is that an agent working on `aroma-system` works in a
+clone with `origin` removed and delivers a patch — so a misdirected edit has nowhere to go.
+See `AROMA-SYSTEM-WORKING-MODEL.md`. **HR-9 reduces the frequency; the no-remote clone removes
+the consequence. Do not treat the rule as a substitute for the clone.**
