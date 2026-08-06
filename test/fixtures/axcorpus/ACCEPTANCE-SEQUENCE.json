@@ -1,0 +1,17 @@
+{
+ "frozenAt": "2026-08-06",
+ "rule": "FROZEN BEFORE THE SEQUENCE WAS RUN. HR-20. The six verbs each passed alone; nothing has strung them together, and every failure this week appeared AT A SEAM rather than inside a unit.",
+ "scope": "one real sequence, headed, on a live READ-ONLY destination: navigate, read, click, read again, type, wait. Nothing that submits.",
+ "criteria": [
+  { "id": "S1", "kind": "ref-survives-noop", "must": "a ref taken BEFORE an action still resolves to the same element after an action that did not disturb it. This is the whole premise of read_page and has never been tested across an action." },
+  { "id": "S2", "kind": "ref-dies-loudly", "must": "a ref to an element the DOM removed REFUSES with ELEMENT_GONE. It must never resolve to a different element and never report success." },
+  { "id": "S3", "kind": "ref-across-navigation", "must": "a ref taken before a NAVIGATION must not silently address a node in the new document. Whatever it does, it must not be a wrong click reported as a right one." },
+  { "id": "S4", "kind": "report-sufficiency", "must": "the report alone says what was done, to what, in what order, what was refused and why — without needing the turns. Same bet as the enquiry runner." },
+  { "id": "S5", "kind": "no-secrets", "must": "no typed value appears anywhere in the report" },
+  { "id": "S6", "kind": "no-coordinates", "must": "no coordinates appear anywhere in the report" },
+  { "id": "S7", "kind": "stops-cleanly", "must": "the sequence STOPS at the first refusal with a named reason. It does not continue, does not retry, and does NOT stop by timing out." },
+  { "id": "S8", "kind": "stop-is-fast", "must": "a refusal that is knowable without waiting (origin not in order, credential field, element gone) is reported in well under the action timeout — a stop that arrives as a timeout is indistinguishable from a hang" }
+ ],
+ "acceptanceBar": "S1-S8 all demonstrated in ONE live headed run against a real page, with the report printed in full so it can be judged on its own.",
+ "notInScope": "the offline/desktop half. Separate estimate, separate evidence, separate codebase."
+}
