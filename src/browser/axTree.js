@@ -29,6 +29,7 @@
  */
 
 const path = require('node:path')
+const { budgetGroups } = require('./groupBudget')
 
 const CORPUS_DIR = path.join(__dirname, '..', '..', 'test', 'fixtures', 'axcorpus')
 
@@ -146,6 +147,91 @@ function resolveRef (ref, rawNodes) {
   return null
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * CONTAINMENT — 「結構一直喺 payload 度，係我第一行就掉咗佢。」
+ *
+ * A CDP AXNode carries `parentId` and `childIds`. Measured on the frozen real Costco capture:
+ * **parentId on 3564 of 3565 nodes**, and every one of the 21 `button "Add to Cart"` resolves
+ * to a distinct product-naming ancestor. This file used to treat `rawNodes` as a flat array
+ * and throw all of that away on its first line.
+ *
+ * ── CONTEXT IS EARNED, NEVER UNIVERSAL ──────────────────────────────────────
+ * Measured cost of labelling every line: **+22% MDN, +47% Costco, +228% Wikipedia portal.**
+ * On the portal that triples the output, so the budget cuts more nodes, so more of the page
+ * goes invisible — **the truncation problem back in a new shape.**
+ *
+ * So a node whose (role, name) is UNIQUE gets no container and must not: every character
+ * spent labelling `link "Skip to Main Content"` is a character not spent on a node the model
+ * cannot otherwise reach. On Costco only 82 of 548 nodes pay.
+ *
+ * ── AND NO FIXED DEPTH ──────────────────────────────────────────────────────
+ * The depth to a usable label measured **1–6, varying within a single page.** Costco's
+ * uniform depth 3 would have produced exactly the wrong rule. The chain is walked until it
+ * resolves, then COLLAPSED to that one ancestor — output nesting is at most 1 regardless.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+/** A label must actually distinguish; a two-character name distinguishes nothing. */
+const MIN_LABEL = 12
+const MAX_CLIMB = 8
+
+function buildIndex (raw) {
+  const byId = new Map()
+  for (const n of raw) if (n && n.nodeId !== undefined) byId.set(n.nodeId, n)
+  return byId
+}
+
+function subtreeLabel (node, byId, ownName, seen = new Set()) {
+  for (const cid of node.childIds || []) {
+    if (seen.has(cid)) continue
+    seen.add(cid)
+    const c = byId.get(cid)
+    if (!c) continue
+    const nm = String(valueOf(c.name) || '').replace(/\s+/g, ' ').trim()
+    if (nm && nm !== ownName && nm.length >= MIN_LABEL) return nm
+    const deeper = subtreeLabel(c, byId, ownName, seen)
+    if (deeper) return deeper
+  }
+  return null
+}
+
+/**
+ * For each duplicate node, the NEAREST ancestor that both (a) differs from every
+ * same-named sibling's ancestor at that height and (b) carries a usable label.
+ *
+ * ⛔ Returns null when no such ancestor exists — the genuinely-identical-siblings case.
+ * That is REPORTED as ambiguity, never resolved by picking one. Two real `Add` buttons are
+ * the page's own ambiguity, and choosing between them is the pruner lying about the page.
+ */
+function resolveContainers (dupNodes, byId) {
+  const result = new Map()
+  const ancestorAt = (n, h) => {
+    let c = byId.get(n.nodeId)
+    for (let i = 0; i < h && c; i++) c = byId.get(c.parentId)
+    return c || null
+  }
+  for (let h = 1; h <= MAX_CLIMB; h++) {
+    const pending = dupNodes.filter((n) => !result.has(n.nodeId))
+    if (!pending.length) break
+    const at = new Map()
+    for (const n of pending) {
+      const a = ancestorAt(n, h)
+      if (!a) continue
+      if (!at.has(a.nodeId)) at.set(a.nodeId, [])
+      at.get(a.nodeId).push(n)
+    }
+    for (const [aid, members] of at) {
+      if (members.length !== 1) continue // still shares its ancestor with a twin — climb again
+      const a = byId.get(aid)
+      const own = String(valueOf(members[0].name) || '').replace(/\s+/g, ' ').trim()
+      const label = subtreeLabel(a, byId, own)
+      if (label) result.set(members[0].nodeId, { containerNode: a, label })
+    }
+  }
+  return result
+}
+
 function valueOf (v) { return v && typeof v === 'object' ? v.value : v }
 
 function normalise (raw) {
@@ -186,7 +272,7 @@ function readPage (rawNodes, opts = {}) {
     const domId = n.backendDOMNodeId
     if (domId === undefined || domId === null) continue
 
-    candidates.push({ ref: refFor(domId), domId: Number(domId), role, name, interactive })
+    candidates.push({ ref: refFor(domId), domId: Number(domId), role, name, interactive, nodeId: n.nodeId })
   }
 
   // ── NAME ECHO — HR-16 ───────────────────────────────────────────────────────
@@ -219,52 +305,66 @@ function readPage (rawNodes, opts = {}) {
   const nameEchoesDropped = candidates.length - kept0.length
 
   const totalCandidates = kept0.length
-  let kept = kept0.slice(0, maxNodes)
-  let truncated = totalCandidates > kept.length
 
-  const line = (n) => `[#${n.ref}] ${n.role}${n.name ? ' "' + n.name + '"' : ''}`
-  let body = kept.map(line).join('\n')
+  // ── CONTAINERS, FOR DUPLICATES ONLY ─────────────────────────────────────────
+  const byId = buildIndex(raw)
+  const nameCount = new Map()
+  for (const c of kept0) {
+    if (!c.name) continue
+    const k = c.role + "|" + c.name
+    nameCount.set(k, (nameCount.get(k) || 0) + 1)
+  }
+  const dupes = kept0.filter((c) => c.name && nameCount.get(c.role + "|" + c.name) > 1)
+  const resolved = opts.group === false ? new Map() : resolveContainers(dupes, byId)
 
-  // The character budget is a SECOND bound, because 250 short nodes and 250 long ones are
-  // not the same prompt. Cutting here must state itself exactly as cutting by count does.
-  if (body.length > maxChars) {
-    truncated = true
-    const lines = []
-    let used = 0
-    for (const n of kept) {
-      const l = line(n)
-      if (used + l.length + 1 > maxChars - 120) break
-      lines.push(l); used += l.length + 1
+  // A duplicate with NO resolving ancestor is genuinely indistinguishable on the page.
+  // It is FLAGGED, never merged away and never given a container that would imply it was
+  // told apart. See HR-16 finding 2.
+  const ambiguousNames = new Set()
+  for (const c of dupes) if (!resolved.has(c.nodeId)) ambiguousNames.add(c.role + "|" + c.name)
+
+  const groups = []
+  const byContainer = new Map()
+  const grouped = new Set()
+  for (const c of kept0) {
+    const r = resolved.get(c.nodeId)
+    if (!r) continue
+    c.groupName = r.label
+    const gid = r.containerNode.nodeId
+    if (!byContainer.has(gid)) {
+      const gref = r.containerNode.backendDOMNodeId
+      const grp = { ref: gref === undefined || gref === null ? "g" + gid : refFor(gref), name: r.label, members: [] }
+      byContainer.set(gid, grp)
+      groups.push(grp)
     }
-    kept = kept.slice(0, lines.length)
-    body = lines.join('\n')
+    byContainer.get(gid).members.push(c)
+    grouped.add(c.ref)
   }
 
-  // A CUT THAT SAYS IT WAS CUT. A model reads the text; a flag it never sees is not a
-  // disclosure, and a partial page that reads as whole is `count: 43` in a new place.
-  //
-  // ⚠ REVERTED 2026-08-06 to exactly this one line. The expanded version — a header before
-  // the data, 「refs are not sequential」, 「answer only a printed ref」 — was A/B tested against
-  // this one and scored WORSE (9/10 against 10/10) while introducing a new failure mode.
-  // The Owner's ruling: 「Keeping a change whose sole measured signal is negative because it
-  // 『should』 help is the thing we keep removing.」 The fence is now the REF FORMAT, above.
-  const notice = truncated
-    ? `\n（已截斷 truncated：顯示 ${kept.length} 項，符合條件嘅共 ${totalCandidates} 項；未顯示嘅嘢唔代表唔存在）`
-    : ''
-  const text = body + notice
+  const loose = kept0.filter((c) => !grouped.has(c.ref)).map((c) => {
+    if (c.name && ambiguousNames.has(c.role + "|" + c.name)) {
+      c.ambiguous = true
+      const n = nameCount.get(c.role + "|" + c.name)
+      return { ...c, name: c.name + `" ⚠ indistinguishable from ${n - 1} other${n === 2 ? "" : "s"} on this page — do NOT choose between them"`.slice(0, 200) }
+    }
+    return c
+  })
 
-  // An ambiguous ref would click the wrong element, so a collision is REPORTED rather than
-  // hoped against. At 32 bits over a 4000-node page the expected rate is ~1 in 500 reads of
-  // a page that size — rare, and rare is not never.
+  const budget = budgetGroups(groups, { maxNodes, maxChars }, loose)
+  const kept = kept0.filter((c) => budget.emittedRefs.has(c.ref))
+
   const refCollision = new Set(kept.map((n) => n.ref)).size !== kept.length
 
   return {
     nodes: kept,
-    text,
-    truncated,
+    text: budget.text,
+    truncated: budget.truncated,
     totalCandidates,
     refCollision,
     nameEchoesDropped,
+    groupCount: budget.groups.length,
+    groupsDropped: budget.groupsDropped,
+    ambiguousCount: kept.filter((n) => n.ambiguous).length,
     rawNodeCount: raw.length
   }
 }
