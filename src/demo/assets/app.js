@@ -236,6 +236,40 @@
       .catch(function () { /* no greeting is better than a wrong one */ })
   }
 
+  /**
+   * ── THE STALE-TAB GUARD ───────────────────────────────────────────────────
+   * app.js and app.css are INLINED into this page at server require() time, so a tab loaded
+   * before a restart keeps running old client code against a new server — and looks
+   * completely normal doing it. That has cost three rounds: a reject button that "worked"
+   * and never called the server, a deterministic entrance that did not appear, and a
+   * backlog line that did not render.
+   *
+   * The page knows the fingerprint it was built from. It asks the server what is being
+   * served now, and if they differ it SAYS SO. Checked once on load — the answer only
+   * changes on a restart, so polling would be noise.
+   */
+  function checkStale () {
+    // Substituted by demoHtml.js at build time. It lives HERE rather than in a second
+    // script block in index.html, because the page is required to carry exactly ONE inline
+    // script — 「nothing is fetched at runtime」 is checked by counting them, and this file
+    // is inlined into that count. (Writing the tag name in full here breaks that test: the
+    // comment itself is part of the page.)
+    var mine = '/*BUILD_STAMP*/'
+    if (!mine || mine.indexOf('BUILD_STAMP') !== -1) return
+    fetch('/api/v1/demo/version', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (j) {
+        if (!j || !j.build || j.build === mine) return
+        var bar = el('div', 'stale-banner')
+        // Naming the remedy matters: an ordinary reload does NOT clear this, and a banner
+        // that only says "out of date" sends him looking for the fix.
+        bar.textContent = '呢個頁面唔係最新版本 — 㩒 Ctrl+Shift+R 硬重新整理。'
+        document.body.insertBefore(bar, document.body.firstChild)
+      })
+      .catch(function () { /* a guard that fails is silent; it must never break the page */ })
+  }
+  checkStale()
+
   /** The moment he sends, the greeting is gone — and the pane stops being centred. */
   function clearEmptyScreen (c) {
     if (mainEl) mainEl.classList.remove('empty')

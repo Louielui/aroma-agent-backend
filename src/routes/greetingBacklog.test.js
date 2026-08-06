@@ -50,7 +50,9 @@ describe('greeting + backlog line', () => {
     assert.strictEqual(res.status, 200)
     assert.strictEqual(res.body.ok, true)
     assert.ok(res.body.greeting, 'the greeting itself must survive a Drive failure')
-    assert.strictEqual(res.body.backlog, null, 'no line rather than a wrong one')
+    // OWNER RULING REVERSED 2026-08-06: a failure SPEAKS. Returning null renders identically
+    // to 「nothing waiting」, and that is the one meaning it must never carry.
+    assert.ok(res.body.backlog && /出錯/.test(res.body.backlog), 'a thrown read must say so')
   })
 
   test('the greeting still renders when the backlog read HANGS past its budget', async () => {
@@ -62,7 +64,10 @@ describe('greeting + backlog line', () => {
     const res = await get(app, '/api/v1/demo/greeting')
     assert.strictEqual(res.status, 200)
     assert.ok(res.body.greeting)
-    assert.strictEqual(res.body.backlog, null)
+    // A TIMEOUT MUST NOT BE SILENT. This exact case shipped as null and cost a round: the
+    // read took 3.2-5.6s against a 2.5s budget, so every cold render showed nothing while
+    // 64 files sat in Drive.
+    assert.ok(res.body.backlog && /未攞到數/.test(res.body.backlog), 'a timeout must say so')
     assert.ok(Date.now() - started < 2000, 'must not wait for a hung Drive call')
   })
 
@@ -80,12 +85,17 @@ describe('greeting + backlog line', () => {
     assert.ok(res.body.backlog.includes('我只數到檔案，數唔到入面有幾多張發票'))
   })
 
-  test('nothing waiting means NO line — a daily line becomes furniture and stops being read', async () => {
+  test('a CLEAR result speaks and proves it looked — silence cannot distinguish clear from broken', async () => {
     const app = appWith({
-      readBacklogFn: async () => ({ scanned: { state: 'EMPTY', fileCount: 0 }, inbox: { state: 'EMPTY', fileCount: 0 } })
+      readBacklogFn: async () => ({
+        scanned: { state: 'EMPTY', fileCount: 0 },
+        inbox: { state: 'EMPTY', fileCount: 0 },
+        checkedAt: '2026-08-06T00:47:00.000Z'
+      })
     })
     const res = await get(app, '/api/v1/demo/greeting')
-    assert.strictEqual(res.body.backlog, null)
+    assert.ok(res.body.backlog, 'a clear result must not be silent')
+    assert.match(res.body.backlog, /冇嘢等緊/)
   })
 
   test('a read FAILURE speaks — silence there would read as "nothing waiting"', async () => {
@@ -105,6 +115,7 @@ describe('greeting + backlog line', () => {
     assert.strictEqual(res.status, 200)
     assert.strictEqual(res.body.ok, true)
     assert.ok(res.body.greeting)
+    // Silence is reserved for one case only: no reader injected, i.e. the feature is off.
     assert.strictEqual(res.body.backlog, null)
   })
 })

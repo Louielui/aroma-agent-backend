@@ -61,7 +61,40 @@ function inlineSvg (name) {
  * source list lives inside app.js and only exists in `out` once the script has been
  * inlined. The loop below walks this array in order, so the new key belongs at the end.
  */
-const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/']
+const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/']
+
+/**
+ * ── THE BUILD STAMP: how a stale tab tells on itself ─────────────────────────
+ *
+ * This file inlines app.js and app.css at require() time, so a tab loaded before a restart
+ * keeps running the OLD client against the NEW server. That has cost a full round THREE
+ * times: the reject button that "worked" and never called the server; the deterministic
+ * entrance that did not appear; the backlog line that did not render.
+ *
+ * Each time it was diagnosed and recorded. It recurred anyway. Owner ruling 2026-08-06:
+ * 「a lesson recorded three times without a mechanism is not a lesson, it is a note.」
+ *
+ * So the page carries the fingerprint of the assets it was built from, and asks the server
+ * (GET /api/v1/demo/version) what it is serving now. Different → the page says so.
+ *
+ * A FINGERPRINT, NOT A TIMESTAMP. Same inputs must give the same stamp, or every page
+ * would report itself stale and the warning would become noise within a day.
+ *
+ * @param {object} [overrides] asset name → contents, for tests that need a changed input
+ */
+function computeBuildStamp (overrides = {}) {
+  const crypto = require('node:crypto')
+  const h = crypto.createHash('sha256')
+  // Exactly the assets that can go stale in a browser. index.html is included because the
+  // placeholders and structure live there too.
+  for (const name of ['app.js', 'app.css', 'index.html']) {
+    h.update(name)
+    h.update(Object.prototype.hasOwnProperty.call(overrides, name) ? overrides[name] : readAsset(name))
+  }
+  return h.digest('hex').slice(0, 12)
+}
+
+const BUILD_STAMP = computeBuildStamp()
 
 /**
  * THE READ SOURCES, AS THE OWNER NAMES THEM — generated from the registry, not typed.
@@ -93,7 +126,8 @@ function buildDemoHtml () {
     // The favicon is the padded SQUARE form, shared with the installed app icon so the
     // tab and the taskbar show the same thing. appManifest owns that geometry.
     '/*FAVICON_URI*/': iconDataUri(),
-    '/*READ_SOURCE_LABELS*/': readSourceLabelsJson()
+    '/*READ_SOURCE_LABELS*/': readSourceLabelsJson(),
+    '/*BUILD_STAMP*/': BUILD_STAMP
   }
   let out = readAsset('index.html')
   for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])
@@ -105,4 +139,4 @@ function buildDemoHtml () {
 
 const DEMO_HTML = buildDemoHtml()
 
-module.exports = { DEMO_HTML, buildDemoHtml, ASSET_DIR }
+module.exports = { DEMO_HTML, buildDemoHtml, ASSET_DIR, BUILD_STAMP, computeBuildStamp }

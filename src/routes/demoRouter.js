@@ -28,7 +28,7 @@ const { getAdapter } = require('../adapters/adapterFactory')
 const { processIntake } = require('../intake/intakeService')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
-const { DEMO_HTML } = require('../demo/demoHtml')
+const { DEMO_HTML, BUILD_STAMP } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
 const { explainOffer } = require('./workRequestOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
@@ -153,14 +153,31 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
       try {
         const budget = new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), backlogTimeoutMs))
         const r = await Promise.race([Promise.resolve().then(readBacklogFn), budget])
-        if (r !== TIMED_OUT) payload.backlog = sentenceFor(r)
+        payload.backlog = r === TIMED_OUT
+          // A TIMEOUT MUST NOT BE SILENT. It used to set null, which renders identically to
+          // 「nothing waiting」 — and that is exactly what happened: the read took 3.2-5.6s
+          // against a 2.5s budget, so every cold render showed nothing while 64 files sat
+          // in Drive. Silence is reserved for「the feature is off」and nothing else.
+          ? '仲喺度查 Drive，今次未攞到數。'
+          : sentenceFor(r)
       } catch (_) {
-        // A thrown read is a missing line, not a failed screen. No sentence is better than
-        // a wrong one, and a wrong one here would be read as 「nothing waiting」.
-        payload.backlog = null
+        // A thrown read still SAYS so. No sentence at all would be read as 「nothing
+        // waiting」, which is the one meaning it must never carry.
+        payload.backlog = '查 Drive 嗰陣出錯，今次攞唔到數。'
       }
     }
     res.json(payload)
+  })
+
+  /**
+   * THE STALE-TAB GUARD. The page embeds the fingerprint of the assets it was built from;
+   * this says what the process is serving NOW. A page that finds them different tells the
+   * Owner to hard-reload instead of silently running old code against a new server.
+   *
+   * Deliberately cheap: no store read, no Drive read, no work. The page polls it.
+   */
+  router.get('/api/v1/demo/version', demoGuard, (req, res) => {
+    res.json({ ok: true, build: BUILD_STAMP })
   })
 
   router.get('/api/v1/conversations', demoGuard, (req, res) => {

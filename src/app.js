@@ -907,20 +907,30 @@ function createApp (options = {}) {
   // Cached briefly — the number moves in hours, and the greeting is fetched per empty
   // screen. The route timeboxes and swallows failures; nothing here can break the screen.
   let backlogCache = { at: 0, value: null }
-  const readBacklogFn = async () => {
-    const now = Date.now()
-    if (backlogCache.value && now - backlogCache.at < 5 * 60 * 1000) return backlogCache.value
+  const refreshBacklog = async () => {
     const { readInvoiceBacklog } = require('./context/invoiceBacklog')
     const { credsPresent, service } = require('./context/googleAuth')
     const drive = credsPresent() ? service('drive', 'v3') : null
     const value = await readInvoiceBacklog({ drive })
-    backlogCache = { at: now, value }
+    backlogCache = { at: Date.now(), value }
     return value
+  }
+  const readBacklogFn = async () => {
+    if (backlogCache.value && Date.now() - backlogCache.at < 5 * 60 * 1000) return backlogCache.value
+    return refreshBacklog()
   }
   app.use(createDemoRouter({
     conversationStore: realConversationStore,
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null
   }))
+
+  // PRIME THE CACHE ONCE AT STARTUP so the FIRST greeting after a restart is already warm.
+  // Without this the first render pays the full Drive round-trip, and that is exactly the
+  // render most likely to be the Owner opening the page right after a restart. Fire and
+  // forget: a failure here is a cold cache, never a failed boot.
+  if (process.env.READ_ACCESS === 'on') {
+    setTimeout(() => { refreshBacklog().catch(() => {}) }, 500).unref()
+  }
 
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless

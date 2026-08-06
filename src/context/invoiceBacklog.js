@@ -88,14 +88,19 @@ async function readFolder (drive, folder, now) {
   let fileCount = top.length - batches.length
   let nonEmptyBatchCount = 0
 
-  for (const b of batches) {
-    let kids
-    try {
-      kids = await children(drive, b.id)
-    } catch (err) {
-      // One unreadable batch must not turn the whole answer into a number that looks whole.
-      return noNumber(BACKLOG_STATE.READ_FAILED, `batch ${b.name}: ${String((err && err.message) || 'read failed')}`.slice(0, 160))
-    }
+  // CONCURRENTLY, and this is not a micro-optimisation. Measured 2026-08-06: eight
+  // SEQUENTIAL calls took 3.2-5.6s against the greeting's 2.5s budget, so every cold read
+  // timed out and rendered as SILENCE — indistinguishable from 「nothing waiting」, which is
+  // the one thing this whole module exists to prevent. The same work issued concurrently
+  // measured 1.0-1.4s.
+  let kidsPerBatch
+  try {
+    kidsPerBatch = await Promise.all(batches.map((b) => children(drive, b.id)))
+  } catch (err) {
+    // One unreadable batch must not turn the whole answer into a number that looks whole.
+    return noNumber(BACKLOG_STATE.READ_FAILED, String((err && err.message) || 'read failed').slice(0, 160))
+  }
+  for (const kids of kidsPerBatch) {
     const files = kids.filter((k) => k.mimeType !== FOLDER_MIME).length
     fileCount += files
     if (files > 0) nonEmptyBatchCount++
@@ -118,9 +123,27 @@ async function readFolder (drive, folder, now) {
  */
 async function readInvoiceBacklog ({ drive, now } = {}) {
   const at = typeof now === 'function' ? now() : new Date()
-  const scanned = await readFolder(drive, FOLDERS.scannedByFranco, at)
-  const inbox = await readFolder(drive, FOLDERS.inbox, at)
-  return { scanned, inbox }
+  // The two folders are independent; reading them one after the other doubles the latency
+  // for no reason. checkedAt is recorded because a number with no time cannot prove it is
+  // fresh — and a stale number that looks current is the failure this line exists to avoid.
+  const [scanned, inbox] = await Promise.all([
+    readFolder(drive, FOLDERS.scannedByFranco, at),
+    readFolder(drive, FOLDERS.inbox, at)
+  ])
+  return { scanned, inbox, checkedAt: at.toISOString() }
+}
+
+/** HH:MM in the Owner's zone. Never the browser's, never the process's. */
+function clockLabel (iso, opts = {}) {
+  if (!iso) return null
+  let timeZone = opts.timeZone
+  if (!timeZone) {
+    try { timeZone = require('../utils/localTime').resolveTimeZone(opts) } catch (_) { return null }
+  }
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, hour: '2-digit', minute: '2-digit', hour12: false })
+      .format(new Date(iso))
+  } catch (_) { return null }
 }
 
 /**
@@ -134,33 +157,52 @@ async function readInvoiceBacklog ({ drive, now } = {}) {
  * and the number becomes another count:43. She counts FILES; a scanned PDF may hold several
  * invoices, and 64 files against the Owner's own estimate of 291 is the demonstration.
  */
-function sentenceFor (r) {
+function sentenceFor (r, opts = {}) {
   const s = r && r.scanned
   const i = r && r.inbox
   if (!s) return null
 
+  // SILENCE IS RESERVED FOR ONE STATE ONLY: the feature is off. Owner ruling 2026-08-06,
+  // reversing his earlier one — 「a silent screen cannot distinguish clear from broken, and
+  // broken is the case that costs me a month of invoices」.
   if (s.state === BACKLOG_STATE.NOT_LOOKED && (!i || i.state === BACKLOG_STATE.NOT_LOOKED)) return null
 
+  const at = clockLabel(r && r.checkedAt, opts)
+  const stamp = at ? `${at} 查過` : '啱啱查過'
+
   if (s.state === BACKLOG_STATE.FOLDER_NOT_FOUND) {
-    return `我搵唔到「${FOLDERS.scannedByFranco.label}」呢個資料夾（id 已經寫死）。可能改咗名或者搬咗——我唔會當佢係空。`
+    return `我搵唔到「${FOLDERS.scannedByFranco.label}」呢個資料夾（id 係寫死嘅）。可能改咗名或者搬咗——我唔會當佢係空。`
   }
   if (s.state === BACKLOG_STATE.READ_FAILED) {
     return `我睇唔到「${FOLDERS.scannedByFranco.label}」——${s.reason}。等緊幾多份，我而家答唔到。`
   }
-  if (s.state === BACKLOG_STATE.EMPTY && (!i || i.fileCount === 0)) return null
 
-  const parts = []
-  if (s.state === BACKLOG_STATE.FILES_WAITING) {
-    const batchBit = s.nonEmptyBatchCount ? `${s.nonEmptyBatchCount} 個批次、` : ''
-    const ageBit = s.oldestBatchAgeDays === null ? '' : `，最舊嗰個批次 ${s.oldestBatchAgeDays} 日前`
-    parts.push(`「${FOLDERS.scannedByFranco.label}」有 ${batchBit}共 ${s.fileCount} 個檔案${ageBit}。`)
-  } else if (s.state === BACKLOG_STATE.EMPTY) {
-    parts.push(`「${FOLDERS.scannedByFranco.label}」係空嘅。`)
+  // ── CLEAR. Short, and it names BOTH what it checked and when. A 「冇嘢等緊」 with no
+  // timestamp is indistinguishable from a check that silently broke.
+  if (s.state === BACKLOG_STATE.EMPTY && (!i || i.fileCount === 0)) {
+    return `「${FOLDERS.scannedByFranco.label}」冇嘢等緊——${stamp}。`
   }
 
-  if (i && i.state === BACKLOG_STATE.FILES_WAITING) parts.push(`「${FOLDERS.inbox.label}」有 ${i.fileCount} 項。`)
-  else if (i && i.state === BACKLOG_STATE.READ_FAILED) parts.push(`「${FOLDERS.inbox.label}」我睇唔到——${i.reason}。`)
+  // ── SOMETHING WAITS. Action first, not the count: what it is, where it is stuck, what to
+  // do, and why it matters. 「4 個批次、64 個檔」 on its own is numbers with no noun.
+  const parts = []
+  if (s.state === BACKLOG_STATE.FILES_WAITING) {
+    const batchBit = s.nonEmptyBatchCount ? `${s.nonEmptyBatchCount} 批、` : ''
+    const ageBit = s.oldestBatchAgeDays === null ? '' : `，最舊 ${s.oldestBatchAgeDays} 日`
+    parts.push(
+      `Franco 掃咗嘅單仲喺「${FOLDERS.scannedByFranco.label}」，未入 ${FOLDERS.inbox.label}` +
+      `——${batchBit}${s.fileCount} 個檔案${ageBit}。搬入去就會自動行落去。`
+    )
+  } else if (s.state === BACKLOG_STATE.EMPTY) {
+    parts.push(`「${FOLDERS.scannedByFranco.label}」冇嘢等緊。`)
+  }
 
+  if (i && i.state === BACKLOG_STATE.FILES_WAITING) parts.push(`${FOLDERS.inbox.label} 有 ${i.fileCount} 項。`)
+  else if (i && i.state === BACKLOG_STATE.READ_FAILED) parts.push(`${FOLDERS.inbox.label} 我睇唔到——${i.reason}。`)
+
+  // OWNER RULING, VERBATIM AND COMPLETE. He refused the shortened form: whether a batch he
+  // has already dealt with is sitting inside that count 「is exactly the difference between
+  // the line saving me a trip and costing me one」.
   parts.push('我只數到檔案，數唔到入面有幾多張發票，亦分唔到邊啲你已經處理過。')
   return parts.join('')
 }
