@@ -1,0 +1,21 @@
+{
+ "frozenAt": "2026-08-06",
+ "rule": "FROZEN BEFORE type/wait_for/screenshot WERE BUILT, from the measured baseline in docs/BASELINE-TYPE-WAIT.md. HR-20: an acceptance bar written after the build is a description of what was built.",
+ "whatTheLibraryAlreadyHandles": "fill replaces existing content and fires focus+input; pressSequentially fires per-keystroke events; contenteditable works; readonly/disabled/number-with-text are all REFUSED; waitFor and waitForFunction bound correctly; screenshot returns a real Buffer. NONE of this is re-implemented.",
+ "criteria": [
+  { "id": "T1", "kind": "force-absent", "must": "type has no force. Measured: fill(readonly,{force:true}) SUCCEEDS and changes nothing — HR-19, the second verb where the same flag lied." },
+  { "id": "T2", "kind": "password-refused", "must": "input[type=password] is REFUSED outright. Not redacted, not warned — refused, before anything is typed." },
+  { "id": "T3", "kind": "no-secret-in-record", "must": "the audit record NEVER carries the typed value. Length and a shape class only." },
+  { "id": "T4", "kind": "refusal-reason", "must": "readonly / disabled / gone / wrong-type each produce a NAMED reason, never an opaque timeout" },
+  { "id": "T5", "kind": "verify-before", "must": "the element is confirmed to be the one read_page named BEFORE anything is typed" },
+  { "id": "T6", "kind": "allowlist", "must": "same sealed order as navigate and click; an absent order blocks everything" },
+  { "id": "T7", "kind": "no-submit", "must": "type never presses Enter and never submits. Typing and submitting are different acts and only one of them is built." },
+  { "id": "W1", "kind": "bounded", "must": "wait_for always has a timeout and can never wait forever" },
+  { "id": "W2", "kind": "timeout-is-an-outcome", "must": "a wait that times out is a STATED outcome, never silently treated as the condition having been met" },
+  { "id": "W3", "kind": "no-arbitrary-code", "must": "wait_for accepts named conditions only — no page-evaluated predicate from a caller, which would be arbitrary code execution wearing a wait" },
+  { "id": "S1", "kind": "not-primary", "must": "a screenshot is never the primary record; role + accessible name is. The record references it, never replaces the vocabulary." },
+  { "id": "S2", "kind": "bounded", "must": "screenshots are size-bounded and the bound is stated when hit" }
+ ],
+ "acceptanceBar": "T1-T7, W1-W3, S1-S2 green as tests, PLUS a LIVE HEADED run against the local hazard page showing readonly and disabled REFUSED WITH NAMED REASONS, a password field REFUSED, and a real typed value absent from the record.",
+ "whyLiveIsRequired": "HR-20. On click, 17 green unit tests accompanied a live run that returned UNKNOWN three times, because the fake accepted what the real page.evaluate rejects."
+}
