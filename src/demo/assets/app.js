@@ -224,6 +224,14 @@
         // Still the same empty conversation? He may have typed while this was in flight.
         if (!j || !j.line || active !== c || c.history.length > 0) return
         box.textContent = j.line
+        // The waiting-invoices line, when there is one. It is ABSENT far more often than
+        // present — silence means nothing is waiting, and a line that showed every day
+        // would become furniture and stop being read.
+        if (j.backlog) {
+          var note = el('div', 'empty-backlog')
+          note.textContent = j.backlog
+          box.appendChild(note)
+        }
       })
       .catch(function () { /* no greeting is better than a wrong one */ })
   }

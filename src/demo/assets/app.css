@@ -598,3 +598,17 @@ button[disabled] { opacity: .45; cursor: default; }
   padding: 8px 0 22px;
   min-height: 1.4em;            /* reserved, so the composer does not jump when it lands */
 }
+
+/* The waiting-invoices line. Quieter and smaller than the greeting: it is information,
+   not a heading, and it is absent on most days. */
+.empty-backlog {
+  margin-top: 0.9em;            /* em throughout: a px here would make this rule a second
+                                   source of truth the moment the type token moves */
+  font-size: 0.78em;
+  font-weight: var(--weight-normal);
+  line-height: 1.55;
+  color: var(--faint);
+  max-width: 34em;
+  margin-left: auto;
+  margin-right: auto;
+}

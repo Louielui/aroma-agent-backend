@@ -47,6 +47,7 @@ const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1
 // anyone who does not gets a store that holds nothing and writes nothing.
 const { INERT_CONVERSATION_STORE, isValidId: isValidConversationId } = require('../store/conversationStore')
 const { greetingFor } = require('../demo/greeting') // the empty screen's line — the Owner's clock, not the browser's
+const { sentenceFor } = require('../context/invoiceBacklog') // the waiting-invoices line; null when there is nothing to say
 
 const INTERACTION_MODES = ['chat', 'email_draft', 'proposal']
 
@@ -95,7 +96,10 @@ function historyTextOf (history) {
   return parts.filter(Boolean).join('\n')
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE } = {}) {
+/** Sentinel for the greeting's backlog budget — distinguishable from any real result. */
+const TIMED_OUT = Symbol('backlog_timed_out')
+
+function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500 } = {}) {
   const router = express.Router()
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
@@ -121,13 +125,42 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
    *
    * It carries no data of any kind: a band word and a proper noun.
    */
-  router.get('/api/v1/demo/greeting', demoGuard, (req, res) => {
+  /**
+   * ── THE BACKLOG LINE RIDES HERE, AND NEVER BREAKS THE GREETING ─────────────
+   * Owner's constraint, verbatim: 「greeting must render even when Drive does not answer」.
+   *
+   * The greeting is a pure function of the clock. Attaching a network read to it would
+   * trade a screen that always works for a feature that usually does — so the greeting is
+   * computed FIRST and returned regardless, and the line is attached only if the read
+   * resolves inside its budget. A Drive outage costs the line, never the greeting.
+   *
+   * It surfaces by itself because the failure mode is the Owner FORGETTING: an answer he
+   * has to ask for inherits the same defect, and would route through a classifier measured
+   * as non-deterministic (M-5).
+   *
+   * SILENCE IS ONLY FOR 「nothing waiting」. A read failure SPEAKS — see sentenceFor().
+   */
+  router.get('/api/v1/demo/greeting', demoGuard, async (req, res) => {
+    let payload
     try {
-      res.json({ ok: true, ...greetingFor(new Date()) })
+      payload = { ok: true, ...greetingFor(new Date()), backlog: null }
     } catch (_) {
       // Never load-bearing: the empty screen simply shows nothing rather than failing.
-      res.status(500).json({ ok: false, error: 'greeting_failed' })
+      return res.status(500).json({ ok: false, error: 'greeting_failed' })
     }
+
+    if (typeof readBacklogFn === 'function') {
+      try {
+        const budget = new Promise((resolve) => setTimeout(() => resolve(TIMED_OUT), backlogTimeoutMs))
+        const r = await Promise.race([Promise.resolve().then(readBacklogFn), budget])
+        if (r !== TIMED_OUT) payload.backlog = sentenceFor(r)
+      } catch (_) {
+        // A thrown read is a missing line, not a failed screen. No sentence is better than
+        // a wrong one, and a wrong one here would be read as 「nothing waiting」.
+        payload.backlog = null
+      }
+    }
+    res.json(payload)
   })
 
   router.get('/api/v1/conversations', demoGuard, (req, res) => {

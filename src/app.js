@@ -901,7 +901,26 @@ function createApp (options = {}) {
   // THE REAL STORE IS PASSED HERE, BY NAME, AND NOWHERE ELSE. The router's default is
   // inert, so production is the only place that gets a writer — a test driving this route
   // cannot reach the Owner's data directory even by forgetting to inject.
-  app.use(createDemoRouter({ conversationStore: realConversationStore }))
+  // ── THE WAITING-INVOICES LINE ────────────────────────────────────────────
+  // Read-only, and gated by the SAME flag as every other Drive read: with READ_ACCESS off
+  // no reader is injected at all, so the greeting behaves exactly as it did before.
+  // Cached briefly — the number moves in hours, and the greeting is fetched per empty
+  // screen. The route timeboxes and swallows failures; nothing here can break the screen.
+  let backlogCache = { at: 0, value: null }
+  const readBacklogFn = async () => {
+    const now = Date.now()
+    if (backlogCache.value && now - backlogCache.at < 5 * 60 * 1000) return backlogCache.value
+    const { readInvoiceBacklog } = require('./context/invoiceBacklog')
+    const { credsPresent, service } = require('./context/googleAuth')
+    const drive = credsPresent() ? service('drive', 'v3') : null
+    const value = await readInvoiceBacklog({ drive })
+    backlogCache = { at: now, value }
+    return value
+  }
+  app.use(createDemoRouter({
+    conversationStore: realConversationStore,
+    readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null
+  }))
 
   // Read Context v1 inspection routes — GET /api/v1/context/health and .../recent.
   // ALWAYS mounted but guard-first: 403 {error:'read_access_disabled'} unless
