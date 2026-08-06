@@ -23,6 +23,8 @@ const path = require('node:path')
 const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
+const { createEnquiryRouter } = require('./routes/enquiryRoutes') // read ONE investigation, on request
+const { createEnquiryStore } = require('./agent/enquiryStore')
 // THE REAL WRITERS, NAMED AT THE COMPOSITION ROOT. Both routers now default to inert, so
 // this file is the only place that hands either of them something that can touch disk.
 const { conversationStore: realConversationStore } = require('./store/conversationStore')

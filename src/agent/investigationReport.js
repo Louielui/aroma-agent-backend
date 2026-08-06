@@ -1,0 +1,134 @@
+'use strict'
+
+/**
+ * investigationReport.js — the report, and the claims it cannot make.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * THE REPORT IS NOT A SUMMARY. IT IS THE ONLY REMAINING REVIEW.
+ *
+ * Before the dispatch path, the Owner carried every intermediate result by hand — ~20 pastes
+ * in one investigation, of which ~3 were approvals. That relay was also, accidentally, a
+ * review at every step: **three of the four wrong diagnoses of 2026-08-05 died in his hands
+ * because each one passed through them.**
+ *
+ * Removing the relay removes a safety property he never chose. So the honesty of this file is
+ * not a nicety — **it is the only place those diagnoses would now surface**, and it is
+ * enforced structurally rather than asked for in a prompt.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+const OUTCOME = Object.freeze({
+  CONCLUDED: 'CONCLUDED',
+  STOPPED_ON_BUDGET: 'STOPPED_ON_BUDGET',
+  BLOCKED_NEEDS_YOU: 'BLOCKED_NEEDS_YOU',
+  FAILED: 'FAILED'
+})
+
+class ReportRefused extends Error {
+  constructor (message) { super(message); this.name = 'ReportRefused' }
+}
+
+/**
+ * Claims of having CHANGED something. Deliberately covers both languages and the passive
+ * forms — a rule that only catches 「fixed」 is a rule someone routes around by writing
+ * 「已經改好」.
+ */
+const FIX_CLAIM = /\b(fixed|applied|patched|resolved|repaired)\b|修好|修復|已修|改好|已改|套用/i
+const VERIFY_CLAIM = /\bverified\b|\bpassing\b|已驗證|驗證通過|測試通過/i
+/** A causal assertion. These are the sentences that need a measurement beside them. */
+const CAUSE_CLAIM = /\b(because|caused by|the cause is|root cause)\b|成因|原因係|係因為|由.*引起/i
+
+function nonEmpty (a) { return Array.isArray(a) && a.length > 0 }
+
+/**
+ * @param {object} input
+ * @param {string} input.outcome        one of OUTCOME
+ * @param {string} input.question       what was asked
+ * @param {string} input.answer         one or two sentences, with the number in them
+ * @param {string[]} input.measurements facts he could re-run
+ * @param {string[]} input.notEstablished what was NOT settled — named, never omitted
+ * @param {object[]} input.appliedChanges anything actually applied. EMPTY means nothing was.
+ * @param {boolean} input.executed      whether anything was actually run
+ * @param {object[]} input.samples      numbers that came from a capped or sampled source
+ * @param {number} input.rounds
+ * @param {number} input.costUsd
+ * @param {string} input.transcript     NEVER inlined — see below
+ * @param {string} input.enquiryId      how to open the turns if the report surprises him
+ * @throws {ReportRefused}
+ */
+function buildReport (input = {}) {
+  const {
+    outcome, question = '', answer = '', measurements = [], notEstablished = [],
+    appliedChanges = [], executed = false, samples = [], rounds = 0, costUsd = 0, enquiryId = null
+  } = input
+
+  if (!Object.prototype.hasOwnProperty.call(OUTCOME, outcome)) {
+    throw new ReportRefused('unknown outcome: ' + outcome)
+  }
+
+  // ── 「FIXED」 WITHOUT AN APPLIED CHANGE IS STRUCTURALLY IMPOSSIBLE ─────────
+  // Owner: 「should be structurally impossible, not discouraged」. The proof that this happens
+  // to a careful author is that a complete, confident patch was written on 2026-08-05 for a
+  // cause that was disproven hours later — and never applied.
+  if (FIX_CLAIM.test(answer) && !nonEmpty(appliedChanges)) {
+    throw new ReportRefused(
+      'the answer claims something was fixed or applied, but appliedChanges is empty. ' +
+      'Nothing was applied — say what was found instead.'
+    )
+  }
+
+  // Reading a file is not running it.
+  if (VERIFY_CLAIM.test(answer) && executed !== true) {
+    throw new ReportRefused('the answer claims verification, but nothing was executed')
+  }
+
+  // A cause with no measurement beside it is exactly what produced three wrong diagnoses.
+  if (CAUSE_CLAIM.test(answer) && !nonEmpty(measurements)) {
+    throw new ReportRefused('a cause is asserted with no measurement in the same report')
+  }
+
+  // Stopping without naming what is unanswered reads as 「there was nothing left」.
+  if (outcome === OUTCOME.STOPPED_ON_BUDGET && !nonEmpty(notEstablished)) {
+    throw new ReportRefused('a stopped enquiry must say what it did not establish')
+  }
+
+  const lines = []
+
+  // ── THE FIRST LINE CARRIES THE OUTCOME WHEN IT IS NOT A CLEAN CONCLUSION ──
+  // A halted investigation rendering as a completed one is the same family as a Drive read
+  // that timed out and rendered as 「nothing waiting」.
+  if (outcome === OUTCOME.STOPPED_ON_BUDGET) {
+    lines.push('⚠ 未查完 —— 用完預算就停咗，唔係查完。')
+  } else if (outcome === OUTCOME.BLOCKED_NEEDS_YOU) {
+    lines.push('⚠ 停低咗等你 —— 有嘢要你決定先行得落去。')
+  } else if (outcome === OUTCOME.FAILED) {
+    lines.push('⚠ 查唔到 —— 中途失敗。')
+  }
+
+  if (question) lines.push('問題：' + question)
+  if (answer) lines.push(answer)
+
+  if (nonEmpty(measurements)) lines.push('量到：' + measurements.join('；'))
+
+  // A capped or sampled number must never read as a total.
+  for (const s of samples) {
+    lines.push(`（「${s.what}」係上限／樣本，唔係總數 —— ${s.why}）`)
+  }
+
+  if (nonEmpty(notEstablished)) lines.push('未確立：' + notEstablished.join('；'))
+
+  // SILENCE ABOUT CHANGES IS NOT ACCEPTABLE EITHER. A report that simply does not mention
+  // applying anything leaves the reader to assume, and the assumption people make is the
+  // comfortable one.
+  lines.push(nonEmpty(appliedChanges)
+    ? '已套用：' + appliedChanges.map((c) => c.file + (c.commit ? ' @' + c.commit : '')).join('、')
+    : '冇改過任何嘢。')
+
+  lines.push(`（${rounds} 回合，US$${Number(costUsd).toFixed(2)}${enquiryId ? '，查證編號 ' + enquiryId : ''}）`)
+
+  // THE TRANSCRIPT IS NEVER INLINED. It is the thing he is trying to stop reading, and it is
+  // retrievable on request by enquiryId — normally the report, the turns when it surprises.
+  return { outcome, text: lines.join('\n'), enquiryId, rounds, costUsd }
+}
+
+module.exports = { OUTCOME, buildReport, ReportRefused }

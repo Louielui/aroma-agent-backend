@@ -242,3 +242,27 @@ through his hands**.
 
 That is the argument for §4 being as strict as it is, and for §3's fourth re-entry existing at
 all. **The gates he keeps are the ones he named. The one he loses is the one he never chose.**
+
+---
+
+## BUILT 2026-08-06 — and one thing deliberately NOT built
+
+`investigationReport.js` · `evidenceGate.js` · `enquiryRunner.js` · `enquiryStore.js` ·
+`routes/enquiryRoutes.js`, with 45 tests written failing first.
+
+### ⛔ The fourth re-entry is NOT stubbed
+
+**Owner: 「approved in principle but cannot be built yet, since she cannot read that record.
+Note it as depending on the memory work, and do not stub it.」**
+
+The re-entry — *stop when a conclusion contradicts an ACTIVE entry in the development record*
+— has **no placeholder, no flag, no dead branch, and no TODO in the code**. Deliberately.
+
+A stub would be a fifth instance of the same defect this whole week has been about: a branch
+that reads as a safeguard and can never fire. `basis` with two unreachable values, a deny
+rule that never matches, a `count` that means a cap — **an unreachable re-entry check would
+be exactly that, in the file that exists to stop wrong conclusions.**
+
+**It depends on `development_record` being routable and turned on** (`CONTEXT_DEVELOPMENT_RECORD`
+is off today, by design). When it is, this is the next thing to add — and it will be added as
+a working check or not at all.
