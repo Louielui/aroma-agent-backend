@@ -135,3 +135,97 @@ describe('what the report may never claim', () => {
     assert.match(r.text, /上限|sample|唔係總數/, 'a capped number must not read as a total')
   })
 })
+
+/**
+ * ── THE SHAPE CHANGE, 2026-08-06 ─────────────────────────────────────────────
+ * The Owner read the turns and found three things the report had lost. The truncation was
+ * not the cause — the SHAPE was:
+ *
+ *   1. the worker's own uncertainty 「I have not measured live row counts, so I cannot say
+ *      whether this is latent or already firing today」
+ *   2. a scoping caveat 「a scoping caveat rather than an error」
+ *   3. an INCIDENTAL defect found in passing — the adapter reads body.count, a response-body
+ *      field, while its own comment calls it 「the API's own header」
+ *
+ * 未確立 carried MY caveats about the method (「I planned the rounds」) and not the WORKER's
+ * caveats about its findings. **Those are different things and both belong.** And an
+ * incidental finding had nowhere to go at all, so it was discarded silently.
+ */
+describe('the two kinds of caveat never merge', () => {
+  const withBoth = {
+    ...base,
+    outcome: OUTCOME.CONCLUDED,
+    notEstablished: ['未量過 live row counts，所以講唔到而家有冇 firing'],
+    aboutTheEnquiry: ['規劃每一輪嘅係 Claude Code，唔係佢']
+  }
+
+  test('a caveat about the ANSWER and a caveat about the METHOD render in separate sections', () => {
+    const r = buildReport(withBoth)
+    assert.match(r.text, /未確立[^\n]*live row counts/)
+    assert.match(r.text, /關於呢次查證[^\n]*規劃每一輪/)
+  })
+
+  test('the method caveat does NOT appear inside the answer caveats', () => {
+    const r = buildReport(withBoth)
+    const line = r.text.split('\n').find((l) => l.startsWith('未確立'))
+    assert.ok(!/規劃每一輪/.test(line), 'merging them is what lost the worker\'s own uncertainty')
+  })
+
+  test('a report with method caveats but no answer caveats still says so, rather than going quiet', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: [], aboutTheEnquiry: ['x'] })
+    assert.match(r.text, /關於呢次查證/)
+  })
+})
+
+describe('incidental findings have somewhere to go', () => {
+  test('a defect found in passing survives into the report', () => {
+    const r = buildReport({
+      ...base,
+      outcome: OUTCOME.CONCLUDED,
+      incidental: ['adapter 讀 body.count（response body），但佢自己個註解叫佢做 the API\'s own header —— 個註解講錯咗機制']
+    })
+    assert.match(r.text, /順帶發現/)
+    assert.match(r.text, /the API's own header/)
+  })
+
+  test('without the section, anything outside the question asked is discarded silently', () => {
+    // The assertion is about the CONTRACT: incidental must be renderable, so a worker that
+    // finds something real while looking for something else does not lose it.
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, incidental: ['A', 'B'] })
+    assert.match(r.text, /A/)
+    assert.match(r.text, /B/)
+  })
+})
+
+describe('a FAILED report must LOCATE the fault, not trace it', () => {
+  test('FAILED without a locus is refused', () => {
+    assert.throws(
+      () => buildReport({ ...base, outcome: OUTCOME.FAILED, answer: '中途失敗', failureLocus: '' }),
+      ReportRefused,
+      'a truthful error that does not locate the fault is only half of what the report promises'
+    )
+  })
+
+  test('the locus names the two sides and what was wrong between them', () => {
+    const r = buildReport({
+      ...base,
+      outcome: OUTCOME.FAILED,
+      answer: '中途失敗',
+      notEstablished: ['未行到第二輪'],
+      failureLocus: 'claudeCodeWorker 把 resolveAgentCliCommand 嘅 {ok, command, reason} 當字串用'
+    })
+    assert.match(r.text, /claudeCodeWorker.*resolveAgentCliCommand/)
+  })
+
+  test('the locus is ONE line — the stack lives in the turns, not here', () => {
+    const r = buildReport({
+      ...base,
+      outcome: OUTCOME.FAILED,
+      answer: 'x',
+      notEstablished: ['y'],
+      failureLocus: 'A handed B the wrong shape',
+      stack: 'at foo\n at bar\n at baz'
+    })
+    assert.ok(!r.text.includes('at foo'), 'a stack trace in the report is a report he will not read')
+  })
+})

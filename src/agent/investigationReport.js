@@ -59,6 +59,7 @@ function nonEmpty (a) { return Array.isArray(a) && a.length > 0 }
 function buildReport (input = {}) {
   const {
     outcome, question = '', answer = '', measurements = [], notEstablished = [],
+    aboutTheEnquiry = [], incidental = [], failureLocus = '',
     appliedChanges = [], executed = false, samples = [], rounds = 0, costUsd = 0, enquiryId = null
   } = input
 
@@ -92,6 +93,19 @@ function buildReport (input = {}) {
     throw new ReportRefused('a stopped enquiry must say what it did not establish')
   }
 
+  // ── A FAILURE MUST LOCATE THE FAULT ──────────────────────────────────────
+  // The first real run failed with 「The "file" argument must be of type string」 — truthful,
+  // and useless until someone read the shape of what resolveAgentCliCommand returns.
+  //
+  // > A truthful error that does not locate the fault is only half of what the report
+  // > promises.
+  //
+  // A LOCUS, not a trace: name the two sides and what was wrong between them. The stack has
+  // somewhere else to live — the turns — so this stays one line he will actually read.
+  if (outcome === OUTCOME.FAILED && !String(failureLocus || '').trim()) {
+    throw new ReportRefused('a failed enquiry must say WHERE it broke — which component handed what to which')
+  }
+
   const lines = []
 
   // ── THE FIRST LINE CARRIES THE OUTCOME WHEN IT IS NOT A CLEAN CONCLUSION ──
@@ -115,7 +129,26 @@ function buildReport (input = {}) {
     lines.push(`（「${s.what}」係上限／樣本，唔係總數 —— ${s.why}）`)
   }
 
+  if (String(failureLocus || '').trim()) lines.push('喺邊爆：' + String(failureLocus).trim())
+
+  // ── TWO KINDS OF CAVEAT, NEVER MERGED ────────────────────────────────────
+  // 未確立 is what the WORKER could not establish about the ANSWER.
+  // 關於呢次查證 is what the Owner should know about the METHOD.
+  //
+  // They were one section, and merging them cost exactly the thing that mattered: the
+  // section filled up with 「I planned the rounds」 while the worker's own 「I have not
+  // measured live row counts, so I cannot say whether this is latent or already firing
+  // today」 was dropped. One is about the answer; the other is about how the answer was got.
   if (nonEmpty(notEstablished)) lines.push('未確立：' + notEstablished.join('；'))
+
+  // ── INCIDENTAL FINDINGS ──────────────────────────────────────────────────
+  // Without this section a report SILENTLY DISCARDS anything outside the question asked.
+  // The run that prompted it found a real defect in passing — the adapter reads body.count,
+  // a response-BODY field, while its own comment calls it 「the API's own header」 — and that
+  // finding existed only in the turns.
+  if (nonEmpty(incidental)) lines.push('順帶發現：' + incidental.join('；'))
+
+  if (nonEmpty(aboutTheEnquiry)) lines.push('關於呢次查證：' + aboutTheEnquiry.join('；'))
 
   // SILENCE ABOUT CHANGES IS NOT ACCEPTABLE EITHER. A report that simply does not mention
   // applying anything leaves the reader to assume, and the assumption people make is the

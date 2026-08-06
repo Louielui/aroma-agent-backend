@@ -65,6 +65,8 @@ async function runEnquiry (input = {}) {
   let step = await next(null)
   let outcome = ENQUIRY.CONCLUDED
   let failure = null
+  // WHERE it broke, not the stack. The stack stays in the turn record.
+  let failureLocus = ''
 
   // The expected cost of the NEXT round, from what rounds have actually cost. Before any
   // round has run there is nothing to learn from, so a conservative floor is used — a first
@@ -89,6 +91,8 @@ async function runEnquiry (input = {}) {
       })
     } catch (err) {
       failure = String((err && err.message) || 'dispatch failed')
+      // Name the boundary rather than the call stack: which component handed what to which.
+      failureLocus = 'enquiryRunner → worker dispatch (round ' + (turns.length + 1) + '): ' + failure
       outcome = ENQUIRY.FAILED
       turns.push({ goal: step.goal, result: null, error: failure, costUsd: 0, sessionId, startedAt, finishedAt: now() })
       break
@@ -118,6 +122,13 @@ async function runEnquiry (input = {}) {
       : (outcome === ENQUIRY.FAILED ? '中途失敗：' + failure : '未查完。'),
     measurements: finished ? (step.measurements || []) : (step && step.measurements) || [],
     notEstablished: finished ? (step.notEstablished || []) : notEstablishedOnStop,
+    // TWO KINDS OF CAVEAT, kept apart on the way through as well. Merging them here would
+    // undo the split one layer below the place it was made.
+    aboutTheEnquiry: (step && step.aboutTheEnquiry) || input.aboutTheEnquiry || [],
+    // A finding outside the question asked. Without somewhere to put it, the report discards
+    // it silently — which is how a real defect lived only in the turns.
+    incidental: (step && step.incidental) || [],
+    failureLocus: outcome === ENQUIRY.FAILED ? (failureLocus || failure || 'dispatch failed') : '',
     appliedChanges: (finished && step.appliedChanges) || [],
     executed: Boolean(finished && step.executed),
     samples: (finished && step.samples) || [],
