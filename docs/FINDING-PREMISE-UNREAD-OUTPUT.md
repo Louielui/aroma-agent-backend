@@ -98,7 +98,59 @@ And the second half, which is what makes it a mechanism rather than advice:
 - **The code stays.** Container resolution, per-group counts and ambiguity reporting are
   correct and tested. What is unproven is whether they **earn their budget** — a different
   claim from whether they work.
-- **Proximity is being measured at n=10** before 「grouping is unnecessary」 is treated as
-  settled. n=3 is a prompt to measure, not a finding, and this round has been burned twice by
-  exactly that.
+- **Proximity MEASURED at n=10: 30/30.** See the trial below — reliable on that page, and
+  its limit is that it is ONE page with ONE layout pattern.
+
 - **`click` is not built.**
+
+---
+
+# THE PROXIMITY TRIAL — n=10, flat output only. **30/30.**
+
+Cap `$5.00`, spent `$4.70`.
+
+| | |
+|---|---|
+| `Bounty Plus Paper Towel, 12 x 91 Sheets` | **10/10** |
+| `Scott Original Shop Towels, 10 rolls` | **10/10** |
+| `Kirkland Signature 2-ply Paper Towels, 12-pack` | **10/10** |
+| **overall** | **30/30 = 100%** |
+
+**Not a lucky afternoon.** Document-order adjacency reaches one of 21 identical buttons
+reliably, and the Kirkland entry — the *first* product, included in the frozen key precisely so
+always-pick-first would score 1/3 — was answered correctly alongside the other two.
+
+> ## The premise error is now fully confirmed. `read_page` could always do this; the round that was built to give it the ability was unnecessary.
+
+## ⚠ AND THE LIMIT OF THIS RESULT, stated with it
+
+**It is ONE page, with ONE layout pattern.** All three questions come from
+`real-costco-search`, where the DOM happens to place each product link immediately above its
+own button.
+
+> ### 30/30 establishes that proximity WORKS where the DOM is ordered that way. It does not establish that the DOM is always ordered that way.
+
+**No corpus page tests a layout where proximity fails** — a control whose label follows it, or
+sits in a separate column, or is attached by `aria-labelledby` across the tree. That is now the
+one open question the container code exists to answer, and it is the next corpus condition:
+
+> **Capture a page where the accessible name that identifies a control is NOT adjacent to it.**
+> If such pages are common, containers earn their budget after all. If they are rare, the
+> container code stays off and stays correct, which is a fine place for it to be.
+
+**Until then: grouping OFF, code kept, `click` not built.**
+
+## And one property is now load-bearing that was previously incidental
+
+Document order was never a designed feature of `read_page` — it is simply the order
+`Accessibility.getFullAXTree` returns nodes in, preserved by accident. **It is now the entire
+mechanism by which the 21-button case works**, so it is asserted by a test:
+
+```js
+// the product link must be the line immediately above its own Add to Cart
+assert.match(lines[i + 1], /button "Add to Cart"/)
+```
+
+**A property nothing depended on is now a property everything depends on.** Anything that
+reorders the output — sorting by role, grouping by region, stable-sorting for diffs — would
+break the 21-button case silently, and the test is there to make it loud.
