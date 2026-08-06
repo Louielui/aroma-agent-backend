@@ -891,3 +891,57 @@ thing rejects.**
 description of what was built. This one was written from a measured baseline, before a line of
 the implementation existed, and it demanded something inconvenient — which is why it was still
 demanding it when the implementation turned out to be wrong.
+
+## ⚠ HR-18, SECOND INSTANCE — one level up. An assertion about how the WORLD behaves is a premise too.
+
+**Owner, 2026-08-06: 「the second HR-18 instance one level up: first our own output, now the
+web itself… An assertion about how the world behaves is a premise too, and two getFullAXTree
+calls would have disproved it at any point this week.」**
+
+| instance | the premise | the disproof |
+|---|---|---|
+| **first** | 「the flat output gives a model **no position**」 — about **our own output**, which is emitted in document order | **four lines of text** nobody printed |
+| **second** | 「a ref taken before an action still resolves after it」 — about **the web** | **two `getFullAXTree` calls** |
+
+## The second one, measured
+
+`link "Jump to content"` on en.wikipedia.org, same page, no navigation, before and after
+clicking Search:
+
+```
+backendDOMNodeId before   8001
+backendDOMNodeId after   20437
+anchors with that text after   1     <- it is still on the page
+the original id       "Node with given id does not belong to the document"
+```
+
+> ## `backendDOMNodeId` is stable for a NODE. A NODE is not stable for a PAGE.
+
+The skin re-rendered its header. Same link, same role, same accessible name — **different DOM
+node.** React, Vue and Vector all replace element objects on re-render as a matter of course,
+so this is not a Wikipedia quirk and no care on our side can make the premise true.
+
+## WHY THE SECOND KIND IS HARDER TO CATCH
+
+A premise about **our own output** is disprovable by printing it. A premise about **the world**
+feels like knowledge — 「a DOM node has a stable identity」 is the kind of thing one simply
+knows, and knowing it is exactly what stops anyone measuring it.
+
+> ### The rule extends: 「measure the baseline」 includes measuring the WORLD the baseline sits in, and the tell is the same — a sentence stating how something behaves, with no measurement beside it.
+
+**Both were cheap. Neither was run.** The cost of the first was a whole design round; the cost
+of the second was an acceptance criterion frozen around a falsehood — and only caught because
+the criterion was tested live rather than assumed.
+
+## And the fix rejected TWICE for the same reason
+
+When a ref goes stale, the tempting repair is to re-find the element by role + accessible name.
+
+| when it was tempting | why it was refused |
+|---|---|
+| `REF 250` — the model answered an item number, present and printed and wrong | nothing structural refuses an answer that *looks* right |
+| the stale ref here — the new node has the same role and the same name, in the same place | 「the element that looks like the one you meant」 |
+
+> **Same defect, two coats.** It would have made the criterion pass on that page and clicked
+> the wrong thing on any page where two nodes share a name. **The refusal is correct; the
+> caller re-reads.**
