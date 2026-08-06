@@ -87,7 +87,21 @@ the fence, and for the step-0 result on the headless CLI (`TOOL_NOT_AVAILABLE`).
 ---
 ---
 
-# TRACK A FEASIBILITY — MEASURED 2026-08-06. Answer: NOT POSSIBLE TODAY.
+# ⛔ TRACK A — CLOSED 2026-08-06. Not deferred.
+
+> **Owner ruling: 「Record it as closed, not deferred — the absence is structural, not a
+> missing feature.」**
+>
+> A fire-and-forget URL scheme does not become a dispatch path by being tried harder. There is
+> nothing to wait for, nothing to parse, no cost and no turns. **It is the shape of what a URL
+> scheme is**, not a gap a future version fills for us.
+>
+> If a supported request/response surface ever appears, that is a NEW question with a new
+> measurement — not this one reopening. **The IG posts stay with the Owner in the meantime,
+> by his decision:** 「I would rather wait for hands she owns than borrow a pair through a
+> channel nobody supports.」
+
+## The measurement that closed it
 
 Config and process reality, read-only. No documentation was consulted.
 
