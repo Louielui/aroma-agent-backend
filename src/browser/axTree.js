@@ -189,8 +189,37 @@ function readPage (rawNodes, opts = {}) {
     candidates.push({ ref: refFor(domId), domId: Number(domId), role, name, interactive })
   }
 
-  const totalCandidates = candidates.length
-  let kept = candidates.slice(0, maxNodes)
+  // ── NAME ECHO — HR-16 ───────────────────────────────────────────────────────
+  // A node carrying the same accessible name as an INTERACTIVE node is that element's own
+  // content, not a second thing to point at: the text inside a button, the label beside a
+  // field, the logo image inside the logo link. Printing it as a peer manufactures a choice
+  // the page does not offer — and the model took the wrong branch 2 times in 10.
+  //
+  // Measured before writing this: 584 of 1724 surviving corpus nodes (34%) sat in a name
+  // group mixing interactive with non-interactive, across FIVE role combinations including
+  // `image + link` — which is why this keys on INTERACTIVITY and not on the role StaticText.
+  //
+  // ⚠ Two things it deliberately does NOT do:
+  //   - it never drops an interactive node. Two real buttons named 「Add」 are a genuine
+  //     ambiguity ON THE PAGE, and hiding one would be the pruner lying about the page.
+  //   - it never drops a name that has no interactive twin. `StaticText + heading` is
+  //     redundancy, not a clickable-or-not choice, and is out of scope until measured.
+  //
+  // `opts.dropNameEchoes` exists ONLY so the A/B trial can measure this against its own
+  // absence without maintaining a second copy of the pruner — comparing two code paths would
+  // measure the difference between the copies. It defaults ON and a test asserts that.
+  // It is not a feature flag and nothing in the runtime passes it.
+  const interactiveNames = new Set()
+  for (const c of candidates) if (c.interactive && c.name) interactiveNames.add(c.name)
+  // NOT an in-place mutation: `candidates.length = 0` once emptied the very array the
+  // unpruned branch had aliased, and every node vanished. Caught by the seam test.
+  const kept0 = opts.dropNameEchoes === false
+    ? candidates.slice()
+    : candidates.filter((c) => c.interactive || !c.name || !interactiveNames.has(c.name))
+  const nameEchoesDropped = candidates.length - kept0.length
+
+  const totalCandidates = kept0.length
+  let kept = kept0.slice(0, maxNodes)
   let truncated = totalCandidates > kept.length
 
   const line = (n) => `[#${n.ref}] ${n.role}${n.name ? ' "' + n.name + '"' : ''}`
@@ -235,6 +264,7 @@ function readPage (rawNodes, opts = {}) {
     truncated,
     totalCandidates,
     refCollision,
+    nameEchoesDropped,
     rawNodeCount: raw.length
   }
 }

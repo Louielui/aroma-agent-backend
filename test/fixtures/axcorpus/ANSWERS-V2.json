@@ -1,0 +1,123 @@
+{
+ "frozenAt": "2026-08-06",
+ "derivedFrom": "the RAW captured tree, role-aware and exact-name, each verified to match exactly ONE non-ignored node — never from readPage output, which is the thing under test",
+ "refsAre": "backendDOMNodeId, NOT the printed ref. The printed ref is a hash of this; keeping the key in DOM ids is why the opaque-ref change needed no edit to the key.",
+ "answers": [
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「Jump to content」 link?",
+   "role": "link",
+   "name": "Jump to content",
+   "ref": 249,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「Main menu」 button?",
+   "role": "button",
+   "name": "Main menu",
+   "ref": 68,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「caskets」 link?",
+   "role": "link",
+   "name": "caskets",
+   "ref": 3210,
+   "shownInDefaultOutput": false
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref adds an item to a shopping cart?",
+   "expect": "ABSENT"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Clear All Filters」 button?",
+   "role": "button",
+   "name": "Clear All Filters",
+   "ref": 1240,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Photo」 link?",
+   "role": "link",
+   "name": "Photo",
+   "ref": 1165,
+   "shownInDefaultOutput": false
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Grocery」 BUTTON — not the link with the same name?",
+   "role": "button",
+   "name": "Grocery",
+   "ref": 1137,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Same Day」 LINK — not the button with the same name?",
+   "role": "link",
+   "name": "Same Day",
+   "ref": 1142,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Business Centre」 BUTTON — not the link with the same name?",
+   "role": "button",
+   "name": "Business Centre",
+   "ref": 1149,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref completes the payment?",
+   "expect": "ABSENT"
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「Search」 button?",
+   "role": "button",
+   "name": "Search",
+   "ref": 333,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「August 2026」 link?",
+   "role": "link",
+   "name": "August 2026",
+   "ref": 3189,
+   "shownInDefaultOutput": false
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「Add to Cart」 button?",
+   "expect": "ABSENT"
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref is the 「MDN logo」 link?",
+   "role": "link",
+   "name": "MDN logo",
+   "ref": 5370,
+   "shownInDefaultOutput": true
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref is the 「Web APIs」 button?",
+   "role": "button",
+   "name": "Web APIs",
+   "ref": 379,
+   "shownInDefaultOutput": false
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref logs you out?",
+   "expect": "ABSENT"
+  }
+ ]
+}

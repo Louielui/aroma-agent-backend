@@ -201,3 +201,93 @@ describe('a ref cannot be guessed, computed, or confused with a number on the pa
     }
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * NAME ECHO — HR-16. The pruner was manufacturing a distractor the page did not contain.
+ *
+ * `read_page` printed `button "Continue"` AND `StaticText "Continue"` as peers. The second is
+ * the first's own label — the text rendered INSIDE the control. On the page there is one
+ * Continue; in our output there were two, and the model picked the wrong one 2 times in 10.
+ *
+ * Measured across the corpus before writing this: 584 of 1724 surviving nodes (34%) sit in a
+ * name group mixing an interactive node with a non-interactive one — and one class is
+ * `image + link`, not StaticText at all.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('a name echo is not a target', () => {
+  test('the StaticText label of a button does not survive beside the button', () => {
+    const out = readPage(fixture('modal-over-content'))
+    const continues = out.nodes.filter((n) => n.name === 'Continue')
+    assert.strictEqual(continues.length, 1, 'exactly one Continue is a thing you can point at')
+    assert.strictEqual(continues[0].role, 'button', 'and it is the control, not the label')
+  })
+
+  test('it is the INTERACTIVE node that survives, never the echo', () => {
+    const out = readPage(fixture('modal-over-content'))
+    for (const name of ['Behind Modal', 'Close', 'Continue']) {
+      const g = out.nodes.filter((n) => n.name === name)
+      assert.strictEqual(g.length, 1, name + ' should appear once')
+      assert.strictEqual(g[0].interactive, true, name + ' should be the control')
+    }
+  })
+
+  test('a form label beside its field collapses to the field', () => {
+    const out = readPage(fixture('login-form'))
+    const pw = out.nodes.filter((n) => n.name === 'Password')
+    assert.strictEqual(pw.length, 1)
+    assert.strictEqual(pw[0].role, 'textbox')
+  })
+
+  test('image + link — the class that is NOT StaticText', () => {
+    const out = readPage(fixture('costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const logo = out.nodes.filter((n) => n.name === 'Costco Wholesale')
+    assert.ok(logo.every((n) => n.role !== 'image'),
+      'the image inside the link echoes the link and is not a separate target')
+  })
+
+  test('two genuinely distinct INTERACTIVE elements with one name both survive', () => {
+    // the real ambiguity is not manufactured, and removing it would be hiding the page
+    const raw = [
+      { role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 1 },
+      { role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 2 }
+    ]
+    assert.strictEqual(readPage(raw).nodes.length, 2)
+  })
+
+  test('a StaticText with no interactive twin is untouched', () => {
+    const out = readPage(fixture('modal-over-content'))
+    assert.ok(out.nodes.some((n) => n.role === 'StaticText' && n.name === 'content'))
+  })
+
+  test('the corpus-wide echo count drops to zero', () => {
+    for (const p of ['costco-search', 'modal-over-content', 'login-form', 'iframe-nested']) {
+      const out = readPage(fixture(p), { maxNodes: 100000, maxChars: 1e9 })
+      const byName = new Map()
+      for (const n of out.nodes) {
+        if (!n.name) continue
+        if (!byName.has(n.name)) byName.set(n.name, [])
+        byName.get(n.name).push(n)
+      }
+      for (const [name, g] of byName) {
+        const inter = g.filter((x) => x.interactive).length
+        assert.ok(inter === 0 || inter === g.length,
+          p + ': "' + name + '" still mixes interactive with echo')
+      }
+    }
+  })
+})
+
+describe('the echo prune is ON by default — the seam is for measurement, not for turning it off', () => {
+  test('default drops echoes', () => {
+    assert.ok(readPage(fixture('modal-over-content')).nameEchoesDropped > 0)
+  })
+  test('only an explicit false disables it, and that is the A/B arm', () => {
+    const off = readPage(fixture('modal-over-content'), { dropNameEchoes: false })
+    assert.strictEqual(off.nodes.filter((n) => n.name === 'Continue').length, 2)
+    for (const v of [undefined, true, null, 0, 'false']) {
+      assert.strictEqual(readPage(fixture('modal-over-content'), { dropNameEchoes: v })
+        .nodes.filter((n) => n.name === 'Continue').length, 1, 'value: ' + String(v))
+    }
+  })
+})

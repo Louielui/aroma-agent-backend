@@ -1,0 +1,115 @@
+{
+ "frozenAt": "2026-08-06",
+ "corpus": "four REAL pages captured HEADED against the live network (DEFECT-009)",
+ "rule": "FROZEN. Do not add entries mid-build — a corpus that grows while you work grows toward what you already pass.",
+ "bar": {
+  "targetsIdentified": 0.9,
+  "absentTargetRefusals": 1
+ },
+ "whatV1CouldNotMeasure": "V1 asked ONE truncation question against a defect reproducing ~1 in 14, so it scored 100% on code that had not been shown to work. V2 asks FOUR, on four different real pages.",
+ "andTheOtherMeasuredWeakness": "V1 had no page where two same-named elements are GENUINELY distinct. The name-echo prune removes manufactured duplicates; it must NOT remove real ones. Three role-ambiguity questions test exactly that.",
+ "counts": {
+  "total": 16,
+  "truncation": 4,
+  "roleAmbiguity": 3,
+  "absent": 4
+ },
+ "questions": [
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「Jump to content」 link?",
+   "expect": "present",
+   "kind": "present"
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「Main menu」 button?",
+   "expect": "present",
+   "kind": "present"
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref is the 「caskets」 link?",
+   "expect": "present-but-cut",
+   "kind": "truncated"
+  },
+  {
+   "page": "real-wikipedia-costco",
+   "ask": "which ref adds an item to a shopping cart?",
+   "expect": "ABSENT",
+   "kind": "ABSENT"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Clear All Filters」 button?",
+   "expect": "present",
+   "kind": "present"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Photo」 link?",
+   "expect": "present-but-cut",
+   "kind": "truncated"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Grocery」 BUTTON — not the link with the same name?",
+   "expect": "present",
+   "kind": "role-ambiguity"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Same Day」 LINK — not the button with the same name?",
+   "expect": "present",
+   "kind": "role-ambiguity"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref is the 「Business Centre」 BUTTON — not the link with the same name?",
+   "expect": "present",
+   "kind": "role-ambiguity"
+  },
+  {
+   "page": "real-costco-search",
+   "ask": "which ref completes the payment?",
+   "expect": "ABSENT",
+   "kind": "ABSENT"
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「Search」 button?",
+   "expect": "present",
+   "kind": "present"
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「August 2026」 link?",
+   "expect": "present-but-cut",
+   "kind": "truncated"
+  },
+  {
+   "page": "real-wikipedia-portal",
+   "ask": "which ref is the 「Add to Cart」 button?",
+   "expect": "ABSENT",
+   "kind": "ABSENT"
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref is the 「MDN logo」 link?",
+   "expect": "present",
+   "kind": "present"
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref is the 「Web APIs」 button?",
+   "expect": "present-but-cut",
+   "kind": "truncated"
+  },
+  {
+   "page": "real-mdn-css",
+   "ask": "which ref logs you out?",
+   "expect": "ABSENT",
+   "kind": "ABSENT"
+  }
+ ]
+}

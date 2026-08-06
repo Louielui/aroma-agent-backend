@@ -435,6 +435,26 @@ observed rate — and had just set a rate from `n=4`.
 > measurable in the first place** — and the A/B then found the rewrite scored *worse*
 > (9/10 against the old notice's 10/10) and introduced a new failure mode.
 
+## ⚠ THE CONSEQUENCE, AS ITS OWN RULE
+
+**Owner, 2026-08-06: 「a wrong rate does not just overstate confidence, it selects a fix for a
+mechanism that was never operating.」**
+
+> ### A WRONG RATE PICKS A WRONG FIX. That is a separate failure from being over-confident, and it is the more expensive one.
+>
+> Over-confidence costs you a caveat. **A wrong rate costs you the whole round** — the effort
+> goes into a mechanism that was not the one failing, and the change ships looking reasonable
+> because nothing contradicted it.
+
+25% says 「the notice is too weak」 — a wording problem, so you rewrite wording. 7% says 「this
+is a rare stochastic slip」 — which no wording change was ever going to move, and which points
+instead at the *format* the model was reasoning over. **The eventual fix was structural
+(opaque refs). The number is what delayed getting there.**
+
+**So the rate is not a headline figure attached to a finding. It is the input that selects
+what you build**, and it must be treated with the seriousness of a design decision rather than
+the looseness of a summary statistic.
+
 **Owner: 「You broke HR-14 in the hour you wrote it, and you caught it yourself. That is the
 strongest evidence yet for HR-13's point — a rule filed as a lesson does not get re-read,
 including by its author.」**
@@ -483,3 +503,69 @@ fails loudly. A wrong grader produces a plausible percentage.
    branch that accepted anything of the right *shape*.
 4. **Read at least one PASS and one FAIL by hand every run.** Both bugs were within one
    minute's reading. Nobody reads the passes.
+
+---
+
+# HR-16 — Our own transformation can MANUFACTURE an ambiguity the source does not have
+
+**Owner, 2026-08-06: 「the pruner can manufacture a distractor that does not exist on the
+page. That is not a browser problem or a model problem — it is our own transformation
+inventing an ambiguity, and it will happen again in shapes that are not StaticText.」**
+
+## What happened
+
+`read_page` asked for the `Continue` button and got the ref of `StaticText "Continue"`.
+**Both lines were real, both were printed, and only one was a thing a person could click.**
+
+But `StaticText "Continue"` **is the button's own label** — the text *inside* the control on
+the line above. On the page there is ONE Continue. In our output there are two.
+
+> ### The model did not hallucinate. It chose between two options WE created.
+
+## The class, named — **NAME ECHO**
+
+> **A node that carries the same accessible name as another node because the accessibility
+> tree exposes both a control and the content that renders inside it.**
+>
+> The echo is not a target. It is a projection of the target, and printing it as a peer makes
+> it look like a choice.
+
+**It is not about `StaticText`.** Measured across the corpus — 1724 surviving nodes,
+**584 of them (34%) sit in a name group that mixes an interactive node with a non-interactive
+one**:
+
+| role combination | groups | note |
+|---|---|---|
+| `StaticText + link` | **558** | the dominant case — a link's own text |
+| `StaticText + button` | 9 | |
+| `StaticText + button + link` | 7 | |
+| **`image + link`** | **4** | **not `StaticText` at all** — the logo image inside the logo link, same accessible name |
+| `StaticText + textbox` | 2 | a form label beside its field |
+| `StaticText + heading` | 6 | **neither is interactive**, so it is redundancy rather than a *choice* between clickable and not — out of scope for the fix, in scope for the rule |
+
+**The Owner's prediction was correct before the fix was written: `image + link` is the same
+defect in a shape nobody would have grepped for.**
+
+## THE RULE
+
+> ### Every transformation that DROPS nodes must be checked for what it makes AMBIGUOUS, not only for what it removes.
+>
+> A pruner is judged on what survives. **The failure here was in the relationship between
+> survivors** — two rows that are one thing — and no test of the form 「is X still present?」
+> can see it.
+
+## The mechanism, not the advice
+
+**A duplicate-name audit across the corpus, run as a measurement and not as a review.** The
+number above (34%) came from twenty lines of script, and it found a class the author had not
+considered. If a transformation is added or changed, that audit is re-run and the new
+combination list is compared — because a new role pairing appearing is exactly how this
+recurs in a shape nobody grepped for.
+
+**And it is a family, not an incident:**
+- the pruner inventing a second `Continue` (this rule);
+- `count: 43` — a filter producing a set whose shape matched the claim (HR-12);
+- an invoice list flattening per-line rows into something the page read as invoices.
+
+**All three are our own transformation changing the meaning of the data while preserving every
+individual value.**
