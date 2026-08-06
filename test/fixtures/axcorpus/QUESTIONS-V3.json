@@ -1,0 +1,13 @@
+{
+ "frozenAt": "2026-08-06",
+ "rule": "FROZEN BEFORE THE GROUPING CHANGE WAS WRITTEN. These questions have NO gradeable answer against today's flat output — that is the point. Do not edit them to match whatever gets built.",
+ "why": "V2 measured a read_page that cannot tell 21 identical 「Add to Cart」 buttons apart, because no question could be written for a case with no correct answer. These are those questions.",
+ "answersFrom": "ANSWERS-V3.json — backendDOMNodeId taken from the RAW capture, so the key does not move when the serialiser does",
+ "questions": [
+  { "page": "real-costco-search", "kind": "container-disambiguation", "ask": "which ref adds the 「Bounty Plus Paper Towel, 12 x 91 Sheets」 to the cart?" },
+  { "page": "real-costco-search", "kind": "container-disambiguation", "ask": "which ref adds the 「Scott Original Shop Towels, 10 rolls」 to the cart?" },
+  { "page": "real-costco-search", "kind": "container-disambiguation", "ask": "which ref adds the 「Kirkland Signature 2-ply Paper Towels, 12-pack」 to the cart?" },
+  { "page": "real-costco-search", "kind": "container-absent", "expect": "ABSENT", "ask": "which ref adds 「Charmin Ultra Soft Toilet Paper」 to the cart?" },
+  { "page": "real-wikipedia-portal", "kind": "group-truncation", "expect": "STATED", "ask": "GROUP-INTERNAL TRUNCATION: is any group in this output showing fewer members than it contains, and does the output say so?" }
+ ]
+}

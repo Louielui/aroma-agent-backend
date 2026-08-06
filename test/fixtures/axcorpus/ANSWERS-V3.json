@@ -1,0 +1,13 @@
+{
+ "frozenAt": "2026-08-06",
+ "derivedFrom": "the RAW real-costco-search capture. Each 「Add to Cart」 button was mapped to the product named by its depth-3 ancestor group, verified across all 21 buttons giving 21 distinct titles.",
+ "refsAre": "backendDOMNodeId. The printed ref is a hash of this.",
+ "note": "THE THIRD ENTRY IS A TRAP ON PURPOSE. 'Kirkland Signature 2-ply Paper Towels, 12-pack' is the FIRST product on the page, so a model that always answers the first 「Add to Cart」 it sees scores 1/3 on this set rather than 0/3. Without it, always-pick-the-first would score zero and look like a considered refusal.",
+ "answers": [
+  { "page": "real-costco-search", "ask": "which ref adds the 「Bounty Plus Paper Towel, 12 x 91 Sheets」 to the cart?", "ref": 2747, "groupRef": 2688, "product": "Bounty Plus Paper Towel, 12 x 91 Sheets" },
+  { "page": "real-costco-search", "ask": "which ref adds the 「Scott Original Shop Towels, 10 rolls」 to the cart?", "ref": 3113, "groupRef": 3040, "product": "Scott Original Shop Towels, 10 rolls" },
+  { "page": "real-costco-search", "ask": "which ref adds the 「Kirkland Signature 2-ply Paper Towels, 12-pack」 to the cart?", "ref": 2608, "groupRef": 2547, "product": "Kirkland Signature 2-ply Paper Towels, 12-pack" },
+  { "page": "real-costco-search", "ask": "which ref adds 「Charmin Ultra Soft Toilet Paper」 to the cart?", "expect": "ABSENT", "note": "that product is not on this results page at all" },
+  { "page": "real-wikipedia-portal", "ask": "GROUP-INTERNAL TRUNCATION: is any group in this output showing fewer members than it contains, and does the output say so?", "expect": "STATED", "note": "graded structurally, not by a model: the output must carry a per-group count wherever a group is partially shown" }
+ ]
+}

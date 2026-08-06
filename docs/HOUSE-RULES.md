@@ -626,3 +626,52 @@ path.
 > or an audit script is itself a test of a kind the suite does not contain** — and that when
 > one is built, its findings about our own code are worth as much as its findings about the
 > subject.
+
+---
+
+# HR-17 — Build the measurement tool. It tests the code in a way using the code cannot.
+
+**Owner, 2026-08-06: 「the bug was reachable only because a measurement required the feature
+switched off, so nothing in the product had ever run that path. That is an argument for
+building measurement tools that is independent of what they measure.」**
+
+## What happened
+
+The name-echo prune shipped green. To A/B it, the pruner needed an off switch — one code path,
+measured against its own absence, rather than two copies of the pruner that would measure the
+difference between the copies.
+
+The moment that seam existed, a test of it failed:
+
+```js
+const deduped = opts.dropNameEchoes === false ? candidates : candidates.filter(...)
+candidates.length = 0            // <-- empties the array `deduped` is ALIASING
+candidates.push(...deduped)      // <-- pushes nothing. Every node gone.
+```
+
+**A real bug, in code written that hour, that the whole suite passed over** — because nothing
+in the product ever takes that branch.
+
+## THE RULE
+
+> ### A measurement tool is a test of a kind the suite does not contain, and its findings about our own code count as much as its findings about the subject.
+
+**And the argument does not depend on what is being measured.** The A/B was built to answer a
+question about a *model's* behaviour. It found a defect in *ours*. That is not luck:
+
+- an A/B needs the feature **off**, so it runs a path the product never runs;
+- a grader needs **ground truth derived independently**, so it contradicts the implementation
+  rather than agreeing with it;
+- an audit script needs to **enumerate**, so it sees classes a hand-written test enumerated by
+  imagination (`image + link`, which no `StaticText` rule would have caught).
+
+**This round produced three findings by these three routes, and zero by the feature tests.**
+
+## The mechanism
+
+**When a change is worth A/B-ing, build the seam as a seam in ONE code path** — never a second
+copy — **and test the seam itself.** The duplicate-copy version of this A/B would have passed
+happily while measuring nothing, because both copies would have been correct *separately*.
+
+**And a seam is not a feature flag.** It defaults to the safe value, a test asserts that
+default, nothing in the runtime passes it, and its comment says it exists for measurement.
