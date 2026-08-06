@@ -162,3 +162,43 @@ describe('grouping is OFF by default — Owner ruling on measurement, 2026-08-06
       'its cart button must be the very next line — this adjacency is now a tested property')
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * A REF IS VALID FOR THE READ THAT PRODUCED IT — NOT FOR THE SESSION.
+ *
+ * Measured live 2026-08-06 on en.wikipedia.org: `link "Jump to content"`, before and after
+ * clicking Search on the SAME page with no navigation —
+ *
+ *     backendDOMNodeId before  8001
+ *     backendDOMNodeId after  20437
+ *     anchors with that text after   1   (it is still on the page)
+ *     the original id ->  "Node with given id does not belong to the document"
+ *
+ * The skin re-rendered the header. Same link, same role, same name, DIFFERENT NODE.
+ *
+ * ⛔ So `read → act → act` is wrong and `read → act → read → act` is the rule. The tempting
+ * repair — re-find a stale ref by role + accessible name — is REFUSED: it is 「the element
+ * that looks like the one you meant」, which is the REF 250 failure in a new costume.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('ref lifetime — a re-rendered element gets a NEW ref, and that is correct', () => {
+  test('two different DOM nodes never share a ref, however alike they look', () => {
+    const same = (id) => ({
+      nodeId: 'n' + id,
+      role: { value: 'link' },
+      name: { value: 'Jump to content' },
+      backendDOMNodeId: id
+    })
+    const before = readPage([same(8001)])
+    const after = readPage([same(20437)])
+    assert.strictEqual(before.nodes[0].name, after.nodes[0].name, 'identical to look at')
+    assert.notStrictEqual(before.nodes[0].ref, after.nodes[0].ref,
+      'and a DIFFERENT ref — a ref names a node, not a description')
+  })
+
+  test('a ref is reproducible for the same node, so a re-read is cheap and safe', () => {
+    const node = { nodeId: 'n1', role: { value: 'button' }, name: { value: 'Search' }, backendDOMNodeId: 42 }
+    assert.strictEqual(readPage([node]).nodes[0].ref, readPage([node]).nodes[0].ref)
+  })
+})
