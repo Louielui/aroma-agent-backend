@@ -246,3 +246,75 @@ not a contract — and a coarse pass/fail test would never have found out.
   visual worker does not touch that ruling.
 
 > ### The line arrived at here is the same line as Costco, from the other direction — and that agreement is the strongest evidence either of them is right.
+
+---
+---
+
+# STEP 0 — MEASURED 2026-08-06. Answer: NO DIRECT PATH. One indirect path, one unknown.
+
+**Owner: 「You said it decides everything, so it goes first and nothing is designed around it
+until it is answered.」** Measured, read-only, nothing built.
+
+## Direct dispatch surface: NONE ON THIS MACHINE
+
+| check | result |
+|---|---|
+| `mcpServers` in `~/.claude.json` | **absent** |
+| `mcpServers` in `~/.claude/settings.json` | **absent** (only `theme`) |
+| a local listening port belonging to a Claude/Chrome bridge | **none** — `7768` is Spotify, `8081` is the A6 service, `8090` is her |
+
+So `claude-in-chrome` is **surfaced by the Claude Code host to the agent it runs**, not by an
+addressable service. **Her backend has nothing to call.** That is measured, not inferred from
+documentation.
+
+## The indirect path EXISTS, and it is one line wide
+
+The Agent Bridge already spawns the real CLI:
+
+```js
+// src/agent/agentBridgeWorker.js:39
+function buildAllowedTools () { return ['Read', 'Edit', 'Write'] }
+// …:142
+'--allowedTools', buildAllowedTools().join(' ')
+```
+
+**She already dispatches to Claude Code.** Reaching visual operation would not need a new
+transport — it would need browser tools in that array.
+
+### ⚠ AND THAT ARRAY IS CURRENTLY A REAL FENCE
+
+Three tools, granted explicitly. The bridge cannot drive a browser **because the capability
+was never handed to it** — not because a rule forbids it.
+
+> ### Adding browser tools to `buildAllowedTools()` converts that fence from 「impossible」 into 「granted, and governed by something else」.
+> **That is the mechanism-to-intention degradation, in one line, in our own code.**
+
+It is the same shape as the remote and the browser before it. If visual operation is ever
+admitted, **the grant must be per-sealed-order — never a widened default** — or the fence
+that is doing real work today stops existing for every dispatch, including the ones nobody
+reviewed.
+
+## THE REMAINING UNKNOWN, and it is the whole of step 0
+
+**Whether a headless `claude -p` subprocess can reach browser tools at all.** The
+`mcp__claude-in-chrome__*` tools are surfaced in an interactive session; whether they exist
+for a spawned CLI run is **not determinable from this machine by inspection.**
+
+There is a signal pointing at 「no」: interactively-authenticated MCP servers may simply be
+absent in headless runs. **A signal is not a measurement, and I am not treating it as one.**
+
+### How to settle it — one experiment, and it costs a paid call
+
+Spawn `claude -p` with a browser tool named in `--allowedTools` and a goal that requires it;
+read whether the tool was available or refused. Cheap, read-only, and decisive.
+
+**It is a paid model call, so it is the Owner's to authorise.** Not run.
+
+## Consequence for the estimate, stated plainly
+
+- **If the headless CLI has browser tools** → the small estimate holds. The transport already
+  exists; what remains is governance.
+- **If it does not** → 「adopt a driver」 is not available on this machine today, and §1 reverts
+  to the larger estimate: building the action set.
+
+**Nothing beyond this is designed. Nothing was built.**
