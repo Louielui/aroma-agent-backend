@@ -229,3 +229,54 @@ describe('a FAILED report must LOCATE the fault, not trace it', () => {
     assert.ok(!r.text.includes('at foo'), 'a stack trace in the report is a report he will not read')
   })
 })
+
+/**
+ * ── COLLAPSE, DO NOT CAP (Owner ruling 2026-08-06) ───────────────────────────
+ * 「Show 未確立 and 順帶發現 fully, but collapsed by default with the count visible. I expand
+ * when the answer surprises me, which is the same habit as opening turns, one level cheaper.
+ * Nothing is dropped, and the report stays readable when there is nothing surprising.」
+ *
+ * And the exception that keeps it honest: 「If a section has one or two entries, show them
+ * inline — collapsing three lines is worse than reading them.」
+ */
+describe('long sections collapse; short ones do not', () => {
+  const many = (n, p) => Array.from({ length: n }, (_, i) => p + (i + 1))
+
+  test('three or more entries render as a COUNT, not as the entries', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: many(8, 'u') })
+    assert.match(r.text, /未確立（8）/)
+    assert.ok(!r.text.includes('u5'), 'a collapsed section must not print its entries')
+  })
+
+  test('two entries render INLINE — collapsing three lines is worse than reading them', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: ['aa', 'bb'] })
+    assert.ok(r.text.includes('aa') && r.text.includes('bb'))
+    assert.ok(!/未確立（2）/.test(r.text))
+  })
+
+  test('one entry renders inline too', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, incidental: ['only one'] })
+    assert.ok(r.text.includes('only one'))
+    assert.ok(!/順帶發現（1）/.test(r.text))
+  })
+
+  test('NOTHING IS DROPPED — the full entries are always on the object', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: many(8, 'u'), incidental: many(5, 'i') })
+    assert.strictEqual(r.sections.notEstablished.length, 8)
+    assert.strictEqual(r.sections.incidental.length, 5)
+    assert.strictEqual(r.sections.notEstablished[7], 'u8', 'the eighth entry must survive collapsing')
+  })
+
+  test('the expanded form contains everything the collapsed form hid', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: many(8, 'u') })
+    for (const e of r.sections.notEstablished) assert.ok(r.expandedText.includes(e))
+    assert.ok(r.expandedText.length > r.text.length)
+  })
+
+  test('collapsing never hides the ANSWER or the measurements — only the two long sections', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: many(9, 'u'), incidental: many(9, 'i') })
+    assert.ok(r.text.includes('唔係缺陷'), 'the answer is never collapsed')
+    assert.ok(r.text.includes('has_incoming 18'), 'measurements are never collapsed')
+    assert.ok(r.text.includes('冇改過任何嘢'), 'what was applied is never collapsed')
+  })
+})

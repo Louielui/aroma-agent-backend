@@ -266,3 +266,30 @@ be exactly that, in the file that exists to stop wrong conclusions.**
 **It depends on `development_record` being routable and turned on** (`CONTEXT_DEVELOPMENT_RECORD`
 is off today, by design). When it is, this is the next thing to add — and it will be added as
 a working check or not at all.
+
+---
+
+## THE ARGUMENT FOR 「順帶發現」, made by the section itself
+
+**Owner: 「The two incidental findings are the proof the section earns itself.」**
+
+Both were found while answering a question about `totalCount`, and **the old report shape
+would have discarded both silently** — there was nowhere to put a finding outside the
+question asked, so the worker's own sentence about it lived only in the turns.
+
+| | |
+|---|---|
+| **`DEFECT-007`** | six `GET` handlers read no `req.query` at all, so **every** value the adapter forwards is ignored server-side. The note already on file said **one** parameter (`limit`); the truth is all six |
+| **`DEFECT-008`** | `/prep-tasks/draft` bypasses Drizzle over a schema mismatch — `db.ts` says `planned_batch`, the column is `batch_count`. **Raw SQL written around a wrong schema definition is a defect in two places** |
+
+Neither was asked for. Neither would have survived. **A report with no room for what it
+noticed in passing does not merely omit — it teaches the worker that only the question
+matters**, and the most useful thing found in an investigation is regularly not the thing it
+was sent to find.
+
+### And the volume answer that goes with it
+
+Collapse, never cap: `未確立（8）` and `順帶發現（8）` render as counts, the entries stay on
+`report.sections` and in `report.expandedText`, and **one or two entries render inline** —
+collapsing three lines is worse than reading them. Nothing is dropped at any point; the only
+thing that changes is how much is shown before he asks.

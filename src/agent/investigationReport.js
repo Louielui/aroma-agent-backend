@@ -139,16 +139,34 @@ function buildReport (input = {}) {
   // section filled up with 「I planned the rounds」 while the worker's own 「I have not
   // measured live row counts, so I cannot say whether this is latent or already firing
   // today」 was dropped. One is about the answer; the other is about how the answer was got.
-  if (nonEmpty(notEstablished)) lines.push('未確立：' + notEstablished.join('；'))
+  // ── COLLAPSE, DO NOT CAP ─────────────────────────────────────────────────
+  // Owner ruling: the volume problem is solved by hiding, never by dropping. A section of
+  // three or more renders as a COUNT; the entries stay on the object and in expandedText.
+  // Expanding is the same habit as opening the turns, one level cheaper.
+  //
+  // TWO OR FEWER RENDER INLINE — 「collapsing three lines is worse than reading them」, and a
+  // 「未確立（2）」 that costs a click to read two sentences is friction pretending to be tidiness.
+  const COLLAPSE_ABOVE = 2
+  const section = (label, items, collapsed) => {
+    if (!nonEmpty(items)) return null
+    if (collapsed && items.length > COLLAPSE_ABOVE) return `${label}（${items.length}）`
+    return label + '：' + items.join('；')
+  }
+  const pushSection = (label, items) => {
+    const l = section(label, items, true)
+    if (l) lines.push(l)
+  }
+
+  pushSection('未確立', notEstablished)
 
   // ── INCIDENTAL FINDINGS ──────────────────────────────────────────────────
   // Without this section a report SILENTLY DISCARDS anything outside the question asked.
   // The run that prompted it found a real defect in passing — the adapter reads body.count,
   // a response-BODY field, while its own comment calls it 「the API's own header」 — and that
   // finding existed only in the turns.
-  if (nonEmpty(incidental)) lines.push('順帶發現：' + incidental.join('；'))
+  pushSection('順帶發現', incidental)
 
-  if (nonEmpty(aboutTheEnquiry)) lines.push('關於呢次查證：' + aboutTheEnquiry.join('；'))
+  pushSection('關於呢次查證', aboutTheEnquiry)
 
   // SILENCE ABOUT CHANGES IS NOT ACCEPTABLE EITHER. A report that simply does not mention
   // applying anything leaves the reader to assume, and the assumption people make is the
@@ -159,9 +177,27 @@ function buildReport (input = {}) {
 
   lines.push(`（${rounds} 回合，US$${Number(costUsd).toFixed(2)}${enquiryId ? '，查證編號 ' + enquiryId : ''}）`)
 
+  // The expanded twin is rebuilt from the SAME arrays with collapsing off, so the two forms
+  // cannot disagree about WHAT the report contains — only about how much of it is shown.
+  const expanded = lines.map((line) => {
+    const m = /^(未確立|順帶發現|關於呢次查證)（(\d+)）$/.exec(line)
+    if (!m) return line
+    const src = m[1] === '未確立' ? notEstablished : m[1] === '順帶發現' ? incidental : aboutTheEnquiry
+    return section(m[1], src, false)
+  })
+
   // THE TRANSCRIPT IS NEVER INLINED. It is the thing he is trying to stop reading, and it is
   // retrievable on request by enquiryId — normally the report, the turns when it surprises.
-  return { outcome, text: lines.join('\n'), enquiryId, rounds, costUsd }
+  return {
+    outcome,
+    text: lines.join('\n'),
+    expandedText: expanded.join('\n'),
+    // NOTHING IS DROPPED. Collapsing is a rendering choice; every entry is always here.
+    sections: { notEstablished, incidental, aboutTheEnquiry, measurements, samples },
+    enquiryId,
+    rounds,
+    costUsd
+  }
 }
 
 module.exports = { OUTCOME, buildReport, ReportRefused }
