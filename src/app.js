@@ -921,6 +921,11 @@ function createApp (options = {}) {
     if (backlogCache.value && Date.now() - backlogCache.at < 5 * 60 * 1000) return backlogCache.value
     return refreshBacklog()
   }
+  // The turns of an investigation: stored always, surfaced never. Opening one is a
+  // deliberate second step — putting them in front of him by default would recreate exactly
+  // the relay the dispatch path removes.
+  app.use(createEnquiryRouter({ enquiryStore: createEnquiryStore() }))
+
   app.use(createDemoRouter({
     conversationStore: realConversationStore,
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null
