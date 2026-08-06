@@ -1,9 +1,19 @@
-# `read_page` acceptance benchmark — RUN 2026-08-06. **BAR NOT MET.**
+# `read_page` acceptance benchmark — 2026-08-06
 
 <!-- record-status: ACTIVE 2026-08-06 -->
 
+> **RUN 1: BAR NOT MET (87.5% / 100%).**
+> **RUN 2: BAR MET (100% / 100%) — but an A/B trial shows the fix is NOT what met it.**
+>
+> **Read RUN 2 and the A/B together or not at all.** The number passes; the confidence does
+> not. `click` is still not built. Jump to `# RUN 2` below.
+
 > **Owner: 「an acceptance condition that has never been evaluated is HR-12 wearing a plan.」**
-> It has now been evaluated. **It does not pass.**
+> It has now been evaluated — twice.
+
+---
+
+# RUN 1 — the first evaluation. **It did not pass.**
 
 | | measured | bar | |
 |---|---|---|---|
