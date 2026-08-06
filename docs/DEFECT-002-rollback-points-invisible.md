@@ -1,5 +1,7 @@
 # DEFECT-002 — the Owner's own rollback points are invisible to him
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Repo: `aroma-system` (production, and the VPS working copy). NOT fixed — reported only.**
 **Found: 2026-08-05, by reading `scripts/deploy.sh` and comparing local/remote tags.**
 **Severity: it does not break anything today. It breaks the recovery, on the day it is needed.**

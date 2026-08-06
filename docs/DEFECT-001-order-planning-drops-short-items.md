@@ -1,5 +1,7 @@
 # DEFECT-001 — `/api/v1/ai/order-planning` silently omits short items
 
+<!-- record-status: DISPROVEN 2026-08-05 -->
+
 > # ⛔ DISPROVEN — 2026-08-05. THERE IS NO DEFECT HERE.
 >
 > ## `/api/v1/ai/order-planning` was correct throughout. The kitchen is not short 18 items.

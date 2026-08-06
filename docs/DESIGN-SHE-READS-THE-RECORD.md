@@ -1,5 +1,7 @@
 # She reads the development record
 
+<!-- record-status: ACTIVE 2026-08-06 -->
+
 **DESIGN ONLY. No code.** 2026-08-06.
 
 > **Owner:** 「Right now everything decided tonight lives in Claude Code's session and in
@@ -49,6 +51,18 @@ file: not `HOUSE-RULES.md`, not a DEFECT file, not this document.
 > ### Verdict: an EXTENSION of a live connector, not a sixth source.
 > One method reachable, plus a plan that knows when to use it. **No new scope, no new
 > credential, no new adapter.**
+
+> ### ⚠ CORRECTED AT BUILD TIME, 2026-08-06 — half of that verdict was wrong.
+>
+> **「No new scope, no new credential」 held.** 「Not a sixth source」 did not.
+>
+> The read layer routes by **source key**, so the record needed its own entry in
+> `ALL_SOURCES` — `development_record`, now six. What makes it unlike the other five is that
+> it is **local**: derived from this build's own `docs/`, needing no token and no network,
+> and describing exactly the commit the process is running. It cannot go unavailable because
+> a credential expired.
+>
+> Recorded rather than quietly corrected: the design said five and the build needed six.
 
 ---
 

@@ -1,5 +1,7 @@
 # Identity — the third class of risk object
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Owner ruling, 2026-08-05: identity comes BEFORE generalising the Agent Bridge.**
 
 > Generalising a shape that cannot say who is acting would just spread that assumption to two

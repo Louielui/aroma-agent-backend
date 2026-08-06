@@ -1,5 +1,7 @@
 # Working on `aroma-system` — the shape, and the wall
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Design only. NOTHING BUILT. No credentials requested, no VPS contact.**
 Measured 2026-08-05 on AromaBrain, read-only.
 

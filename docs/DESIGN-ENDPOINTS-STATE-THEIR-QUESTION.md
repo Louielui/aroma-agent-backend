@@ -1,5 +1,7 @@
 # Make every endpoint state the question it answers
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **DESIGN ONLY. No edit authorised. `aroma-system` is production and was not touched.**
 2026-08-05, directly out of `DEFECT-001` being disproven.
 

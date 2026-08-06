@@ -1,5 +1,7 @@
 # When the worst case is an order, not a bad diff
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Owner ruling, 2026-08-05.** Recorded because it is the finding of the day and it is bigger
 than Costco: it says what our whole safety story has actually been resting on.
 

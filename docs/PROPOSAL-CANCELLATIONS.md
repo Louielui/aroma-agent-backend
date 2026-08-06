@@ -1,5 +1,7 @@
 # Proposal cancellations — the record of WHY
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 The proposal store records `status`, `cancelledBy` and the timestamps. **It has no field for
 a reason.** So a proposal cancelled for housekeeping and one cancelled because the Owner
 changed his mind look identical in the record, forever.

@@ -1,5 +1,7 @@
 # DEFECT-001 — the fix, planned
 
+<!-- record-status: SUPERSEDED 2026-08-05 -->
+
 **DESIGN ONLY. No edit authorised, no clone built, `aroma-system` untouched.**
 Target: `aroma-system/server/routes/aiIntegration.ts`, the `/api/v1/ai/order-planning` route
 (`:219`–`:290`). Defect write-up: `DEFECT-001-order-planning-drops-short-items.md`.

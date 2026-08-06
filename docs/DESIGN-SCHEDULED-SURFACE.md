@@ -1,5 +1,7 @@
 # A Scheduled surface — design, and the truth first
 
+<!-- record-status: ACTIVE 2026-08-06 -->
+
 **DESIGN ONLY. No code.** 2026-08-06.
 
 ---

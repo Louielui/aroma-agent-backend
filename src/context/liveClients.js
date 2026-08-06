@@ -21,12 +21,16 @@
 const { createReadConnector } = require('./readConnector')
 const { readAccessEnabled, resolveFlag } = require('./flags')
 const { createGithubReadAdapter } = require('./adapters/githubRead')
+const { createRecordReadAdapter } = require('./adapters/recordRead') // the development record, derived from THIS build's docs/
 const { createDriveReadAdapter } = require('./adapters/driveRead')
 const { createGmailReadAdapter } = require('./adapters/gmailRead')
 const { createCalendarReadAdapter } = require('./adapters/calendarRead')
 const { createAromaSystemReadAdapter, KEY_ENV: AROMA_KEY_ENV } = require('./adapters/aromaSystemRead')
 
-const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system'])
+// development_record is LOCAL: it is derived from this build's own docs/ directory, so it
+// needs no token, no scope and no network. It is listed here because the read layer routes
+// by source key, not because it is an external connector.
+const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record'])
 
 /** Sources whose master+per-source flags are both exactly 'on'. */
 function enabledSources (env = process.env) {

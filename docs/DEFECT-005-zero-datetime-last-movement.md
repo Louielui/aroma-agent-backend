@@ -1,5 +1,7 @@
 # DEFECT-005 — 77 of 199 rows carry a zero datetime
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Repo: `aroma-system` (production). Recorded, NOT fixed.**
 **Found 2026-08-05, incidentally — it was the source of the 77 warnings that appeared on every
 query touching `inventory_projected_state`.**

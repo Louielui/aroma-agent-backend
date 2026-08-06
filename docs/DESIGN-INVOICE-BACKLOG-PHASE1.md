@@ -1,5 +1,7 @@
 # Phase 1 — she tells me what is waiting
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **RECON + DESIGN ONLY. No code, no scope change, nothing built.** 2026-08-05.
 
 > **Owner's KPI for the whole project:** 「what manual work will Louie never do again?」

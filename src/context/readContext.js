@@ -325,6 +325,12 @@ function aromaMethodFor (text) {
  * when the keyword query returns nothing. Returns { method, params, fallback?, hydrate? }
  * or { unavailable } when the source genuinely cannot be queried.
  */
+/**
+ * What counts as a question ABOUT THE DEVELOPMENT RECORD rather than about the repo.
+ * Deliberately narrow: an id, or the words for a rule/defect/decision. A broad pattern would
+ * route ordinary repo questions into the index and quietly remove the commit view.
+ */
+const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
 function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS } = {}) {
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
@@ -405,6 +411,21 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
   }
 
   if (source === 'github') {
+    // ── THE DEVELOPMENT RECORD COMES FIRST ────────────────────────────────
+    // A question about a ruling, a defect or a house rule is answered from the INDEX, not
+    // from commit titles. Before this, `getFileAtRef` existed on the adapter and was
+    // unreachable from here, so she could see commit messages and no document at all.
+    //
+    // It needs no repo configured: the index is derived from THIS BUILD's docs/, so it
+    // cannot become unavailable because a token expired — and it describes exactly the
+    // commit the process is running.
+    //
+    // NO FALLBACK TO A FILE READ. docs/ is ~410,000 chars against a 6,000-char block; a
+    // document would be truncated by the provider, and a truncated rules file is one
+    // silently missing its later rules. The document is a deliberate follow-up.
+    if (RECORD_RE.test(matchText)) {
+      return { method: 'listRecordEntries', params: { q: matchText, pageSize: 6 } }
+    }
     const repo = env.GITHUB_READ_REPO
     if (!repo || !repo.includes('/')) return { unavailable: 'no GITHUB_READ_REPO configured (owner/repo)' }
     const [owner, name] = repo.split('/')

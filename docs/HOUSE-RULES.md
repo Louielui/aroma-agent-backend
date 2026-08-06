@@ -1,5 +1,7 @@
 # House rules
 
+<!-- record-status: ACTIVE 2026-08-06 -->
+
 Rules the Owner has set that apply across the whole codebase, not to one feature. Each one
 exists because something went wrong once; the story is kept because a rule without its
 reason gets argued away.

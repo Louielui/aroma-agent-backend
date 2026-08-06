@@ -1,5 +1,7 @@
 # Product Information Architecture
 
+<!-- record-status: ACTIVE 2026-08-06 -->
+
 **DOCUMENT ONLY. Nothing here is authorised to be built.** 2026-08-06.
 
 ---

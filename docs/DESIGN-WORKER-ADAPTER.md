@@ -1,5 +1,7 @@
 # The worker adapter — a fence contract, not an interface
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Design only. No code.** 2026-08-05.
 Downstream of `DESIGN-IDENTITY-DIMENSION.md` and `GOVERNANCE-BROWSER-VS-FILE.md`; identity
 comes first, and the fence insight comes from the remote.

@@ -1,5 +1,7 @@
 # DEFECT-003 — `staging → approve → prod` has no working staging
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Repo: `aroma-system` (production). NOT fixed — reported only.**
 **Found: 2026-08-05, by comparing `origin/staging` to `origin/main`.**
 **Severity: the ritual's review step exists on paper and not in the branch graph.**

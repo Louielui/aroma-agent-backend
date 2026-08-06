@@ -1,5 +1,7 @@
 # DEFECT-006 — invoices and POs are windowed by ENTRY date and cited by DOCUMENT date
 
+<!-- record-status: ACTIVE 2026-08-05 -->
+
 **Repo: `aroma-system` (production). Recorded, NOT fixed.**
 **Found 2026-08-05 while designing endpoint disclosure.**
 **Severity: an answer that is internally inconsistent and looks correct.**
