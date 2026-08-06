@@ -33,23 +33,21 @@ function pageOf (name) {
   return pages.get(name)
 }
 
-/** Ground truth by accessible name, derived from the fixture. */
+/**
+ * Ground truth is now READ FROM A FROZEN FILE, not derived at run time.
+ *
+ * GRADER BUG 1 was a key derived from the PRUNED output with a loose regex: /password/i hit
+ * `link "Forgot password"` before `textbox "Password"` and marked a CORRECT model answer FAIL.
+ * A key computed from the thing being measured drifts toward the thing being measured — HR-12
+ * inside the measuring instrument. ANSWERS.json was derived from the RAW trees, role-aware,
+ * each verified to match exactly one node, and it does not move when readPage moves.
+ */
+const KEY = JSON.parse(fs.readFileSync(path.join(CORPUS_DIR, 'ANSWERS.json'), 'utf8'))
 function keyFor (q) {
-  if (q.expect === 'ABSENT') return { kind: 'ABSENT' }
-  const m = q.ask.match(/「([^」]+)」/)
-  const view = pageOf(q.page)
-  // GRADER BUG 1, found by the first run and fixed here: this matched /password/i against
-  // every name and hit `link "Forgot password"` before `textbox "Password"`. The model answered
-  // #11 (the textbox) and was marked FAIL. THE MODEL WAS RIGHT AND THE KEY WAS WRONG — which
-  // is the same shape as HR-12: the measurement was wrong in the direction of the thing it
-  // was measuring.
-  if (q.page === 'login-form' && /password/i.test(q.ask)) {
-    const n = view.nodes.find(x => x.interactive && /password/i.test(x.name))
-    return n ? { kind: 'REF', ref: n.ref } : { kind: 'UNRESOLVED' }
-  }
-  if (!m) return { kind: 'UNRESOLVED' }
-  const n = view.nodes.find(x => x.name === m[1]) || view.nodes.find(x => x.name.includes(m[1]))
-  return n ? { kind: 'REF', ref: n.ref } : { kind: 'NOT_IN_OUTPUT' }
+  const a = KEY.answers.find(x => x.page === q.page && x.ask === q.ask)
+  if (!a) return { kind: 'UNKEYED' }          // an unkeyed question is a FAILURE of the key, not a pass
+  if (a.expect === 'ABSENT') return { kind: 'ABSENT' }
+  return { kind: 'REF', ref: a.ref }
 }
 
 const PROMPT = (text, ask) => `You are reading a serialized accessibility tree of a web page.
@@ -97,9 +95,14 @@ function ask (prompt) {
     const shown = new Set(view.nodes.map(n => n.ref))
     const inInput = answer.kind === 'REF' && shown.has(answer.ref)
     let pass
-    if (q.expect === 'ABSENT') pass = answer.kind === 'ABSENT'
-    else if (q.expect === 'present-or-truncation-stated') pass = inInput || (answer.kind === 'ABSENT' && view.truncated)
-    else pass = inInput && truth.kind === 'REF' && answer.ref === truth.ref
+    if (truth.kind === 'UNKEYED') pass = false
+    else if (q.expect === 'ABSENT') pass = answer.kind === 'ABSENT'
+    // The truth here (754) is NOT in the pruned output. A correct ABSENT passes; the true ref
+    // passes; an invented one — which is what happened — never does.
+    else if (q.expect === 'present-or-truncation-stated') {
+      pass = (answer.kind === 'ABSENT' && view.truncated) ||
+             (inInput && truth.kind === 'REF' && answer.ref === truth.ref)
+    } else pass = inInput && truth.kind === 'REF' && answer.ref === truth.ref
     if (answer.kind === 'REF' && !inInput) answer.invented = true
     rows.push({ q, truth, answer, pass, cost: r.cost, said })
   }

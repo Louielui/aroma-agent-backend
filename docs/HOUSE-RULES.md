@@ -384,3 +384,70 @@ re-reads. So HR-13 is written with its mechanism attached rather than as advice:
 > **The rule is not 「remember to check for absence」. The rule is 「store `nextRunAt`」** — a
 > field, in a record, that makes the absence computable by something that is not a person
 > remembering.
+
+---
+
+# HR-14 — A defect that survives a casual retest is worse than one that always fires
+
+**Owner, 2026-08-06: 「A defect that survives a casual retest is worse than one that always
+fires, because the retest is what most people would do.」**
+
+The `read_page` benchmark caught a model answering with a ref that was not in its input. Run
+the same question three more times and it answers correctly three times. **Roughly 1 in 4.**
+
+> ## The retest is the trap. Not the bug.
+>
+> The reflex on seeing a strange result is 「run it again」 — and for a 1-in-4 defect the
+> retest says *fine* three times out of four. **The behaviour that normally clears a false
+> alarm is the behaviour that buries a real one.**
+
+## The same shape already happened here
+
+| | |
+|---|---|
+| the Drive backlog line | a 5-minute cache made a read that took 3.2–5.6s against a 2.5s budget **occasionally succeed**. The intermittency is why it was diagnosed as a stale tab first |
+| the invented ref | 1 in 4 |
+| the suite reporting `fail 4` once and `fail 3` on re-run | **and the fourth never named itself** |
+
+## THE MECHANISM, not the advice
+
+HR-13's lesson applies to this rule too: a rule filed as advice is not re-read. So:
+
+> ### A fix for an intermittent defect is not evaluated by running it once. The trial size is set from the OBSERVED RATE, before the fix is written.
+>
+> A 1-in-4 defect needs ~10 runs per arm to distinguish 「fixed」 from 「lucky」. **One green run
+> after a change is 0/1, and 0/1 is not evidence.**
+
+And where the fix is a change of wording, prompt, or model input, **the trial is A/B against
+the unchanged version in the same session** — otherwise the comparison is confounded by the
+model's own drift, which is HR-12 in a new place.
+
+---
+
+# HR-15 — A grader that has never been checked against a result you disbelieve is HR-12 in the measuring instrument
+
+**Owner, 2026-08-06: 「Both grader bugs were found by distrusting a result, not by the grader
+failing. Write that where the next benchmark gets built.」**
+
+The first benchmark run had two grader bugs. **Neither announced itself.** Both surfaced only
+because a result looked wrong and got read:
+
+| bug | what it did | how it was found |
+|---|---|---|
+| accepted **any** `REF n` on one question | **scored the invented answer PASS** — the benchmark built to catch invention was blind on the one question where invention happened | the number looked too clean for a truncated page |
+| answer key matched `/password/i` against every name | marked a **CORRECT** model answer FAIL — it hit `link "Forgot password"` before `textbox "Password"` | the failure named an element that was obviously the right one |
+
+**A grader is code that reports a number and never reports its own wrongness.** A wrong test
+fails loudly. A wrong grader produces a plausible percentage.
+
+## The mechanisms
+
+1. **Derive the answer key from the RAW input, never from the output being graded.** Bug 1
+   existed because the key was computed from the pruner's output — so it drifted toward the
+   pruner. **The key must not depend on the thing under test.**
+2. **Freeze the key in a file before the run.** A key computed at run time can be edited by
+   the same reasoning that produced the code.
+3. **A pass must be positively earned.** 「Not obviously wrong」 is not a pass. Bug 2 was a
+   branch that accepted anything of the right *shape*.
+4. **Read at least one PASS and one FAIL by hand every run.** Both bugs were within one
+   minute's reading. Nobody reads the passes.

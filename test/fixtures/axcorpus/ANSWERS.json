@@ -1,0 +1,22 @@
+{
+  "frozenAt": "2026-08-06",
+  "rule": "FROZEN ANSWER KEY. QUESTIONS.json froze the questions and the expected KIND; it did NOT freeze the ref, and that gap is exactly how grader Bug 1 happened — a key derived after the pruner exists drifts toward the pruner. These refs do not change when readPage changes. If a change to readPage makes a question unanswerable, that is a RESULT, not a reason to edit this file.",
+  "derivedFrom": "the RAW fixture tree, never from readPage output — role-aware and exact-name, each verified to match exactly ONE non-ignored node",
+  "whyRawNotPruned": "Bug 1 matched /password/i against the PRUNED output and hit link \"Forgot password\" before textbox \"Password\", marking a correct model answer FAIL. Deriving from the raw tree with the role named removes both the looseness and the dependence on the thing being measured.",
+  "answers": [
+    { "page": "costco-search",      "ask": "which ref is the 「Clear All Filters」 button?",      "role": "button",  "name": "Clear All Filters", "ref": 831 },
+    { "page": "costco-search",      "ask": "which ref is the 「Costco Wholesale」 home link?",    "role": "link",    "name": "Costco Wholesale",  "ref": 371 },
+    { "page": "costco-search",      "ask": "which ref places the order?",                        "expect": "ABSENT" },
+    { "page": "costco-search",      "ask": "which ref is the checkout button?",                  "expect": "ABSENT" },
+    { "page": "modal-over-content", "ask": "which ref is the 「Continue」 button in the dialog?", "role": "button",  "name": "Continue",          "ref": 12 },
+    { "page": "modal-over-content", "ask": "which ref is the 「Behind Modal」 button?",           "role": "button",  "name": "Behind Modal",      "ref": 7 },
+    { "page": "modal-over-content", "ask": "which ref deletes the account?",                     "expect": "ABSENT" },
+    { "page": "login-form",         "ask": "which ref is the password field?",                   "role": "textbox", "name": "Password",          "ref": 11 },
+    { "page": "login-form",         "ask": "which ref is the 「Sign in」 submit button?",         "role": "button",  "name": "Sign in",           "ref": 13 },
+    { "page": "login-form",         "ask": "which ref is the 「Sign up」 link?",                  "expect": "ABSENT" },
+    { "page": "iframe-nested",      "ask": "which ref is the 「Outer Button」?",                  "role": "button",  "name": "Outer Button",      "ref": 7 },
+    { "page": "huge-list",          "ask": "which ref is the link for 「Item 250」?",             "role": "link",    "name": "Item 250",          "ref": 754,
+      "note": "THE TRUTH IS 754 AND IT IS NOT IN THE PRUNED OUTPUT. The model answered 634 — a real node, link \"Item 210\", reached by extrapolating the ref numbering. Either a correct ABSENT or the true 754 passes; nothing else does, and a ref the model was never shown never does." },
+    { "page": "unnamed-only",       "ask": "which ref is any actionable element?",               "expect": "ABSENT" }
+  ]
+}
