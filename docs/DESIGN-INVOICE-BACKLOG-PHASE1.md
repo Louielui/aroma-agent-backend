@@ -189,3 +189,33 @@ the code — `drive.file` versus `drive` is the difference between a mechanism a
 
 **Nothing built. No scope change. All measurement was read-only metadata listing with the
 credentials already in place.**
+
+---
+
+## ✅ EVIDENCE THAT THIS TARGETS THE REAL CONSTRAINT — recorded on Owner instruction
+
+> **Owner: 「your finding that 00_Inbox is nearly empty means downstream works and the
+> bottleneck is confirmed to be me.」**
+
+Measured 2026-08-05:
+
+| | |
+|---|---|
+| `00_Inbox` | **2 items**, one of them a `使用說明.txt` readme — so **≈1 real document** |
+| `Scanned by Franco` | **64 files** across 4 non-empty batches, oldest **53 days** |
+| invoices ingested in the last 30 days | **1** |
+
+**Downstream drains.** If classification, the approval queue or the dual-write were broken,
+`00_Inbox` would be the folder filling up. It is not — it is nearly empty while the folder
+*upstream of the manual step* holds 64 files and 53 days of age.
+
+> ### The bottleneck is the one manual step between the two folders.
+
+This matters because it is the difference between **a feature aimed at a measured constraint
+and one aimed at a guessed one.** The obvious guess — 「the invoice pipeline is broken, 1
+invoice in 30 days」 — was wrong, and building against it would have meant rewriting a
+pipeline that works.
+
+**It also sets the success condition for Phase 2 in advance:** if she ever moves the files,
+the number that should change is `00_Inbox` filling and then draining. If `Scanned by Franco`
+empties while `00_Inbox` stays flat, something is being lost rather than moved.
