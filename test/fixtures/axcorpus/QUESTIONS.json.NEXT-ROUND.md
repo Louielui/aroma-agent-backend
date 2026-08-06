@@ -82,3 +82,40 @@ Measured across all six real captures, containers holding ≥5 duplicate members
 against future rounds — **but nobody should read their presence as evidence that they were
 required.** The Owner asked for them on the strength of my claim; the claim was wrong, and the
 correction belongs next to the corpus rather than in a report he has already read.
+
+---
+
+# NEXT CAPTURE — the page that decides whether the container code lives
+
+<!-- added 2026-08-06, Owner ruling -->
+
+**Owner: 「whether proximity survives a layout that separates label from control is a corpus
+condition, not a blocker. Record it as the next capture, and note that container code stays
+unproven until that page exists.」**
+
+## The capture
+
+> **A page where the accessible name that identifies a control is NOT adjacent to it** — a
+> label that follows its control, sits in a separate column, or is attached across the tree by
+> `aria-labelledby`.
+
+Candidates worth trying: a data table with row headers and per-row action buttons; a settings
+page with the control left of its description; a comparison grid.
+
+## What it decides
+
+**Proximity measured 30/30 on `real-costco-search` — one page, one layout pattern.** It
+establishes that document order works *where the DOM is ordered that way*, not that the DOM is
+always ordered that way.
+
+| if the capture shows | then |
+|---|---|
+| proximity FAILS on separated layouts, and such layouts are common | **the container code earns its budget** and grouping comes back on, with a new allocation policy |
+| proximity holds, or such layouts are rare | **the container code stays off** — correct, tested, and unused, which is a fine place for it |
+
+> ## ⛔ UNTIL THAT PAGE EXISTS, THE CONTAINER CODE IS UNPROVEN.
+>
+> Not wrong — **unproven.** It is correct and tested (`axGroup.test.js`, `groupBudget.test.js`);
+> what has never been shown is that it is *needed*. Nobody should read its presence, its tests,
+> or its measured 4/4 on V3 as evidence that it should be switched on. **Grouping cost 31
+> points and bought nothing measurable**, and that stands until this capture says otherwise.
