@@ -119,3 +119,96 @@ real result, and the result is **below the bar**.
 The next round is **the truncation notice, not the next verb.** The one failure is a model
 stepping past a boundary the output declared. If a stated cut does not stop an extrapolation,
 that is a `read_page` defect, and it sits on the exact path `click` would consume.
+
+---
+---
+
+# RUN 2 — 2026-08-06, frozen key + fixed grader + rewritten notice
+
+| | run 1 | **run 2** | bar |
+|---|---|---|---|
+| **targetsIdentified** | 87.5% (7/8) | **100% (8/8)** | 90% |
+| **absentTargetRefusals** | 100% (5/5) | **100% (5/5)** | 100% |
+
+**Cap `$3.00`, spent `$1.62`. VERDICT: BAR MET.**
+
+# ⛔ AND THE NOTICE IS NOT WHAT MET IT. Do not read run 2 as the fix working.
+
+**A single clean run of an intermittent defect is 0/1** (HR-14, written this same day). So the
+notice was A/B tested: same question, same pruned nodes, same session, **interleaved** so the
+model's own drift hits both arms equally. Ten runs per arm, `$3.10` of a `$3.50` cap.
+
+| | invented a ref not in its input | correct |
+|---|---|---|
+| **OLD notice** (the one that failed) | **0/10** | **10/10** |
+| **NEW notice** (this rewrite) | **0/10** | **9/10** |
+
+> ## The old notice scored 10/10 on the exact question it had failed. The new one scored 9/10.
+>
+> **The change is not shown to help, and the only measured difference points the other way.**
+
+## ⚠ Which means my own 「1 in 4」 was an over-claim
+
+The invention was **1 event in 4 attempts**, and I reported a rate from it. With 14 old-notice
+attempts now on record it is **1 in 14 ≈ 7%**.
+
+**I set a rate from n=4 and stated it as a finding — in the same session I wrote HR-14, which
+says the trial size must come from the observed rate before the fix is written.** The rule was
+written and then broken within the hour, which is exactly what HR-13 predicted about rules
+filed as lessons.
+
+## So what actually moved 87.5% → 100%?
+
+**The grader fix, not the notice.** Decomposed against run 1's own recorded answers:
+
+| question | run 1 | why it changed |
+|---|---|---|
+| `login-form` password | FAIL → **PASS** | **the answer key was wrong**; the model was always right |
+| `huge-list` `Item 250` | PASS(wrongly) → **PASS(earned)** | the A/B shows the OLD notice answers this correctly ~10/10 anyway |
+
+**One point came from correcting a measurement error. The other is within the noise of the
+unchanged code.** Nothing here is evidence that the notice rewrite did anything.
+
+## ⚠ AND IT MAY HAVE INTRODUCED A NEW FAILURE — one the notice's own rule cannot catch
+
+The single new-notice miss answered **`REF 250`**. Ref 250 is real, is printed, and is
+**`link "Item 82"`**. The model answered **the item number as if it were the ref**.
+
+> ### That is worse than the invention, not better.
+>
+> The invented ref was *not in the input*, so a downstream check catches it for free — and the
+> grader now does. **`REF 250` is in the input.** Nothing structural refuses it, `click` would
+> take it, and it opens Item 82.
+
+n=1, so it is not established as caused by the rewrite. **It is also exactly the kind of thing
+「answer only with a ref printed above」 would push a model toward** when the printed thing it
+is looking for is not there.
+
+---
+
+# THE RULING THIS SUPPORTS — and it is not 「build click」
+
+**The number meets the bar. The confidence does not.**
+
+1. **The corpus cannot measure this.** One truncation question, at a ~7% base rate, needs far
+   more than 13 questions to separate a fix from luck. **The bar was met on a corpus too small
+   to detect the defect the bar exists for.**
+2. **The structural fix is still the answer.** An opaque ref — a deterministic hash of
+   `backendDOMNodeId`, stable across reads, impossible to extrapolate — is a mechanism.
+   The notice is a declaration, and this project's own rule is that declared fences degrade.
+   **It would also have refused `REF 250`,** which the notice cannot.
+3. **The notice rewrite is UNVALIDATED and its only signal is negative.** It is left in place
+   rather than reverted only because the Owner has not ruled; the decision is his, and it is
+   flagged rather than absorbed.
+
+**Recorded as the condition for the NEXT corpus round** (not patched now, per the freeze rule):
+real pages, captured **headed** — `DEFECT-009` shows the capture failure was bot mitigation,
+not a broken network — and **more than one truncation question**, since that is the single
+hazard this corpus tests with n=1.
+
+## And the thing to say beside every number above
+
+> **Five of six fixtures are mine. The score partly measures whether I guessed my own
+> difficulty correctly, not whether `read_page` works on the web.** The one real page scored
+> 4/4 — the real page was the easy one. Both readings of that are unflattering to the corpus,
+> and the Owner has accepted them as the condition for the next round rather than a patch now.
