@@ -84,3 +84,45 @@ describe('⛔ genuine same-container siblings are REPORTED, never resolved by pi
     assert.ok(amb.every((n) => !n.groupName), 'an unresolvable node is not given a misleading group')
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * THE SEAM MUST BE PROVEN TO ISOLATE ONE THING.
+ *
+ * `opts.group === false` once skipped the container resolution entirely. Ambiguity is
+ * DEFINED as 「a duplicate with no resolving container」, so the flat arm flagged 32 nodes
+ * ambiguous and carried 「do NOT choose between them」 — a different treatment wearing the
+ * word 「baseline」. Three A/B numbers were unreadable because of it.
+ *
+ * The first fix left a residue: flagging was keyed by NAME while resolution is by NODE, so a
+ * name with some resolvable instances still diverged — 153 flagged flat against 134 grouped.
+ *
+ * These tests are the proof. HR-17: the rule is not 「build measurement tools」, it is
+ * 「a seam must be PROVEN to isolate one thing, and the proof is not that you intended it to」.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('the A/B seam isolates grouping and nothing else', () => {
+  const wide = { maxNodes: 100000, maxChars: 1e9 }
+  for (const page of ['real-costco-search', 'real-mdn-css', 'real-wikipedia-costco']) {
+    test(`${page}: ambiguity is IDENTICAL in both arms`, () => {
+      const flat = readPage(fixture(page), { ...wide, group: false })
+      const grouped = readPage(fixture(page), wide)
+      const amb = (v) => v.nodes.filter((n) => n.ambiguous).map((n) => n.ref).sort()
+      assert.deepStrictEqual(amb(flat), amb(grouped),
+        'the flat arm must not be told anything the grouped arm is not')
+      assert.strictEqual(
+        /indistinguishable/.test(flat.text), /indistinguishable/.test(grouped.text),
+        'the do-not-choose warning must appear in both arms or neither')
+    })
+
+    test(`${page}: the arms show the SAME nodes and differ only by group lines`, () => {
+      const flat = readPage(fixture(page), { ...wide, group: false })
+      const grouped = readPage(fixture(page), wide)
+      assert.deepStrictEqual(
+        flat.nodes.map((n) => n.ref).sort(), grouped.nodes.map((n) => n.ref).sort(),
+        'at an unbounded budget both arms must show the same nodes')
+      assert.strictEqual(flat.groupCount, 0)
+      assert.ok(grouped.groupCount > 0)
+    })
+  }
+})

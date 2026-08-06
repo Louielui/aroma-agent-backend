@@ -101,3 +101,19 @@ describe('the probe is not the loop — a bare header must never survive', () =>
     }
   })
 })
+
+describe('looseFirst is a MEASURED DEAD END, kept only as a record', () => {
+  test('it is OFF by default', () => {
+    const out = budgetGroups([g('alpha', 2)], { maxNodes: 50 }, [{ ref: 'rz', role: 'link', name: 'Home' }])
+    assert.ok(out.text.indexOf('alpha') < out.text.indexOf('Home'), 'groups still lead by default')
+  })
+
+  test('with looseFirst, a large loose set starves the groups entirely', () => {
+    // This is the measurement, as a test: on the real pages it emitted ZERO groups, which
+    // discards the 21-button fix. Neither extreme works — the open question is ALLOCATION.
+    const loose = Array.from({ length: 40 }, (_, i) => ({ ref: 'rl' + i, role: 'link', name: 'Item ' + i }))
+    const out = budgetGroups([g('alpha', 3)], { maxNodes: 40, looseFirst: true }, loose)
+    assert.strictEqual(out.groups.length, 0, 'groups get nothing')
+    assert.ok(out.groupsDropped > 0, 'and the loss is counted, not silent')
+  })
+})

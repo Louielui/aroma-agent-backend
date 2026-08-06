@@ -61,6 +61,32 @@ function budgetGroups (groups, opts = {}, loose = []) {
   // about a number that is not the number of lines produced.
   const fits = (text, cost = 1) => nodes + cost <= maxNodes && chars + text.length + 1 <= maxChars - RESERVE
 
+  // ── ORDER: WHO GETS THE BUDGET FIRST ────────────────────────────────────────
+  // Measured 2026-08-06: emitting every group first took roughly HALF the node budget in
+  // header lines (82, 77 and 93 headers on the three real pages), and four UNIQUE-name
+  // targets that flat output carried were pushed out entirely. The model answered ABSENT
+  // about things that were genuinely absent — a 25-point regression on already-passing
+  // questions, with the cause being allocation, not comprehension.
+  //
+  // A unique target costs ONE line and is what a model most often needs. A group costs a
+  // header plus members. `looseFirst` serves the cheap, unambiguous nodes before spending
+  // what remains on disambiguation.
+  //
+  // ⚠ IT IS A SEAM, NOT A SETTING, and it is here to be A/B'd — the reasoning above is
+  // exactly the shape of 「應該會有幫助」 that lost a trial earlier the same day.
+  const emitLoose = () => {
+    for (const n of loose) {
+      const l = line(n)
+      if (!fits(l)) { looseDropped++; truncated = true; continue }
+      out.push(l)
+      emittedRefs.add(n.ref)
+      nodes++
+      chars += l.length + 1
+    }
+  }
+  let looseEmitted = false
+  if (opts.looseFirst) { emitLoose(); looseEmitted = true }
+
   for (const grp of groups) {
     const total = grp.total ?? grp.members.length
     // Probe: can this group afford its header AND at least one member?
@@ -98,14 +124,7 @@ function budgetGroups (groups, opts = {}, loose = []) {
     emitted.push({ ref: grp.ref, name: grp.name, shown: memberLines.length, total, partial })
   }
 
-  for (const n of loose) {
-    const l = line(n)
-    if (!fits(l)) { looseDropped++; truncated = true; continue }
-    out.push(l)
-    emittedRefs.add(n.ref)
-    nodes++
-    chars += l.length + 1
-  }
+  if (!looseEmitted) emitLoose()
 
   const parts = []
   if (groupsDropped) parts.push(`${groupsDropped} group${groupsDropped === 1 ? '' : 's'} not shown at all`)

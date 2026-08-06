@@ -107,3 +107,61 @@ untouched by ambiguity flagging, and independently confirmed above as *cut from 
    the fit probe said one member would fit and the loop then took none. **The unit tests
    passed; synthetic groups never hit it.** Found by reading real output, fixed, and now
    asserted as an invariant across an 8×6 sweep of budgets rather than as a scenario.
+
+---
+---
+
+# THE SEAM IS FIXED, AND THE ORDERING FIX IS MEASURED DEAD — 2026-08-06
+
+## 1. `FLAT` now means flat
+
+The seam moved two behaviours. Fixed in two places, because the first fix was incomplete:
+
+| | before | after |
+|---|---|---|
+| resolution skipped when grouping off | every duplicate 「unresolvable」, **32 nodes told 「do NOT choose」** | resolution ALWAYS runs; the seam only decides whether group *lines* are emitted |
+| flagging keyed by **name**, resolution by **node** | **153** flagged flat vs **134** grouped | flagged by node — identical in both arms |
+
+**Proven, not intended:** for three real pages, both arms at an unbounded budget must show the
+**same nodes, the same ambiguous flags, and the same warning text**, differing only in group
+lines. Those tests exist now and would have failed on the day. See HR-17's worked example.
+
+## 2. ⛔ 「Serve loose nodes first」 does not work — and it cost nothing to find out
+
+The proposed fix was A/B-ready. **Checked locally first, for free, and it is dead:**
+
+| page | FLAT | GROUPED | **LOOSE-FIRST** |
+|---|---|---|---|
+| `real-wikipedia-costco` | 154 nodes | 96 nodes + 82 groups | 151 nodes **+ 0 groups** |
+| `real-costco-search` | 182 nodes | 80 nodes + 77 groups | 175 nodes **+ 0 groups** |
+| `real-wikipedia-portal` | 159 nodes | 105 nodes + 93 groups | 152 nodes **+ 0 groups** |
+
+It restores **all four** lost targets — and emits **zero groups on every page**, so
+`Add to Cart` shown drops to **0** and the 21-button fix is gone entirely. **It is flat output
+with extra steps.**
+
+> ### Neither extreme works. Groups-first loses unique targets; loose-first loses every group.
+
+**No paid A/B was run**, because a local measurement answered it. That is the cheapest possible
+outcome and worth naming: **an A/B is for questions the code cannot answer about itself.**
+
+## 3. SO THE REAL QUESTION IS ALLOCATION, AND IT IS THE OWNER'S
+
+The fix is not an ordering. **It is a policy for splitting one budget between two goods that
+compete directly:**
+
+| | buys | costs |
+|---|---|---|
+| **coverage** — loose, unique nodes | one line each; most questions need exactly this | nothing else fits |
+| **disambiguation** — groups | the only way to reach one of 21 identical buttons | a header plus members, ~half the budget in practice |
+
+Candidates, none built:
+1. **A fixed split** (e.g. 60% coverage / 40% groups), tuned by A/B.
+2. **Bigger budget for structured output** — the budget was chosen for a flat list, and it has
+   never been re-derived since the output stopped being one.
+3. **Group only where the page is dense in duplicates** — Costco's 21 buttons matter; the
+   Wikipedia portal's 93 groups of citation links almost certainly do not.
+
+**I am not picking one.** Two 「應該會有幫助」 changes have now been measured this round: one lost
+its A/B, one died locally. **A third guess is not what this needs** — and (2) in particular is
+a change to what the model is asked to read, which is the Owner's call and not a tuning knob.

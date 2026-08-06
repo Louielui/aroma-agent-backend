@@ -504,6 +504,26 @@ fails loudly. A wrong grader produces a plausible percentage.
 4. **Read at least one PASS and one FAIL by hand every run.** Both bugs were within one
    minute's reading. Nobody reads the passes.
 
+## ⚠ THE COROLLARY — assert the INVARIANT, not the scenario
+
+**2026-08-06.** The group budgeter emitted `group "Panorama…" — 0 of 1 shown` on a real
+capture: a **bare header** — the exact thing its own header rule forbids, a claim that
+something exists with no way to reach it. The fit probe said one member would fit; the loop
+then took none.
+
+**Every unit test was green.** They used synthetic groups, whose arithmetic never reaches that
+state. **It was found by reading real output.**
+
+> ### The fix was not a test for that case. It was a SWEEP asserting the property.
+>
+> `maxChars ∈ [80…600] × maxNodes ∈ [1…9]` — 48 combinations — asserting **every emitted group
+> has at least one member**, rather than pinning the one budget that happened to break.
+
+**A scenario test proves a case; an invariant sweep proves a property.** Where a defect came
+out of arithmetic you did not anticipate, testing the case you just found is testing your
+imagination a second time — the same failure as writing a `StaticText` rule for what turned
+out to include `image + link`.
+
 ---
 
 # HR-16 — Our own transformation can MANUFACTURE an ambiguity the source does not have
@@ -651,6 +671,41 @@ candidates.push(...deduped)      // <-- pushes nothing. Every node gone.
 
 **A real bug, in code written that hour, that the whole suite passed over** — because nothing
 in the product ever takes that branch.
+
+## ⚠ WORKED EXAMPLE — HR-17 failed in the session it was written, and that is what the rule became
+
+**Owner, 2026-08-06: 「the rule is not 『build measurement tools』, it is 『a seam must be proven
+to isolate one thing, and the proof is not that you intended it to』.」**
+
+Hours after writing this rule I built a seam, `opts.group === false`, to A/B grouping. **It did
+not isolate grouping.**
+
+Ambiguity is **DEFINED** as 「a duplicate with no resolving container」. Turning grouping off
+skipped the resolution, so every duplicate became unresolvable, and the arm labelled **FLAT**
+carried 「⚠ indistinguishable from N others — **do NOT choose between them**」 on **32 nodes**.
+
+> ### The baseline arm was actively instructing the model not to answer.
+>
+> It failed three role-ambiguity questions it had passed **3/3** hours earlier, and three
+> numbers in the comparison were unreadable — not because measuring was hard, but because
+> **the seam moved two things while its name said one.**
+
+**And the first fix did not finish the job.** Flagging was keyed by NAME while resolution is by
+NODE, so a name with some resolvable instances still diverged: **153 flagged in the flat arm
+against 134 in the grouped arm, on the same page.** A seam bug with a seam bug inside it.
+
+### THE RULE, RESTATED
+
+> ## A seam must be PROVEN to isolate one thing. The proof is not that you intended it to.
+
+The proof is a test, and it is cheap: **run both arms at an unbounded budget and assert that
+everything except the one intended difference is identical** — same nodes, same flags, same
+warnings. That test now exists for three real pages, and it would have caught this on the day.
+
+**This is the second rule this week broken in the hour it was written** (HR-14 was the first).
+Not carelessness twice — it is the evidence for HR-13's mechanism, **a rule filed as a lesson
+does not get re-read, including by its author**, and it is why each of these now carries a
+mechanism instead of advice.
 
 ## THE RULE
 

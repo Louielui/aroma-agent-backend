@@ -315,13 +315,28 @@ function readPage (rawNodes, opts = {}) {
     nameCount.set(k, (nameCount.get(k) || 0) + 1)
   }
   const dupes = kept0.filter((c) => c.name && nameCount.get(c.role + "|" + c.name) > 1)
-  const resolved = opts.group === false ? new Map() : resolveContainers(dupes, byId)
+  // ⚠ THE SEAM MUST ISOLATE EXACTLY ONE THING, AND PROVING THAT IS NOT THE SAME AS
+  // INTENDING IT. This line used to read `opts.group === false ? new Map() : resolve(...)`.
+  // Ambiguity is DEFINED as a duplicate with no resolving container — so skipping the
+  // resolution made every duplicate unresolvable, and the "flat" arm of the A/B carried
+  // "do NOT choose between them" on 32 nodes. It was not a baseline; it was a different
+  // treatment. See HR-17's worked example.
+  //
+  // So the resolution ALWAYS runs — it is pure computation over the raw tree — and the seam
+  // controls only whether containers are EMITTED as group lines.
+  const resolved = resolveContainers(dupes, byId)
 
   // A duplicate with NO resolving ancestor is genuinely indistinguishable on the page.
   // It is FLAGGED, never merged away and never given a container that would imply it was
   // told apart. See HR-16 finding 2.
-  const ambiguousNames = new Set()
-  for (const c of dupes) if (!resolved.has(c.nodeId)) ambiguousNames.add(c.role + "|" + c.name)
+  // BY NODE, NOT BY NAME. Flagging by name was the seam bug's residue: where a name has some
+  // resolvable instances and some not, a name-keyed flag marks the resolvable ones too — and
+  // it marked them only in the flat arm, because the grouped arm had already moved them into
+  // groups. 153 flagged flat against 134 grouped, for the same page.
+  // A node is ambiguous iff IT is a duplicate and IT has no resolving container.
+  const ambiguousIds = new Set()
+  for (const c of dupes) if (!resolved.has(c.nodeId)) ambiguousIds.add(c.nodeId)
+  const dupCount = (c) => nameCount.get(c.role + '|' + c.name) || 1
 
   const groups = []
   const byContainer = new Map()
@@ -329,7 +344,8 @@ function readPage (rawNodes, opts = {}) {
   for (const c of kept0) {
     const r = resolved.get(c.nodeId)
     if (!r) continue
-    c.groupName = r.label
+    c.groupName = r.label             // metadata either way — identical in both arms
+    if (opts.group === false) continue // the ONLY difference: no group line is emitted
     const gid = r.containerNode.nodeId
     if (!byContainer.has(gid)) {
       const gref = r.containerNode.backendDOMNodeId
@@ -342,15 +358,15 @@ function readPage (rawNodes, opts = {}) {
   }
 
   const loose = kept0.filter((c) => !grouped.has(c.ref)).map((c) => {
-    if (c.name && ambiguousNames.has(c.role + "|" + c.name)) {
+    if (ambiguousIds.has(c.nodeId)) {
       c.ambiguous = true
-      const n = nameCount.get(c.role + "|" + c.name)
-      return { ...c, name: c.name + `" ⚠ indistinguishable from ${n - 1} other${n === 2 ? "" : "s"} on this page — do NOT choose between them"`.slice(0, 200) }
+      const n = dupCount(c)
+      return { ...c, name: c.name + ` ⚠ indistinguishable from ${n - 1} other${n === 2 ? '' : 's'} on this page — do NOT choose between them` }
     }
     return c
   })
 
-  const budget = budgetGroups(groups, { maxNodes, maxChars }, loose)
+  const budget = budgetGroups(groups, { maxNodes, maxChars, looseFirst: opts.looseFirst === true }, loose)
   const kept = kept0.filter((c) => budget.emittedRefs.has(c.ref))
 
   const refCollision = new Set(kept.map((n) => n.ref)).size !== kept.length
