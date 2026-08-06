@@ -730,3 +730,62 @@ happily while measuring nothing, because both copies would have been correct *se
 
 **And a seam is not a feature flag.** It defaults to the safe value, a test asserts that
 default, nothing in the runtime passes it, and its comment says it exists for measurement.
+
+---
+
+# HR-18 — Measure the BASELINE before designing for a limitation. A right answer to an unchecked question is the most expensive failure shape.
+
+**2026-08-06. The headline finding of the browser round — recorded above the seam bug, at the
+Owner's instruction, because it cost more.**
+
+## What happened
+
+I wrote that the flat `read_page` output gives a model 「**no containing product, no position,
+no grouping**」 to tell 21 identical `Add to Cart` buttons apart. It was recorded as a
+limitation and acted on: a design round, a measured containment study, a new frozen corpus,
+per-group truncation, an A/B.
+
+**The output was emitted in document order the whole time.** The product link sits on the line
+immediately above its own button. **「我對住一個按文件次序輸出嘅嘢，寫咗『冇位置』。」**
+
+Measured: **flat scores 100% on the very questions the round existed to make answerable**, and
+grouping costs **31 points** elsewhere.
+
+## ⚠ WHY THIS IS WORSE THAN A WRONG ANSWER
+
+**The fix WORKED. 4/4.**
+
+> ### With a clean measurement we would have shipped a working fix, for a problem that did not exist, at 31 points of cost — and the 100% would have read as proof.
+
+The only reason anyone looked was a contaminated A/B arm producing a gap that needed
+explaining. **A correct measurement of a correct fix would have closed the case.**
+
+> **Owner: 「not a wrong answer, a right answer to a question nobody checked.」**
+
+## Why the other rules do not cover it
+
+| rule | guards | why it missed |
+|---|---|---|
+| HR-12 | a measurement whose filter matches the claim | **there was no measurement** — the premise was asserted |
+| HR-15 | a grader nobody checked | the grader was correct |
+| HR-17 | a seam that moves two things | the seam accident *exposed* this; it did not cause it |
+
+**Every A/B compared two treatments. None asked whether the baseline already solved the
+problem — because the premise said it could not.**
+
+> ### We validate FIXES exhaustively and PREMISES not at all.
+
+## THE MECHANISM — two parts, both cheap
+
+**1. Before building for a limitation of our own output, PRINT THE OUTPUT AND READ IT.** Not
+re-derive it, not reason about what the code should emit — read the bytes a model receives.
+**The disproof here was four lines of text and cost nothing**, and it was available before the
+design document, before the corpus round, before roughly `$13` of trials.
+
+**2. Every problem statement gets a BASELINE MEASUREMENT before it gets a design.** The V3
+questions could have been written and run against flat output on day one; they would have
+scored 100% and the round would never have begun.
+
+> **A question with no gradeable answer today is a reason to MEASURE the baseline, not a
+> reason to assume it fails.** That assumption is what 「this cannot be tested against current
+> output」 quietly becomes.

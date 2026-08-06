@@ -345,7 +345,19 @@ function readPage (rawNodes, opts = {}) {
     const r = resolved.get(c.nodeId)
     if (!r) continue
     c.groupName = r.label             // metadata either way — identical in both arms
-    if (opts.group === false) continue // the ONLY difference: no group line is emitted
+    // ⛔ GROUPING IS OFF BY DEFAULT. Owner ruling 2026-08-06, on measurement:
+    //
+    //   FLAT     V2 87.5%   V3 100%
+    //   GROUPED  V2 56.3%   V3 100%
+    //
+    // It costs 31 points on the questions that already passed and buys NOTHING on the
+    // questions it was built for — because the flat list is emitted in DOCUMENT ORDER, so a
+    // product link already sits immediately above its own 「Add to Cart」. Proximity carried
+    // the association the whole time.
+    //
+    // The code stays because it is correct and tested. What is unproven is whether it EARNS
+    // ITS BUDGET. Do not turn this on without a measurement showing it does.
+    if (opts.group !== true) continue
     const gid = r.containerNode.nodeId
     if (!byContainer.has(gid)) {
       const gref = r.containerNode.backendDOMNodeId

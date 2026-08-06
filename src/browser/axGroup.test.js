@@ -14,7 +14,7 @@ const fixture = (n) => require(path.join(CORPUS_DIR, n + '.json')).nodes
 
 describe('the 21-button problem', () => {
   test('every Add to Cart is reachable by the product it belongs to', () => {
-    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9, group: true })
     const carts = out.nodes.filter((n) => n.name === 'Add to Cart')
     assert.strictEqual(carts.length, 21, 'all 21 still present — the page has 21')
     const containers = carts.map((c) => c.groupName)
@@ -23,14 +23,14 @@ describe('the 21-button problem', () => {
   })
 
   test('Bounty resolves to the Bounty button, and it is not the first on the page', () => {
-    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9, group: true })
     const bounty = out.nodes.filter((n) => n.name === 'Add to Cart' && /Bounty/.test(n.groupName || ''))
     assert.strictEqual(bounty.length, 1)
     assert.strictEqual(bounty[0].domId, 2747, 'the frozen key says 2747')
   })
 
   test('the serialized form nests members under their group', () => {
-    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9, group: true })
     const lines = out.text.split('\n')
     const gi = lines.findIndex((l) => /group "Bounty Plus/.test(l))
     assert.ok(gi >= 0, 'a group line exists')
@@ -38,14 +38,14 @@ describe('the 21-button problem', () => {
   })
 
   test('UNAMBIGUOUS nodes get no group — context is earned, never universal', () => {
-    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9, group: true })
     const solo = out.nodes.find((n) => n.name === 'Clear All Filters')
     assert.ok(solo)
     assert.strictEqual(solo.groupName, undefined, 'a unique name needs no context')
   })
 
   test('output nesting is at most ONE level, whatever the DOM depth', () => {
-    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-costco-search'), { maxNodes: 100000, maxChars: 1e9, group: true })
     for (const l of out.text.split('\n')) {
       if (!l.startsWith(' ')) continue
       assert.match(l, /^ {2}\[#/, 'no line is indented more than one level: ' + JSON.stringify(l.slice(0, 30)))
@@ -60,7 +60,7 @@ describe('⛔ genuine same-container siblings are REPORTED, never resolved by pi
       { nodeId: '2', parentId: '1', role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 2 },
       { nodeId: '3', parentId: '1', role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 3 }
     ]
-    const out = readPage(raw, { maxNodes: 100, maxChars: 1e6 })
+    const out = readPage(raw, { maxNodes: 100, maxChars: 1e6, group: true })
     const adds = out.nodes.filter((n) => n.name === 'Add')
     assert.strictEqual(adds.length, 2, 'BOTH survive — hiding one is the pruner lying')
   })
@@ -71,14 +71,14 @@ describe('⛔ genuine same-container siblings are REPORTED, never resolved by pi
       { nodeId: '2', parentId: '1', role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 2 },
       { nodeId: '3', parentId: '1', role: { value: 'button' }, name: { value: 'Add' }, backendDOMNodeId: 3 }
     ]
-    const out = readPage(raw, { maxNodes: 100, maxChars: 1e6 })
+    const out = readPage(raw, { maxNodes: 100, maxChars: 1e6, group: true })
     assert.ok(out.nodes.filter((n) => n.ambiguous).length === 2, 'both flagged ambiguous')
     assert.match(out.text, /indistinguishable/i,
       'a model must not be allowed to believe it chose correctly between them')
   })
 
   test('the real Wikipedia case is reported, not silently resolved', () => {
-    const out = readPage(fixture('real-wikipedia-costco'), { maxNodes: 100000, maxChars: 1e9 })
+    const out = readPage(fixture('real-wikipedia-costco'), { maxNodes: 100000, maxChars: 1e9, group: true })
     const amb = out.nodes.filter((n) => n.ambiguous)
     assert.ok(amb.length > 0, 'the depth-8 identical siblings measured earlier must surface')
     assert.ok(amb.every((n) => !n.groupName), 'an unresolvable node is not given a misleading group')
@@ -102,7 +102,7 @@ describe('⛔ genuine same-container siblings are REPORTED, never resolved by pi
  * ══════════════════════════════════════════════════════════════════════════════
  */
 describe('the A/B seam isolates grouping and nothing else', () => {
-  const wide = { maxNodes: 100000, maxChars: 1e9 }
+  const wide = { maxNodes: 100000, maxChars: 1e9, group: true }
   for (const page of ['real-costco-search', 'real-mdn-css', 'real-wikipedia-costco']) {
     test(`${page}: ambiguity is IDENTICAL in both arms`, () => {
       const flat = readPage(fixture(page), { ...wide, group: false })
@@ -125,4 +125,40 @@ describe('the A/B seam isolates grouping and nothing else', () => {
       assert.ok(grouped.groupCount > 0)
     })
   }
+})
+
+describe('grouping is OFF by default — Owner ruling on measurement, 2026-08-06', () => {
+  test('the default output has no group lines', () => {
+    const out = readPage(fixture('real-costco-search'))
+    assert.strictEqual(out.groupCount, 0)
+    assert.doesNotMatch(out.text, /^\[#r[0-9a-f]{8}\] group /m)
+  })
+
+  test('only an explicit group:true turns it on', () => {
+    for (const v of [undefined, false, null, 0, 1, 'true']) {
+      assert.strictEqual(readPage(fixture('real-costco-search'), { group: v }).groupCount, 0,
+        'value: ' + String(v))
+    }
+    assert.ok(readPage(fixture('real-costco-search'), { group: true }).groupCount > 0)
+  })
+
+  test('the default keeps the coverage grouping was costing', () => {
+    // The four targets that grouping cut, back where they belong.
+    const costco = readPage(fixture('real-costco-search'))
+    assert.ok(costco.nodes.some((n) => n.name === 'Clear All Filters'))
+    const wiki = readPage(fixture('real-wikipedia-costco'))
+    assert.ok(wiki.nodes.some((n) => n.name === 'Jump to content'))
+    assert.ok(wiki.nodes.some((n) => n.name === 'Main menu'))
+  })
+
+  test('document order is PRESERVED — it is what disambiguates, and it is load-bearing now', () => {
+    // 「我對住一個按文件次序輸出嘅嘢，寫咗『冇位置』。」 The product link must stay
+    // immediately above its own Add to Cart button, because that adjacency IS the answer.
+    const out = readPage(fixture('real-costco-search'))
+    const lines = out.text.split('\n')
+    const i = lines.findIndex((l) => /link "Bounty Plus Paper Towel/.test(l))
+    assert.ok(i >= 0, 'the Bounty link is shown')
+    assert.match(lines[i + 1], /button "Add to Cart"/,
+      'its cart button must be the very next line — this adjacency is now a tested property')
+  })
 })
