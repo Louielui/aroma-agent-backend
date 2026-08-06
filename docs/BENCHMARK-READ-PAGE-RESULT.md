@@ -254,3 +254,80 @@ hazard this corpus tests with n=1.
 > difficulty correctly, not whether `read_page` works on the web.** The one real page scored
 > 4/4 — the real page was the easy one. Both readings of that are unflattering to the corpus,
 > and the Owner has accepted them as the condition for the next round rather than a patch now.
+
+---
+---
+
+# RUN 3 — 2026-08-06, opaque refs. **87.5% / 100%. BAR NOT MET.**
+
+| | run 1 | run 2 | **run 3** | bar |
+|---|---|---|---|---|
+| targetsIdentified | 87.5% | 100% | **87.5% (7/8)** | 90% |
+| absentTargetRefusals | 100% | 100% | **100% (5/5)** | 100% |
+
+Cap `$2.50`, spent `$1.67`.
+
+## What the structural fix bought — and it is exactly what it was built for
+
+| failure class | before | now |
+|---|---|---|
+| `REF 634` — extrapolated to reach an unseen element | possible | **unreachable.** No sequence to extrapolate |
+| `REF 250` — the item number answered as a ref | **passes every check we have** | **malformed.** Does not parse; `resolveRef` refuses it |
+| `huge-list` truncation question | the original failure | **correctly refused** |
+
+## ⚠ AND WHAT IT COST — measured, not suspected
+
+The lost point: on `modal-over-content`, asked for the **`Continue` button**, the model
+answered the ref of **`StaticText "Continue"`**. Same accessible name, different role, both
+printed, three lines apart. Run 2 got this right with numeric refs.
+
+**n=1 against n=1 is exactly what HR-14 forbids concluding from.** So it was A/B'd — same
+question, same nodes, same session, interleaved, ten runs per arm, the *only* difference being
+`[#12]` versus `[#r1d194297]`:
+
+| | correct | picked the `StaticText` decoy |
+|---|---|---|
+| **NUMERIC refs** | **10/10** | 0 |
+| **OPAQUE refs** | **8/10** | **2** |
+
+> ## The opaque ref is 20 points worse at telling two same-named lines apart — on a NINE-LINE page.
+
+Plausible mechanism: `[#12]` binds to its line at a glance; a nine-character hash makes the
+ref↔line association real work, and the model sometimes carries back the neighbouring line
+with the same name.
+
+### This is a TRADE, and it is now measured rather than assumed
+
+**Bought:** two failure classes that pass every other check, gone structurally.
+**Paid:** a measurable loss of discriminability between similarly-named lines.
+
+**It is not an argument to revert.** The two classes it kills are the ones nothing else
+catches — `REF 250` was *present, printed and wrong*, and no absence check will ever see it.
+A 20-point discriminability cost on a decoy pair is a different and more visible problem.
+
+## THE REAL DEFECT THE A/B EXPOSED — and it is not the ref format
+
+`StaticText "Continue"` **is the button's own label.** It is not a separate thing a person
+could point at; it is the text *inside* the control on the line above.
+
+> ### The pruner is emitting a decoy that the page does not actually contain.
+
+So the candidate fix is not a different ref format — it is **dropping a `StaticText` whose
+name exactly matches an interactive element's name**, because it duplicates that element the
+way `InlineTextBox` duplicates `StaticText`. Look at the modal page: `Behind Modal`, `Close`
+and `Continue` each appear **twice**, once as a control and once as its own label.
+
+**NOT BUILT. It is another 「it should help」, and this round has already shown one of those
+scoring worse in an A/B.** It is written down as the proposal it is, for the Owner to rule on,
+with the measurement that motivates it attached — not applied because it sounds right.
+
+## Cost so far, all caps held
+
+| | |
+|---|---|
+| run 1 | `$2.05` of `$3.00` |
+| run 2 | `$1.62` of `$3.00` |
+| notice A/B | `$3.10` of `$3.50` |
+| run 3 | `$1.67` of `$2.50` |
+| ref-format A/B | `$2.25` of `$2.50` |
+| **total** | **`$10.69`** |
