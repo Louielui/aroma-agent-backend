@@ -326,3 +326,59 @@ mechanical applies it:
 **A rule that relies on being remembered will be forgotten by the person who wrote it, within
 a day.** That is not a criticism of the rule — it is the measurement of what rules are worth,
 and the argument for spending the effort on the mechanism instead.
+
+---
+
+## HR-13 — Absence does not announce itself
+
+**Owner instruction, 2026-08-06: 「Record the DID_NOT_RUN finding prominently.
+『冇嗰一行本身就係訊號』 is the temporal version of count:43 and it will be forgotten
+precisely because absence does not announce itself.」**
+
+> ## The thing that did not run cannot write the row saying it did not run.
+
+A scheduled task that never fires — process down, trigger disabled, machine asleep — leaves
+**no record at all**. A screen reading its own table then shows the last successful run and
+**looks calm**. Nothing is false on that screen. Everything on it is stale.
+
+### Why this is the same defect as `count: 43`
+
+| | the filtered answer | the absent answer |
+|---|---|---|
+| what happened | rows removed by a predicate | no row was ever written |
+| what it looks like | a complete count | a healthy history |
+| why nobody catches it | the response cannot say what it dropped | **there is no response to inspect** |
+
+The second is worse: with `count: 43` there was at least an artefact to interrogate.
+
+### The rule
+
+**Whenever something is expected to happen on its own, store the expectation, not only the
+result.** `nextRunAt` written on every run is what lets a reader compute
+`now > nextRunAt + grace → DID_NOT_RUN`. Without it, a scheduler that silently stopped is
+indistinguishable from one with nothing to report.
+
+Generalised, because this is not only about schedulers:
+
+> **A system that reports only what happened cannot report what failed to happen.
+> Something must hold the expectation, and something must compare against it.**
+
+Instances already live in this project:
+- a scheduled run that never fires (this rule);
+- a Drive folder that returns zero because it was never visible — 64 files reading as empty;
+- a deploy whose safety tag was never pushed, so the rollback point's absence is invisible
+  (`DEFECT-002`);
+- a regression script that is missing, and the deploy exits `0` (`DEFECT-004`).
+
+**All four are the same shape**: nothing went wrong loudly, so nothing was recorded, so the
+record looks fine.
+
+### And the reason this rule is written the way it is
+
+**It will be forgotten.** HR-12 was written one evening and its own defect recurred the next
+morning, in this project's own work, because a rule filed as a lesson is not a thing anyone
+re-reads. So HR-13 is written with its mechanism attached rather than as advice:
+
+> **The rule is not 「remember to check for absence」. The rule is 「store `nextRunAt`」** — a
+> field, in a record, that makes the absence computable by something that is not a person
+> remembering.
