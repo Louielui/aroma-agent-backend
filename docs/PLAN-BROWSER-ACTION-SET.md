@@ -198,3 +198,85 @@ operation: N% done」 across both is a number that hides the hard half behind th
 other four are small once a ref means something; **they are meaningless before it.**
 
 **Nothing is built. No dependency has been added.**
+
+---
+
+# WHY A 13 MB DEPENDENCY EXISTS IN A REPO WITH A NO-NEW-DEPENDENCY RULE
+
+<!-- Owner: 「Record the reasoning, not just the ruling. The next person will see a 13 MB
+     dependency in a repo with a no-new-dependency rule and want to remove it.」 -->
+
+> ## READ THIS BEFORE REMOVING `playwright-core`.
+
+**The rule was not waived. It was weighed, and the argument that won was against my own first
+proposal.**
+
+**The purity option was real.** Node 24 has a global `WebSocket`, and
+`Accessibility.getFullAXTree` is one CDP call. Hand-rolling the transport genuinely adds zero
+dependencies. **The transport is a weekend.**
+
+> ### What is not a weekend is `click`.
+>
+> A correct click scrolls the element into view, confirms it is not covered, confirms it has
+> stopped moving, resolves the right frame, computes the hit point, and dispatches trusted
+> events in the right order. **Every one of those is a place a hand-rolled version is right
+> on the sites you tested and wrong on the rest.**
+
+That is this project's own recurring failure — right on the sample, wrong on the population —
+and it is the failure we have spent a week removing everywhere else.
+
+> **13.4 MB of one reviewable thing beats a year of our own subtle wrongness.**
+
+**Measured, not recalled:** `playwright-core@1.62.1` has **no `dependencies` field** (zero
+transitive tree) and **no `scripts` field** (no postinstall, nothing downloads a browser). It
+connects to an existing Chrome rather than shipping one. `puppeteer-core` brings six direct
+dependencies including a browser downloader.
+
+**If you are removing it, you are choosing to write click yourself. That is the decision —
+not 「reduce dependencies」.**
+
+---
+
+# BUILT 2026-08-06 — navigate + read_page. The other four are NOT built.
+
+## The corpus was frozen BEFORE the pruner was written
+
+`test/fixtures/axcorpus/` — **6 pages and 13 questions, 5 of them absent-target (38%)**,
+committed before a line of `axTree.js` existed.
+
+| fixture | provenance | raw AX nodes |
+|---|---|---|
+| `costco-search` | **real HTML, rendered locally** | **890** (419 ignored, 91 InlineTextBox, 184 interactive) |
+| `huge-list` | authored — bounding | 4004 |
+| `login-form` · `modal-over-content` · `iframe-nested` · `unnamed-only` | authored — one hazard each | 23 · 19 · 10 · 7 |
+
+### ⚠ THE CORPUS IS WEAKER THAN THE PLAN ASKED FOR, and that is a finding not a footnote
+
+- **Only ONE fixture is a real page.** The plan asked for ~10 including Canva, an IG composer
+  and a supplier portal. Those need a login, and **Chrome in this environment cannot resolve
+  DNS** — `example.com` failed with `ERR_NAME_NOT_RESOLVED` while `node` reached the same host
+  fine. The Costco page exists only because node fetched the HTML and Chrome rendered it
+  locally.
+- **JS-loaded content is therefore ABSENT** from that fixture. The real page's results are
+  rendered client-side; what is frozen is the server HTML.
+- **Five fixtures are authored by me**, so they model *my* idea of hard.
+
+**This is recorded rather than fixed, per the freeze rule** — 「a corpus that grows while you
+work grows toward what you already pass」. Filling the gap is a future round on an
+unrestricted network, not a mid-build addition.
+
+## And the acceptance benchmark has NOT been run
+
+The 90% / 100% bar needs a MODEL reading the serialized tree and naming refs. **That is paid
+calls, and it has not happened.** What is green today is the deterministic layer: pruning,
+refs, bounding, truncation-stated. **The bar remains unmet, not met.**
+
+## A correction to this document's own dependency argument
+
+I cited `page.accessibility.snapshot()` as a reason to choose `playwright-core`. **That API
+does not exist in 1.62.1** — it was removed. Measured: `p.accessibility` is `undefined`.
+
+The capability is still reachable through `context.newCDPSession(page)` and
+`Accessibility.getFullAXTree`, which is what is used — and arguably better, since we prune the
+raw tree ourselves rather than accepting someone else's pruning. **But the reason I gave was
+wrong, and the argument that actually carries the decision is `click`, not the snapshot API.**

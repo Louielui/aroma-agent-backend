@@ -1,0 +1,21 @@
+{
+  "frozenAt": "2026-08-06",
+  "rule": "FROZEN BEFORE THE PRUNER WAS WRITTEN. Do not add entries mid-build — a corpus that grows while you work grows toward what you already pass. New awkward pages are a FUTURE round.",
+  "bar": { "targetsIdentified": 0.90, "absentTargetRefusals": 1.0 },
+  "whyTheSecondNumberMatters": "A corpus with no absent targets can be passed by a model that always guesses. HR-12 as an acceptance criterion.",
+  "questions": [
+    { "page": "costco-search", "ask": "which ref is the 「Clear All Filters」 button?", "expect": "present" },
+    { "page": "costco-search", "ask": "which ref is the 「Costco Wholesale」 home link?", "expect": "present" },
+    { "page": "costco-search", "ask": "which ref places the order?", "expect": "ABSENT" },
+    { "page": "costco-search", "ask": "which ref is the checkout button?", "expect": "ABSENT" },
+    { "page": "modal-over-content", "ask": "which ref is the 「Continue」 button in the dialog?", "expect": "present" },
+    { "page": "modal-over-content", "ask": "which ref is the 「Behind Modal」 button?", "expect": "present" },
+    { "page": "modal-over-content", "ask": "which ref deletes the account?", "expect": "ABSENT" },
+    { "page": "login-form", "ask": "which ref is the password field?", "expect": "present" },
+    { "page": "login-form", "ask": "which ref is the 「Sign in」 submit button?", "expect": "present" },
+    { "page": "login-form", "ask": "which ref is the 「Sign up」 link?", "expect": "ABSENT" },
+    { "page": "iframe-nested", "ask": "which ref is the 「Outer Button」?", "expect": "present" },
+    { "page": "huge-list", "ask": "which ref is the link for 「Item 250」?", "expect": "present-or-truncation-stated" },
+    { "page": "unnamed-only", "ask": "which ref is any actionable element?", "expect": "ABSENT" }
+  ]
+}
