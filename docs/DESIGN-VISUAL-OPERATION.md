@@ -318,3 +318,121 @@ read whether the tool was available or refused. Cheap, read-only, and decisive.
   to the larger estimate: building the action set.
 
 **Nothing beyond this is designed. Nothing was built.**
+
+---
+
+# THE EXPERIMENT — RUN 2026-08-06. Answer: NOT AVAILABLE.
+
+**Owner-authorised, one paid call. Read-only goal, no fallback possible.**
+
+## What was run
+
+```
+claude.exe -p "Call the tool named mcp__claude-in-chrome__tabs_context_mcp and report its
+exact output verbatim. If that tool is NOT available to you, reply with exactly the single
+token TOOL_NOT_AVAILABLE and nothing else. Do not use any other tool, do not use WebFetch,
+do not guess, do not describe what the tool would do."
+  --allowedTools "mcp__claude-in-chrome__tabs_context_mcp"
+  --output-format json
+```
+
+Scoped so 「it worked」 could not be produced by a fallback: **exactly one tool named**, every
+substitute explicitly forbidden, and the task is to call that tool — not to achieve something
+a different tool could also achieve.
+
+## What the CLI actually said — verbatim
+
+```json
+"result": "TOOL_NOT_AVAILABLE"
+"permission_denials": []
+"num_turns": 1
+"is_error": false
+"subtype": "success"
+"total_cost_usd": 0.10613649999999998
+```
+
+**`permission_denials: []` is the load-bearing field.** The tool was not *refused by a gate*.
+It was **absent**. Those are different outcomes and only one of them could be changed by a
+permission setting.
+
+## THE POSITIVE CONTROL — free, and it agrees
+
+A negative with no positive control is not a measurement (HR-12). `claude mcp list` costs no
+model call and enumerates what the CLI can actually see:
+
+```
+claude.ai Microsoft 365:    https://microsoft365.mcp.claude.com/mcp   - ! Needs authentication
+claude.ai Google Calendar:  https://calendarmcp.googleapis.com/mcp/v1 - ✔ Connected
+claude.ai Gmail:            https://gmailmcp.googleapis.com/mcp/v1    - ✔ Connected
+claude.ai Google Drive:     https://drivemcp.googleapis.com/mcp/v1    - ✔ Connected
+
+grep -ic "chrome|browser"  →  0
+```
+
+**The command demonstrably works** — it listed four servers and distinguished a connected one
+from one needing authentication. So an empty result for a browser is a **real absence**, not a
+broken command. Two independent methods, one paid and one free, agree.
+
+## THE ANSWER, and what it costs
+
+> ## A headless `claude -p` subprocess has NO browser tools. The indirect path does not exist today.
+
+Per §1, that means **「adopt a driver」 is not available on this machine**, and the estimate
+reverts to the larger one: building the action set. **The months-apart question is settled in
+the direction of months.**
+
+**Not disproven, and worth stating precisely:** this measures *this machine, this CLI, today*.
+It does not establish that no such interface exists anywhere — only that there is none here to
+build on.
+
+---
+
+# ⚠ THE MORE IMPORTANT HALF — a fence made of absence
+
+**Owner ruling, recorded prominently at his instruction.**
+
+```js
+// src/agent/agentBridgeWorker.js:39
+function buildAllowedTools () { return ['Read', 'Edit', 'Write'] }
+```
+
+> ## That line is a real fence today, and it is a fence made of ABSENCE rather than PROHIBITION.
+>
+> The bridge cannot drive a browser because **the capability was never handed to it** — not
+> because a rule forbids it.
+
+## The ruling
+
+> **If visual operation is ever admitted, the grant goes in the SEALED ORDER, per dispatch.
+> NEVER as a widened default.**
+>
+> A default would remove the fence from **every** dispatch — including the ones nobody
+> reviewed.
+
+The experiment above does not weaken this. It postpones the temptation; it does not remove
+it. The day a browser tool becomes reachable, the cheapest edit will be to add one string to
+that array, and it will work immediately.
+
+## THE FIFTH INSTANCE THIS WEEK — and why it keeps happening
+
+| # | the mechanism | how it degrades |
+|---|---|---|
+| 1 | **the remote** | no origin → `push` impossible. Add an origin → `push` is a rule |
+| 2 | **the browser** | no payment method → cannot spend. Log in → chooses not to click |
+| 3 | **typed EXECUTE** | a sealed order with a nonce → a click that can be lost in transit |
+| 4 | **`pnpm install *`** | lockfile-driven restore → a wildcard that admits `install <package>` |
+| 5 | **`buildAllowedTools()`** | a capability never granted → **one string in an array** |
+
+> ### It keeps appearing because THE DEGRADED FORM IS ALWAYS THE CHEAPER EDIT.
+>
+> Adding an origin is one command. Logging in is one form. Making EXECUTE a button is the
+> obvious UI. A wildcard is shorter than four enumerated scripts. **Adding a string to an
+> array is one line.**
+>
+> The structural form always costs more: a clone to build, a profile to construct, a nonce to
+> carry, four entries to type, a per-order grant to thread through. **Nobody chooses the
+> degraded form because they prefer it. They choose it because it is Tuesday and it is one
+> line.**
+
+That is why it must be caught in review rather than in policy: **a policy is also one line,
+and it loses to the cheaper edit every time.**
