@@ -1,0 +1,18 @@
+{
+ "frozenAt": "2026-08-06",
+ "rule": "FROZEN BEFORE click WAS BUILT. Written from the measured baseline in docs/BASELINE-CLICK.md, not from what the implementation turns out to do. Do not edit to match the build.",
+ "whatThePlaybookAlreadyHandles": "scroll-into-view, covered, moving, disabled, iframes, trusted events — measured, and NOT re-implemented. click is an adapter, not a verb built from nothing.",
+ "criteria": [
+  { "id": "C1", "kind": "resolution", "must": "a ref from read_page resolves to exactly the element read_page named — verified by its accessible name, not by position" },
+  { "id": "C2", "kind": "staleness", "must": "a ref whose element left the DOM REFUSES. It must never act on a detached node, and never report success." },
+  { "id": "C3", "kind": "force-absent", "must": "there is no way to pass force. Not a discouraged option — structurally absent, like headless. Measured: force:true on a covered button returns success and clicks nothing." },
+  { "id": "C4", "kind": "refusal-reason", "must": "every refusal states WHICH reason — covered / not stable / disabled / gone / not found. An opaque timeout is not a report." },
+  { "id": "C5", "kind": "covered", "must": "a covered element is REFUSED, never clicked through" },
+  { "id": "C6", "kind": "allowlist", "must": "click obeys the same sealed order as navigate: an element on an origin the order did not name is a HALT, not an error to retry" },
+  { "id": "C7", "kind": "no-submit", "must": "there is no submit verb and no form submission path, even when the last click is obviously harmless" },
+  { "id": "C8", "kind": "audit", "must": "the record carries role + accessible name + the ref, and NEVER coordinates" },
+  { "id": "C9", "kind": "one-action", "must": "one call clicks at most one element. No retry loop, no fallback selector, no 'try the next match'." }
+ ],
+ "acceptanceBar": "C1-C9 all green as tests, PLUS a live headed probe against the frozen local hazard page showing covered/moving/disabled all REFUSED WITH A STATED REASON.",
+ "notAcceptance": "A model-facing benchmark is NOT part of this. click takes a ref it is given; choosing the ref is read_page's job and was measured at 30/30. Adding a model to this loop would measure read_page again."
+}
