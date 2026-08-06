@@ -569,3 +569,60 @@ recurs in a shape nobody grepped for.
 
 **All three are our own transformation changing the meaning of the data while preserving every
 individual value.**
+
+## The three findings the Owner ruled worth keeping from this round
+
+### 1. `image + link` is what makes NAME ECHO a principle rather than a StaticText rule
+
+**Owner: 「I would have accepted a StaticText fix and been wrong.」**
+
+The bug presented as `StaticText "Continue"` beside `button "Continue"`, and the obvious fix is
+a rule about `StaticText`. The corpus audit found **five role combinations** and 34% of
+surviving nodes in mixed groups — **including `image + link`**, the logo image inside the logo
+link, which no `StaticText` rule would ever have touched.
+
+> **The measurement is what turned a fix into a principle.** Had the audit not been run, the
+> rule would have been written in terms of the symptom, passed its tests, and left the same
+> defect live in a shape nobody would grep for.
+
+**So the prune keys on INTERACTIVITY, not on a role name** — the property that actually
+defines the class.
+
+### 2. ⛔ AN INTERACTIVE NODE IS NEVER PRUNED. This line will be tempting to cross.
+
+**Owner: 「two real Add buttons are the page's own ambiguity, and hiding one is the pruner
+lying. That line will be tempting to cross when the 21-button problem gets hard.」**
+
+The temptation is concrete and it is coming: the live Costco page has **21 buttons all named
+`Add to Cart`**, and the cheapest way to make that output look clean is to emit one.
+
+> ### That is not simplification. It is the pruner reporting a page that does not exist.
+>
+> A manufactured duplicate (the echo) is OURS to remove. A real duplicate is the PAGE'S, and
+> removing it is the same class of error as `count: 43` — a transformation that changes the
+> meaning while every surviving value stays true.
+
+**The rule: ambiguity that exists on the page must reach the model as ambiguity.** The fix for
+21 identical buttons is to give them *distinguishing context*, never to give them *fewer
+entries*.
+
+### 3. A measurement instrument found a bug the feature tests could not — for the second time this round
+
+**Owner: 「That is the second time this round a measurement instrument found something the
+feature tests could not.」**
+
+| | what it found | what the feature tests said |
+|---|---|---|
+| the benchmark grader | the model answering a ref that was not in its input | all green |
+| the A/B seam test | `candidates.length = 0` emptying the array the unpruned branch had **aliased** — every node vanished | all green |
+
+The second one is a real bug in shipped-that-hour code, and **the only reason it was reachable
+was that a measurement needed the feature turned off.** Nothing in the product ever calls that
+path.
+
+> ### Building the instrument exercised the code in a way using the code does not.
+>
+> This is not an argument for more unit tests. It is an argument that **an A/B seam, a grader,
+> or an audit script is itself a test of a kind the suite does not contain** — and that when
+> one is built, its findings about our own code are worth as much as its findings about the
+> subject.
