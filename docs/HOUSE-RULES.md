@@ -789,3 +789,105 @@ scored 100% and the round would never have begun.
 > **A question with no gradeable answer today is a reason to MEASURE the baseline, not a
 > reason to assume it fails.** That assumption is what 「this cannot be tested against current
 > output」 quietly becomes.
+
+---
+
+# HR-19 — The convenience flag that returns success and does nothing. It will appear again.
+
+**Owner, 2026-08-06: 「A library flag that returns success while doing nothing is the exact
+failure shape we have spent a week removing, and it arrived as a convenience. Note that it
+will appear again — every browser library has one, and the next person will find the same flag
+and the same reason to use it.」**
+
+## Measured, twice, in two different verbs
+
+| call | result |
+|---|---|
+| `click(covered, { force: true })` | **returns success. The button is never clicked** — the overlay eats the event |
+| `fill(readonly, { force: true })` | **returns success. The field still reads `"read only"`** |
+
+**No error. No exception. No warning.** In both cases the very next line of our code would
+have written 「clicked」 or 「typed」 into the audit record, truthfully reporting a call that
+returned normally and did nothing.
+
+## Why it exists, and why that is the danger
+
+`force` skips actionability. It exists because the checks are sometimes wrong — a element that
+is technically covered by a transparent overlay a user can click through, a field a framework
+marks readonly while accepting input. **Those are real cases, and that is exactly why someone
+will reach for it.**
+
+> ### The flag is not a bug. It is a documented escape hatch from the checks that make every refusal in this system trustworthy.
+>
+> And the moment it is used, **every refusal we report becomes unreliable**, because the
+> reader cannot tell which calls were checked.
+
+## THE MECHANISM
+
+> ## Structurally absent, not discouraged. Passing it THROWS.
+
+Like `headless` in `launch.js`: not a validated option with a warning, **no parameter to set.**
+`click.js` and `type.js` each throw on `'force' in target`, and a test asserts it.
+
+## ⚠ AND IT WILL APPEAR AGAIN — this is the part to keep
+
+Every browser automation library has this flag, under some name: `force`, `noWaitAfter`,
+`dispatchEvent`, `evaluate(el => el.click())`. **The next person will meet a page where a
+correct refusal is inconvenient, will find the flag, and will have a genuinely good reason.**
+
+So the rule is not 「do not use `force`」 — that is advice, and advice loses to a deadline.
+
+> ### The rule is: any option that SKIPS A CHECK must be absent from our surface, and the reason must be recorded where the person reaching for it will read it.
+>
+> That reason, in one line: **it returns success while doing nothing, and we measured it in
+> two separate verbs on the same afternoon.**
+
+---
+
+# HR-20 — Freeze the acceptance BEFORE the build. Seventeen green unit tests and a live run that returned UNKNOWN three times.
+
+**Owner, 2026-08-06: 「The two acceptance catches are the argument for freezing acceptance
+before the build, and I want them stated that way. Not 『acceptance is good practice』.」**
+
+`ACCEPTANCE-CLICK.json` was frozen before `click.js` existed. Its bar demanded **「C1–C9 green
+as tests, PLUS a live headed probe showing covered / moving / disabled REFUSED WITH A STATED
+REASON」**. That second clause looked redundant when it was written. It caught two defects that
+the tests could not.
+
+## Catch 1 — a safeguard that could never fire
+
+`REFUSAL.UNSTABLE` was **unreachable in production.** The in-page probe returned a hardcoded
+`stable: true`; its unit test passed because the fake returned `false`.
+
+**A branch that reads as a safety check and can never trigger** — the thing this project
+refused to stub in `DESIGN-DISPATCH-PATH` for exactly this reason — **inside the file whose
+purpose is explaining why a click was refused.**
+
+## Catch 2 — seventeen green tests, three UNKNOWNs
+
+The live run then came back:
+
+```
+REFUSED  REFUSED_REASON_UNKNOWN   disabled
+REFUSED  REFUSED_REASON_UNKNOWN   moving
+REFUSED  REFUSED_REASON_UNKNOWN   covered
+```
+
+**All 17 unit tests were green.** The probe was passed to `page.evaluate` as a **string**, and
+the real `page.evaluate` does not bind arguments to a string. **The fake accepted what the real
+thing rejects.**
+
+> ## The feature was, in the only way that matters, entirely broken — and every test agreed it worked.
+
+## THE RULE
+
+> ### Acceptance is frozen before the build, and it names a check the unit tests structurally cannot perform.
+>
+> Usually that means **one live run against the real dependency.** Not because live tests are
+> better, but because a fake is written by the same person, at the same time, with the same
+> assumptions — and it will agree with them.
+
+**Frozen before** matters as much as **live**: an acceptance bar written after the build is a
+description of what was built. This one was written from a measured baseline, before a line of
+the implementation existed, and it demanded something inconvenient — which is why it was still
+demanding it when the implementation turned out to be wrong.
