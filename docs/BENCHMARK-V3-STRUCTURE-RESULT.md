@@ -165,3 +165,69 @@ Candidates, none built:
 **I am not picking one.** Two 「應該會有幫助」 changes have now been measured this round: one lost
 its A/B, one died locally. **A third guess is not what this needs** — and (2) in particular is
 a change to what the model is asked to read, which is the Owner's call and not a tuning knob.
+
+---
+---
+
+# ⛔ THE CLEAN A/B INVERTS THE PREMISE OF THIS ENTIRE ROUND
+
+Re-run with the fixed seam. Cap `$7.00`, spent `$6.25`.
+
+| | V2 — already passing | V3 — the 21-button questions |
+|---|---|---|
+| **FLAT** | **87.5%** (14/16) | **100%** (4/4) |
+| **GROUPED** | **56.3%** (9/16) | **100%** (4/4) |
+
+## Two things changed once `FLAT` meant flat
+
+**1. The regression is WORSE than reported: 31 points, not 25.** The contaminated baseline was
+81.3%; the real one is 87.5%. **I under-reported the damage**, because the arm I compared
+against had been handicapped by my own seam.
+
+**2. And this is the finding: FLAT scores 100% on V3 too.**
+
+> ## Flat output already answers the 21-button questions. Grouping buys NOTHING there and costs 31 points.
+
+### Why — and it was visible in the output the whole time
+
+```
+[#r8314f3ba] link "Bounty Plus Paper Towel, 12 x 91 Sheets"
+[#rd412c753] button "Add to Cart"
+[#r68ad4dab] link "Scotties Premium Facial Tissue, 21-pack"
+```
+
+**The flat list preserves document order, so the product link sits immediately above its own
+Add to Cart button.** Proximity already carries the association, and the model reads it.
+
+**This is not the model guessing 「the first one」** — the frozen key deliberately included
+Kirkland, the *first* product, precisely so that always-pick-first would score 1/3 rather than
+0/3. Flat answered Bounty and Scott correctly too, neither of which is first.
+
+## What I got wrong, plainly
+
+**The premise was 「the flat serialization gives a model NOTHING to tell them apart — no
+containing product, no position, no grouping」.** That was stated as a limitation and acted on.
+
+> ### It was wrong. The flat serialization gives a model POSITION, and position was enough.
+>
+> I had written 「no position」 about an output that is emitted in document order.
+
+## ⚠ What this does NOT establish
+
+**V3 is n=3 real container questions** (the fourth is an ABSENT control). **A 4/4 at n=3 is
+exactly the thin evidence this round has twice been burned by** — the 1-in-4 that was really
+1-in-14, and the single clean run that the A/B then contradicted.
+
+**It is enough to stop grouping being the default. It is not enough to conclude that
+containers are never needed** — proximity will fail wherever the DOM order does not put the
+label beside the control, and no corpus page tests that yet.
+
+## RECOMMENDATION — and the ruling is the Owner's
+
+1. **Grouping OFF by default.** It costs 31 measured points and buys nothing measured.
+2. **Repeat V3 flat-only, ~10 runs per question** (~$4.50) before concluding proximity is
+   reliable. n=3 is not a finding, it is a prompt to measure.
+3. **Keep the code.** The container resolution, the per-group counts and the ambiguity
+   reporting are all correct and tested; what is unproven is that they are *worth their
+   budget*. The allocation question is now much weaker — you do not need to split a budget
+   for a benefit you have not shown exists.
