@@ -409,14 +409,46 @@ the same question three more times and it answers correctly three times. **Rough
 | the invented ref | 1 in 4 |
 | the suite reporting `fail 4` once and `fail 3` on re-run | **and the fourth never named itself** |
 
+## ⚠ WORKED EXAMPLE — this rule was broken by its own author, within the hour
+
+**Not a separate note. It belongs here, because it is the strongest evidence the rule needs a
+mechanism rather than a filing.**
+
+Writing this page, I reported the invented ref as **「1 in 4」**. That came from **one event in
+four attempts.** I then wrote, three paragraphs down, that a trial size must be set from the
+observed rate — and had just set a rate from `n=4`.
+
+**The A/B trial that followed put 14 old-notice attempts on record. The real figure is
+1 in 14 ≈ 7%.**
+
+| | |
+|---|---|
+| what I claimed | a 25% invention rate, stated as a finding |
+| what the evidence supported | one event, in four |
+| how much the number moved | **more than 3×**, and it was the number the whole fix was aimed at |
+
+> ### And the consequence was not academic — it chose the wrong fix.
+>
+> A 25% rate reads as 「the notice is failing often」. A 7% rate reads as 「this barely
+> reproduces, so a wording change cannot be evaluated by wording-change-sized trials」. **The
+> first number justified rewriting the notice. The second says the rewrite was never
+> measurable in the first place** — and the A/B then found the rewrite scored *worse*
+> (9/10 against the old notice's 10/10) and introduced a new failure mode.
+
+**Owner: 「You broke HR-14 in the hour you wrote it, and you caught it yourself. That is the
+strongest evidence yet for HR-13's point — a rule filed as a lesson does not get re-read,
+including by its author.」**
+
 ## THE MECHANISM, not the advice
 
-HR-13's lesson applies to this rule too: a rule filed as advice is not re-read. So:
+HR-13's lesson applies to this rule too, and the worked example above is the proof: a rule
+filed as advice is not re-read, **including by the person who just wrote it.** So:
 
 > ### A fix for an intermittent defect is not evaluated by running it once. The trial size is set from the OBSERVED RATE, before the fix is written.
 >
-> A 1-in-4 defect needs ~10 runs per arm to distinguish 「fixed」 from 「lucky」. **One green run
-> after a change is 0/1, and 0/1 is not evidence.**
+> **And a rate is not a rate at n=4.** One event in four attempts is one event; it licenses a
+> trial, not a number. A ~7% defect needs tens of runs per arm to separate 「fixed」 from
+> 「lucky」. **One green run after a change is 0/1, and 0/1 is not evidence.**
 
 And where the fix is a change of wording, prompt, or model input, **the trial is A/B against
 the unchanged version in the same session** — otherwise the comparison is confounded by the

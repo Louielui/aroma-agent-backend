@@ -3,10 +3,19 @@
 <!-- record-status: ACTIVE 2026-08-06 -->
 
 > **RUN 1: BAR NOT MET (87.5% / 100%).**
-> **RUN 2: BAR MET (100% / 100%) — but an A/B trial shows the fix is NOT what met it.**
+> **RUN 2: BAR MET (100% / 100%) — and the 100% DOES NOT MEAN WHAT IT LOOKS LIKE.**
 >
-> **Read RUN 2 and the A/B together or not at all.** The number passes; the confidence does
-> not. `click` is still not built. Jump to `# RUN 2` below.
+> ## ⛔ THE BAR WAS MET ON A CORPUS TOO SMALL TO DETECT THE DEFECT THE BAR EXISTS FOR.
+>
+> One truncation question, against a defect that reproduces about **1 time in 14**. A corpus
+> that size scores 100% on broken code most of the time. **The number is real and it is not
+> evidence.**
+>
+> **A file that reports 100% and buries the caveat is the shape of `count: 43`** — so the
+> caveat is here, above the number, not in a section further down that a reader reaches after
+> they have already formed a view.
+>
+> `click` is still not built. Read `# RUN 2` and the A/B together or not at all.
 
 > **Owner: 「an acceptance condition that has never been evaluated is HR-12 wearing a plan.」**
 > It has now been evaluated — twice.
@@ -189,6 +198,29 @@ The single new-notice miss answered **`REF 250`**. Ref 250 is real, is printed, 
 > The invented ref was *not in the input*, so a downstream check catches it for free — and the
 > grader now does. **`REF 250` is in the input.** Nothing structural refuses it, `click` would
 > take it, and it opens Item 82.
+
+## ⚠⚠ READ THIS BEFORE CELEBRATING THE 100%
+
+> **Owner: 「An answer that is present, printed, and wrong passes every structural check we
+> have.」**
+
+Every defence built so far catches a ref that is **absent** from the input:
+
+| defence | catches an invented ref | catches `REF 250` |
+|---|---|---|
+| the grader's 「never shown → never a pass」 | **yes** | **no** |
+| the truncation notice | (was supposed to) | **no** |
+| any downstream 「is this ref in the last read?」 check | **yes** | **no** |
+
+**`REF 250` is a valid ref, printed on its own line, pointing at a real and clickable
+element.** It fails only the one test nothing automated can run: *is it the element the
+question was about?*
+
+> ### So a 100% on this corpus does not mean 「she will not click the wrong thing」. It means the corpus asked one truncation question and got a good answer to it.
+
+This is the single strongest argument for the **structural** fix over the declarative one: a
+ref that cannot be a plain number cannot be answered with an item number. It is the only
+defence in the table above that would have refused `REF 250`.
 
 n=1, so it is not established as caused by the rewrite. **It is also exactly the kind of thing
 「answer only with a ref printed above」 would push a model toward** when the printed thing it

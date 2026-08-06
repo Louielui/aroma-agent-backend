@@ -20,7 +20,7 @@
 const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const path = require('node:path')
-const { readPage, CORPUS_DIR } = require('./axTree')
+const { readPage, resolveRef, CORPUS_DIR } = require('./axTree')
 
 const fixture = (n) => require(path.join(CORPUS_DIR, n + '.json')).nodes
 
@@ -116,7 +116,9 @@ describe('the serialized form is what the model actually gets', () => {
   test('each line carries ref, role and name — the audit vocabulary', () => {
     const out = readPage(fixture('login-form'))
     const first = out.text.split('\n').find((l) => l.trim())
-    assert.match(first, /\[#\d+\]/, 'a ref marker per line')
+    // was /\[#\d+\]/ — updated when refs became opaque, deliberately and not as a loosening:
+    // a NUMERIC ref marker is now itself a defect, and the test below asserts none appear.
+    assert.match(first, /\[#r[0-9a-f]{8}\]/, 'an opaque ref marker per line')
     assert.match(out.text, /button/)
   })
 
@@ -129,54 +131,73 @@ describe('the serialized form is what the model actually gets', () => {
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
- * THE TRUNCATION NOTICE — rewritten after the benchmark caught it failing.
+ * NON-EXTRAPOLABLE REFS — the structural fix, replacing the reverted notice.
  *
- * Benchmark 2026-08-06: on the truncated huge-list the model answered `REF 634` — a ref
- * that was NOT in its input. A real node (`link "Item 210"`) that the pruner had cut,
- * reached by EXTRAPOLATING the ref numbering from the visible lines. The true ref was 754.
+ * Owner: 「That is a mechanism; the notice was a declaration, and this project's own rule is
+ * that declarative fences degrade. It also refuses REF 250, which the notice cannot.」
  *
- * The old notice was one line, in Chinese, AFTER 250 lines of data, and it said that
- * unshown things may exist. It never said the two things that would have stopped this:
- * that refs are not sequential, and that only a ref printed above may be answered.
+ * Two real failures this must make IMPOSSIBLE rather than discouraged:
+ *   REF 634  — extrapolated from the visible numbering. Not in the input.
+ *   REF 250  — the ITEM NUMBER answered as a ref. Present, printed, and the wrong element,
+ *              so it passes every absence-based check we have.
  * ══════════════════════════════════════════════════════════════════════════════
  */
-describe('the truncation notice must stop an extrapolation, not just disclose a cut', () => {
-  test('the boundary is declared BEFORE the data, not only after it', () => {
-    const out = readPage(fixture('huge-list'), { maxNodes: 100 })
-    const firstNodeLine = out.text.split('\n').findIndex((l) => l.startsWith('[#'))
-    const head = out.text.slice(0, out.text.indexOf('[#'))
-    assert.ok(firstNodeLine > 0, 'something must precede the first node line')
-    assert.match(head, /truncated/i,
-      'a limit announced after 250 lines is announced to a reader who has stopped reading')
+describe('a ref cannot be guessed, computed, or confused with a number on the page', () => {
+  test('no ref is a bare number — so an item number can never BE a ref', () => {
+    const out = readPage(fixture('huge-list'), { maxNodes: 60 })
+    for (const n of out.nodes) {
+      assert.match(String(n.ref), /^r[0-9a-f]{8}$/, 'got ' + n.ref)
+    }
+    assert.doesNotMatch(out.text, /\[#\d+\]/, 'a numeric ref marker must not appear anywhere')
   })
 
-  test('it says refs are NOT sequential — the exact move the model made', () => {
-    const out = readPage(fixture('huge-list'), { maxNodes: 100 })
-    assert.match(out.text, /not sequential|do not (?:infer|extrapolate|guess)/i)
+  test('the same node keeps its ref across two independent reads', () => {
+    const a = readPage(fixture('login-form'))
+    const b = readPage(fixture('login-form'))
+    assert.deepStrictEqual(a.nodes.map((n) => n.ref), b.nodes.map((n) => n.ref))
   })
 
-  test('it forbids answering with a ref that is not printed', () => {
-    const out = readPage(fixture('huge-list'), { maxNodes: 100 })
-    assert.match(out.text, /only .*(?:ref|refs).*(?:appear|printed|listed|shown)/i)
+  test('a ref survives OTHER nodes disappearing — the property an index does not have', () => {
+    const raw = fixture('login-form')
+    const full = readPage(raw)
+    const target = full.nodes[full.nodes.length - 1]
+    const thinned = readPage(raw.filter((n) => n.backendDOMNodeId !== full.nodes[0].domId))
+    const still = thinned.nodes.find((n) => n.domId === target.domId)
+    assert.ok(still, 'the node is still present')
+    assert.strictEqual(still.ref, target.ref, 'and its ref did not move')
   })
 
-  test('it states the counts so the model knows how much is missing', () => {
-    const out = readPage(fixture('huge-list'), { maxNodes: 100 })
-    assert.match(out.text, /100\b/)
-    assert.match(out.text, new RegExp(String(out.totalCandidates)))
+  test('refs are not ordered, so the sequence carries no information to extrapolate from', () => {
+    const out = readPage(fixture('huge-list'), { maxNodes: 40 })
+    const nums = out.nodes.map((n) => parseInt(n.ref.slice(1), 16))
+    const ascending = nums.every((v, i) => i === 0 || v >= nums[i - 1])
+    assert.strictEqual(ascending, false, 'a monotonic sequence is an extrapolable one')
   })
 
-  test('an untruncated page carries NO notice — a warning that always fires is ignored', () => {
-    const out = readPage(fixture('login-form'), { maxNodes: 100 })
-    assert.strictEqual(out.truncated, false)
-    assert.doesNotMatch(out.text, /truncated/i)
-    assert.ok(out.text.startsWith('[#'), 'no header at all when nothing was cut')
+  test('every ref in one read is unique — an ambiguous ref would click the wrong element', () => {
+    const out = readPage(fixture('costco-search'), { maxNodes: 4000, maxChars: 500000 })
+    assert.strictEqual(new Set(out.nodes.map((n) => n.ref)).size, out.nodes.length)
+    assert.strictEqual(out.refCollision, false)
   })
 
-  test('the character-budget cut states itself exactly as the count cut does', () => {
-    const out = readPage(fixture('costco-search'), { maxChars: 4000 })
-    assert.strictEqual(out.truncated, true)
-    assert.match(out.text.slice(0, out.text.indexOf('[#')), /truncated/i)
-    assert.ok(out.text.length <= 4000, 'the notice must fit INSIDE the budget, got ' + out.text.length)
+  test('resolveRef maps a ref back to the DOM node — statelessly, by recomputation', () => {
+    const raw = fixture('login-form')
+    const out = readPage(raw)
+    const n = out.nodes.find((x) => x.role === 'button')
+    assert.strictEqual(resolveRef(n.ref, raw), n.domId)
+  })
+
+  test('resolveRef REFUSES a ref that does not belong to this page', () => {
+    assert.strictEqual(resolveRef('r00000000', fixture('login-form')), null)
+    assert.strictEqual(resolveRef('250', fixture('huge-list')), null, 'REF 250 is not even well-formed now')
+    assert.strictEqual(resolveRef(250, fixture('huge-list')), null)
+  })
+
+  test('the DOM id never appears in the text the model reads', () => {
+    const out = readPage(fixture('huge-list'), { maxNodes: 40 })
+    const domIds = out.nodes.map((n) => n.domId)
+    for (const id of domIds) {
+      assert.doesNotMatch(out.text, new RegExp('#' + id + '\]'), 'domId ' + id + ' leaked')
+    }
   })
 })

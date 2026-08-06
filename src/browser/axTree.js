@@ -16,6 +16,9 @@
  *                which is why no coordinate ever appears in this file's output
  *   BOUNDED      it fits a budget, and when it is cut it SAYS SO
  *   DETERMINISTIC the same tree read twice gives the same refs
+ *   OPAQUE       and a ref cannot be GUESSED — measured 2026-08-06, a model reached an
+ *                element it could not see by extrapolating numeric refs, and answered an
+ *                item number as a ref. See `REF_SALT`.
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * ── WHAT THIS DELIBERATELY DOES NOT DO ───────────────────────────────────────
@@ -30,32 +33,35 @@ const path = require('node:path')
 const CORPUS_DIR = path.join(__dirname, '..', '..', 'test', 'fixtures', 'axcorpus')
 
 /**
- * ⚠ WHY THE TRUNCATION NOTICE LOOKS OVER-WRITTEN. Do not trim it back to one line.
+ * ⚠ THE TRUNCATION NOTICE IS ONE LINE ON PURPOSE, AND IT WAS ONCE LONGER.
  *
- * The 2026-08-06 benchmark ran this against a real model. On the truncated list it answered
- * `REF 634` — **a ref that was not in its input.** 634 is a REAL node (`link "Item 210"`)
- * that the pruner had cut; the model reached it by extrapolating the ref numbering from the
- * visible lines. The true ref was 754. `click` would have hit Item 210 and reported success.
+ * On 2026-08-06 the benchmark caught a model answering `REF 634` on the truncated list — a
+ * ref that was **not in its input**, reached by extrapolating the visible ref numbering. So
+ * the notice was rewritten: a header before the data, 「refs are not sequential」, 「answer
+ * only a printed ref」.
  *
- * The old notice was one line, in Chinese, placed AFTER 250 lines of data, and it said only
- * that unshown things may exist. It never said the two things that would have stopped this:
- * **refs are not sequential**, and **only a printed ref may be answered.**
+ * ── THEN IT WAS A/B TESTED, AND IT LOST ──────────────────────────────────────
+ * Same question, same nodes, same session, interleaved, ten runs per arm:
  *
- * ── AND IT IS A RATE, NOT A PROPERTY ────────────────────────────────────────
- * Three re-runs of the same question answered ABSENT correctly. Roughly 1 in 4. That is
- * WORSE than a deterministic bug, because the retest most people would run is the one that
- * says it is fine. If you are editing this, you cannot check your change by running it once.
+ *      OLD (this one-liner)   0/10 invented   10/10 correct
+ *      NEW (the rewrite)      0/10 invented    9/10 correct
  *
- * ── THE STRONGER FIX WE DID NOT TAKE, AND WHY IT IS STILL OPEN ───────────────
- * A notice is a DECLARATION. The structural fix is an opaque ref — a deterministic hash of
- * backendDOMNodeId — which stays stable across reads (so it keeps the property the ref
- * exists for) while being **impossible to extrapolate**. That is a mechanism, not an
- * intention, and by this project's own rule it beats a warning. It was not taken here
- * because the Owner scoped this round to the notice; it costs `click` a reverse map and
- * costs a human reading the tree the ability to correlate to the DOM. **If the notice does
- * not carry the benchmark, this is the next move, not a bigger notice.**
+ * The rewrite also produced a NEW failure — `REF 250`, the item number answered as a ref,
+ * which is present, printed, and the wrong element, so nothing structural refuses it.
+ *
+ * > **Owner's ruling: 「Keeping a change whose sole measured signal is negative because it
+ * > 『should』 help is the thing we keep removing.」 REVERTED.**
+ *
+ * ── AND THE RATE I FIRST REPORTED WAS WRONG ──────────────────────────────────
+ * I called it 1 in 4. That was one event in four attempts. With 14 attempts on record it is
+ * **1 in 14 ≈ 7%** — which also means a wording change was never measurable by a
+ * wording-change-sized trial. See HR-14's worked example.
+ *
+ * ── SO THE FENCE MOVED FROM THE TEXT TO THE FORMAT ───────────────────────────
+ * **Do not re-expand this notice.** The defect it was aimed at is now handled structurally by
+ * the opaque ref (see `REF_SALT` below): there is no sequence to extrapolate, and `250` is
+ * not a well-formed ref at all. A notice asks; a format refuses.
  */
-const NOTICE_WHY = 'see the block comment above'
 
 /**
  * Roles that are ACTIONABLE and therefore survive even with no accessible name. An unnamed
@@ -84,6 +90,61 @@ const STRUCTURAL = new Set([
  * at. Dropping these is most of the order-of-magnitude reduction.
  */
 const NEVER = new Set(['InlineTextBox', 'generic', 'none', 'presentation', 'LineBreak'])
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * THE REF IS OPAQUE ON PURPOSE. `r4f2a9c1b`, never `634`.
+ *
+ * This replaced a truncation notice that told the model not to guess. The notice was A/B
+ * tested against the one it replaced and scored WORSE, so it was reverted. **A declaration
+ * degrades; a format cannot be argued with.**
+ *
+ * Two measured failures, and what this does to each:
+ *
+ *   REF 634 — the model extrapolated the ref numbering to reach an element it could not see.
+ *             `link "Item 210"`, real, pruned out, wrong. **Now unreachable: there is no
+ *             sequence to extrapolate. A ref is a hash, and you cannot hash an id you were
+ *             never shown.**
+ *
+ *   REF 250 — the model answered the ITEM NUMBER as a ref. It was present, printed, and the
+ *             wrong element, so it passed every absence-based check we have. **Now
+ *             malformed: `250` is not a ref, and `resolveRef` refuses it outright.**
+ *
+ * ── WHY A HASH AND NOT A RANDOM TOKEN ────────────────────────────────────────
+ * A ref must survive a re-read, or `click` cannot use one taken from an earlier `read_page`.
+ * A per-read random token would break that; a hash of `backendDOMNodeId` keeps it, because
+ * it is a pure function of the node's own identity and of nothing about this particular read.
+ *
+ * ── AND WHY NOTHING IS STORED ────────────────────────────────────────────────
+ * `resolveRef` recomputes rather than remembering. A stored map is state, and state has a
+ * staleness question — 「is this map still the page it came from?」 — that a recomputation
+ * simply does not have. If the node is gone, the ref resolves to nothing, which is the
+ * correct answer and not an error to recover from.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const crypto = require('node:crypto')
+
+/** Fixed, not secret and not per-read. Secrecy is not what makes the ref unguessable —
+ *  not having been shown the id is. The constant exists so refs are stable forever. */
+const REF_SALT = 'aroma.axtree.ref.v1'
+
+function refFor (domId) {
+  return 'r' + crypto.createHash('sha256').update(REF_SALT + ':' + String(domId)).digest('hex').slice(0, 8)
+}
+
+/**
+ * A ref back to a DOM node, by recomputation over the tree it came from.
+ * @returns {number|null} the backendDOMNodeId, or null — including for anything malformed.
+ */
+function resolveRef (ref, rawNodes) {
+  if (typeof ref !== 'string' || !/^r[0-9a-f]{8}$/.test(ref)) return null
+  for (const n of Array.isArray(rawNodes) ? rawNodes : []) {
+    const id = n && n.backendDOMNodeId
+    if (id === undefined || id === null) continue
+    if (refFor(id) === ref) return Number(id)
+  }
+  return null
+}
 
 function valueOf (v) { return v && typeof v === 'object' ? v.value : v }
 
@@ -120,11 +181,12 @@ function readPage (rawNodes, opts = {}) {
 
     // THE REF IS THE DOM NODE, not a position in this list. A ref taken from one read must
     // still mean the same node when the click happens — a positional index would silently
-    // point somewhere else after any change.
-    const ref = n.backendDOMNodeId
-    if (ref === undefined || ref === null) continue
+    // point somewhere else after any change. It is HASHED rather than printed: see the
+    // block comment above `REF_SALT`.
+    const domId = n.backendDOMNodeId
+    if (domId === undefined || domId === null) continue
 
-    candidates.push({ ref: Number(ref), role, name, interactive })
+    candidates.push({ ref: refFor(domId), domId: Number(domId), role, name, interactive })
   }
 
   const totalCandidates = candidates.length
@@ -132,52 +194,49 @@ function readPage (rawNodes, opts = {}) {
   let truncated = totalCandidates > kept.length
 
   const line = (n) => `[#${n.ref}] ${n.role}${n.name ? ' "' + n.name + '"' : ''}`
-
-  // Rebuilt after the benchmark caught the old notice failing. `header` is the whole point:
-  // a limit announced after 250 lines is announced to a reader who has already stopped
-  // reading. See the block comment above `NOTICE_WHY`.
-  const header = (shown) => `⚠ TRUNCATED — this page was CUT. You are seeing ${shown} of ${totalCandidates} matching elements.
-Refs are opaque DOM identifiers. They are NOT sequential and NOT contiguous — you cannot work
-out the ref of an element you cannot see, and a plausible-looking number will be a different
-element. Answer only with a ref that appears literally in the lines below. If what you want is
-not printed below, say it is NOT SHOWN; it may still exist further down the page.
-
-`
-  const footer = (shown) => `
-
-（已截斷 truncated：顯示 ${shown} 項，符合條件嘅共 ${totalCandidates} 項；未顯示嘅嘢唔代表唔存在）
-Only the ${shown} refs printed above may be answered. Do not infer any other.`
+  let body = kept.map(line).join('\n')
 
   // The character budget is a SECOND bound, because 250 short nodes and 250 long ones are
-  // not the same prompt — and the notice must fit INSIDE it, not be added on top. A
-  // disclosure that pushes the prompt past its own budget is not a disclosure.
-  const reserve = () => header(kept.length).length + footer(kept.length).length + 40
-  if (kept.map(line).join('\n').length + (truncated ? reserve() : 0) > maxChars) {
+  // not the same prompt. Cutting here must state itself exactly as cutting by count does.
+  if (body.length > maxChars) {
     truncated = true
-    const budget = maxChars - reserve()
     const lines = []
     let used = 0
     for (const n of kept) {
       const l = line(n)
-      if (used + l.length + 1 > budget) break
+      if (used + l.length + 1 > maxChars - 120) break
       lines.push(l); used += l.length + 1
     }
     kept = kept.slice(0, lines.length)
+    body = lines.join('\n')
   }
 
-  const body = kept.map(line).join('\n')
+  // A CUT THAT SAYS IT WAS CUT. A model reads the text; a flag it never sees is not a
+  // disclosure, and a partial page that reads as whole is `count: 43` in a new place.
+  //
+  // ⚠ REVERTED 2026-08-06 to exactly this one line. The expanded version — a header before
+  // the data, 「refs are not sequential」, 「answer only a printed ref」 — was A/B tested against
+  // this one and scored WORSE (9/10 against 10/10) while introducing a new failure mode.
+  // The Owner's ruling: 「Keeping a change whose sole measured signal is negative because it
+  // 『should』 help is the thing we keep removing.」 The fence is now the REF FORMAT, above.
+  const notice = truncated
+    ? `\n（已截斷 truncated：顯示 ${kept.length} 項，符合條件嘅共 ${totalCandidates} 項；未顯示嘅嘢唔代表唔存在）`
+    : ''
+  const text = body + notice
 
-  // A CUT THAT SAYS IT WAS CUT, BEFORE AND AFTER. And an untruncated page carries NO notice
-  // at all — a warning that always fires is a warning nobody reads.
-  const text = truncated ? header(kept.length) + body + footer(kept.length) : body
+  // An ambiguous ref would click the wrong element, so a collision is REPORTED rather than
+  // hoped against. At 32 bits over a 4000-node page the expected rate is ~1 in 500 reads of
+  // a page that size — rare, and rare is not never.
+  const refCollision = new Set(kept.map((n) => n.ref)).size !== kept.length
 
   return {
     nodes: kept,
     text,
     truncated,
     totalCandidates,
+    refCollision,
     rawNodeCount: raw.length
   }
 }
 
-module.exports = { readPage, CORPUS_DIR, INTERACTIVE, NEVER }
+module.exports = { readPage, resolveRef, refFor, CORPUS_DIR, INTERACTIVE, NEVER }
