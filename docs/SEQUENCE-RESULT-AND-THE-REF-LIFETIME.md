@@ -124,3 +124,58 @@ value from the start rather than stripped on the way out. **No ruling asked for 
 out of the baseline measurement, where the only honest way to describe the difference between
 `click` and `type` was 「`click` moves a mouse; `type` puts content into a page」 — and the rest
 followed from taking that sentence seriously.
+
+---
+---
+
+# RE-RUN AGAINST S1′ — **ACCEPTANCE MET, 11/11.**
+
+The frozen `ACCEPTANCE-SEQUENCE.json` was **not edited**. `ACCEPTANCE-SEQUENCE-V2.json`
+supersedes it and says so, naming the false premise the original encoded.
+
+```
+S1'  a stale ref is REFUSED BY NAME, never re-bound to the new node    PASS
+S1b  read -> act -> act refused BY THE RUNNER, before the browser      PASS
+S1c  a plan that acts twice on one read is refused before it starts    PASS
+S9   no code path re-finds a stale ref by role + accessible name       PASS
+S2   a ref to a removed node refuses with ELEMENT_GONE                 PASS
+S3   a ref from before a navigation never acts on a different element  PASS
+S4   the report names every step, target and outcome                   PASS
+S5   no typed value anywhere                                           PASS
+S6   no coordinates anywhere                                           PASS
+S7   it stops with a named reason                                      PASS
+S8   a knowable stop is fast — 0ms                                     PASS
+```
+
+Live evidence of the mechanism, from the run itself:
+
+```
+12. session: read then act                  CLICKED   link "Wikipedia The Free Encyclopedia"
+13. session: a SECOND act on the same read  REFUSED   REF_FROM_A_SPENT_READ
+14. session: plan check                     REFUSED   step 3 (click) uses refs from a read
+                                                      that step 2 already spent.
+                                                      Insert a read_page between them.
+```
+
+## ⚠ AND THE PROBE WAS WRONG ONCE MORE BEFORE IT WAS RIGHT
+
+The first re-run reported **S1b FAIL**. The runner was correct; **the harness was not.**
+
+It picked `link "Jump to content"` as the first act — a skip-link playwright refuses — and **a
+refused act does not spend the read, by design.** So the guard never armed, the second act was
+correctly allowed, and the check read as a failure of the rule it was testing.
+
+**Fixed by clicking candidates until one actually succeeds.** That is the fifth harness of this
+week to be wrong before it was right, and the fifth time the fault was in the measurement
+rather than the thing measured. It is why every one of these is now printed in full rather than
+reduced to a verdict.
+
+## What is enforced now, in code rather than prose
+
+| | |
+|---|---|
+| `read → act → act` | **refused by the runner**, before the browser is touched, naming which read the ref came from and how many acts have happened since |
+| a whole plan | **refused before it starts**, naming the offending step |
+| `wait_for` | **spends** a read but does not **require** a fresh one — 「click, then wait for the result」 is correct, and rejecting it would push callers toward not waiting |
+| `screenshot` | does not spend a read — it changes nothing |
+| a **refused** act | does not spend a read — nothing happened, so nothing changed, and charging for it would punish the safe path |

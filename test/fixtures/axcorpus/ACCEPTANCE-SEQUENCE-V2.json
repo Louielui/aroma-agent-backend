@@ -1,0 +1,19 @@
+{
+ "frozenAt": "2026-08-06",
+ "supersedes": "ACCEPTANCE-SEQUENCE.json — kept unedited. Its S1 encoded a FALSE PREMISE about the web ('a ref taken before an action still resolves after it'), disproved live: backendDOMNodeId 8001 -> 20437 for a link that never left the page. The frozen text was not edited to make it pass.",
+ "rule": "FROZEN BEFORE THE RE-RUN. HR-20.",
+ "criteria": [
+  { "id": "S1prime", "kind": "stale-ref-refused", "must": "a stale ref is REFUSED BY NAME, never silently re-bound to whatever now occupies its place — even when the new element has the same role, the same accessible name and the same position" },
+  { "id": "S1b", "kind": "composition-enforced", "must": "read -> act -> act is refused BY THE RUNNER, before the second act reaches the browser. The rule is a mechanism, not a note." },
+  { "id": "S1c", "kind": "composition-plan", "must": "a whole plan that acts twice on one read is refused before it starts, naming the offending step" },
+  { "id": "S2", "kind": "ref-dies-loudly", "must": "a ref to a removed node refuses with ELEMENT_GONE" },
+  { "id": "S3", "kind": "ref-across-navigation", "must": "a ref from before a navigation never acts on a different element" },
+  { "id": "S4", "kind": "report-sufficiency", "must": "the report alone says what was done, to what, in what order, and what was refused and why" },
+  { "id": "S5", "kind": "no-secrets", "must": "no typed value anywhere in the report" },
+  { "id": "S6", "kind": "no-coordinates", "must": "no coordinates anywhere in the report" },
+  { "id": "S7", "kind": "stops-cleanly", "must": "it stops at the first refusal with a named reason, does not retry, does not continue" },
+  { "id": "S8", "kind": "stop-is-fast", "must": "a stop knowable without waiting arrives in well under the action timeout — a stop that arrives as a timeout is indistinguishable from a hang" },
+  { "id": "S9", "kind": "no-name-reresolution", "must": "there is NO code path that re-finds a stale ref by role + accessible name. Rejected twice for the same reason: it is REF 250 in a new coat." }
+ ],
+ "acceptanceBar": "S1prime, S1b, S1c, S2-S9 demonstrated in ONE live headed run against a real page, report printed in full."
+}

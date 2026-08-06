@@ -14,6 +14,9 @@ const { checkNavigation, NAV } = require('../src/browser/navigate')
 const { buildClick } = require('../src/browser/click')
 const { buildType } = require('../src/browser/type')
 const { buildWaitFor, WAIT } = require('../src/browser/wait')
+const { buildSession, SESSION_REFUSAL } = require('../src/browser/session')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const ORDER = { allowedOrigins: ['https://en.wikipedia.org'] }
 const START = 'https://en.wikipedia.org/wiki/Costco'
@@ -70,8 +73,10 @@ const note = (verb, target, outcome, detail) =>
 
   // ── S1: does a ref taken BEFORE the action still resolve AFTER it? ────────
   const s1 = await click({ ref: survivorBefore.ref, domId: survivorBefore.domId, expectRole: 'link', expectName: survivorBefore.name })
-  note('click(ref from before)', `link "${survivorBefore.name}"`, s1.outcome, s1.reason || 'the pre-action ref still addressed the same element')
-  const S1 = s1.outcome === 'CLICKED'
+  note('click(stale ref — element was re-rendered)', `link "${survivorBefore.name}"`, s1.outcome, s1.reason || '')
+  // S1′ — it must REFUSE BY NAME. The new node has the same role, the same accessible name
+  // and the same position; silently re-binding to it is REF 250 in a new coat.
+  const S1 = s1.outcome === 'REFUSED' && s1.reason === 'ELEMENT_GONE'
 
   // ── S2: a ref to something the DOM removed must die loudly ────────────────
   const doomed = findIn(view, 'link', /./)
@@ -126,7 +131,45 @@ const note = (verb, target, outcome, detail) =>
   const stopMs = Date.now() - t0
   note('click(origin not in the order)', 'the sealed order', stop.outcome, `${stop.reason} in ${stopMs}ms`)
 
-  finish(b, { S1, S2, S3, stopMs, stopOutcome: stop.outcome, stopReason: stop.reason })
+  // ── S1b — the composition rule, enforced live by the runner ───────────────
+  const session = buildSession({
+    read: async () => (await readTree()).view,
+    click: (t) => click(t),
+    type: (t) => type(t),
+    waitFor: (r) => waitFor(r),
+    screenshot: async () => ({ outcome: 'CAPTURED' })
+  })
+  const sv = await session.read()
+  const candidates = sv.nodes.filter((n) => n.interactive && n.name)
+  // ⚠ THE FIRST ACT MUST ACTUALLY SUCCEED, or the guard never arms — a REFUSED act does not
+  // spend the read, by design. The first version of this probe picked a skip-link that
+  // playwright refuses, so the second act was correctly ALLOWED and the check read as a
+  // failure of the runner. The harness was wrong, not the rule.
+  let first = null
+  let used = null
+  for (const c of candidates.slice(0, 6)) {
+    const r = await session.click({ ref: c.ref, domId: c.domId, expectRole: c.role, expectName: c.name })
+    if (r.outcome === 'CLICKED') { first = r; used = c; break }
+  }
+  note('session: read then act', used ? `${used.role} "${used.name}"` : 'no clickable candidate',
+    first ? first.outcome : 'NONE_CLICKABLE', 'the first act on a fresh read')
+  const other = candidates.find((c) => !used || c.ref !== used.ref)
+  const secondAct = await session.click({ ref: other.ref, domId: other.domId, expectRole: other.role, expectName: other.name })
+  note('session: a SECOND act on the same read', `${other.role} "${other.name}"`, secondAct.outcome, secondAct.reason || '')
+  const S1b = Boolean(first) && secondAct.outcome === 'REFUSED' && secondAct.reason === SESSION_REFUSAL.STALE_READ
+
+  const plan = await session.checkPlan([{ verb: 'read_page' }, { verb: 'click' }, { verb: 'click' }])
+  note('session: plan check', 'read → click → click', plan.ok ? 'ALLOWED' : 'REFUSED', plan.detail || '')
+  const S1c = plan.ok === false && plan.reason === SESSION_REFUSAL.STALE_READ
+
+  // ── S9 — the rejected fix must be absent from the source, not merely unused ─
+  const src = ['click.js', 'type.js', 'session.js', 'axTree.js']
+    .map((f) => fs.readFileSync(path.join(__dirname, '..', 'src', 'browser', f), 'utf8'))
+    .join('\n')
+    .split('\n').filter((l) => !/^\s*(\*|\/\/|\/\*)/.test(l)).join('\n')   // code only, not comments
+  const S9 = !/getByRole|getByText|getByLabel|re-?resolve|refindBy|byAccessibleName/i.test(src)
+
+  finish(b, { S1, S1b, S1c, S9, S2, S3, stopMs, stopOutcome: stop.outcome, stopReason: stop.reason })
 })().catch((e) => { console.error('FATAL', e.message); process.exit(1) })
 
 async function finish (b, res) {
@@ -140,7 +183,10 @@ async function finish (b, res) {
 
   const text = JSON.stringify(steps)
   const checks = [
-    ['S1  a ref from before an action still resolves after it', res.S1],
+    ["S1'  a stale ref is REFUSED BY NAME, never re-bound to the new node", res.S1],
+    ['S1b  read -> act -> act refused BY THE RUNNER, before the browser', res.S1b],
+    ['S1c  a plan that acts twice on one read is refused before it starts', res.S1c],
+    ['S9   no code path re-finds a stale ref by role + accessible name', res.S9],
     ['S2  a ref to a removed node REFUSES with ELEMENT_GONE', res.S2],
     ['S3  a ref from before a navigation never acts on a different element', res.S3],
     ['S4  the report names every step, its target and its outcome', steps.every((s) => s.verb && s.target && s.outcome)],
