@@ -2,20 +2,26 @@
 
 <!-- record-status: ACTIVE 2026-08-06 -->
 
-> **RUN 1: BAR NOT MET (87.5% / 100%).**
-> **RUN 2: BAR MET (100% / 100%) — and the 100% DOES NOT MEAN WHAT IT LOOKS LIKE.**
+> ## CURRENT STATE — RUN 3: **87.5% / 100%. BAR NOT MET.**
 >
-> ## ⛔ THE BAR WAS MET ON A CORPUS TOO SMALL TO DETECT THE DEFECT THE BAR EXISTS FOR.
+> | run | what changed | result |
+> |---|---|---|
+> | 1 | first evaluation | 87.5% / 100% — **not met** |
+> | 2 | frozen key, fixed grader, rewritten notice | 100% / 100% — met, **but an A/B showed the notice was not what met it, and the notice was REVERTED** |
+> | **3** | **opaque non-extrapolable refs** | **87.5% / 100% — not met** |
 >
-> One truncation question, against a defect that reproduces about **1 time in 14**. A corpus
-> that size scores 100% on broken code most of the time. **The number is real and it is not
-> evidence.**
+> ## ⛔ AND NO RUN HERE HAS MEASURED WHAT THE BAR EXISTS FOR.
 >
-> **A file that reports 100% and buries the caveat is the shape of `count: 43`** — so the
-> caveat is here, above the number, not in a section further down that a reader reaches after
-> they have already formed a view.
+> The corpus asks **one** truncation question, against a defect that reproduces about **1 time
+> in 14**. A corpus that size scores 100% on broken code most of the time. **Run 2's 100% was
+> real and was not evidence.**
 >
-> `click` is still not built. Read `# RUN 2` and the A/B together or not at all.
+> **A file that reports a percentage and buries the caveat is the shape of `count: 43`** — so
+> the caveat is above the number, not in a section a reader reaches after forming a view.
+>
+> `click` is not built, and is blocked on both of the Owner's conditions: refs unguessable
+> (**done**, run 3) AND more than one truncation question (**not done** — see
+> `test/fixtures/axcorpus/QUESTIONS.json.NEXT-ROUND.md`).
 
 > **Owner: 「an acceptance condition that has never been evaluated is HR-12 wearing a plan.」**
 > It has now been evaluated — twice.
