@@ -9,7 +9,7 @@
  *
  * No Chrome. No browser. No network. Reads files only.
  */
-const P = require('../src/browser/profileProbe')
+const P = require('../src/governance/profileProbe')
 const DIR = 'C:\\Aroma\\browser-profile'
 
 const expected = {

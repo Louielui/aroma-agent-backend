@@ -39,7 +39,7 @@
  */
 
 const { checkNavigation, NAV } = require('./navigate')
-const { checkPaymentStop } = require('./paymentStop')
+const { checkPaymentStop } = require('../governance/paymentStop')
 
 const REFUSAL = Object.freeze({
   ORIGIN: 'ORIGIN_NOT_IN_ORDER',

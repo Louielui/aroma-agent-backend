@@ -18,7 +18,7 @@ const express = require('express')
 const {
   SESSION_COOKIE, readCookie, passwordMatches, readOwnerPassword,
   ownerPasswordConfigured, sessionCookie, clearedCookie
-} = require('../api/ownerAuth')
+} = require('../governance/ownerAuth')
 const { iconDataUri } = require('../demo/appManifest') // the same dot the rest of the app uses
 
 /** Minimal same-origin check for the login POST itself. Sec-Fetch-Site is sent by every

@@ -25,9 +25,9 @@
  * HR-23: a guardrail that cannot read its own evidence is blind, not clean.
  */
 
-const { probePaymentMethods, probeCardSavingDisabled, probeBrowserSignIn, probeProfileLock, writeProfileDefaults } = require('./profileProbe')
-const { buildRequestFence } = require('./requestFence')
-const { checkOriginPolicy, POLICY } = require('./originPolicy')
+const { probePaymentMethods, probeCardSavingDisabled, probeBrowserSignIn, probeProfileLock, writeProfileDefaults } = require('../governance/profileProbe')
+const { buildRequestFence } = require('../governance/requestFence')
+const { checkOriginPolicy, POLICY } = require('../governance/originPolicy')
 const { launchOptions } = require('./launch')
 const { readPage } = require('./axTree')
 const { buildClick } = require('./click')

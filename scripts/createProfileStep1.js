@@ -9,7 +9,7 @@
  */
 const fs = require('node:fs')
 const path = require('node:path')
-const { writeProfileDefaults } = require('../src/browser/profileProbe')
+const { writeProfileDefaults } = require('../src/governance/profileProbe')
 
 const DIR = path.join('C:', String.fromCharCode(92), 'Aroma', 'browser-profile')
   .replace(/^C:\\?/, 'C:\\')

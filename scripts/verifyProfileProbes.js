@@ -13,7 +13,7 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { chromium } = require('playwright-core')
-const { probePaymentMethods, probeProfileLock } = require('../src/browser/profileProbe')
+const { probePaymentMethods, probeProfileLock } = require('../src/governance/profileProbe')
 
 const DIR = 'C:\\Aroma\\_probe-throwaway'
 const say = (s) => console.log(s)

@@ -23,11 +23,42 @@ const FORBIDDEN_ACTIONS = Object.freeze([
 ])
 const MUST_FORBID = Object.freeze(['commit', 'push', 'PR', 'merge', 'deploy'])
 
-// Files/dirs the agent may NEVER be allowed to edit — 心燈's own permission,
-// approval, audit, flag, credential and truth machinery. Matched (Cap 5) against a
-// normalized relative path (posix separators, lowercased). If a Work Order's
-// allowedFiles names any of these, validation FAILS — they are un-allowlistable.
+/**
+ * ⛔ BY LOCATION FIRST, BY NAME ONLY AS AN EXCEPTION SET.
+ *
+ * ── WHAT THIS LIST USED TO BE, AND WHY IT FAILED ─────────────────────────────
+ * Every entry below was added by someone remembering to add it. Measured 2026-08-07:
+ * **eleven fences existed and ZERO were on this list.** Five or more were built that week and
+ * the list was updated zero times.
+ *
+ * > **一張要人記得去維護嘅清單，唔係籬笆，係一張 checklist。** A checklist means nothing to a
+ * > thing that writes code, because it does not forget — it has simply never been stopped.
+ *
+ * That is not an argument against the list. **It is evidence the list was never doing the
+ * work.** It looked like a fence for as long as nobody tested whether it grew.
+ *
+ * ── THE CHANGE ──────────────────────────────────────────────────────────────
+ * `src/governance/` is forbidden AS A PATH. A new fence placed there is protected because of
+ * WHERE IT LIVES; putting one outside becomes a visible decision rather than a silent omission.
+ *
+ * > **一道由一個陣列砌成嘅籬笆，擋唔住一個改得到嗰個陣列嘅嘢。**
+ * > **改代碼嘅能力一旦掂到定義籬笆嗰行，嗰道籬笆就唔係「有規矩嘅能力」，佢根本唔係籬笆。**
+ * > **呢個係定義，唔係謹慎。**
+ *
+ * ── THE RESIDUAL GAP, STATED ────────────────────────────────────────────────
+ * Protection is now structural. **The INVENTORY is not.** Whether some new fence was placed
+ * outside `src/governance/` is still a judgement, now expressed as a failing test
+ * (`governanceMigration.test.js`) rather than as silence. A red test is not a fence either —
+ * it is a checklist that shouts. That is an improvement and it is not the same thing.
+ *
+ * The by-name entries below STAY. Removing them while relocating is how a gap opens in the
+ * window between two mechanisms.
+ */
+const GOVERNANCE_PATH = 'src/governance/'
+
 const FORBIDDEN_FILE_PATTERNS = Object.freeze([
+  // ⛔ BY LOCATION — the whole path, so the NEXT fence is protected by default.
+  /^src\/governance\//,
   /(^|\/)\.env(\.[^/]*)?$/, // .env, .env.*
   /(^|\/)\.git(\/|$)/, // git internals
   /(^|\/)node_modules(\/|$)/,
@@ -145,6 +176,7 @@ function hashWorkOrder (wo) {
 }
 
 module.exports = {
+  GOVERNANCE_PATH,
   FORBIDDEN_ACTIONS,
   MUST_FORBID,
   FORBIDDEN_FILE_PATTERNS,

@@ -31,7 +31,7 @@ const { buildClick } = require('../browser/click')
 const { buildType } = require('../browser/type')
 const { buildWaitFor } = require('../browser/wait')
 const { buildSession } = require('../browser/session')
-const { buildRequestFence } = require('../browser/requestFence')
+const { buildRequestFence } = require('../governance/requestFence')
 const { checkRecall, HOST, SEARCH_PATH } = require('./recallCheck')
 
 const ORDER = { allowedOrigins: [HOST] }

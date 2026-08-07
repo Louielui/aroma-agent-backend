@@ -22,7 +22,7 @@
  * dispatch needs a new origin, the origin goes in the order.
  */
 
-const { checkOriginPolicy, POLICY } = require('./originPolicy')
+const { checkOriginPolicy, POLICY } = require('../governance/originPolicy')
 
 const NAV = Object.freeze({
   ALLOWED: 'ALLOWED',

@@ -19,7 +19,7 @@ const { buildClick } = require('../../src/browser/click')
 const { buildType } = require('../../src/browser/type')
 const { buildWaitFor } = require('../../src/browser/wait')
 const { buildSession } = require('../../src/browser/session')
-const { buildRequestFence } = require('../../src/browser/requestFence')
+const { buildRequestFence } = require('../../src/governance/requestFence')
 const { HOST, SEARCH_PATH } = require('../../src/errands/recallCheck')
 
 const QUERY = process.argv[2] || 'cheese'

@@ -65,8 +65,8 @@ const { getAdapter } = require('./adapters/adapterFactory')
 const { resolveArtifactDir } = require('./runtime/artifactDir') // Runtime Foundation A4 — external artifact root
 
 // Service-token authentication for every state-changing route. See src/api/auth.js.
-const { createRequireServiceToken, readExpectedToken } = require('./api/auth')
-const { createSessionStore, createRequireOwner, readOwnerPassword, ownerPasswordConfigured } = require('./api/ownerAuth') // Owner gate: demo + context + intake
+const { createRequireServiceToken, readExpectedToken } = require('./governance/auth')
+const { createSessionStore, createRequireOwner, readOwnerPassword, ownerPasswordConfigured } = require('./governance/ownerAuth') // Owner gate: demo + context + intake
 const { createOwnerAuthRouter } = require('./routes/ownerAuthRouter') // the login surface (mounted OUTSIDE the gate)
 
 // B2-1 worker invocation (integration slice). These are wired at the composition
@@ -974,7 +974,7 @@ function createApp (options = {}) {
     // three of those left no trace on the server at all — the only log was the PowerShell
     // wrapper's, client side. A door that records nothing cannot tell 「nobody called」 from
     // 「I did not look」.
-    knockLog: require('./home/knockLog').openKnockLog(path.join(__dirname, '..', 'data', 'home')),
+    knockLog: require('./governance/knockLog').openKnockLog(path.join(__dirname, '..', 'data', 'home')),
     // HR-34 one level up: the pacing rule spaced searches WITHIN a run and nothing governed
     // how often the run happened. A daily errand never needs to run twice in an hour.
     minRunIntervalMs: 60 * 60 * 1000,

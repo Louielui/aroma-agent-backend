@@ -20,7 +20,7 @@ const { buildClick } = require('../src/browser/click')
 const { buildType } = require('../src/browser/type')
 const { buildWaitFor, WAIT } = require('../src/browser/wait')
 const { buildSession } = require('../src/browser/session')
-const { buildRequestFence } = require('../src/browser/requestFence')
+const { buildRequestFence } = require('../src/governance/requestFence')
 
 const HOST = 'https://recalls-rappels.canada.ca'
 const ORDER = { allowedOrigins: [HOST] }

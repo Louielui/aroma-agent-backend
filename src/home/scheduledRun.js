@@ -29,6 +29,10 @@
  */
 
 const { KINDS } = require('./errandKinds')
+// ⛔ THE ALLOWLIST ITSELF LIVES IN THE PROTECTED PATH. The kind's own readOnly flag is kept as
+// a second, independent condition — a fence that agrees with itself from two files is harder to
+// widen by accident than one boolean in a module the Owner may edit.
+const { isTimerRunnable } = require('../governance/timerAllowlist')
 const { runErrand } = require('./errandRunner')
 
 /**
@@ -44,7 +48,7 @@ async function runScheduledErrands ({ store, runners, kinds, now }) {
   const wired = Object.keys(runners || {})
 
   // ⛔ THE THREE-WAY INTERSECTION, COMPUTED BEFORE ANYTHING RUNS.
-  const allowed = registry.filter((k) => k.readOnly === true && typeof (runners || {})[k.id] === 'function')
+  const allowed = registry.filter((k) => isTimerRunnable(k.id) && k.readOnly === true && typeof (runners || {})[k.id] === 'function')
   const refused = wired.filter((id) => !allowed.some((k) => k.id === id))
 
   const rows = []

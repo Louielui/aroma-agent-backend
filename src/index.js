@@ -9,7 +9,7 @@
 
 const app = require('./app')
 const { sweepAgedSandboxes } = require('./workers/workspace/tmpdirSandbox')
-const { readExpectedToken } = require('./api/auth')
+const { readExpectedToken } = require('./governance/auth')
 const { evaluateStartupConfig } = require('./persona/processRole') // R4a — memory-free startup guard
 const { evaluatePrimaryPersonaStartup } = require('./persona/primaryPersonaStartupGuard') // Runtime Guard — hybrid-primary readiness
 const { getPersonaSource } = require('./persona/personaSource') // memory-free import (Memory lazy-loaded only for non-legacy)

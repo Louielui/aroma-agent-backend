@@ -21,7 +21,7 @@
  */
 
 const { spawn } = require('node:child_process')
-const { probeProfileLock } = require('../browser/profileProbe')
+const { probeProfileLock } = require('../governance/profileProbe')
 
 const OPEN = Object.freeze({
   OPENED: 'OPENED',
