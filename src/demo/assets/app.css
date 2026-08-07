@@ -848,3 +848,17 @@ button[disabled] { opacity: .45; cursor: default; }
 .attach-line { color: var(--muted); }
 /* The settings offer: one line, before → after, so he approves what he can see. */
 .set-change { margin: 0.4em 0; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* ── destinations, above and separate from the conversation list ─────────────
+   Owner: 「首頁 goes to the top as a button, separate from the conversation list — like
+   Claude's Home / Code. Right now it sits between 開新對話 and the list, which reads as
+   another conversation.」 It is a PLACE. The separation is the whole point, so the rule that
+   creates it is a border rather than spacing that can be tuned away. */
+.places {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15em;
+  padding-bottom: 0.6em;
+  margin-bottom: 0.6em;
+  border-bottom: 1px solid var(--line, var(--card));
+}

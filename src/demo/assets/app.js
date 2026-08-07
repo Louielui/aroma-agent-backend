@@ -229,13 +229,36 @@
     mainEl.classList.add('empty')
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)
+    /**
+     * ⛔ NEVER SILENTLY BLANK — the rule that holds everywhere else on this surface.
+     *
+     * The Owner reported the greeting gone after the briefing moved to 首頁. The endpoint
+     * returns 「午安，Louie」, the CSS is intact and this function is still called, so I could
+     * not reproduce it — and the old code returned SILENTLY on every failure path, which means
+     * a blank greeting and a broken greeting looked identical.
+     *
+     * That is the same shape as every 「count: 43」 in this project. If it is blank again now,
+     * the screen says WHY, and 「I could not reproduce it」 stops being the end of the sentence.
+     *
+     * The clock stays the SERVER's — 早晨/午安/晚安 depends on HIS timezone, never the browser's,
+     * so there is no local fallback greeting. The fallback is an honest sentence, not a guess.
+     */
+    var settle = function (text) {
+      if (active !== c || c.history.length > 0) return
+      box.textContent = text
+    }
     fetch('/api/v1/demo/greeting', { headers: { Accept: 'application/json' } })
-      .then(function (r) { return r.ok ? r.json() : null })
-      .then(function (j) {
-        if (!j || !j.line || active !== c || c.history.length > 0) return
-        box.textContent = j.line
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status)
+        return r.json()
       })
-      .catch(function () { /* no greeting is better than a wrong one */ })
+      .then(function (j) {
+        if (!j || !j.line) throw new Error('no line in payload')
+        settle(j.line)
+      })
+      .catch(function (e) {
+        settle('(我攞唔到今日嘅招呼語 —— ' + String(e && e.message).slice(0, 40) + ')')
+      })
   }
 
   /** 首頁 — the briefing as its own destination. */

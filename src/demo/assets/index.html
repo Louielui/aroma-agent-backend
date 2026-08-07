@@ -18,13 +18,17 @@
         <button id="collapse" class="icon-btn" type="button" aria-label="收合側欄" title="收合側欄">☰</button>
         <span class="brand">香香</span>
       </div>
+      <!-- ⛔ DESTINATIONS, ABOVE AND SEPARATE FROM THE CONVERSATION LIST.
+           Sitting between 開新對話 and the list, 首頁 read as another conversation — which is
+           what it is not. It is a place, like Claude's Home. 營運 / 財務 / 行政 stay in
+           PRODUCT-IA and OFF this nav until each has something conversation does badly,
+           asserted by src/demo/sidebar.test.js. -->
+      <nav id="places" class="places" aria-label="地方">
+        <button id="open-home" class="side-item" type="button">
+          <span class="side-item-icon" aria-hidden="true">◱</span><span>首頁</span>
+        </button>
+      </nav>
       <button id="new-chat" class="new-chat" type="button">＋ 開新對話</button>
-      <!-- 首頁 earns its place because the briefing outgrew the conversation screen it was
-           borrowing. 營運 / 財務 / 行政 stay in PRODUCT-IA and OFF this list until each has
-           something conversation does badly — asserted by src/demo/sidebar.test.js. -->
-      <button id="open-home" class="side-item" type="button">
-        <span class="side-item-icon" aria-hidden="true">◱</span><span>首頁</span>
-      </button>
       <nav id="convs" class="convs" aria-label="歷史對話"></nav>
       <button id="open-settings" class="side-item" type="button" aria-haspopup="dialog" aria-expanded="false">
         <span class="side-item-icon" aria-hidden="true">⚙</span><span>設定</span>

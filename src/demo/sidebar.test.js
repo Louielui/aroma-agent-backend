@@ -29,6 +29,12 @@ const APP_CSS = fs.readFileSync(path.join(__dirname, 'assets', 'app.css'), 'utf8
 
 test('首頁 is a sidebar destination, beside 設定', () => {
   assert.match(HTML, /id="open-home"/, '首頁 must be reachable as its own item')
+  // ⛔ ABOVE the conversation list and in its own nav — sitting between 開新對話 and the list
+  // made a PLACE read as another conversation.
+  assert.ok(HTML.indexOf('id="places"') < HTML.indexOf('id="new-chat"'),
+    'destinations come before 開新對話')
+  assert.ok(HTML.indexOf('id="open-home"') < HTML.indexOf('id="convs"'),
+    '首頁 must not sit inside or below the conversation list')
   assert.match(HTML, /首頁/)
   assert.match(HTML, /id="open-settings"/, '設定 stays')
 })
