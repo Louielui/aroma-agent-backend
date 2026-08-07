@@ -42,6 +42,9 @@ describe('the section envelope reaches the model prompt', () => {
   test('⛔ no attachment means no envelope — an empty block would still frame the turn', async () => {
     const seen = {}
     await processIntake('普通問題', spyAdapter(seen), [], { requestId: 'r3', interactionMode: 'chat', demo: true }).catch(() => {})
-    assert.ok(!/section_context/.test(seen.prompt || ''))
+    // ⛔ `|| ''` meant this passed if the adapter was NEVER CALLED — the strongest possible
+    // failure looked identical to the behaviour under test.
+    assert.strictEqual(typeof seen.prompt, 'string', 'the adapter must have been called at all')
+    assert.ok(!/section_context/.test(seen.prompt))
   })
 })

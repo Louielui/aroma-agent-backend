@@ -96,7 +96,11 @@ describe('⛔ the three outcomes stay apart', () => {
   test('no search box is BLOCKED_BY_SITE, never a quiet 「冇回收」', async () => {
     const r = await checkRecall({ session: fakeSession([[{ ref: 'r6', domId: 6, role: 'text', name: 'hello', interactive: false }]]), goto, query: 'mushrooms' })
     assert.strictEqual(r.outcome, 'BLOCKED_BY_SITE')
-    assert.doesNotMatch(r.detail || '', /冇搵到相關回收/,
+    // ⛔ THE SUBJECT MUST EXIST BEFORE ITS ABSENCE MEANS ANYTHING. With `|| ''` this passed
+    // for free whenever detail was missing — a BLOCKED result that said nothing at all
+    // satisfied 「it must not read as a clean page」.
+    assert.ok(r.detail, 'BLOCKED must say why; with no detail the check below is vacuous')
+    assert.doesNotMatch(r.detail, /冇搵到相關回收/,
       'a page she could not search must never read as a page with no recalls')
   })
 
@@ -276,13 +280,17 @@ describe('⛔ 「I recognised nothing」 is never reported as 「there is nothin
     const r = await checkRecall({ session: searched(broken), goto, query: 'cheese' })
     assert.strictEqual(r.outcome, 'BLOCKED_BY_SITE')
     assert.match(r.detail, /89/, 'it must name the contradiction it detected')
-    assert.doesNotMatch(r.detail || '', /冇搵到相關回收/)
+    assert.doesNotMatch(r.detail, /冇搵到相關回收/) // detail proved a string by the line above
   })
 
   test('⛔ no count line AND nothing parsed → refuses to call it 「no recalls」', async () => {
     const r = await checkRecall({ session: searched([{ ref: 'y1', domId: 1, role: 'generic', name: 'hello', interactive: false }]), goto, query: 'cheese' })
     assert.notStrictEqual(r.outcome, 'ANSWERED')
-    assert.doesNotMatch((r.detail || '') + (r.answer || ''), /冇搵到相關回收/,
+    // ⛔ Both defaulted to '' meant a result carrying NEITHER field passed this test — the
+    // silence it exists to forbid was the one input it could not catch.
+    const said = (r.detail || '') + (r.answer || '')
+    assert.ok(said, 'it must say something; silence is the failure this test is about')
+    assert.doesNotMatch(said, /冇搵到相關回收/,
       'unable to read is not the same as nothing to read, and only one of them is good news')
   })
 

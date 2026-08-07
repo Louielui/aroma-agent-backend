@@ -91,7 +91,11 @@ describe('⛔ 查唔到 always has its own field, even when everything else is c
     const c = conclusionFor(KIND, fiveCleanOneBlocked(), NOW)
     assert.ok(c.gap, 'the unchecked ingredient must have its own line')
     assert.match(c.gap, /green onion/)
-    assert.doesNotMatch(c.calm || '', /green onion/, 'it must not appear in the calm summary')
+    // ⛔ The calm sentence must EXIST here (five ingredients are clean) before 「green onion is
+    // not in it」 says anything. Defaulted to '', a regression that dropped the sentence
+    // entirely would have passed this line.
+    assert.ok(c.calm, 'five are clean, so there is a calm sentence')
+    assert.doesNotMatch(c.calm, /green onion/, 'it must not appear in the calm summary')
   })
 
   test('the calm summary counts only what was ACTUALLY checked', () => {
