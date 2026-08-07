@@ -90,3 +90,75 @@ test('the bar is suppressed on 首頁, because the briefing is right there', () 
 test('the destination has styles and does not reuse the thread layout', () => {
   assert.match(APP_CSS, /\.home-view/)
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ THE DEFECT THIS ROUND INTRODUCED, AND WHY IT IS THE WORST KIND.
+ *
+ * `showHome()` set `active = null`. `submit()` opens with `active.history.length`. So a screen
+ * he could type into **silently swallowed the message**: TypeError, nothing sent, nothing
+ * rendered, no error — the text just gone.
+ *
+ * > **Owner: 「It would have looked like she ignored me.」**
+ *
+ * The composer is removed from 首頁 because it is a report. The GUARD stays anyway: a future
+ * destination must not be able to reintroduce the silent swallow.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+test('⛔ 首頁 has no composer — it is a report, not a conversation', () => {
+  const i = APP_JS.indexOf('function showHome')
+  const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 10))
+  assert.match(body, /showComposer\(\s*false\s*\)/, '首頁 must hide the composer explicitly')
+})
+
+test('⛔ submit() REFUSES when there is no conversation, instead of throwing', () => {
+  const i = APP_JS.indexOf('function submit')
+  const body = APP_JS.slice(i, i + 1200)
+  assert.match(body, /if \(!active\)/, 'a missing conversation must be handled, not dereferenced')
+})
+
+test('the composer comes back when a conversation is shown', () => {
+  const i = APP_JS.indexOf('function selectConversation')
+  const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 10))
+  assert.match(body, /showComposer\(\s*true\s*\)/, 'leaving 首頁 must restore it')
+})
+
+/**
+ * ⛔ HIERARCHY IS WEIGHT, NOT ORDER. The order was already waiting → conclusion → Franco
+ * (HR-28, yesterday). Nothing changed, because:
+ *
+ * > **「當所有嘢字重一樣，最高嗰嚿就贏，擺喺邊都冇用。」** — Owner, 2026-08-07
+ *
+ * On a normal day waiting is one quiet line and Franco is four — so the least urgent thing
+ * dominated every ordinary day. HR-33 again, in typography.
+ */
+test('⛔ the three sections have DISTINCT weights, not just distinct positions', () => {
+  const block = APP_CSS.slice(APP_CSS.indexOf('/* ── hierarchy'))
+  assert.ok(block.length > 100, 'the hierarchy rules must exist')
+  assert.match(block, /\.brief-waiting/)
+  assert.match(block, /\.brief-backlog/)
+  // Franco is quiet: it must not use --ink, the loudest token.
+  const franco = block.slice(block.indexOf('.brief-backlog'), block.indexOf('.brief-backlog') + 300)
+  assert.doesNotMatch(franco, /var\(--ink\)/, 'the least urgent, tallest block must not take the loudest ink')
+})
+
+test('⛔ Franco is LIGHTENED, not shortened — the caveat survives', () => {
+  // Owner: 「I would have accepted a shorter line and lost the caveat, which is the one thing
+  // on that screen that stops me reading 64 as a number of invoices.」
+  assert.doesNotMatch(APP_JS, /backlog[^\n]*slice\(0,\s*\d+\)/,
+    'truncating the Drive line would drop the caveat that stops 64 being read as invoices')
+})
+
+/**
+ * ⛔ TIMESTAMPS: one line at the top; a section shows its own only when it MEANS something.
+ * The threshold is each section's own freshness expectation, not a chosen number.
+ */
+test('a single 更新於 line is rendered at the top', () => {
+  assert.match(APP_JS, /更新於/)
+  assert.match(APP_JS, /builtAtLabel/)
+})
+
+test('⛔ a per-section time renders only when the server says it earns its place', () => {
+  assert.match(APP_JS, /showCheckedAt/,
+    'the client must not decide this — the server knows each section\'s freshness expectation')
+})

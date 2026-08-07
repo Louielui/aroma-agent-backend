@@ -2062,3 +2062,42 @@ interval, and why every rule this week that actually held was structural.
 **The one that is now mechanised:** HR-34's twin. The endpoint has a minimum interval and a
 server-side knock log, **so the person running errands is now governed by the same thing that
 governs the errand.** The other eight rows in that table have no mechanism at all.
+
+---
+
+# HR-42 — A surface you can type into that swallows the message is worse than one you cannot
+
+**Round:** the sidebar, 2026-08-07. **Introduced and found in the same round.**
+
+Moving the briefing to 首頁 meant `showHome()` set `active = null`. `submit()` opens with
+`active.history.length`. So 首頁 rendered **with the composer still on screen**, and typing into
+it produced: a TypeError, no message sent, nothing rendered, no error surfaced. **The text
+simply disappeared.**
+
+> **Owner: 「It would have looked like she ignored me.」**
+
+That sentence is the whole rule. Every other failure mode in this system announces itself —
+a refusal says why, a blocked errand says what blocked it, an unreadable store says it cannot
+read. **This one is indistinguishable from being ignored**, which is the one thing a
+conversational surface may never be mistaken for.
+
+## Why it happened, and it is not carelessness
+
+`active` was a page-wide variable that every screen had always set. A **new kind of screen** was
+added — a destination that is not a conversation — and it correctly set it to null. Nothing was
+wrong with either half. **The defect is in the seam**, exactly as HR-30 described for records:
+two correct components composing into a third behaviour nobody wrote.
+
+## THE RULE
+
+> ### When you add a screen where an existing input does not apply, you must do BOTH: remove the
+> ### input, AND make the handler refuse safely. Removing it alone leaves the crash one future
+> ### screen away; guarding alone leaves a control that does nothing.
+
+**Both are in place.** 首頁 hides the composer because it is a report; `submit()` returns early
+on no conversation because the next destination must not be able to reintroduce the swallow.
+
+**And the general test:** for any input that can now appear on a screen it was not designed for,
+ask **「what does pressing it do here?」** If the answer is 「nothing, silently」, that is a defect
+with the highest cost-to-visibility ratio in the whole product — the user concludes something
+about *her*, not about the software.

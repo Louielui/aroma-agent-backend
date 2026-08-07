@@ -92,3 +92,43 @@ briefing until something briefs it.**
 | **amounts age out** | plain < 2h · struck through 2–24h · **absent > 24h** |
 | **the link stays open at any age** | 過期嘅係主張，唔係 access |
 | **open-the-page** | refuses cleanly if she holds the profile; **never auto-clears a stale lock** |
+
+---
+
+# OPEN QUESTION — the follow-up that needs to know what he was reading
+
+<!-- opened 2026-08-07 · NOT SOLVED · do not close with a composer -->
+
+首頁 has no composer, and that is correct: it is a report, not a conversation. But it leaves a
+real problem, and the Owner named it precisely.
+
+> **Owner, 2026-08-07: 「「點解青蔥查唔到」 needing to reach a conversation that knows what I was
+> reading — you are right that a bare composer would be worse than none. Record it as an open
+> question, do not solve it now. But note that it is the reason I will keep wanting a composer
+> there, so whatever eventually goes in that space has to carry context or it will be this bug
+> with a nicer failure.」**
+
+## The shape of the problem
+
+He reads a conclusion — 「青蔥查唔到」 — and wants to ask about it. Today he must leave 首頁, open
+a conversation, and **retype the context she already has on screen**. That friction is the reason
+a composer keeps looking like the answer.
+
+## Why a bare composer is not the answer
+
+It would start a conversation that does not know what he was looking at. **It would look like it
+continues from the report and would not** — which is the same failure as HR-42 wearing a nicer
+face: an input that appears to do one thing and does another.
+
+## The bar any solution must clear
+
+> ### Whatever goes in that space must CARRY THE CONTEXT — the errand, the conclusion, the row he
+> ### was reading — into the conversation it opens. If it cannot, it does not go in.
+
+Candidate shapes, none chosen: a per-item 「問下」 affordance that seeds the turn with that item;
+a composer that shows what it will attach before he types; or nothing, permanently, with the
+answer being that he asks in conversation and she reads the same briefing he is reading.
+
+> ### ⛔ ENFORCED BY: `src/demo/sidebar.test.js` → 「首頁 has no composer」, which fails if a bare
+> ### composer is added back. It does NOT enforce that a context-carrying one is correct — that
+> ### needs its own test the day one is designed.

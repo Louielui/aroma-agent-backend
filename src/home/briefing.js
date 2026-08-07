@@ -48,9 +48,34 @@ function hhmm (ms) {
  * none, **invisibly**, because the result is a plausible clock either way. It sat under the
  * sections that happen to be honest today, waiting for the ordering luck to run out.
  */
-function stamped (section, readAt) {
+function stamped (section, readAt, opts) {
   if (!readAt) return section
-  return { ...section, checkedAt: readAt, checkedAtLabel: hhmm(readAt) }
+  const o = opts || {}
+  /**
+   * ⛔ WHETHER THE TIME EARNS ITS PLACE ON SCREEN — decided HERE, not by the client.
+   *
+   * Measured 2026-08-07: builtAt 14:04, waiting 14:04, errands 14:04, backlog 14:02. Three
+   * identical to the build and one two minutes off. Four timestamps saying 「roughly now」 is
+   * noise, and it buried the real times, which live inside the text — 55 days, 5 hours ago.
+   *
+   * ⛔ BUT NOT REMOVED, because 「一個非聲稱配一個時間，衰過冇時間」: a section reporting
+   * CANNOT_READ under a single top-line time would look like it had just been read.
+   *
+   * The threshold is the section's OWN freshness expectation — the Drive reader caches for
+   * five minutes, so five minutes is when its age starts meaning something. A chosen number
+   * would be a layout decision nobody made (HR-28).
+   */
+  const freshWithin = Number(o.freshWithinMs) || 0
+  const age = Number(o.now) - readAt
+  const unhealthy = ['CANNOT_READ', 'NOT_WIRED', 'NOT_CHECKED', 'UNJUDGEABLE'].includes(section.state)
+  return {
+    ...section,
+    checkedAt: readAt,
+    checkedAtLabel: hhmm(readAt),
+    // The client renders the label only when this is true. Both reasons are load-bearing:
+    // an unhealthy section must always date itself, whatever its age.
+    showCheckedAt: unhealthy || age > freshWithin
+  }
 }
 
 /** The briefing shows the CONCLUSION; the rows are a drill-down, not the display. */
@@ -121,10 +146,10 @@ function buildBriefing ({ store, backlog, witness, now }) {
     try { rows = store.list() } catch (_) { unreadable = true }
 
     if (unreadable) {
-      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], conclusions: [], hiddenRows: 0, totalRows: 0, line: '我睇唔到差事紀錄。' }, t)
+      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], conclusions: [], hiddenRows: 0, totalRows: 0, line: '我睇唔到差事紀錄。' }, t, { now: t })
       // ⛔ An unreadable record is NOT 「nothing waiting」 — it is 「I cannot tell you」, and
       // the difference could cost him a cart he was waiting to pay for.
-      waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t)
+      waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t, { now: t })
     } else {
       // The store WAS read, at t. That is why these carry a time — from the read, not by default.
       //
@@ -144,12 +169,12 @@ function buildBriefing ({ store, backlog, witness, now }) {
       const hiddenRows = Math.max(0, rows.length - shownRows.length)
       errands = stamped(rows.length
         ? { state: 'HAS_ROWS', rows: shownRows, hiddenRows, totalRows: rows.length, conclusions, freshness, line: '' }
-        : { state: 'NONE_RAN', rows: [], hiddenRows: 0, totalRows: 0, conclusions, freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
+        : { state: 'NONE_RAN', rows: [], hiddenRows: 0, totalRows: 0, conclusions, freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t, { now: t })
 
       const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
       waiting = stamped(w.length
         ? { state: 'WAITING', cards: w.map((e) => cardFor(e, t)), line: '' }
-        : { state: 'NOTHING_WAITING', cards: [], line: '冇嘢等你決定。' }, t)
+        : { state: 'NOTHING_WAITING', cards: [], line: '冇嘢等你決定。' }, t, { now: t })
     }
   }
 

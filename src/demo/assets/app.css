@@ -754,3 +754,35 @@ button[disabled] { opacity: .45; cursor: default; }
 }
 /* The current destination, marked in one place so two cannot both look selected. */
 .side-item-on { background: var(--card); color: var(--ink); }
+
+/* ── hierarchy: weight, not order ────────────────────────────────────────────
+   The order was already waiting → conclusion → Franco (HR-28, 2026-08-07). Nothing changed,
+   because:
+
+     「當所有嘢字重一樣，最高嗰嚿就贏，擺喺邊都冇用。」 — Owner, 2026-08-07
+
+   On a normal day waiting is one quiet line and Franco is four, so the LEAST urgent block
+   dominated every ordinary day. HR-33 in typography.
+
+   ⛔ Franco is LIGHTENED, NOT SHORTENED. Its caveat — that 64 counts FILES, not invoices — is
+   the one thing on this screen that stops a number being read as something it is not. Cutting
+   the line to save height would have cut the caveat. Weight is free; meaning is not. */
+
+/* ① waiting — the only element permitted to be loud, because it is the only one with a
+   deadline. Quiet when empty; the heaviest thing on screen when it has a card. */
+.brief-waiting .brief-text { color: var(--muted); }
+.brief-waiting .brief-card { border-color: var(--warn, #a8782a); }
+
+/* ② the conclusion — the default. Normal ink, no decoration. */
+.brief-conclusion { margin-top: 0.5em; }
+
+/* ③ Franco — last, and quiet. Never --ink: it changes once a day and he already knows it. */
+.brief-backlog .brief-text {
+  color: var(--faint);
+  line-height: 1.55;
+}
+.brief-backlog { margin-top: 1.1em; opacity: 0.92; }
+
+/* The single top-line time. Faint, above everything, so the sections stop repeating it. */
+.brief-updated { margin-bottom: 0.7em; }
+.brief-updated .brief-text { color: var(--faint); font-variant-numeric: tabular-nums; }

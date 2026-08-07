@@ -242,6 +242,10 @@
   function showHome () {
     if (!mainEl) return
     active = null
+    // ⛔ 首頁 IS A REPORT, NOT A CONVERSATION — so there is no composer here. A composer on a
+    // report looks like it continues from what he is reading, and would not. The follow-up
+    // problem it leaves open is recorded in DESIGN-HOME-BRIEFING; a bare box is not the answer.
+    showComposer(false)
     mainEl.classList.remove('empty')
     clear(log)
     titleEl.textContent = '首頁'
@@ -266,11 +270,26 @@
       })
   }
 
+  /** The composer belongs to a conversation. One place decides, so the two cannot disagree. */
+  function showComposer (on) {
+    var c = document.getElementById('composer')
+    if (c) c.classList.toggle('hidden', !on)
+  }
+
   /** Which destination is current. One place, so the two cannot both look selected. */
   function markHome (on) {
     var b = document.getElementById('open-home')
     if (b) b.classList.toggle('side-item-on', !!on)
     if (on) renderConvList()
+  }
+
+  /**
+   * A section shows its own time ONLY when the server says it earns its place.
+   * Four timestamps all saying 「roughly now」 buried the real times, which live inside the
+   * text — 55 days, 5 hours ago. See briefing.js stamped().
+   */
+  function whenFor (section) {
+    return (section && section.showCheckedAt) ? section.checkedAtLabel : ''
   }
 
   function row (cls, text, when) {
@@ -307,14 +326,20 @@
   function renderBriefing (host, b) {
     clear(host)
 
+    // ⛔ ONE TIME, AT THE TOP. Measured 2026-08-07: builtAt 14:04, waiting 14:04, errands
+    // 14:04, backlog 14:02 — four stamps all saying 「roughly now」. That is noise, and it
+    // buried the real times, which live INSIDE the text: 55 days, 5 hours ago.
+    // A section still dates itself when that means something — see whenFor().
+    if (b.builtAtLabel) host.appendChild(row('brief-updated', '更新於 ' + b.builtAtLabel, ''))
+
     // ── ① anything waiting on him — the only thing with a deadline ──
     var w = b.waiting || {}
     if (w.state === 'NOT_WIRED') {
       host.appendChild(row('brief-waiting brief-defect', w.line, ''))
     } else if (w.state === 'CANNOT_READ') {
-      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', w.checkedAtLabel))
+      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', whenFor(w)))
     } else if (w.state === 'NOTHING_WAITING') {
-      host.appendChild(row('brief-waiting', '冇嘢等你決定。', w.checkedAtLabel))
+      host.appendChild(row('brief-waiting', '冇嘢等你決定。', whenFor(w)))
     } else if (w.cards) {
       for (var k = 0; k < w.cards.length; k++) host.appendChild(waitingCard(w.cards[k]))
     }
@@ -326,11 +351,11 @@
       // record may be full — nothing asked it. Same class as DEFECT-011.
       host.appendChild(row('brief-errands brief-defect', e.line, ''))
     } else if (e.state === 'CANNOT_READ') {
-      host.appendChild(row('brief-errands', '我睇唔到差事紀錄。', e.checkedAtLabel))
+      host.appendChild(row('brief-errands', '我睇唔到差事紀錄。', whenFor(e)))
     } else if (e.state === 'NONE_RAN' || !(e.rows && e.rows.length)) {
       // ⛔ Empty FOR A REASON is still never blank. Owner ruling: say why.
       host.appendChild(row('brief-errands',
-        '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。', e.checkedAtLabel))
+        '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。', whenFor(e)))
     } else {
       // ── THE CONCLUSION, NOT THE LOG ──
       //
@@ -361,7 +386,7 @@
       if (e.totalRows) bits.push(e.totalRows + ' 條紀錄')
       // ⛔ Never-blank applies to what was CUT, not only to what is empty.
       if (e.hiddenRows > 0) bits.push('仲有 ' + e.hiddenRows + ' 條冇顯示')
-      if (bits.length) host.appendChild(row('brief-errands concl-history', bits.join(' · ') + ' —— 未有紀錄頁,要睇就問我。', e.checkedAtLabel))
+      if (bits.length) host.appendChild(row('brief-errands concl-history', bits.join(' · ') + ' —— 未有紀錄頁,要睇就問我。', whenFor(e)))
     }
 
     // ── ②b how fresh that is ALLOWED to be ──
@@ -392,7 +417,7 @@
 
     // ── ③ the Drive line, LAST: standing state, four lines tall, changes once a day ──
     if (b.backlog) {
-      host.appendChild(row('brief-backlog', b.backlog.line, b.backlog.checkedAtLabel))
+      host.appendChild(row('brief-backlog', b.backlog.line, whenFor(b.backlog)))
     }
   }
 
@@ -561,6 +586,7 @@
   function selectConversation (c) {
     // A conversation is the current destination, so 首頁 is not.
     markHome(false)
+    showComposer(true)
     active = c
     clear(log)
     log.appendChild(c.thread)
@@ -937,6 +963,17 @@
 
   function submit () {
     if (pending) return
+    /**
+     * ⛔ NO CONVERSATION, NO SEND — AND IT MUST NOT THROW.
+     *
+     * showHome() set `active = null`, and the next line dereferenced it. A screen he could type
+     * into SILENTLY SWALLOWED the message: TypeError, nothing sent, nothing rendered, no error,
+     * the text simply gone. Owner: 「It would have looked like she ignored me.」
+     *
+     * 首頁 hides the composer, so this is unreachable today. The guard stays anyway, because the
+     * next destination must not be able to reintroduce a silent swallow.
+     */
+    if (!active) return
     var text = msg.value.trim()
     if (!text) return
     clearErrors()

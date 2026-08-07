@@ -953,7 +953,10 @@ function createApp (options = {}) {
           const checkedAt = r && r.checkedAt ? new Date(r.checkedAt).getTime() : undefined
           // `sentenceFor` returns null only for 「the feature is off」 — which is not a read.
           if (!line) return null
-          return { line, checkedAt }
+          // The reader declares its OWN freshness expectation: this value is served from a
+          // 5-minute cache, so five minutes is when its age starts to mean something. The
+          // briefing shows a per-section time only past that. See briefing.js stamped().
+          return { line, checkedAt, freshWithinMs: 5 * 60 * 1000 }
         },
 
     // ── the scheduled door, and the two witnesses ────────────────────────────
