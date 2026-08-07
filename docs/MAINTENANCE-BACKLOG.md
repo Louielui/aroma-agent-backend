@@ -357,3 +357,28 @@ safety-relevant modules, not a copy.
 > live evidence field.** Whichever copy wins the merge, it must not come back — the audit
 > mirror sends `.aroma/computer-audit/` to Backblaze nightly, and a window title can carry a
 > customer name or an email subject.
+
+---
+
+## M-7 — the launcher had no backup
+
+**Status:** ✅ RESOLVED 2026-08-07 · **Opened and closed same day** · **Severity: was high, silently**
+
+**Recorded as its own defect at the Owner's instruction**, rather than folded into
+`DESIGN-LAUNCHER-PROTECTION.md` — it is not about tampering.
+
+`Monthly-OfflineBackup.ps1` covered four sources: TruthData, ReleaseRecords, XiangxiangArchive,
+Core. The launcher was in none of them.
+
+> ### The one file that starts everything was the one file with no copy.
+
+Nothing to do with an attacker. A bad edit, a disk error or a mistake would have left no way
+back — and protection without a copy means the best case is *knowing* it is broken.
+
+**Fixed:** `scripts/launcher/` is now a monthly offline source. The BODY is what holds the
+flags; the 21-line shim at `C:\Aroma\xiangxiang.ps1` is covered differently, by a pinned hash
+(`src/governance/launcherPin.js`), because it lives outside the repo.
+
+**⛔ ENFORCED BY:** `src/governance/launcherPin.test.js` → 「the launcher body IS in the monthly
+backup sources」, and `scripts/verify/launcher.js` → 「啟動器有備份」, which FAILS if it is
+removed from the list.

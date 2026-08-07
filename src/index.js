@@ -134,6 +134,26 @@ const server = app.listen(PORT, BIND_HOST, () => {
   console.log(`[AROMA-HUB] Listening on ${BIND_HOST}:${PORT}`)
   console.log(`[AROMA-HUB] LLM provider: ${process.env.LLM_PROVIDER || 'claude'}`)
   // NEVER log the API key
+
+  /**
+   * ⛔ L-1 ② — THE LAUNCHER CHECK. Every restart is a check, so nobody has to remember.
+   *
+   * IT REPORTS AND NEVER REFUSES. A legitimate flag edit must not brick her, and the thing
+   * that would repair a refused start is the thing that refused to start. So: log it, surface
+   * it on 首頁 as a defect, and carry on. See docs/DESIGN-LAUNCHER-PROTECTION.md §3.
+   */
+  try {
+    const { checkLauncher } = require('./governance/launcherPin')
+    const l = checkLauncher()
+    if (l.state === 'MATCH') {
+      console.log('[AROMA-HUB] launcher pin: MATCH')
+    } else {
+      console.warn('[AROMA-HUB] launcher pin: ' + l.state + ' — ' + l.saying)
+    }
+  } catch (e) {
+    // Even the checker failing must not stop her. It becomes a line, like everything else.
+    console.warn('[AROMA-HUB] launcher pin: CHECK_FAILED — ' + String(e && e.message).split('\n')[0])
+  }
 })
 // Fail closed on any bind/listen error (e.g. port in use): no half-started state, no
 // alternative port, no second listener — a safe FATAL code + non-zero exit.

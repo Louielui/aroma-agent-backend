@@ -60,8 +60,21 @@ test('an unrecognised value is still WARNED about — it is a typo, not a prefer
 test('*** the launcher and the repo default now agree ***', () => {
   // The whole point. If someone edits one, this fails and they must consider the other.
   const fs = require('fs')
+  const path = require('path')
+  /**
+   * ⛔ THE LAUNCHER MOVED, AND THIS TEST CAUGHT IT — which is what it is for.
+   *
+   * 2026-08-07: the flags now live in the repo at scripts/launcher/xiangxiang-body.ps1, and
+   * C:\Aroma\xiangxiang.ps1 is a 21-line shim with no configuration in it (L-1 ①). Reading the
+   * shim would find no TURN_ROUTER and the test would pass VACUOUSLY — an assertion that stops
+   * asserting is worse than one that fails.
+   *
+   * The path comes from the governance module so there is ONE place that knows where the
+   * launcher lives.
+   */
+  const { BODY_REL } = require('../governance/launcherPin')
   let launcher = null
-  try { launcher = fs.readFileSync('C:/Aroma/xiangxiang.ps1', 'utf8') } catch (_) {}
+  try { launcher = fs.readFileSync(path.join(__dirname, '..', '..', BODY_REL), 'utf8') } catch (_) {}
   if (launcher === null) return // not on the Owner's machine; the assertion above still holds
   const m = /\$env:TURN_ROUTER\s*=\s*'([a-z]+)'/.exec(launcher)
   assert.ok(m, 'the launcher no longer sets TURN_ROUTER at all')

@@ -46,6 +46,10 @@ $Sources  = @(
   # deferred it to a "Stage 2" that was never written, and this list was built without it.
   # Two independent omissions of the same leg — which is how it ran 12 nights unnoticed.
   [pscustomobject]@{ Name = '香香核心資料 (core-data)';    Path = 'C:\AromaBackupStaging\Core' }
+  # ⛔ ADDED 2026-08-07 as its own defect, not folded into the protection design:
+  # the one file that starts everything was the one file with no copy. The BODY is what
+  # holds the flags; the shim at C:Aroma is 21 lines and is pinned by hash instead.
+  [pscustomobject]@{ Name = '啟動器 (launcher body)';      Path = 'C:\Aroma\aroma-agent-backend\scripts\launcher' }
 )
 
 function Say ([string]$T, [string]$C = 'Gray') {
