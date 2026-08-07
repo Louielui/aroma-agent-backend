@@ -54,6 +54,24 @@ function browserResolverSource () {
   ].join('\n')
 }
 
+/**
+ * The locale the page STARTS in, resolved by the same `currentLocale()` the server uses.
+ *
+ * ⛔ THE PAGE SHIPS BOTH LANGUAGES AND IS TOLD WHICH ONE TO OPEN IN. It is not given a bound
+ * catalogue: switching language must not need a reload, let alone a restart. This is the
+ * initial value only.
+ *
+ * ⚠ AND THERE IS NO SWITCH YET. That is step 3 — `language` as the settings registry's eighth
+ * and final entry — and it is one line: the page reads the setting instead of this. Until then
+ * the only way to change it is `XIANGXIANG_LOCALE` in the server's environment, which is a
+ * developer affordance and not the feature. Said plainly so nobody reports the missing switch
+ * as a defect.
+ */
+function browserLocaleSource () {
+  const { currentLocale } = require('./t')
+  return 'var INITIAL_LOCALE = ' + JSON.stringify(currentLocale()) + ';'
+}
+
 /** The catalogue, both locales, as a page-safe literal. */
 function browserCatalogueSource () {
   // ⛔ `</script>` inside any string would end the inline script early. The page is assembled
@@ -63,7 +81,7 @@ function browserCatalogueSource () {
 
 /** Everything the page needs, in one block. */
 function browserI18nSource () {
-  return browserResolverSource() + '\n' + browserCatalogueSource()
+  return browserResolverSource() + '\n' + browserLocaleSource() + '\n' + browserCatalogueSource()
 }
 
-module.exports = { browserResolverSource, browserCatalogueSource, browserI18nSource }
+module.exports = { browserResolverSource, browserCatalogueSource, browserLocaleSource, browserI18nSource }

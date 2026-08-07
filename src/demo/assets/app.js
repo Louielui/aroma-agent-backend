@@ -59,9 +59,10 @@
    * `t(`, so calling the client's resolver anything else would have left the file with the most
    * interface strings outside the one structural rule. The rename was the cheaper side.
    *
-   * The locale is DEFAULT_LOCALE today. Step 3 makes it a setting; that is one line here.
+   * INITIAL_LOCALE comes from the same currentLocale() the server uses — see
+   * browserResolver.js. There is no SWITCH yet; that is step 3, and it is one line here.
    */
-  var t = createResolver({ catalogue: CATALOGUE, locale: DEFAULT_LOCALE })
+  var t = createResolver({ catalogue: CATALOGUE, locale: INITIAL_LOCALE })
 
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
