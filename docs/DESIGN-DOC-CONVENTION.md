@@ -69,3 +69,30 @@ test. **The check is that a reader can go from any requirement to the thing that
 and, where nothing would, see that stated.
 
 See `docs/HOUSE-RULES.md` → HR-40.
+
+---
+
+## ⚠ The first use of this convention caught itself
+
+`DESIGN-CONVERSATIONAL-BROWSING.md`, written 2026-08-07, carried:
+
+```
+⛔ ENFORCED BY: `src/browser/originPolicy.test.js` → the existing blocked-surface tests.
+                **This one is already enforced.**
+```
+
+**That file does not exist.** The government block IS tested — in
+`src/browser/wiringSmoke.test.js`, and more strongly than the citation claimed — but the
+citation named a file nobody had opened.
+
+> ### An `ENFORCED BY` line is itself a claim, and it fails the same way the requirement does.
+
+It was caught by **checking whether the cited test exists** before publishing, which took one
+command. So the convention gains its only operational step:
+
+> ## Before committing a design doc, open every non-`NOTHING YET` citation and confirm the test
+> ## exists AND asserts what the line says it asserts. `ls` is not enough; read the assertion.
+
+Had this shipped, a future reader would have taken a requirement as enforced, gone looking for
+the file, found nothing, and had no way to tell whether the test was deleted or never written.
+**That is worse than `NOTHING YET`** — which is the whole reason `NOTHING YET` exists.
