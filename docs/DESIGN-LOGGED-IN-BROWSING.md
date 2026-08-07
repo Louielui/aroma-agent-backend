@@ -331,3 +331,97 @@ would.**
 4. Only then create the real profile and have the Owner log in once.
 
 **Nothing above is built. No profile exists. No credential has been touched.**
+
+---
+---
+
+# ⛔ THE HEADLINE — Owner's instruction, 2026-08-06
+
+> # 「空 profile 剷走嘅係自動填表，剷唔走你張卡喺 Costco 個資料庫入面。」
+
+**Owner: 「Your correction is right and I would have shipped my version.」**
+
+That sentence is the headline of this design and belongs above everything else in it. The
+ruling arrived believing an empty profile made payment impossible. **It makes autofill
+impossible.** Every retailer the Owner uses keeps the card on its own account record, so a
+logged-in one-click purchase is unaffected by anything in the browser profile.
+
+**L3 — request interception, deny non-GET by default — is the load-bearing layer.** L2 is real
+and worth doing and is not the guarantee it was believed to be.
+
+# BUILD ORDER — approved as proposed, not as ruled
+
+1. **Measure L1 free, placing no orders**  ← this round
+2. **The payment probe, proven to fail** on a throwaway profile with a fake card
+3. **L3, before anything else is built**
+4. **The real profile last**, and the Owner logs in once
+
+# GOVERNMENT — approved, with the explicit list kept
+
+An origin that appears in no sealed order is **unreachable at 0 ms**, and that is **complete
+rather than partial**. The block stays an **explicit reviewed list of submission surfaces** —
+**a `*.gc.ca` pattern would kill the CFIA recall check, which is the only errand that has ever
+worked.**
+
+---
+
+# RESIDUAL RISKS — three Owner decisions, recorded as decisions
+
+## 1. Unlimited reading — **ACCEPTED, not pending**
+
+> **Owner: 「Reading is unlimited and I accept that knowingly. Record it as accepted, not as
+> pending.」**
+
+Her session can read everything his accounts can read: order history, addresses, card last-4,
+supplier pricing, invoices, HR records within reach of the account. **No layer touches this and
+none is planned.** The audit records reads faithfully **after the fact** — a record, not a
+fence.
+
+**This is a closed decision. It is not an open item, not a TODO, and not something a later
+round should re-raise as though it were an oversight.**
+
+## 2. The profile folder is a credential — **treated as one from day one**
+
+> **Owner: 「Treat it as one from day one — ACL, out of the repo, out of offsite backup, and
+> written down so nobody later reads it as a cache.」**
+
+`C:\Aroma\browser-profile\` will hold **live session cookies for the Owner's accounts**.
+Anything with file access to it has those accounts — **no password, no 2FA**.
+
+| requirement | from day one, not after the first scare |
+|---|---|
+| **ACL** | restricted to the account that runs her; not world-readable |
+| **repository** | **never** — `.gitignore`d before the directory exists |
+| **offsite backup** | **excluded** — it must not reach Backblaze B2 or any copy that leaves the machine |
+| **the record** | written down as a credential-equivalent artifact, **so nobody later reads it as a cache and deletes, copies or syncs it casually** |
+
+**It is a new credential-equivalent artifact on this machine**, and 「she never sees passwords」
+does not cover it.
+
+## 3. ⚠ Prompt injection while wearing the Owner's identity — **the largest, and NOT solved this round**
+
+> **Owner: 「the one I had not thought about and it is the largest. Do not solve it in this
+> round, but state plainly in the record what changed.」**
+
+### WHAT CHANGED, stated plainly
+
+> ## Until now she read public pages **as nobody**. After this she reads them **as the Owner**.
+>
+> The same injected instruction that previously could achieve nothing can now be attempted
+> **with his accounts, his order history, and his ability to act already loaded.**
+
+What stands against it today is real but partial:
+
+- page content is **data, never instruction** — the standing rule;
+- the **sealed order is fixed before the run**, so an injected 「go here」 cannot add an origin;
+- the **origin allowlist** measured refusing in 0 ms;
+- **L3's deny-non-GET** would refuse an injected act that requires a write.
+
+**What none of them stops:** an injected instruction to do something *within an already-allowed
+origin, using an already-allowed method.*
+
+> ### ⛔ ANY FUTURE DESIGN THAT WIDENS THE ALLOWLIST HAS TO ANSWER TO THIS.
+>
+> Widening the allowlist was previously a convenience question. **It is now a
+> prompt-injection-surface question**, and this paragraph is where a future round has to come
+> and argue.
