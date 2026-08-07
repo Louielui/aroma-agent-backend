@@ -2101,3 +2101,71 @@ on no conversation because the next destination must not be able to reintroduce 
 ask **「what does pressing it do here?」** If the answer is 「nothing, silently」, that is a defect
 with the highest cost-to-visibility ratio in the whole product — the user concludes something
 about *her*, not about the software.
+
+---
+
+# HR-43 — Two readers of one record, and only one of them knew that MISSING and EMPTY are different
+
+**Round:** 首頁 sections Round A, 2026-08-07.
+
+> **Owner: 「conclusionFor handled it correctly and detailFor, written later, discarded the
+> distinction with one line. A second reader of the same data, written by the same author, that
+> quietly disagreed with the first. That is the same shape as HR-25 — write policy, read
+> evidence, never both on one key — but one level up: two readers of one record.」**
+
+| reader | the line | verdict |
+|---|---|---|
+| `conclusionFor` | `if (!prev \|\| !Array.isArray(latest.items))` → `uncomparable` | **correct** |
+| `detailFor` | `items: Array.isArray(latest.items) ? latest.items : []` | ⛔ **collapsed** |
+
+Rows written before the `items` field existed carry no `items`. The second reader turned that
+absence into an empty list, and eight ingredients rendered **「冇搵到相關回收」** on the live
+screen — a false all-clear produced by a missing FIELD rather than a missing RECALL.
+
+## Why a second reader is more dangerous than a second writer
+
+A second writer produces a conflict someone notices — two values, one record. **A second reader
+produces AGREEMENT-SHAPED OUTPUT.** Both screens rendered fine. Both were internally consistent.
+They simply described different worlds, and nothing compares them, because comparing readers is
+not a thing anyone does.
+
+> ### The first reader's care does not transfer. Every distinction a record supports must be
+> ### re-earned by every reader, and a reader written later has no way to know which
+> ### distinctions the earlier one found the hard way.
+
+## THE RULE
+
+> ### When you write a SECOND reader of a record, open the first one and list the distinctions
+> ### it makes. Any distinction it makes that yours does not, you are about to collapse.
+>
+> And prefer to make the record incapable of the collapse: **`items: undefined` and `items: []`
+> must not both be reachable through the same accessor.** Where that is impractical, the
+> distinction needs a NAMED STATE — here `UNRECORDED`, which is a value a renderer must handle
+> rather than a subtlety it must remember.
+
+## The audit this produced — and there WAS a third reader
+
+Asked for by the Owner: *「if there is a third reader it has the same chance of collapsing the
+same thing.」* Measured, not assumed:
+
+| reader | reads | verdict |
+|---|---|---|
+| `errandConclusion.conclusionFor` | `items`, `outcome`, `at` | ✅ distinguishes |
+| `errandKinds.freshnessOf` | `at`, `nextRunAt` | ✅ missing time → `UNJUDGEABLE` |
+| `errandStore.waiting()` | `outcome`, `resolvedAt` | ✅ nothing to collapse |
+| `homeRoutes` `/errand/:id/open` | `stop.where` | ✅ missing → 400, not a silent no-op |
+| `home.sectionDetail.detailFor` | `items`, `found`, `outcome` | ⛔ **was the collapse. Fixed.** |
+| **`demo/assets/app.js` `renderSection`** | `items` | ⛔ **THE THIRD READER: `(g.items \|\| [])`** |
+
+The client did the identical collapse one layer out. It was **unreachable** — the server's
+`state` field kept it out of that branch — **but the guard lived somewhere else, which is
+precisely the fragility.** Hardened: missing gets its own branch there too.
+
+**And the fallback test from HR-30 decides it independently of reachability:** `|| []` claims
+*「there were none」*. That is the wrong claim for an absent field no matter who guarantees the
+invariant. **A fallback must fail toward honesty, not toward calm.**
+
+**One lower-stakes instance left, named rather than silently fixed:** `briefing.cardFor` does
+`s.filled || []` on a stop report. There, missing and empty plausibly mean the same thing —
+「she recorded nothing she did」 — so it is left, and named here so the next reader knows it was
+considered rather than missed.

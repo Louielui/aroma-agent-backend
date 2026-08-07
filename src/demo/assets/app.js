@@ -341,9 +341,16 @@
         // ⛔ AND 「冇記低」 IS NOT 「冇搵到」. Rendering an absent field as an empty result put a
         // false all-clear on this screen for all eight ingredients. Found live, not by tests.
         body.textContent = g.why || '嗰次冇記低搵到啲乜。'
+      } else if (!Array.isArray(g.items)) {
+        // ⛔ THE THIRD READER, HARDENED. This branch used to be `(g.items || []).slice(...)`,
+        // which is the SAME collapse that put a false all-clear on this screen from the server
+        // side — missing rendered as empty. It is currently unreachable because the server's
+        // state field keeps it out, but the guard against it lived somewhere else, which is
+        // exactly the fragility. A fallback must fail toward honesty, not toward calm.
+        body.textContent = '冇記低搵到啲乜 —— 唔好當佢係冇回收。'
       } else {
         var head = (typeof g.found === 'number' ? '個站搵到 ' + g.found + ' 條' : '')
-        var top = (g.items || []).slice(0, 3).map(function (x) { return x.when + ' ' + x.title }).join(' / ')
+        var top = g.items.slice(0, 3).map(function (x) { return x.when + ' ' + x.title }).join(' / ')
         body.textContent = head + (top ? ':' + top : ':冇搵到相關回收。')
       }
       line.appendChild(body)

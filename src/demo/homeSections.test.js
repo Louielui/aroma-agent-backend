@@ -73,3 +73,21 @@ test('⛔ a BLOCKED ingredient shows its reason, not a zero', () => {
   const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 900))
   assert.match(APP_JS, /BLOCKED/, 'a site that would not answer is not a site with no recalls')
 })
+
+/**
+ * ⛔ THE THIRD READER. HR-43.
+ *
+ * `conclusionFor` knew missing ≠ empty. `detailFor` did not. The CLIENT is the third reader of
+ * the same field, and it did `(g.items || [])` — the identical collapse, one layer out,
+ * protected only by a server state field it does not check itself.
+ */
+test('⛔ the client never collapses a missing item list into an empty one', () => {
+  const i = APP_JS.indexOf('function renderSection')
+  const raw = APP_JS.slice(i, APP_JS.indexOf('\n  /** The composer', i))
+  // ⛔ Strip comments first. The first version of this test matched the COMMENT that documents
+  // the removal — a source-scanning test failing on its own documentation. Assert the code.
+  const body = raw.split('\n').filter((l) => !l.trim().startsWith('//') && !l.trim().startsWith('*')).join('\n')
+  assert.doesNotMatch(body, /g\.items \|\| \[\]/,
+    'a fallback must fail toward honesty, not toward calm')
+  assert.match(body, /!Array\.isArray\(g\.items\)/, 'missing gets its own branch, here too')
+})
