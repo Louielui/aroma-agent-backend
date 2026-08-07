@@ -46,6 +46,9 @@
 
       <div id="composer">
         <div class="composer-col">
+          <!-- ⛔ 附上咗乜要睇得見 — ABOVE the textarea, so what would travel is read BEFORE
+               anything is typed. Filled from the server's own preview, never composed here. -->
+          <div id="attach-preview" class="attach-preview hidden" aria-live="polite"></div>
           <div id="composer-box">
             <textarea id="msg" rows="1" placeholder="跟香香說…改檔案要你批准才會執行" aria-label="訊息"></textarea>
             <div class="composer-bar">

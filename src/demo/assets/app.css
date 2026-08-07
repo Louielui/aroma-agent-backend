@@ -830,3 +830,19 @@ button[disabled] { opacity: .45; cursor: default; }
 .sect-day-changed .brief-text { color: var(--ink); }
 /* ⛔ 「冇記低」 is not 「冇搵到」 — it gets its own look so it can never be read as a clean zero. */
 .sect-unrecorded .sect-detail { color: var(--soft, var(--muted)); font-style: italic; }
+
+/* ── 附上咗乜要睇得見 ─────────────────────────────────────────────────────────
+   Owner: 「Before I type anything I should be able to see what would travel. Not after
+   sending, not in a log — on screen, before.」 So it sits ABOVE the textarea, and it renders
+   the SERVER's own lines verbatim — the client never composes a summary of its own, because
+   the one he reads would be the one that is not sent. */
+.attach-preview {
+  border: 1px dashed var(--line, var(--card));
+  border-radius: 0.45em;
+  padding: 0.5em 0.7em;
+  margin-bottom: 0.5em;
+  background: var(--card);
+  line-height: 1.5;
+}
+.attach-head { color: var(--faint); margin-bottom: 0.25em; }
+.attach-line { color: var(--muted); }

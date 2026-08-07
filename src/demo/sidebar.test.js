@@ -112,8 +112,10 @@ test('⛔ 首頁 has no composer — it is a report, not a conversation', () => 
 })
 
 test('⛔ submit() REFUSES when there is no conversation, instead of throwing', () => {
-  const i = APP_JS.indexOf('function submit')
-  const body = APP_JS.slice(i, i + 1200)
+  const { codeOnly } = require('../testutil/codeOnly')
+  const code = codeOnly(APP_JS)
+  const i = code.indexOf('function submit')
+  const body = code.slice(i, i + 700)
   assert.match(body, /if \(!active\)/, 'a missing conversation must be handled, not dereferenced')
 })
 

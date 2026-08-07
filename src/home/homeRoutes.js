@@ -139,6 +139,28 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     res.json(detailFor(kind, rows, Date.now(), witness))
   })
 
+  /**
+   * ⛔ 附上咗乜要睇得見 — and this endpoint is what makes that structural.
+   *
+   * The client does NOT compose its own preview. It asks what would travel and shows exactly
+   * that, and the send path calls the same `attachmentFor`. Two renderings could disagree; one
+   * function cannot disagree with itself.
+   *
+   * ⛔ AND THE CONTEXT IS RE-DERIVED HERE, never taken from the browser. Same discipline as
+   * `workRequestRoute.js`: 「the browser supplies the message, never the target」.
+   */
+  router.get('/api/v1/home/section/:kind/attachment', pass, (req, res) => {
+    const { KINDS } = require('./errandKinds')
+    const { attachmentFor } = require('./sectionAttachment')
+    const kind = KINDS.find((k) => k.id === req.params.kind)
+    if (!kind) return res.status(404).json({ saying: '我唔認得呢一節,所以冇嘢好附上。' })
+    let rows
+    try { rows = store.list() } catch (_) {
+      return res.status(503).json({ state: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以講唔到會附上啲乜。' })
+    }
+    res.json(attachmentFor(kind, rows, Date.now()))
+  })
+
   router.post('/api/v1/home/errand/:id/open', pass, (req, res) => {
     let row = null
     try { row = store.list().find((e) => e.id === req.params.id) } catch (_) {

@@ -270,6 +270,36 @@
       })
   }
 
+  /**
+   * ⛔ WHAT WOULD TRAVEL, ON SCREEN, BEFORE HE TYPES.
+   *
+   * Owner: 「Before I type anything I should be able to see what would travel. Not after
+   * sending, not in a log — on screen, before.」
+   *
+   * It renders `a.lines` VERBATIM. The client deliberately does not compose its own summary
+   * from the briefing: two renderings can disagree, and the one he reads would be the one that
+   * is not sent. The server's preview endpoint and its send path call the same function.
+   */
+  var attachedKind = null
+  function renderAttachPreview (a) {
+    var box = document.getElementById('attach-preview')
+    if (!box) return
+    clear(box)
+    if (!a || !Array.isArray(a.lines) || !a.lines.length) {
+      box.classList.add('hidden')
+      return
+    }
+    box.classList.remove('hidden')
+    var head = el('div', 'attach-head')
+    head.textContent = '⬚ 我會帶住呢啲落去(' + (a.title || a.kind) + '):'
+    box.appendChild(head)
+    for (var i = 0; i < a.lines.length; i++) {
+      var l = el('div', 'attach-line')
+      l.textContent = a.lines[i]
+      box.appendChild(l)
+    }
+  }
+
   /** The door into a section. Rendered only when the server says there is an inside. */
   function openLink (c) {
     var b = el('button', 'sect-open')
@@ -288,8 +318,17 @@
    */
   function showSection (kind, title) {
     if (!mainEl) return
+    /**
+     * ⛔ ROUND B. The composer IS here, and it carries the section as context — because the
+     * context is WHICH DOOR HE OPENED, never something inferred from what he types.
+     *
+     * ⛔ 附上咗乜要睇得見: the preview is fetched and rendered as the section opens, before any
+     * keystroke. It is the SERVER's own answer to 「what would travel」, displayed verbatim —
+     * the client never composes a summary of its own, because two renderings can disagree.
+     */
+    attachedKind = kind
     active = null
-    showComposer(false)
+    showComposer(true)
     markHome(false)
     mainEl.classList.remove('empty')
     clear(log)
@@ -307,6 +346,13 @@
     var host = el('div', 'sect-body')
     view.appendChild(host)
     renderWaitingBar(true)
+
+    // ⛔ FETCHED AS THE SECTION OPENS — before any keystroke, not on focus, not on send.
+    // What is rendered is the SERVER's own answer to 「what would travel」, verbatim.
+    fetch('/api/v1/home/section/' + encodeURIComponent(kind) + '/attachment', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (a) { renderAttachPreview(a) })
+      .catch(function () { renderAttachPreview(null) })
 
     fetch('/api/v1/home/section/' + encodeURIComponent(kind), { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
@@ -1069,15 +1115,24 @@
   function submit () {
     if (pending) return
     /**
-     * ⛔ NO CONVERSATION, NO SEND — AND IT MUST NOT THROW.
+     * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
      *
-     * showHome() set `active = null`, and the next line dereferenced it. A screen he could type
-     * into SILENTLY SWALLOWED the message: TypeError, nothing sent, nothing rendered, no error,
-     * the text simply gone. Owner: 「It would have looked like she ignored me.」
+     * 1. SENDING FROM A SECTION OPENS AN ORDINARY CONVERSATION. Not a hidden per-section
+     *    thread — he would have conversations he cannot find again. Without this branch
+     *     is null on the section view and the guard below would SWALLOW the message,
+     *    which is the exact defect HR-42 records, in the screen added to fix the context
+     *    problem. 「It would have looked like she ignored me.」
      *
-     * 首頁 hides the composer, so this is unreachable today. The guard stays anyway, because the
-     * next destination must not be able to reintroduce a silent swallow.
+     * 2. THE ATTACHMENT IS CAPTURED FIRST, because newConversation → selectConversation
+     *    clears it. And it rides the FIRST TURN ONLY: 「no lingering scope, no guessing」.
+     *    A context that quietly persisted for ten turns would be the invisible carried state
+     *    this whole shape exists to remove, and the preview disappearing says so on screen.
+     *
+     * The !active guard stays after both, because the NEXT destination must not be able to
+     * reintroduce a silent swallow.
      */
+    var carry = attachedKind
+    if (!active && carry) newConversation(false)
     if (!active) return
     var text = msg.value.trim()
     if (!text) return
@@ -1113,9 +1168,14 @@
       credentials: 'same-origin',
       // No interactionMode unless a shortcut forced one — the SERVER routes. Sending a
       // lane the Owner never chose would put the old upfront decision back, invisibly.
-      body: JSON.stringify(forced
-        ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
-        : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid })
+      // ⛔ THE SECTION ID TRAVELS, NEVER THE LINES. The server re-derives them from its own
+      // store, so text the browser composed can never enter the prompt wearing the section's
+      // name — the same discipline as workRequestRoute re-deriving the file from his words.
+      body: JSON.stringify(Object.assign(
+        forced
+          ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
+          : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
+        carry ? { attachSection: carry } : {}))
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {

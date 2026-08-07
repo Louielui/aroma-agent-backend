@@ -264,7 +264,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   } else {
     effSystem = system
   }
-  const baseEffPrompt = demo ? (ctx.preamble + prompt) : prompt
+  /**
+   * ⛔ ROUND B — THE SECTION ENVELOPE ENTERS HERE, AND ONLY HERE.
+   *
+   * `opts.sectionPreamble` is built by `home/sectionAttachment.js` from the SERVER's own store
+   * — never from anything the browser sent — and it arrives already whitelisted, delimiter-
+   * escaped and wrapped in a block that says, in words, that its contents are a record and not
+   * a request.
+   *
+   * It sits BEFORE the context card and before the prompt for the same reason the context card
+   * does: it is background the turn is read against, not the turn.
+   */
+  const sectionPre = (demo && typeof opts?.sectionPreamble === 'string') ? opts.sectionPreamble : ''
+  const baseEffPrompt = demo ? (sectionPre + ctx.preamble + prompt) : prompt
 
   // ── CONTEXT SHARING (v1 — supersedes the v0 boundary) ──────────────────────
   // In v0 the GPT path was denied the Read Context and Decision Recall blocks by

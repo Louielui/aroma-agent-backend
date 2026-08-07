@@ -99,7 +99,7 @@ function historyTextOf (history) {
 /** Sentinel for the greeting's backlog budget — distinguishable from any real result. */
 const TIMED_OUT = Symbol('backlog_timed_out')
 
-function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500 } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
   const router = express.Router()
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
@@ -305,6 +305,42 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           providerHint
         })
         opts.telemetry = telemetry
+
+        /**
+         * ⛔ ROUND B — THE SECTION ATTACHMENT. The browser sends a section ID and NOTHING ELSE.
+         *
+         * The lines are RE-DERIVED here from the server's own store, exactly as the preview
+         * endpoint derives them, by the same function. So 「what he was shown」 and 「what
+         * travels」 are the same value rather than two renderings that agree today.
+         *
+         * A browser-supplied set of lines would be a way to put arbitrary text into the prompt
+         * wearing the section's name — the same reason `workRequestRoute.js` re-derives the file
+         * from the Owner's words instead of honouring a body-supplied path.
+         */
+        const attachKind = typeof req.body.attachSection === 'string' ? req.body.attachSection : null
+        if (attachKind && errandStoreFn) {
+          try {
+            const { KINDS } = require('../home/errandKinds')
+            const { attachmentFor, buildSectionPreamble } = require('../home/sectionAttachment')
+            const kind = KINDS.find((k) => k.id === attachKind)
+            if (kind) {
+              const attachment = attachmentFor(kind, errandStoreFn().list(), Date.now())
+              const built = buildSectionPreamble(attachment)
+              opts.sectionPreamble = built.preamble
+              telemetry.attachedSection = kind.id
+              telemetry.attachedLines = attachment.lines.length
+              // Transformations are never silent — the same rule contextCard follows.
+              if (built.warnings.length) telemetry.attachWarnings = built.warnings.length
+            } else {
+              telemetry.attachedSection = 'unknown'
+            }
+          } catch (_) {
+            // ⛔ A failure to attach must not silently send an unattached turn: he would be
+            // answered from a context he believes was carried. Say so in the outcome record.
+            telemetry.attachedSection = 'failed'
+          }
+        }
+
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
         const result = await processIntakeFn(message, adapter, history || [], opts)
 

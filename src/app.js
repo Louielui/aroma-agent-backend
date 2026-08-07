@@ -932,8 +932,11 @@ function createApp (options = {}) {
   // What she ran, what waits on him, and the Drive line — the surface the design has
   // specified for two rounds and that nothing rendered. Mounted HERE, on the real
   // composition root, and `homeWiringSmoke.test.js` fails if this line is removed.
+  // ONE errand store, shared by 首頁's routes and by the demo router's section attachment —
+  // so the lines he is shown and the lines that travel are read from the same file.
+  const homeErrandStore = openErrandStore(path.join(__dirname, '..', 'data', 'home'))
   mountHomeRoutes(app, {
-    store: openErrandStore(path.join(__dirname, '..', 'data', 'home')),
+    store: homeErrandStore,
     profileDir: 'C:\\Aroma\\browser-profile',
     // DEFECT-011: this was missing, so the Drive section reported NOT_CHECKED — a calm,
     // grammatical, timestamped sentence produced by a wire that was never connected. The
@@ -997,7 +1000,10 @@ function createApp (options = {}) {
 
   app.use(createDemoRouter({
     conversationStore: realConversationStore,
-    readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null
+    readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
+    // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser
+    // sends a section id and never the lines — see demoRouter's attachSection block.
+    errandStoreFn: () => homeErrandStore
   }))
 
   // PRIME THE CACHE ONCE AT STARTUP so the FIRST greeting after a restart is already warm.

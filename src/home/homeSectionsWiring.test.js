@@ -56,3 +56,45 @@ describe('the section detail endpoint is reachable in the REAL assembly', () => 
     } finally { s.close() }
   })
 })
+
+/**
+ * ⛔ ROUND B: 「附上咗乜要睇得見」 — enforced, not commented.
+ *
+ * The preview endpoint and the send path call the SAME function. What he sees before typing is
+ * what travels, because one function cannot disagree with itself.
+ */
+describe('the attachment preview is readable BEFORE anything is typed', () => {
+  test('GET .../attachment returns exactly what would travel', async () => {
+    const { s, port } = await serve()
+    try {
+      const r = await fetch('http://127.0.0.1:' + port + '/api/v1/home/section/recall/attachment')
+      assert.strictEqual(r.status, 200)
+      const a = await r.json()
+      assert.strictEqual(a.kind, 'recall')
+      assert.ok(Array.isArray(a.lines) && a.lines.length > 0, 'an empty preview would look like nothing is carried')
+      assert.ok(a.capturedAt)
+    } finally { s.close() }
+  })
+
+  test('⛔ the preview and the prompt come from ONE function, so they cannot diverge', async () => {
+    const { s, port } = await serve()
+    try {
+      const a = await (await fetch('http://127.0.0.1:' + port + '/api/v1/home/section/recall/attachment')).json()
+      const { buildSectionPreamble } = require('./sectionAttachment')
+      const { preamble } = buildSectionPreamble(a)
+      for (const line of a.lines) {
+        // every previewed line, with delimiters stripped, must appear in what is sent
+        assert.ok(preamble.includes(line.replace(/[<>]/g, '')),
+          'a line he was shown that does not travel is exactly the failure this round exists to prevent')
+      }
+    } finally { s.close() }
+  })
+
+  test('an unknown kind previews nothing, with a 404 rather than an empty attachment', async () => {
+    const { s, port } = await serve()
+    try {
+      const r = await fetch('http://127.0.0.1:' + port + '/api/v1/home/section/nonesuch/attachment')
+      assert.strictEqual(r.status, 404)
+    } finally { s.close() }
+  })
+})
