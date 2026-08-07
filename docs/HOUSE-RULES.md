@@ -1556,3 +1556,48 @@ recalling this entry.
 
 **Seen to fail before trusted:** `absent` / `dir:0` / `dir:1[a.txt]` all distinguished. A probe
 that has never failed is not evidence.
+
+---
+
+# HR-32 — Print every branch of a sentence before you rely on it. A branch nobody has READ is untested however green the suite is.
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「Your DUE wording change is the part I would forget to check. After it goes live,
+> tell me what the DUE line actually says in both states — I want to read the scheduled version
+> before I rely on it, not after a scheduler has been dead for three days.」**
+
+Printing all five DUE branches side by side immediately exposed one that no test had asked
+about:
+
+| witness | what it rendered | what it means |
+|---|---|---|
+| `NOT_INSTALLED` | 「仲係手動行嘅,冇人行就冇新嘅。」 | nothing was ever set up — **calm, correct** |
+| `DISABLED` | 「仲係手動行嘅,冇人行就冇新嘅。」 | **a schedule EXISTS and somebody switched it off** |
+
+Both have `scheduled: false` — correctly, since a disabled task cannot fire — so both fell into
+the same branch. **The quietest failure mode in the whole design was wearing the calmest
+sentence in it.** He would read 「手動」, conclude nothing is wired, and never look at the task.
+
+## Why the suite was no help
+
+Every test passed. The tests asserted the states the branches were WRITTEN for; nothing asked
+what two different inputs LOOKED LIKE next to each other. **A test proves a branch behaves as
+specified. Only reading proves the specification says different things about different worlds.**
+
+## THE RULE
+
+> ### For any surface that renders a sentence per state, print EVERY state's sentence in one
+> ### block and read them together, before it ships. Two different facts that produce the same
+> ### sentence is a defect, and it is invisible one test at a time.
+
+**Mechanism:** the pairs worth checking are the ones a reader would act on differently. Here:
+*absent vs disabled*, *never-ran vs unreadable*, *manual vs trigger-never-fired*. Each pair now
+has a test asserting the sentences DIFFER — not just that each is individually correct.
+
+**And it generalises past sentences.** Any mapping from many states onto fewer outputs — colours,
+icons, exit codes — can collapse two meanings into one. The same round produced a second
+instance at the exit-code level: `ok` required every errand to answer, so one throttled
+ingredient (measured: one in six on a normal day) would have painted the Windows task red every
+morning until 「the task is failing」 meant nothing. **HR-27's family — a defect wearing the
+shape of an answer — but arriving through COLLAPSE rather than through a wrong value.**

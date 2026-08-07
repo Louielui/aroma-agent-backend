@@ -94,7 +94,7 @@ function cardFor (e, now) {
 /**
  * @param {{store:object, backlog?:object, now?:number}} args
  */
-function buildBriefing ({ store, backlog, now }) {
+function buildBriefing ({ store, backlog, witness, now }) {
   const t = Number(now) || Date.now()
 
   // ── errands + waiting ──────────────────────────────────────────────────────
@@ -129,7 +129,7 @@ function buildBriefing ({ store, backlog, now }) {
       // errand that never ran once renders as nothing — and nothing reads as calm. Walking the
       // declared kinds is what makes 「從來未查過」 sayable, and it is why this line is computed
       // even when `rows` is empty.
-      const freshness = freshnessReport(rows, t)
+      const freshness = freshnessReport(rows, t, witness)
       errands = stamped(rows.length
         ? { state: 'HAS_ROWS', rows: rows.map((r) => ({ ...r, atLabel: hhmm(r.at) })), freshness, line: '' }
         : { state: 'NONE_RAN', rows: [], freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)

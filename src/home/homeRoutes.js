@@ -31,9 +31,39 @@ const OPEN = Object.freeze({
   NO_TARGET: 'NO_PAGE_RECORDED'
 })
 
-function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath, guard, launcher }) {
+function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath, guard, launcher, serviceGuard, scheduledRunners, witnessReader }) {
   const pass = guard || ((req, res, next) => next())
   const { buildBriefing } = require('./briefing')
+
+  /**
+   * ⛔ THE TIMER'S DOOR. Guarded by the SERVICE token, not the Owner session.
+   *
+   * `serviceGuard` is `requireServiceToken`, which fails CLOSED (401) when HUB_TOKEN is unset.
+   * Omitting it here would leave the route open, so its absence is a 501 rather than a default:
+   * a scheduled-run endpoint that is reachable without a token is worse than one that is missing.
+   *
+   * ⛔ AND IT TAKES NO PARAMETERS. The body is never read. See scheduledRun.js — the read-only
+   * gate is the absence of any field in which to name an action.
+   */
+  if (serviceGuard) {
+    router.post('/api/v1/home/errand/scheduled-run', serviceGuard, async (req, res) => {
+      const { runScheduledErrands } = require('./scheduledRun')
+      let r
+      try {
+        r = await runScheduledErrands({ store, runners: scheduledRunners || {} })
+      } catch (e) {
+        return res.status(500).json({ ok: false, ran: 0, recorded: false, saying: String(e.message).split('\n')[0] })
+      }
+      // ⛔ NON-2xx ON FAILURE, AND THAT IS WITNESS #1.
+      // The PowerShell exits non-zero, Task Scheduler records a failed run, and 「the task is
+      // failing」 becomes visible from the Windows side without her having to say anything.
+      res.status(r.ok ? 200 : 500).json(r)
+    })
+  } else {
+    router.post('/api/v1/home/errand/scheduled-run', (req, res) => {
+      res.status(501).json({ ok: false, saying: '排程入口未接上服務憑證守衛,所以佢係關住嘅。呢個係一個缺陷,唔係一個狀態。' })
+    })
+  }
 
   router.get('/api/v1/home/briefing', pass, async (req, res) => {
     // ⛔ `undefined` means NO READER WAS WIRED — a defect. `null` means a reader exists and
@@ -48,7 +78,15 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     // buildBriefing never throws on an unreadable store — it reports CANNOT_READ, which is
     // the whole point. A 500 here would render as a blank screen, and blank is the one thing
     // this surface may never be.
-    res.json(buildBriefing({ store, backlog, now: Date.now() }))
+    // ⛔ WITNESS #1 IS READ HERE, NOT INSIDE buildBriefing.
+    // Asking Windows costs a subprocess; buildBriefing stays synchronous and pure so it remains
+    // testable without a shell. `undefined` means nobody looked — and freshnessOf then falls
+    // back to the kind's declaration rather than claiming the witness said anything.
+    let witness
+    if (typeof witnessReader === 'function') {
+      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: '問唔到 Windows 排程。' } }
+    }
+    res.json(buildBriefing({ store, backlog, witness, now: Date.now() }))
   })
 
   router.post('/api/v1/home/errand/:id/open', pass, (req, res) => {

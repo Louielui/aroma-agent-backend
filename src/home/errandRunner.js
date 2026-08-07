@@ -27,8 +27,17 @@ const { OUTCOME } = require('./errandStore')
  *   `{outcome, answer?, stop?, detail?}` — outcome being one of OUTCOME's values.
  * @returns {Promise<{outcome, recorded, recordError?, detail?}>}
  */
-async function runErrand ({ store, id, title, run, now }) {
+async function runErrand ({ store, id, title, run, now, decorate }) {
   const clock = typeof now === 'function' ? now : Date.now
+  /**
+   * ⛔ EXTRA FIELDS ARE SPREAD FIRST, SO THEY CAN NEVER OVERWRITE THE AUTHORITATIVE ONES.
+   *
+   * `decorate` carries provenance the caller knows and the errand does not — `trigger:
+   * 'SCHEDULED'`, `nextRunAt`. It must not be able to reach `outcome`, `at`, `id` or `stop`:
+   * a caller that could set `outcome` could record an answer for an errand that failed, which
+   * is precisely the class of forgery every other guard in this file exists to prevent.
+   */
+  const deco = (decorate && typeof decorate === 'object') ? decorate : {}
   let row
 
   try {
@@ -36,15 +45,15 @@ async function runErrand ({ store, id, title, run, now }) {
     const outcome = r && r.outcome
 
     if (outcome === OUTCOME.ANSWERED) {
-      row = { id, title, outcome, at: clock(), answer: r.answer, detail: r.detail || '' }
+      row = { ...deco, id, title, outcome, at: clock(), answer: r.answer, detail: r.detail || '' }
     } else if (outcome === OUTCOME.BLOCKED_BY_SITE) {
-      row = { id, title, outcome, at: clock(), detail: r.detail || '' }
+      row = { ...deco, id, title, outcome, at: clock(), detail: r.detail || '' }
     } else if (outcome === OUTCOME.STOPPED_FOR_YOU) {
-      row = { id, title, outcome, at: clock(), stop: r.stop }
+      row = { ...deco, id, title, outcome, at: clock(), stop: r.stop }
     } else {
       // ⛔ An outcome nobody named is a DEFECT IN THE ERRAND, and it is recorded as one
       // rather than coerced into a state that reads as normal operation.
-      row = {
+      row = { ...deco,
         id,
         title,
         outcome: OUTCOME.BLOCKED_BY_SITE,
@@ -53,7 +62,7 @@ async function runErrand ({ store, id, title, run, now }) {
       }
     }
   } catch (e) {
-    row = {
+    row = { ...deco,
       id,
       title,
       outcome: OUTCOME.BLOCKED_BY_SITE,
@@ -70,7 +79,7 @@ async function runErrand ({ store, id, title, run, now }) {
     return { outcome: row.outcome, recorded: true, detail: row.detail }
   } catch (e) {
     const why = String(e && e.message).split('\n')[0].slice(0, 120)
-    const fallback = {
+    const fallback = { ...deco,
       id,
       title,
       outcome: OUTCOME.BLOCKED_BY_SITE,

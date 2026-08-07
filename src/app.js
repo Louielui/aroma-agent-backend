@@ -954,7 +954,33 @@ function createApp (options = {}) {
           // `sentenceFor` returns null only for 「the feature is off」 — which is not a read.
           if (!line) return null
           return { line, checkedAt }
-        }
+        },
+
+    // ── the scheduled door, and the two witnesses ────────────────────────────
+    //
+    // ⛔ THE SERVICE TOKEN, NOT THE OWNER SESSION. A schedule is his absence, so the trigger
+    // authenticates as a service. `requireServiceToken` fails CLOSED (401) when HUB_TOKEN is
+    // unset — and the PowerShell hydrates that token from the environment at run time, so the
+    // registered task definition contains no secret at all.
+    serviceGuard: requireServiceToken,
+
+    // ⛔ THE READ-ONLY ALLOWLIST, WIRED HERE AND NOWHERE ELSE.
+    // The timer can run exactly what is in this object AND declared `readOnly` in the registry.
+    // Adding a key here is adding it to the timer, and the Owner's ruling is that nothing else
+    // joins without its own GO. The recall check qualifies: public register, no login, no
+    // writes, no dispatch, no paid model calls, $0.00.
+    scheduledRunners: {
+      recall: async () => {
+        const { runRecallForIngredients } = require('./errands/recallRunner')
+        return runRecallForIngredients()
+      }
+    },
+
+    // WITNESS #1. Read here because it costs a subprocess; buildBriefing stays pure.
+    witnessReader: async () => {
+      const { readSchedulerWitness } = require('./home/schedulerWitness')
+      return readSchedulerWitness({})
+    }
   })
 
   app.use(createDemoRouter({
