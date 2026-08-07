@@ -1767,3 +1767,93 @@ broken」 — never 「你冇事」. No total AND no rows AND no explicit 「no 
 
 **This is HR-30's family** — asking what a failure DEGRADES INTO — applied to the absence of
 data rather than the absence of a record.
+
+---
+
+# HR-36 — The first-run state is the one nobody tests, and it is the first thing he sees
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「a sentinel read as a failure code, in the first sentence I would have seen after
+> approving. Same family as case D — correct branches, wrong reading of a value that only
+> appears in the state nobody tests.」**
+
+A freshly registered Windows task reports `LastTaskResult = 267011` and
+`LastRunTime = 1999-11-30`. That is `SCHED_S_TASK_HAS_NOT_RUN` and Windows' never-ran sentinel:
+**the task is perfectly healthy and has simply not fired yet.**
+
+The witness tested `code === 0`. So, seconds after a clean install:
+
+> 「上次行嗰次 Windows 報失敗,退出碼 267011(0x41303)。⚠ 0x1 通常係排程 logon 睇唔到 user
+> profile 入面嘅檔案 —— 備份 task 就係咁死過。」
+
+**Every clause of that is wrong**, and it would have been the first sentence he read after
+approving the install — the exact moment he is deciding whether to trust the thing.
+
+## Two compounding errors, and the second is the more common one
+
+1. **A sentinel read as a value.** `267011` is not an exit code; the whole `0x41300` family are
+   statuses. Some mean trouble (`TERMINATED`, `NO_VALID_TRIGGERS`) and some do not
+   (`HAS_NOT_RUN`, `RUNNING`, `READY`). **「≠ 0」 collapses all of them into 「failed」.**
+2. **A hint attached to the wrong scope.** The `0x1` profile-visibility note is real and
+   valuable — it is the measured trap that killed the backup tasks — but it was printed for
+   ANY non-zero code, so it would have sent him hunting a cause that did not apply.
+
+## THE RULE
+
+> ### For anything with a lifecycle, write down what it reports in its FIRST state — before it
+> ### has ever run, before it has any history — and check that sentence specifically. It is the
+> ### state with no test data, it happens exactly once, and it is the state the person is in
+> ### when they are deciding whether to trust the thing.
+
+**And the general form:** an external system's status field is a VOCABULARY, not a number line.
+Look up what the values mean before comparing them to zero. `0` meaning success does not imply
+every other value means failure.
+
+**Family:** HR-32 (two states rendering the same sentence) and this (one state rendering the
+wrong sentence) are both **correct branches, wrong reading of the input**. HR-32's mechanism —
+print every state and read them as a set — would have caught this one too, if the first-run
+state had been in the set. It was not, because nothing had ever produced it.
+
+---
+
+# HR-37 — A deliverable written for a human must be exercised in the place they will open it
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「you were right about the BOM. That is why Show returned nothing and I had nothing
+> to attach. A script written for me to read failed to parse in the shell I would read it in,
+> and neither of us saw it until it ran.」**
+
+`aroma-errand-task.ps1` was written to be READ — the whole point of it was 「an auditable script
+in the repo, not a schtasks line nobody can find again」. It was carefully commented, it was
+committed, it was offered to the Owner with a `-Action Show` command.
+
+**It could not be parsed at all.** Written as UTF-8 without a BOM, PowerShell 5.1 read it as
+ANSI, the first Chinese string became an unterminated literal, and EVERY action — including
+`Show` — died with a parser error. The Owner ran it, got nothing, and had nothing to attach.
+
+## Why nothing caught it
+
+| | |
+|---|---|
+| the suite | greps the file as TEXT for the task name — passes on a file PowerShell cannot parse |
+| review | it reads correctly in every editor; the defect is in the encoding, which is invisible |
+| **the author** | **never once ran it** — it was going to be run under the Owner's GO |
+
+The one thing that would have caught it is the one thing not done: **executing the read-only
+action.** `-Action Show` changes nothing. There was never a reason not to run it.
+
+## THE RULE
+
+> ### If you hand someone an artifact to open — a script, an export, a config, a report — OPEN
+> ### IT YOURSELF, in the tool they will open it in, before handing it over. Not the source: the
+> ### artifact, in its destination.
+>
+> And when the artifact has a read-only mode, **that mode is free to run and there is never a
+> reason to skip it.** Waiting for approval is a reason not to INSTALL. It is not a reason not
+> to `Show`.
+
+**The specific trap, recorded so it is not rediscovered:** PowerShell 5.1 requires a **UTF-8
+BOM** to read a UTF-8 file correctly. Any `.ps1` in this repo containing 中文 or ⛔ must be
+saved with one, or it fails at parse time — not at the line with the character.

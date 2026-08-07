@@ -76,7 +76,9 @@ describe('it answers, and the answer is a value rather than a log line', () => {
       goto,
       query: 'chicken'
     })
-    assert.strictEqual(typed, 'chicken')
+    // Quoted since 2026-08-07 — the register OR-matches otherwise. The rule this test protects
+    // is unchanged: the QUERY must reach the page, and it must be the right ingredient.
+    assert.strictEqual(typed, '"chicken"')
   })
 })
 
@@ -293,5 +295,70 @@ describe('⛔ 「I recognised nothing」 is never reported as 「there is nothin
     assert.strictEqual(r.outcome, 'ANSWERED')
     assert.match(r.answer, /冇/)
     assert.strictEqual(r.found, 0)
+  })
+})
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ NARROW THE QUESTION, NEVER THE ANSWER — AND SAY WHICH NARROWING WAS APPLIED.
+ *
+ * > **Owner: 「say in the line which narrowing was applied, every time — 「只計 2026」 is a claim
+ * > about what I was shown and it belongs on screen, not in a config file.」**
+ *
+ * MEASURED (scripts/probes/measureRecallNarrowing.js, 2026-08-07):
+ *
+ *   green onion   unquoted  349  top = 「Femyso: … two green Mifepristone cartons」
+ *   green onion   QUOTED      1  top = 「Old Dutch … Sour Cream, Green Onion & Bacon … Chips」
+ *   cheese        unquoted   89  ·  QUOTED 89   (single words are unaffected)
+ *
+ * The register OR-matches words, so 「green onion」 was returning everything containing 「green」.
+ * Quoting is a narrower QUESTION — the site still decides what matches and in what order — and
+ * it dropped nothing to zero on any ingredient.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('⛔ the query is quoted, and the line says so', () => {
+  const oneHit = resultsPage([{ title: 'Some brand thing recalled due to Listeria', when: '2026-08-01' }], 'Displaying 1 - 1 of 1 items.')
+
+  test('the phrase is sent to the site in quotes', async () => {
+    let typed = null
+    await checkRecall({
+      session: fakeSession([[SEARCH_BOX], [SEARCH_BOX, SEARCH_BTN], oneHit], {
+        type: async (req) => { typed = req.text; return { outcome: 'TYPED', record: { length: 5, shape: 'plain' } } }
+      }),
+      goto,
+      query: 'green onion'
+    })
+    assert.strictEqual(typed, '"green onion"', 'unquoted, the register OR-matches and returns 349 items')
+  })
+
+  test('⛔ the narrowing is stated in the ANSWER, every time — not left in a config file', async () => {
+    const r = await checkRecall({ session: searched(oneHit), goto, query: 'green onion' })
+    assert.match(r.answer, /詞組/, 'it is a claim about what he was shown, so it belongs on screen')
+    assert.ok(Array.isArray(r.narrowing) && r.narrowing.length >= 1)
+  })
+
+  test('the stated narrowing appears even when the answer is 「冇搵到」', async () => {
+    // ⛔ This is the case where it matters MOST: a zero produced by a narrowed question is a
+    // different fact from a zero produced by an open one, and only the line can say which.
+    const r = await checkRecall({
+      session: searched([{ ref: 'n1', domId: 1, role: 'StaticText', name: 'Your search yielded no results.', interactive: false }]),
+      goto,
+      query: 'green onion'
+    })
+    assert.strictEqual(r.outcome, 'ANSWERED')
+    assert.match(r.answer, /詞組/)
+    assert.match(r.answer, /冇/)
+  })
+
+  test('the query still reaches the page unmangled inside the quotes', async () => {
+    let typed = null
+    await checkRecall({
+      session: fakeSession([[SEARCH_BOX], [SEARCH_BOX, SEARCH_BTN], oneHit], {
+        type: async (req) => { typed = req.text; return { outcome: 'TYPED', record: { length: 5, shape: 'plain' } } }
+      }),
+      goto,
+      query: 'romaine'
+    })
+    assert.strictEqual(typed, '"romaine"')
   })
 })

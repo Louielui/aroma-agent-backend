@@ -39,6 +39,11 @@ const blocked = (detail) => ({ outcome: 'BLOCKED_BY_SITE', detail })
  */
 async function checkRecall ({ session, goto, query, url, maxActions, note }) {
   const cap = maxActions || MAX_ACTIONS
+  // ⛔ The narrowing is DECLARED here and reported in every answer. The Owner's ruling:
+  // 「it is a claim about what I was shown and it belongs on screen, not in a config file.」
+  const asked = '"' + query + '"'
+  const narrowing = ['詞組搜尋']
+  const narrowLabel = '(' + narrowing.join(';') + ')'
   const target = url || (HOST + SEARCH_PATH)
   let actions = 0
   const say = (verb, outcome, detail) => { if (note) note(verb, outcome, detail || '') }
@@ -68,9 +73,19 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
     return blocked('個站冇浮到搜尋框出嚟,所以根本冇查成。呢個唔等於「冇回收」。')
   }
 
-  // ── 2. TYPE ────────────────────────────────────────────────────────────────
+  // ── 2. TYPE — THE NARROWED QUESTION ───────────────────────────────────────
+  //
+  // ⛔ NARROW THE QUESTION, NEVER THE ANSWER.
+  //
+  // The register OR-matches words, so 「green onion」 returned 349 items led by a Mifepristone
+  // packaging recall — it was matching 「green」. Quoting asks a narrower QUESTION; the site
+  // still decides what matches and in what order, and we still report everything it returns.
+  // That is categorically different from dropping results after the fact (HR-35).
+  //
+  // MEASURED 2026-08-07: green onion 349 → 1 (and the 1 is a real green-onion phrase match).
+  // Single words are unaffected: cheese 89 → 89. Nothing dropped to zero anywhere.
   if (!spend()) return blocked('打字之前爆咗動作上限 (budget)。')
-  const t = await session.type({ ref: box.ref, domId: box.domId, expectRole: box.role, expectName: box.name, text: query })
+  const t = await session.type({ ref: box.ref, domId: box.domId, expectRole: box.role, expectName: box.name, text: asked })
   say('type', t.outcome, t.reason || '')
   if (t.outcome !== 'TYPED') return blocked('打唔到字入去:' + t.reason + ' — ' + (t.detail || ''))
 
@@ -125,10 +140,10 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
         '⛔ 唔好當佢係「冇回收」。')
     }
     if (count && count.total === 0) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」冇搵到相關回收。', found: 0, shown: 0, detail: '個站自己講明零條。' }
+      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, detail: '個站自己講明零條。' }
     }
     if (saysNoResults(v)) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」冇搵到相關回收。', found: 0, shown: 0, detail: '個站顯示「no results」。' }
+      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, detail: '個站顯示「no results」。' }
     }
     // No count, no recognisable rows, no explicit 「no results」. Cannot tell the difference
     // between an empty search and a page we failed to read — so claim neither.
@@ -147,10 +162,11 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
 
   return {
     outcome: 'ANSWERED',
-    answer: '「' + query + '」:' + foundLabel + shownLabel + ':' +
+    answer: '「' + query + '」' + narrowLabel + ':' + foundLabel + shownLabel + ':' +
       shown.map((h) => h.when + ' ' + h.title).join(' / '),
     found,
     shown: shown.length,
+    narrowing,
     detail: '讀咗 ' + v.nodes.length + ' 個節點。' + (count ? '' : ' ⚠ 個站冇畀總數,可能仲有下一頁。')
   }
 }
