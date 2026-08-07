@@ -94,3 +94,48 @@ describe('card saving is off at CREATION, and the probe rechecks it every sessio
     fs.rmSync(d, { recursive: true, force: true })
   })
 })
+
+describe('Chrome itself must never sign in — a SEPARATE failure route from a saved card', () => {
+  test('creation blocks browser sign-in and sync', () => {
+    const d = tmp()
+    const w = P.writeProfileDefaults(d)
+    assert.strictEqual(w.set.signin_allowed, false)
+    assert.strictEqual(w.set.sync_requested, false)
+    assert.strictEqual(P.probeBrowserSignIn(d).state, 'BLOCKED')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('⛔ an account appearing is caught — seen to fail live', () => {
+    const d = tmp()
+    P.writeProfileDefaults(d)
+    const f = path.join(d, 'Default', 'Preferences')
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'))
+    j.account_info = [{ email: 'someone@example.com' }]
+    fs.writeFileSync(f, JSON.stringify(j))
+    const r = P.probeBrowserSignIn(d)
+    assert.strictEqual(r.state, 'SIGNED_IN')
+    assert.strictEqual(r.ok, false)
+    assert.match(r.saying, /Google Pay/, 'it must say WHY a browser login matters')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('⛔ sync turned on with NO account listed is caught too — the second route', () => {
+    const d = tmp()
+    P.writeProfileDefaults(d)
+    const f = path.join(d, 'Default', 'Preferences')
+    const j = JSON.parse(fs.readFileSync(f, 'utf8'))
+    j.sync.requested = true
+    fs.writeFileSync(f, JSON.stringify(j))
+    assert.strictEqual(P.probeBrowserSignIn(d).ok, false)
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('a missing or unreadable Preferences file is unsafe, not fine', () => {
+    const d = tmp()
+    assert.strictEqual(P.probeBrowserSignIn(d).ok, false)
+    fs.mkdirSync(path.join(d, 'Default'), { recursive: true })
+    fs.writeFileSync(path.join(d, 'Default', 'Preferences'), 'not json')
+    assert.strictEqual(P.probeBrowserSignIn(d).state, 'UNREADABLE')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+})

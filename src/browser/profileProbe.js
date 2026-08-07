@@ -184,8 +184,30 @@ function writeProfileDefaults (userDataDir) {
   prefs.autofill.profile_enabled = false          // nor an address
   prefs.credentials_enable_service = false        // nor a password
   prefs.credentials_enable_autosignin = false
+
+  // ⛔ CHROME ITSELF MUST NEVER SIGN IN. Signing the BROWSER into a Google account is a
+  // different act from signing into a website with Google, and it SYNCS GOOGLE PAY CARDS AND
+  // AUTOFILL INTO THE PROFILE — dismantling L2 without anyone visiting a payment page.
+  // Set at creation; checked by probeBrowserSignIn before every session.
+  prefs.signin = prefs.signin || {}
+  prefs.signin.allowed = false
+  prefs.signin.allowed_on_next_startup = false
+  prefs.sync = prefs.sync || {}
+  prefs.sync.requested = false
+  prefs.sync.has_setup_completed = false
+  prefs.account_info = []
+
   fs.writeFileSync(file, JSON.stringify(prefs))
-  return { file, set: { credit_card_enabled: false, profile_enabled: false, credentials_enable_service: false } }
+  return {
+    file,
+    set: {
+      credit_card_enabled: false,
+      profile_enabled: false,
+      credentials_enable_service: false,
+      signin_allowed: false,
+      sync_requested: false
+    }
+  }
 }
 
 function probeCardSavingDisabled (userDataDir) {
@@ -209,4 +231,38 @@ function probeCardSavingDisabled (userDataDir) {
 
 module.exports.writeProfileDefaults = writeProfileDefaults
 module.exports.probeCardSavingDisabled = probeCardSavingDisabled
+/**
+ * ⛔ Is Chrome ITSELF signed into a Google account?
+ *
+ * If it is, Google Pay cards and autofill sync in and L2 is gone — **without anyone visiting a
+ * payment page.** That is a SEPARATE failure route from 「he saved a card」, so it gets its own
+ * probe, its own three states, and its own demonstration of failing.
+ */
+function probeBrowserSignIn (userDataDir) {
+  const file = path.join(userDataDir, 'Default', 'Preferences')
+  if (!fs.existsSync(file)) {
+    return { ok: false, state: 'NO_PREFERENCES', accounts: 0, saying: '搵唔到個 profile 嘅設定檔。讀唔到就當唔安全。' }
+  }
+  let prefs
+  try { prefs = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (_) {
+    return { ok: false, state: 'UNREADABLE', accounts: 0, saying: '個設定檔讀唔到。當唔安全,唔開工。' }
+  }
+  const accounts = Array.isArray(prefs.account_info) ? prefs.account_info.length : 0
+  const syncing = Boolean(prefs.sync && (prefs.sync.requested || prefs.sync.has_setup_completed))
+  if (accounts > 0 || syncing) {
+    return {
+      ok: false,
+      state: 'SIGNED_IN',
+      accounts,
+      saying: 'Chrome 本身登咗 Google 戶口,或者開咗同步。咁樣 Google Pay 啲卡同自動填表會同步入呢個 profile ' +
+        '—— 即係唔使去過任何付款頁,「冇付款方式」已經唔成立。要喺 Chrome 度登出同關同步,我先可以開工。'
+    }
+  }
+  if (!prefs.signin || prefs.signin.allowed !== false) {
+    return { ok: false, state: 'SIGNIN_ALLOWED', accounts: 0, saying: 'Chrome 仲准許登入佢自己嘅 Google 戶口。呢個應該喺開 profile 嗰陣就關死。' }
+  }
+  return { ok: true, state: 'BLOCKED', accounts: 0, saying: 'Chrome 本身唔准登入,亦冇同步。' }
+}
+
+module.exports.probeBrowserSignIn = probeBrowserSignIn
 module.exports.PREF_PATH = PREF_PATH

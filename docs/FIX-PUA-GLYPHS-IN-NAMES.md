@@ -100,3 +100,43 @@ next full run was back to 3.**
 **It named itself**, unlike the earlier unnamed flake, so it is recorded here as a known
 intermittent rather than left as a number that moved. **Not fixed — out of scope for this
 round, and it is not in the browser code.**
+
+---
+
+# ⚠ HOW A WRONG NUMBER BECAME LOAD-BEARING — recorded as an example, not only as a correction
+
+> **Owner: 「Record that the wrong number reached me and was repeated back — that is how a
+> wrong fact becomes load-bearing, and it is worth having an example of it in the file rather
+> than only the correction.」**
+
+## The chain, in three steps
+
+| | |
+|---|---|
+| **1. I wrote it** | 「it has been silently present in **every page we have measured**」 — in the L1 measurement report. **I had measured one page and generalised from it.** |
+| **2. He absorbed it** | the next instruction came back as 「**it has been silently present in every page we have measured**」 — my sentence, now in his words |
+| **3. It was about to become a reason** | it was cited as part of why the fix was worth doing. **A wrong number was carrying a decision.** |
+
+**What was actually true: 3 of 26 pages. 36 of 36,669 surviving nodes — 0.1%.**
+
+## Why this one is worth keeping as an example
+
+**Nothing caught it.** No test failed, no probe fired, no reviewer objected. **It was caught
+only because the fix required measuring the thing properly**, and the real number happened to
+contradict the claim I had already made.
+
+> ### An unmeasured claim, once repeated back by the person you are reporting to, stops looking like a claim and starts looking like shared knowledge.
+>
+> **At that point it is load-bearing**: it justifies work, it shapes priorities, and the next
+> person to question it has to argue against both of us.
+
+## And the honest note about the fix itself
+
+**The fix is still right** — it landed on a *commit control*, and consequence is not
+proportional to frequency. **But 「it is everywhere」 and 「it is rare and lands badly」 are
+different arguments**, and only the second one is true. **The first would have justified a
+larger change than the evidence supports.**
+
+**The mechanism is HR-18's:** a claim about how often something happens is a **measurement**,
+and stating it without one is the same defect as stating a premise without one — the difference
+is only that a frequency claim sounds like an observation.
