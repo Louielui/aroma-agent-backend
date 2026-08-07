@@ -1857,3 +1857,101 @@ action.** `-Action Show` changes nothing. There was never a reason not to run it
 **The specific trap, recorded so it is not rediscovered:** PowerShell 5.1 requires a **UTF-8
 BOM** to read a UTF-8 file correctly. Any `.ps1` in this repo containing 中文 or ⛔ must be
 saved with one, or it fails at parse time — not at the line with the character.
+
+---
+
+# HR-38 — 「行咗」 and 「喺啱嘅地方行咗」 are different things
+
+**Round:** the backup repair, 2026-08-07. **HR-37 failed in the hour it was written.**
+
+> **Owner: 「you ran two read-only checks and both were run in the wrong environment, one of
+> them against a header that warned about exactly that. 「行咗」 and 「喺啱嘅地方行咗」 being
+> different things is HR-37 failing in the hour it was written — that is now the third rule
+> this week to do that.」**
+
+Minutes after recording HR-37 — *「open it yourself, in the tool they will open it in」* — I ran
+two read-only checks and got two answers that were not answers:
+
+| check | what I did | what came back | the truth |
+|---|---|---|---|
+| `auditWiring.js` | ran it in MY shell | `not_authorized` | in the launcher env: **`agent_bridge_authorized`** |
+| `verifyHybridPersona.js` | ran it in MY shell | `CONFIG_ERROR` | `AROMA_CORE_DIR` is set **nowhere at all** |
+
+The first is the sharper one. **The probe's own header warns about this in its opening
+paragraph** — 「is the store wired in the REAL assembly, with the REAL launcher environment — as
+opposed to appearing wired when app.js is read?」 I ran the probe and skipped the sentence
+explaining what running it means.
+
+## Why this keeps happening
+
+Running a check produces OUTPUT, and output feels like an answer. **The feeling of having
+checked is delivered by execution, not by validity** — so the incentive to verify the
+environment disappears at exactly the moment the result appears.
+
+## THE RULE
+
+> ### Before believing a check's result, state where it ran and why that is the place the
+> ### answer is about. If you cannot name the difference between that environment and the real
+> ### one, you have not run the check — you have run something with the same filename.
+
+**Mechanism:** for anything environment-sensitive, print the environment WITH the result. A
+probe that reports `AGENT_BRIDGE=off` next to its verdict makes a wrong-environment run
+self-evident; one that reports only the verdict makes it invisible. `auditWiring.js` already
+does this — it prints the flags — **and I still did not read them.** So: the check must be
+compared against the launcher's own values, not merely displayed.
+
+**Third rule this week to fail in the hour it was written** — after HR-27 (a defect wearing the
+shape of an answer, which then happened inside the test written to catch it) and HR-32
+(two states rendering one sentence, whose own first-run state was the thing it missed).
+The pattern is not carelessness; **it is that a rule about noticing cannot be applied by the
+same attention it is trying to correct.** Every one of these was caught by a MECHANISM or by
+the Owner, never by resolving to be careful.
+
+---
+
+# HR-39 — A gate that cannot run until the thing it gates is approved is not a gate
+
+**Round:** the backup repair, 2026-08-07.
+
+> **Owner: 「the gate scripts held hostage by the decision they exist to inform is its own
+> shape. Name it. A measurement that cannot run until the thing it measures is approved is not
+> a gate, it is a formality waiting to be skipped.」**
+
+`scripts/computer/verify-session-gate.ps1` exists to answer ONE question with evidence — does
+the scheduled task run in the same interactive session as the Companion — and its own header
+says 「if it does not, STOP」. It is **read-only**. It has never been run, because Computer
+Operator is held pending an EXECUTE GO.
+
+**It is the measurement that GO is supposed to be based on.** Same for `tierA-probe.ps1`, the
+containment measurement, and `computerSupervisor.dryRun()`, which has never been run against a
+real work order.
+
+## What the inversion does
+
+A gate held until after approval has only two possible fates, and both are bad:
+
+| | |
+|---|---|
+| it is run after the GO | it can no longer stop anything — the decision is made, the momentum is committed, and a FAIL now costs more than it saves |
+| it is skipped | **more likely**, because by then the thing works, and running a gate that could only produce bad news is nobody's instinct |
+
+Either way the gate never gated. **It became a formality the moment its result stopped being
+able to change the decision.**
+
+## THE RULE
+
+> ### A gate must be runnable BEFORE the decision it informs, and its cost must be low enough
+> ### that running it early is free. If a measurement requires the approval it exists to
+> ### inform, it is mis-sequenced — fix the sequence, do not schedule the measurement later.
+>
+> Test to apply when writing one: **「what does this measurement cost, and what is stopping me
+> from running it right now?」** If the honest answer is 「a decision that this measurement is
+> supposed to inform」, the gate is upside down.
+
+**Distinguish the legitimate case.** Some measurements genuinely cannot precede the thing —
+`verify-session-gate.ps1` needs the AromaOperator account to exist and be signed in. That is a
+real prerequisite, not a decision. **The test is whether the blocker is a FACT or a CHOICE.**
+Waiting on a fact is sequencing. Waiting on the choice you are meant to inform is inversion.
+
+**Its sibling is HR-37's second half:** waiting for approval is a reason not to INSTALL. It is
+not a reason not to `Show`, not to `-DryRun`, and not to measure.

@@ -42,6 +42,10 @@ $Sources  = @(
   [pscustomobject]@{ Name = '倉存/發票資料 (truth-data)';  Path = 'C:\AromaBackupStaging\TruthData' }
   [pscustomobject]@{ Name = '發佈紀錄 (release-records)';  Path = 'C:\AromaBackupStaging\ReleaseRecords' }
   [pscustomobject]@{ Name = '香香對話封存 (archive)';       Path = 'C:\AromaBackupStaging\XiangxiangArchive' }
+  # ⛔ ADDED 2026-08-07. Core was omitted from BOTH migrations: Stage1-RetireDStaging.ps1
+  # deferred it to a "Stage 2" that was never written, and this list was built without it.
+  # Two independent omissions of the same leg — which is how it ran 12 nights unnoticed.
+  [pscustomobject]@{ Name = '香香核心資料 (core-data)';    Path = 'C:\AromaBackupStaging\Core' }
 )
 
 function Say ([string]$T, [string]$C = 'Gray') {
