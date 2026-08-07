@@ -301,24 +301,36 @@
       host.appendChild(row('brief-errands',
         '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。', e.checkedAtLabel))
     } else {
-      var list = el('div', 'brief-errands')
-      for (var i = 0; i < e.rows.length; i++) {
-        var r = e.rows[i]
-        var line = el('div', 'brief-errand ' + (OUT_CLASS[r.outcome] || ''))
-        var dot = el('span', 'out-dot')
-        line.appendChild(dot)
-        var name = el('span', 'errand-title')
-        name.textContent = r.title
-        line.appendChild(name)
-        var out = el('span', 'errand-outcome')
-        out.textContent = OUT_WORD[r.outcome] || r.outcome
-        line.appendChild(out)
-        var at = el('span', 'brief-when')
-        at.textContent = r.atLabel
-        line.appendChild(at)
-        list.appendChild(line)
+      // ── THE CONCLUSION, NOT THE LOG ──
+      //
+      // Forty-four rows pushed the composer off the screen: the briefing ate the thing it sits
+      // above. A row is one execution of one query; what he acts on is what the kind FOUND.
+      //
+      // ⛔ THE FOUR FIELDS RENDER SEPARATELY AND ARE NEVER CONCATENATED.
+      //   alert   — a new recall. Act on this.
+      //   gap     — something could NOT be checked. ⛔ Its own line, always, even when five of
+      //             six are clean. This is the through-line of the whole week.
+      //   unknown — nothing to compare against. Never 「冇新嘢」. First run especially.
+      //   calm    — the count that was actually checked and actually comparable.
+      // Folding one into another requires deleting a branch here, not rewording a sentence.
+      var cl = el('div', 'brief-conclusion')
+      for (var ci = 0; ci < (e.conclusions || []).length; ci++) {
+        var c = e.conclusions[ci]
+        if (c.alert) cl.appendChild(row('concl-line concl-alert', c.alert, ''))
+        if (c.gap) cl.appendChild(row('concl-line concl-gap', c.gap, ''))
+        if (c.unknown) cl.appendChild(row('concl-line concl-unknown', c.unknown, ''))
+        if (c.calm) cl.appendChild(row('concl-line concl-calm', c.calm, ''))
       }
-      host.appendChild(list)
+      host.appendChild(cl)
+
+      // ── the history is REACHABLE, not displayed ──
+      var runs = (e.conclusions || []).reduce(function (a, x) { return Math.max(a, x.runsToday || 0) }, 0)
+      var bits = []
+      if (runs > 1) bits.push('今日行過 ' + runs + ' 次')
+      if (e.totalRows) bits.push(e.totalRows + ' 條紀錄')
+      // ⛔ Never-blank applies to what was CUT, not only to what is empty.
+      if (e.hiddenRows > 0) bits.push('仲有 ' + e.hiddenRows + ' 條冇顯示')
+      if (bits.length) host.appendChild(row('brief-errands concl-history', bits.join(' · ') + ' —— 未有紀錄頁,要睇就問我。', e.checkedAtLabel))
     }
 
     // ── ②b how fresh that is ALLOWED to be ──

@@ -84,7 +84,33 @@ function openErrandStore (dir) {
         }
       }
       const rows = rowsOrThrow()
-      rows.push({ ...e, at: Number(e.at) || Date.now() })
+      /**
+       * ⛔ UPSERT BY ID. This used to be an unconditional `push`.
+       *
+       * `runRecallErrand.js` carried a comment saying 「one id per ingredient per day:
+       * re-running today updates today's row instead of stacking duplicates」. Nothing
+       * implemented it and no test asked. Measured 2026-08-07: **44 rows, 10 distinct ids** —
+       * and 首頁 grew until it pushed the composer off the screen.
+       *
+       * ⛔ AND IT MUST NOT BE AMNESIAC. Six runs collapsing into one row that looks like a
+       * single run would hide the very thing that went wrong. `runCount` and `firstAt` carry
+       * the repetition; `resolvedAt` survives so a decision he has already acted on can never
+       * be resurrected into his queue by a later run of the same id.
+       */
+      const at = Number(e.at) || Date.now()
+      const i = rows.findIndex((r) => r && r.id === e.id)
+      if (i >= 0) {
+        const prev = rows[i]
+        rows[i] = {
+          ...e,
+          at,
+          firstAt: Number(prev.firstAt) || Number(prev.at) || at,
+          runCount: (Number(prev.runCount) || 1) + 1,
+          ...(prev.resolvedAt ? { resolvedAt: prev.resolvedAt } : {})
+        }
+      } else {
+        rows.push({ ...e, at, firstAt: at, runCount: 1 })
+      }
       fs.mkdirSync(dir, { recursive: true })
       fs.writeFileSync(file, JSON.stringify(rows, null, 1))
       return e.id

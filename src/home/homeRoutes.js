@@ -31,7 +31,10 @@ const OPEN = Object.freeze({
   NO_TARGET: 'NO_PAGE_RECORDED'
 })
 
-function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath, guard, launcher, serviceGuard, scheduledRunners, witnessReader }) {
+function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath, guard, launcher, serviceGuard, scheduledRunners, witnessReader, knockLog, minRunIntervalMs }) {
+  // Default: one hour. A daily errand never needs to run twice in an hour, and the morning
+  // that produced this rule had six runs in forty-five minutes.
+  minRunIntervalMs = Number(minRunIntervalMs) > 0 ? Number(minRunIntervalMs) : 60 * 60 * 1000
   const pass = guard || ((req, res, next) => next())
   const { buildBriefing } = require('./briefing')
 
@@ -48,6 +51,26 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
   if (serviceGuard) {
     router.post('/api/v1/home/errand/scheduled-run', serviceGuard, async (req, res) => {
       const { runScheduledErrands } = require('./scheduledRun')
+      const now = Date.now()
+
+      // ⛔ EVERY KNOCK IS RECORDED, ACCEPTED OR NOT — and the refusals are the interesting ones.
+      // On 2026-08-07 this endpoint was hit six times in 45 minutes and three of those calls
+      // left no trace anywhere on the server. A door that records nothing cannot tell
+      // 「nobody called」 from 「I did not look」.
+      const caller = (req.ip || (req.socket && req.socket.remoteAddress) || 'unknown')
+      const agent = String(req.headers['user-agent'] || '').slice(0, 60)
+
+      // ⛔ HR-34, ONE LEVEL UP. The pacing rule spaced the searches WITHIN a run and nothing
+      // governed how often the run itself happened — so ~95 searches went at a public register
+      // in one morning. The interval is answered from the LOG, not from an in-process
+      // timestamp, because 8090 was restarted repeatedly during exactly that hammering.
+      const gate = knockLog ? knockLog.mayRun(now, minRunIntervalMs) : { ok: true, reason: 'NO_KNOCK_LOG' }
+      if (!gate.ok) {
+        if (knockLog) knockLog.record({ at: now, verdict: gate.reason, caller, agent })
+        return res.status(429).json({ ok: false, ran: 0, recorded: false, reason: gate.reason, saying: gate.saying })
+      }
+      if (knockLog) knockLog.record({ at: now, verdict: 'ACCEPTED', caller, agent })
+
       let r
       try {
         r = await runScheduledErrands({ store, runners: scheduledRunners || {} })

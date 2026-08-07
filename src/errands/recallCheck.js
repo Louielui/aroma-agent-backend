@@ -140,10 +140,10 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
         '⛔ 唔好當佢係「冇回收」。')
     }
     if (count && count.total === 0) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, detail: '個站自己講明零條。' }
+      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, items: [], detail: '個站自己講明零條。' }
     }
     if (saysNoResults(v)) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, detail: '個站顯示「no results」。' }
+      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, items: [], detail: '個站顯示「no results」。' }
     }
     // No count, no recognisable rows, no explicit 「no results」. Cannot tell the difference
     // between an empty search and a page we failed to read — so claim neither.
@@ -167,6 +167,9 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
     found,
     shown: shown.length,
     narrowing,
+    // ⛔ THE STRUCTURED RESULT, not just the sentence. 「新」 is a comparison between runs, and
+    // a comparison needs values — diffing the prose answer would break on any wording change.
+    items: shown.map((h) => ({ when: h.when, title: h.title })),
     detail: '讀咗 ' + v.nodes.length + ' 個節點。' + (count ? '' : ' ⚠ 個站冇畀總數,可能仲有下一頁。')
   }
 }

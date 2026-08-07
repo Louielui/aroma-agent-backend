@@ -964,6 +964,15 @@ function createApp (options = {}) {
     // registered task definition contains no secret at all.
     serviceGuard: requireServiceToken,
 
+    // ⛔ EVERY KNOCK, SERVER SIDE. On 2026-08-07 this door was hit six times in 45 minutes and
+    // three of those left no trace on the server at all — the only log was the PowerShell
+    // wrapper's, client side. A door that records nothing cannot tell 「nobody called」 from
+    // 「I did not look」.
+    knockLog: require('./home/knockLog').openKnockLog(path.join(__dirname, '..', 'data', 'home')),
+    // HR-34 one level up: the pacing rule spaced searches WITHIN a run and nothing governed
+    // how often the run happened. A daily errand never needs to run twice in an hour.
+    minRunIntervalMs: 60 * 60 * 1000,
+
     // ⛔ THE READ-ONLY ALLOWLIST, WIRED HERE AND NOWHERE ELSE.
     // The timer can run exactly what is in this object AND declared `readOnly` in the registry.
     // Adding a key here is adding it to the timer, and the Owner's ruling is that nothing else

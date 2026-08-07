@@ -200,3 +200,35 @@ test('DUE and NEVER_RUN are visually distinct from FRESH, but none of them is an
   const head = block.slice(0, 900)
   assert.doesNotMatch(head, /#(f00|ff0000|e74c3c|d32f2f)/i, 'DUE is a fact, not a fault')
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * > **Owner: 「an errand log does not belong on 首頁. What I want is the CONCLUSION … The
+ * > per-run history should be reachable, not displayed.」**
+ * > **「Dozens of rows pushed the composer off screen entirely — the briefing ate the thing it
+ * > sits above.」**
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+test('⛔ the CONCLUSION is rendered, and the per-run history is not', () => {
+  assert.match(APP_JS, /conclusions/, 'the server sends it; a conclusion nobody renders is the fifth unwired component this month')
+  assert.match(APP_JS, /brief-conclusion/)
+  assert.match(APP_CSS, /\.brief-conclusion/)
+})
+
+test('⛔ the four conclusion fields render SEPARATELY — gap can never be folded into calm', () => {
+  // Structural: each is its own named field with its own class. Merging them would require
+  // deleting a branch, not rewording a sentence.
+  for (const f of ['alert', 'gap', 'unknown', 'calm']) {
+    assert.match(APP_JS, new RegExp('c\.' + f), 'conclusion.' + f + ' must be rendered on its own')
+    assert.match(APP_CSS, new RegExp('\.concl-' + f), '.concl-' + f + ' needs its own style')
+  }
+})
+
+test('⛔ the row list is CAPPED and says how many are hidden', () => {
+  assert.match(APP_JS, /hiddenRows/, 'never-blank applies to what was cut, not only to what is empty')
+  assert.match(APP_JS, /睇紀錄|隱藏|仲有/, 'the hidden count must be stated in words he reads')
+})
+
+test('the run count is shown as a number, not as thirty lines', () => {
+  assert.match(APP_JS, /runsToday/)
+})

@@ -149,3 +149,66 @@ describe('⛔ NEVER BLANK — an unreadable store is not an empty one', () => {
     fs.rmSync(d, { recursive: true, force: true })
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ IDEMPOTENCY. THE COMMENT CLAIMED IT; THE CODE NEVER DID IT.
+ *
+ * `runRecallErrand.js` said, in a comment: 「One id per ingredient per day: re-running today
+ * updates today's row instead of stacking duplicates.」 `record()` did `rows.push(...)`
+ * unconditionally — no key, no lookup. Measured: **44 rows, 10 distinct ids**, and the briefing
+ * grew until it pushed the composer off the screen.
+ *
+ * The design section requiring idempotency for scheduled work (DESIGN-SCHEDULED-SURFACE §4)
+ * was written by the same author in the same week.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('⛔ one id, one row', () => {
+  const t0 = new Date('2026-08-07T12:00:00Z').getTime()
+
+  test('recording the same id twice REPLACES, it does not append', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'idem-'))
+    const s = openErrandStore(d)
+    s.record({ id: 'recall-mushrooms-2026-08-07', title: 'a', outcome: OUTCOME.ANSWERED, at: t0, answer: 'first' })
+    s.record({ id: 'recall-mushrooms-2026-08-07', title: 'a', outcome: OUTCOME.ANSWERED, at: t0 + 60000, answer: 'second' })
+    assert.strictEqual(s.list().length, 1)
+    assert.strictEqual(s.list()[0].answer, 'second', 'the latest run is the truth')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('⛔ re-running is still VISIBLE — runCount and firstAt survive the replace', () => {
+    // Idempotent must not mean amnesiac. Six runs collapsing to one row that claims to be the
+    // only run would hide exactly the thing that went wrong this morning.
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'idem-'))
+    const s = openErrandStore(d)
+    s.record({ id: 'x-1', title: 'a', outcome: OUTCOME.ANSWERED, at: t0 })
+    s.record({ id: 'x-1', title: 'a', outcome: OUTCOME.ANSWERED, at: t0 + 60000 })
+    s.record({ id: 'x-1', title: 'a', outcome: OUTCOME.ANSWERED, at: t0 + 120000 })
+    const r = s.list()[0]
+    assert.strictEqual(r.runCount, 3)
+    assert.strictEqual(r.firstAt, t0, 'when this id was first written')
+    assert.strictEqual(r.at, t0 + 120000, 'and when it was last written')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('different ids still coexist', () => {
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'idem-'))
+    const s = openErrandStore(d)
+    s.record({ id: 'a-1', title: 'a', outcome: OUTCOME.ANSWERED, at: t0 })
+    s.record({ id: 'b-1', title: 'b', outcome: OUTCOME.ANSWERED, at: t0 })
+    assert.strictEqual(s.list().length, 2)
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+
+  test('⛔ a replace cannot resurrect a resolved stop as unresolved', () => {
+    // He acted on it; a later run of the same id must not put it back in his queue.
+    const d = fs.mkdtempSync(path.join(os.tmpdir(), 'idem-'))
+    const s = openErrandStore(d)
+    const stop = { where: 'u', notPressed: { role: 'button', name: 'Pay', ref: 'r1' } }
+    s.record({ id: 's-1', title: 'a', outcome: OUTCOME.STOPPED_FOR_YOU, at: t0, stop })
+    s.resolve('s-1', t0 + 10)
+    s.record({ id: 's-1', title: 'a', outcome: OUTCOME.STOPPED_FOR_YOU, at: t0 + 60000, stop })
+    assert.strictEqual(s.waiting().length, 0, 'a resolved decision stays resolved')
+    fs.rmSync(d, { recursive: true, force: true })
+  })
+})

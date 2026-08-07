@@ -726,3 +726,18 @@ button[disabled] { opacity: .45; cursor: default; }
 .fresh-never_run .fresh-mark { opacity: 0.9; }
 /* Unjudgeable is a DEFECT — a row exists but carries no time. It must not read as a state. */
 .fresh-unjudgeable .fresh-line { color: var(--stop, #b0564b); }
+
+/* ── the conclusion, not the log ─────────────────────────────────────────────
+   Owner: 「an errand log does not belong on 首頁. What I want is the CONCLUSION.」
+   Four fields, four classes, never concatenated. `gap` is the one that must never be quiet:
+   an ingredient that could not be checked is the actionable part even when five of six
+   are clean. It is the only one that gets the stop colour. */
+.brief-conclusion { margin: 0.15em 0 0.4em; }
+.concl-line { display: flex; gap: 0.6em; padding: 0.2em 0; line-height: 1.55; }
+.concl-calm    .brief-text { color: var(--muted); }
+.concl-unknown .brief-text { color: var(--soft, var(--muted)); }
+.concl-alert   .brief-text { color: var(--ink); font-weight: var(--weight-medium); }
+/* ⛔ The gap is the only stop-coloured line in the briefing. Everything else this surface
+   says is information; this one is 「你有一樣嘢未查過」. */
+.concl-gap     .brief-text { color: var(--stop, #b0564b); }
+.concl-history .brief-text { color: var(--faint); opacity: 0.8; }

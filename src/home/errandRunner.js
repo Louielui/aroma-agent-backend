@@ -45,7 +45,8 @@ async function runErrand ({ store, id, title, run, now, decorate }) {
     const outcome = r && r.outcome
 
     if (outcome === OUTCOME.ANSWERED) {
-      row = { ...deco, id, title, outcome, at: clock(), answer: r.answer, detail: r.detail || '' }
+      // `items` rides along so the conclusion can compare runs; `found` so it can say 89 vs 6.
+      row = { ...deco, id, title, outcome, at: clock(), answer: r.answer, detail: r.detail || '', items: Array.isArray(r.items) ? r.items : undefined, found: r.found }
     } else if (outcome === OUTCOME.BLOCKED_BY_SITE) {
       row = { ...deco, id, title, outcome, at: clock(), detail: r.detail || '' }
     } else if (outcome === OUTCOME.STOPPED_FOR_YOU) {

@@ -17,7 +17,8 @@
  */
 
 const { OUTCOME } = require('./errandStore')
-const { freshnessReport } = require('./errandKinds')
+const { freshnessReport, KINDS } = require('./errandKinds')
+const { conclusionFor } = require('./errandConclusion')
 const { localParts } = require('../utils/localTime')
 
 /**
@@ -51,6 +52,9 @@ function stamped (section, readAt) {
   if (!readAt) return section
   return { ...section, checkedAt: readAt, checkedAtLabel: hhmm(readAt) }
 }
+
+/** The briefing shows the CONCLUSION; the rows are a drill-down, not the display. */
+const MAX_ROWS_SHOWN = 6
 
 const AGE = Object.freeze({ FRESH: 'FRESH', STALE: 'STALE', EXPIRED: 'EXPIRED' })
 const TWO_HOURS = 2 * 3600 * 1000
@@ -109,7 +113,7 @@ function buildBriefing ({ store, backlog, witness, now }) {
     // ⛔ NO FRESHNESS CLAIM WITHOUT A READ. `NEVER_RUN` would be inventing a fact out of a
     // failure to establish one — the registry says the errand SHOULD have run, but only the
     // store can say whether it did. Same for CANNOT_READ below. HR-27's family.
-    errands = { state: 'NOT_WIRED', rows: [], freshness: [], line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
+    errands = { state: 'NOT_WIRED', rows: [], freshness: [], conclusions: [], rows: [], hiddenRows: 0, totalRows: 0, line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
     waiting = { state: 'NOT_WIRED', cards: [], line: '差事紀錄未接線,所以我答唔到有冇嘢等你。呢個係一個缺陷。' }
   } else {
     let rows = null
@@ -117,7 +121,7 @@ function buildBriefing ({ store, backlog, witness, now }) {
     try { rows = store.list() } catch (_) { unreadable = true }
 
     if (unreadable) {
-      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], line: '我睇唔到差事紀錄。' }, t)
+      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], conclusions: [], hiddenRows: 0, totalRows: 0, line: '我睇唔到差事紀錄。' }, t)
       // ⛔ An unreadable record is NOT 「nothing waiting」 — it is 「I cannot tell you」, and
       // the difference could cost him a cart he was waiting to pay for.
       waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t)
@@ -130,9 +134,17 @@ function buildBriefing ({ store, backlog, witness, now }) {
       // declared kinds is what makes 「從來未查過」 sayable, and it is why this line is computed
       // even when `rows` is empty.
       const freshness = freshnessReport(rows, t, witness)
+      // ⛔ THE CONCLUSION, NOT THE LOG. Forty-four rows pushed the composer off the screen —
+      // the briefing ate the thing it sits above. A row is one execution of one query; what he
+      // acts on is what the kind FOUND. Registry-driven, like freshness.
+      const conclusions = KINDS.map((k) => conclusionFor(k, rows, t))
+      // ⛔ CAPPED, AND THE HIDDEN COUNT IS STATED. The history stays reachable through the API;
+      // it is no longer DISPLAYED. Never-blank applies to what is cut, not only to what is empty.
+      const shownRows = rows.slice(0, MAX_ROWS_SHOWN).map((r) => ({ ...r, atLabel: hhmm(r.at) }))
+      const hiddenRows = Math.max(0, rows.length - shownRows.length)
       errands = stamped(rows.length
-        ? { state: 'HAS_ROWS', rows: rows.map((r) => ({ ...r, atLabel: hhmm(r.at) })), freshness, line: '' }
-        : { state: 'NONE_RAN', rows: [], freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
+        ? { state: 'HAS_ROWS', rows: shownRows, hiddenRows, totalRows: rows.length, conclusions, freshness, line: '' }
+        : { state: 'NONE_RAN', rows: [], hiddenRows: 0, totalRows: 0, conclusions, freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
 
       const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
       waiting = stamped(w.length
