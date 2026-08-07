@@ -17,6 +17,7 @@
 const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const { detailFor } = require('./sectionDetail')
+const { t } = require('../i18n/t')
 const { KINDS } = require('./errandKinds')
 
 const DAY = 24 * 3600 * 1000
@@ -87,13 +88,16 @@ describe('history is CHANGE, not occurrence', () => {
       row('mushrooms', 0, { items: [it2('2026-01-01', 'same')] })
     ]
     const d = detailFor(KIND, rows, NOW)
-    assert.match(d.history[0].line, /冇變|冇新/)
+    // CONVERTED: which statement. The day is a slot, so the assertion pins the day too.
+    assert.strictEqual(d.history[0].line, t('detail.dayNothingNew', { day: d.history[0].day }))
     assert.doesNotMatch(d.history[0].line, /same/, 'repeating the unchanged list is the log, not the history')
   })
 
   test('the earliest day has nothing to compare against and says so', () => {
     const d = detailFor(KIND, [row('mushrooms', 0, { items: [it2('2026-08-04', 'a')] })], NOW)
-    assert.match(d.history[d.history.length - 1].line, /未有得比|第一次/)
+    // CONVERTED: which statement.
+    const earliest = d.history[d.history.length - 1]
+    assert.strictEqual(earliest.line, t('detail.dayCannotCompare', { day: earliest.day }))
   })
 
   test('history is newest first', () => {

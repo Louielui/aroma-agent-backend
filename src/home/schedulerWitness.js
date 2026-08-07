@@ -29,6 +29,7 @@
  */
 
 const { execFile } = require('node:child_process')
+const { t } = require('../i18n/t')
 
 /** ⛔ ONE constant, shared with `scripts/scheduler/aroma-errand-task.ps1`. If these drift, the
  *  witness reports NOT_INSTALLED for a task that exists — and the briefing says 「手動」 about
@@ -75,14 +76,20 @@ function defaultExec () {
  * Some of the family mean trouble and some do not. That distinction is the whole point.
  */
 const SCHED_S = {
-  267008: { healthy: null, saying: '個 task 裝咗,準備緊行(Ready)。' },
-  267009: { healthy: null, saying: '個 task 而家行緊。' },
-  267010: { healthy: null, saying: '個 task 俾人停用咗。' },
-  267011: { healthy: null, saying: '個 task 裝咗,但未行過 —— 未到時間,唔係失敗。' },
-  267012: { healthy: false, saying: '⚠ Windows 話冇下一次執行(no more runs)—— 對一個每日 task 嚟講,即係個 trigger 出咗事。' },
-  267013: { healthy: false, saying: '⚠ Windows 話個 task 冇被排程(not scheduled)。' },
-  267014: { healthy: false, saying: '⚠ 上次行到一半俾人終止咗(terminated)—— 通常係撞到執行時限。' },
-  267015: { healthy: false, saying: '⚠ 個 task 冇任何有效 trigger,所以佢唔會自己行。' }
+  // ⛔ EACH ROW HOLDS A THUNK, NOT A KEY STRING — AND THIS IS THE SECOND ATTEMPT.
+  // The first stored `key: 'sched.ready'` and called `t(status.key)`, which is a DYNAMIC key:
+  // exactly the hole rule ① exists to close, written by me, at exactly the moment the Owner
+  // predicted — 「it will be tempting to break the first time something looks repetitive」.
+  // The source scan failed the build. A thunk keeps the table's shape and keeps every key a
+  // literal at a real call site, so the scan can still see all eight.
+  267008: { healthy: null, say: () => t('sched.ready') },
+  267009: { healthy: null, say: () => t('sched.running') },
+  267010: { healthy: null, say: () => t('sched.disabled') },
+  267011: { healthy: null, say: () => t('sched.notYetRun') },
+  267012: { healthy: false, say: () => t('sched.noMoreRuns') },
+  267013: { healthy: false, say: () => t('sched.notScheduled') },
+  267014: { healthy: false, say: () => t('sched.terminated') },
+  267015: { healthy: false, say: () => t('sched.noValidTrigger') }
 }
 
 /** Windows' 「never ran」 sentinel. Showing it as a date would be showing him a 1999 timestamp. */
@@ -122,7 +129,7 @@ async function readSchedulerWitness (opts) {
       healthy: null,
       lastRunAt: null,
       nextRunAt: null,
-      saying: '問唔到 Windows 排程(' + String(e && e.message).split('\n')[0].slice(0, 80) + ')。我唔知有冇 task。',
+      saying: t('sched.cannotAsk', { error: String(e && e.message).split('\n')[0].slice(0, 80) }),
       readAt: now
     })
   }
@@ -136,7 +143,7 @@ async function readSchedulerWitness (opts) {
       healthy: null,
       lastRunAt: null,
       nextRunAt: null,
-      saying: 'Windows 答咗啲我讀唔明嘅嘢,所以我唔知有冇 task。',
+      saying: t('sched.unparseable'),
       readAt: now
     })
   }
@@ -148,7 +155,7 @@ async function readSchedulerWitness (opts) {
       healthy: null,
       lastRunAt: null,
       nextRunAt: null,
-      saying: '冇裝過排程 task。',
+      saying: t('sched.notInstalled'),
       readAt: now
     })
   }
@@ -167,18 +174,18 @@ async function readSchedulerWitness (opts) {
   let saying
   if (disabled) {
     // ⛔ The quietest way for a schedule to stop: still listed, still there, never fires.
-    saying = '個 task 裝咗但係俾人停用咗 —— 佢唔會行。'
+    saying = t('sched.installedButDisabled')
   } else if (status) {
-    saying = status.saying
+    saying = status.say()
   } else if (healthy === false) {
-    saying = '上次行嗰次 Windows 報失敗,退出碼 ' + code + '(0x' + (code >>> 0).toString(16) + ')。' +
+    saying = t('sched.lastRunFailed', { code, hex: (code >>> 0).toString(16) }) +
       // ⛔ ONLY for code 1. Printing this hint under every non-zero code sent him looking at
       // user-profile visibility for failures that had nothing to do with it.
-      (code === 1 ? '⚠ 0x1 通常係排程 logon 睇唔到 user profile 入面嘅檔案 —— 備份 task 就係咁死過。' : '')
+      (code === 1 ? t('sched.hint0x1') : '')
   } else if (healthy === null) {
-    saying = '個 task 裝咗,但 Windows 冇報過一次執行結果。'
+    saying = t('sched.noResultReported')
   } else {
-    saying = '個 task 裝咗,行緊,上次 Windows 報成功。'
+    saying = t('sched.healthy')
   }
 
   return remember(key, useCache, {

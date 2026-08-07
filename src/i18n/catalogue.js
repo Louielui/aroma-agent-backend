@@ -21,9 +21,15 @@
  * key for it. Her language is the conversation contract's rule plus `traditionalGuard.js`.
  *
  * ── STATUS ──────────────────────────────────────────────────────────────────
- * ⚠ THIS IS THE MECHANISM'S PROOF SET, NOT THE MIGRATION. Measured: 919 production lines carry
- * interface Chinese. None of them have moved yet — the Owner asked to see the mechanism first.
- * The entries below exist to exercise every rule the resolver enforces.
+ * ⚠ PARTIAL. 首頁 and its server-side surface are extracted; the browser half and the rest of
+ * the server are not. `src/governance/textClasses.js` is the authority on which files may be
+ * translated at all — only a minority of the Chinese in this codebase may.
+ *
+ * ⛔ THREE TIMES NOW, THE GAP BETWEEN THE TWO LANGUAGES WAS NOT IN THE WORDS:
+ *   · 「、」 and 「；」 — CJK punctuation, outside the Han range the survey counted.
+ *   · number agreement — 「{n} of them were」 is wrong at n=1 and renders anyway.
+ *   · sentence joining — 「…daily.Still run by hand」, because Chinese needs no space.
+ * Whatever the next one is, it will not be a word either.
  */
 
 /**
@@ -199,7 +205,223 @@ const CATALOGUE = Object.freeze({
   'briefing.amountExpired': {
     zh: '太久了（{hours} 個鐘）。價錢同存貨都要重新看 —— 建議我重新跑一次，不要接住做。',
     en: 'Too long ago ({hours} hours). Both the price and the stock need re-reading. Let me run it again rather than carry on from this.'
-  }
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // DURATIONS.
+  //
+  // ⛔ ENGLISH NEEDS A SINGULAR AND CHINESE DOES NOT. 「1 分鐘」 and 「11 分鐘」 are one
+  // template; 「1 minute」 and 「11 minutes」 are two. Where `conclusion.gap` could be REWRITTEN to
+  // dodge agreement, a bare duration cannot — there is nowhere for the number to hide.
+  //
+  // So the singular is its own key, chosen at the call site with `n === 1 ? t(a) : t(b)`. NOT a
+  // `plural(n, keyOne, keyMany)` helper, however much tidier that reads: keys passed to a helper
+  // are invisible to the source scan that keeps data out of the translator, and buying tidiness
+  // with a hole in rule ① is the wrong trade. Two visible `t()` calls stay scannable.
+  //
+  // Six keys, and no plural FRAMEWORK. If a language turns up needing dual or paucal forms, that
+  // is a real design conversation, not a number to nudge.
+  // ══════════════════════════════════════════════════════════════════════════
+  'time.oneMinute': { zh: '1 分鐘', en: '1 minute' },
+  'time.minutes': { zh: '{n} 分鐘', en: '{n} minutes' },
+  'time.oneHour': { zh: '1 個鐘', en: '1 hour' },
+  'time.hours': { zh: '{n} 個鐘', en: '{n} hours' },
+  'time.oneDay': { zh: '1 日', en: '1 day' },
+  'time.days': { zh: '{n} 日', en: '{n} days' },
+
+  'cadence.daily': { zh: '每日', en: 'daily' },
+  'cadence.everyNDays': { zh: '每 {n} 日', en: 'every {n} days' },
+  'cadence.hourly': { zh: '每個鐘', en: 'hourly' },
+  'cadence.everyNHours': { zh: '每 {n} 個鐘', en: 'every {n} hours' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // FRESHNESS — the registry-driven line for each errand kind.
+  // ⛔ DUE MUST NOT CRY WOLF, and the English must not be louder than the Chinese. Today's
+  // normal state is 「nobody ran it」; if that reads as an alarm he learns to skip the line
+  // within a week, and the day it means something he skips it then too.
+  // ══════════════════════════════════════════════════════════════════════════
+  'freshness.neverRun': {
+    zh: '{title}：從來沒有查過。應該{cadence}一次。',
+    en: '{title}: never checked. It should run {cadence}.'
+  },
+  'freshness.unjudgeable': {
+    zh: '{title}：有紀錄但沒有時間，所以我判斷不到有多新。這是一個缺陷。',
+    en: '{title}: there are records but no times, so I cannot judge how fresh they are. That is a defect.'
+  },
+  'freshness.fresh': {
+    zh: '{title}：{ago}之前查過。{cadence}一次。',
+    en: '{title}: last checked {ago} ago. Runs {cadence}.'
+  },
+  'freshness.dueHead': {
+    zh: '{title}：{ago}之前查過，應該{cadence}一次。',
+    en: '{title}: last checked {ago} ago, and it should run {cadence}.'
+  },
+  'freshness.dueUnknownSchedule': {
+    zh: '我問不到 Windows 有沒有排程，所以我不知道是沒有人跑，還是排程死了。',
+    en: 'I could not ask Windows whether a schedule exists, so I cannot tell you whether nobody ran it or the schedule is dead.'
+  },
+  /**
+   * ⛔ THE QUIETEST FAILURE MODE HAD BEEN MAPPED ONTO THE CALMEST SENTENCE — 「switched off」
+   * once read as 「never set up」. Both languages must keep the distinction audible.
+   */
+  'freshness.dueDisabled': {
+    zh: '⚠ 排程 task 是裝了的，但被人停用了，所以它一世都不會跑。不是沒有裝 —— 是裝了而關掉了。',
+    en: '⚠ The scheduled task IS installed, but someone disabled it, so it will never fire. Not missing — installed and switched off.'
+  },
+  'freshness.dueManual': {
+    zh: '還是手動跑的，沒有人跑就沒有新的。',
+    en: 'Still run by hand, so nothing is new until someone runs it.'
+  },
+  'freshness.dueFailed': {
+    zh: '⚠ 排程跑過但失敗了，要去看。{saying}',
+    en: '⚠ The schedule ran and failed. Worth looking at. {saying}'
+  },
+  /**
+   * ⛔ THE WHOLE REASON THERE ARE TWO WITNESSES. Windows reports nothing wrong; there is simply
+   * no row. A trigger that never fired leaves no error anywhere, and this sentence is the only
+   * place it surfaces.
+   */
+  'freshness.dueNeverFired': {
+    zh: '⚠ 有排程，但沒有跑過 —— Windows 那邊沒有報錯，即是那個 trigger 可能根本沒有 fire 過。這種情況沒有任何錯誤訊息，只是少了一行紀錄。',
+    en: '⚠ A schedule exists but has never run — and Windows reports no error, which means the trigger may never have fired at all. This case produces no error message anywhere; it is only a missing row.'
+  },
+  'witness.notAsked': {
+    zh: '沒有問過 Windows。',
+    en: 'Windows was not asked.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION DETAIL — the per-day drill-down.
+  // ══════════════════════════════════════════════════════════════════════════
+  'detail.whyNoItemsRecordedThen': {
+    zh: '那次沒有記下找到什麼（舊紀錄）',
+    en: 'that run did not record what it found (an older row)'
+  },
+  'detail.dayCannotCompare': {
+    zh: '{day}：沒有得比（之前沒有紀錄）。',
+    en: '{day}: nothing to compare against (no earlier run).'
+  },
+  'detail.dayNothingNew': {
+    zh: '{day}：沒有新的。',
+    en: '{day}: nothing new.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // SECTION ATTACHMENT — what travels when he types from inside a section.
+  // ⛔ These are NOT the freshness lines, however similar they read. A converted assertion
+  // pointed at `freshness.neverRun` and failed here: the attachment builds its own sentence,
+  // and 「never ran」 said twice in two places is two strings, not one.
+  // ══════════════════════════════════════════════════════════════════════════
+  'attachment.neverRan': {
+    zh: '{title}：從來沒有跑過。',
+    en: '{title}: has never run.'
+  },
+  'attachment.noConclusion': {
+    zh: '{title}：今天沒有可以講的結論。',
+    en: '{title}: nothing conclusive to say today.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // WINDOWS SCHEDULER WITNESS.
+  // ⛔ 267011 IS NOT A FAILURE. It means 「installed, has not run yet」, and reading it as an
+  // error cost a day once. The wording must not drift back toward alarm in either language.
+  // ══════════════════════════════════════════════════════════════════════════
+  'sched.ready': { zh: '這個 task 裝了，準備跑（Ready）。', en: 'The task is installed and ready to run.' },
+  'sched.running': { zh: '這個 task 正在跑。', en: 'The task is running now.' },
+  'sched.disabled': { zh: '這個 task 被人停用了。', en: 'The task has been disabled.' },
+  'sched.notYetRun': {
+    zh: '這個 task 裝了，但還沒有跑過 —— 未到時間，不是失敗。',
+    en: 'The task is installed but has not run yet — not due yet, not failed.'
+  },
+  'sched.noMoreRuns': {
+    zh: '⚠ Windows 說沒有下一次執行（no more runs）—— 對一個每日 task 來說，即是那個 trigger 出了事。',
+    en: '⚠ Windows reports no further runs — for a daily task that means the trigger is broken.'
+  },
+  'sched.notScheduled': { zh: '⚠ Windows 說這個 task 沒有被排程（not scheduled）。', en: '⚠ Windows reports the task is not scheduled.' },
+  'sched.terminated': {
+    zh: '⚠ 上次跑到一半被終止（terminated）—— 通常是撞到執行時限。',
+    en: '⚠ The last run was terminated part-way — usually the execution time limit.'
+  },
+  'sched.noValidTrigger': { zh: '⚠ 這個 task 沒有任何有效 trigger，所以它不會自己跑。', en: '⚠ The task has no valid trigger, so it will never fire on its own.' },
+  'sched.cannotAsk': {
+    zh: '問不到 Windows 排程（{error}）。我不知道有沒有 task。',
+    en: 'I could not ask Windows about the schedule ({error}). I do not know whether a task exists.'
+  },
+  'sched.unparseable': {
+    zh: 'Windows 答了一些我讀不懂的東西，所以我不知道有沒有 task。',
+    en: 'Windows answered with something I could not parse, so I do not know whether a task exists.'
+  },
+  'sched.notInstalled': { zh: '沒有裝過排程 task。', en: 'No scheduled task has ever been installed.' },
+  'sched.installedButDisabled': {
+    zh: '這個 task 裝了但被人停用了 —— 它不會跑。',
+    en: 'The task is installed but disabled — it will not run.'
+  },
+  'sched.lastRunFailed': {
+    zh: '上次跑那次 Windows 報失敗，退出碼 {code}（0x{hex}）。',
+    en: 'Windows reported the last run as failed, exit code {code} (0x{hex}).'
+  },
+  /**
+   * ⛔ THE 0x1 HINT. It is a hint, not a diagnosis, and it says so — a scheduler logon cannot
+   * see files inside a user profile, and that is exactly how the backup task died.
+   */
+  'sched.hint0x1': {
+    zh: '⚠ 0x1 通常是排程 logon 看不到 user profile 裡的檔案 —— 備份 task 就是這樣死過。',
+    en: '⚠ 0x1 usually means the scheduler logon cannot see files inside a user profile — that is how the backup task died.'
+  },
+  'sched.noResultReported': {
+    zh: '這個 task 裝了，但 Windows 沒有報過一次執行結果。',
+    en: 'The task is installed, but Windows has never reported a run result.'
+  },
+  'sched.healthy': {
+    zh: '這個 task 裝了，在跑，上次 Windows 報成功。',
+    en: 'The task is installed, running, and Windows reported the last run as successful.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // HOME ROUTES — what an endpoint says when it will not or cannot answer.
+  // ⛔ Every one of these is 「a defect, not a state」 or 「I cannot」 — never 「there is none」.
+  // ══════════════════════════════════════════════════════════════════════════
+  'route.schedNotWired': {
+    zh: '排程入口未接上服務憑證守衛，所以它是關住的。這是一個缺陷，不是一個狀態。',
+    en: 'The scheduling endpoint is not wired to the service-credential guard, so it is closed. That is a defect, not a state.'
+  },
+  'route.cannotAskWindows': { zh: '問不到 Windows 排程。', en: 'I could not ask Windows about the schedule.' },
+  'route.unknownSection': { zh: '我不認得這一節：{kind}', en: 'I do not recognise that section: {kind}' },
+  'route.unknownSectionNoAttach': { zh: '我不認得這一節，所以沒有東西好附上。', en: 'I do not recognise that section, so there is nothing to attach.' },
+  'route.cannotReadOpenSection': { zh: '我看不到差事紀錄，所以打不開這一節。', en: 'I cannot read the errand record, so I cannot open this section.' },
+  'route.cannotReadAttach': { zh: '我看不到差事紀錄，所以說不出會附上什麼。', en: 'I cannot read the errand record, so I cannot tell you what would travel.' },
+  'route.cannotReadFindErrand': { zh: '我看不到差事紀錄，所以找不到那一單。', en: 'I cannot read the errand record, so I cannot find that errand.' },
+  'route.noSettingSeen': { zh: '我從你那句話裡看不出要改哪個設定。', en: 'I cannot tell from that which setting you mean.' },
+  'route.errandNotFound': { zh: '找不到那一單差事。', en: 'I could not find that errand.' },
+  'route.noTarget': { zh: '那一單沒有記下停在哪一頁。', en: 'That errand did not record which page it stopped on.' },
+  /**
+   * ⛔ THE RULE IN THE SENTENCE IS THE RULE IN THE CODE: 「Never auto-clear a stale
+   * SingletonLock. Two Chromes writing one profile is the kind of corruption that surfaces days
+   * later as something else entirely.」 The English must keep the reason, not just the refusal —
+   * a refusal without its reason reads as an obstacle and invites someone to remove it.
+   */
+  'route.profileBusy': {
+    zh: '香香現在用著這個 profile，所以開不到。停了它先，或者等它做完。⛔ 我不會自動清那個鎖 —— 兩個 Chrome 一齊寫一個 profile 的損壞，會在幾天之後以另一件事的樣子出現。',
+    en: 'She is using that profile right now, so it cannot be opened. Stop her first, or wait until she is done. ⛔ I will not clear the lock automatically — two Chromes writing one profile is the kind of corruption that surfaces days later as something else entirely.'
+  },
+  'route.launchFailed': { zh: '開不到 Chrome：{error}', en: 'Could not launch Chrome: {error}' },
+  'route.opened': {
+    zh: '開了在香香那個 profile 裡 —— 即是你會見回她那個購物車。',
+    en: 'Opened in her profile — so you will see the same cart she left.'
+  },
+
+  'errand.recallTitle': { zh: '回收檢查', en: 'Recall check' },
+
+  /**
+   * ⛔ SENTENCE JOINING IS INTERFACE TOO, AND ENGLISH NEEDS IT WHERE CHINESE DOES NOT.
+   * The DUE line is a head plus a cause, concatenated. In Chinese 「…一次。還是手動跑的…」 is
+   * correct with nothing between them; in English it rendered 「…run daily.Still run by hand」.
+   * Third time the same lesson: the gap between Chinese and English is not only in the words.
+   */
+  'punct.sentenceSep': { zh: '', en: ' ' },
+
+  // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
+  'punct.colon': { zh: '：', en: ': ' }
 })
 
 module.exports = { CATALOGUE }

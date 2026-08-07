@@ -246,14 +246,16 @@ describe('⛔ freshness: the second number, without which a timestamp judges not
     const b = buildBriefing({ store: store([]), now: NOW })
     const f = b.errands.freshness.find((x) => x.kind === 'recall')
     assert.strictEqual(f.state, 'NEVER_RUN')
-    assert.match(f.line, /從來未/)
+    // CONVERTED: which statement.
+    assert.strictEqual(f.line, t('freshness.neverRun', { title: f.title, cadence: t('cadence.daily') }))
   })
 
   test('a recent run reads FRESH and still says its age', () => {
     const b = buildBriefing({ store: store([recallRow(2)]), now: NOW })
     const f = b.errands.freshness.find((x) => x.kind === 'recall')
     assert.strictEqual(f.state, 'FRESH')
-    assert.match(f.line, /個鐘/)
+    // CONVERTED: it guarded that the age is still stated, not the unit's wording.
+    assert.ok(f.line.includes(t('time.hours', { n: 2 })), 'it still says its age')
   })
 
   test('⛔ an overdue UNSCHEDULED run names its cause and does not read as a fault', () => {

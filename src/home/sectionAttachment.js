@@ -38,6 +38,7 @@
  */
 
 const { conclusionFor } = require('./errandConclusion')
+const { t } = require('../i18n/t')
 // ⛔ THE ENVELOPE IS GOVERNANCE AND LIVES IN THE PROTECTED PATH. This file derives WHAT to
 // attach (content — the Owner may change it); the envelope decides how it is framed so page
 // text cannot become an instruction (a fence — he must not). See governance/sectionEnvelope.js.
@@ -67,8 +68,8 @@ function attachmentFor (kind, rows, now) {
   // would be back to guessing what she knows — the thing this shape exists to remove.
   if (!lines.length) {
     lines.push(c.state === 'NEVER_RUN'
-      ? kind.title + ':從來未行過。'
-      : kind.title + ':今日冇可以講嘅結論。')
+      ? t('attachment.neverRan', { title: kind.title })
+      : t('attachment.noConclusion', { title: kind.title }))
   }
 
   return {

@@ -24,6 +24,8 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
+const { t } = require('../i18n/t')
+
 const HOUR = 3600 * 1000
 const DAY = 24 * HOUR
 
@@ -45,7 +47,14 @@ const FRESHNESS = Object.freeze({
 const KINDS = Object.freeze([
   Object.freeze({
     id: 'recall',
-    title: '回收檢查',
+    /**
+     * ⛔ A GETTER, SO THE TITLE IS RESOLVED AT USE TIME AND STAYS A STRING EVERYWHERE.
+     * `KINDS` is frozen at module load, which is right for the id and the prefix and wrong for
+     * a word. A thunk would have forced every reader (`base.title`, the conclusion, the
+     * attachment, the routes) to learn it is now a function; a getter changes none of them.
+     * The `t()` call is still a literal at a real call site, so the source scan still sees it.
+     */
+    get title () { return t('errand.recallTitle') },
     prefix: 'recall-',
     everyMs: DAY,
     graceMs: 6 * HOUR,
@@ -68,16 +77,27 @@ function kindOfRow (row) {
 
 /** 「3 日」 / 「2 個鐘」 / 「11 分鐘」 — the unit he would use out loud. */
 function ago (ms) {
-  if (ms < 90 * 60 * 1000) return Math.max(1, Math.round(ms / 60000)) + ' 分鐘'
-  if (ms < 2 * DAY) return Math.round(ms / HOUR) + ' 個鐘'
-  return Math.round(ms / DAY) + ' 日'
+  // ⛔ The singular is chosen HERE with two visible t() calls, not by a plural() helper —
+  // a key passed to a helper is invisible to the source scan that keeps data out of the
+  // translator. Chinese ignores the distinction; English cannot.
+  if (ms < 90 * 60 * 1000) {
+    const n = Math.max(1, Math.round(ms / 60000))
+    return n === 1 ? t('time.oneMinute') : t('time.minutes', { n })
+  }
+  if (ms < 2 * DAY) {
+    const n = Math.round(ms / HOUR)
+    return n === 1 ? t('time.oneHour') : t('time.hours', { n })
+  }
+  const n = Math.round(ms / DAY)
+  return n === 1 ? t('time.oneDay') : t('time.days', { n })
 }
 
 /** 「每日」 / 「每 6 個鐘」 */
 function cadenceLabel (everyMs) {
-  if (everyMs === DAY) return '每日'
-  if (everyMs % DAY === 0) return '每 ' + (everyMs / DAY) + ' 日'
-  return '每 ' + Math.round(everyMs / HOUR) + ' 個鐘'
+  if (everyMs === DAY) return t('cadence.daily')
+  if (everyMs % DAY === 0) return t('cadence.everyNDays', { n: everyMs / DAY })
+  const n = Math.round(everyMs / HOUR)
+  return n === 1 ? t('cadence.hourly') : t('cadence.everyNHours', { n })
 }
 
 /**
@@ -112,7 +132,7 @@ function freshnessOf (kind, rows, now, witness) {
       state: FRESHNESS.NEVER_RUN,
       lastAt: null,
       ageMs: null,
-      line: kind.title + ':從來未查過。應該 ' + cadenceLabel(kind.everyMs) + '一次。'
+      line: t('freshness.neverRun', { title: kind.title, cadence: cadenceLabel(kind.everyMs) })
     }
   }
 
@@ -125,7 +145,7 @@ function freshnessOf (kind, rows, now, witness) {
       state: FRESHNESS.UNJUDGEABLE,
       lastAt: null,
       ageMs: null,
-      line: kind.title + ':有紀錄但冇時間,所以我判斷唔到有幾新。呢個係一個缺陷。'
+      line: t('freshness.unjudgeable', { title: kind.title })
     }
   }
 
@@ -156,7 +176,7 @@ function freshnessOf (kind, rows, now, witness) {
     registry: { gap, nextRunAt, nextRunAtSource, lastAt, ageMs },
     windows: witness
       ? { state: witness.state, scheduled: witness.scheduled, healthy: witness.healthy, lastTaskResult: witness.lastTaskResult === undefined ? null : witness.lastTaskResult, saying: witness.saying }
-      : { state: 'NOT_CHECKED', scheduled: null, healthy: null, lastTaskResult: null, saying: '冇問過 Windows。' }
+      : { state: 'NOT_CHECKED', scheduled: null, healthy: null, lastTaskResult: null, saying: t('witness.notAsked') }
   }
 
   // ⛔ FRESHNESS IS THE GAP, NOT THE AGE.
@@ -180,7 +200,7 @@ function freshnessOf (kind, rows, now, witness) {
       nextRunAt,
       nextRunAtSource,
       witnesses,
-      line: kind.title + ':' + ago(ageMs) + '之前查過。' + cadenceLabel(kind.everyMs) + '一次。'
+      line: t('freshness.fresh', { title: kind.title, ago: ago(ageMs), cadence: cadenceLabel(kind.everyMs) })
     }
   }
 
@@ -193,13 +213,13 @@ function freshnessOf (kind, rows, now, witness) {
   // So DUE names its own cause. Today the cause is always 「nobody ran it」. The day `scheduled`
   // is true, the identical state means something else entirely — the trigger may have died —
   // and the sentence has to say so, because THAT is the silence worth interrupting him for.
-  const head = kind.title + ':' + ago(ageMs) + '之前查過,應該' + cadenceLabel(kind.everyMs) + '一次。'
+  const head = t('freshness.dueHead', { title: kind.title, ago: ago(ageMs), cadence: cadenceLabel(kind.everyMs) })
   let line
 
   if (scheduled === null) {
     // The witness could not look. Claiming either story would be inventing the fact it failed
     // to establish — and the manual story is the comfortable one, which is why it is dangerous.
-    line = head + '我問唔到 Windows 有冇排程,所以我唔知係冇人行,定係排程死咗。'
+    line = head + t('punct.sentenceSep') + t('freshness.dueUnknownSchedule')
   } else if (witnesses.windows.state === 'DISABLED') {
     // ⛔ ITS OWN SENTENCE, AND THE REASON IS THE WHOLE POINT OF READING THESE ALOUD.
     //
@@ -208,19 +228,18 @@ function freshnessOf (kind, rows, now, witness) {
     // like 「no schedule was ever set up」. He would see 「手動」 and conclude nothing is wired,
     // when in truth something IS wired and is silently off. **The quietest failure mode was
     // mapped onto the calmest sentence.** Found by printing every branch, not by testing them.
-    line = head + '⚠ 排程 task 係裝咗嘅,但俾人停用咗,所以佢一世都唔會行。唔係冇裝 —— 係裝咗而熄咗。'
+    line = head + t('punct.sentenceSep') + t('freshness.dueDisabled')
   } else if (scheduled === false) {
     // Today's normal state: no task at all. NOT an alarm — see the note above.
-    line = head + '仲係手動行嘅,冇人行就冇新嘅。'
+    line = head + t('punct.sentenceSep') + t('freshness.dueManual')
   } else if (witnesses.windows.healthy === false) {
     // Both witnesses agree, and Windows can say WHY. This is the loud case.
-    line = head + '⚠ 排程行過但失敗咗,要去睇。' + (witnesses.windows.saying || '')
+    line = head + t('punct.sentenceSep') + t('freshness.dueFailed', { saying: witnesses.windows.saying || '' })
   } else {
     // ⛔ THE QUIET CASE, AND THE REASON THERE ARE TWO WITNESSES.
     // Windows reports nothing wrong; there is simply no row. A trigger that never fired leaves
     // no error anywhere — this sentence is the only place it surfaces.
-    line = head + '⚠ 有排程,但冇行過 —— Windows 嗰邊冇報錯,即係個 trigger 可能根本冇 fire 過。' +
-      '呢種情況冇任何錯誤訊息,淨係差咗一行紀錄。'
+    line = head + t('punct.sentenceSep') + t('freshness.dueNeverFired')
   }
 
   return { ...base, scheduled, state: FRESHNESS.DUE, lastAt, ageMs, nextRunAt, nextRunAtSource, witnesses, line }

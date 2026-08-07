@@ -6,6 +6,7 @@
  * exercises the real assembly: createApp() → the route → the store → the detail.
  */
 const { test, describe } = require('node:test')
+const { t } = require('../i18n/t')
 const assert = require('node:assert')
 const http = require('node:http')
 const { createApp } = require('../app')
@@ -38,7 +39,8 @@ describe('the section detail endpoint is reachable in the REAL assembly', () => 
       const r = await fetch('http://127.0.0.1:' + port + '/api/v1/home/section/nonesuch')
       assert.strictEqual(r.status, 404)
       const b = await r.json()
-      assert.match(b.saying, /唔認得|冇/)
+      // CONVERTED: which statement — and the slot proves the unknown kind reaches the sentence.
+      assert.strictEqual(b.saying, t('route.unknownSection', { kind: 'nonesuch' }))
     } finally { s.close() }
   })
 

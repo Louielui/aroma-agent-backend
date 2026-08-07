@@ -57,7 +57,10 @@ describe('what would travel is a VALUE, computed once', () => {
   test('a section that never ran attaches that fact rather than nothing', () => {
     const a = attachmentFor(KIND, [], NOW)
     assert.ok(a.lines.length > 0, 'an empty attachment would look like no context was carried')
-    assert.match(a.lines.join(' '), /從來未/)
+    // CONVERTED — SECOND ATTEMPT. The first pointed at `freshness.neverRun` and failed: the
+    // attachment builds its OWN sentence. 「Never ran」 said in two places is two strings, and
+    // the key is what made that visible; the regex /從來未/ had matched both indifferently.
+    assert.strictEqual(a.lines[0], t('attachment.neverRan', { title: KIND.title }))
   })
 
   test('the attachment carries WHEN it was captured', () => {

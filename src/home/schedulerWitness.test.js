@@ -22,6 +22,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 const { test, describe } = require('node:test')
+const { t } = require('../i18n/t')
 const assert = require('node:assert')
 const { readSchedulerWitness, WITNESS, TASK_NAME } = require('./schedulerWitness')
 
@@ -137,7 +138,12 @@ describe('⛔ a task that has never run is not a task that failed', () => {
   test('267011 SCHED_S_TASK_HAS_NOT_RUN → not unhealthy, and says it has not run', async () => {
     const r = await w(267011)
     assert.notStrictEqual(r.healthy, false, 'a fresh install must not be described as failing')
-    assert.match(r.saying, /未行過|冇行過/)
+    // CONVERTED: which statement. 267011 means 「installed, not yet due」 and the key says so.
+    assert.strictEqual(r.saying, t('sched.notYetRun'))
+    // ⛔ KEPT AS WORDING. This does not guard which key was chosen — it guards that the 0x1
+    // profile-visibility HINT never appears here. That hint is about code 1, and once it was
+    // printed under every non-zero code and sent him looking in the wrong place for a day.
+    // The hint is a literal fragment, so a literal check is what tests for it.
     assert.doesNotMatch(r.saying, /0x1 /, 'the profile-visibility hint is about code 1, not about this')
   })
 

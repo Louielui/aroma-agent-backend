@@ -23,6 +23,7 @@
 const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const { KINDS, FRESHNESS, freshnessOf, kindOfRow } = require('./errandKinds')
+const { t } = require('../i18n/t')
 
 const HOUR = 3600 * 1000
 const DAY = 24 * HOUR
@@ -48,20 +49,28 @@ describe('⛔ the three freshness states, and none of them is a timestamp', () =
   test('within the cadence → FRESH', () => {
     const f = freshnessOf(KINDS.find((k) => k.id === 'recall'), [row('recall-a-1', 2 * HOUR)], NOW)
     assert.strictEqual(f.state, FRESHNESS.FRESH)
-    assert.match(f.line, /2 個鐘/, 'it still says how old — freshness replaces nothing')
+    // CONVERTED: it guarded that the AGE still appears, not how the unit is written.
+    assert.ok(f.line.includes(t('time.hours', { n: 2 })), 'it still says how old — freshness replaces nothing')
   })
 
   test('past the cadence → DUE, saying both the age AND what it should be', () => {
     const f = freshnessOf(KINDS.find((k) => k.id === 'recall'), [row('recall-a-1', 3 * DAY)], NOW)
     assert.strictEqual(f.state, FRESHNESS.DUE)
-    assert.match(f.line, /3 日/, 'how old it is')
-    assert.match(f.line, /每日/, 'and how old it is ALLOWED to be — a number alone judges nothing')
+    // CONVERTED (both): the age, and the cadence it is judged against. A number alone judges
+    // nothing, and that is about which two facts are present — not their wording.
+    assert.ok(f.line.includes(t('time.days', { n: 3 })), 'how old it is')
+    assert.ok(f.line.includes(t('cadence.daily')), 'and how old it is ALLOWED to be')
   })
 
   test('⛔ never run at all → NEVER_RUN, which no row could ever have said', () => {
     const f = freshnessOf(KINDS.find((k) => k.id === 'recall'), [], NOW)
     assert.strictEqual(f.state, FRESHNESS.NEVER_RUN)
-    assert.match(f.line, /從來未/)
+    // CONVERTED: which statement.
+    assert.strictEqual(f.line, t('freshness.neverRun', {
+      title: f.title, cadence: t('cadence.daily')
+    }))
+    // ⛔ KEPT, and it is not a wording assertion at all — it guards against a FORMATTING
+    // artefact reaching the screen. undefined/NaN/1970 are what an invented time looks like.
     assert.ok(!/undefined|NaN|1970/.test(f.line), 'no invented time for a run that never happened')
   })
 
@@ -174,14 +183,21 @@ describe('⛔ scheduled is MEASURED, and the DUE sentence changes with it', () =
     const f = freshnessOf(k(), late, NOW, W.ok)
     assert.strictEqual(f.witnesses.registry.gap, true)
     assert.notStrictEqual(f.witnesses.windows.healthy, false, 'Windows reports nothing wrong')
-    assert.match(f.line, /冇行|未行|冇新/, 'the sentence must not be reassured by a healthy Windows')
+    // CONVERTED: this is THE quiet case — a trigger that never fired. The key names it, and
+    // the key is the whole reason there are two witnesses.
+    assert.ok(f.line.includes(t('freshness.dueNeverFired')),
+      'the sentence must not be reassured by a healthy Windows')
   })
 
   test('an unreadable witness claims NEITHER — 「I could not look」 is its own state', () => {
     const f = freshnessOf(k(), late, NOW, W.blind)
     assert.strictEqual(f.scheduled, null)
-    assert.match(f.line, /唔知|睇唔到|問唔到/)
-    assert.doesNotMatch(f.line, /手動行嘅,冇人行就冇新嘅/, 'it must not fall back to a confident manual claim')
+    // CONVERTED: which statement — 「I could not look」 is its own state.
+    assert.ok(f.line.includes(t('freshness.dueUnknownSchedule')))
+    // CONVERTED, and it stays a NEGATIVE assertion: the failure mode is falling back to the
+    // comfortable manual story, so the manual sentence must be provably absent — not merely
+    // 「some other sentence present」.
+    assert.ok(!f.line.includes(t('freshness.dueManual')), 'it must not fall back to a confident manual claim')
   })
 
   test('FRESH does not depend on the witness — a recent row is recent either way', () => {

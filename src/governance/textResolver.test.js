@@ -183,11 +183,20 @@ describe('⛔ her replies are not interface text', () => {
 
 describe('the catalogue is written in both languages at once', () => {
   test('⛔ every entry has zh AND en — a half-written entry is a future second pass', () => {
+    /**
+     * ⛔ MISSING AND DELIBERATELY EMPTY ARE NOT THE SAME THING, and the first version of this
+     * test treated them as one. `punct.sentenceSep` is zh:'' and en:' ' — Chinese needs no
+     * space between sentences and English does, so the empty string IS the value.
+     *
+     * The guard that matters is 「nobody wrote the other language yet」, which shows up as a
+     * MISSING key, not as an empty one. So: both must be strings, and an entry may not be
+     * empty in BOTH — that would be an entry saying nothing in any language.
+     */
     for (const [key, e] of Object.entries(CATALOGUE)) {
       for (const loc of LOCALES) {
         assert.strictEqual(typeof e[loc], 'string', key + ' is missing ' + loc)
-        assert.ok(e[loc].length > 0, key + '/' + loc + ' is empty')
       }
+      assert.ok(LOCALES.some((loc) => e[loc].length > 0), key + ' is empty in every language')
     }
   })
 

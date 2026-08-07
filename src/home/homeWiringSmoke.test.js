@@ -9,6 +9,7 @@
  * A unit test proves a component behaves; only this proves it is REACHED.
  */
 const { test, describe } = require('node:test')
+const { t } = require('../i18n/t')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -133,7 +134,11 @@ describe('the open button honours the measured lock behaviour', () => {
     assert.strictEqual(r.json.outcome, 'PROFILE_IN_USE')
     assert.strictEqual(launched, false, 'nothing may be launched onto a locked profile')
     assert.ok(fs.existsSync(path.join(profile, 'lockfile')), '⛔ the lock must still be there')
-    assert.match(r.json.saying, /唔會自動清/)
+    // ⛔ KEPT AS WORDING, and this is the strongest case for keeping one. The rule is 「never
+    // auto-clear a stale SingletonLock」, and what must reach him is the REFUSAL PLUS ITS
+    // REASON — a refusal without its reason reads as an obstacle and invites removal. Asserting
+    // the key would pass for a key whose text had quietly lost the second half.
+    assert.match(r.json.saying, /不會自動清|唔會自動清/)
     fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(profile, { recursive: true, force: true })
   })
 

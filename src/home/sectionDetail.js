@@ -20,6 +20,7 @@
  */
 
 const { freshnessOf } = require('./errandKinds')
+const { t } = require('../i18n/t')
 
 /** The ingredient is the part of the id between the kind prefix and the trailing date. */
 function ingredientOf (kind, id) {
@@ -79,7 +80,7 @@ function detailFor (kind, rows, now, witness) {
       ingredients.push({
         ingredient,
         state: 'UNRECORDED',
-        why: '嗰次冇記低搵到啲乜(舊紀錄)',
+        why: t('detail.whyNoItemsRecordedThen'),
         items: null,
         at: Number(latest.at),
         runsToday: Number(latest.runCount) || 1
@@ -131,10 +132,10 @@ function detailFor (kind, rows, now, witness) {
     if (!comparable) {
       // ⛔ Nothing to compare against is 「未有得比」, never 「冇變」 — the same rule the
       // conclusion follows. On the earliest day everything looks new and nothing is.
-      line = day + ':未有得比(之前冇紀錄)。'
+      line = t('detail.dayCannotCompare', { day })
     } else if (!changes.length) {
       // ⛔ 「冇變」, not a repeat of the same list. Repeating it is the log grain.
-      line = day + ':冇新嘢。'
+      line = t('detail.dayNothingNew', { day })
     } else {
       line = day + ':' + changes.join(';')
     }

@@ -21,6 +21,7 @@
  */
 
 const { spawn } = require('node:child_process')
+const { t } = require('../i18n/t')
 const { probeProfileLock } = require('../governance/profileProbe')
 
 const OPEN = Object.freeze({
@@ -92,7 +93,7 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     })
   } else {
     router.post('/api/v1/home/errand/scheduled-run', (req, res) => {
-      res.status(501).json({ ok: false, saying: '排程入口未接上服務憑證守衛,所以佢係關住嘅。呢個係一個缺陷,唔係一個狀態。' })
+      res.status(501).json({ ok: false, saying: t('route.schedNotWired') })
     })
   }
 
@@ -115,7 +116,7 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     // back to the kind's declaration rather than claiming the witness said anything.
     let witness
     if (typeof witnessReader === 'function') {
-      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: '問唔到 Windows 排程。' } }
+      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: t('route.cannotAskWindows') } }
     }
     res.json(buildBriefing({ store, backlog, witness, now: Date.now() }))
   })
@@ -134,15 +135,15 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     const { KINDS } = require('./errandKinds')
     const { detailFor } = require('./sectionDetail')
     const kind = KINDS.find((k) => k.id === req.params.kind)
-    if (!kind) return res.status(404).json({ saying: '我唔認得呢一節:' + String(req.params.kind).slice(0, 40) })
+    if (!kind) return res.status(404).json({ saying: t('route.unknownSection', { kind: String(req.params.kind).slice(0, 40) }) })
 
     let rows
     try { rows = store.list() } catch (_) {
-      return res.status(503).json({ state: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以打唔開呢一節。' })
+      return res.status(503).json({ state: 'CANNOT_READ', saying: t('route.cannotReadOpenSection') })
     }
     let witness
     if (typeof witnessReader === 'function') {
-      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: '問唔到 Windows 排程。' } }
+      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: t('route.cannotAskWindows') } }
     }
     res.json(detailFor(kind, rows, Date.now(), witness))
   })
@@ -161,10 +162,10 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     const { KINDS } = require('./errandKinds')
     const { attachmentFor } = require('./sectionAttachment')
     const kind = KINDS.find((k) => k.id === req.params.kind)
-    if (!kind) return res.status(404).json({ saying: '我唔認得呢一節,所以冇嘢好附上。' })
+    if (!kind) return res.status(404).json({ saying: t('route.unknownSectionNoAttach') })
     let rows
     try { rows = store.list() } catch (_) {
-      return res.status(503).json({ state: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以講唔到會附上啲乜。' })
+      return res.status(503).json({ state: 'CANNOT_READ', saying: t('route.cannotReadAttach') })
     }
     res.json(attachmentFor(kind, rows, Date.now()))
   })
@@ -197,7 +198,7 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     const settings = require('./settingsValues')
     const message = typeof (req.body && req.body.message) === 'string' ? req.body.message : ''
     const d = explainSettingsOffer({ message, currentValue: (id) => settings.get(id) })
-    if (!d.offer) return res.status(400).json({ ok: false, reason: d.reason, saying: d.saying || '我由你嗰句話度睇唔出要改邊個設定。' })
+    if (!d.offer) return res.status(400).json({ ok: false, reason: d.reason, saying: d.saying || t('route.noSettingSeen') })
     const r = settings.set(d.offer.id, d.offer.to)
     if (!r.ok) return res.status(400).json(r)
     res.json(Object.assign({ ok: true, id: d.offer.id, say: d.offer.say, from: d.offer.from, to: d.offer.to }, r))
@@ -215,19 +216,18 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
   router.post('/api/v1/home/errand/:id/open', pass, (req, res) => {
     let row = null
     try { row = store.list().find((e) => e.id === req.params.id) } catch (_) {
-      return res.status(503).json({ outcome: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以搵唔到嗰單。' })
+      return res.status(503).json({ outcome: 'CANNOT_READ', saying: t('route.cannotReadFindErrand') })
     }
-    if (!row) return res.status(404).json({ outcome: OPEN.NOT_FOUND, saying: '搵唔到嗰單差事。' })
+    if (!row) return res.status(404).json({ outcome: OPEN.NOT_FOUND, saying: t('route.errandNotFound') })
     const url = row.stop && row.stop.where
-    if (!url) return res.status(400).json({ outcome: OPEN.NO_TARGET, saying: '嗰單冇記低停喺邊一版。' })
+    if (!url) return res.status(400).json({ outcome: OPEN.NO_TARGET, saying: t('route.noTarget') })
 
     // ⛔ THE LOCK IS CHECKED, AND NEVER CLEARED.
     const lock = probeProfileLock(profileDir)
     if (lock.held) {
       return res.status(409).json({
         outcome: OPEN.IN_USE,
-        saying: '香香而家用緊個 profile,所以開唔到。停咗佢先,或者等佢做完。' +
-          '⛔ 我唔會自動清個鎖 —— 兩個 Chrome 一齊寫一個 profile 嘅損壞,會喺幾日之後以另一件事嘅樣出現。',
+        saying: t('route.profileBusy'),
         lock: lock.files.map((f) => f.file)
       })
     }
@@ -238,9 +238,9 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
       const child = (launcher || spawn)(exe, args, { detached: true, stdio: 'ignore' })
       if (child && child.unref) child.unref()
     } catch (e) {
-      return res.status(500).json({ outcome: 'LAUNCH_FAILED', saying: '開唔到 Chrome:' + String(e.message).split('\n')[0] })
+      return res.status(500).json({ outcome: 'LAUNCH_FAILED', saying: t('route.launchFailed', { error: String(e.message).split('\n')[0] }) })
     }
-    res.json({ outcome: OPEN.OPENED, url, saying: '開咗喺香香個 profile 度 —— 即係你會見返佢嗰個購物車。' })
+    res.json({ outcome: OPEN.OPENED, url, saying: t('route.opened') })
   })
 
   return router
