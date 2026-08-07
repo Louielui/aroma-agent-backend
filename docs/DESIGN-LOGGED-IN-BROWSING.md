@@ -594,3 +594,71 @@ stock」 is not visible from a stale reading and only a fresh errand would find 
 4. The real profile
 5. **首頁's stopped-errand line, last** — it displays what the layers produce, so it has nothing
    true to display until they exist.
+
+---
+---
+
+# 13. ⛔ WHEN THE FENCE FIRST BITES — the answer, written down NOW
+
+> **Owner: 「When it first bites, the correct response is a named `allowedWrites` entry in the
+> sealed order — deliberate, per errand, auditable. Write that down now, because the moment it
+> happens I will be in the middle of something and the tempting fix will be to widen the fence
+> generally.」**
+
+**The cost is real and unpaid.** L3 was measured free across six sites, and **none of them
+searched over `POST`.** A site whose search or filter runs on GraphQL will break: the errand
+will stop on a page whose results never loaded.
+
+> ## THE CORRECT RESPONSE, decided in advance, while nobody is in a hurry:
+
+```jsonc
+// in the sealed order for THAT errand, and only that errand
+"allowedWrites": [
+  { "origin": "https://supplier.example.com", "pathPrefix": "/graphql", "method": "POST" }
+]
+```
+
+**Three properties, all of which the tempting fix destroys:**
+
+| | |
+|---|---|
+| **deliberate** | someone wrote that line, for that site, knowing why |
+| **per errand** | it does not follow her to the next site or the next day |
+| **auditable** | it is in the order, so the record shows what was permitted and by whom |
+
+## ⛔ AND THE THREE FIXES THAT WILL LOOK REASONABLE AT THE TIME
+
+**Named here so they can be recognised in the moment rather than reasoned about:**
+
+1. **「Allow POST on this whole origin」** — the origin includes `/checkout`.
+2. **「Allow POST when the path contains `search` or `graphql`」** — a pattern, not a decision;
+   `/graphql` is *one endpoint for everything*, including placing the order.
+3. **「Turn the fence off for this run and back on after」** — it will not go back on.
+
+> ### Every one of them converts a fence into a preference, and the measurement that made L3 worth having (**free on six sites**) is exactly what will make widening it feel harmless.
+
+**If the narrow entry does not work, the errand stops and is reported.** That is the same
+answer as Costco: **④ accept the ceiling.**
+
+---
+
+# 14. THE LAYER TABLE, WITH EACH LAYER'S LIMITS ATTACHED
+
+> **Owner: 「Three layers with independent failure modes is the honest claim; three layers
+> where one silently pretends to be complete is what we have been removing all week.」**
+
+| layer | what it is | **what it cannot do** | measured |
+|---|---|---|---|
+| **L1** button recognition | **a convenience** | **fails on any name the site chose that we did not imagine** — a purchase button called `Continue`, an icon-only control, another language, a two-step flow whose commit was the previous page | **100% fitted / 45% held-out**, and 45% is optimistic |
+| **L2** empty profile | removes **browser autofill** | ⛔ **does not remove the Owner's card from the merchant's database.** One-click purchase on a logged-in account is untouched by it | probes built, **all three seen to fail** |
+| **L3** request fence | **the guardrail** — deny non-`GET` by default | ⛔ **a `GET` that commits is not caught** — an unsubscribe link, a delete-by-URL, an old-style confirm link. **And it does not read bodies**: it is a method-and-destination fence, not a content filter | **free to read across six sites, 51 writes refused** |
+
+**Nothing above is complete. The claim is that their failure modes are independent** — a site
+would have to defeat naming *and* routing, in different vocabularies, on the same action — and
+that is a different and weaker claim than 「she cannot pay」.
+
+> ### 「空 profile 剷走嘅係自動填表，剷唔走你張卡喺 Costco 個資料庫入面。」
+
+**And one thing NO layer touches:** the irreversible acts that are neither payment nor filing —
+cancelling an order, changing an address, sending a message as him, accepting terms, deleting.
+**L3's deny-non-`GET` is the only thing that reaches that class at all.**
