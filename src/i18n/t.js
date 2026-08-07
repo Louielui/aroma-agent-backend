@@ -29,12 +29,31 @@ function resolverFor (locale) {
 }
 
 /**
- * ⛔ NOT YET A SETTING. See the header — this is step 3, and it is one line.
- * Until then: the env override, else the default. Never a guess.
+ * ⛔ THE SETTING, READ AT USE TIME — never captured at module load.
+ *
+ * `language` is entry 8 of 8 in the settings registry. Reading it here, on every call, is what
+ * makes 「I changed it」 and 「it took effect」 the same moment for anything rendered after the
+ * change. A module-level `const locale = ...` would have made this a restart-only setting,
+ * which is the thing the registry exists to stop.
+ *
+ * Order, and each part is deliberate:
+ *   1. `XIANGXIANG_LOCALE` — a developer override for tests and for looking at a rendering
+ *      without touching his stored settings. Deliberately FIRST so a test cannot be perturbed
+ *      by whatever he happens to have saved.
+ *   2. the stored setting — the feature.
+ *   3. the default — never a guess.
+ *
+ * ⛔ AND IT NEVER THROWS. A settings file that cannot be read must not blank the interface;
+ * it falls back to the default, which is the same rule as `missingMark` one level down.
  */
 function currentLocale () {
   const env = process.env.XIANGXIANG_LOCALE
-  return LOCALES.includes(env) ? env : DEFAULT_LOCALE
+  if (LOCALES.includes(env)) return env
+  try {
+    const v = require('../home/settingsValues').get('language')
+    if (LOCALES.includes(v)) return v
+  } catch (_) { /* no settings module or unreadable file — the default stands, visibly */ }
+  return DEFAULT_LOCALE
 }
 
 /**

@@ -182,7 +182,7 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
       // Each entry ships the sentence HE would say, not the identifier.
       entries: ENTRIES.map((e) => ({
         id: e.id, say: e.say, type: e.type, value: values[e.id],
-        min: e.min, max: e.max, minItems: e.minItems, maxItems: e.maxItems,
+        min: e.min, max: e.max, minItems: e.minItems, maxItems: e.maxItems, oneOf: e.oneOf || null,
         appliesOn: e.appliesOn, howToApply: e.howToApply || null
       }))
     })

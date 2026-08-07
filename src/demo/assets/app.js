@@ -60,9 +60,17 @@
    * interface strings outside the one structural rule. The rename was the cheaper side.
    *
    * INITIAL_LOCALE comes from the same currentLocale() the server uses — see
-   * browserResolver.js. There is no SWITCH yet; that is step 3, and it is one line here.
+   * browserResolver.js. It is the value baked into THIS page, and the page is assembled once at
+   * module load, so a language change after that would never reach a reloaded tab. Hence
+   * setLocale() below: boot reads the stored setting and re-points the resolver, so changing
+   * the language needs a RELOAD and never a restart.
+   *
+   * ⛔ ONE RESOLVER, RE-POINTED — not a second implementation, not a mutated catalogue. Every
+   * call site stays `t('literal.key')` and stays visible to the source scan.
    */
-  var t = createResolver({ catalogue: CATALOGUE, locale: INITIAL_LOCALE })
+  var resolver = createResolver({ catalogue: CATALOGUE, locale: INITIAL_LOCALE })
+  function t (key, slots) { return resolver(key, slots) }
+  function setLocale (loc) { resolver = createResolver({ catalogue: CATALOGUE, locale: loc }) }
 
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
@@ -1968,4 +1976,33 @@
   newConversation(false)
   // The sidebar reads its history from the server. Done after the page is already usable,
   // so a slow or failed fetch delays nothing and breaks nothing.
-  bootHistory()})()
+  bootHistory()
+
+  /**
+   * ⛔ THE LANGUAGE, READ FROM THE STORED SETTING — the reason a change needs a RELOAD
+   * and not a RESTART.
+   *
+   * The page was BUILT with whatever locale the server had when it assembled the document,
+   * once, at module load. This asks what the setting says NOW and re-points the resolver, so
+   * the language he chose is the language the next reload shows.
+   *
+   * ⛔ NOTHING ALREADY ON SCREEN IS RE-RENDERED, and that is deliberate rather than lazy:
+   * this runs before the first briefing render, and re-rendering mid-flight is how a
+   * half-translated page happens. A tab left open in the old language is caught by the
+   * stale-tab banner, because the build stamp covers the catalogue and the locale.
+   *
+   * A silent catch, and this is the one place it is right (HR-46 is about fallbacks that
+   * hide a FAILURE): the page has already rendered in a real language. A settings endpoint
+   * that does not answer is not a reason to blank it, and 「I could not read your
+   * settings」 belongs to the settings panel, which says it.
+   */
+  fetch('/api/v1/home/settings', { credentials: 'same-origin' })
+    .then(function (r) { return r.ok ? r.json() : null })
+    .then(function (j) {
+      if (!j || !j.entries) return
+      for (var i = 0; i < j.entries.length; i++) {
+        var e = j.entries[i]
+        if (e.id === 'language' && e.value && e.value !== INITIAL_LOCALE) setLocale(e.value)
+      }
+    })
+    .catch(function () { })})()

@@ -8,6 +8,30 @@ reason gets argued away.
 
 ---
 
+## ⛔ READ HR-48 FIRST — it is the reason the rest of this file is not enough
+
+> **Owner: 「Rules do not survive the moment they are inconvenient; the scan did.」**
+
+One round before it happened, the Owner wrote:
+
+> 「Literal keys only, enforced by a test that fails on a dynamic key. That is the one
+> structural line that keeps data out of the translator, **and it will be tempting to break the
+> first time something looks repetitive**.」
+
+I wrote that rule down, wrote its test, wrote the paragraph explaining it — and then broke it, at
+the first thing that looked repetitive, in the very next tranche. **The scan failed the build.
+The warning did not prevent it.** Two more of the same temptation appeared in the same round.
+
+**This document is a list of rules, and this is the evidence that a list of rules is not a
+mechanism.** Every entry below is worth reading; none of them will stop anyone at the moment it
+matters. What stops people is a check that runs. Where a rule here has no check, that is a gap,
+not a preference — and where a check cannot be built, say so plainly rather than writing one that
+merely looks like a guard (HR-48's corollary, and `src/i18n/catalogue.js` on plural agreement).
+
+**Full entry: [HR-48](#hr-48--a-rule-you-were-warned-about-is-not-a-mechanism).**
+
+---
+
 ## HR-1 — A card shows only what the decision needs
 
 **Owner decision, 2026-08-03.**
@@ -2384,3 +2408,82 @@ rhetorical.
 **Corollary:** when a rule cannot be made structural, say so plainly rather than writing a check
 that looks like one. The English plural-agreement rule in `src/i18n/catalogue.js` is untested and
 says why: a regex for one agreement would have the appearance of a guard and miss every other.
+
+---
+
+# HR-49 — A test that scans a file for a phrase dies silently when the phrase moves
+
+**Round:** the bilingual extraction, 2026-08-07.
+
+> **Owner: 「A test that scans a source file for a phrase goes green forever once the phrase
+> moves. It did not fail, it stopped existing. That is worse than a wrong assertion because
+> nothing marks it.」**
+
+Several tests pinned real requirements by grepping `app.js` for a Chinese phrase:
+
+```js
+assert.equal(/copy[^\n]*回答|回答[^\n]*writeText/.test(APP_JS), false) // attribution not copied
+assert.ok(/檔案/.test(shortcuts))                                     // the note names the file
+assert.ok(DEMO_HTML.includes('會送去 OpenAI'))                         // data goes to a 2nd vendor
+```
+
+Extraction moved every one of those phrases into the catalogue. **The regexes still ran, still
+passed, and no longer touched anything.** A wrong assertion is loud on the next run; this is
+silent forever, and it is invisible in a diff that only shows the file the phrase LEFT.
+
+The requirement did not stop mattering. `會送去 OpenAI` is the disclosure that his data reaches a
+second vendor — it could have been dropped from the English rendering with a green suite.
+
+## THE RULE
+
+> ### An assertion whose subject is a FILE dies when the content moves files. Assert on the
+> ### thing that carries the meaning — the catalogue entry, the rendered value, the exported
+> ### object — and let the file scan pin only STRUCTURE, which is what does not move.
+
+**And when the meaning is a sentence, check every language it exists in.** Every converted case
+here got stronger for the same reason: scanning `app.js` could only ever have verified the
+Chinese. The English could have quietly become 「please refresh」 instead of naming Ctrl+Shift+R,
+or dropped 「nothing ran」 from a failed rejection, and nothing would have failed.
+
+**Corollary — this is HR-46's shape arriving by a different road.** There the assertion exempted
+itself when its subject was ABSENT; here it exempts itself when its subject has MOVED. Both end
+as a green line that checks nothing, and neither is announced.
+
+---
+
+# HR-50 — Reading the constructed object cannot see what the source says
+
+**Round:** the same, 2026-08-07.
+
+> **Owner: 「Reading the object can never see it; only reading the source can.」**
+
+`i18n/catalogue.js` defined `briefing.nothingWaiting` twice, with different wording. JavaScript
+keeps the last and discards the first **in silence**:
+
+| | |
+|---|---|
+| every test | passed |
+| `Object.keys(CATALOGUE).length` | still correct |
+| one of the two sentences | did not exist |
+
+No assertion written against the VALUE can find this, however careful, because the duplicate is
+resolved before the module finishes loading. Only the file still holds both.
+
+## THE RULE
+
+> ### When the defect is something the language RESOLVES — a duplicate key, a shadowed
+> ### declaration, a spread that overwrites — the check must read the SOURCE. By the time you
+> ### have the object, the evidence has already been destroyed.
+
+**Swept the codebase, and the answer to 「where else」 is: the literal form appears nowhere else
+today.** 428 files scanned, zero duplicates, and the scanner was watched to fire on the real case
+before that zero was reported (HR-47). It is now a standing test, repo-wide rather than
+catalogue-only, because the catalogue is merely where it happened first.
+
+**One near-relative was found and guarded.** `settingsRegistry.ENTRIES` is an ARRAY keyed by
+`id`, so a duplicate does the opposite of the catalogue's: both entries survive, the count goes
+UP, and `entry(id)` can only ever reach the first — the second is dead weight consuming one of
+the eight slots. Same invisibility from the value, opposite symptom. Now asserted.
+
+**Not covered, and said rather than implied:** keys assembled at runtime (`obj[k] = …` twice),
+object spreads, and `Object.assign` all shadow silently and no source scan sees them.

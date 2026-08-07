@@ -29,7 +29,19 @@ const MAX_ENTRIES = 8
  */
 const APPLIES = Object.freeze({
   LIVE: 'LIVE', // read at use time; the next run uses it
-  REREGISTER_TASK: 'REREGISTER_TASK' // lives in Windows Task Scheduler, not in this process
+  REREGISTER_TASK: 'REREGISTER_TASK', // lives in Windows Task Scheduler, not in this process
+  /**
+   * ⛔ THE PAGE HAS TO BE RELOADED — and this value exists rather than calling it LIVE.
+   *
+   * The demo page is assembled ONCE at module load (demoHtml.js, deliberately). Server-side
+   * text picks the new language on the next render, but the open tab keeps the language it
+   * was built with until it is reloaded. No restart: the page reads the setting on load.
+   *
+   * Calling that LIVE would be the exact failure this field exists to prevent — 「a setting
+   * that silently does not apply is worse than one he cannot change; he would believe it
+   * took」. So the screen tells him to reload, because that is what is true.
+   */
+  RELOAD_PAGE: 'RELOAD_PAGE'
 })
 
 const ENTRIES = Object.freeze([
@@ -107,6 +119,31 @@ const ENTRIES = Object.freeze([
     appliesOn: APPLIES.REREGISTER_TASK,
     howToApply: 'powershell -File scripts/scheduler/aroma-errand-task.ps1 -Action Remove ' +
       'then -Action Install -At HH:00'
+  },
+  /**
+   * ⛔ ENTRY 8 OF 8. THE REGISTRY IS NOW FULL, AND THAT IS THE DESIGN, NOT A PROBLEM.
+   *
+   * > **Owner: 「The registry hitting 8 of 8: add language, then stop. If something needs a
+   * > ninth, that is a conversation about whether the cap or the contents are wrong — not a
+   * > number to nudge.」**
+   *
+   * ⛔ THIS IS THE INTERFACE'S LANGUAGE, NOT HERS. Her replies are model output governed by the
+   * conversation contract and `intake/traditionalGuard.js`; no key in the catalogue can reach
+   * them and neither can this setting. See `governance/textResolver.js` rule ③.
+   */
+  {
+    id: 'language',
+    say: '介面用邊種語言',
+    type: 'enum',
+    oneOf: ['zh', 'en'],
+    def: 'zh',
+    /**
+     * ⛔ RELOAD, NOT LIVE — and the difference is stated because he would otherwise believe it
+     * took. Server-side text changes on the next render; the open tab keeps the language it was
+     * built with until reloaded. No restart: the page reads this on load.
+     */
+    appliesOn: APPLIES.RELOAD_PAGE,
+    howToApply: 'reload the page (Ctrl+R)'
   }
 ])
 
@@ -159,6 +196,20 @@ function validate (id, raw) {
       }
     }
     return { ok: true, value: n }
+  }
+
+  if (e.type === 'enum') {
+    // ⛔ THE LIST IS THE FENCE. An unknown locale would fall back silently to the default and
+    // look like the setting had not saved — see textResolver's locale handling.
+    const v = String(raw == null ? '' : raw).trim()
+    if (!e.oneOf.includes(v)) {
+      return {
+        ok: false,
+        reason: 'not_in_list',
+        saying: '「' + e.say + '」只可以係:' + e.oneOf.join('、') + '。'
+      }
+    }
+    return { ok: true, value: v }
   }
 
   if (e.type === 'string[]') {

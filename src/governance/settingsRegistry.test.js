@@ -18,6 +18,33 @@ describe('⛔ the boundary is a test, not a note', () => {
       'past this it is the abstraction layer he ruled out: ' + ENTRIES.length + ' entries')
   })
 
+  test('⛔ the registry is FULL, and the next one is a conversation, not a nudge', () => {
+    /**
+     * > **Owner: 「add language, then stop. If something needs a ninth, that is a conversation
+     * > about whether the cap or the contents are wrong — not a number to nudge.」**
+     *
+     * Asserted at EQUALITY rather than `<=`, so a ninth entry fails here and not silently at
+     * some later point. The failure message is the conversation.
+     */
+    assert.strictEqual(ENTRIES.length, MAX_ENTRIES,
+      'the registry is full at ' + MAX_ENTRIES + '. A ninth setting is a conversation about ' +
+      'whether the CAP or the CONTENTS are wrong — raise it, do not raise the number.')
+  })
+
+  test('⛔ no id is defined twice — the lookup can only ever reach the first', () => {
+    /**
+     * ⛔ SAME FAMILY AS THE DUPLICATE CATALOGUE KEY, DIFFERENT SYMPTOM.
+     *
+     * The catalogue is an OBJECT, so a duplicate key vanishes and the count stays right.
+     * ENTRIES is an ARRAY, so a duplicate id does the opposite: both survive, the count goes
+     * UP, and `entry(id)` can only ever reach the first — the second is dead weight that
+     * consumes one of the eight slots. Neither is visible from the value you get back.
+     */
+    const ids = ENTRIES.map((e) => e.id)
+    const dupes = ids.filter((id, i) => ids.indexOf(id) !== i)
+    assert.deepStrictEqual(dupes, [], 'a duplicate id is unreachable AND costs a slot')
+  })
+
   test('⛔ every entry says what he would SAY, not what the variable is called', () => {
     for (const e of ENTRIES) {
       assert.ok(typeof e.say === 'string' && e.say.length >= 4,
