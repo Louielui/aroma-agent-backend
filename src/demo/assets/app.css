@@ -862,3 +862,18 @@ button[disabled] { opacity: .45; cursor: default; }
   margin-bottom: 0.6em;
   border-bottom: 1px solid var(--line, var(--card));
 }
+
+/* ⛔ A PLACE IS A BUTTON, NOT A ROW. Measured: `.side-item` is transparent with no border —
+   the same visual language as `.conv`, which is why 首頁 read as a conversation entry. This is
+   the `.new-chat` treatment (card, border, radius): a control, visibly not a list item.
+   設定 deliberately keeps `.side-item` — it lives in the footer and IS a quiet row. */
+.place-btn {
+  display: flex; align-items: center; gap: 9px;
+  width: 100%; text-align: left; padding: 9px 12px;
+  background: var(--card); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 10px;
+  font: inherit; font-size: var(--ui-size); cursor: pointer;
+}
+.place-btn:hover { border-color: var(--accent); color: var(--accent); }
+/* The current destination, marked on the button rather than on a row. */
+.place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }

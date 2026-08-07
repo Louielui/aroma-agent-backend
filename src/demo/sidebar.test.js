@@ -37,6 +37,10 @@ test('首頁 is a sidebar destination, beside 設定', () => {
     '首頁 must not sit inside or below the conversation list')
   assert.match(HTML, /首頁/)
   assert.match(HTML, /id="open-settings"/, '設定 stays')
+  // ⛔ A PLACE IS A BUTTON. .side-item is transparent with no border — the same visual
+  // language as .conv — which is why 首頁 read as a conversation entry.
+  assert.match(HTML, /id="open-home" class="place-btn"/, '首頁 must be a button, not a row')
+  assert.match(APP_CSS, /.place-btn[^}]*border:/, 'and it must actually look like one')
 })
 
 test('⛔ 營運 / 財務 / 行政 are NOT in the sidebar, and this test is why', () => {

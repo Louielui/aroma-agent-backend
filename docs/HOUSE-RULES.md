@@ -2169,3 +2169,97 @@ invariant. **A fallback must fail toward honesty, not toward calm.**
 `s.filled || []` on a stop report. There, missing and empty plausibly mean the same thing —
 「she recorded nothing she did」 — so it is left, and named here so the next reader knows it was
 considered rather than missed.
+
+---
+
+# HR-44 — Verify the RUNNING system, not the source it was built from
+
+**Round:** the sidebar, 2026-08-07. **Third time this week that a thing was correct on the
+server, green in tests, and wrong on his screen.**
+
+> **Owner: 「You reported 擺喺 開新對話 之上 and the screen shows the opposite.」**
+
+The markup was right. The CSS had no reordering. The test passed. And he was correct.
+
+```
+server started : 2026-08-07 16:40:49
+index.html     : 2026-08-07 16:51:43   ← eleven minutes LATER
+```
+
+`DEMO_HTML` is built **once, at module load**. Editing an asset after the server started leaves
+the running process serving the old page indefinitely, silently, with a green suite.
+
+## ⛔ AND THE VERIFICATION THAT MISSED IT WAS THE ONE THAT EXISTS TO CATCH IT
+
+For several rounds I had been 「verifying at the served string」 like this:
+
+```js
+const m = require('./src/demo/demoHtml')   // a FRESH node process
+```
+
+which **re-reads the files from disk**. It verifies the file. The server is a different process
+that read those files at a different time.
+
+> ## Right check, wrong process. HR-38's family, a third instance — and this time inside the
+> ## mechanism that was supposed to close it.
+
+「Verify at the served string」 was a good instruction that I executed against the wrong object
+for days, and the phrase's own wording hid it: it says *served*, and what I checked was *build-
+able*.
+
+## And the existing stale-tab banner structurally cannot see this
+
+It compares the BROWSER's build stamp against the SERVER's. Both come from the same module-load
+constant, so **they agree perfectly while both are stale.** It detects an old tab. It has never
+been able to detect an old server, and nothing else did either.
+
+## THE RULE
+
+> ### A claim about what the user sees must be checked against the PROCESS THAT IS SERVING THEM,
+> ### not against the files that process was built from. If you cannot reach that process, say
+> ### so — do not substitute a fresh build and call it the same thing.
+
+**Mechanised:** `scripts/verify/servedAssets.js` compares the running process's start time with
+the asset mtimes and FAILS when any asset is newer. Credential-free, so it works without his
+session. Seen to fail: touching `index.html` without restarting reproduces the exact state, and
+it exits 1.
+
+---
+
+# HR-45 — When you cannot reproduce it, make the failure state explain itself
+
+**Round:** the greeting, 2026-08-07.
+
+> **Owner: 「you could not reproduce it, said so, and made the blank state explain itself instead
+> of guessing. 「我重現唔到」 stopped being a full stop — that is the mechanism, and it is worth
+> more than the fix would have been.」**
+
+The greeting had vanished. The endpoint returned 「午安，Louie」, the CSS was intact, the function
+was still called and still fetching. The demo sits behind the Owner's password and I do not enter
+credentials, so I could not look at the screen.
+
+Three bad options and one good one:
+
+| | |
+|---|---|
+| guess at a cause and change something | a fix for a defect never observed, which cannot be verified either |
+| declare it unreproducible and stop | leaves him with a blank screen and no next step |
+| ask him to debug it | outsources the work to the person who reported it |
+| **make the blank state say why it is blank** | ✅ |
+
+The old code returned **silently** on every failure path — a bad fetch, a missing field, a 401 —
+so a blank greeting and a broken greeting were **indistinguishable**. That is this project's
+oldest shape wearing a new face.
+
+## THE RULE
+
+> ### 「I could not reproduce it」 is a legitimate finding and an illegitimate ending. When you
+> ### cannot see the failure, change the code so that the NEXT occurrence describes itself —
+> ### then the report you cannot act on becomes one you can.
+
+**And it is not a substitute for looking.** It is what you do when looking is genuinely closed
+to you — here, by a password I must not type. Say which it was.
+
+**Corollary:** any code path that can produce an empty surface should say why it is empty, even
+when nobody has reported a problem. Every silent `return` in a render path is a future
+unreproducible bug report.
