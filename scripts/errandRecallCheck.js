@@ -20,6 +20,7 @@ const { buildClick } = require('../src/browser/click')
 const { buildType } = require('../src/browser/type')
 const { buildWaitFor, WAIT } = require('../src/browser/wait')
 const { buildSession } = require('../src/browser/session')
+const { buildRequestFence } = require('../src/browser/requestFence')
 
 const HOST = 'https://recalls-rappels.canada.ca'
 const ORDER = { allowedOrigins: [HOST] }
@@ -44,6 +45,9 @@ const budgetLeft = () => actions < MAX_ACTIONS && (Date.now() - t0) < DEADLINE_M
   const page = await b.newPage()
   const cdp = await page.context().newCDPSession(page)
   await cdp.send('DOM.enable'); await cdp.send('Accessibility.enable')
+  // L3 INSTALLED. The measurement is whether the one errand that works still works.
+  const fence = process.env.FENCE === 'off' ? null : buildRequestFence({ order: ORDER })
+  if (fence) { await page.route('**/*', fence.handle); globalThis.__fence = fence }
   const waitFor = buildWaitFor({ page })
   const read = async () => {
     const { nodes } = await cdp.send('Accessibility.getFullAXTree')
@@ -132,5 +136,10 @@ async function done (b, v) {
   }
   console.log(`\n  ${steps.length} 步,${actions} 個動作,${((Date.now() - t0) / 1000).toFixed(1)}s,上限 ${MAX_ACTIONS} / 150s`)
   console.log('  冇登入,冇憑證,冇付費模型呼叫。')
+  if (globalThis.__fence) {
+    const r = globalThis.__fence.report()
+    console.log(`  L3:拒絕咗 ${r.refusedCount} 個寫入請求,批准咗 ${r.allowedWrites} 個。`)
+    r.refused.slice(0, 6).forEach(x => console.log(`      ${x.method} ${x.url.slice(0, 76)}`))
+  }
   process.exit(0)
 }
