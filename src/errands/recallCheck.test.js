@@ -176,3 +176,122 @@ describe('it stays inside its budget and never touches a credential', () => {
     assert.ok(reads < 10, 'it stopped instead of looping')
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ 「個站搵到,我掉咗」 — THE SHAPE THAT MUST NEVER SHIP INTO A DAILY 「冇嘢」.
+ *
+ * > **Owner: 「Report what the site actually returns rather than filtering it. Noise is fine;
+ * > I will read six lines and dismiss four. Silence I cannot audit.」**
+ * > **「A false all-clear on a recall is the one case where the cost is not my time.」**
+ *
+ * The old extractor kept only recalls whose TITLE contained the query word. So a romaine recall
+ * titled 「Caesar Salad Kit」 — which the site returned — was dropped, and the errand reported
+ * 「冇搵到相關回收」. Every morning, unattended, in a sentence that reads like good news.
+ *
+ * Measured page structure (scripts/probes/probeRecallResults.js, "cheese"):
+ *     link       「Coaticook brand White Cheddar cheeses recalled due to Listeria monocytogenes」
+ *     StaticText 「Recall」
+ *     StaticText 「Food recall warning | 2026-08-03」
+ *     …and 「Displaying 1 - 15 of 89 items.」 for the count.
+ *
+ * ⛔ TWO RULINGS BUILT IN:
+ *   1. KEEP THE SITE'S ORDER. Re-ranking by our own relevance guess is the same filter one
+ *      step later.
+ *   2. SAY FOUND vs SHOWN. 「4 條,顯示頭 3」 is a different fact from 「3 條」.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const resultsPage = (items, countLine) => {
+  const nodes = [
+    { ref: 'rA', domId: 90, role: 'link', name: 'Skip to main content', interactive: true },
+    { ref: 'rB', domId: 91, role: 'heading', name: 'All recalls', interactive: false }
+  ]
+  items.forEach((it, i) => {
+    nodes.push({ ref: 'l' + i, domId: 200 + i, role: 'link', name: it.title, interactive: true })
+    nodes.push({ ref: 's' + i, domId: 300 + i, role: 'StaticText', name: 'Recall', interactive: false })
+    nodes.push({ ref: 'd' + i, domId: 400 + i, role: 'StaticText', name: (it.kind || 'Food recall warning') + ' | ' + it.when, interactive: false })
+  })
+  if (countLine) nodes.push({ ref: 'rC', domId: 99, role: 'StaticText', name: countLine, interactive: false })
+  return nodes
+}
+const searched = (resultNodes) => fakeSession([[SEARCH_BOX], [SEARCH_BOX, SEARCH_BTN], resultNodes])
+
+describe('⛔ it reports what the SITE returned, not what matched the query word', () => {
+  test('a recall the site returned but whose title lacks the query word is KEPT', async () => {
+    // The exact false-all-clear: searching romaine, the site returns a salad kit.
+    const r = await checkRecall({
+      session: searched(resultsPage([
+        { title: 'Certain Caesar Salad Kits recalled due to E. coli', when: '2026-08-05' }
+      ], 'Displaying 1 - 1 of 1 items.')),
+      goto,
+      query: 'romaine'
+    })
+    assert.strictEqual(r.outcome, 'ANSWERED')
+    assert.match(r.answer, /Caesar Salad Kit/, 'the site judged this relevant; dropping it is the defect')
+  })
+
+  test('⛔ the SITE\'s order is preserved — no re-ranking by our own relevance guess', async () => {
+    const r = await checkRecall({
+      session: searched(resultsPage([
+        { title: 'AAA brand item recalled due to Listeria', when: '2019-01-01' },
+        { title: 'BBB brand item recalled due to Listeria', when: '2026-08-06' },
+        { title: 'CCC brand item recalled due to Listeria', when: '2022-05-05' }
+      ], 'Displaying 1 - 3 of 3 items.')),
+      goto,
+      query: 'cheese'
+    })
+    const iA = r.answer.indexOf('AAA'); const iB = r.answer.indexOf('BBB'); const iC = r.answer.indexOf('CCC')
+    assert.ok(iA < iB && iB < iC, 'sorting by date would be our judgement replacing the site\'s')
+  })
+
+  test('⛔ it says FOUND vs SHOWN, taking the total from the site\'s own count line', async () => {
+    const many = Array.from({ length: 12 }, (_, i) => ({ title: 'Item ' + i + ' brand thing recalled due to Listeria', when: '2026-0' + ((i % 8) + 1) + '-01' }))
+    const r = await checkRecall({
+      session: searched(resultsPage(many, 'Displaying 1 - 15 of 89 items.')),
+      goto,
+      query: 'cheese'
+    })
+    assert.match(r.answer, /89/, 'he wants to know when a search returns forty')
+    assert.match(r.answer, /顯示|頭/, 'and that he is not seeing all of them')
+    assert.strictEqual(r.found, 89)
+    assert.ok(r.shown < 89)
+  })
+})
+
+/**
+ * ⛔ THE GUARD THAT MATTERS MOST: A PARSER FAILURE MUST NEVER RENDER AS 「冇回收」.
+ *
+ * If the site changes its markup, the extractor recognises nothing — and the old code would
+ * have said 「冇搵到相關回收」 with total confidence. That is the same false all-clear arriving
+ * through a different door, and on an unattended daily task nobody would notice for months.
+ */
+describe('⛔ 「I recognised nothing」 is never reported as 「there is nothing」', () => {
+  test('the site says 89 items but nothing parses → BLOCKED, not a clean 「冇回收」', async () => {
+    const broken = [
+      { ref: 'x1', domId: 1, role: 'StaticText', name: 'Displaying 1 - 15 of 89 items.', interactive: false },
+      { ref: 'x2', domId: 2, role: 'generic', name: 'something restructured', interactive: false }
+    ]
+    const r = await checkRecall({ session: searched(broken), goto, query: 'cheese' })
+    assert.strictEqual(r.outcome, 'BLOCKED_BY_SITE')
+    assert.match(r.detail, /89/, 'it must name the contradiction it detected')
+    assert.doesNotMatch(r.detail || '', /冇搵到相關回收/)
+  })
+
+  test('⛔ no count line AND nothing parsed → refuses to call it 「no recalls」', async () => {
+    const r = await checkRecall({ session: searched([{ ref: 'y1', domId: 1, role: 'generic', name: 'hello', interactive: false }]), goto, query: 'cheese' })
+    assert.notStrictEqual(r.outcome, 'ANSWERED')
+    assert.doesNotMatch((r.detail || '') + (r.answer || ''), /冇搵到相關回收/,
+      'unable to read is not the same as nothing to read, and only one of them is good news')
+  })
+
+  test('the site explicitly reporting ZERO is a real, clean answer', async () => {
+    const r = await checkRecall({
+      session: searched([{ ref: 'z1', domId: 1, role: 'StaticText', name: 'Your search yielded no results.', interactive: false }]),
+      goto,
+      query: 'unobtainium'
+    })
+    assert.strictEqual(r.outcome, 'ANSWERED')
+    assert.match(r.answer, /冇/)
+    assert.strictEqual(r.found, 0)
+  })
+})

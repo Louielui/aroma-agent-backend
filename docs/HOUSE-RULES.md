@@ -1700,3 +1700,70 @@ present. `PAUSE_BETWEEN_MS` in `recallRunner.js` carries this reasoning at the c
 **Also honest about the cost:** pacing means the errand takes ~70s instead of ~40s, and that
 one ingredient may still fail on a bad day. That is recorded as `BLOCKED_BY_SITE` and reported —
 a worse-but-honest result, chosen over a better-looking one obtained by pushing harder.
+
+---
+
+# HR-35 — Report what the source returned. A second filter on top of a search is invisible, and its failure mode is silence.
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「個站搵到,我掉咗」 is the shape that must never ship into something that runs every
+> morning and says 「冇嘢」. A false all-clear on a recall is the one case where the cost is not
+> my time. Noise is fine; I will read six lines and dismiss four. Silence I cannot audit.」**
+
+The recall errand searched the register, then kept only results whose TITLE contained the query
+word. It looked like precision. It was **a second, undeclared filter stacked on the site's own
+search** — and the site had already decided relevance.
+
+So a romaine recall the register returned under the title 「Certain Caesar Salad Kits recalled
+due to E. coli」 was **dropped**, and the errand answered 「冇搵到相關回收」.
+
+## Why this class is worse than an ordinary bug
+
+| | |
+|---|---|
+| a wrong answer | visible; he checks it and finds it wrong |
+| **a filtered-away answer** | **renders as good news, is indistinguishable from a genuine all-clear, and nothing in the output hints that a filter ran** |
+
+And on a **daily unattended task** nobody would notice for months, because the output would be
+correct-looking every single morning.
+
+## THE RULE
+
+> ### When something else has already selected for you — a search, an API query, a filter you
+> ### passed in — REPORT WHAT IT RETURNED. Do not re-select. If the result set is too big, cap
+> ### the number SHOWN and state the total; never narrow the set by your own criteria.
+>
+> Corollaries, both from the Owner:
+> 1. **Keep the source's ORDER.** Re-ranking by your own relevance guess is the same filter one
+>    step later. (Sorting by date is not exempt — it is still our judgement replacing theirs.)
+> 2. **Say FOUND vs SHOWN.** 「89 條,顯示頭 6」 is a different fact from 「6 條」, and only one
+>    of them lets him notice that a search returned forty.
+
+## ⛔ THE WORKED EXAMPLE — KEPT SO NOBODY LATER 「IMPROVES」 THIS BACK INTO A FILTER
+
+Searching **「green onion」** returns **「Old Dutch Ridgies Sour Cream, Green Onion & Bacon Flavour
+Potato Chips」**. A FLAVOUR NAME, not an ingredient. Useless to a chef.
+
+**It stays.** It is precisely the false positive the Owner said he would accept, and the
+asymmetry is the entire argument:
+
+> a false positive costs two seconds of reading · **a false negative costs a recalled product
+> going out on a plate**
+
+Any change that makes the potato chips disappear will also make some Caesar salad kit disappear,
+and **only one of those is visible from the outside.** The chips are the price of the salad kit.
+
+## And the guard that has to come with it
+
+Removing the filter creates a new way to be silent: if the site restructures its markup, the
+extractor recognises nothing and 「no rows parsed」 would render as 「no recalls」. So:
+
+> ### 「I recognised nothing」 must never be reported as 「there is nothing」.
+
+The site states its own total (「Displaying 1 - 15 of 89 items.」). Total > 0 with zero rows
+parsed is a **contradiction**, and the only honest reading of a contradiction is 「my parser is
+broken」 — never 「你冇事」. No total AND no rows AND no explicit 「no results」 claims neither.
+
+**This is HR-30's family** — asking what a failure DEGRADES INTO — applied to the absence of
+data rather than the absence of a record.
