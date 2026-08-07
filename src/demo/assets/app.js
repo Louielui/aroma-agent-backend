@@ -218,22 +218,205 @@
     mainEl.classList.add('empty')
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)
+    var brief = el('div', 'brief')
+    c.thread.appendChild(brief)
     fetch('/api/v1/demo/greeting', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (j) {
-        // Still the same empty conversation? He may have typed while this was in flight.
         if (!j || !j.line || active !== c || c.history.length > 0) return
         box.textContent = j.line
-        // The waiting-invoices line, when there is one. It is ABSENT far more often than
-        // present — silence means nothing is waiting, and a line that showed every day
-        // would become furniture and stop being read.
-        if (j.backlog) {
-          var note = el('div', 'empty-backlog')
-          note.textContent = j.backlog
-          box.appendChild(note)
-        }
       })
       .catch(function () { /* no greeting is better than a wrong one */ })
+    // The Drive line has MOVED OFF the greeting into its own row — the Owner said it does not
+    // belong glued to a salutation. It now arrives with everything else, from one read.
+    fetch('/api/v1/home/briefing', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (b) {
+        if (!b || active !== c || c.history.length > 0) return
+        renderBriefing(brief, b)
+      })
+      .catch(function () {
+        // ⛔ NEVER BLANK. A failed fetch is not 「nothing waiting」 — it is 「I could not look」,
+        // and the two look identical in an empty box and mean opposite things.
+        brief.appendChild(row('brief-errands', '我搵唔到 首頁 個 API,所以答唔到你有咩等緊。', ''))
+      })
+  }
+
+  function row (cls, text, when) {
+    var r = el('div', 'brief-row ' + cls)
+    var t = el('div', 'brief-text')
+    t.textContent = text
+    r.appendChild(t)
+    if (when) {
+      var s = el('div', 'brief-when')
+      s.textContent = when
+      r.appendChild(s)
+    }
+    return r
+  }
+
+  var OUT_CLASS = { ANSWERED: 'out-answered', STOPPED_FOR_YOU: 'out-stopped', BLOCKED_BY_SITE: 'out-blocked' }
+  var OUT_WORD = { ANSWERED: '答到', STOPPED_FOR_YOU: '停低,等你', BLOCKED_BY_SITE: '俾網站擋咗' }
+
+  /**
+   * The full briefing — empty screen only. Everything here can wait for the next blank
+   * screen; only the waiting bar has a deadline.
+   */
+  function renderBriefing (host, b) {
+    clear(host)
+
+    // ── the Drive line, its own row ──
+    if (b.backlog) {
+      host.appendChild(row('brief-backlog', b.backlog.line, b.backlog.checkedAtLabel))
+    }
+
+    // ── what she ran ──
+    var e = b.errands || {}
+    if (e.state === 'CANNOT_READ') {
+      host.appendChild(row('brief-errands', '我睇唔到差事紀錄。', e.checkedAtLabel))
+    } else if (e.state === 'NONE_RAN' || !(e.rows && e.rows.length)) {
+      // ⛔ Empty FOR A REASON is still never blank. Owner ruling: say why.
+      host.appendChild(row('brief-errands',
+        '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。', e.checkedAtLabel))
+    } else {
+      var list = el('div', 'brief-errands')
+      for (var i = 0; i < e.rows.length; i++) {
+        var r = e.rows[i]
+        var line = el('div', 'brief-errand ' + (OUT_CLASS[r.outcome] || ''))
+        var dot = el('span', 'out-dot')
+        line.appendChild(dot)
+        var name = el('span', 'errand-title')
+        name.textContent = r.title
+        line.appendChild(name)
+        var out = el('span', 'errand-outcome')
+        out.textContent = OUT_WORD[r.outcome] || r.outcome
+        line.appendChild(out)
+        var at = el('span', 'brief-when')
+        at.textContent = r.atLabel
+        line.appendChild(at)
+        list.appendChild(line)
+      }
+      host.appendChild(list)
+    }
+
+    // ── waiting, in full, here as well as in the bar ──
+    var w = b.waiting || {}
+    if (w.state === 'CANNOT_READ') {
+      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', w.checkedAtLabel))
+    } else if (w.state === 'NOTHING_WAITING') {
+      host.appendChild(row('brief-waiting', '冇嘢等你決定。', w.checkedAtLabel))
+    } else if (w.cards) {
+      for (var k = 0; k < w.cards.length; k++) host.appendChild(waitingCard(w.cards[k]))
+    }
+  }
+
+  /** The stop report, INLINE. Not a link to a report — he decides here or he does not. */
+  function waitingCard (c) {
+    var card = el('div', 'brief-card')
+    var h = el('div', 'card-head')
+    h.textContent = '⏸ 等你 —— ' + c.title
+    card.appendChild(h)
+
+    if (c.where) card.appendChild(kv('邊度', c.where));
+    if (c.account) card.appendChild(kv('用邊個', c.account))
+    if (c.filled && c.filled.length) card.appendChild(kv('我做咗', c.filled.join(' · ')))
+    if (c.notPressed) card.appendChild(kv('我冇撳', c.notPressed.role + ' 「' + c.notPressed.name + '」'))
+
+    if (c.amount) {
+      var a = el('div', 'card-kv')
+      var ak = el('span', 'kv-k'); ak.textContent = '金額'; a.appendChild(ak)
+      var av = el('span', 'kv-v' + (c.amountStruck ? ' amount-struck' : ''))
+      av.textContent = c.amount
+      a.appendChild(av)
+      card.appendChild(a)
+    }
+    if (c.amountNote) card.appendChild(kv('', c.amountNote))
+    if (c.whichLayer) card.appendChild(kv('點解停', c.whichLayer))
+
+    var btn = el('button', 'card-open')
+    btn.type = 'button'
+    btn.textContent = '開返嗰版'
+    btn.addEventListener('click', function () { openStopped(c, btn) })
+    card.appendChild(btn)
+    return card
+  }
+  function kv (k, v) {
+    var r = el('div', 'card-kv')
+    var ke = el('span', 'kv-k'); ke.textContent = k; r.appendChild(ke)
+    var ve = el('span', 'kv-v'); ve.textContent = v; r.appendChild(ve)
+    return r
+  }
+
+  /**
+   * ⛔ A POST, never an <a href>.
+   *
+   * A cart lives in the session that built it. A link opened in HIS everyday Chrome shows an
+   * empty cart — measured on Costco. Only a local endpoint can launch Chrome against HER
+   * profile, so the button asks the server to do it.
+   */
+  function openStopped (c, btn) {
+    btn.disabled = true
+    var was = btn.textContent
+    btn.textContent = '開緊…'
+    fetch(c.openHref, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
+      .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j } }) })
+      .then(function (res) {
+        btn.disabled = false
+        if (res.ok) { btn.textContent = '開咗'; return }
+        // A refusal is an ANSWER, not something to try again. The lock especially: two
+        // Chromes writing one profile is corruption that surfaces days later as something
+        // else entirely, so nothing here retries and nothing clears a lock.
+        btn.textContent = was
+        var m = el('div', 'card-refusal')
+        m.textContent = (res.j && res.j.outcome === 'PROFILE_IN_USE')
+          ? (res.j.saying || '香香而家用緊個 profile。')
+          : ((res.j && res.j.saying) || '開唔到。')
+        btn.parentNode.appendChild(m)
+      })
+      .catch(function () {
+        btn.disabled = false
+        btn.textContent = was
+      })
+  }
+
+  /**
+   * ⛔ THE WAITING BAR — the ONE thing that survives a keystroke.
+   *
+   * `renderEmptyScreen` returns early once the conversation has history, so the greeting and
+   * everything with it vanishes on the first keystroke. That is fine for 「what she ran」 and
+   * fatal for 「a cart is priced and unpressed」 — it would leave the screen at the exact
+   * moment he is doing something else.
+   *
+   * So this renders ABOVE the thread, is not gated on an empty conversation, and shows only
+   * items with a deadline. 有死線嗰啲留低,其餘等下次空畫面。
+   */
+  function renderWaitingBar () {
+    if (!mainEl) return
+    var old = document.getElementById('waiting-bar')
+    if (old) old.parentNode.removeChild(old)
+    fetch('/api/v1/home/briefing', { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (b) {
+        if (!b || !b.waiting) return
+        if (b.waiting.state !== 'WAITING' || !b.waiting.cards.length) return
+        var bar = el('div', 'waiting-bar')
+        bar.id = 'waiting-bar'
+        var n = b.waiting.cards.length
+        var t = el('span', 'wb-text')
+        t.textContent = '⏸ ' + n + ' 單等你決定'
+        bar.appendChild(t)
+        var open = el('button', 'wb-open')
+        open.type = 'button'
+        open.textContent = '睇下'
+        open.addEventListener('click', function () {
+          bar.classList.toggle('expanded')
+          if (bar.querySelector('.brief-card')) return
+          for (var i = 0; i < b.waiting.cards.length; i++) bar.appendChild(waitingCard(b.waiting.cards[i]))
+        })
+        bar.appendChild(open)
+        mainEl.insertBefore(bar, mainEl.firstChild)
+      })
+      .catch(function () { /* the bar is an addition; its absence is not a claim */ })
   }
 
   /**
@@ -286,6 +469,8 @@
     // A stored conversation is a title until it is opened; the transcript arrives here.
     if (c.stored && !c.loaded) loadConversation(c)
     else renderEmptyScreen(c)
+    // ⛔ OUTSIDE the empty-screen path, deliberately. See renderWaitingBar.
+    renderWaitingBar()
     scroll()
   }
   function renderConvList () {

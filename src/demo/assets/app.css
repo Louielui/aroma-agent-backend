@@ -623,3 +623,74 @@ button[disabled] { opacity: .45; cursor: default; }
   background: var(--card);
   border-bottom: 1px solid var(--line, var(--card));
 }
+
+/* ── 首頁 — the briefing ──────────────────────────────────────────────────────
+   Everything here is em-based off the type tokens. A px font-size in this block would be a
+   second source of truth the moment the token moves, and a test asserts there are none. */
+.brief {
+  max-width: 34em;
+  margin: 0 auto;
+  text-align: left;
+}
+.brief-row, .brief-errand {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.35em 0;
+  line-height: 1.5;
+  color: var(--faint);
+}
+.brief-text { flex: 1 1 auto; }
+.brief-when { flex: 0 0 auto; color: var(--faint); opacity: 0.75; font-variant-numeric: tabular-nums; }
+.errand-title { flex: 1 1 auto; color: var(--muted); }
+.errand-outcome { flex: 0 0 auto; }
+
+/* The three outcomes never merge — a dot per state, and they are the only colour here. */
+.out-dot { width: 0.5em; height: 0.5em; border-radius: 50%; flex: 0 0 auto; display: inline-block; }
+.out-answered .out-dot { background: var(--ok, #5f8466); }
+.out-stopped  .out-dot { background: var(--warn, #a8782a); }
+.out-blocked  .out-dot { background: var(--stop, #b0564b); }
+.out-stopped .errand-outcome { color: var(--warn, #a8782a); }
+
+/* The stop report, inline. He decides here or he does not. */
+.brief-card {
+  margin: 0.9em 0;
+  padding: 0.8em 0.9em;
+  border: 1px solid var(--line, var(--card));
+  border-radius: 0.5em;
+  background: var(--card);
+  line-height: 1.6;
+}
+.card-head { font-weight: var(--weight-medium); color: var(--ink); margin-bottom: 0.5em; }
+.card-kv { display: flex; gap: 0.8em; }
+.kv-k { flex: 0 0 5.5em; color: var(--faint); }
+.kv-v { flex: 1 1 auto; color: var(--muted); word-break: break-word; }
+/* Struck, not deleted — 2 to 24 hours old. Beyond that the server sends no amount at all. */
+.amount-struck { text-decoration: line-through; opacity: 0.7; }
+.card-open {
+  margin-top: 0.7em;
+  padding: 0.4em 0.9em;
+  border: 1px solid var(--line, var(--card));
+  border-radius: 0.4em;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  cursor: pointer;
+}
+.card-refusal { margin-top: 0.5em; color: var(--stop, #b0564b); }
+
+/* The one thing that survives a keystroke. */
+.waiting-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.8em;
+  flex-wrap: wrap;
+  padding: 0.5em 1em;
+  background: var(--card);
+  border-bottom: 1px solid var(--line, var(--card));
+  color: var(--ink);
+}
+.wb-text { flex: 1 1 auto; }
+.wb-open { border: none; background: transparent; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; }
+.waiting-bar .brief-card { flex: 1 1 100%; display: none; }
+.waiting-bar.expanded .brief-card { display: block; }
