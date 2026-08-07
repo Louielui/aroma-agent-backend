@@ -195,7 +195,11 @@ function writeProfileDefaults (userDataDir) {
   prefs.sync = prefs.sync || {}
   prefs.sync.requested = false
   prefs.sync.has_setup_completed = false
-  prefs.account_info = []
+
+  // ⛔ account_info IS DELIBERATELY NOT TOUCHED. It is the EVIDENCE probeBrowserSignIn reads.
+  // Setting it to [] would make the fence erase the very thing its own probe looks for -- on
+  // a re-assert before every launch, a genuinely signed-in Chrome would be wiped from the
+  // record and then reported clean. We WRITE POLICY; we READ EVIDENCE. Never both on one key.
 
   fs.writeFileSync(file, JSON.stringify(prefs))
   return {
@@ -210,10 +214,32 @@ function writeProfileDefaults (userDataDir) {
   }
 }
 
+/**
+ * ⚠ WHY THIS ASKS THE LOCK BEFORE IT BLAMES A MISSING FILE.
+ *
+ * Chrome rewrites `Preferences` ATOMICALLY — temp file, then rename — so a probe run while
+ * Chrome is open can catch the instant it does not exist. The first version reported
+ * 「搵唔到個 profile 嘅設定檔」, which describes a missing file when the truth is 「Chrome is
+ * holding it」. **A correct refusal with a wrong reason sends the Owner looking in the wrong
+ * place**, and this week has cost several rounds to exactly that.
+ */
+function absentReason (userDataDir) {
+  const lock = probeProfileLock(userDataDir)
+  if (lock.held) {
+    return {
+      state: 'PROFILE_IN_USE',
+      saying: 'Chrome 而家開住呢個 profile,佢自己揸住個設定檔 —— 佢係原子性重寫嘅,' +
+        '所以會有一刻讀唔到。閂咗 Chrome 我就讀得返。個檔案冇唔見。'
+    }
+  }
+  return { state: 'NO_PREFERENCES', saying: '個 profile 冇設定檔,而 Chrome 亦冇開住佢。讀唔到就當唔安全。' }
+}
+
 function probeCardSavingDisabled (userDataDir) {
   const file = path.join(userDataDir, 'Default', 'Preferences')
   if (!fs.existsSync(file)) {
-    return { ok: false, state: 'NO_PREFERENCES', saying: '搵唔到個 profile 嘅設定檔。讀唔到就當唔安全。' }
+    const a = absentReason(userDataDir)
+    return { ok: false, state: a.state, saying: a.saying }
   }
   let prefs
   try { prefs = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (e) {
@@ -241,7 +267,8 @@ module.exports.probeCardSavingDisabled = probeCardSavingDisabled
 function probeBrowserSignIn (userDataDir) {
   const file = path.join(userDataDir, 'Default', 'Preferences')
   if (!fs.existsSync(file)) {
-    return { ok: false, state: 'NO_PREFERENCES', accounts: 0, saying: '搵唔到個 profile 嘅設定檔。讀唔到就當唔安全。' }
+    const a = absentReason(userDataDir)
+    return { ok: false, state: a.state, accounts: 0, saying: a.saying }
   }
   let prefs
   try { prefs = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (_) {

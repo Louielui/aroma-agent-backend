@@ -25,7 +25,7 @@
  * HR-23: a guardrail that cannot read its own evidence is blind, not clean.
  */
 
-const { probePaymentMethods, probeCardSavingDisabled, probeBrowserSignIn, probeProfileLock } = require('./profileProbe')
+const { probePaymentMethods, probeCardSavingDisabled, probeBrowserSignIn, probeProfileLock, writeProfileDefaults } = require('./profileProbe')
 const { buildRequestFence } = require('./requestFence')
 const { checkOriginPolicy, POLICY } = require('./originPolicy')
 const { launchOptions } = require('./launch')
@@ -89,7 +89,28 @@ async function openBrowserSession ({ profileDir, order, chromium, probes }) {
     }
   }
 
-  // 3. THE FOUR PROBES, BEFORE ANY BROWSER STARTS.
+  // 3. ⛔ THE LOCK FIRST — everything after it needs Chrome CLOSED.
+  const lock0 = (probes && probes.lock ? probes.lock : probeProfileLock)(profileDir)
+  if (lock0.held === true) {
+    return {
+      opened: false,
+      reason: OPEN_REFUSED.PROFILE_DIRTY,
+      unclean: [{ probe: 'lock', state: lock0.state, saying: lock0.saying }],
+      detail: lock0.saying
+    }
+  }
+
+  // 4. ⛔ RE-ASSERT THE GUARDRAILS ON EVERY LAUNCH, not once at creation.
+  //
+  // DEFECT-010: Chrome rewrote `Preferences` wholesale on its first run and every fence set at
+  // creation was erased — `signin.allowed` came back TRUE. **A guardrail established once is a
+  // CLAIM ABOUT THE PAST**, and Chrome demonstrated it can be silently withdrawn.
+  //
+  // Written here, with Chrome closed, immediately before launch, and VERIFIED by the probes
+  // below — so 「Chrome rewrote it again」 becomes uninteresting rather than dangerous.
+  if (!probes) writeProfileDefaults(profileDir)
+
+  // 5. THE PROBES. They verify what step 4 just wrote.
   const { results, unclean } = checkProfile(profileDir, probes)
   if (unclean.length) {
     return {
