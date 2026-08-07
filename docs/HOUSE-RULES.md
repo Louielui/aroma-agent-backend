@@ -1145,3 +1145,55 @@ absent* — applied to the thing that is supposed to be doing the protecting.
 outcomes — *passed*, *failed*, and **could not be evaluated** — and the third is treated as
 failure. **A gate that cannot tell 「I checked and it is fine」 from 「I could not check」 is a
 gate that opens when it breaks.**
+
+---
+
+# HR-24 — A frequency claim is a MEASUREMENT. Once it is repeated back to you, it stops being a claim.
+
+**Owner, 2026-08-06: 「that describes every wrong premise this week, and it is the only one
+where the mechanism is stated.」**
+
+> ## 一個未經量度嘅講法，一旦俾你覆述返，就唔再似一個講法，而係似共同知識。
+
+**This rule lives here, in the file read before a finding is written — not only in the report
+of the one incident that produced it.**
+
+## The worked example, in three steps
+
+| | |
+|---|---|
+| **1. I wrote it** | 「it has been silently present in **every page we have measured**」 — I had measured **one page** and generalised |
+| **2. He repeated it back** | the next instruction came in his own words: 「it has been silently present in every page we have measured」 |
+| **3. It was carrying a decision** | cited as part of why the fix was worth doing |
+
+**The truth: 3 of 26 pages. 36 of 36,669 surviving nodes — 0.1%.**
+
+## Why it is worse than an ordinary error
+
+**Nothing caught it.** No test failed, no probe fired, no reviewer objected. **It surfaced only
+because the fix required measuring the thing properly**, and the real number happened to
+contradict a claim I had already made.
+
+> ### At the moment it is repeated back, it stops being *my* claim and becomes *our* shared knowledge — and from then on it justifies work, shapes priorities, and the next person to doubt it must argue against both of us.
+
+## And the specific reason a frequency claim slips through
+
+**HR-18 says a premise needs a measurement.** A frequency claim evades that rule because
+**「it is everywhere」 sounds like an observation, not an assertion** — it has the grammar of
+something someone noticed rather than something someone computed.
+
+| what was claimed | what it would have justified |
+|---|---|
+| 「it is everywhere」 | a large change, urgently |
+| **「it is rare and lands badly」** (the truth) | **a small change, carefully** — which is what was built |
+
+**Both arguments support the same fix. Only one of them is true**, and the false one would have
+supported far more than the evidence does.
+
+## THE MECHANISM
+
+> ### Any sentence containing 「every」, 「always」, 「most」, 「usually」, 「rarely」 or a percentage is a MEASUREMENT CLAIM. Either a number is beside it, or the word is deleted.
+
+**And when the Owner repeats one back:** that is the moment to check it, **not the moment to
+feel confirmed.** A claim returning in his words is the last point at which it is still cheap
+to correct — after that it is load-bearing.
