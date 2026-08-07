@@ -127,6 +127,16 @@
        namespace URL as a literal. cloneNode needs neither. -->
   <template id="tpl-avatar">/*INLINE_DOT*/</template>
 
-<script>/*INLINE_JS*/</script>
+<!-- ⛔ ONE inline script, and the i18n goes INSIDE it, not beside it.
+     A second script element broke the 「exactly one inline script」 invariant that keeps this a
+     single auditable same-origin document. And writing that tag name out in full HERE broke the
+     count a second time — the checker counts occurrences in the whole page, comment included.
+     Third form of the same thing today: documentation that trips the guard it explains.
+     So this comment does NOT spell out the placeholder token either — a page that still
+     contains the token reads as a placeholder that was never replaced.
+     The first block is the resolver + catalogue (generated from src/i18n/browserResolver.js);
+     it precedes the app so the IIFE closes over createResolver and CATALOGUE. -->
+<script>/*INLINE_I18N*/
+/*INLINE_JS*/</script>
 </body>
 </html>

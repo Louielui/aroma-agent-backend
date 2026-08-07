@@ -23,12 +23,21 @@ const { CLASS, FILE_CLASS, classOf, mayTranslate } = require('./textClasses')
 const SRC = path.join(__dirname, '..')
 
 /**
- * ⛔ THE ENTRANCE ITSELF, AND NOTHING ELSE.
- * `i18n/t.js` requires the resolver because it IS the one place allowed to — that is what makes
- * the locale readable at use time in exactly one spot. Named here rather than special-cased
- * inside a filter, so adding a second exemption is a visible act.
+ * ⛔ THE TWO FILES THAT MAY TOUCH THE RESOLVER DIRECTLY, EACH WITH ITS REASON.
+ *
+ * Named here rather than special-cased inside a filter, so adding a third is a visible act with
+ * a reason attached — an exemption list that grows quietly stops being a fence.
+ *
+ *   · `i18n/t.js` — THE CALLER'S ENTRANCE. Everything that renders text goes through it, which
+ *     is what makes the locale readable at use time in exactly one place.
+ *
+ *   · `i18n/browserResolver.js` — NOT a caller. It SHIPS the resolver to the page, and it needs
+ *     the raw pieces (`createResolver.toString()`, `KEY_SHAPE.source`) precisely because the
+ *     alternative — hand-writing a second `t()` in app.js — is the thing being avoided. Going
+ *     through `i18n/t.js` would give it a bound locale, which is the opposite of what the page
+ *     needs: the page ships BOTH languages and chooses at runtime.
  */
-const ENTRANCE = 'i18n/t.js'
+const ENTRANCES = ['i18n/t.js', 'i18n/browserResolver.js']
 
 /** Comments are documentation, not text he reads. Strip before judging. */
 function stripComments (src) {
@@ -108,7 +117,7 @@ describe('⛔ ① every file carrying Chinese has been classified', () => {
 
 describe('⛔ ② only INTERFACE files may reach the resolver', () => {
   test('⛔ no MODEL, MATCHING or FROZEN file calls t()', () => {
-    const violations = translatingFiles().filter((f) => f !== ENTRANCE && !mayTranslate(f))
+    const violations = translatingFiles().filter((f) => !ENTRANCES.includes(f) && !mayTranslate(f))
     assert.deepStrictEqual(violations, [],
       'translating one of these does not change the language of the interface — it changes what ' +
       'she is told, or what her words are matched against: ' + JSON.stringify(violations))
@@ -128,8 +137,9 @@ describe('⛔ ② only INTERFACE files may reach the resolver', () => {
     assert.strictEqual(mayTranslate('some/file/nobody/classified.js'), false)
   })
 
-  test('the resolver and the shared t are themselves reachable only through i18n/t', () => {
-    // One entrance, so the locale is read at use time in exactly one place.
+  test('the resolver is reachable ONLY through the two named entrances', () => {
+    // One entrance for callers, one for the file that ships it to the page. Anything else
+    // would bind a locale at require() time, or be a second implementation.
     const direct = []
     const walk = (d) => {
       for (const n of fs.readdirSync(d)) {
@@ -138,7 +148,7 @@ describe('⛔ ② only INTERFACE files may reach the resolver', () => {
         if (st.isDirectory()) { if (n !== 'node_modules') walk(p); continue }
         if (!/\.js$/.test(n) || /\.test\.js$/.test(n)) continue
         const rel = path.relative(SRC, p).split(path.sep).join('/')
-        if (rel === 'i18n/t.js' || rel.startsWith('governance/textResolver')) continue
+        if (ENTRANCES.includes(rel) || rel.startsWith('governance/textResolver')) continue
         if (/require\((['"])[^'"]*textResolver\1\)/.test(stripComments(fs.readFileSync(p, 'utf8')))) direct.push(rel)
       }
     }

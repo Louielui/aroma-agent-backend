@@ -47,6 +47,22 @@
   // ALL_SOURCES the read layer uses (see demoHtml.js). The note used to list four by hand
   // and had gone stale: aroma_system — the restaurant's own system, the one he reads most —
   // was missing from a sentence whose whole job is to say where his data goes.
+  /**
+   * ⛔ THE SAME RESOLVER THE SERVER RUNS, not a second one.
+   * `createResolver` and `CATALOGUE` are inlined above this script by demoHtml.js from
+   * src/i18n/browserResolver.js — the server's own function object, serialised. Two renderings
+   * could disagree; one function cannot disagree with itself, and browserResolver.test.js
+   * proves it over every key in both languages.
+   *
+   * ⛔ AND IT IS NAMED `t`, WHICH COST 57 RENAMES IN THIS FILE. `t` was a local for DOM nodes
+   * throughout (now `tEl`). The source scan that keeps data out of the translator looks for
+   * `t(`, so calling the client's resolver anything else would have left the file with the most
+   * interface strings outside the one structural rule. The rename was the cheaper side.
+   *
+   * The locale is DEFAULT_LOCALE today. Step 3 makes it a setting; that is one line here.
+   */
+  var t = createResolver({ catalogue: CATALOGUE, locale: DEFAULT_LOCALE })
+
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
   var SOURCE_TEXT = READ_SOURCES.join('／') + '同過往決定'
 
@@ -271,7 +287,7 @@
     showComposer(false)
     mainEl.classList.remove('empty')
     clear(log)
-    titleEl.textContent = '首頁'
+    titleEl.textContent = t('nav.home')
     var view = el('div', 'home-view')
     log.appendChild(view)
     var brief = el('div', 'brief')
@@ -289,7 +305,7 @@
       .catch(function () {
         // ⛔ NEVER BLANK. A failed fetch is not 「nothing waiting」 — it is 「I could not look」,
         // and the two look identical in an empty box and mean opposite things.
-        brief.appendChild(row('brief-errands brief-defect', '我搵唔到 首頁 個 API,所以答唔到你有咩等緊。', ''))
+        brief.appendChild(row('brief-errands brief-defect', t('client.noHomeApi'), ''))
       })
   }
 
@@ -362,7 +378,7 @@
 
     var back = el('button', 'sect-back')
     back.type = 'button'
-    back.textContent = '← 返 首頁'
+    back.textContent = t('nav.backHome')
     back.addEventListener('click', function () { showHome() })
     view.appendChild(back)
 
@@ -385,7 +401,7 @@
       })
       .catch(function () {
         // ⛔ NEVER BLANK, here too. 「我睇唔到」 is not 「there is nothing」.
-        host.appendChild(row('brief-errands brief-defect', '我打唔開呢一節 —— 個 API 睇唔到。', ''))
+        host.appendChild(row('brief-errands brief-defect', t('client.cannotOpenSection'), ''))
       })
   }
 
@@ -462,9 +478,9 @@
 
   function row (cls, text, when) {
     var r = el('div', 'brief-row ' + cls)
-    var t = el('div', 'brief-text')
-    t.textContent = text
-    r.appendChild(t)
+    var tEl = el('div', 'brief-text')
+    tEl.textContent = text
+    r.appendChild(tEl)
     if (when) {
       var s = el('div', 'brief-when')
       s.textContent = when
@@ -498,16 +514,16 @@
     // 14:04, backlog 14:02 — four stamps all saying 「roughly now」. That is noise, and it
     // buried the real times, which live INSIDE the text: 55 days, 5 hours ago.
     // A section still dates itself when that means something — see whenFor().
-    if (b.builtAtLabel) host.appendChild(row('brief-updated', '更新於 ' + b.builtAtLabel, ''))
+    if (b.builtAtLabel) host.appendChild(row('brief-updated', t('briefing.updatedAt', { time: b.builtAtLabel }), ''))
 
     // ── ① anything waiting on him — the only thing with a deadline ──
     var w = b.waiting || {}
     if (w.state === 'NOT_WIRED') {
       host.appendChild(row('brief-waiting brief-defect', w.line, ''))
     } else if (w.state === 'CANNOT_READ') {
-      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', whenFor(w)))
+      host.appendChild(row('brief-waiting', w.line || t('briefing.waitingCannotRead'), whenFor(w)))
     } else if (w.state === 'NOTHING_WAITING') {
-      host.appendChild(row('brief-waiting', '冇嘢等你決定。', whenFor(w)))
+      host.appendChild(row('brief-waiting', t('briefing.nothingWaiting'), whenFor(w)))
     } else if (w.cards) {
       for (var k = 0; k < w.cards.length; k++) host.appendChild(waitingCard(w.cards[k]))
     }
@@ -519,11 +535,10 @@
       // record may be full — nothing asked it. Same class as DEFECT-011.
       host.appendChild(row('brief-errands brief-defect', e.line, ''))
     } else if (e.state === 'CANNOT_READ') {
-      host.appendChild(row('brief-errands', '我睇唔到差事紀錄。', whenFor(e)))
+      host.appendChild(row('brief-errands', t('briefing.errandsCannotRead'), whenFor(e)))
     } else if (e.state === 'NONE_RAN' || !(e.rows && e.rows.length)) {
       // ⛔ Empty FOR A REASON is still never blank. Owner ruling: say why.
-      host.appendChild(row('brief-errands',
-        '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。', whenFor(e)))
+      host.appendChild(row('brief-errands', t('briefing.noneRan'), whenFor(e)))
     } else {
       // ── THE CONCLUSION, NOT THE LOG ──
       //
@@ -699,9 +714,9 @@
         var bar = el('div', 'waiting-bar')
         bar.id = 'waiting-bar'
         var n = b.waiting.cards.length
-        var t = el('span', 'wb-text')
-        t.textContent = '⏸ ' + n + ' 單等你決定'
-        bar.appendChild(t)
+        var tEl = el('span', 'wb-text')
+        tEl.textContent = '⏸ ' + n + ' 單等你決定'
+        bar.appendChild(tEl)
         var open = el('button', 'wb-open')
         open.type = 'button'
         open.textContent = '睇下'
@@ -743,7 +758,7 @@
         var bar = el('div', 'stale-banner')
         // Naming the remedy matters: an ordinary reload does NOT clear this, and a banner
         // that only says "out of date" sends him looking for the fix.
-        bar.textContent = '呢個頁面唔係最新版本 — 㩒 Ctrl+Shift+R 硬重新整理。'
+        bar.textContent = t('client.staleTab')
         document.body.insertBefore(bar, document.body.firstChild)
       })
       .catch(function () { /* a guard that fails is silent; it must never break the page */ })
@@ -828,8 +843,8 @@
     }
   }
   function titleFrom (text) {
-    var t = String(text).replace(/\s+/g, ' ').trim()
-    return t.length > 30 ? t.slice(0, 30) + '…' : (t || '新對話')
+    var tEl = String(text).replace(/\s+/g, ' ').trim()
+    return tEl.length > 30 ? tEl.slice(0, 30) + '…' : (tEl || '新對話')
   }
 
   /* ── history, from the server ─────────────────────────────────────────────
@@ -932,9 +947,9 @@
             addUser(text, c)
             c.history.push({ role: 'user', text: text })
           } else {
-            var t = addBot(text, c)
+            var tEl = addBot(text, c)
             // The same disclosure a live turn carries: who actually answered.
-            if (m[i] && m[i].servedBy) labelServedBy(t, { servedBy: m[i].servedBy })
+            if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
           }
         }
@@ -984,18 +999,18 @@
   // can outlive a click now pass it explicitly.
   function turn (who, conv) {
     var c = conv || active
-    var t = el('div', 'turn ' + who)
-    if (who === 'bot') t.appendChild(avatar())
+    var tEl = el('div', 'turn ' + who)
+    if (who === 'bot') tEl.appendChild(avatar())
     var body = el('div', 'body')
-    t.appendChild(body)
-    c.thread.appendChild(t)
+    tEl.appendChild(body)
+    c.thread.appendChild(tEl)
     if (c === active) scroll()   // never yank the view to a conversation he is not reading
-    return { root: t, body: body }
+    return { root: tEl, body: body }
   }
   function addUser (text, conv) {
-    var t = turn('user', conv)
-    t.body.appendChild(el('div', null, text))
-    return t
+    var tEl = turn('user', conv)
+    tEl.body.appendChild(el('div', null, text))
+    return tEl
   }
   /* ── copy one message ─────────────────────────────────────────────────────
    * WHAT IT COPIES IS THE POINT. The Owner pastes her answers into invoices, notes and
@@ -1035,40 +1050,40 @@
   }
 
   function addBot (text, conv) {
-    var t = turn('bot', conv)
-    t.body.appendChild(renderMarkdown(text))
+    var tEl = turn('bot', conv)
+    tEl.body.appendChild(renderMarkdown(text))
     // ONE FOOTER ROW PER MESSAGE, built here so it rides on the message rather than on a
     // call site. The copy control is always in it; labelServedBy drops the attribution in
     // beside it when the server reported who answered. Both reuse styles app.css already
     // defines — this change adds no CSS.
-    t.source = String(text == null ? '' : text)
-    t.foot = el('div', 'served')
-    t.foot.appendChild(copyButton(t.source))
-    t.body.appendChild(t.foot)
-    return t
+    tEl.source = String(text == null ? '' : text)
+    tEl.foot = el('div', 'served')
+    tEl.foot.appendChild(copyButton(tEl.source))
+    tEl.body.appendChild(tEl.foot)
+    return tEl
   }
   function addError (text, conv) {
-    var t = turn('bot', conv)
-    t.body.appendChild(el('div', 'err-note', text))
-    return t
+    var tEl = turn('bot', conv)
+    tEl.body.appendChild(el('div', 'err-note', text))
+    return tEl
   }
   function addMeta (host, text) { host.appendChild(el('div', 'meta', text)) }
 
   // A typing indicator the moment a message is sent — never a silent wait.
   function addTyping (conv) {
-    var t = turn('bot', conv)
+    var tEl = turn('bot', conv)
     var dots = el('div', 'typing')
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
-    t.body.appendChild(dots)
-    return t
+    tEl.body.appendChild(dots)
+    return tEl
   }
   // Stale red errors used to sit above fresh content, so the Owner could not tell which
   // message was current. Any new render clears them first.
   function clearErrors () {
     var olds = active.thread.querySelectorAll('.err-note')
     for (var i = 0; i < olds.length; i++) {
-      var t = olds[i].parentNode && olds[i].parentNode.parentNode
-      if (t && t.parentNode) t.parentNode.removeChild(t)
+      var tEl = olds[i].parentNode && olds[i].parentNode.parentNode
+      if (tEl && tEl.parentNode) tEl.parentNode.removeChild(tEl)
     }
   }
 
@@ -1279,8 +1294,8 @@
   // A pick is not a promise: if the chosen provider fails, the orchestrator falls back to
   // Claude, so the reply may not come from whoever the Owner selected. The label reads the
   // SERVER's report of what actually answered — never the local pick.
-  function labelServedBy (t, res) {
-    if (!t || !t.body || !res || typeof res.servedBy !== 'string') return
+  function labelServedBy (tEl, res) {
+    if (!tEl || !tEl.body || !res || typeof res.servedBy !== 'string') return
     var name = res.servedBy === 'openai' ? '香香（GPT）' : '香香（Claude）'
     var text = res.fallbackUsed
       ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）')
@@ -1288,34 +1303,34 @@
     // INTO the message's own footer when it has one, so the attribution and the copy
     // control read as one row. A turn that is not a plain markdown message (a draft, a
     // proposal card) has no footer, and still gets its own line exactly as before.
-    if (t.foot) {
-      if (res.fallbackUsed) t.foot.className = 'served fallback'
-      t.foot.appendChild(el('span', null, text))
+    if (tEl.foot) {
+      if (res.fallbackUsed) tEl.foot.className = 'served fallback'
+      tEl.foot.appendChild(el('span', null, text))
       return
     }
-    t.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''), text))
+    tEl.body.appendChild(el('div', 'served' + (res.fallbackUsed ? ' fallback' : ''), text))
   }
 
   function renderDraft (res) {
-    var t = turn('bot')
+    var tEl = turn('bot')
     var d = res.draft || {}
-    t.body.appendChild(el('div', 'sec-t', '草稿（未寄出）'))
-    if (d.subject) t.body.appendChild(el('div', 'sec-b', '主旨：' + d.subject))
-    t.body.appendChild(renderMarkdown(d.body || '（無內文）'))
-    addMeta(t.body, 'SHADOW_ONLY · 未寄出 · 未寫入記憶')
+    tEl.body.appendChild(el('div', 'sec-t', '草稿（未寄出）'))
+    if (d.subject) tEl.body.appendChild(el('div', 'sec-b', '主旨：' + d.subject))
+    tEl.body.appendChild(renderMarkdown(d.body || '（無內文）'))
+    addMeta(tEl.body, 'SHADOW_ONLY · 未寄出 · 未寫入記憶')
   }
 
   function renderProposal (res, conv) {
-    var t = turn('bot')
-    if (res.reply) t.body.appendChild(renderMarkdown(res.reply))
+    var tEl = turn('bot')
+    if (res.reply) tEl.body.appendChild(renderMarkdown(res.reply))
     var proposals = Array.isArray(res.proposals) ? res.proposals : []
     if (!proposals.length || !proposals[0] || !proposals[0].id) {
-      addMeta(t.body, '尚未建立任何提案')
+      addMeta(tEl.body, '尚未建立任何提案')
       return
     }
     var pid = proposals[0].id
     var goal = proposals[0].task || res.reply || ''
-    addMeta(t.body, '提案 ' + pid + ' · 只是提案，未執行')
+    addMeta(tEl.body, '提案 ' + pid + ' · 只是提案，未執行')
 
     /* WHAT SHE READ OUT OF WHAT YOU ALREADY SAID.
      *
@@ -1335,7 +1350,7 @@
       if (inf.file) read.appendChild(el('div', null, '檔案：' + inf.file))
       if (inf.intent) read.appendChild(el('div', null, '改動：' + inf.intent))
       read.appendChild(el('div', 'inferred-note', '睇錯咗？直接打多句話講清楚就得，唔使填表。'))
-      t.body.appendChild(read)
+      tEl.body.appendChild(read)
     }
 
     var row = el('div', 'act')
@@ -1344,7 +1359,7 @@
     if (missing.length) {
       // ONE question, about the one thing missing. Never two boxes, never a question
       // about something already answered.
-      t.body.appendChild(el('p', 'ask', inf.question || '你想改邊個檔？'))
+      tEl.body.appendChild(el('p', 'ask', inf.question || '你想改邊個檔？'))
       askIn = el('input', 'typed')
       askIn.setAttribute('type', 'text')
       askIn.setAttribute('aria-label', missing.indexOf('file') >= 0 ? '要改的單一檔案路徑' : '打算改成甚麼')
@@ -1360,7 +1375,7 @@
     mk.disabled = !!askIn
     if (askIn) askIn.addEventListener('input', function () { mk.disabled = askIn.value.trim() === '' })
     row.appendChild(mk)
-    t.body.appendChild(row)
+    tEl.body.appendChild(row)
 
     mk.addEventListener('click', function () {
       if (mk.disabled) return
@@ -1380,7 +1395,7 @@
    * any chance I approve a change I did not mean.」 Nothing is written until he presses.
    */
   function renderSettingsOffer (offer, conv) {
-    var t = turn('bot')
+    var tEl = turn('bot')
     var box = el('div', 'offer')
     box.appendChild(el('p', null, '要我改呢個設定?'))
     var line = el('div', 'set-change')
@@ -1397,7 +1412,7 @@
     go.setAttribute('type', 'button')
     var out = el('div', 'meta')
     row.appendChild(go); box.appendChild(row); box.appendChild(out)
-    t.body.appendChild(box)
+    tEl.body.appendChild(box)
     scroll()
 
     go.addEventListener('click', function () {
@@ -1422,7 +1437,7 @@
   }
 
   function renderOffer (offer, conv) {
-    var t = turn('bot')
+    var tEl = turn('bot')
     var box = el('div', 'offer')
     box.appendChild(el('p', null, '要我出一張工作單改 ' + offer.file + '？'))
     var row = el('div', 'act')
@@ -1431,7 +1446,7 @@
     var out = el('div', 'meta')
     row.appendChild(go)
     box.appendChild(row); box.appendChild(out)
-    t.body.appendChild(box)
+    tEl.body.appendChild(box)
     scroll()
 
     go.addEventListener('click', function () {
@@ -1497,7 +1512,7 @@
   function renderCard (sealed) {
     clearErrors()
     var c = sealed.card || { heading: '', sections: [], actions: ['批准測試', '拒絕'], technicalTitle: '技術細節' }
-    var t = turn('bot')
+    var tEl = turn('bot')
     var card = el('div', 'order')
     card.appendChild(el('h2', null, c.heading))
 
@@ -1561,7 +1576,7 @@
     typed.addEventListener('input', function () { go.disabled = (typed.value !== sealed.typedConfirmationRequired) })
     act.appendChild(typed); act.appendChild(go); act.appendChild(no)
     card.appendChild(act); card.appendChild(out)
-    t.body.appendChild(card)
+    tEl.body.appendChild(card)
     scroll()
 
     /* REJECT IS A GOVERNANCE ACTION, SO IT GOES TO THE SERVER.

@@ -77,7 +77,8 @@ test('⛔ 首頁 is NEVER BLANK when the read fails', () => {
   const i = APP_JS.indexOf('function showHome')
   const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 10))
   assert.match(body, /catch/, 'a failed read must say so')
-  assert.match(body, /搵唔到|睇唔到/, 'in words, not as an empty screen')
+  // CONVERTED: it must SAY something, and what it says is now a key.
+  assert.match(body, /t\('client\.noHomeApi'\)/, 'in words, not as an empty screen')
 })
 
 test('⛔ the waiting bar still persists on the CONVERSATION screen', () => {
@@ -166,7 +167,7 @@ test('⛔ Franco is LIGHTENED, not shortened — the caveat survives', () => {
  * The threshold is each section's own freshness expectation, not a chosen number.
  */
 test('a single 更新於 line is rendered at the top', () => {
-  assert.match(APP_JS, /更新於/)
+  assert.match(APP_JS, /t\('briefing\.updatedAt'/)
   assert.match(APP_JS, /builtAtLabel/)
 })
 

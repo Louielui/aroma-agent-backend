@@ -34,8 +34,9 @@ const APP_CSS = fs.readFileSync(path.join(__dirname, 'assets', 'app.css'), 'utf8
 test('*** turn() appends to the conversation it was given, not to whatever is on screen ***', () => {
   assert.ok(/function turn \(who, conv\)/.test(APP_JS), 'turn takes the conversation')
   assert.ok(/var c = conv \|\| active/.test(APP_JS), 'and falls back to active so old call sites are unchanged')
-  assert.ok(/c\.thread\.appendChild\(t\)/.test(APP_JS), 'it appends to THAT conversation')
-  assert.equal(/active\.thread\.appendChild\(t\)/.test(APP_JS), false,
+  // `t` is the resolver's name project-wide, so this file's DOM local became `tEl`.
+  assert.ok(/c\.thread\.appendChild\(tEl\)/.test(APP_JS), 'it appends to THAT conversation')
+  assert.equal(/active\.thread\.appendChild\(tEl\)/.test(APP_JS), false,
     'THE DEFECT: a reply arriving after a click landed in the wrong pane')
   assert.ok(/if \(c === active\) scroll\(\)/.test(APP_JS), 'and never yanks the view to a conversation he is not reading')
 })

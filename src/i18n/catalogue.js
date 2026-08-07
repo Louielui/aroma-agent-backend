@@ -420,6 +420,37 @@ const CATALOGUE = Object.freeze({
    */
   'punct.sentenceSep': { zh: '', en: ' ' },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE BROWSER HALF.
+  //
+  // ⛔ EXTRACTING THESE FOUND A DUPLICATION THE WORDING HAD HIDDEN. `app.js` carried its own
+  // copies of 「我睇唔到差事紀錄。」, 「冇嘢等你決定。」 and 「未有差事紀錄 ——…」 — the SAME
+  // sentences the server already produces in `briefing.js`, as fallbacks for when `line` is
+  // absent. Two copies of one sentence, in two languages of code, free to drift the moment
+  // either is reworded. They now resolve THE SAME KEYS the server uses: one sentence, one
+  // entry, two renderers that provably agree (see browserResolver.test.js).
+  // ══════════════════════════════════════════════════════════════════════════
+  'nav.home': { zh: '首頁', en: 'Home' },
+  'nav.backHome': { zh: '← 返首頁', en: '← Back to Home' },
+  'client.noHomeApi': {
+    zh: '我找不到首頁那個 API，所以答不到你有什麼等著。',
+    en: 'I cannot find the Home API, so I cannot tell you what is waiting.'
+  },
+  'client.cannotOpenSection': {
+    zh: '我打不開這一節 —— 那個 API 看不到。',
+    en: 'I cannot open this section — the API is not reachable.'
+  },
+  /**
+   * ⛔ THE STALE-TAB BAR. It has cost a full round three times: the reject button that
+   * 「worked」 and never called the server, the entrance that did not appear, the backlog line
+   * that did not render. The instruction must survive translation intact — a hard reload is
+   * the whole message, and 「refresh」 alone does not do it.
+   */
+  'client.staleTab': {
+    zh: '這個頁面不是最新版本 — 按 Ctrl+Shift+R 硬重新整理。',
+    en: 'This page is not the current version — press Ctrl+Shift+R to hard-reload.'
+  },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

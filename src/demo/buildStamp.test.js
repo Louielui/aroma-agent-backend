@@ -51,6 +51,35 @@ describe('build stamp', () => {
     }
   })
 
+  test('⛔ AND THE CATALOGUE — rewording is a page change, so it must move the stamp', () => {
+    /**
+     * The words the page shows now live in `src/i18n/catalogue.js`, not in app.js. Without the
+     * catalogue in the fingerprint, rewording anything would change what the page SAYS and not
+     * change its stamp — so a tab holding the old wording would report itself current. That is
+     * exactly the failure the stamp exists to catch, walking back in through the door the
+     * bilingual work opened.
+     *
+     * `computeBuildStamp` takes overrides by ASSET NAME, and the catalogue is not an asset, so
+     * this proves it the only way available: mutate the real module cache, recompute, restore.
+     */
+    const base = computeBuildStamp()
+    const cataloguePath = require.resolve('../i18n/catalogue')
+    const real = require('../i18n/catalogue').CATALOGUE
+    const patched = Object.assign({}, real, {
+      'briefing.nothingWaiting': { zh: '（改咗字）', en: '(reworded)' }
+    })
+    require.cache[cataloguePath].exports = { CATALOGUE: patched }
+    delete require.cache[require.resolve('../i18n/browserResolver')]
+    try {
+      assert.notStrictEqual(computeBuildStamp(), base,
+        'a reworded catalogue must produce a different stamp, or a stale tab believes itself current')
+    } finally {
+      require.cache[cataloguePath].exports = { CATALOGUE: real }
+      delete require.cache[require.resolve('../i18n/browserResolver')]
+    }
+    assert.strictEqual(computeBuildStamp(), base, 'and restoring it must restore the stamp')
+  })
+
   test('it is a fingerprint, not a timestamp — the same inputs give the same stamp', () => {
     assert.strictEqual(computeBuildStamp(), computeBuildStamp(),
       'a stamp that changes on every call would report every page as stale')

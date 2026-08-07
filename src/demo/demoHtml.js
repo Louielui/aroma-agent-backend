@@ -61,7 +61,7 @@ function inlineSvg (name) {
  * source list lives inside app.js and only exists in `out` once the script has been
  * inlined. The loop below walks this array in order, so the new key belongs at the end.
  */
-const PLACEHOLDERS = ['/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/']
+const PLACEHOLDERS = ['/*INLINE_I18N*/', '/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/']
 
 /**
  * ── THE BUILD STAMP: how a stale tab tells on itself ─────────────────────────
@@ -91,6 +91,15 @@ function computeBuildStamp (overrides = {}) {
     h.update(name)
     h.update(Object.prototype.hasOwnProperty.call(overrides, name) ? overrides[name] : readAsset(name))
   }
+  /**
+   * ⛔ THE CATALOGUE IS PART OF THE PAGE, SO IT IS PART OF THE FINGERPRINT.
+   * Every interface word is moving out of app.js and into the catalogue. Without this, rewording
+   * anything would change what the page SAYS and not change its stamp — so a tab holding the old
+   * wording would believe itself current. That is precisely the failure the stamp exists to
+   * catch, re-entering through the door this round opened.
+   */
+  h.update('i18n')
+  h.update(require('../i18n/browserResolver').browserI18nSource())
   return h.digest('hex').slice(0, 12)
 }
 
@@ -118,6 +127,8 @@ function readSourceLabelsJson () {
  */
 function buildDemoHtml () {
   const parts = {
+    // ⛔ BEFORE the script in the document: app.js closes over CATALOGUE and createResolver.
+    '/*INLINE_I18N*/': require('../i18n/browserResolver').browserI18nSource(),
     '/*INLINE_CSS*/': readAsset('app.css'),
     '/*INLINE_JS*/': readAsset('app.js'),
     // The same dot fills both the header mark and the avatar template, so one entry

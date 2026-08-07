@@ -70,6 +70,15 @@ describe('the page compares the two itself', () => {
     const app = require('fs').readFileSync(require.resolve('../demo/assets/app.js'), 'utf8')
     // A banner saying "out of date" and nothing else sends him looking. Ctrl+Shift+R is the
     // remedy and it is not something a normal reload achieves.
-    assert.ok(/Ctrl\+Shift\+R/.test(app), 'the banner must name the hard reload')
+    assert.match(app, /t\('client\.staleTab'\)/, 'the banner is rendered from the catalogue')
+    // ⛔ KEPT AS WORDING, and now checked in BOTH languages. Ctrl+Shift+R IS the message: a
+    // banner saying 「out of date」 and nothing else sends him looking, and an ordinary reload
+    // does not fix it. Scanning app.js could only ever have checked the Chinese — the English
+    // could have quietly become 「please refresh」 and nothing would have failed.
+    const { CATALOGUE } = require('../i18n/catalogue')
+    for (const loc of ['zh', 'en']) {
+      assert.match(CATALOGUE['client.staleTab'][loc], /Ctrl\+Shift\+R/,
+        'the ' + loc + ' banner must name the hard reload')
+    }
   })
 })

@@ -43,7 +43,7 @@ test('*** it sits in the same footer row as the attribution ***', () => {
   const addBot = APP_JS.slice(APP_JS.indexOf('function addBot'), APP_JS.indexOf('function addError'))
   assert.ok(/el\('div', 'served'\)/.test(addBot), 'the footer reuses the existing served row')
   const label = APP_JS.slice(APP_JS.indexOf('function labelServedBy'), APP_JS.indexOf('function renderDraft'))
-  assert.ok(label.includes('t.foot'), 'the attribution goes INTO that row rather than making a second one')
+  assert.ok(label.includes('tEl.foot'), 'the attribution goes INTO that row rather than making a second one')
 })
 
 /* ── what gets copied ────────────────────────────────────────────────────── */
@@ -52,7 +52,7 @@ test('*** the SOURCE is copied, not the rendered DOM text ***', () => {
   const addBot = APP_JS.slice(APP_JS.indexOf('function addBot'), APP_JS.indexOf('function addError'))
   // The very same string handed to renderMarkdown is the one handed to the copy control.
   assert.ok(addBot.includes('renderMarkdown(text)'), 'the message is still rendered from text')
-  assert.ok(/copyButton\(\s*(text|t\.source)/.test(addBot), 'and the copy control is given that same text')
+  assert.ok(/copyButton\(\s*(text|tEl\.source)/.test(addBot), 'and the copy control is given that same text')
   assert.equal(/copyButton\([^)]*textContent/.test(APP_JS), false, 'never the flattened DOM text')
   assert.equal(/innerText/.test(APP_JS), false, 'and never innerText')
 })

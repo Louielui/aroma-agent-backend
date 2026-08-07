@@ -15,6 +15,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -62,13 +63,25 @@ test('the three outcomes reach the DOM as distinct classes, never merged', () =>
 test('⛔ an empty errand list SAYS WHY it is empty', () => {
   // Owner ruling: never-blank applies to a section empty for a REASON as much as one empty
   // by failure. 「未有差事紀錄」 with its cause, not a blank box.
-  assert.match(APP_JS, /未有差事紀錄/)
-  assert.match(APP_JS, /手動跑/, 'it must name the cause: every errand so far was run by hand')
+  // CONVERTED: the client must render THIS statement. The wording moved to the catalogue.
+  assert.match(APP_JS, /t\('briefing\.noneRan'\)/, 'the client renders the never-ran line')
+  // ⛔ AND THE WORDING GUARD MOVED WITH IT — 「says why」 is about the sentence, so it is
+  // asserted on the sentence, IN BOTH LANGUAGES. Scanning app.js could only ever have
+  // checked the Chinese; the English could have dropped the cause and nothing would fail.
+  const noneRan = CATALOGUE['briefing.noneRan']
+  assert.match(noneRan.zh, /手動/, 'the Chinese must name the cause')
+  assert.match(noneRan.en, /by hand/, 'and so must the English')
 })
 
 test('⛔ 「cannot read」 and 「nothing waiting」 render as different lines', () => {
-  assert.match(APP_JS, /睇唔到差事紀錄/)
-  assert.match(APP_JS, /冇嘢等你/)
+  // CONVERTED: two different keys is what 「different lines」 means now, and it is stronger —
+  // the old regexes would both have passed if the two sentences had become identical.
+  assert.match(APP_JS, /t\('briefing\.waitingCannotRead'\)/)
+  assert.match(APP_JS, /t\('briefing\.nothingWaiting'\)/)
+  for (const loc of ['zh', 'en']) {
+    assert.notStrictEqual(CATALOGUE['briefing.waitingCannotRead'][loc], CATALOGUE['briefing.nothingWaiting'][loc],
+      'they must not collapse into the same sentence in ' + loc)
+  }
   // and the client must branch on the server's state rather than on emptiness
   assert.match(APP_JS, /CANNOT_READ/)
   assert.match(APP_JS, /NOTHING_WAITING/)
