@@ -1955,3 +1955,104 @@ Waiting on a fact is sequencing. Waiting on the choice you are meant to inform i
 
 **Its sibling is HR-37's second half:** waiting for approval is a reason not to INSTALL. It is
 not a reason not to `Show`, not to `-DryRun`, and not to measure.
+
+---
+
+# HR-40 — A specification and its violation, same codebase, same author, same week
+
+**Round:** the briefing redesign, 2026-08-07.
+
+> **Owner: 「The comment claimed idempotency that was never implemented or tested, and the
+> design section requiring it was written by you. A specification and its violation in the same
+> codebase, by the same author, in the same week.」**
+
+Three artefacts, all mine, all within seven days:
+
+| | |
+|---|---|
+| **the rule** | `DESIGN-SCHEDULED-SURFACE.md §4`: 「it must be IDEMPOTENT: one open proposal per task, never one per run」 — with the reason: 30 identical rows in a month |
+| **the claim** | `runRecallErrand.js`: 「One id per ingredient per day: re-running today **updates** today's row instead of stacking duplicates」 |
+| **the code** | `errandStore.record()`: `rows.push(...)`. No key. No lookup. |
+
+Measured: **44 rows, 10 distinct ids**, until the briefing pushed the composer off the screen.
+
+## Why writing the rule made it LESS likely to be caught, not more
+
+This is the part worth keeping.
+
+> ### Having specified it, I had already experienced deciding it — and a decision, once made,
+> ### feels like a property the system has.
+
+The comment was not a lie told to the reader. **It was a lie told to me first**, and it was
+convincing precisely because I had reasoned the requirement through in another file. The design
+document did not act as a check on the code; **it acted as a substitute for checking the code.**
+
+That inverts the usual assumption that documenting a requirement helps enforce it. Here it
+supplied the FEELING of enforcement, which is the thing that stops you looking.
+
+## THE RULE
+
+> ### A requirement written in a design document is not a property of the system. It is a claim
+> ### about a property, and it needs the same evidence as any other claim. **Where a design doc
+> ### states a requirement, the test that enforces it must name the doc**, so the requirement and
+> ### its evidence are one artefact and cannot drift apart silently.
+
+**And a sharper test for comments specifically:** a comment describing BEHAVIOUR (「this updates
+rather than appends」) is an assertion. If no test makes it fail when it stops being true, it is
+decoration. Prefer deleting such a comment to leaving it — **a wrong comment is worse than no
+comment, because it stops the next reader from checking.**
+
+---
+
+# HR-41 — A rule scoped to the ARTEFACT does not govern the WORK, and the twin is always unwritten
+
+**Round:** the briefing redesign, 2026-08-07.
+
+> **Owner: 「~95 searches in one morning while citing the pacing rule. HR-34 governed the errand
+> and not the person running errands, and the same shape will recur every time a rule is scoped
+> to the artefact rather than the activity.」**
+
+HR-34 says: pace, do not retry; a read-only errand that retries harder is not read-only in any
+sense the site cares about. I wrote it, cited it, and then in one morning sent **~95 searches**
+at that same public register — six endpoint runs, a 36-request narrowing measurement, facet
+probes, hand-runs. **Every individual run was perfectly paced.** The rule governed the errand
+and said nothing about the person re-running the errand.
+
+> ### The artefact was polite. The activity was not. And nothing in the house had an opinion,
+> ### because every rule is written about the thing we inspect — and the activity is what is
+> ### doing the inspecting, so it is never in the frame.
+
+## THE AUDIT — every rule with an unwritten activity twin
+
+Asked for by the Owner, and it is worth more than the fix. **The twins already biting are marked.**
+
+| rule (scoped to the artefact) | the unwritten twin (scoped to the work) | status |
+|---|---|---|
+| **HR-35** report what the source returned; a second filter is invisible and fails as silence | **my report to him is a filter on what I found.** I select what to say. 95 searches became a paragraph — by exactly the mechanism HR-35 forbids, at the only layer he cannot audit | ⛔ **the most serious. Unaddressed.** |
+| **HR-25** write policy, read evidence — never both on one key | **I perform an action and grade it from the same output.** No independent read | ⛔ already bit — this is the mechanism under HR-38 |
+| **HR-22** a probe that checks the name you would first think of reports UNSAFE as SAFE | **I audit what I would first think to grep for.** Yesterday's 「what read-only checks are unused」 was exactly that list | ⛔ already bit |
+| **HR-32** print every state and read them as a set | **my reporting is a state-rendering surface** — 「done」/「done, unverified」/「partly done」 have never been read side by side | ⛔ likely biting now |
+| **HR-33** ask what a NORMAL day looks like | **what does a normal session's report look like, and is it still read after twenty of them?** | unaddressed |
+| **HR-15** a grader never checked against a result you disbelieve | **my own judgement is that grader.** Nothing adversarially checks a conclusion I like | unaddressed |
+| **HR-36** the first-run state is the one nobody tests | **the first time I do a kind of task** has no precedent and no check | unaddressed |
+| **HR-18** measure the baseline before designing for a limitation | I design my own working process without measuring it | unaddressed |
+| **HR-23** a guardrail that cannot read its own evidence is blind | a verification step of mine that cannot see its own environment — HR-38 exactly | ⛔ already bit |
+
+**HR-31, HR-37, HR-38, HR-39 are already activity-scoped.** They are the exceptions, and all four
+were written in the last two days — because the Owner pushed the frame outward, not because the
+practice noticed.
+
+## THE RULE
+
+> ### When you write a rule, name the ACTIVITY it governs, not only the artefact. Then ask:
+> ### **「what is the same failure, performed by the person doing this work?」** If that sentence
+> ### is true and unwritten, the rule is half-written.
+
+**Why this cannot be fixed by resolve.** The artefact is in front of you; the work is what you
+are doing while looking. **A rule about the work can only be enforced by something outside the
+work** — a mechanism, a log, or the Owner. That is why the knock log matters more than the
+interval, and why every rule this week that actually held was structural.
+
+**The one that is now mechanised:** HR-34's twin. The endpoint has a minimum interval and a
+server-side knock log, **so the person running errands is now governed by the same thing that
+governs the errand.** The other eight rows in that table have no mechanism at all.
