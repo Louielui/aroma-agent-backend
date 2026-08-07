@@ -109,3 +109,67 @@ describe('the task name is one constant, shared with the install script', () => 
       'briefing would say 「手動」 about something running on a timer')
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ SCHED_S_* ARE STATUSES, NOT FAILURES. FOUND THE MINUTE THE TASK WAS REGISTERED.
+ *
+ * A freshly registered task reports `LastTaskResult = 267011` and `LastRunTime = 1999-11-30`.
+ * That is `SCHED_S_TASK_HAS_NOT_RUN` and Windows' never-ran epoch — **the task is perfectly
+ * healthy and has simply not fired yet.**
+ *
+ * The first version tested `code === 0`, so the briefing said 「上次行嗰次 Windows 報失敗,退出碼
+ * 267011」 within seconds of a clean install — and appended the 0x1 profile-visibility hint,
+ * which had nothing to do with anything. **A brand-new healthy task described as a failing one**,
+ * and, worse, the first thing he would have read after approving the install.
+ *
+ * The 0x41300-family are informational. Some mean trouble (TERMINATED, NO_VALID_TRIGGERS) and
+ * some do not (HAS_NOT_RUN, RUNNING, READY) — they must not be lumped together under 「≠ 0」.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('⛔ a task that has never run is not a task that failed', () => {
+  const w = (lastTaskResult, lastRunTime) => readSchedulerWitness({
+    exec: exec(JSON.stringify({ found: true, state: 'Ready', lastTaskResult, lastRunTime: lastRunTime || '1999-11-30T00:00:00' })),
+    now: Date.parse('2026-08-07T12:00:00Z'),
+    cache: false
+  })
+
+  test('267011 SCHED_S_TASK_HAS_NOT_RUN → not unhealthy, and says it has not run', async () => {
+    const r = await w(267011)
+    assert.notStrictEqual(r.healthy, false, 'a fresh install must not be described as failing')
+    assert.match(r.saying, /未行過|冇行過/)
+    assert.doesNotMatch(r.saying, /0x1 /, 'the profile-visibility hint is about code 1, not about this')
+  })
+
+  test('the 1999-11-30 never-ran epoch is not reported as a real last-run time', async () => {
+    const r = await w(267011)
+    assert.strictEqual(r.lastRunAt, null, '1999 is a sentinel, not a date he should be shown')
+  })
+
+  test('267009 RUNNING and 267008 READY are also not failures', async () => {
+    for (const code of [267009, 267008]) {
+      assert.notStrictEqual((await w(code)).healthy, false, code + ' is a status')
+    }
+  })
+
+  test('⛔ but 267014 TERMINATED and 267015 NO_VALID_TRIGGERS ARE trouble, and say which', async () => {
+    const term = await w(267014, '2026-08-07T07:00:00')
+    assert.strictEqual(term.healthy, false)
+    assert.match(term.saying, /終止|時限/)
+    const notrig = await w(267015, '2026-08-07T07:00:00')
+    assert.strictEqual(notrig.healthy, false)
+    assert.match(notrig.saying, /trigger/i)
+  })
+
+  test('a real exit code 1 still gets the profile-visibility hint — it is the measured trap', async () => {
+    const r = await w(1, '2026-08-07T07:00:00')
+    assert.strictEqual(r.healthy, false)
+    assert.match(r.saying, /0x1/)
+    assert.match(r.saying, /profile/i)
+  })
+
+  test('0 with a real run time is healthy', async () => {
+    const r = await w(0, '2026-08-07T07:00:00')
+    assert.strictEqual(r.healthy, true)
+  })
+})

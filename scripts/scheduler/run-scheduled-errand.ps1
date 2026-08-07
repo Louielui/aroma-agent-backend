@@ -1,4 +1,4 @@
-<#
+﻿<#
   run-scheduled-errand.ps1 — WHAT THE WINDOWS TASK ACTUALLY EXECUTES.
 
   It does no work. It knocks on 8090 and lets 香香 do the work and write the row.

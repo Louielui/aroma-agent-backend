@@ -1,4 +1,4 @@
-<#
+﻿<#
   aroma-errand-task.ps1 — the auditable registration of 香香's ONE scheduled task.
 
       .\aroma-errand-task.ps1                 # Status  (default — READ-ONLY)
@@ -49,6 +49,11 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# Output encoding, so the Chinese status lines are legible whatever codepage the shell is in.
+# (The file itself needs a UTF-8 BOM for PowerShell 5.1 to parse it at all — without one it is
+# read as ANSI and the first Chinese string becomes an unterminated literal. Learned at Install.)
+try { [Console]::OutputEncoding = [Text.Encoding]::UTF8 } catch { }
+
 # ⛔ ONE constant, shared with src/home/schedulerWitness.js. A test greps that file for this
 #    exact string: if they drift, the witness reports NOT_INSTALLED for a task that exists, and
 #    the briefing says 「手動」 about something running on a timer.
@@ -87,8 +92,14 @@ function Show-Status {
   if ($i) {
     Write-Host ("  last run    : " + $i.LastRunTime + "   result: " + $i.LastTaskResult)
     Write-Host ("  next run    : " + $i.NextRunTime)
-    if ($i.LastTaskResult -ne 0) {
-      Write-Host '  ⚠ non-zero result. 0x1 is usually a scheduler logon that cannot see user-profile files.'
+    # 0x41303 (267011) is SCHED_S_TASK_HAS_NOT_RUN — a fresh task, not a failure. The whole
+    # 0x41300 family are statuses; only some of them mean trouble. See src/home/schedulerWitness.js.
+    if ($i.LastTaskResult -eq 267011) {
+      Write-Host '  (267011 = SCHED_S_TASK_HAS_NOT_RUN: registered, has not fired yet. Not a failure.)'
+    } elseif ($i.LastTaskResult -eq 1) {
+      Write-Host '  ⚠ exit code 1. Usually a scheduler logon that cannot see user-profile files.'
+    } elseif ($i.LastTaskResult -ne 0 -and $i.LastTaskResult -lt 267008) {
+      Write-Host ('  ⚠ non-zero result: ' + $i.LastTaskResult)
     }
   }
 }
@@ -113,7 +124,9 @@ switch ($Action) {
     Show-Definition
     Confirm-Or-Stop 'Register this task?'
 
-    $action = New-ScheduledTaskAction -Execute 'powershell.exe' `
+    # NOTE: not $action — PowerShell variables are case-insensitive, so it would assign to the
+    # -Action PARAMETER and fail its ValidateSet with "MSFT_TaskExecAction is not a valid value".
+    $taskAction = New-ScheduledTaskAction -Execute 'powershell.exe' `
       -Argument ('-NoProfile -ExecutionPolicy Bypass -File "' + $Runner + '"') `
       -WorkingDirectory $RepoRoot
 
@@ -131,7 +144,7 @@ switch ($Action) {
       -MultipleInstances IgnoreNew `
       -RestartCount 0
 
-    Register-ScheduledTask -TaskName $TaskName -Action $action -Trigger $trigger `
+    Register-ScheduledTask -TaskName $TaskName -Action $taskAction -Trigger $trigger `
       -Principal $principal -Settings $settings `
       -Description '香香 — daily recall check. READ ONLY. Knocks on 127.0.0.1:8090; the server runs the errand and writes the record. Registered by scripts/scheduler/aroma-errand-task.ps1 in the aroma-agent-backend repo.' | Out-Null
 
