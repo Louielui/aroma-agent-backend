@@ -1082,9 +1082,25 @@ model, are not independent.
 `SingletonSocket`, `lockfile` — because listing plausible names is a habit, not because I knew
 the fourth was the one that mattered here.
 
-> **A habit that happens to cover a gap is not the same thing as knowing the gap is there.**
+> ## A habit that happens to cover a hole is not knowledge of the hole.
+>
 > Had I written the one name I was confident about, the probe would have shipped reporting
 > `FREE` on locked profiles, and the live run would have agreed with it.
+
+### And the sharper form of it, which is this week's whole pattern
+
+> **Owner: 「『見過失敗』 is not independent evidence when the failure is staged by the same
+> mind that wrote the check.」**
+
+**A demonstration written by the author of the check shares the author's assumptions.** The
+fake lock in a seen-to-fail test would have been created under whichever name the test author
+also thought of — so the check and its proof would have agreed, and the agreement would have
+looked like evidence.
+
+**Seen-to-fail is necessary and it is not sufficient.** What makes it evidence is that the
+failure is staged by something the author did not choose: **a real page, a real platform, or a
+second person.** Here it was a real Windows Chrome, which had never read the documentation
+either of us learned from.
 
 ## THE RULE
 

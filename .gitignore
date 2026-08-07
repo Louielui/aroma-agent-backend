@@ -24,3 +24,8 @@ conversation-archive/
 # It covers nothing already tracked, so it is protection against a future mistake, not a
 # cleanup of a past one.
 /*.txt
+
+# ⛔ CREDENTIAL-EQUIVALENT. Holds LIVE SESSION COOKIES for the Owner's accounts —
+# no password, no 2FA needed by anything that can read it. Never stage, never commit,
+# never copy into a backup that leaves this machine. NOT a cache.
+/browser-profile/
