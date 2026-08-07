@@ -53,6 +53,41 @@ function resolveConversationContract (env = process.env) {
   return resolveFlag(env, 'CONVERSATION_CONTRACT')
 }
 
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ HOW MANY OF THESE RULES ARE ENFORCED. AUDIT 2026-08-07: THIRTY-FIVE TO THREE.
+ *
+ * > **Owner: 「Thirty-five rules that read identically while three are enforced is exactly the
+ * > shape we removed from ENFORCED BY — the reader cannot tell which is which, and that is
+ * > what makes prose feel like protection.」**
+ *
+ * This block is here, in the contract, rather than in a separate document — because a reader
+ * of the contract is the person who needs to know.
+ *
+ * ── HELD BY A MECHANISM (3) ─────────────────────────────────────────────────
+ *   the reply may not deny a read that happened   → src/intake/readStateGuard.js
+ *   action prose comes from the real outcome      → src/intake/groundedReply.js
+ *   the answer plan is validated against rows     → src/intake/answerPlan.js
+ *   ⛔ 一律用書面繁體中文                            → src/intake/traditionalGuard.js  (added today)
+ *
+ * ── HELD BY THIS PROSE ALONE (everything else) ──────────────────────────────
+ * And the ranking matters more than the count. The highest-stakes unenforced rule is NOT the
+ * language one:
+ *
+ *   ⛔ 專有名詞一律保留原文,不翻譯 (rules 8–10)
+ *     A Simplified character is cosmetic. **A translated supplier or ingredient name is an
+ *     order placed for the wrong thing.** Held by prose alone at the time of writing.
+ *
+ * Others with no output check: 絕不猜測性別 · 資料不足時不編造 · 「香香睇法」只講資料顯示到嘅嘢.
+ *
+ * ── THE FINDING, KEPT ───────────────────────────────────────────────────────
+ * > **成個禮拜都係繁體,唔係因為佢受保護,係因為嗰句指示夠強,加上運氣。**
+ *
+ * Every prompt instruction has that shape. Adding a rule here adds a claim, not a guarantee —
+ * so when you add one, say in the same breath whether anything checks it.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
 const CONVERSATION_CONTRACT = [
   '【對話體驗約定】這一節規範你回覆中 reply 的表達與態度,不改變輸出格式,也不改變你的身分定義。',
   // ── OWNER LANGUAGE POLICY (permanent) ──────────────────────────────────────

@@ -187,6 +187,22 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     })
   })
 
+  /**
+   * ⛔ THE BUTTON'S ROUTE. It RE-DERIVES the change from the Owner's own message — a
+   * body-supplied value is ignored, not honoured, exactly as workRequestRoute re-derives the
+   * file. Otherwise this becomes a way to set any setting to any value from a request body.
+   */
+  router.post('/api/v1/home/settings/apply', pass, (req, res) => {
+    const { explainSettingsOffer } = require('../routes/settingsOffer')
+    const settings = require('./settingsValues')
+    const message = typeof (req.body && req.body.message) === 'string' ? req.body.message : ''
+    const d = explainSettingsOffer({ message, currentValue: (id) => settings.get(id) })
+    if (!d.offer) return res.status(400).json({ ok: false, reason: d.reason, saying: d.saying || '我由你嗰句話度睇唔出要改邊個設定。' })
+    const r = settings.set(d.offer.id, d.offer.to)
+    if (!r.ok) return res.status(400).json(r)
+    res.json(Object.assign({ ok: true, id: d.offer.id, say: d.offer.say, from: d.offer.from, to: d.offer.to }, r))
+  })
+
   router.post('/api/v1/home/settings/:id', pass, (req, res) => {
     const settings = require('./settingsValues')
     const r = settings.set(req.params.id, req.body && req.body.value)

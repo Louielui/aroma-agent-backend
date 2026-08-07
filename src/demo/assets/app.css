@@ -846,3 +846,5 @@ button[disabled] { opacity: .45; cursor: default; }
 }
 .attach-head { color: var(--faint); margin-bottom: 0.25em; }
 .attach-line { color: var(--muted); }
+/* The settings offer: one line, before → after, so he approves what he can see. */
+.set-change { margin: 0.4em 0; color: var(--ink); font-variant-numeric: tabular-nums; }

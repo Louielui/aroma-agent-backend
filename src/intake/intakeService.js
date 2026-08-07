@@ -45,6 +45,8 @@ const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice 
 const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
+// ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
+const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
@@ -735,6 +737,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       : '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。'
 
     const guarded = enforceReadState(reply, Array.from(turnPerSource.values()), message)
+    // ⛔ SECOND OUTPUT GUARD. Detect + record + flag; never rewrite — 簡轉繁 is not one-to-one.
+    const lang = enforceTraditional(guarded.reply)
+    logTraditionalFlag(lang, requestId)
+    guarded.reply = lang.reply
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
@@ -796,6 +802,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // The ordinary chat path — this is the one the 「我目前讀唔到你的日程」 turn came down
     // while the calendar telemetry said trust:'live'.
     const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()), message)
+    const lang = enforceTraditional(guarded.reply)
+    logTraditionalFlag(lang, requestId)
+    guarded.reply = lang.reply
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     const view = buildReadResultReply({
       reply: guarded.reply,

@@ -1242,6 +1242,11 @@
      * approving from memory rather than from what was on the screen. Nothing exists at this
      * point — no Task, no Proposal, no sealed order. Pressing the button is what creates. */
     if (res.workRequestOffer) return renderOffer(res.workRequestOffer, conv)
+    /* ⛔ AND THE SETTINGS OFFER, HERE — BEFORE the clarification branch, for the same reason
+       the work-order offer is. HR-7: the server computed this correctly and the browser threw
+       it away, which is a whole failure however green the suite is. Caught at the served
+       string, not by a test. */
+    if (res.settingsOffer) return renderSettingsOffer(res.settingsOffer, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
@@ -1345,6 +1350,54 @@
   }
 
   /* ── the deterministic offer: ONE SENTENCE AND A BUTTON ──────────────── */
+  /**
+   * ⛔ ONE LINE, BEFORE → AFTER, AND A BUTTON.
+   *
+   * Owner: 「A settings offer that says 每樣食材顯示幾多條回收：6 → 10 is one line and removes
+   * any chance I approve a change I did not mean.」 Nothing is written until he presses.
+   */
+  function renderSettingsOffer (offer, conv) {
+    var t = turn('bot')
+    var box = el('div', 'offer')
+    box.appendChild(el('p', null, '要我改呢個設定?'))
+    var line = el('div', 'set-change')
+    line.textContent = offer.say + ':' + JSON.stringify(offer.from) + ' → ' + JSON.stringify(offer.to)
+    box.appendChild(line)
+    if (offer.appliesOn !== 'LIVE') {
+      // ⛔ Said BEFORE he presses. A change that will not take effect must never look like one
+      // that will.
+      var warn = el('div', 'meta', '⚠ 呢個唔會即刻生效 —— 改完仲要重新登記個 task。')
+      box.appendChild(warn)
+    }
+    var row = el('div', 'act')
+    var go = el('button', 'primary', '改')
+    go.setAttribute('type', 'button')
+    var out = el('div', 'meta')
+    row.appendChild(go); box.appendChild(row); box.appendChild(out)
+    t.body.appendChild(box)
+    scroll()
+
+    go.addEventListener('click', function () {
+      if (go.disabled) return
+      go.disabled = true
+      out.textContent = '改緊…'
+      /* THE MESSAGE, NOT THE VALUE. The server re-derives which setting and what value from
+         his own words; a value posted from here would be ignored. */
+      fetch('/api/v1/home/settings/apply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ message: lastOwnerMessage(conv) })
+      }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j } }) })
+        .then(function (x) {
+          if (!x.ok) { out.textContent = '改唔到:' + (x.j.saying || x.j.reason || ''); return }
+          out.textContent = '改咗:' + x.j.say + ' = ' + JSON.stringify(x.j.to) +
+            (x.j.appliesOn === 'LIVE' ? '(即刻生效)' : '(要重新登記 task:' + x.j.howToApply + ')')
+        })
+        .catch(function () { out.textContent = '改唔到 —— 個 API 冇答。' })
+    })
+  }
+
   function renderOffer (offer, conv) {
     var t = turn('bot')
     var box = el('div', 'offer')

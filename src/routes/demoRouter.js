@@ -30,7 +30,9 @@ const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML, BUILD_STAMP } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
-const { explainOffer } = require('./workRequestOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
+const { explainOffer } = require('./workRequestOffer')
+// ⛔ The SETTINGS entrance — same shape, same guarantee: an offer, never a change.
+const { explainSettingsOffer } = require('./settingsOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
 const { normalizeProviderHint } = require('../routing/modelRouter') // closed provider allowlist
 const { routeLane } = require('../intake/laneRouter') // Unified Conversation v1: zero-context lane routing
@@ -352,6 +354,17 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         const hasProposalAlready = !!(result && typeof result === 'object' && !Array.isArray(result) &&
           Array.isArray(result.proposals) && result.proposals.length > 0)
         const offerDecision = explainOffer({ message, hasProposal: hasProposalAlready })
+        /**
+         * ⛔ THE SETTINGS OFFER, computed from HIS WORDS. Nothing is written by computing it —
+         * it carries before → after so he approves what he can see, and the button is what
+         * changes anything.
+         */
+        let settingsOffer = null
+        try {
+          const sv = require('../home/settingsValues')
+          settingsOffer = explainSettingsOffer({ message, currentValue: (id) => sv.get(id) }).offer
+        } catch (_) { settingsOffer = null }
+        telemetry.settingsOffer = settingsOffer !== null
         telemetry.workRequestOffer = offerDecision.offer !== null
         telemetry.offerDeclined = offerDecision.reason
 
@@ -458,7 +471,8 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         // Decided and recorded above, before emit(). carriesProposal is recomputed there
         // from the same result, so the two cannot disagree.
         const offer = offerDecision.offer
-        const withOffer = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
+        const withOffer0 = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
+        const withOffer = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
 
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
         // One completed turn, written after the reply exists, so a failed turn leaves no

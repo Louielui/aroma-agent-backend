@@ -159,3 +159,37 @@ test('the topic is not restricted — there is no relevance check anywhere', () 
   assert.doesNotMatch(code, /isRelevantTo|offTopic|onlyAbout/,
     'judging whether a question belongs to a section is M-5 with a new surface')
 })
+
+/**
+ * ⛔ HR-7, CAUGHT AT THE SERVED STRING AND NOT BY THE SUITE.
+ *
+ * The settings offer was computed correctly server-side, attached to the envelope, and the
+ * browser threw it away — exactly the defect HR-7 records for the work-order offer. 「Correct
+ * server-side and absent to the Owner is a whole failure.」
+ */
+test('⛔ the settings offer is RENDERED, not merely delivered', () => {
+  assert.match(APP_JS, /res\.settingsOffer/, 'the envelope carries it; something must draw it')
+  assert.match(APP_JS, /function renderSettingsOffer/)
+})
+
+test('⛔ it renders BEFORE the clarification branch, which is what ate the last one', () => {
+  const i = APP_JS.indexOf('res.settingsOffer')
+  const j = APP_JS.indexOf("res.demoOutcome === 'clarification'")
+  assert.ok(i > 0 && j > 0 && i < j,
+    'placed after it, the offer could only ever render on turns that did not need it — HR-7')
+})
+
+test('the offer shows before → after, and the button posts the MESSAGE not the value', () => {
+  const i = APP_JS.indexOf('function renderSettingsOffer')
+  const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 10))
+  assert.match(body, /offer\.from/)
+  assert.match(body, /offer\.to/)
+  assert.match(body, /lastOwnerMessage/, 'the server re-derives; a value posted from here would be ignored')
+  assert.doesNotMatch(body, /value:\s*offer\.to/, 'posting the value would let the browser choose it')
+})
+
+test('⛔ a non-live change says so BEFORE he presses', () => {
+  const i = APP_JS.indexOf('function renderSettingsOffer')
+  const body = APP_JS.slice(i, APP_JS.indexOf('\n  function ', i + 10))
+  assert.match(body, /appliesOn !== 'LIVE'/, 'a change that will not take effect must not look like one that will')
+})
