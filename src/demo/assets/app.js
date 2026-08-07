@@ -262,15 +262,33 @@
    * The full briefing — empty screen only. Everything here can wait for the next blank
    * screen; only the waiting bar has a deadline.
    */
+  /**
+   * ⛔ ORDER: WAITING FIRST, THE STANDING BACKLOG LAST.
+   *
+   * The first version rendered Drive, then errands, then waiting — 而 Drive 排第一，係因為佢
+   * 先存在。A layout decision nobody made, which would have been defended if the Owner had
+   * not asked, because the thing that exists first looks like the thing that belongs first.
+   *
+   * The briefing already has the principle: only items with a DEADLINE persist above the
+   * thread. The order now follows the same principle it uses for persistence. The Drive line
+   * is four lines tall and changes once a day; it is the least urgent thing on the screen.
+   */
   function renderBriefing (host, b) {
     clear(host)
 
-    // ── the Drive line, its own row ──
-    if (b.backlog) {
-      host.appendChild(row('brief-backlog', b.backlog.line, b.backlog.checkedAtLabel))
+    // ── ① anything waiting on him — the only thing with a deadline ──
+    var w = b.waiting || {}
+    if (w.state === 'NOT_WIRED') {
+      host.appendChild(row('brief-waiting brief-defect', w.line, ''))
+    } else if (w.state === 'CANNOT_READ') {
+      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', w.checkedAtLabel))
+    } else if (w.state === 'NOTHING_WAITING') {
+      host.appendChild(row('brief-waiting', '冇嘢等你決定。', w.checkedAtLabel))
+    } else if (w.cards) {
+      for (var k = 0; k < w.cards.length; k++) host.appendChild(waitingCard(w.cards[k]))
     }
 
-    // ── what she ran ──
+    // ── ② what she ran ──
     var e = b.errands || {}
     if (e.state === 'NOT_WIRED') {
       // A defect must not render as a condition. 「未有差事紀錄」 would be a lie here: the
@@ -303,16 +321,9 @@
       host.appendChild(list)
     }
 
-    // ── waiting, in full, here as well as in the bar ──
-    var w = b.waiting || {}
-    if (w.state === 'NOT_WIRED') {
-      host.appendChild(row('brief-waiting brief-defect', w.line, ''))
-    } else if (w.state === 'CANNOT_READ') {
-      host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', w.checkedAtLabel))
-    } else if (w.state === 'NOTHING_WAITING') {
-      host.appendChild(row('brief-waiting', '冇嘢等你決定。', w.checkedAtLabel))
-    } else if (w.cards) {
-      for (var k = 0; k < w.cards.length; k++) host.appendChild(waitingCard(w.cards[k]))
+    // ── ③ the Drive line, LAST: standing state, four lines tall, changes once a day ──
+    if (b.backlog) {
+      host.appendChild(row('brief-backlog', b.backlog.line, b.backlog.checkedAtLabel))
     }
   }
 
@@ -396,8 +407,20 @@
    * So this renders ABOVE the thread, is not gated on an empty conversation, and shows only
    * items with a deadline. 有死線嗰啲留低,其餘等下次空畫面。
    */
-  function renderWaitingBar () {
+  function renderWaitingBar (briefingVisible) {
     if (!mainEl) return
+    // ⛔ THE STAND-IN RULE — one sentence deciding both the order and the gating:
+    //   首頁 shows waiting FIRST; the bar is the briefing's STAND-IN when the briefing is gone.
+    //
+    // While the briefing is on screen the bar is redundant, and worse than redundant: it
+    // rendered the SAME waiting item twice — a collapsed count at the top and the useful card
+    // at the bottom. Nothing had stopped yet, so neither of us had seen it, and the first day
+    // something did stop is the moment the Owner would be least patient with it.
+    if (briefingVisible) {
+      var stale = document.getElementById('waiting-bar')
+      if (stale) stale.parentNode.removeChild(stale)
+      return
+    }
     var old = document.getElementById('waiting-bar')
     if (old) old.parentNode.removeChild(old)
     fetch('/api/v1/home/briefing', { headers: { Accept: 'application/json' } })
@@ -475,8 +498,9 @@
     // A stored conversation is a title until it is opened; the transcript arrives here.
     if (c.stored && !c.loaded) loadConversation(c)
     else renderEmptyScreen(c)
-    // ⛔ OUTSIDE the empty-screen path, deliberately. See renderWaitingBar.
-    renderWaitingBar()
+    // The briefing is on screen exactly when the empty screen is. The bar is its STAND-IN,
+    // so it is told which rather than guessing.
+    renderWaitingBar(!isListed(c) && c.history.length === 0)
     scroll()
   }
   function renderConvList () {

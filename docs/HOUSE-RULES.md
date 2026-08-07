@@ -1374,3 +1374,56 @@ nothing was unwired.
 catch exactly this class.** That is the part worth carrying: **a test can be about the right
 thing and still assert the wrong property**, and the wrong property is almost always 「it
 exists」 rather than 「it is right」.
+
+---
+
+# HR-28 — A layout decision nobody made. 「Drive 排第一，係因為佢先存在。」
+
+**Owner, 2026-08-07: 「That is worth naming as its own shape: a layout decision nobody made,
+that would have been defended if I had not asked, because the thing that exists first looks
+like the thing that belongs first.」**
+
+## What happened
+
+首頁 rendered **Drive → errands → waiting**. The Drive line is **four lines tall and changes
+once a day**; 「等你決定」 is **one line and is the only thing with a deadline**.
+
+**There was no reason for that order.** Drive went first because it was the section that
+already existed — it had been attached to the greeting for weeks. **Sequence of construction
+became sequence of importance, and nobody decided it.**
+
+> ### And I would have defended it. Asked 「why is Drive first?」 I could have produced 「context before decisions」 in one sentence — a reason invented after the fact, for an arrangement that had none.
+
+## Why this shape is worth its own rule
+
+A wrong decision leaves an argument behind: someone weighed it, and the reasoning can be found
+and re-examined. **A non-decision leaves nothing** — and the empty space fills with
+justification the moment it is questioned.
+
+| | |
+|---|---|
+| a decision | has a reason. The reason can be wrong, and can be checked |
+| **a non-decision** | **acquires a reason only when challenged** — and that reason is generated to defend it, not to explain it |
+
+**This is HR-18's family** — a premise nobody measured — **applied to arrangement instead of
+fact.** Both are 「something that was never established behaving as though it had been」.
+
+## THE MECHANISM
+
+> ### For any ordering, ask: **would this be the order if the pieces had been built in the opposite sequence?** If the honest answer is no, the order is construction history, not design.
+
+**And the corrective is a principle already in the system**, not a new opinion. Here the
+briefing *already* had one — **only items with a deadline persist above the thread** — and the
+order simply was not following the rule the same surface used for persistence.
+
+> **The fix was not 「pick a better order」. It was 「apply the rule that was already there」.**
+
+## The sentence that resolved it
+
+> ## 首頁 shows waiting FIRST; the bar is the briefing's STAND-IN when the briefing is gone.
+
+**One sentence deciding both the order and the gating** — and the gating half exposed a
+duplication neither of us had seen: the bar was not gated at all, so on the empty screen a
+waiting item rendered **twice**, a collapsed count at the top and the useful card at the
+bottom. **Nothing had stopped yet, so it had never been visible** — and the first day something
+stopped would have been the moment of least patience with it.
