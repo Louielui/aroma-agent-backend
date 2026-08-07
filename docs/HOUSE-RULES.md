@@ -945,3 +945,65 @@ When a ref goes stale, the tempting repair is to re-find the element by role + a
 > **Same defect, two coats.** It would have made the criterion pass on that page and clicked
 > the wrong thing on any page where two nodes share a name. **The refusal is correct; the
 > caller re-reads.**
+
+## ⚠ HR-18, THE STRONGEST CASE FOR IT — a guardrail from a baseline met its first real case within a day
+
+**Owner, 2026-08-06: 「A guardrail you added from a baseline measurement, unprompted, meeting
+its first real case within a day — that is the strongest argument yet for measuring before
+designing, and it is worth stating beside HR-18 rather than only in the errand log.」**
+
+## The sequence, with dates that are hours apart
+
+| | |
+|---|---|
+| **the measurement** | baselining `type` produced the only honest way to state the difference between the verbs: **「`click` moves a mouse; `type` puts CONTENT into a page」** |
+| **the guardrail** | from that sentence alone — `input[type=password]` and credential-shaped accessible names are **REFUSED, not redacted**, and the audit record is built **without the typed value from the start** rather than stripped on the way out |
+| **who asked for it** | **nobody.** No ruling, no requirement, no review comment |
+| **its first real case** | **less than a day later, on the Owner's own login form** — `textbox "Email"`, `textbox "Password"`, `button "Sign in"` — reached by an errand that had nothing to do with credentials |
+
+> ### Had the errand been written to 「just log in」, `type` would have refused before touching the field.
+>
+> **The fence was there before the case arrived, and that is the only order that counts.** A
+> guardrail added after the first incident is a patch; the same guardrail added before it is a
+> property.
+
+## Why this argues for HR-18 specifically, and not merely for caution
+
+The refusal did not come from imagining what could go wrong. **It came from writing down what
+was measured, and then reading the sentence honestly.** Baselining `type` was done to find out
+what the library already handled — a cost-saving exercise — and the governance requirement fell
+out of it as a by-product of describing the verb accurately.
+
+> **Measuring before designing does not only tell you what NOT to build. It tells you what the
+> thing you are building actually IS** — and 「a verb that puts content into a page」 has
+> obligations that 「a verb that types」 does not.
+
+**Advice would not have produced this.** 「Be careful with credentials」 is agreeable and
+inert. The measurement produced a sentence, and the sentence produced a fence.
+
+---
+
+# HR-21 — The browser is for systems WITHOUT an API. Pointing it at one we own is the hardest mechanism against the easiest problem.
+
+**Owner ruling, 2026-08-06.**
+
+ERRAND-002 pointed the six verbs at `aroma-system`, which the Owner owns, and hit a login wall
+in 1.8 seconds. **That system has `/api/v1` with Bearer tokens, and 香香 already holds a scoped
+read-only key for it.**
+
+> ## Reading pending invoices through the API needs no browser at all: no accessibility tree, no refs, no staleness, no clicking, no re-read after every action. One request, one JSON body.
+
+| | use the API | use the browser |
+|---|---|---|
+| a system we own, or any system with an API | ✅ | ❌ **hardest mechanism, easiest problem** |
+| a supplier portal, a vendor order form, Canva, a site with no programmatic surface | — | ✅ **this is what it is for** |
+
+**The rule is a routing decision, made before the work starts:** *does this destination have a
+programmatic surface?* If yes, the browser is the wrong tool and choosing it adds every
+failure mode of the six verbs — staleness, truncation, re-render, bot mitigation — **in
+exchange for nothing.**
+
+And it cuts the other way too: **the browser's value is exactly proportional to the absence of
+an API.** Its hardest cases — defended retail, framework re-renders, login walls — are the
+cases where no easier mechanism exists, which is why it is worth having and why it will always
+look inefficient next to a system that could have been queried directly.
