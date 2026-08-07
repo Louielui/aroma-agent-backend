@@ -270,6 +270,98 @@
       })
   }
 
+  /** The door into a section. Rendered only when the server says there is an inside. */
+  function openLink (c) {
+    var b = el('button', 'sect-open')
+    b.type = 'button'
+    b.textContent = '打開 ' + c.title + ' →'
+    b.addEventListener('click', function () { showSection(c.kind, c.title) })
+    return b
+  }
+
+  /**
+   * 首頁 → one section, at higher resolution.
+   *
+   * ⛔ ROUND A HAS NO COMPOSER. The context problem it exists to solve is real, and the answer
+   * must CARRY what it attaches visibly — DESIGN-HOME-SECTIONS §4. A bare box here would be
+   * HR-42 with a nicer failure.
+   */
+  function showSection (kind, title) {
+    if (!mainEl) return
+    active = null
+    showComposer(false)
+    markHome(false)
+    mainEl.classList.remove('empty')
+    clear(log)
+    titleEl.textContent = title || kind
+
+    var view = el('div', 'home-view')
+    log.appendChild(view)
+
+    var back = el('button', 'sect-back')
+    back.type = 'button'
+    back.textContent = '← 返 首頁'
+    back.addEventListener('click', function () { showHome() })
+    view.appendChild(back)
+
+    var host = el('div', 'sect-body')
+    view.appendChild(host)
+    renderWaitingBar(true)
+
+    fetch('/api/v1/home/section/' + encodeURIComponent(kind), { headers: { Accept: 'application/json' } })
+      .then(function (r) { return r.ok ? r.json() : null })
+      .then(function (d) {
+        if (!d) throw new Error('no body')
+        renderSection(host, d)
+      })
+      .catch(function () {
+        // ⛔ NEVER BLANK, here too. 「我睇唔到」 is not 「there is nothing」.
+        host.appendChild(row('brief-errands brief-defect', '我打唔開呢一節 —— 個 API 睇唔到。', ''))
+      })
+  }
+
+  /** The inside: the same conclusion at higher resolution. Never a step log. */
+  function renderSection (host, d) {
+    clear(host)
+
+    if (d.freshness && d.freshness.line) host.appendChild(row('sect-fresh', d.freshness.line, ''))
+
+    var ings = el('div', 'sect-ingredients')
+    for (var i = 0; i < (d.ingredients || []).length; i++) {
+      var g = d.ingredients[i]
+      var line = el('div', 'sect-ingredient ' + (g.state === 'BLOCKED' ? 'sect-blocked' : (g.state === 'UNRECORDED' ? 'sect-unrecorded' : '')))
+      var name = el('span', 'sect-name')
+      name.textContent = g.ingredient
+      line.appendChild(name)
+      var body = el('span', 'sect-detail')
+      if (g.state === 'BLOCKED') {
+        // ⛔ A reason, never a zero. A site that would not answer is not a site with no recalls.
+        body.textContent = '查唔到 —— ' + (g.why || '')
+      } else if (g.state === 'UNRECORDED') {
+        // ⛔ AND 「冇記低」 IS NOT 「冇搵到」. Rendering an absent field as an empty result put a
+        // false all-clear on this screen for all eight ingredients. Found live, not by tests.
+        body.textContent = g.why || '嗰次冇記低搵到啲乜。'
+      } else {
+        var head = (typeof g.found === 'number' ? '個站搵到 ' + g.found + ' 條' : '')
+        var top = (g.items || []).slice(0, 3).map(function (x) { return x.when + ' ' + x.title }).join(' / ')
+        body.textContent = head + (top ? ':' + top : ':冇搵到相關回收。')
+      }
+      line.appendChild(body)
+      ings.appendChild(line)
+    }
+    host.appendChild(ings)
+
+    // ⛔ History is CHANGE, not occurrence. A day that repeats the same list is the log grain.
+    var h = el('div', 'sect-history')
+    var head = el('div', 'sect-history-head')
+    head.textContent = '邊日變咗乜'
+    h.appendChild(head)
+    for (var j = 0; j < (d.history || []).length; j++) {
+      h.appendChild(row('sect-day' + (d.history[j].changeCount ? ' sect-day-changed' : ''), d.history[j].line, ''))
+    }
+    host.appendChild(h)
+  }
+
   /** The composer belongs to a conversation. One place decides, so the two cannot disagree. */
   function showComposer (on) {
     var c = document.getElementById('composer')
@@ -376,6 +468,12 @@
         if (c.gap) cl.appendChild(row('concl-line concl-gap', c.gap, ''))
         if (c.unknown) cl.appendChild(row('concl-line concl-unknown', c.unknown, ''))
         if (c.calm) cl.appendChild(row('concl-line concl-calm', c.calm, ''))
+        // ── the door, beside the conclusion it opens ──
+        //
+        // ⛔ 冇門好過一道假門. The control exists only when the SERVER says this section has an
+        // inside. A kind that never ran gets its line and NO affordance — a greyed-out card
+        // promises something is there and then has nothing.
+        if (c.openable) cl.appendChild(openLink(c))
       }
       host.appendChild(cl)
 

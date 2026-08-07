@@ -174,3 +174,35 @@ describe('the execution history is REACHABLE, not displayed', () => {
     assert.deepStrictEqual(c.checkedIngredients, ['mushrooms'])
   })
 })
+
+/**
+ * ⛔ 冇門好過一道假門 — Owner, 2026-08-07.
+ *
+ * A grey unclickable card PROMISES something is there and then has nothing. So clickability
+ * follows CONTENT, not category: a kind that has run has a door; a kind that never has, has a
+ * line and no affordance at all — and the missing door is the honest statement.
+ */
+describe('⛔ openable follows content, not category', () => {
+  test('a kind that has run is openable', () => {
+    const rows = [row('mushrooms', 0, { items: [item('2026-01-01', 'x')] })]
+    assert.strictEqual(conclusionFor(KIND, rows, NOW).openable, true)
+  })
+
+  test('⛔ NEVER_RUN is NOT openable — no door rather than an empty room', () => {
+    const c = conclusionFor(KIND, [], NOW)
+    assert.strictEqual(c.state, CONCLUSION.NEVER_RUN)
+    assert.strictEqual(c.openable, false)
+    assert.ok(c.calm === null)
+  })
+
+  test('the line is still there when there is no door', () => {
+    // Never-blank outranks never-promise. The absence must be stated, just not as a door.
+    const c = conclusionFor(KIND, [], NOW)
+    assert.match(c.unknown || c.gap || c.alert || '從來未', /從來未|未有/)
+  })
+
+  test('a kind whose only rows are BLOCKED is still openable — the reasons are content', () => {
+    const rows = [row('green onion', 0, { outcome: 'BLOCKED_BY_SITE', detail: 'timeout', items: undefined })]
+    assert.strictEqual(conclusionFor(KIND, rows, NOW).openable, true)
+  })
+})

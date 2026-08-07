@@ -786,3 +786,47 @@ button[disabled] { opacity: .45; cursor: default; }
 /* The single top-line time. Faint, above everything, so the sections stop repeating it. */
 .brief-updated { margin-bottom: 0.7em; }
 .brief-updated .brief-text { color: var(--faint); font-variant-numeric: tabular-nums; }
+
+/* ── the door, and what is behind it ─────────────────────────────────────────
+   DESIGN-HOME-SECTIONS. The card is a DOOR, not a container: conclusions stay on 首頁 so he
+   still sees everything at once, and the door is for resolution he asked for.
+
+   ⛔ 冇門好過一道假門 — there is no disabled state here on purpose. A section with nothing
+   inside renders no button at all, and the missing door is the honest statement. */
+.sect-open {
+  margin-top: 0.5em;
+  padding: 0.25em 0;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 0.25em;
+}
+.sect-open:hover { color: var(--ink); }
+.sect-back {
+  margin-bottom: 1em;
+  border: none;
+  background: transparent;
+  color: var(--faint);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+.sect-back:hover { color: var(--muted); }
+
+.sect-fresh .brief-text { color: var(--faint); }
+.sect-ingredients { margin: 0.9em 0 1.4em; }
+.sect-ingredient { display: flex; gap: 0.8em; padding: 0.35em 0; line-height: 1.55; align-items: baseline; }
+.sect-name { flex: 0 0 7em; color: var(--muted); }
+.sect-detail { flex: 1 1 auto; color: var(--ink); }
+/* A blocked ingredient is the actionable one — the same stop colour the gap line uses. */
+.sect-blocked .sect-detail { color: var(--stop, #b0564b); }
+
+.sect-history-head { color: var(--faint); margin-bottom: 0.3em; }
+.sect-day .brief-text { color: var(--faint); }
+/* A day where something actually changed is the only one that gets full ink. */
+.sect-day-changed .brief-text { color: var(--ink); }
+/* ⛔ 「冇記低」 is not 「冇搵到」 — it gets its own look so it can never be read as a clean zero. */
+.sect-unrecorded .sect-detail { color: var(--soft, var(--muted)); font-style: italic; }

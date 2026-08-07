@@ -112,6 +112,33 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
     res.json(buildBriefing({ store, backlog, witness, now: Date.now() }))
   })
 
+  /**
+   * ⛔ WHAT IS BEHIND THE DOOR. Read-only, uncapped.
+   *
+   * The briefing caps rows at six so it cannot eat the screen. Here the resolution IS the point,
+   * so nothing is capped — DESIGN-HOME-SECTIONS §3.
+   *
+   * An unknown kind is a 404, never an empty detail: an empty detail for a kind that does not
+   * exist would render as 「nothing to report」, which is this project's oldest failure wearing
+   * yet another shape.
+   */
+  router.get('/api/v1/home/section/:kind', pass, async (req, res) => {
+    const { KINDS } = require('./errandKinds')
+    const { detailFor } = require('./sectionDetail')
+    const kind = KINDS.find((k) => k.id === req.params.kind)
+    if (!kind) return res.status(404).json({ saying: '我唔認得呢一節:' + String(req.params.kind).slice(0, 40) })
+
+    let rows
+    try { rows = store.list() } catch (_) {
+      return res.status(503).json({ state: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以打唔開呢一節。' })
+    }
+    let witness
+    if (typeof witnessReader === 'function') {
+      try { witness = await witnessReader() } catch (_) { witness = { state: 'UNREADABLE', scheduled: null, healthy: null, saying: '問唔到 Windows 排程。' } }
+    }
+    res.json(detailFor(kind, rows, Date.now(), witness))
+  })
+
   router.post('/api/v1/home/errand/:id/open', pass, (req, res) => {
     let row = null
     try { row = store.list().find((e) => e.id === req.params.id) } catch (_) {

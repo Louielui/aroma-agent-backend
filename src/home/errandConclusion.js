@@ -49,10 +49,15 @@ const keyOf = (it) => (it.when || '?') + '|' + String(it.title || '').slice(0, 6
 function conclusionFor (kind, rows, now) {
   const mine = (rows || []).filter((r) => r && typeof r.id === 'string' && r.id.startsWith(kind.prefix))
   const empty = {
-    kind: kind.id, title: kind.title, alert: null, gap: null, unknown: null, calm: null,
+    kind: kind.id, title: kind.title, openable: false, alert: null, gap: null, unknown: null, calm: null,
     newItems: [], unchecked: [], uncomparable: [], checkedIngredients: [], runsToday: 0
   }
-  if (!mine.length) return Object.assign({}, empty, { state: CONCLUSION.NEVER_RUN })
+  /**
+   * ⛔ 冇門好過一道假門. A section is openable when a detail view would HAVE something —
+   * never because of what kind it is. NEVER_RUN gets a line and no affordance, and the
+   * missing door is the honest statement that there is nothing behind it.
+   */
+  if (!mine.length) return Object.assign({}, empty, { state: CONCLUSION.NEVER_RUN, openable: false })
 
   // Group by ingredient, newest first.
   const byIng = new Map()
@@ -131,6 +136,7 @@ function conclusionFor (kind, rows, now) {
     unchecked,
     uncomparable,
     checkedIngredients: clean,
+    openable: true,
     runsToday
   }
 }
