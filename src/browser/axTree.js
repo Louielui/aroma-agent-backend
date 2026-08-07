@@ -234,10 +234,35 @@ function resolveContainers (dupNodes, byId) {
 
 function valueOf (v) { return v && typeof v === 'object' ? v.value : v }
 
+/**
+ * ⚠ PRIVATE USE AREA GLYPHS — 「個字喺度，但個 name 唔係嗰個字。」
+ *
+ * Icon fonts put their glyphs in the Unicode Private Use Areas, and those glyphs end up
+ * INSIDE the accessible name. Blender's donate control reads `" Donate"`, so a rule
+ * anchored on `^donate$` fails and a model reading the tree sees a name that starts with a
+ * character meaning nothing outside that one font.
+ *
+ * MEASURED ACROSS THE WHOLE CORPUS BEFORE FIXING: **36 of 36,669 surviving nodes (0.1%), on
+ * 3 of 26 pages.** Rare by count — **and it landed on a COMMIT control**, so the consequence
+ * is not proportional to the frequency.
+ *
+ * Three ranges, and nothing else: BMP `U+E000–U+F8FF`, plane 15 and plane 16. **Chinese,
+ * accents, emoji, currency and symbols are never touched** — a test asserts it, because a
+ * stripper that over-reaches would quietly delete the names of the pages that matter most.
+ */
+const PUA = /[-]|[\u{F0000}-\u{FFFFD}]|[\u{100000}-\u{10FFFD}]/gu
+let glyphsStrippedThisRead = 0
+
 function normalise (raw) {
   const role = String(valueOf(raw.role) || '')
-  const name = String(valueOf(raw.name) || '').replace(/\s+/g, ' ').trim()
-  return { role, name }
+  let name = String(valueOf(raw.name) || '')
+  if (PUA.test(name)) {
+    PUA.lastIndex = 0
+    name = name.replace(PUA, '')
+    glyphsStrippedThisRead++
+  }
+  PUA.lastIndex = 0
+  return { role, name: name.replace(/\s+/g, ' ').trim() }
 }
 
 /**
@@ -249,6 +274,7 @@ function readPage (rawNodes, opts = {}) {
   const maxNodes = Number.isFinite(opts.maxNodes) ? opts.maxNodes : 250
   const maxChars = Number.isFinite(opts.maxChars) ? opts.maxChars : 8000
   const raw = Array.isArray(rawNodes) ? rawNodes : []
+  glyphsStrippedThisRead = 0   // per-read counter; reported, never silent
 
   const candidates = []
   for (const n of raw) {
@@ -390,6 +416,7 @@ function readPage (rawNodes, opts = {}) {
     totalCandidates,
     refCollision,
     nameEchoesDropped,
+    glyphsStripped: glyphsStrippedThisRead,
     groupCount: budget.groups.length,
     groupsDropped: budget.groupsDropped,
     ambiguousCount: kept.filter((n) => n.ambiguous).length,

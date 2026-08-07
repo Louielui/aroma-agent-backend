@@ -291,3 +291,66 @@ describe('the echo prune is ON by default — the seam is for measurement, not f
     }
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * PRIVATE USE AREA GLYPHS IN ACCESSIBLE NAMES — 「個字喺度，但個 name 唔係嗰個字。」
+ *
+ * Found while measuring L1: Blender's donate control has the accessible name
+ * `" Donate"` — an icon-font glyph is PART OF THE NAME, so `^donate$` fails.
+ *
+ * MEASURED ACROSS THE WHOLE CORPUS FIRST: 36 of 36,669 surviving nodes (0.1%), on
+ * 3 of 26 pages. Rare by count — and it landed on a COMMIT control, so the consequence
+ * is not proportional to the frequency.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('icon-font glyphs are stripped from names, and the stripping is REPORTED', () => {
+  const raw = (name, id = 1, role = 'button') => ({
+    nodeId: 'n' + id, role: { value: role }, name: { value: name }, backendDOMNodeId: id
+  })
+
+  test('a BMP private-use glyph is removed from the name', () => {
+    const out = readPage([raw(' Donate')])
+    assert.strictEqual(out.nodes[0].name, 'Donate')
+  })
+
+  test('plane-15 and plane-16 private-use glyphs are removed too', () => {
+    const out = readPage([raw('\u{F0001} Save', 1), raw('\u{100001} Load', 2)])
+    assert.deepStrictEqual(out.nodes.map((n) => n.name), ['Save', 'Load'])
+  })
+
+  test('⛔ real text is NEVER touched — Chinese, accents, emoji, symbols', () => {
+    const names = ['付款', 'Tōkon', 'Café £5', '★ Featured', '確認付款']
+    const out = readPage(names.map((n, i) => raw(n, i + 1)))
+    assert.deepStrictEqual(out.nodes.map((n) => n.name), names)
+  })
+
+  test('a name that was ONLY a glyph becomes empty, not a ghost string', () => {
+    const out = readPage([raw('', 1)])
+    assert.strictEqual(out.nodes[0].name, '', 'an icon-only button is unnamed, and says so')
+  })
+
+  test('the count is REPORTED — a transformation that changes data must state it', () => {
+    const out = readPage([raw(' Donate', 1), raw('Plain', 2), raw(' Cart', 3)])
+    assert.strictEqual(out.glyphsStripped, 2)
+  })
+
+  test('nothing stripped means the count is zero, not absent', () => {
+    assert.strictEqual(readPage([raw('Donate')]).glyphsStripped, 0)
+  })
+
+  test('two names that differed ONLY by a glyph become a real ambiguity, and are flagged', () => {
+    const out = readPage([raw(' Save', 1), raw(' Save', 2)], { group: false })
+    assert.strictEqual(out.nodes.length, 2, 'both survive — the page really has two')
+    assert.ok(out.nodes.every((n) => n.name === 'Save'))
+    assert.ok(out.ambiguousCount >= 2, 'and the model is told it cannot tell them apart')
+  })
+
+  test('the real Blender capture: the donate control now reads as its word', () => {
+    const out = readPage(require(path.join(CORPUS_DIR, '..', 'checkout-heldout', 'blender-fund.json')).nodes,
+      { maxNodes: 100000, maxChars: 1e9 })
+    assert.ok(out.glyphsStripped > 0, 'the capture carries glyphs')
+    assert.ok(out.nodes.some((n) => n.name === 'Donate'),
+      'and a control whose name was " Donate" now reads as "Donate"')
+  })
+})
