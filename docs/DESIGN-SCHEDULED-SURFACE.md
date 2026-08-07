@@ -232,6 +232,20 @@ decision, which is the correct shape — nothing happens without him.
 
 > **Allowed, but it must be IDEMPOTENT: one open proposal per task, never one per run.**
 
+> ### ⛔ ENFORCED BY: `src/home/errandStore.test.js` → 「one id, one row」
+>
+> **This line exists because this requirement was violated by its own author, four days after
+> being written here.** `record()` appended unconditionally; a comment in `runRecallErrand.js`
+> claimed it upserted; nothing tested either. Measured 2026-08-07: **44 rows, 10 distinct ids**,
+> until 首頁 pushed the composer off the screen.
+>
+> The design document did not act as a check on the code. **It acted as a substitute for
+> checking the code** — having reasoned the requirement through here, I had already experienced
+> deciding it, and a decision once made feels like a property the system has.
+>
+> So: **a requirement stated in a design doc is a CLAIM, not a property.** It carries an
+> `ENFORCED BY` line naming the test, or it is decoration. See HR-40.
+
 Otherwise a daily task leaves 30 identical pending proposals in a month. We have already had
 to clean residue by hand — `prop_80897e17` and the five before it — and that was from
 occasional manual testing, not a daily loop.

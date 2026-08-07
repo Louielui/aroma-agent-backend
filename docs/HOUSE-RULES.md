@@ -1960,6 +1960,12 @@ not a reason not to `Show`, not to `-DryRun`, and not to measure.
 
 # HR-40 — A specification and its violation, same codebase, same author, same week
 
+> ### ⛔ THIS RULE LIVES AT THE POINT OF AUTHORSHIP, NOT HERE.
+> **Owner: 「Keep it where a design gets written, not where a defect gets recorded.」**
+> The operative form is  — read before writing any ,
+> and it asks for one line per requirement: . This entry is the record of
+> how it was found; that file is the thing that acts.
+
 **Round:** the briefing redesign, 2026-08-07.
 
 > **Owner: 「The comment claimed idempotency that was never implemented or tested, and the
