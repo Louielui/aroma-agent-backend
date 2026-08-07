@@ -33,6 +33,8 @@ const { buildWaitFor } = require('../browser/wait')
 const { buildSession } = require('../browser/session')
 const { buildRequestFence } = require('../governance/requestFence')
 const { checkRecall, HOST, SEARCH_PATH } = require('./recallCheck')
+// ⛔ READ AT USE TIME. Importing these as constants is exactly what would force a restart.
+const settings = require('../home/settingsValues')
 
 const ORDER = { allowedOrigins: [HOST] }
 
@@ -72,7 +74,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
  *   fell over is a recorded BLOCKED_BY_SITE, not a lost run.
  */
 async function runRecallForIngredients (ingredients) {
-  const list = (ingredients && ingredients.length) ? ingredients : DEFAULT_INGREDIENTS
+  // The Owner's list, read now — not the value this module saw when it was first required.
+  const list = (ingredients && ingredients.length) ? ingredients : settings.get('recallIngredients')
+  const pauseMs = settings.get('pauseBetweenMs')
   const b = await chromium.launch(launchOptions())
   try {
     const page = await b.newPage()
@@ -103,10 +107,10 @@ async function runRecallForIngredients (ingredients) {
 
     const out = []
     for (const q of list) {
-      if (out.length) await sleep(PAUSE_BETWEEN_MS)
+      if (out.length) await sleep(pauseMs)
       let result
       try {
-        result = await checkRecall({ session, goto, query: q, url: HOST + SEARCH_PATH })
+        result = await checkRecall({ session, goto, query: q, url: HOST + SEARCH_PATH, shown: settings.get('recallShownPerIngredient') })
       } catch (e) {
         result = { outcome: 'BLOCKED_BY_SITE', detail: '查「' + q + '」嗰陣爆咗:' + String(e && e.message).split('\n')[0].slice(0, 100) }
       }

@@ -37,7 +37,10 @@ const blocked = (detail) => ({ outcome: 'BLOCKED_BY_SITE', detail })
  *   and L1 live inside it. `goto` navigates; the caller owns the origin check.
  * @returns {Promise<{outcome:string, answer?:string, detail?:string, stop?:object}>}
  */
-async function checkRecall ({ session, goto, query, url, maxActions, note }) {
+async function checkRecall ({ session, goto, query, url, maxActions, note, shown }) {
+  // ⛔ Passed in, not imported: the caller reads the setting at use time. MAX_SHOWN is the
+  // fallback so behaviour is unchanged when nobody supplies one.
+  const maxShown = Number(shown) > 0 ? Number(shown) : MAX_SHOWN
   const cap = maxActions || MAX_ACTIONS
   // ⛔ The narrowing is DECLARED here and reported in every answer. The Owner's ruling:
   // 「it is a claim about what I was shown and it belongs on screen, not in a config file.」
@@ -153,23 +156,23 @@ async function checkRecall ({ session, goto, query, url, maxActions, note }) {
 
   // ⛔ SITE ORDER, UNTOUCHED. Re-ranking by our own idea of relevance — including by date —
   // is the same filter one step later, and the filter is what produced the false all-clear.
-  const shown = hits.slice(0, MAX_SHOWN)
+  const shownHits = hits.slice(0, maxShown)
   const found = count ? count.total : hits.length
   const foundLabel = count
     ? '個站搵到 ' + count.total + ' 條'
     : '我喺第一頁讀到 ' + hits.length + ' 條(個站冇畀總數)'
-  const shownLabel = found > shown.length ? ',顯示頭 ' + shown.length + ' 條' : ''
+  const shownLabel = found > shownHits.length ? ',顯示頭 ' + shownHits.length + ' 條' : ''
 
   return {
     outcome: 'ANSWERED',
     answer: '「' + query + '」' + narrowLabel + ':' + foundLabel + shownLabel + ':' +
-      shown.map((h) => h.when + ' ' + h.title).join(' / '),
+      shownHits.map((h) => h.when + ' ' + h.title).join(' / '),
     found,
-    shown: shown.length,
+    shown: shownHits.length,
     narrowing,
     // ⛔ THE STRUCTURED RESULT, not just the sentence. 「新」 is a comparison between runs, and
     // a comparison needs values — diffing the prose answer would break on any wording change.
-    items: shown.map((h) => ({ when: h.when, title: h.title })),
+    items: shownHits.map((h) => ({ when: h.when, title: h.title })),
     detail: '讀咗 ' + v.nodes.length + ' 個節點。' + (count ? '' : ' ⚠ 個站冇畀總數,可能仲有下一頁。')
   }
 }

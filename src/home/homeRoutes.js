@@ -34,7 +34,15 @@ const OPEN = Object.freeze({
 function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath, guard, launcher, serviceGuard, scheduledRunners, witnessReader, knockLog, minRunIntervalMs }) {
   // Default: one hour. A daily errand never needs to run twice in an hour, and the morning
   // that produced this rule had six runs in forty-five minutes.
-  minRunIntervalMs = Number(minRunIntervalMs) > 0 ? Number(minRunIntervalMs) : 60 * 60 * 1000
+  /**
+   * ⛔ RESOLVED PER REQUEST, NOT CAPTURED HERE. An injected value still wins (tests do that),
+   * but with nothing injected the Owner's setting is read at the moment the door is knocked —
+   * so changing it does not need a restart.
+   */
+  const resolveInterval = () => {
+    if (Number(minRunIntervalMs) > 0) return Number(minRunIntervalMs)
+    try { return require('./settingsValues').get('minRunIntervalMs') } catch (_) { return 60 * 60 * 1000 }
+  }
   const pass = guard || ((req, res, next) => next())
   const { buildBriefing } = require('./briefing')
 
@@ -64,7 +72,7 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
       // governed how often the run itself happened — so ~95 searches went at a public register
       // in one morning. The interval is answered from the LOG, not from an in-process
       // timestamp, because 8090 was restarted repeatedly during exactly that hammering.
-      const gate = knockLog ? knockLog.mayRun(now, minRunIntervalMs) : { ok: true, reason: 'NO_KNOCK_LOG' }
+      const gate = knockLog ? knockLog.mayRun(now, resolveInterval()) : { ok: true, reason: 'NO_KNOCK_LOG' }
       if (!gate.ok) {
         if (knockLog) knockLog.record({ at: now, verdict: gate.reason, caller, agent })
         return res.status(429).json({ ok: false, ran: 0, recorded: false, reason: gate.reason, saying: gate.saying })
@@ -159,6 +167,33 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
       return res.status(503).json({ state: 'CANNOT_READ', saying: '我睇唔到差事紀錄,所以講唔到會附上啲乜。' })
     }
     res.json(attachmentFor(kind, rows, Date.now()))
+  })
+
+  /**
+   * ⛔ THE SETTINGS SURFACE. The REGISTRY decides what exists and what the ranges are
+   * (src/governance/settingsRegistry.js, protected path); this only carries values.
+   */
+  router.get('/api/v1/home/settings', pass, (req, res) => {
+    const { ENTRIES } = require('../governance/settingsRegistry')
+    const settings = require('./settingsValues')
+    const values = settings.all()
+    res.json({
+      // Each entry ships the sentence HE would say, not the identifier.
+      entries: ENTRIES.map((e) => ({
+        id: e.id, say: e.say, type: e.type, value: values[e.id],
+        min: e.min, max: e.max, minItems: e.minItems, maxItems: e.maxItems,
+        appliesOn: e.appliesOn, howToApply: e.howToApply || null
+      }))
+    })
+  })
+
+  router.post('/api/v1/home/settings/:id', pass, (req, res) => {
+    const settings = require('./settingsValues')
+    const r = settings.set(req.params.id, req.body && req.body.value)
+    // ⛔ A refusal carries its reason, and a save that does not apply live carries the
+    // instruction — reporting it as merely saved would let him believe it took effect.
+    if (!r.ok) return res.status(400).json(r)
+    res.json(r)
   })
 
   router.post('/api/v1/home/errand/:id/open', pass, (req, res) => {

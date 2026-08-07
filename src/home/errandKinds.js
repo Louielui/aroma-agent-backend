@@ -87,6 +87,21 @@ function cadenceLabel (everyMs) {
  * @returns {{kind, state, lastAt, ageMs, line}}
  */
 function freshnessOf (kind, rows, now, witness) {
+  /**
+   * ⛔ THE CADENCE IS READ NOW, NOT TAKEN FROM THE FROZEN KIND.
+   * KINDS is Object.freeze'd at module load — which is correct for the ID and the prefix and
+   * wrong for a number the Owner may change. Reading it here is what makes 「幾耐查一次先算準時」
+   * take effect on the next briefing rather than on the next restart.
+   */
+  if (kind && kind.id === 'recall') {
+    try {
+      const settings = require('./settingsValues')
+      kind = Object.assign({}, kind, {
+        everyMs: settings.get('recallEveryMs'),
+        graceMs: settings.get('recallGraceMs')
+      })
+    } catch (_) { /* no settings module in a unit context — the frozen defaults stand */ }
+  }
   const mine = (rows || []).filter((r) => r && typeof r.id === 'string' && r.id.startsWith(kind.prefix))
   const base = { kind: kind.id, title: kind.title, everyMs: kind.everyMs, scheduled: kind.scheduled }
 
