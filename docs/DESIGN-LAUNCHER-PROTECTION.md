@@ -11,26 +11,7 @@ it. This is the answer to the open question left unsolved on purpose in
 
 ---
 
-# 0. What was measured, 2026-08-07
-
-```
-owner : AROMABRAIN\louis
-ACL   : every ACE INHERITED — the file has no ACL of its own
-        NT AUTHORITY\Authenticated Users  →  Modify        (Allow)
-        AromaBrain\AromaOperator          →  FullControl   (Deny)
-```
-
-- **Who can change it:** any authenticated account. `AromaOperator` is the one deliberate
-  exclusion, from the Computer Operator work.
-- **Does anything notice:** **no.** No hash, no signature, no git history — it is outside the
-  repo. Two tests read it; neither checks integrity.
-- **Is there a copy:** **no.** See §4 — recorded as its own defect, not folded in here.
-- Already foreseen and never acted on: `scripts/computer/deploy-companion.ps1` names
-  「drop something beside xiangxiang.ps1」 as a persistence path.
-
----
-
-# 1. ⛔ WHY TIGHTENING PERMISSIONS WOULD HAVE BEEN MOTION WITHOUT EFFECT
+# ⛔ READ THIS FIRST — ACL IS NOT WEAK HERE. IT IS ABSENT.
 
 > **Owner: 「I asked which mechanism is better and the answer is that one of them is not present
 > at all.」**
@@ -55,11 +36,34 @@ An ACL that permits him permits her, necessarily and by construction.
 it does **nothing** about the case this section exists for. Recorded here so the next reader does
 not spend the effort and believe the problem is solved.
 
-**The only real prevention is Part ③, and it is not being built.**
+**The only real prevention is ③ — running her as a different account — and that is deferred
+with its cost stated, not rejected.**
 
 ---
 
-# 2. ① SHRINK THE SURFACE — a shim outside, the body inside
+# 0. What was measured, 2026-08-07
+
+```
+owner : AROMABRAIN\louis
+ACL   : every ACE INHERITED — the file has no ACL of its own
+        NT AUTHORITY\Authenticated Users  →  Modify        (Allow)
+        AromaBrain\AromaOperator          →  FullControl   (Deny)
+```
+
+- **Who can change it:** any authenticated account. `AromaOperator` is the one deliberate
+  exclusion, from the Computer Operator work.
+- **Does anything notice:** **no.** No hash, no signature, no git history — it is outside the
+  repo. Two tests read it; neither checks integrity.
+- **Is there a copy:** it had none. FIXED the same day and recorded as its own defect —
+  `MAINTENANCE-BACKLOG.md` M-7. **It is deliberately not designed here**, because it needed
+  fixing rather than designing: the monthly job already existed and the launcher simply was not
+  in its list. One line to a list is not a document.
+- Already foreseen and never acted on: `scripts/computer/deploy-companion.ps1` names
+  「drop something beside xiangxiang.ps1」 as a persistence path.
+
+---
+
+# ① SHRINK THE SURFACE — a shim outside, the body inside
 
 Rather than protect 8,964 bytes that cannot be protected, make the unprotectable part three
 lines that never legitimately change.
@@ -87,7 +91,7 @@ What this buys:
 
 ---
 
-# 3. ② PIN AND DETECT — and the checker's home is what the migration paid for
+# ② PIN AND DETECT — and the checker's home is what the migration paid for
 
 A hash prevents nothing. It **detects**, and detection is the half the Owner actually asked
 about: *「a silently changed ACL looks identical to a working one.」*
@@ -116,8 +120,13 @@ becomes a mismatch.
 
 > **R2.3 ⛔ IT REPORTS. IT NEVER REFUSES TO START.**
 > A legitimate flag edit would otherwise brick her — **and the thing that would repair a refused
-> start is the thing that refused to start.** That is L2-1's shape exactly, and the answer is the
-> same: report loudly, start anyway.
+> start is the thing that refused to start.**
+>
+> ### ⛔ THIS IS THE SAME PROBLEM AS L2-1, NOT A SECOND ONE.
+> `DESIGN-SHE-CHANGES-HERSELF.md` §3: *the thing that repairs a failed restart is the thing that
+> failed to restart.* Here: *the thing that repairs a refusing launcher is the launcher.* One
+> shape, one answer — **report loudly, start anyway** — and whatever eventually answers L2-1
+> should answer this too. Reading them as two problems would produce two half-mechanisms.
 > ### ⛔ ENFORCED BY: `src/governance/launcherPin.test.js` → 「a mismatch never throws」.
 
 > **R2.4** A mismatch surfaces on 首頁 as a DEFECT line, not as an operational state. It is rare
@@ -130,27 +139,11 @@ becomes a mismatch.
 
 ---
 
-# 4. ⛔ SEPARATE DEFECT: the launcher has no backup
+# ③ RUN HER AS ANOTHER ACCOUNT — **not now, and here is what it would cost**
 
-**Recorded as its own defect at the Owner's instruction, not folded into the protection design.**
-
-`Monthly-OfflineBackup.ps1` covers four sources — TruthData, ReleaseRecords, XiangxiangArchive,
-Core. **The launcher is in none of them.**
-
-> ### The one file that starts everything is the one file with no copy.
-
-This is unrelated to tampering: it is about a bad edit, a disk error, or a mistake. Protection
-without a copy means the best case is *knowing* it is broken.
-
-> **R4.1** The launcher body is in the monthly offline source list.
-> ### ⛔ ENFORCED BY: `src/governance/launcherPin.test.js` → 「the launcher body is in the monthly backup sources」.
-
----
-
-# 5. ③ RUN HER AS ANOTHER ACCOUNT — **NOT BUILT**
-
-The only mechanism that would actually **prevent** rather than detect. Written down so it does
-not read as unexplored.
+⛔ **NOT REJECTED — DEFERRED, WITH ITS PRICE STATED.** This is the only mechanism that would
+actually **prevent** rather than detect, and it stays on the table. What follows is what it
+would cost, so the decision can be made on the cost rather than on the effort of re-deriving it.
 
 **What it would do:** give her process a principal distinct from the Owner's, so an ACL finally
 has two things to tell apart, and `Deny` on the launcher becomes meaningful.
@@ -170,7 +163,7 @@ ruling is that the profile folder is a credential.
 
 ---
 
-# 6. What this design does NOT claim
+# What this design does NOT claim
 
 > **A file outside the repository cannot be protected the way one inside it can.**
 
@@ -179,15 +172,19 @@ them is prevention. Anything running as the Owner — including her — can stil
 the body, the pin and the checker, in that order, given the intent to do so.
 
 What changes is that **doing so leaves marks**: a diff on the body, a mismatch on the shim, a
-commit on the pin. Detection is not prevention and this document does not present it as such.
+commit on the pin.
+
+⛔ Four verify scripts and a startup check will make a reader FEEL protected. This sentence is
+the only thing in the repository that will tell them what they actually have:
+
+> ## 我唔會將偵測包裝成防止。
 
 ---
 
-# 7. Build order
+# Build order
 
 | # | | status |
 |---|---|---|
-| ① | shim outside, body in the repo | **build now** |
-| ② | pin + startup check + verify script | **build now** |
-| — | the launcher into the monthly backup | **build now** (§4, one line) |
-| ③ | separate account | **not built**, §5, with its cost |
+| ① | shim outside, body in the repo | ✅ built 3de03b7 |
+| ② | pin + startup check + verify script | ✅ built 3de03b7, seen to fail live |
+| ③ | separate account | **not now** — its cost is stated above, so the decision is about the cost |
