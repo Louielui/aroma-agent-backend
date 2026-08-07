@@ -201,3 +201,75 @@ describe('⛔ a section that did not read carries NO TIME AT ALL', () => {
     assert.ok(b.errands.checkedAtLabel)
   })
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * > **Owner: 「時間戳唔係新鮮度 —— and it is the reason the scheduler alone would have made
+ * > the briefing more confidently wrong. A row that knows how stale it is allowed to be is
+ * > honest with or without a scheduler; a row that only knows when it ran is not.」**
+ *
+ * The section rendered `07:14` and stopped there. Below, it must also carry what that age is
+ * ALLOWED to be — and, crucially, it must be built from the KIND REGISTRY rather than from the
+ * rows, or an errand that never ran once renders as nothing and nothing reads as calm.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('⛔ freshness: the second number, without which a timestamp judges nothing', () => {
+  const recallRow = (h) => ({ id: 'recall-mushrooms-2026-08-07', title: '回收檢查 — mushrooms', outcome: OUTCOME.ANSWERED, at: hoursAgo(h), answer: '冇搵到相關回收。' })
+
+  test('the errands section carries a freshness entry per DECLARED KIND', () => {
+    const b = buildBriefing({ store: store([recallRow(2)]), now: NOW })
+    assert.ok(Array.isArray(b.errands.freshness), 'without this the section is still just timestamps')
+    assert.ok(b.errands.freshness.find((f) => f.kind === 'recall'))
+  })
+
+  test('⛔ a kind that has NEVER run still appears — absence is the signal', () => {
+    // The whole reason the registry drives this. An empty store used to render 「未有差事紀錄」
+    // and say nothing about WHAT was never done.
+    const b = buildBriefing({ store: store([]), now: NOW })
+    const f = b.errands.freshness.find((x) => x.kind === 'recall')
+    assert.strictEqual(f.state, 'NEVER_RUN')
+    assert.match(f.line, /從來未/)
+  })
+
+  test('a recent run reads FRESH and still says its age', () => {
+    const b = buildBriefing({ store: store([recallRow(2)]), now: NOW })
+    const f = b.errands.freshness.find((x) => x.kind === 'recall')
+    assert.strictEqual(f.state, 'FRESH')
+    assert.match(f.line, /個鐘/)
+  })
+
+  test('⛔ an overdue UNSCHEDULED run names its cause and does not read as a fault', () => {
+    const b = buildBriefing({ store: store([recallRow(72)]), now: NOW })
+    const f = b.errands.freshness.find((x) => x.kind === 'recall')
+    assert.strictEqual(f.state, 'DUE')
+    assert.match(f.line, /手動|人手/, 'today the cause is that nobody ran it — not that anything broke')
+    assert.doesNotMatch(f.line, /scheduler/i)
+  })
+
+  test('rows belonging to no declared kind keep their timestamp and gain NO freshness claim', () => {
+    const b = buildBriefing({ store: store([{ id: 'e-costco', title: 'Costco', outcome: OUTCOME.BLOCKED_BY_SITE, at: hoursAgo(50) }]), now: NOW })
+    assert.strictEqual(b.errands.freshness.filter((f) => f.kind === 'e-costco').length, 0,
+      'judging it would be inventing a standard it was never given')
+    assert.strictEqual(b.errands.rows.length, 1, 'and it must not be dropped either')
+  })
+
+  test('⛔ freshness is present even when the store is EMPTY — that is when it matters most', () => {
+    const b = buildBriefing({ store: store([]), now: NOW })
+    assert.ok(b.errands.freshness.length > 0,
+      'an empty store is exactly the case where 「nothing ran」 must be distinguishable from 「nothing to report」')
+  })
+
+  test('a store that CANNOT be read makes no freshness claim at all', () => {
+    // ⛔ Unreadable is not 「never run」. Claiming NEVER_RUN here would invent a fact from a
+    // failure to read one — the same class as HR-27.
+    const b = buildBriefing({ store: store([], 'UNREADABLE'), now: NOW })
+    assert.strictEqual(b.errands.state, 'CANNOT_READ')
+    assert.deepStrictEqual(b.errands.freshness, [])
+  })
+
+  test('a NOT_WIRED store makes no freshness claim either', () => {
+    const b = buildBriefing({ now: NOW })
+    assert.strictEqual(b.errands.state, 'NOT_WIRED')
+    assert.deepStrictEqual(b.errands.freshness, [])
+  })
+})

@@ -698,3 +698,31 @@ button[disabled] { opacity: .45; cursor: default; }
 /* A wiring defect must not look like an operational state. DEFECT-011: 「我未睇過 Drive」
    arrived as a calm, grammatical, timestamped sentence produced by a wire nobody connected. */
 .brief-defect .brief-text { color: var(--stop, #b0564b); }
+
+/* ── how fresh a row is ALLOWED to be ────────────────────────────────────────
+   「時間戳唔係新鮮度」. One line per DECLARED kind, so a thing that never ran once — which
+   produces no row at all — is still visible.
+
+   ⛔ DELIBERATELY QUIET, AND THAT IS THE DESIGN, NOT AN OVERSIGHT.
+   She has no scheduler, so every kind is DUE most of the time: the normal state of a thing he
+   runs by hand. Red would train him to skip the line within a week — and he would skip it too
+   on the day it stopped being normal. DUE is a fact, not a fault. */
+.brief-fresh-list { margin: 0.15em 0 0.5em; }
+.brief-fresh {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6em;
+  padding: 0.12em 0;
+  line-height: 1.5;
+  color: var(--faint);
+}
+.fresh-mark { flex: 0 0 0.8em; text-align: center; opacity: 0.6; }
+.fresh-line { flex: 1 1 auto; }
+/* FRESH recedes; DUE is plainly readable but not louder; NEVER_RUN is the only one that has
+   never been true before, so it gets the ink — an absence he has not yet been told about. */
+.fresh-fresh .fresh-line { opacity: 0.75; }
+.fresh-due .fresh-line { color: var(--muted); }
+.fresh-never_run .fresh-line { color: var(--ink); }
+.fresh-never_run .fresh-mark { opacity: 0.9; }
+/* Unjudgeable is a DEFECT — a row exists but carries no time. It must not read as a state. */
+.fresh-unjudgeable .fresh-line { color: var(--stop, #b0564b); }

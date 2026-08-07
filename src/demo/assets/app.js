@@ -321,6 +321,32 @@
       host.appendChild(list)
     }
 
+    // ── ②b how fresh that is ALLOWED to be ──
+    //
+    // ⛔ RENDERED FOR EVERY DECLARED KIND, INCLUDING ON THE EMPTY PATH — which is exactly when
+    // it carries the most: 「未有差事紀錄」 says nothing about WHAT was never done, and a kind
+    // that has never run once produces no row to hang a timestamp on.
+    //
+    // ⛔ AND IT IS NOT AN ALARM. With no scheduler every kind is DUE most of the time — the
+    // normal state of a thing he runs by hand. Styled red, he would learn to skip the line
+    // within a week, and skip it too on the day it meant something.
+    if (e.freshness && e.freshness.length) {
+      var fl = el('div', 'brief-fresh-list')
+      for (var j = 0; j < e.freshness.length; j++) {
+        var f = e.freshness[j]
+        var cls = 'brief-fresh fresh-' + String(f.state || '').toLowerCase()
+        var fr = el('div', cls)
+        var mark = el('span', 'fresh-mark')
+        mark.textContent = f.state === 'FRESH' ? '·' : (f.state === 'NEVER_RUN' ? '○' : '–')
+        fr.appendChild(mark)
+        var txt = el('span', 'fresh-line')
+        txt.textContent = f.line
+        fr.appendChild(txt)
+        fl.appendChild(fr)
+      }
+      host.appendChild(fl)
+    }
+
     // ── ③ the Drive line, LAST: standing state, four lines tall, changes once a day ──
     if (b.backlog) {
       host.appendChild(row('brief-backlog', b.backlog.line, b.backlog.checkedAtLabel))

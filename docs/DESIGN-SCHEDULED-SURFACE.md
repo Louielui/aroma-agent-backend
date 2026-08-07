@@ -46,6 +46,39 @@ schedule that runs at 07:00 and writes a row he does not look at has changed not
 > There is none today — no email out, no notification, no push. So scheduled-at-07:00 and
 > computed-when-you-open are **equivalent in effect**, and the second is already built.
 
+> ## ⚠ 2026-08-07 — THE MEASUREMENT THAT BOUNDS THE PARAGRAPH ABOVE
+>
+> **The equivalence holds for a sub-second list call. It does not survive a browser errand.**
+>
+> Measured, not estimated: **ERRAND-003 costs 6.8s for one ingredient**, and roughly **5–7s per
+> additional one** sharing the browser. For the eight or so ingredients the Owner actually
+> stocks that is **40–55 seconds**. 首頁 cannot compute that on open — nobody accepts a home
+> screen that paints in fifty seconds.
+>
+> **So the recall check has exactly two possible modes: run by hand, or run on a trigger. There
+> is no third**, where the Drive check has always had one.
+>
+> The reasoning above is **still correct and no longer applicable**. It was never a rule about
+> schedules; it was a rule about tasks *cheap enough to compute on demand*, and it never said
+> so because at the time no other kind existed. **The Drive check made the cheap case look like
+> the general case.**
+>
+> ### Corrected form of §1's test
+>
+> | | verdict |
+> |---|---|
+> | cheap enough to compute on open (Drive: one list, sub-second) | on-open wins; a schedule buys only a series |
+> | **too expensive to compute on open (recall: 40–55s of browser)** | **on-open is not available at all — the schedule is the only mode** |
+>
+> **The Owner's original 「唔好住起」 was right on the evidence available.** What changed is not
+> the argument; it is that a task appeared on the other side of a distinction the argument had
+> never needed to draw.
+>
+> ⛔ **And a schedule still does not make the briefing TRUE** — only fresher. See
+> `src/home/errandKinds.js`: a timestamp is a fact about the past, and freshness is a claim
+> about the present. Built 2026-08-07, **before** the scheduler, deliberately: without it a
+> scheduler that silently stopped renders identically to one working perfectly.
+
 What a schedule *would* add, and it is not nothing: **a series**. A daily row makes 「64 files,
 53 days」 into a trend that can be shown to be getting worse. That is a byproduct, not a
 justification.

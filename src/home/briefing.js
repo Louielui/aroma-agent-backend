@@ -17,6 +17,7 @@
  */
 
 const { OUTCOME } = require('./errandStore')
+const { freshnessReport } = require('./errandKinds')
 const { localParts } = require('../utils/localTime')
 
 /**
@@ -105,7 +106,10 @@ function buildBriefing ({ store, backlog, now }) {
   let errands
   let waiting
   if (!store || typeof store.list !== 'function') {
-    errands = { state: 'NOT_WIRED', rows: [], line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
+    // ⛔ NO FRESHNESS CLAIM WITHOUT A READ. `NEVER_RUN` would be inventing a fact out of a
+    // failure to establish one — the registry says the errand SHOULD have run, but only the
+    // store can say whether it did. Same for CANNOT_READ below. HR-27's family.
+    errands = { state: 'NOT_WIRED', rows: [], freshness: [], line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
     waiting = { state: 'NOT_WIRED', cards: [], line: '差事紀錄未接線,所以我答唔到有冇嘢等你。呢個係一個缺陷。' }
   } else {
     let rows = null
@@ -113,15 +117,22 @@ function buildBriefing ({ store, backlog, now }) {
     try { rows = store.list() } catch (_) { unreadable = true }
 
     if (unreadable) {
-      errands = stamped({ state: 'CANNOT_READ', rows: [], line: '我睇唔到差事紀錄。' }, t)
+      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], line: '我睇唔到差事紀錄。' }, t)
       // ⛔ An unreadable record is NOT 「nothing waiting」 — it is 「I cannot tell you」, and
       // the difference could cost him a cart he was waiting to pay for.
       waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t)
     } else {
       // The store WAS read, at t. That is why these carry a time — from the read, not by default.
+      //
+      // ⛔ FRESHNESS IS BUILT FROM THE REGISTRY, NOT FROM `rows`.
+      // A section built by walking the rows can only ever report things that HAPPENED, so an
+      // errand that never ran once renders as nothing — and nothing reads as calm. Walking the
+      // declared kinds is what makes 「從來未查過」 sayable, and it is why this line is computed
+      // even when `rows` is empty.
+      const freshness = freshnessReport(rows, t)
       errands = stamped(rows.length
-        ? { state: 'HAS_ROWS', rows: rows.map((r) => ({ ...r, atLabel: hhmm(r.at) })), line: '' }
-        : { state: 'NONE_RAN', rows: [], line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
+        ? { state: 'HAS_ROWS', rows: rows.map((r) => ({ ...r, atLabel: hhmm(r.at) })), freshness, line: '' }
+        : { state: 'NONE_RAN', rows: [], freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
 
       const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
       waiting = stamped(w.length

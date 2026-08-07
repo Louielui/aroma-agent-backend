@@ -160,3 +160,43 @@ test('⛔ the bar is the briefing\'s STAND-IN — it does not render while the b
   assert.match(APP_JS, /renderWaitingBar\(\s*briefingVisible\s*\)|renderWaitingBar\(!/,
     'selectConversation must tell it whether the briefing is on screen')
 })
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * > **Owner: 「時間戳唔係新鮮度。A row that knows how stale it is allowed to be is honest with
+ * > or without a scheduler; a row that only knows when it ran is not.」**
+ *
+ * The server now sends `errands.freshness` — one entry per DECLARED KIND, not per row, so a
+ * thing that never ran can still be reported. A freshness line nobody renders is the fourth
+ * component this month that passed its tests and was wired to nothing.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+test('⛔ the freshness lines are RENDERED — not merely delivered', () => {
+  assert.match(APP_JS, /freshness/,
+    'the server computes it; if the client never reads it, the briefing is still just timestamps')
+  assert.match(APP_JS, /brief-fresh/)
+  assert.match(APP_CSS, /\.brief-fresh/)
+})
+
+test('⛔ freshness renders on the EMPTY store path too — that is when it matters most', () => {
+  // 「未有差事紀錄」 says nothing about WHAT was never done. The NEVER_RUN line does.
+  // Guarded structurally: the empty branch must not return before the freshness block.
+  const i = APP_JS.indexOf('function renderBriefing')
+  const body = APP_JS.slice(i, APP_JS.indexOf('/** The stop report', i))
+  const iEmpty = body.indexOf('未有差事紀錄')
+  const iFresh = body.indexOf('freshness')
+  assert.ok(iEmpty > 0 && iFresh > 0, 'both branches must exist')
+  assert.doesNotMatch(body.slice(iEmpty, iEmpty + 300), /\breturn\b/,
+    'the empty-errands branch must not return before freshness is rendered')
+})
+
+test('DUE and NEVER_RUN are visually distinct from FRESH, but none of them is an alarm', () => {
+  for (const s of ['DUE', 'NEVER_RUN']) {
+    assert.match(APP_JS, new RegExp(s), s + ' must be branched on, not lumped in with FRESH')
+  }
+  // ⛔ With no scheduler every kind is DUE most of the time — that is the NORMAL state of a
+  // thing he runs by hand. Red would train him to ignore the line within a week.
+  const block = APP_CSS.slice(APP_CSS.indexOf('.brief-fresh'))
+  const head = block.slice(0, 900)
+  assert.doesNotMatch(head, /#(f00|ff0000|e74c3c|d32f2f)/i, 'DUE is a fact, not a fault')
+})

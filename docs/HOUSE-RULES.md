@@ -1505,3 +1505,54 @@ precisely the assumption the defect was made of.
 **This is HR-6's family** (assert the VALUE, not that the key was mentioned) **arriving at the
 level of composition:** it is not enough for each component to be right — the sentence the
 composition produces is itself a claim, and nobody had read it.
+
+---
+
+# HR-31 — When told to delete a guarantee, look for the version that KEEPS it
+
+**Round:** the errand runner, 2026-08-07.
+
+> **Owner: 「delete the assertion, not the folder.」**
+> **Owner, after: 「Your fix is better than what I asked for and I want the reason recorded…
+> next time I may be wrong in the same direction.」**
+
+Three tests asserted `C:\Aroma\ComputerOperator-Test` does **not exist**, meaning **「this code
+created nothing」**. Absence was a PROXY for the claim. An Owner-approved canary then created
+the folder, the proxy went false, and the claim never did.
+
+The Owner ruled out the destructive fix immediately and correctly — **deleting live evidence so
+a test goes green is not a fix.** His remaining instruction was to delete the assertion.
+
+## Why deleting it would have cost something real
+
+| | |
+|---|---|
+| delete the folder | ⛔ destroys the evidence the test protects |
+| delete the assertion | tests pass, and **the guarantee is gone** — nothing then checks that Phase 1 / 3a create nothing |
+| **snapshot and compare** | ✅ tests the claim itself, **and is strictly stronger than the original** |
+
+> ## 「唔存在」 can never catch WRITING INTO a folder that already exists.
+> The original assertion had a blind spot from the day it was written, and the blind spot only
+> became reachable once the folder existed. Snapshot-and-compare closes it.
+
+So the stale assertion was not merely stale — **it was the weaker of two available checks the
+whole time**, and the canary is what made the difference observable.
+
+## THE RULE
+
+> ### An instruction to remove a check is an instruction to solve the problem the check has become. It is not always an instruction to lose the check.
+> Before deleting, ask: **is there a formulation that asserts the CLAIM instead of the PROXY?**
+> If yes, that version usually also covers a case the original never did — because the proxy was
+> chosen for convenience, and convenience is where blind spots live.
+
+**And the direction matters.** The Owner was right about the destructive half (do not touch the
+folder) and under-reaching on the constructive half. **That is the safe direction to be wrong
+in** — and it is why the constructive half is worth checking rather than executing. He asked
+for this to be recorded precisely because he expects to be wrong in the same direction again.
+
+**Structural, not remembered:** `rootUntouched.helper.js` is the only place the comparison
+lives, so the next inertness test inherits the stronger form by default rather than by
+recalling this entry.
+
+**Seen to fail before trusted:** `absent` / `dir:0` / `dir:1[a.txt]` all distinguished. A probe
+that has never failed is not evidence.
