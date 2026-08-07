@@ -45,7 +45,13 @@ const ALIASES = Object.freeze({
   minRunIntervalMs: ['最少隔幾耐', '幾耐先再行'],
   recallEveryMs: ['幾耐查一次', '幾耐查'],
   recallGraceMs: ['幾耐算過期', '過期'],
-  recallDailyHour: ['幾點查', '每朝幾點']
+  recallDailyHour: ['幾點查', '每朝幾點'],
+  /**
+   * ⛔ MATCHING TOKENS, NOT INTERFACE TEXT. These are compared against what HE TYPES, so they
+   * are never translated — see governance/textClasses.js, class MATCHING. Translating this
+   * list would delete the entrance with no code removed and nothing reported.
+   */
+  language: ['介面語言', '介面用邊種', '介面用乜', '介面用什麼', '用邊種語言', '介面語']
 })
 
 /**
@@ -94,6 +100,23 @@ function valueIn (message, e) {
     if (!nums || nums.length !== 1) return null // two numbers is ambiguous; none is incomplete
     return Number(nums[0])
   }
+  if (e.type === 'enum') {
+    /**
+     * ⛔ THE VALUE IS NAMED IN WORDS, SO THE WORDS ARE MATCHING TOKENS TOO.
+     *
+     * Both spellings of each, always, and both scripts — he writes 英文 and he writes 'en'.
+     * The same discipline as intake/scopeNotes.js: adding a form is additive and nothing is
+     * ever SWAPPED, because a sentence he has already typed must keep working.
+     *
+     * ⛔ EXACTLY ONE MATCH OR NOTHING. If a sentence names two locales the entrance fires
+     * nothing rather than picking one — picking one is the hand-written classifier this whole
+     * mechanism exists to avoid (M-5).
+     */
+    const FORMS = { zh: ['中文', '繁體', '廣東話', 'zh'], en: ['英文', 'English', 'english', 'en'] }
+    const named = e.oneOf.filter((loc) => (FORMS[loc] || [loc]).some((w) => message.includes(w)))
+    return named.length === 1 ? named[0] : null
+  }
+
   if (e.type === 'string[]') {
     // A list is only unambiguous when he writes it as one, after a colon or 「改成」.
     const m = message.match(/(?:改成|設成|:|：)\s*(.+)$/)

@@ -101,3 +101,52 @@ describe('nothing is written by making an offer', () => {
     assert.doesNotMatch(src, /settingsValues/, 'an offer that can write is not an offer')
   })
 })
+
+/**
+ * ⛔ ENTRY 8 — THE LANGUAGE, WHICH IS THE FIRST ENUM THE ENTRANCE HAS EVER SEEN.
+ *
+ * Before this, `valueIn` handled `int` and `string[]`. A language setting he cannot reach from
+ * conversation would be a setting only I can change, which is the thing the entrance was built
+ * to stop — 「a registry she cannot reach from conversation is a registry I have to ask you to
+ * edit」.
+ */
+describe('⛔ the language can be changed by saying so', () => {
+  const cur = (id) => ({ language: 'zh' })[id]
+
+  test('he names the setting and the language, in his own words', () => {
+    for (const m of ['介面語言改做英文', '介面用邊種語言 改成 en', '介面語言 改成 English']) {
+      const r = explainSettingsOffer({ message: m, currentValue: cur })
+      assert.ok(r.offer, m + ' produced nothing: ' + r.reason)
+      assert.strictEqual(r.offer.id, 'language')
+      assert.strictEqual(r.offer.to, 'en')
+    }
+  })
+
+  test('⛔ BOTH SPELLINGS, ALWAYS — 英文 and en, 中文 and zh', () => {
+    // Same discipline as intake/scopeNotes.js: forms are ADDED, never swapped, because a
+    // sentence he has already typed must keep working.
+    assert.strictEqual(explainSettingsOffer({ message: '介面語言改做中文', currentValue: cur }).offer.to, 'zh')
+    assert.strictEqual(explainSettingsOffer({ message: '介面語言改成 zh', currentValue: cur }).offer.to, 'zh')
+  })
+
+  test('⛔ SEEN TO FAIL — two locales in one sentence fires NOTHING', () => {
+    // M-5: picking one would be the hand-written classifier this entrance exists to avoid.
+    const r = explainSettingsOffer({ message: '介面語言改做英文定中文', currentValue: cur })
+    assert.strictEqual(r.offer, null)
+    assert.strictEqual(r.reason, 'no_value_named')
+  })
+
+  test('⛔ an unsupported language is refused with the list, not offered', () => {
+    // The offer is validated before he is shown a button, so no button can exist that fails.
+    const { validate } = require('../governance/settingsRegistry')
+    const v = validate('language', 'fr')
+    assert.strictEqual(v.ok, false)
+    assert.match(v.saying, /zh/)
+  })
+
+  test('the offer carries RELOAD_PAGE, so the screen says what is needed', () => {
+    const r = explainSettingsOffer({ message: '介面語言改做英文', currentValue: cur })
+    assert.strictEqual(r.offer.appliesOn, 'RELOAD_PAGE')
+    assert.ok(r.offer.howToApply, 'and how to apply it — a change that looks applied and is not would be the calmest lie')
+  })
+})
