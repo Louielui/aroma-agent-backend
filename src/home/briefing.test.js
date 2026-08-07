@@ -6,6 +6,13 @@ const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const { buildBriefing, AGE } = require('./briefing')
 const { OUTCOME } = require('./errandStore')
+/**
+ * ⛔ ASSERTING ON THE KEY, NOT ON THE WORDING — but only where the test was guarding WHICH
+ * statement gets made. Where it was guarding a specific phrase, the phrase assertion stays and
+ * says so at the line. A test converted to assert-key when it was actually guarding a phrase is
+ * a guard quietly removed.
+ */
+const { t } = require('../i18n/t')
 
 const NOW = new Date('2026-08-07T15:00:00Z').getTime()
 const hoursAgo = (h) => NOW - h * 3600 * 1000
@@ -37,14 +44,21 @@ describe('⛔ NEVER BLANK, and the two emptinesses never collapse', () => {
     const b = buildBriefing({ store: store([]), backlog: null, now: NOW })
     assert.strictEqual(b.waiting.state, 'NOTHING_WAITING')
     assert.ok(b.waiting.checkedAt, 'a claim without a time is not a claim')
-    assert.match(b.waiting.line, /冇嘢等你/)
+    // CONVERTED: this guarded WHICH statement is made, not how it is worded.
+    assert.strictEqual(b.waiting.line, t('briefing.nothingWaiting'))
   })
 
   test('⛔ an unreadable record is NOT 「nothing waiting」', () => {
     const b = buildBriefing({ store: store([], 'UNREADABLE'), backlog: null, now: NOW })
     assert.strictEqual(b.waiting.state, 'CANNOT_READ')
-    assert.match(b.waiting.line, /睇唔到差事紀錄/)
-    assert.doesNotMatch(b.waiting.line, /冇嘢等你/)
+    // CONVERTED: which statement.
+    assert.strictEqual(b.waiting.line, t('briefing.waitingCannotRead'))
+    // ⛔ KEPT AS WORDING, DELIBERATELY. This one does not guard which key was chosen — it
+    // guards that the PHRASE never appears here at all. `notStrictEqual(line, nothingWaiting)`
+    // would be weaker: it passes for any sentence that merely CONTAINS 「沒有等你決定」, which
+    // is precisely the collapse this test exists to prevent. It costs a re-edit whenever the
+    // wording changes, and that cost is the point.
+    assert.doesNotMatch(b.waiting.line, /沒有等你決定|冇嘢等你/)
   })
 
   test('the errand list distinguishes 「none ran」 from 「cannot read」', () => {
@@ -107,14 +121,16 @@ describe('amounts age out — 過期嘅係主張，唔係 access', () => {
     assert.strictEqual(c.amountAge, AGE.STALE)
     assert.strictEqual(c.amountStruck, true)
     assert.strictEqual(c.amount, '$284.61', 'still shown, but marked')
-    assert.match(c.amountNote, /可能唔同咗/)
+    // CONVERTED: it guarded that the stale NOTE is present, not its phrasing.
+    assert.strictEqual(c.amountNote, t('briefing.amountStale', { hours: 5 }))
   })
 
   test('⛔ over 24 hours: the amount is GONE, not struck', () => {
     const c = buildBriefing({ store: store([stopAt(30, '$284.61')]), now: NOW }).waiting.cards[0]
     assert.strictEqual(c.amountAge, AGE.EXPIRED)
     assert.strictEqual(c.amount, null, 'a number we can no longer support is removed, not decorated')
-    assert.match(c.amountNote, /重新/)
+    // CONVERTED: which statement — and the slot pins the age, which the regex never did.
+    assert.strictEqual(c.amountNote, t('briefing.amountExpired', { hours: 30 }))
   })
 
   test('⛔ THE LINK STAYS OPEN AT EVERY AGE', () => {
@@ -136,7 +152,8 @@ describe('the Franco backlog is its own row, off the greeting', () => {
   test('when Drive did not answer it says so — silence is not 「nothing waiting」', () => {
     const b = buildBriefing({ store: store([]), backlog: { error: 'timeout' }, now: NOW })
     assert.strictEqual(b.backlog.state, 'CANNOT_READ')
-    assert.match(b.backlog.line, /睇唔到/)
+    // CONVERTED: which statement, and the slot proves the reason reaches the sentence.
+    assert.strictEqual(b.backlog.line, t('briefing.driveCannotRead', { error: 'timeout' }))
   })
 
   test('genuinely nothing waiting in Drive is its own state', () => {
@@ -168,7 +185,8 @@ describe('⛔ a section that did not read carries NO TIME AT ALL', () => {
     assert.strictEqual(b.errands.state, 'NOT_WIRED')
     assert.strictEqual(b.waiting.state, 'NOT_WIRED')
     assert.strictEqual(b.errands.checkedAt, undefined)
-    assert.match(b.errands.line, /未接線|接唔到/, 'it must name itself a defect, not a condition')
+    // CONVERTED: which statement. The key is the one that names itself a defect, not a condition.
+    assert.strictEqual(b.errands.line, t('briefing.errandsNotWired'))
   })
 
   test('⛔ a MISSING store must NOT read as 「I cannot read the record」', () => {

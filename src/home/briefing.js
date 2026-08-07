@@ -20,6 +20,7 @@ const { OUTCOME } = require('./errandStore')
 const { freshnessReport, KINDS } = require('./errandKinds')
 const { conclusionFor } = require('./errandConclusion')
 const { localParts } = require('../utils/localTime')
+const { t } = require('../i18n/t')
 
 /**
  * ⛔ THE CLOCK IS THE OWNER'S, AND IT IS RESOLVED HERE.
@@ -113,8 +114,8 @@ function cardFor (e, now) {
     amountNote: age === AGE.FRESH
       ? ''
       : age === AGE.STALE
-        ? '呢個價我 ' + hours + ' 個鐘之前讀,可能唔同咗。'
-        : '太耐(' + hours + ' 個鐘)。個價同存貨都要重新睇 —— 建議我重新行一次,唔好接住做。',
+        ? t('briefing.amountStale', { hours })
+        : t('briefing.amountExpired', { hours }),
     // ⛔ At EVERY age. What expires is the CLAIM, not the ACCESS.
     openHref: '/api/v1/home/errand/' + encodeURIComponent(e.id) + '/open'
   }
@@ -124,7 +125,7 @@ function cardFor (e, now) {
  * @param {{store:object, backlog?:object, now?:number}} args
  */
 function buildBriefing ({ store, backlog, witness, now }) {
-  const t = Number(now) || Date.now()
+  const nowMs = Number(now) || Date.now()
 
   // ── errands + waiting ──────────────────────────────────────────────────────
   // ⛔ A MISSING STORE IS A DEFECT, NOT A CONDITION. Before this, `store.list()` threw a
@@ -138,61 +139,61 @@ function buildBriefing ({ store, backlog, witness, now }) {
     // ⛔ NO FRESHNESS CLAIM WITHOUT A READ. `NEVER_RUN` would be inventing a fact out of a
     // failure to establish one — the registry says the errand SHOULD have run, but only the
     // store can say whether it did. Same for CANNOT_READ below. HR-27's family.
-    errands = { state: 'NOT_WIRED', rows: [], freshness: [], conclusions: [], rows: [], hiddenRows: 0, totalRows: 0, line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
-    waiting = { state: 'NOT_WIRED', cards: [], line: '差事紀錄未接線,所以我答唔到有冇嘢等你。呢個係一個缺陷。' }
+    errands = { state: 'NOT_WIRED', rows: [], freshness: [], conclusions: [], rows: [], hiddenRows: 0, totalRows: 0, line: t('briefing.errandsNotWired') }
+    waiting = { state: 'NOT_WIRED', cards: [], line: t('briefing.waitingNotWired') }
   } else {
     let rows = null
     let unreadable = false
     try { rows = store.list() } catch (_) { unreadable = true }
 
     if (unreadable) {
-      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], conclusions: [], hiddenRows: 0, totalRows: 0, line: '我睇唔到差事紀錄。' }, t, { now: t })
+      errands = stamped({ state: 'CANNOT_READ', rows: [], freshness: [], conclusions: [], hiddenRows: 0, totalRows: 0, line: t('briefing.errandsCannotRead') }, nowMs, { now: nowMs })
       // ⛔ An unreadable record is NOT 「nothing waiting」 — it is 「I cannot tell you」, and
       // the difference could cost him a cart he was waiting to pay for.
-      waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t, { now: t })
+      waiting = stamped({ state: 'CANNOT_READ', cards: [], line: t('briefing.waitingCannotRead') }, nowMs, { now: nowMs })
     } else {
-      // The store WAS read, at t. That is why these carry a time — from the read, not by default.
+      // The store WAS read, at nowMs. That is why these carry a time — from the read, not by default.
       //
       // ⛔ FRESHNESS IS BUILT FROM THE REGISTRY, NOT FROM `rows`.
       // A section built by walking the rows can only ever report things that HAPPENED, so an
       // errand that never ran once renders as nothing — and nothing reads as calm. Walking the
       // declared kinds is what makes 「從來未查過」 sayable, and it is why this line is computed
       // even when `rows` is empty.
-      const freshness = freshnessReport(rows, t, witness)
+      const freshness = freshnessReport(rows, nowMs, witness)
       // ⛔ THE CONCLUSION, NOT THE LOG. Forty-four rows pushed the composer off the screen —
       // the briefing ate the thing it sits above. A row is one execution of one query; what he
       // acts on is what the kind FOUND. Registry-driven, like freshness.
-      const conclusions = KINDS.map((k) => conclusionFor(k, rows, t))
+      const conclusions = KINDS.map((k) => conclusionFor(k, rows, nowMs))
       // ⛔ CAPPED, AND THE HIDDEN COUNT IS STATED. The history stays reachable through the API;
       // it is no longer DISPLAYED. Never-blank applies to what is cut, not only to what is empty.
       const shownRows = rows.slice(0, MAX_ROWS_SHOWN).map((r) => ({ ...r, atLabel: hhmm(r.at) }))
       const hiddenRows = Math.max(0, rows.length - shownRows.length)
       errands = stamped(rows.length
         ? { state: 'HAS_ROWS', rows: shownRows, hiddenRows, totalRows: rows.length, conclusions, freshness, line: '' }
-        : { state: 'NONE_RAN', rows: [], hiddenRows: 0, totalRows: 0, conclusions, freshness, line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t, { now: t })
+        : { state: 'NONE_RAN', rows: [], hiddenRows: 0, totalRows: 0, conclusions, freshness, line: t('briefing.noneRan') }, nowMs, { now: nowMs })
 
       const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
       waiting = stamped(w.length
-        ? { state: 'WAITING', cards: w.map((e) => cardFor(e, t)), line: '' }
-        : { state: 'NOTHING_WAITING', cards: [], line: '冇嘢等你決定。' }, t, { now: t })
+        ? { state: 'WAITING', cards: w.map((e) => cardFor(e, nowMs)), line: '' }
+        : { state: 'NOTHING_WAITING', cards: [], line: t('briefing.nothingWaiting') }, nowMs, { now: nowMs })
     }
   }
 
   // ── the Drive line, its own row, and its time comes FROM THE READ ──────────
   let back
   if (backlog === undefined) {
-    back = { state: 'NOT_WIRED', line: 'Drive 未接線 —— 我根本冇去睇。呢個係一個缺陷,唔係一個狀態。' }
+    back = { state: 'NOT_WIRED', line: t('briefing.driveNotWired') }
   } else if (backlog === null) {
-    back = { state: 'NOT_CHECKED', line: '我未睇過 Drive。' }
+    back = { state: 'NOT_CHECKED', line: t('briefing.driveNotChecked') }
   } else if (backlog.error) {
-    back = stamped({ state: 'CANNOT_READ', line: '我睇唔到 Drive 個資料夾(' + backlog.error + ')。' }, backlog.checkedAt)
+    back = stamped({ state: 'CANNOT_READ', line: t('briefing.driveCannotRead', { error: backlog.error }) }, backlog.checkedAt)
   } else if (backlog.empty) {
-    back = stamped({ state: 'NOTHING', line: 'Drive 度冇等緊處理嘅發票。' }, backlog.checkedAt)
+    back = stamped({ state: 'NOTHING', line: t('briefing.driveEmpty') }, backlog.checkedAt)
   } else {
     back = stamped({ state: 'PRESENT', line: backlog.line }, backlog.checkedAt)
   }
 
-  return { errands, waiting, backlog: back, builtAt: t, builtAtLabel: hhmm(t) }
+  return { errands, waiting, backlog: back, builtAt: nowMs, builtAtLabel: hhmm(nowMs) }
 }
 
 module.exports = { buildBriefing, AGE }

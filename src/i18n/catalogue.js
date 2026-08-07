@@ -61,28 +61,144 @@ const CATALOGUE = Object.freeze({
     en: '"{ingredient}" ({narrowing}): no matching recalls.'
   },
 
-  // ── a gap must never read as calm, in either language ──
+  // ══════════════════════════════════════════════════════════════════════════
+  // 首頁 CONCLUSIONS — the four fields, none of which may absorb another.
+  // ⛔ A GAP MUST NEVER READ AS CALM, IN EITHER LANGUAGE. That rule is structural in
+  // `errandConclusion.js` (four separate fields); here it is a rule about WORDING — the English
+  // must not be gentler than the Chinese, because a softer translation is how a fence gets
+  // talked around without anyone editing the fence.
+  // ══════════════════════════════════════════════════════════════════════════
+  /**
+   * ⛔ PUNCTUATION IS INTERFACE TOO, AND THE MEASUREMENT MISSED IT.
+   *
+   * The survey that produced 「721 lines carry interface Chinese」 looked for Han ideographs
+   * (U+4E00–U+9FFF). 「、」 and 「；」 are CJK PUNCTUATION, outside that range, so every list
+   * joined with them was invisible to the count. Left alone, the English would have rendered
+   *
+   *     green onion、romaine could not be checked
+   *
+   * — English words held together by Chinese punctuation, in a sentence that otherwise looks
+   * finished. Separators are interface and get keys like anything else.
+   */
+  'punct.listSep': {
+    zh: '、',
+    en: ', '
+  },
+  'punct.clauseSep': {
+    zh: '；',
+    en: '; '
+  },
+  'conclusion.alert': {
+    zh: '⚠ {findings}',
+    en: '⚠ {findings}'
+  },
+  'conclusion.alertOne': {
+    zh: '{ingredient} 有新回收：{items}',
+    en: '{ingredient} — new recall: {items}'
+  },
+  /**
+   * ⛔ ENGLISH TEMPLATES MUST NOT REQUIRE NUMBER AGREEMENT WITH A SLOT.
+   *
+   * The first English here read 「so {n} of them were never searched」, which is wrong at n=1 and
+   * right at n=2. Chinese has no number agreement, so a template that is correct in Chinese for
+   * every value can be ungrammatical in English for half of them — and it renders, so nothing
+   * fails. Write the English so the count sits in apposition and no verb has to agree with it.
+   *
+   * ⛔ THIS IS NOT TESTED, AND SAYING SO IS THE HONEST PART. A regex for 「{n} … were」 would
+   * give the appearance of a guard while missing every other agreement it does not know about.
+   * It is a writing rule, checked by reading, and it is written here where it will be read.
+   */
   'conclusion.gap': {
     zh: '⛔ {ingredients} 查不到，所以這 {n} 樣今天沒有查過 —— 這不等於沒有事。',
-    en: '⛔ {ingredients} could not be checked, so these {n} were not searched today — that is not the same as nothing found.'
+    en: '⛔ Could not check {ingredients} — {n} not searched today, which is not the same as nothing found.'
   },
   'conclusion.calm': {
     zh: '{n} 樣查過，沒有新的回收。',
-    en: '{n} checked, no new recalls.'
+    en: '{n} checked, nothing new.'
   },
   'conclusion.cannotCompare': {
-    zh: '{ingredients} 沒有可比對的紀錄，所以說不出有沒有新的。',
-    en: '{ingredients} have nothing to compare against, so 「new」 cannot be answered.'
+    zh: '{ingredients} 沒有得比（{why}），所以說不出有沒有新的。',
+    en: 'Nothing to compare {ingredients} against ({why}), so I cannot say whether anything is new.'
+  },
+  'conclusion.whyNoItemsRecorded': {
+    zh: '這次沒有記下找到什麼',
+    en: 'this run did not record what it found'
+  },
+  'conclusion.whyNoPriorRun': {
+    zh: '之前沒有紀錄可比',
+    en: 'no earlier run to compare with'
   },
 
-  // ── a defect must not read as a state, in either language ──
-  'briefing.cannotRead': {
+  // ══════════════════════════════════════════════════════════════════════════
+  // 首頁 BRIEFING.
+  // ⛔ A DEFECT MUST NOT READ AS A STATE. 「未接線」 is a wiring failure, 「沒有」 is a finding,
+  // and they are one careless English sentence apart.
+  // ══════════════════════════════════════════════════════════════════════════
+  'briefing.nothingWaiting': {
+    zh: '沒有等你決定的事。',
+    // ⛔ NOT 「Nothing awaits your decision」. Written as he would say it.
+    en: 'Nothing needs you.'
+  },
+  'briefing.errandsCannotRead': {
     zh: '我看不到差事紀錄。',
     en: 'I cannot read the errand record.'
   },
-  'briefing.notWired': {
-    zh: '差事紀錄沒有接線 —— 這是一個缺陷，不是一個狀態。',
-    en: 'The errand record is not wired — this is a defect, not a state.'
+  'briefing.waitingCannotRead': {
+    zh: '我看不到差事紀錄，所以答不到你有沒有事等著。',
+    en: 'I cannot read the errand record, so I cannot tell you whether anything is waiting.'
+  },
+  'briefing.errandsNotWired': {
+    zh: '差事紀錄未接線 —— 這是一個缺陷，不是一個狀態。',
+    en: 'The errand record is not wired — that is a defect, not a state.'
+  },
+  'briefing.waitingNotWired': {
+    zh: '差事紀錄未接線，所以我答不到有沒有事等你。這是一個缺陷。',
+    en: 'The errand record is not wired, so I cannot tell you whether anything is waiting. That is a defect.'
+  },
+  'briefing.noneRan': {
+    zh: '未有差事紀錄 —— 到今天為止每一單都是手動跑的，沒有記下。',
+    en: 'No errands on record — every one so far has been run by hand and nothing was written down.'
+  },
+  'briefing.driveNotWired': {
+    zh: 'Drive 未接線 —— 我根本沒有去看。這是一個缺陷，不是一個狀態。',
+    en: 'Drive is not wired — I never went and looked. That is a defect, not a state.'
+  },
+  'briefing.driveNotChecked': {
+    zh: '我還沒有看過 Drive。',
+    en: 'I have not looked at Drive yet.'
+  },
+  'briefing.driveCannotRead': {
+    zh: '我看不到 Drive 那個資料夾（{error}）。',
+    en: 'I cannot read that Drive folder ({error}).'
+  },
+  'briefing.driveEmpty': {
+    zh: 'Drive 裡沒有等著處理的發票。',
+    en: 'No invoices waiting in Drive.'
+  },
+
+  /**
+   * ⛔ FLAGGED — THIS ONE DID NOT SURVIVE BEING WRITTEN NATIVELY IN ENGLISH.
+   *
+   * 「呢個價我 N 個鐘之前讀，可能唔同咗。」 and 「太耐（N 個鐘）。個價同存貨都要重新睇 ——
+   * 建議我重新行一次，唔好接住做。」 are one concept in Cantonese: the number is stale AND
+   * here is what to do about it. Written natively in English they split in two, because English
+   * will not carry the recommendation inside the same breath without sounding like an apology.
+   *
+   * That is the tell the Owner asked to be told about: the Chinese was doing something
+   * STRUCTURAL — the age and the instruction are one field, `amountNote`, precisely so a stale
+   * price can never appear without the instruction attached. Two sentences in English is fine;
+   * two FIELDS would not be, because the second could be dropped at a call site.
+   *
+   * Kept as one key with two sentences in the English. Recorded here rather than silently
+   * resolved, because the next person to tidy this will want to split it.
+   */
+  'briefing.amountStale': {
+    zh: '這個價我 {hours} 個鐘之前讀的，可能已經不同了。',
+    en: 'I read this price {hours} hours ago. It may have moved.'
+  },
+  'briefing.amountExpired': {
+    zh: '太久了（{hours} 個鐘）。價錢同存貨都要重新看 —— 建議我重新跑一次，不要接住做。',
+    en: 'Too long ago ({hours} hours). Both the price and the stock need re-reading. Let me run it again rather than carry on from this.'
   }
 })
 

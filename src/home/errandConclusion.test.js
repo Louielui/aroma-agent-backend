@@ -24,6 +24,12 @@
 const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const { conclusionFor, CONCLUSION } = require('./errandConclusion')
+/**
+ * ⛔ ASSERT ON THE KEY WHERE THE TEST GUARDED WHICH STATEMENT IS MADE; KEEP THE PHRASE WHERE IT
+ * GUARDED A PHRASE. Each converted line says which it was, at the line. A test converted to
+ * assert-key when it was really guarding a specific phrase is a guard quietly removed.
+ */
+const { t } = require('../i18n/t')
 
 const DAY = 24 * 3600 * 1000
 const NOW = new Date('2026-08-07T12:00:00Z').getTime()
@@ -47,8 +53,9 @@ describe('the calm day is ONE line', () => {
     ])
     const c = conclusionFor(KIND, rows, NOW)
     assert.strictEqual(c.state, CONCLUSION.NOTHING_NEW)
-    assert.match(c.calm, /2 樣/)
-    assert.match(c.calm, /冇新/)
+    // CONVERTED (both): they guarded the COUNT and that the sentence is the calm one.
+    // Exact equality pins the key AND the number, which the two regexes did between them.
+    assert.strictEqual(c.calm, t('conclusion.calm', { n: 2 }))
     assert.strictEqual(c.gap, null)
     assert.strictEqual(c.unknown, null)
     assert.strictEqual(c.alert, null)
@@ -89,8 +96,9 @@ describe('⛔ 查唔到 always has its own field, even when everything else is c
 
   test('the calm summary counts only what was ACTUALLY checked', () => {
     const c = conclusionFor(KIND, fiveCleanOneBlocked(), NOW)
-    assert.match(c.calm, /5 樣/, '6 would be a lie — one was never searched')
-    assert.doesNotMatch(c.calm, /6 樣/)
+    // CONVERTED. 6 would be a lie — one was never searched. Exact equality on n:5 SUBSUMES
+    // the old /6 樣/ check: no other number can appear in a string that equals this one.
+    assert.strictEqual(c.calm, t('conclusion.calm', { n: 5 }))
   })
 
   test('⛔ the state is PARTIAL, not NOTHING_NEW — the summary word itself must not read clean', () => {
@@ -121,9 +129,16 @@ describe('⛔ nothing to compare against is 「未有得比」, never 「冇新�
     const c = conclusionFor(KIND, rows, NOW)
     assert.strictEqual(c.state, CONCLUSION.CANNOT_COMPARE)
     assert.ok(c.unknown, 'it must say it cannot compare')
-    assert.match(c.unknown, /未有得比|第一次/)
+    // CONVERTED, and stronger: the slots pin WHICH ingredients and WHY, which the regex
+    // never looked at.
+    assert.strictEqual(c.unknown, t('conclusion.cannotCompare', {
+      ingredients: 'mushrooms、chicken', why: t('conclusion.whyNoPriorRun')
+    }))
     assert.strictEqual(c.alert, null, 'everything looks new on a first run; calling it new would cry wolf')
-    assert.ok(!/冇新/.test(c.calm || ''), '⛔ the one sentence a first run may never produce')
+    // CONVERTED, and STRONGER rather than equal: the guard was 「the calm sentence must never
+    // appear on a first run」, and absence of the whole field says that without depending on
+    // any phrase surviving. Any non-null calm now fails, not merely one containing 「冇新」.
+    assert.strictEqual(c.calm, null, '⛔ the one sentence a first run may never produce')
   })
 
   test('a mix: one comparable and clean, one with no history → BOTH stated, neither hidden', () => {
@@ -133,7 +148,8 @@ describe('⛔ nothing to compare against is 「未有得比」, never 「冇新�
       row('romaine', 0, { items: [item('2026-01-01', 'y')] })
     ]
     const c = conclusionFor(KIND, rows, NOW)
-    assert.match(c.calm, /1 樣/, 'only the comparable one is summarised as clean')
+    // CONVERTED: only the comparable one is summarised as clean.
+    assert.strictEqual(c.calm, t('conclusion.calm', { n: 1 }))
     assert.ok(c.unknown)
     assert.match(c.unknown, /romaine/)
   })
@@ -145,7 +161,9 @@ describe('⛔ nothing to compare against is 「未有得比」, never 「冇新�
       row('romaine', 0, { items: [] })
     ]
     const c = conclusionFor(KIND, rows, NOW)
-    assert.doesNotMatch(c.calm, /2 樣/, 'counting it would be exactly the filter this forbids')
+    // CONVERTED. Counting the uncomparable one would be exactly the filter this forbids;
+    // exact equality on n:1 subsumes the old 「must not say 2」 check.
+    assert.strictEqual(c.calm, t('conclusion.calm', { n: 1 }))
   })
 
   test('nothing ever run at all → NEVER_RUN, and no calm sentence exists', () => {
@@ -195,10 +213,28 @@ describe('⛔ openable follows content, not category', () => {
     assert.ok(c.calm === null)
   })
 
-  test('the line is still there when there is no door', () => {
-    // Never-blank outranks never-promise. The absence must be stated, just not as a door.
+  test('NEVER_RUN makes no claim in any of the four fields', () => {
+    /**
+     * ⛔ FOUND WHILE CLASSIFYING THIS FILE: THE PREVIOUS ASSERTION HERE COULD NOT FAIL.
+     *
+     *     assert.match(c.unknown || c.gap || c.alert || '從來未', /從來未|未有/)
+     *
+     * On NEVER_RUN all three fields are null, so the chain fell through to the LITERAL
+     * '從來未' and matched itself. It was green from the day it was written and would have
+     * stayed green if every field had been filled with the wrong sentence.
+     *
+     * It was not converted to assert-key, because there was no guard to convert — inventing
+     * one out of a vacuous test would be worse than leaving it. What is asserted instead is
+     * the invariant that is actually true and actually matters: NEVER_RUN states nothing in
+     * any of the four fields. The 「從來未查過」 LINE the old test was reaching for is not
+     * produced here at all — it comes from `freshnessReport` in errandKinds.js, and it is
+     * covered there.
+     */
     const c = conclusionFor(KIND, [], NOW)
-    assert.match(c.unknown || c.gap || c.alert || '從來未', /從來未|未有/)
+    assert.strictEqual(c.state, CONCLUSION.NEVER_RUN)
+    for (const f of ['alert', 'gap', 'unknown', 'calm']) {
+      assert.strictEqual(c[f], null, f + ' must make no claim when nothing has ever run')
+    }
   })
 
   test('a kind whose only rows are BLOCKED is still openable — the reasons are content', () => {

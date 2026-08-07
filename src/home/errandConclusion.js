@@ -24,6 +24,8 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
+const { t } = require('../i18n/t')
+
 const CONCLUSION = Object.freeze({
   NEVER_RUN: 'NEVER_RUN',           // no row has ever existed
   CANNOT_COMPARE: 'CANNOT_COMPARE', // ran, but nothing to compare against — first run
@@ -89,7 +91,12 @@ function conclusionFor (kind, rows, now) {
     // there is no such thing as 「new」, and no such thing as 「nothing new」.
     const prev = list.slice(1).find((r) => r.outcome === 'ANSWERED' && Array.isArray(r.items))
     if (!prev || !Array.isArray(latest.items)) {
-      uncomparable.push({ ingredient: ing, why: prev ? '今次冇記低搵到啲乜' : '之前冇紀錄好比' })
+      // ⛔ These two `why` values are OUR words, so they are keys. The `why` on `unchecked`
+      // above is NOT — it is `latest.detail`, which comes off the row and is data.
+      uncomparable.push({
+        ingredient: ing,
+        why: prev ? t('conclusion.whyNoItemsRecorded') : t('conclusion.whyNoPriorRun')
+      })
       continue
     }
 
@@ -100,22 +107,34 @@ function conclusionFor (kind, rows, now) {
   }
 
   // ── the four fields. Each is a separate fact and none absorbs another. ──────
+  //
+  // ⛔ THE INGREDIENT NAMES AND THE RECALL TITLES ARE SLOTS, NOT WORDS.
+  // They come from the register and from his own ingredient list. They are inserted verbatim in
+  // both languages — a translated product name is an order placed for the wrong thing.
   const alert = newItems.length
-    ? '⚠ ' + newItems.map((n) => n.ingredient + ' 有新回收:' +
-        n.items.slice(0, 2).map((i) => i.when + ' ' + i.title.slice(0, 52)).join(' / ')).join(';')
+    ? t('conclusion.alert', {
+        findings: newItems.map((n) => t('conclusion.alertOne', {
+          ingredient: n.ingredient,
+          items: n.items.slice(0, 2).map((i) => i.when + ' ' + i.title.slice(0, 52)).join(' / ')
+        })).join(t('punct.clauseSep'))
+      })
     : null
 
   const gap = unchecked.length
-    ? '⛔ ' + unchecked.map((u) => u.ingredient).join('、') + ' 查唔到,所以呢 ' +
-      unchecked.length + ' 樣今日冇查過 —— 唔等於冇事。'
+    ? t('conclusion.gap', {
+        ingredients: unchecked.map((u) => u.ingredient).join(t('punct.listSep')),
+        n: unchecked.length
+      })
     : null
 
   const unknown = uncomparable.length
-    ? uncomparable.map((u) => u.ingredient).join('、') + ' 未有得比(' +
-      (uncomparable[0].why) + '),所以講唔到有冇新嘢。'
+    ? t('conclusion.cannotCompare', {
+        ingredients: uncomparable.map((u) => u.ingredient).join(t('punct.listSep')),
+        why: uncomparable[0].why
+      })
     : null
 
-  const calm = clean.length ? clean.length + ' 樣查過,冇新回收。' : null
+  const calm = clean.length ? t('conclusion.calm', { n: clean.length }) : null
 
   // ⛔ PARTIAL WINS. A word that reads clean must never be chosen while something is unchecked.
   let state

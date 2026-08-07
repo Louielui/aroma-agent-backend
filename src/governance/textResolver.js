@@ -26,6 +26,23 @@
  *   · AT RUNTIME — an unknown key cannot resolve. A key built from data will not be in the
  *     catalogue, so even if the static check were bypassed the data does not get translated.
  *
+ * ⛔ AND THE OBVIOUS IMPLEMENTATION OF THIS RULE DOES NOT WORK. READ THIS BEFORE WRITING IT.
+ *
+ * The first version of the static check asked 「does the argument start with a string literal」.
+ * It passed everything it was supposed to pass, and it passed this:
+ *
+ *     t('supplier.' + name)          ← BEGINS with a literal. Data straight into the translator.
+ *
+ * That is the natural way to write the check, it reads correct, and it is wrong. It was not
+ * caught by review — it was caught by the seen-to-fail test, which fed it the shapes data would
+ * actually arrive in and watched it say yes. Review looked at it and agreed with it.
+ *
+ * Two things follow, and both are load-bearing:
+ *   · The predicate must demand a COMPLETE literal and nothing else — see `isLiteralKeyArg`.
+ *   · The predicate lives HERE, not in the test, so the proof and the scan are ONE function.
+ *     Two copies that drift is the same failure as two readers of one record: they agree until
+ *     the day they matter. A proof written against a copy stops proving anything silently.
+ *
  * ── ② TEMPLATES, NOT SENTENCES ──────────────────────────────────────────────
  * ⛔ THE PROOF, KEPT HERE BECAUSE THIS IS WHERE SOMEONE WOULD FLATTEN IT:
  *

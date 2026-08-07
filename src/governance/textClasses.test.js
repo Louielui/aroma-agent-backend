@@ -1,0 +1,148 @@
+'use strict'
+/**
+ * textClasses.test.js — the boundary is enforced, not remembered.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * Two things are checked, and the second is the one that matters:
+ *
+ *   ① COVERAGE — every production file carrying quoted Chinese is classified. A new file
+ *      carrying Chinese fails the suite until someone decides what kind it is. This is what
+ *      stops the classification becoming a snapshot of one afternoon in August.
+ *
+ *   ② ⛔ NO NON-INTERFACE FILE MAY TRANSLATE. A MODEL file that starts calling `t()` is a
+ *      behaviour change; a MATCHING file that does is a guard deleted with no code removed and
+ *      nothing reported. Neither would look wrong in a diff.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const { test, describe } = require('node:test')
+const assert = require('node:assert')
+const fs = require('node:fs')
+const path = require('node:path')
+const { CLASS, FILE_CLASS, classOf, mayTranslate } = require('./textClasses')
+
+const SRC = path.join(__dirname, '..')
+
+/**
+ * ⛔ THE ENTRANCE ITSELF, AND NOTHING ELSE.
+ * `i18n/t.js` requires the resolver because it IS the one place allowed to — that is what makes
+ * the locale readable at use time in exactly one spot. Named here rather than special-cased
+ * inside a filter, so adding a second exemption is a visible act.
+ */
+const ENTRANCE = 'i18n/t.js'
+
+/** Comments are documentation, not text he reads. Strip before judging. */
+function stripComments (src) {
+  return src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+}
+
+/** Production files (not tests, not fixtures-under-test) with Chinese inside a quoted string. */
+function filesWithQuotedHan (root) {
+  const out = []
+  const walk = (d) => {
+    for (const n of fs.readdirSync(d)) {
+      const p = path.join(d, n)
+      const st = fs.statSync(p)
+      if (st.isDirectory()) { if (n !== 'node_modules') walk(p); continue }
+      if (!/\.(js|html)$/.test(n) || /\.test\.js$/.test(n)) continue
+      const stripped = stripComments(fs.readFileSync(p, 'utf8'))
+      const quoted = stripped.split('\n').some((l) => /(['"`])[^'"`]*[一-鿿][^'"`]*\1/.test(l))
+      if (quoted) out.push(path.relative(root, p).split(path.sep).join('/'))
+    }
+  }
+  walk(root)
+  return out
+}
+
+/** Files that require the resolver or the shared `t`. */
+function translatingFiles () {
+  const out = []
+  const walk = (d) => {
+    for (const n of fs.readdirSync(d)) {
+      const p = path.join(d, n)
+      const st = fs.statSync(p)
+      if (st.isDirectory()) { if (n !== 'node_modules') walk(p); continue }
+      if (!/\.js$/.test(n) || /\.test\.js$/.test(n)) continue
+      const src = stripComments(fs.readFileSync(p, 'utf8'))
+      if (/require\((['"])[^'"]*\/(i18n\/t|textResolver)\1\)/.test(src)) {
+        out.push(path.relative(SRC, p).split(path.sep).join('/'))
+      }
+    }
+  }
+  walk(SRC)
+  return out
+}
+
+describe('⛔ ① every file carrying Chinese has been classified', () => {
+  test('nothing is unclassified — a new one fails the suite until someone decides', () => {
+    const unclassified = filesWithQuotedHan(SRC).filter((f) => classOf(f) === null)
+    assert.deepStrictEqual(unclassified, [],
+      'these carry Chinese and nobody has said what kind it is. INTERFACE means it may be ' +
+      'translated; MODEL means translating it changes her behaviour; MATCHING means translating ' +
+      'it deletes a guard silently. Decide, then add it to textClasses.js.')
+  })
+
+  test('the classification does not keep entries for files that carry nothing and translate nothing', () => {
+    /**
+     * ⛔ THE FIRST VERSION OF THIS TEST WAS WRONG, AND IT FAILED ON THE FIRST TWO FILES THAT
+     * WERE FULLY EXTRACTED.
+     *
+     * It asked 「does this file still contain Chinese」 and called the answer staleness. But a
+     * finished INTERFACE file has NO Chinese left — every string became a key. That is success,
+     * not staleness, and the file must stay classified precisely because it still calls `t()`.
+     *
+     * An entry is stale only when the file carries no Chinese AND translates nothing: then it
+     * really has left the subject, and a lingering entry reads as coverage it no longer gives.
+     */
+    const carries = new Set(filesWithQuotedHan(SRC))
+    const translates = new Set(translatingFiles())
+    const stale = Object.keys(FILE_CLASS).filter((f) => !carries.has(f) && !translates.has(f))
+    assert.deepStrictEqual(stale, [], 'stale entries in FILE_CLASS — remove them')
+  })
+
+  test('every class used is a real one', () => {
+    for (const [f, c] of Object.entries(FILE_CLASS)) {
+      assert.ok(Object.values(CLASS).includes(c), f + ' has an unknown class: ' + c)
+    }
+  })
+})
+
+describe('⛔ ② only INTERFACE files may reach the resolver', () => {
+  test('⛔ no MODEL, MATCHING or FROZEN file calls t()', () => {
+    const violations = translatingFiles().filter((f) => f !== ENTRANCE && !mayTranslate(f))
+    assert.deepStrictEqual(violations, [],
+      'translating one of these does not change the language of the interface — it changes what ' +
+      'she is told, or what her words are matched against: ' + JSON.stringify(violations))
+  })
+
+  test('⛔ SEEN TO FAIL — the rule really rejects each non-interface class', () => {
+    // A probe never observed failing is not evidence.
+    assert.strictEqual(mayTranslate('home/briefing.js'), true, 'an INTERFACE file may')
+    for (const f of [
+      'persona/conversationContract.js', // MODEL — translating it changes her behaviour
+      'intake/scopeNotes.js', // MATCHING — translating it deletes a guard
+      'core/memory/shadow/identityShadow.js' // FROZEN — not ours to edit at all
+    ]) {
+      assert.strictEqual(mayTranslate(f), false, f + ' must never be translatable')
+    }
+    // And an unclassified file is NOT translatable by default — silence is not permission.
+    assert.strictEqual(mayTranslate('some/file/nobody/classified.js'), false)
+  })
+
+  test('the resolver and the shared t are themselves reachable only through i18n/t', () => {
+    // One entrance, so the locale is read at use time in exactly one place.
+    const direct = []
+    const walk = (d) => {
+      for (const n of fs.readdirSync(d)) {
+        const p = path.join(d, n)
+        const st = fs.statSync(p)
+        if (st.isDirectory()) { if (n !== 'node_modules') walk(p); continue }
+        if (!/\.js$/.test(n) || /\.test\.js$/.test(n)) continue
+        const rel = path.relative(SRC, p).split(path.sep).join('/')
+        if (rel === 'i18n/t.js' || rel.startsWith('governance/textResolver')) continue
+        if (/require\((['"])[^'"]*textResolver\1\)/.test(stripComments(fs.readFileSync(p, 'utf8')))) direct.push(rel)
+      }
+    }
+    walk(SRC)
+    assert.deepStrictEqual(direct, [], 'these bypass i18n/t and would freeze the locale at require() time')
+  })
+})

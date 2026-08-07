@@ -27,6 +27,7 @@ const { test, describe } = require('node:test')
 const assert = require('node:assert')
 const { attachmentFor, buildSectionPreamble, OPEN, CLOSE, ALLOWED_FIELDS } = require('./sectionAttachment')
 const { KINDS } = require('./errandKinds')
+const { t } = require('../i18n/t')
 
 const NOW = new Date('2026-08-07T12:00:00Z').getTime()
 const KIND = KINDS.find((k) => k.id === 'recall')
@@ -45,8 +46,12 @@ describe('what would travel is a VALUE, computed once', () => {
 
   test('⛔ a BLOCKED ingredient travels as a gap, not as a silence', () => {
     const a = attachmentFor(KIND, [row('green onion', { outcome: 'BLOCKED_BY_SITE', detail: 'timeout', items: undefined })], NOW)
+    // The ingredient is DATA and stays a plain-text assertion — it must appear verbatim.
     assert.match(a.lines.join(' '), /green onion/)
-    assert.match(a.lines.join(' '), /查唔到/)
+    // CONVERTED: this guarded that the GAP travels rather than being silently dropped, not how
+    // the gap is worded. The key and its slots say that, and say it in either language.
+    assert.ok(a.lines.join(' ').includes(t('conclusion.gap', { ingredients: 'green onion', n: 1 })),
+      'the gap must travel with the attachment — a silence here is the false all-clear again')
   })
 
   test('a section that never ran attaches that fact rather than nothing', () => {
