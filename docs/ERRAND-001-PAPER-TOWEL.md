@@ -122,3 +122,46 @@ destination** — it is the one place on the web actively investing in stopping 
 The same six verbs against a supplier portal the Owner has an account on, a Drive folder, or an
 internal page would meet none of this. **The capability is real. Today's target was the hard
 case, and it was the Owner's to choose.**
+
+---
+---
+
+# THE ADAPTIVE BLOCK — the finding, with its evidence, and the sentence to keep
+
+<!-- Owner ruling 2026-08-06: record this with the three-observation table -->
+
+**Same URL. Same code. Nothing changed between attempts but time and request count.**
+
+| # | how it was reached | result |
+|---|---|---|
+| 1 | via the search button, after typing | **Access Denied** — 5 AX nodes, 8 DOM elements |
+| 2 | direct `navigate`, minutes later | **HTTP 200 — 3622 raw nodes** |
+| 3 | direct `navigate`, minutes later again | **Access Denied** |
+
+**And a fourth observation from earlier the same day:** the frozen corpus capture
+(`test/fixtures/axcorpus/real-costco-search.json`, 3565 raw nodes of real results) came from
+this same URL and succeeded.
+
+> ## 一單喺測試度行得通嘅差事，可以喺實際運作時因為同我哋段 code 完全無關嘅原因而失敗 —— 而且係遲啲先失敗，喺佢已經被信任之後。
+>
+> **Owner's ruling: this sentence is kept, and it applies to ANYTHING we ever point at a
+> protected site.**
+
+**It is not a Costco fact. It is a property of defended sites**, and it has a shape worth
+naming: the failure mode is *not* 「it does not work」 — it is 「it works, until it has been
+relied on」. Nothing in our tests can catch that, because the thing that changes is on the
+other side.
+
+---
+
+# RULINGS — settled 2026-08-06, not to be re-litigated
+
+| | path | ruling |
+|---|---|---|
+| ① | **throttling / pacing** | **worth an hour, but NOT NOW** — only after we know how often this actually bites on sites the Owner uses |
+| ② | **the Owner's logged-in session** | ⛔ **NO.** 「Credentials plus a session that can spend is the thing every fence this month exists to prevent.」 |
+| ③ | **formal permission from the site** | correct, and **out of our hands** |
+| ④ | **accept the ceiling** | ✅ **This is the answer** — and it is not failure |
+
+**① is explicitly conditional on evidence we do not have yet**, and that evidence comes from
+pointing the verbs at sites the Owner actually uses. Which is the next errand.
