@@ -64,11 +64,11 @@
   var t = createResolver({ catalogue: CATALOGUE, locale: DEFAULT_LOCALE })
 
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
-  var SOURCE_TEXT = READ_SOURCES.join('／') + '同過往決定'
+  var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
   var PROVIDERS = [
-    { id: 'claude', name: '香香（Claude）', note: '睇到 ' + SOURCE_TEXT, warn: false },
-    { id: 'openai', name: '香香（GPT）', note: '一樣睇到 ' + SOURCE_TEXT + ' —— 但呢啲資料會送去 OpenAI', warn: true }
+    { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
+    { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
   var provider = 'claude'
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
@@ -206,7 +206,7 @@
     var cid = (window.crypto && window.crypto.randomUUID)
       ? window.crypto.randomUUID()
       : 'conv-' + Date.now() + '-' + Math.random().toString(16).slice(2, 10)
-    var c = { id: 'c' + (convs.length + 1), cid: cid, title: '新對話', history: [], thread: thread }
+    var c = { id: 'c' + (convs.length + 1), cid: cid, title: t('conv.new'), history: [], thread: thread }
     convs.unshift(c)
     selectConversation(c)
     renderConvList()
@@ -273,7 +273,7 @@
         settle(j.line)
       })
       .catch(function (e) {
-        settle('(我攞唔到今日嘅招呼語 —— ' + String(e && e.message).slice(0, 40) + ')')
+        settle(t('greeting.unavailable', { error: String(e && e.message).slice(0, 40) }))
       })
   }
 
@@ -330,7 +330,7 @@
     }
     box.classList.remove('hidden')
     var head = el('div', 'attach-head')
-    head.textContent = '⬚ 我會帶住呢啲落去(' + (a.title || a.kind) + '):'
+    head.textContent = t('attach.travelling', { title: a.title || a.kind })
     box.appendChild(head)
     for (var i = 0; i < a.lines.length; i++) {
       var l = el('div', 'attach-line')
@@ -343,7 +343,7 @@
   function openLink (c) {
     var b = el('button', 'sect-open')
     b.type = 'button'
-    b.textContent = '打開 ' + c.title + ' →'
+    b.textContent = t('attach.open', { title: c.title })
     b.addEventListener('click', function () { showSection(c.kind, c.title) })
     return b
   }
@@ -421,22 +421,22 @@
       var body = el('span', 'sect-detail')
       if (g.state === 'BLOCKED') {
         // ⛔ A reason, never a zero. A site that would not answer is not a site with no recalls.
-        body.textContent = '查唔到 —— ' + (g.why || '')
+        body.textContent = t('detail.blocked', { why: g.why || '' })
       } else if (g.state === 'UNRECORDED') {
         // ⛔ AND 「冇記低」 IS NOT 「冇搵到」. Rendering an absent field as an empty result put a
         // false all-clear on this screen for all eight ingredients. Found live, not by tests.
-        body.textContent = g.why || '嗰次冇記低搵到啲乜。'
+        body.textContent = g.why || t('detail.noItemsRecorded')
       } else if (!Array.isArray(g.items)) {
         // ⛔ THE THIRD READER, HARDENED. This branch used to be `(g.items || []).slice(...)`,
         // which is the SAME collapse that put a false all-clear on this screen from the server
         // side — missing rendered as empty. It is currently unreachable because the server's
         // state field keeps it out, but the guard against it lived somewhere else, which is
         // exactly the fragility. A fallback must fail toward honesty, not toward calm.
-        body.textContent = '冇記低搵到啲乜 —— 唔好當佢係冇回收。'
+        body.textContent = t('detail.noItemsWarning')
       } else {
-        var head = (typeof g.found === 'number' ? '個站搵到 ' + g.found + ' 條' : '')
+        var head = (typeof g.found === 'number' ? t('detail.siteFound', { n: g.found }) : '')
         var top = g.items.slice(0, 3).map(function (x) { return x.when + ' ' + x.title }).join(' / ')
-        body.textContent = head + (top ? ':' + top : ':冇搵到相關回收。')
+        body.textContent = head + t('punct.colon') + (top || t('detail.nothingFound'))
       }
       line.appendChild(body)
       ings.appendChild(line)
@@ -446,7 +446,7 @@
     // ⛔ History is CHANGE, not occurrence. A day that repeats the same list is the log grain.
     var h = el('div', 'sect-history')
     var head = el('div', 'sect-history-head')
-    head.textContent = '邊日變咗乜'
+    head.textContent = t('detail.whichDayChanged')
     h.appendChild(head)
     for (var j = 0; j < (d.history || []).length; j++) {
       h.appendChild(row('sect-day' + (d.history[j].changeCount ? ' sect-day-changed' : ''), d.history[j].line, ''))
@@ -490,7 +490,12 @@
   }
 
   var OUT_CLASS = { ANSWERED: 'out-answered', STOPPED_FOR_YOU: 'out-stopped', BLOCKED_BY_SITE: 'out-blocked' }
-  var OUT_WORD = { ANSWERED: '答到', STOPPED_FOR_YOU: '停低,等你', BLOCKED_BY_SITE: '俾網站擋咗' }
+  // ⛔ Thunks, not key strings: `t(OUT_WORD[x])` would be a dynamic key (HR-48).
+  var OUT_WORD = {
+    ANSWERED: function () { return t('outcome.answered') },
+    STOPPED_FOR_YOU: function () { return t('outcome.stopped') },
+    BLOCKED_BY_SITE: function () { return t('outcome.blocked') }
+  }
 
   /**
    * The full briefing — empty screen only. Everything here can wait for the next blank
@@ -571,11 +576,11 @@
       // ── the history is REACHABLE, not displayed ──
       var runs = (e.conclusions || []).reduce(function (a, x) { return Math.max(a, x.runsToday || 0) }, 0)
       var bits = []
-      if (runs > 1) bits.push('今日行過 ' + runs + ' 次')
-      if (e.totalRows) bits.push(e.totalRows + ' 條紀錄')
+      if (runs > 1) bits.push(t('errands.ranTimesToday', { n: runs }))
+      if (e.totalRows) bits.push(e.totalRows === 1 ? t('errands.oneRow') : t('errands.rows', { n: e.totalRows }))
       // ⛔ Never-blank applies to what was CUT, not only to what is empty.
-      if (e.hiddenRows > 0) bits.push('仲有 ' + e.hiddenRows + ' 條冇顯示')
-      if (bits.length) host.appendChild(row('brief-errands concl-history', bits.join(' · ') + ' —— 未有紀錄頁,要睇就問我。', whenFor(e)))
+      if (e.hiddenRows > 0) bits.push(t('errands.moreHidden', { n: e.hiddenRows }))
+      if (bits.length) host.appendChild(row('brief-errands concl-history', t('errands.noHistoryPage', { bits: bits.join(t('punct.bulletSep')) }), whenFor(e)))
     }
 
     // ── ②b how fresh that is ALLOWED to be ──
@@ -614,28 +619,28 @@
   function waitingCard (c) {
     var card = el('div', 'brief-card')
     var h = el('div', 'card-head')
-    h.textContent = '⏸ 等你 —— ' + c.title
+    h.textContent = t('waiting.heading', { title: c.title })
     card.appendChild(h)
 
-    if (c.where) card.appendChild(kv('邊度', c.where));
-    if (c.account) card.appendChild(kv('用邊個', c.account))
-    if (c.filled && c.filled.length) card.appendChild(kv('我做咗', c.filled.join(' · ')))
-    if (c.notPressed) card.appendChild(kv('我冇撳', c.notPressed.role + ' 「' + c.notPressed.name + '」'))
+    if (c.where) card.appendChild(kv(t('waiting.where'), c.where));
+    if (c.account) card.appendChild(kv(t('waiting.account'), c.account))
+    if (c.filled && c.filled.length) card.appendChild(kv(t('waiting.didWhat'), c.filled.join(t('punct.bulletSep'))))
+    if (c.notPressed) card.appendChild(kv(t('waiting.notPressed'), t('waiting.notPressedValue', { role: c.notPressed.role, name: c.notPressed.name })))
 
     if (c.amount) {
       var a = el('div', 'card-kv')
-      var ak = el('span', 'kv-k'); ak.textContent = '金額'; a.appendChild(ak)
+      var ak = el('span', 'kv-k'); ak.textContent = t('waiting.amount'); a.appendChild(ak)
       var av = el('span', 'kv-v' + (c.amountStruck ? ' amount-struck' : ''))
       av.textContent = c.amount
       a.appendChild(av)
       card.appendChild(a)
     }
     if (c.amountNote) card.appendChild(kv('', c.amountNote))
-    if (c.whichLayer) card.appendChild(kv('點解停', c.whichLayer))
+    if (c.whichLayer) card.appendChild(kv(t('waiting.whyStopped'), c.whichLayer))
 
     var btn = el('button', 'card-open')
     btn.type = 'button'
-    btn.textContent = '開返嗰版'
+    btn.textContent = t('waiting.reopen')
     btn.addEventListener('click', function () { openStopped(c, btn) })
     card.appendChild(btn)
     return card
@@ -657,20 +662,20 @@
   function openStopped (c, btn) {
     btn.disabled = true
     var was = btn.textContent
-    btn.textContent = '開緊…'
+    btn.textContent = t('waiting.opening')
     fetch(c.openHref, { method: 'POST', headers: { 'Content-Type': 'application/json' } })
       .then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j } }) })
       .then(function (res) {
         btn.disabled = false
-        if (res.ok) { btn.textContent = '開咗'; return }
+        if (res.ok) { btn.textContent = t('waiting.opened'); return }
         // A refusal is an ANSWER, not something to try again. The lock especially: two
         // Chromes writing one profile is corruption that surfaces days later as something
         // else entirely, so nothing here retries and nothing clears a lock.
         btn.textContent = was
         var m = el('div', 'card-refusal')
         m.textContent = (res.j && res.j.outcome === 'PROFILE_IN_USE')
-          ? (res.j.saying || '香香而家用緊個 profile。')
-          : ((res.j && res.j.saying) || '開唔到。')
+          ? (res.j.saying || t('waiting.profileBusyShort'))
+          : ((res.j && res.j.saying) || t('waiting.cannotOpen'))
         btn.parentNode.appendChild(m)
       })
       .catch(function () {
@@ -715,11 +720,11 @@
         bar.id = 'waiting-bar'
         var n = b.waiting.cards.length
         var tEl = el('span', 'wb-text')
-        tEl.textContent = '⏸ ' + n + ' 單等你決定'
+        tEl.textContent = t('waiting.countWaiting', { n: n })
         bar.appendChild(tEl)
         var open = el('button', 'wb-open')
         open.type = 'button'
-        open.textContent = '睇下'
+        open.textContent = t('waiting.look')
         open.addEventListener('click', function () {
           bar.classList.toggle('expanded')
           if (bar.querySelector('.brief-card')) return
@@ -779,7 +784,7 @@
     active = c
     clear(log)
     log.appendChild(c.thread)
-    titleEl.textContent = isListed(c) ? c.title : '香香'
+    titleEl.textContent = isListed(c) ? c.title : t('brand.name')
     renderConvList()
     // A stored conversation is a title until it is opened; the transcript arrives here.
     if (c.stored && !c.loaded) loadConversation(c)
@@ -829,8 +834,8 @@
         if (c.stored) {
           var d = el('button', 'icon-btn conv-del', '✕')
           d.setAttribute('type', 'button')
-          d.setAttribute('aria-label', '刪除「' + c.title + '」')
-          d.setAttribute('title', '刪除')
+          d.setAttribute('aria-label', t('conv.deleteLabel', { title: c.title }))
+          d.setAttribute('title', t('conv.delete'))
           d.addEventListener('click', function (e) {
             if (e && e.stopPropagation) e.stopPropagation()
             deleteConversation(c)
@@ -844,7 +849,7 @@
   }
   function titleFrom (text) {
     var tEl = String(text).replace(/\s+/g, ' ').trim()
-    return tEl.length > 30 ? tEl.slice(0, 30) + '…' : (tEl || '新對話')
+    return tEl.length > 30 ? tEl.slice(0, 30) + '…' : (tEl || t('conv.new'))
   }
 
   /* ── history, from the server ─────────────────────────────────────────────
@@ -864,7 +869,7 @@
   // second click from appending the same transcript underneath the first.
   function stubFor (row) {
     return {
-      id: 'h-' + row.id, cid: row.id, title: row.title || '新對話',
+      id: 'h-' + row.id, cid: row.id, title: row.title || t('conv.new'),
       updatedAt: row.updatedAt || row.createdAt || null,
       messageCount: row.messageCount || 0,
       history: [], thread: el('div', 'thread'), stored: true, loaded: false
@@ -885,15 +890,15 @@
     if (isNaN(d.getTime())) return ''
     var days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
     if (days === 0) return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
-    return (d.getMonth() + 1) + '月' + d.getDate() + '日'
+    return t('conv.monthDay', { m: d.getMonth() + 1, d: d.getDate() })
   }
 
   function groupLabel (iso) {
-    if (!iso) return '更早'
+    if (!iso) return t('conv.earlier')
     var d = new Date(iso)
-    if (isNaN(d.getTime())) return '更早'
+    if (isNaN(d.getTime())) return t('conv.earlier')
     var days = Math.round((startOfDay(new Date()) - startOfDay(d)) / 86400000)
-    return days === 0 ? '今日' : (days === 1 ? '尋日' : '更早')
+    return days === 0 ? t('conv.today') : (days === 1 ? t('conv.yesterday') : t('conv.earlier'))
   }
 
   /** The live conversation knows its own count; a stub is told by the server. */
@@ -935,7 +940,7 @@
       .then(function (j) {
         c.inflight = false
         if (!j || !j.ok || !j.conversation) {
-          addError('讀唔到呢個對話，可以再撳一次。', c)
+          addError(t('conv.cannotRead'), c)
           return
         }
         var m = j.conversation.messages || []
@@ -958,13 +963,13 @@
       })
       .catch(function () {
         c.inflight = false   // a failed load may be retried by clicking again
-        addError('讀唔到呢個對話，可以再撳一次。', c)
+        addError(t('conv.cannotRead'), c)
       })
   }
 
   function deleteConversation (c) {
     // ASKS FIRST. A conversation is not deleted on a stray click, and there is no undo.
-    if (!window.confirm('刪除「' + c.title + '」？呢個係永久嘅，冇得復原。')) return
+    if (!window.confirm(t('conv.deleteConfirm', { title: c.title }))) return
     fetch('/api/v1/conversations/' + encodeURIComponent(c.cid), { method: 'DELETE', credentials: 'same-origin' })
       .then(function () {
         for (var i = 0; i < convs.length; i++) {
@@ -973,7 +978,7 @@
         if (active === c) newConversation(false)
         else renderConvList()
       })
-      .catch(function () { addError('刪唔到，可以再試一次。') })
+      .catch(function () { addError(t('conv.cannotDelete')) })
   }
 
   /* ── message rendering ────────────────────────────────────────────────── */
@@ -1030,8 +1035,8 @@
     var IDLE = '⧉'
     var b = el('button', 'icon-btn', IDLE)
     b.setAttribute('type', 'button')
-    b.setAttribute('aria-label', '複製呢個回覆')
-    b.setAttribute('title', '複製')
+    b.setAttribute('aria-label', t('copy.label'))
+    b.setAttribute('title', t('copy.title'))
     var busy = false
     function flash (label) {
       b.textContent = label
@@ -1041,10 +1046,10 @@
       if (busy) return
       busy = true
       var clip = window.navigator && window.navigator.clipboard
-      if (!clip || typeof clip.writeText !== 'function') { flash('複製唔到'); return }
+      if (!clip || typeof clip.writeText !== 'function') { flash(t('copy.failed')); return }
       try {
-        clip.writeText(source).then(function () { flash('已複製') }).catch(function () { flash('複製唔到') })
-      } catch (e) { flash('複製唔到') }
+        clip.writeText(source).then(function () { flash(t('copy.done')) }).catch(function () { flash(t('copy.failed')) })
+      } catch (e) { flash(t('copy.failed')) }
     })
     return b
   }
@@ -1093,11 +1098,11 @@
    * required upfront choice. A shortcut applies to the NEXT message only and then clears
    * itself, so a forced lane can never quietly persist into later turns. */
   var SHORTCUTS = [
-    { mode: 'email_draft', name: '寫 Email', note: '直接走 Email 草稿通道' },
+    { mode: 'email_draft', name: t('lane.emailDraft'), note: t('lane.emailDraftNote') },
     // THE HOW-TO HALF of the retired opening bubble lives here. The composer
     // placeholder carries the approval promise; naming the file and the change needs more
     // room than a placeholder has, and this is where someone already comes to ask for one.
-    { mode: 'proposal', name: '建立提案', note: '講明改哪個檔案、改什麼；批准後才執行' }
+    { mode: 'proposal', name: t('lane.proposal'), note: t('lane.proposalNote') }
   ]
   var forcedMode = null
 
@@ -1105,7 +1110,7 @@
     forcedMode = mode || null
     var s = null
     for (var i = 0; i < SHORTCUTS.length; i++) if (SHORTCUTS[i].mode === forcedMode) s = SHORTCUTS[i]
-    laneHint.textContent = s ? ('下一句：' + s.name + '（撳一下取消）') : ''
+    laneHint.textContent = s ? t('lane.next', { name: s.name }) : ''
     laneHint.className = 'lane-hint' + (s ? ' on' : '')
   }
   laneHint.addEventListener('click', function () { if (forcedMode) setForced(null) })
@@ -1138,7 +1143,12 @@
   renderPlusMenu()
 
   /** What the server says the turn actually became — shown after the fact, never before. */
-  var LANE_NAMES = { chat: '聊天', email_draft: 'Email 草稿', proposal: '提案' }
+  // ⛔ Thunks, not key strings — a dynamic key is the one structural line (HR-48).
+  var LANE_NAMES = {
+    chat: function () { return t('lane.chat') },
+    email_draft: function () { return t('lane.emailName') },
+    proposal: function () { return t('lane.proposalName') }
+  }
 
   /* ── send ─────────────────────────────────────────────────────────────── */
   function setPending (p) {
@@ -1237,7 +1247,7 @@
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
-      addError('連線失敗，可以重新送出。', conv)
+      addError(t('err.connection'), conv)
     }).then(function () {
       // THE ONE PLACE THAT RUNS ON EVERY OUTCOME. Clearing this in the success handler and
       // again in the catch would work today and rot the first time someone adds a third
@@ -1252,14 +1262,14 @@
 
   function render (status, res, conv) {
     res = res || {}
-    if (status === 403) return addError('示範功能未啟用（demo_disabled）。', conv)
-    if (status === 400) return addError('輸入無效，請檢查訊息或模式。', conv)
+    if (status === 403) return addError(t('err.demoDisabled'), conv)
+    if (status === 400) return addError(t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
-      return addError((res.error && res.error.message ? res.error.message : '系統暫時無法處理這個請求。') + '（可重新送出）', conv)
+      return addError(t('err.retrySuffix', { message: res.error && res.error.message ? res.error.message : t('err.serverBusy') }), conv)
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)
-      addMeta(b.body, '未送外部模型，未執行任何動作')
+      addMeta(b.body, t('served.noExternalModel'))
       return b
     }
     if (res.stage === 'SHADOW_ONLY') return renderDraft(res)
@@ -1288,7 +1298,7 @@
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
-    return addError('收到回應但格式未知。requestId: ' + (res.requestId || '（無）'), conv)
+    return addError(t('err.unknownShape', { id: res.requestId || t('err.none') }), conv)
   }
 
   // A pick is not a promise: if the chosen provider fails, the orchestrator falls back to
@@ -1296,10 +1306,10 @@
   // SERVER's report of what actually answered — never the local pick.
   function labelServedBy (tEl, res) {
     if (!tEl || !tEl.body || !res || typeof res.servedBy !== 'string') return
-    var name = res.servedBy === 'openai' ? '香香（GPT）' : '香香（Claude）'
+    var name = res.servedBy === 'openai' ? t('provider.gpt') : t('provider.claude')
     var text = res.fallbackUsed
-      ? ('由 ' + name + ' 回答（你揀嘅嗰個失敗咗，已自動改用佢）')
-      : ('由 ' + name + ' 回答')
+      ? t('served.byFallback', { name: name })
+      : t('served.by', { name: name })
     // INTO the message's own footer when it has one, so the attribution and the copy
     // control read as one row. A turn that is not a plain markdown message (a draft, a
     // proposal card) has no footer, and still gets its own line exactly as before.
@@ -1314,10 +1324,10 @@
   function renderDraft (res) {
     var tEl = turn('bot')
     var d = res.draft || {}
-    tEl.body.appendChild(el('div', 'sec-t', '草稿（未寄出）'))
-    if (d.subject) tEl.body.appendChild(el('div', 'sec-b', '主旨：' + d.subject))
-    tEl.body.appendChild(renderMarkdown(d.body || '（無內文）'))
-    addMeta(tEl.body, 'SHADOW_ONLY · 未寄出 · 未寫入記憶')
+    tEl.body.appendChild(el('div', 'sec-t', t('draft.title')))
+    if (d.subject) tEl.body.appendChild(el('div', 'sec-b', t('draft.subject', { subject: d.subject })))
+    tEl.body.appendChild(renderMarkdown(d.body || t('draft.emptyBody')))
+    addMeta(tEl.body, t('draft.meta'))
   }
 
   function renderProposal (res, conv) {
@@ -1325,12 +1335,12 @@
     if (res.reply) tEl.body.appendChild(renderMarkdown(res.reply))
     var proposals = Array.isArray(res.proposals) ? res.proposals : []
     if (!proposals.length || !proposals[0] || !proposals[0].id) {
-      addMeta(tEl.body, '尚未建立任何提案')
+      addMeta(tEl.body, t('proposal.none'))
       return
     }
     var pid = proposals[0].id
     var goal = proposals[0].task || res.reply || ''
-    addMeta(tEl.body, '提案 ' + pid + ' · 只是提案，未執行')
+    addMeta(tEl.body, t('proposal.meta', { id: pid }))
 
     /* WHAT SHE READ OUT OF WHAT YOU ALREADY SAID.
      *
@@ -1347,9 +1357,9 @@
 
     if (inf.file || inf.intent) {
       var read = el('div', 'inferred')
-      if (inf.file) read.appendChild(el('div', null, '檔案：' + inf.file))
-      if (inf.intent) read.appendChild(el('div', null, '改動：' + inf.intent))
-      read.appendChild(el('div', 'inferred-note', '睇錯咗？直接打多句話講清楚就得，唔使填表。'))
+      if (inf.file) read.appendChild(el('div', null, t('proposal.file', { file: inf.file })))
+      if (inf.intent) read.appendChild(el('div', null, t('proposal.intent', { intent: inf.intent })))
+      read.appendChild(el('div', 'inferred-note', t('proposal.correctIt')))
       tEl.body.appendChild(read)
     }
 
@@ -1359,18 +1369,18 @@
     if (missing.length) {
       // ONE question, about the one thing missing. Never two boxes, never a question
       // about something already answered.
-      tEl.body.appendChild(el('p', 'ask', inf.question || '你想改邊個檔？'))
+      tEl.body.appendChild(el('p', 'ask', inf.question || t('proposal.whichFile')))
       askIn = el('input', 'typed')
       askIn.setAttribute('type', 'text')
-      askIn.setAttribute('aria-label', missing.indexOf('file') >= 0 ? '要改的單一檔案路徑' : '打算改成甚麼')
+      askIn.setAttribute('aria-label', missing.indexOf('file') >= 0 ? t('proposal.askFileLabel') : t('proposal.askIntentLabel'))
       /* THE PLACEHOLDER IS AN INSTRUCTION, NEVER A PLAUSIBLE ANSWER. An earlier walkthrough
          cost two attempts and burned a nonce because an empty field LOOKED filled — the
          placeholder was the value. A sample path here would repeat exactly that. */
-      askIn.setAttribute('placeholder', missing.indexOf('file') >= 0 ? '請輸入要改的檔案路徑' : '請輸入想改成甚麼')
+      askIn.setAttribute('placeholder', missing.indexOf('file') >= 0 ? t('proposal.askFilePlaceholder') : t('proposal.askIntentPlaceholder'))
       row.appendChild(askIn)
     }
 
-    var mk = el('button', 'primary', '產生工作單')
+    var mk = el('button', 'primary', t('proposal.makeWorkOrder'))
     mk.setAttribute('type', 'button')
     mk.disabled = !!askIn
     if (askIn) askIn.addEventListener('input', function () { mk.disabled = askIn.value.trim() === '' })
@@ -1397,18 +1407,18 @@
   function renderSettingsOffer (offer, conv) {
     var tEl = turn('bot')
     var box = el('div', 'offer')
-    box.appendChild(el('p', null, '要我改呢個設定?'))
+    box.appendChild(el('p', null, t('offer.settingAsk')))
     var line = el('div', 'set-change')
-    line.textContent = offer.say + ':' + JSON.stringify(offer.from) + ' → ' + JSON.stringify(offer.to)
+    line.textContent = t('offer.change', { say: offer.say, from: JSON.stringify(offer.from), to: JSON.stringify(offer.to) })
     box.appendChild(line)
     if (offer.appliesOn !== 'LIVE') {
       // ⛔ Said BEFORE he presses. A change that will not take effect must never look like one
       // that will.
-      var warn = el('div', 'meta', '⚠ 呢個唔會即刻生效 —— 改完仲要重新登記個 task。')
+      var warn = el('div', 'meta', t('offer.needsReregister'))
       box.appendChild(warn)
     }
     var row = el('div', 'act')
-    var go = el('button', 'primary', '改')
+    var go = el('button', 'primary', t('offer.go'))
     go.setAttribute('type', 'button')
     var out = el('div', 'meta')
     row.appendChild(go); box.appendChild(row); box.appendChild(out)
@@ -1418,7 +1428,7 @@
     go.addEventListener('click', function () {
       if (go.disabled) return
       go.disabled = true
-      out.textContent = '改緊…'
+      out.textContent = t('offer.changing')
       /* THE MESSAGE, NOT THE VALUE. The server re-derives which setting and what value from
          his own words; a value posted from here would be ignored. */
       fetch('/api/v1/home/settings/apply', {
@@ -1428,20 +1438,23 @@
         body: JSON.stringify({ message: lastOwnerMessage(conv) })
       }).then(function (r) { return r.json().then(function (j) { return { ok: r.ok, j: j } }) })
         .then(function (x) {
-          if (!x.ok) { out.textContent = '改唔到:' + (x.j.saying || x.j.reason || ''); return }
-          out.textContent = '改咗:' + x.j.say + ' = ' + JSON.stringify(x.j.to) +
-            (x.j.appliesOn === 'LIVE' ? '(即刻生效)' : '(要重新登記 task:' + x.j.howToApply + ')')
+          if (!x.ok) { out.textContent = t('offer.failed', { reason: x.j.saying || x.j.reason || '' }); return }
+          out.textContent = t('offer.done', {
+            say: x.j.say,
+            to: JSON.stringify(x.j.to),
+            how: x.j.appliesOn === 'LIVE' ? t('offer.liveNow') : t('offer.howToApply', { how: x.j.howToApply })
+          })
         })
-        .catch(function () { out.textContent = '改唔到 —— 個 API 冇答。' })
+        .catch(function () { out.textContent = t('offer.noAnswer') })
     })
   }
 
   function renderOffer (offer, conv) {
     var tEl = turn('bot')
     var box = el('div', 'offer')
-    box.appendChild(el('p', null, '要我出一張工作單改 ' + offer.file + '？'))
+    box.appendChild(el('p', null, t('offer.workOrderAsk', { file: offer.file })))
     var row = el('div', 'act')
-    var go = el('button', 'primary', '出工作單')
+    var go = el('button', 'primary', t('offer.makeWorkOrder'))
     go.setAttribute('type', 'button')
     var out = el('div', 'meta')
     row.appendChild(go)
@@ -1452,7 +1465,7 @@
     go.addEventListener('click', function () {
       if (go.disabled) return
       go.disabled = true
-      out.textContent = '正在出工作單…'
+      out.textContent = t('offer.making')
       /* THE MESSAGE, NOT THE TARGET. The server re-derives the file and the change from
          the Owner's own words; a file named here would be ignored. */
       fetch('/api/v1/owner/work-requests', {
@@ -1468,9 +1481,9 @@
           requestWorkOrder(o.body.goal, o.body.file, null, o.body.proposalId, o.body.intent, conv)
           return
         }
-        out.textContent = '未能出工作單（' + (o.body.reason || o.body.error || '未知原因') + '）。甚麼都沒有建立。'
+        out.textContent = t('offer.makeFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') })
       }).catch(function () {
-        out.textContent = '連線失敗，未能出工作單。甚麼都沒有建立。'
+        out.textContent = t('offer.makeFailedNet')
       })
     })
   }
@@ -1499,8 +1512,8 @@
     }).then(function (o) {
       if (o.status === 201) { renderCard(o.body) ; return }
       // reasonForOwner already opens with 未能建立工作單 — never prefix it again.
-      addError(o.body.reasonForOwner || ('未能建立工作單：' + (o.body.reason || o.body.error || '未知原因')))
-    }).catch(function () { addError('連線失敗（未建立任何工作單）。') })
+      addError(o.body.reasonForOwner || t('offer.createFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') }))
+    }).catch(function () { addError(t('offer.createFailedNet')) })
   }
 
   function historyText (conv) {
@@ -1511,7 +1524,7 @@
 
   function renderCard (sealed) {
     clearErrors()
-    var c = sealed.card || { heading: '', sections: [], actions: ['批准測試', '拒絕'], technicalTitle: '技術細節' }
+    var c = sealed.card || { heading: '', sections: [], actions: [t('approve.approve'), t('approve.reject')], technicalTitle: t('approve.technical') }
     var tEl = turn('bot')
     var card = el('div', 'order')
     card.appendChild(el('h2', null, c.heading))
@@ -1525,7 +1538,7 @@
       var s = el('div', 'sec' + (secs[i].title ? '' : ' bare'))
       if (secs[i].title) {
         s.appendChild(el('div', 'sec-t', secs[i].title))
-        var isExcerpt = secs[i].title.indexOf('現時內容') === 0
+        var isExcerpt = secs[i].title.indexOf(t('approve.currentContent')) === 0
         s.appendChild(el('div', 'sec-b' + (isExcerpt ? ' mono' : ''), secs[i].body))
       } else {
         s.appendChild(el('div', 'sec-b', secs[i].body))
@@ -1540,12 +1553,12 @@
       var dd = document.createElement('details')
       dd.className = 'tech'
       var ds = document.createElement('summary')
-      ds.textContent = c.detailsTitle || '詳細'
+      ds.textContent = c.detailsTitle || t('approve.details')
       dd.appendChild(ds)
       for (var j = 0; j < dets.length; j++) {
         var d = el('div', 'sec')
         d.appendChild(el('div', 'sec-t', dets[j].title))
-        var mono = dets[j].title.indexOf('現時內容') === 0 || dets[j].title.indexOf('打算改成') >= 0
+        var mono = dets[j].title.indexOf(t('approve.currentContent')) === 0 || dets[j].title.indexOf(t('approve.intendedChange')) >= 0
         d.appendChild(el('div', 'sec-b' + (mono ? ' mono' : ''), dets[j].body))
         dd.appendChild(d)
       }
@@ -1557,7 +1570,7 @@
     var det = document.createElement('details')
     det.className = 'tech'
     var sum = document.createElement('summary')
-    sum.textContent = c.technicalTitle || '技術細節'
+    sum.textContent = c.technicalTitle || t('approve.technical')
     det.appendChild(sum)
     det.appendChild(el('pre', null, (sealed.technicalLines || []).join('\n')))
     card.appendChild(det)
@@ -1565,12 +1578,12 @@
     var act = el('div', 'act')
     var typed = el('input', 'typed')
     typed.setAttribute('type', 'text')
-    typed.setAttribute('placeholder', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認')
-    typed.setAttribute('aria-label', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認')
-    var go = el('button', 'primary', (c.actions && c.actions[0]) || '批准測試')
+    typed.setAttribute('placeholder', t('approve.typeToConfirm', { word: sealed.typedConfirmationRequired }))
+    typed.setAttribute('aria-label', t('approve.typeToConfirm', { word: sealed.typedConfirmationRequired }))
+    var go = el('button', 'primary', (c.actions && c.actions[0]) || t('approve.approve'))
     go.setAttribute('type', 'button')
     go.disabled = true                                  // exact match only — no misclick
-    var no = el('button', 'ghost', (c.actions && c.actions[1]) || '拒絕')
+    var no = el('button', 'ghost', (c.actions && c.actions[1]) || t('approve.reject'))
     no.setAttribute('type', 'button')
     var out = el('div', 'meta')
     typed.addEventListener('input', function () { go.disabled = (typed.value !== sealed.typedConfirmationRequired) })
@@ -1591,7 +1604,7 @@
     no.addEventListener('click', function () {
       if (no.disabled) return
       no.disabled = true; go.disabled = true; typed.disabled = true
-      out.textContent = '正在取消…'
+      out.textContent = t('approve.cancelling')
       fetch('/api/v1/owner/reject', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1605,12 +1618,12 @@
         return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
       }).then(function (o) {
         if (o.status === 200) {
-          out.textContent = '你拒絕了這張工作單。提案已取消，甚麼都沒有執行。'
+          out.textContent = t('approve.rejected')
           return
         }
-        out.textContent = '未能取消這張工作單（' + (o.body.reason || o.body.error || '未知原因') + '）。甚麼都沒有執行，但提案仍然存在。'
+        out.textContent = t('approve.cancelFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') })
       }).catch(function () {
-        out.textContent = '連線失敗，未能取消。甚麼都沒有執行，但提案仍然存在。'
+        out.textContent = t('approve.cancelFailedNet')
       })
     })
 
@@ -1633,15 +1646,15 @@
         typed.disabled = true; no.disabled = true
         if (o.status === 201) {
           if (o.body.dispatchStatus === 'agent_execute_accepted') {
-            out.textContent = '已批准。香香開始喺丟棄式副本入面做。'
+            out.textContent = t('approve.startedInCopy')
             watchProgress(sealed.approvalId, card, sealed)
           } else {
-            out.textContent = '已批准：工作單已確認，但執行通道未開啟，所以甚麼都冇跑過。'
+            out.textContent = t('approve.confirmedNotRun')
           }
           return
         }
-        out.textContent = '被拒絕：' + (o.body.reason || o.body.error || '未知原因') + '（這張單已作廢，請重新產生）'
-      }).catch(function () { out.textContent = '連線失敗（這張單已作廢，請重新產生）' })
+        out.textContent = t('approve.refused', { reason: o.body.reason || o.body.error || t('err.unknownReason') })
+      }).catch(function () { out.textContent = t('approve.refusedNet') })
     })
   }
 
@@ -1657,7 +1670,7 @@
     var box = el('div', 'progress')
     var row = el('div', 'phase-row')
     var spin = el('div', 'spin')
-    var label = el('span', null, '正在開始…')
+    var label = el('span', null, t('run.starting'))
     row.appendChild(spin); row.appendChild(label)
     var bar = el('div', 'bar'); var fill = el('i'); bar.appendChild(fill)
     var elapsedEl = el('div', 'elapsed', '')
@@ -1674,7 +1687,7 @@
       if (spin.parentNode) spin.parentNode.removeChild(spin)
       var mark = el('span', state === 'done' ? 'done-mark' : 'fail-mark', state === 'done' ? '✓' : '✕')
       row.insertBefore(mark, label)
-      label.textContent = (body && body.headline) || (state === 'done' ? '完成' : '未成功')
+      label.textContent = (body && body.headline) || (state === 'done' ? t('run.done') : t('run.failed'))
       if (body && Array.isArray(body.sections)) renderResult(card, body)
       scroll()
     }
@@ -1696,8 +1709,8 @@
           if (typeof b.elapsedMs === 'number') {
             var secs = Math.floor(b.elapsedMs / 1000)
             elapsedEl.textContent = capMs
-              ? ('已用 ' + secs + ' 秒 / 上限 ' + Math.round(capMs / 1000) + ' 秒')
-              : ('已用 ' + secs + ' 秒')
+              ? t('run.elapsedOfCap', { secs: secs, cap: Math.round(capMs / 1000) })
+              : t('run.elapsed', { secs: secs })
             if (capMs) fill.style.width = Math.min(100, (b.elapsedMs / capMs) * 100) + '%'
           }
           if (b.finished === true || b.status === 'done' || b.status === 'failed' ||
@@ -1710,7 +1723,7 @@
             // so, rather than spinning forever and implying something is still happening.
             stopped = true
             if (spin.parentNode) spin.parentNode.removeChild(spin)
-            label.textContent = '超過時限仍未收到結果 —— 請查伺服器記錄'
+            label.textContent = t('run.timedOut')
             return
           }
           setTimeout(tick, POLL_MS)
@@ -1722,12 +1735,12 @@
 
   function renderResult (card, body) {
     var box = el('div', 'result')
-    box.appendChild(el('div', 'sec-t', '執行結果'))
+    box.appendChild(el('div', 'sec-t', t('run.result')))
     var s = Array.isArray(body.sections) ? body.sections : []
     for (var i = 0; i < s.length; i++) {
       var sec = el('div', 'sec')
       sec.appendChild(el('div', 'sec-t', s[i].title))
-      var isDiff = s[i].title.indexOf('diff') >= 0 || s[i].title.indexOf('改動') === 0
+      var isDiff = s[i].title.indexOf('diff') >= 0 || s[i].title.indexOf(t('run.changes')) === 0
       sec.appendChild(el('div', 'sec-b' + (isDiff ? ' mono' : ''), s[i].body))
       box.appendChild(sec)
     }
@@ -1807,9 +1820,13 @@
   // all — the switch existed nowhere and the Owner could not turn it off. The server sends
   // `flagLabels`, derived from the registered source list, and any flag it reports that is
   // not named here is rendered with that label.
+  // ⛔ THUNKS, NOT KEY STRINGS. `t(SET_LABELS[key])` would be a DYNAMIC key — the one
+  // structural line that keeps data out of the translator, and the exact hole I walked into at
+  // the scheduler status codes one tranche ago (HR-48). A thunk keeps this table's shape and
+  // keeps every key a literal the source scan can see.
   var SET_LABELS = {
-    CONVERSATION_RECALL: '對話記憶',
-    DECISION_RECALL: '決定記憶'
+    CONVERSATION_RECALL: function () { return t('set.conversationRecall') },
+    DECISION_RECALL: function () { return t('set.decisionRecall') }
   }
   var SET_READ_SOURCES = []
 
@@ -1851,25 +1868,26 @@
       var f = setState.flags[key] || { effective: 'off', setByOwner: false }
       if (key === 'READ_ACCESS') return // the master switch is reported, not offered here
       var row = el('div', 'set-flag')
-      row.appendChild(el('span', 'set-name', SET_LABELS[key] || setState.flagLabels[key] || key))
-      row.appendChild(el('span', 'set-who', f.setByOwner ? '你設定' : '啟動時設定'))
+      var label = SET_LABELS[key] ? SET_LABELS[key]() : (setState.flagLabels[key] || key)
+      row.appendChild(el('span', 'set-name', label))
+      row.appendChild(el('span', 'set-who', f.setByOwner ? t('set.setByOwner') : t('set.setAtStartup')))
 
-      var btn = el('button', null, f.effective === 'on' ? '開' : '關')
+      var btn = el('button', null, f.effective === 'on' ? t('set.on') : t('set.off'))
       btn.type = 'button'
       btn.setAttribute('data-state', f.effective)
       btn.addEventListener('click', function () {
         var next = btn.getAttribute('data-state') === 'on' ? 'off' : 'on'
         btn.setAttribute('data-state', next)
-        btn.textContent = next === 'on' ? '開' : '關'
+        btn.textContent = next === 'on' ? t('set.on') : t('set.off')
         setState.flags[key] = { effective: next, setByOwner: true }
-        row.querySelector('.set-who').textContent = '你設定'
+        row.querySelector('.set-who').textContent = t('set.setByOwner')
       })
       row.appendChild(btn)
 
       /* A source shown as "on" while the master READ_ACCESS is off would be a lie on the
          screen, so the gap is stated rather than hidden. */
       if (key.indexOf('CONTEXT_') === 0 && setState.readAccess !== 'on') {
-        row.appendChild(el('span', 'set-note', '總開關 READ_ACCESS 係關嘅，所以呢個開咗都唔會讀到'))
+        row.appendChild(el('span', 'set-note', t('set.masterOff')))
       }
       box.appendChild(row)
     })
@@ -1878,7 +1896,7 @@
   function openSettings () {
     setOverlay.className = 'overlay'
     setOpenBtn.setAttribute('aria-expanded', 'true')
-    setSay('讀取中…')
+    setSay(t('set.loading'))
     fetch('/api/v1/settings', { credentials: 'same-origin' })
       .then(function (r) { return r.json() })
       .then(function (j) {
@@ -1890,9 +1908,9 @@
         setState.readAccess = (j.flags && j.flags.READ_ACCESS && j.flags.READ_ACCESS.effective) || 'off'
         setCounts()
         renderSetFlags()
-        setSay(j.updatedAt ? '上次儲存 ' + String(j.updatedAt).replace('T', ' ').slice(0, 16) : '')
+        setSay(j.updatedAt ? t('set.lastSaved', { when: String(j.updatedAt).replace('T', ' ').slice(0, 16) }) : '')
       })
-      .catch(function () { setSay('讀取設定失敗', 'bad') })
+      .catch(function () { setSay(t('set.loadFailed'), 'bad') })
     setStyle.focus()
   }
 
@@ -1915,7 +1933,7 @@
   document.getElementById('save-settings').addEventListener('click', function () {
     var btn = document.getElementById('save-settings')
     btn.disabled = true
-    setSay('儲存中…')
+    setSay(t('set.saving'))
 
     var flags = {}
     Object.keys(SET_LABELS).forEach(function (k) {
@@ -1933,14 +1951,14 @@
         if (res.status === 200 && res.body.ok) {
           setState.flags = res.body.flags || setState.flags
           renderSetFlags()
-          setSay('已儲存。下一句即時生效。', 'ok')
+          setSay(t('set.saved'), 'ok')
           return
         }
         /* A refusal is shown in full — it names what was rejected and why, and says nothing
            was saved. The page never silently edits what the Owner typed. */
-        setSay(res.body.detail || '儲存失敗', 'bad')
+        setSay(res.body.detail || t('set.saveFailed'), 'bad')
       })
-      .catch(function () { setSay('儲存失敗', 'bad') })
+      .catch(function () { setSay(t('set.saveFailed'), 'bad') })
       .finally(function () { btn.disabled = false })
   })
 

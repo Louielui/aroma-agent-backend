@@ -2263,3 +2263,124 @@ to you — here, by a password I must not type. Say which it was.
 **Corollary:** any code path that can produce an empty surface should say why it is empty, even
 when nobody has reported a problem. Every silent `return` in a render path is a future
 unreproducible bug report.
+
+---
+
+# HR-46 — The defensive habit disarms the guard it is defending
+
+**Round:** the bilingual extraction, 2026-08-07.
+
+> **Owner: 「防守嘅習慣，解除咗佢自己防守緊嘅守衛。A guard that stops matching my words, with no
+> code deleted and nothing reporting — that is every silent failure this month in a new
+> disguise.」**
+
+A sweep of 223 test files and 7,220 assertions found six assertions that could not fail. One
+compared a literal to itself. The other five all had this shape:
+
+```js
+assert.doesNotMatch(r.detail || '', /冇搵到相關回收/)   // passes for free when detail is absent
+assert.ok(!/section_context/.test(seen.prompt || ''))  // passes for free if the adapter never ran
+```
+
+**All five sat on a 「must not read as good news」 guard.** The blocked recall that must not read
+as a clean page, the site that says 89 items but parses none, the calm summary that must not
+swallow an unchecked ingredient, the envelope that must not frame an ordinary turn.
+
+That placement is not chance. `|| ''` is what you write when you are being careful about a field
+that **might be missing** — and 「might be missing」 is the exact state those guards exist to
+catch. The care and the hole have the same cause.
+
+None of the five was hiding a live defect. Adding the existence assertion left all of them green.
+They were loaded guns pointed away from the target.
+
+## THE RULE
+
+> ### A fallback makes the absent case pass. Wherever you write one — `|| ''`, `|| []`,
+> ### `|| {}`, `?? 0`, `catch { return null }` — ask what the code does when the fallback is
+> ### the value, and whether that is the case you were trying to check. If it is, assert the
+> ### subject EXISTS before asserting anything about it.
+
+**This is not only about tests.** The same shape in production is how `detailFor` collapsed a
+missing `items` into `[]` and produced a false all-clear for eight ingredients (HR-43), and how
+a missing `store` rendered identically to a corrupt one until `NOT_WIRED` was split out. A
+fallback answers a question the code failed to answer. Sometimes that is mercy; on a guard it is
+a lie.
+
+**Mechanised:** `src/testutil/assertionShape.js` detects both shapes across the suite and fails
+the build. It also states what it does NOT cover, because a green run there means one family is
+absent, not that every assertion can fail.
+
+---
+
+# HR-47 — A detector must be proven against the thing it detects
+
+**Round:** the same sweep, 2026-08-07.
+
+> **Owner: 「a detector built to find shape X must be proven against X before its clean result
+> means anything, because a broken detector and a clean codebase produce the same output.」**
+
+The scanner written for HR-46 had a one-line bug: `readLiteral` never accumulated ordinary
+characters, so every string literal read back as `''`. It still reported the five `|| ''` sites —
+by coincidence, since their fallback genuinely was empty — while being **structurally incapable**
+of seeing `|| '從來未'`, the exact shape it was written to find.
+
+I would have reported a clean sweep of the remaining families and believed it. The four
+seen-to-fail cases caught it. **Review had already read the function and agreed with it.**
+
+That was the third time in one day:
+
+| | what review agreed with |
+|---|---|
+| the literal-key predicate | `'supplier.' + name` BEGINS with a literal, so a check on the beginning passed it |
+| the staleness rule | 「still contains Chinese」 called a fully-extracted file stale |
+| this scanner | a missing `out += ch` |
+
+Each read correctly. Each was wrong. Reading code you have just written tells you what you meant.
+
+## THE RULE
+
+> ### Before a detector's clean result may be reported, feed it the thing it exists to find and
+> ### watch it fire. A broken detector and a clean codebase produce the same output, and the
+> ### difference is invisible from the result alone.
+
+**Corollary — where the sample must come from.** The probe cases must be REAL instances, copied
+from the code that motivated the detector, not examples invented alongside it. An invented case
+tests the same misunderstanding twice.
+
+**Corollary — the fixtures must not be found by the scan.** Write the examples so the scanner
+cannot read them as instances (`'assert' + '.'`), or the file fails on its own documentation —
+which has now happened five times in this codebase, and is why `src/testutil/codeOnly.js` exists.
+
+---
+
+# HR-48 — A rule you were warned about is not a mechanism
+
+**Round:** the same, 2026-08-07.
+
+> **Owner: 「Rules do not survive the moment they are inconvenient; the scan did.」**
+
+The Owner's exact warning, given one round earlier:
+
+> 「Literal keys only, enforced by a test that fails on a dynamic key. That is the one structural
+> line that keeps data out of the translator, **and it will be tempting to break the first time
+> something looks repetitive**.」
+
+Eight Windows scheduler status codes then looked repetitive. I wrote a lookup table holding
+`key: 'sched.ready'` and called `t(status.key)` — a dynamic key — in the first tranche after the
+warning, having written the rule, the test, and the paragraph explaining it.
+
+**The source scan failed the build. The warning did not prevent it.**
+
+## THE RULE
+
+> ### The value of making something structural is not that it states the rule more clearly. It is
+> ### that it holds when the person who wrote the rule is the one breaking it, for a reason that
+> ### looks good at the time.
+
+Being warned, agreeing with the warning, and having authored the warning are all compatible with
+walking into it. 「唔可能」，唔係「唔准」 — and this is the case that proves the distinction is not
+rhetorical.
+
+**Corollary:** when a rule cannot be made structural, say so plainly rather than writing a check
+that looks like one. The English plural-agreement rule in `src/i18n/catalogue.js` is untested and
+says why: a regex for one agreement would have the appearance of a guard and miss every other.

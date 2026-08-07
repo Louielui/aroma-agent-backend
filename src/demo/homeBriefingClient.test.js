@@ -239,7 +239,11 @@ test('⛔ the four conclusion fields render SEPARATELY — gap can never be fold
 
 test('⛔ the row list is CAPPED and says how many are hidden', () => {
   assert.match(APP_JS, /hiddenRows/, 'never-blank applies to what was cut, not only to what is empty')
-  assert.match(APP_JS, /睇紀錄|隱藏|仲有/, 'the hidden count must be stated in words he reads')
+  // CONVERTED: the hidden count must be STATED, and the count is a slot in both languages.
+  assert.match(APP_JS, /t\('errands\.moreHidden'/, 'the hidden count must be stated in words he reads')
+  for (const loc of ['zh', 'en']) {
+    assert.match(CATALOGUE['errands.moreHidden'][loc], /\{n\}/, loc + ' must state the number')
+  }
 })
 
 test('the run count is shown as a number, not as thirty lines', () => {

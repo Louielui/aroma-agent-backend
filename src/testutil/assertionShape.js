@@ -20,12 +20,36 @@
  * ever draws attention to it. It is only findable by asking a question no one thinks to ask:
  * **can this assertion pass without touching the thing it names?**
  *
+ * ── ⛔ AND THE GENERAL FORM, WHICH IS BIGGER THAN `|| ''` (HR-46) ───────────
+ *
+ * > **Owner: 「防守嘅習慣，解除咗佢自己防守緊嘅守衛。」**
+ *
+ * All five instances found by the first sweep sat on a 「must not read as good news」 guard. That
+ * is not chance: `|| ''` is what you write when being careful about a field that MIGHT BE
+ * MISSING, and 「might be missing」 is the exact state those guards exist to catch. The care and
+ * the hole have the same cause.
+ *
+ * The rule generalises past `|| ''` and past tests. Wherever a fallback is written — `|| []`,
+ * `|| {}`, `?? 0`, `catch { return null }` — ask what the code does when the FALLBACK is the
+ * value, and whether that is the case you were trying to check. In production this is how
+ * `detailFor` turned a missing `items` into `[]` and produced a false all-clear for eight
+ * ingredients (HR-43), and how a missing store rendered identically to a corrupt one until
+ * NOT_WIRED was split out. A fallback answers a question the code failed to answer; sometimes
+ * that is mercy, and on a guard it is a lie.
+ *
  * ── WHAT IS DETECTED ────────────────────────────────────────────────────────
  * ① FALL-THROUGH: the subject is an `||` chain ending in a literal, and that literal alone
  *    satisfies the matcher. The assertion passes with every real operand null.
  * ② EMPTY-COERCION: the subject coerces a possibly-absent value with `|| ''` and then asserts
  *    that something is ABSENT from it. Empty contains nothing, so the absent case passes for
  *    free — a nullable field silently exempts itself from the check it looks covered by.
+ *
+ * ⛔ THIS DETECTOR'S OWN CLEAN RESULT MEANS NOTHING UNTIL IT HAS BEEN SEEN TO FIRE (HR-47).
+ * Its first version had a one-line bug — `readLiteral` never accumulated ordinary characters —
+ * so it was structurally incapable of seeing `|| '從來未'`, the shape it was written to find,
+ * while still reporting the `|| ''` sites and looking like it worked. A broken detector and a
+ * clean codebase produce the same output. `assertionShape.test.js` feeds it real instances,
+ * copied from the code that motivated it, and watches each one fire.
  *
  * ⛔ WHAT IS NOT DETECTED, AND THE HONESTY THAT MATTERS MORE THAN THE COVERAGE:
  * this finds ONE family. An assertion can be vacuous in ways no scanner sees — a fixture that

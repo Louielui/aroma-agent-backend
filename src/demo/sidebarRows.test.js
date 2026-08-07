@@ -21,6 +21,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -55,7 +56,7 @@ test('the send path captures its conversation BEFORE anything renders', () => {
   assert.ok(submit.indexOf('var conv = active') < submit.indexOf('addUser('), 'captured first')
   assert.ok(/addUser\(text, conv\)/.test(submit))
   assert.ok(/addTyping\(conv\)/.test(submit))
-  assert.ok(/addError\('連線失敗，可以重新送出。', conv\)/.test(submit))
+  assert.ok(/addError\(t\('err\.connection'\), conv\)/.test(submit))
 })
 
 /* ═══ 2. `loaded` MEANS LOADED ═══════════════════════════════════════════════ */
@@ -83,12 +84,22 @@ test('*** rows carry a time and a turn count — the only things that separate t
   assert.ok(/function whenLabel/.test(APP_JS), 'a time')
   assert.ok(/function convCount/.test(APP_JS), 'and a count')
   assert.ok(/el\('div', 'conv-meta'\)/.test(APP_JS), 'rendered beside the title')
-  assert.ok(APP_JS.includes("'月'") && APP_JS.includes("'日'"), 'older rows show a date')
+  // CONVERTED: older rows show a DATE. The format is a key now — and 「月/日」 was never the
+  // requirement, only how Chinese writes it.
+  assert.ok(APP_JS.includes("t('conv.monthDay'"), 'older rows show a date')
+  for (const loc of ['zh', 'en']) {
+    const v = CATALOGUE['conv.monthDay'][loc]
+    assert.ok(v.includes('{m}') && v.includes('{d}'), loc + ' must carry both month and day')
+  }
 })
 
 test('*** the list is grouped 今日 / 尋日 / 更早 ***', () => {
   assert.ok(/function groupLabel/.test(APP_JS))
-  for (const g of ['今日', '尋日', '更早']) assert.ok(APP_JS.includes(g), g)
+  // CONVERTED: the three groups exist. Their words live in the catalogue, in both languages.
+  for (const key of ['conv.today', 'conv.yesterday', 'conv.earlier']) {
+    assert.ok(APP_JS.includes("t('" + key + "')"), key + ' is rendered')
+    for (const loc of ['zh', 'en']) assert.ok(CATALOGUE[key][loc].length > 0, key + '/' + loc)
+  }
   assert.ok(/el\('div', 'conv-group', g\)/.test(APP_JS), 'a label only when the group changes')
 })
 

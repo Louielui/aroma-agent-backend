@@ -70,7 +70,8 @@ test('*** it is cleared in the terminal step that runs after success AND failure
 test('*** a failed turn does not leave it spinning ***', () => {
   const s = submit()
   const catchBlock = s.slice(s.indexOf('}).catch(function ()'), s.lastIndexOf('}).then(function ()'))
-  assert.ok(/addError\([^)]*, conv\)/.test(catchBlock), 'the error goes to the conversation that asked')
+  // `addError(t('err.connection'), conv)` has a nested `)`, so [^)]* no longer spans it.
+  assert.ok(/addError\(.*, conv\)/.test(catchBlock), 'the error goes to the conversation that asked')
   // The terminal step clears it, so the catch does not have to remember to.
   const tail = s.slice(s.lastIndexOf('}).then(function ()'))
   assert.ok(/conv\.working = false/.test(tail))

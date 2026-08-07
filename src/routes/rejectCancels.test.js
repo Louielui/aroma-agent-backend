@@ -18,6 +18,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -83,7 +84,7 @@ test('*** the message is only shown after the server confirms it ***', () => {
   const at = CLIENT.indexOf("no.addEventListener('click'")
   const handler = CLIENT.slice(at, at + 1400)
   const fetchAt = handler.indexOf('fetch(')
-  const claimAt = handler.indexOf('你拒絕了')
+  const claimAt = handler.indexOf("t('approve.rejected')")
   assert.ok(claimAt > fetchAt, 'the claim is printed before the request is made')
 })
 
@@ -91,5 +92,9 @@ test('*** a failed reject says so rather than claiming success ***', () => {
   const at = CLIENT.indexOf("no.addEventListener('click'")
   const handler = CLIENT.slice(at, at + 1400)
   assert.ok(/catch\(/.test(handler), 'no failure path')
-  assert.ok(/未能|失敗/.test(handler), 'a failed reject must not read as a successful one')
+  // CONVERTED: a failed reject must say so. Both failure keys are checked, and their
+  // sentences are checked in both languages — 「nothing ran」 is the reassurance that matters.
+  assert.ok(/approve\.cancelFailed/.test(handler), 'a failed reject must not read as a successful one')
+  assert.match(CATALOGUE['approve.cancelFailed'].zh, /沒有執行/, 'the Chinese says nothing ran')
+  assert.match(CATALOGUE['approve.cancelFailed'].en, /[Nn]othing ran/, 'and so does the English')
 })

@@ -25,6 +25,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -144,8 +145,15 @@ test('*** the HOW-TO half was not deleted — it is in the ＋ menu ***', () => 
   // The placeholder cannot carry both halves without wrapping. This one names the file and
   // the change, which is what someone needs when they actually want one.
   const shortcuts = APP_JS.slice(APP_JS.indexOf('var SHORTCUTS'), APP_JS.indexOf('var SHORTCUTS') + 500)
-  assert.ok(/檔案/.test(shortcuts), 'the note says to name the file: ' + shortcuts)
-  assert.ok(/批准/.test(shortcuts), 'and that approval comes first')
+  // CONVERTED: the shortcut must be the proposal lane, whose note carries both halves.
+  assert.ok(shortcuts.includes("t('lane.proposalNote')"), 'the proposal note is used: ' + shortcuts)
+  // ⛔ AND THE WORDING GUARD MOVED TO THE SENTENCE, IN BOTH LANGUAGES. 「name the file」 and
+  // 「approval comes first」 are about what the note SAYS; scanning app.js could only ever
+  // have checked the Chinese.
+  assert.match(CATALOGUE['lane.proposalNote'].zh, /檔案/, 'the Chinese names the file')
+  assert.match(CATALOGUE['lane.proposalNote'].zh, /批准/, 'and that approval comes first')
+  assert.match(CATALOGUE['lane.proposalNote'].en, /file/i, 'the English names the file')
+  assert.match(CATALOGUE['lane.proposalNote'].en, /approve/i, 'and that approval comes first')
 })
 
 /* ═══ 5. IT REACHES THE SERVED PAGE ════════════════════════════════════════ */

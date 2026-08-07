@@ -11,6 +11,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -286,7 +287,8 @@ test('an empty conversation is not also listed in the sidebar', () => {
   assert.ok(DEMO_HTML.includes('function isListed (c) { return c.stored === true || c.history.length > 0 }'),
     'listing requires content, or a server-stored conversation that has some')
   assert.ok(DEMO_HTML.includes('if (!isListed(convs[i])) continue'), 'empty ones are skipped')
-  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : '香香'"), 'the header does not repeat an empty title')
+  assert.ok(DEMO_HTML.includes("titleEl.textContent = isListed(c) ? c.title : t('brand.name')"),
+    'the header does not repeat an empty title')
 })
 
 /* ── Stage A.2: the model picker ─────────────────────────────────────────── */
@@ -310,12 +312,18 @@ test('*** what the picker CLAIMS about each provider must be TRUE, and stated on
   // sixth source fails this test until the interface names it.
   const { ALL_SOURCES } = require('../context/liveClients')
   const { LABELS } = require('../intake/readStateGuard')
-  const sources = ALL_SOURCES.map((s) => LABELS[s] || s).join('／') + '同過往決定'
+  const sources = ALL_SOURCES.map((s) => LABELS[s] || s).join('／')
   assert.ok(!DEMO_HTML.includes('睇唔到 Drive'), 'the stale "GPT is blind" claim is gone from the interface')
+  // CONVERTED. What must be TRUE is the CLAIM, so it is checked on the sentence — in both
+  // languages. Scanning the page for 「會送去 OpenAI」 could only ever have checked the Chinese,
+  // and an English note that quietly dropped the second-vendor disclosure would have passed.
   assert.ok(DEMO_HTML.includes(JSON.stringify(ALL_SOURCES.map((s) => LABELS[s] || s))), 'the source list is injected from the registry')
-  assert.ok(DEMO_HTML.includes("'一樣睇到 ' + SOURCE_TEXT"), 'GPT is stated to see the same context')
-  assert.ok(DEMO_HTML.includes('會送去 OpenAI'), 'and that the data goes to a second vendor')
-  assert.ok(DEMO_HTML.includes("'睇到 ' + SOURCE_TEXT"), 'the Claude capability, for contrast')
+  assert.ok(DEMO_HTML.includes("t('provider.canSeeButSends', { sources: SOURCE_TEXT })"), 'GPT is stated to see the same context')
+  for (const loc of ['zh', 'en']) {
+    assert.match(CATALOGUE['provider.canSeeButSends'][loc], /OpenAI/, loc + ': the data goes to a second vendor')
+    assert.match(CATALOGUE['provider.canSeeButSends'][loc], /{sources}/, loc + ': and it names the same sources')
+  }
+  assert.ok(DEMO_HTML.includes("t('provider.canSee', { sources: SOURCE_TEXT })"), 'the Claude capability, for contrast')
   assert.ok(sources.includes('餐廳系統'), 'and the restaurant\'s own system is part of that list')
   assert.ok(DEMO_HTML.includes("el('div', 'opt-note'"), 'rendered as a visible note element')
   assert.ok(!/title="[^"]*OpenAI/.test(DEMO_HTML), 'not a tooltip-only disclosure')
@@ -325,8 +333,23 @@ test('*** what the picker CLAIMS about each provider must be TRUE, and stated on
 test('each reply is labelled with the provider that ACTUALLY answered', () => {
   assert.ok(DEMO_HTML.includes('function labelServedBy'), 'there is a served-by label')
   assert.ok(DEMO_HTML.includes('res.servedBy'), 'it reads the server-reported provider')
-  assert.ok(DEMO_HTML.includes('你揀嘅嗰個失敗咗'), 'a fallback is disclosed, not hidden')
+  // CONVERTED: a fallback must be DISCLOSED. The sentence is a key now, and the disclosure
+  // requirement is checked on the sentence in BOTH languages — scanning the page could only
+  // ever have checked the Chinese.
+  assert.ok(DEMO_HTML.includes("t('served.byFallback'"), 'a fallback is disclosed, not hidden')
+  assert.match(CATALOGUE['served.byFallback'].zh, /失敗/, 'the Chinese says the pick failed')
+  assert.match(CATALOGUE['served.byFallback'].en, /failed/i, 'and so does the English')
   // it must not simply echo what the page asked for
-  assert.ok(!/labelServedBy[\s\S]{0,400}provider\b/.test(DEMO_HTML.slice(DEMO_HTML.indexOf('function labelServedBy'), DEMO_HTML.indexOf('function labelServedBy') + 400)),
-    'the label never reads the local pick')
+  /**
+   * ⛔ NARROWED, BECAUSE EXTRACTION BROADENED WHAT MATCHES.
+   *
+   * The body now contains `t('provider.gpt')` and `t('provider.claude')` — catalogue KEYS that
+   * happen to contain the word 「provider」, so the old `/provider\b/` fired on them. The rule
+   * was never 「the word provider must not appear」; it is that the label must not read the
+   * page's own PICK, which is the bare variable `provider`. Keys are excluded first, then the
+   * bare identifier is what is forbidden.
+   */
+  const at = DEMO_HTML.indexOf('function labelServedBy')
+  const body = DEMO_HTML.slice(at, at + 400).replace(/'provider\.[a-zA-Z]+'/g, "''")
+  assert.ok(!/\bprovider\b/.test(body), 'the label never reads the local pick')
 })

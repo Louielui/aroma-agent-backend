@@ -62,7 +62,22 @@ function filesWithQuotedHan (root) {
   return out
 }
 
-/** Files that require the resolver or the shared `t`. */
+/**
+ * Files that translate — by importing the resolver, OR by calling `t('a.b')`.
+ *
+ * ⛔ THE IMPORT ALONE WAS THE WRONG DEFINITION, and `demo/assets/app.js` is the file that
+ * proved it. The browser asset has no `require`: the resolver is inlined above it in the page.
+ * It translates more than any other file in the codebase and this function could not see it —
+ * so once app.js was fully extracted it looked like a file that carries nothing and translates
+ * nothing, and the staleness check asked for its classification to be DELETED. The rule that
+ * keeps MODEL and MATCHING files away from the resolver would have stopped covering the one
+ * file with the most interface text in it.
+ *
+ * A call site is what rule ② is actually about. The import was a proxy for it.
+ */
+const CALLS_T = /\bt\('[a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+'/
+const IMPORTS_RESOLVER = /require\((['"])[^'"]*\/(i18n\/t|textResolver)\1\)/
+
 function translatingFiles () {
   const out = []
   const walk = (d) => {
@@ -72,7 +87,7 @@ function translatingFiles () {
       if (st.isDirectory()) { if (n !== 'node_modules') walk(p); continue }
       if (!/\.js$/.test(n) || /\.test\.js$/.test(n)) continue
       const src = stripComments(fs.readFileSync(p, 'utf8'))
-      if (/require\((['"])[^'"]*\/(i18n\/t|textResolver)\1\)/.test(src)) {
+      if (IMPORTS_RESOLVER.test(src) || CALLS_T.test(src)) {
         out.push(path.relative(SRC, p).split(path.sep).join('/'))
       }
     }

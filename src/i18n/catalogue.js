@@ -38,11 +38,18 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
-  // ── the plainest case: no data at all ──
-  'briefing.nothingWaiting': {
-    zh: '沒有需要你決定的事。',
-    en: 'Nothing waiting on you.'
-  },
+  /**
+   * ⛔ THIS FILE ONCE HELD `briefing.nothingWaiting` TWICE.
+   *
+   * The proof-set version lived here and the real one arrived later under 首頁 BRIEFING, with
+   * different wording. An object literal keeps the LAST and discards the first in silence, so
+   * every test passed, the catalogue reported the right number of entries, and one of the two
+   * sentences simply did not exist. The 「Nothing waiting on you.」 that was written first was
+   * gone and nothing said so.
+   *
+   * It cannot be caught by reading the object — by then the duplicate is already resolved. It
+   * is caught by scanning THIS SOURCE, in `textResolver.test.js`.
+   */
   'briefing.updatedAt': {
     zh: '更新於 {time}',
     en: 'Updated {time}'
@@ -450,6 +457,252 @@ const CATALOGUE = Object.freeze({
     zh: '這個頁面不是最新版本 — 按 Ctrl+Shift+R 硬重新整理。',
     en: 'This page is not the current version — press Ctrl+Shift+R to hard-reload.'
   },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE CLIENT — app.js. Every remaining interface string on the screen.
+  // ══════════════════════════════════════════════════════════════════════════
+
+  // ── who is answering, and what they can see ──
+  'provider.claude': { zh: '香香（Claude）', en: 'Xiangxiang (Claude)' },
+  'provider.gpt': { zh: '香香（GPT）', en: 'Xiangxiang (GPT)' },
+  'provider.canSee': { zh: '看到 {sources}', en: 'Can see {sources}' },
+  /**
+   * ⛔ THE ASYMMETRY IS THE POINT, and the English must not soften it. The same data, but a
+   * SECOND VENDOR receives it. contextAsymmetry.test.js pins that this stays true.
+   */
+  'provider.canSeeButSends': {
+    zh: '一樣看到 {sources} —— 但這些資料會送去 OpenAI',
+    en: 'Sees the same {sources} — but that data is sent to OpenAI'
+  },
+  'provider.pastDecisions': { zh: '同過往決定', en: 'and past decisions' },
+
+  // ── conversations ──
+  'conv.new': { zh: '新對話', en: 'New conversation' },
+  'conv.deleteLabel': { zh: '刪除「{title}」', en: 'Delete "{title}"' },
+  'conv.delete': { zh: '刪除', en: 'Delete' },
+  /** ⛔ 「冇得復原」 must survive translation — it is the whole reason there is a confirm. */
+  'conv.deleteConfirm': {
+    zh: '刪除「{title}」？這是永久的，沒有得復原。',
+    en: 'Delete "{title}"? This is permanent and cannot be undone.'
+  },
+  'conv.cannotRead': { zh: '讀不到這個對話，可以再按一次。', en: 'I could not load that conversation. Try again.' },
+  'conv.cannotDelete': { zh: '刪不到，可以再試一次。', en: 'I could not delete it. Try again.' },
+  'conv.today': { zh: '今日', en: 'Today' },
+  'conv.yesterday': { zh: '尋日', en: 'Yesterday' },
+  'conv.earlier': { zh: '更早', en: 'Earlier' },
+  /**
+   * ⛔ NO MONTH NAMES. Twelve of them is twelve more things to keep in step, for a label that
+   * only has to be unambiguous. He writes 「8月7日」 and would write 「8/7」.
+   */
+  'conv.monthDay': { zh: '{m}月{d}日', en: '{m}/{d}' },
+
+  // ── the greeting ──
+  'greeting.unavailable': {
+    zh: '（我拿不到今日的招呼語 —— {error}）',
+    en: '(I could not fetch today\'s greeting — {error})'
+  },
+
+  // ── section attachment preview: ⛔ 附上咗乜要睇得見 ──
+  'attach.travelling': { zh: '⬚ 我會帶著這些落去（{title}）：', en: '⬚ This travels with what you type ({title}):' },
+  'attach.open': { zh: '打開 {title} →', en: 'Open {title} →' },
+
+  // ── section detail ──
+  'detail.blocked': { zh: '查不到 —— {why}', en: 'Could not check — {why}' },
+  'detail.noItemsRecorded': { zh: '沒有記下找到什麼。', en: 'This run did not record what it found.' },
+  /** ⛔ The false all-clear, named out loud. Neither language may soften it. */
+  'detail.noItemsWarning': {
+    zh: '沒有記下找到什麼 —— 不要當它是沒有回收。',
+    en: 'Nothing was recorded — do not read that as "no recalls".'
+  },
+  'detail.siteFound': { zh: '網站找到 {n} 條', en: 'The site returned {n}' },
+  'detail.nothingFound': { zh: '沒有找到相關回收。', en: 'No matching recalls.' },
+  'detail.whichDayChanged': { zh: '哪日變了什麼', en: 'What changed, and when' },
+
+  // ── the errand outcomes ──
+  'outcome.answered': { zh: '答到', en: 'Answered' },
+  'outcome.stopped': { zh: '停低，等你', en: 'Stopped for you' },
+  'outcome.blocked': { zh: '被網站擋住', en: 'Blocked by the site' },
+
+  // ── the errand history strip ──
+  'errands.ranTimesToday': { zh: '今日跑過 {n} 次', en: 'ran {n} times today' },
+  'errands.oneRow': { zh: '1 條紀錄', en: '1 row' },
+  'errands.rows': { zh: '{n} 條紀錄', en: '{n} rows' },
+  'errands.moreHidden': { zh: '還有 {n} 條沒有顯示', en: '{n} more not shown' },
+  'errands.noHistoryPage': { zh: '{bits} —— 沒有紀錄頁，要看就問我。', en: '{bits} — there is no history page yet; ask me and I will show you.' },
+
+  // ── the waiting card ──
+  'waiting.heading': { zh: '⏸ 等你 —— {title}', en: '⏸ Waiting on you — {title}' },
+  'waiting.where': { zh: '邊度', en: 'Where' },
+  'waiting.account': { zh: '用邊個', en: 'Account' },
+  'waiting.didWhat': { zh: '我做咗', en: 'What I did' },
+  'waiting.notPressed': { zh: '我冇撳', en: 'What I did NOT press' },
+  'waiting.notPressedValue': { zh: '{role}「{name}」', en: '{role} "{name}"' },
+  'waiting.amount': { zh: '金額', en: 'Amount' },
+  'waiting.whyStopped': { zh: '點解停', en: 'Why it stopped' },
+  'waiting.reopen': { zh: '開返嗰版', en: 'Reopen that page' },
+  'waiting.opening': { zh: '開緊…', en: 'Opening…' },
+  'waiting.opened': { zh: '開咗', en: 'Opened' },
+  'waiting.profileBusyShort': { zh: '香香而家用緊個 profile。', en: 'She is using that profile right now.' },
+  'waiting.cannotOpen': { zh: '開唔到。', en: 'Could not open it.' },
+  'waiting.countWaiting': { zh: '⏸ {n} 單等你決定', en: '⏸ {n} waiting on you' },
+  'waiting.look': { zh: '睇下', en: 'Look' },
+
+  // ── copy ──
+  'copy.label': { zh: '複製這個回覆', en: 'Copy this reply' },
+  'copy.title': { zh: '複製', en: 'Copy' },
+  'copy.done': { zh: '已複製', en: 'Copied' },
+  'copy.failed': { zh: '複製唔到', en: 'Could not copy' },
+
+  // ── lanes ──
+  'lane.emailDraft': { zh: '寫 Email', en: 'Draft an email' },
+  'lane.emailDraftNote': { zh: '直接走 Email 草稿通道', en: 'Goes straight to the email-draft lane' },
+  'lane.proposal': { zh: '建立提案', en: 'Make a proposal' },
+  'lane.proposalNote': { zh: '講明改哪個檔案、改什麼；批准後才執行', en: 'Names the file and the change; nothing runs until you approve' },
+  'lane.next': { zh: '下一句：{name}（按一下取消）', en: 'Next message: {name} (click to cancel)' },
+  'lane.chat': { zh: '聊天', en: 'Chat' },
+  'lane.emailName': { zh: 'Email 草稿', en: 'Email draft' },
+  'lane.proposalName': { zh: '提案', en: 'Proposal' },
+
+  // ── errors ──
+  'err.connection': { zh: '連線失敗，可以重新送出。', en: 'Connection failed. You can send it again.' },
+  'err.demoDisabled': { zh: '示範功能未啟用（demo_disabled）。', en: 'The demo is not enabled (demo_disabled).' },
+  'err.badInput': { zh: '輸入無效，請檢查訊息或模式。', en: 'Invalid input — check the message or the mode.' },
+  'err.serverBusy': { zh: '系統暫時無法處理這個請求。', en: 'The system cannot handle this request right now.' },
+  'err.retrySuffix': { zh: '{message}（可重新送出）', en: '{message} (you can send it again)' },
+  'err.unknownShape': { zh: '收到回應但格式未知。requestId: {id}', en: 'A reply arrived in a shape I do not recognise. requestId: {id}' },
+  'err.none': { zh: '（無）', en: '(none)' },
+  'err.unknownReason': { zh: '未知原因', en: 'no reason given' },
+
+  // ── who answered ──
+  'served.by': { zh: '由 {name} 回答', en: 'Answered by {name}' },
+  /** ⛔ The fallback must SAY it was a fallback; silently switching vendor is the thing to avoid. */
+  'served.byFallback': {
+    zh: '由 {name} 回答（你揀的那個失敗了，已自動改用它）',
+    en: 'Answered by {name} (the one you picked failed, so this one was used instead)'
+  },
+  'served.noExternalModel': { zh: '未送外部模型，未執行任何動作', en: 'No external model was called; nothing was executed' },
+
+  // ── email draft ──
+  'draft.title': { zh: '草稿（未寄出）', en: 'Draft (not sent)' },
+  'draft.subject': { zh: '主旨：{subject}', en: 'Subject: {subject}' },
+  'draft.emptyBody': { zh: '（無內文）', en: '(no body)' },
+  'draft.meta': { zh: 'SHADOW_ONLY · 未寄出 · 未寫入記憶', en: 'SHADOW_ONLY · not sent · not written to memory' },
+
+  // ── proposals ──
+  'proposal.none': { zh: '尚未建立任何提案', en: 'No proposal has been created' },
+  'proposal.meta': { zh: '提案 {id} · 只是提案，未執行', en: 'Proposal {id} · a proposal only; nothing has run' },
+  'proposal.file': { zh: '檔案：{file}', en: 'File: {file}' },
+  'proposal.intent': { zh: '改動：{intent}', en: 'Change: {intent}' },
+  'proposal.correctIt': {
+    zh: '看錯了？直接打多一句話講清楚就可以，不用填表。',
+    en: 'Got it wrong? Just say so in another sentence — there is no form to fill in.'
+  },
+  'proposal.whichFile': { zh: '你想改哪個檔？', en: 'Which file do you want changed?' },
+  'proposal.askFileLabel': { zh: '要改的單一檔案路徑', en: 'The single file path to change' },
+  'proposal.askIntentLabel': { zh: '打算改成甚麼', en: 'What it should become' },
+  'proposal.askFilePlaceholder': { zh: '請輸入要改的檔案路徑', en: 'Enter the file path to change' },
+  'proposal.askIntentPlaceholder': { zh: '請輸入想改成甚麼', en: 'Enter what it should become' },
+  'proposal.makeWorkOrder': { zh: '產生工作單', en: 'Create a work order' },
+
+  // ── the settings offer (deterministic entrance) ──
+  'offer.settingAsk': { zh: '要我改這個設定？', en: 'Shall I change this setting?' },
+  'offer.change': { zh: '{say}：{from} → {to}', en: '{say}: {from} → {to}' },
+  'offer.needsReregister': {
+    zh: '⚠ 這個不會即刻生效 —— 改完還要重新登記那個 task。',
+    en: '⚠ This does not take effect immediately — the task has to be re-registered afterwards.'
+  },
+  'offer.go': { zh: '改', en: 'Change it' },
+  'offer.changing': { zh: '改緊…', en: 'Changing…' },
+  'offer.failed': { zh: '改不到：{reason}', en: 'Could not change it: {reason}' },
+  'offer.done': { zh: '改咗：{say} = {to}{how}', en: 'Changed: {say} = {to}{how}' },
+  'offer.liveNow': { zh: '（即刻生效）', en: ' (live now)' },
+  'offer.howToApply': { zh: '（要重新登記 task：{how}）', en: ' (re-register the task: {how})' },
+  'offer.noAnswer': { zh: '改不到 —— 那個 API 沒有回答。', en: 'Could not change it — the API did not answer.' },
+  'offer.workOrderAsk': { zh: '要我出一張工作單改 {file}？', en: 'Shall I raise a work order to change {file}?' },
+  'offer.makeWorkOrder': { zh: '出工作單', en: 'Raise a work order' },
+  'offer.making': { zh: '正在出工作單…', en: 'Raising a work order…' },
+  /** ⛔ 「甚麼都沒有建立」 is the reassurance that matters on a failure. Keep it in both. */
+  'offer.makeFailed': {
+    zh: '未能出工作單（{reason}）。甚麼都沒有建立。',
+    en: 'Could not raise the work order ({reason}). Nothing was created.'
+  },
+  'offer.makeFailedNet': {
+    zh: '連線失敗，未能出工作單。甚麼都沒有建立。',
+    en: 'Connection failed, so no work order was raised. Nothing was created.'
+  },
+  'offer.createFailed': { zh: '未能建立工作單：{reason}', en: 'Could not create the work order: {reason}' },
+  'offer.createFailedNet': { zh: '連線失敗（未建立任何工作單）。', en: 'Connection failed (no work order was created).' },
+
+  // ── the approval card ──
+  'approve.approve': { zh: '批准測試', en: 'Approve test' },
+  'approve.reject': { zh: '拒絕', en: 'Reject' },
+  'approve.technical': { zh: '技術細節', en: 'Technical detail' },
+  'approve.details': { zh: '詳細', en: 'Detail' },
+  'approve.typeToConfirm': { zh: '請輸入 {word} 以確認', en: 'Type {word} to confirm' },
+  'approve.cancelling': { zh: '正在取消…', en: 'Cancelling…' },
+  'approve.rejected': {
+    zh: '你拒絕了這張工作單。提案已取消，甚麼都沒有執行。',
+    en: 'You rejected this work order. The proposal is cancelled and nothing ran.'
+  },
+  'approve.cancelFailed': {
+    zh: '未能取消這張工作單（{reason}）。甚麼都沒有執行，但提案仍然存在。',
+    en: 'Could not cancel this work order ({reason}). Nothing ran, but the proposal still exists.'
+  },
+  'approve.cancelFailedNet': {
+    zh: '連線失敗，未能取消。甚麼都沒有執行，但提案仍然存在。',
+    en: 'Connection failed, so it was not cancelled. Nothing ran, but the proposal still exists.'
+  },
+  'approve.startedInCopy': { zh: '已批准。香香開始在丟棄式副本裡面做。', en: 'Approved. She has started, in a throwaway copy.' },
+  /** ⛔ 「甚麼都冇跑過」 — approved is not the same as executed, and the sentence must say so. */
+  'approve.confirmedNotRun': {
+    zh: '已批准：工作單已確認，但執行通道未開啟，所以甚麼都沒有跑過。',
+    en: 'Approved: the work order is confirmed, but the execution lane is not open, so nothing has run.'
+  },
+  'approve.refused': { zh: '被拒絕：{reason}（這張單已作廢，請重新產生）', en: 'Refused: {reason} (this card is void — raise a new one)' },
+  'approve.refusedNet': { zh: '連線失敗（這張單已作廢，請重新產生）', en: 'Connection failed (this card is void — raise a new one)' },
+  'approve.currentContent': { zh: '現時內容', en: 'Current content' },
+  'approve.intendedChange': { zh: '打算改成', en: 'Intended change' },
+
+  // ── run progress ──
+  'run.starting': { zh: '正在開始…', en: 'Starting…' },
+  'run.done': { zh: '完成', en: 'Done' },
+  'run.failed': { zh: '未成功', en: 'Did not succeed' },
+  /** No agreement problem: seconds are always plural in this form, and 「1s」 reads correctly. */
+  'run.elapsed': { zh: '已用 {secs} 秒', en: '{secs}s elapsed' },
+  'run.elapsedOfCap': { zh: '已用 {secs} 秒 / 上限 {cap} 秒', en: '{secs}s elapsed of {cap}s' },
+  'run.timedOut': { zh: '超過時限仍未收到結果 —— 請查伺服器記錄', en: 'Past the time limit with no result — check the server log' },
+  'run.result': { zh: '執行結果', en: 'Result' },
+  'run.changes': { zh: '改動', en: 'Changes' },
+
+  // ── settings panel ──
+  'set.conversationRecall': { zh: '對話記憶', en: 'Conversation memory' },
+  'set.decisionRecall': { zh: '決定記憶', en: 'Decision memory' },
+  'set.setByOwner': { zh: '你設定', en: 'set by you' },
+  'set.setAtStartup': { zh: '啟動時設定', en: 'set at startup' },
+  'set.on': { zh: '開', en: 'On' },
+  'set.off': { zh: '關', en: 'Off' },
+  /** ⛔ A switch that is on but cannot read must say so, or it reads as working. */
+  'set.masterOff': {
+    zh: '總開關 READ_ACCESS 是關的，所以這個開了也讀不到',
+    en: 'The READ_ACCESS master switch is off, so turning this on still reads nothing'
+  },
+  'set.loading': { zh: '讀取中…', en: 'Loading…' },
+  'set.lastSaved': { zh: '上次儲存 {when}', en: 'Last saved {when}' },
+  'set.loadFailed': { zh: '讀取設定失敗', en: 'Could not load settings' },
+  'set.saving': { zh: '儲存中…', en: 'Saving…' },
+  'set.saved': { zh: '已儲存。下一句即時生效。', en: 'Saved. It takes effect on your next message.' },
+  'set.saveFailed': { zh: '儲存失敗', en: 'Could not save' },
+
+  'brand.name': { zh: '香香', en: 'Xiangxiang' },
+
+  /**
+   * ⛔ MORE SEPARATORS, FOUND THE SAME WAY. 「／」 joins the read-source names and 「·」 joins
+   * the errand history bits. Neither is a Han ideograph, so neither appeared in any count of
+   * 「Chinese in the codebase」 — and left alone the English would have read
+   * 「Drive／Gmail／Calendar」. Fourth instance of the same lesson.
+   */
+  'punct.sourceSep': { zh: '／', en: ' / ' },
+  'punct.bulletSep': { zh: ' · ', en: ' · ' },
 
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }

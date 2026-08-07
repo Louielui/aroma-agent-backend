@@ -200,8 +200,61 @@ describe('the catalogue is written in both languages at once', () => {
     }
   })
 
+  test('⛔ no key is defined twice — the object cannot show you this, so the SOURCE is scanned', () => {
+    /**
+     * A duplicate key in an object literal keeps the LAST and discards the earlier one in
+     * silence. Every test still passes, the entry count is still right, and one of the two
+     * sentences simply does not exist. This happened: `briefing.nothingWaiting` was written in
+     * the proof set and again in the briefing block, with different words.
+     *
+     * By the time you have the object, the evidence is gone. So this reads the file.
+     */
+    const src = fs.readFileSync(path.join(SRC, 'i18n', 'catalogue.js'), 'utf8')
+    const seen = new Map()
+    const dupes = []
+    for (const m of src.matchAll(/^ {2}'([a-z][a-zA-Z0-9]*(?:\.[a-z][a-zA-Z0-9]*)+)':/gm)) {
+      if (seen.has(m[1])) dupes.push(m[1])
+      seen.set(m[1], true)
+    }
+    assert.deepStrictEqual(dupes, [], 'defined twice; the earlier one is silently discarded')
+    assert.strictEqual(seen.size, Object.keys(CATALOGUE).length,
+      'the scan must see every key the object has, or it is not covering the file')
+  })
+
   test('every key is key-shaped, so data can never collide with one', () => {
     for (const key of Object.keys(CATALOGUE)) assert.match(key, KEY_SHAPE, key)
+  })
+
+  test('⛔ no English entry is punctuated in Chinese', () => {
+    /**
+     * ⛔ FIFTH INSTANCE OF ONE FAMILY: THE GAP BETWEEN THE LANGUAGES IS NOT ONLY IN THE WORDS.
+     *
+     *   1. 「、」「；」 — list separators, outside the Han range every count used.
+     *   2. number agreement — 「{n} of them were」 is wrong at n=1 and renders anyway.
+     *   3. sentence joining — 「…run daily.Still run by hand」, no space between sentences.
+     *   4. 「／」「·」 — more separators, found the same way as the first.
+     *   5. THIS — an English sentence quoting with 「」: `do not read that as 「no recalls」`.
+     *
+     * Every one of them renders. Every one of them was found by a person reading output. Four
+     * were fixed and left as writing advice; the fifth is where that stops being enough, so
+     * the mechanical half of the family — punctuation that simply does not belong in English —
+     * is checked here. The plural rule still is not, and `catalogue.js` says why: a regex for
+     * one agreement would look like a guard and miss every other.
+     */
+    /**
+     * ⛔ AND THE FIRST VERSION OF THIS SET WAS WRONG — it included 「—」 and 「…」, which are
+     * ordinary English punctuation, and failed on `{ingredient} — new recall: {items}`. A
+     * detector that flags correct work gets switched off, and then it protects nothing
+     * (HR-47's other half). Only unambiguously CJK and fullwidth forms belong here.
+     */
+    const CJK_PUNCT = /[「」『』【】〔〕〈〉《》、。，；：？！～＂＇（）［］｛｝／＼｜]/
+    for (const [key, e] of Object.entries(CATALOGUE)) {
+      // The separator entries ARE punctuation — their English value is chosen deliberately.
+      if (key.startsWith('punct.')) continue
+      const bad = e.en.match(CJK_PUNCT)
+      assert.strictEqual(bad, null,
+        key + '/en is punctuated in Chinese (' + (bad && bad[0]) + '): ' + e.en)
+    }
   })
 
   test('the same slots appear in both languages', () => {

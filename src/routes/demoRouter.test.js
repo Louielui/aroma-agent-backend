@@ -9,6 +9,7 @@
  */
 
 const { test } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const express = require('express')
 
@@ -292,13 +293,21 @@ test('DEFECT (a): no input uses its required value as the placeholder, and submi
   // filled: the placeholder WAS the required value. Placeholders are now instructions.
   // Pinned to the RULE, not to one call's syntax: the placeholder must be an instruction.
   // (It is now set through a ternary, because only the missing field is ever asked for.)
-  assert.ok(DEMO_HTML.includes("'請輸入要改的檔案路徑'"), 'file path placeholder is an instruction')
-  assert.ok(DEMO_HTML.includes("'請輸入想改成甚麼'"), 'the change placeholder is an instruction too')
+  // CONVERTED: a placeholder must be an INSTRUCTION, not the required value. That is a
+  // property of the sentence, so it is checked on the sentence — in BOTH languages.
+  assert.ok(DEMO_HTML.includes("t('proposal.askFilePlaceholder')"), 'file path placeholder is used')
+  assert.ok(DEMO_HTML.includes("t('proposal.askIntentPlaceholder')"), 'the change placeholder too')
+  for (const key of ['proposal.askFilePlaceholder', 'proposal.askIntentPlaceholder']) {
+    for (const loc of ['zh', 'en']) {
+      assert.match(CATALOGUE[key][loc], /輸入|Enter/i, key + '/' + loc + ' must instruct, not exemplify')
+    }
+  }
   // Stronger than before: a SAMPLE PATH as ghost text would be the same defect wearing a
   // different hat — an empty field that looks filled.
   assert.ok(!/placeholder',\s*'[a-z0-9_.-]+\/[a-z0-9_.\-/]+'/i.test(DEMO_HTML),
     'no example file path is ever used as ghost text')
-  assert.ok(DEMO_HTML.includes("'請輸入 ' + sealed.typedConfirmationRequired + ' 以確認'"), 'confirmation placeholder is an instruction')
+  assert.ok(DEMO_HTML.includes("t('approve.typeToConfirm', { word: sealed.typedConfirmationRequired })"),
+    'confirmation placeholder is an instruction')
   assert.ok(!/placeholder',\s*sealed\.typedConfirmationRequired\)/.test(DEMO_HTML), 'the required value is never the placeholder')
   assert.ok(!/placeholder',\s*'EXECUTE'/.test(DEMO_HTML), 'EXECUTE is never shown as ghost text')
 
@@ -308,8 +317,12 @@ test('DEFECT (a): no input uses its required value as the placeholder, and submi
   // missing, so the gate now hangs off that single input. Same guarantee, new name.
   assert.ok(DEMO_HTML.includes("mk.disabled = askIn.value.trim() === ''"), 'seal enabled only on a non-empty answer')
   assert.ok(DEMO_HTML.includes('mk.disabled = !!askIn'), 'and it starts disabled whenever a question is being asked')
-  assert.ok(DEMO_HTML.includes("setAttribute('placeholder', '請輸入 ' + sealed.typedConfirmationRequired + ' 以確認')") ||
-            DEMO_HTML.includes("'請輸入 ' + sealed.typedConfirmationRequired + ' 以確認'"), 'confirmation placeholder is an instruction')
+  assert.ok(DEMO_HTML.includes("t('approve.typeToConfirm', { word: sealed.typedConfirmationRequired })"),
+    'confirmation placeholder is an instruction')
+  for (const loc of ['zh', 'en']) {
+    assert.match(CATALOGUE['approve.typeToConfirm'][loc], /\{word\}/,
+      loc + ': the required word is a slot in an instruction, never the placeholder itself')
+  }
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'the approve button starts disabled')
   assert.ok(DEMO_HTML.includes('go.disabled = (typed.value !== sealed.typedConfirmationRequired)'), 'approve enabled only on an EXACT match')
   // and the click handlers still refuse a disabled button (defence in depth)
@@ -329,8 +342,10 @@ test('DEFECT (b): a new card clears the previous red errors', () => {
 
 test('DEFECT (c): the failure message is not doubled', () => {
   // reasonForOwner already opens with 未能建立工作單, so the page must show it verbatim.
-  assert.ok(DEMO_HTML.includes('addError(o.body.reasonForOwner || ('), 'reasonForOwner is shown as-is')
-  assert.ok(!DEMO_HTML.includes("'未能建立工作單：' + (o.body.reasonForOwner"), 'never prefixed onto reasonForOwner')
+  assert.ok(DEMO_HTML.includes('addError(o.body.reasonForOwner || t('), 'reasonForOwner is shown as-is')
+  // CONVERTED: reasonForOwner must never be wrapped in the prefix template. The prefix is
+  // `offer.createFailed` now, and the rule is that it is the FALLBACK, not a wrapper.
+  assert.ok(!/createFailed'[^\n]*reasonForOwner/.test(DEMO_HTML), 'never prefixed onto reasonForOwner')
 })
 
 test('DEFECT (d): the card renders the server-built sections, never a raw brief', () => {

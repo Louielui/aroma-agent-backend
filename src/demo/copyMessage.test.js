@@ -19,6 +19,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -59,10 +60,15 @@ test('*** the SOURCE is copied, not the rendered DOM text ***', () => {
 
 test('*** the attribution line is never part of what is copied ***', () => {
   const label = APP_JS.slice(APP_JS.indexOf('function labelServedBy'), APP_JS.indexOf('function renderDraft'))
-  assert.ok(label.includes('回答'), 'the attribution is still written')
+  // CONVERTED: the attribution is still written — now as a key.
+  assert.ok(/t\('served\.by(Fallback)?'/.test(label), 'the attribution is still written')
   // It is appended as its own node into the footer — it is never concatenated onto the
   // source string, so it cannot travel to the clipboard.
-  assert.equal(/copy[^\n]*回答|回答[^\n]*writeText/.test(APP_JS), false, 'the attribution is not in the copy payload')
+  // CONVERTED, and it now checks the right thing. The old regex looked for the WORD 回答
+  // near the copy path; after extraction the word is not in app.js at all, so it would have
+  // passed for free forever — the HR-46 shape arriving through the extraction itself.
+  assert.equal(/copy[^\n]*served\.by|served\.by[^\n]*writeText/.test(APP_JS), false,
+    'the attribution is not in the copy payload')
 })
 
 /* ── the click ───────────────────────────────────────────────────────────── */
@@ -76,19 +82,37 @@ test('*** the clipboard write has a graceful failure path ***', () => {
   // project keeps eliminating.
   assert.ok(/if \(!clip \|\| typeof clip\.writeText !== 'function'\)/.test(fn), 'a missing API is checked before it is called')
   assert.ok(fn.includes('.catch('), 'a rejected write is caught')
-  assert.ok(/複製唔到|複製失敗/.test(fn), 'and the Owner is told, in his own language')
+  assert.ok(fn.includes("t('copy.failed')"), 'and the Owner is told')
 })
 
 test('*** a click confirms, then reverts ***', () => {
   const fn = APP_JS.slice(APP_JS.indexOf('function copyButton'), APP_JS.indexOf('function addError'))
-  assert.ok(fn.includes('已複製'), 'a confirmation the Owner can read')
+  // CONVERTED: a confirmation is shown. The words live in the catalogue, in both languages.
+  assert.ok(fn.includes("t('copy.done')"), 'a confirmation the Owner can read')
+  assert.ok(CATALOGUE['copy.done'].zh && CATALOGUE['copy.done'].en, 'and it exists in both')
   assert.ok(/setTimeout\([^,]+,\s*2000\s*\)/.test(fn), 'reverting after about two seconds')
 })
 
 test('the labels are Traditional Chinese, and the control is reachable without sight', () => {
   const fn = APP_JS.slice(APP_JS.indexOf('function copyButton'), APP_JS.indexOf('function addError'))
   assert.ok(/aria-label/.test(fn), 'an icon with no accessible name is a mystery button')
-  assert.equal(/[Cc]opy(ing)?['"。]/.test(fn.replace(/function copyButton/, '')), false, 'no English on the Owner-facing label')
+  /**
+   * ⛔ THE ASSERTION THAT WAS HERE IS NOW OBSOLETE, AND SAYING SO IS THE POINT.
+   *
+   *   assert.equal(/[Cc]opy(ing)?['"。]/.test(fn), false, 'no English on the Owner-facing label')
+   *
+   * It forbade English on a label the Owner reads. The interface is bilingual now, so English
+   * IS a supported rendering and that rule no longer states anything true. Worse: after
+   * extraction the labels are not in app.js at all, so it would have passed forever while
+   * checking nothing — HR-46 arriving through the extraction itself.
+   *
+   * What is actually required: the Chinese must be Chinese, and an English rendering must
+   * exist. Asserted on the catalogue, where both now live.
+   */
+  for (const key of ['copy.label', 'copy.title', 'copy.done', 'copy.failed']) {
+    assert.match(CATALOGUE[key].zh, /[\u4e00-\u9fff]/, key + ' zh must be Chinese')
+    assert.ok(CATALOGUE[key].en.length > 0, key + ' must have an English rendering')
+  }
 })
 
 /* ── the standing rules ──────────────────────────────────────────────────── */
