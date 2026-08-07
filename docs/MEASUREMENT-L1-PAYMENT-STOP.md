@@ -36,7 +36,7 @@ processor, an amount — and reaching one places nothing. The four commercial pa
 | | recall | false positives |
 |---|---|---|
 | **the corpus it was written against** | **11/11 = 100%** | **0/11 = 0%** |
-| **held-out pages it had never seen** | **5/11 = 45.5%** | 0 clear |
+| **held-out pages it had never seen** | **5/11 = 45.5% — and this is OPTIMISTIC, because the hardest button is the one we cannot reach without doing the thing we are preventing** | 0 clear |
 
 ## ⛔ THE 100% WAS FITTING, AND I SAID SO BEFORE MEASURING THE HELD-OUT SET
 

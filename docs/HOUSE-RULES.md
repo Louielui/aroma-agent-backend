@@ -1007,3 +1007,44 @@ And it cuts the other way too: **the browser's value is exactly proportional to 
 an API.** Its hardest cases — defended retail, framework re-renders, login walls — are the
 cases where no easier mechanism exists, which is why it is worth having and why it will always
 look inefficient next to a system that could have been queried directly.
+
+## ⚠ HR-15, THE SAME FAMILY ONE LEVEL OUT — declaring your own contamination BEFORE the measurement, not after
+
+**Owner, 2026-08-06: 「You saw the labels before writing the exclusions, and you said so before
+measuring the holdout rather than after. That is the discipline that made the number worth
+anything — record it beside HR-15, since it is the same family as a grader that agrees with its
+author.」**
+
+## What happened
+
+Measuring L1 required hand-labelling a corpus, which required **listing the element names** —
+so `AGREE & PROCEED`, `Next`, `Buy` and `Add to cart` were in front of me **before** I wrote
+the exclusions that exempt exactly those four.
+
+The recogniser then scored **11/11 and 0 false positives** on that corpus.
+
+> ### That 100% was fitting, and saying so afterwards would have been worthless.
+
+**It was declared before the held-out capture existed, and the recogniser was committed
+unchanged first**, so the second number — **45%** — is verifiably a measurement against a
+frozen rule set rather than a claim about one.
+
+## Why the ORDER is the whole rule
+
+| when the contamination is declared | what the number is worth |
+|---|---|
+| **before** the held-out set is captured | a real measurement, because the author has bound himself in advance |
+| **after** the held-out number is known | **nothing.** It reads as an explanation for a disappointing result, and it is indistinguishable from one |
+
+**HR-15 says a grader nobody checked is HR-12 in the measuring instrument.** This is the same
+family with the instrument being the *author*:
+
+> ## A measurement whose designer has seen the answers is fitted, and the only thing that recovers it is DECLARING IT WHILE THE OUTCOME IS STILL UNKNOWN.
+
+**The mechanism:** when a corpus must be inspected in order to be labelled, say so in the
+record **at labelling time**, freeze and commit the thing being measured before capturing the
+held-out set, and treat the fitted score as **a description of the corpus, never as a
+capability**.
+
+**And the practical tell:** if a fitted score and a held-out score are far apart, the fitted one
+was never a finding. **100% and 45% is one result, not two.**
