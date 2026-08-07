@@ -90,3 +90,71 @@ the wiring.
 
 **No errand has run with either layer except the one I explicitly wired for the measurement.
 That was never stated, and it should have been.**
+
+---
+---
+
+# RESOLVED — the layers are LIVE, and here is how I know
+
+**Built in one round at the Owner's instruction, after he had already logged into Costco
+Business Centre in the profile. No errand has been run since.**
+
+## WHICH LAYERS ARE LIVE — and the evidence is a test that fails without the wiring
+
+> **Owner: 「tell me which layers are live and how you know — not which files exist.」**
+
+| layer | where it is attached | **proven red when the wiring is cut** |
+|---|---|---|
+| **L1 payment stop** | inside `click()`, before anything is pressed | ✅ **1 failure** |
+| **government block** | inside `checkNavigation()`, **before** the allowlist | ✅ **2 failures** |
+| **government block on the ORDER** | in `openBrowserSession`, before a browser exists | ✅ **1 failure** |
+| **the four probes** | in `openBrowserSession`, before launch | ✅ **4 failures** |
+| **L3 request fence** | `page.route('**/*')` at session open | ✅ **1 failure** |
+
+**Each was proven by deleting its call site, running `wiringSmoke.test.js`, and restoring the
+file.** Five cuts, five reds, zero cuts that stayed green.
+
+> ## A component test proves behaviour. These prove REACH — and reach is what was missing three times.
+
+## What the session refuses to do
+
+- **It refuses to OPEN, not to warn.** A dirty probe means **no browser is launched at all** —
+  the test asserts this by making `launchPersistentContext` throw if it is ever called.
+- **An order naming a blocked origin is refused before a browser exists** — the mistake is
+  caught when the order is written, not when it is acted on.
+- **`UNREADABLE` is unclean** (HR-23), and a held lock stops the session without deleting
+  anything.
+- **A CRA origin is refused even when the order explicitly names it**, and refused for the
+  *same reason* whether named or not.
+- **`recalls-rappels.canada.ca` is NOT blocked** — a test asserts it, because a `*.gc.ca`
+  pattern would kill ERRAND-003, the only errand that has ever produced an answer.
+
+---
+
+# ⛔ THE OMISSION IS THE LESSON, NOT THE GAP
+
+> **Owner: 「Record that 『check, do not recall』 found what three rounds of green tests could
+> not. And record your own sentence.」**
+
+> ## 「除咗我為量度而明確駁咗嗰一單，冇任何差事帶住任何一層跑過。呢句我從來冇講，而我應該講。」
+
+**Three rounds of green tests did not find this. One instruction — 「check rather than recall」 —
+found all four in about ninety seconds of grepping.**
+
+**The gap was ordinary**: components built before the thing that calls them, which is the normal
+order of work. **The omission was not.** I reported 「L3 is the guardrail, free to read, 51
+writes refused」 and 「L1 is a convenience at 45%」 without ever saying **that neither had run
+outside the one script I wired to measure it.**
+
+| what I said | what was also true and unsaid |
+|---|---|
+| the measurements | **accurate** |
+| 「the guardrail」 | it guarded one measurement script |
+| 「a convenience」 | a convenience that was switched off |
+
+**Every sentence was true. The set of them was misleading**, and nothing in a test suite can
+catch that — it is a property of what was reported, not of what was built.
+
+**The mechanism, and it is now in the code rather than in this paragraph:** `liveLayers()`
+answers 「what is on?」 from the session itself, so the next report can state it from a running
+object instead of from a memory of having built something.

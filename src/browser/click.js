@@ -39,12 +39,14 @@
  */
 
 const { checkNavigation, NAV } = require('./navigate')
+const { checkPaymentStop } = require('./paymentStop')
 
 const REFUSAL = Object.freeze({
   ORIGIN: 'ORIGIN_NOT_IN_ORDER',
   GONE: 'ELEMENT_GONE',
   CHANGED: 'ELEMENT_CHANGED_SINCE_READ',
   AMBIGUOUS: 'REF_MATCHED_MORE_THAN_ONE',
+  PAYMENT: 'LOOKS_LIKE_A_PAYMENT_COMMIT',
   COVERED: 'COVERED_BY_ANOTHER_ELEMENT',
   UNSTABLE: 'STILL_MOVING',
   DISABLED: 'DISABLED',
@@ -120,6 +122,23 @@ function buildClick ({ page, cdp, order }) {
       })
     } catch (e) {
       return refused(REFUSAL.GONE, String(e.message).split('\n')[0], record)
+    }
+
+    // ── L1, THE SOFT STOP — wired HERE, before anything is clicked ──────────────
+    // Measured 45% on pages it had never seen, so it is a CONVENIENCE, not the fence. It runs
+    // anyway, because the half it does catch is the difference between a report the Owner
+    // reads and an order he has to unwind. L3 is the guardrail.
+    const l1 = checkPaymentStop(
+      { role: target.expectRole, name: target.expectName },
+      { url: page.url() }
+    )
+    if (l1.stop) {
+      return {
+        outcome: 'STOPPED_FOR_YOU',
+        reason: REFUSAL.PAYMENT,
+        detail: 'this control ' + l1.why + '. I do not press the last step — you do.',
+        record
+      }
     }
 
     const sel = '[' + TAG + '=' + JSON.stringify(tagValue) + ']'

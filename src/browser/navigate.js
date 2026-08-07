@@ -22,6 +22,8 @@
  * dispatch needs a new origin, the origin goes in the order.
  */
 
+const { checkOriginPolicy, POLICY } = require('./originPolicy')
+
 const NAV = Object.freeze({
   ALLOWED: 'ALLOWED',
   BLOCKED: 'BLOCKED'
@@ -31,7 +33,7 @@ const NAV = Object.freeze({
  *  the Owner asked her to visit — they are ways to reach the machine she runs on. */
 const ALLOWED_SCHEMES = new Set(['http:', 'https:'])
 
-function blocked (reason) { return { verdict: NAV.BLOCKED, reason } }
+function blocked (reason, extra) { return { verdict: NAV.BLOCKED, reason, ...(extra || {}) } }
 
 /**
  * @param {string} url
@@ -39,6 +41,15 @@ function blocked (reason) { return { verdict: NAV.BLOCKED, reason } }
  * @returns {{verdict: string, origin?: string, reason?: string}}
  */
 function checkNavigation (url, order) {
+  // ⛔ THE GOVERNMENT BLOCK RUNS FIRST AND AN ORDER CANNOT TURN IT OFF.
+  // The allowlist below protects against an origin nobody named; this protects against one
+  // someone NAMED BY MISTAKE — a future order author, including a future me. It is checked
+  // before the allowlist so that naming it in an order changes nothing.
+  const policy = checkOriginPolicy(url)
+  if (policy.verdict !== POLICY.ALLOWED) {
+    return blocked(policy.reason, { governmentBlock: true, host: policy.host })
+  }
+
   // An ABSENT fence is not an open one. A missing order is the most likely way this gets
   // called wrongly, so it is the first thing refused.
   const allowed = order && Array.isArray(order.allowedOrigins) ? order.allowedOrigins : null
