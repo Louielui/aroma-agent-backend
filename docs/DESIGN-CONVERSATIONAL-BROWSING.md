@@ -71,8 +71,13 @@ Both are true at once, and this design chooses the second at the cost of the fir
 
 > ## 「去睇下我上次嗰張單」 WILL NOT WORK. That is the design, not a gap.
 
-**Owner ruling, 2026-08-07:** *「if that turns out to be how I actually talk, that is a finding,
-not a bug to patch with a model.」*
+**Owner ruling, 2026-08-07:** *「if that turns out to be how I actually talk, that is a finding
+to bring back — not a reason to add a model.」*
+
+> ### ⛔ THIS IS A PERMANENT LIMITATION, NOT A GAP AWAITING A FIX.
+> A future reader finding 「去睇下我上次嗰張單」 unhandled should NOT treat it as unfinished work.
+> The correct response is to bring the frequency back to the Owner as a finding — never to close
+> it with a classifier, which is the one option this design has already rejected on evidence.
 
 So the thing to watch is **how often case 3 fires**, and that is a measurement, not an opinion.
 If he is routinely being asked 「去邊個網?」, the answer is not a classifier — it is either a
@@ -200,7 +205,7 @@ nothing. See §6.
 
 ---
 
-# 5. The order allowlist — and this one is a JUDGEMENT GATE, not a wall
+# 5. The order allowlist — written in advance, and the third branch is what makes that livable
 
 ## Why the construction step has no good answer
 
@@ -212,24 +217,44 @@ rejected:
 | the model resolves the name | ⛔ M-5. And what would be unstable is **the fence**, not a reply. |
 | a search engine resolves the name | ⛔ worst. The fence would be authored by a page nobody has read. |
 | a registry I write | this is 「written in advance」 with a different name — **but honestly so** |
-| ask once, then remember | ⛔ this is追認, not construction — and it trains a reflex yes |
+| ask once, then remember | ⛔ **rejected by the Owner, 2026-08-07.** It is 追認, not construction. And: 「I would learn to press yes. **I have already approved from memory once this month.**」 |
 
 > ## Owner ruling, 2026-08-07: 「she can browse in conversation only to origins written in
 > ## advance」 is a legitimate outcome, and better than a mechanism that lets a sentence author
 > ## its own fence.
 
-**Accepted.** The registry is the mechanism, and the confirm-once flow exists only to grow it
-with his decision, never to bypass it.
+**Accepted, and the confirm-once flow is REMOVED with it.** An earlier draft of this section
+rejected 「ask once, then remember」 in the table above and then reinstated it three paragraphs
+later — a contradiction inside one section, caught by the Owner. Nothing ratifies an origin
+in-flow. The registry is written in advance or the origin is spoken in full.
 
 ## The shape
 
 1. **URL/domain in the sentence** → zero construction. The token IS the origin.
 2. **Name in the registry** → resolved from a file in the repo he can read: origin, the date it
    was added, and the sentence that introduced it.
-3. **Neither** → she asks 「去邊個網?」 (§1 case 3).
+3. **Neither** → she asks 「去邊個網?」 (§1 case 3). He answers with a domain, and **that answer
+   is case 1** — zero construction, because the token he just typed IS the origin.
 
-When he names an origin that is not in the registry, she asks once, in conversation, and on his
-answer adds it — with provenance — before the errand starts.
+⛔ **Nothing is added to the registry by that exchange.** Answering a question is not a decision
+to trust a site forever. Growing the registry is a separate, deliberate, reviewed act — a code
+change like any other written-in-advance thing — never a side effect of getting an errand done.
+
+## ⛔ WHY THE NARROWING IS LIVABLE RATHER THAN A WALL
+
+> ## 「唔中唔係拒絕，亦唔係猜 —— 係一句普通反問。」 — Owner, 2026-08-07
+
+This is the load-bearing sentence of the whole design and it is why §1's limitation is
+acceptable at all.
+
+| if case 3 were… | cost |
+|---|---|
+| a refusal | he maintains an allowlist. Worse than learning a magic sentence. |
+| a guess | M-5, and what would be unstable is the fence |
+| **a plain question** | **one word from him, and no classifier anywhere in the path** |
+
+A question costs him a word. A gate costs him a habit — and the habit is the thing that already
+failed once this month.
 
 > **R5.1** An origin enters the registry only through an explicit Owner answer, recorded with the
 > date and the sentence that introduced it. Never inferred, never added by a page.
@@ -242,14 +267,21 @@ answer adds it — with provenance — before the errand starts.
 > **R5.3** Page content can never construct or widen an order.
 > ### ⛔ ENFORCED BY: `NOTHING YET` — planned: `browseRequestRoute.test.js` → 「the order is derived from the message only」.
 
-## ⛔ AND IT IS LABELLED FOR WHAT IT IS
+## ⛔ WHAT IS STRUCTURAL HERE AND WHAT IS NOT
 
-> ### The confirm-once step is a JUDGEMENT GATE, not a structural one.
+With the confirm-once step removed, §5 contains **no judgement gate at all** — and that is the
+improvement. What remains:
 
-**Owner's standing rule: 「a fence I can reason past is a preference.」** This one he explicitly
-cannot make structural, and this paragraph exists so nobody later reads the registry as a wall.
+| | |
+|---|---|
+| **structural** | the order is sealed at the start and never widened (R5.2, already enforced); page content can never author it (R5.3); origins come from the message or from a file written in advance |
+| **judgement, frozen and visible** | what is IN the registry. That is mine and his, dated, in the repo, readable — wrong the same way every time, which is fixable |
 
-It reduces accidental and injected origins. **It does not make an arbitrary page safe to read.**
+**Owner's standing rule: 「a fence I can reason past is a preference.」** The registry's CONTENTS
+are a preference; the fact that an origin must be in it or spoken in full is not.
+
+⛔ This paragraph exists so nobody later reads a registry entry as evidence that a site is safe.
+Being listed means he named it once. **It does not make an arbitrary page safe to read.**
 The structural guarantees remain exactly three, and they are the ones in §3 and §4:
 
 > **GET only · no credentials · government surfaces blocked by name**
@@ -269,7 +301,12 @@ it **worse**, and the word is deliberate:
 
 | before | after |
 |---|---|
-| the set of pages that can attempt it = **origins I wrote in code** | = **origins he names in passing**, plus whatever the registry accumulates |
+| the set of pages that can attempt it = **origins I wrote in code** | = **origins he names in passing**, plus the registry |
+
+⛔ **Narrowing the origins (§5) REDUCES WHICH PAGES GET THE CHANCE. It does not remove the
+chance.** Every structural fence in this design — GET only, no credentials, no order widening —
+bounds what she can DO. **None of them bounds what she can be TOLD**, and what she is told is
+what reaches him.
 
 ## Why this one matters more than the others
 
