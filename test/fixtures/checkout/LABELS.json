@@ -1,0 +1,25 @@
+{
+ "frozenAt": "2026-08-06",
+ "rule": "FROZEN BEFORE THE L1 RECOGNISER WAS WRITTEN. HR-20. Labels are the Owner's question, not the code's: would pressing this commit him to a payment, or hand off to a processor with the amount already fixed?",
+ "howReached": "Every page was reached with ONE GET navigation (page.goto). Nothing was clicked. No cart exists, no account is logged in, no payment was initiated. Reaching a payment page is a GET and places nothing.",
+ "whatThisCorpusCANNOTCOVER": "The hardest case is a final 'Place Your Order' on a retailer AFTER a logged-in cart. That cannot be reached without a live cart, and per the Owner's instruction such candidates were DROPPED rather than improvised. So this measures PAYMENT-ENTRY commits, not FINAL-ORDER commits, and the score must be read as such.",
+ "pages": [
+  { "page": "eff-donate", "commit": ["DONATE $25 A MONTH", "Donate $100 Instead"], "safe": ["Shop", "Copyright", "About"] },
+  { "page": "wikimedia-donate", "commit": ["Donate by credit/debit card Visa Mastercard American Express Discover", "PayPal", "Apple Pay", "Google Pay"], "safe": ["Other ways to give"] },
+  { "page": "sublime-buy", "commit": ["PAY WITH CARD", "PAY WITH PAYPAL"], "safe": ["Buy", "End User License Agreement"] },
+  { "page": "mozilla-donate", "commit": ["Donate Donate", "PayPal"], "safe": [] },
+  { "page": "archive-donate", "commit": ["GooglePay icon The GooglePay logo"], "safe": ["Donate cryptocurrency Cryptocurrency Icons"] },
+  { "page": "digitalocean-pricing", "commit": [], "safe": ["AGREE & PROCEED"],
+    "note": "THE FALSE-POSITIVE TEST. 'AGREE & PROCEED' is a COOKIE CONSENT button. It reads exactly like a payment commit and is not one. A recogniser that flags it would stop her on every consent banner on the web." },
+  { "page": "humble-store", "commit": [], "safe": ["Next", "You have 0 items in your shopping cart. View your cart"],
+    "note": "SECOND FALSE-POSITIVE TEST. Eight buttons named 'Next' are carousel controls." },
+  { "page": "jetbrains-store", "commit": [], "safe": ["Buy", "Purchase Terms"],
+    "note": "THIRD. 'Buy' here is navigational — it opens a store page. Commit-shaped word, no commitment." },
+  { "page": "namecheap-domains", "commit": [], "safe": ["Add to cart", "Your Cart"],
+    "note": "FOURTH. A cart is not a payment. Flagging 'Add to cart' would make her unusable for ordinary shopping." }
+ ],
+ "scoring": {
+  "recall": "of every labelled COMMIT element, what fraction does L1 flag? A miss is a payment she would have pressed.",
+  "falsePositiveRate": "of every labelled SAFE element, what fraction does L1 flag? A false positive is an errand that stops for nothing, and enough of them make the soft stop something the Owner learns to ignore."
+ }
+}
