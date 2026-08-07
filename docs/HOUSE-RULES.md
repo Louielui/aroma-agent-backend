@@ -1048,3 +1048,84 @@ capability**.
 
 **And the practical tell:** if a fitted score and a held-out score are far apart, the fitted one
 was never a finding. **100% and 45% is one result, not two.**
+
+---
+
+# HR-22 — A probe that checks the name you would first think of reports UNSAFE as SAFE. And this one was caught by luck as much as by discipline.
+
+**Owner, 2026-08-06: 「The lockfile name is the finding of this round and I want it recorded as
+such, not as a Windows footnote… It caught it because you listed both names, and that was luck
+as much as discipline. Say so.」**
+
+## What happened
+
+The profile-lock probe looks for Chrome's single-instance lock. **The name I would reach for
+is `SingletonLock`** — it is the one in every Chromium discussion, every bug report, every
+answer online.
+
+**On Windows the file is `lockfile`.** `SingletonLock` is the POSIX name and **does not exist
+on this machine.**
+
+| what a probe checking only `SingletonLock` would report | what was true |
+|---|---|
+| `FREE` — the profile is idle, go ahead | **a live Chrome session holding the profile** |
+
+> ## Unsafe, while reading safe. **That is the exact shape 「seen to fail」 exists to catch — and it would have PASSED a seen-to-fail test**, because the fake lock in the test would have been created under whichever name the test author also thought of.
+
+**The demonstration and the defect would have shared an assumption.** A probe and its own
+failure-demonstration written by the same person, on the same afternoon, from the same mental
+model, are not independent.
+
+## ⚠ AND IT WAS CAUGHT BY LUCK AS MUCH AS BY DISCIPLINE
+
+**I did not reason that Windows differs.** I wrote a *list* — `SingletonLock`, `SingletonCookie`,
+`SingletonSocket`, `lockfile` — because listing plausible names is a habit, not because I knew
+the fourth was the one that mattered here.
+
+> **A habit that happens to cover a gap is not the same thing as knowing the gap is there.**
+> Had I written the one name I was confident about, the probe would have shipped reporting
+> `FREE` on locked profiles, and the live run would have agreed with it.
+
+## THE RULE
+
+> ### Where a probe keys on a NAME the platform chose, the first name you think of is the name from the platform you learned on. Enumerate the alternatives, and prefer a check that does not depend on the name at all.
+
+Three mechanisms, in order of strength:
+
+1. **Do not key on the name.** Ask the system the question directly — *is this profile in use?* —
+   by attempting the thing that would fail. **The strongest check here turned out to be exactly
+   that**: a second `launchPersistentContext` is refused in 0.3s with a clear message, and it
+   depends on no filename at all.
+2. **If you must key on a name, enumerate every platform's** and record why each is in the list.
+3. **Verify the demonstration is independent of the implementation** — if the same person picks
+   both the check and the way it is made to fail, the failure demonstration proves the two
+   agree, not that the check is right.
+
+**HR-15 said a grader that agrees with its author proves nothing. This is the same defect in a
+probe, and the shared assumption was not a value — it was a filename.**
+
+---
+
+# HR-23 — A guardrail that cannot read its own evidence is not clean, it is BLIND
+
+**Owner, 2026-08-06: 「The three-state result and the UNREADABLE ruling are right. A guardrail
+that cannot read its own evidence is not clean, it is blind.」**
+
+The payment probe returns **three** states where two would have been natural:
+
+| state | claim |
+|---|---|
+| `CLEAN` | **we looked at five tables and they are empty** |
+| `NO_DATABASE_YET` | **Chrome has never written here** — nothing has been stored, which is not the same as having checked |
+| `UNREADABLE` | **we could not look** → `clean = false`, and the session refuses to start |
+
+> ## A binary `clean: true/false` forces 「I could not read the evidence」 into one of two answers, and the one it lands on is 「fine」.
+
+**That is `count: 43` in a fence**: a value that is technically true (no findings were returned)
+standing in for a claim that was never established (there are none). HR-5 — *absent stays
+absent* — applied to the thing that is supposed to be doing the protecting.
+
+**The rule generalises past probes:** any check that gates an action reports **at least three**
+outcomes — *passed*, *failed*, and **could not be evaluated** — and the third is treated as
+failure. **A gate that cannot tell 「I checked and it is fine」 from 「I could not check」 is a
+gate that opens when it breaks.**
