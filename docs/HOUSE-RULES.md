@@ -1245,6 +1245,27 @@ tell is a single key appearing on both sides:
 wrong, do I want to overwrite it or to be told about it?」 **Overwrite policy. Be told about
 evidence.**
 
+## ⚠ AND NO TEST CAUGHT IT
+
+**Owner: 「the only reason it did not ship that way is that you noticed while wiring it. Say
+so; that was not caught by a test either.」**
+
+Every unit test passed — **including the two that prove the sign-in probe catches a signed-in
+Chrome** — because those tests wrote the account themselves *after* the defaults had been
+written. **The fake never met the fence.**
+
+It was caught by **reading the two functions side by side** while wiring a third thing, and
+noticing they touched one key from opposite directions.
+
+| the last four defects of this family | caught by |
+|---|---|
+| the unmounted enquiry router | a live 404 |
+| Chrome sign-in missing from the defaults | the Owner, reading the design against the report |
+| L1 and L3 wired to nothing | the Owner, saying 「check, do not recall」 |
+| **the fence erasing its own evidence** | **reading two functions side by side** |
+
+> ### Four of a kind. **None caught by the suite.** Wiring smoke tests now cover the third. **Nothing covers the fourth**, and the honest reason is that I do not know what shape that test has — a test that asserts 「no writer touches a key any reader depends on」 is a static-analysis question, not an assertion.
+
 ---
 
 # HR-26 — 「Logged in」 is not one state
