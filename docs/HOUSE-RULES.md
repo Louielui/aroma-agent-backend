@@ -1295,3 +1295,82 @@ everything is fine.
    when it has read account data — not when it recognised a greeting.
 3. **Report which one you observed.** 「LOOKS SIGNED IN」 must never be written as 「signed in」;
    the errand log now distinguishes them.
+
+---
+
+# HR-27 — A state that is unreachable in production, but renders as a calm sentence, is worse than an error
+
+> ## 個 state 令個 bug 睇落似資訊。
+
+**Owner, 2026-08-07: 「A state that is unreachable in production but produces a calm,
+grammatical, timestamped sentence is worse than an error — it is a defect wearing the shape of
+an answer.」 Recorded beside `count: 43`, which is the same shape one layer down.**
+
+## What happened
+
+`NOT_CHECKED` existed for the Drive section. The reader was never wired, so it fired — and
+rendered:
+
+```
+我未睇過 Drive。          00:27
+```
+
+**Grammatical. Calm. Timestamped. Entirely wrong.**
+
+> ### Had the state not existed, an unwired reader would have thrown, or produced a missing section, or crashed — something visibly broken. Instead it produced a sentence the Owner had no reason to distrust.
+
+**Second instance the same week:** an absent `Preferences` file reported 「搵唔到個 profile 嘅
+設定檔」 when the truth was 「Chrome is holding it」 — **a correct refusal with a wrong reason.**
+
+## Why it is worse than an error
+
+| | |
+|---|---|
+| an error | **announces itself.** Someone investigates within minutes |
+| a calm, wrong sentence | **is read, believed, and repeated** — and by HR-24 it becomes load-bearing the moment it is repeated back |
+
+**An error costs an hour. A plausible sentence costs however long it takes for reality to
+contradict it** — and 「64 files, 53 days」 vs 「我未睇過」 only contradicted because the Owner
+happened to remember yesterday.
+
+## THE RULE
+
+> ### Every state a section can report must be reachable ONLY by something that actually happened. A state that a MISSING WIRE can produce must name itself a defect, not a condition.
+
+Three mechanisms, applied here:
+
+1. **`NOT_WIRED` is its own state, for every section**, and its text says 「呢個係一個缺陷,唔係
+   一個狀態」. It never falls through to the empty-for-a-reason line.
+2. **A missing dependency is distinguished from a failing one.** `store.list()` on an absent
+   store threw a `TypeError` that the same `catch` reported as `CANNOT_READ` — a wiring bug
+   dressed as a data problem. Now they are separate states.
+3. **The wiring smoke test asserts the state is not `NOT_WIRED`** — a value only a real read
+   can produce, rather than merely 「a state exists」.
+
+---
+
+# ⚠ HR-24, SECOND WORKED EXAMPLE — a claim repeated back became load-bearing within ONE round
+
+**Owner, 2026-08-07: 「I wrote that the fifth had not happened based on your report. That is
+HR-24 again — a claim I repeated back became load-bearing within one round.」**
+
+| | |
+|---|---|
+| **I wrote it** | 「the fifth thing wired to nothing did not happen」 — in the commit for the 首頁 server half |
+| **He repeated it back** | 「yesterday found four things wired to nothing and I am not adding a fifth」 |
+| **It was false when I wrote it** | the Drive reader was already unwired in the same commit |
+| **Time to load-bearing** | **one round** |
+
+## What makes this instance sharper than the first
+
+The PUA frequency claim took a day and a measurement to disprove. **This one was false at the
+moment of writing**, and I wrote it **in the same commit that contained the counter-example** —
+`mountHomeRoutes` was called without a `backlogReader` four lines below the sentence claiming
+nothing was unwired.
+
+> ### And my own wiring smoke test agreed with me. It asserted the section had a `state` and a `checkedAt`; `NOT_CHECKED` has both.
+
+**HR-6 — assert the VALUE, not that the key was mentioned — failed inside a test written to
+catch exactly this class.** That is the part worth carrying: **a test can be about the right
+thing and still assert the wrong property**, and the wrong property is almost always 「it
+exists」 rather than 「it is right」.

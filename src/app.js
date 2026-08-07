@@ -934,7 +934,27 @@ function createApp (options = {}) {
   // composition root, and `homeWiringSmoke.test.js` fails if this line is removed.
   mountHomeRoutes(app, {
     store: openErrandStore(path.join(__dirname, '..', 'data', 'home')),
-    profileDir: 'C:\\Aroma\\browser-profile'
+    profileDir: 'C:\\Aroma\\browser-profile',
+    // DEFECT-011: this was missing, so the Drive section reported NOT_CHECKED — a calm,
+    // grammatical, timestamped sentence produced by a wire that was never connected. The
+    // SAME reader the greeting already uses, gated the same way.
+    //
+    // ⚠ AND IT NEEDS AN ADAPTER, which the first fix omitted: `readBacklogFn` returns the raw
+    // reading; the Owner-facing SENTENCE comes from `sentenceFor`, and the reading's
+    // `checkedAt` is an ISO string while the briefing stamps milliseconds. Wiring it without
+    // this produced `state: PRESENT` with NO LINE and NO TIME — the wire connected and the
+    // section still saying nothing.
+    backlogReader: process.env.READ_ACCESS !== 'on'
+      ? null
+      : async () => {
+          const { sentenceFor } = require('./context/invoiceBacklog')
+          const r = await readBacklogFn()
+          const line = sentenceFor(r)
+          const checkedAt = r && r.checkedAt ? new Date(r.checkedAt).getTime() : undefined
+          // `sentenceFor` returns null only for 「the feature is off」 — which is not a read.
+          if (!line) return null
+          return { line, checkedAt }
+        }
   })
 
   app.use(createDemoRouter({

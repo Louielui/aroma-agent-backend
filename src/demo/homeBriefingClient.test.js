@@ -112,3 +112,10 @@ test('the CSS uses tokens, not raw px, in the new rules', () => {
   const offenders = block.match(/font-size:\s*\d+px/g) || []
   assert.deepEqual(offenders, [], 'font sizes come from tokens: ' + offenders.join(', '))
 })
+
+test('⛔ NOT_WIRED renders as a DEFECT, never as 「未有差事紀錄」', () => {
+  assert.match(APP_JS, /NOT_WIRED/,
+    'a wiring failure must not fall through to the empty-for-a-reason line — that would be a lie')
+  assert.match(APP_JS, /brief-defect/)
+  assert.match(APP_CSS, /\.brief-defect/)
+})

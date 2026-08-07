@@ -272,7 +272,11 @@
 
     // ── what she ran ──
     var e = b.errands || {}
-    if (e.state === 'CANNOT_READ') {
+    if (e.state === 'NOT_WIRED') {
+      // A defect must not render as a condition. 「未有差事紀錄」 would be a lie here: the
+      // record may be full — nothing asked it. Same class as DEFECT-011.
+      host.appendChild(row('brief-errands brief-defect', e.line, ''))
+    } else if (e.state === 'CANNOT_READ') {
       host.appendChild(row('brief-errands', '我睇唔到差事紀錄。', e.checkedAtLabel))
     } else if (e.state === 'NONE_RAN' || !(e.rows && e.rows.length)) {
       // ⛔ Empty FOR A REASON is still never blank. Owner ruling: say why.
@@ -301,7 +305,9 @@
 
     // ── waiting, in full, here as well as in the bar ──
     var w = b.waiting || {}
-    if (w.state === 'CANNOT_READ') {
+    if (w.state === 'NOT_WIRED') {
+      host.appendChild(row('brief-waiting brief-defect', w.line, ''))
+    } else if (w.state === 'CANNOT_READ') {
       host.appendChild(row('brief-waiting', w.line || '我睇唔到差事紀錄。', w.checkedAtLabel))
     } else if (w.state === 'NOTHING_WAITING') {
       host.appendChild(row('brief-waiting', '冇嘢等你決定。', w.checkedAtLabel))

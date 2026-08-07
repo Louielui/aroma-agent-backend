@@ -52,11 +52,15 @@ describe('⛔ NEVER BLANK, and the two emptinesses never collapse', () => {
     assert.strictEqual(buildBriefing({ store: store([], 'UNREADABLE'), now: NOW }).errands.state, 'CANNOT_READ')
   })
 
-  test('every section carries a checkedAt — no section may be silently stale', () => {
-    const b = buildBriefing({ store: store([]), backlog: null, now: NOW })
+  test('a section that DID read carries a time; one that did not, does not', () => {
+    // This test previously asserted that EVERY section carries a checkedAt. That encoded
+    // the defect: it forced a time onto 「我未睇過 Drive」. DEFECT-011 reversed the rule.
+    const b = buildBriefing({ store: store([]), backlog: { line: 'x', checkedAt: NOW }, now: NOW })
     for (const k of ['errands', 'waiting', 'backlog']) {
-      assert.ok(b[k].checkedAt, k + ' must say when it looked')
+      assert.ok(b[k].checkedAt, k + ' read, so it must say when')
     }
+    const none = buildBriefing({ store: store([]), backlog: null, now: NOW })
+    assert.strictEqual(none.backlog.checkedAt, undefined, 'no read, no time')
   })
 })
 
@@ -138,5 +142,62 @@ describe('the Franco backlog is its own row, off the greeting', () => {
   test('genuinely nothing waiting in Drive is its own state', () => {
     const b = buildBriefing({ store: store([]), backlog: { line: '', empty: true, checkedAt: NOW }, now: NOW })
     assert.strictEqual(b.backlog.state, 'NOTHING')
+  })
+})
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * DEFECT-011 — 「一個非聲稱配一個時間，衰過冇時間。」
+ *
+ * A timestamp on 「I have not looked」 is a claim about an event that did not happen, and the
+ * time manufactures credibility for a check that never ran. The `|| t` fallback put the
+ * briefing's own build time under any section whose reader supplied none — invisibly,
+ * because the result is a plausible clock either way.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+describe('⛔ a section that did not read carries NO TIME AT ALL', () => {
+  test('NOT_CHECKED has no checkedAt and no label', () => {
+    const b = buildBriefing({ store: store([]), backlog: null, now: NOW })
+    assert.strictEqual(b.backlog.state, 'NOT_CHECKED')
+    assert.strictEqual(b.backlog.checkedAt, undefined, 'a non-claim must not carry a time')
+    assert.strictEqual(b.backlog.checkedAtLabel, undefined)
+  })
+
+  test('⛔ NOT_WIRED is its own state, distinct from NOT_CHECKED, and also timeless', () => {
+    const b = buildBriefing({ store: null, backlog: null, now: NOW })
+    assert.strictEqual(b.errands.state, 'NOT_WIRED')
+    assert.strictEqual(b.waiting.state, 'NOT_WIRED')
+    assert.strictEqual(b.errands.checkedAt, undefined)
+    assert.match(b.errands.line, /未接線|接唔到/, 'it must name itself a defect, not a condition')
+  })
+
+  test('⛔ a MISSING store must NOT read as 「I cannot read the record」', () => {
+    // The equivalent of NOT_CHECKED for errands: a wiring failure swallowed by the same
+    // catch that reports a corrupt file. They are different problems and one is a defect.
+    const missing = buildBriefing({ store: null, now: NOW })
+    const corrupt = buildBriefing({ store: store([], 'UNREADABLE'), now: NOW })
+    assert.notStrictEqual(missing.errands.state, corrupt.errands.state)
+    assert.strictEqual(corrupt.errands.state, 'CANNOT_READ')
+  })
+
+  test('⛔ THE `|| t` FALLBACK IS GONE — a read with no time of its own gets no time', () => {
+    const b = buildBriefing({ store: store([]), backlog: { line: '64 個檔案', empty: false }, now: NOW })
+    assert.strictEqual(b.backlog.state, 'PRESENT')
+    assert.strictEqual(b.backlog.checkedAt, undefined,
+      'the reader supplied no time, so the briefing must not lend it one')
+    assert.strictEqual(b.backlog.line, '64 個檔案')
+  })
+
+  test('a read that DOES carry its own time keeps it, unchanged', () => {
+    const readAt = NOW - 90 * 1000
+    const b = buildBriefing({ store: store([]), backlog: { line: 'x', checkedAt: readAt }, now: NOW })
+    assert.strictEqual(b.backlog.checkedAt, readAt, 'the time comes FROM THE READ')
+    assert.ok(b.backlog.checkedAtLabel)
+  })
+
+  test('errands and waiting keep a time only because the store was ACTUALLY read', () => {
+    const b = buildBriefing({ store: store([]), now: NOW })
+    assert.strictEqual(b.errands.checkedAt, NOW, 'read at NOW, so stamped NOW — not by luck of ordering')
+    assert.ok(b.errands.checkedAtLabel)
   })
 })

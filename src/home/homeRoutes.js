@@ -36,8 +36,13 @@ function mountHomeRoutes (router, { store, backlogReader, profileDir, chromePath
   const { buildBriefing } = require('./briefing')
 
   router.get('/api/v1/home/briefing', pass, async (req, res) => {
-    let backlog = null
-    if (backlogReader) {
+    // ⛔ `undefined` means NO READER WAS WIRED — a defect. `null` means a reader exists and
+    // was deliberately switched off. They are different facts, buildBriefing states them
+    // differently, and collapsing them is how DEFECT-011 read as an operational message.
+    let backlog
+    if (backlogReader === undefined) backlog = undefined
+    else if (backlogReader === null) backlog = null
+    else {
       try { backlog = await backlogReader() } catch (e) { backlog = { error: String(e.message).split('\n')[0].slice(0, 60) } }
     }
     // buildBriefing never throws on an unreadable store — it reports CANNOT_READ, which is

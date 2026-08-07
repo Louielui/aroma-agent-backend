@@ -50,14 +50,35 @@ describe('首頁 IS MOUNTED — not merely built', () => {
     assert.ok(r.json, 'and it must answer JSON, not an error page')
   })
 
-  test('the briefing carries all three sections, each with a timestamp', async () => {
+  test('⛔ every section reaches a state ONLY A REAL READ CAN PRODUCE', async () => {
+    // DEFECT-011: the previous version asserted each section HAD a state and a checkedAt.
+    // `NOT_CHECKED` satisfies both — so a wiring test PASSED with the Drive reader connected
+    // to nothing. HR-6, failing inside a test written to catch this exact class: assert the
+    // VALUE, not that the key appeared.
     const srv = await serve(createApp({ serviceToken: TOKEN }))
     const r = await req(srv, 'GET', '/api/v1/home/briefing')
     srv.close()
+    const UNREACHABLE = ['NOT_WIRED'] // a defect, never a condition
     for (const k of ['errands', 'waiting', 'backlog']) {
       assert.ok(r.json[k], k + ' missing from the briefing')
-      assert.ok(r.json[k].checkedAt, k + ' has no checkedAt — a claim without a time is not a claim')
-      assert.ok(r.json[k].state, k + ' has no state')
+      assert.ok(!UNREACHABLE.includes(r.json[k].state),
+        k + ' is ' + r.json[k].state + ' — that state means nothing called its reader')
+    }
+    for (const k of ['errands', 'waiting']) {
+      assert.ok(r.json[k].checkedAt, k + ' claims a read but carries no time')
+    }
+  })
+
+  test('⛔ a section that did NOT read carries no time — the DEFECT-011 invariant', async () => {
+    const srv = await serve(createApp({ serviceToken: TOKEN }))
+    const r = await req(srv, 'GET', '/api/v1/home/briefing')
+    srv.close()
+    const b = r.json.backlog
+    if (b.state === 'NOT_CHECKED' || b.state === 'NOT_WIRED') {
+      assert.strictEqual(b.checkedAt, undefined, '一個非聲稱配一個時間，衰過冇時間')
+      assert.strictEqual(b.checkedAtLabel, undefined)
+    } else {
+      assert.ok(b.checkedAt, 'a real read must carry the time OF THAT READ')
     }
   })
 
@@ -141,5 +162,30 @@ describe('the open button honours the measured lock behaviour', () => {
     assert.strictEqual(r.json.outcome, 'OPENED')
     assert.strictEqual(launched, true, 'refusing to open his own cart would be the system overreaching')
     fs.rmSync(d, { recursive: true, force: true }); fs.rmSync(profile, { recursive: true, force: true })
+  })
+})
+
+describe('⛔ a wired reader must produce a LINE and a TIME, not just a state', () => {
+  const { mountHomeRoutes } = require('./homeRoutes')
+  const express = require('express')
+
+  test('the first fix connected the wire and the section still said nothing', async () => {
+    // Live evidence: `state: PRESENT` with no `line` and no `checkedAtLabel`, because
+    // readBacklogFn returns the RAW reading while the section needs the sentence, and the
+    // reading's checkedAt is an ISO string where the briefing stamps milliseconds.
+    // A connected wire that renders blank is DEFECT-011 with a different last mile.
+    const app = express()
+    app.use(express.json())
+    mountHomeRoutes(app, {
+      store: { list: () => [] },
+      profileDir: 'C:\nowhere',
+      backlogReader: async () => ({ line: '64 個檔案,最舊 53 日', checkedAt: Date.now() })
+    })
+    const srv = await serve(app)
+    const r = await req(srv, 'GET', '/api/v1/home/briefing')
+    srv.close()
+    assert.strictEqual(r.json.backlog.state, 'PRESENT')
+    assert.ok(r.json.backlog.line && r.json.backlog.line.length > 3, 'PRESENT with no line says nothing')
+    assert.ok(r.json.backlog.checkedAtLabel, 'and a read must carry its own time, formatted')
   })
 })

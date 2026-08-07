@@ -694,3 +694,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .wb-open { border: none; background: transparent; color: var(--ink); font: inherit; cursor: pointer; text-decoration: underline; }
 .waiting-bar .brief-card { flex: 1 1 100%; display: none; }
 .waiting-bar.expanded .brief-card { display: block; }
+
+/* A wiring defect must not look like an operational state. DEFECT-011: 「我未睇過 Drive」
+   arrived as a calm, grammatical, timestamped sentence produced by a wire nobody connected. */
+.brief-defect .brief-text { color: var(--stop, #b0564b); }

@@ -29,11 +29,26 @@ const { localParts } = require('../utils/localTime')
  * a first version of this file that sent raw milliseconds.
  */
 function hhmm (ms) {
-  if (!ms) return ''
+  if (!ms) return undefined
   try {
     const p = localParts(new Date(Number(ms)))
     return String(p.hour).padStart(2, '0') + ':' + String(p.minute).padStart(2, '0')
-  } catch (_) { return '' }
+  } catch (_) { return undefined }
+}
+
+/**
+ * ⛔ THE ONLY WAY A SECTION GETS A TIME.
+ *
+ * `readAt` must come FROM THE READ. When there was no read it is undefined and the section
+ * carries **no time at all** — 「一個非聲稱配一個時間，衰過冇時間」.
+ *
+ * The old `|| t` fallback lent the briefing's own build time to any reader that supplied
+ * none, **invisibly**, because the result is a plausible clock either way. It sat under the
+ * sections that happen to be honest today, waiting for the ordering luck to run out.
+ */
+function stamped (section, readAt) {
+  if (!readAt) return section
+  return { ...section, checkedAt: readAt, checkedAtLabel: hhmm(readAt) }
 }
 
 const AGE = Object.freeze({ FRESH: 'FRESH', STALE: 'STALE', EXPIRED: 'EXPIRED' })
@@ -81,39 +96,54 @@ function cardFor (e, now) {
 function buildBriefing ({ store, backlog, now }) {
   const t = Number(now) || Date.now()
 
-  // ── errands + waiting, from one read, so the two sections cannot disagree ──
-  let rows = null
-  let unreadable = false
-  try { rows = store.list() } catch (_) { unreadable = true }
-
-  const errands = unreadable
-    ? { state: 'CANNOT_READ', rows: [], line: '我睇唔到差事紀錄。', checkedAt: t, checkedAtLabel: hhmm(t) }
-    : rows.length
-      ? { state: 'HAS_ROWS', rows, line: '', checkedAt: t, checkedAtLabel: hhmm(t) }
-      : { state: 'NONE_RAN', rows: [], line: '今日冇差事跑過。', checkedAt: t, checkedAtLabel: hhmm(t) }
-
+  // ── errands + waiting ──────────────────────────────────────────────────────
+  // ⛔ A MISSING STORE IS A DEFECT, NOT A CONDITION. Before this, `store.list()` threw a
+  // TypeError that the same catch reported as CANNOT_READ — so a WIRING FAILURE rendered
+  // identically to a corrupt file, in a calm operational sentence. That is exactly what
+  // NOT_CHECKED did for Drive, and it is the answer to 「what is the equivalent for errands
+  // before the ordering luck runs out」.
+  let errands
   let waiting
-  if (unreadable) {
-    // ⛔ The whole point. An unreadable record is NOT 「nothing waiting」 — it is 「I cannot
-    // tell you」, and the difference could cost him a cart he was waiting to pay for.
-    waiting = { state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。', checkedAt: t, checkedAtLabel: hhmm(t) }
+  if (!store || typeof store.list !== 'function') {
+    errands = { state: 'NOT_WIRED', rows: [], line: '差事紀錄未接線 —— 呢個係一個缺陷,唔係一個狀態。' }
+    waiting = { state: 'NOT_WIRED', cards: [], line: '差事紀錄未接線,所以我答唔到有冇嘢等你。呢個係一個缺陷。' }
   } else {
-    const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
-    waiting = w.length
-      ? { state: 'WAITING', cards: w.map((e) => cardFor(e, t)), line: '', checkedAt: t, checkedAtLabel: hhmm(t) }
-      : { state: 'NOTHING_WAITING', cards: [], line: '冇嘢等你決定。', checkedAt: t, checkedAtLabel: hhmm(t) }
+    let rows = null
+    let unreadable = false
+    try { rows = store.list() } catch (_) { unreadable = true }
+
+    if (unreadable) {
+      errands = stamped({ state: 'CANNOT_READ', rows: [], line: '我睇唔到差事紀錄。' }, t)
+      // ⛔ An unreadable record is NOT 「nothing waiting」 — it is 「I cannot tell you」, and
+      // the difference could cost him a cart he was waiting to pay for.
+      waiting = stamped({ state: 'CANNOT_READ', cards: [], line: '我睇唔到差事紀錄,所以答唔到你有冇嘢等緊。' }, t)
+    } else {
+      // The store WAS read, at t. That is why these carry a time — from the read, not by default.
+      errands = stamped(rows.length
+        ? { state: 'HAS_ROWS', rows: rows.map((r) => ({ ...r, atLabel: hhmm(r.at) })), line: '' }
+        : { state: 'NONE_RAN', rows: [], line: '未有差事紀錄 —— 到今日為止每單都係手動跑,冇記低。' }, t)
+
+      const w = rows.filter((e) => e.outcome === OUTCOME.STOPPED_FOR_YOU && !e.resolvedAt)
+      waiting = stamped(w.length
+        ? { state: 'WAITING', cards: w.map((e) => cardFor(e, t)), line: '' }
+        : { state: 'NOTHING_WAITING', cards: [], line: '冇嘢等你決定。' }, t)
+    }
   }
 
-  // ── the Franco line, its own row, off the greeting ──
+  // ── the Drive line, its own row, and its time comes FROM THE READ ──────────
   let back
-  if (!backlog) back = { state: 'NOT_CHECKED', line: '我未睇過 Drive。', checkedAt: t, checkedAtLabel: hhmm(t) }
-  else if (backlog.error) back = { state: 'CANNOT_READ', line: '我睇唔到 Drive 個資料夾(' + backlog.error + ')。', checkedAt: t, checkedAtLabel: hhmm(t) }
-  else if (backlog.empty) back = { state: 'NOTHING', line: 'Drive 度冇等緊處理嘅發票。', checkedAt: backlog.checkedAt || t, checkedAtLabel: hhmm(backlog.checkedAt || t) }
-  else back = { state: 'PRESENT', line: backlog.line, checkedAt: backlog.checkedAt || t, checkedAtLabel: hhmm(backlog.checkedAt || t) }
-
-  if (errands.rows && errands.rows.length) {
-    errands.rows = errands.rows.map((r) => ({ ...r, atLabel: hhmm(r.at) }))
+  if (backlog === undefined) {
+    back = { state: 'NOT_WIRED', line: 'Drive 未接線 —— 我根本冇去睇。呢個係一個缺陷,唔係一個狀態。' }
+  } else if (backlog === null) {
+    back = { state: 'NOT_CHECKED', line: '我未睇過 Drive。' }
+  } else if (backlog.error) {
+    back = stamped({ state: 'CANNOT_READ', line: '我睇唔到 Drive 個資料夾(' + backlog.error + ')。' }, backlog.checkedAt)
+  } else if (backlog.empty) {
+    back = stamped({ state: 'NOTHING', line: 'Drive 度冇等緊處理嘅發票。' }, backlog.checkedAt)
+  } else {
+    back = stamped({ state: 'PRESENT', line: backlog.line }, backlog.checkedAt)
   }
+
   return { errands, waiting, backlog: back, builtAt: t, builtAtLabel: hhmm(t) }
 }
 
