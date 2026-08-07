@@ -1197,3 +1197,80 @@ supported far more than the evidence does.
 **And when the Owner repeats one back:** that is the moment to check it, **not the moment to
 feel confirmed.** A claim returning in his words is the last point at which it is still cheap
 to correct — after that it is load-bearing.
+
+---
+
+# HR-25 — Write policy, read evidence. Never both on one key.
+
+**Owner, 2026-08-06: 「a guardrail that overwrites the key its own probe reads would have
+reported clean forever, and nothing else would ever have said otherwise.」**
+
+> ## 寫政策，讀證據 —— 同一個 key 上面永遠唔會兩樣都做。
+
+## What was about to happen
+
+`writeProfileDefaults` set `account_info = []` — and `probeBrowserSignIn` **reads
+`account_info`** to decide whether Chrome is signed into a Google account.
+
+Written once at creation, that was harmless. **Re-asserted before every launch — which is the
+fix the Owner had just approved — it becomes:**
+
+```
+launch:  write account_info = []      (wipes the evidence)
+         probe account_info           (finds nothing)
+         report: signIn BLOCKED, clean
+```
+
+> ### A genuinely signed-in Chrome would have been erased from the record and then reported clean, forever, by design.
+
+**Nothing else in the system would ever have contradicted it.** No test, no second probe, no
+live behaviour — because the state the probe existed to detect was destroyed by the fence one
+line earlier.
+
+## Why it is a general rule and not a bug report
+
+Every guardrail that both **enforces** and **verifies** has this shape available to it. The
+tell is a single key appearing on both sides:
+
+| the fence writes | the probe reads | verdict |
+|---|---|---|
+| `autofill.credit_card_enabled = false` | `autofill.credit_card_enabled` | **fine** — this is *policy*, and re-asserting it is the point |
+| `account_info = []` | `account_info` | ⛔ **catastrophic** — this is *evidence*, and re-asserting it is a lie |
+
+**The distinction is not the key, it is what the key MEANS:**
+
+> ### POLICY is what we intend. EVIDENCE is what happened. Re-asserting policy is a fence; re-asserting evidence is forgery.
+
+**The mechanism:** before writing anything into a store a probe reads, ask 「if this value is
+wrong, do I want to overwrite it or to be told about it?」 **Overwrite policy. Be told about
+evidence.**
+
+---
+
+# HR-26 — 「Logged in」 is not one state
+
+**2026-08-06, measured on Costco Business Centre with the Owner's own session.**
+
+> ## 登咗入唔係一個狀態。
+
+The profile's cookies were enough for the site to **personalise the homepage** — it showed
+`link "Orders"`, the account nav, the member greeting. **The same cookies were not enough to
+open the orders page**, which redirected to a full sign-in form with a password field.
+
+| state | what it looks like |
+|---|---|
+| **recognised** | the homepage knows who you are, shows your nav, your name, your saved lists |
+| **authenticated** | the account area will actually serve your data |
+
+**Cookies present ≠ signed in.** And the failure lands **at the useful page, not the front
+page** — which is the worst place for it, because every check short of the real target says
+everything is fine.
+
+## What follows for every future errand
+
+1. **Never conclude 「signed in」 from the landing page.** The nav saying `Orders` is a claim
+   about the *menu*, not about the *session*.
+2. **The check is the destination.** An errand that needs account data is only proven to work
+   when it has read account data — not when it recognised a greeting.
+3. **Report which one you observed.** 「LOOKS SIGNED IN」 must never be written as 「signed in」;
+   the errand log now distinguishes them.

@@ -100,7 +100,13 @@ let stopped = null
     const f = s.fenceReport()
     console.log('\n══════════ 報告 ══════════\n')
     console.log(`  L3:拒絕咗 ${f.refusedCount} 個寫入請求,批准咗 ${f.allowedWrites} 個。`)
-    f.refused.slice(0, 8).forEach((x) => console.log(`      ${x.method} ${x.url.slice(0, 74)}`))
+    const docs = f.refused.filter((x) => x.type === "document")
+    if (docs.length) {
+      console.log("  ⛔ 其中 " + docs.length + " 個係 NAVIGATION(document),即係成版頁俾我自己擋咗:")
+      docs.forEach((x) => console.log("      " + x.method + " " + x.url.slice(0, 74)))
+    }
+    console.log("  其餘(背景請求):")
+    f.refused.filter((x) => x.type !== "document").slice(0, 6).forEach((x) => console.log(`      ${x.type.padEnd(10)} ${x.method} ${x.url.slice(0, 62)}`))
     const l1 = steps.filter((x) => x.outcome === 'STOPPED_FOR_YOU')
     console.log(`  L1:停低咗 ${l1.length} 次。` + (l1.length ? l1.map((x) => x.target).join(', ') : ''))
     console.log(`\n  ${steps.length} 步,${actions} 個動作,${((Date.now() - t0) / 1000).toFixed(1)}s,上限 ${MAX_ACTIONS} / 180s`)
