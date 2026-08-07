@@ -37,13 +37,18 @@ const { checkRecall, HOST, SEARCH_PATH } = require('./recallCheck')
 const ORDER = { allowedOrigins: [HOST] }
 
 /**
- * What she checks when nobody names an ingredient.
+ * What she checks every morning.
  *
- * ⚠ THIS LIST IS A GUESS AND SHOULD BE REPLACED BY THE OWNER'S ACTUAL STOCK. It was chosen
- * because six felt like a list, which is not a reason (HR-28). It is here so the errand has
- * something to do, not because these are the right six.
+ * ⛔ THE OWNER'S ACTUAL STOCK, NAMED BY HIM ON 2026-08-07. Not a guess, and not a placeholder.
+ *
+ * > 「What I actually stock and would act on a recall for: mushrooms · chicken · cheese · beef ·
+ * > romaine · green onion.」
+ *
+ * The previous list was mine — six items chosen because six felt like a list, which is not a
+ * reason (HR-28). A placeholder in something that runs unattended every morning is worse than
+ * a placeholder anywhere else: it produces a confident daily answer about the wrong question.
  */
-const DEFAULT_INGREDIENTS = ['mushrooms', 'chicken', 'cheese', 'beef', 'lettuce', 'shrimp']
+const DEFAULT_INGREDIENTS = ['mushrooms', 'chicken', 'cheese', 'beef', 'romaine', 'green onion']
 
 /**
  * ⛔ MEASURED, NOT POLITE-BY-GUESS: six back-to-back searches BROKE the register.

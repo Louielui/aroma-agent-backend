@@ -1559,9 +1559,28 @@ that has never failed is not evidence.
 
 ---
 
-# HR-32 — Print every branch of a sentence before you rely on it. A branch nobody has READ is untested however green the suite is.
+# HR-32 — Whatever renders a state must be printed across ALL its states and read as a set, before it ships
 
-**Round:** the scheduler, 2026-08-07.
+> **Owner: 「Add the mechanism rather than the lesson — whatever renders a state should be
+> printed across all its states and read as a set, before it ships.」**
+
+## THE MECHANISM
+
+> ### Find every surface that maps a state onto an output — a sentence, a colour, an icon, an
+> ### exit code. Enumerate the states. Render all of them into ONE block. Read it as a set.
+> ### Any two states producing the same output is a defect, and the pairs to check first are
+> ### the ones a reader would ACT on differently.
+>
+> Then write the assertion as **`notStrictEqual(render(A), render(B))`** — not as two separate
+> tests that each render one state correctly. **Sameness is a property of a PAIR, and a suite
+> that only ever looks at one state at a time cannot see it.**
+
+Add it to the definition of done for any state-rendering surface, beside the integration test.
+It costs one `console.log` loop and it is the only thing that finds this class.
+
+---
+
+**Round:** the scheduler, 2026-08-07. **What the mechanism caught the day it was written:**
 
 > **Owner: 「Your DUE wording change is the part I would forget to check. After it goes live,
 > tell me what the DUE line actually says in both states — I want to read the scheduled version
@@ -1601,3 +1620,83 @@ instance at the exit-code level: `ok` required every errand to answer, so one th
 ingredient (measured: one in six on a normal day) would have painted the Windows task red every
 morning until 「the task is failing」 meant nothing. **HR-27's family — a defect wearing the
 shape of an answer — but arriving through COLLAPSE rather than through a wrong value.**
+
+---
+
+# HR-33 — Ask what a NORMAL day looks like, not what a failure looks like
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「note that you found it by asking what a normal day looks like rather than what a
+> failure looks like. That question is doing a lot of work and it is not written down anywhere.」**
+
+## THE MECHANISM
+
+> ### For any signal — a colour, a sentence, an exit code, an alert — do not ask 「is it correct
+> ### when things go wrong?」 Ask: **「what does this show on an ordinary Tuesday, and will he
+> ### still be reading it in a month?」**
+
+A signal is only worth its correctness if it is still being read. **Correct-and-ignored is
+indistinguishable from absent**, and it arrives silently: nothing fails, the tests stay green,
+and the person just stops looking.
+
+## Three instances in eight days, all the same shape
+
+| where | what the failure-first question said | what the normal-day question said |
+|---|---|---|
+| the `DUE` line's colour | red = overdue, correct | **every kind is DUE most days when nothing is scheduled.** Red daily → skipped within a week |
+| the scheduled task's exit code | any errand not answering = failure, correct | **one ingredient in six gets throttled on a normal day.** Red every morning → 「the task is failing」 means nothing |
+| the `NEVER_RUN` line | it says a true thing | it is the only one that has **never been true before**, so it is the one that earns the ink |
+
+The first two were caught only by measuring an ordinary run. **Both were correct.** Correctness
+was never the property at risk.
+
+## Why it is not the same as 「don't be noisy」
+
+Noise is a volume problem and can be tuned. **This is a semantics problem:** the signal is
+spending its meaning on the common case, so it has none left for the rare one. The fix is never
+「show it less」 — it is to make the common case say something ordinary in ordinary words, so the
+uncommon case has somewhere to stand out FROM. HR-32's disabled-vs-absent pair is the same
+budget viewed the other way round.
+
+**Where it goes:** beside HR-32 in the definition of done. HR-32 asks 「do two states say the
+same thing?」 This asks 「which state is TODAY, and what does that do to the others?」
+
+---
+
+# HR-34 — Pace, do not retry. A read-only errand that retries harder is not read-only in any sense the site cares about
+
+**Round:** the scheduler, 2026-08-07.
+
+> **Owner: 「A read-only errand that retries harder against a site already struggling is not
+> read-only in any sense that matters to the site.」**
+
+Measured: six recall searches back-to-back **broke the register**. The first real scheduled run
+answered 2 of 6 — the third timed out on the search button, and 4 through 6 could not navigate
+at all. Paced five seconds apart: **6 of 6 in 42 seconds.**
+
+## Why the reflex is wrong
+
+The obvious fix for a timeout is a retry, and it is the wrong one here:
+
+> ## 「Read-only」 is a claim about the DATA. It is not a claim about the LOAD.
+> A site cannot see that our requests are harmless. It sees a client that got slower responses
+> and answered by sending more. From the other end, a well-behaved reader and a small denial of
+> service differ only in intent — and intent is not observable.
+
+Every fence in this system is structural for exactly this reason: what a thing IS, not what it
+means. **This is that principle pointed outward** — at the load we place on someone else, on a
+public register we have no right to strain, from a task that runs unattended every morning.
+
+## THE RULE
+
+> ### When an unattended read starts failing, slow down. Do not retry, and never retry faster.
+> A retry loop is the one shape that converts a transient failure into a sustained one.
+
+**And the schedule is what makes it non-negotiable.** A hand-run that hammers a site is a
+mistake someone is watching; the same loop on a timer runs every morning, forever, with nobody
+present. `PAUSE_BETWEEN_MS` in `recallRunner.js` carries this reasoning at the constant.
+
+**Also honest about the cost:** pacing means the errand takes ~70s instead of ~40s, and that
+one ingredient may still fail on a bad day. That is recorded as `BLOCKED_BY_SITE` and reported —
+a worse-but-honest result, chosen over a better-looking one obtained by pushing harder.
