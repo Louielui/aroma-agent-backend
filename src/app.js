@@ -24,6 +24,8 @@ const express = require('express')
 const intakeRouter = require('./routes/intakeRouter')
 const { createDemoRouter } = require('./routes/demoRouter') // B2-2 demo UI (guarded; 403 when demo OFF)
 const { createEnquiryRouter } = require('./routes/enquiryRoutes') // read ONE investigation, on request
+const { mountHomeRoutes } = require('./home/homeRoutes') // 首頁 — what she ran, what waits on him
+const { openErrandStore } = require('./home/errandStore')
 const { createEnquiryStore } = require('./agent/enquiryStore')
 // THE REAL WRITERS, NAMED AT THE COMPOSITION ROOT. Both routers now default to inert, so
 // this file is the only place that hands either of them something that can touch disk.
@@ -925,6 +927,15 @@ function createApp (options = {}) {
   // deliberate second step — putting them in front of him by default would recreate exactly
   // the relay the dispatch path removes.
   app.use(createEnquiryRouter({ enquiryStore: createEnquiryStore() }))
+
+  // ── 首頁 ────────────────────────────────────────────────────────────────────
+  // What she ran, what waits on him, and the Drive line — the surface the design has
+  // specified for two rounds and that nothing rendered. Mounted HERE, on the real
+  // composition root, and `homeWiringSmoke.test.js` fails if this line is removed.
+  mountHomeRoutes(app, {
+    store: openErrandStore(path.join(__dirname, '..', 'data', 'home')),
+    profileDir: 'C:\\Aroma\\browser-profile'
+  })
 
   app.use(createDemoRouter({
     conversationStore: realConversationStore,
