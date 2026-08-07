@@ -1427,3 +1427,81 @@ duplication neither of us had seen: the bar was not gated at all, so on the empt
 waiting item rendered **twice**, a collapsed count at the top and the useful card at the
 bottom. **Nothing had stopped yet, so it had never been visible** — and the first day something
 stopped would have been the moment of least patience with it.
+
+---
+
+# HR-29 — Do not borrow a credential for a page that does not ask for one
+
+**Round:** the errand runner, 2026-08-07. **Owner: 「the recall errand not reaching for the
+credential profile, and the reason」.**
+
+She now has a logged-in Chrome profile, built deliberately, ACL'd, out of the repo and out of
+offsite backup. **The Owner's own framing: 「The profile folder is a credential. Treat it as
+one from day one.」**
+
+The moment a session runner exists, it becomes the obvious thing to call — and the first errand
+wired through it was ERRAND-003, the **public** recall register. No login. No account. Nothing
+the profile contributes.
+
+## The two costs, and the second one is the one that gets missed
+
+| | |
+|---|---|
+| **Exposure** | a credential is carried onto a page that never needed it. Prompt injection while wearing his identity is **unmitigated** — so every page she visits while holding it is a page that can try |
+| **⛔ Availability** | `openBrowserSession` refuses to open when the profile lock is held. **His own Chrome being open would fail the errand** — and the failure would read as 「blocked」, on a site that was never blocking anything |
+
+The second is the one that would have shipped quietly. It is not a security cost, it is a
+**reliability cost paid for a security asset that was doing no work**, and it only shows up on
+the days he happens to be browsing.
+
+## THE RULE
+
+> ### Reach for a credential when the page demands one, never because the runner that holds it is the convenient one.
+> The default for a public read is a **fresh ephemeral browser**. It carries nothing, so it can
+> leak nothing and cannot be locked out.
+
+**And the fence is structural, not declared** — the test greps the errand's own source for
+`profileDir` and `browser-profile` and fails if either appears. Not 「remember not to」.
+
+---
+
+# HR-30 — Ask what a REFUSED record degrades INTO. A guard's fallback is a claim of its own.
+
+**Round:** the errand runner, 2026-08-07. **Owner: 「a stop report that cannot be assembled
+becomes BLOCKED_BY_SITE, which would tell me the site blocked her when she actually stopped
+for me.」**
+
+`errandStore` correctly **refuses** a `STOPPED_FOR_YOU` row with no stop report — an
+Owner-approved rule, because a stop he cannot act on is not a stop. `runErrand` correctly
+**does not drop** a refused row, because an errand that ran and left no trace is
+indistinguishable from one that never ran.
+
+Both rules are right. **Composed, they silently convert 「she stopped for you」 into 「the site
+blocked her」.**
+
+| what happened | what he would read | what he would do |
+|---|---|---|
+| she reached a control she would not press, and is standing at it | 「個站攔住佢」 | nothing — sites block things, that is normal |
+
+A cart sits half-built at a checkout page and the briefing files it under **weather**.
+
+## Why no test caught it and no review would have
+
+Both components were tested **in isolation and were correct in isolation.** The store's
+refusal test passes. The runner's never-lose-a-row test passes. **The defect lives in the
+seam**, and the seam is where each component is doing exactly its job.
+
+## THE RULE
+
+> ### Every guard has a fallback. Name the sentence the fallback produces, and check it is not a DIFFERENT TRUE-SOUNDING CLAIM.
+> A refusal that degrades to an error is honest. A refusal that degrades to **another
+> outcome the system also uses for real events** is a forgery, and it will be believed.
+
+**The mechanism:** the errand builds the stop **complete, at the point of the stop**, where all
+five fields are in hand — never assembled later from what survived. And the test round-trips it
+through the **real store**, not a fake. A fake store accepts whatever it is handed, which is
+precisely the assumption the defect was made of.
+
+**This is HR-6's family** (assert the VALUE, not that the key was mentioned) **arriving at the
+level of composition:** it is not enough for each component to be right — the sentence the
+composition produces is itself a claim, and nobody had read it.

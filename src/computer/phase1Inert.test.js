@@ -195,10 +195,18 @@ test('the computer-audit artifact kind is registered BEFORE anything can act', (
 
 test('*** the allowedPath folder was NOT created, and nothing here would create it ***', () => {
   const { ALLOWED_ROOT } = require('./computerWorkOrder')
+  const { snapshotRoot } = require('./rootUntouched.helper')
   assert.equal(ALLOWED_ROOT, 'C:\\Aroma\\ComputerOperator-Test')
   // The constant exists to validate against. Phase 1 must not create the folder — and
   // cannot, since no module imports fs at all (asserted above).
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'Phase 1 did not create the test folder')
+  //
+  // ⛔ That last clause is the REAL guarantee, and it is what this now asserts. Loading every
+  // Phase 1 module must leave the root exactly as it was. The old form asserted the root was
+  // ABSENT, which stopped being true when the Owner-approved canary created it on 2026-07-31 —
+  // a true claim failing on a false proxy.
+  const before = snapshotRoot(ALLOWED_ROOT)
+  for (const f of MODULES) require('./' + f)
+  assert.equal(snapshotRoot(ALLOWED_ROOT), before, 'loading Phase 1 must leave the approved root untouched')
 })
 
 test('*** no Windows account was created, and the definition says so as data ***', () => {

@@ -17,6 +17,7 @@ const fs = require('node:fs')
 
 const { createComputerSupervisor, ASSURANCE } = require('./computerSupervisor')
 const { ALLOWED_ROOT, MUST_FORBID, HARD_MAX_STEPS } = require('./computerWorkOrder')
+const { snapshotRoot } = require('./rootUntouched.helper')
 
 const P = (rel) => ALLOWED_ROOT + '\\' + rel
 
@@ -54,9 +55,13 @@ test('*** the Supervisor has NO execute path — only a dry-run ***', () => {
 })
 
 test('a dry-run creates nothing on disk — not even the approved root', () => {
+  // Asserts the CLAIM (「the dry-run changed nothing」), not the coincidence (「that path is
+  // absent」). The canary provisioning created the root on 2026-07-31, which made the old
+  // proxy false without making this claim false. See rootUntouched.helper.js.
+  const before = snapshotRoot(ALLOWED_ROOT)
   const s = sup()
   s.dryRun(order())
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'the folder is still not created')
+  assert.equal(snapshotRoot(ALLOWED_ROOT), before, 'the dry-run must leave the approved root exactly as it found it')
 })
 
 /* ── THE ASSURANCE BOUNDARY ───────────────────────────────────────────────── */

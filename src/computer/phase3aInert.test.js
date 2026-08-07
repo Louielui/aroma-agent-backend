@@ -115,9 +115,17 @@ test('*** the flag is still off and the launcher still does not mention it ***',
   assert.equal(appCode.includes('companion'), false)
 })
 
-test('*** the approved test folder still does not exist ***', () => {
+test('*** Phase 3a leaves the approved test folder exactly as it found it ***', () => {
   const { ALLOWED_ROOT } = require('./computerWorkOrder')
-  assert.equal(fs.existsSync(ALLOWED_ROOT), false, 'Phase 3a must not create it')
+  const { snapshotRoot } = require('./rootUntouched.helper')
+  // Was 「still does not exist」. The canary provisioning created it on 2026-07-31 under the
+  // Owner's approval, so absence stopped being available as a proxy for 「Phase 3a created
+  // nothing」. This asserts the claim itself — and additionally catches Phase 3a WRITING INTO
+  // an existing folder, which the absence check never could.
+  const before = snapshotRoot(ALLOWED_ROOT)
+  require('./computerOperatorFlag')
+  require('./computerWorkOrder')
+  assert.equal(snapshotRoot(ALLOWED_ROOT), before, 'Phase 3a must not create it or write into it')
 })
 
 /* ── the account is the Owner's step, and the code says so honestly ───────── */
