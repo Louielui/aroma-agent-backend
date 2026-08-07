@@ -425,3 +425,172 @@ origin, using an already-allowed method.*
 > Widening the allowlist was previously a convenience question. **It is now a
 > prompt-injection-surface question**, and this paragraph is where a future round has to come
 > and argue.
+
+---
+---
+
+# 8. WHERE HE SEES IT — **首頁, not a new surface**
+
+> **Owner: 「This is 首頁 from the IA — 『what needs my decision』 is exactly what a stopped
+> checkout is. Do not invent a new surface for it.」**
+
+`PRODUCT-IA.md` §首頁: *the COO morning briefing — what needs him today, in the fewest words
+that are true*, already carrying the waiting-invoices line with its five states, its
+looked-at time, and its caveat. **A stopped checkout is another line of exactly that shape.**
+
+## The three things it shows
+
+### a. What she ran
+
+```
+今日  3 單差事
+  ✅ 回收檢查(蘑菇/雞/芝士)     09:12   答到
+  ⏸ Costco 落單 —— 紙巾 ×6      11:40   停低,等你
+  ⛔ 供應商入口                  14:03   俾網站擋咗
+```
+
+Three outcomes, **never merged**: **答到 / 停低等你 / 擋咗**. The same discipline as the
+invoice line's five states — 「stopped for you」 and 「blocked by the site」 are different facts
+and must never collapse into 「didn't work」.
+
+### b. What is waiting, with the stop report INLINE
+
+**Not a link to a report. The report.** He decides from 首頁 or he does not decide.
+
+```
+⏸ 等你 —— Costco 落單,準備好,冇撳
+   我做咗              6 件貨落車 · Winnipeg 門市取貨
+   我冇撳              button "Place Your Order"
+   金額                $284.61   ← 11:40 讀到,冇核實
+   點解停              L1 認得出粒掣個名
+   [ 開返嗰版 ]
+```
+
+The five required fields from §5, unchanged: **filled (names and shapes, never values) ·
+not-pressed (role, name, ref) · amount marked READ-not-verified · which layer · where to go.**
+
+### c. The link — **and this is the part that needs care**
+
+---
+
+# 9. THE LINK — a cart lives in the session that built it
+
+> **Owner: 「a link opened in my daily Chrome will show an empty cart — we measured that on
+> Costco.」**
+
+Correct, and it is the same fact from a different direction: **the cart is server-side, tied to
+the session cookie in HER profile.** His daily Chrome is a different session and sees a
+different cart, or none.
+
+## So the link cannot be an `<a href>`
+
+**首頁 is served by her own backend on `127.0.0.1:8090`.** The button is a **POST to a local
+endpoint**, which launches Chrome **against her profile directory** at that URL:
+
+```
+POST /api/v1/errand/:id/open      →  chrome --user-data-dir=C:\Aroma\browser-profile <url>
+```
+
+A local surface can start a local process. **A hosted page could not do this, and that is a
+reason the briefing stays local rather than a limitation to route around.**
+
+## ⚠ WHAT HAPPENS IF THE PROFILE IS BUSY — the case that needs an answer, not a hope
+
+A Chrome user-data-dir is **single-instance**: it holds a `SingletonLock`. Three states, and
+each needs a defined behaviour:
+
+| state | what the button must do |
+|---|---|
+| **profile idle** | launch it headed at the URL. The normal case |
+| **she is mid-errand in it** | ⛔ **refuse, and say so** — 「香香而家用緊個 profile。停佢先?」 with a stop control. **Never launch a second Chrome on the same dir and hope** |
+| **stale lock** (a crashed run left the lock behind) | detect and report it as its own state — **never delete a lock file automatically**, because 「clear the lock and carry on」 is how two Chromes end up writing one profile |
+
+> ### ⚠ UNVERIFIED, AND IT MUST BE MEASURED BEFORE IT IS BUILT.
+>
+> Whether a second `chrome --user-data-dir` on a live Playwright persistent context **attaches
+> a tab** or **fails** is behaviour I have not measured. **I am not going to assert it.** It is
+> a fifteen-minute probe with the throwaway profile from step 2 and it belongs in that step.
+
+## ⛔ AND THE THING THIS SURFACES THAT NOBODY HAS SAID YET
+
+**When he finishes the payment in her profile, he is typing his card into her profile.**
+
+> ### That is the most likely way L2 gets silently undone — not by us, by him, on the first purchase.
+
+Chrome will offer to save the card. If it saves, **the profile now holds a payment method**,
+and 「cannot autofill」 quietly stops being true.
+
+Two requirements follow, and neither is optional:
+
+1. **Card saving must be OFF in that profile by construction** — the preference set when the
+   profile is created, not a habit of declining a prompt at 11pm.
+2. **The payment probe runs before every session and refuses to start if it finds one** — which
+   already exists in §2. **It would catch this**, and the report must say *why* it refused in
+   words that point at the purchase he made, not at a database table.
+
+**If the merchant holds the card server-side, none of this arises** — he clicks and pays. **The
+hazard is exactly the sites where L2 was doing something.**
+
+---
+
+# 10. DOES A STOPPED ERRAND EXPIRE? — **yes, and the answer is about the AMOUNT, not the link**
+
+> **Owner: 「A cart from three days ago may be priced differently or partly out of stock.」**
+
+**What goes stale is not the page — it is the number she read.** The page is live and correct
+whenever he opens it; the `$284.61` on the card is a reading from a moment that has passed.
+
+| age | 首頁 shows |
+|---|---|
+| **< 2 h** | the amount plainly. `11:40 讀到` |
+| **2–24 h** | the amount **struck through**, with 「呢個價我 X 個鐘之前讀,可能唔同咗」 |
+| **> 24 h** | **no amount at all** — 「太耐,個價同存貨都要重新睇。建議我重新行一次,唔好接住做。」 |
+
+## Should it refuse to link past some point? — **No, and this is a deliberate ruling**
+
+**The link stays available at every age.** Opening a page is a `GET`; it commits nothing, and
+he may well want to look.
+
+> ### What expires is the CLAIM, not the ACCESS.
+>
+> Refusing the link would be the system deciding he may not look at his own cart. **Removing
+> the amount is refusing to keep asserting something we can no longer support** — which is
+> HR-5, 「absent stays absent」, applied to a number that has aged out of being true.
+
+**And past 24 h the card recommends re-running rather than resuming**, because 「partly out of
+stock」 is not visible from a stale reading and only a fresh errand would find it.
+
+---
+
+# 11. WHAT IT SHOWS WHEN NOTHING IS WAITING
+
+> **Owner: 「Same ruling as the Drive line: never blank, and it says when it last looked.」**
+
+```
+✅ 冇嘢等你決定。
+   啱啱睇過 · 14:52
+   今日行過 2 單:回收檢查(答到)· 供應商入口(俾網站擋咗)
+```
+
+**Three requirements, taken directly from the invoice line that already works:**
+
+1. **Never blank.** A blank space is indistinguishable from a broken feature. **Silence is only
+   permitted when the feature is off**, and then it says so.
+2. **It names when it last looked.** 「冇嘢等你」 is a claim with a timestamp or it is not a
+   claim — the same reason the Drive line says 「幾點睇過」.
+3. **A failed check is NOT 「nothing waiting」.** If the errand store cannot be read, the line
+   says **「我睇唔到差事紀錄」**, never 「冇嘢等你」. **The two look identical to a tired reader
+   and mean opposite things**, which is the whole shape of `count: 43`.
+
+---
+
+# 12. BUILD ORDER — unchanged, this goes LAST
+
+**This surface is not built ahead of the L1 measurement, and not ahead of the three layers.**
+
+1. ~~Measure L1~~ ← **done: 100% fitted, 45% held-out**
+2. The payment probe, proven to fail — **and the profile-lock probe from §9 joins this step**
+3. L3
+4. The real profile
+5. **首頁's stopped-errand line, last** — it displays what the layers produce, so it has nothing
+   true to display until they exist.
