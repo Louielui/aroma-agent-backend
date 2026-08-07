@@ -51,10 +51,11 @@ describe('it runs the read-only errands and records them', () => {
     fs.rmSync(d, { recursive: true, force: true })
   })
 
-  test('a row records that it came from the timer, not from a hand-run', async () => {
+  test('⛔ a row records the DOOR it came through, never a cause it cannot know', async () => {
     const d = tmp(); const store = openErrandStore(d)
     await runScheduledErrands({ store, runners: { recall: okRunner }, now: () => NOW })
-    assert.strictEqual(store.list()[0].trigger, 'SCHEDULED')
+    assert.strictEqual(store.list()[0].via, 'SCHEDULED_ENDPOINT',
+      'the field names the DOOR the request came through — not who caused it, which this endpoint cannot know')
     fs.rmSync(d, { recursive: true, force: true })
   })
 })

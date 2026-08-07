@@ -213,13 +213,22 @@
    * depends on the OWNER'S timezone, not this device's — so the band words are not written
    * in this file at all. A failed fetch shows nothing rather than guessing.
    */
+  /**
+   * The empty conversation screen: a greeting and a composer. That is all.
+   *
+   * ⛔ THE BRIEFING USED TO LIVE HERE AND NO LONGER DOES. It grew until forty-four rows pushed
+   * the composer off the screen — the briefing ate the thing it sits above. It has its own
+   * destination now (`showHome`), which is what PRODUCT-IA specified all along.
+   *
+   * The waiting bar still persists over this screen. It is the one thing with a deadline, and
+   * moving the briefing away must not take it along: a stopped errand needs somewhere to appear
+   * while he is typing.
+   */
   function renderEmptyScreen (c) {
     if (!mainEl || isListed(c) || c.history.length > 0) return
     mainEl.classList.add('empty')
     var box = el('div', 'empty-greeting')
     c.thread.appendChild(box)
-    var brief = el('div', 'brief')
-    c.thread.appendChild(brief)
     fetch('/api/v1/demo/greeting', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (j) {
@@ -227,19 +236,41 @@
         box.textContent = j.line
       })
       .catch(function () { /* no greeting is better than a wrong one */ })
-    // The Drive line has MOVED OFF the greeting into its own row — the Owner said it does not
-    // belong glued to a salutation. It now arrives with everything else, from one read.
+  }
+
+  /** 首頁 — the briefing as its own destination. */
+  function showHome () {
+    if (!mainEl) return
+    active = null
+    mainEl.classList.remove('empty')
+    clear(log)
+    titleEl.textContent = '首頁'
+    var view = el('div', 'home-view')
+    log.appendChild(view)
+    var brief = el('div', 'brief')
+    view.appendChild(brief)
+    markHome(true)
+    // ⛔ The briefing IS visible here, so the bar must not duplicate it — the same stand-in
+    // rule as before, with a new answer to 「is the briefing on screen?」.
+    renderWaitingBar(true)
     fetch('/api/v1/home/briefing', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null })
       .then(function (b) {
-        if (!b || active !== c || c.history.length > 0) return
+        if (!b) throw new Error('no body')
         renderBriefing(brief, b)
       })
       .catch(function () {
         // ⛔ NEVER BLANK. A failed fetch is not 「nothing waiting」 — it is 「I could not look」,
         // and the two look identical in an empty box and mean opposite things.
-        brief.appendChild(row('brief-errands', '我搵唔到 首頁 個 API,所以答唔到你有咩等緊。', ''))
+        brief.appendChild(row('brief-errands brief-defect', '我搵唔到 首頁 個 API,所以答唔到你有咩等緊。', ''))
       })
+  }
+
+  /** Which destination is current. One place, so the two cannot both look selected. */
+  function markHome (on) {
+    var b = document.getElementById('open-home')
+    if (b) b.classList.toggle('side-item-on', !!on)
+    if (on) renderConvList()
   }
 
   function row (cls, text, when) {
@@ -528,6 +559,8 @@
   }
   function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
+    // A conversation is the current destination, so 首頁 is not.
+    markHome(false)
     active = c
     clear(log)
     log.appendChild(c.thread)
@@ -1486,6 +1519,10 @@
     DECISION_RECALL: '決定記憶'
   }
   var SET_READ_SOURCES = []
+
+  // ── 首頁 as a destination ──
+  var homeBtn = document.getElementById('open-home')
+  if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
 
   var setOverlay = document.getElementById('settings-overlay')
   var setOpenBtn = document.getElementById('open-settings')

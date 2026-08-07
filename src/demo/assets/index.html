@@ -19,6 +19,12 @@
         <span class="brand">香香</span>
       </div>
       <button id="new-chat" class="new-chat" type="button">＋ 開新對話</button>
+      <!-- 首頁 earns its place because the briefing outgrew the conversation screen it was
+           borrowing. 營運 / 財務 / 行政 stay in PRODUCT-IA and OFF this list until each has
+           something conversation does badly — asserted by src/demo/sidebar.test.js. -->
+      <button id="open-home" class="side-item" type="button">
+        <span class="side-item-icon" aria-hidden="true">◱</span><span>首頁</span>
+      </button>
       <nav id="convs" class="convs" aria-label="歷史對話"></nav>
       <button id="open-settings" class="side-item" type="button" aria-haspopup="dialog" aria-expanded="false">
         <span class="side-item-icon" aria-hidden="true">⚙</span><span>設定</span>

@@ -741,3 +741,16 @@ button[disabled] { opacity: .45; cursor: default; }
    says is information; this one is 「你有一樣嘢未查過」. */
 .concl-gap     .brief-text { color: var(--stop, #b0564b); }
 .concl-history .brief-text { color: var(--faint); opacity: 0.8; }
+
+/* ── 首頁 as its own destination ─────────────────────────────────────────────
+   The briefing outgrew the conversation screen it was borrowing: forty-four rows pushed the
+   composer off. PRODUCT-IA specified 首頁 as a workspace; it earned the item when it acquired
+   something conversation does badly — standing state that must be readable without asking. */
+.home-view {
+  max-width: 34em;
+  margin: 0 auto;
+  padding: 1.4em 1em 3em;
+  text-align: left;
+}
+/* The current destination, marked in one place so two cannot both look selected. */
+.side-item-on { background: var(--card); color: var(--ink); }

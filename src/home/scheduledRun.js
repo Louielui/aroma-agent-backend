@@ -75,9 +75,19 @@ async function runScheduledErrands ({ store, runners, kinds, now }) {
         id: kind.prefix + it.suffix + '-' + new Date(t).toISOString().slice(0, 10),
         title: it.title || kind.title,
         now: () => t,
-        // `trigger` and `nextRunAt` ride along on the row so the briefing can tell a scheduled
-        // run from a hand-run without asking anything else.
-        decorate: { trigger: 'SCHEDULED', nextRunAt: next },
+        /**
+         * ⛔ `via`, NOT `trigger`. THE FIELD IS NAMED FOR THE DOOR, NOT FOR THE CAUSE.
+         *
+         * This was `trigger: 'SCHEDULED'`, and on 2026-08-07 every one of seven rows said
+         * SCHEDULED while the task had never fired once — they were hand-runs through the same
+         * endpoint. The Owner read the briefing, saw seven runs, and reasonably concluded the
+         * guardrail had failed. It had not; the data was claiming a cause it could not know.
+         *
+         * This endpoint knows ONE thing for certain: the request arrived here. Who knocked is
+         * in the knock log, which is the only place with evidence. So the row states the door
+         * and nothing more.
+         */
+        decorate: { via: 'SCHEDULED_ENDPOINT', nextRunAt: next },
         run: async () => it.result
       })
       rows.push({ id: kind.prefix + it.suffix, outcome: r.outcome, recorded: r.recorded })
