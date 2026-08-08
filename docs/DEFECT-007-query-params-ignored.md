@@ -56,3 +56,45 @@ curl -s -H "Authorization: Bearer $KEY" \
 ```
 
 Today that returns 199 rows.
+
+---
+
+# CONFIRMED FROM THE SERVER SIDE — 2026-08-08
+
+> **Owner: 「record it beside the earlier note that said 「the API ignores limit」. That note said
+> one parameter; the probe now shows the cost is every read pulling the whole table across the
+> network.」**
+
+Read-only inspection of `aroma-system/server/routes/aiIntegration.ts`. **Nothing was changed.**
+
+**No endpoint reads `req.query` at all.** Not `limit`, not `q`, not `from`/`to`, not `status`,
+not `supplierId`. `ALLOWED_QUERY` in the reader declares six parameters and the server accepts
+none of them.
+
+| endpoint | server-side window | server-side cap | rows returned for `?limit=3` |
+|---|---|---:|---:|
+| `/inventory` | none | **none** | **199** |
+| `/suppliers` | none | **none** | 36 |
+| `/daily-counts` | last 7 days (`submittedAt`) | 50 | **50 — at the cap** |
+| `/order-planning` | none | **none** | 44 |
+| `/purchase-orders` | last 30 days (`createdAt`) | 100 | 14 |
+| `/invoices` | last 30 days (`createdAt`) | 100 | **1** — see DEFECT-009 |
+
+## The cost, measured rather than inferred
+
+Three endpoints have **no cap at all** and return the entire table on every call. The reader then
+discards all but `MAX_ITEMS = 25`, client-side. So a question about stock transfers 199 rows to
+keep 25, on every turn that reads inventory.
+
+Correctness is unaffected. What it costs is bandwidth, latency, and a table scan per turn — and
+it grows with the business, silently, because nothing reports it.
+
+## And one that is not merely wasteful
+
+`/daily-counts` returned **exactly 50 rows against a hardcoded `.limit(50)`**. A result that
+lands exactly on its cap is indistinguishable from one that was truncated, and nothing in the
+response says which. The reader's `totalCount` becomes 50 and `completeness` becomes
+`'complete'`. **If there were 60 submissions in those 7 days, she would report 50 and call it
+all of them.**
+
+That is the same shape as DEFECT-009 below it, one endpoint over.

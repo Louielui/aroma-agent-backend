@@ -279,3 +279,80 @@ one first and show you the numbers before designing step 2 in detail.
   the escalation is the mitigation, not a fix.
 - **Whether the graph is ever enough.** It has never run. Nothing here has been observed working;
   it is a design, and the first honest measurement is step 1.
+
+---
+
+# THE FIRST REAL TEST IS NOT THE COSTCO QUESTION — 2026-08-08
+
+> **Owner: 「orderPlanning already carries supplier_name, so the Costco question needs no join at
+> all. That means the first real test of the enquiry layer is not the one I asked about. Say what
+> question actually requires a multi-step read, because I would rather build against a real case
+> than the one I happened to type.」**
+
+He is right, and the reason is worth naming: **`order-planning` is already a pre-joined view.**
+Measured, its rows carry `ingredient_name`, `supplier_id`, `supplier_name`, `live_qty`,
+`par_level`, `incoming_qty`, `projected_qty`, `suggested_order_qty` and `order_lead_days`. The
+server has already done stock × par × on-order × supplier. 「今天 Costco 訂什麼」 is **one read**,
+and no enquiry layer would improve it.
+
+That is a good outcome and it removes the motivating example. So what is left?
+
+## WHAT DOES NOT NEED MULTIPLE READS (checked, not assumed)
+
+| question | why one read |
+|---|---|
+| what to order today, from whom | `order-planning` — pre-joined, supplier named inline |
+| what is below par | `order-planning` carries `par_level` and `live_qty` |
+| what is on order already | `order-planning` carries `incoming_qty` |
+| what is on an invoice | `invoices` carries `lineItems` inline |
+| what was counted in a stocktake | `daily-counts` carries `items` inline |
+
+Nearly every business question has a pre-joined view. **That is the honest reason the enquiry
+tier is smaller than it looked.**
+
+## ⛔ THE ONE THAT GENUINELY DOES — count versus system
+
+> **「上次盤點嘅數，同系統而家嘅存量對唔對得上？」**
+> (Does the last stocktake agree with what the system thinks we have?)
+
+Two reads, no pre-joined view, and a real operational question — a variance between counted and
+recorded stock is money and it is what a stocktake is FOR.
+
+```
+1. daily-counts  → items[] { ingredientId, ingredientName, countedQty, unit }
+2. inventory     → { id, name, currentStock, unit }
+   join on: daily-counts.items[].ingredientId → inventory.id
+```
+
+Why this one and not the others:
+
+- **No view does it.** `order-planning` compares live stock to PAR, never to a COUNT.
+- **Both sides are populated** — `ingredientId` in the snapshot, `id` in inventory, both required
+  and non-empty in the sample.
+- **The join key is real, not inferred** — `ingredientId` is already in `ID_FIELDS`, and unlike
+  `invoices.supplierId` it has values on both ends (HR-56).
+- **It is exactly two steps**, so it exercises the runner without needing depth 3.
+- **The answer is a list of differences**, which is the shape that makes 「what I read」 easy to
+  state and 「查齊了」 easy to avoid: 「我對比咗 N 項，其中 M 項對唔上」 names its own scope.
+
+### A second candidate, one step harder
+
+> **「上次落嘅單，收咗貨未？」** — `purchase-orders.items[]` against `daily-counts` or `inventory`.
+
+Same shape, but `/purchase-orders` sits behind the 30-day `createdAt` window (DEFECT-009), so the
+answer would silently exclude older open orders. **Not a good first test until that is resolved** —
+it would test the enquiry layer against a source that is already lying about its scope.
+
+## WHAT THIS CHANGES ABOUT BUILDING IT
+
+The first enquiry is **stocktake-vs-inventory**, not order planning. That means:
+
+- the join map needs **one** verified edge to start, not three
+- depth 2 is enough for the first real case; the 3-round bound is not exercised yet
+- and the measurement now running (intent breadth) should be watched for whether questions of
+  this shape are even asked — `daily_count` and `inventory` co-occurring is exactly an `n=2` line
+  in the log, and if it never appears, the enquiry tier has no customer.
+
+> **The counter added today is the thing that will say whether this is worth building.** That was
+> the point of putting measurement first, and it now has a specific pattern to look for rather
+> than a general hope.

@@ -2887,3 +2887,60 @@ being in the loop.
 4. **State the cost of a design next to the design.** 「$0.62 a question」 nearly bought caution
    against the wrong thing; the caution belonged to one architecture and was being applied to the
    feature.
+
+---
+
+# HR-56 — NAME-BASED INFERENCE, THREE TIMES IN ONE DAY, AND THE THIRD WOULD HAVE ANSWERED
+
+> **Owner: 「Three instances in one day — 訂貨/訂什麼貨, 沒有權限/中間插字, and now supplierId —
+> and this one would have produced an answer rather than a failure.」**
+
+## THE THREE
+
+| # | the inference | what it was | how it failed |
+|---|---|---|---|
+| 1 | `訂貨` matches 「訂什麼貨」 | a contiguous substring | **silence** — no intent, nothing read, a false capability denial |
+| 2 | `沒有權限` matches her sentence | a contiguous substring | **silence** — the guard never fired |
+| 3 | `supplierId` points at `suppliers` | a field NAME implying a relationship | **an answer** |
+
+The first two fail by not firing. **The third fails by working.**
+
+## WHY THE THIRD IS THE DANGEROUS ONE
+
+Measured against production, 2026-08-08:
+
+```
+orderPlanning.supplier_id  → suppliers.id    populated 3/3
+purchaseOrders.supplierId  → suppliers.id    populated 3/3
+invoices.supplierId        → suppliers.id    NULL in every sampled row
+```
+
+`invoices.supplierId` is present, correctly typed, and **empty**. A join map written from field
+names would have declared that edge with total confidence — the name is right, the type is right,
+the target exists. Traversing it returns nothing, and 「no supplier found for this invoice」 is
+indistinguishable from 「this invoice has no supplier」.
+
+> **A missing edge produces a gap the Owner can see. A wrong edge produces a plausible answer
+> against the wrong table.** Silence is recoverable; a confident answer from an empty join is not,
+> because nothing about it looks wrong.
+
+And the name carries none of what actually matters. `supplierId` on an order-planning row could be
+the supplier of record, the last-invoiced supplier, or the preferred one. **Three different
+questions, one field name, and the name answers none of them.**
+
+## THE RULE
+
+1. **A field name is evidence that a relationship MIGHT exist. It is never evidence that it
+   holds, and never evidence of what it means.**
+2. **Every declared edge is VERIFIED against a captured response** — does the source field come
+   back, and do its values resolve in the target — before anything traverses it.
+3. **An unverified edge STOPS the query and says so.** Never silently skipped, never guessed.
+   (Owner ruling, 2026-08-08.)
+4. **Verification is not one-off.** `invoices.supplierId` may be populated next month. An edge
+   that verified once and is checked never again is a stale map with a passing test.
+
+## THE GENERAL FORM, WHICH IS WHY IT KEEPS HAPPENING
+
+> Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
+> **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
+> be measured, and in all three cases measuring it was cheap and nobody had.
