@@ -403,6 +403,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     turnOperations.set(operation, trust === 'live' ? OP_LIVE : OP_UNAVAILABLE)
   }
   const operationsInState = (state) => Array.from(turnOperations.entries()).filter(([, v]) => v === state).map(([k]) => k)
+  /**
+   * ⛔ TRUTH CLOSURE — OPERATIONS THIS TURN OBTAINED BY THE MODEL'S OWN DECISION, AND LIVE.
+   *
+   * > **Production request dbda7d7f-0899-4f65-87ff-97e9914af640, gpt-5.6-terra.**
+   * > Router said CONVERSATION/default and read NOTHING automatically. The model then chose
+   * > `aroma_system.replenishment` (live), observed it, chose `aroma_system.purchasing` (live),
+   * > observed that, and answered — genuine autonomous multi-step reasoning.
+   * > `ANSWER_PLAN outcome=fallback reason=no_plan_returned`. No claim binding, no evidence
+   * > validation. Real business prose about stockout risk and expired purchase orders reached
+   * > the Owner having been proven against nothing.
+   *
+   * The gate below asked the ROUTER whether this turn was about business data. The router
+   * answers a different question — 「what should be read automatically from the ORIGINAL
+   * message」 — and it is right about that. It cannot answer 「did the model later obtain real
+   * evidence」, because that had not happened yet when it ran.
+   *
+   * So provenance is RECORDED WHERE IT HAPPENS, at the reasoning loop's own executeRead, and
+   * nowhere else. It is deliberately NOT derived from the route, from turnItems, from a source
+   * name, from the presence of a read block, or from `turnOperations` — that last one carries
+   * automatic reads too, so it would let the router's own read masquerade as the model's.
+   *
+   * MEMBERSHIP IS EARNED BY ONE THING: the loop asked for it AND the row came back
+   * `trust:'live'`. A live zero-row read IS evidence — the table really is empty — and it
+   * belongs here. An `unavailable` read is not evidence and must never appear.
+   */
+  const modelDirectedLiveOperations = new Set()
   // ── A3 REASONING LOOP: observations gathered mid-turn, in the order they arrived. ──
   // Each entry is a read-context block produced by the SAME buildReadContext the one-shot
   // path uses. Empty on an ordinary turn, so the prompt is byte-identical to before.
@@ -614,7 +640,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ROUTER vs MODEL — the distinction is the whole fix. The router decides the AUTOMATIC
     // first read; nextRead is the model REQUESTING one. The router keeps its job and loses
     // only its power to silence the question.
-    const planApplies = !(routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) && turnItems.size > 0
+    // ── THE AUTOMATIC RULE, UNCHANGED, BYTE FOR BYTE ──────────────────────────
+    // The router still decides whether an AUTOMATIC read may demand an Answer Plan, and rows
+    // still cannot force one onto a route that did not ask for data. Nothing below relaxes it.
+    const automaticPlanApplies = !(routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) && turnItems.size > 0
+    // ── TRUTH CLOSURE: EVIDENCE THE MODEL FETCHED ITSELF ALSO DEMANDS A PLAN ──
+    //
+    // ⛔ AND IT DELIBERATELY DOES NOT REQUIRE turnItems.size > 0. A live read that matched
+    // ZERO rows is a true answer about an empty table, and it is exactly the answer most likely
+    // to be embroidered — 「我睇過，冇嘢」 is cheap to say and expensive to be wrong about. It
+    // gets grounded like any other read. No row refs exist, so withRowRefs leaves the schema
+    // alone and the model declares citesEvidence:false with empty sections, which the existing
+    // schema already supports. Nothing fabricates an id.
+    //
+    // An `unavailable` model-directed read is absent from this set, so a failed read still
+    // cannot open the grounding path.
+    const modelDirectedPlanApplies = modelDirectedLiveOperations.size > 0
+    const planApplies = automaticPlanApplies || modelDirectedPlanApplies
     // ⛔ OPERATIONS, MINUS THE ONES ALREADY PERFORMED. Filtering by SOURCE used to hide all six
     // Aroma views the moment any one of them was read; an operation grain hides only what has
     // actually been answered.
@@ -936,6 +978,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const row = (rc && Array.isArray(rc.perSource)) ? rc.perSource.find((r) => r && r.source === resolved.source) : null
         const trust = row ? row.trust : null
         recordOperation(capability, trust)
+        // ⛔ TRUTH CLOSURE: PROVENANCE IS RECORDED AT THE ONLY PLACE THAT KNOWS IT.
+        // This line is inside the loop's executeRead, so reaching it IS the proof the read was
+        // model-directed; and `trust === 'live'` is the proof it produced evidence. An
+        // `unavailable` read is excluded here, so a failed read can never open the grounding
+        // path — the same three-state rule as recordOperation, applied to a second question.
+        if (trust === 'live') modelDirectedLiveOperations.add(capability)
         return { capability, ok: trust === 'live', summary: null }
       },
       callModel: async ({ step }) => {
