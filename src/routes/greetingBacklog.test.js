@@ -53,7 +53,12 @@ describe('greeting + backlog line', () => {
     assert.ok(res.body.greeting, 'the greeting itself must survive a Drive failure')
     // OWNER RULING REVERSED 2026-08-06: a failure SPEAKS. Returning null renders identically
     // to 「nothing waiting」, and that is the one meaning it must never carry.
-    assert.ok(res.body.backlog && /出錯/.test(res.body.backlog), 'a thrown read must say so')
+    // ⛔ The KEY against the response, the WORDING against the catalogue (HR-51). Grepping
+    // 「出錯」 on the body went green on the phrasing, which now lives in the catalogue and
+    // can be rewritten in either locale without this noticing.
+    assert.strictEqual(res.body.backlog, CATALOGUE['route.driveError'].zh)
+    assert.match(CATALOGUE['route.driveError'].zh, /出錯|失敗/)
+    assert.match(CATALOGUE['route.driveError'].en, /fail/i)
   })
 
   test('the greeting still renders when the backlog read HANGS past its budget', async () => {
@@ -68,7 +73,9 @@ describe('greeting + backlog line', () => {
     // A TIMEOUT MUST NOT BE SILENT. This exact case shipped as null and cost a round: the
     // read took 3.2-5.6s against a 2.5s budget, so every cold render showed nothing while
     // 64 files sat in Drive.
-    assert.ok(res.body.backlog && /未攞到數/.test(res.body.backlog), 'a timeout must say so')
+    assert.strictEqual(res.body.backlog, CATALOGUE['route.driveStillReading'].zh)
+    assert.match(CATALOGUE['route.driveStillReading'].zh, /未拿到|還在/)
+    assert.match(CATALOGUE['route.driveStillReading'].en, /still|no count/i)
     assert.ok(Date.now() - started < 2000, 'must not wait for a hung Drive call')
   })
 

@@ -21,6 +21,7 @@
  */
 
 const { OUTCOME } = require('./errandStore')
+const { t } = require('../i18n/t')
 
 /**
  * @param {{store, id, title, run, now?}} args `run` resolves to
@@ -59,7 +60,7 @@ async function runErrand ({ store, id, title, run, now, decorate }) {
         title,
         outcome: OUTCOME.BLOCKED_BY_SITE,
         at: clock(),
-        detail: '呢單差事返咗一個冇人定義過嘅結果:' + JSON.stringify(outcome) + '。當佢冇完成。'
+        detail: t('runner.undefinedOutcome', { outcome: JSON.stringify(outcome) })
       }
     }
   } catch (e) {
@@ -68,7 +69,7 @@ async function runErrand ({ store, id, title, run, now, decorate }) {
       title,
       outcome: OUTCOME.BLOCKED_BY_SITE,
       at: clock(),
-      detail: '中途爆咗:' + String(e && e.message).split('\n')[0].slice(0, 120)
+      detail: t('runner.threw', { error: String(e && e.message).split('\n')[0].slice(0, 120) })
     }
   }
 
@@ -85,7 +86,7 @@ async function runErrand ({ store, id, title, run, now, decorate }) {
       title,
       outcome: OUTCOME.BLOCKED_BY_SITE,
       at: clock(),
-      detail: '個結果寫唔入紀錄(' + why + ')。差事本身跑過。'
+      detail: t('runner.recordFailed', { why })
     }
     try {
       store.record(fallback)

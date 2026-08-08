@@ -17,15 +17,17 @@
  */
 
 const crypto = require('crypto')
+const { t } = require('../i18n/t')
 const { DistillParseError } = require('../intake/distillPrompt')   // owner module (Slice A) — import, NOT re-export
 const { IntakeUpstreamError } = require('../intake/intakeErrors')  // Slice B error
 
 // Client-facing, fixed and safe. Never contain: parser reason, provider name/text,
 // raw, prompt, Context Card, stack, path, or err.message.
 const SAFE_MESSAGES = Object.freeze({
-  invalid_llm_output: '香香未能產生有效回應，請稍後再試。',
-  llm_unavailable: '香香目前暫時無法連接服務，請稍後再試。',
-  internal_error: '系統暫時無法處理這個請求。'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  invalid_llm_output: () => t('diag.invalidOutput'),
+  llm_unavailable: () => t('diag.unavailable'),
+  internal_error: () => t('diag.internal')
 })
 const STATUS = Object.freeze({ invalid_llm_output: 500, llm_unavailable: 503, internal_error: 500 })
 const RETRYABLE = Object.freeze({ invalid_llm_output: true, llm_unavailable: true, internal_error: false })

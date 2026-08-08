@@ -210,7 +210,8 @@ function renderSummary (intent, groups) {
   const parts = groups.map((g) => `${LABELS[g.source] || g.source} ${g.items.length} ${intent.unit}${intent.noun}`)
   const body = parts.length === 0
     ? t('rrv.noDirectMatch', { noun: intent.noun })
-    : `目前確認到${parts.join('、')}。`
+    // ⛔ The separator is interface too — 、 between English words reads as a typo.
+    : t('rrv.confirmedSoFar', { parts: parts.join(t('punct.listSep')) })
   return `### ${intent.heading}\n\n${body}`
 }
 

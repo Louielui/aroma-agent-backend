@@ -464,3 +464,66 @@ hardcoded literal on a field that later becomes translatable. That is recorded h
 guarded, and the rule it depends on is written where it applies:
 
 > ### 意思用欄位 travel，唔用字面 — meaning travels as a field, never as text.
+
+---
+
+# M-8 — COMMENTS THAT ASSERT A STRUCTURAL PROPERTY
+
+> Owner: 「A comment saying 「these are built from the same source」 or 「this cannot happen」 is
+> an unenforced assertion, and we now have two instances of one being false.」
+
+He asked for a sweep for CLAIMS, not for defects. Here it is.
+
+## THE COUNT
+
+Comment lines in `src/` whose shape is a structural assertion, non-test files only:
+
+| shape | count | example |
+|---|---:|---|
+| ALWAYS / ONLY | 168 | 「the only place a real process is spawned」 |
+| IMPOSSIBLE | 96 | 「an approved Work Order can never point the…」 |
+| INVARIANT / by construction | 65 | 「read-only by construction」 |
+| SAME-SOURCE | 26 | 「rebuilt from the SAME arrays」 |
+| **total** | **355** | |
+
+355 unenforced assertions is the honest answer to 「does any other comment do this」. The count
+is not the finding, though — at that size it is a description of how this codebase is commented,
+not a defect list, and treating it as 355 open items would be the noisy-check mistake again.
+
+## WHAT WAS ACTUALLY CHECKED
+
+The 26 SAME-SOURCE claims are the class both known-false instances belong to, and the only class
+that is mechanically checkable by reading two places. Of those, 19 are prose about design
+(「one source's scope」, 「a failure in one source」) and 7 are load-bearing:
+
+| claim | verdict | what makes it true |
+|---|---|---|
+| `agent/investigationReport.js:199` expanded twin from the SAME arrays | **WAS FALSE, now true** | nothing held it — one form was REVERSE-PARSED from the other. Fixed in `e090dcf`: `sections` now carries `{index, label, items}`, so the twin rebuilds from the same `items`. The sentence did not change; the code moved under it. |
+| `agent/requestShape.js:80` change verbs borrowed so the two cannot disagree | TRUE | `require('./requestInference')` |
+| `routes/demoRouter.js:442` same path extractor the producer validates with | TRUE | `requestInference` imports `mentionedFilesFrom` + `isForbiddenFile` |
+| `routes/workRequestOffer.js:21` + `workRequestRoute.js:28` same function as the model path | TRUE | both `require` `inferWorkRequest` |
+| `demo/demoHtml.js:39` the mark is drawn ONCE and cannot drift | TRUE | one `dot.svg`, read by `inlineSvg` and by `appManifest` |
+| `demo/assets/app.js:329` + `home/homeRoutes.js:155` preview and send call the same function | TRUE | both call `attachmentFor` from `home/sectionAttachment` |
+| `governance/textResolver.js:133` the proof uses the same predicate the scan uses | TRUE | `isLiteralKeyArg` exported and imported by both |
+
+## THE FINDING
+
+**Every true one is true because of an `import`. The one that was false described two blocks
+inside one file.** That is the whole difference, and it is visible without understanding either
+claim:
+
+> A 「same source」 claim across a module boundary is held up by the import — deleting it breaks
+> the build. A 「same source」 claim about two things in the SAME file is held up by nothing but
+> the sentence, and the sentence does not run.
+
+`investigationReport.js` was exactly that: two rendering functions, one file, a comment saying
+they shared arrays, and one of them parsing the other's output back into structure.
+
+## WHY NO FENCE
+
+A checker cannot tell which two subjects a sentence names. What it could flag — 「a SAME-SOURCE
+comment in a file with no import」 — would fire on most of the 19 prose cases and be right about
+one. Same arithmetic as M-7, same conclusion.
+
+What is cheap and was done instead: the 7 load-bearing ones are now VERIFIED, in writing, above.
+The other 348 are recorded as unverified, which is a truer state than not knowing they existed.

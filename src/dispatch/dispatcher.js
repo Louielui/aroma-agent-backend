@@ -15,12 +15,19 @@
  */
 
 const store = require('../store/store')
+const { t } = require('../i18n/t')
 const { workerForCapability } = require('../workers/registry')
 const { checkRedLine } = require('../intake/redlinePolicy')
 
 const STATUS_LABEL = {
-  queued: '已排入佇列', assigned: '已指派', running: '執行中',
-  completed: '已完成', failed: '失敗', waiting_connection: '等待接入', waiting_approval: '待批准'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  queued: () => t('dispatch.queued'),
+  assigned: () => t('dispatch.assigned'),
+  running: () => t('dispatch.running'),
+  completed: () => t('dispatch.completed'),
+  failed: () => t('dispatch.failed'),
+  waiting_connection: () => t('dispatch.waitingConnection'),
+  waiting_approval: () => t('dispatch.waitingApproval')
 }
 function statusLabel (s) { return STATUS_LABEL[s] || s }
 
@@ -51,7 +58,7 @@ async function executeDispatch (dispatchId, adapter, context = {}) {
   // Red-line guard: never send sensitive content to an external model.
   const rl = checkRedLine(taskText)
   if (rl && rl.blocked) {
-    store.updateDispatch(dispatchId, { status: 'waiting_approval', error: '含敏感資訊,需人工處理,未送外部模型' })
+    store.updateDispatch(dispatchId, { status: 'waiting_approval', error: t('dispatch.sensitiveHeld') })
     return
   }
 

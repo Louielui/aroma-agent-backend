@@ -40,6 +40,7 @@
  */
 
 const { offerFor } = require('./workRequestOffer')
+const { t } = require('../i18n/t')
 const { persistIntake, recordApprovalEvent } = require('../store/store')
 
 const ENTRY_POINT = 'deterministic_entry'
@@ -70,7 +71,7 @@ async function createWorkRequest (input = {}, deps = {}) {
   try {
     persisted = persistIntake({
       understanding: goal,
-      decision: { statement: goal, rationale: '由你的一句話直接開出，未經模型判斷。' },
+      decision: { statement: goal, rationale: t('wr.rationale') },
       tasks: [{ title: goal, note: offer.file }],
       // PROVENANCE, half of it. The other half is the approval event below.
       provenance: { proposed_by: 'louie', source: ENTRY_POINT }

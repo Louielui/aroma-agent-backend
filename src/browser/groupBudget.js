@@ -1,5 +1,7 @@
 'use strict'
 
+const { t } = require('../i18n/t')
+
 /**
  * groupBudget.js — spending a fixed budget across groups, and SAYING what was cut.
  *
@@ -130,8 +132,7 @@ function budgetGroups (groups, opts = {}, loose = []) {
   if (groupsDropped) parts.push(`${groupsDropped} group${groupsDropped === 1 ? '' : 's'} not shown at all`)
   if (looseDropped) parts.push(`${looseDropped} further item${looseDropped === 1 ? '' : 's'} not shown`)
   const notice = truncated
-    ? '\n（已截斷 truncated' + (parts.length ? '：' + parts.join('；') : '') +
-      '；未顯示嘅嘢唔代表唔存在）'
+    ? t('budget.truncated', { parts: parts.length ? t('budget.truncatedParts', { parts: parts.join(t('punct.clauseSep')) }) : '' })
     : ''
 
   return {

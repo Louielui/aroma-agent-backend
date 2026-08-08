@@ -97,7 +97,11 @@ describe('the minimum interval, and it is answered from the LOG not from memory'
     const k = openKnockLog(d)
     const v = k.mayRun(T, 60 * 60 * 1000)
     assert.strictEqual(v.ok, false)
-    assert.match(v.saying, /讀唔到|睇唔到/)
+    // ⛔ The REASON, not the wording. Refusing is half the guarantee; refusing BECAUSE it
+    // could not read the log is the other half, and that half travels as a field. Matching
+    // 「讀唔到」 tied this test to one locale's phrasing of a fact the code already states.
+    assert.strictEqual(v.reason, 'LOG_UNREADABLE')
+    assert.ok(v.saying && v.saying.length > 0, 'refusal must say something')
     fs.rmSync(d, { recursive: true, force: true })
   })
 })

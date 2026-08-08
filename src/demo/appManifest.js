@@ -55,6 +55,12 @@ function iconDataUri () {
 function buildManifest () {
   const icon = iconDataUri()
   return {
+    // ⛔ NOT EXTRACTED, deliberately. Three things have to move together and none of them
+    // is a string swap: MANIFEST is built ONCE at module load (below), so a t() here freezes
+    // whatever the locale was at process start; `lang` is hard-coded 'zh-Hant', so an English
+    // description would be served declared as Chinese; and the route hands out MANIFEST_JSON,
+    // a constant. Doing it properly means building per request and deriving `lang` from the
+    // locale — a change to a served endpoint, not to this batch. Left in Chinese, and said so.
     name: '香香',
     short_name: '香香',
     description: 'Aroma 的 AI 營運長',

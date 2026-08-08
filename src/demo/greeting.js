@@ -23,6 +23,7 @@
  */
 
 const { localParts } = require('../utils/localTime')
+const { t } = require('../i18n/t')
 
 /** The Owner's name, as he writes it. Not a setting — a proper noun. */
 const OWNER_NAME = 'Louie'
@@ -31,10 +32,12 @@ const OWNER_NAME = 'Louie'
  * The bands, published so the boundaries are readable rather than buried in comparisons.
  * `from` is inclusive, and the last band wraps past midnight.
  */
+// ⛔ GETTERS, not thunks. `bandFor` hands `b.word` straight to callers and to the
+// published `greeting` field, so `word` must BE the string, resolved at read time.
 const GREETINGS = Object.freeze([
-  { word: '早晨', from: 5, to: 12 }, // 05:00–11:59
-  { word: '午安', from: 12, to: 18 }, // 12:00–17:59
-  { word: '晚安', from: 18, to: 5 } //  18:00–04:59, wrapping
+  { get word () { return t('greet.morning') }, from: 5, to: 12 }, // 05:00–11:59
+  { get word () { return t('greet.afternoon') }, from: 12, to: 18 }, // 12:00–17:59
+  { get word () { return t('greet.evening') }, from: 18, to: 5 } //  18:00–04:59, wrapping
 ])
 
 function bandFor (hour) {
@@ -61,7 +64,7 @@ function greetingFor (at, opts = {}) {
   return {
     greeting: word,
     name: OWNER_NAME,
-    line: word ? `${word}，${OWNER_NAME}` : OWNER_NAME
+    line: word ? t('greet.line', { word, name: OWNER_NAME }) : OWNER_NAME
   }
 }
 

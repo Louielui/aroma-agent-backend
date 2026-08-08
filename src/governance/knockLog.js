@@ -22,6 +22,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const path = require('node:path')
 
 const MAX_ROWS = 500
@@ -73,7 +74,7 @@ function openKnockLog (dir) {
     mayRun (now, minIntervalMs) {
       let rows
       try { rows = rowsOrThrow() } catch (e) {
-        return { ok: false, reason: 'LOG_UNREADABLE', saying: '我讀唔到敲門紀錄,所以我唔知上次幾時行過。唔知就唔行。' }
+        return { ok: false, reason: 'LOG_UNREADABLE', saying: t('knock.unreadable') }
       }
       const accepted = rows.filter((r) => r && r.verdict === 'ACCEPTED' && Number(r.at) > 0)
       if (!accepted.length) return { ok: true, reason: 'FIRST_RUN' }
@@ -85,8 +86,7 @@ function openKnockLog (dir) {
         ok: false,
         reason: 'TOO_SOON',
         lastRunAt: last,
-        saying: '上次 ' + Math.round(since / 60000) + ' 分鐘之前行過,重複行會撞爆個站。' +
-          '仲要等 ' + mins + ' 分鐘。'
+        saying: t('knock.tooSoon', { mins: Math.round(since / 60000), wait: mins })
       }
     }
   }

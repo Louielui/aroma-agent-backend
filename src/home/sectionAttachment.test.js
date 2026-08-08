@@ -24,6 +24,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const { attachmentFor, buildSectionPreamble, OPEN, CLOSE, ALLOWED_FIELDS } = require('./sectionAttachment')
 const { KINDS } = require('./errandKinds')
@@ -107,8 +108,19 @@ describe('⛔ attached content cannot escape its envelope', () => {
     // The frame is what tells the reader this is a statement about a result rather than a
     // request. Removing the sentence is a silent change in meaning, so it is asserted.
     const { preamble } = buildSectionPreamble({ kind: 'recall', lines: ['x'], capturedAt: NOW })
-    assert.match(preamble, /紀錄|record/i)
-    assert.match(preamble, /唔係.*要求|not.*request/i)
+    // ⛔ The KEY against the preamble, the WORDING against the catalogue — in BOTH locales,
+    // because this frame is the whole defence against a recorded line being read as an
+    // instruction, and an English rendering that lost the 「not a request」 clause would
+    // have left the zh assertion green.
+    // The frame's second line carries no {title} slot, so it is asserted verbatim from the
+    // catalogue — containment that cannot pass on a preamble that dropped it.
+    const frameLine = CATALOGUE['env.record'].zh.split('\n').find(l => l.includes('⛔'))
+    assert.ok(frameLine, 'env.record must still carry the ⛔ framing line')
+    assert.ok(preamble.includes(frameLine), 'the preamble must carry the env.record frame')
+    assert.match(CATALOGUE['env.record'].zh, /紀錄/)
+    assert.match(CATALOGUE['env.record'].zh, /不是.*要求/)
+    assert.match(CATALOGUE['env.record'].en, /record/i)
+    assert.match(CATALOGUE['env.record'].en, /not a request/i)
   })
 
   test('an empty attachment produces NO envelope at all', () => {

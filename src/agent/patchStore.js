@@ -25,6 +25,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const path = require('node:path')
 
 const DEFAULT_DIR = 'C:\\Aroma\\AgentPatches'
@@ -73,8 +74,7 @@ function writePatch (approvalId, patchText, opts = {}) {
 /** The line the Owner is shown, with the command that applies it. */
 function applyHint (patchPath, repoRoot) {
   if (!patchPath) return null
-  return 'patch 已寫入： ' + patchPath + '\n' +
-    '睇一睇再 apply： git -C "' + (repoRoot || 'C:\\Aroma\\aroma-agent-backend') + '" apply "' + patchPath + '"'
+  return t('patch.written', { path: patchPath, repo: repoRoot || 'C:\\Aroma\\aroma-agent-backend' })
 }
 
 module.exports = { writePatch, applyHint, patchDir, DEFAULT_DIR, MAX_PATCH_BYTES }

@@ -22,6 +22,7 @@
 // No test-only request field / header / env flag selects fixtures.
 
 const express = require('express')
+const { t } = require('../i18n/t')
 const { body, validationResult } = require('express-validator')
 const { v4: uuidv4 } = require('uuid')
 const { getAdapter } = require('../adapters/adapterFactory')
@@ -160,12 +161,12 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           // 「nothing waiting」 — and that is exactly what happened: the read took 3.2-5.6s
           // against a 2.5s budget, so every cold render showed nothing while 64 files sat
           // in Drive. Silence is reserved for「the feature is off」and nothing else.
-          ? '仲喺度查 Drive，今次未攞到數。'
+          ? t('route.driveStillReading')
           : sentenceFor(r)
       } catch (_) {
         // A thrown read still SAYS so. No sentence at all would be read as 「nothing
         // waiting」, which is the one meaning it must never carry.
-        payload.backlog = '查 Drive 嗰陣出錯，今次攞唔到數。'
+        payload.backlog = t('route.driveError')
       }
     }
     res.json(payload)
@@ -534,7 +535,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         try {
           mapped = handleIntakeError(err, { correlationId, endpoint: '/api/v1/demo/intake' })
         } catch (_) {
-          mapped = { status: 500, body: { error: { code: 'internal_error', message: '系統暫時無法處理這個請求。', correlationId, retryable: false } } }
+          mapped = { status: 500, body: { error: { code: 'internal_error', message: t('diag.internal'), correlationId, retryable: false } } }
         }
         // 'early_error' when the pipeline never reached a provider (adapter acquisition,
         // guard, unexpected throw); 'handled_error' once a provider had been contacted.

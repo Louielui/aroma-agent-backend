@@ -30,6 +30,7 @@
  */
 
 const crypto = require('node:crypto')
+const { t } = require('../i18n/t')
 const { OUTCOME, buildReport } = require('./investigationReport')
 
 const ENQUIRY = Object.freeze({
@@ -53,7 +54,7 @@ const ENQUIRY = Object.freeze({
 async function runEnquiry (input = {}) {
   const {
     question = '', worker, next, budgetUsd = 1, maxRounds = 6,
-    notEstablishedOnStop = ['未講明'], now = () => new Date().toISOString(),
+    notEstablishedOnStop = [t('enq.notStated')], now = () => new Date().toISOString(),
     newId = () => crypto.randomUUID()
   } = input
 
@@ -119,7 +120,7 @@ async function runEnquiry (input = {}) {
     question,
     answer: finished
       ? (step.answer || '')
-      : (outcome === ENQUIRY.FAILED ? '中途失敗：' + failure : '未查完。'),
+      : (outcome === ENQUIRY.FAILED ? t('enq.failedMidway', { failure }) : t('enq.notFinished')),
     measurements: finished ? (step.measurements || []) : (step && step.measurements) || [],
     notEstablished: finished ? (step.notEstablished || []) : notEstablishedOnStop,
     // TWO KINDS OF CAVEAT, kept apart on the way through as well. Merging them here would

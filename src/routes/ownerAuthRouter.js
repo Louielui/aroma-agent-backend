@@ -14,6 +14,7 @@
  */
 
 const express = require('express')
+const { t, currentLocale } = require('../i18n/t')
 
 const {
   SESSION_COOKIE, readCookie, passwordMatches, readOwnerPassword,
@@ -55,12 +56,12 @@ function escapeHtml (s) {
 function loginPage ({ next = '/demo', error = null, configured = true } = {}) {
   const safeNext = safePath(next)
   const notice = !configured
-    ? '<p class="err">尚未設定登入密碼。請在 .env 設定 AROMA_OWNER_PASSWORD 後重啟。</p>'
+    ? '<p class="err">' + t('auth.noPassword') + '</p>'
     : (error ? `<p class="err">${escapeHtml(error)}</p>` : '')
   return `<!doctype html>
-<html lang="zh-Hant"><head><meta charset="utf-8">
+<html lang="${currentLocale() === 'en' ? 'en' : 'zh-Hant'}"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>香香</title>
+<title>${escapeHtml(t('auth.pageTitle'))}</title>
 <link rel="icon" type="image/svg+xml" href="${iconDataUri()}">
 <style>
 :root{color-scheme:light dark}
@@ -82,13 +83,13 @@ button:hover{background:#c96a47}
   background:#f5e3e0;color:#a8493f}
 </style></head><body>
 <form class="card" method="post" action="/owner/login">
-  <h1>香香</h1>
-  <p class="sub">請輸入密碼</p>
+  <h1>${escapeHtml(t('auth.pageTitle'))}</h1>
+  <p class="sub">${escapeHtml(t('auth.enterPassword'))}</p>
   ${notice}
-  <label for="p">密碼</label>
+  <label for="p">${escapeHtml(t('auth.passwordLabel'))}</label>
   <input id="p" name="password" type="password" autocomplete="current-password" autofocus required>
   <input type="hidden" name="next" value="${escapeHtml(safeNext)}">
-  <button type="submit">登入</button>
+  <button type="submit">${escapeHtml(t('auth.signIn'))}</button>
 </form>
 </body></html>`
 }
@@ -119,7 +120,7 @@ function createOwnerAuthRouter ({ sessions, isConfigured = ownerPasswordConfigur
     if (!passwordMatches(presented, resolvePassword() || '')) {
       // One fixed message. No hint about length, prefix, or how close it was — and the
       // attempted value is not echoed back into the form.
-      return res.status(401).type('html').send(loginPage({ next: body.next, error: '密碼不正確。' }))
+      return res.status(401).type('html').send(loginPage({ next: body.next, error: t('auth.wrongPassword') }))
     }
     const sid = sessions.issue()
     res.setHeader('Set-Cookie', sessionCookie(sid, sessions.TTL_MS))

@@ -29,6 +29,7 @@
  */
 
 const { KINDS } = require('./errandKinds')
+const { t } = require('../i18n/t')
 // ⛔ THE ALLOWLIST ITSELF LIVES IN THE PROTECTED PATH. The kind's own readOnly flag is kept as
 // a second, independent condition — a fence that agrees with itself from two files is harder to
 // widen by accident than one boolean in a module the Owner may edit.
@@ -43,7 +44,8 @@ const { runErrand } = require('./errandRunner')
  */
 async function runScheduledErrands ({ store, runners, kinds, now }) {
   const clock = typeof now === 'function' ? now : Date.now
-  const t = clock()
+  // ⛔ `startedAt`, not `t` — `t` is the resolver.
+  const startedAt = clock()
   const registry = kinds || KINDS
   const wired = Object.keys(runners || {})
 
@@ -60,7 +62,7 @@ async function runScheduledErrands ({ store, runners, kinds, now }) {
   for (const kind of allowed) {
     // Stored on the row so a later cadence change cannot retroactively rewrite whether past
     // runs were on time (DESIGN-SCHEDULED-SURFACE §2). Witness #2 measures the gap against it.
-    const next = t + kind.everyMs
+    const next = startedAt + kind.everyMs
     nextRunAt = nextRunAt === null ? next : Math.min(nextRunAt, next)
 
     let items
@@ -69,16 +71,16 @@ async function runScheduledErrands ({ store, runners, kinds, now }) {
     } catch (e) {
       // The runner itself fell over before producing any errand. That is still one recorded
       // event — a schedule that fails silently is indistinguishable from one with nothing to say.
-      items = [{ suffix: 'run', title: kind.title, result: { outcome: 'BLOCKED_BY_SITE', detail: '排程行嗰陣爆咗:' + String(e && e.message).split('\n')[0].slice(0, 120) } }]
+      items = [{ suffix: 'run', title: kind.title, result: { outcome: 'BLOCKED_BY_SITE', detail: t('runner.scheduledThrew', { error: String(e && e.message).split('\n')[0].slice(0, 120) }) } }]
     }
 
     for (const it of (items || [])) {
       ran++
       const r = await runErrand({
         store,
-        id: kind.prefix + it.suffix + '-' + new Date(t).toISOString().slice(0, 10),
+        id: kind.prefix + it.suffix + '-' + new Date(startedAt).toISOString().slice(0, 10),
         title: it.title || kind.title,
-        now: () => t,
+        now: () => startedAt,
         /**
          * ⛔ `via`, NOT `trigger`. THE FIELD IS NAMED FOR THE DOOR, NOT FOR THE CAUSE.
          *

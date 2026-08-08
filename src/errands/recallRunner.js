@@ -24,6 +24,7 @@
  */
 
 const { chromium } = require('playwright-core')
+const { t } = require('../i18n/t')
 const { launchOptions } = require('../browser/launch')
 const { readPage } = require('../browser/axTree')
 const { checkNavigation, NAV } = require('../browser/navigate')
@@ -112,9 +113,9 @@ async function runRecallForIngredients (ingredients) {
       try {
         result = await checkRecall({ session, goto, query: q, url: HOST + SEARCH_PATH, shown: settings.get('recallShownPerIngredient') })
       } catch (e) {
-        result = { outcome: 'BLOCKED_BY_SITE', detail: '查「' + q + '」嗰陣爆咗:' + String(e && e.message).split('\n')[0].slice(0, 100) }
+        result = { outcome: 'BLOCKED_BY_SITE', detail: t('runner.recallThrew', { q, error: String(e && e.message).split('\n')[0].slice(0, 100) }) }
       }
-      out.push({ suffix: q, title: '回收檢查 — ' + q, result })
+      out.push({ suffix: q, title: t('runner.recallTitle', { q }), result })
     }
     out.fenceReport = fence.report()
     return out

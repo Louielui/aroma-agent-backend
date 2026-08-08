@@ -39,6 +39,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const crypto = require('node:crypto')
 
 const SHIM_PATH = 'C:\\Aroma\\xiangxiang.ps1'
@@ -86,19 +87,18 @@ function checkLauncher (opts) {
       state: STATE.UNREADABLE,
       expected: PIN,
       actual: null,
-      saying: '我讀唔到個 launcher(' + p + '):' + String(e && e.code) + '。唔知佢有冇被改過。'
+      saying: t('pin.unreadable', { path: p, code: String(e && e.code) })
     }
   }
   const actual = crypto.createHash('sha256').update(buf).digest('hex')
   if (actual === PIN) {
-    return { state: STATE.MATCH, expected: PIN, actual, saying: 'Launcher 同釘住嗰個 hash 一樣。' }
+    return { state: STATE.MATCH, expected: PIN, actual, saying: t('pin.match') }
   }
   return {
     state: STATE.CHANGED,
     expected: PIN,
     actual,
-    saying: '⛔ Launcher 俾人改過 —— 而家嘅 hash 同 repo 釘住嗰個唔同。' +
-      '如果係你自己改嘅,更新 src/governance/launcherPin.js 入面條 PIN;如果唔係,即刻睇返 ' + p + '。'
+    saying: t('pin.changed', { path: p })
   }
 }
 

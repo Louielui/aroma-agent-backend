@@ -1,6 +1,7 @@
 'use strict'
 
 const express = require('express')
+const { t } = require('../i18n/t')
 const { body, validationResult } = require('express-validator')
 const { v4: uuidv4 } = require('uuid')
 const { processIntake } = require('../intake/intakeService')
@@ -69,7 +70,7 @@ router.post(
       try {
         mapped = handleIntakeError(err, { correlationId, endpoint: '/api/v1/intake' })
       } catch (_) {
-        mapped = { status: 500, body: { error: { code: 'internal_error', message: '系統暫時無法處理這個請求。', correlationId, retryable: false } } }
+        mapped = { status: 500, body: { error: { code: 'internal_error', message: t('diag.internal'), correlationId, retryable: false } } }
       }
       return res.status(mapped.status).json(mapped.body)
     }

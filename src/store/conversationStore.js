@@ -37,6 +37,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const path = require('node:path')
 
 /** Same data directory as store.js, same override, so the truth files live together. */
@@ -63,9 +64,10 @@ function isValidId (id) {
 }
 
 function titleFrom (text) {
-  const t = String(text == null ? '' : text).replace(/\s+/g, ' ').trim()
-  if (!t) return '新對話'
-  return t.length > TITLE_MAX ? t.slice(0, TITLE_MAX) + '…' : t
+  // ⛔ `raw`, not `t` — `t` is the resolver, called on the next line.
+  const raw = String(text == null ? '' : text).replace(/\s+/g, ' ').trim()
+  if (!raw) return t('store.newConversation')
+  return raw.length > TITLE_MAX ? raw.slice(0, TITLE_MAX) + '…' : raw
 }
 
 /**
@@ -136,7 +138,7 @@ function createConversationStore (options = {}) {
       if (!c) continue
       out.push({
         id: c.id,
-        title: c.title || '新對話',
+        title: c.title || t('store.newConversation'),
         createdAt: c.createdAt || null,
         updatedAt: c.updatedAt || c.createdAt || null,
         messageCount: c.messages.length
