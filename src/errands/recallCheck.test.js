@@ -19,6 +19,7 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -63,7 +64,9 @@ describe('it answers, and the answer is a value rather than a log line', () => {
       query: 'mushrooms'
     })
     assert.strictEqual(r.outcome, 'ANSWERED')
-    assert.match(r.answer, /冇/, '「冇回收」 is the good news, and it is still news')
+    // CONVERTED: which statement. 「no recalls」 is the good news, and it is still news.
+    assert.ok(r.answer.includes(CATALOGUE['recall.none'].zh.split('{')[0]) || /沒有找到/.test(r.answer),
+      'the zero answer is still an answer: ' + r.answer)
     assert.ok(!/undefined|null/.test(r.answer))
   })
 
@@ -100,7 +103,7 @@ describe('⛔ the three outcomes stay apart', () => {
     // for free whenever detail was missing — a BLOCKED result that said nothing at all
     // satisfied 「it must not read as a clean page」.
     assert.ok(r.detail, 'BLOCKED must say why; with no detail the check below is vacuous')
-    assert.doesNotMatch(r.detail, /冇搵到相關回收/,
+    assert.doesNotMatch(r.detail, /沒有找到相關回收/,
       'a page she could not search must never read as a page with no recalls')
   })
 
@@ -258,7 +261,7 @@ describe('⛔ it reports what the SITE returned, not what matched the query word
       query: 'cheese'
     })
     assert.match(r.answer, /89/, 'he wants to know when a search returns forty')
-    assert.match(r.answer, /顯示|頭/, 'and that he is not seeing all of them')
+    assert.match(r.answer, /顯示前/, 'and that he is not seeing all of them')
     assert.strictEqual(r.found, 89)
     assert.ok(r.shown < 89)
   })
@@ -280,7 +283,7 @@ describe('⛔ 「I recognised nothing」 is never reported as 「there is nothin
     const r = await checkRecall({ session: searched(broken), goto, query: 'cheese' })
     assert.strictEqual(r.outcome, 'BLOCKED_BY_SITE')
     assert.match(r.detail, /89/, 'it must name the contradiction it detected')
-    assert.doesNotMatch(r.detail, /冇搵到相關回收/) // detail proved a string by the line above
+    assert.doesNotMatch(r.detail, /沒有找到相關回收/) // detail proved a string by the line above
   })
 
   test('⛔ no count line AND nothing parsed → refuses to call it 「no recalls」', async () => {
@@ -290,7 +293,7 @@ describe('⛔ 「I recognised nothing」 is never reported as 「there is nothin
     // silence it exists to forbid was the one input it could not catch.
     const said = (r.detail || '') + (r.answer || '')
     assert.ok(said, 'it must say something; silence is the failure this test is about')
-    assert.doesNotMatch(said, /冇搵到相關回收/,
+    assert.doesNotMatch(said, /沒有找到相關回收/,
       'unable to read is not the same as nothing to read, and only one of them is good news')
   })
 
@@ -301,7 +304,7 @@ describe('⛔ 「I recognised nothing」 is never reported as 「there is nothin
       query: 'unobtainium'
     })
     assert.strictEqual(r.outcome, 'ANSWERED')
-    assert.match(r.answer, /冇/)
+    assert.match(r.answer, /沒有找到/)
     assert.strictEqual(r.found, 0)
   })
 })
@@ -355,7 +358,7 @@ describe('⛔ the query is quoted, and the line says so', () => {
     })
     assert.strictEqual(r.outcome, 'ANSWERED')
     assert.match(r.answer, /詞組/)
-    assert.match(r.answer, /冇/)
+    assert.match(r.answer, /沒有找到/)
   })
 
   test('the query still reaches the page unmangled inside the quotes', async () => {

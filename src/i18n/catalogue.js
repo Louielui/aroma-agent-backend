@@ -1017,6 +1017,121 @@ const CATALOGUE = Object.freeze({
   },
   'plan.countOf': { zh: '{n} {kind}', en: '{n} {kind}' },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE PROFILE PROBE — governance/profileProbe.js.
+  //
+  // ⛔ EVERY SENTENCE HERE IS A REFUSAL OR ITS REASON. 「讀唔到就當唔安全,唔開工」 is the
+  // fail-closed rule stated to him in words; an English rendering that softened it into
+  // 「could not check」 would describe the same code as a warning instead of a stop.
+  // ══════════════════════════════════════════════════════════════════════════
+  'probe.neverWrote': {
+    zh: '這個 profile Chrome 沒有寫過資料庫 —— 即是沒有存過卡，不是「查過沒有卡」。',
+    en: 'Chrome has never written a database for this profile — so no card was ever stored, which is NOT the same as "checked and found none".'
+  },
+  'probe.unreadableTables': {
+    zh: '我打得開這個資料庫，但一張表都查不到。當作不安全處理。',
+    en: 'I can open the database but cannot read a single table. Treated as unsafe.'
+  },
+  'probe.hasPaymentMethods': {
+    zh: '這個 profile 現在有付款方式（{total} 項：{findings}）。最可能是你上次在這個 profile 完成付款時，Chrome 問你存不存卡，而存了。要在 Chrome 設定裡刪走它，我才可以開工。',
+    en: 'This profile now has payment methods ({total}: {findings}). Most likely Chrome offered to save a card when you last paid in this profile, and it was saved. Remove it in Chrome settings before I can work.'
+  },
+  'probe.clean': { zh: '查過 {n} 張付款表，全部空。', en: 'Checked {n} payment tables; all empty.' },
+  /** ⛔ 「讀不到就當不安全，不開工」 — the fail-closed rule, not a description of one. */
+  'probe.cannotRead': {
+    zh: '我讀不到這個 profile 的付款資料庫（{error}）。讀不到就當不安全，不開工。',
+    en: 'I cannot read this profile\'s payment database ({error}). Unreadable is treated as unsafe, so I will not start.'
+  },
+  'probe.noProfileDir': { zh: '這個 profile 資料夾還不存在。', en: 'That profile folder does not exist yet.' },
+  'probe.noLock': { zh: '沒有鎖，這個 profile 有空。', en: 'No lock; the profile is free.' },
+  /**
+   * ⛔ THE STANDING RULE, IN HIS WORDS: 「Never auto-clear a stale SingletonLock. Two Chromes
+   * writing one profile is the kind of corruption that surfaces days later as something else
+   * entirely.」 The refusal AND its reason must both survive translation — a refusal without
+   * its reason reads as an obstacle and invites someone to remove it.
+   */
+  'probe.locked': {
+    zh: '這個 profile 有鎖（{files}）。可能香香用著，也可能是上次 crash 留下的。⛔ 我不會自動刪 —— 兩個 Chrome 一齊寫一個 profile 的損壞，會在幾天之後以另一件事的樣子出現。',
+    en: 'This profile is locked ({files}). She may be using it, or it may be left over from a crash. ⛔ I will not clear it automatically — two Chromes writing one profile is the kind of corruption that surfaces days later as something else entirely.'
+  },
+  'probe.chromeHoldsPrefs': {
+    zh: 'Chrome 現在開著這個 profile，它自己拿著設定檔 —— 它是原子性重寫的，所以會有一刻讀不到。關掉 Chrome 我就讀得回。這個檔案沒有不見。',
+    en: 'Chrome has this profile open and is holding the preferences file. It rewrites it atomically, so there is a moment when it cannot be read. Close Chrome and I can read it again. The file is not missing.'
+  },
+  'probe.noPreferences': {
+    zh: '這個 profile 沒有設定檔，而 Chrome 也沒有開著它。讀不到就當不安全。',
+    en: 'This profile has no preferences file and Chrome does not have it open. Unreadable is treated as unsafe.'
+  },
+  'probe.prefsUnreadable': { zh: '設定檔讀不到（{error}）。當作不安全。', en: 'The preferences file cannot be read ({error}). Treated as unsafe.' },
+  'probe.saveCardOff': { zh: '存卡功能是關掉的。', en: 'Card saving is switched off.' },
+  'probe.saveCardOn': {
+    zh: 'Chrome 現在會問你存不存卡（設定是 {value}）。這個是在開 profile 時就應該關死的東西 —— 現在它開回了，所以下次你付款，卡會留在這個 profile 裡。',
+    en: 'Chrome will now offer to save your card (the setting is {value}). This should have been switched off when the profile was created — it is back on, so the next time you pay, the card stays in this profile.'
+  },
+  'probe.prefsUnreadableNoStart': { zh: '設定檔讀不到。當作不安全，不開工。', en: 'The preferences file cannot be read. Treated as unsafe; I will not start.' },
+  /** ⛔ 「「沒有付款方式」已經不成立」 — the claim being withdrawn, not a caution. */
+  'probe.signedIn': {
+    zh: 'Chrome 本身登了 Google 帳戶，或者開了同步。這樣 Google Pay 的卡同自動填表會同步入這個 profile —— 即是不用去過任何付款頁，「沒有付款方式」已經不成立。要在 Chrome 裡登出同關掉同步，我才可以開工。',
+    en: 'Chrome itself is signed into a Google account, or sync is on. Google Pay cards and autofill then sync INTO this profile — so without ever visiting a payment page, "no payment methods" no longer holds. Sign out and turn off sync in Chrome before I can start.'
+  },
+  'probe.signinAllowed': {
+    zh: 'Chrome 仍然准許登入它自己的 Google 帳戶。這個應該在開 profile 時就關死。',
+    en: 'Chrome still allows signing into its own Google account. That should have been switched off when the profile was created.'
+  },
+  'probe.signinBlocked': { zh: 'Chrome 本身不准登入，也沒有同步。', en: 'Chrome itself cannot sign in, and sync is off.' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE RECALL ERRAND — errands/recallCheck.js.
+  //
+  // ⛔ EVERY 「blocked」 REASON EXISTS TO PREVENT ONE SENTENCE: 「沒有回收」. The whole file is
+  // built so that a failure to search never renders as a clean result, and the English must
+  // carry that distinction as sharply.
+  // ══════════════════════════════════════════════════════════════════════════
+  'recall.narrowingPhrase': { zh: '詞組搜尋', en: 'phrase search' },
+  'recall.budgetBeforeStart': { zh: '還沒開始就已經超出動作上限（budget）。', en: 'The action budget was spent before it even started.' },
+  'recall.cannotNavigate': { zh: '去不到回收登記處：{reason}', en: 'Could not reach the recall register: {reason}' },
+  'recall.budgetBeforeRead': { zh: '讀這一頁之前就超出動作上限（budget）。', en: 'The action budget ran out before the page could be read.' },
+  'recall.loginWall': {
+    zh: '這一頁出了登入牆（讀到 password 欄位）。什麼都沒有打過就收手了。',
+    en: 'The page showed a login wall (a password field was present). Nothing was typed and it stopped there.'
+  },
+  /** ⛔ 「這不等於「沒有回收」」 — the sentence this whole errand exists to avoid. */
+  'recall.noSearchBox': {
+    zh: '這個網站沒有浮出搜尋框，所以根本沒有查成。這不等於「沒有回收」。',
+    en: 'The site never surfaced a search box, so no search happened at all. That is NOT the same as "no recalls".'
+  },
+  'recall.budgetBeforeType': { zh: '打字之前超出動作上限（budget）。', en: 'The action budget ran out before anything could be typed.' },
+  'recall.cannotType': { zh: '打不到字進去：{reason} — {detail}', en: 'Could not type into it: {reason} — {detail}' },
+  'recall.budgetAfterType': { zh: '打完字之後超出動作上限（budget）。', en: 'The action budget ran out after typing.' },
+  'recall.noSearchButton': {
+    zh: '找不到一顆按得到的搜尋掣（type 從來不會自己按 Enter），所以查不成。',
+    en: 'No clickable search button was found (typing never presses Enter by itself), so the search did not happen.'
+  },
+  'recall.budgetBeforeClick': { zh: '按掣之前超出動作上限（budget）。', en: 'The action budget ran out before the button could be pressed.' },
+  'recall.cannotClick': { zh: '按不到搜尋掣：{reason} — {detail}', en: 'Could not press the search button: {reason} — {detail}' },
+  'recall.budgetBeforeResults': { zh: '讀結果之前超出動作上限（budget）。', en: 'The action budget ran out before the results could be read.' },
+  /** ⛔ THE STRUCTURE-CHANGED CASE. It must never read as zero. */
+  'recall.countButNoRows': {
+    zh: '這個網站說有 {total} 條結果，但我一條都認不出來 —— 即是頁面結構改了，我讀漏了東西。⛔ 不要當它是「沒有回收」。',
+    en: 'The site says there are {total} results but I could not recognise a single one — the page structure has changed and I am missing rows. ⛔ Do NOT read this as "no recalls".'
+  },
+  'recall.none': { zh: '「{query}」{narrowing}：沒有找到相關回收。', en: '"{query}" {narrowing}: no matching recalls.' },
+  'recall.siteSaysZero': { zh: '這個網站自己說明零條。', en: 'The site itself states zero.' },
+  'recall.siteSaysNoResults': { zh: '這個網站顯示「no results」。', en: 'The site displays "no results".' },
+  'recall.cannotTellZero': {
+    zh: '我讀不到結果數目，又認不出任何一條回收紀錄，所以我不敢講「沒有回收」。（讀了 {nodes} 個節點。）',
+    en: 'I could not read a result count and could not recognise a single recall row, so I will not say "no recalls". ({nodes} nodes read.)'
+  },
+  'recall.foundTotal': { zh: '這個網站找到 {total} 條', en: 'the site returned {total}' },
+  'recall.foundFirstPage': { zh: '我在第一頁讀到 {n} 條（這個網站沒有給總數）', en: 'I read {n} on the first page (the site gave no total)' },
+  'recall.shownLabel': { zh: '，顯示前 {n} 條', en: ', showing the first {n}' },
+  'recall.answer': { zh: '「{query}」{narrowing}：{found}{shown}：{items}', en: '"{query}" {narrowing}: {found}{shown}: {items}' },
+  'recall.detailNodes': { zh: '讀了 {nodes} 個節點。', en: '{nodes} nodes read.' },
+  'recall.detailNoTotal': {
+    zh: ' ⚠ 這個網站沒有給總數，可能還有下一頁。',
+    en: ' ⚠ The site gave no total, so there may be another page.'
+  },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

@@ -4,6 +4,7 @@
  * before these tests were written. See scripts/verifyProfileProbes.js.
  */
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -17,7 +18,10 @@ describe('the payment probe distinguishes THREE states, not two', () => {
     const d = tmp()
     const r = P.probePaymentMethods(d)
     assert.strictEqual(r.state, 'NO_DATABASE_YET')
-    assert.match(r.saying, /唔係「查過冇卡」/, 'it must refuse to claim it looked')
+    // CONVERTED: which statement — and the claim it refuses to make is checked on the
+    // sentence, in both languages.
+    assert.strictEqual(r.saying, CATALOGUE['probe.neverWrote'].zh)
+    assert.match(CATALOGUE['probe.neverWrote'].en, /NOT the same as/, 'it must refuse to claim it looked')
     fs.rmSync(d, { recursive: true, force: true })
   })
 
@@ -52,7 +56,14 @@ describe('the lock probe reports and NEVER clears', () => {
     const r = P.probeProfileLock(d)
     assert.strictEqual(r.state, 'LOCKED')
     assert.ok(fs.existsSync(lock), '⛔ the probe must never delete a lock')
-    assert.match(r.saying, /唔會自動刪/)
+    /**
+     * ⛔ KEPT AS WORDING, IN BOTH LANGUAGES. This is the Owner's standing rule — never
+     * auto-clear a stale lock — and what must reach him is the REFUSAL PLUS ITS REASON. A
+     * refusal without its reason reads as an obstacle and invites someone to remove it.
+     */
+    assert.match(r.saying, /不會自動刪/)
+    assert.match(CATALOGUE['probe.locked'].en, /will not clear it automatically/i, 'the refusal')
+    assert.match(CATALOGUE['probe.locked'].en, /days later/i, 'and the reason it exists')
     fs.rmSync(d, { recursive: true, force: true })
   })
 
@@ -84,7 +95,10 @@ describe('card saving is off at CREATION, and the probe rechecks it every sessio
     const r = P.probeCardSavingDisabled(d)
     assert.strictEqual(r.ok, false)
     assert.strictEqual(r.state, 'ENABLED')
-    assert.match(r.saying, /張卡會留喺呢個 profile/, 'it must say what happens NEXT time he pays')
+    // ⛔ KEPT AS WORDING. The point is not that a warning exists — it is that the sentence
+    // says what happens the NEXT time he pays, which is the consequence he acts on.
+    assert.match(r.saying, /卡會留在這個 profile/, 'it must say what happens NEXT time he pays')
+    assert.match(CATALOGUE['probe.saveCardOn'].en, /next time you pay/i, 'and so must the English')
     fs.rmSync(d, { recursive: true, force: true })
   })
 

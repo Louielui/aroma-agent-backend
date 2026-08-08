@@ -31,6 +31,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const path = require('node:path')
 
 const STATE = Object.freeze({
@@ -69,7 +70,7 @@ function probePaymentMethods (userDataDir) {
       clean: true,
       findings: [],
       checked: [],
-      saying: '呢個 profile Chrome 未寫過資料庫 —— 即係未存過卡,唔係「查過冇卡」。'
+      saying: t('probe.neverWrote')
     }
   }
 
@@ -96,7 +97,7 @@ function probePaymentMethods (userDataDir) {
     try { fs.unlinkSync(tmp) } catch (_) {}
 
     if (!checked.length) {
-      return { state: STATE.UNREADABLE, clean: false, findings: [], checked, saying: '我打得開個資料庫,但一張表都查唔到。當唔安全處理。' }
+      return { state: STATE.UNREADABLE, clean: false, findings: [], checked, saying: t('probe.unreadableTables') }
     }
     if (findings.length) {
       const total = findings.reduce((s, f) => s + f.count, 0)
@@ -106,12 +107,13 @@ function probePaymentMethods (userDataDir) {
         findings,
         checked,
         // Points at what he did, not at a table.
-        saying: '呢個 profile 而家有付款方式(' + total + ' 項:' + findings.map((f) => f.saying).join('、') +
-          ')。最可能係你上次喺呢個 profile 完成付款嗰陣,Chrome 問你存唔存卡,而存咗。' +
-          '要喺 Chrome 設定度刪走佢,我先可以開工。'
+        saying: t('probe.hasPaymentMethods', {
+          total,
+          findings: findings.map((f) => f.saying).join(t('punct.listSep'))
+        })
       }
     }
-    return { state: STATE.CLEAN, clean: true, findings: [], checked, saying: '查過 ' + checked.length + ' 張付款表,全部空。' }
+    return { state: STATE.CLEAN, clean: true, findings: [], checked, saying: t('probe.clean', { n: checked.length }) }
   } catch (e) {
     try { if (db) db.close() } catch (_) {}
     return {
@@ -119,7 +121,7 @@ function probePaymentMethods (userDataDir) {
       clean: false,
       findings: [],
       checked: [],
-      saying: '我讀唔到個 profile 嘅付款資料庫(' + String(e.message).split('\n')[0].slice(0, 60) + ')。讀唔到就當唔安全,唔開工。'
+      saying: t('probe.cannotRead', { error: String(e.message).split('\n')[0].slice(0, 60) })
     }
   }
 }
@@ -137,7 +139,7 @@ const LOCK_FILES = ['SingletonLock', 'SingletonCookie', 'SingletonSocket', 'lock
 
 function probeProfileLock (userDataDir) {
   if (!fs.existsSync(userDataDir)) {
-    return { state: 'NO_PROFILE', held: false, files: [], saying: '個 profile 資料夾未存在。' }
+    return { state: 'NO_PROFILE', held: false, files: [], saying: t('probe.noProfileDir') }
   }
   const found = []
   for (const f of LOCK_FILES) {
@@ -147,14 +149,12 @@ function probeProfileLock (userDataDir) {
       found.push({ file: f, kind: st.isSymbolicLink() ? 'symlink' : 'file', mtime: st.mtimeMs })
     } catch (_) { /* absent */ }
   }
-  if (!found.length) return { state: 'FREE', held: false, files: [], saying: '冇鎖,個 profile 得閒。' }
+  if (!found.length) return { state: 'FREE', held: false, files: [], saying: t('probe.noLock') }
   return {
     state: 'LOCKED',
     held: true,
     files: found,
-    saying: '個 profile 有鎖(' + found.map((f) => f.file).join('、') + ')。' +
-      '可能香香用緊,亦可能係上次 crash 留低。⛔ 我唔會自動刪 —— 兩個 Chrome 一齊寫一個 profile ' +
-      '嘅損壞,會喺幾日之後以另一件事嘅樣出現。'
+    saying: t('probe.locked', { files: found.map((f) => f.file).join(t('punct.listSep')) })
   }
 }
 
@@ -228,11 +228,10 @@ function absentReason (userDataDir) {
   if (lock.held) {
     return {
       state: 'PROFILE_IN_USE',
-      saying: 'Chrome 而家開住呢個 profile,佢自己揸住個設定檔 —— 佢係原子性重寫嘅,' +
-        '所以會有一刻讀唔到。閂咗 Chrome 我就讀得返。個檔案冇唔見。'
+      saying: t('probe.chromeHoldsPrefs')
     }
   }
-  return { state: 'NO_PREFERENCES', saying: '個 profile 冇設定檔,而 Chrome 亦冇開住佢。讀唔到就當唔安全。' }
+  return { state: 'NO_PREFERENCES', saying: t('probe.noPreferences') }
 }
 
 function probeCardSavingDisabled (userDataDir) {
@@ -243,15 +242,14 @@ function probeCardSavingDisabled (userDataDir) {
   }
   let prefs
   try { prefs = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (e) {
-    return { ok: false, state: 'UNREADABLE', saying: '個設定檔讀唔到(' + String(e.message).slice(0, 40) + ')。當唔安全。' }
+    return { ok: false, state: 'UNREADABLE', saying: t('probe.prefsUnreadable', { error: String(e.message).slice(0, 40) }) }
   }
   const v = prefs && prefs.autofill ? prefs.autofill.credit_card_enabled : undefined
-  if (v === false) return { ok: true, state: 'DISABLED', saying: '存卡功能係熄嘅。' }
+  if (v === false) return { ok: true, state: 'DISABLED', saying: t('probe.saveCardOff') }
   return {
     ok: false,
     state: v === undefined ? 'NOT_SET' : 'ENABLED',
-    saying: 'Chrome 而家會問你存唔存卡(設定係 ' + String(v) + ')。' +
-      '呢個係喺開 profile 嗰陣就應該熄死嘅嘢 —— 而家佢開返咗,所以下次你付款,張卡會留喺呢個 profile 度。'
+    saying: t('probe.saveCardOn', { value: String(v) })
   }
 }
 
@@ -272,7 +270,7 @@ function probeBrowserSignIn (userDataDir) {
   }
   let prefs
   try { prefs = JSON.parse(fs.readFileSync(file, 'utf8')) } catch (_) {
-    return { ok: false, state: 'UNREADABLE', accounts: 0, saying: '個設定檔讀唔到。當唔安全,唔開工。' }
+    return { ok: false, state: 'UNREADABLE', accounts: 0, saying: t('probe.prefsUnreadableNoStart') }
   }
   const accounts = Array.isArray(prefs.account_info) ? prefs.account_info.length : 0
   const syncing = Boolean(prefs.sync && (prefs.sync.requested || prefs.sync.has_setup_completed))
@@ -281,14 +279,13 @@ function probeBrowserSignIn (userDataDir) {
       ok: false,
       state: 'SIGNED_IN',
       accounts,
-      saying: 'Chrome 本身登咗 Google 戶口,或者開咗同步。咁樣 Google Pay 啲卡同自動填表會同步入呢個 profile ' +
-        '—— 即係唔使去過任何付款頁,「冇付款方式」已經唔成立。要喺 Chrome 度登出同關同步,我先可以開工。'
+      saying: t('probe.signedIn')
     }
   }
   if (!prefs.signin || prefs.signin.allowed !== false) {
-    return { ok: false, state: 'SIGNIN_ALLOWED', accounts: 0, saying: 'Chrome 仲准許登入佢自己嘅 Google 戶口。呢個應該喺開 profile 嗰陣就關死。' }
+    return { ok: false, state: 'SIGNIN_ALLOWED', accounts: 0, saying: t('probe.signinAllowed') }
   }
-  return { ok: true, state: 'BLOCKED', accounts: 0, saying: 'Chrome 本身唔准登入,亦冇同步。' }
+  return { ok: true, state: 'BLOCKED', accounts: 0, saying: t('probe.signinBlocked') }
 }
 
 module.exports.probeBrowserSignIn = probeBrowserSignIn

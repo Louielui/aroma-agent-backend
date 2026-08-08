@@ -22,6 +22,8 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
+const { t } = require('../i18n/t')
+
 const HOST = 'https://recalls-rappels.canada.ca'
 const SEARCH_PATH = '/en/search/site?f%5B0%5D=type%3Arecall'
 const MAX_ACTIONS = 12
@@ -45,35 +47,35 @@ async function checkRecall ({ session, goto, query, url, maxActions, note, shown
   // ⛔ The narrowing is DECLARED here and reported in every answer. The Owner's ruling:
   // 「it is a claim about what I was shown and it belongs on screen, not in a config file.」
   const asked = '"' + query + '"'
-  const narrowing = ['詞組搜尋']
-  const narrowLabel = '(' + narrowing.join(';') + ')'
+  const narrowing = [t('recall.narrowingPhrase')]
+  const narrowLabel = '（' + narrowing.join(t('punct.clauseSep')) + '）'
   const target = url || (HOST + SEARCH_PATH)
   let actions = 0
   const say = (verb, outcome, detail) => { if (note) note(verb, outcome, detail || '') }
   const spend = () => { actions++; return actions <= cap }
 
-  if (!spend()) return blocked('未開始就已經爆咗動作上限 (budget)。')
+  if (!spend()) return blocked(t('recall.budgetBeforeStart'))
   const nav = await goto(target)
-  if (nav && nav.ok === false) return blocked('去唔到個回收登記處:' + (nav.reason || 'navigation failed'))
+  if (nav && nav.ok === false) return blocked(t('recall.cannotNavigate', { reason: nav.reason || 'navigation failed' }))
   say('navigate', 'ARRIVED', target)
   await session.waitFor({ condition: 'network_idle', timeoutMs: 8000 })
 
   // ── 1. READ ────────────────────────────────────────────────────────────────
-  if (!spend()) return blocked('讀個頁之前就爆咗動作上限 (budget)。')
+  if (!spend()) return blocked(t('recall.budgetBeforeRead'))
   let v = await session.read()
   say('read_page', 'READ', v.nodes.length + ' nodes')
 
   // ⛔ A login wall ends the errand. She does not type a credential, ever — and a public
   // register that suddenly asks for one is a change worth being told about.
   if (v.nodes.some((n) => /password/i.test(n.name))) {
-    return blocked('個頁面出咗登入牆(讀到 password 欄位)。冇打過任何嘢就收咗手。')
+    return blocked(t('recall.loginWall'))
   }
 
   const box = v.nodes.find((n) => /searchbox|textbox|combobox/.test(n.role) && /search|recherche/i.test(n.name))
   if (!box) {
     // ⛔ THE TWO LIES THIS GUARD PREVENTS. 「搜尋框搵唔到」 and 「冇回收」 look alike from the
     // outside and mean opposite things: one is 「我查唔到」, the other is 「我查過,安全」.
-    return blocked('個站冇浮到搜尋框出嚟,所以根本冇查成。呢個唔等於「冇回收」。')
+    return blocked(t('recall.noSearchBox'))
   }
 
   // ── 2. TYPE — THE NARROWED QUESTION ───────────────────────────────────────
@@ -87,21 +89,23 @@ async function checkRecall ({ session, goto, query, url, maxActions, note, shown
   //
   // MEASURED 2026-08-07: green onion 349 → 1 (and the 1 is a real green-onion phrase match).
   // Single words are unaffected: cheese 89 → 89. Nothing dropped to zero anywhere.
-  if (!spend()) return blocked('打字之前爆咗動作上限 (budget)。')
-  const t = await session.type({ ref: box.ref, domId: box.domId, expectRole: box.role, expectName: box.name, text: asked })
-  say('type', t.outcome, t.reason || '')
-  if (t.outcome !== 'TYPED') return blocked('打唔到字入去:' + t.reason + ' — ' + (t.detail || ''))
+  if (!spend()) return blocked(t('recall.budgetBeforeType'))
+  // ⛔ `typed`, not `t` — `t` is the resolver everywhere in this codebase, and a local of
+  // that name would have shadowed it. Caught here; the same collision cost 57 renames in app.js.
+  const typed = await session.type({ ref: box.ref, domId: box.domId, expectRole: box.role, expectName: box.name, text: asked })
+  say('type', typed.outcome, typed.reason || '')
+  if (typed.outcome !== 'TYPED') return blocked(t('recall.cannotType', { reason: typed.reason, detail: typed.detail || '' }))
 
   // ── 3. READ AGAIN — the composition rule; the session enforces it anyway ───
-  if (!spend()) return blocked('打完字之後爆咗動作上限 (budget)。')
+  if (!spend()) return blocked(t('recall.budgetAfterType'))
   v = await session.read()
 
   const go = v.nodes.find((n) => n.interactive && /^(search|go|submit|rechercher)$/i.test(n.name.trim())) ||
              v.nodes.find((n) => n.role === 'button' && /search/i.test(n.name))
-  if (!go) return blocked('搵唔到一粒撳得嘅搜尋掣(type 從來唔會自己撳 Enter),所以查唔成。')
+  if (!go) return blocked(t('recall.noSearchButton'))
 
   // ── 4. CLICK ───────────────────────────────────────────────────────────────
-  if (!spend()) return blocked('撳掣之前爆咗動作上限 (budget)。')
+  if (!spend()) return blocked(t('recall.budgetBeforeClick'))
   const c = await session.click({ ref: go.ref, domId: go.domId, expectRole: go.role, expectName: go.name })
   say('click', c.outcome, c.reason || '')
 
@@ -118,11 +122,11 @@ async function checkRecall ({ session, goto, query, url, maxActions, note, shown
       }
     }
   }
-  if (c.outcome !== 'CLICKED') return blocked('撳唔到個搜尋掣:' + c.reason + ' — ' + (c.detail || ''))
+  if (c.outcome !== 'CLICKED') return blocked(t('recall.cannotClick', { reason: c.reason, detail: c.detail || '' }))
 
   // ── 5. WAIT, READ, EXTRACT ────────────────────────────────────────────────
   await session.waitFor({ condition: 'network_idle', timeoutMs: 12000 })
-  if (!spend()) return blocked('讀結果之前爆咗動作上限 (budget)。')
+  if (!spend()) return blocked(t('recall.budgetBeforeResults'))
   v = await session.read()
   say('read_page', 'READ', v.nodes.length + ' nodes')
 
@@ -139,19 +143,17 @@ async function checkRecall ({ session, goto, query, url, maxActions, note, shown
     if (count && count.total > 0) {
       // The site says there are results and we parsed none. That is a contradiction, and the
       // only honest reading of it is 「my parser is broken」.
-      return blocked('個站話有 ' + count.total + ' 條結果,但我一條都認唔到 —— 即係個頁面結構改咗,我讀漏嘢。' +
-        '⛔ 唔好當佢係「冇回收」。')
+      return blocked(t('recall.countButNoRows', { total: count.total }))
     }
     if (count && count.total === 0) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, items: [], detail: '個站自己講明零條。' }
+      return { outcome: 'ANSWERED', answer: t('recall.none', { query, narrowing: narrowLabel }), found: 0, shown: 0, narrowing, items: [], detail: t('recall.siteSaysZero') }
     }
     if (saysNoResults(v)) {
-      return { outcome: 'ANSWERED', answer: '「' + query + '」' + narrowLabel + ':冇搵到相關回收。', found: 0, shown: 0, narrowing, items: [], detail: '個站顯示「no results」。' }
+      return { outcome: 'ANSWERED', answer: t('recall.none', { query, narrowing: narrowLabel }), found: 0, shown: 0, narrowing, items: [], detail: t('recall.siteSaysNoResults') }
     }
     // No count, no recognisable rows, no explicit 「no results」. Cannot tell the difference
     // between an empty search and a page we failed to read — so claim neither.
-    return blocked('我讀唔到結果數目,又認唔到任何一條回收紀錄,所以我唔敢講「冇回收」。' +
-      '(讀咗 ' + v.nodes.length + ' 個節點。)')
+    return blocked(t('recall.cannotTellZero', { nodes: v.nodes.length }))
   }
 
   // ⛔ SITE ORDER, UNTOUCHED. Re-ranking by our own idea of relevance — including by date —
@@ -159,21 +161,26 @@ async function checkRecall ({ session, goto, query, url, maxActions, note, shown
   const shownHits = hits.slice(0, maxShown)
   const found = count ? count.total : hits.length
   const foundLabel = count
-    ? '個站搵到 ' + count.total + ' 條'
-    : '我喺第一頁讀到 ' + hits.length + ' 條(個站冇畀總數)'
-  const shownLabel = found > shownHits.length ? ',顯示頭 ' + shownHits.length + ' 條' : ''
+    ? t('recall.foundTotal', { total: count.total })
+    : t('recall.foundFirstPage', { n: hits.length })
+  const shownLabel = found > shownHits.length ? t('recall.shownLabel', { n: shownHits.length }) : ''
 
   return {
     outcome: 'ANSWERED',
-    answer: '「' + query + '」' + narrowLabel + ':' + foundLabel + shownLabel + ':' +
-      shownHits.map((h) => h.when + ' ' + h.title).join(' / '),
+    answer: t('recall.answer', {
+      query,
+      narrowing: narrowLabel,
+      found: foundLabel,
+      shown: shownLabel,
+      items: shownHits.map((h) => h.when + ' ' + h.title).join(' / ')
+    }),
     found,
     shown: shownHits.length,
     narrowing,
     // ⛔ THE STRUCTURED RESULT, not just the sentence. 「新」 is a comparison between runs, and
     // a comparison needs values — diffing the prose answer would break on any wording change.
     items: shownHits.map((h) => ({ when: h.when, title: h.title })),
-    detail: '讀咗 ' + v.nodes.length + ' 個節點。' + (count ? '' : ' ⚠ 個站冇畀總數,可能仲有下一頁。')
+    detail: t('recall.detailNodes', { nodes: v.nodes.length }) + (count ? '' : t('recall.detailNoTotal'))
   }
 }
 

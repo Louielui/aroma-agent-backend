@@ -2676,9 +2676,13 @@ Counted across the bilingual work. Every defect I introduced, and what found it:
 | 14 | `DEMO_HTML.includes('餐廳系統')` — green only via the inlined catalogue | the HR-51 fence, one commit old |
 | 15 | 9 tests conditional on the shell's environment | running the suite twice and diffing |
 | 16 | the suite reading the Owner's settings file | the suite going red in unrelated places |
-| 17 | the client deciding section formatting by matching TRANSLATED text (3 sites) | the HR-51x position fence, on its first run |
+| 17 | the client deciding section formatting by matching TRANSLATED text (3 sites) | the position fence, on its first run |
+| 18 | `t` shadowed by a local in `recallCheck.js` — the resolver would never have been called | reading, while renaming (**the first one reading has caught**) |
+| 19 | CJK quotes in six new English entries | the punctuation fence |
+| 20 | `recallCheck.js` extracted with no `t` import at all | the suite failing to load |
 
-**Seventeen. Reading found none of them.**
+**Twenty. Reading found exactly one** — #18, and only because a rename forced me to look at every
+occurrence of that identifier. Nineteen of twenty came from a mechanism.
 
 Not one was caught by me looking at the diff — including the ones where I looked hard, and
 including #5, where I looked, reasoned, wrote the reasoning down, and was correct about the
@@ -2693,9 +2697,25 @@ do not collapse it」 was a reading decision, not a test result.
 
 > ### Review decides WHAT to build. Only a mechanism finds out whether you built it.
 
-**Corollary — the interval matters.** Four of the seventeen (#10, #12, #13, #14, #17) were caught
-by fences built within the previous day or two. A mechanism written this week paid for itself
-this week. That is the argument for building the check WITH the change rather than after it.
+## ⛔ THE SECOND HALF OF THE ARGUMENT, ON ITS OWN LINE
+
+> ### Mechanisms written this week paid for themselves this week.
+
+Five of the seventeen (#10, #12, #13, #14, #17) were caught by fences built one or two days
+earlier. Not by fences that had been standing for months and finally earned their keep — by
+checks written alongside the change they went on to catch.
+
+**That is the answer to anyone who thinks a guard can be added after the change lands.** The
+window in which a defect is cheap to find is the window in which it is introduced, and a guard
+added later starts its life on a codebase that already passes it. #17 is the sharpest: the
+position fence found three live defects on its FIRST RUN, in code committed the day before,
+that every other test in the suite had approved.
+
+## THE COUNT IS LIVE
+
+⛔ Every future batch adds to this table. The number is not a scoreboard — the RATIO is the
+standing argument for every fence in this codebase, and it stops being an argument the moment
+it stops being counted.
 
 **Corollary — the count is the evidence, not the tone.** This is not seventeen failures of care.
 It is seventeen data points saying that care is the wrong instrument for this class of error, and

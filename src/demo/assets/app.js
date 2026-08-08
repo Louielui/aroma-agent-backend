@@ -1752,9 +1752,15 @@
     for (var i = 0; i < s.length; i++) {
       var sec = el('div', 'sec')
       sec.appendChild(el('div', 'sec-t', s[i].title))
-      // 'diff' is a technical token the server emits verbatim in both languages; the
-      // translated half became a flag for the same reason as above.
-      var isDiff = s[i].mono === true || s[i].title.indexOf('diff') >= 0
+      /**
+       * ⛔ THE FLAG ONLY. The fallback here was `title.indexOf('diff')`, and I left it in as
+       * belt-and-braces on the grounds that 「diff」 is a technical token both renderings
+       * happen to contain. That is true today and it is true because of a WORDING CHOICE, not
+       * a contract — reword the section and the branch silently takes the other path.
+       *
+       * 意思用欄位 travel，唔用字面. The server marks it; the client reads the mark.
+       */
+      var isDiff = s[i].mono === true
       sec.appendChild(el('div', 'sec-b' + (isDiff ? ' mono' : ''), s[i].body))
       box.appendChild(sec)
     }
