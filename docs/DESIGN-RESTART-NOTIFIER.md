@@ -4,8 +4,10 @@
 > is the thing being changed, the change is removing an `if`, and I want to see the exact diff
 > before it runs.」**
 
-Companion to `DESIGN-RESTART-REPAIR.md`. **Nothing has been applied.** The exact diff is §5, it
-parses clean, and it has not been run.
+Companion to `DESIGN-RESTART-REPAIR.md`. **APPLIED AND PROVEN 2026-08-08 — see the record at the**
+**end of this file.** §5 is the diff exactly as the Owner reviewed it. Running the proofs then
+forced two further fixes (#35, #36) which are NOT in that diff — they are in the record and in the
+applied file. Four of the five branches were exercised; the fifth is honestly unproven.
 
 **One correction to the brief, stated up front:** the change is *not only* removing an `if`. Four
 of the five branches are exactly that. The fifth is the branch that produced the only recorded
@@ -127,9 +129,19 @@ Each case below is reversible, touches nothing persistent, and is run against `-
 |---|---|---|---|---|
 | 1 | repo not on `main` | `git switch -c proof/notifier-1` in the repo, run `-Mode Startup` | **拒絕啟動** + the branch name | `git switch main` |
 | 2 | foreign holder | a stub PowerShell TCP listener binding 8090, answering nothing | **拒絕啟動** + 「冇殺對方、冇轉 port」. The stub must still be alive afterwards | stop the stub |
-| 3 | missing `HUB_TOKEN` | clear it **in a child process env only**, never in the User store | **拒絕啟動** + names HUB_TOKEN | close the child shell |
-| 4 | spawn-then-die | run with `PORT` bound by the §2 stub, so `listen` throws | **啟動失敗** + exit code + the `.err.log` path, within seconds not 60s | stop the stub |
-| 5 | slow start (the real 2026-07-26 case) | delay listen past 15s (hold the port for ~20s then release) | **NOTHING.** A log line reading `SLOW: Ns` and no box | release the port |
+| 3 | missing `HUB_TOKEN` | ~~clear it in a child process env only~~ — **this method does not work**, see below | **拒絕啟動** + names HUB_TOKEN | — |
+| 4 | spawn-then-die | ~~`PORT` bound by the §2 stub~~ → **`NODE_OPTIONS` set to an invalid flag**, so node exits immediately | **啟動失敗** + exit code + the `.err.log` path, within seconds not 60s | nothing to revert — env var, one shell |
+| 5 | slow start (the real 2026-07-26 case) | ~~hold the port for ~20s~~ → **a `node.cmd` shim first on `PATH`** that delays ~22s, launcher unmodified | **NOTHING.** A log line reading `SLOW: Ns` and no box | remove the shim dir from `PATH` |
+
+⛔ **Two of the three methods above were wrong as planned, and are struck through rather than
+quietly replaced** — a document about proofs is the last place to overwrite a mistaken instruction
+as if it had never been given.
+
+- **Case 3's** planned method cannot work: the branch reads the **User registry store**
+  (`GetEnvironmentVariable('HUB_TOKEN','User')`), so clearing a child process env changes nothing.
+  Exercising it for real means blanking a live credential. Not done — see the applied record.
+- **Case 5's** planned method would have proved the *wrong branch*: holding the port makes the
+  launcher's first probe return `foreign`, so it refuses (case 2) and never starts node at all.
 | 6 | *(deferred, §2.1)* ErrandRecall catch-up race | run the task within 1s of launcher start | **NOTHING** — not yet built | — |
 
 **Case 5 is the acceptance test for the whole change.** It is the only failure mode that has ever
@@ -306,3 +318,107 @@ announced is a failure that enters the record, and a repairer, if it is ever jus
 something real to be exercised against instead of five cases someone imagined in a document.
 
 **Status: designed, diff written, parses clean, NOT APPLIED.** Awaiting the Owner's read of §5.
+
+---
+
+# APPLIED AND PROVEN — 2026-08-08
+
+Owner GO received for all four hunks, including the last one: 「the 15→60 and the dead-versus-
+unresponsive split are the parts that make this trustworthy, not optional extras… Without
+-PassThru both states read as a timeout, and they need different actions from me.」
+
+**Status: applied, five branches exercised, she is back up on `main` and answering `/health`.**
+
+## THE INSTRUMENT, PROVED FIRST
+
+`catch-box.ps1` waits for a dialog, **reads its text**, writes it to a file, and closes it.
+Reading the text is the point — 「a box appeared」 is not the claim; the claim is that a specific,
+correct sentence reached the screen.
+
+Seen-to-fail, in both directions, before it certified anything:
+
+- no dialog present → `exit 7`, file reads `((NO BOX APPEARED))`
+- a dialog present → `exit 0`, file reads `TITLE: 香香` + the full body
+
+It also had to be rewritten once. The first version matched the window by its **title**, which is
+Chinese — and PowerShell 5.1 decodes a BOM-less `.ps1` as ANSI, so the literal became mojibake and
+`FindWindow` never matched. The instrument now matches on the dialog **class** (`#32770`) and is
+deliberately pure ASCII, so it cannot fail that way regardless of how it is saved. **The launcher
+itself was checked for the same trap and is fine — it kept its BOM (`ef bb bf`).**
+
+## THE FIVE
+
+All run against `-Mode Startup` — the mode that was silent by construction — and all re-run
+against the final file after the fixes below.
+
+| # | branch | result | evidence |
+|---|---|---|---|
+| 1 | repo not on `main` | **PASS** | box: 拒絕啟動（fail-closed 正常運作）/ 「程式庫唔喺 main，而家喺 proof/notifier-1。香香冇啟動，亦冇自動 checkout。」 |
+| 2 | foreign holder on 8090 | **PASS** | box: 拒絕啟動 / 「冇殺對方、冇轉去第二個 port」 — **and the stub was still alive afterwards**, so the refusal is real, not merely claimed |
+| 3 | missing `HUB_TOKEN` | **NOT RUN** | see below — it requires clearing a live credential |
+| 4 | spawn-then-die | **PASS** | box: 啟動失敗 / 「即刻死咗（3 秒，exit code 9）」 + the `.err.log` path. Returned in 3s, did not wait out the budget |
+| 5 | slow start | **PASS — SILENT** | no box (`exit 7`), log line `health probe matched after start — SLOW: 23s (median is ~1s)` |
+
+### ⛔ CASE 5'S PASS LOOKS LIKE NOTHING HAPPENING. IT IS THE ACCEPTANCE TEST.
+
+Owner: 「state it that way in the record, because a proof whose success looks like nothing
+happening is the one someone later mistakes for an untested branch.」
+
+**Case 5 is not an untested branch. Its correct output is silence, and the silence was measured.**
+The instrument watched for 55 seconds and returned `exit 7` — its proved-negative result, not an
+absence of evidence. The positive evidence is the log line: she took **23 real seconds**
+(10:26:32.73 → 10:26:56.11) and it was recorded as a slow start rather than announced as a
+failure. Under the old 15s budget this exact launch would have produced a box, and the box would
+have been wrong — which is the entire argument of §4 reproduced on demand.
+
+The delay was real, not simulated: a `node.cmd` shim placed first on `PATH`, so **the launcher
+ran completely unmodified** and she genuinely started slowly.
+
+### Case 3 — NOT RUN, and why
+
+The branch reads `[Environment]::GetEnvironmentVariable('HUB_TOKEN', 'User')` — the **User
+registry store**, not the process environment. Clearing it in a child shell does nothing;
+exercising this branch for real means blanking a live credential and restoring it seconds later.
+
+**I did not do that, and I am not going to without being asked.** If the process were interrupted
+mid-window the token would be gone from the store. It is recoverable, but it is his credential and
+the decision is his, not mine.
+
+What is known without it: cases 1 and 2 prove the identical `Notify-Owner` path with the identical
+REFUSED wording, and this branch differs only in which variable it tests. That is an argument, and
+**HR-48 is explicit that an argument is not a fence** — so it is recorded as **unproven**, not as
+「effectively covered」.
+
+## TWO DEFECTS THE PROOFS CAUGHT — NEITHER FOUND BY READING
+
+**#35 — `ExitCode` was blank.** Case 4 fired the right branch and named the right log, but printed
+`exit code ` with nothing after it. Cause: when `Start-Process` is given
+`-RedirectStandardOutput`/`-RedirectStandardError`, the object `-PassThru` returns never populates
+`ExitCode` — not even after `WaitForExit()`. `HasExited` works, which is why the branch was right
+and the number was missing. Fixed with `$proc.EnableRaisingEvents = $true`, which makes .NET
+retain the handle. A fallback now prints 「讀唔到」 rather than a blank, because an unknown
+rendered as an empty gap is an unknown the eye skips.
+
+**#36 — the budget was not in seconds.** `$waited` counted **loop iterations**, was named as if it
+were seconds, and was printed with an `s` suffix. One iteration is not one second: `Probe-Server`
+sleeps 1s and, on a closed port, its `Get-NetTCPConnection` fallback costs roughly another. Case 5
+took 23 real seconds and the counter reached about 12 — so **the SLOW line did not fire at all on
+the first run**, and the budget everyone had agreed was 「60 seconds」 was really 60 iterations,
+nearer two minutes. Replaced with a `Stopwatch`, so the loop bound and the reported number are
+both real seconds.
+
+#36 is the sharper one. It sat inside the single line whose whole purpose is to give the next
+person data instead of an anecdote — and the number it would have handed them was wrong. It was
+invisible to reading and visible the moment a real slow start was staged.
+
+## WHAT IS STILL NOT PROVEN
+
+- **Case 3**, above.
+- **The box appearing during the logon storm.** Every proof here ran on a machine with a settled
+  desktop. Whether a modal dialog is seen at boot, behind whatever else is starting, cannot be
+  faked — it needs a real reboot. Case 1 is the cheapest way to arm it: leave the repo on a
+  non-`main` branch before restarting, and the box should be waiting. **The Owner will say when
+  that reboot is.**
+- **Anything unanticipated.** Five branches were exercised because five branches exist in the
+  source. That is not the same as proving the notifier speaks when something nobody imagined
+  goes wrong.
