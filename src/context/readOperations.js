@@ -130,14 +130,37 @@ function operationForAromaMethod (method) {
  * ⛔ MODEL TEXT (textClasses.js, class MODEL) — she is told this, and it decides which view she
  * picks. `aroma_system.purchasing` alone is guessable; 「aroma_system.purchasing＝採購單」 is not.
  * Generated from the same frozen table as the enum, so the two can never disagree.
+ *
+ * ⛔ AN ABSENT OPERATION IS AMBIGUOUS, AND THE LIVE CANARY PROVED IT.
+ *
+ * The enum offers only what is still UNREAD, so a view already read this turn simply vanishes
+ * from it. On the 「庫存」 follow-up, the automatic read fetched inventory correctly, the rows
+ * were in her prompt — and GPT, seeing no 倉存 in the list, replied
+ * 「目前可讀取的資料沒有『庫存』操作 … 目前無法直接讀取庫存資料。」 and then spent a second paid
+ * read on 盤點紀錄 as a substitute. She denied data she was holding: the exact false
+ * read-failure claim readStateGuard exists to prevent, manufactured by a wording.
+ *
+ * So the two states are now NAMED SEPARATELY. Still-readable is a list of choices; already-read
+ * is a statement that the answer is above, with an explicit instruction not to claim otherwise.
+ * Silence about the second state is what produced the wrong answer.
  */
-function describeOperations (operations = []) {
+function label (op) {
+  const hit = BY_OPERATION.get(op)
+  return hit ? `${op}＝${hit.label}` : op
+}
+
+function describeOperations (operations = [], alreadyRead = []) {
+  const open = (Array.isArray(operations) ? operations : []).map(label)
+  const done = (Array.isArray(alreadyRead) ? alreadyRead : []).map(label)
   const parts = []
-  for (const op of Array.isArray(operations) ? operations : []) {
-    const hit = BY_OPERATION.get(op)
-    parts.push(hit ? `${op}＝${hit.label}` : op)
+  if (open.length) parts.push(`本回合可用的讀取操作：${open.join('；')}。只能填其中一個。`)
+  if (done.length) {
+    parts.push(
+      `本回合已經讀取：${done.join('；')}。呢啲資料已經喺上面，唔會出現喺可選清單度 —— ` +
+      '唔好再讀一次，更加唔好講「讀唔到」「沒有這個操作」或者「無法直接讀取」。'
+    )
   }
-  return parts.length ? `本回合可用的讀取操作：${parts.join('；')}。只能填其中一個。` : null
+  return parts.length ? parts.join('\n') : null
 }
 
 module.exports = {

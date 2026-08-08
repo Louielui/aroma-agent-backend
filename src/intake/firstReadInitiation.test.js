@@ -203,6 +203,24 @@ test('*** C — Aroma asked which view; 「庫存」 resolves it and the read ru
   })
 })
 
+test('*** C2 — the view just read is declared READ, not left looking unavailable ***', async () => {
+  await withEnv({}, async () => {
+    const fc = fakeConnector()
+    const a = scriptedAdapter('claude', [FINAL('倉存讀到 1 項。')])
+    await run('庫存', a, { connector: fc.connector, sources: ['aroma_system'] })
+
+    // ⛔ FOUND BY THE LIVE CANARY, NOT BY A FAKE. Inventory was read and its rows were in the
+    // prompt, but 倉存 was merely ABSENT from the choice list — and GPT read that absence as
+    // 「目前可讀取的資料沒有『庫存』操作 … 無法直接讀取庫存資料」, then spent a second paid read
+    // on 盤點紀錄 as a substitute. A view she is holding must never look like one she was denied.
+    const gloss = a.calls[0].gloss || ''
+    assert.ok(gloss.includes('本回合已經讀取'), 'the already-read state is stated, not implied by omission')
+    assert.ok(gloss.includes('aroma_system.inventory＝倉存'), 'and it names the view she is holding')
+    assert.equal(a.calls[0].readChoices.includes('aroma_system.inventory'), false,
+      'it is still not OFFERED — it has already been answered')
+  })
+})
+
 /* ═══ D. A GENERIC SOURCE IS UNCHANGED ════════════════════════════════════ */
 
 test('*** D — a zero-read Gmail question still initiates its existing generic read ***', async () => {

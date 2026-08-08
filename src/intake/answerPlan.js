@@ -1377,7 +1377,10 @@ function withReadChoices (schema, available, description) {
   if (!nr) return out
   const list = Array.from(new Set((available || []).filter((x) => typeof x === 'string' && x)))
   if (list.length === 0) {
-    out.properties.nextRead = { type: 'null', description: nr.description || null }
+    // Nothing left to read — but the description still matters: it is where "these were
+    // ALREADY read, do not claim you could not" is said. Dropping it here is how a turn that
+    // read everything would be told nothing about what it holds.
+    out.properties.nextRead = { type: 'null', description: (typeof description === 'string' && description) ? description : (nr.description || null) }
     return out
   }
   nr.properties.capability.enum = list

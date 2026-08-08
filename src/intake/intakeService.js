@@ -588,7 +588,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Aroma views the moment any one of them was read; an operation grain hides only what has
     // actually been answered.
     const openChoices = authorisedOperationsFor(activeProvider || primaryProvider).filter((op) => !turnOperations.has(op))
-    const choiceGloss = describeOperations(openChoices)
+    // BOTH STATES, NAMED. What is still readable AND what has already been read this turn —
+    // because an operation that merely disappears from the list reads as 「not available」, and
+    // the live canary watched exactly that turn into 「無法直接讀取庫存資料」 with the inventory
+    // rows sitting in the same prompt.
+    const choiceGloss = describeOperations(openChoices, Array.from(turnOperations))
     if (!planApplies) {
       // Nothing to plan over yet — offer the DECISION only, never a fabricated plan.
       // No reads left, or not the chat lane: behave exactly as before this change.

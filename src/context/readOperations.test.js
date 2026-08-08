@@ -120,5 +120,26 @@ test('*** the description glosses each Aroma operation and lists nothing else **
   const d = describeOperations(['aroma_system.purchasing', 'gmail'])
   assert.ok(d.includes('aroma_system.purchasing＝採購單'), 'an opaque name is a guess waiting to happen')
   assert.ok(d.includes('gmail'), 'a generic source is listed as itself')
-  assert.equal(describeOperations([]), null, 'nothing to offer means no description')
+  assert.equal(describeOperations([]), null, 'nothing to offer and nothing read means no description')
+})
+
+/* ═══ ⛔ THE LIVE-CANARY DEFECT: AN ABSENT OPERATION IS NOT AN UNAVAILABLE ONE ══ */
+
+test('*** an already-read operation is stated as READ, never left to look missing ***', () => {
+  // Live GPT, 「庫存」 follow-up: inventory HAD been read and its rows were in the prompt, but
+  // 倉存 was absent from the choice list and she answered 「目前無法直接讀取庫存資料」, then
+  // spent a second paid read on 盤點紀錄 as a substitute. Silence about the second state did
+  // that — so the second state is now said out loud.
+  const d = describeOperations(['aroma_system.invoices'], ['aroma_system.inventory'])
+  assert.ok(d.includes('本回合已經讀取'), 'the already-read state must be NAMED')
+  assert.ok(d.includes('aroma_system.inventory＝倉存'), 'and named specifically')
+  assert.ok(/讀唔到|無法直接讀取/.test(d), 'with the false claim it must not make, spelled out')
+  assert.ok(d.includes('aroma_system.invoices＝發票'), 'while what is still open stays open')
+})
+
+test('*** everything read and nothing left still says what is held ***', () => {
+  const d = describeOperations([], ['aroma_system.inventory'])
+  assert.ok(d && d.includes('本回合已經讀取'),
+    'no choices left is not the same as nothing to say — this is where 「讀唔到」 came from')
+  assert.equal(d.includes('本回合可用的讀取操作'), false, 'and nothing is offered that is not offerable')
 })
