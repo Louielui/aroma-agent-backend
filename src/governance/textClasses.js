@@ -19,6 +19,17 @@
  * a guard, and deletes it silently — the code still runs, the list simply stops matching what he
  * actually types. Both would look like tidy extraction work in a diff.
  *
+ * ⛔ AND THE CLASSIFICATION IS PER-FILE, WHICH IS TOO COARSE FOR SOME FILES.
+ *
+ * `intake/answerPlan.js` holds all three at once:
+ *   · unit/status/entity LABELS         → INTERFACE, extracted
+ *   · the JSON-schema `description` fields → MODEL: she is TOLD them, and they shape her output
+ *   · `MERIDIEM` (下午/早上/晚上…)          → MATCHING: they parse what HE types
+ *
+ * The table below can only give that file ONE class, so the fence there is the file's own ⛔
+ * notes at each region, not this map. Recorded rather than papered over: a per-region
+ * classification would be the real fix, and this is the gap until someone builds it.
+ *
  * ⛔ SO THE BOUNDARY IS DECLARED, NOT REMEMBERED. A new file carrying Chinese must be classified
  * before the suite goes green — see `textClasses.test.js`. That is the difference between a fence
  * and a checklist someone has to remember to consult.

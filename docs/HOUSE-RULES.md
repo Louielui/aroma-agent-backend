@@ -2581,7 +2581,21 @@ checks only the collision.
 
 **Round:** the bilingual extraction, 2026-08-08.
 
-> **Owner: 「every green suite this week was conditional on a file outside the tests.」**
+> ### 一個叫「FLAGS OFF」嘅案例，實際意思係「除非呢個 shell 啱好開咗」。
+>
+> ### A case named 「FLAGS OFF」 actually meant 「off unless this shell happens to have it on」.
+
+> **Owner: 「every green suite this week was green in a shell that was not the one she runs in
+> — and two of those tests were proving that a switch being off means nothing gets read. In her
+> real environment they could not prove it.」**
+
+⛔ **THIS IS THE ENTRY, NOT A FOOTNOTE TO A TRACING EXERCISE.** It was found while answering a
+question about one settings file, and it is larger than that question: for a week, every green
+run was green because the terminal it ran in was not the terminal 香香 lives in.
+
+And the two worst of the nine were the read-access tests. Their job is to prove that **when the
+master switch is off, nothing is read** — the guarantee behind every 「關咗就係關咗」 on the
+settings screen. In the environment where reading is actually enabled, they could not prove it.
 
 Step 3 made `currentLocale()` read `data/settings-values.json`. That file is the Owner's, it is
 mutable, and no test controls it — so the moment it contained `language: "en"`, ~40 assertions

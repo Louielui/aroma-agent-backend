@@ -331,7 +331,7 @@ test('*** 「Aroma System」 now reaches the Owner AS 「Aroma System」 ***', (
 })
 
 test('the substitution is the label map, not a guess', () => {
-  assert.equal(SOURCE_LABELS.aroma_system, '餐廳系統')
+  assert.equal(SOURCE_LABELS.aroma_system(), '餐廳系統')
   // A source whose Owner-facing label IS its Latin name stays as it is.
   const v = validatePlan(plan({ directAnswer: 'Gmail 嗰邊冇新嘢。' }), ctx())
   assert.ok(v.plan.directAnswer.includes('Gmail'), 'Gmail is already the Owner-facing name')

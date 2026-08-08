@@ -382,3 +382,47 @@ flags; the 21-line shim at `C:\Aroma\xiangxiang.ps1` is covered differently, by 
 **⛔ ENFORCED BY:** `src/governance/launcherPin.test.js` → 「the launcher body IS in the monthly
 backup sources」, and `scripts/verify/launcher.js` → 「啟動器有備份」, which FAILS if it is
 removed from the list.
+
+---
+
+# M-6 — A settings change leaves no trace anywhere
+
+**Recorded 2026-08-08. NOT fixed in this batch, at the Owner's instruction.**
+
+> **Owner: 「A setting change with no log and no audit is a governance gap regardless of who
+> made it.」**
+
+`data/settings-values.json` was found containing `language: "en"`. Tracing who wrote it:
+
+| evidence | what it showed |
+|---|---|
+| the file's mtime | ~00:11 on 2026-08-08 |
+| `data/` is gitignored | **no history at all** |
+| the server log at 00:11:00 | a real `/api/v1/demo/intake` turn — a paid Haiku call |
+| the suite, snapshot-and-diff | **writes nothing to live data**, so not a test |
+| `settingsValues.set()` | **no log line, no audit entry, nothing** |
+| `homeRoutes` settings write paths | same — silent |
+
+**The write could not be attributed.** The Owner has since said it was not his 00:11 turn, so it
+remains unaccounted for.
+
+## WHY THIS IS A DEFECT AND NOT AN INCONVENIENCE
+
+`settingsValues.set()` is reachable from two HTTP routes and changes behaviour the Owner then
+relies on — the recall cadence, the pause floor that protects HR-34, which ingredients are
+checked, and now the interface language. **Every one of those is a decision, and none of them
+leaves a record.** The knock log exists because a door that records nothing cannot tell
+「nobody called」 from 「I did not look」; the same argument applies here and this door has no log.
+
+The consequence in this instance was small and visible (the interface changed language). The
+same silence would cover a change to `pauseBetweenMs` or `recallIngredients`, where the effect
+is that something quietly stops being checked.
+
+## WHAT A FIX WOULD BE
+
+An append-only record of every accepted AND refused write — id, from, to, at, and how it
+arrived (the conversational entrance, the settings screen, or a direct call). Refusals matter as
+much as writes: the knock log's own lesson was that the interesting rows are the ones that were
+turned away.
+
+**Not started. This entry is the record that it is open.**

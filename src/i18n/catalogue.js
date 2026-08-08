@@ -905,6 +905,118 @@ const CATALOGUE = Object.freeze({
     en: 'Isolation: a throwaway copy with every remote removed; changes cannot reach main'
   },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE EXECUTION RESULT — agent/agentResultView.js.
+  // ⛔ Same class of claims as the approval card: what ran, whether it stayed in scope, and
+  // that the real repository was not touched. 「越界」 must stay as loud in English.
+  // ══════════════════════════════════════════════════════════════════════════
+  'result.unknown': { zh: '（執行器沒有提供這項資料）', en: '(the runner did not report this)' },
+  'phase.accepted': { zh: '已批准，正在排隊', en: 'Approved, queued' },
+  'phase.preparing': { zh: '正在準備丟棄式副本', en: 'Preparing the throwaway copy' },
+  'phase.running': { zh: '香香正在處理', en: 'She is working' },
+  'phase.verifying': { zh: '正在核對改動範圍', en: 'Checking what changed' },
+  'phase.done': { zh: '完成', en: 'Done' },
+  'phase.failed': { zh: '未成功', en: 'Did not succeed' },
+
+  'result.running': { zh: '香香正在丟棄式副本內處理中…', en: 'She is working inside the throwaway copy…' },
+  'result.pending': {
+    zh: '仍未有結果（這次批准未有執行，或執行器未回報）',
+    en: 'No result yet (this approval never ran, or the runner has not reported)'
+  },
+  'result.refused': { zh: '執行器拒絕了這張工作單（沒有任何改動）', en: 'The runner refused this work order (nothing changed)' },
+  'result.timeout': { zh: '超時中止 —— 測試副本已丟棄', en: 'Timed out and stopped — the test copy is discarded' },
+  'result.doneHeadline': { zh: '完成 —— 這是在丟棄式副本內的結果', en: 'Done — this is the result inside the throwaway copy' },
+  'result.failedHeadline': { zh: '未成功 —— 測試副本已丟棄', en: 'Did not succeed — the test copy is discarded' },
+  'result.noFilesChanged': { zh: '（沒有任何檔案被改動）', en: '(no file was changed)' },
+  'result.inScope': { zh: '有守住範圍：只動過批准的 {files}。', en: 'Stayed in scope: only the approved {files} were touched.' },
+  /** ⛔ 「這份結果不應採用」 is an instruction, not a description. It must survive translation. */
+  'result.outOfScope': {
+    zh: '越界：動過不在批准範圍內的檔案 —— {files}。這份結果不應採用。',
+    en: 'OUT OF SCOPE: files outside the approval were touched — {files}. Do not use this result.'
+  },
+  'result.noTestCommand': { zh: '（這張工作單沒有測試指令）', en: '(this work order has no test command)' },
+  'result.testPassed': { zh: '測試通過：{cmd}', en: 'Tests passed: {cmd}' },
+  'result.testFailed': { zh: '測試失敗：{cmd}', en: 'Tests failed: {cmd}' },
+  'result.durationSec': { zh: '{n} 秒', en: '{n}s' },
+  'result.capsText': { zh: '（上限 {money} / {time}）', en: ' (limits: {money} / {time})' },
+  'result.capSeconds': { zh: '{n} 秒', en: '{n}s' },
+  'result.noPatchNoChange': { zh: '沒有改動，所以沒有 patch。', en: 'Nothing changed, so there is no patch.' },
+  'result.patchTooBig': {
+    zh: 'patch 太大，沒有寫入 —— 改動範圍超出了預期，請重新出一張更窄的工作單。',
+    en: 'The patch was too large to write — the change went wider than expected. Raise a narrower work order.'
+  },
+  'result.patchFailed': {
+    zh: 'patch 寫不到（{status}）。改動已經隨副本刪除，要重新跑。',
+    en: 'The patch could not be written ({status}). The changes went with the copy and it must be run again.'
+  },
+  'result.secResult': { zh: '結果', en: 'Result' },
+  'result.secChanged': { zh: '實際改動了甚麼', en: 'What actually changed' },
+  'result.secScope': { zh: '有沒有超出批准範圍', en: 'Did it go outside the approval' },
+  'result.secTest': { zh: '測試', en: 'Tests' },
+  'result.secDiff': { zh: '改動內容（diff）', en: 'The change (diff)' },
+  'result.secCost': { zh: '用了多少', en: 'What it used' },
+  'result.secPatch': { zh: '改動去咗邊', en: 'Where the change went' },
+  'result.secYourRepo': { zh: '你的真實程式庫', en: 'Your real repository' },
+  /** ⛔ The whole reason approving was safe. Neither language may soften it. */
+  'result.yourRepoBody': {
+    zh: '完全沒有被改動。這次操作只發生在丟棄式副本裡，副本已經（或即將）被刪除。',
+    en: 'Not touched at all. This ran only inside a throwaway copy, which has been (or is about to be) deleted.'
+  },
+  'result.secRefusedReason': { zh: '拒絕原因', en: 'Why it was refused' },
+  'result.secFailedReason': { zh: '失敗原因', en: 'Why it failed' },
+  'result.noApprovalId': { zh: '（無 approvalId）', en: '(no approvalId)' },
+  'result.title': { zh: '【執行結果 — {id}】', en: '[Result — {id}]' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ANSWER PLAN — the labels that reach the screen.
+  // ⛔ THIS FILE ALSO HOLDS MODEL TEXT AND MATCHING TOKENS. Only the labels below moved; see
+  // the ⛔ notes in intake/answerPlan.js at each region that must never be translated.
+  // ══════════════════════════════════════════════════════════════════════════
+  'unit.ea': { zh: '件', en: 'ea' },
+  'unit.cs': { zh: '箱', en: 'cs' },
+  'unit.box': { zh: '盒', en: 'box' },
+  'unit.pal': { zh: '卡板', en: 'pallet' },
+  'unit.bag': { zh: '袋', en: 'bag' },
+  'unit.bottle': { zh: '支', en: 'bottle' },
+  'unit.pack': { zh: '包', en: 'pack' },
+
+  'status.needsReview': { zh: '需要審批', en: 'needs approval' },
+  'status.approved': { zh: '已批准', en: 'approved' },
+  'status.sent': { zh: '已發送', en: 'sent' },
+  'status.received': { zh: '已收貨', en: 'received' },
+  'status.partiallyReceived': { zh: '部分收貨', en: 'partly received' },
+  'status.active': { zh: '啟用中', en: 'active' },
+  'status.inactive': { zh: '已停用', en: 'inactive' },
+  /** ⛔ NOT 「unknown」. The record does not say — which is a different claim from 「it is unknown」. */
+  'status.unknown': { zh: '狀態未確認', en: 'status not confirmed' },
+
+  'entity.inventoryItem': { zh: '項存貨記錄', en: 'stock records' },
+  'entity.supplier': { zh: '個供應商', en: 'suppliers' },
+  'entity.invoice': { zh: '張發票', en: 'invoices' },
+  'entity.purchaseOrder': { zh: '張採購單', en: 'purchase orders' },
+  'entity.dailyCount': { zh: '次盤點', en: 'counts' },
+  'entity.orderSuggestion': { zh: '項訂貨建議', en: 'order suggestions' },
+  'entity.mail': { zh: '封郵件', en: 'emails' },
+  'entity.file': { zh: '份文件', en: 'documents' },
+  'entity.event': { zh: '件安排', en: 'calendar entries' },
+  'entity.commit': { zh: '個改動', en: 'commits' },
+  'entity.pullRequest': { zh: '個 PR', en: 'pull requests' },
+  'entity.generic': { zh: '項記錄', en: 'records' },
+
+  'source.aromaSystem': { zh: '餐廳系統', en: 'the restaurant system' },
+  'source.calendar': { zh: '日曆', en: 'Calendar' },
+
+  /** ⛔ 「不會亂說」 is the promise. Read succeeded, answer withheld — two separate facts. */
+  'plan.cannotRead': {
+    zh: '我這次讀不到可以用來回答這個問題的資料。',
+    en: 'I could not read anything this time that would answer that.'
+  },
+  'plan.readButNoAnswer': {
+    zh: '我讀到 {parts}。資料讀取成功，但這一次我組不出一個可靠的答案，所以不會亂說。',
+    en: 'I read {parts}. The read succeeded, but I cannot assemble a reliable answer from it this time, so I will not guess.'
+  },
+  'plan.countOf': { zh: '{n} {kind}', en: '{n} {kind}' },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

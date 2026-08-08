@@ -18,8 +18,9 @@
  */
 
 const { canonicalWorkOrder } = require('./workOrder')
+const { t } = require('../i18n/t')
 
-const UNKNOWN = '（執行器沒有提供這項資料）'
+const UNKNOWN = () => t('result.unknown')
 
 // ── THE PROGRESS VOCABULARY (closed allowlist) ───────────────────────────────
 // The Owner should see what is happening, but the agent's own output is NEVER the
@@ -28,19 +29,25 @@ const UNKNOWN = '（執行器沒有提供這項資料）'
 // knows from its own control flow — no stdout parsing, no paths, no file contents, no
 // prompt, no credential can ride along, because a phase is one of exactly these strings
 // and nothing else is ever emitted.
+/**
+ * ⛔ THUNKS, NOT KEY STRINGS — `t(PHASES[name])` would be a DYNAMIC key (HR-48). The closed
+ * allowlist is unchanged: a phase is one of exactly these six names and nothing else is emitted.
+ */
 const PHASES = Object.freeze({
-  accepted: '已批准，正在排隊',
-  preparing: '正在準備丟棄式副本',
-  running: '香香正在處理',
-  verifying: '正在核對改動範圍',
-  done: '完成',
-  failed: '未成功'
+  accepted: () => t('phase.accepted'),
+  preparing: () => t('phase.preparing'),
+  running: () => t('phase.running'),
+  verifying: () => t('phase.verifying'),
+  done: () => t('phase.done'),
+  failed: () => t('phase.failed')
 })
 const PHASE_NAMES = Object.freeze(Object.keys(PHASES))
 /** True only for a value that is one of the fixed phase names. */
 function isPhase (p) { return typeof p === 'string' && PHASE_NAMES.includes(p) }
 /** Render a phase for the Owner. Unknown input yields null, never a passthrough. */
-function phaseLabel (p) { return isPhase(p) ? PHASES[p] : null }
+/** ⛔ CALLS the thunk — PHASES holds functions now, so returning PHASES[p] would hand a
+ *  FUNCTION to every caller that expects a sentence. Caught by uiStageA.test.js. */
+function phaseLabel (p) { return isPhase(p) ? PHASES[p]() : null }
 
 /** Did the run stay inside the one file it was allowed to touch? */
 function scopeVerdict (allowedFiles, filesChanged) {
@@ -125,46 +132,51 @@ function buildAgentResultView (input = {}) {
   else status = 'failed'
 
   const headline = {
-    running: '香香正在丟棄式副本內處理中…',
-    pending: '仍未有結果（這次批准未有執行，或執行器未回報）',
-    refused: '執行器拒絕了這張工作單（沒有任何改動）',
-    timeout: '超時中止 —— 測試副本已丟棄',
-    done: '完成 —— 這是在丟棄式副本內的結果',
-    failed: '未成功 —— 測試副本已丟棄'
-  }[status]
+    running: () => t('result.running'),
+    pending: () => t('result.pending'),
+    refused: () => t('result.refused'),
+    timeout: () => t('result.timeout'),
+    done: () => t('result.doneHeadline'),
+    failed: () => t('result.failedHeadline')
+  }[status]()
 
   const scope = scopeVerdict(canonical.allowedFiles, r && r.filesChanged)
 
   const changed = (r && Array.isArray(r.filesChanged))
-    ? (r.filesChanged.length ? r.filesChanged.join('\n') : '（沒有任何檔案被改動）')
-    : UNKNOWN
+    ? (r.filesChanged.length ? r.filesChanged.join('\n') : t('result.noFilesChanged'))
+    : UNKNOWN()
 
   const scopeLine = !scope.known
-    ? UNKNOWN
+    ? UNKNOWN()
     : (scope.inScope
-        ? `有守住範圍：只動過批准的 ${canonical.allowedFiles.join(', ')}。`
-        : `越界：動過不在批准範圍內的檔案 —— ${scope.outside.join(', ')}。這份結果不應採用。`)
+        ? t('result.inScope', { files: canonical.allowedFiles.join(', ') })
+        : t('result.outOfScope', { files: scope.outside.join(', ') }))
 
   const testLine = (r == null || r.testPassed === undefined || r.testPassed === null)
-    ? (canonical.allowedTestCommand ? UNKNOWN : '（這張工作單沒有測試指令）')
-    : (r.testPassed ? `測試通過：${canonical.allowedTestCommand}` : `測試失敗：${canonical.allowedTestCommand}`)
+    ? (canonical.allowedTestCommand ? UNKNOWN() : t('result.noTestCommand'))
+    : (r.testPassed
+        ? t('result.testPassed', { cmd: canonical.allowedTestCommand })
+        : t('result.testFailed', { cmd: canonical.allowedTestCommand }))
 
   const diff = (r && typeof r.diff === 'string' && r.diff.trim() !== '')
     ? r.diff
-    : ((r && typeof r.diffStat === 'string' && r.diffStat.trim() !== '') ? r.diffStat : UNKNOWN)
+    : ((r && typeof r.diffStat === 'string' && r.diffStat.trim() !== '') ? r.diffStat : UNKNOWN())
 
-  const money = (n) => (n == null ? UNKNOWN : `US$${Number(n).toFixed(2)}`) // 0.5 -> US$0.50
+  const money = (n) => (n == null ? UNKNOWN() : `US$${Number(n).toFixed(2)}`) // 0.5 -> US$0.50
   const costParts = []
   if (r && typeof r.costUsd === 'number') costParts.push(money(r.costUsd))
   // Duration: the MEASURED wall time of the run, recorded once at completion. Prefer the
   // execution record's own measurement over the worker's spawn latency, and never compute
   // it from "now" — that is what made the reported time grow forever after the run.
   const durationMs = Number.isFinite(input.durationMs) ? input.durationMs : (r && r.durationMs)
-  if (Number.isFinite(durationMs)) costParts.push(`${(durationMs / 1000).toFixed(1)} 秒`)
+  if (Number.isFinite(durationMs)) costParts.push(t('result.durationSec', { n: (durationMs / 1000).toFixed(1) }))
   const capsText = (canonical.costCapUsd == null && canonical.timeoutSec == null)
     ? ''
-    : `（上限 ${money(canonical.costCapUsd)} / ${canonical.timeoutSec == null ? UNKNOWN : canonical.timeoutSec + ' 秒'}）`
-  const cost = costParts.length ? `${costParts.join(' · ')}${capsText}` : UNKNOWN
+    : t('result.capsText', {
+        money: money(canonical.costCapUsd),
+        time: canonical.timeoutSec == null ? UNKNOWN() : t('result.capSeconds', { n: canonical.timeoutSec })
+      })
+  const cost = costParts.length ? costParts.join(t('punct.bulletSep')) + capsText : UNKNOWN()
 
   /**
    * WHERE THE WORK WENT. The clone is thrown away, so without a file the Owner is told
@@ -179,35 +191,35 @@ function buildAgentResultView (input = {}) {
     ? (r.patchStatus === 'written' && r.applyHint
         ? r.applyHint
         : (r.patchStatus === 'no_changes'
-            ? '冇改動，所以冇 patch。'
+            ? t('result.noPatchNoChange')
             : (r.patchStatus === 'patch_too_large'
-                ? 'patch 太大，冇寫入 —— 改動範圍超出咗預期，請重新出一張更窄嘅工作單。'
-                : 'patch 寫唔到（' + r.patchStatus + '）。改動已經隨副本刪除，要重新跑。')))
+                ? t('result.patchTooBig')
+                : t('result.patchFailed', { status: r.patchStatus }))))
     : null
 
   const sections = [
-    { title: '結果', body: headline },
-    { title: '實際改動了甚麼', body: changed },
-    { title: '有沒有超出批准範圍', body: scopeLine },
-    { title: '測試', body: testLine },
-    { title: '改動內容（diff）', body: diff },
-    { title: '用了多少', body: cost },
-    { title: '改動去咗邊', body: patchLine },
-    { title: '你的真實程式庫', body: '完全沒有被改動。這次操作只發生在丟棄式副本裡，副本已經(或即將)被刪除。' }
+    { title: t('result.secResult'), body: headline },
+    { title: t('result.secChanged'), body: changed },
+    { title: t('result.secScope'), body: scopeLine },
+    { title: t('result.secTest'), body: testLine },
+    { title: t('result.secDiff'), body: diff },
+    { title: t('result.secCost'), body: cost },
+    { title: t('result.secPatch'), body: patchLine },
+    { title: t('result.secYourRepo'), body: t('result.yourRepoBody') }
   ]
   // Inserted only when there is something to say (see patchLine).
-  if (patchLine) sections.splice(sections.length - 1, 0, { title: '改動去咗邊', body: patchLine })
+  if (patchLine) sections.splice(sections.length - 1, 0, { title: t('result.secPatch'), body: patchLine })
 
   if (status === 'refused' && r && r.reason) {
-    sections.splice(1, 0, { title: '拒絕原因', body: String(r.reason) })
+    sections.splice(1, 0, { title: t('result.secRefusedReason'), body: String(r.reason) })
   }
   // A failure the Owner can act on: say WHY, using the runner's own allowlisted warnings
   // (enums and short messages the worker composed — never agent output, never a path).
   if (status === 'failed' && r && r.warnings.length) {
-    sections.splice(1, 0, { title: '失敗原因', body: r.warnings.join('\n') })
+    sections.splice(1, 0, { title: t('result.secFailedReason'), body: r.warnings.join('\n') })
   }
 
-  const lines = [`【執行結果 — ${approvalId == null ? '（無 approvalId）' : approvalId}】`, '']
+  const lines = [t('result.title', { id: approvalId == null ? t('result.noApprovalId') : approvalId }), '']
   for (const s of sections) {
     lines.push(s.title)
     for (const l of String(s.body).split('\n')) lines.push('  ' + l)

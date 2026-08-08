@@ -150,7 +150,9 @@ function enforceRouteEvidence (input) {
 
   if (withheld.length === 0) return none
 
-  const named = [...sources].map((s) => SOURCE_LABELS[s] || s)
+  // SOURCE_LABELS holds thunks now (see answerPlan.js) — a key string there would be a
+  // dynamic key at the call site.
+  const named = [...sources].map((s) => (SOURCE_LABELS[s] ? SOURCE_LABELS[s]() : s))
   const note = named.length
     ? `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。這個問題要查${named.join('、')}才答得準，要我現在查嗎？`
     : `有 ${withheld.length} 句講到營運狀況，但這一輪沒有查任何來源，所以我沒有顯示它。要我查過再答嗎？`

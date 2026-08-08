@@ -36,6 +36,7 @@
  */
 
 const { ENTITY_TYPES } = require('../context/contextResult')
+const { t } = require('../i18n/t')
 
 /**
  * THE OWNER-FACING UNIT WORDS. Keys are the codes the LIVE rows carry.
@@ -50,19 +51,27 @@ const { ENTITY_TYPES } = require('../context/contextResult')
  * itself — never guessed.
  */
 const UNIT_LABELS = Object.freeze({
-  ea: '件', cs: '箱', box: '盒', pal: '卡板', bag: '袋', bottle: '支', pack: '包'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  ea: () => t('unit.ea'),
+  cs: () => t('unit.cs'),
+  box: () => t('unit.box'),
+  pal: () => t('unit.pal'),
+  bag: () => t('unit.bag'),
+  bottle: () => t('unit.bottle'),
+  pack: () => t('unit.pack')
 })
 
 /** The Owner-facing status words. Keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
-  needs_review: '需要審批',
-  approved: '已批准',
-  sent: '已發送',
-  received: '已收貨',
-  partially_received: '部分收貨',
-  active: '啟用中',
-  inactive: '已停用',
-  unknown: '狀態未確認'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  needs_review: () => t('status.needsReview'),
+  approved: () => t('status.approved'),
+  sent: () => t('status.sent'),
+  received: () => t('status.received'),
+  partially_received: () => t('status.partiallyReceived'),
+  active: () => t('status.active'),
+  inactive: () => t('status.inactive'),
+  unknown: () => t('status.unknown')
 })
 
 const LIMITS = Object.freeze({
@@ -97,6 +106,9 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
   additionalProperties: false,
   required: ['directAnswer', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
   properties: {
+    // ⛔ EVERY `description` IN THIS SCHEMA IS MODEL TEXT — she is TOLD it, and it shapes
+    // what she produces. Translating it is a BEHAVIOUR change wearing a translation's clothes.
+    // It stays Chinese regardless of the interface language. See textClasses.js, class MODEL.
     directAnswer: { type: 'string', description: '一至兩句，直接回答問題。不要覆述逐項細節。' },
     unanswerable: { type: 'boolean', description: '資料無法回答這個問題時填 true —— 這是誠實，不是失敗。' },
     // ── THE DECLARATION THAT REPLACED A FORCED SECTION ───────────────────────────────
@@ -766,9 +778,11 @@ function metricLabelMap (evidenceSets = []) {
 /** Translate a status-looking value; leave anything else alone. */
 function translate (value) {
   const raw = String(value)
-  if (Object.prototype.hasOwnProperty.call(STATUS_LABELS, raw)) return STATUS_LABELS[raw]
+  // The tables hold thunks now — see the ⛔ note at each. Calling them here keeps every
+  // catalogue key a literal at its own call site (HR-48).
+  if (Object.prototype.hasOwnProperty.call(STATUS_LABELS, raw)) return STATUS_LABELS[raw]()
   // Units join statuses on the same terms: a declared table, applied by the server.
-  if (Object.prototype.hasOwnProperty.call(UNIT_LABELS, raw)) return UNIT_LABELS[raw]
+  if (Object.prototype.hasOwnProperty.call(UNIT_LABELS, raw)) return UNIT_LABELS[raw]()
   return raw
 }
 
@@ -820,6 +834,13 @@ function cjkToNumber (s) {
  * because 「4 時」 in a sentence about an afternoon appointment is not a claim about 04:00
  * and refusing it would delete a correct statement. Each candidate is still compared by
  * exact equality against a time the evidence actually holds.
+ */
+/**
+ * ⛔ MATCHING TOKENS — NEVER TRANSLATED, NEVER EXTRACTED.
+ *
+ * These are compared against WHAT HE TYPES. Moving them to the catalogue would delete a parser
+ * with no code removed and nothing reported: 「下午三點」 would simply stop being understood.
+ * See governance/textClasses.js, class MATCHING.
  */
 const MERIDIEM = { 上午: 'am', 早上: 'am', 凌晨: 'am', 中午: 'pm', 下午: 'pm', 晚上: 'pm', 夜晚: 'pm', am: 'am', pm: 'pm' }
 const TIME_RE = /(上午|早上|凌晨|中午|下午|晚上|夜晚)?\s*(\d{1,2})\s*(?:[:：]\s*(\d{1,2})|\s*[時点點]\s*(?:(\d{1,2})\s*分)?)\s*(am|pm)?/gi
@@ -1138,11 +1159,12 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
  */
 function minimalAnswer (evidenceSets = []) {
   const live = evidenceSets.filter((e) => e && e.trust === 'live' && (e.shownCount > 0 || e.totalCount > 0))
-  if (live.length === 0) return '我這次讀不到可以用來回答這個問題的資料。'
+  if (live.length === 0) return t('plan.cannotRead')
   const parts = live.map((e) => {
     const n = Number.isFinite(e.totalCount) ? e.totalCount : e.shownCount
-    const kind = ENTITY_LABELS[e.entityType] || '項記錄'
-    return `${SOURCE_LABELS[e.source] || e.source} ${n} ${kind}`
+    const kind = ENTITY_LABELS[e.entityType] ? ENTITY_LABELS[e.entityType]() : t('entity.generic')
+    const src = SOURCE_LABELS[e.source] ? SOURCE_LABELS[e.source]() : e.source
+    return src + ' ' + t('plan.countOf', { n, kind })
   })
   // A SUCCESSFUL READ AND A FAILED COMPOSITION ARE DIFFERENT EVENTS.
   // The Owner saw this sentence sitting above a correction that read 「上面講『讀唔到』係
@@ -1158,25 +1180,29 @@ function minimalAnswer (evidenceSets = []) {
   // chosen over 無法組出 because 無法讀取/無法取得 are IN that list and a near neighbour is
   // an invitation to the same argument. The test asserts against UNREADABLE_CLAIM itself,
   // not against a hand-copied list of spellings.
-  return `我讀到 ${parts.join('、')}。資料讀取成功，但這一次我組不出一個可靠的答案，所以不會亂說。`
+  return t('plan.readButNoAnswer', { parts: parts.join(t('punct.listSep')) })
 }
 
 const ENTITY_LABELS = Object.freeze({
-  [ENTITY_TYPES.INVENTORY_ITEM]: '項存貨記錄',
-  [ENTITY_TYPES.SUPPLIER]: '個供應商',
-  [ENTITY_TYPES.INVOICE]: '張發票',
-  [ENTITY_TYPES.PURCHASE_ORDER]: '張採購單',
-  [ENTITY_TYPES.DAILY_COUNT]: '次盤點',
-  [ENTITY_TYPES.ORDER_SUGGESTION]: '項訂貨建議',
-  [ENTITY_TYPES.MAIL]: '封郵件',
-  [ENTITY_TYPES.FILE]: '份文件',
-  [ENTITY_TYPES.EVENT]: '件安排',
-  [ENTITY_TYPES.COMMIT]: '個改動',
-  [ENTITY_TYPES.PULL_REQUEST]: '個 PR'
+  [ENTITY_TYPES.INVENTORY_ITEM]: () => t('entity.inventoryItem'),
+  [ENTITY_TYPES.SUPPLIER]: () => t('entity.supplier'),
+  [ENTITY_TYPES.INVOICE]: () => t('entity.invoice'),
+  [ENTITY_TYPES.PURCHASE_ORDER]: () => t('entity.purchaseOrder'),
+  [ENTITY_TYPES.DAILY_COUNT]: () => t('entity.dailyCount'),
+  [ENTITY_TYPES.ORDER_SUGGESTION]: () => t('entity.orderSuggestion'),
+  [ENTITY_TYPES.MAIL]: () => t('entity.mail'),
+  [ENTITY_TYPES.FILE]: () => t('entity.file'),
+  [ENTITY_TYPES.EVENT]: () => t('entity.event'),
+  [ENTITY_TYPES.COMMIT]: () => t('entity.commit'),
+  [ENTITY_TYPES.PULL_REQUEST]: () => t('entity.pullRequest')
 })
 
 const SOURCE_LABELS = Object.freeze({
-  aroma_system: '餐廳系統', gmail: 'Gmail', drive: 'Drive', calendar: '日曆', github: 'GitHub'
+  aroma_system: () => t('source.aromaSystem'),
+  gmail: () => 'Gmail',
+  drive: () => 'Drive',
+  calendar: () => t('source.calendar'),
+  github: () => 'GitHub'
 })
 
 /**

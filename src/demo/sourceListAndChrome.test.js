@@ -69,7 +69,11 @@ test('effectiveFlags reports a state for every switch the page can show', () => 
 test('*** the picker note names every source, generated — not a stale four ***', () => {
   // The claim on the picker is a statement about where the Owner's data goes. A stale one
   // is worse than none, and this one had gone stale in the direction that understates it.
-  assert.ok(DEMO_HTML.includes('餐廳系統'), 'aroma_system must appear in the interface text')
+  // CONVERTED (HR-51): the catalogue is inlined into the page, so this found the words either
+  // way. The page must RENDER the source list; the label itself is checked on its entry.
+  assert.ok(DEMO_HTML.includes('READ_SOURCES'), 'the page renders the generated source list')
+  assert.strictEqual(CATALOGUE['source.aromaSystem'].zh, '餐廳系統', 'aroma_system is named in the interface text')
+  assert.ok(CATALOGUE['source.aromaSystem'].en.length > 0, 'and in English')
   for (const s of ALL_SOURCES) {
     assert.ok(DEMO_HTML.includes(LABELS[s]), `${s} (${LABELS[s]}) is missing from the page`)
   }
