@@ -83,7 +83,12 @@ test('*** the picker note names every source, generated — not a stale four ***
 
 test('the second-vendor disclosure survives the rewrite', () => {
   // contextAsymmetry.test.js pins the behaviour; this pins that the interface still says it.
-  assert.ok(DEMO_HTML.includes('會送去 OpenAI'), 'GPT sending the same context to a second vendor is still disclosed')
+  // CONVERTED: inlining the catalogue made this pass regardless of what the page renders.
+  assert.ok(DEMO_HTML.includes("t('provider.canSeeButSends'"), 'the disclosure is rendered')
+  for (const loc of ['zh', 'en']) {
+    assert.match(CATALOGUE['provider.canSeeButSends'][loc], /OpenAI/,
+      loc + ': GPT sending the same context to a second vendor is still disclosed')
+  }
 })
 
 /* ── the chrome ──────────────────────────────────────────────────────────── */

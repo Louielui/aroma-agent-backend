@@ -22,6 +22,23 @@ I wrote that rule down, wrote its test, wrote the paragraph explaining it — an
 the first thing that looked repetitive, in the very next tranche. **The scan failed the build.
 The warning did not prevent it.** Two more of the same temptation appeared in the same round.
 
+### ⛔ AND THE FOURTH TIME WAS THE ONE THAT MATTERS
+
+The first three were carelessness. The fourth was not: I reasoned my way in, **wrote the
+reasoning down beside the code**, and the reasoning was CORRECT — the table held only literals
+written in that file, nothing external could reach it, no data could enter the translator. Every
+word of that was true. The scan refused it anyway, and the scan was right.
+
+> ### 規矩①係「call site 用 literal key」，唔係「有人論證得到係安全嘅 key」——因為論證本身就係失敗模式。
+>
+> ### Rule ① is 「literal keys at call sites」, not 「keys someone can argue are safe」 — because
+> ### the arguing IS the failure mode.
+
+A correct argument for an exception is not weaker evidence than a careless one. It is stronger,
+and that is what makes it worse: it comes with its own justification attached, it survives
+review, and the next person reads the paragraph and agrees. The fence does not read the
+paragraph.
+
 **This document is a list of rules, and this is the evidence that a list of rules is not a
 mechanism.** Every entry below is worth reading; none of them will stop anyone at the moment it
 matters. What stops people is a check that runs. Where a rule here has no check, that is a gap,
@@ -2487,3 +2504,63 @@ the eight slots. Same invisibility from the value, opposite symptom. Now asserte
 
 **Not covered, and said rather than implied:** keys assembled at runtime (`obj[k] = …` twice),
 object spreads, and `Object.assign` all shadow silently and no source scan sees them.
+
+---
+
+# HR-51 — An assertion can keep its colour while losing its meaning
+
+**Round:** the bilingual extraction, 2026-08-08.
+
+> **Owner: 「you have found this shape three times and I would rather have the sweep than a
+> fourth instance.」**
+
+The sweep found the fourth instance, and it was already there, and it was **green**.
+
+The catalogue is INLINED into the served page — that is what lets the browser run the server's
+own resolver. So after extraction:
+
+```js
+assert.ok(DEMO_HTML.includes('產生工作單'))   // still passes
+```
+
+It now finds that string inside `var CATALOGUE = {…}`, not in anything the page renders. It had
+stopped proving 「the page shows this」 and started proving 「the catalogue ships this entry」.
+**If `app.js` stopped calling `t('proposal.makeWorkOrder')` altogether, it would still pass.**
+
+26 assertions across six files were in that state, including:
+
+| what it was guarding | what it was actually checking |
+|---|---|
+| the page discloses GPT sends data to a second vendor | the catalogue has an entry mentioning OpenAI |
+| the page states the honesty rules are CODE, not text | the catalogue has an entry saying so |
+| a refusal ends the card instead of retrying | the catalogue has the word 「作廢」 |
+
+## THE FAMILY, IN ORDER OF HOW BADLY IT BEHAVES
+
+| | what happened to the subject | what the assertion did |
+|---|---|---|
+| HR-46 | it was ABSENT | exempted itself via a fallback |
+| HR-49 | it MOVED away | went blank |
+| **HR-51** | it moved **INTO the blob being searched** | **kept its colour** |
+
+The first two go quiet. **This one lies** — it reports success for a check it is no longer
+performing, and nothing in a diff, a test run or a review shows it.
+
+## THE RULE
+
+> ### Assert the KEY against the page — that is the code path. Assert the WORDING against the
+> ### catalogue — that is the meaning, and it can be checked in every language. Never the
+> ### wording against the page.
+
+**Mechanised:** `src/testutil/pageWordingScans.test.js` fails the build on any assertion that
+greps a page or source blob for a phrase that exists in the catalogue.
+
+**And the detector's own first version was too broad.** It flagged
+`assert.equal(APP_CSS.includes('複製'), false)` — an honest leak-guard on a stylesheet the
+catalogue is never inlined into. A detector that flags correct work gets switched off, and then
+it protects nothing (HR-47's other half). Narrowed to blobs where the collision can actually
+occur.
+
+**Not covered, and said rather than implied:** an assertion that greps a blob for wording that is
+NOT in the catalogue — a prompt, a matching token, a fixture — is legitimate and untouched. This
+checks only the collision.

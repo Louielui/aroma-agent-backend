@@ -141,5 +141,6 @@ test('the page still assembles no markup from strings, and stores nothing in the
 
 test('the control is in the SERVED page, not only in the asset file', () => {
   assert.ok(DEMO_HTML.includes('function copyButton'), 'it is inlined into the page the Owner loads')
-  assert.ok(DEMO_HTML.includes('已複製'))
+  // CONVERTED: the catalogue is inlined, so this word is in the page either way.
+  assert.ok(DEMO_HTML.includes("t('copy.done')"), 'the confirmation is rendered from the key')
 })

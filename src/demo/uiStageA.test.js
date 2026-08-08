@@ -184,7 +184,12 @@ test('the page POLLS the result endpoint instead of asking once', () => {
 })
 
 test('elapsed time is shown against the cap the Owner approved', () => {
-  assert.ok(DEMO_HTML.includes('已用 ') && DEMO_HTML.includes('上限 '), 'elapsed vs cap is rendered')
+  // CONVERTED: both strings live in the catalogue, which the page inlines — so this passed
+  // whether or not the progress line rendered either of them.
+  assert.ok(DEMO_HTML.includes("t('run.elapsed'") && DEMO_HTML.includes("t('run.elapsedOfCap'"),
+    'elapsed vs cap is rendered')
+  assert.match(CATALOGUE['run.elapsedOfCap'].zh, /上限/)
+  assert.match(CATALOGUE['run.elapsedOfCap'].en, /of \{cap\}/)
   assert.ok(DEMO_HTML.includes('b.capSec'), 'the cap comes from the server, not the page')
 })
 

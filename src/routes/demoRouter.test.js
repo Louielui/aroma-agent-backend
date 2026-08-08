@@ -223,7 +223,21 @@ test('DEMO_HTML: ONE composer — no permanent mode controls, two shortcuts behi
   // before typing it. Both lanes survive only as optional shortcuts.
   assert.ok(!DEMO_HTML.includes('data-mode='), 'no permanent mode controls remain')
   assert.ok(!DEMO_HTML.includes('id="modes"'), 'the mode switcher element is gone')
-  assert.ok(DEMO_HTML.includes('寫 Email') && DEMO_HTML.includes('建立提案'), 'both survive as shortcuts')
+  /**
+   * ⛔ CONVERTED — AND THESE WERE GREEN, WHICH IS THE WHOLE PROBLEM.
+   *
+   * The catalogue is INLINED into the served page, so `DEMO_HTML.includes('產生工作單')`
+   * finds the string inside `var CATALOGUE = {…}` whether or not any code renders it. Every
+   * one of these assertions had quietly stopped proving 「the page shows this」 and started
+   * proving 「the catalogue ships this entry」 — while staying green and looking meaningful.
+   *
+   * Worse than HR-49, which at least went blank. This one kept its colour.
+   *
+   * So: the KEY must be used in the page (that is the code path), and the WORDING is asserted
+   * on the catalogue, in both languages.
+   */
+  assert.ok(DEMO_HTML.includes("t('lane.emailDraft')") && DEMO_HTML.includes("t('lane.proposal')"),
+    'both survive as shortcuts')
   assert.ok(DEMO_HTML.includes('id="plus"'), 'behind a + menu')
   // A shortcut is ONE-SHOT: a forced lane must never persist silently into later turns.
   assert.ok(DEMO_HTML.includes('ONE-SHOT'), 'the one-shot rule is stated in the code')
@@ -236,19 +250,28 @@ test('DEMO_HTML: no storage/cookies, no innerHTML/eval/new Function', () => {
 })
 
 test('DEMO_HTML: safety labels + unknown fallback + Enter/Shift+Enter', () => {
-  for (const l of ['SHADOW_ONLY', '未寄出', '未寫入記憶', '只是提案，未執行']) assert.ok(DEMO_HTML.includes(l), 'label ' + l)
+  // CONVERTED: the two labels are rendered from keys; the WORDS are checked on the entries,
+  // in both languages — 「not sent」 and 「nothing has run」 are the claims that matter.
+  assert.ok(DEMO_HTML.includes('SHADOW_ONLY'), 'the stage marker is literal and stays literal')
+  assert.ok(DEMO_HTML.includes("t('draft.meta')") && DEMO_HTML.includes("t('proposal.meta'"), 'both labels are rendered')
+  assert.match(CATALOGUE['draft.meta'].zh, /未寄出/)
+  assert.match(CATALOGUE['draft.meta'].en, /not sent/i)
+  assert.match(CATALOGUE['proposal.meta'].zh, /未執行/)
+  assert.match(CATALOGUE['proposal.meta'].en, /nothing has run/i)
   // The old placeholder "確認執行（尚未開放）" is GONE — it is replaced by the real Owner
   // approval card, which still cannot execute from the chat card itself: the chat lane can
   // only ASK the server to seal a Work Order, and executing needs the sealed card's typed
   // confirmation + single-use nonce. Asserted below.
   assert.ok(!DEMO_HTML.includes('確認執行（尚未開放）'), 'the disabled placeholder is retired')
-  assert.ok(DEMO_HTML.includes('產生工作單'), 'the chat card only requests a Work Order')
+  assert.ok(DEMO_HTML.includes("t('proposal.makeWorkOrder')"), 'the chat card only requests a Work Order')
   // RE-POINTED, NOT DELETED. This promise used to live in the opening assistant bubble,
   // which the empty-screen redesign retired. Owner decision: it moves to the composer
   // placeholder — the one place he looks before typing. The ASSERTION is the same one it
   // always was: the page must state, before he types, that a file change needs his approval.
-  assert.ok(/改檔案要你批准才會執行/.test(DEMO_HTML), 'the page still states up front that nothing runs unapproved')
-  assert.ok(DEMO_HTML.includes('格式未知'), 'unknown-shape safe fallback')
+  assert.ok(DEMO_HTML.includes("t('shell.composerPlaceholder')"), 'the page states it up front')
+  assert.match(CATALOGUE['shell.composerPlaceholder'].zh, /批准/, 'nothing runs unapproved — zh')
+  assert.match(CATALOGUE['shell.composerPlaceholder'].en, /approve/i, 'nothing runs unapproved — en')
+  assert.ok(DEMO_HTML.includes("t('err.unknownShape'"), 'unknown-shape safe fallback')
   assert.ok(DEMO_HTML.includes("e.key === 'Enter'") && DEMO_HTML.includes('shiftKey'), 'Enter sends, Shift+Enter newline')
 })
 
@@ -283,7 +306,12 @@ test('DEMO_HTML: the approval card is a viewer + four fields of intent, and hold
   assert.ok(DEMO_HTML.includes("credentials: 'same-origin'"), 'session cookie only, same-origin')
   // One click only, and a burnt nonce is never retried from the page.
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'single click')
-  assert.ok(DEMO_HTML.includes('這張單已作廢，請重新產生'), 'a refusal ends the card instead of retrying')
+  // CONVERTED: 「this card is void」 is the claim that stops a retry loop; both languages.
+  assert.ok(DEMO_HTML.includes("t('approve.refused'") && DEMO_HTML.includes("t('approve.refusedNet')"),
+    'a refusal ends the card instead of retrying')
+  for (const loc of ['zh', 'en']) {
+    assert.match(CATALOGUE['approve.refused'][loc], loc === 'zh' ? /作廢/ : /void/i, loc + ': the card is void')
+  }
 })
 
 /* ── Owner Decision Card v2 — the four walkthrough defects ─────────────────── */

@@ -14,6 +14,7 @@ const path = require('node:path')
 
 const { createSettingsRouter } = require('./settingsRouter')
 const { save, load, effectiveFlags } = require('../persona/ownerSettings')
+const { CATALOGUE } = require('../i18n/catalogue')
 
 function tmpRoot () { return fs.mkdtempSync(path.join(os.tmpdir(), 'xx-settings-r-')) }
 const rm = (d) => { try { fs.rmSync(d, { recursive: true, force: true }) } catch (_) {} }
@@ -64,9 +65,18 @@ test('*** GET /settings serves one self-contained page ***', async () => {
   try {
     const res = await call(serve(root), 'GET', '/settings')
     assert.equal(res.status, 200)
-    assert.match(String(res.body), /香香 設定/)
-    assert.match(String(res.body), /說話風格/)
-    assert.match(String(res.body), /要她記住的事/)
+    /**
+     * ⛔ CONVERTED, AND THESE WERE GREEN — WHICH IS THE PROBLEM.
+     *
+     * The catalogue is INLINED into this page, so matching these words against the body found
+     * them inside `var CATALOGUE = {…}` whether or not the page rendered a single one. They had
+     * stopped proving 「the page shows this」 and started proving 「the catalogue ships this」,
+     * while staying green and looking meaningful. Worse than HR-49, which at least went blank.
+     */
+    for (const key of ['shell.settingsTitle', 'set.styleHeading', 'set.prefsHeading']) {
+      assert.ok(String(res.body).includes("t('" + key + "')"), key + ' must be rendered by the page')
+      for (const loc of ['zh', 'en']) assert.ok(CATALOGUE[key][loc].length > 0, key + '/' + loc)
+    }
     const external = (String(res.body).match(/(?:src|href)="https?:\/\/[^"]+"/g) || [])
     assert.deepEqual(external, [], 'nothing is loaded from off-origin')
   } finally { rm(root) }
@@ -86,9 +96,9 @@ test('*** the page states that the guards are code, not wording ***', async () =
      * An English rendering that softened that into 「settings do not affect safety」 would lose
      * the point, and scanning the page could only ever have caught the Chinese.
      */
-    const { CATALOGUE } = require('../i18n/catalogue')
-    assert.match(String(res.body), /是程式碼，不是文字/, 'the Owner is told what settings cannot do')
-    assert.match(String(res.body), /PERSONA_IDENTITY/, 'and that identity is frozen')
+    assert.ok(String(res.body).includes("t('set.footPage')"), 'the page renders that paragraph')
+    assert.match(CATALOGUE['set.footPage'].zh, /是程式碼，不是文字/, 'the Owner is told what settings cannot do')
+    assert.match(CATALOGUE['set.footPage'].zh, /PERSONA_IDENTITY/, 'and that identity is frozen')
     assert.match(CATALOGUE['set.footPage'].en, /CODE, not text/, 'the English says it too')
     assert.match(CATALOGUE['set.footPage'].en, /PERSONA_IDENTITY/, 'and names the frozen identity')
   } finally { rm(root) }
