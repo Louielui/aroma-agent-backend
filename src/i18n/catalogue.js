@@ -556,16 +556,16 @@ const CATALOGUE = Object.freeze({
   'waiting.heading': { zh: '⏸ 等你 —— {title}', en: '⏸ Waiting on you — {title}' },
   'waiting.where': { zh: '邊度', en: 'Where' },
   'waiting.account': { zh: '用邊個', en: 'Account' },
-  'waiting.didWhat': { zh: '我做咗', en: 'What I did' },
-  'waiting.notPressed': { zh: '我冇撳', en: 'What I did NOT press' },
+  'waiting.didWhat': { zh: '我做了', en: 'What I did' },
+  'waiting.notPressed': { zh: '我沒有按', en: 'What I did NOT press' },
   'waiting.notPressedValue': { zh: '{role}「{name}」', en: '{role} "{name}"' },
   'waiting.amount': { zh: '金額', en: 'Amount' },
   'waiting.whyStopped': { zh: '點解停', en: 'Why it stopped' },
-  'waiting.reopen': { zh: '開返嗰版', en: 'Reopen that page' },
+  'waiting.reopen': { zh: '重新開啟那一頁', en: 'Reopen that page' },
   'waiting.opening': { zh: '開緊…', en: 'Opening…' },
-  'waiting.opened': { zh: '開咗', en: 'Opened' },
+  'waiting.opened': { zh: '已開啟', en: 'Opened' },
   'waiting.profileBusyShort': { zh: '香香而家用緊個 profile。', en: 'She is using that profile right now.' },
-  'waiting.cannotOpen': { zh: '開唔到。', en: 'Could not open it.' },
+  'waiting.cannotOpen': { zh: '無法開啟。', en: 'Could not open it.' },
   'waiting.countWaiting': { zh: '⏸ {n} 單等你決定', en: '⏸ {n} waiting on you' },
   'waiting.look': { zh: '睇下', en: 'Look' },
 
@@ -573,7 +573,7 @@ const CATALOGUE = Object.freeze({
   'copy.label': { zh: '複製這個回覆', en: 'Copy this reply' },
   'copy.title': { zh: '複製', en: 'Copy' },
   'copy.done': { zh: '已複製', en: 'Copied' },
-  'copy.failed': { zh: '複製唔到', en: 'Could not copy' },
+  'copy.failed': { zh: '無法複製', en: 'Could not copy' },
 
   // ── lanes ──
   'lane.emailDraft': { zh: '寫 Email', en: 'Draft an email' },
@@ -636,7 +636,7 @@ const CATALOGUE = Object.freeze({
   'offer.go': { zh: '改', en: 'Change it' },
   'offer.changing': { zh: '改緊…', en: 'Changing…' },
   'offer.failed': { zh: '改不到：{reason}', en: 'Could not change it: {reason}' },
-  'offer.done': { zh: '改咗：{say} = {to}{how}', en: 'Changed: {say} = {to}{how}' },
+  'offer.done': { zh: '已修改：{say} = {to}{how}', en: 'Changed: {say} = {to}{how}' },
   'offer.liveNow': { zh: '（即刻生效）', en: ' (live now)' },
   'offer.howToApply': { zh: '（要重新登記 task：{how}）', en: ' (re-register the task: {how})' },
   'offer.noAnswer': { zh: '改不到 —— 那個 API 沒有回答。', en: 'Could not change it — the API did not answer.' },
@@ -711,6 +711,18 @@ const CATALOGUE = Object.freeze({
   'set.loading': { zh: '讀取中…', en: 'Loading…' },
   'set.lastSaved': { zh: '上次儲存 {when}', en: 'Last saved {when}' },
   'set.loadFailed': { zh: '讀取設定失敗', en: 'Could not load settings' },
+  // ⛔ TWO DIFFERENT FACTS, TWO DIFFERENT SENTENCES. An expired session and a broken read used
+  // to render identically, so the one that needs a 30-second fix looked like the one that needs
+  // a developer. Each also states that Save is off and why — a disabled control with no reason
+  // beside it reads as a second fault.
+  'set.notSignedIn': {
+    zh: '尚未登入：登入階段已失效（伺服器重新啟動後就會這樣）。請重新登入，再開啟設定。儲存已停用。',
+    en: 'Not signed in: the session has expired (a server restart does this). Sign in again, then reopen settings. Save is disabled.'
+  },
+  'set.loadFailedSaveOff': {
+    zh: '讀取設定失敗。你的設定沒有讀進來，所以儲存已停用，以免把空白蓋過原本的內容。',
+    en: 'Could not load settings. Nothing was read, so Save is disabled — otherwise it would write blanks over what is there.'
+  },
   'set.saving': { zh: '儲存中…', en: 'Saving…' },
   'set.saved': { zh: '已儲存。下一句即時生效。', en: 'Saved. It takes effect on your next message.' },
   'set.saveFailed': { zh: '儲存失敗', en: 'Could not save' },
@@ -768,7 +780,7 @@ const CATALOGUE = Object.freeze({
   // ── the settings sheet ──
   'set.styleHeading': { zh: '說話風格', en: 'How she speaks' },
   'set.styleHint': {
-    zh: '你想她怎樣講嘢。例如：「講嘢簡短一點，一段一件事，不要每次都反問我」',
+    zh: '你想她怎樣說話。例如：「說話簡短一點，一段一件事，不要每次都反問我」',
     en: 'How you want her to talk. For example: "keep it short, one thing per paragraph, stop asking me a question back every time".'
   },
   'set.stylePlaceholder': { zh: '（留空即沿用預設）', en: '(leave empty to keep the default)' },
@@ -977,7 +989,7 @@ const CATALOGUE = Object.freeze({
   'result.secTest': { zh: '測試', en: 'Tests' },
   'result.secDiff': { zh: '改動內容（diff）', en: 'The change (diff)' },
   'result.secCost': { zh: '用了多少', en: 'What it used' },
-  'result.secPatch': { zh: '改動去咗邊', en: 'Where the change went' },
+  'result.secPatch': { zh: '改動去了哪裡', en: 'Where the change went' },
   'result.secYourRepo': { zh: '你的真實程式庫', en: 'Your real repository' },
   /** ⛔ The whole reason approving was safe. Neither language may soften it. */
   'result.yourRepoBody': {

@@ -21,7 +21,8 @@
   var READ_SOURCES = ['CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR', 'CONTEXT_GITHUB']
 
   var $ = function (id) { return document.getElementById(id) }
-  var state = { flags: {}, caps: {}, readAccess: 'off' }
+  // `loaded` starts false: nothing may be written before a read has succeeded.
+  var state = { flags: {}, caps: {}, readAccess: 'off', loaded: false }
 
   function el (tag, cls, text) {
     var n = document.createElement(tag)
@@ -76,11 +77,34 @@
     m.className = 'msg' + (kind ? ' ' + kind : '')
   }
 
+  /**
+   * ⛔ SAVE IS OFF UNTIL A READ SUCCEEDS. The page must never be able to write settings it
+   * never read: the POST body is built from the textareas unconditionally, and on a failed
+   * read those are empty — which the server accepts, because an empty string IS a string.
+   *
+   * The write happened to be blocked before this existed, but only because `requireOwner`
+   * gates GET and POST alike. A valid session with a failed read — a 500, a dropped
+   * connection, a body that will not parse — had no guard at all.
+   */
+  function lockSave (message) {
+    state.loaded = false
+    $('save').disabled = true
+    say(message, 'bad')
+  }
+
   function loadAll () {
+    $('save').disabled = true // closed until proven open, including while the request is in flight
     fetch('/api/v1/settings', { credentials: 'same-origin' })
-      .then(function (r) { return r.json() })
-      .then(function (j) {
-        if (!j.ok) throw new Error('read failed')
+      .then(function (r) {
+        return r.json()
+          .then(function (j) { return { status: r.status, body: j } })
+          .catch(function () { return { status: r.status, body: null } })
+      })
+      .then(function (res) {
+        // 401 is not a malfunction — it is a session that ended, and it has its own sentence.
+        if (res.status === 401) { lockSave(t('set.notSignedIn')); return }
+        if (res.status !== 200 || !res.body || !res.body.ok) { lockSave(t('set.loadFailedSaveOff')); return }
+        var j = res.body
         $('style').value = j.style || ''
         $('prefs').value = j.preferences || ''
         state.caps = j.caps || {}
@@ -89,11 +113,17 @@
         if (j.updatedAt) $('sub').textContent = t('set.lastSaved', { when: j.updatedAt.replace('T', ' ').slice(0, 16) })
         counts()
         renderFlags()
+        state.loaded = true
+        $('save').disabled = false
       })
-      .catch(function () { say(t('set.loadFailed'), 'bad') })
+      .catch(function () { lockSave(t('set.loadFailedSaveOff')) })
   }
 
   $('save').addEventListener('click', function () {
+    // ⛔ THE HANDLER REFUSES, NOT JUST THE BUTTON. `disabled` is an affordance; a click can
+    // still arrive from a script, an enter key, or a stale DOM. The guard belongs where the
+    // write is, not only where the finger is.
+    if (!state.loaded) { say(t('set.loadFailedSaveOff'), 'bad'); return }
     var btn = $('save')
     btn.disabled = true
     say(t('set.saving'))
@@ -123,7 +153,10 @@
         say(res.body.detail || t('set.saveFailed'), 'bad')
       })
       .catch(function () { say(t('set.saveFailed'), 'bad') })
-      .finally(function () { btn.disabled = false })
+      // ⛔ NOT an unconditional re-enable. Writing `false` here would undo the read guard from
+      // inside the save path itself — a failed save would hand the button back on a page that
+      // still holds nothing.
+      .finally(function () { btn.disabled = !state.loaded })
   })
 
   $('style').addEventListener('input', counts)

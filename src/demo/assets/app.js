@@ -1859,7 +1859,8 @@
   var setStyle = document.getElementById('set-style')
   var setPrefs = document.getElementById('set-prefs')
   var setMsg = document.getElementById('set-msg')
-  var setState = { flags: {}, flagLabels: {}, caps: {}, readAccess: 'off' }
+  // `loaded` starts false: nothing may be written before a read has succeeded.
+  var setState = { flags: {}, flagLabels: {}, caps: {}, readAccess: 'off', loaded: false }
 
   function setSay (text, kind) {
     setMsg.textContent = text || ''
@@ -1917,10 +1918,22 @@
     setOverlay.className = 'overlay'
     setOpenBtn.setAttribute('aria-expanded', 'true')
     setSay(t('set.loading'))
+    // ⛔ Closed until proven open — same guard as the settings page. The POST body is built
+    // from these fields unconditionally, and on a failed read they are empty, which the server
+    // accepts because an empty string IS a string.
+    setState.loaded = false
+    document.getElementById('save-settings').disabled = true
     fetch('/api/v1/settings', { credentials: 'same-origin' })
-      .then(function (r) { return r.json() })
-      .then(function (j) {
-        if (!j.ok) throw new Error('read failed')
+      .then(function (r) {
+        return r.json()
+          .then(function (j) { return { status: r.status, body: j } })
+          .catch(function () { return { status: r.status, body: null } })
+      })
+      .then(function (res) {
+        // 401 is a session that ended, not a malfunction. Different fact, different sentence.
+        if (res.status === 401) { setLockSave(t('set.notSignedIn')); return }
+        if (res.status !== 200 || !res.body || !res.body.ok) { setLockSave(t('set.loadFailedSaveOff')); return }
+        var j = res.body
         setStyle.value = j.style || ''
         setPrefs.value = j.preferences || ''
         setState.caps = j.caps || {}
@@ -1929,9 +1942,17 @@
         setCounts()
         renderSetFlags()
         setSay(j.updatedAt ? t('set.lastSaved', { when: String(j.updatedAt).replace('T', ' ').slice(0, 16) }) : '')
+        setState.loaded = true
+        document.getElementById('save-settings').disabled = false
       })
-      .catch(function () { setSay(t('set.loadFailed'), 'bad') })
+      .catch(function () { setLockSave(t('set.loadFailedSaveOff')) })
     setStyle.focus()
+  }
+
+  function setLockSave (message) {
+    setState.loaded = false
+    document.getElementById('save-settings').disabled = true
+    setSay(message, 'bad')
   }
 
   function closeSettings () {
@@ -1951,6 +1972,9 @@
   setPrefs.addEventListener('input', setCounts)
 
   document.getElementById('save-settings').addEventListener('click', function () {
+    // ⛔ THE HANDLER REFUSES, NOT JUST THE BUTTON. `disabled` is an affordance; a click can
+    // still arrive from a script, a key, or a stale DOM. The guard belongs at the write.
+    if (!setState.loaded) { setSay(t('set.loadFailedSaveOff'), 'bad'); return }
     var btn = document.getElementById('save-settings')
     btn.disabled = true
     setSay(t('set.saving'))
@@ -1979,7 +2003,9 @@
         setSay(res.body.detail || t('set.saveFailed'), 'bad')
       })
       .catch(function () { setSay(t('set.saveFailed'), 'bad') })
-      .finally(function () { btn.disabled = false })
+      // ⛔ NOT an unconditional re-enable — that would undo the read guard from inside the save
+      // path itself, handing the button back on a dialog that still holds nothing.
+      .finally(function () { btn.disabled = !setState.loaded })
   })
 
   send.disabled = true

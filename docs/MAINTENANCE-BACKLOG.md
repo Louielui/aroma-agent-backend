@@ -527,3 +527,60 @@ one. Same arithmetic as M-7, same conclusion.
 
 What is cheap and was done instead: the 7 load-bearing ones are now VERIFIED, in writing, above.
 The other 348 are recorded as unverified, which is a truer state than not knowing they existed.
+
+---
+
+# P-1 — THE SESSION STORE IS IN MEMORY. NOT A DEFECT; A PROPERTY.
+
+> **Owner: 「That is not a defect but it is a property I did not know, and it explains a class of
+> confusion I will otherwise attribute to something else.」**
+
+`governance/ownerAuth.js`:
+
+```js
+function createSessionStore ({ ttlMs = DEFAULT_TTL_MS, ... } = {}) {
+  const sessions = new Map()   // id -> expiresAt
+```
+
+A plain `Map`, created per process, held only in memory. There is no file, no store, no
+persistence of any kind.
+
+## THE CONSEQUENCE, STATED PLAINLY
+
+> **Every restart of 8090 invalidates every owner cookie that exists.** Not on a timer, not on
+> expiry — instantly, because the Map that could recognise them is gone with the process.
+
+An open browser tab keeps sending a cookie minted by a process that no longer exists. The server
+answers `401 owner_auth_required`, and every owner-gated surface fails at once — settings,
+context, intake — with whatever message that surface shows for a bad response.
+
+## WHAT IT LOOKED LIKE ON 2026-08-08
+
+Six restarts between 10:00 and 10:30 while proving the notifier (`DESIGN-RESTART-NOTIFIER.md`).
+The Owner's open tab then showed 「讀取設定失敗」 in the settings dialog. Nothing was broken: the
+server was healthy, the handler built its payload correctly, `load()` cannot even throw. The
+cookie was simply from a dead process, and the page rendered a 401 as a read failure.
+
+**Time from cause to visible symptom: however long the tab stayed open.** That is what makes this
+worth writing down — the restart and the error are not adjacent, so the error gets attributed to
+whatever changed most recently instead.
+
+## IS IT WORTH CHANGING?
+
+**Not now, and the reason is the same shape as L2-1.** A persistent session store is a file
+holding live credentials — a new thing to protect, back up, expire and revoke, added to remove a
+re-login after a restart that happens perhaps twice a week. The cost lands on the credential
+surface; the benefit is convenience.
+
+What was cheap and IS done: the page now distinguishes 「未登入」 from 「讀取設定失敗」
+(`set.notSignedIn` vs `set.loadFailedSaveOff`), so the symptom names its own cause and the fix
+is legible from the screen — sign in again.
+
+**Revisit if** either becomes true: restarts stop being rare (a supervisor, a watchdog, frequent
+deploys), or something unattended starts depending on an owner session surviving one.
+
+## THE GENERAL FORM
+
+> A property that is obvious from the code and invisible from the screen will be mistaken for a
+> defect in whatever was touched most recently. Writing it down is cheaper than re-diagnosing it,
+> and this is the second time it has cost a diagnosis.
