@@ -2762,3 +2762,49 @@ it stops being counted.
 **Corollary — the count is the evidence, not the tone.** This is not seventeen failures of care.
 It is seventeen data points saying that care is the wrong instrument for this class of error, and
 that the honest response is to build the instrument that does work.
+
+---
+
+## HR-54 — A MECHANICAL TASK FORCES ATTENTION EXACTLY AS FAR AS ITS FORM MAKES STOPPING IMPOSSIBLE, AND NOT ONE LINE FURTHER
+
+> Owner, after defect 18: 「can mechanical tasks substitute for attention, or was the rename
+> lucky twice?」
+
+Defect 18 was a rename that forced line-by-line reading and turned up four latent shadows. The
+tempting conclusion — 「give yourself mechanical work and attention follows」 — is wrong, and this
+batch is the counter-example, from the same technique.
+
+**The same rename, done again, failed twice.** `const t = clock()` → `startedAt`, and
+`const t = String(text…)` → `raw`. Both times the declaration changed and the USES did not.
+Seven tests went red in `scheduledRun`, and the shadow fence fired again on `conversationStore`.
+
+The difference between the working case and the failing one is not luck and not care:
+
+> In defect 18, the rename was of a symbol whose every USE had to be retyped, so there was no
+> way to stop early. Here the rename was of a DECLARATION, and the form permitted stopping
+> at the line I had already touched — so I did.
+
+Attention did not travel with the mechanism. It travelled exactly to the boundary the mechanism
+made unskippable, and stopped dead there.
+
+### THE SHARPER HALF: A MECHANISM THAT REPORTS ITS OWN SUCCESS
+
+Twice now a `node -e` script has printed 「applied」 for substitutions it did not make — once for
+three files at the end of group C, once for a rename. The strings were still in the files.
+
+A hand-edit that fails leaves the file unchanged and says nothing. A script that fails leaves the
+file unchanged **and says it succeeded**, and that output is then read as verification. The
+mechanisation did not just fail to substitute for attention — it produced a false report of
+completion, which is this codebase's oldest root cause (「an unknown answered as a fact」) with a
+tool wrapped around it.
+
+### THE RULE
+
+1. **A mechanical task is worth choosing for the part that cannot be skipped, and worth
+   distrusting everywhere else.** Name that boundary before starting. A rename covers the
+   declaration; the uses are a separate job.
+2. **A script may not report its own success.** It reports what it OBSERVED after writing —
+   re-read the file and assert the old string is gone. `console.log('applied')` at the bottom of
+   a function that never checked is a lie with a green tint.
+3. **The suite is what actually caught both.** Not the technique, and not reading. The count in
+   HR-53 stands: reading has caught zero.
