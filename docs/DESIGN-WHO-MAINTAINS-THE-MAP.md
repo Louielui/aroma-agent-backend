@@ -210,3 +210,76 @@ worth it」, they are not wasted.
 - **Is it worth building?** The map's staleness is already a live problem with no detector. §5
   steps 1–2 pay for themselves regardless. Whether step 3–4 follow is a separate GO, and it
   should be taken after the measurement in the previous design has produced real numbers.
+
+---
+
+# STEP 2 RESULT — THE SIX RESPONSE SHAPES, CAPTURED 2026-08-08
+
+Six read-only GETs against production. **Field names and types only — no values were recorded**;
+the data is the Owner's business data and the exercise is about names.
+
+## What the adapter assumes vs what is there
+
+| endpoint | id | title | date | verdict |
+|---|---|---|---|---|
+| `inventory` | `id` | `name` | — | **no date field exists** |
+| `suppliers` | `id` | `name` | — | **no date field exists** |
+| `dailyCounts` | `id` | `locationName` | `submittedAt` | ok |
+| `orderPlanning` | `ingredient_id`, `supplier_id` | `ingredient_name`, `supplier_name` | — | **no date field exists** |
+| `purchaseOrders` | `id`, `supplierId` | `poNumber`, `supplierName` | `orderDate`, `createdAt` | ok |
+| `invoices` | `id`, `supplierId`(null) | `invoiceNumber`(null) → `rawVendorName` | `invoiceDate`, `createdAt` | ok |
+
+**The three 「(no date)」 endpoints are not a defect.** `SCOPE_OF` already declares
+`hasAsOf: false` for exactly those three. The name lists and the scope table agree — which is the
+first time anything has actually checked that they do.
+
+`invoices.invoiceNumber` arrives **null**, and `TITLE_FIELDS` falls through to `rawVendorName`
+exactly as its comment says it was designed to. Working as intended, now observed rather than
+assumed.
+
+## FOUR FINDINGS WORTH ACTING ON
+
+### 1. ⛔ `orderPlanning` is snake_case; every other endpoint is camelCase
+
+`supplier_id`, `live_qty`, `par_level`, `suggested_order_qty` — against `supplierId`,
+`currentStock`, `parLevel` everywhere else. `ALLOWED_QUERY` lists **`supplierId`** only. So the
+one parameter that would filter order planning by supplier is spelled the other way from the
+field that endpoint returns. Not yet a failure — nothing filters by it today — but it is a
+loaded gun for the join map.
+
+### 2. ⛔ `limit` appears not to be honoured
+
+`?limit=3` returned **199 inventory rows**, 36 suppliers, 50 daily counts, 44 order-planning
+rows, 14 purchase orders. The adapter caps at `MAX_ITEMS = 25` **client-side**, so every read
+pulls the whole table across the network and throws most of it away. Correctness is unaffected;
+cost and latency are not.
+
+### 3. ⛔ `invoices` returned ONE row
+
+`CLAUDE.md` records ~471 invoices. The endpoint returned a single row. Either the endpoint filters
+to something narrow, or the AI-facing invoice view is near-empty. **This is a question, not a
+diagnosis** — I have not looked at the server side, and doing so is a separate task.
+
+### 4. ⛔ THE JOIN EVIDENCE — and one edge is already dead
+
+| edge | populated? |
+|---|---|
+| `orderPlanning.supplier_id` → `suppliers.id` | **yes**, 3/3 non-empty |
+| `purchaseOrders.supplierId` → `suppliers.id` | **yes**, 3/3 non-empty |
+| `invoices.supplierId` → `suppliers.id` | **NO — null in every sampled row** |
+
+> The invoice→supplier join is exactly the edge that 「supplierId obviously points at
+> suppliers」 would have declared, and it would have returned nothing while looking like it
+> worked. This is the Owner's ruling arriving before the code: **an unverified edge stops the
+> query and says so; it is never guessed and never silently skipped.**
+
+And a second, cheaper finding: `orderPlanning` already carries `supplier_name` **inline**. The
+join to `suppliers` is therefore not needed to name a supplier — only for lead days and order
+method. One less traversal for the commonest question.
+
+## WHAT THIS CHANGES
+
+- The join map has **three candidate edges, two verified live and one verified DEAD** — before a
+  line of it was written.
+- 「a list can be checked against a captured response」 is now done, once. It should be a test
+  that runs against a stored capture, so the next drift is loud.
