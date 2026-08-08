@@ -340,7 +340,10 @@ test('the schema closes every object so nothing can be smuggled past the validat
   // `citesEvidence` joined the required set on 2026-08-04, when `sections.minItems: 1` was
   // removed. The declaration is REQUIRED precisely so that "no sections" is a stated choice
   // the server can act on, rather than an empty array indistinguishable from a failure.
-  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.sort(), ['citesEvidence', 'directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'])
+  // answerClaims joined required on 2026-08-08, after a LIVE HTTP 400 from OpenAI:
+  // strict Structured Outputs reject any property not in required, so optionality must be
+  // a NULL UNION. Its semantics are unchanged — null means UNBOUND.
+  assert.deepEqual(ANSWER_PLAN_SCHEMA.required.slice().sort(), ['answerClaims', 'citesEvidence', 'directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'])
 })
 
 test('length rules are bounded by the server, not by the model behaving', () => {

@@ -48,7 +48,7 @@ const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // 
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, withReadChoices, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -340,8 +340,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // means either third-party data kept that should not be, or an answer discarded for nothing.
   const readContextUsedBy = new Map()
 
+  // ── BLOCKER 1 + 3 (Owner review): ONE read-dependency resolution and ONE authorisation
+  // calculation, resolved here and reused by BOTH the initial read and the reasoning loop.
+  // They used to be resolved inside buildPromptFor(), where the reasoning loop could not see
+  // them — so the loop referenced a  that was out of scope.
+  const readDeps = (opts && opts.readContextDeps) || null
+  /**
+   * ⛔ THE AUTHORISATION BOUNDARY, AND THE ONLY ONE. A source may be read this turn when
+   * READ_ACCESS is on AND it is enabled AND the ACTIVE provider is allowed to see it.
+   * The ROUTE may narrow the automatic first read; it is NOT the boundary, so a reasoning
+   * step may pick any source the Owner has already authorised — and nothing wider.
+   */
+  function authorisedSourcesFor (providerName) {
+    if (resolveFlag(process.env, 'READ_ACCESS') !== 'on') return []
+    const enabled = readDeps && Array.isArray(readDeps.sources) ? readDeps.sources : enabledSources(process.env)
+    return sourcesForProvider(providerName, enabled, process.env)
+  }
+  // ── A3 REASONING LOOP: observations gathered mid-turn, in the order they arrived. ──
+  // Each entry is a read-context block produced by the SAME buildReadContext the one-shot
+  // path uses. Empty on an ordinary turn, so the prompt is byte-identical to before.
+  const extraObservationBlocks = []
+
   async function buildPromptFor (providerName) {
-    if (promptCache.has(providerName)) return promptCache.get(providerName)
+    // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
+    // step 1's prompt and the loop would ask the same question forever — the read would
+    // happen and the model would never see it.
+    const cacheKey = providerName + ':' + extraObservationBlocks.length
+    if (promptCache.has(cacheKey)) return promptCache.get(cacheKey)
     let effPrompt = baseEffPrompt
     const isChat = !!(opts && opts.interactionMode === 'chat')
 
@@ -398,7 +423,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // becomes an UNAVAILABLE line and never blocks the reply. Nothing is persisted.
     if (isChat && resolveFlag(process.env, 'READ_ACCESS') === 'on') {
       try {
-        const deps = (opts && opts.readContextDeps) || null
+        const deps = readDeps // BLOCKER 1: the one shared resolution, not a second one
         const enabled = deps && Array.isArray(deps.sources) ? deps.sources : enabledSources(process.env)
         // ── STEP 3: THE ROUTE DECIDES WHAT IS READ ────────────────────────
         // Before this, the only conditions were "chat lane" and "READ_ACCESS on", so every
@@ -462,7 +487,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
 
-    promptCache.set(providerName, effPrompt)
+    // Observations from earlier steps of THIS turn, newest last, above the base prompt and
+    // below nothing — they are read context and are framed by the same safety header the
+    // one-shot read block carries, because they were produced by the same builder.
+    for (const obs of extraObservationBlocks) {
+      if (obs) effPrompt = obs + '\n\n' + effPrompt
+    }
+    promptCache.set(cacheKey, effPrompt)
     return effPrompt
   }
 
@@ -518,9 +549,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${source}#${it.sourceId}`)
       }
     }
-    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs) }
+    // ⛔ THE MODEL IS SHOWN ITS ACTUAL CHOICES (live canary, blocker 2). Authorised for the
+    // provider making THIS call, minus anything already read this turn. With nothing left,
+    // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
+    const alreadyRead = new Set(Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source))
+    const choices = authorisedSourcesFor(activeProvider || primaryProvider).filter((sname) => !alreadyRead.has(sname))
+    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), choices)
+    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null
+  // ⛔ THE PROVIDER THAT PRODUCED THE ACCEPTED ENVELOPE. Set at the orchestration branch
+  // that actually made the call — never inferred from the result, because the real
+  // OpenAIAdapter returns {text, usage, model, latencyMs, stopReason} and carries NO
+  // provider field at all. Reading llmResult.provider therefore silently identified every
+  // real GPT turn as Claude, and the reasoning loop would have continued on the wrong
+  // adapter with a prompt built for someone else. The path already knows who it called.
+  let activeProvider = null
+  let activeAdapter = null
   let distilled = null
   let routerFallbackReason = null
 
@@ -621,6 +666,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
           llmResult = gptResult
+          activeProvider = OPENAI // its envelope PARSED — this is the accepted provider
+          activeAdapter = gpt
         } catch (err) {
           routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
         }
@@ -654,6 +701,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
     // Same rule for the Claude attempt: recorded before the parse can throw.
     noteProvider('claude', llmResult)
+    // Claude produced the answer — either as primary, or as the fallback after GPT failed
+    // or failed to parse. Either way it is now the active provider for the rest of the turn.
+    activeProvider = CLAUDE
+    activeAdapter = adapter
     tel.fallbackUsed = (primaryProvider === OPENAI)
     await recordProviderUsage(llmResult)
   }
@@ -722,6 +773,72 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //    A real model call ran, so usage IS recorded first (same accounting contract as
   //    the talk / clarification paths) — but NO Decision/Task, NO Proposal, NO dispatch.
   const interactionMode = opts && opts.interactionMode
+  // ══════════════════════════════════════════════════════════════════════════════
+  // A3 — THE BOUNDED REASONING LOOP. Reason → Read → Observe → Reason → Final.
+  //
+  // > **Owner: 「Louie must NOT need to manually carry information between steps.」**
+  //
+  // The first model call has already happened above. If it asked for a read instead of
+  // answering, this executes that read with the SAME buildReadContext the one-shot path
+  // uses, feeds the observation back, and calls the model again — at most three decisions.
+  //
+  // ⛔ INERT ON AN ORDINARY TURN. A model that answers directly sets no `nextRead`, this
+  // block does nothing, and the prompt, the reply and the accounting are byte-identical to
+  // before. A direct question still costs exactly one model call.
+  //
+  // Provider neutrality: the loop module is handed a closure and never learns what is
+  // behind it. All provider routing stays above, behind the adapter boundary.
+  if (interactionMode === 'chat' && distilled && distilled.nextRead) {
+    const { runReasoningLoop, STOP } = require('./reasoningLoop')
+    // ⛔ BLOCKER 2: THE PROVIDER THAT PRODUCED THE VALID FIRST ENVELOPE CONTINUES THE TURN.
+    // Step 2 used to call the Claude adapter even when OpenAI produced step 1 — a silent
+    // provider switch mid-turn, with step 2 reading a prompt built for someone else.
+    // Both are tracked explicitly and neither is chosen inside reasoningLoop.js, which stays
+    // provider-neutral: the loop is handed a closure and never learns what is behind it.
+    // Set above, at the branch that produced the accepted envelope. Not re-derived here.
+    // ⛔ BLOCKER 3: the SAME authorisation boundary as the first read, for the ACTIVE
+    // provider. READ_ACCESS off yields [], so every reasoning read is refused.
+    const allowed = (activeAdapter && activeProvider) ? authorisedSourcesFor(activeProvider) : []
+    let pending = distilled.nextRead
+    const loop = await runReasoningLoop({
+      capabilities: allowed,
+      onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
+      executeRead: async ({ capability }) => {
+        const connector = (readDeps && readDeps.connector) || createLiveReadConnector({ env: process.env }).connector
+        const rc = await buildReadContext({ connector, message, sources: [capability], env: process.env })
+        if (rc && rc.block) extraObservationBlocks.push(rc.block)
+        for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(row.source, row)
+        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
+        for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(e.source, e)
+        return { capability, ok: !!(rc && rc.block), summary: null }
+      },
+      callModel: async ({ step }) => {
+        if (step === 1) return { type: 'read', capability: String(pending.capability || '') }
+        const prompt = await buildPromptFor(activeProvider)
+        const fmt = answerPlanFormat()
+        const next = await activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) })
+        noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
+        await recordProviderUsage(next)                                     // ⛔ accounting, per call
+        llmResult = next
+        let parsed = null
+        try { parsed = parseDistillResponse(next.text, tel) } catch (_) { return { type: 'final', result: null } }
+        pending = parsed && parsed.nextRead ? parsed.nextRead : null
+        if (!pending) { distilled = parsed || distilled; return { type: 'final', result: parsed } }
+        // ⛔ BLOCKER 4: a STILL-PENDING envelope is NOT adopted as the answer. If the loop
+        // now hits the step limit, distilled still holds the last FINISHED envelope and the
+        // prose that was mid-request never reaches the Owner as though it were complete.
+        return { type: 'read', capability: String(pending.capability || '') }
+      }
+    })
+    // ⛔ BLOCKER 4: the result is USED, not voided. At the step limit there is no fourth
+    // call and nothing is invented — the turn falls through to the EXISTING deterministic
+    // rendering, which now runs over every observation gathered (they are already in
+    // turnEvidence / turnItems / turnPerSource) rather than over a half-finished sentence.
+    if (loop.stopReason === STOP.STEP_LIMIT) {
+      distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null })
+      try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: null, stopReason: loop.stopReason, observations: loop.observations.length })) } catch (_) {}
+    }
+  }
   if (interactionMode === 'chat' && distilled.mode === 'commit') {
     // chat mode never creates a proposal: intercept a commit → talk-only.
     await recordProviderUsage(llmResult) // idempotent: already recorded pre-parse

@@ -143,13 +143,14 @@ test('*** ⛔ additionalProperties:false still holds, at every level ***', () =>
   assert.equal(claims.items.properties.scope.additionalProperties, false, 'and so is its scope')
 })
 
-test('*** answerClaims is OPTIONAL — required[] is unchanged ***', () => {
-  assert.deepEqual(
-    ANSWER_PLAN_SCHEMA.required.slice().sort(),
-    ['citesEvidence', 'directAnswer', 'followUp', 'limitations', 'sections', 'unanswerable'].sort(),
-    'adding it to required would break every existing provider and force an invented binding'
-  )
-  assert.equal(ANSWER_PLAN_SCHEMA.required.includes('answerClaims'), false)
+test('*** answerClaims is REQUIRED + NULLABLE — optional semantics, strict-mode safe ***', () => {
+  // ⛔ CORRECTED BY THE LIVE CANARY. This test asserted answerClaims stayed OUT of
+  // required[] — and that is exactly what produced a live HTTP 400 invalid_json_schema
+  // from OpenAI, whose strict Structured Outputs reject any property not in required.
+  // Optionality is expressed as a NULL UNION, never by omission. The SEMANTICS are
+  // unchanged: null means UNBOUND and verifyClaimBindings(null) still returns [].
+  assert.equal(ANSWER_PLAN_SCHEMA.required.includes('answerClaims'), true)
+  assert.deepEqual(ANSWER_PLAN_SCHEMA.properties.answerClaims.type, ['array', 'null'])
 })
 
 test('*** claimKind is a CLOSED enum — a model cannot invent a fourth kind ***', () => {

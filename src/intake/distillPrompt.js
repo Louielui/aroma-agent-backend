@@ -68,6 +68,15 @@ mode="commit"（decision / task / reminder —— 操作型):
 - context/chat(不建立任務)例:「從今天開始我們一起開發 Aroma System」「我們公司主要做餐飲」「Aroma 有三個門市」「我昨天跟供應商談過了」「我最近在想香香的定位」。
 - commit(建立任務)例:「幫我把 Timeline 的輪詢在終止狀態後停掉」「建立一個新的供應商資料表」。
 
+【需要補充資料時】
+若本次輸出 schema 包含 nextRead：
+- 如果目前提供的資料已足夠回答，nextRead = null，直接完成回答。
+- 如果問題需要另一個 nextRead.capability 中列出的資料來源才能可靠回答，不要直接說「沒有資料」「未連接」或猜答案；設定 nextRead 為該來源，先讀取資料。
+- 讀取結果會在同一個 user turn 重新提供給你。收到結果後重新判斷：資料足夠就 nextRead = null 並完成回答；仍需要另一個可選來源才再 request 一次。
+- 只能使用 schema 列出的 capability。
+- nextRead 只用於讀取資料，不得用來執行寫入、修改、發送、購買、刪除或其他 action。
+- 不要輸出你的逐步思考，只輸出決定與最終答案。
+
 【最重要的規則:絕不謊稱已完成】
 - commit 的 reply【絕對不能】說「我已合併/我幫你做好了/我現在就去做」。
 - 正確說法：「我已理解，並把它整理成一項執行提案（Proposal）。這是提案，等待 Louie 批准；尚未執行，也尚未派給任何 Worker。正式 Proposal 是否成功建立，以系統紀錄為準。」
@@ -256,6 +265,22 @@ function parseDistillResponse (text, diag) {
 
   const base = { intent, mode, reply, understanding: reply, judgment: '', decision: null, tasks: [], risks: [], next_step: '', reasons: [], offer: '' }
   if (answerPlan !== undefined) base.answerPlan = answerPlan
+
+  // ── A3 REASONING LOOP: the ONE new field the model may use to ask for a read. ────
+  //
+  // ⛔ THIS PARSER BUILDS A CLOSED ENVELOPE, and that is why the field has to be added here
+  // rather than merely to the schema: a provider can return `nextRead`, the schema can accept
+  // it, and it still never reaches the pipeline because this function constructs a fresh
+  // object from known fields. The reasoning loop appeared wired and did nothing — the whole
+  // turn silently collapsed back to one model call.
+  //
+  // Only the SHAPE is admitted, and only a string capability. Everything else about it —
+  // whether that source was authorised, whether it is read-shaped — is decided by the server
+  // in intakeService.authorisedSourcesFor() and in reasoningLoop.js. A name here is a request,
+  // never a permission.
+  if (p.nextRead && typeof p.nextRead === 'object' && typeof p.nextRead.capability === 'string' && p.nextRead.capability) {
+    base.nextRead = { capability: p.nextRead.capability }
+  }
 
   if (mode === 'recommend') {
     return { ...base,

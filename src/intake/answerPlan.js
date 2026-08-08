@@ -104,7 +104,12 @@ const TELEMETRY_RE = /(未列出|長度上限|判斷為與此問題無關|fallba
 const ANSWER_PLAN_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  required: ['directAnswer', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
+  // ⛔ EVERY PROPERTY IS IN required. OpenAI strict Structured Outputs REJECTS a schema
+  // whose properties are not all required — it expresses optionality as a NULL UNION, not
+  // by omission. Omitting answerClaims produced a live HTTP 400 invalid_json_schema and
+  // every OpenAI turn silently fell back to Claude. Only the canary could see that; a fake
+  // adapter never validates a schema.
+  required: ['directAnswer', 'answerClaims', 'sections', 'limitations', 'followUp', 'unanswerable', 'citesEvidence'],
   properties: {
     // ⛔ EVERY `description` IN THIS SCHEMA IS MODEL TEXT — she is TOLD it, and it shapes
     // what she produces. Translating it is a BEHAVIOUR change wearing a translation's clothes.
@@ -125,7 +130,9 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
     // source's unknown coverage refuse a sentence about a different one. Declared here,
     // VERIFIED server-side in claimBinding.js — never inferred from the words.
     answerClaims: {
-      type: 'array',
+      // null = UNBOUND. verifyClaimBindings(null) already returns [], so the semantics are
+      // unchanged: an absent declaration is never an inferred binding.
+      type: ['array', 'null'],
       description: '把 directAnswer 拆成一句一個 claim，並宣告每句是關於哪些證據。不要猜；不確定就不要填這個欄位。',
       items: {
         type: 'object',
@@ -218,9 +225,22 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
 const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
   type: 'object',
   additionalProperties: false,
-  required: ['intent', 'mode', 'reply', 'answerPlan'],
+  // Same strict-mode rule as ANSWER_PLAN_SCHEMA above: required + nullable, never omitted.
+  required: ['intent', 'nextRead', 'mode', 'reply', 'answerPlan'],
   properties: {
     intent: { type: 'string' },
+    // ── A3 REASONING LOOP: THE ONLY NEW DECISION THE MODEL CAN MAKE. ────────────
+    // OPTIONAL, and absent means FINAL — so an ordinary turn is byte-identical and a
+    // direct question still costs exactly one model call. It is an ACTION DECISION, not
+    // chain-of-thought: the model says WHICH authorised source it wants read, never why.
+    // The server verifies the name against the allowlist this turn was already granted.
+    nextRead: {
+      type: ['object', 'null'],
+      additionalProperties: false,
+      required: ['capability'],
+      description: '需要先讀取資料才能回答時填寫；可以直接回答就不要填。只能填本回合已獲授權的來源名稱。',
+      properties: { capability: { type: 'string', description: '已授權的來源名稱，例如 aroma_system。' } }
+    },
     mode: { type: 'string', enum: ['commit', 'recommend', 'ask', 'chat'] },
     reply: { type: 'string', description: '一句自然的說話。逐項清單由系統渲染，不要在這裡覆述。' },
     answerPlan: ANSWER_PLAN_SCHEMA
@@ -1294,10 +1314,41 @@ function parsePlan (text) {
   return { ok: true, plan: obj }
 }
 
+/**
+ * ⛔ SHOW THE MODEL ITS ACTUAL CHOICES. (Live canary, blocker 2.)
+ *
+ * capability was a bare string, so the model had to GUESS a source name it had never been
+ * shown. Claude noticed Gmail was missing and still did not ask for it — it had no
+ * structural way to know Gmail was askable, or what it was called.
+ *
+ * The enum is pinned per call to sources that are BOTH authorised for the active provider
+ * AND not already read this turn. Re-reading the same source with the same message yields
+ * nothing new at this capability grain, so it is not offered.
+ *
+ * ⛔ THE SCHEMA CONSTRAINS; IT DOES NOT AUTHORISE. authorisedSourcesFor() upstream and the
+ * allowlist inside reasoningLoop.js remain the boundary. A model that somehow returned a
+ * name outside the enum would still be refused server-side.
+ *
+ * With nothing left to read, nextRead becomes null-ONLY — never an empty enum, which is
+ * itself an invalid strict schema.
+ */
+function withReadChoices (schema, available) {
+  const out = JSON.parse(JSON.stringify(schema))
+  const nr = out.properties && out.properties.nextRead
+  if (!nr) return out
+  const list = Array.from(new Set((available || []).filter((x) => typeof x === 'string' && x)))
+  if (list.length === 0) {
+    out.properties.nextRead = { type: 'null', description: nr.description || null }
+    return out
+  }
+  nr.properties.capability.enum = list
+  return out
+}
 module.exports = {
   ANSWER_PLAN_SCHEMA,
   DISTILL_WITH_PLAN_SCHEMA,
   withRowRefs,
+  withReadChoices,
   STATUS_LABELS,
   ENTITY_LABELS,
   SOURCE_LABELS,
