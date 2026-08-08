@@ -1357,6 +1357,22 @@ const CATALOGUE = Object.freeze({
     zh: '\n\n〔系統更正 — 依實際讀取紀錄〕上面講「讀不到」是不對的。{parts}。以這個紀錄為準。',
     en: '\n\n[SYSTEM CORRECTION — from the actual read record] The statement above that it "could not be read" is wrong. {parts}. This record is authoritative.'
   },
+  // ⛔ Stated as a FACT ABOUT THE TURN, never as a verdict on her sentence. This note is
+  // appended without reading her words at all, so it must not assert that anything she said
+  // was wrong — only what the record shows: nothing was read, and therefore nothing above is
+  // grounded in one. 「沒有去看」 and 「沒有權限」 are different claims and only one is provable.
+  'rsg.nothingRead': {
+    zh: '這一轉沒有讀取任何來源',
+    en: 'Nothing was read this turn'
+  },
+  'rsg.nothingReadNote': {
+    zh: '\n\n〔系統附註 — 依這一轉的讀取紀錄〕{what}，所以上面關於系統內容或讀取權限的說法都不是根據讀取結果。正確的說法是「我沒有去看」，而不是「我沒有權限」。{why}',
+    en: '\n\n[SYSTEM NOTE — from this turn\'s read record] {what}, so nothing above about the system\'s contents or about read access is based on a read. The accurate statement is "I did not look", not "I do not have access".{why}'
+  },
+  'rsg.nothingReadWhyNoIntent': {
+    zh: '（這一轉沒有辨認到需要讀取的項目，所以讀取層沒有執行。）',
+    en: ' (No readable subject was recognised this turn, so the read layer never ran.)'
+  },
 
   // ══════════════════════════════════════════════════════════════════════════
   // THE CREDENTIAL REFUSALS — agent/credentialHealth.js.

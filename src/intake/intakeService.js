@@ -44,7 +44,7 @@ const { buildContextPreamble } = require('../governance/contextCard')         //
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
-const { enforceReadState } = require('./readStateGuard') // a reply may not deny a read that happened
+const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // a reply may not deny a read that happened — nor claim one that never ran
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
@@ -58,6 +58,24 @@ const { answerUtility } = require('./utilityAnswer') // the server answers, or i
  * two logs: the source names, which rule fired, and the request id — never the reply, the
  * message, or anything read.
  */
+/**
+ * A turn that read nothing carried a note saying so. Counted, because 「how often does she
+ * talk about a source we never read」 is the measurement that says whether the intent
+ * vocabulary is the real problem — and nobody could answer it before this existed.
+ * Metadata only: no message, no reply, no content.
+ */
+function logNoReadClaim (routeDecision, requestId) {
+  try {
+    console.log('[AROMA-READ-CLAIM]', JSON.stringify({
+      event: 'NO_READ_CLAIM_NOTED',
+      timestamp: new Date().toISOString(),
+      route: (routeDecision && routeDecision.route) || null,
+      reason: (routeDecision && routeDecision.reason) || null,
+      requestId: typeof requestId === 'string' ? requestId : null
+    }))
+  } catch (_) { /* a diagnostic must never break a turn */ }
+}
+
 function logReadClaimCorrection (guarded, requestId) {
   try {
     console.log('[AROMA-READ-CLAIM]', JSON.stringify({
@@ -737,6 +755,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       : '我未有建立提案 —— 呢句我當咗係傾偈。想我出一張提案，直接講明改邊個檔案同改乜，例如「改 docs/canary/agent-canary.md 嗰行字」。'
 
     const guarded = enforceReadState(reply, Array.from(turnPerSource.values()), message)
+    // ⛔ THE OTHER HALF OF THE SAME RULE. `enforceReadState` catches 「she denied a read that
+    // HAPPENED」. This catches 「she made a claim about reading when NOTHING was read」 — the
+    // 2026-08-08 aroma_system turn, which routed CONVERSATION with sourcesRead:[] and was
+    // answered with 「我目前沒有直接連接到 Aroma System 的讀取權限」. Nothing existed to
+    // contradict her, so nothing did.
+    //
+    // Appending to `guarded.reply` is safe HERE specifically: this fires only when the turn
+    // read nothing, and `buildReadResultReply` is a no-op with nothing retrieved, so the note
+    // cannot be discarded the way a correction on a rebuilt read-reply would be.
+    const unread = enforceNoReadClaim(guarded.reply, Array.from(turnPerSource.values()), message, routeDecision)
+    guarded.reply = unread.reply
+    if (unread.flagged) logNoReadClaim(routeDecision, requestId)
     // ⛔ SECOND OUTPUT GUARD. Detect + record + flag; never rewrite — 簡轉繁 is not one-to-one.
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)

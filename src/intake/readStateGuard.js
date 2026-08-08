@@ -47,6 +47,7 @@ const UNREADABLE_CLAIM = /(讀唔到|讀不到|睇唔到|看不到|攞唔到|拿
 const { ALL_SOURCES } = require('../context/liveClients')
 const { t } = require('../i18n/t')
 const { intentFor } = require('../context/readContext') // THE one intent table — the entity a turn is about
+const { isReadRequest } = require('./laneRouter') // 「did he ask me to look」 — already the one detector for that
 
 // Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
 const VOCABULARY = Object.freeze({
@@ -272,4 +273,60 @@ function enforceReadState (reply, perSource, message) {
   }
 }
 
-module.exports = { enforceReadState, detectFalseReadClaim, buildCorrection, UNREADABLE_CLAIM, SOURCE_ALIASES, LABELS, SOURCE_KEYS, VOCABULARY }
+/**
+ * ── A TURN THAT READ NOTHING MAY NOT LEAVE A CAPABILITY CLAIM STANDING ────────
+ *
+ * > **Owner: 「冇讀過就只准講『我冇去睇』，唔准講『我冇權限』」**
+ *
+ * Everything above this line matches PHRASINGS, and that is precisely how the 2026-08-08 turn
+ * escaped: `UNREADABLE_CLAIM` holds 「沒有權限」 and she wrote 「沒有直接連接到 Aroma System 的
+ * 讀取權限」. Four more variants missed the same way (「我未連接」,「我沒有讀取權限」…). Widening
+ * the list is worth doing and is still a list.
+ *
+ * ⛔ SO THIS FUNCTION NEVER LOOKS AT HER WORDS. Its inputs are the TURN RECORD — was anything
+ * read — and the OWNER'S message — did he ask for a look. Both are facts the server already
+ * holds. A phrasing nobody has thought of is covered, because phrasing is not consulted.
+ *
+ * ── WHY IT IS GATED ON 「he asked for a look」 ────────────────────────────────
+ * Most turns read nothing, correctly. Annotating all of them would be noise, and a control
+ * that fires on correct work gets switched off — which is the other half of HR-47 and the
+ * reason `detectFalseReadClaim` above was narrowed rather than widened. The note is earned
+ * only when he ASKED her to look and the record shows she did not.
+ *
+ * ⚠ WHAT IT CANNOT DO: it cannot stop her saying it, only put the record beside it. And it
+ * cannot tell a capability claim from an honest 「我沒有去看」 — it does not read either — so
+ * on an honest reply the note is redundant. Redundant-and-true is the safe side of that trade.
+ */
+function detectUnreadTurnClaim (perSource, message) {
+  const readAnything = Array.isArray(perSource) && perSource.length > 0
+  if (readAnything) return false // that case belongs to detectFalseReadClaim, above
+
+  const text = typeof message === 'string' ? message : ''
+  if (!text.trim()) return false
+
+  // Did he ask her to look? Either he named a source, or the message is a lookup request.
+  const namedSource = SOURCE_KEYS.some((k) => mentionsSource(text, k))
+  return namedSource || isReadRequest(text)
+}
+
+/**
+ * @param {string} reply
+ * @param {object[]} perSource  the turn's read records — EMPTY is the case this owns
+ * @param {string} message      the Owner's words
+ * @param {{reason?: string}} [route]  the router's own reason, when known
+ * @returns {{ reply: string, flagged: boolean, note: string }}
+ */
+function enforceNoReadClaim (reply, perSource, message, route) {
+  if (!detectUnreadTurnClaim(perSource, message)) {
+    return { reply, flagged: false, note: '' }
+  }
+  // The router already knows why it read nothing. Saying so turns 「nothing was read」 from an
+  // assertion into an explanation, which is the difference between a warning and a diagnosis.
+  const why = (route && route.reason && route.reason !== 'intent')
+    ? t('rsg.nothingReadWhyNoIntent')
+    : ''
+  const note = t('rsg.nothingReadNote', { what: t('rsg.nothingRead'), why })
+  return { reply: String(reply) + note, flagged: true, note }
+}
+
+module.exports = { enforceReadState, enforceNoReadClaim, detectFalseReadClaim, detectUnreadTurnClaim, buildCorrection, UNREADABLE_CLAIM, SOURCE_ALIASES, LABELS, SOURCE_KEYS, VOCABULARY }
