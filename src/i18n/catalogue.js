@@ -1361,6 +1361,12 @@ const CATALOGUE = Object.freeze({
   // appended without reading her words at all, so it must not assert that anything she said
   // was wrong — only what the record shows: nothing was read, and therefore nothing above is
   // grounded in one. 「沒有去看」 and 「沒有權限」 are different claims and only one is provable.
+  // A configuration claim needs a configuration answer. Telling him 「it WAS read」 does not
+  // address 「I am not connected」 — he would still be left thinking a switch is off.
+  'rsg.correctionCapability': {
+    zh: '\n\n〔系統更正 — 依實際讀取紀錄〕連接是正常的，權限也是開著的。{parts}。以這個紀錄為準。',
+    en: '\n\n[SYSTEM CORRECTION — from the actual read record] The connection is working and access is on. {parts}. This record is authoritative.'
+  },
   'rsg.nothingRead': {
     zh: '這一轉沒有讀取任何來源',
     en: 'Nothing was read this turn'

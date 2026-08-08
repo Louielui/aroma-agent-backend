@@ -33,6 +33,36 @@
 // slightly differently is still a false claim.
 const UNREADABLE_CLAIM = /(讀唔到|讀不到|睇唔到|看不到|攞唔到|拿不到|取唔到|無法讀取|無法存取|冇權限|沒有權限|讀取失敗|存取失敗|連唔到|連不上|未能讀取|無法取得|不能讀取|cannot read|can'?t read|unable to read|couldn'?t read|no access|access denied|failed to read)/i
 
+/**
+ * ── A SECOND, DIFFERENT CLASS: A CLAIM ABOUT THE CONFIGURATION ───────────────
+ *
+ * > **Owner: 「capability denials are a different class from read failures… A guard that only
+ * > knows 「我讀唔到」 while she says 「我未連接」 has been narrow since it was written — this is
+ * > the sixth failure and the first that is the guard's fault rather than the model's.」**
+ *
+ * 「我讀不到 X」 is a claim about one attempt. 「我未連接到 X」 is a claim about what she IS
+ * WIRED TO, and it is worse to be wrong about: it tells the Owner a switch is off when it is
+ * on, and he stops asking.
+ *
+ * ⛔ THE GAP IS BOUNDED, AND THAT IS THE WHOLE DESIGN. `UNREADABLE_CLAIM` above carries the
+ * contiguous string 「沒有權限」 and missed 「沒有直接連接到 Aroma System 的讀取權限」 — the same
+ * defeat-by-interposition that made 「訂貨」 miss 「訂什麼貨」 one layer up. So these allow
+ * characters in between, and the class EXCLUDES clause punctuation so a 沒有 in one clause can
+ * never reach a 權限 in the next. The bound is 24, measured from the real sentence (22).
+ */
+const NOT_CLAUSE_END = '[^。！？!?，、；;\\n]'
+const CAPABILITY_DENIAL = new RegExp([
+  // 沒有 / 冇 / 未 / 無 … 權限 | 存取權 | 讀取權
+  '(沒有|冇|未|無|尚未|並未)' + NOT_CLAUSE_END + '{0,24}(權限|存取權|讀取權)',
+  // 沒有 / 未 / 尚未 … 連接 | 連線 | 接上 | 連上
+  '(沒有|冇|未|無|尚未|並未)' + NOT_CLAUSE_END + '{0,24}(連接|連線|接上|連上|接通)',
+  // English, same shape
+  '(no|without)\\s+(direct\\s+)?access',
+  'not\\s+(yet\\s+)?connected',
+  "(do not|don't|cannot|can't|couldn't)\\s+(have|get)\\s+access",
+  'not\\s+connected\\s+to'
+].join('|'), 'i')
+
 // ── THE SOURCE MAPS ARE DERIVED, NOT LISTED ───────────────────────────────────
 // These two tables used to be hardcoded to four sources. A fifth was connected and read
 // live, and because it had no entry here `mentionsSource()` could never match it and
@@ -201,7 +231,12 @@ function detectFalseReadClaim (reply, perSource, message) {
   const text = typeof reply === 'string' ? reply : ''
   const rows = Array.isArray(perSource) ? perSource : []
   if (!text || rows.length === 0) return { violated: false, sources: [], kind: null }
-  if (!UNREADABLE_CLAIM.test(text)) return { violated: false, sources: [], kind: null }
+  // Two classes, checked with one pass each. `kind` carries which one fired, because the
+  // Owner reading the correction should be able to tell 「it WAS read」 from 「the connection
+  // IS there」 — those answer different worries.
+  if (!UNREADABLE_CLAIM.test(text) && !CAPABILITY_DENIAL.test(text)) {
+    return { violated: false, sources: [], kind: null }
+  }
 
   const live = rows.filter((r) => r && r.trust === 'live')
   if (live.length === 0) return { violated: false, sources: [], kind: null } // nothing was read; the claim is true
@@ -209,9 +244,17 @@ function detectFalseReadClaim (reply, perSource, message) {
   // Only clauses that actually carry a failure phrase can attribute one.
   const entity = entityAnchorOf(message)
   const named = new Set()
+  let sawCapability = false
   for (const clause of clausesOf(text)) {
-    const fail = UNREADABLE_CLAIM.exec(clause)
+    // Whichever class fires FIRST in this clause anchors the attribution — the same
+    // 「the operand is what matters」 rule the modifier test already applies.
+    const readFail = UNREADABLE_CLAIM.exec(clause)
+    const capFail = CAPABILITY_DENIAL.exec(clause)
+    const fail = (readFail && capFail)
+      ? (readFail.index <= capFail.index ? readFail : capFail)
+      : (readFail || capFail)
     if (!fail) continue
+    if (fail === capFail) sawCapability = true
     for (const r of live) {
       if (mentionsSource(clause, r.source) && !isModifierNotSubject(clause, r.source, fail.index)) {
         named.add(r.source)
@@ -228,14 +271,14 @@ function detectFalseReadClaim (reply, perSource, message) {
   }
 
   if (named.size === 0) return { violated: false, sources: [], kind: null } // unattributable → silent
-  return { violated: true, sources: [...named], kind: 'named' }
+  return { violated: true, sources: [...named], kind: sawCapability ? 'capability' : 'named' }
 }
 
 /**
  * The deterministic correction. Built from the recorded outcome only — it states counts
  * and states, never content, and never guesses what the answer should have been.
  */
-function buildCorrection (perSource, sources) {
+function buildCorrection (perSource, sources, kind) {
   const rows = (Array.isArray(perSource) ? perSource : []).filter((r) => sources.includes(r.source))
   const parts = rows.map((r) => {
     const label = LABELS[r.source] || r.source
@@ -246,7 +289,11 @@ function buildCorrection (perSource, sources) {
     }
     return t('rsg.readNothing', { label })
   })
-  return t('rsg.correction', { parts: parts.join(t('punct.clauseSep')) })
+  // The class decides the sentence: a configuration claim needs a configuration answer.
+  const key = kind === 'capability' ? 'rsg.correctionCapability' : 'rsg.correction'
+  return key === 'rsg.correctionCapability'
+    ? t('rsg.correctionCapability', { parts: parts.join(t('punct.clauseSep')) })
+    : t('rsg.correction', { parts: parts.join(t('punct.clauseSep')) })
 }
 
 /**
@@ -258,7 +305,7 @@ function buildCorrection (perSource, sources) {
 function enforceReadState (reply, perSource, message) {
   const found = detectFalseReadClaim(reply, perSource, message)
   if (!found.violated) return { reply, corrected: false, sources: [], kind: null }
-  const correction = buildCorrection(perSource, found.sources)
+  const correction = buildCorrection(perSource, found.sources, found.kind)
   return {
     reply: String(reply) + correction,
     // THE CORRECTION ON ITS OWN. The presentation layer rebuilds a read reply from the
@@ -329,4 +376,4 @@ function enforceNoReadClaim (reply, perSource, message, route) {
   return { reply: String(reply) + note, flagged: true, note }
 }
 
-module.exports = { enforceReadState, enforceNoReadClaim, detectFalseReadClaim, detectUnreadTurnClaim, buildCorrection, UNREADABLE_CLAIM, SOURCE_ALIASES, LABELS, SOURCE_KEYS, VOCABULARY }
+module.exports = { enforceReadState, enforceNoReadClaim, detectFalseReadClaim, detectUnreadTurnClaim, buildCorrection, UNREADABLE_CLAIM, CAPABILITY_DENIAL, SOURCE_ALIASES, LABELS, SOURCE_KEYS, VOCABULARY }
