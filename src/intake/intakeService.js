@@ -48,7 +48,7 @@ const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // 
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, withRowRefs, withReadChoices, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -541,8 +541,31 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // reads being governed. With reads governed there should be no rows on a CONVERSATION
     // turn anyway; if a future change ever puts some there, the schema still must not
     // appear. Proven by a test that injects rows onto a conversational route.
-    if (routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) return undefined
-    if (turnItems.size === 0) return undefined
+    // ⛔ FIRST-READ INITIATION. These two conditions used to RETURN UNDEFINED, sending no
+    // schema at all — so on a zero-read turn the model was never offered nextRead, and the
+    // loop could EXTEND a read but never INITIATE one. 「你能看到 aroma system 嗎？」 came back
+    // as 「我無法確認」 with the connector authorised and working.
+    //
+    // They still do their original job: no ANSWER PLAN before evidence exists. They no
+    // longer stop the model ASKING for a read.
+    //
+    // ROUTER vs MODEL — the distinction is the whole fix. The router decides the AUTOMATIC
+    // first read; nextRead is the model REQUESTING one. The router keeps its job and loses
+    // only its power to silence the question.
+    const planApplies = !(routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) && turnItems.size > 0
+    const readAlready = new Set(Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source))
+    const openChoices = authorisedSourcesFor(activeProvider || primaryProvider).filter((sn) => !readAlready.has(sn))
+    if (!planApplies) {
+      // Nothing to plan over yet — offer the DECISION only, never a fabricated plan.
+      // No reads left, or not the chat lane: behave exactly as before this change.
+      if (openChoices.length === 0) return undefined
+      if (!(opts && opts.interactionMode === 'chat')) return undefined
+      return {
+        type: 'json_schema',
+        name: 'distill_with_read_decision',
+        schema: withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, openChoices)
+      }
+    }
     const refs = []
     for (const [source, items] of turnItems) {
       for (const it of (Array.isArray(items) ? items : [])) {
@@ -552,9 +575,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ⛔ THE MODEL IS SHOWN ITS ACTUAL CHOICES (live canary, blocker 2). Authorised for the
     // provider making THIS call, minus anything already read this turn. With nothing left,
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
-    const alreadyRead = new Set(Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source))
-    const choices = authorisedSourcesFor(activeProvider || primaryProvider).filter((sname) => !alreadyRead.has(sname))
-    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), choices)
+    // Reuses openChoices from above rather than recomputing, so the two schemas can never
+    // disagree about what is still readable this turn.
+    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), openChoices)
     return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null

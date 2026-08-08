@@ -1332,6 +1332,30 @@ function parsePlan (text) {
  * With nothing left to read, nextRead becomes null-ONLY — never an empty enum, which is
  * itself an invalid strict schema.
  */
+/**
+ * ⛔ THE ZERO-READ DECISION SCHEMA. The loop could EXTEND a read and never INITIATE one.
+ *
+ * answerPlanFormat() returns no schema at all when nothing was retrieved, so on a turn that
+ * read nothing the model was never offered nextRead — and 「你能看到 aroma system 嗎？」 was
+ * answered with 「我無法確認」 while the connector sat there, authorised and working.
+ *
+ * This is the SAME envelope minus answerPlan. An Answer Plan is evidence-shaped: forcing one
+ * before any evidence exists would ask the model to invent sections and sourceIds it cannot
+ * have. So the first call gets the ordinary reply shape plus one decision — read, or do not.
+ *
+ * Strict-mode rules are identical: every property in required, optionality as a NULL UNION.
+ */
+const DISTILL_WITH_READ_DECISION_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: ['intent', 'mode', 'reply', 'nextRead'],
+  properties: {
+    intent: DISTILL_WITH_PLAN_SCHEMA.properties.intent,
+    mode: DISTILL_WITH_PLAN_SCHEMA.properties.mode,
+    reply: DISTILL_WITH_PLAN_SCHEMA.properties.reply,
+    nextRead: DISTILL_WITH_PLAN_SCHEMA.properties.nextRead
+  }
+})
 function withReadChoices (schema, available) {
   const out = JSON.parse(JSON.stringify(schema))
   const nr = out.properties && out.properties.nextRead
@@ -1349,6 +1373,7 @@ module.exports = {
   DISTILL_WITH_PLAN_SCHEMA,
   withRowRefs,
   withReadChoices,
+  DISTILL_WITH_READ_DECISION_SCHEMA,
   STATUS_LABELS,
   ENTITY_LABELS,
   SOURCE_LABELS,
