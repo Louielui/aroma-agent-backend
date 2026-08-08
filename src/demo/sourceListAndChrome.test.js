@@ -18,6 +18,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 
 const { ALL_SOURCES } = require('../context/liveClients')
@@ -113,8 +114,12 @@ test('the retired names that remain are comments only, and are counted', () => {
 })
 
 test('the tab and installed-app titles are the current name', () => {
-  assert.ok(DEMO_HTML.includes('<title>香香</title>'))
-  assert.ok(DEMO_HTML.includes('name="apple-mobile-web-app-title" content="香香"'))
+  // CONVERTED: the tab title is set by applyShellText so it follows the language; the markup
+  // carries only a neutral fallback for the moment before the script runs.
+  const { CATALOGUE } = require('../i18n/catalogue')
+  assert.ok(DEMO_HTML.includes("document.title = t('shell.title')"), 'the tab title follows the language')
+  assert.strictEqual(CATALOGUE['shell.title'].zh, '香香', 'and the Chinese name is unchanged')
+  assert.ok(DEMO_HTML.includes('apple-mobile-web-app-title'), 'the installed-app title is still declared')
 })
 
 /* ── the sidebar ─────────────────────────────────────────────────────────── */

@@ -1976,6 +1976,80 @@
   newConversation(false)
   // The sidebar reads its history from the server. Done after the page is already usable,
   // so a slow or failed fetch delays nothing and breaks nothing.
+  /**
+   * ⛔ THE PAGE SHELL CARRIES NO WORDS OF ITS OWN, AND THIS IS WHY.
+   *
+   * index.html used to hold its labels as literal text. Static markup cannot call t(), and
+   * baking the words in at assembly time would freeze them: the document is built ONCE at
+   * module load, so a language change would have needed a RESTART — not the reload the
+   * setting promises. So the markup ships empty and every label is set here, through the same
+   * resolver as everything else, and re-set whenever the locale changes.
+   *
+   * ⛔ textContent AND setAttribute ONLY. No markup is assembled from strings anywhere in this
+   * file, and a bilingual shell is not a reason to start.
+   */
+  var SHELL_TEXT = [
+    ['brand-name', 'text', function () { return t('shell.title') }],
+    ['home-label', 'text', function () { return t('nav.home') }],
+    ['new-chat', 'text', function () { return t('shell.newChat') }],
+    ['settings-label', 'text', function () { return t('shell.settings') }],
+    ['conn-text', 'text', function () { return t('shell.local') }],
+    ['composer-note', 'text', function () { return t('shell.composerNote') }],
+    ['settings-title', 'text', function () { return t('shell.settings') }],
+    ['set-style-h', 'text', function () { return t('set.styleHeading') }],
+    ['set-style-hint', 'text', function () { return t('set.styleHint') }],
+    ['set-prefs-h', 'text', function () { return t('set.prefsHeading') }],
+    ['set-prefs-hint', 'text', function () { return t('set.prefsHint') }],
+    ['set-mem-h', 'text', function () { return t('set.memoryHeading') }],
+    ['set-mem-hint', 'text', function () { return t('set.memoryHint') }],
+    ['set-foot', 'text', function () { return t('set.foot') }],
+    ['save-settings', 'text', function () { return t('set.save') }],
+    ['set-style', 'placeholder', function () { return t('set.stylePlaceholder') }],
+    ['set-prefs', 'placeholder', function () { return t('set.prefsPlaceholder') }],
+    ['msg', 'placeholder', function () { return t('shell.composerPlaceholder') }],
+    ['msg', 'aria', function () { return t('shell.messageLabel') }],
+    ['sidebar', 'aria', function () { return t('shell.convListLabel') }],
+    ['collapse', 'both', function () { return t('shell.collapse') }],
+    ['expand', 'both', function () { return t('shell.expand') }],
+    ['places', 'aria', function () { return t('shell.placesLabel') }],
+    ['convs', 'aria', function () { return t('shell.historyLabel') }],
+    ['plus', 'both', function () { return t('shell.more') }],
+    ['plus-menu', 'aria', function () { return t('shell.shortcuts') }],
+    ['picker-menu', 'aria', function () { return t('shell.pickWho') }],
+    ['send', 'aria', function () { return t('shell.send') }],
+    ['close-settings', 'both', function () { return t('shell.close') }]
+  ]
+
+  function applyShellText () {
+    document.title = t('shell.title')
+    for (var i = 0; i < SHELL_TEXT.length; i++) {
+      var id = SHELL_TEXT[i][0]
+      var how = SHELL_TEXT[i][1]
+      /**
+       * ⛔ THUNKS — AND THE FIRST VERSION OF THIS TABLE HELD KEY STRINGS AND CALLED
+       * `t(SHELL_TEXT[i][2])`.
+       *
+       * I wrote a paragraph right here arguing that was fine: the table holds literals written
+       * in this file, nothing from outside can reach it, so no data can enter the translator.
+       * The argument is even correct. **The scan failed the build anyway, and it was right to.**
+       *
+       * Rule ① is 「literal keys at call sites」, not 「keys someone can argue are safe」 — because
+       * the arguing IS the failure mode. Fourth time this has happened in this work, and the
+       * fourth time the fence held where the reasoning did not (HR-48).
+       */
+      var text = SHELL_TEXT[i][2]()
+      var n = document.getElementById(id)
+      if (!n) continue
+      if (how === 'text') n.textContent = text
+      else if (how === 'placeholder') n.setAttribute('placeholder', text)
+      else if (how === 'aria') n.setAttribute('aria-label', text)
+      else { n.setAttribute('aria-label', text); n.setAttribute('title', text) }
+    }
+    // The picker shows the provider it is on, and provider names are catalogue entries too.
+    if (pickerLabel) pickerLabel.textContent = currentProvider().name
+  }
+  applyShellText()
+
   bootHistory()
 
   /**
@@ -2002,7 +2076,12 @@
       if (!j || !j.entries) return
       for (var i = 0; i < j.entries.length; i++) {
         var e = j.entries[i]
-        if (e.id === 'language' && e.value && e.value !== INITIAL_LOCALE) setLocale(e.value)
+        if (e.id === 'language' && e.value && e.value !== INITIAL_LOCALE) {
+          setLocale(e.value)
+          // ⛔ The shell was already painted in the baked language; re-paint it. Only the
+          // static labels — nothing rendered from server data is touched mid-flight.
+          applyShellText()
+        }
       }
     })
     .catch(function () { })})()

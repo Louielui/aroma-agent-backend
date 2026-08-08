@@ -70,7 +70,6 @@ const FILE_CLASS = Object.freeze({
   'agent/workOrderProducer.js': CLASS.INTERFACE,      //  16 — refusal messages
   'home/schedulerWitness.js': CLASS.INTERFACE,        //  16
   'intake/utilityAnswer.js': CLASS.INTERFACE,         //  16
-  'demo/assets/index.html': CLASS.INTERFACE,          //  15
   'home/homeRoutes.js': CLASS.INTERFACE,              //  15
   'agent/investigationReport.js': CLASS.INTERFACE,    //  14
   'governance/settingsRegistry.js': CLASS.INTERFACE,  //  14 — the `say` sentences
@@ -94,7 +93,6 @@ const FILE_CLASS = Object.freeze({
   'agent/enquiryRunner.js': CLASS.INTERFACE,          //   2
   'agent/evidenceGate.js': CLASS.INTERFACE,           //   2
   'browser/groupBudget.js': CLASS.INTERFACE,          //   2
-  'demo/assets/settings.html': CLASS.INTERFACE,       //   2
   'errands/recallRunner.js': CLASS.INTERFACE,         //   2
   'governance/sectionEnvelope.js': CLASS.INTERFACE,   //   2
   'home/sectionAttachment.js': CLASS.INTERFACE,       //   2
@@ -106,6 +104,17 @@ const FILE_CLASS = Object.freeze({
   'routes/ownerAuthRouter.js': CLASS.INTERFACE,       //   1
   'routes/workRequestRoute.js': CLASS.INTERFACE,      //   1
   'i18n/catalogue.js': CLASS.INTERFACE,               //   9 — already extracted; it IS the words
+
+  /**
+   * ⛔ DELIBERATELY ABSENT, so nobody reads their absence as an oversight:
+   *   · demo/assets/index.html
+   *   · demo/assets/settings.html
+   *
+   * Both were INTERFACE and are now EMPTY — their markup ships with no words at all and every
+   * label is set from the catalogue by applyShellText(). They carry nothing and translate
+   * nothing, so an entry here would be coverage they no longer give. If Chinese is ever put
+   * back into either, the COVERAGE test fails until someone classifies it again.
+   */
 
   // ── MODEL — she is told this. Translating it changes behaviour. ─────────────
   'persona/conversationContract.js': CLASS.MODEL,     //  46

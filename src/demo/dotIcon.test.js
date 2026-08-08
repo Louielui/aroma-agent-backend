@@ -9,6 +9,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const fs = require('node:fs')
 const path = require('node:path')
@@ -145,10 +146,27 @@ test('the favicon is the padded square, shared with the installed app icon', () 
   assert.ok(uri.includes('xmlns='), 'a data: URI is standalone XML, so xmlns is required there')
 })
 
-test('*** icon only — the name 香香 and every string are unchanged ***', () => {
-  assert.ok(DEMO_HTML.includes('<title>香香</title>'))
-  assert.ok(DEMO_HTML.includes('<span class="brand">香香</span>'))
-  assert.ok(DEMO_HTML.includes('<h1 id="conv-title">香香</h1>'))
-  assert.ok(DEMO_HTML.includes('跟香香說…改檔案要你批准才會執行'))
-  assert.ok(DEMO_HTML.includes('香香（Claude）'))
+test('*** icon only — the name and every string are unchanged ***', () => {
+  /**
+   * ⛔ CONVERTED, AND THIS TEST WAS ONE EDIT AWAY FROM BECOMING AN HR-49.
+   *
+   * It pinned five literal strings in the served page. The shell now ships EMPTY — every
+   * label is set by `applyShellText()` — so four of those five `includes` would have been
+   * checking nothing. They failed loudly here only because they were `assert.ok` on a
+   * missing string; a `doesNotMatch` in the same position would have gone green forever.
+   *
+   * What it actually guards is 「the icon change touched only the icon」: the shell still
+   * names each of these places, and the words still exist, in both languages.
+   */
+  const { CATALOGUE } = require('../i18n/catalogue')
+  for (const id of ['brand-name', 'conv-title', 'msg']) {
+    assert.ok(DEMO_HTML.includes('id="' + id + '"'), 'the shell still has ' + id)
+  }
+  for (const key of ['shell.title', 'shell.composerPlaceholder', 'provider.claude']) {
+    assert.ok(DEMO_HTML.includes("t('" + key + "')"), key + ' must still reach the page')
+    for (const loc of ['zh', 'en']) {
+      assert.ok(CATALOGUE[key][loc] && CATALOGUE[key][loc].length > 0, key + '/' + loc + ' is empty')
+    }
+  }
+  assert.strictEqual(CATALOGUE['shell.title'].zh, '香香', 'and the name itself is unchanged')
 })

@@ -35,6 +35,13 @@ function inject (html, token, value) {
 let SETTINGS_HTML = readAsset('settings.html')
 SETTINGS_HTML = inject(SETTINGS_HTML, '__ICON__', iconDataUri())
 SETTINGS_HTML = inject(SETTINGS_HTML, '__CSS__', readAsset('settings.css'))
+/**
+ * ⛔ THE SAME RESOLVER AND THE SAME CATALOGUE AS THE CHAT PAGE — one function, two documents.
+ * Writing a second t() here would be the second implementation browserResolver.js exists to
+ * prevent, and this page would be where the two quietly disagreed.
+ * It precedes the app script so settings.js closes over createResolver and CATALOGUE.
+ */
+SETTINGS_HTML = inject(SETTINGS_HTML, '__I18N__', require('../i18n/browserResolver').browserI18nSource())
 SETTINGS_HTML = inject(SETTINGS_HTML, '__JS__', readAsset('settings.js'))
 
 module.exports = { SETTINGS_HTML }

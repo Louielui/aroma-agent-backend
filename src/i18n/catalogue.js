@@ -704,6 +704,94 @@ const CATALOGUE = Object.freeze({
   'punct.sourceSep': { zh: '／', en: ' / ' },
   'punct.bulletSep': { zh: ' · ', en: ' · ' },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE PAGE SHELL — index.html's static text, and the settings page.
+  //
+  // ⛔ index.html NOW CARRIES NO WORDS AT ALL. Static markup cannot call t(), and baking the
+  // text at assembly time would freeze it: the document is built ONCE at module load, so a
+  // language change would need a RESTART rather than the reload the setting promises. So the
+  // markup ships empty-labelled and app.js fills every one of these at boot, through the same
+  // resolver as everything else — see applyShellText().
+  // ══════════════════════════════════════════════════════════════════════════
+  'shell.title': { zh: '香香', en: 'Xiangxiang' },
+  'shell.settingsTitle': { zh: '香香 設定', en: 'Xiangxiang — Settings' },
+  'shell.convListLabel': { zh: '對話列表', en: 'Conversations' },
+  'shell.collapse': { zh: '收合側欄', en: 'Collapse sidebar' },
+  'shell.expand': { zh: '展開側欄', en: 'Expand sidebar' },
+  'shell.placesLabel': { zh: '地方', en: 'Places' },
+  'shell.newChat': { zh: '＋ 開新對話', en: '+ New conversation' },
+  'shell.historyLabel': { zh: '歷史對話', en: 'Conversation history' },
+  'shell.settings': { zh: '設定', en: 'Settings' },
+  'shell.local': { zh: '本機 · 127.0.0.1', en: 'Local · 127.0.0.1' },
+  /**
+   * ⛔ THE COMPOSER PLACEHOLDER CARRIES A PROMISE, NOT A HINT. 「改檔案要你批准才會執行」 is the
+   * standing guarantee that nothing runs unapproved, and it is the first thing he reads on an
+   * empty screen. It must survive translation whole.
+   */
+  'shell.composerPlaceholder': {
+    zh: '跟香香說…改檔案要你批准才會執行',
+    en: 'Talk to Xiangxiang… file changes run only after you approve'
+  },
+  'shell.messageLabel': { zh: '訊息', en: 'Message' },
+  'shell.more': { zh: '更多', en: 'More' },
+  'shell.shortcuts': { zh: '捷徑', en: 'Shortcuts' },
+  'shell.pickWho': { zh: '揀邊個香香', en: 'Choose which Xiangxiang' },
+  'shell.send': { zh: '送出', en: 'Send' },
+  'shell.composerNote': {
+    zh: '本機示範 · 任何動作都要你批准',
+    en: 'Local demo · every action needs your approval'
+  },
+  'shell.close': { zh: '關閉', en: 'Close' },
+
+  // ── the settings sheet ──
+  'set.styleHeading': { zh: '說話風格', en: 'How she speaks' },
+  'set.styleHint': {
+    zh: '你想她怎樣講嘢。例如：「講嘢簡短一點，一段一件事，不要每次都反問我」',
+    en: 'How you want her to talk. For example: "keep it short, one thing per paragraph, stop asking me a question back every time".'
+  },
+  'set.stylePlaceholder': { zh: '（留空即沿用預設）', en: '(leave empty to keep the default)' },
+  'set.prefsHeading': { zh: '要她記住的事', en: 'Things for her to remember' },
+  'set.prefsHint': {
+    zh: '你寫下要她長期記住的事。你親手寫的，優先於對話記憶。',
+    en: 'What you want her to remember long-term. What you write by hand outranks conversation memory.'
+  },
+  'set.prefsPlaceholder': { zh: '每行一件事', en: 'One thing per line' },
+  'set.memoryHeading': { zh: '記憶與讀取', en: 'Memory and reading' },
+  /** ⛔ 「唔會扮知道」 is the honesty guarantee, not decoration. Both languages keep it. */
+  'set.memoryHint': {
+    zh: '關了就是關了 —— 她會照直講讀不到，不會扮知道。',
+    en: 'Off means off — she will say plainly that she cannot read it, and will not pretend to know.'
+  },
+  /**
+   * ⛔ THE PARAGRAPH THAT SAYS WHAT THIS SCREEN CANNOT DO. Identity is frozen; the honesty
+   * rules, the red-line policy and the read-state guard are CODE, not text — so nothing typed
+   * on this screen can change them. An English rendering that softened this into 「settings do
+   * not affect safety」 would lose the point, which is that they are a different KIND of thing.
+   */
+  'set.foot': {
+    zh: '這裡只改風格、記憶同開關。身分是凍結的，不在這裡改。誠實守則、紅線政策、讀取狀態守衛是程式碼，不是文字 —— 寫在這裡的東西改變不了它們。',
+    en: 'This screen changes style, memory and switches only. Identity is frozen and is not changed here. The honesty rules, the red-line policy and the read-state guard are CODE, not text — nothing written here can change them.'
+  },
+  'set.save': { zh: '儲存', en: 'Save' },
+  'set.savedNextTurn': { zh: '已儲存。下次對話即時生效。', en: 'Saved. It takes effect on your next message.' },
+  'set.subtitle': {
+    zh: '改完儲存，下次對話即時生效。不需要重啟。',
+    en: 'Save your changes and they take effect on your next message. No restart needed.'
+  },
+  /**
+   * ⛔ THE STANDALONE SETTINGS PAGE names PERSONA_IDENTITY explicitly where the in-chat sheet
+   * does not. Kept as its own entry rather than folded into set.foot: two surfaces saying
+   * ALMOST the same thing is exactly how one of them silently loses half its meaning.
+   */
+  'set.footPage': {
+    zh: '這頁只改風格、記憶同開關。身分（PERSONA_IDENTITY）是凍結的，不在這裡改。誠實守則、紅線政策、讀取狀態守衛是程式碼，不是文字 —— 寫在這裡的東西改變不了它們。',
+    en: 'This page changes style, memory and switches only. Identity (PERSONA_IDENTITY) is frozen and is not changed here. The honesty rules, the red-line policy and the read-state guard are CODE, not text — nothing written here can change them.'
+  },
+  'set.readDrive': { zh: '讀取 Drive', en: 'Read Drive' },
+  'set.readGmail': { zh: '讀取 Gmail', en: 'Read Gmail' },
+  'set.readCalendar': { zh: '讀取 Calendar', en: 'Read Calendar' },
+  'set.readGithub': { zh: '讀取 GitHub', en: 'Read GitHub' },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

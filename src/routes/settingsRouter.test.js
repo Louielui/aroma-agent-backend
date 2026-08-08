@@ -76,8 +76,21 @@ test('*** the page states that the guards are code, not wording ***', async () =
   const root = tmpRoot()
   try {
     const res = await call(serve(root), 'GET', '/settings')
-    assert.match(String(res.body), /係程式碼，唔係文字/, 'the Owner is told what settings cannot do')
+    /**
+     * ⛔ STILL ASSERTED ON THE SERVED PAGE, because that is what he actually receives — the
+     * catalogue is inlined into the document, so the sentence really is in the response. The
+     * wording moved from 口語 to 書面語 in the same pass that extracted it.
+     *
+     * And now checked in BOTH languages: this is the paragraph saying the honesty rules and
+     * the read-state guard are CODE and cannot be changed by anything typed on this screen.
+     * An English rendering that softened that into 「settings do not affect safety」 would lose
+     * the point, and scanning the page could only ever have caught the Chinese.
+     */
+    const { CATALOGUE } = require('../i18n/catalogue')
+    assert.match(String(res.body), /是程式碼，不是文字/, 'the Owner is told what settings cannot do')
     assert.match(String(res.body), /PERSONA_IDENTITY/, 'and that identity is frozen')
+    assert.match(CATALOGUE['set.footPage'].en, /CODE, not text/, 'the English says it too')
+    assert.match(CATALOGUE['set.footPage'].en, /PERSONA_IDENTITY/, 'and names the frozen identity')
   } finally { rm(root) }
 })
 

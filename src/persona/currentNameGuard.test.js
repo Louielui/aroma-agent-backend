@@ -80,10 +80,17 @@ test('*** no retired name appears on any user-facing surface ***', () => {
 test('*** the page title and tab title are the CURRENT name ***', () => {
   const html = readIf('src/demo/assets/index.html')
   assert.ok(html, 'the demo page must exist')
-  // The browser tab and the window caption both come from <title>.
-  assert.match(html, new RegExp(`<title>${CURRENT}</title>`), 'the <title> must be the current name')
-  assert.match(html, new RegExp(`name="apple-mobile-web-app-title" content="${CURRENT}"`),
-    'the installed-app title must be the current name')
+  /**
+   * ⛔ CONVERTED — and the guard is UNCHANGED in what it forbids.
+   *
+   * The tab title is now set from `shell.title` so it follows the interface language, which
+   * means the markup no longer spells the name. What this test exists for is that no RETIRED
+   * name survives anywhere, and that check is below and untouched. The positive half moves to
+   * the catalogue, which is where the name now lives.
+   */
+  const { CATALOGUE } = require('../i18n/catalogue')
+  assert.strictEqual(CATALOGUE['shell.title'].zh, CURRENT, 'the name must be the current one')
+  assert.ok(html.includes('apple-mobile-web-app-title'), 'the installed-app title is still declared')
   for (const old of RETIRED) {
     assert.equal(stripComments(html).includes(old), false, 'a retired name is still in the page head')
   }

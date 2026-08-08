@@ -257,8 +257,12 @@ test('send is disabled until there is real input, and while a reply is in flight
 })
 
 test('the placeholder is short enough not to be clipped', () => {
-  const m = DEMO_HTML.match(/id="msg"[^>]*placeholder="([^"]*)"/)
-  assert.ok(m, 'the textarea has a placeholder')
+  // CONVERTED: applyShellText sets the placeholder, so the length bound belongs on the
+  // sentence — and on BOTH, because only the Chinese was ever measured.
+  assert.ok(DEMO_HTML.includes("t('shell.composerPlaceholder')"), 'the textarea gets a placeholder')
+  const m = [null, CATALOGUE['shell.composerPlaceholder'].zh]
+  assert.ok(CATALOGUE['shell.composerPlaceholder'].en.length <= 60,
+    'the English must not be clipped either: ' + CATALOGUE['shell.composerPlaceholder'].en)
   // CAP RAISED 12 -> 20, and not quietly. Owner decision, 2026-08-04: the placeholder now
   // carries the approval affordance retired from the opening bubble, because it is the one
   // place he looks before typing and it costs no screen. 16 chars at the composer width is

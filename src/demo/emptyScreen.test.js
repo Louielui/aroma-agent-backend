@@ -133,10 +133,22 @@ test('*** the greeting is large and quiet, and centred ***', () => {
 /* ═══ 4. THE AFFORDANCE, BOTH HALVES ═══════════════════════════════════════ */
 
 test('*** the approval half is in the composer placeholder ***', () => {
-  const m = /<textarea id="msg"[^>]*placeholder="([^"]+)"/.exec(INDEX)
-  assert.ok(m, 'the composer still has a placeholder')
-  const p = m[1]
+  /**
+   * ⛔ CONVERTED. The placeholder is no longer IN the markup — index.html ships empty and
+   * app.js sets it, so a regex over INDEX would have found nothing and `assert.ok(m)` would
+   * have failed loudly. That is the good case; the silent one is what HR-49 is about.
+   *
+   * The requirement is about the SENTENCE, so it is checked on the sentence, in both
+   * languages: the placeholder must state that approval gates a file change, and must stay
+   * short enough not to wrap.
+   */
+  assert.ok(INDEX.includes('id="msg"'), 'the composer still has that field')
+  assert.ok(INDEX.includes("['msg', 'placeholder', function () { return t('shell.composerPlaceholder') }]") ||
+            /shell\.composerPlaceholder/.test(fs.readFileSync(require('path').join(__dirname, 'assets', 'app.js'), 'utf8')),
+  'and app.js fills it')
+  const p = CATALOGUE['shell.composerPlaceholder'].zh
   assert.ok(/批准/.test(p), 'it says approval gates it: ' + p)
+  assert.match(CATALOGUE['shell.composerPlaceholder'].en, /approve/i, 'and so does the English')
   assert.ok(p.length <= 24, 'short enough not to wrap: ' + p.length + ' chars — ' + p)
   assert.equal(/講嘢|冇|嘅/.test(p), false, 'written Traditional Chinese, per the language policy: ' + p)
 })
@@ -220,25 +232,40 @@ test('the header returns with the first message — it is the same class and not
 /* ═══ 8. THE FOOTER NOTE ═══════════════════════════════════════════════════ */
 
 test('*** the footer keeps the LOCAL-DEMO fact, which nothing else states ***', () => {
-  const m = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)
-  assert.ok(m, 'the note still exists')
-  const note = m[1]
+  // CONVERTED: applyShellText sets the note now, so the markup no longer holds it.
+  assert.ok(INDEX.includes('id="composer-note"'), 'the note still has its place on the page')
+  const note = CATALOGUE['shell.composerNote'].zh
   assert.ok(/本機示範/.test(note), 'the one thing the placeholder does not say: ' + note)
-  assert.equal(/唔會|冇|嘢|咩/.test(note), false, 'written Traditional Chinese now: ' + note)
+  assert.equal(/唔會|冇|嘢|咩/.test(note), false, 'written Traditional Chinese: ' + note)
+  assert.match(CATALOGUE['shell.composerNote'].en, /[Ll]ocal demo/, 'and the English says it too')
 })
 
 test('*** and it keeps the BROADER approval claim — the placeholder\'s is narrower ***', () => {
   // NOT the same statement, which is why this was not deleted. The placeholder promises
   // approval for FILE CHANGES; this promises it for ANY action. Dropping it to tidy the
   // screen would have narrowed a governance claim without saying so.
-  const note = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)[1]
-  const placeholder = /<textarea id="msg"[^>]*placeholder="([^"]+)"/.exec(INDEX)[1]
-  assert.ok(/改檔案/.test(placeholder), 'the placeholder is scoped to file changes: ' + placeholder)
-  assert.ok(/任何動作|所有動作/.test(note), 'the note is scoped to every action: ' + note)
-  assert.ok(/批准/.test(note))
+  /**
+   * ⛔ CONVERTED, AND CHECKED IN BOTH LANGUAGES — which is this test's whole point, not a
+   * bonus. The two sentences make DIFFERENT promises: the placeholder covers FILE CHANGES,
+   * the note covers ANY action. An English rendering that collapsed them into one scope would
+   * narrow a governance claim silently, and scanning the markup could only ever have compared
+   * the Chinese.
+   */
+  for (const loc of ['zh', 'en']) {
+    const note = CATALOGUE['shell.composerNote'][loc]
+    const placeholder = CATALOGUE['shell.composerPlaceholder'][loc]
+    assert.match(placeholder, loc === 'zh' ? /改檔案/ : /file changes/i,
+      loc + ': the placeholder is scoped to file changes — ' + placeholder)
+    assert.match(note, loc === 'zh' ? /任何動作|所有動作/ : /every action/i,
+      loc + ': the note is scoped to every action — ' + note)
+    assert.match(note, loc === 'zh' ? /批准/ : /approval/i, loc + ': and it names approval')
+  }
 })
 
 test('the note is short enough to read as one line', () => {
-  const note = /<p class="composer-note">([^<]+)<\/p>/.exec(INDEX)[1]
+  // The Chinese bound is the tight one; English is wider per character but not unbounded.
+  const note = CATALOGUE['shell.composerNote'].zh
   assert.ok(note.length <= 22, note.length + ' chars — ' + note)
+  assert.ok(CATALOGUE['shell.composerNote'].en.length <= 52,
+    'the English must fit on one line too: ' + CATALOGUE['shell.composerNote'].en)
 })

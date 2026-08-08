@@ -3,47 +3,47 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>香香</title>
+<title>Xiangxiang</title>
 <link rel="icon" type="image/svg+xml" href="/*FAVICON_URI*/">
 <link rel="manifest" href="/manifest.webmanifest">
 <meta name="theme-color" content="#faf7f2" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#1c1b19" media="(prefers-color-scheme: dark)">
-<meta name="apple-mobile-web-app-title" content="香香">
+<meta name="apple-mobile-web-app-title" content="Xiangxiang">
 <style>/*INLINE_CSS*/</style>
 </head>
 <body>
   <div id="app">
-    <aside id="sidebar" aria-label="對話列表">
+    <aside id="sidebar">
       <div class="side-top">
-        <button id="collapse" class="icon-btn" type="button" aria-label="收合側欄" title="收合側欄">☰</button>
-        <span class="brand">香香</span>
+        <button id="collapse" class="icon-btn" type="button">☰</button>
+        <span class="brand" id="brand-name"></span>
       </div>
       <!-- ⛔ DESTINATIONS, ABOVE AND SEPARATE FROM THE CONVERSATION LIST.
            Sitting between 開新對話 and the list, 首頁 read as another conversation — which is
            what it is not. It is a place, like Claude's Home. 營運 / 財務 / 行政 stay in
            PRODUCT-IA and OFF this nav until each has something conversation does badly,
            asserted by src/demo/sidebar.test.js. -->
-      <nav id="places" class="places" aria-label="地方">
+      <nav id="places" class="places">
         <button id="open-home" class="place-btn" type="button">
-          <span class="side-item-icon" aria-hidden="true">◱</span><span>首頁</span>
+          <span class="side-item-icon" aria-hidden="true">◱</span><span id="home-label"></span>
         </button>
       </nav>
-      <button id="new-chat" class="new-chat" type="button">＋ 開新對話</button>
-      <nav id="convs" class="convs" aria-label="歷史對話"></nav>
+      <button id="new-chat" class="new-chat" type="button"></button>
+      <nav id="convs" class="convs"></nav>
       <button id="open-settings" class="side-item" type="button" aria-haspopup="dialog" aria-expanded="false">
-        <span class="side-item-icon" aria-hidden="true">⚙</span><span>設定</span>
+        <span class="side-item-icon" aria-hidden="true">⚙</span><span id="settings-label"></span>
       </button>
       <div class="side-foot">
         <span class="dot" id="conn-dot" aria-hidden="true"></span>
-        <span id="conn-text">本機 · 127.0.0.1</span>
+        <span id="conn-text"></span>
       </div>
     </aside>
 
     <main id="main">
       <header id="topbar">
-        <button id="expand" class="icon-btn hidden" type="button" aria-label="展開側欄" title="展開側欄">☰</button>
+        <button id="expand" class="icon-btn hidden" type="button">☰</button>
         <span class="brand-mark" aria-hidden="true">/*INLINE_DOT*/</span>
-        <h1 id="conv-title">香香</h1>
+        <h1 id="conv-title"></h1>
       </header>
 
       <div id="log" role="log" aria-live="polite" aria-relevant="additions"></div>
@@ -54,25 +54,25 @@
                anything is typed. Filled from the server's own preview, never composed here. -->
           <div id="attach-preview" class="attach-preview hidden" aria-live="polite"></div>
           <div id="composer-box">
-            <textarea id="msg" rows="1" placeholder="跟香香說…改檔案要你批准才會執行" aria-label="訊息"></textarea>
+            <textarea id="msg" rows="1"></textarea>
             <div class="composer-bar">
               <div id="plus-wrap">
-                <button id="plus" type="button" aria-haspopup="menu" aria-expanded="false" aria-label="更多" title="更多">＋</button>
-                <div id="plus-menu" class="hidden" role="menu" aria-label="捷徑"></div>
+                <button id="plus" type="button" aria-haspopup="menu" aria-expanded="false">＋</button>
+                <div id="plus-menu" class="hidden" role="menu"></div>
               </div>
               <span id="lane-hint" class="lane-hint"></span>
               <div class="bar-right">
                 <div id="picker-wrap">
                   <button id="picker" type="button" aria-haspopup="listbox" aria-expanded="false">
-                    <span id="picker-label">香香（Claude）</span><span class="caret">▾</span>
+                    <span id="picker-label"></span><span class="caret">▾</span>
                   </button>
-                  <div id="picker-menu" class="hidden" role="listbox" aria-label="揀邊個香香"></div>
+                  <div id="picker-menu" class="hidden" role="listbox"></div>
                 </div>
-                <button id="send" type="button" aria-label="送出">↑</button>
+                <button id="send" type="button">↑</button>
               </div>
             </div>
           </div>
-          <p class="composer-note">本機示範 · 任何動作都要你批准</p>
+          <p class="composer-note" id="composer-note"></p>
         </div>
       </div>
     </main>
@@ -86,37 +86,36 @@
     <div class="overlay-backdrop" id="settings-backdrop"></div>
     <div class="sheet" role="document">
       <div class="sheet-head">
-        <h2 id="settings-title">設定</h2>
-        <button id="close-settings" class="icon-btn" type="button" aria-label="關閉" title="關閉">✕</button>
+        <h2 id="settings-title"></h2>
+        <button id="close-settings" class="icon-btn" type="button">✕</button>
       </div>
 
       <div class="sheet-body">
         <section class="set-sec">
-          <h3>說話風格</h3>
-          <p class="set-hint">你想她點樣講嘢。例如：「講嘢簡短啲，一段一件事，唔好每次都反問我」</p>
-          <textarea id="set-style" rows="4" placeholder="（留空即沿用預設）"></textarea>
+          <h3 id="set-style-h"></h3>
+          <p class="set-hint" id="set-style-hint"></p>
+          <textarea id="set-style" rows="4"></textarea>
           <div class="set-count"><span id="set-style-n">0</span> / <span id="set-style-cap">—</span></div>
         </section>
 
         <section class="set-sec">
-          <h3>要她記住的事</h3>
-          <p class="set-hint">你寫低要佢長期記住嘅嘢。你親手寫嘅，優先於對話記憶。</p>
-          <textarea id="set-prefs" rows="6" placeholder="每行一件事"></textarea>
+          <h3 id="set-prefs-h"></h3>
+          <p class="set-hint" id="set-prefs-hint"></p>
+          <textarea id="set-prefs" rows="6"></textarea>
           <div class="set-count"><span id="set-prefs-n">0</span> / <span id="set-prefs-cap">—</span></div>
         </section>
 
         <section class="set-sec">
-          <h3>記憶與讀取</h3>
-          <p class="set-hint">關咗就係關咗——佢會照直講讀唔到，唔會扮知道。</p>
+          <h3 id="set-mem-h"></h3>
+          <p class="set-hint" id="set-mem-hint"></p>
           <div id="set-flags"></div>
         </section>
 
-        <p class="set-foot">呢度只改風格、記憶同開關。身分係凍結嘅，唔喺呢度改。<br>
-        誠實守則、紅線政策、讀取狀態守衛係程式碼，唔係文字——寫喺呢度嘅嘢改變唔到佢哋。</p>
+        <p class="set-foot" id="set-foot"></p>
       </div>
 
       <div class="sheet-foot">
-        <button id="save-settings" class="set-save" type="button">儲存</button>
+        <button id="save-settings" class="set-save" type="button"></button>
         <span class="set-msg" id="set-msg"></span>
       </div>
     </div>
