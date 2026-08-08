@@ -129,7 +129,7 @@ test('*** the Aroma System rewrite table is WITHDRAWN ***', () => {
 test('*** "Aroma System" survives verbatim through the render path ***', () => {
   // NOT model behaviour — this is code that used to rewrite it, and now must not.
   const { validatePlan } = require('../intake/answerPlan')
-  const evidenceSets = [{ source: 'aroma_system', trust: 'live', totalCount: 199, shownCount: 1, completeness: 'sample', scope: {}, metrics: {} }]
+  const evidenceSets = [{ source: 'aroma_system', trust: 'live', matchingTotal: 199, shownCount: 1, completeness: 'sample', scope: {}, metrics: {} }]
   const itemsBySource = [{
     source: 'aroma_system',
     items: [{ source: 'aroma_system', sourceId: '1', title: 'Napa Cabbage', entityType: 'inventory_item', fields: { name: 'Napa Cabbage' } }]

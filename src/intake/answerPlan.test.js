@@ -26,9 +26,9 @@ const INVENTORY_EVIDENCE = {
   source: 'aroma_system',
   entityType: 'inventory_item',
   endpoint: 'inventory',
-  scope: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅' },
+  rowShape: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅' },
   metrics: { currentStock: { label: '現有存量' }, parLevel: { label: '安全存量' } },
-  totalCount: 199,
+  matchingTotal: 199,
   shownCount: 2,
   completeness: 'sample',
   rankedBy: 'parLevel - currentStock desc',
@@ -47,9 +47,9 @@ const INVENTORY_ITEMS = {
 }
 
 const SUPPLIER_EVIDENCE = Object.assign({}, INVENTORY_EVIDENCE, {
-  entityType: 'supplier', endpoint: 'suppliers', totalCount: 36, shownCount: 1,
+  entityType: 'supplier', endpoint: 'suppliers', matchingTotal: 36, shownCount: 1,
   rankedBy: null, selectedBy: 'api_order', metrics: {},
-  scope: { hasLocation: false, hasAsOf: false, note: null }
+  rowShape: { hasLocation: false, hasAsOf: false, note: null }
 })
 const SUPPLIER_ITEMS = {
   source: 'aroma_system',
@@ -70,10 +70,12 @@ test('*** a stock claim the evidence cannot support is removed ***', () => {
   assert.equal(r.droppedSentences, 1)
 })
 
-test('the scope note travels with the evidence, so an answer can state it', () => {
-  assert.equal(INVENTORY_EVIDENCE.scope.hasLocation, false)
-  assert.equal(INVENTORY_EVIDENCE.scope.hasAsOf, false)
-  assert.ok(INVENTORY_EVIDENCE.scope.note.includes('冇分地點'))
+test('the ROW SHAPE travels with the evidence, so an answer can state it', () => {
+  // MIGRATED FOR A1: this is what a ROW carries, which is a different fact from which rows
+  // were selected (`queryScope`). They shared the word 「scope」 until now.
+  assert.equal(INVENTORY_EVIDENCE.rowShape.hasLocation, false)
+  assert.equal(INVENTORY_EVIDENCE.rowShape.hasAsOf, false)
+  assert.ok(INVENTORY_EVIDENCE.rowShape.note.includes('冇分地點'))
   // and a plan that says so passes untouched — it carries no unmeasured number
   const r = validatePlan({
     directAnswer: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅。',
@@ -85,7 +87,7 @@ test('the scope note travels with the evidence, so an answer can state it', () =
 
 /* ── 2. sample vs total ───────────────────────────────────────────────────── */
 
-test('*** shownCount may never be presented as totalCount ***', () => {
+test('*** shownCount may never be presented as matchingTotal ***', () => {
   const i = evidenceIndex([INVENTORY_EVIDENCE], [INVENTORY_ITEMS])
   assert.ok(i.numbers.has('199'), 'the real total is stateable')
   assert.ok(i.numbers.has('2'), 'so is the shown count')
@@ -356,7 +358,7 @@ test('length rules are bounded by the server, not by the model behaving', () => 
 /* ── 9. MULTI-SOURCE — mandatory ──────────────────────────────────────────── */
 
 test('*** validation holds with several sources present at once ***', () => {
-  const gmailEvidence = { source: 'gmail', entityType: 'mail', totalCount: null, shownCount: 1, trust: 'live', completeness: 'unknown', usedFallback: true, selectedBy: 'recency', retrievedAt: NOW }
+  const gmailEvidence = { source: 'gmail', entityType: 'mail', matchingTotal: null, shownCount: 1, trust: 'live', completeness: 'unknown', usedFallback: true, selectedBy: 'recency', retrievedAt: NOW }
   const gmailItems = { source: 'gmail', items: [{ source: 'gmail', sourceId: 'm1', title: 'Invoice Report', originalDate: 'Sun, 3 Aug 2026 09:14:02 -0500', entityType: 'mail', fields: { subject: 'Invoice Report' } }] }
   const r = validatePlan({
     directAnswer: '餐廳系統有 199 項存貨記錄。',

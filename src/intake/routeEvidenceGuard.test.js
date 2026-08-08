@@ -90,7 +90,7 @@ test('*** ACTION and BUSINESS_QUERY are out of scope ***', () => {
 })
 
 test('*** a turn that DID read is out of scope, even with one source ***', () => {
-  const withEvidence = { evidenceSets: [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1 }] }
+  const withEvidence = { evidenceSets: [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1 }] }
   assert.equal(say('存貨還有 12 箱。', '仲有幾多貨？', withEvidence).violated, false,
     'evidence exists; answerPlan is the layer that checks it, and this guard must not double-judge')
 })

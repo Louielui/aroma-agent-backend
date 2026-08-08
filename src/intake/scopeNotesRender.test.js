@@ -22,11 +22,11 @@ const EV = [{
   source: 'aroma_system',
   kind: 'inventory',
   trust: 'live',
-  totalCount: 199,
+  matchingTotal: 199,
   shownCount: 2,
   completeness: 'sample',
   rankedBy: null,
-  scope: { hasLocation: false, hasAsOf: false, note: null },
+  rowShape: { hasLocation: false, hasAsOf: false, note: null },
   metrics: { qty: { label: '存量', meaning: null } }
 }]
 

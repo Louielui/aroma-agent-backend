@@ -82,9 +82,27 @@ function checkEvidence ({ claim = '', evidence = [], admitsLimitation = false } 
     }
   }
 
-  // A claim that names its own limitation is exactly what is wanted. Refusing it would teach
-  // authors to drop the qualifier rather than add it.
-  if (admitsLimitation) return { ok: true }
+  // ⛔ THE BLANKET BYPASS IS GONE. (Owner review, A1 final.)
+  //
+  // This used to read `if (admitsLimitation) return { ok: true }`, placed BEFORE every
+  // truncation, sample and coverage check — so one caller-supplied boolean disabled the whole
+  // contract. It was harmless only by the accident that nothing sets it, and 「harmless
+  // because unwired」 is precisely the state that ends the day something gets wired.
+  //
+  // ⚠ WHAT IS LOST, STATED PLAINLY: a claim that HONESTLY names its own limitation
+  // (「見到嘅 25 項入面…」) is now refused alongside one that does not. That is a real cost and
+  // it is accepted deliberately, because the alternative is worse in a specific way — telling
+  // truth from qualifier requires reading the sentence, and a gate that reads prose is a gate
+  // that can be talked past.
+  //
+  // The parameter is still ACCEPTED and is now INERT, asserted by test. Removing it from the
+  // signature would break callers silently; leaving it undocumented would let someone believe
+  // it still does something. Inert-and-tested is the honest middle.
+  //
+  // THE FIX IS A STRUCTURALLY CLAIM-LOCAL SCOPE SIGNAL — a claim that carries which scope it
+  // is about, checkable against the evidence's queryScope without reading a word of it. That
+  // is a later phase and its own decision; it is NOT invented here.
+  void admitsLimitation
 
   for (const e of rows) {
     if (e.truncated === true) {
@@ -93,7 +111,7 @@ function checkEvidence ({ claim = '', evidence = [], admitsLimitation = false } 
     if (e.completeness === 'sample' && UNIVERSAL.test(claim)) {
       return refuse(
         GATE.SAMPLE_TREATED_AS_WHOLE,
-        `a universal claim from a sample (${e.shownCount} of ${e.totalCount}) — say 「見到嘅 N 項入面」 instead`
+        `a universal claim from a sample (${e.shownCount} of ${e.matchingTotal}) — say 「見到嘅 N 項入面」 instead`
       )
     }
     if (e.readState === 'NO_RELEVANT_RESULTS' && UNIVERSAL.test(claim)) {
@@ -101,6 +119,47 @@ function checkEvidence ({ claim = '', evidence = [], admitsLimitation = false } 
         GATE.ABSENCE_AS_PROOF,
         'the source was read and found nothing — that supports 「冇搵到」, never 「冇」'
       )
+    }
+    // ⛔ A1 FINAL — SOURCE-WIDE COVERAGE, NOT SCOPE COVERAGE.
+    //
+    // > **Owner: 「completeWithinScope=true means only: all rows matching the declared server
+    // > query were returned without truncation. It does NOT mean: all records in the wider
+    // > source were examined.」**
+    //
+    // The first cut of this rule passed a universal claim on `completeWithinScope === true`
+    // alone, and a test of mine asserted that 14 purchase orders — complete within a THIRTY-DAY
+    // window — supported 「所有採購單都已收貨」. Complete within a slice is not complete.
+    //
+    // ⛔ FAILS CLOSED, AND DELIBERATELY HARD. Universality over a source needs all four, and
+    // every one is a structural fact rather than a reading of the sentence:
+    //     completeWithinScope === true   nothing was truncated
+    //     matchingTotal is a number      we know how many matched
+    //     sourceTotal   is a number      we know how many exist
+    //     matchingTotal === sourceTotal  the query covered the source
+    // Today `sourceTotal` is null on every endpoint, so this refuses every unqualified
+    // source-wide universal — which is the honest state, not an over-correction.
+    //
+    // ⚠ SCOPED universals (「過去 30 日所有採購單…」) are refused too, and that is a KNOWN COST.
+    // Distinguishing them needs a claim-local scope signal. `admitsLimitation` is the obvious
+    // candidate and it is NOT usable: it has no production setter anywhere, so it cannot be
+    // shown to be claim-local. Per the Owner's instruction it is not expanded here; the gap
+    // is reported instead.
+    if (UNIVERSAL.test(claim)) {
+      const covered = e.completeWithinScope === true &&
+        Number.isFinite(e.matchingTotal) &&
+        Number.isFinite(e.sourceTotal) &&
+        e.matchingTotal === e.sourceTotal
+      if (!covered) {
+        const why = e.completeWithinScope !== true
+          ? (e.completeWithinScope === false ? 'the server truncated the result' : 'completeness could not be established')
+          : (!Number.isFinite(e.sourceTotal)
+              ? 'the wider source total is unknown, so coverage of the source is not established'
+              : `only ${e.matchingTotal} of ${e.sourceTotal} records were in scope`)
+        return refuse(
+          GATE.SAMPLE_TREATED_AS_WHOLE,
+          `a universal claim, but ${why} — say what was read (「見到嘅 N 項入面」), never how many exist`
+        )
+      }
     }
   }
 

@@ -33,7 +33,7 @@ const { validatePlan, matchValue, evidenceIndex, ANSWER_PLAN_SCHEMA } = require(
 /* ═══ CLASS C — A DATE IS A DATE ═══════════════════════════════════════════ */
 
 const dateIndex = () => evidenceIndex(
-  [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+  [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
   [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'INV', originalDate: '2026-07-06T00:00:00.000Z', fields: { total: '191.10', invoiceDate: '2026-07-06T00:00:00.000Z', phone: '204-555-1234' } }] }]
 )
 
@@ -75,7 +75,7 @@ test('substring matching is still refused', () => {
 /* ═══ CLASS B — THE RECORD EXPLAINS ITSELF ═════════════════════════════════ */
 
 const ctx = () => ({
-  evidenceSets: [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: { currentStock: { label: '現有存量' }, parLevel: { label: '安全存量' } } }],
+  evidenceSets: [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: { currentStock: { label: '現有存量' }, parLevel: { label: '安全存量' } } }],
   itemsBySource: [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'Beef Plate', fields: { currentStock: '0.000', parLevel: '30.000', unit: 'kg' } }] }],
   message: ''
 })

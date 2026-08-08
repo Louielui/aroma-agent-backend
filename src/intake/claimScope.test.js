@@ -120,7 +120,7 @@ const { validatePlan } = require('./answerPlan')
 const { buildReadResultReply } = require('./readResultView')
 
 const calCtx = () => ({
-  evidenceSets: [{ source: 'calendar', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+  evidenceSets: [{ source: 'calendar', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
   itemsBySource: [{ source: 'calendar', items: [{ source: 'calendar', sourceId: 'e1', title: '眼科檢查（Dr. Phangureh）', originalDate: '2026-08-11T16:00:00-05:00', content: 'Dr. Phangureh 診所', fields: { start: '2026-08-11T16:00:00-05:00' } }] }],
   message: ''
 })

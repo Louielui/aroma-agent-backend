@@ -31,7 +31,7 @@ describe('the gate refuses a conclusion built on declared incompleteness', () =>
   test('a positive claim from a set the source called a SAMPLE is refused', () => {
     const r = checkEvidence({
       claim: '全部 43 項都冇在途貨。',
-      evidence: [{ source: 'aroma_system', completeness: 'sample', totalCount: 199, shownCount: 25 }]
+      evidence: [{ source: 'aroma_system', completeness: 'sample', matchingTotal: 199, shownCount: 25 }]
     })
     assert.strictEqual(r.ok, false)
     assert.strictEqual(r.reason, GATE.SAMPLE_TREATED_AS_WHOLE)
@@ -84,15 +84,26 @@ describe('the gate lets honest conclusions through', () => {
     assert.strictEqual(r.ok, true)
   })
 
-  test('a claim that ADMITS the limitation is allowed', () => {
+  test('a claim that ADMITS the limitation is allowed — and NOT because of the flag', () => {
     // Saying "of the 25 shown" is exactly what the gate wants; refusing it would teach
     // people to omit the qualifier rather than add it.
-    const r = checkEvidence({
+    //
+    // ⛔ WHY THIS STILL PASSES CHANGED, AND THE COMMENT HAD TO CHANGE WITH IT. It used to
+    // pass through `if (admitsLimitation) return { ok: true }` — a blanket bypass, now
+    // removed. It passes today because 「冇一項」 is not a universal by the UNIVERSAL regex:
+    // the qualified sentence is genuinely not the claim the gate refuses. Verified by
+    // asserting the SAME verdict with the flag absent, so this test can never again be
+    // green for a reason it does not state.
+    const input = {
       claim: '見到嘅 25 項入面冇一項超過 30 日（總數 199，呢個係樣本）。',
-      evidence: [{ source: 'aroma_system', completeness: 'sample', totalCount: 199, shownCount: 25 }],
-      admitsLimitation: true
-    })
-    assert.strictEqual(r.ok, true)
+      evidence: [{ source: 'aroma_system', completeness: 'sample', matchingTotal: 199, shownCount: 25 }]
+    }
+    assert.strictEqual(checkEvidence(input).ok, true, 'the qualified claim is not a universal')
+    assert.deepEqual(
+      checkEvidence({ ...input, admitsLimitation: true }),
+      checkEvidence(input),
+      'and the flag changes nothing — it is inert'
+    )
   })
 
   test('no evidence at all is refused — not passed', () => {

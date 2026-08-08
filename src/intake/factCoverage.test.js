@@ -34,7 +34,7 @@ const { validatePlan, matchValue, evidenceIndex, translate, LIMITS } = require('
 /* ═══ 1. CALENDAR — content is evidence ════════════════════════════════════ */
 
 const calIndex = () => evidenceIndex(
-  [{ source: 'calendar', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+  [{ source: 'calendar', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
   [{
     source: 'calendar',
     items: [{
@@ -84,7 +84,7 @@ test('*** the unit codes the live rows actually carry are declared ***', () => {
 
 test('*** she may write either the code or the Owner-facing word ***', () => {
   const i = evidenceIndex(
-    [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+    [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
     [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'Beef Plate', fields: { unit: 'cs', currentStock: '0.000' } }] }]
   )
   assert.equal(matchValue('cs', i).ok, true, 'the raw code the row carries')
@@ -93,7 +93,7 @@ test('*** she may write either the code or the Owner-facing word ***', () => {
 
 test('*** whichever she writes, the RENDERED value is the Owner-facing one ***', () => {
   const c = {
-    evidenceSets: [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+    evidenceSets: [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
     itemsBySource: [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'Beef Plate', fields: { unit: 'cs' } }] }],
     message: ''
   }
@@ -112,7 +112,7 @@ test('a unit code with no declared label renders as itself, never guessed', () =
 /* ═══ 3. LIMITATIONS — filtered means COUNTED ═════════════════════════════ */
 
 const limCtx = () => ({
-  evidenceSets: [{ source: 'aroma_system', trust: 'live', totalCount: 199, shownCount: 1, scope: {}, metrics: {} }],
+  evidenceSets: [{ source: 'aroma_system', trust: 'live', matchingTotal: 199, shownCount: 1, scope: {}, metrics: {} }],
   itemsBySource: [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'Beef Plate', fields: { currentStock: '0.000' } }] }],
   message: ''
 })
@@ -157,7 +157,7 @@ test('*** a derivation is kept even when four ordinary facts already fill the it
     evidenceSets: [{
       source: 'aroma_system',
       trust: 'live',
-      totalCount: 199,
+      matchingTotal: 199,
       shownCount: 1,
       scope: {},
       metrics: { currentStock: { label: '現有存量' }, parLevel: { label: '安全存量' } },

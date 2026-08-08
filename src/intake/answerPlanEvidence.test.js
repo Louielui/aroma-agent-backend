@@ -58,12 +58,23 @@ const INVENTORY_EVIDENCE = {
   source: 'aroma_system',
   entityType: 'inventory_item',
   endpoint: 'inventory',
-  scope: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅' },
+  // MIGRATED FOR A1: `scope` split into rowShape (what a row carries) and queryScope (which
+  // rows were selected); `totalCount` replaced by matchingTotal + sourceTotal, because the one
+  // field could not say which of the two numbers it held.
+  rowShape: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點、亦冇記錄係幾時嘅' },
+  queryScope: { field: null, window: null, declaredBy: 'reader' },
+  filtersApplied: [],
+  limit: null,
+  truncated: null,
+  completeWithinScope: null,
+  dataAsOf: null,
   metrics: {
     currentStock: { label: '現有存量', meaning: '記錄存量,無地點、無時間戳' },
     parLevel: { label: '安全存量', meaning: '應該保持嘅水平' }
   },
-  totalCount: 199,
+  matchingTotal: 199,
+  sourceTotal: null,
+  returnedRows: 199,
   shownCount: 1,
   completeness: 'sample',
   rankedBy: 'parLevel - currentStock desc',
@@ -146,14 +157,25 @@ const ctx = (evidence = INVENTORY_EVIDENCE, items = ROWS) => ({
  * was shown the number, rather than that the number existed somewhere in the server.
  */
 
-test('*** the real total reaches the model — totalCount is IN the outbound prompt ***', async () => {
+test('*** the matching total reaches the model — and is NOT stated as a source total (A1) ***', async () => {
   await withEnv(async () => {
     const spy = spyAdapter(envelope(PLAN))
     await run(spy)
     const prompt = spy.calls[0].prompt
-    assert.ok(prompt.includes('199'), 'the model must SEE the real total, not be judged against it')
-    assert.ok(/199 records exist/.test(prompt), 'the total must be stated as a total')
-    assert.ok(/1 shown/.test(prompt), 'and the shown count must be stated as separate from it')
+    // MIGRATED FOR A1. This test used to require 「199 records exist」, and that exact sentence
+    // is the defect: on /invoices it printed 「1 records exist」 for a table holding ~471,
+    // because `count` is a filtered page on three of six endpoints (DEFECT-009).
+    //
+    // The GUARANTEE IT WAS PROTECTING IS UNCHANGED and still asserted: the model must SEE the
+    // number rather than be judged against one it was never shown. What changed is what the
+    // number is called.
+    assert.ok(prompt.includes('199'), 'the model must SEE the count, not be judged against it')
+    assert.ok(/199 matched/.test(prompt), 'stated as rows MATCHING the query')
+    assert.equal(/\d+\s*(records?\s*)?exists?\b/i.test(prompt), false,
+      'and never as a count of what exists')
+    assert.ok(/TOTAL IN THE WIDER SOURCE IS UNKNOWN/.test(prompt),
+      'the unknown must be stated, not omitted')
+    assert.ok(/1 shown/.test(prompt), 'and the shown count stays separate from both')
   })
 })
 
@@ -186,12 +208,14 @@ test('*** completeness travels, and the model is told which number is the total 
 
 test('*** an unknown total is stated as unknown — never as the shown count ***', async () => {
   await withEnv(async () => {
-    const unknown = Object.assign({}, INVENTORY_EVIDENCE, { totalCount: null, completeness: 'unknown' })
+    const unknown = Object.assign({}, INVENTORY_EVIDENCE, { matchingTotal: null, completeness: 'unknown' })
     const spy = spyAdapter(envelope(PLAN))
     await run(spy, fakeConnector(ROWS, unknown))
     const prompt = spy.calls[0].prompt
-    assert.ok(/total unknown/i.test(prompt), 'unknown is unknown')
-    assert.equal(/1 records exist/.test(prompt), false, 'the shown count must never wear a total\'s clothes')
+    assert.ok(/match count unknown/i.test(prompt), 'unknown is unknown')
+    assert.ok(/TOTAL IN THE WIDER SOURCE IS UNKNOWN/.test(prompt), 'and so is the source total')
+    assert.equal(/\d+\s*(records?\s*)?exists?\b/i.test(prompt), false,
+      'the shown count must never wear a total\'s clothes')
   })
 })
 
@@ -205,7 +229,10 @@ test('the truncation note stays, and is consistent with the counts rather than a
     const prompt = spy.calls[0].prompt
     assert.ok(prompt.includes('capped'), 'the existing truncation note must survive')
     assert.ok(/4 shown/.test(prompt), 'and the exact shown count must be there too')
-    assert.ok(prompt.includes('199 records exist'), 'the total is still the total')
+    // MIGRATED FOR A1 — same guarantee, honest wording. The number still travels and is still
+    // distinct from the shown count; it is no longer called a count of what exists.
+    assert.ok(prompt.includes('199 matched'), 'the matching total is still stated, and still distinct')
+    assert.equal(/\d+\s*(records?\s*)?exists?\b/i.test(prompt), false, 'and never as an existence claim')
   })
 })
 

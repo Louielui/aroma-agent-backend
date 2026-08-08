@@ -23,7 +23,7 @@
  *   SHAPE is guaranteed at the API layer (json_schema, strict) — not requested.
  *   FACTS are checked against the retrieved rows here — every number in the prose must
  *     appear in the evidence, and every rendered value must equal a real one.
- *   TOTALS cannot be faked: shownCount and totalCount come from the EvidenceSet.
+ *   TOTALS cannot be faked: shownCount, matchingTotal and sourceTotal come from the EvidenceSet.
  *   STATUS words are translated here, so a raw enum cannot reach the screen.
  *
  * And, stated plainly rather than papered over: a JUDGEMENT is not machine-checkable.
@@ -95,7 +95,7 @@ const LIMITS = Object.freeze({
 })
 
 /** Words that mean the system is talking about itself. They are telemetry, not an answer. */
-const TELEMETRY_RE = /(未列出|長度上限|判斷為與此問題無關|fallback|usedFallback|shownCount|totalCount|evidence|token)/i
+const TELEMETRY_RE = /(未列出|長度上限|判斷為與此問題無關|fallback|usedFallback|shownCount|matchingTotal|sourceTotal|returnedRows|evidence|token)/i
 
 /**
  * THE SCHEMA. Enforced by the provider, not by a prompt. Every object closes
@@ -486,8 +486,17 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     }
   }
   // Counts the model is allowed to state, because the server measured them.
+  //
+  // ⛔ A1: `matchingTotal` and `sourceTotal` are BOTH stateable, and they are different
+  // claims. The retired `totalCount` conflated them, so a number that only ever meant 「rows
+  // matching a 30-day window」 was equally usable to say 「how many exist」. Admitting both
+  // here is deliberate: the guard against misusing one as the other is the SCOPE line telling
+  // the model which is which, plus the evidence gate — not a missing number, which would only
+  // stop her stating a count she was correctly shown.
   for (const e of evidenceSets) {
-    if (Number.isFinite(e.totalCount)) numbers.add(String(e.totalCount))
+    if (Number.isFinite(e.matchingTotal)) numbers.add(String(e.matchingTotal))
+    if (Number.isFinite(e.sourceTotal)) numbers.add(String(e.sourceTotal))
+    if (Number.isFinite(e.returnedRows)) numbers.add(String(e.returnedRows))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
   return { byId, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys }
@@ -1158,10 +1167,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
  * true, smaller answer rather than a confident wrong one.
  */
 function minimalAnswer (evidenceSets = []) {
-  const live = evidenceSets.filter((e) => e && e.trust === 'live' && (e.shownCount > 0 || e.totalCount > 0))
+  const live = evidenceSets.filter((e) => e && e.trust === 'live' && (e.shownCount > 0 || e.matchingTotal > 0))
   if (live.length === 0) return t('plan.cannotRead')
   const parts = live.map((e) => {
-    const n = Number.isFinite(e.totalCount) ? e.totalCount : e.shownCount
+    // ⛔ A1: the MATCHING total, never a source total. This sentence is the deterministic
+    // fallback the Owner actually reads, so the number in it is the one number that must not
+    // over-claim. `sourceTotal` is deliberately NOT used even when known — the fallback says
+    // what this read found, not what the business holds.
+    const n = Number.isFinite(e.matchingTotal) ? e.matchingTotal : e.shownCount
     const kind = ENTITY_LABELS[e.entityType] ? ENTITY_LABELS[e.entityType]() : t('entity.generic')
     const src = SOURCE_LABELS[e.source] ? SOURCE_LABELS[e.source]() : e.source
     return src + ' ' + t('plan.countOf', { n, kind })

@@ -36,10 +36,12 @@ const { pruneRepeatedScopeNotes } = require('./scopeNotes')
 const EV = [{
   source: 'aroma_system',
   trust: 'live',
-  totalCount: 199,
+  matchingTotal: 199,
+  sourceTotal: null,
   shownCount: 20,
   completeness: 'sample',
-  scope: { hasLocation: false, hasAsOf: false, note: null }
+  // A1: rowShape — what a row carries. `queryScope` would be which rows were selected.
+  rowShape: { hasLocation: false, hasAsOf: false, note: null }
 }]
 
 const said = (text) => [{ role: 'assistant', text }]
@@ -106,7 +108,7 @@ test('a repeat that quotes only the source\'s own scope numbers is still a repea
 test('*** a concept the EvidenceSet does not assert is never suppressed ***', () => {
   // These rows DO carry a location. So a sentence about location is saying something else —
   // something real about this turn — and nothing here may touch it.
-  const evidenceSets = [{ ...EV[0], scope: { hasLocation: true, hasAsOf: false, note: null } }]
+  const evidenceSets = [{ ...EV[0], rowShape: { hasLocation: true, hasAsOf: false, note: null } }]
   const line = '有啲行嘅地點對唔上，冇計入。'
   const { kept } = pruneRepeatedScopeNotes([line], { evidenceSets, history: said('地點資料冇分倉。') })
   assert.deepEqual(kept, [line], 'suppression is gated on what the evidence asserts, not on keywords alone')

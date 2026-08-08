@@ -90,7 +90,7 @@ test('a source that genuinely failed is still never corrected', () => {
 /* ═══ 3. NEARNESS — computed on the full value, only the score travels ════ */
 
 const nearCtx = () => ({
-  evidenceSets: [{ source: 'calendar', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+  evidenceSets: [{ source: 'calendar', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
   itemsBySource: [{ source: 'calendar', items: [{ source: 'calendar', sourceId: 'e1', title: '眼科檢查', originalDate: '2026-08-11T16:00:00-05:00', content: '需要提供保險資料', fields: {} }] }],
   message: ''
 })

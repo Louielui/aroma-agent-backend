@@ -28,11 +28,11 @@ const { DERIVATIONS_OF, FIELD_LABELS_OF } = require('../context/adapters/aromaSy
 const invEvidence = () => ({
   source: 'aroma_system',
   trust: 'live',
-  totalCount: 199,
+  matchingTotal: 199,
   shownCount: 4,
   completeness: 'sample',
   rankedBy: null,
-  scope: { hasLocation: false, hasAsOf: false, note: null },
+  rowShape: { hasLocation: false, hasAsOf: false, note: null },
   metrics: { currentStock: { label: '現有存量', meaning: 'x' }, parLevel: { label: '安全存量', meaning: 'y' } },
   derivations: DERIVATIONS_OF.inventory
 })
@@ -71,7 +71,7 @@ test('*** she may write either label, and the rendered one is the Owner-facing o
     evidenceSets: [{
       source: 'aroma_system',
       trust: 'live',
-      totalCount: 1,
+      matchingTotal: 1,
       shownCount: 1,
       scope: {},
       metrics: {},
@@ -92,7 +92,7 @@ test('*** she may write either label, and the rendered one is the Owner-facing o
 
 test('an undeclared source code renders as itself, never guessed', () => {
   const c = {
-    evidenceSets: [{ source: 'aroma_system', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {}, fieldLabels: FIELD_LABELS_OF.invoices }],
+    evidenceSets: [{ source: 'aroma_system', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {}, fieldLabels: FIELD_LABELS_OF.invoices }],
     itemsBySource: [{ source: 'aroma_system', items: [{ source: 'aroma_system', sourceId: '1', title: 'A-1', fields: { source: 'fax' } }] }],
     message: ''
   }
@@ -103,7 +103,7 @@ test('an undeclared source code renders as itself, never guessed', () => {
 /* ═══ 3. A NUMBER EMBEDDED IN PROSE ═══════════════════════════════════════ */
 
 const proseIndex = () => evidenceIndex(
-  [{ source: 'calendar', trust: 'live', totalCount: 1, shownCount: 1, scope: {}, metrics: {} }],
+  [{ source: 'calendar', trust: 'live', matchingTotal: 1, shownCount: 1, scope: {}, metrics: {} }],
   [{ source: 'calendar', items: [{ source: 'calendar', sourceId: 'e1', title: '眼科檢查', originalDate: '2026-08-11T16:00:00-05:00', content: '電話：204-555-1234 請提前十分鐘到達', fields: {} }] }]
 )
 

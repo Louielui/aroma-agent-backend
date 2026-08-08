@@ -89,7 +89,14 @@ function buildSafetyHeader (sources = [], opts = {}) {
  * These lines close that gap: the total, the shown count, whether this is a sample, what
  * the numeric fields MEAN, and which dimensions the rows do NOT have.
  */
-const SCOPE_PREAMBLE = 'SCOPE — how much of each source exists, and how much of it is below. When you state how many of something there are, take the number from these lines. NEVER from the number of lines you can count below: what is shown is a sample unless a line says otherwise.'
+// ⛔ A1: THIS SENTENCE USED TO SAY 「how much of each source EXISTS」, and that is the
+// instruction that licensed the claim. It is not the renderer's fault alone — the model was
+// TOLD these lines were existence counts, and on three of six endpoints they are the size of
+// a filtered, capped page (DEFECT-009). What it now says is what the numbers actually are.
+// ⚠ AND IT IS KEPT SHORT ON PURPOSE. The first A1 wording was twice this length and pushed
+// the LAST source out of the block budget — a test caught it. Honesty that prices out a
+// source is not free; the wording has to buy its space.
+const SCOPE_PREAMBLE = 'SCOPE — how many rows MATCHED THE QUERY ISSUED, and how many are below. Take counts from these lines, NEVER from the number of lines you can count below. A matched count is NOT how many exist: never state a wider total unless a line gives one.'
 
 /** A scope line is bounded like any other, but generously — it carries meaning, not content. */
 const MAX_SCOPE_LINE_CHARS = 320
@@ -108,7 +115,23 @@ const MAX_SCOPE_LINE_CHARS = 320
 function renderScopeLine (e) {
   if (!e || !e.source || e.trust !== 'live') return null
   const shown = Number.isFinite(e.shownCount) ? e.shownCount : 0
-  const total = Number.isFinite(e.totalCount) ? `${e.totalCount} records exist` : 'total unknown'
+  // ⛔ NEVER AN EXISTENCE CLAIM. This line used to read 「${totalCount} records exist」, and on
+  // /invoices that printed 「1 records exist」 for a table holding ~471 — because `count` is a
+  // filtered page on three of six endpoints. What is stated now is what is actually known:
+  // how many matched the DECLARED QUERY, which query that was, and that the wider source
+  // total is unknown. (A1 rule 9.)
+  //
+  // ⚠ THIS TEXT IS MODEL-FACING and stays English. It is what she is TOLD, not what he reads —
+  // translating it would change behaviour, which is the MODEL/INTERFACE boundary in
+  // governance/textClasses.js. The Owner-facing sentence is generated downstream FROM this.
+  const qs = (e.queryScope && typeof e.queryScope === 'object') ? e.queryScope : null
+  const window = qs && qs.window ? ` within the declared query scope (${qs.field}: ${qs.window})` : ' for the query as issued'
+  const matched = Number.isFinite(e.matchingTotal)
+    ? `${e.matchingTotal} matched${window}`
+    : `match count unknown${window}`
+  const total = Number.isFinite(e.sourceTotal)
+    ? `${matched}; ${e.sourceTotal} records in the wider source`
+    : `${matched}; TOTAL IN THE WIDER SOURCE IS UNKNOWN — do not state or imply how many exist`
   const completeness = typeof e.completeness === 'string' && e.completeness ? ` (${e.completeness})` : ''
   // 'SCOPE ' LEADS THE LINE, and the source tag follows it. A scope line is ABOUT a read;
   // an item line IS one, and they must not be confusable — by the model, or by anything
@@ -119,12 +142,21 @@ function renderScopeLine (e) {
   if (e.usedFallback === true) parts.push('selected by RECENCY, not by the question asked')
   else if (e.rankedBy) parts.push(`ranked by ${e.rankedBy}`)
 
-  const scope = (e.scope && typeof e.scope === 'object') ? e.scope : {}
+  // ⛔ rowShape, NOT scope. The word 「scope」 now means WHICH ROWS (above); this is what a row
+  // does not carry. Two facts that shared one word until A1.
+  const rowShape = (e.rowShape && typeof e.rowShape === 'object') ? e.rowShape : {}
   const missing = []
-  if (scope.hasLocation === false) missing.push('NO location')
-  if (scope.hasAsOf === false) missing.push('NO as-of timestamp')
+  if (rowShape.hasLocation === false) missing.push('NO location')
+  if (rowShape.hasAsOf === false) missing.push('NO as-of timestamp')
   if (missing.length) parts.push(`${missing.join(', ')} on these rows`)
-  if (scope.note) parts.push(String(scope.note))
+  if (rowShape.note) parts.push(String(rowShape.note))
+  // Truncation is stated only when it is KNOWN. Unknown says so rather than staying silent,
+  // because silence reads as 「fine」.
+  if (e.truncated === true) parts.push('TRUNCATED by a server limit — more rows matched than were returned')
+  else if (e.truncated === null && Number.isFinite(e.limit)) {
+    parts.push(`returned exactly the server limit (${e.limit}) — CANNOT TELL whether more matched`)
+  }
+  if (e.dataAsOf === null) parts.push('data currency unknown')
 
   // ── WHAT THE SERVER WILL COMPUTE FOR HER ──────────────────────────────────
   // DERIVATIONS_OF reached the VALIDATOR and never reached the PROMPT: 缺口 was computed
@@ -569,23 +601,37 @@ const unavailableLine = (source, reason) => `[${source}] UNAVAILABLE: ${reason}`
  *
  * An adapter that describes itself wins — it knows its endpoint's real total, what its
  * numbers mean and how it ordered them. For the others the honest minimum is built here:
- * the entity kind from the rows themselves, and `totalCount: null` for "we do not know",
+ * the entity kind from the rows themselves, and `matchingTotal: null` for "we do not know",
  * never the shown count wearing a total's clothes.
  *
  * `usedFallback` is carried because a recent-items read answers a different question from
  * the one asked, and a composer must be able to say so rather than present it as a match.
  */
 function describeRead (source, adapterEvidence, kept, usedFallback, asOf) {
+  // ⛔ THE CANONICAL SHAPE, for sources whose adapter does not describe itself. Every
+  // semantic field is PRESENT and explicitly unknown — never omitted because it is unknown
+  // (A1 rule 3). `totalCount` is gone here too: it was the field that could not say which
+  // of two different numbers it held.
   const base = adapterEvidence || {
     source,
     entityType: (kept[0] && kept[0].entityType) || null,
     endpoint: null,
-    scope: { hasLocation: false, hasAsOf: false, note: null },
-    metrics: {},
-    totalCount: null, // unknown is unknown
+    returnedRows: kept.length,
     shownCount: kept.length,
+    matchingTotal: null, // unknown is unknown
+    sourceTotal: null,
+    queryScope: { field: null, window: null, declaredBy: 'reader' },
+    // Unknown, not empty: nothing here has audited what this source filters by.
+    filtersApplied: null,
+    limit: null,
+    limitKnown: false, //  the cap STATE is unknown, which is why truncation is unknowable
+    truncated: null,
+    completeWithinScope: null, // fails closed
+    rowShape: { hasLocation: false, hasAsOf: false, note: null },
+    metrics: {},
     completeness: 'unknown',
     rankedBy: null,
+    dataAsOf: null,
     retrievedAt: asOf,
     trust: 'live',
     provenance: source

@@ -76,13 +76,13 @@ none of them.
 | `/inventory` | none | **none** | **199** |
 | `/suppliers` | none | **none** | 36 |
 | `/daily-counts` | last 7 days (`submittedAt`) | 50 | **50 — at the cap** |
-| `/order-planning` | none | **none** | 44 |
+| `/order-planning` | none | **100** (raw SQL `LIMIT 100` ×2) | 44 |
 | `/purchase-orders` | last 30 days (`createdAt`) | 100 | 14 |
 | `/invoices` | last 30 days (`createdAt`) | 100 | **1** — see DEFECT-009 |
 
 ## The cost, measured rather than inferred
 
-Three endpoints have **no cap at all** and return the entire table on every call. The reader then
+Two endpoints have **no cap at all** and return the entire table on every call. The reader then
 discards all but `MAX_ITEMS = 25`, client-side. So a question about stock transfers 199 rows to
 keep 25, on every turn that reads inventory.
 
@@ -98,3 +98,10 @@ response says which. The reader's `totalCount` becomes 50 and `completeness` bec
 all of them.**
 
 That is the same shape as DEFECT-009 below it, one endpoint over.
+
+
+> **CORRECTION, 2026-08-08 (Owner review).** The table above first recorded `/order-planning`
+> as uncapped. It is **LIMIT 100**, written in RAW SQL inside a template literal — twice — so an
+> audit that grepped for drizzle’s `.limit(` missed it. Searching for one spelling of a thing,
+> the same defect as HR-56. Re-audited with both spellings; the corrected table is in
+> `DEFECT-009` and in `SERVER_LIMITS`.

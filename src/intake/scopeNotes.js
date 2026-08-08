@@ -61,12 +61,12 @@ const CONCEPTS = Object.freeze([
   // concept. cantoneseComprehension.test.js fails if a Cantonese form is ever removed.
   {
     key: 'location',
-    asserted: (e) => e.scope.hasLocation === false,
+    asserted: (e) => e.rowShape.hasLocation === false,
     words: ['地點', '位置', '倉庫', '分倉', '邊個倉', '哪個倉', '門市', '分店', 'location']
   },
   {
     key: 'asOf',
-    asserted: (e) => e.scope.hasAsOf === false,
+    asserted: (e) => e.rowShape.hasAsOf === false,
     // 什麼時候 is the broadest entry here. It is acceptable because this table is only
     // consulted for the `asOf` concept when the EvidenceSet asserts hasAsOf === false, it
     // only ever runs over limitation lines, and the number gate still protects per-turn ones.
@@ -108,9 +108,11 @@ function scopeFacts (evidenceSets) {
   if (!Array.isArray(evidenceSets)) return { concepts, numbers }
   for (const raw of evidenceSets) {
     if (!raw || typeof raw !== 'object' || raw.trust !== 'live') continue
-    const e = { completeness: raw.completeness, scope: (raw.scope && typeof raw.scope === 'object') ? raw.scope : {} }
+    // A1: rowShape, not scope — 「which rows」 and 「what a row carries」 are different facts.
+    const e = { completeness: raw.completeness, rowShape: (raw.rowShape && typeof raw.rowShape === 'object') ? raw.rowShape : {} }
     for (const c of CONCEPTS) if (c.asserted(e)) concepts.add(c.key)
-    if (Number.isFinite(raw.totalCount)) numbers.add(String(raw.totalCount))
+    if (Number.isFinite(raw.matchingTotal)) numbers.add(String(raw.matchingTotal))
+    if (Number.isFinite(raw.sourceTotal)) numbers.add(String(raw.sourceTotal))
     if (Number.isFinite(raw.shownCount)) numbers.add(String(raw.shownCount))
   }
   return { concepts, numbers }

@@ -77,14 +77,14 @@ const EVIDENCE = {
   source: 'aroma_system',
   entityType: 'inventory_item',
   endpoint: 'inventory',
-  scope: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點' },
+  rowShape: { hasLocation: false, hasAsOf: false, note: '每項有一個存量數字,但冇分地點' },
   // The same labels the SCOPE block puts in the prompt — which is where the model got
   // 「現有存量」 and 「安全存量」 as field names in the live turn.
   metrics: {
     currentStock: { label: '現有存量', meaning: '記錄存量,無地點、無時間戳' },
     parLevel: { label: '安全存量', meaning: '應該保持嘅水平' }
   },
-  totalCount: 199,
+  matchingTotal: 199,
   shownCount: 1,
   completeness: 'sample',
   rankedBy: 'parLevel - currentStock desc',
