@@ -143,3 +143,34 @@ test('*** everything read and nothing left still says what is held ***', () => {
     'no choices left is not the same as nothing to say — this is where 「讀唔到」 came from')
   assert.equal(d.includes('本回合可用的讀取操作'), false, 'and nothing is offered that is not offerable')
 })
+
+/* ═══ ⛔ THE OPPOSITE ERROR: ATTEMPTED IS NOT READ ═════════════════════════ */
+
+test('*** an UNAVAILABLE operation is never described as retrieved ***', () => {
+  const d = describeOperations([], [], ['aroma_system.inventory'])
+  assert.ok(d.includes('本回合試過讀但讀唔到'), 'a failed read is stated as a failed read')
+  assert.ok(d.includes('aroma_system.inventory＝倉存'), 'and named')
+  assert.equal(d.includes('本回合已經讀取'), false,
+    '⛔ THE BLOCKER: telling her the data is above when the connector never answered is a ' +
+    'false claim the SERVER authored')
+  assert.equal(/資料已經喺上面/.test(d), false, 'nothing may imply the rows are present')
+})
+
+test('*** live and unavailable are described as the two different things they are ***', () => {
+  const d = describeOperations(['aroma_system.suppliers'], ['aroma_system.invoices'], ['aroma_system.inventory'])
+  assert.ok(d.includes('本回合可用的讀取操作：aroma_system.suppliers＝供應商'), 'OPEN')
+  assert.ok(/本回合已經讀取：aroma_system\.invoices＝發票/.test(d), 'LIVE')
+  assert.ok(/本回合試過讀但讀唔到：aroma_system\.inventory＝倉存/.test(d), 'UNAVAILABLE')
+  // The LIVE 「do not say you could not read it」 instruction must be scoped to the LIVE list,
+  // or it would gag her about the source that genuinely failed.
+  assert.ok(d.indexOf('唔好就住呢幾項講') > d.indexOf('本回合已經讀取'), 'the gag is on the LIVE clause')
+  assert.ok(d.includes('照直同 Louie 講今次讀唔到'), 'and honesty is required about the failed one')
+})
+
+test('*** the gloss carries STRUCTURE only — never an error, a body or a value ***', () => {
+  const d = describeOperations([], [], ['gmail'])
+  // Whatever the connector said is not the model's business and is not in her prompt.
+  for (const leak of ['ECONNREFUSED', 'token', 'Bearer', '401', 'stack', 'http']) {
+    assert.equal(d.toLowerCase().includes(leak.toLowerCase()), false, 'must not leak ' + leak)
+  }
+})

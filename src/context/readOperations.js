@@ -140,24 +140,44 @@ function operationForAromaMethod (method) {
  * read on 盤點紀錄 as a substitute. She denied data she was holding: the exact false
  * read-failure claim readStateGuard exists to prevent, manufactured by a wording.
  *
- * So the two states are now NAMED SEPARATELY. Still-readable is a list of choices; already-read
- * is a statement that the answer is above, with an explicit instruction not to claim otherwise.
- * Silence about the second state is what produced the wrong answer.
+ * ⛔ AND THE OPPOSITE ERROR IS WORSE. The first fix said 「已經讀取」 for every operation that
+ * left the OPEN list — including one whose connector FAILED, because `trust:'unavailable'` was
+ * being filed alongside a successful read. That instructed her to state that data was above
+ * when nothing had been retrieved: a false claim authored by the server, not by the model.
+ *
+ * So there are THREE states and they read as three different sentences:
+ *
+ *   OPEN         a choice she may make.
+ *   LIVE         retrieved — the rows are above, do not re-read, do not deny them.
+ *                Includes a read that matched ZERO rows: the table really is empty, which is a
+ *                true answer and not a failure.
+ *   UNAVAILABLE  attempted and it did not answer. Say so honestly; it will not be retried.
+ *
+ * ⛔ STRUCTURAL STATE ONLY. Operation names and their labels — never an error message, a
+ * response body, a credential or a business value. The reason a read failed is not the model's
+ * business and is not put in her prompt.
  */
 function label (op) {
   const hit = BY_OPERATION.get(op)
   return hit ? `${op}＝${hit.label}` : op
 }
 
-function describeOperations (operations = [], alreadyRead = []) {
+function describeOperations (operations = [], live = [], unavailable = []) {
   const open = (Array.isArray(operations) ? operations : []).map(label)
-  const done = (Array.isArray(alreadyRead) ? alreadyRead : []).map(label)
+  const got = (Array.isArray(live) ? live : []).map(label)
+  const failed = (Array.isArray(unavailable) ? unavailable : []).map(label)
   const parts = []
   if (open.length) parts.push(`本回合可用的讀取操作：${open.join('；')}。只能填其中一個。`)
-  if (done.length) {
+  if (got.length) {
     parts.push(
-      `本回合已經讀取：${done.join('；')}。呢啲資料已經喺上面，唔會出現喺可選清單度 —— ` +
-      '唔好再讀一次，更加唔好講「讀唔到」「沒有這個操作」或者「無法直接讀取」。'
+      `本回合已經讀取：${got.join('；')}。呢啲資料已經喺上面，唔需要再讀 —— ` +
+      '唔好就住呢幾項講「讀唔到」「沒有這個操作」或者「無法直接讀取」。'
+    )
+  }
+  if (failed.length) {
+    parts.push(
+      `本回合試過讀但讀唔到：${failed.join('；')}。呢幾項【冇】資料喺上面，本回合亦唔會再試。` +
+      '如果答案需要呢部分，照直同 Louie 講今次讀唔到，唔好當佢有，亦唔好靠估或者用其他資料頂替。'
     )
   }
   return parts.length ? parts.join('\n') : null

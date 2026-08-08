@@ -221,6 +221,131 @@ test('*** C2 — the view just read is declared READ, not left looking unavailab
   })
 })
 
+/* ═══ ⛔ ATTEMPTED ≠ SUCCESSFULLY READ — THE THREE OPERATION STATES ════════ */
+
+/**
+ * A read that FAILED used to be filed with reads that SUCCEEDED: the reasoning path called
+ * `turnOperations.add(capability)` unconditionally, and the automatic path recorded any
+ * perSource row whatever its trust. Both then reached the gloss as 「本回合已經讀取 …… 資料已經
+ * 喺上面 …… 唔好講讀唔到」 — a claim the SERVER authored about data that was never retrieved.
+ *
+ * Three states now, and all three are asserted here through the real intake path:
+ *   OPEN         authorised, not attempted
+ *   LIVE         executed, trust==='live' — INCLUDING a zero-row read
+ *   UNAVAILABLE  attempted, trust==='unavailable' — not retried, and never called retrieved
+ */
+
+/** A connector whose reads throw — buildReadContext turns that into trust:'unavailable'. */
+function brokenConnector () {
+  const reads = []
+  return {
+    reads,
+    connector: {
+      async read (source, method) { reads.push({ source, method }); throw new Error('SECRET-TOKEN-abc123 upstream 401') }
+    }
+  }
+}
+
+/** A connector that succeeds and matches nothing — a true answer, not a failure. */
+function emptyConnector () {
+  const reads = []
+  return {
+    reads,
+    connector: {
+      async read (source, method) {
+        reads.push({ source, method })
+        return { asOf: NOW, source, count: 0, results: [], evidence: { source, trust: 'live', shownCount: 0, matchingTotal: 0, sourceTotal: null, completeness: 'complete', retrievedAt: NOW } }
+      }
+    }
+  }
+}
+
+test('*** S-A — a successful operation is withdrawn from OPEN and described as READ ***', async () => {
+  await withEnv({}, async () => {
+    const fc = fakeConnector()
+    const a = scriptedAdapter('claude', [READ('aroma_system.invoices'), FINAL('發票讀到咗。')])
+    await run('你可以驗證一下嗎？', a, { connector: fc.connector, sources: ['aroma_system'] })
+    const g = a.calls[1].gloss || ''
+    assert.equal(a.calls[1].readChoices.includes('aroma_system.invoices'), false, 'withdrawn from OPEN')
+    assert.ok(/本回合已經讀取：.*aroma_system\.invoices＝發票/.test(g), 'described as READ')
+    assert.equal(g.includes('本回合試過讀但讀唔到'), false, 'and not as a failure')
+  })
+})
+
+test('*** S-B — a successful ZERO-RESULT read is LIVE, not unavailable ***', async () => {
+  await withEnv({}, async () => {
+    const ec = emptyConnector()
+    const a = scriptedAdapter('claude', [READ('aroma_system.invoices'), FINAL('冇發票。')])
+    await run('你可以驗證一下嗎？', a, { connector: ec.connector, sources: ['aroma_system'] })
+    const g = a.calls[1].gloss || ''
+    assert.ok(/本回合已經讀取：.*aroma_system\.invoices＝發票/.test(g),
+      '⛔ zero rows is a TRUE ANSWER — the table is empty. It is not a read failure.')
+    assert.equal(g.includes('本回合試過讀但讀唔到'), false)
+    assert.equal(a.calls[1].readChoices.includes('aroma_system.invoices'), false, 'still not re-offered')
+  })
+})
+
+test('*** S-C — a model-directed read whose connector FAILS is never called retrieved ***', async () => {
+  await withEnv({}, async () => {
+    const bc = brokenConnector()
+    const a = scriptedAdapter('claude', [READ('aroma_system.invoices'), FINAL('發票今次讀唔到。')])
+    const events = []
+    const realLog = console.log
+    console.log = (...args) => { if (args[0] === '[AROMA-REASONING]') { try { events.push(JSON.parse(args[1])) } catch (_) {} } }
+    let out
+    try {
+      out = await run('你可以驗證一下嗎？', a, { connector: bc.connector, sources: ['aroma_system'] })
+    } finally { console.log = realLog }
+
+    const g = a.calls[1].gloss || ''
+    assert.ok(/本回合試過讀但讀唔到：.*aroma_system\.invoices＝發票/.test(g), 'stated as attempted-and-failed')
+    assert.equal(/本回合已經讀取/.test(g), false,
+      '⛔ THE BLOCKER: a failed read must NEVER be described as a successful one')
+    assert.equal(/資料已經喺上面/.test(g), false, 'and nothing may imply the rows are present')
+
+    assert.equal(a.calls[1].readChoices.includes('aroma_system.invoices'), false,
+      'not re-offered — a failed operation is not retried inside the bound')
+    assert.equal(bc.reads.filter((r) => r.method === 'listInvoices').length, 1, 'exactly ONE attempt')
+
+    const step = events.find((e) => e && e.decisionType === 'read' && e.capability === 'aroma_system.invoices')
+    assert.ok(step, 'the attempt is on the record')
+    assert.equal(step.ok, false, 'and the loop was told it did NOT succeed')
+
+    // She is allowed to say so, and the turn still completes.
+    assert.ok(typeof out.reply === 'string' && out.reply.length > 0)
+    // ⛔ STRUCTURE ONLY: the upstream error text never reaches the prompt.
+    assert.equal(/SECRET-TOKEN|401/.test(g), false, 'no error message, no credential, no body')
+  })
+})
+
+test('*** S-D — the same semantics for an AUTOMATIC Aroma read that fails ***', async () => {
+  await withEnv({}, async () => {
+    const bc = brokenConnector()
+    const a = scriptedAdapter('claude', [FINAL('倉存今次讀唔到。')])
+    await run('而家倉存入面有咩？', a, { connector: bc.connector, sources: ['aroma_system'] })
+
+    const g = a.calls[0].gloss || ''
+    assert.deepEqual(bc.reads, [{ source: 'aroma_system', method: 'listInventory' }], 'the automatic read was attempted once')
+    assert.ok(/本回合試過讀但讀唔到：.*aroma_system\.inventory＝倉存/.test(g),
+      '⛔ the automatic path must not file a failure as a success either')
+    assert.equal(/本回合已經讀取/.test(g), false)
+    assert.equal(a.calls[0].readChoices.includes('aroma_system.inventory'), false, 'and it is not offered for a retry')
+    assert.equal(/SECRET-TOKEN|401/.test(g), false, 'no error text in the prompt')
+  })
+})
+
+test('*** S-E — a source nobody asked stays OPEN: notAsked is neither read nor failed ***', async () => {
+  await withEnv({}, async () => {
+    const fc = fakeConnector()
+    const a = scriptedAdapter('claude', [FINAL('你好！')])
+    await run('你好', a, { connector: fc.connector, sources: ['aroma_system'] })
+    const g = a.calls[0].gloss || ''
+    assert.deepEqual(a.calls[0].readChoices, ALL_AROMA_OPS, 'every view is still open')
+    assert.equal(/本回合已經讀取|本回合試過讀但讀唔到/.test(g), false,
+      'nothing was attempted, so there is nothing to report about attempts')
+  })
+})
+
 /* ═══ D. A GENERIC SOURCE IS UNCHANGED ════════════════════════════════════ */
 
 test('*** D — a zero-read Gmail question still initiates its existing generic read ***', async () => {

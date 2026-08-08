@@ -372,11 +372,37 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return operationsForSources(authorisedSourcesFor(providerName))
   }
   /**
-   * Operations ALREADY EXECUTED this turn. Not sources: reading inventory says nothing about
-   * invoices, and hiding the whole source after one view would put the model back where it
-   * started — able to see that aroma_system exists and unable to ask it anything else.
+   * ⛔ WHAT HAPPENED TO EACH OPERATION THIS TURN — THREE STATES, NOT TWO.
+   *
+   * operation → 'live' | 'unavailable'. An operation ABSENT from this map is OPEN: authorised
+   * and not attempted.
+   *
+   * ⛔ ATTEMPTED IS NOT READ. This was a Set of 「已執行」 names, and both writers added to it
+   * unconditionally — the reasoning path after buildReadContext returned, the automatic path
+   * for any perSource row. But buildReadContext reports `trust:'unavailable'` for a real
+   * connector failure, so a FAILED read was filed alongside a successful one, and the gloss
+   * then told the model 「資料已經喺上面 …… 唔好講讀唔到」 about data that was never retrieved.
+   * That is a false claim manufactured by the server, in the exact class the read-state guards
+   * exist to prevent — and worse than the canary defect it was introduced to fix, because there
+   * the data really was present.
+   *
+   * Both states are excluded from OPEN — a failed operation is not re-offered inside the same
+   * bounded loop, so there is still no automatic retry. They are described completely
+   * differently, which is the whole point.
+   *
+   * LIVE IS STICKY. A source read successfully and then re-requested and failing does not
+   * un-retrieve the rows already in the prompt.
    */
-  const turnOperations = new Set()
+  const turnOperations = new Map()
+  const OP_LIVE = 'live'
+  const OP_UNAVAILABLE = 'unavailable'
+  /** trust in, state out. Anything that is not a live read is an attempt that did not land. */
+  function recordOperation (operation, trust) {
+    if (!operation) return
+    if (turnOperations.get(operation) === OP_LIVE) return // live is sticky
+    turnOperations.set(operation, trust === 'live' ? OP_LIVE : OP_UNAVAILABLE)
+  }
+  const operationsInState = (state) => Array.from(turnOperations.entries()).filter(([, v]) => v === state).map(([k]) => k)
   // ── A3 REASONING LOOP: observations gathered mid-turn, in the order they arrived. ──
   // Each entry is a read-context block produced by the SAME buildReadContext the one-shot
   // path uses. Empty on an ordinary turn, so the prompt is byte-identical to before.
@@ -473,15 +499,20 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
               if (row && row.source) turnPerSource.set(row.source, row)
-              // WHICH OPERATION THE AUTOMATIC READ ACTUALLY WAS, so the model is not offered a
-              // view it has already been given. Recomputed with the SAME deterministic function
-              // planFor used a moment ago — no new plumbing, and no guess: for aroma_system the
-              // view came from the message, for every other source the operation IS the source.
+              // WHICH OPERATION THE AUTOMATIC READ ACTUALLY WAS, AND HOW IT WENT. Recomputed
+              // with the SAME deterministic function planFor used a moment ago — no new
+              // plumbing, and no guess: for aroma_system the view came from the message, for
+              // every other source the operation IS the source.
+              //
+              // ⛔ THE ROW'S OWN `trust` DECIDES THE STATE. `trust:'live'` is a successful read
+              // INCLUDING a zero-row one — the table really is empty, which is a true answer.
+              // `trust:'unavailable'` is a read that did not happen, and must never be filed as
+              // one that did. A source nobody asked (`notAsked`) produces NO perSource row at
+              // all, so it is never touched here and stays OPEN.
               if (row && row.source === 'aroma_system') {
-                const op = operationForAromaMethod(aromaMethodFor(message))
-                if (op) turnOperations.add(op)
+                recordOperation(operationForAromaMethod(aromaMethodFor(message)), row.trust)
               } else if (row && row.source) {
-                turnOperations.add(row.source)
+                recordOperation(row.source, row.trust)
               }
             }
             for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
@@ -588,11 +619,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Aroma views the moment any one of them was read; an operation grain hides only what has
     // actually been answered.
     const openChoices = authorisedOperationsFor(activeProvider || primaryProvider).filter((op) => !turnOperations.has(op))
-    // BOTH STATES, NAMED. What is still readable AND what has already been read this turn —
-    // because an operation that merely disappears from the list reads as 「not available」, and
-    // the live canary watched exactly that turn into 「無法直接讀取庫存資料」 with the inventory
-    // rows sitting in the same prompt.
-    const choiceGloss = describeOperations(openChoices, Array.from(turnOperations))
+    // ⛔ ALL THREE STATES, NAMED SEPARATELY.
+    //
+    // OPEN, because an operation that merely disappears from the list reads as 「not available」
+    // — the live canary watched exactly that turn into 「無法直接讀取庫存資料」 with the
+    // inventory rows sitting in the same prompt.
+    //
+    // LIVE vs UNAVAILABLE, because collapsing them is the same error pointing the other way: it
+    // would tell her the data is above when the connector never answered, which is a false claim
+    // the server itself authored. Both are withheld from OPEN — no retry inside the bound — and
+    // they are described as the different things they are.
+    const choiceGloss = describeOperations(openChoices, operationsInState(OP_LIVE), operationsInState(OP_UNAVAILABLE))
     if (!planApplies) {
       // Nothing to plan over yet — offer the DECISION only, never a fabricated plan.
       // No reads left, or not the chat lane: behave exactly as before this change.
@@ -882,12 +919,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // the re-derivation that vetoed this very read as `notAsked`. For every other source it
         // changes nothing; their plans were never intent-derived.
         const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, env: process.env })
-        turnOperations.add(capability)
         if (rc && rc.block) extraObservationBlocks.push(rc.block)
         for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(row.source, row)
         for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
         for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(e.source, e)
-        return { capability, ok: !!(rc && rc.block), summary: null }
+
+        // ⛔ ATTEMPTED IS NOT READ. This used to be an unconditional `turnOperations.add()` and
+        // an `ok` computed from `!!rc.block` — but a FAILED read still produces a block: it
+        // carries the UNAVAILABLE line. So a connector failure was recorded as a success, told
+        // to the model as 「資料已經喺上面」, and reported to the loop as ok:true.
+        //
+        // The row's own `trust` is the authority, exactly as on the automatic path. A read that
+        // succeeded and returned nothing is 'live' and IS a real answer; a read that could not
+        // be performed is 'unavailable'. Absent row ⇒ treated as an attempt that did not land,
+        // which is the safe direction: it is never described as retrieved, and it is not retried.
+        const row = (rc && Array.isArray(rc.perSource)) ? rc.perSource.find((r) => r && r.source === resolved.source) : null
+        const trust = row ? row.trust : null
+        recordOperation(capability, trust)
+        return { capability, ok: trust === 'live', summary: null }
       },
       callModel: async ({ step }) => {
         if (step === 1) return { type: 'read', capability: String(pending.capability || '') }
