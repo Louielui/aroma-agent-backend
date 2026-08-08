@@ -462,8 +462,28 @@ function relabel (text) {
 const TWO_OPTION_RE = /定係|定|或者|\bor\b/
 
 /** Every scalar value in the evidence, as strings — the universe of provable values. */
+/**
+ * Resolve a model-written row reference to exactly one retrieved row, or to nothing.
+ *
+ * ⛔ FAIL CLOSED ON AMBIGUITY. A canonical `readKey#sourceId` always wins. A legacy alias
+ * (bare id, or `source#id`) resolves ONLY when a single canonical row owns it; with two
+ * owners it selects NO row. There is no tie-break, deliberately: every available tie-break —
+ * first, last, title match, nearest entity type — is a guess presented as an identity, and
+ * the measured cost of the last one was a fact rendered under the wrong row's name.
+ */
+function resolveRowRef (index, ref) {
+  const key = String(ref)
+  const exact = index.byId.get(key)
+  if (exact) return exact
+  const owners = index.aliasOwners.get(key)
+  if (!owners || owners.size !== 1) return null
+  return index.byId.get([...owners][0]) || null
+}
+
 function evidenceIndex (evidenceSets = [], itemsBySource = []) {
   const byId = new Map()
+  // legacy alias -> the set of canonical refs claiming it. Size 1 resolves; more fails closed.
+  const aliasOwners = new Map()
   const values = new Set()
   const numbers = new Set()
   // THE SAME VALUES AS QUANTITIES. MySQL hands back '18.000' where the model writes '18';
@@ -486,11 +506,28 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
 
   for (const g of itemsBySource) {
     for (const row of (g.items || [])) {
-      // TWO KEYS FOR ONE ROW, and neither is a relaxation. `ref` (source#id) is what the
-      // prompt shows and what the schema pins; the bare id is what the old contract
-      // accepted and still does. A SOURCE NAME is a key to nothing, which is the point.
-      byId.set(String(row.sourceId), row)
-      if (row.source) byId.set(`${row.source}#${row.sourceId}`, row)
+      // ── ONE CANONICAL IDENTITY, PLUS ALIASES THAT MUST EARN THEIR RESOLUTION ──
+      //
+      // ⛔ THE CANONICAL REF IS `readKey#sourceId`, and it is the ONLY key written directly.
+      // Two operations of one source can each return a row with raw id 7 — ids are per-table
+      // sequences — and both used to key `aroma_system#7` into this very Map. Last write won,
+      // so an order-planning quantity could be rendered under a purchase order's title.
+      //
+      // The bare id and `source#id` remain LEGACY ALIASES, but they are collected as
+      // CANDIDATE SETS below and resolve only when exactly one canonical row owns them.
+      // Two owners is ambiguous and resolves to nothing — never the first row, never the
+      // last, never a title or entity-type guess.
+      const readKey = row.readKey || g.readKey || row.source
+      const canonical = `${readKey}#${row.sourceId}`
+      byId.set(canonical, row)
+      const alias = (key) => {
+        if (key === canonical) return
+        const set = aliasOwners.get(key) || new Set()
+        set.add(canonical)
+        aliasOwners.set(key, set)
+      }
+      alias(String(row.sourceId))
+      if (row.source) alias(`${row.source}#${row.sourceId}`)
       for (const v of Object.values(row.fields || {})) {
         values.add(String(v))
         // BOTH FORMS. The row carries `cs`; she writes 箱. Indexing only the raw code made
@@ -565,7 +602,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.returnedRows)) numbers.add(String(e.returnedRows))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys }
+  return { byId, aliasOwners, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys }
 }
 
 /**
@@ -1078,7 +1115,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     for (const it of (Array.isArray(sec.items) ? sec.items : []).slice(0, LIMITS.maxItemsPerSection)) {
       modelItemCount++
       const sourceId = String(it.sourceId)
-      const row = index.byId.get(sourceId)
+      const row = resolveRowRef(index, sourceId)
       if (!row) { // an item that was never retrieved is an invention
         droppedItems++
         drops.push({ kind: 'item', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars) })

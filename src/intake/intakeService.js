@@ -560,7 +560,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
               // AUTOMATIC READ: one read per source, so the readKey IS the source — this grain
               // is unchanged and this path behaves exactly as it always has.
-              if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, { source: g.source, items: g.items })
+              if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, { source: g.source, readKey: g.readKey || g.source, items: g.items })
             }
             for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) {
               if (e && e.source) turnEvidence.set(e.source, e)
@@ -708,7 +708,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const refs = []
     for (const g of turnItems.values()) {
       for (const it of (g && Array.isArray(g.items) ? g.items : [])) {
-        if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${g.source}#${it.sourceId}`)
+        if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${it.readKey || g.readKey || g.source}#${it.sourceId}`)
       }
     }
     // ⛔ THE MODEL IS SHOWN ITS ACTUAL CHOICES (live canary, blocker 2). Authorised for the
@@ -991,7 +991,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // aroma_system.purchasing erase aroma_system.replenishment. The values still carry
         // their own real `source`, so every ref downstream is unchanged.
         for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(capability, row)
-        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(capability, { source: g.source, items: g.items })
+        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(capability, { source: g.source, readKey: g.readKey || capability, items: g.items })
         for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(capability, e)
 
         // ⛔ ATTEMPTED IS NOT READ. This used to be an unconditional `turnOperations.add()` and

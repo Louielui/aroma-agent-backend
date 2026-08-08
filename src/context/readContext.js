@@ -141,7 +141,10 @@ function renderScopeLine (e) {
   // an item line IS one, and they must not be confusable — by the model, or by anything
   // that reads the block. Without the prefix both begin '[calendar]', which is one string
   // match away from a scope line being counted as an event.
-  const parts = [`SCOPE [${e.source}] ${total}; ${shown} shown${completeness}`]
+  // Labelled by readKey: two reads of ONE source must be tellable apart, or a zero-row
+  // purchasing read looks like an empty replenishment one. readKey === source on every
+  // single-read path, so this line is byte-identical there.
+  const parts = [`SCOPE [${e.readKey || e.source}] ${total}; ${shown} shown${completeness}`]
 
   if (e.usedFallback === true) parts.push('selected by RECENCY, not by the question asked')
   else if (e.rankedBy) parts.push(`ranked by ${e.rankedBy}`)
@@ -611,7 +614,13 @@ function renderItem (r, caps = CAPS, opts = {}) {
     // cannot collide across sources either. The schema pins the answer's sourceId to an
     // enum of exactly these values, so echoing it is enforced by the provider rather than
     // requested in prose.
-    r.sourceId ? `ref=${r.source}#${r.sourceId}` : null,
+    // ⛔ THE REF IS NAMESPACED BY readKey, NOT BY source. Two operations of ONE source can
+    // each return a row whose raw id is 7 — ids are per-table sequences, so this is ordinary.
+    // Both were `aroma_system#7`, the validator's index is a Map, and last-write-wins meant an
+    // order-planning quantity could be rendered under a purchase order's title. Measured, not
+    // theorised. `readKey` is the operation for a model-directed Aroma read and the SOURCE
+    // everywhere else, so every single-read path renders exactly the token it always did.
+    r.sourceId ? `ref=${r.readKey || r.source}#${r.sourceId}` : null,
     r.link || null,
     c.text ? `— ${c.text}` : null,
     c.truncated ? '[truncated]' : null
@@ -619,6 +628,8 @@ function renderItem (r, caps = CAPS, opts = {}) {
   return bits.join(' ')
 }
 
+// Labelled by readKey so a zero-row purchasing read is never mistaken for an empty
+// replenishment one. For every single-read path readKey IS the source, so the text is unchanged.
 const zeroResultLine = (source) => `[${source}] read OK — no matching results for this query`
 const unavailableLine = (source, reason) => `[${source}] UNAVAILABLE: ${reason}`
 
@@ -716,6 +727,20 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   // turn or affect its neighbours.
   async function fetchOne (source) {
     const startedAt = Date.now()
+    // ⛔ THE EVIDENCE NAMESPACE FOR THIS READ.
+    //
+    // `source` is the connector and never changes meaning: aroma_system / gmail / drive /
+    // calendar / github. `readKey` is the grain the read actually happened at — the concrete
+    // OPERATION when the model directed it, and the SOURCE in every other case.
+    //
+    // On every existing path readKey === source, so refs, scope lines and the whole rendered
+    // block are byte-identical. It only diverges when ONE source is read through TWO
+    // operations, which is precisely the case where `aroma_system#7` stopped being an identity.
+    //
+    // A model-directed operation for a DIFFERENT source cannot rename this one: the guard is
+    // the same one planFor uses, so the two can never disagree about what was directed.
+    const directed = operation ? resolveReadOperation(operation) : null
+    const readKey = (directed && directed.method && directed.source === source) ? operation : source
     try {
       // `operation` is ABSENT on every automatic read — the one-shot path passes no such
       // argument — so this call is byte-identical to before for every existing caller.
@@ -726,12 +751,12 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
         return { durationMs: Date.now() - startedAt, skipped: true, source, reason: plan.notAsked }
       }
       if (plan.unavailable) {
-        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(source, plan.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, plan.unavailable)], overflow: false }
       }
 
       let step = await runStep(connector, source, plan, caps)
       if (step.unavailable) {
-        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(source, step.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, step.unavailable)], overflow: false }
       }
 
       // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
@@ -745,25 +770,38 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       const overflow = step.results.length > kept.length
 
       if (kept.length === 0) { // read succeeded, nothing matched — NOT unavailable
-        return { durationMs: Date.now() - startedAt, entry: { source, trust: 'live', count: 0, error: null, usedFallback }, lines: [zeroResultLine(source)], overflow }
+        // A zero-row read still HAS an evidence identity — it is a real, successful read of a
+        // real view — it simply owns no row refs. Carrying its EvidenceSet is what lets a
+        // second operation's empty result be told apart from the first one's.
+        return {
+          durationMs: Date.now() - startedAt,
+          entry: { source, readKey, trust: 'live', count: 0, error: null, usedFallback },
+          lines: [zeroResultLine(readKey)],
+          evidence: Object.assign(describeRead(source, step.evidence, [], usedFallback, asOf), { readKey }),
+          overflow
+        }
       }
+      // Rows are stamped with the readKey of the read that produced them. The row's own
+      // `source` is untouched, so every source-keyed lookup downstream (metric labels,
+      // derivations, source labels) keeps working exactly as before.
+      const stamped = kept.map((r) => Object.assign({}, r, { readKey }))
       return {
-        entry: { source, trust: 'live', count: kept.length, error: null, usedFallback },
-        lines: kept.map((r) => renderItem(r, caps, { recent: usedFallback })),
+        entry: { source, readKey, trust: 'live', count: kept.length, error: null, usedFallback },
+        lines: stamped.map((r) => renderItem(r, caps, { recent: usedFallback })),
         // The rows themselves, carried out unchanged for the Owner-facing view. Returning
         // what was already computed — this changes nothing about what is read or sent to
         // the model; the block above is still the only thing that reaches the prompt.
-        items: kept,
+        items: stamped,
         // WHAT THIS READ IS. From the adapter when it describes itself; otherwise the
         // honest minimum, where an unknown total is NULL rather than the number we happen
         // to hold — a shown count standing in for a total is the exact false claim this
         // whole descriptor exists to prevent.
-        evidence: describeRead(source, step.evidence, kept, usedFallback, asOf),
+        evidence: Object.assign(describeRead(source, step.evidence, stamped, usedFallback, asOf), { readKey }),
         overflow
       }
     } catch (err) {
       const why = (err && err.message) ? String(err.message).slice(0, 120) : 'read failed'
-      return { durationMs: Date.now() - startedAt, entry: { source, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(source, why)], overflow: false }
+      return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(readKey, why)], overflow: false }
     }
   }
 
@@ -791,7 +829,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
-    itemsBySource.push({ source: got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
+    itemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
     evidenceSets.push(got.evidence || describeRead(got.entry.source, null, [], got.entry.usedFallback === true, asOf))
     if (got.overflow) truncated = true
 

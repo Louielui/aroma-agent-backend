@@ -64,27 +64,65 @@ const BINDING = Object.freeze({
   UNVERIFIED: 'unverified'
 })
 
-/** Sources actually read LIVE this turn. `trust` is the existing liveness marker. */
-function liveSources (evidenceSets) {
-  const out = new Map()
+/**
+ * ⛔ EVIDENCE IS IDENTIFIED BY readKey, NOT BY source.
+ *
+ * This was `Map(source -> EvidenceSet)`, which is a Map, which means last write wins. One
+ * source can now be read by TWO operations in a turn — aroma_system.replenishment and
+ * aroma_system.purchasing — and a set_scoped claim naming 「aroma_system」 was silently checked
+ * against whichever read happened to be stored last. That is a coverage rule applied to the
+ * wrong subset, which is indistinguishable from having no rule.
+ *
+ * `byKey` is the exact identity. `bySource` collects CANDIDATES for the legacy bare-source
+ * form, which resolves only when exactly one live read owns that source.
+ */
+function liveEvidence (evidenceSets) {
+  const byKey = new Map()
+  const bySource = new Map()
   for (const e of (Array.isArray(evidenceSets) ? evidenceSets : [])) {
-    if (e && e.source && e.trust === 'live') out.set(e.source, e)
+    if (!e || !e.source || e.trust !== 'live') continue
+    const key = e.readKey || e.source
+    byKey.set(key, e)
+    const set = bySource.get(e.source) || new Set()
+    set.add(key)
+    bySource.set(e.source, set)
   }
-  return out
+  return { byKey, bySource }
 }
 
-/** Every retrieved row id, per source. A claim may only name ids that came back. */
-function retrievedIds (itemsBySource) {
-  const out = new Map()
+/**
+ * Every retrieved row, by CANONICAL ref, plus the legacy aliases that point at it.
+ * Same discipline as the Answer Plan's evidence index, for the same reason: a bare id shared
+ * by two reads names two different entities, and choosing one of them is a guess.
+ */
+function retrievedRows (itemsBySource) {
+  const byRef = new Map() // canonical `readKey#sourceId` -> readKey
+  const aliasOwners = new Map() // legacy alias -> Set(canonical refs)
   for (const group of (Array.isArray(itemsBySource) ? itemsBySource : [])) {
     if (!group || !group.source || !Array.isArray(group.items)) continue
-    const ids = out.get(group.source) || new Set()
     for (const it of group.items) {
-      if (it && it.sourceId != null) ids.add(String(it.sourceId))
+      if (!it || it.sourceId == null) continue
+      const readKey = it.readKey || group.readKey || group.source
+      const canonical = `${readKey}#${it.sourceId}`
+      byRef.set(canonical, readKey)
+      for (const a of [String(it.sourceId), `${group.source}#${it.sourceId}`]) {
+        if (a === canonical) continue
+        const set = aliasOwners.get(a) || new Set()
+        set.add(canonical)
+        aliasOwners.set(a, set)
+      }
     }
-    out.set(group.source, ids)
   }
-  return out
+  return { byRef, aliasOwners }
+}
+
+/** A declared row reference → its canonical form, or null when it names no single row. */
+function resolveDeclaredRef (rows, ref) {
+  const key = String(ref)
+  if (rows.byRef.has(key)) return key
+  const owners = rows.aliasOwners.get(key)
+  if (!owners || owners.size !== 1) return null
+  return [...owners][0]
 }
 
 /**
@@ -111,7 +149,7 @@ function sourceCovered (e) {
  * Verify one declared claim against what was really read.
  * @returns {{ claimKind: string|null, binding: string, reason: string|null, evidenceSources: string[], sourceIds: string[] }}
  */
-function verifyOne (claim, live, ids) {
+function verifyOne (claim, live, rows) {
   const declared = claim && typeof claim === 'object' ? claim : {}
   const sources = Array.isArray(declared.evidenceSources) ? declared.evidenceSources.map(String) : []
   const sourceIds = Array.isArray(declared.sourceIds) ? declared.sourceIds.map(String) : []
@@ -124,22 +162,34 @@ function verifyOne (claim, live, ids) {
   if (kind === null) return no('unknown_claim_kind')
   if (sources.length === 0) return no('no_evidence_source')
 
-  // Every named source must have been read live. A model may not bind to a source that was
-  // never consulted — that is the shape where a confident answer cites a read that never ran.
+  // ── EACH DECLARED SOURCE MUST NAME EXACTLY ONE LIVE READ ────────────────────
+  // An exact readKey resolves itself. A legacy bare SOURCE resolves only while it owns a
+  // single live read; once one source has been read twice in a turn it names two different
+  // subsets, and picking either would apply a coverage rule to the wrong one.
+  const resolved = []
   for (const s of sources) {
-    if (!live.has(s)) return no('source_not_read')
+    if (live.byKey.has(s)) { resolved.push(s); continue }
+    const candidates = live.bySource.get(s)
+    if (!candidates || candidates.size === 0) return no('source_not_read')
+    if (candidates.size > 1) return no('evidence_source_ambiguous')
+    resolved.push([...candidates][0])
   }
+  const declaredKeys = new Set(resolved)
 
   if (kind === CLAIM_KIND.ROW_LOCAL) {
     // A row-local claim with no rows is not row-local. Fail closed rather than treat it as
     // a weaker kind — silently reclassifying a declaration is exactly what 「never trust a
     // model declaration」 forbids.
     if (sourceIds.length === 0) return no('row_local_without_rows')
-    for (const s of sources) {
-      const known = ids.get(s) || new Set()
-      for (const id of sourceIds) {
-        if (!known.has(id)) return no('source_id_not_retrieved')
-      }
+    // ⛔ THE CROSS-PRODUCT RULE IS GONE, and its replacement is stricter, not looser. It used
+    // to require every id under EVERY declared source, which was the only thing a bare id
+    // could be checked against. A canonical ref carries its own read, so the structural
+    // question is exact: does this row exist, and does it belong to a read this claim
+    // declared? An ambiguous alias resolves to no row and fails here.
+    for (const id of sourceIds) {
+      const canonical = resolveDeclaredRef(rows, id)
+      if (!canonical) return no('source_id_not_retrieved')
+      if (!declaredKeys.has(rows.byRef.get(canonical))) return no('row_outside_declared_evidence')
     }
     // ⛔ BLOCKER 2. Truncation is deliberately NOT consulted here. The row came back; a cap
     // on how many OTHER rows came back has no bearing on it.
@@ -149,8 +199,8 @@ function verifyOne (claim, live, ids) {
   if (kind === CLAIM_KIND.SET_SCOPED) {
     const scope = declared.scope && typeof declared.scope === 'object' ? declared.scope : {}
     if (scope.field == null && scope.window == null) return no('scope_not_declared')
-    for (const s of sources) {
-      const e = live.get(s)
+    for (const key of resolved) {
+      const e = live.byKey.get(key)
       if (!scopeAgrees(scope, e.queryScope)) return no('scope_mismatch')
       // Within the declared scope the read must actually be complete, or the aggregate is
       // over an unknown fraction of its own subset.
@@ -161,8 +211,8 @@ function verifyOne (claim, live, ids) {
 
   // SOURCE_WIDE — the A1 coverage test. Today `sourceTotal` is null on every endpoint, so
   // this refuses every source-wide declaration. That is the honest state, not a bug.
-  for (const s of sources) {
-    if (!sourceCovered(live.get(s))) return no('source_coverage_unknown')
+  for (const key of resolved) {
+    if (!sourceCovered(live.byKey.get(key))) return no('source_coverage_unknown')
   }
   return Object.assign({}, base, { binding: BINDING.VERIFIED, reason: null })
 }
@@ -179,9 +229,9 @@ function verifyOne (claim, live, ids) {
  */
 function verifyClaimBindings (claims, ctx = {}) {
   if (!Array.isArray(claims) || claims.length === 0) return []
-  const live = liveSources(ctx.evidenceSets)
-  const ids = retrievedIds(ctx.itemsBySource)
-  return claims.map((c) => verifyOne(c, live, ids))
+  const live = liveEvidence(ctx.evidenceSets)
+  const rows = retrievedRows(ctx.itemsBySource)
+  return claims.map((c) => verifyOne(c, live, rows))
 }
 
 module.exports = { verifyClaimBindings, CLAIM_KIND, BINDING, scopeAgrees, sourceCovered }

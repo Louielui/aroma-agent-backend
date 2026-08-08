@@ -264,7 +264,10 @@ test('*** C1 — under id collision, BOTH operations\' rows still reach the evid
       answerClaims: null,
       unanswerable: false,
       citesEvidence: true,
-      sections: [{ heading: '要跟進', items: [{ sourceId: 'aroma_system#7', title: 'PO-7 Gordon', facts: [{ field: '項目數', value: '9' }] }] }],
+      // CANONICAL, because the legacy `aroma_system#7` now has two owners and correctly
+      // resolves to nothing (proved by C3). This test is about the KEYING fix — that neither
+      // read was erased — so it cites the ref that names the read it means.
+      sections: [{ heading: '要跟進', items: [{ sourceId: 'aroma_system.purchasing#7', title: 'PO-7 Gordon', facts: [{ field: '項目數', value: '9' }] }] }],
       limitations: [],
       followUp: null
     }
@@ -278,7 +281,7 @@ test('*** C1 — under id collision, BOTH operations\' rows still reach the evid
   })
 })
 
-test('*** C3 — LIMITATION PIN: a shared sourceId mis-attributes across operations ***', async () => {
+test('*** C3 — FORMERLY A LIMITATION PIN: a shared sourceId no longer mis-attributes ***', async () => {
   await withEnv({}, async () => {
     const tc = twoOperationConnector({
       listPurchaseOrders: {
@@ -311,21 +314,18 @@ test('*** C3 — LIMITATION PIN: a shared sourceId mis-attributes across operati
     ])
     const { result } = await withPlanLog(() => run(BROAD, a, { connector: tc.connector, sources: ['aroma_system'] }))
 
-    // ⛔ THIS ASSERTION DESCRIBES A DEFECT, NOT A DESIRED BEHAVIOUR. Both items resolved to the
-    // LAST row indexed under aroma_system#7, so the order-planning entity's own title is gone
-    // and its fact is shown under the purchase order's name. When the ref contract is made
-    // operation-aware, this assertion must be INVERTED, not deleted.
+    // ⛔ INVERTED, as its own note instructed. The plan below cites the AMBIGUOUS legacy
+    //  for both items, and with two owners that now resolves to NO row at
+    // all — fail closed. Neither renders, and crucially neither renders under the OTHER's
+    // name, which is the mis-attribution this pin existed to record.
     assert.equal(String(result.reply).includes('Napa Cabbage'), false,
-      'PINNED DEFECT: the order-planning title is lost to the colliding id')
-    assert.ok(String(result.reply).includes('PO-7 Gordon'),
-      'PINNED DEFECT: both items render under the purchase order title')
+      'an ambiguous citation selects nothing — not the first row, not the last')
+    assert.equal(String(result.reply).includes('PO-7 Gordon'), false,
+      '⛔ THE DEFECT IS GONE: no row is silently chosen to stand in for the other')
   })
 })
 
-test('*** C2 — two operations sharing a sourceId must be citable as distinct entities ***',
-  { todo: 'REQUIRES A REF-CONTRACT CHANGE beyond intakeService+tests — reported, not silently widened. ' +
-          'Minimum change: make the evidence identity operation-aware in readContext.renderItem, ' +
-          'answerPlan.evidenceIndex and the intakeService ref builder, together.' },
+test('*** C2 — two operations sharing a sourceId ARE citable as distinct entities ***',
   async () => {
     await withEnv({}, async () => {
     // Both operations return a row whose id is 7. They are different entities from different
@@ -349,8 +349,8 @@ test('*** C2 — two operations sharing a sourceId must be citable as distinct e
       sections: [{
         heading: '要跟進',
         items: [
-          { sourceId: 'aroma_system#7', title: 'Napa Cabbage', facts: [{ field: '現有', value: '0.000' }] },
-          { sourceId: 'aroma_system#7', title: 'PO-7 Gordon', facts: [{ field: '項目數', value: '9' }] }
+          { sourceId: 'aroma_system.replenishment#7', title: 'Napa Cabbage', facts: [{ field: '現有', value: '0.000' }] },
+          { sourceId: 'aroma_system.purchasing#7', title: 'PO-7 Gordon', facts: [{ field: '項目數', value: '9' }] }
         ]
       }],
       limitations: [],
