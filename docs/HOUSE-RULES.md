@@ -2837,3 +2837,53 @@ tool wrapped around it.
    a function that never checked is a lie with a green tint.
 3. **The suite is what actually caught both.** Not the technique, and not reading. The count in
    HR-53 stands: reading has caught zero.
+
+---
+
+# HR-55 — A LOOP WITH NO MODEL IN IT COSTS NOTHING, AND THAT IS A DESIGN CHOICE, NOT A DISCOVERY
+
+> **Owner: 「I raised 「$0.62 per question」 as a reason to be careful, and the answer is that a
+> deterministic planner costs nothing because the loop contains no model. That changes what I am
+> approving.」**
+
+Recorded prominently because the number was the reason for caution, and the number turned out to
+be a property of one design rather than of multi-round enquiry.
+
+## THE TWO SHAPES, AND WHAT SEPARATES THEM
+
+|  | model-planned loop | deterministic planner |
+|---|---|---|
+| who chooses round N+1 | the model | a graph edge |
+| model calls | one per round | **one, at the end** |
+| marginal cost of depth | linear in rounds | **zero** |
+| what stops it | a budget the planner can spend | the graph running out |
+
+The existing `enquiryRunner` is the first column, because its worker is a code agent that thinks
+each round. Business enquiry is the second, because the next step is a JOIN over a closed set of
+six endpoints with known keys — and a graph walk is not thinking.
+
+## WHY THIS IS WORTH A RULE AND NOT JUST A NOTE
+
+The cost was never the real question. **The cost was a symptom of where the decision lived.**
+
+> Put the model inside the loop and you get three things at once: a per-round bill, a runaway
+> risk you cannot bound from inside, and a stop condition decided by the thing being measured.
+> Take it out and all three disappear together — not mitigated, **absent**.
+
+That is why 「it is cheap」 and 「it cannot run away」 (DESIGN-DIRECT-QUERY-AND-BOUNDED-ENQUIRY §4)
+are the same finding stated twice. Neither is a safeguard. Both are consequences of the model not
+being in the loop.
+
+## THE RULE
+
+1. **Before pricing a loop, ask what decides the next step.** If the answer is 「the model」, the
+   cost is per round and the bound is a leash held by the thing being leashed.
+2. **A closed set with known relationships is a graph, not a judgement.** Six endpoints and their
+   foreign keys need no intelligence to traverse — and reaching for a model there buys
+   non-determinism at a price.
+3. **When the graph runs out, that is an answer** — 「here is what I read and what is missing」 —
+   **not a prompt to start thinking.** Adding a model planner later is a separate decision, taken
+   against logged cases of the graph being exhausted, never in advance.
+4. **State the cost of a design next to the design.** 「$0.62 a question」 nearly bought caution
+   against the wrong thing; the caution belonged to one architecture and was being applied to the
+   feature.

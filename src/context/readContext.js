@@ -319,6 +319,38 @@ function separableMatcher (kw) {
   return re
 }
 
+/** Does this ONE intent match? Extracted so intentFor and allIntentsFor cannot disagree. */
+function intentMatches (intent, s, low) {
+  if (intent.cjk.some((t) => {
+    if (s.includes(t)) return true
+    const re = separableMatcher(t)
+    return re ? re.test(s) : false
+  })) return true
+  // Whole-word for latin: a word inside a longer word is not a mention of it.
+  return intent.latin.some((w) => new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])', 'i').test(low))
+}
+
+/**
+ * EVERY intent a message matches, in table order — measurement only.
+ *
+ * > **Owner: 「Count every intent match, record the n, change nothing.」**
+ *
+ * ⛔ `intentFor` walks this same table and returns the FIRST match, so the fact that three
+ * intents matched is computed on every turn and discarded on every turn. This keeps it, and
+ * NOTHING routes on it. The tier rule for Direct-vs-Enquiry will be chosen from the real
+ * distribution of these numbers, rather than from the nine phrases I invented in
+ * DESIGN-DIRECT-QUERY-AND-BOUNDED-ENQUIRY.md — which would be the same defect as picking a
+ * keyword list by imagining what he types.
+ *
+ * Returns [] when nothing matched — never null, so a caller cannot confuse 「no match」 with
+ * 「not measured」.
+ */
+function allIntentsFor (text) {
+  const s = String(text == null ? '' : text)
+  const low = s.toLowerCase()
+  return INTENTS.filter((intent) => intentMatches(intent, s, low))
+}
+
 /** The intent a message expresses, or null when nothing matched. */
 function intentFor (text) {
   const s = String(text == null ? '' : text)
@@ -797,6 +829,7 @@ module.exports = {
   INTENTS,
   AROMA_INTENTS,
   intentFor,
+  allIntentsFor,
   aromaMethodFor,
   OPEN,
   CLOSE,

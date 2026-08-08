@@ -197,8 +197,32 @@ test('*** the log carries NO message content — allowlisted fields only ***', (
   assert.equal('extra' in out[0], false, 'the projection is explicit, not a spread')
   assert.equal('message' in out[0], false)
   const allowed = ['event', 'timestamp', 'route', 'reason', 'confidence', 'utility', 'domain',
-    'routerSources', 'lane', 'sourcesRead', 'rowsRetrieved', 'answerPlanForced', 'agreement', 'requestId']
+    'routerSources', 'lane', 'sourcesRead', 'rowsRetrieved', 'answerPlanForced', 'agreement', 'requestId',
+    // Added 2026-08-08 for the intent-breadth measurement. This fence FIRED on them, which is
+    // why they are here deliberately rather than by accident — see the constraint below.
+    'intentBreadth', 'intentKeys']
   assert.deepEqual(Object.keys(out[0]).sort(), allowed.slice().sort())
+})
+
+test('*** ⛔ intentKeys may only ever contain KEYS from the closed intent table ***', () => {
+  // The allowlist above now admits an ARRAY, which is the one shape that could smuggle
+  // content into a log that has none. It cannot: these are keys from INTENTS, and this
+  // asserts that rather than trusting it. A message full of supplier names and amounts
+  // yields at most the words 'supplier', 'invoice', 'inventory'…
+  const { INTENTS } = require('../context/readContext')
+  const known = new Set(INTENTS.map((i) => i.key))
+  const { sink, out } = capture()
+  logTurnRoute({
+    decision: routeTurn('幫我睇下 Miller\'s Meats 張發票同倉存同供應商同訂貨'),
+    lane: 'chat',
+    sourcesRead: [],
+    rowsRetrieved: 0
+  }, sink)
+  assert.ok(out[0].intentKeys.length > 1, 'this message matches several intents')
+  for (const k of out[0].intentKeys) {
+    assert.ok(known.has(k), 'not an intent key: ' + k)
+  }
+  assert.equal(JSON.stringify(out[0]).includes('Miller'), false, 'still no supplier name')
 })
 
 test('reason is a closed enum, never free text', () => {

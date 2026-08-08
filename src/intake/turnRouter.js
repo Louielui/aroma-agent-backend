@@ -56,7 +56,7 @@
  */
 
 const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
-const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
+const { intentFor, allIntentsFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { UTILITY_PATTERNS } = require('./utilityAnswer') // THE one utility vocabulary — this file holds none
 
 /** Priority order, and the Owner's. Highest first; CONVERSATION is the fallback. */
@@ -89,6 +89,27 @@ function businessIntentOf (text) {
 }
 
 /**
+ * ── MEASUREMENT ONLY. NOTHING ROUTES ON THIS. ────────────────────────────────
+ *
+ * > **Owner: 「Count every intent match, record the n, change nothing. Run it for a while,
+ * > then pick the tiering rule from my real questions rather than your nine invented ones.」**
+ *
+ * `intentFor` returns the FIRST match and discards the rest, so 「this question is about stock
+ * AND suppliers AND ordering」 is computed every turn and thrown away every turn. This records
+ * it and changes no decision: `routeTurn` below still branches on `intent`, singular.
+ *
+ * ⛔ IT MUST STAY INERT UNTIL THE DATA EXISTS. The tier rule in
+ * DESIGN-DIRECT-QUERY-AND-BOUNDED-ENQUIRY.md §1 was measured against nine phrases I invented,
+ * which is the same defect as choosing a keyword list by imagining what he types. Reading a
+ * rule off this counter before it has real turns in it would preserve the defect and add a
+ * number to make it look measured.
+ */
+function intentBreadthOf (text) {
+  const all = allIntentsFor(text)
+  return { n: all.length, keys: all.map((i) => i.key) }
+}
+
+/**
  * Route one turn.
  *
  * @param {string} message              the Owner's own words, and nothing else
@@ -100,7 +121,11 @@ function businessIntentOf (text) {
  */
 function routeTurn (message, opts) {
   const text = typeof message === 'string' ? message.trim() : ''
-  const none = (route, reason, confidence) => ({ route, reason, confidence, utility: null, domain: null, sources: [] })
+  // Measured FIRST so every return below carries it, including the empty-text one. Attached
+  // to every outcome because the turns where nothing was read are exactly the interesting
+  // ones — a CONVERSATION turn with n=3 is the case the tier rule has to be chosen against.
+  const breadth = intentBreadthOf(text)
+  const none = (route, reason, confidence) => ({ route, reason, confidence, utility: null, domain: null, sources: [], intentBreadth: breadth.n, intentKeys: breadth.keys })
 
   if (!text) return none('CONVERSATION', 'empty', 'high')
 
@@ -130,7 +155,10 @@ function routeTurn (message, opts) {
       utility: null,
       domain: intent.key,
       // The intent table's OWN declaration of what answers it. Not every enabled source.
-      sources: Array.isArray(intent.sources) ? intent.sources.slice() : []
+      sources: Array.isArray(intent.sources) ? intent.sources.slice() : [],
+      // Measurement only — `domain` above is still the FIRST match and still what routes.
+      intentBreadth: breadth.n,
+      intentKeys: breadth.keys
     }
   }
 
@@ -212,6 +240,13 @@ function logTurnRoute (entry, sink) {
     utility: d.utility == null ? null : String(d.utility),
     domain: d.domain == null ? null : String(d.domain),
     routerSources,
+    // ── MEASUREMENT (Owner GO 2026-08-08). Nothing routes on these two fields. ──
+    // `domain` above is the FIRST matching intent and is what decided the route.
+    // `intentBreadth` is how many matched in total — the signal intentFor discards.
+    // The tier rule for Direct-vs-Enquiry gets chosen from the distribution of THIS
+    // number over real turns, not from invented phrases.
+    intentBreadth: Number.isFinite(d.intentBreadth) ? d.intentBreadth : 0,
+    intentKeys: Array.isArray(d.intentKeys) ? d.intentKeys.map(String) : [],
     // what the pipeline really did
     lane: e.lane == null ? null : String(e.lane),
     sourcesRead,
