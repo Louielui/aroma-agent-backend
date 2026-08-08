@@ -26,8 +26,9 @@
  */
 
 const { canonicalWorkOrder, canonicalWorkOrderJson, hashWorkOrder } = require('./workOrder')
+const { t } = require('../i18n/t')
 
-const NOT_PROVIDED = '（未提供）'
+const NOT_PROVIDED = () => t('card.notProvided')
 
 /**
  * ── 「不會發生」, DERIVED FROM THE SEALED ORDER ───────────────────────────────
@@ -47,15 +48,16 @@ const NOT_PROVIDED = '（未提供）'
  * forbiddenActions, so the card cannot claim less than the order enforces.
  */
 const WILL_NOT_LABELS = Object.freeze({
-  commit: '提交',
-  push: '上傳',
-  PR: '開 PR',
-  merge: '合併',
-  deploy: '部署',
-  'cred-edit': '改憑證',
-  'env-edit': '改環境設定',
-  'gate-edit': '改授權閘',
-  'audit-edit': '改稽核紀錄'
+  // ⛔ Thunks, not key strings — `t(WILL_NOT_LABELS[a])` would be a DYNAMIC key (HR-48).
+  commit: () => t('wont.commit'),
+  push: () => t('wont.push'),
+  PR: () => t('wont.pr'),
+  merge: () => t('wont.merge'),
+  deploy: () => t('wont.deploy'),
+  'cred-edit': () => t('wont.credEdit'),
+  'env-edit': () => t('wont.envEdit'),
+  'gate-edit': () => t('wont.gateEdit'),
+  'audit-edit': () => t('wont.auditEdit')
 })
 
 /**
@@ -78,28 +80,51 @@ const FILE_SCOPE = Object.freeze(['cred-edit', 'env-edit', 'gate-edit', 'audit-e
  * @param {string[]} actions  the sealed order's own forbiddenActions
  * @returns {string} one or two sentences naming every one of them
  */
+/**
+ * The EXECUTION half as one phrase: 「不會提交、不會上傳、不會開 PR…」
+ * ⛔ ONE BUILDER, used by both the full sentence and the card face. See the note at the face.
+ */
+function execPhrase (actions) {
+  const list = Array.isArray(actions) ? actions : []
+  return EXECUTION.filter((a) => list.includes(a))
+    .map((a) => t('wont.each', { item: WILL_NOT_LABELS[a]() }))
+    .join(t('punct.listSep'))
+}
+
 function willNotHappenFrom (actions) {
   const list = Array.isArray(actions) ? actions.filter((a) => typeof a === 'string') : []
-  const exec = EXECUTION.filter((a) => list.includes(a)).map((a) => WILL_NOT_LABELS[a])
-  const rest = list.filter((a) => !EXECUTION.includes(a) && WILL_NOT_LABELS[a]).map((a) => WILL_NOT_LABELS[a])
+  const exec = EXECUTION.filter((a) => list.includes(a)).map((a) => WILL_NOT_LABELS[a]())
+  const rest = list.filter((a) => !EXECUTION.includes(a) && WILL_NOT_LABELS[a]).map((a) => WILL_NOT_LABELS[a]())
   // AN ACTION THIS MAP DOES NOT KNOW IS COUNTED, NEVER DROPPED. A sentence that reads
   // complete while quietly omitting a term is the exact failure this project has spent
   // weeks removing — and here the omission would be a safety guarantee.
   const unknown = list.filter((a) => !WILL_NOT_LABELS[a])
 
+  /**
+   * ⛔ THE CHINESE IS PRESERVED EXACTLY, AND MY FIRST ATTEMPT DID NOT PRESERVE IT.
+   *
+   * The execution list negates EVERY item — 「不會提交、不會上傳、不會開 PR」 — while the
+   * file-scope list negates once — 「亦不會改憑證、改環境設定」. That asymmetry is the Owner's
+   * wording and it is emphatic on purpose.
+   *
+   * I first collapsed it to a single negation because that reads better in English, and
+   * `cardFace.test.js` failed on 「不會上傳」. Rewriting HIS Chinese to suit MY English is the
+   * translation equivalent of narrowing a claim so it fits — on the one card whose whole job
+   * is to state what cannot happen. The per-item form stays.
+   */
   const parts = []
-  if (exec.length) parts.push(exec.map((w) => '不會' + w).join('、') + '。')
-  if (rest.length) parts.push('亦不會' + rest.join('、') + '。')
-  if (!parts.length) parts.push('這張工作單沒有宣告任何禁止動作。')
-  if (unknown.length) parts.push(`另有 ${unknown.length} 項禁止動作未能顯示名稱（${unknown.join('、')}）。`)
-  return parts.join('')
+  if (exec.length) parts.push(t('wont.execSentence', { list: execPhrase(list) }))
+  if (rest.length) parts.push(t('wont.alsoSentence', { list: rest.join(t('punct.listSep')) }))
+  if (!parts.length) parts.push(t('wont.none'))
+  if (unknown.length) parts.push(t('wont.unnamed', { n: unknown.length, ids: unknown.join(t('punct.listSep')) }))
+  return parts.join(t('punct.sentenceSep'))
 }
 
 /** 120 -> "2 分鐘"; 90 -> "90 秒". Deterministic, no locale lookup. */
 function humanDuration (sec) {
-  if (typeof sec !== 'number' || !Number.isFinite(sec) || sec <= 0) return NOT_PROVIDED
-  if (sec % 60 === 0) return `${sec / 60} 分鐘`
-  return `${sec} 秒`
+  if (typeof sec !== 'number' || !Number.isFinite(sec) || sec <= 0) return NOT_PROVIDED()
+  if (sec % 60 === 0) return t('card.minutes', { n: sec / 60 })
+  return t('card.seconds', { n: sec })
 }
 
 function indent (text, pad = '    ') {
@@ -114,43 +139,52 @@ function buildApprovalView (workOrder) {
   const canonical = canonicalWorkOrder(workOrder)
   const canonicalJson = canonicalWorkOrderJson(workOrder)
   const hash = hashWorkOrder(workOrder)
-  const file = canonical.allowedFiles[0] || NOT_PROVIDED
+  const file = canonical.allowedFiles[0] || NOT_PROVIDED()
   const test = canonical.allowedTestCommand
 
   // ── the visible face — plain Chinese, one decision ────────────────────────
   // The Owner needs to know WHAT SHE WANTS TO DO, not what category of exercise it is.
   // 「安全測試」 described the machinery; this describes the request.
-  const heading = '香香想改一個檔案'
+  const heading = t('card.heading')
 
-  const whatChanges = canonical.goal || NOT_PROVIDED
+  const whatChanges = canonical.goal || NOT_PROVIDED()
 
   const scope = [
-    `只修改 ${file} 一個檔案。`,
-    '只在丟棄式副本內操作，真實程式庫不會被改動。'
+    t('card.scopeOneFile', { file }),
+    t('card.scopeThrowaway')
   ]
 
   // Before/after. The labels carry the epistemic status, so the Owner cannot mistake the
   // intended text for something that has already happened.
-  const beforeLabel = `現時內容（讀自真實檔案${canonical.currentExcerptTruncated ? '，已截斷，下面還有' : ''}）`
-  const afterLabel = '香香打算改成（這是香香的打算，不是已完成的結果 —— 它仍未執行，實際結果可能不同）'
-  const before = canonical.currentExcerpt == null ? NOT_PROVIDED : canonical.currentExcerpt
+  const beforeLabel = t('card.beforeLabel', { truncated: canonical.currentExcerptTruncated ? t('card.truncated') : '' })
+  const afterLabel = t('card.afterLabel')
+  const before = canonical.currentExcerpt == null ? NOT_PROVIDED() : canonical.currentExcerpt
   const after = canonical.intendedChange // may be null — see below
   // If she stated no intent, SAY NOTHING rather than printing 「（未提供）」. An empty
   // promise box reads as a broken form and invites the Owner to fill it in himself, which
   // is backwards: the intent is hers to state, not his to supply.
   const hasIntent = typeof after === 'string' && after.trim() !== ''
 
-  const worstCase = '改壞了？只改副本，你的程式庫不受影響。'
+  const worstCase = t('card.worstCase')
 
   const willNotHappen = willNotHappenFrom(canonical.forbiddenActions)
-  // The face carries the EXECUTION half, derived the same way — drop an action from the
-  // order and the face stops claiming it.
-  const willNotHappenFace = EXECUTION.filter((a) => canonical.forbiddenActions.includes(a))
-    .map((a) => '不會' + WILL_NOT_LABELS[a]).join('、')
+  /**
+   * The face carries the EXECUTION half — drop an action from the order and the face stops
+   * claiming it.
+   *
+   * ⛔ AND IT NOW USES THE SAME BUILDER, because it did not before and that cost a defect.
+   * This line assembled the sentence itself, so when the full version moved to keys, the face
+   * silently lost its 「不會」 prefix and rendered 「提交、上傳、開 PR」 — a list of the actions
+   * that WILL happen, on the card whose job is to say what cannot. Caught by cardFace.test.js.
+   *
+   * Two derivations of one guarantee is the shape this file's own header warns about
+   * (「no second projection」). It applies to the sentence as much as to the values.
+   */
+  const willNotHappenFace = execPhrase(canonical.forbiddenActions)
 
   // Money reads as money: 0.5 -> US$0.50, never US$0.5.
-  const money = (n) => (n == null ? NOT_PROVIDED : `US$${Number(n).toFixed(2)}`)
-  const caps = `最長 ${humanDuration(canonical.timeoutSec)} · 最多 ${money(canonical.costCapUsd)}`
+  const money = (n) => (n == null ? NOT_PROVIDED() : `US$${Number(n).toFixed(2)}`)
+  const caps = t('card.caps', { time: humanDuration(canonical.timeoutSec), money: money(canonical.costCapUsd) })
 
   // ── the collapsed 技術細節 — every machine-shaped value, still inside the hash ──
   const technical = {
@@ -167,19 +201,19 @@ function buildApprovalView (workOrder) {
   }
 
   const technicalLines = [
-    `approvalId        : ${technical.approvalId == null ? NOT_PROVIDED : technical.approvalId}`,
-    `分支              : ${technical.branch == null ? NOT_PROVIDED : technical.branch}`,
+    `approvalId        : ${technical.approvalId == null ? NOT_PROVIDED() : technical.approvalId}`,
+    t('tech.branch', { v: technical.branch == null ? NOT_PROVIDED() : technical.branch }),
     `hash              : ${technical.hash}`,
-    `可改檔案          : ${technical.allowedFiles.join(', ') || NOT_PROVIDED}`,
-    `測試指令          : ${test == null || test === '' ? '（無）' : test}`,
-    `禁止動作          : ${technical.forbiddenActions.join(', ') || NOT_PROVIDED}`,
-    `上限（原始值）    : ${technical.timeoutSec}s / ${money(technical.costCapUsd)}`,
-    `工作單有效時間    : ${humanDuration(technical.approvalTtlSec)}（逾時自動失效，需重新產生）`,
-    `現時內容是否截斷  : ${technical.currentExcerptTruncated ? '是' : '否'}`,
+    t('tech.allowedFiles', { v: technical.allowedFiles.join(', ') || NOT_PROVIDED() }),
+    t('tech.testCommand', { v: test == null || test === '' ? t('card.none') : test }),
+    t('tech.forbidden', { v: technical.forbiddenActions.join(', ') || NOT_PROVIDED() }),
+    t('tech.capsRaw', { v: technical.timeoutSec + 's / ' + money(technical.costCapUsd) }),
+    t('tech.ttl', { v: humanDuration(technical.approvalTtlSec) }),
+    t('tech.truncated', { v: technical.currentExcerptTruncated ? t('card.yes') : t('card.no') }),
     // The no-amend rule. It was on v1's front face; it is a real guarantee but it is not
     // part of the Owner's decision, so it lives here rather than crowding the card.
-    '如需改第二個檔案  : 必須重新建立一張新的工作單（沒有中途加檔案的機制）',
-    '隔離方式          : 丟棄式副本，已移除所有 remote，改動無法回到 main'
+    t('tech.secondFile'),
+    t('tech.isolation')
   ]
 
   /**
@@ -205,7 +239,10 @@ function buildApprovalView (workOrder) {
       // negations and the isolation scope on one screen. It did not — they were behind
       // 詳細, and he had been approving on a belief about the card rather than on the card.
       // The face grows by ONE line, not by five sections; see EXECUTION / FILE_SCOPE above.
-      { title: null, body: willNotHappenFace ? `${worstCase}\n${willNotHappenFace}。` : worstCase }
+      // ⛔ The full stop was a LITERAL 「。」 here, outside the catalogue, so the English face
+      // ended 「…will not deploy。」 — Chinese punctuation closing an English sentence. The
+      // terminator belongs to the sentence, so it comes from the sentence's own key.
+      { title: null, body: willNotHappenFace ? worstCase + '\n' + t('wont.execSentence', { list: willNotHappenFace }) : worstCase }
     ],
     details: [
       // The before/after keeps its FULL honest labelling here. The Owner asked that the
@@ -213,16 +250,16 @@ function buildApprovalView (workOrder) {
       // it — but where the two texts sit side by side the distinction still has to be
       // spelled out, and collapsed it costs him nothing.
       hasIntent
-        ? { title: '現時內容 / 打算改成', body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
-        : { title: '現時內容', body: `${beforeLabel}：\n${indent(before)}` },
-      { title: '要修改的內容', body: whatChanges },
-      { title: '影響範圍', body: scope.join('\n') },
-      { title: '不會發生', body: willNotHappen },
-      { title: '上限', body: caps }
+        ? { title: t('card.secBeforeAfter'), body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
+        : { title: t('card.secBefore'), body: `${beforeLabel}：\n${indent(before)}` },
+      { title: t('card.secWhatChanges'), body: whatChanges },
+      { title: t('card.secScope'), body: scope.join('\n') },
+      { title: t('card.secWillNot'), body: willNotHappen },
+      { title: t('card.secCaps'), body: caps }
     ],
-    actions: ['批准', '拒絕'],
-    detailsTitle: '詳細',
-    technicalTitle: '技術細節'
+    actions: [t('card.approve'), t('card.reject')],
+    detailsTitle: t('card.details'),
+    technicalTitle: t('card.technical')
   }
 
   // Plain-text rendering — exactly what the Owner sees, used by the report and asserted

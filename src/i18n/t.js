@@ -49,6 +49,23 @@ function resolverFor (locale) {
 function currentLocale () {
   const env = process.env.XIANGXIANG_LOCALE
   if (LOCALES.includes(env)) return env
+
+  /**
+   * ⛔ UNDER THE TEST RUNNER, THE STORED SETTING IS NOT READ — AND THIS IS A DEFECT I SHIPPED.
+   *
+   * Step 3 made this read `data/settings-values.json`. That file is the OWNER'S, it is mutable,
+   * and it is outside every test — so the moment it contained `language: "en"`, ~40 assertions
+   * across the suite began rendering in English and failing, in files that have nothing to do
+   * with i18n. A test whose result depends on ambient state on the machine is not a test.
+   *
+   * It was found the worst way: the suite went red in a dozen unrelated places at once and the
+   * cause was a data file, not the code under test.
+   *
+   * `NODE_TEST_CONTEXT` is set by `node --test` in every child. Tests that want another locale
+   * set `XIANGXIANG_LOCALE`, which is checked FIRST and is explicit at the point of use.
+   */
+  if (process.env.NODE_TEST_CONTEXT) return DEFAULT_LOCALE
+
   try {
     const v = require('../home/settingsValues').get('language')
     if (LOCALES.includes(v)) return v

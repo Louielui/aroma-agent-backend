@@ -23,16 +23,23 @@ const { LOCALES, DEFAULT_LOCALE } = require('../governance/textResolver')
 
 let dir
 let savedEnv
+let savedCtx
 beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lang-'))
   process.env.AROMA_DATA_DIR = dir
   savedEnv = process.env.XIANGXIANG_LOCALE
   delete process.env.XIANGXIANG_LOCALE
+  // ⛔ These tests are ABOUT the stored setting, so they opt back into reading it — see the
+  // note in i18n/t.js on why every other test does not.
+  savedCtx = process.env.NODE_TEST_CONTEXT
+  delete process.env.NODE_TEST_CONTEXT
   require('../home/settingsValues')._resetCache()
 })
 afterEach(() => {
   if (savedEnv === undefined) delete process.env.XIANGXIANG_LOCALE
   else process.env.XIANGXIANG_LOCALE = savedEnv
+  if (savedCtx === undefined) delete process.env.NODE_TEST_CONTEXT
+  else process.env.NODE_TEST_CONTEXT = savedCtx
   delete process.env.AROMA_DATA_DIR
   require('../home/settingsValues')._resetCache()
   fs.rmSync(dir, { recursive: true, force: true })

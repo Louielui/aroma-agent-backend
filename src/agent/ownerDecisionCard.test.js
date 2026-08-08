@@ -256,8 +256,10 @@ test('the visible face follows the Owner-specified structure, in plain Chinese',
   const { MUST_FORBID } = require('./workOrder')
   const { WILL_NOT_LABELS } = require('./workOrderView')
   const willNot = byTitle('不會發生').body
+  // WILL_NOT_LABELS holds thunks now, not strings — a key string there would be a dynamic
+  // key at the call site, which rule ① forbids (HR-48).
   for (const a of MUST_FORBID) {
-    assert.ok(willNot.includes(WILL_NOT_LABELS[a]), 'the card must name ' + a + ': ' + willNot)
+    assert.ok(willNot.includes(WILL_NOT_LABELS[a]()), 'the card must name ' + a + ': ' + willNot)
   }
   assert.ok(willNot.includes('開 PR'), 'THE ONE THAT WAS MISSING')
   assert.equal(byTitle('上限').body, '最長 2 分鐘 · 最多 US$0.50', 'money reads as money')

@@ -792,6 +792,119 @@ const CATALOGUE = Object.freeze({
   'set.readCalendar': { zh: '讀取 Calendar', en: 'Read Calendar' },
   'set.readGithub': { zh: '讀取 GitHub', en: 'Read GitHub' },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE APPROVAL CARD — agent/workOrderView.js.
+  //
+  // ⛔ EVERY SENTENCE HERE IS A GOVERNANCE CLAIM, NOT A LABEL. 「只在丟棄式副本內操作」 and
+  // 「不會提交」 are what he is approving ON THE STRENGTH OF. An English rendering that
+  // softened, generalised or dropped any of them would narrow a guarantee without touching a
+  // line of enforcement — which is the quietest way this card could go wrong.
+  // ══════════════════════════════════════════════════════════════════════════
+  'card.notProvided': { zh: '（未提供）', en: '(not provided)' },
+  'card.none': { zh: '（無）', en: '(none)' },
+  'card.yes': { zh: '是', en: 'yes' },
+  'card.no': { zh: '否', en: 'no' },
+
+  // ── the nine forbidden actions, as HE would name them ──
+  'wont.commit': { zh: '提交', en: 'commit' },
+  'wont.push': { zh: '上傳', en: 'push' },
+  'wont.pr': { zh: '開 PR', en: 'open a PR' },
+  'wont.merge': { zh: '合併', en: 'merge' },
+  'wont.deploy': { zh: '部署', en: 'deploy' },
+  'wont.credEdit': { zh: '改憑證', en: 'change credentials' },
+  'wont.envEdit': { zh: '改環境設定', en: 'change environment settings' },
+  'wont.gateEdit': { zh: '改授權閘', en: 'change the authorisation gate' },
+  'wont.auditEdit': { zh: '改稽核紀錄', en: 'change the audit record' },
+
+  /**
+   * ⛔ THE CHINESE IS PRESERVED EXACTLY, AND MY FIRST ATTEMPT DID NOT PRESERVE IT.
+   *
+   * The execution list negates EVERY item — 「不會提交、不會上傳、不會開 PR」 — and the
+   * file-scope list negates once — 「亦不會改憑證、改環境設定」. That asymmetry is the Owner's
+   * wording and it is emphatic on purpose.
+   *
+   * I first 「fixed」 it into a single negation because that reads better in English, and
+   * cardFace.test.js failed on 「不會上傳」. Rewriting HIS Chinese to suit MY English is the
+   * translation equivalent of narrowing a claim to make it fit — so the per-item form stays,
+   * and the English carries it as 「will not commit, will not push」, which is emphatic in the
+   * same way rather than merely shorter.
+   */
+  'wont.each': { zh: '不會{item}', en: 'will not {item}' },
+  'wont.execSentence': { zh: '{list}。', en: 'It {list}.' },
+  'wont.alsoSentence': { zh: '亦不會{list}。', en: 'It will also not {list}.' },
+  'wont.none': {
+    zh: '這張工作單沒有宣告任何禁止動作。',
+    en: 'This work order declares no forbidden actions.'
+  },
+  /** ⛔ AN ACTION THE MAP DOES NOT KNOW IS COUNTED, NEVER DROPPED — the omission would be a guarantee. */
+  'wont.unnamed': {
+    zh: '另有 {n} 項禁止動作未能顯示名稱（{ids}）。',
+    en: 'A further {n} forbidden actions could not be named ({ids}).'
+  },
+
+  // ── durations, reused from the errand formatter's rules ──
+  'card.seconds': { zh: '{n} 秒', en: '{n}s' },
+  'card.minutes': { zh: '{n} 分鐘', en: '{n} min' },
+
+  // ── the face ──
+  'card.heading': { zh: '香香想改一個檔案', en: 'Xiangxiang wants to change one file' },
+  'card.scopeOneFile': { zh: '只修改 {file} 一個檔案。', en: 'Changes {file} and nothing else.' },
+  /** ⛔ THE ISOLATION PROMISE. It is the reason approving this is safe at all. */
+  'card.scopeThrowaway': {
+    zh: '只在丟棄式副本內操作，真實程式庫不會被改動。',
+    en: 'Works only inside a throwaway copy; the real repository is not touched.'
+  },
+  'card.beforeLabel': { zh: '現時內容（讀自真實檔案{truncated}）', en: 'Current content (read from the real file{truncated})' },
+  'card.truncated': { zh: '，已截斷，下面還有', en: ', truncated — there is more below' },
+  /** ⛔ 「不是已完成的結果」 — an intention, not an outcome. Both languages must keep that apart. */
+  'card.afterLabel': {
+    zh: '香香打算改成（這是香香的打算，不是已完成的結果 —— 它仍未執行，實際結果可能不同）',
+    en: 'What she intends to change it to (an intention, not a result — it has not run, and the real outcome may differ)'
+  },
+  'card.worstCase': {
+    zh: '改壞了？只改副本，你的程式庫不受影響。',
+    en: 'Breaks something? Only the copy changes; your repository is untouched.'
+  },
+  'card.caps': { zh: '最長 {time} · 最多 {money}', en: 'Up to {time} · at most {money}' },
+  'card.secBeforeAfter': { zh: '現時內容 / 打算改成', en: 'Current content / intended change' },
+  'card.secBefore': { zh: '現時內容', en: 'Current content' },
+  'card.secWhatChanges': { zh: '要修改的內容', en: 'What changes' },
+  'card.secScope': { zh: '影響範圍', en: 'Scope' },
+  'card.secWillNot': { zh: '不會發生', en: 'What will not happen' },
+  'card.secCaps': { zh: '上限', en: 'Limits' },
+  'card.approve': { zh: '批准', en: 'Approve' },
+  'card.reject': { zh: '拒絕', en: 'Reject' },
+  'card.details': { zh: '詳細', en: 'Detail' },
+  'card.technical': { zh: '技術細節', en: 'Technical detail' },
+
+  /**
+   * ⛔ THE TECHNICAL BLOCK IS COLUMN-ALIGNED WITH FULL-WIDTH PADDING, AND THAT IS ANOTHER
+   * PLACE THE GAP IS NOT IN THE WORDS.
+   *
+   * 「分支              : 」 lines up because CJK glyphs are double-width in a monospace
+   * terminal. The same padding in English produces a ragged column, and padding computed by
+   * character count would be wrong for either. So the SPACING IS PART OF EACH LANGUAGE'S
+   * TEMPLATE — the Chinese keeps its alignment, the English uses a plain label and colon.
+   */
+  'tech.branch': { zh: '分支              : {v}', en: 'Branch: {v}' },
+  'tech.allowedFiles': { zh: '可改檔案          : {v}', en: 'Files it may change: {v}' },
+  'tech.testCommand': { zh: '測試指令          : {v}', en: 'Test command: {v}' },
+  'tech.forbidden': { zh: '禁止動作          : {v}', en: 'Forbidden actions: {v}' },
+  'tech.capsRaw': { zh: '上限（原始值）    : {v}', en: 'Limits (raw): {v}' },
+  'tech.ttl': {
+    zh: '工作單有效時間    : {v}（逾時自動失效，需重新產生）',
+    en: 'Work order valid for: {v} (expires automatically; raise a new one)'
+  },
+  'tech.truncated': { zh: '現時內容是否截斷  : {v}', en: 'Current content truncated: {v}' },
+  'tech.secondFile': {
+    zh: '如需改第二個檔案  : 必須重新建立一張新的工作單（沒有中途加檔案的機制）',
+    en: 'To change a second file: a new work order is required — there is no mechanism for adding one mid-run'
+  },
+  'tech.isolation': {
+    zh: '隔離方式          : 丟棄式副本，已移除所有 remote，改動無法回到 main',
+    en: 'Isolation: a throwaway copy with every remote removed; changes cannot reach main'
+  },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })
