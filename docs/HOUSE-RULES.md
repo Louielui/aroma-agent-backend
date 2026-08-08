@@ -2705,13 +2705,42 @@ Counted across the bilingual work. Every defect I introduced, and what found it:
 | 28 | `t` shadowed a FOURTH time (`utilityAnswer.js`) — and this one was **LIVE**: the line below it calls t('util.temperature') | the shadow fence |
 | 29 | STATUS_LABEL consumers still read thunks as strings | the suite |
 | 30 | four English entries named the product three words running — the catalogue's own flattening check | the flattening check |
+| 31 | greeting bands returned thunks where `bandFor` hands the value straight to callers | `emptyScreen.test.js` |
+| 32 | a rename changed the declaration and not the uses — **twice more** (`scheduledRun.js`, `conversationStore.js`); and the `node -e` that "applied" it **printed success without checking** | the suite + the shadow fence |
+| 33 | `knockLog.test.js` matched 「讀唔到」 on a message that had moved to 書面中文 — while the refusal REASON was already a field | the suite, on the register change |
+| 34 | three more wording assertions reading page/response blobs (`greetingBacklog` ×2, `sectionAttachment`) | the HR-51 fence |
+| 35 | `ExitCode` blank: with `-RedirectStandardOutput/-Error`, the object `-PassThru` returns never populates it — `HasExited` works, so the branch was RIGHT and the number was MISSING | **proof case 4** |
+| 36 | **the budget was never in seconds** — `$waited` counted loop iterations, was named as seconds, printed with an `s` | **proof case 5** |
 
-**Thirty to one.**
+**Thirty-six to zero.**
 
-⛔ **And the one is not a point for reading.** #18 surfaced during a rename — a mechanical task
-that required visiting every occurrence of an identifier and removed the option of skimming. I
-was not reviewing the code; I was being marched through it. Reading, as an act of judgement over
-a diff, has caught **none of the thirty**.
+⛔ **The 「one」 in the earlier tally has been withdrawn, and not on a technicality.** #18 surfaced
+during a rename — a mechanical task that removed the option of skimming. I was not reviewing the
+code; I was being marched through it. **#32 settles it: the same technique, applied twice more,
+failed both times** (see HR-54). Reading, as an act of judgement over a diff, has caught **none of
+the thirty-six**.
+
+### ⛔ #36 IS THE ONE TO KEEP PROMINENT
+
+> **Owner: 「A budget measured in loop iterations while named in seconds, sitting in the exact line
+> whose purpose is to give the next person data instead of an anecdote. Note that I approved
+> 「60 seconds」 and it was never seconds — the number I ruled on did not exist.」**
+
+That last clause is the finding, and it is worse than a wrong value:
+
+- The line existed **because** one anecdote (2026-07-26) had been allowed to stand in for data.
+  Its entire job was to stop that recurring. It would have handed the next person a fabricated
+  number — and one that reads as a measurement, which is the only kind that gets believed.
+- **The Owner reviewed and approved a quantity that did not exist.** He was shown 「15 → 60」,
+  ruled on it in seconds, and the code counted iterations at roughly two seconds each. The review
+  was real; the thing reviewed was not what the diff appeared to say. **A diff can be read
+  correctly and still misinform, when a name asserts a unit the code does not carry.**
+- It was invisible to reading — the variable is called `$waited`, the log prints `s`, and every
+  line around it is about seconds — and it became visible the instant a real slow start was
+  staged. It did not even fail loudly: on the first run the SLOW line simply **did not appear**,
+  which is the quietest possible way for a measurement to be wrong.
+
+> ### A unit in a name is an unenforced claim (M-8). This one was false, in the line whose job was measurement.
 
 That distinction matters, because 「read it more carefully」 is the remedy people reach for. What
 actually worked once was a task whose SHAPE made skipping impossible — which is a mechanism

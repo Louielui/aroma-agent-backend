@@ -374,7 +374,25 @@ have been wrong — which is the entire argument of §4 reproduced on demand.
 The delay was real, not simulated: a `node.cmd` shim placed first on `PATH`, so **the launcher
 ran completely unmodified** and she genuinely started slowly.
 
-### Case 3 — NOT RUN, and why
+### Case 3 — UNVERIFIED, BY OWNER'S RULING. NOT A GAP.
+
+> **Owner, 2026-08-08: 「Case 3 stays unverified. I am not emptying a live credential to prove a
+> branch that shares its code path with two that passed — and your refusal to call it verified by
+> argument is the right call. Record it as unverified with the reason, not as a gap.」**
+
+**This is a closed decision, not an outstanding item.** It is not waiting for a quieter week, and
+it should not be re-proposed. The branch is unverified because verifying it costs more than the
+verification is worth, and that trade was made deliberately with the facts in view:
+
+- what it would prove: that a third caller of `Notify-Owner` reaches the screen, when two already
+  demonstrably do, with identical wording and an identical call;
+- what it would cost: blanking a live credential in the User registry store and restoring it
+  seconds later, with a window in which an interruption leaves `HUB_TOKEN` empty.
+
+**The state is 「unverified」, and 「unverified」 is the honest word — not 「effectively covered」.**
+HR-48 is why: cases 1 and 2 make a *correct argument* that this branch works, and a correct
+argument is exactly what that rule exists to refuse. The fence did not run here. Saying so is the
+record; upgrading it by reasoning would be the defect.
 
 The branch reads `[Environment]::GetEnvironmentVariable('HUB_TOKEN', 'User')` — the **User
 registry store**, not the process environment. Clearing it in a child shell does nothing;
@@ -416,9 +434,14 @@ invisible to reading and visible the moment a real slow start was staged.
 - **Case 3**, above.
 - **The box appearing during the logon storm.** Every proof here ran on a machine with a settled
   desktop. Whether a modal dialog is seen at boot, behind whatever else is starting, cannot be
-  faked — it needs a real reboot. Case 1 is the cheapest way to arm it: leave the repo on a
-  non-`main` branch before restarting, and the box should be waiting. **The Owner will say when
-  that reboot is.**
+  faked — it needs a real reboot.
+
+  **NOT SCHEDULED, and deliberately so.** Owner: 「I will tell you before my next real restart and
+  you can leave the repo off main so the box is waiting. Not scheduled — I am not restarting to
+  test.」 Restarting *in order to* test would make the boot the artificial part and prove the
+  wrong thing; the proof is worth having only on a restart that was going to happen anyway. When
+  he gives notice, arming it is one command — `git switch -c proof/boot-notifier` — and the box
+  should be waiting at logon. Until then this stays honestly unproven.
 - **Anything unanticipated.** Five branches were exercised because five branches exist in the
   source. That is not the same as proving the notifier speaks when something nobody imagined
   goes wrong.
