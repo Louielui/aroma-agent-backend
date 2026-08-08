@@ -2645,3 +2645,58 @@ Both now produce 2663 / 2659 pass, 0 fail — identical.
 `WORKER_INVOCATION=on`) surface 6 more. Those are not the environment 香香 runs in, so they are
 recorded here rather than fixed, and the number is stated so nobody reads the green above as
 「the suite is environment-independent」. It is independent of **the environment that matters**.
+
+---
+
+# HR-53 — What review is actually for, counted
+
+**Round:** the bilingual work, 2026-08-07 → 08.
+
+> **Owner: 「Two defects caught by tests rather than reading, again. That is the fourth or fifth
+> time this week and it is worth a count somewhere — not as self-criticism, as evidence about
+> what review is actually for.」**
+
+Counted across the bilingual work. Every defect I introduced, and what found it:
+
+| # | the defect | found by |
+|---|---|---|
+| 1 | the literal-key predicate passed `'supplier.' + name` | its own seen-to-fail case |
+| 2 | the staleness rule called a fully-extracted file stale | the fence, on the first success |
+| 3 | `readLiteral` never accumulated characters — the detector could not see its own target | its seen-to-fail cases |
+| 4 | dynamic key at the eight scheduler status codes | the source scan |
+| 5 | dynamic key at `SHELL_TEXT`, **with a correct argument written beside it** | the source scan |
+| 6 | the card face dropped 「不會」 and listed what WILL happen | `cardFace.test.js` |
+| 7 | a blanket regex rewrote the export list | module load |
+| 8 | `phaseLabel` returned a thunk instead of a sentence | `uiStageA.test.js` |
+| 9 | `SOURCE_LABELS` became thunks; two outside consumers still read strings | two tests |
+| 10 | an English sentence quoted with 「」 | the punctuation fence, one round old |
+| 11 | `briefing.nothingWaiting` defined twice | the source-level duplicate scan |
+| 12 | the CJK-punctuation check flagged the em dash | running it |
+| 13 | the page-wording check flagged an honest `app.css` leak-guard | running it |
+| 14 | `DEMO_HTML.includes('餐廳系統')` — green only via the inlined catalogue | the HR-51 fence, one commit old |
+| 15 | 9 tests conditional on the shell's environment | running the suite twice and diffing |
+| 16 | the suite reading the Owner's settings file | the suite going red in unrelated places |
+| 17 | the client deciding section formatting by matching TRANSLATED text (3 sites) | the HR-51x position fence, on its first run |
+
+**Seventeen. Reading found none of them.**
+
+Not one was caught by me looking at the diff — including the ones where I looked hard, and
+including #5, where I looked, reasoned, wrote the reasoning down, and was correct about the
+reasoning while being wrong about the rule.
+
+## WHAT THIS SAYS REVIEW IS FOR
+
+Review is good at **whether the intent is right**: is this the correct thing to build, does the
+sentence say what he needs, is the guarantee the right guarantee. Every judgement call in this
+work came from reading, and several were reversed by reading — 「the per-item 不會 is his wording,
+do not collapse it」 was a reading decision, not a test result.
+
+> ### Review decides WHAT to build. Only a mechanism finds out whether you built it.
+
+**Corollary — the interval matters.** Four of the seventeen (#10, #12, #13, #14, #17) were caught
+by fences built within the previous day or two. A mechanism written this week paid for itself
+this week. That is the argument for building the check WITH the change rather than after it.
+
+**Corollary — the count is the evidence, not the tone.** This is not seventeen failures of care.
+It is seventeen data points saying that care is the wrong instrument for this class of error, and
+that the honest response is to build the instrument that does work.

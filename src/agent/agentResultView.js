@@ -202,7 +202,7 @@ function buildAgentResultView (input = {}) {
     { title: t('result.secChanged'), body: changed },
     { title: t('result.secScope'), body: scopeLine },
     { title: t('result.secTest'), body: testLine },
-    { title: t('result.secDiff'), body: diff },
+    { title: t('result.secDiff'), mono: true, body: diff },
     { title: t('result.secCost'), body: cost },
     { title: t('result.secPatch'), body: patchLine },
     { title: t('result.secYourRepo'), body: t('result.yourRepoBody') }

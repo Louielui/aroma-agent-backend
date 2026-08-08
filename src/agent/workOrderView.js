@@ -263,14 +263,25 @@ function buildApprovalView (workOrder) {
       // terminator belongs to the sentence, so it comes from the sentence's own key.
       { title: null, body: willNotHappenFace ? worstCase + '\n' + t('wont.execSentence', { list: willNotHappenFace }) : worstCase }
     ],
+    /**
+     * ⛔ `mono` IS A FLAG, NOT A TITLE MATCH.
+     *
+     * The client used to decide which detail sections render monospaced by comparing their
+     * TITLE against 「現時內容」. After extraction that became a comparison against a
+     * TRANSLATED string — so a page rendering in one language against a server rendering in
+     * the other (which happens in the reload window after a language change) would simply
+     * stop matching, and the excerpt would lose its formatting with nothing reported.
+     *
+     * Found by translationPosition.test.js on its first run. Meaning now travels as a field.
+     */
     details: [
       // The before/after keeps its FULL honest labelling here. The Owner asked that the
       // face stop explaining that an intention is not a result — 「香香想改」 already says
       // it — but where the two texts sit side by side the distinction still has to be
       // spelled out, and collapsed it costs him nothing.
       hasIntent
-        ? { title: t('card.secBeforeAfter'), body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
-        : { title: t('card.secBefore'), body: `${beforeLabel}：\n${indent(before)}` },
+        ? { title: t('card.secBeforeAfter'), mono: true, body: `${beforeLabel}：\n${indent(before)}\n${afterLabel}：\n${indent(after)}` }
+        : { title: t('card.secBefore'), mono: true, body: `${beforeLabel}：\n${indent(before)}` },
       { title: t('card.secWhatChanges'), body: whatChanges },
       { title: t('card.secScope'), body: scope.join('\n') },
       { title: t('card.secWillNot'), body: willNotHappen },

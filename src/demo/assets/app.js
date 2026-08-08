@@ -1547,7 +1547,10 @@
       var s = el('div', 'sec' + (secs[i].title ? '' : ' bare'))
       if (secs[i].title) {
         s.appendChild(el('div', 'sec-t', secs[i].title))
-        var isExcerpt = secs[i].title.indexOf(t('approve.currentContent')) === 0
+        // ⛔ A FLAG, NOT A TITLE MATCH. This compared the section title against a TRANSLATED
+      // string — so a page in one language against a server in the other (the reload window
+      // after a language change) would simply stop matching, silently.
+      var isExcerpt = secs[i].mono === true
         s.appendChild(el('div', 'sec-b' + (isExcerpt ? ' mono' : ''), secs[i].body))
       } else {
         s.appendChild(el('div', 'sec-b', secs[i].body))
@@ -1567,7 +1570,7 @@
       for (var j = 0; j < dets.length; j++) {
         var d = el('div', 'sec')
         d.appendChild(el('div', 'sec-t', dets[j].title))
-        var mono = dets[j].title.indexOf(t('approve.currentContent')) === 0 || dets[j].title.indexOf(t('approve.intendedChange')) >= 0
+        var mono = dets[j].mono === true
         d.appendChild(el('div', 'sec-b' + (mono ? ' mono' : ''), dets[j].body))
         dd.appendChild(d)
       }
@@ -1749,7 +1752,9 @@
     for (var i = 0; i < s.length; i++) {
       var sec = el('div', 'sec')
       sec.appendChild(el('div', 'sec-t', s[i].title))
-      var isDiff = s[i].title.indexOf('diff') >= 0 || s[i].title.indexOf(t('run.changes')) === 0
+      // 'diff' is a technical token the server emits verbatim in both languages; the
+      // translated half became a flag for the same reason as above.
+      var isDiff = s[i].mono === true || s[i].title.indexOf('diff') >= 0
       sec.appendChild(el('div', 'sec-b' + (isDiff ? ' mono' : ''), s[i].body))
       box.appendChild(sec)
     }

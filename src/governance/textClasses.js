@@ -26,9 +26,16 @@
  *   · the JSON-schema `description` fields → MODEL: she is TOLD them, and they shape her output
  *   · `MERIDIEM` (下午/早上/晚上…)          → MATCHING: they parse what HE types
  *
- * The table below can only give that file ONE class, so the fence there is the file's own ⛔
- * notes at each region, not this map. Recorded rather than papered over: a per-region
- * classification would be the real fix, and this is the gap until someone builds it.
+ * The table below can only give that file ONE class.
+ *
+ * ⛔ AND MEASURED: 8 OF THE 34 REMAINING INTERFACE FILES ARE MIXED — 24%, carrying 20 of the
+ * 232 remaining lines. answerPlan is not an outlier.
+ *
+ * The fence is NOT a per-region registry — that would be a second hand-maintained list,
+ * consulted by whoever remembers to, which is the thing HR-48 is about. It is
+ * : no  call may stand in a MODEL or MATCHING
+ * POSITION. It checks the failure rather than cataloguing the territory, and it found three
+ * live instances on its first run.
  *
  * ⛔ SO THE BOUNDARY IS DECLARED, NOT REMEMBERED. A new file carrying Chinese must be classified
  * before the suite goes green — see `textClasses.test.js`. That is the difference between a fence
