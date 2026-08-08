@@ -8,7 +8,7 @@ const path = require('node:path')
 const fs = require('node:fs')
 process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-readctx-test-'))
 
-const { test, afterEach } = require('node:test')
+const { test, beforeEach, afterEach } = require('node:test')
 const assert = require('node:assert/strict')
 
 const { CAPS, SAFETY_HEADER, OPEN, CLOSE, extractKeywords, planFor, buildReadContext, weekdayOf, zeroResultLine, unavailableLine } = require('./readContext')
@@ -36,7 +36,29 @@ function fakeConnector (script = {}) {
 }
 const okList = (source, items) => ({ asOf: NOW, source, count: items.length, truncatedCount: 0, results: items })
 
-afterEach(() => { for (const k of Object.keys(FLAGS_ON)) delete process.env[k]; delete process.env.GITHUB_READ_REPO })
+/**
+ * ⛔ THE STATE A TEST NAMES MUST BE ESTABLISHED, NOT INHERITED.
+ *
+ * There was only an afterEach here, so 「FLAGS OFF」 meant 「off unless this shell happens to
+ * have them on」. Run from a terminal carrying the launcher's environment — READ_ACCESS=on,
+ * CONTEXT_DRIVE=on — these two tests fail, and they fail by asserting the OPPOSITE of what
+ * they claim to prove: that nothing is read when reading is off.
+ *
+ * Found by running the whole suite twice, once in a clean shell and once with the launcher's
+ * flags set, and diffing. Same family as `currentLocale()` reading the Owner's settings file:
+ * a green run that was conditional on ambient state nobody in the test controls.
+ */
+const clearFlags = () => {
+  for (const k of Object.keys(FLAGS_ON)) delete process.env[k]
+  delete process.env.GITHUB_READ_REPO
+  delete process.env.TURN_ROUTER
+  // CONVERSATION_RECALL changes what processIntake assembles, so it belongs here too — it
+  // was the flag still leaking after the first fix.
+  delete process.env.CONVERSATION_RECALL
+  delete process.env.DECISION_RECALL
+}
+beforeEach(clearFlags)
+afterEach(clearFlags)
 
 /* ── v1.1 deterministic term extraction (the root-cause fix) ──────────────── */
 const LOUIE_Q = '我下星期有咩會議、Drive 有冇中央廚房設備嘅文件、Gmail 最近有咩供應商郵件、GitHub 上有咩開著嘅 PR? 每項請講出處同日期,讀唔到嘅直接講讀唔到。'

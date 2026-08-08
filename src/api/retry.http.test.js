@@ -10,7 +10,7 @@
 
 process.env.LLM_PROVIDER = 'mock'
 
-const { test, afterEach } = require('node:test')
+const { test, afterEach, beforeEach } = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
@@ -22,7 +22,26 @@ const { createArtifactStore } = require('../store/artifactStore')
 const { TEST_SERVICE_TOKEN: TOKEN } = require('./_serviceTokenFixture') // B2-15: explicit test token
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
 
-afterEach(() => { delete process.env.WORKER_INVOCATION; delete process.env.DEVELOP_DISPATCH })
+/**
+ * ⛔ THE STATE A TEST NAMES MUST BE ESTABLISHED, NOT INHERITED.
+ *
+ * There was only an afterEach here, so a case meaning 「this flag is off」 meant 「off unless
+ * the shell happens to have it on」. Run from a terminal carrying the launcher environment,
+ * these fail — and they fail by asserting the OPPOSITE of what they prove.
+ *
+ * Found by running the whole suite twice, clean shell vs launcher flags, and diffing.
+ */
+const clearGateFlags = () => {
+  delete process.env.WORKER_INVOCATION
+  delete process.env.DEVELOP_DISPATCH
+  delete process.env.AGENT_BRIDGE
+  delete process.env.MULTI_AI_ROUTER
+  delete process.env.TURN_ROUTER
+  delete process.env.CONVERSATION_RECALL
+  delete process.env.DECISION_RECALL
+}
+beforeEach(clearGateFlags)
+afterEach(clearGateFlags)
 
 async function post (server, url, body, token) {
   const { port } = server.address()

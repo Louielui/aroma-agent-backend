@@ -8,7 +8,17 @@ reason gets argued away.
 
 ---
 
-## ⛔ READ HR-48 FIRST — it is the reason the rest of this file is not enough
+## ⛔ READ THIS FIRST — it is the reason the rest of this file is not enough
+
+> ### A CORRECT argument for an exception is worse than a careless one. It comes with its own
+> ### justification attached, it survives review, and the next person reads it and agrees.
+> ### The fence does not read the paragraph.
+
+> ### 規矩①係「call site 用 literal key」，唔係「有人論證得到係安全嘅 key」——因為論證本身就係失敗模式。
+
+**This applies far past literal keys.** Any rule in this document can be reasoned around, and the
+better the reasoning, the more likely it is to succeed. That is what a mechanism is for: it holds
+when the person breaking the rule is the one who wrote it, for a reason that is actually good.
 
 > **Owner: 「Rules do not survive the moment they are inconvenient; the scan did.」**
 
@@ -2564,3 +2574,60 @@ occur.
 **Not covered, and said rather than implied:** an assertion that greps a blob for wording that is
 NOT in the catalogue — a prompt, a matching token, a fixture — is legitimate and untouched. This
 checks only the collision.
+
+---
+
+# HR-52 — A green suite that depends on the shell is not a green suite
+
+**Round:** the bilingual extraction, 2026-08-08.
+
+> **Owner: 「every green suite this week was conditional on a file outside the tests.」**
+
+Step 3 made `currentLocale()` read `data/settings-values.json`. That file is the Owner's, it is
+mutable, and no test controls it — so the moment it contained `language: "en"`, ~40 assertions
+across a dozen files unrelated to i18n began rendering in English and failing.
+
+The Owner asked whether anything else did the same. **It did.**
+
+## THE SWEEP
+
+**Writes.** Snapshotted every file under `data/`, ran the full suite, diffed: **the suite writes
+nothing to live data.** Good, and now known rather than assumed.
+
+**Reads — files.** Four production modules resolve a default path. Only one mattered:
+
+| module | what it reaches | verdict |
+|---|---|---|
+| `home/settingsValues.js` | the Owner's settings | ⛔ the instance — fixed |
+| `context/googleAuth.js` | `C:\Aroma\secrets` | tests use its CONSTANTS only, never read |
+| `agent/credentialHealth.js` | the home directory | its test injects `env` |
+| `context/developmentRecord.js` | the repo's own `docs/` | tracked and deterministic |
+
+**Reads — environment.** This is where it was worse. Running the whole suite twice — once in a
+clean shell, once with **the launcher's exact flag set, which is the environment 香香 actually
+runs in** — and diffing:
+
+> ### 9 tests across 7 files failed under the environment the product runs in.
+
+`readContext.test.js` (2), `flagScopeContainment.test.js` (5), `retry.http`,
+`workerIdempotency.http`, `workerTrigger`, `proposalBridge.http`, `laneRouter.test.js`,
+`demoRouter.test.js`.
+
+**Every one had the same shape:** an `afterEach` that cleaned up, and **nothing that established
+the starting state**. So a case named 「FLAGS OFF」 meant 「off unless this shell happens to have
+them on」 — and two of them failed by asserting the OPPOSITE of what they claim to prove: that
+nothing is read when reading is off.
+
+## THE RULE
+
+> ### A test must ESTABLISH the state it names, not inherit it. `afterEach` cleans up after
+> ### you; only `beforeEach` protects you from whoever ran before — including the shell.
+
+**And the way to find these is to run the suite in the environment the product runs in.** A clean
+developer shell is not that environment, and the difference is invisible from either run alone.
+Both now produce 2663 / 2659 pass, 0 fail — identical.
+
+**Not covered, and said rather than implied:** flags beyond the launcher's own set (e.g.
+`WORKER_INVOCATION=on`) surface 6 more. Those are not the environment 香香 runs in, so they are
+recorded here rather than fixed, and the number is stated so nobody reads the green above as
+「the suite is environment-independent」. It is independent of **the environment that matters**.

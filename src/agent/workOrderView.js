@@ -23,6 +23,25 @@
  * 3. HONEST BEFORE/AFTER — 「現時內容」 is a bounded read of the real file taken at seal
  *    time (a fact). 「香香打算改成」 is INTENT: the agent has not run and may produce
  *    something else. The card labels it as intent and never states it as a result.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ AND PROPERTY #1 APPLIES TO THE SENTENCES, NOT ONLY TO THE VALUES.
+ *
+ * 「no second projection」 is written above about fields. During the bilingual extraction the
+ * card face turned out to build the 「不會發生」 sentence a SECOND time, separately from
+ * willNotHappenFrom(). My substitution updated one and dropped the 「不會」 prefix from the
+ * other, and the face rendered:
+ *
+ *       提交、上傳、開 PR、合併、部署。
+ *
+ * A list of the actions that WILL happen, on the card whose entire purpose is to say what will
+ * NOT. It is one character per item, it reads as a normal list, and it inverts the guarantee
+ * the Owner approves on.
+ *
+ * **Caught by cardFace.test.js, not by reading it.** I wrote the change, read it back, and did
+ * not see it. Both paths now go through `execPhrase()` — one builder, because a promise stated
+ * twice is a promise that can disagree with itself.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
 
 const { canonicalWorkOrder, canonicalWorkOrderJson, hashWorkOrder } = require('./workOrder')

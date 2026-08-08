@@ -19,12 +19,34 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 
+
 // Isolate the truth store BEFORE anything requires store.js (its data dir is
 // resolved at module load). This process is dedicated to this test file.
 process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-bridge-truth-'))
 process.env.LLM_PROVIDER = 'mock'
 
-const { test } = require('node:test')
+const { test, beforeEach, afterEach } = require('node:test')
+
+/**
+ * ⛔ THE STATE A TEST NAMES MUST BE ESTABLISHED, NOT INHERITED.
+ *
+ * There was only an afterEach here, so a case meaning 「this flag is off」 meant 「off unless
+ * the shell happens to have it on」. Run from a terminal carrying the launcher environment,
+ * these fail — and they fail by asserting the OPPOSITE of what they prove.
+ *
+ * Found by running the whole suite twice, clean shell vs launcher flags, and diffing.
+ */
+const clearGateFlags = () => {
+  delete process.env.WORKER_INVOCATION
+  delete process.env.DEVELOP_DISPATCH
+  delete process.env.AGENT_BRIDGE
+  delete process.env.MULTI_AI_ROUTER
+  delete process.env.TURN_ROUTER
+  delete process.env.CONVERSATION_RECALL
+  delete process.env.DECISION_RECALL
+}
+beforeEach(clearGateFlags)
+afterEach(clearGateFlags)
 const assert = require('node:assert/strict')
 
 const { createApp } = require('../app')

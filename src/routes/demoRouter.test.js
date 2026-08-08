@@ -8,10 +8,32 @@
  *   Run: node --test src/routes/demoRouter.test.js
  */
 
-const { test } = require('node:test')
+const { test, beforeEach, afterEach } = require('node:test')
 const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 const express = require('express')
+
+/**
+ * ⛔ THE STATE A TEST NAMES MUST BE ESTABLISHED, NOT INHERITED.
+ *
+ * These tests describe DEFAULT routing behaviour, so they must run with the routing flags
+ * off — and there was nothing making that true. Run from a terminal carrying the launcher
+ * environment (which is the environment 香香 actually runs in), they fail.
+ *
+ * Found by running the whole suite under the launcher's exact flag set and diffing against
+ * a clean shell. Same family as currentLocale() reading the Owner's settings file.
+ */
+const clearRuntimeFlags = () => {
+  for (const k of [
+    'TURN_ROUTER', 'MULTI_AI_ROUTER', 'CONVERSATION_RECALL', 'DECISION_RECALL',
+    'READ_ACCESS', 'CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR',
+    'CONTEXT_GITHUB', 'CONTEXT_AROMA_SYSTEM', 'AGENT_BRIDGE', 'XIANGXIANG_ARCHIVE',
+    'CONVERSATION_CONTRACT', 'CONVERSATION_DEMO'
+  ]) delete process.env[k]
+}
+beforeEach(clearRuntimeFlags)
+afterEach(clearRuntimeFlags)
+
 
 const { createDemoRouter } = require('./demoRouter')
 const { DEMO_HTML } = require('../demo/demoHtml')

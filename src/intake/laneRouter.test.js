@@ -16,8 +16,32 @@
  */
 
 const test = require('node:test')
+const { beforeEach, afterEach } = require('node:test')
 const assert = require('node:assert')
 const express = require('express')
+
+/**
+ * ⛔ THE STATE A TEST NAMES MUST BE ESTABLISHED, NOT INHERITED.
+ *
+ * These describe DEFAULT routing, so they need the runtime flags OFF — and nothing made that
+ * true. Run from a terminal carrying the launcher environment, which is the environment 香香
+ * actually runs in, this file fails: `XIANGXIANG_ARCHIVE=on` adds a field and the
+ * 「proposal envelope unchanged」 assertion breaks.
+ *
+ * Found by running the whole suite twice — clean shell versus the launcher's exact flag set —
+ * and diffing, then bisecting one flag at a time. Same family as `currentLocale()` reading the
+ * Owner's settings file: a green that was conditional on ambient state.
+ */
+const clearRuntimeFlags = () => {
+  for (const k of [
+    'TURN_ROUTER', 'MULTI_AI_ROUTER', 'CONVERSATION_RECALL', 'DECISION_RECALL',
+    'READ_ACCESS', 'CONTEXT_DRIVE', 'CONTEXT_GMAIL', 'CONTEXT_CALENDAR',
+    'CONTEXT_GITHUB', 'CONTEXT_AROMA_SYSTEM', 'AGENT_BRIDGE', 'XIANGXIANG_ARCHIVE',
+    'CONVERSATION_CONTRACT', 'CONVERSATION_DEMO'
+  ]) delete process.env[k]
+}
+beforeEach(clearRuntimeFlags)
+afterEach(clearRuntimeFlags)
 
 const { routeLane, isShortReply, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL } = require('./laneRouter')
 const { createDemoRouter } = require('../routes/demoRouter')
