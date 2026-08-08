@@ -319,17 +319,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
-  // THE TURN'S REAL READ OUTCOME, recorded AT the read — source -> {source,trust,count,
-  // usedFallback}. Keyed by source so the same source fetched for a second provider does
-  // not double-count. This is what the reply is checked against below; reconstructing it
-  // afterwards is the exact bug class that has already cost three rounds.
+  /**
+   * THE TURN'S REAL READ OUTCOME, recorded AT the read.
+   *
+   * ⛔ KEYED AT THE GRAIN THE READ ACTUALLY HAPPENED — `readKey` below, NOT bare source.
+   *
+   * These were keyed by SOURCE, which was right while a turn could read a source at most
+   * once. The model-directed loop broke that: `aroma_system.replenishment` and
+   * `aroma_system.purchasing` are two reads of two different entities and BOTH carry
+   * `source === 'aroma_system'`, so the second silently overwrote the first and the validator
+   * was handed half of what had been read.
+   *
+   * Worse, the three maps disagreed about WHEN they overwrote — `turnItems` was replaced only
+   * by a non-empty group while the other two were replaced unconditionally — so a live
+   * zero-row second read left read A's ROWS paired with read B's EVIDENCE, a state describing
+   * neither read. Latent until Truth Closure started handing these to the validator.
+   *
+   * The KEY changed; the VALUES did not. Each carries its own real `source`, so the evidence
+   * ref contract downstream (`source#sourceId`, e.g. `aroma_system#7`) is byte-identical —
+   * nothing outside this file learns that the key is finer than it was.
+   */
   const turnPerSource = new Map()
 
   // THE ROWS THEMSELVES, for the Owner-facing view. Recorded at the same instant as
   // turnPerSource and for the same reason: the presentation is built from what this turn
   // really retrieved, never reconstructed from the reply afterwards.
-  const turnItems = new Map() // source -> items[]
-  const turnEvidence = new Map() // source -> what that read IS (kind, totals, meaning)
+  const turnItems = new Map() // readKey -> { source, items[] }
+  const turnEvidence = new Map() // readKey -> what that read IS (kind, totals, meaning)
   let turnTruncated = false
 
   // WHICH PROVIDER ACTUALLY RECEIVED EXTERNAL READ CONTEXT, recorded AT the injection —
@@ -542,7 +558,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               }
             }
             for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
-              if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
+              // AUTOMATIC READ: one read per source, so the readKey IS the source — this grain
+              // is unchanged and this path behaves exactly as it always has.
+              if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, { source: g.source, items: g.items })
             }
             for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) {
               if (e && e.source) turnEvidence.set(e.source, e)
@@ -683,10 +701,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         schema: withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, openChoices, choiceGloss)
       }
     }
+    // ⛔ THE REF COMES FROM THE GROUP'S OWN SOURCE, NEVER FROM THE MAP KEY. The key is now the
+    // read grain (an operation for a model-directed read) and the ref contract is the SOURCE —
+    // building refs from the key would emit `aroma_system.purchasing#31` while evidenceIndex
+    // builds `aroma_system#31` from the row itself, and every citation would drop.
     const refs = []
-    for (const [source, items] of turnItems) {
-      for (const it of (Array.isArray(items) ? items : [])) {
-        if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${source}#${it.sourceId}`)
+    for (const g of turnItems.values()) {
+      for (const it of (g && Array.isArray(g.items) ? g.items : [])) {
+        if (it && it.sourceId != null && it.sourceId !== '') refs.push(`${g.source}#${it.sourceId}`)
       }
     }
     // ⛔ THE MODEL IS SHOWN ITS ACTUAL CHOICES (live canary, blocker 2). Authorised for the
@@ -859,7 +881,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   if (routeDecision) {
     try {
       let rows = 0
-      for (const items of turnItems.values()) rows += Array.isArray(items) ? items.length : 0
+      for (const g of turnItems.values()) rows += (g && Array.isArray(g.items)) ? g.items.length : 0
       logTurnRoute({
         decision: routeDecision,
         // Read from `opts`, NOT from `isChat`/`interactionMode`: both of those live in the
@@ -868,7 +890,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // turn and produced no shadow data at all — a telemetry feature that logs nothing
         // while appearing to work.
         lane: (opts && opts.interactionMode === 'proposal') ? 'proposal' : ((opts && opts.interactionMode === 'chat') ? 'chat' : 'other'),
-        sourcesRead: Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source),
+        // De-duplicated: the key is now the read grain, so one source read through two
+        // operations appears twice in the map and must not be double-listed here.
+        sourcesRead: [...new Set(Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source))],
         rowsRetrieved: rows,
         // THE EXACT CONDITION at intakeService.js:401 that makes the plan mandatory today.
         answerPlanForced: turnItems.size > 0,
@@ -962,9 +986,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // changes nothing; their plans were never intent-derived.
         const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, env: process.env })
         if (rc && rc.block) extraObservationBlocks.push(rc.block)
-        for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(row.source, row)
-        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
-        for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(e.source, e)
+        // ⛔ MODEL-DIRECTED READ: the readKey is the OPERATION, because that is the grain at
+        // which the model actually read. Keying by source here is what let
+        // aroma_system.purchasing erase aroma_system.replenishment. The values still carry
+        // their own real `source`, so every ref downstream is unchanged.
+        for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(capability, row)
+        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(capability, { source: g.source, items: g.items })
+        for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(capability, e)
 
         // ⛔ ATTEMPTED IS NOT READ. This used to be an unconditional `turnOperations.add()` and
         // an `ok` computed from `!!rc.block` — but a FAILED read still produces a block: it
@@ -1075,7 +1103,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       evidenceSets: Array.from(turnEvidence.values()),
       provider: (llmResult && llmResult.provider) || null,
       requestId,
-      itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
+      itemsBySource: Array.from(turnItems.values()),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated,
       // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope
@@ -1137,7 +1165,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       evidenceSets: Array.from(turnEvidence.values()),
       provider: (llmResult && llmResult.provider) || null,
       requestId,
-      itemsBySource: Array.from(turnItems.entries()).map(([source, items]) => ({ source, items })),
+      itemsBySource: Array.from(turnItems.values()),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated,
       // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope
