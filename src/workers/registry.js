@@ -1,5 +1,7 @@
 'use strict'
 
+const { t } = require('../i18n/t')
+
 /**
  * Worker Registry = Aroma's AI TEAM (an org chart, not a model list).
  *
@@ -18,15 +20,20 @@
  */
 
 const EXECUTIVE = {
-  id: 'aroma', name: '香香', role: 'AI Executive', provider: 'Claude',
-  responsibilities: ['理解需求', '拆解任務', '制定計畫', '派工', '整合成果', '向 Louie 回報', '等待批准'],
+  id: 'aroma', get name () { return t('worker.aroma') }, role: 'AI Executive', provider: 'Claude',
+  // ⛔ A GETTER, so `responsibilities` is still an array of STRINGS at every consumer while
+  // being read at use time. A thunk would make every reader learn it is now a function.
+  get responsibilities () {
+    return [t('resp.understand'), t('resp.decompose'), t('resp.plan'), t('resp.dispatch'),
+      t('resp.integrate'), t('resp.report'), t('resp.awaitApproval')]
+  },
   connected: true
 }
 
 const WORKERS = [
   {
     id: 'architect', role: 'Architect / Designer', provider: 'Claude', engine: 'llm', connected: true,
-    responsibilities: ['系統設計', 'UI / UX', 'PRD', '文件', '複雜推理', '架構審查'],
+    get responsibilities () { return [t('resp.systemDesign'), 'UI / UX', 'PRD', t('resp.docs'), t('resp.complexReasoning'), t('resp.architectureReview')] },
     capabilities: ['architecture', 'design', 'ui_ux', 'prd', 'documentation', 'reasoning', 'review', 'analysis', 'verification', 'planning', 'research', 'writing', 'product', 'ops']
   },
   {
@@ -36,22 +43,22 @@ const WORKERS = [
   },
   {
     id: 'advisor', role: 'Technical Advisor / Strategy', provider: 'GPT', engine: 'external', connected: false,
-    responsibilities: ['技術規劃', '產品策略', '架構討論', '商業邏輯分析'],
+    get responsibilities () { return [t('resp.techPlanning'), t('resp.productStrategy'), t('resp.architectureDiscussion'), t('resp.businessLogic')] },
     capabilities: ['strategy', 'product_strategy', 'business_logic', 'planning_technical']
   },
   {
     id: 'qa', role: 'Engineering QA', provider: 'Codex', engine: 'external', connected: false,
-    responsibilities: ['Code Review', '靜態分析', '回歸風險', '改進建議'],
+    get responsibilities () { return ['Code Review', t('resp.staticAnalysis'), t('resp.regressionRisk'), t('resp.suggestions')] },
     capabilities: ['code_review', 'static_analysis', 'regression', 'quality']
   },
   {
     id: 'automation', role: 'Automation Specialist', provider: 'Manus', engine: 'external', connected: false,
-    responsibilities: ['瀏覽器自動化', '長流程', '研究', '資料蒐集', '多步驟執行'],
+    get responsibilities () { return [t('resp.browserAutomation'), t('resp.longFlows'), t('resp.research'), t('resp.dataGathering'), t('resp.multiStep')] },
     capabilities: ['browser', 'web', 'research_web', 'data_collection', 'workflow']
   },
   {
     id: 'operator', role: 'Computer Operator', provider: 'Windows Agent', engine: 'external', connected: false,
-    responsibilities: ['Git', 'VS Code', '終端機', '部署', '本機指令', '檔案操作'],
+    get responsibilities () { return ['Git', 'VS Code', t('resp.terminal'), t('resp.deploy'), t('resp.localCommands'), t('resp.fileOps')] },
     capabilities: ['git', 'terminal', 'deploy', 'file_ops', 'local_commands', 'execution', 'desktop', 'ssh']
   }
 ]

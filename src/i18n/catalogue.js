@@ -1324,6 +1324,102 @@ const CATALOGUE = Object.freeze({
     en: '\n\n[SYSTEM CORRECTION — from the actual read record] The statement above that it "could not be read" is wrong. {parts}. This record is authoritative.'
   },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE CREDENTIAL REFUSALS — agent/credentialHealth.js.
+  // ⛔ EVERY ONE ENDS 「所以冇派工」. The refusal and the reason arrive together, and the login
+  // hint carries WHY the absolute path matters — a hint without its reason gets ignored.
+  // ══════════════════════════════════════════════════════════════════════════
+  'cred.loginHint': {
+    zh: '在終端機執行： "{path}" /login\n（要用 claude.exe 的絕對路徑 —— 直接打 claude 會走到 .ps1 wrapper，被 PowerShell 執行政策擋住。香香派工用的本來就是絕對路徑，所以派工不受影響。）',
+    en: 'Run in a terminal: "{path}" /login\n(Use the absolute path to claude.exe — typing claude on its own resolves to a .ps1 wrapper and is blocked by PowerShell execution policy. Dispatch already uses the absolute path, so dispatch itself is unaffected.)'
+  },
+  'cred.notFound': { zh: '找不到 Claude Code 的登入憑證，所以沒有派工。\n{hint}', en: 'Could not find the Claude Code login credentials, so nothing was dispatched.\n{hint}' },
+  /** ⛔ 「狀態未知就當唔可用」 — unknown is treated as unusable, and the sentence says so. */
+  'cred.unreadable': {
+    zh: '讀不到 Claude Code 的登入憑證，所以沒有派工。狀態未知就當作不可用。\n{hint}',
+    en: 'Could not read the Claude Code login credentials, so nothing was dispatched. Unknown state is treated as unusable.\n{hint}'
+  },
+  'cred.badFormat': { zh: 'Claude Code 的登入憑證讀得到但格式不認得，所以沒有派工。\n{hint}', en: 'The credentials were readable but in a format I do not recognise, so nothing was dispatched.\n{hint}' },
+  'cred.incomplete': { zh: 'Claude Code 的登入憑證不完整，所以沒有派工。\n{hint}', en: 'The credentials are incomplete, so nothing was dispatched.\n{hint}' },
+  'cred.noExpiry': { zh: '看不到登入憑證什麼時候到期，狀態未知就當作不可用，所以沒有派工。\n{hint}', en: 'I cannot see when the credentials expire. Unknown state is treated as unusable, so nothing was dispatched.\n{hint}' },
+  /**
+   * ⛔ THE ENGLISH DOES NOT NAME THE PRODUCT THREE WORDS IN A ROW, and that is not style.
+   * The catalogue's flattening check forbids a proper-noun phrase inside a template, because
+   * that is what DATA escaping into a translatable string looks like. 「The Claude Code login」
+   * trips it. The product name stays in the Chinese, where it reads as a name; the English says
+   * 「the login」, which is what he is being told about anyway.
+   */
+  'cred.expired': { zh: 'Claude Code 的登入已經過期，要重新登入才可以派工。\n{hint}', en: 'The login has expired and must be renewed before anything can be dispatched.\n{hint}' },
+  'cred.expiringSoon': { zh: '登入還有 {days} 日到期。這次照跑，但記得續期。\n{hint}', en: 'The login expires in {days} days. This run proceeds, but renew it.\n{hint}' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE WORKER REGISTRY — who does what, as shown on screen.
+  // ══════════════════════════════════════════════════════════════════════════
+  'worker.aroma': { zh: '香香', en: 'Xiangxiang' },
+  'resp.understand': { zh: '理解需求', en: 'understanding what is needed' },
+  'resp.decompose': { zh: '拆解任務', en: 'breaking work down' },
+  'resp.plan': { zh: '制定計畫', en: 'planning' },
+  'resp.dispatch': { zh: '派工', en: 'dispatching' },
+  'resp.integrate': { zh: '整合成果', en: 'pulling results together' },
+  'resp.report': { zh: '向 Louie 回報', en: 'reporting to Louie' },
+  'resp.awaitApproval': { zh: '等待批准', en: 'waiting for approval' },
+  'resp.systemDesign': { zh: '系統設計', en: 'system design' },
+  'resp.docs': { zh: '文件', en: 'documentation' },
+  'resp.complexReasoning': { zh: '複雜推理', en: 'complex reasoning' },
+  'resp.architectureReview': { zh: '架構審查', en: 'architecture review' },
+  'resp.techPlanning': { zh: '技術規劃', en: 'technical planning' },
+  'resp.productStrategy': { zh: '產品策略', en: 'product strategy' },
+  'resp.architectureDiscussion': { zh: '架構討論', en: 'architecture discussion' },
+  'resp.businessLogic': { zh: '商業邏輯分析', en: 'business-logic analysis' },
+  'resp.staticAnalysis': { zh: '靜態分析', en: 'static analysis' },
+  'resp.regressionRisk': { zh: '回歸風險', en: 'regression risk' },
+  'resp.suggestions': { zh: '改進建議', en: 'improvement suggestions' },
+  'resp.browserAutomation': { zh: '瀏覽器自動化', en: 'browser automation' },
+  'resp.longFlows': { zh: '長流程', en: 'long flows' },
+  'resp.research': { zh: '研究', en: 'research' },
+  'resp.dataGathering': { zh: '資料蒐集', en: 'data gathering' },
+  'resp.multiStep': { zh: '多步驟執行', en: 'multi-step execution' },
+  'resp.terminal': { zh: '終端機', en: 'terminal' },
+  'resp.deploy': { zh: '部署', en: 'deployment' },
+  'resp.localCommands': { zh: '本機指令', en: 'local commands' },
+  'resp.fileOps': { zh: '檔案操作', en: 'file operations' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // ASKING WHICH FILE — agent/requestInference.js.
+  // ⛔ 「唔可以改」 is a refusal about a protected path, not a request for clarification, and
+  // the two must not blur: the question that follows it is a SECOND sentence.
+  // ══════════════════════════════════════════════════════════════════════════
+  'ask.forbidden': {
+    zh: '「{file}」屬於受保護範圍（憑證／授權閘／稽核），不可以改。你想改哪個檔？',
+    en: '"{file}" is in the protected set (credentials / authorisation gate / audit) and cannot be changed. Which file did you mean?'
+  },
+  'ask.whichOfThese': { zh: '你想改哪個檔？我在對話裡見到 {files}。', en: 'Which file do you want changed? In this conversation I can see {files}.' },
+  'ask.whichAndHow': { zh: '你想改哪個檔，還有想怎麼改？', en: 'Which file, and what change?' },
+  'ask.which': { zh: '你想改哪個檔？', en: 'Which file?' },
+  'ask.how': { zh: '你想怎麼改？', en: 'What change?' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE DEVELOPMENT RECORD — context/developmentRecord.js.
+  // ⛔ 「已推翻」 is not 「已被取代」. A disproven decision and a superseded one are different
+  // facts about the past, and collapsing them loses which is which.
+  // ══════════════════════════════════════════════════════════════════════════
+  'dec.active': { zh: '現行', en: 'current' },
+  'dec.superseded': { zh: '已被取代', en: 'superseded' },
+  'dec.disproven': { zh: '已推翻', en: 'disproven' },
+  'dec.workingNote': { zh: '工作筆記', en: 'working note' },
+  'dec.undated': { zh: '未標日期', en: 'undated' },
+  'dec.line': { zh: '{id}（{when}，{label}）{title} ［{file}］', en: '{id} ({when}, {label}) {title} [{file}]' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // TIME, DATE AND CONVERSION ANSWERS — intake/utilityAnswer.js.
+  // ⛔ THE PATTERNS IN THAT FILE ARE MATCHING and stay Chinese; only these answers move.
+  // ══════════════════════════════════════════════════════════════════════════
+  'util.timeIs': { zh: '現在是{meridiem} {h} 時 {m} 分（{zone}）。', en: 'It is {h}:{m} {meridiem} ({zone}).' },
+  'util.dateIs': { zh: '{label}是 {y} 年 {mo} 月 {d} 日，{weekday}（{zone}）。', en: '{label} is {y}-{mo}-{d}, {weekday} ({zone}).' },
+  'util.calc': { zh: '{expr} = {value}。', en: '{expr} = {value}.' },
+  'util.temperature': { zh: '{amount} °{from} = {result} °{to}。', en: '{amount}°{from} = {result}°{to}.' },
+  'util.measureNote': { zh: '（{notes} 量度）', en: ' ({notes} measure)' },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

@@ -32,6 +32,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const os = require('node:os')
 const path = require('node:path')
 
@@ -55,9 +56,7 @@ function credentialsPath (env = process.env) {
 /** The exact command that fixes it. */
 function loginHint (cliPath) {
   const p = cliPath || 'C:\\Users\\louis\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe'
-  return '喺終端機行： "' + p + '" /login\n' +
-    '（要用 claude.exe 嘅絕對路徑 —— 直接打 claude 會行到 .ps1 wrapper，被 PowerShell 執行政策擋住。' +
-    '香香派工用嘅本來就係絕對路徑，所以派工唔受影響。）'
+  return t('cred.loginHint', { path: p })
 }
 
 /**
@@ -90,8 +89,8 @@ function checkCredentialHealth (opts = {}) {
       state: missing ? STATE.ABSENT : STATE.UNREADABLE,
       canRun: false,
       refusal: missing
-        ? '搵唔到 Claude Code 嘅登入憑證，所以冇派工。\n' + loginHint(opts.cliPath)
-        : '讀唔到 Claude Code 嘅登入憑證，所以冇派工。狀態未知就當唔可用。\n' + loginHint(opts.cliPath),
+        ? t('cred.notFound', { hint: loginHint(opts.cliPath) })
+        : t('cred.unreadable', { hint: loginHint(opts.cliPath) }),
       warning: null
     })
   }
@@ -106,7 +105,7 @@ function checkCredentialHealth (opts = {}) {
     return Object.assign({}, base, {
       state: STATE.UNREADABLE,
       canRun: false,
-      refusal: 'Claude Code 嘅登入憑證讀得到但格式唔認得，所以冇派工。\n' + loginHint(opts.cliPath),
+      refusal: t('cred.badFormat', { hint: loginHint(opts.cliPath) }),
       warning: null
     })
   }
@@ -131,7 +130,7 @@ function checkCredentialHealth (opts = {}) {
     return Object.assign({}, facts, {
       state: STATE.UNREADABLE,
       canRun: false,
-      refusal: 'Claude Code 嘅登入憑證唔完整，所以冇派工。\n' + loginHint(opts.cliPath),
+      refusal: t('cred.incomplete', { hint: loginHint(opts.cliPath) }),
       warning: null
     })
   }
@@ -141,7 +140,7 @@ function checkCredentialHealth (opts = {}) {
     return Object.assign({}, facts, {
       state: STATE.UNREADABLE,
       canRun: false,
-      refusal: '睇唔到登入憑證幾時到期，狀態未知就當唔可用，所以冇派工。\n' + loginHint(opts.cliPath),
+      refusal: t('cred.noExpiry', { hint: loginHint(opts.cliPath) }),
       warning: null
     })
   }
@@ -150,7 +149,7 @@ function checkCredentialHealth (opts = {}) {
     return Object.assign({}, facts, {
       state: STATE.EXPIRED,
       canRun: false,
-      refusal: 'Claude Code 嘅登入已經過期，要重新登入先可以派工。\n' + loginHint(opts.cliPath),
+      refusal: t('cred.expired', { hint: loginHint(opts.cliPath) }),
       warning: null
     })
   }
@@ -160,7 +159,7 @@ function checkCredentialHealth (opts = {}) {
       state: STATE.EXPIRING_SOON,
       canRun: true, // still runs — this is a heads-up, not a gate
       refusal: null,
-      warning: '登入仲有 ' + facts.daysLeft + ' 日到期。今次照跑，但記得續期。\n' + loginHint(opts.cliPath)
+      warning: t('cred.expiringSoon', { days: facts.daysLeft, hint: loginHint(opts.cliPath) })
     })
   }
 

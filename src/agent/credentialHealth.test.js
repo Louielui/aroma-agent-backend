@@ -73,7 +73,7 @@ test('*** a refresh token inside the warning window runs, but says so ***', () =
   const h = check(creds({ refreshTokenExpiresAt: days(3) }))
   assert.equal(h.state, STATE.EXPIRING_SOON)
   assert.equal(h.canRun, true, 'a heads-up, not a gate')
-  assert.match(h.warning, /仲有 3 日到期/)
+  assert.match(h.warning, /還有 3 日到期/)
   assert.match(h.warning, /login/)
   assert.equal(h.daysLeft, 3)
 })

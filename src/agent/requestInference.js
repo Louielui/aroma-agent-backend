@@ -30,6 +30,7 @@
  */
 
 const { mentionedFilesFrom } = require('./workOrderProducer')
+const { t } = require('../i18n/t')
 const { isForbiddenFile } = require('./workOrder')
 
 /**
@@ -131,18 +132,18 @@ function inferWorkRequest (input = {}) {
  */
 function questionFor (missing, candidates, forbidden) {
   if (forbidden) {
-    return '「' + forbidden + '」屬於受保護範圍（憑證／授權閘／稽核），唔可以改。你想改邊個檔？'
+    return t('ask.forbidden', { file: forbidden })
   }
   if (missing.length === 0) return null
   const needFile = missing.includes('file')
   const needIntent = missing.includes('intent')
 
   if (needFile && candidates.length > 1) {
-    return '你想改邊個檔？我喺對話入面見到 ' + candidates.join('、') + '。'
+    return t('ask.whichOfThese', { files: candidates.join(t('punct.listSep')) })
   }
-  if (needFile && needIntent) return '你想改邊個檔，同埋想點改？'
-  if (needFile) return '你想改邊個檔？'
-  return '你想點改？'
+  if (needFile && needIntent) return t('ask.whichAndHow')
+  if (needFile) return t('ask.which')
+  return t('ask.how')
 }
 
 module.exports = { inferWorkRequest, intentFrom, questionFor, CHANGE_VERB }

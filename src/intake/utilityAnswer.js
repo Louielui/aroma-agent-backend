@@ -25,10 +25,15 @@
  */
 
 const { resolveTimeZone, formatLocal, startOfLocalDay, localParts } = require('../utils/localTime')
+const { t } = require('../i18n/t')
 
 /* ── time and date ────────────────────────────────────────────────────────── */
 
-const WEEKDAYS = Object.freeze(['星期日', '星期一', '星期二', '星期三', '星期四', '星期五', '星期六'])
+// ⛔ Thunks, not key strings — `t(WEEKDAYS[n])` would be a DYNAMIC key (HR-48).
+const WEEKDAYS = Object.freeze([
+  () => t('day.sun'), () => t('day.mon'), () => t('day.tue'), () => t('day.wed'),
+  () => t('day.thu'), () => t('day.fri'), () => t('day.sat')
+])
 
 /**
  * ── THE TIME AND DATE VOCABULARY LIVES HERE, WITH THE CODE THAT ANSWERS IT ──
@@ -41,9 +46,12 @@ const WEEKDAYS = Object.freeze(['星期日', '星期一', '星期二', '星期�
 
 /** 而家 / 今日 / 聽日 / 琴日 → an offset in days from today. */
 const DAY_WORDS = Object.freeze([
-  { re: /聽日|明日|明天/, offset: 1, label: '明天' },
-  { re: /琴日|尋日|昨日|昨天/, offset: -1, label: '昨天' },
-  { re: /今日|今天|而家|依家|家陣|現在|目前|宜家/, offset: 0, label: '今天' }
+  // ⛔ THE `re` PATTERNS ARE MATCHING TOKENS — they parse what HE TYPES and are NEVER
+  // translated. Only `label` is interface. Two classes in one table, marked in place because
+  // textClasses is per-file. See governance/textClasses.js.
+  { re: /聽日|明日|明天/, offset: 1, label: () => t('day.tomorrow') },
+  { re: /琴日|尋日|昨日|昨天/, offset: -1, label: () => t('day.yesterday') },
+  { re: /今日|今天|而家|依家|家陣|現在|目前|宜家/, offset: 0, label: () => t('day.today') }
 ])
 
 /** The ways he asks for a date. 幾月幾號 is listed so the anchor window can stay tight. */
@@ -71,9 +79,9 @@ function wallClock (now, opts) { return localParts(now, opts) }
 
 function timeSentence (now, opts) {
   const c = wallClock(now, opts)
-  const meridiem = c.hour < 12 ? '上午' : '下午'
+  const meridiem = c.hour < 12 ? t('time.am') : t('time.pm')
   const h12 = c.hour % 12 === 0 ? 12 : c.hour % 12
-  return `現在是${meridiem} ${h12} 時 ${c.minute} 分（${zoneLabel(c.tz)}）。`
+  return t('util.timeIs', { meridiem, h: h12, m: c.minute, zone: zoneLabel(c.tz) })
 }
 
 /**
@@ -94,7 +102,14 @@ function dateSentence (now, opts, message) {
     at = new Date(start.getTime() + (hit.offset * 24 + 12) * 60 * 60 * 1000)
   }
   const c = wallClock(at, opts)
-  return `${hit.label}是 ${c.year} 年 ${c.month} 月 ${c.day} 日，${WEEKDAYS[c.weekday] || ''}（${zoneLabel(c.tz)}）。`
+  return t('util.dateIs', {
+    label: hit.label(),
+    y: c.year,
+    mo: c.month,
+    d: c.day,
+    weekday: WEEKDAYS[c.weekday] ? WEEKDAYS[c.weekday]() : '',
+    zone: zoneLabel(c.tz)
+  })
 }
 
 /* ── arithmetic ───────────────────────────────────────────────────────────── */
@@ -253,7 +268,7 @@ function calcSentence (message) {
   // An expression with no operator at all is not a calculation — 「第 3 張」 must not become
   // 「3 = 3」. parseExpression accepts a bare number, so the check belongs here.
   if (!/[-+*/]/.test(candidate.replace(/^\s*-/, ''))) return null
-  return `${prettyExpression(candidate)} = ${tidy(v)}。`
+  return t('util.calc', { expr: prettyExpression(candidate), value: tidy(v) })
 }
 
 /* ── unit conversion ──────────────────────────────────────────────────────── */
@@ -366,15 +381,20 @@ const tempOf = (tok) => TEMPERATURE[String(tok).toLowerCase()] || TEMPERATURE[to
 /** C↔F, the one conversion that is not a ratio. */
 function temperatureSentence (amount, fromScale, toScale) {
   // 度 on its own is resolved ONLY by the other side naming a scale. Both bare → decline.
+  /**
+   * ⛔ `to`, NOT `t` — AND THIS ONE WAS LIVE. The line below calls `t('util.temperature')`; with
+   * a local `t` holding a scale letter it would have thrown on the first temperature question.
+   * Caught by governance/resolverShadow.test.js, which is why that fence exists.
+   */
   let f = fromScale
-  let t = toScale
-  if (f === '?' && t === '?') return null
-  if (f === '?') f = t === 'C' ? 'F' : 'C'
-  if (t === '?') t = f === 'C' ? 'F' : 'C'
-  if (f === t) return null
+  let to = toScale
+  if (f === '?' && to === '?') return null
+  if (f === '?') f = to === 'C' ? 'F' : 'C'
+  if (to === '?') to = f === 'C' ? 'F' : 'C'
+  if (f === to) return null
   const value = f === 'C' ? (amount * 9 / 5) + 32 : (amount - 32) * 5 / 9
   if (!Number.isFinite(value)) return null
-  return `${tidy(amount)} °${f} = ${tidy(Math.round(value * 100) / 100)} °${t}。`
+  return t('util.temperature', { amount: tidy(amount), from: f, result: tidy(Math.round(value * 100) / 100), to })
 }
 
 function convertSentence (message) {
@@ -411,7 +431,7 @@ function convertSentence (message) {
   if (!Number.isFinite(value)) return null
   // A unit whose size is ambiguous says which one was used, on either side of the sum.
   const notes = [...new Set([from.note, to.note].filter(Boolean))]
-  const suffix = notes.length ? `（${notes.join('/')} 量度）` : ''
+  const suffix = notes.length ? t('util.measureNote', { notes: notes.join('/') }) : ''
   return `${tidy(amount)} ${from.name} = ${tidy(Math.round(value * 1000) / 1000)} ${to.name}${suffix}。`
 }
 

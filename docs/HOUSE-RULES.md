@@ -2700,13 +2700,18 @@ Counted across the bilingual work. Every defect I introduced, and what found it:
 | 23 | the rrv catalogue block inserted TWICE | the duplicate-key fence |
 | 24 | a rename changed three declarations but not their uses | the suite |
 | 25 | `return mapped` handed back a thunk instead of a sentence | `readResultView.test.js` |
+| 26 | a comment claimed both report forms were built from the same arrays — one was REVERSE-PARSED from the other's output | the extraction, when the labels became keys |
+| 27 | `t` shadowed a THIRD time (`developmentRecord.js`) | the shadow fence |
+| 28 | `t` shadowed a FOURTH time (`utilityAnswer.js`) — and this one was **LIVE**: the line below it calls t('util.temperature') | the shadow fence |
+| 29 | STATUS_LABEL consumers still read thunks as strings | the suite |
+| 30 | four English entries named the product three words running — the catalogue's own flattening check | the flattening check |
 
-**Twenty-five to one.**
+**Thirty to one.**
 
 ⛔ **And the one is not a point for reading.** #18 surfaced during a rename — a mechanical task
 that required visiting every occurrence of an identifier and removed the option of skimming. I
 was not reviewing the code; I was being marched through it. Reading, as an act of judgement over
-a diff, has caught **none of the twenty-five**.
+a diff, has caught **none of the thirty**.
 
 That distinction matters, because 「read it more carefully」 is the remedy people reach for. What
 actually worked once was a task whose SHAPE made skipping impossible — which is a mechanism

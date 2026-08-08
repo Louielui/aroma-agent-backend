@@ -44,14 +44,14 @@ test('*** a file with no instruction asks ONLY about the change ***', () => {
   const r = inferWorkRequest({ message: '幫我改 docs/canary/agent-canary.md' })
   assert.equal(r.file, 'docs/canary/agent-canary.md', 'the file he gave is kept')
   assert.deepEqual(r.missing, ['intent'])
-  assert.equal(r.question, '你想點改？')
+  assert.equal(r.question, '你想怎麼改？')
   assert.equal(/邊個檔/.test(r.question), false, 'it must NOT re-ask for the file')
 })
 
 test('*** an instruction with no file asks ONLY about the file ***', () => {
   const r = inferWorkRequest({ message: '幫我改個 canary 檔，加一行' })
   assert.equal(r.file, null)
-  assert.equal(r.question, '你想改邊個檔？')
+  assert.equal(r.question, '你想改哪個檔？')
   assert.equal(/點改/.test(r.question), false, 'it must NOT re-ask what to do')
 })
 
@@ -65,7 +65,7 @@ test('*** a bare verb is not an instruction ***', () => {
 test('*** two files named → it asks WHICH, and lists them ***', () => {
   const r = inferWorkRequest({ message: '睇下 src/a.js 同 src/b.js 邊個好，然後改佢' })
   assert.equal(r.file, null, 'ambiguity is never resolved by picking one')
-  assert.match(r.question, /你想改邊個檔/)
+  assert.match(r.question, /你想改哪個檔/)
   assert.match(r.question, /src\/a\.js/)
   assert.match(r.question, /src\/b\.js/)
 })

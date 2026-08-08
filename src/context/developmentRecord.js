@@ -30,6 +30,7 @@
  */
 
 const fs = require('node:fs')
+const { t } = require('../i18n/t')
 const path = require('node:path')
 
 const DOCS_DIR = path.join(__dirname, '..', '..', 'docs')
@@ -43,10 +44,11 @@ const RECORD_STATUS = Object.freeze({
 
 /** Owner-facing wording per status. WORKING_NOTE must never read as current. */
 const STATUS_LABEL = Object.freeze({
-  ACTIVE: '現行',
-  SUPERSEDED: '已被取代',
-  DISPROVEN: '已推翻',
-  WORKING_NOTE: '工作筆記'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  ACTIVE: () => t('dec.active'),
+  SUPERSEDED: () => t('dec.superseded'),
+  DISPROVEN: () => t('dec.disproven'),
+  WORKING_NOTE: () => t('dec.workingNote')
 })
 
 /**
@@ -78,8 +80,10 @@ function firstHeading (text) {
 
 /** Trim to something that fits a shared 6,000-char block four items at a time. */
 function short (s, n = 110) {
-  const t = String(s || '').replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim()
-  return t.length <= n ? t : t.slice(0, n - 1) + '…'
+  // ⛔ `clean`, not `t` — `t` is the resolver. THIRD occurrence of this collision, and the
+  // first one the fence caught rather than luck (governance/resolverShadow.test.js).
+  const clean = String(s || '').replace(/[`*_]/g, '').replace(/\s+/g, ' ').trim()
+  return clean.length <= n ? clean : clean.slice(0, n - 1) + '…'
 }
 
 /**
@@ -156,11 +160,11 @@ function buildIndex ({ dir = DOCS_DIR } = {}) {
  * There is deliberately no second rendering function. A shorter one would be used.
  */
 function citationFor (e) {
-  const label = STATUS_LABEL[e.status] || STATUS_LABEL.WORKING_NOTE
+  const label = (STATUS_LABEL[e.status] || STATUS_LABEL.WORKING_NOTE)()
   // No date is stated as MISSING rather than filled in. An invented date on a ruling is
   // worse than an unstamped one.
-  const when = e.declaredAt || '未標日期'
-  return `${e.id}（${when}，${label}）${e.title} ［${e.sourceFile}］`
+  const when = e.declaredAt || t('dec.undated')
+  return t('dec.line', { id: e.id, when, label, title: e.title, file: e.sourceFile })
 }
 
 module.exports = { RECORD_STATUS, STATUS_LABEL, parseStatus, buildIndex, citationFor, DOCS_DIR }
