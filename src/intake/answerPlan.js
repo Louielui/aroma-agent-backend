@@ -110,6 +110,49 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
     // what she produces. Translating it is a BEHAVIOUR change wearing a translation's clothes.
     // It stays Chinese regardless of the interface language. See textClasses.js, class MODEL.
     directAnswer: { type: 'string', description: '一至兩句，直接回答問題。不要覆述逐項細節。' },
+    // ── A2 PHASE 2: WHAT EACH DIRECT-ANSWER CLAIM IS ABOUT, STRUCTURALLY ────────────
+    //
+    // ⛔ OPTIONAL, DELIBERATELY. It is NOT in `required` above, so a provider that does not
+    // send it stays valid and the turn behaves exactly as before — the binding state is then
+    // recorded as UNBOUND rather than inferred. Adding it to `required` would break every
+    // existing provider and would force a model to invent a binding it cannot justify.
+    //
+    // ⛔ AND IT IS METADATA ONLY IN THIS PHASE. Nothing renders from it, nothing is refused
+    // because of it, and `directAnswer` remains the sole source of the answer the Owner reads.
+    //
+    // The point is to remove a structural blocker: a SENTENCE has no mapping to the source it
+    // is about, so a coverage check handed the whole evidenceSets array would let an unrelated
+    // source's unknown coverage refuse a sentence about a different one. Declared here,
+    // VERIFIED server-side in claimBinding.js — never inferred from the words.
+    answerClaims: {
+      type: 'array',
+      description: '把 directAnswer 拆成一句一個 claim，並宣告每句是關於哪些證據。不要猜；不確定就不要填這個欄位。',
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['text', 'claimKind', 'evidenceSources', 'sourceIds', 'scope'],
+        properties: {
+          text: { type: 'string', description: 'directAnswer 之中的那一句，原文照抄。' },
+          claimKind: {
+            type: 'string',
+            enum: ['row_local', 'set_scoped', 'source_wide'],
+            description: 'row_local＝關於指定的若干列；set_scoped＝關於一個已宣告範圍的整體；source_wide＝關於整個來源。'
+          },
+          evidenceSources: { type: 'array', items: { type: 'string' }, description: '這一句所依據、本回合確實讀取過的來源。' },
+          sourceIds: { type: 'array', items: { type: 'string' }, description: 'row_local 必須填；其他填空陣列。必須是證據中真實存在的 id。' },
+          scope: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['field', 'window'],
+            description: 'set_scoped 必須填寫，並且要與證據本身的範圍一致；其他情況填 null。',
+            properties: {
+              field: { type: ['string', 'null'] },
+              window: { type: ['string', 'null'] }
+            }
+          }
+        }
+      }
+    },
     unanswerable: { type: 'boolean', description: '資料無法回答這個問題時填 true —— 這是誠實，不是失敗。' },
     // ── THE DECLARATION THAT REPLACED A FORCED SECTION ───────────────────────────────
     // `sections.minItems: 1` used to sit below. It was added because item detail had been
@@ -1143,8 +1186,21 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const answerSurvived = directAnswer.trim().length > 0
   if (!answerSurvived) directAnswer = ''
 
+  // ── A2 PHASE 2: CLAIM BINDING. COMPUTED, RETURNED, AND ACTED ON BY NOTHING. ──
+  //
+  // ⛔ THE RETURNED `plan` ABOVE IS NOT TOUCHED BY THIS, and no branch below reads
+  // `claimBindings`. It is metadata for a future gating phase. A test asserts the rendered
+  // reply is byte-identical with and without `answerClaims` present, because 「it only adds
+  // metadata」 is a claim about code, and this project has been wrong about that before.
+  //
+  // An absent declaration yields [] — UNBOUND, never an inferred binding.
+  const { verifyClaimBindings } = require('./claimBinding')
+  const claimBindings = verifyClaimBindings(plan.answerClaims, { evidenceSets, itemsBySource })
+
   return {
     plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence },
+    // Structural verdicts only — no claim text, no row values. See claimBinding.js.
+    claimBindings,
     droppedFacts,
     droppedItems,
     droppedSentences,
