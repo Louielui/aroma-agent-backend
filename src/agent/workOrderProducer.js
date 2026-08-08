@@ -24,6 +24,7 @@
  */
 
 const crypto = require('node:crypto')
+const { t } = require('../i18n/t')
 const fs = require('node:fs')
 const path = require('node:path')
 const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile } = require('./workOrder')
@@ -64,10 +65,10 @@ function readCurrentExcerptFromDisk (repoRoot, relPath) {
 }
 
 const EXCERPT_REFUSALS = Object.freeze({
-  not_found: (f) => `「${f}」在程式庫中不存在。我不會為一個不存在的檔案建立工作單`,
-  not_a_file: (f) => `「${f}」不是一個檔案（可能是資料夾）`,
-  unreadable: (f) => `「${f}」無法讀取，所以我無法向你顯示它現時的內容`,
-  outside_repo: (f) => `「${f}」不在程式庫範圍內`
+  not_found: (f) => t('wop.notFound', { file: f }),
+  not_a_file: (f) => t('wop.notAFile', { file: f }),
+  unreadable: (f) => t('wop.unreadable', { file: f }),
+  outside_repo: (f) => t('wop.outsideRepo', { file: f })
 })
 
 /**
@@ -84,7 +85,7 @@ function plainGoal (raw) {
   if (m) {
     const title = (m[1] || '').replace(/\s+/g, ' ').trim().replace(/[。.]+$/, '')
     const details = (m[2] || '').replace(/\s+/g, ' ').trim()
-    s = (title && details && details !== title) ? `${title}（${details}）` : (title || details)
+    s = (title && details && details !== title) ? t('wop.detailsSuffix', { title, details }) : (title || details)
   }
   return s.replace(/\s+/g, ' ').trim()
 }
@@ -117,7 +118,7 @@ function reject (errors) {
     // Plain-language explanation the Owner sees instead of a Work Order. It carries its own
     // "未能建立工作單" opener, so no caller should prefix that again (the demo page used to,
     // producing "未能建立工作單：未能建立工作單：").
-    reasonForOwner: '未能建立工作單：' + errors.join('；') + '。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。'
+    reasonForOwner: t('wop.reasonForOwner', { errors: errors.join(t('punct.clauseSep')) })
   }
 }
 
@@ -132,7 +133,7 @@ function proposeWorkOrder (input = {}) {
 
   // ── L0: shape ─────────────────────────────────────────────────────────────
   const goal = plainGoal(p.goal)
-  if (!goal) errors.push('goal 不可為空')
+  if (!goal) errors.push(t('wop.goalEmpty'))
 
   // The producer accepts ONE candidate. An array is tolerated only to reject it loudly.
   let candidates = []
@@ -141,24 +142,24 @@ function proposeWorkOrder (input = {}) {
   else if (Array.isArray(p.allowedFiles)) candidates = p.allowedFiles // defensive: model shape drift
   candidates = candidates.filter((x) => typeof x === 'string' && x.trim() !== '')
 
-  if (candidates.length === 0) errors.push('必須指定一個檔案')
-  if (candidates.length > MAX_ALLOWED_FILES) errors.push(`一次只可以改一個檔案（收到 ${candidates.length} 個）`)
+  if (candidates.length === 0) errors.push(t('wop.needOneFile'))
+  if (candidates.length > MAX_ALLOWED_FILES) errors.push(t('wop.onlyOneFile', { n: candidates.length }))
 
   const raw = candidates[0]
   if (raw) {
     const posix = raw.replace(/\\/g, '/')
-    if (WILDCARD_RE.test(posix)) errors.push('不接受通用字元（wildcard／glob）')
-    if (posix.endsWith('/')) errors.push('不接受資料夾，必須是單一檔案')
-    if (!/\.[A-Za-z0-9]{1,6}$/.test(posix)) errors.push('必須是明確的檔案路徑（要有副檔名）')
-    if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix)) errors.push('必須是相對路徑')
-    if (posix.includes('..')) errors.push('路徑不可包含 ..')
+    if (WILDCARD_RE.test(posix)) errors.push(t('wop.noWildcard'))
+    if (posix.endsWith('/')) errors.push(t('wop.noFolder'))
+    if (!/\.[A-Za-z0-9]{1,6}$/.test(posix)) errors.push(t('wop.needExtension'))
+    if (posix.startsWith('/') || /^[A-Za-z]:/.test(posix)) errors.push(t('wop.needRelative'))
+    if (posix.includes('..')) errors.push(t('wop.noDotDot'))
   }
   if (errors.length) return reject(errors)
 
   const file = raw.replace(/\\/g, '/')
 
   // ── L1: the HARD boundary — reuse the existing validator, never a parallel one ──
-  if (isForbiddenFile(file)) errors.push(`「${file}」屬於受保護範圍（憑證／環境／授權閘／稽核／治理），不可修改`)
+  if (isForbiddenFile(file)) errors.push(t('wop.protected', { file }))
   if (errors.length) return reject(errors)
 
   // ── L2: provenance — option B, the file must already be in the conversation ──
@@ -166,7 +167,7 @@ function proposeWorkOrder (input = {}) {
     ? input.mentionedFiles.map(normRel)
     : mentionedFilesFrom(input.conversation)
   if (!mentioned.includes(normRel(file))) {
-    return reject([`「${file}」未在對話中提及過。我不會自行搜尋或推測檔案路徑`])
+    return reject([t('wop.notMentioned', { file })])
   }
 
   // ── L3: the file must actually EXIST and be readable, because the card promises the
@@ -184,7 +185,7 @@ function proposeWorkOrder (input = {}) {
   const defaults = Object.assign({}, DEFAULTS, input.defaults || {})
   const newId = typeof input.newId === 'function' ? input.newId : () => `appr_${crypto.randomUUID().slice(0, 8)}`
   const approvalId = newId()
-  if (!SAFE_ID.test(approvalId)) return reject(['內部錯誤：approvalId 格式不正確'])
+  if (!SAFE_ID.test(approvalId)) return reject([t('wop.badApprovalId')])
 
   const workOrder = {
     goal,

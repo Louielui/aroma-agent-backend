@@ -426,3 +426,41 @@ much as writes: the knock log's own lesson was that the interesting rows are the
 turned away.
 
 **Not started. This entry is the record that it is open.**
+
+---
+
+# M-7 — Client behaviour keyed on text it did not author (swept, ONE fixed, no fence)
+
+**Recorded 2026-08-08. Deliberately NOT mechanised.**
+
+> **Owner: 「a check that cries wolf gets turned off, and then it protects nothing.」**
+
+Swept every branch in `app.js` and `settings.js` that compares a text-bearing field:
+
+| | |
+|---|---|
+| comparisons on a text field | 14 |
+| of those, against a string literal | 8 |
+| genuinely the hazardous shape | **1** |
+
+The seven others branch on ENUMS the server emits verbatim — `lane`, `mode`, `role`, `stage`,
+`dispatchStatus`. Those are machine values, and comparing them is correct.
+
+The one was `s[i].title.indexOf('diff')` — a section TITLE, which extraction had made
+translatable, compared against a hardcoded token. It worked only because both renderings happen
+to contain the Latin word 「diff」, which is a wording choice and not a contract. **Fixed
+structurally:** the server sets `mono: true` and the client reads the flag.
+
+## WHY THERE IS NO STANDING CHECK HERE
+
+A fence for this shape would fire on all eight and be right about one. Seven false alarms out of
+eight is the condition under which a check gets switched off — and a check that has been switched
+off protects nothing at all, which is strictly worse than never having built it, because its
+existence is remembered as coverage.
+
+The translatable case — a `t()` call standing inside a comparison — IS mechanised, in
+`governance/translationPosition.test.js`. What is left uncovered is a comparison against a
+hardcoded literal on a field that later becomes translatable. That is recorded here rather than
+guarded, and the rule it depends on is written where it applies:
+
+> ### 意思用欄位 travel，唔用字面 — meaning travels as a field, never as text.

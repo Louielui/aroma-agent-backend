@@ -2677,12 +2677,25 @@ Counted across the bilingual work. Every defect I introduced, and what found it:
 | 15 | 9 tests conditional on the shell's environment | running the suite twice and diffing |
 | 16 | the suite reading the Owner's settings file | the suite going red in unrelated places |
 | 17 | the client deciding section formatting by matching TRANSLATED text (3 sites) | the position fence, on its first run |
-| 18 | `t` shadowed by a local in `recallCheck.js` — the resolver would never have been called | reading, while renaming (**the first one reading has caught**) |
+| 18 | `t` shadowed by a local in `recallCheck.js` — the resolver would never have been called | a RENAME that forced line-by-line reading |
 | 19 | CJK quotes in six new English entries | the punctuation fence |
 | 20 | `recallCheck.js` extracted with no `t` import at all | the suite failing to load |
+| 21 | `t` shadowed AGAIN, in `readResultView.js` (`const t = fieldOf(…)`) | the shadow fence, built that hour |
+| 22 | four more latent `t` shadows in `answerPlan.js` | the same fence, same run |
+| 23 | the rrv catalogue block inserted TWICE | the duplicate-key fence |
+| 24 | a rename changed three declarations but not their uses | the suite |
+| 25 | `return mapped` handed back a thunk instead of a sentence | `readResultView.test.js` |
 
-**Twenty. Reading found exactly one** — #18, and only because a rename forced me to look at every
-occurrence of that identifier. Nineteen of twenty came from a mechanism.
+**Twenty-five to one.**
+
+⛔ **And the one is not a point for reading.** #18 surfaced during a rename — a mechanical task
+that required visiting every occurrence of an identifier and removed the option of skimming. I
+was not reviewing the code; I was being marched through it. Reading, as an act of judgement over
+a diff, has caught **none of the twenty-five**.
+
+That distinction matters, because 「read it more carefully」 is the remedy people reach for. What
+actually worked once was a task whose SHAPE made skipping impossible — which is a mechanism
+wearing different clothes, not an argument for attention.
 
 Not one was caught by me looking at the diff — including the ones where I looked hard, and
 including #5, where I looked, reasoned, wrote the reasoning down, and was correct about the
@@ -2700,6 +2713,15 @@ do not collapse it」 was a reading decision, not a test result.
 ## ⛔ THE SECOND HALF OF THE ARGUMENT, ON ITS OWN LINE
 
 > ### Mechanisms written this week paid for themselves this week.
+>
+> ### 事後補嘅守衛，一出世就企喺一個已經通過佢嘅 codebase 上面。
+>
+> ### A guard added after the fact starts life on a codebase that already passes it.
+
+That is why every guard added AFTER a defect has only ever caught the NEXT one. It is not that
+late guards are weak — it is that the instance which motivated them is, by construction, already
+fixed and therefore already invisible to them. The check has to be written in the same commit as
+the change to catch anything about that change.
 
 Five of the seventeen (#10, #12, #13, #14, #17) were caught by fences built one or two days
 earlier. Not by fences that had been standing for months and finally earned their keep — by

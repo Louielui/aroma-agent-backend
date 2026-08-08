@@ -1132,6 +1132,124 @@ const CATALOGUE = Object.freeze({
     en: ' ⚠ The site gave no total, so there may be another page.'
   },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // READ RESULTS — intake/readResultView.js.
+  // ⛔ 「讀到，但沒有相關結果」 and 「讀不到」 are DIFFERENT FACTS and the whole file exists to
+  // keep them apart. One says the source answered; the other says it did not. English must
+  // not blur them into 「no results」.
+  // ══════════════════════════════════════════════════════════════════════════
+  'rrv.limits': { zh: '資料限制', en: 'Limits of this data' },
+  'rrv.opinion': { zh: '香香睇法', en: 'Her read on it' },
+  'rrv.next': { zh: '下一步', en: 'Next' },
+  'rrv.unknownStatusRaw': { zh: '{label}（{raw}）', en: '{label} ({raw})' },
+  'rrv.untitled': { zh: '（未命名）', en: '(untitled)' },
+  'rrv.noDate': { zh: '沒有日期', en: 'no date' },
+  'rrv.andMore': { zh: '另外有 {n} 項。', en: '{n} more.' },
+  'rrv.noDirectMatch': { zh: '暫時找不到同「{noun}」直接相符的記錄。', en: 'Nothing directly matching "{noun}" was found.' },
+  'rrv.confirmed': { zh: '目前確認到{parts}。', en: 'Confirmed so far: {parts}.' },
+  /** ⛔ The source could not be READ. Not 「nothing found」. */
+  'rrv.sourceUnreadable': { zh: '{label}：讀不到{error}', en: '{label}: could not be read{error}' },
+  'rrv.sourceError': { zh: '（{error}）', en: ' ({error})' },
+  'rrv.sourceFallback': {
+    zh: '{label}：找不到直接相符的{noun}（最近項目 {n} 項未列出）',
+    en: '{label}: nothing directly matching {noun} ({n} recent items not listed)'
+  },
+  /** ⛔ The source WAS read and had nothing. The opposite claim to the one above. */
+  'rrv.sourceEmpty': { zh: '{label}：讀到，但沒有相關結果', en: '{label}: read successfully, nothing relevant' },
+  'rrv.truncated': {
+    zh: '部分項目因長度上限未顯示 —— 見不到不代表沒有。',
+    en: 'Some items are not shown because of a length cap — not shown does not mean not there.'
+  },
+  'rrv.droppedItems': { zh: '有 {n} 項系統無法核對，未顯示。', en: '{n} items could not be verified and are not shown.' },
+  'rrv.droppedFacts': { zh: '有 {n} 個數值無法核對，未顯示。', en: '{n} figures could not be verified and are not shown.' },
+  'rrv.droppedSentences': { zh: '有 {n} 句無法核對，未顯示。', en: '{n} sentences could not be verified and are not shown.' },
+  'rrv.hidden': { zh: '另有 {n} 項未列出（判斷為與此問題無關）', en: '{n} more not listed (judged unrelated to the question)' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // WORK ORDER PRODUCER — agent/workOrderProducer.js. Refusals, and why.
+  // ⛔ 「我不會自行搜尋或推測檔案路徑」 is a boundary, not an apology.
+  // ══════════════════════════════════════════════════════════════════════════
+  'wop.notFound': { zh: '「{file}」在程式庫中不存在。我不會為一個不存在的檔案建立工作單', en: '"{file}" does not exist in the repository. I will not raise a work order for a file that is not there' },
+  'wop.notAFile': { zh: '「{file}」不是一個檔案（可能是資料夾）', en: '"{file}" is not a file (it may be a folder)' },
+  'wop.unreadable': { zh: '「{file}」無法讀取，所以我無法向你顯示它現時的內容', en: '"{file}" cannot be read, so I cannot show you what is in it now' },
+  'wop.outsideRepo': { zh: '「{file}」不在程式庫範圍內', en: '"{file}" is outside the repository' },
+  'wop.detailsSuffix': { zh: '{title}（{details}）', en: '{title} ({details})' },
+  'wop.reasonForOwner': {
+    zh: '未能建立工作單：{errors}。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。',
+    en: 'Could not create the work order: {errors}. I need you to confirm a single file that has been named in this conversation, exists, and is not in the protected set.'
+  },
+  'wop.goalEmpty': { zh: 'goal 不可為空', en: 'the goal may not be empty' },
+  'wop.needOneFile': { zh: '必須指定一個檔案', en: 'exactly one file must be named' },
+  'wop.onlyOneFile': { zh: '一次只可以改一個檔案（收到 {n} 個）', en: 'only one file may be changed at a time ({n} were given)' },
+  'wop.noWildcard': { zh: '不接受通用字元（wildcard／glob）', en: 'wildcards and globs are not accepted' },
+  'wop.noFolder': { zh: '不接受資料夾，必須是單一檔案', en: 'a folder is not accepted; it must be a single file' },
+  'wop.needExtension': { zh: '必須是明確的檔案路徑（要有副檔名）', en: 'it must be an explicit file path, with an extension' },
+  'wop.needRelative': { zh: '必須是相對路徑', en: 'it must be a relative path' },
+  'wop.noDotDot': { zh: '路徑不可包含 ..', en: 'the path may not contain ..' },
+  'wop.protected': {
+    zh: '「{file}」屬於受保護範圍（憑證／環境／授權閘／稽核／治理），不可修改',
+    en: '"{file}" is in the protected set (credentials / environment / authorisation gate / audit / governance) and may not be modified'
+  },
+  /** ⛔ 「我不會自行搜尋或推測」 — the refusal to guess a path is the boundary itself. */
+  'wop.notMentioned': {
+    zh: '「{file}」未在對話中提及過。我不會自行搜尋或推測檔案路徑',
+    en: '"{file}" was never named in this conversation. I will not search for or guess a file path'
+  },
+  'wop.badApprovalId': { zh: '內部錯誤：approvalId 格式不正確', en: 'internal error: the approvalId is malformed' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // UTILITY ANSWERS — intake/utilityAnswer.js.
+  // ⛔ THIS FILE IS MOSTLY MATCHING. The date, time, arithmetic and unit PATTERNS parse what
+  // HE TYPES and are never translated; only the ANSWERS below are interface. See the ⛔ notes
+  // at each pattern table in the file.
+  // ══════════════════════════════════════════════════════════════════════════
+  'day.sun': { zh: '星期日', en: 'Sunday' },
+  'day.mon': { zh: '星期一', en: 'Monday' },
+  'day.tue': { zh: '星期二', en: 'Tuesday' },
+  'day.wed': { zh: '星期三', en: 'Wednesday' },
+  'day.thu': { zh: '星期四', en: 'Thursday' },
+  'day.fri': { zh: '星期五', en: 'Friday' },
+  'day.sat': { zh: '星期六', en: 'Saturday' },
+  'day.tomorrow': { zh: '明天', en: 'tomorrow' },
+  'day.yesterday': { zh: '昨天', en: 'yesterday' },
+  'day.today': { zh: '今天', en: 'today' },
+  'time.am': { zh: '上午', en: 'am' },
+  'time.pm': { zh: '下午', en: 'pm' },
+  'time.nowIs': { zh: '現在是{meridiem} {h} 時 {m} 分（{zone}）。', en: 'It is {h}:{m} {meridiem} ({zone}).' },
+  'time.dateIs': { zh: '{label}是 {y} 年 {mo} 月 {d} 日，{weekday}（{zone}）。', en: '{label} is {y}-{mo}-{d}, {weekday} ({zone}).' },
+  'calc.result': { zh: '{expr} = {value}。', en: '{expr} = {value}.' },
+  'convert.temperature': { zh: '{amount} °{from} = {result} °{to}。', en: '{amount}°{from} = {result}°{to}.' },
+  'convert.notes': { zh: '（{notes} 量度）', en: ' ({notes} measure)' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE SETTINGS REGISTRY — the sentence HE would say for each setting, and the refusals.
+  // ⛔ THE RANGES ARE A FENCE AND THE REFUSAL SAYS SO. 「呢個範圍係一道籬笆，唔係一個建議」
+  // must not become 「please choose a value in range」.
+  // ══════════════════════════════════════════════════════════════════════════
+  'setting.recallIngredients': { zh: '查哪幾樣食材', en: 'which ingredients to check' },
+  'setting.recallShown': { zh: '每樣食材顯示幾多條回收', en: 'how many recalls to show per ingredient' },
+  'setting.pauseBetween': { zh: '兩次搜尋之間隔多久', en: 'how long to pause between searches' },
+  'setting.minRunInterval': { zh: '同一單差事最少隔多久才再跑', en: 'the minimum gap before the same errand runs again' },
+  'setting.recallEvery': { zh: '多久查一次才算準時', en: 'how often it should run to count as on time' },
+  'setting.recallGrace': { zh: '遲多久才算過期', en: 'how late before it counts as overdue' },
+  'setting.recallDailyHour': { zh: '每朝幾點查', en: 'what time each morning it runs' },
+  'setting.language': { zh: '介面用哪種語言', en: 'which language the interface uses' },
+  'setting.unknown': { zh: '沒有這個設定：{id}', en: 'there is no such setting: {id}' },
+  'setting.notAnInteger': { zh: '「{say}」要一個整數。', en: '"{say}" needs a whole number.' },
+  /** ⛔ 「一道籬笆，不是一個建議」 — the range is enforcement, and the sentence says which. */
+  'setting.outOfRange': {
+    zh: '「{say}」要在 {min} 同 {max} 之間。這個範圍是一道籬笆，不是一個建議。',
+    en: '"{say}" must be between {min} and {max}. That range is a fence, not a suggestion.'
+  },
+  'setting.notInList': { zh: '「{say}」只可以是：{options}。', en: '"{say}" can only be: {options}.' },
+  'setting.notAList': { zh: '「{say}」要一張清單。', en: '"{say}" needs a list.' },
+  'setting.tooFew': { zh: '「{say}」至少要 {min} 樣。', en: '"{say}" needs at least {min}.' },
+  'setting.tooMany': {
+    zh: '「{say}」最多 {max} 樣 —— 每樣約 12 秒無人看管的瀏覽器時間，對著一個會限流的網站。',
+    en: '"{say}" takes at most {max} — each one is about 12 seconds of unattended browser time against a site that throttles.'
+  },
+  'setting.unknownType': { zh: '這個設定的型別我不懂處理。', en: 'I do not know how to handle this setting\'s type.' },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

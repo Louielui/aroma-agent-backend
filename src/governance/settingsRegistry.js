@@ -20,6 +20,8 @@
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
+const { t } = require('../i18n/t')
+
 /** ⛔ Hard ceiling. R1.3: past this the registry has become the abstraction layer he ruled out. */
 const MAX_ENTRIES = 8
 
@@ -47,7 +49,7 @@ const APPLIES = Object.freeze({
 const ENTRIES = Object.freeze([
   {
     id: 'recallIngredients',
-    say: '查邊幾樣食材',
+    get say () { return t('setting.recallIngredients') },
     type: 'string[]',
     def: ['mushrooms', 'chicken', 'cheese', 'beef', 'romaine', 'green onion'],
     minItems: 1,
@@ -56,7 +58,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'recallShownPerIngredient',
-    say: '每樣食材顯示幾多條回收',
+    get say () { return t('setting.recallShown') },
     type: 'int',
     def: 6,
     min: 1,
@@ -65,7 +67,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'pauseBetweenMs',
-    say: '兩次搜尋之間隔幾耐',
+    get say () { return t('setting.pauseBetween') },
     type: 'int',
     def: 5000,
     // ⛔ THE FLOOR IS THE FENCE. Measured: six back-to-back searches broke the register.
@@ -77,7 +79,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'minRunIntervalMs',
-    say: '同一單差事最少隔幾耐先再行',
+    get say () { return t('setting.minRunInterval') },
     type: 'int',
     def: 60 * 60 * 1000,
     min: 5 * 60 * 1000, // ⛔ also a fence: ~95 searches in one morning is what this prevents
@@ -86,7 +88,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'recallEveryMs',
-    say: '幾耐查一次先算準時',
+    get say () { return t('setting.recallEvery') },
     type: 'int',
     def: 24 * 60 * 60 * 1000,
     min: 60 * 60 * 1000,
@@ -95,7 +97,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'recallGraceMs',
-    say: '遲幾耐先算過期',
+    get say () { return t('setting.recallGrace') },
     type: 'int',
     def: 6 * 60 * 60 * 1000,
     min: 0,
@@ -104,7 +106,7 @@ const ENTRIES = Object.freeze([
   },
   {
     id: 'recallDailyHour',
-    say: '每朝幾點查',
+    get say () { return t('setting.recallDailyHour') },
     type: 'int',
     def: 7,
     min: 0,
@@ -133,7 +135,7 @@ const ENTRIES = Object.freeze([
    */
   {
     id: 'language',
-    say: '介面用邊種語言',
+    get say () { return t('setting.language') },
     type: 'enum',
     oneOf: ['zh', 'en'],
     def: 'zh',
@@ -181,18 +183,18 @@ function defaults () {
  */
 function validate (id, raw) {
   const e = entry(id)
-  if (!e) return { ok: false, reason: 'unknown_setting', saying: '冇呢個設定:' + String(id).slice(0, 40) }
+  if (!e) return { ok: false, reason: 'unknown_setting', saying: t('setting.unknown', { id: String(id).slice(0, 40) }) }
 
   if (e.type === 'int') {
     const n = Number(raw)
     if (!Number.isFinite(n) || !Number.isInteger(n)) {
-      return { ok: false, reason: 'not_an_integer', saying: '「' + e.say + '」要一個整數。' }
+      return { ok: false, reason: 'not_an_integer', saying: t('setting.notAnInteger', { say: e.say }) }
     }
     if (n < e.min || n > e.max) {
       return {
         ok: false,
         reason: 'out_of_range',
-        saying: '「' + e.say + '」要喺 ' + e.min + ' 同 ' + e.max + ' 之間。呢個範圍係一道籬笆,唔係一個建議。'
+        saying: t('setting.outOfRange', { say: e.say, min: e.min, max: e.max })
       }
     }
     return { ok: true, value: n }
@@ -206,27 +208,27 @@ function validate (id, raw) {
       return {
         ok: false,
         reason: 'not_in_list',
-        saying: '「' + e.say + '」只可以係:' + e.oneOf.join('、') + '。'
+        saying: t('setting.notInList', { say: e.say, options: e.oneOf.join(t('punct.listSep')) })
       }
     }
     return { ok: true, value: v }
   }
 
   if (e.type === 'string[]') {
-    if (!Array.isArray(raw)) return { ok: false, reason: 'not_a_list', saying: '「' + e.say + '」要一張清單。' }
+    if (!Array.isArray(raw)) return { ok: false, reason: 'not_a_list', saying: t('setting.notAList', { say: e.say }) }
     const list = raw.map((x) => String(x == null ? '' : x).trim()).filter(Boolean)
-    if (list.length < e.minItems) return { ok: false, reason: 'too_few', saying: '「' + e.say + '」至少要 ' + e.minItems + ' 樣。' }
+    if (list.length < e.minItems) return { ok: false, reason: 'too_few', saying: t('setting.tooFew', { say: e.say, min: e.minItems }) }
     if (list.length > e.maxItems) {
       return {
         ok: false,
         reason: 'too_many',
-        saying: '「' + e.say + '」最多 ' + e.maxItems + ' 樣 —— 每樣約 12 秒無人看管嘅瀏覽器時間,對住一個會限流嘅站。'
+        saying: t('setting.tooMany', { say: e.say, max: e.maxItems })
       }
     }
     return { ok: true, value: list }
   }
 
-  return { ok: false, reason: 'unknown_type', saying: '呢個設定嘅型別我唔識處理。' }
+  return { ok: false, reason: 'unknown_type', saying: t('setting.unknownType') }
 }
 
 module.exports = { ENTRIES, APPLIES, MAX_ENTRIES, entry, defaults, validate }

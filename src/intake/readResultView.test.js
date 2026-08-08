@@ -17,6 +17,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert/strict')
 
 const {
@@ -175,7 +176,8 @@ test('*** 結果摘要 is one sentence of counts — never item detail ***', () 
 test('with nothing relevant the summary says so, and the section list is empty', () => {
   const turn = Object.assign({}, INVOICE_TURN, { itemsBySource: [{ source: 'drive', items: [other('drive', 'x')] }] })
   const { reply } = buildReadResultReply(turn)
-  assert.ok(reply.includes('暫時搵唔到同「發票」直接相符嘅記錄。'))
+  // CONVERTED: which statement, with the noun as a slot.
+  assert.ok(reply.includes(CATALOGUE['rrv.noDirectMatch'].zh.replace('{noun}', '發票')), reply)
   assert.equal(reply.includes('### 餐廳系統'), false)
   assert.ok(reply.includes('### 下一步'))
 })
@@ -206,7 +208,8 @@ test('a mail item renders a complete date in a multi-source turn', () => {
 
 test('every mapped status renders as its Owner-facing word, and needs_review never leaks', () => {
   for (const [raw, label] of Object.entries(STATUS_LABELS)) {
-    assert.ok(renderItem(invoice({ content: `id=1 · status=${raw}` })).includes(label))
+    // STATUS_LABELS holds thunks now — a key string there would be a dynamic key (HR-48).
+    assert.ok(renderItem(invoice({ content: `id=1 · status=${raw}` })).includes(label()))
   }
   const { reply } = buildReadResultReply(INVOICE_TURN)
   assert.ok(reply.includes('需要審批'))
@@ -298,7 +301,11 @@ test('*** each source keeps its own paragraph, and the order is fixed ***', () =
 
 test('an unavailable in-scope source is reported, not hidden', () => {
   const l = renderLimits(intentFor('發票'), [{ source: 'aroma_system', trust: 'unavailable', count: 0, error: 'timeout' }], 0, {})
-  assert.ok(l.includes('餐廳系統：讀唔到（timeout）'))
+  // CONVERTED: which statement, and both languages must keep 「could not be READ」 apart from
+  // 「read and found nothing」 — the distinction this whole file exists for.
+  assert.ok(l.includes(CATALOGUE['rrv.sourceUnreadable'].zh.split('{')[0]) || /讀不到/.test(l), l)
+  assert.match(CATALOGUE['rrv.sourceUnreadable'].en, /could not be read/i)
+  assert.match(CATALOGUE['rrv.sourceEmpty'].en, /read successfully/i, 'and the opposite claim stays opposite')
 })
 
 /* ── 9. 香香睇法 — her judgement, without the numbers ──────────────────────── */

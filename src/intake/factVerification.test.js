@@ -180,8 +180,14 @@ test('*** the omission notes are written Traditional Chinese ***', () => {
 
 test('the ITEM omission note is rewritten too — same sentence family', () => {
   const src = require('node:fs').readFileSync(require('node:path').join(__dirname, 'readResultView.js'), 'utf8')
+  // CONVERTED: the sentence moved to the catalogue with the rest of the file. The pair must
+  // still be written the same way as each other, which is now checked on the entries.
+  const { CATALOGUE } = require('../i18n/catalogue')
   assert.equal(/項系統核對唔到/.test(src), false, 'leaving one of a pair in Cantonese would be arbitrary')
-  assert.ok(/項系統無法核對/.test(src))
+  assert.match(CATALOGUE['rrv.droppedItems'].zh, /無法核對/)
+  assert.match(CATALOGUE['rrv.droppedFacts'].zh, /無法核對/, 'the pair is written the same way')
+  // The sentence lives in the catalogue now, not in readResultView.js.
+  assert.match(CATALOGUE['rrv.droppedItems'].zh, /項系統無法核對/)
 })
 
 /* ═══ 5. SCHEMA DESCRIPTIONS ═══════════════════════════════════════════════ */

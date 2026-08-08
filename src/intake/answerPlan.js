@@ -287,8 +287,8 @@ const LATIN_RUN = /[A-Za-z][A-Za-z'’.-]*/g
 function latinTokens (text) {
   const out = []
   for (const m of String(text).match(LATIN_RUN) || []) {
-    const t = m.replace(/[.'’-]+$/, '').toLowerCase()
-    if (t.length >= 2) out.push(t)
+    const tok = m.replace(/[.'’-]+$/, '').toLowerCase()
+    if (tok.length >= 2) out.push(tok)
   }
   return out
 }
@@ -462,18 +462,18 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
         const coarse = whole.split(/[·;；\n]/)
         const fine = coarse.flatMap((c) => c.split(/[,，、]/))
         for (const seg of [whole, ...coarse, ...fine]) {
-          const t = seg.trim()
-          if (!t) continue
-          values.add(t)
-          addNum(t)
-          addText(t)
-          const n = numericOf(t); if (n !== null) numericValues.add(n)
-          const dk = dateKeyOf(t); if (dk) dateKeys.add(dk)
+          const seg2 = seg.trim()
+          if (!seg2) continue
+          values.add(seg2)
+          addNum(seg2)
+          addText(seg2)
+          const n = numericOf(seg2); if (n !== null) numericValues.add(n)
+          const dk = dateKeyOf(seg2); if (dk) dateKeys.add(dk)
           if (dk) monthDayKeys.add(dk.slice(5))
-          for (const tk of timeKeysIn(t)) timeKeys.add(tk)
-          const gk = digitsKeyOf(t); if (gk) digitKeys.add(gk)
+          for (const tk of timeKeysIn(seg2)) timeKeys.add(tk)
+          const gk = digitsKeyOf(seg2); if (gk) digitKeys.add(gk)
           // and any digit run embedded in the segment
-          for (const run of t.match(DIGIT_RUN_RE) || []) {
+          for (const run of seg2.match(DIGIT_RUN_RE) || []) {
             const rk = digitsKeyOf(run); if (rk) digitKeys.add(rk)
           }
         }
@@ -545,9 +545,9 @@ const SEPARATED_RE = /^[\d\s\-()+]+$/
 const DIGIT_RUN_RE = /\d[\d\s\-()+]{4,}\d/g
 
 function digitsKeyOf (s) {
-  const t = String(s).trim()
-  if (!SEPARATED_RE.test(t)) return null
-  const groups = t.match(/\d+/g) || []
+  const val = String(s).trim()
+  if (!SEPARATED_RE.test(val)) return null
+  const groups = val.match(/\d+/g) || []
   if (groups.length < 2) return null
   return groups.join('')
 }
@@ -642,10 +642,10 @@ const NEAR_MAX_CHARS = 200 // bounded: a score is cheap, but not at any length
 const NEAR_MAX_VALUES = 400
 
 function bigramsOf (s) {
-  const t = String(s).toLowerCase().replace(/\s+/g, '')
+  const norm = String(s).toLowerCase().replace(/\s+/g, '')
   const out = new Map()
-  for (let i = 0; i + 1 < t.length; i++) {
-    const g = t.slice(i, i + 2)
+  for (let i = 0; i + 1 < norm.length; i++) {
+    const g = norm.slice(i, i + 2)
     out.set(g, (out.get(g) || 0) + 1)
   }
   return out

@@ -33,16 +33,19 @@
 const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { enforceRouteEvidence } = require('./routeEvidenceGuard') // STEP 4: an answer with nothing behind it
+const { t } = require('../i18n/t')
+
 const { pruneRepeatedScopeNotes } = require('./scopeNotes') // a source's fixed properties: once per conversation
 
 /** Owner-facing status words. The keys are the API's own values. */
 const STATUS_LABELS = Object.freeze({
-  needs_review: '需要審批',
-  approved: '已批准',
-  sent: '已發送',
-  received: '已收貨',
-  partially_received: '部分收貨',
-  unknown: '狀態未確認'
+  // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
+  needs_review: () => t('status.needsReview'),
+  approved: () => t('status.approved'),
+  sent: () => t('status.sent'),
+  received: () => t('status.received'),
+  partially_received: () => t('status.partiallyReceived'),
+  unknown: () => t('status.unknown')
 })
 
 /**
@@ -61,7 +64,11 @@ const CAPS = Object.freeze({
   maxRawStatusChars: 24
 })
 
-const H = Object.freeze({ limits: '資料限制', opinion: '香香睇法', next: '下一步' })
+const H = Object.freeze({
+  get limits () { return t('rrv.limits') },
+  get opinion () { return t('rrv.opinion') },
+  get next () { return t('rrv.next') }
+})
 
 /** Sentences kept from her reading of the rows. */
 const MAX_OPINION_SENTENCES = 3
@@ -109,10 +116,10 @@ function statusSegment (item) {
   const raw = fieldOf(item.content, 'status')
   if (raw === null) return null // the row itself carries no status — say nothing
   const mapped = STATUS_LABELS[raw]
-  if (mapped) return mapped
+  if (mapped) return mapped() // ⛔ CALL it — STATUS_LABELS holds thunks, not strings
   // NEVER silently dropped: an unrecognised value is shown, with its raw form.
   const shown = raw.length > CAPS.maxRawStatusChars ? raw.slice(0, CAPS.maxRawStatusChars) + '…' : raw
-  return `${STATUS_LABELS.unknown}（${shown}）`
+  return t('rrv.unknownStatusRaw', { label: STATUS_LABELS.unknown(), raw: shown })
 }
 
 /** The human identifier for a row, when it has one. Never the internal row id. */
@@ -126,9 +133,12 @@ function identifierOf (item) {
 
 /** The money segment, when the row carries a total. Rendered, never recomputed. */
 function amountOf (item) {
-  const t = fieldOf(item.content, 'total')
-  if (t === null) return null
-  return /^[\d.,]+$/.test(t) ? `$${t}` : null
+  // ⛔ `total`, not `t` — `t` is the resolver, and a local of that name silently shadows it.
+  // Second time in two files (recallCheck.js was the first). Now caught by a fence:
+  // governance/resolverShadow.test.js.
+  const total = fieldOf(item.content, 'total')
+  if (total === null) return null
+  return /^[\d.,]+$/.test(total) ? `$${total}` : null
 }
 
 const cap = (s, n) => (String(s).length <= n ? String(s) : String(s).slice(0, n) + '…')
@@ -142,14 +152,14 @@ const cap = (s, n) => (String(s).length <= n ? String(s) : String(s).slice(0, n)
  * words 冇日期 — never today, never guessed.
  */
 function renderItem (item) {
-  const title = item.title ? cap(item.title, CAPS.maxTitleChars) : '(未命名)'
+  const title = item.title ? cap(item.title, CAPS.maxTitleChars) : t('rrv.untitled')
   const ident = identifierOf(item)
   const head = `**${ident ? `${title} — ${ident}` : title}**`
 
   const segs = []
   const amount = amountOf(item)
   if (amount) segs.push(amount)
-  segs.push(dayOf(item.originalDate) || '冇日期')
+  segs.push(dayOf(item.originalDate) || t('rrv.noDate'))
   const status = statusSegment(item)
   if (status) segs.push(status)
 
@@ -163,7 +173,7 @@ function renderSection (source, items) {
   const rest = items.length - shown.length
   const lines = [`### ${label}`]
   for (const it of shown) lines.push(renderItem(it))
-  if (rest > 0) lines.push(`另外有 ${rest} 項。`)
+  if (rest > 0) lines.push(t('rrv.andMore', { n: rest }))
   return lines.join('\n\n')
 }
 
@@ -199,7 +209,7 @@ function selectRelevant (intent, itemsBySource, perSource) {
 function renderSummary (intent, groups) {
   const parts = groups.map((g) => `${LABELS[g.source] || g.source} ${g.items.length} ${intent.unit}${intent.noun}`)
   const body = parts.length === 0
-    ? `暫時搵唔到同「${intent.noun}」直接相符嘅記錄。`
+    ? t('rrv.noDirectMatch', { noun: intent.noun })
     : `目前確認到${parts.join('、')}。`
   return `### ${intent.heading}\n\n${body}`
 }
@@ -215,12 +225,12 @@ function renderLimits (intent, perSource, hidden, opts = {}) {
   for (const r of rows) {
     if (!intent.sources.includes(r.source)) continue // out of scope: covered by the count
     const label = LABELS[r.source] || r.source
-    if (r.trust !== 'live') parts.push(`${label}：讀唔到${r.error ? `（${cap(r.error, 60)}）` : ''}`)
-    else if (r.usedFallback) parts.push(`${label}：搵唔到直接相符嘅${intent.noun}（最近項目 ${r.count} 項未列出）`)
-    else if (!r.count) parts.push(`${label}：讀到，但冇相關結果`)
+    if (r.trust !== 'live') parts.push(t('rrv.sourceUnreadable', { label, error: r.error ? t('rrv.sourceError', { error: cap(r.error, 60) }) : '' }))
+    else if (r.usedFallback) parts.push(t('rrv.sourceFallback', { label, noun: intent.noun, n: r.count }))
+    else if (!r.count) parts.push(t('rrv.sourceEmpty', { label }))
   }
-  if (hidden > 0) parts.push(`另有 ${hidden} 項未列出（判斷為與此問題無關）`)
-  if (opts.truncated) parts.push('部分項目因長度上限未顯示 —— 見唔到唔代表冇。')
+  if (hidden > 0) parts.push(t('rrv.hidden', { n: hidden }))
+  if (opts.truncated) parts.push(t('rrv.truncated'))
   if (parts.length === 0) return null
   return `### ${H.limits}\n\n` + parts.join('\n')
 }
@@ -411,13 +421,13 @@ function renderValidatedPlan (input) {
   // that legitimately cites nothing.
   const omissions = []
   if (v.keptItemCount > 0) {
-    if (v.droppedItems > 0) omissions.push(`有 ${v.droppedItems} 項系統無法核對，未顯示。`)
-    if (v.droppedFacts > 0) omissions.push(`有 ${v.droppedFacts} 個數值無法核對，未顯示。`)
+    if (v.droppedItems > 0) omissions.push(t('rrv.droppedItems', { n: v.droppedItems }))
+    if (v.droppedFacts > 0) omissions.push(t('rrv.droppedFacts', { n: v.droppedFacts }))
     // A DROPPED SENTENCE IS ALSO A REMOVAL. Before the rows were allowed to survive one,
     // a failed sentence produced a fallback that announced itself; now it produces an
     // answer that simply starts at the heading. Said out loud rather than left to be
     // noticed — the same rule as the two counts above.
-    if (v.droppedSentences > 0) omissions.push(`有 ${v.droppedSentences} 句無法核對，未顯示。`)
+    if (v.droppedSentences > 0) omissions.push(t('rrv.droppedSentences', { n: v.droppedSentences }))
   }
 
   // A SOURCE'S FIXED PROPERTIES ARE SAID ONCE PER CONVERSATION, NOT ONCE PER TURN.
