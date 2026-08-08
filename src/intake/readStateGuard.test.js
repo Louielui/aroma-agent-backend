@@ -12,6 +12,7 @@
  */
 
 const test = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 
 const { enforceReadState, detectFalseReadClaim } = require('./readStateGuard')
@@ -34,7 +35,7 @@ test('the correction is appended, and states what was actually read', () => {
   assert.ok(out.reply.startsWith('我目前讀唔到你的日程。'), 'her original words are kept, not edited')
   assert.ok(out.reply.includes('系統更正'), 'the correction is visible and labelled')
   assert.ok(out.reply.includes('2 項'), 'it states the real count from the record')
-  assert.ok(out.reply.includes('唔喺你問嗰段時間內'), 'usedFallback is stated honestly, not hidden')
+  assert.ok(out.reply.includes('不在你問的時段內'), 'usedFallback is stated honestly, not hidden')
 })
 
 test('a live read with NO fallback is corrected without the out-of-window wording', () => {
@@ -47,7 +48,7 @@ test('*** the zero-result state stays DISTINCT from unavailable ***', () => {
   // read OK, nothing matched. Saying 讀唔到 is still false — it was read.
   const out = enforceReadState('我讀唔到你的日曆。', [{ source: 'calendar', trust: 'live', count: 0, usedFallback: false }])
   assert.equal(out.corrected, true)
-  assert.ok(out.reply.includes('讀到咗，但冇相關結果'), 'the middle state is named as itself')
+  assert.ok(out.reply.includes(CATALOGUE['rsg.readNothing'].zh.split('{label}')[1]), 'the middle state is named as itself')
 })
 
 /* ── a TRUE statement is never "corrected" ────────────────────────────────── */

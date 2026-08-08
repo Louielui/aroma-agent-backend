@@ -1,5 +1,7 @@
 'use strict'
 
+const { t } = require('../i18n/t')
+
 /**
  * invoiceBacklog.js — what is waiting in Drive, read-only.
  *
@@ -168,42 +170,47 @@ function sentenceFor (r, opts = {}) {
   if (s.state === BACKLOG_STATE.NOT_LOOKED && (!i || i.state === BACKLOG_STATE.NOT_LOOKED)) return null
 
   const at = clockLabel(r && r.checkedAt, opts)
-  const stamp = at ? `${at} 查過` : '啱啱查過'
+  const stamp = at ? t('backlog.checkedAt', { at }) : t('backlog.checkedJustNow')
 
   if (s.state === BACKLOG_STATE.FOLDER_NOT_FOUND) {
-    return `我搵唔到「${FOLDERS.scannedByFranco.label}」呢個資料夾（id 係寫死嘅）。可能改咗名或者搬咗——我唔會當佢係空。`
+    return t('backlog.folderMissing', { folder: FOLDERS.scannedByFranco.label })
   }
   if (s.state === BACKLOG_STATE.READ_FAILED) {
-    return `我睇唔到「${FOLDERS.scannedByFranco.label}」——${s.reason}。等緊幾多份，我而家答唔到。`
+    return t('backlog.folderUnreadable', { folder: FOLDERS.scannedByFranco.label, reason: s.reason })
   }
 
   // ── CLEAR. Short, and it names BOTH what it checked and when. A 「冇嘢等緊」 with no
   // timestamp is indistinguishable from a check that silently broke.
   if (s.state === BACKLOG_STATE.EMPTY && (!i || i.fileCount === 0)) {
-    return `「${FOLDERS.scannedByFranco.label}」冇嘢等緊——${stamp}。`
+    return t('backlog.folderEmpty', { folder: FOLDERS.scannedByFranco.label, stamp })
   }
 
   // ── SOMETHING WAITS. Action first, not the count: what it is, where it is stuck, what to
   // do, and why it matters. 「4 個批次、64 個檔」 on its own is numbers with no noun.
   const parts = []
   if (s.state === BACKLOG_STATE.FILES_WAITING) {
-    const batchBit = s.nonEmptyBatchCount ? `${s.nonEmptyBatchCount} 批、` : ''
-    const ageBit = s.oldestBatchAgeDays === null ? '' : `，最舊 ${s.oldestBatchAgeDays} 日`
+    const batchBit = s.nonEmptyBatchCount ? t('backlog.batchBit', { n: s.nonEmptyBatchCount }) : ''
+    const ageBit = s.oldestBatchAgeDays === null ? '' : t('backlog.ageBit', { days: s.oldestBatchAgeDays })
     parts.push(
-      `Franco 掃咗嘅單仲喺「${FOLDERS.scannedByFranco.label}」，未入 ${FOLDERS.inbox.label}` +
-      `——${batchBit}${s.fileCount} 個檔案${ageBit}。搬入去就會自動行落去。`
+      t('backlog.waiting', {
+        folder: FOLDERS.scannedByFranco.label,
+        inbox: FOLDERS.inbox.label,
+        batch: batchBit,
+        files: s.fileCount,
+        age: ageBit
+      })
     )
   } else if (s.state === BACKLOG_STATE.EMPTY) {
-    parts.push(`「${FOLDERS.scannedByFranco.label}」冇嘢等緊。`)
+    parts.push(t('backlog.scannedEmpty', { folder: FOLDERS.scannedByFranco.label }))
   }
 
-  if (i && i.state === BACKLOG_STATE.FILES_WAITING) parts.push(`${FOLDERS.inbox.label} 有 ${i.fileCount} 項。`)
-  else if (i && i.state === BACKLOG_STATE.READ_FAILED) parts.push(`${FOLDERS.inbox.label} 我睇唔到——${i.reason}。`)
+  if (i && i.state === BACKLOG_STATE.FILES_WAITING) parts.push(t('backlog.inboxCount', { inbox: FOLDERS.inbox.label, n: i.fileCount }))
+  else if (i && i.state === BACKLOG_STATE.READ_FAILED) parts.push(t('backlog.inboxUnreadable', { inbox: FOLDERS.inbox.label, reason: i.reason }))
 
   // OWNER RULING, VERBATIM AND COMPLETE. He refused the shortened form: whether a batch he
   // has already dealt with is sitting inside that count 「is exactly the difference between
   // the line saving me a trip and costing me one」.
-  parts.push('我只數到檔案，數唔到入面有幾多張發票，亦分唔到邊啲你已經處理過。')
+  parts.push(t('backlog.countCaveat'))
   return parts.join('')
 }
 

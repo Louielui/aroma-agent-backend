@@ -236,7 +236,7 @@ test('*** no stale correction: the guard judges what is SHOWN, not discarded pro
   assert.equal(captured[0].outcome, 'fallback')
   assert.equal(captured[0].reason, 'items_unsupported')
   assert.equal(result.reply.includes('系統更正'), false, 'THE CONTRADICTION: a correction about text nobody can see')
-  assert.equal(result.reply.includes('讀唔到'), false)
+  assert.equal(result.reply.includes('讀不到'), false)
   assert.ok(result.reply.includes('讀取成功'))
 })
 
@@ -246,7 +246,7 @@ test('*** a false read claim in the SHOWN answer is still corrected ***', async 
   const plan = Object.assign(planWith('aroma_system#2'), { directAnswer: '我讀唔到餐廳系統嘅資料。' })
   const { result } = await withEnv(() => withLogCapture(() => run(spyAdapter(envelope(plan, '好。')))))
   assert.ok(result.reply.includes('系統更正'), 'a false claim that IS on screen must still be corrected')
-  assert.ok(result.reply.includes('讀到咗'))
+  assert.ok(result.reply.includes('讀到了'))
 })
 
 test('a clean validated turn carries no correction at all', async () => {

@@ -1250,6 +1250,80 @@ const CATALOGUE = Object.freeze({
   },
   'setting.unknownType': { zh: '這個設定的型別我不懂處理。', en: 'I do not know how to handle this setting\'s type.' },
 
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE INVESTIGATION REPORT — agent/investigationReport.js.
+  // ⛔ 「未查完」 and 「查唔到」 are different failures and neither may read as a finished
+  // investigation. 「用完預算就停咗，唔係查完」 is the distinction in one line.
+  // ══════════════════════════════════════════════════════════════════════════
+  'inv.budgetExhausted': {
+    zh: '⚠ 未查完 —— 用完預算就停了，不是查完。',
+    en: '⚠ NOT finished — it ran out of budget and stopped, which is not the same as completing.'
+  },
+  'inv.stoppedForYou': { zh: '⚠ 停下等你 —— 有事要你決定才走得下去。', en: '⚠ Stopped for you — something needs your decision before it can continue.' },
+  'inv.failed': { zh: '⚠ 查不到 —— 中途失敗。', en: '⚠ Could not find out — it failed part-way.' },
+  'inv.question': { zh: '問題：{q}', en: 'Question: {q}' },
+  'inv.measured': { zh: '量到：{items}', en: 'Measured: {items}' },
+  /** ⛔ A cap or a sample is NOT a total, and saying which is the whole point of the line. */
+  'inv.notATotal': { zh: '（「{what}」是上限／樣本，不是總數 —— {why}）', en: '("{what}" is a cap or a sample, NOT a total — {why})' },
+  'inv.failureLocus': { zh: '在哪裡出事：{where}', en: 'Where it broke: {where}' },
+  'inv.collapsed': { zh: '{label}（{n}）', en: '{label} ({n})' },
+  'inv.section': { zh: '{label}：{items}', en: '{label}: {items}' },
+  'inv.notEstablished': { zh: '未確立', en: 'Not established' },
+  'inv.incidental': { zh: '順帶發現', en: 'Noticed along the way' },
+  'inv.aboutTheEnquiry': { zh: '關於這次查證', en: 'About this enquiry' },
+  'inv.footer': { zh: '（{rounds} 回合，US${cost}{enquiry}）', en: '({rounds} rounds, US${cost}{enquiry})' },
+  'inv.enquiryId': { zh: '，查證編號 {id}', en: ', enquiry {id}' },
+  'inv.applied': { zh: '已套用：{changes}', en: 'Applied: {changes}' },
+  'inv.nothingChanged': { zh: '沒有改過任何東西。', en: 'Nothing was changed.' },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // THE INVOICE BACKLOG LINE — context/invoiceBacklog.js.
+  // ⛔ 「我唔會當佢係空」 is the rule: a folder that could not be read is never reported as
+  // empty. English must not collapse 「could not read」 into 「nothing waiting」.
+  // ══════════════════════════════════════════════════════════════════════════
+  'backlog.checkedAt': { zh: '{at} 查過', en: 'checked {at}' },
+  'backlog.checkedJustNow': { zh: '剛剛查過', en: 'checked just now' },
+  'backlog.folderMissing': {
+    zh: '我找不到「{folder}」這個資料夾（id 是寫死的）。可能改了名或者搬了 —— 我不會當它是空的。',
+    en: 'I cannot find the folder "{folder}" (its id is hard-coded). It may have been renamed or moved — I will NOT treat it as empty.'
+  },
+  'backlog.folderUnreadable': {
+    zh: '我看不到「{folder}」—— {reason}。等著多少份，我現在答不到。',
+    en: 'I cannot read "{folder}" — {reason}. I cannot tell you how many are waiting.'
+  },
+  'backlog.folderEmpty': { zh: '「{folder}」沒有東西等著 —— {stamp}。', en: 'Nothing waiting in "{folder}" — {stamp}.' },
+  'backlog.batchBit': { zh: '{n} 批、', en: '{n} batches, ' },
+  'backlog.ageBit': { zh: '，最舊 {days} 日', en: ', the oldest {days} days old' },
+  'backlog.waiting': {
+    zh: 'Franco 掃了的單還在「{folder}」，未進 {inbox} —— {batch}{files} 個檔案{age}。搬進去就會自動走下去。',
+    en: 'Franco\'s scans are still in "{folder}" and have not reached {inbox} — {batch}{files} files{age}. Moving them in starts the rest automatically.'
+  },
+  'backlog.scannedEmpty': { zh: '「{folder}」沒有東西等著。', en: 'Nothing waiting in "{folder}".' },
+  'backlog.inboxCount': { zh: '{inbox} 有 {n} 項。', en: '{inbox} has {n}.' },
+  'backlog.inboxUnreadable': { zh: '{inbox} 我看不到 —— {reason}。', en: 'I cannot read {inbox} — {reason}.' },
+  /** ⛔ WHAT THE COUNT IS NOT. A file count is not an invoice count and not a to-do count. */
+  'backlog.countCaveat': {
+    zh: '我只數到檔案，數不到裡面有多少張發票，也分不到哪些你已經處理過。',
+    en: 'I can only count files — not how many invoices are inside them, and not which ones you have already dealt with.'
+  },
+
+  // ══════════════════════════════════════════════════════════════════════════
+  // READ-STATE CORRECTION — intake/readStateGuard.js.
+  // ⛔ THE WORD LISTS IN THAT FILE ARE MATCHING TOKENS and are never translated; only the
+  // label of each source and the correction sentences are interface. See the ⛔ note there.
+  // ══════════════════════════════════════════════════════════════════════════
+  'src.calendar': { zh: '日曆', en: 'Calendar' },
+  'src.decisions': { zh: '過往決定', en: 'past decisions' },
+  'src.aromaSystem': { zh: '餐廳系統', en: 'the restaurant system' },
+  'rsg.readOutOfWindow': { zh: '{label}：讀到了（{n} 項，但不在你問的時段內，是之後的）', en: '{label}: read successfully ({n}, but outside the period you asked about — later than it)' },
+  'rsg.readCount': { zh: '{label}：讀到了（{n} 項）', en: '{label}: read successfully ({n})' },
+  'rsg.readNothing': { zh: '{label}：讀到了，但沒有相關結果', en: '{label}: read successfully, nothing relevant' },
+  /** ⛔ THE CORRECTION ITSELF. It overrules her own sentence, so it must say so plainly. */
+  'rsg.correction': {
+    zh: '\n\n〔系統更正 — 依實際讀取紀錄〕上面講「讀不到」是不對的。{parts}。以這個紀錄為準。',
+    en: '\n\n[SYSTEM CORRECTION — from the actual read record] The statement above that it "could not be read" is wrong. {parts}. This record is authoritative.'
+  },
+
   // ⛔ Interface punctuation — see punct.listSep above for why these are keys.
   'punct.colon': { zh: '：', en: ': ' }
 })

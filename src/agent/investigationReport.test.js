@@ -17,6 +17,7 @@
  */
 
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const {
   OUTCOME, buildReport, ReportRefused
@@ -80,7 +81,7 @@ describe('「fixed」 without an applied change is STRUCTURALLY IMPOSSIBLE', () 
 
   test('a report with NO applied changes says so explicitly rather than staying silent', () => {
     const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED })
-    assert.match(r.text, /冇改過任何嘢|沒有應用任何變更/)
+    assert.match(r.text, /沒有改過任何東西/)
   })
 })
 
@@ -90,7 +91,7 @@ describe('STOPPED_ON_BUDGET is the FIRST line', () => {
     // is asserted separately below
     const r = buildReport({ ...base, outcome: OUTCOME.STOPPED_ON_BUDGET, costUsd: 2.0, notEstablished: ['邊個來源權威'] })
     const first = r.text.split('\n').find((l) => l.trim())
-    assert.match(first, /未查完|STOPPED_ON_BUDGET|停咗/, 'got first line: ' + first)
+    assert.match(first, /未查完|STOPPED_ON_BUDGET|停了/, 'got first line: ' + first)
   })
 
   test('a halted investigation can never render as a completed one', () => {
@@ -132,7 +133,7 @@ describe('what the report may never claim', () => {
       measurements: ['count 50'],
       samples: [{ what: 'count 50', why: 'LIMIT 50' }]
     })
-    assert.match(r.text, /上限|sample|唔係總數/, 'a capped number must not read as a total')
+    assert.match(r.text, /上限|sample|不是總數/, 'a capped number must not read as a total')
   })
 })
 
@@ -162,7 +163,7 @@ describe('the two kinds of caveat never merge', () => {
   test('a caveat about the ANSWER and a caveat about the METHOD render in separate sections', () => {
     const r = buildReport(withBoth)
     assert.match(r.text, /未確立[^\n]*live row counts/)
-    assert.match(r.text, /關於呢次查證[^\n]*規劃每一輪/)
+    assert.match(r.text, /關於這次查證[^\n]*規劃每一輪/)
   })
 
   test('the method caveat does NOT appear inside the answer caveats', () => {
@@ -173,7 +174,7 @@ describe('the two kinds of caveat never merge', () => {
 
   test('a report with method caveats but no answer caveats still says so, rather than going quiet', () => {
     const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: [], aboutTheEnquiry: ['x'] })
-    assert.match(r.text, /關於呢次查證/)
+    assert.match(r.text, /關於這次查證/)
   })
 })
 
@@ -277,6 +278,6 @@ describe('long sections collapse; short ones do not', () => {
     const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, notEstablished: many(9, 'u'), incidental: many(9, 'i') })
     assert.ok(r.text.includes('唔係缺陷'), 'the answer is never collapsed')
     assert.ok(r.text.includes('has_incoming 18'), 'measurements are never collapsed')
-    assert.ok(r.text.includes('冇改過任何嘢'), 'what was applied is never collapsed')
+    assert.ok(r.text.includes(CATALOGUE['inv.nothingChanged'].zh), 'what was applied is never collapsed')
   })
 })

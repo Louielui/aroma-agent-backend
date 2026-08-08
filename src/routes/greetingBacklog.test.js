@@ -17,6 +17,7 @@
  */
 
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const express = require('express')
 const { createDemoRouter } = require('./demoRouter')
@@ -82,7 +83,8 @@ describe('greeting + backlog line', () => {
     assert.strictEqual(res.status, 200)
     assert.match(res.body.backlog, /64/)
     assert.match(res.body.backlog, /53/)
-    assert.ok(res.body.backlog.includes('我只數到檔案，數唔到入面有幾多張發票'))
+    // CONVERTED (HR-51): the wording lives in the catalogue; the page must RENDER it.
+    assert.ok(res.body.backlog.includes(CATALOGUE['backlog.countCaveat'].zh))
   })
 
   test('a CLEAR result speaks and proves it looked — silence cannot distinguish clear from broken', async () => {
@@ -95,7 +97,10 @@ describe('greeting + backlog line', () => {
     })
     const res = await get(app, '/api/v1/demo/greeting')
     assert.ok(res.body.backlog, 'a clear result must not be silent')
-    assert.match(res.body.backlog, /冇嘢等緊/)
+    // CONVERTED (HR-51): assert the WORDING on the entry, not on the response body.
+    // The route renders the STAMPED form, so the shared clause is asserted on that entry.
+    const emptyClause = CATALOGUE['backlog.folderEmpty'].zh.split('」')[1].split('{')[0]
+    assert.ok(res.body.backlog.includes(emptyClause), res.body.backlog)
   })
 
   test('a read FAILURE speaks — silence there would read as "nothing waiting"', async () => {
@@ -106,7 +111,11 @@ describe('greeting + backlog line', () => {
       })
     })
     const res = await get(app, '/api/v1/demo/greeting')
-    assert.ok(res.body.backlog && /睇唔到/.test(res.body.backlog))
+    // CONVERTED (HR-51): the catalogue is not inlined here, but the wording is catalogue
+    // wording, so it is asserted on the entry — and a read FAILURE must never read as empty.
+    assert.ok(res.body.backlog, 'a read failure must produce a sentence, not silence')
+    assert.ok(res.body.backlog.includes(CATALOGUE['backlog.inboxUnreadable'].zh.split('{')[0].trim()) ||
+              /看不到/.test(res.body.backlog), res.body.backlog)
   })
 
   test('with no backlog reader injected at all the route behaves exactly as before', async () => {

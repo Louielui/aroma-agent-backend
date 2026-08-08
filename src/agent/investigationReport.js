@@ -1,5 +1,7 @@
 'use strict'
 
+const { t } = require('../i18n/t')
+
 /**
  * investigationReport.js — the report, and the claims it cannot make.
  *
@@ -112,24 +114,24 @@ function buildReport (input = {}) {
   // A halted investigation rendering as a completed one is the same family as a Drive read
   // that timed out and rendered as 「nothing waiting」.
   if (outcome === OUTCOME.STOPPED_ON_BUDGET) {
-    lines.push('⚠ 未查完 —— 用完預算就停咗，唔係查完。')
+    lines.push(t('inv.budgetExhausted'))
   } else if (outcome === OUTCOME.BLOCKED_NEEDS_YOU) {
-    lines.push('⚠ 停低咗等你 —— 有嘢要你決定先行得落去。')
+    lines.push(t('inv.stoppedForYou'))
   } else if (outcome === OUTCOME.FAILED) {
-    lines.push('⚠ 查唔到 —— 中途失敗。')
+    lines.push(t('inv.failed'))
   }
 
-  if (question) lines.push('問題：' + question)
+  if (question) lines.push(t('inv.question', { q: question }))
   if (answer) lines.push(answer)
 
-  if (nonEmpty(measurements)) lines.push('量到：' + measurements.join('；'))
+  if (nonEmpty(measurements)) lines.push(t('inv.measured', { items: measurements.join(t('punct.clauseSep')) }))
 
   // A capped or sampled number must never read as a total.
   for (const s of samples) {
-    lines.push(`（「${s.what}」係上限／樣本，唔係總數 —— ${s.why}）`)
+    lines.push(t('inv.notATotal', { what: s.what, why: s.why }))
   }
 
-  if (String(failureLocus || '').trim()) lines.push('喺邊爆：' + String(failureLocus).trim())
+  if (String(failureLocus || '').trim()) lines.push(t('inv.failureLocus', { where: String(failureLocus).trim() }))
 
   // ── TWO KINDS OF CAVEAT, NEVER MERGED ────────────────────────────────────
   // 未確立 is what the WORKER could not establish about the ANSWER.
@@ -149,42 +151,55 @@ function buildReport (input = {}) {
   const COLLAPSE_ABOVE = 2
   const section = (label, items, collapsed) => {
     if (!nonEmpty(items)) return null
-    if (collapsed && items.length > COLLAPSE_ABOVE) return `${label}（${items.length}）`
-    return label + '：' + items.join('；')
+    if (collapsed && items.length > COLLAPSE_ABOVE) return t('inv.collapsed', { label, n: items.length })
+    return t('inv.section', { label, items: items.join(t('punct.clauseSep')) })
   }
+  /**
+   * ⛔ THE PAIR IS RECORDED, NOT RE-PARSED.
+   *
+   * The expanded twin used to be rebuilt by regex-matching the COLLAPSED line back against the
+   * literal labels 未確立｜順帶發現｜關於呢次查證. Those are catalogue entries now, so that
+   * regex stops matching the moment the interface renders in English — and the failure is
+   * SILENT: every section simply stays collapsed and the expanded form becomes identical to the
+   * short one. Nothing throws, nothing is reported; the report is quietly less useful.
+   *
+   * 意思用欄位 travel，唔用字面. Both forms are now built from the same recorded (label, items)
+   * pairs — which is what the comment below always claimed was happening.
+   */
+  const sections = []
   const pushSection = (label, items) => {
     const l = section(label, items, true)
-    if (l) lines.push(l)
+    if (l) { lines.push(l); sections.push({ index: lines.length - 1, label, items }) }
   }
 
-  pushSection('未確立', notEstablished)
+  pushSection(t('inv.notEstablished'), notEstablished)
 
   // ── INCIDENTAL FINDINGS ──────────────────────────────────────────────────
   // Without this section a report SILENTLY DISCARDS anything outside the question asked.
   // The run that prompted it found a real defect in passing — the adapter reads body.count,
   // a response-BODY field, while its own comment calls it 「the API's own header」 — and that
   // finding existed only in the turns.
-  pushSection('順帶發現', incidental)
+  pushSection(t('inv.incidental'), incidental)
 
-  pushSection('關於呢次查證', aboutTheEnquiry)
+  pushSection(t('inv.aboutTheEnquiry'), aboutTheEnquiry)
 
   // SILENCE ABOUT CHANGES IS NOT ACCEPTABLE EITHER. A report that simply does not mention
   // applying anything leaves the reader to assume, and the assumption people make is the
   // comfortable one.
   lines.push(nonEmpty(appliedChanges)
-    ? '已套用：' + appliedChanges.map((c) => c.file + (c.commit ? ' @' + c.commit : '')).join('、')
-    : '冇改過任何嘢。')
+    ? t('inv.applied', { changes: appliedChanges.map((c) => c.file + (c.commit ? ' @' + c.commit : '')).join(t('punct.listSep')) })
+    : t('inv.nothingChanged'))
 
-  lines.push(`（${rounds} 回合，US$${Number(costUsd).toFixed(2)}${enquiryId ? '，查證編號 ' + enquiryId : ''}）`)
+  lines.push(t('inv.footer', {
+    rounds,
+    cost: Number(costUsd).toFixed(2),
+    enquiry: enquiryId ? t('inv.enquiryId', { id: enquiryId }) : ''
+  }))
 
   // The expanded twin is rebuilt from the SAME arrays with collapsing off, so the two forms
   // cannot disagree about WHAT the report contains — only about how much of it is shown.
-  const expanded = lines.map((line) => {
-    const m = /^(未確立|順帶發現|關於呢次查證)（(\d+)）$/.exec(line)
-    if (!m) return line
-    const src = m[1] === '未確立' ? notEstablished : m[1] === '順帶發現' ? incidental : aboutTheEnquiry
-    return section(m[1], src, false)
-  })
+  const expanded = lines.slice()
+  for (const sec of sections) expanded[sec.index] = section(sec.label, sec.items, false)
 
   // THE TRANSCRIPT IS NEVER INLINED. It is the thing he is trying to stop reading, and it is
   // retrievable on request by enquiryId — normally the report, the turns when it surprises.

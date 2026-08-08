@@ -45,18 +45,22 @@ const UNREADABLE_CLAIM = /(讀唔到|讀不到|睇唔到|看不到|攞唔到|拿
 // new source is never invisible here — it is merely less well described, and the test
 // below fails until someone gives it words.
 const { ALL_SOURCES } = require('../context/liveClients')
+const { t } = require('../i18n/t')
 const { intentFor } = require('../context/readContext') // THE one intent table — the entity a turn is about
 
 // Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
 const VOCABULARY = Object.freeze({
-  calendar: { words: ['日曆', '日程', '行事曆', '行程', '排程', 'calendar', 'schedule'], label: '日曆' },
-  gmail: { words: ['gmail', '電郵', '郵件', '信箱', '收件箱', 'email', 'e-mail', 'mail', 'inbox'], label: 'Gmail' },
-  drive: { words: ['drive', '雲端', '雲端硬碟', '文件', '檔案', 'google drive', 'docs'], label: 'Drive' },
-  github: { words: ['github', '程式碼庫', '版本庫', 'repo', 'repository'], label: 'GitHub' },
-  aroma_system: { words: ['aroma system', 'aroma-system', 'aroma_system', '餐廳系統', '系統'], label: '餐廳系統' },
+  // ⛔ THE `words` ARE MATCHING TOKENS — they are compared against WHAT HE TYPES and are
+  // NEVER translated. Only `label` is interface. Two classes, one table, marked in place
+  // because textClasses is per-file. See governance/textClasses.js.
+  calendar: { words: ['日曆', '日程', '行事曆', '行程', '排程', 'calendar', 'schedule'], label: () => t('src.calendar') },
+  gmail: { words: ['gmail', '電郵', '郵件', '信箱', '收件箱', 'email', 'e-mail', 'mail', 'inbox'], label: () => 'Gmail' },
+  drive: { words: ['drive', '雲端', '雲端硬碟', '文件', '檔案', 'google drive', 'docs'], label: () => 'Drive' },
+  github: { words: ['github', '程式碼庫', '版本庫', 'repo', 'repository'], label: () => 'GitHub' },
+  aroma_system: { words: ['aroma system', 'aroma-system', 'aroma_system', '餐廳系統', '系統'], label: () => t('src.aromaSystem') },
   // Not a read source — the Decision Recall block, which the Owner can be told about the
   // same way. It is listed here rather than in ALL_SOURCES because nothing reads it.
-  decisions: { words: ['過往決定', '決定紀錄'], label: '過往決定' }
+  decisions: { words: ['過往決定', '決定紀錄'], label: () => t('src.decisions') }
 })
 
 const SOURCE_KEYS = Object.freeze([...new Set([...ALL_SOURCES, ...Object.keys(VOCABULARY)])])
@@ -69,8 +73,16 @@ const SOURCE_ALIASES = Object.freeze(SOURCE_KEYS.reduce((acc, key) => {
 }, {}))
 
 /** The Owner-facing name. Falls back to the key so a new source is named, not skipped. */
+/**
+ * ⛔ GETTERS, so `LABELS[x]` is still a STRING at every call site while being read at use time.
+ * A thunk here would have forced every consumer — readResultView, the correction block, the
+ * settings screen — to learn that a label is now a function.
+ */
 const LABELS = Object.freeze(SOURCE_KEYS.reduce((acc, key) => {
-  acc[key] = (VOCABULARY[key] && VOCABULARY[key].label) || key
+  Object.defineProperty(acc, key, {
+    enumerable: true,
+    get () { return (VOCABULARY[key] && VOCABULARY[key].label()) || key }
+  })
   return acc
 }, {}))
 
@@ -228,12 +240,12 @@ function buildCorrection (perSource, sources) {
     const label = LABELS[r.source] || r.source
     if (r.count > 0) {
       return r.usedFallback
-        ? `${label}：讀到咗（${r.count} 項，但唔喺你問嗰段時間內，係之後嘅）`
-        : `${label}：讀到咗（${r.count} 項）`
+        ? t('rsg.readOutOfWindow', { label, n: r.count })
+        : t('rsg.readCount', { label, n: r.count })
     }
-    return `${label}：讀到咗，但冇相關結果`
+    return t('rsg.readNothing', { label })
   })
-  return '\n\n〔系統更正 — 依實際讀取紀錄〕上面講「讀唔到」係唔啱嘅。' + parts.join('；') + '。以呢個紀錄為準。'
+  return t('rsg.correction', { parts: parts.join(t('punct.clauseSep')) })
 }
 
 /**

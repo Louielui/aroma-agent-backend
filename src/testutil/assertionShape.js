@@ -51,6 +51,13 @@
  * clean codebase produce the same output. `assertionShape.test.js` feeds it real instances,
  * copied from the code that motivated it, and watches each one fire.
  *
+ * ⛔ BEFORE ADDING A CHECK HERE, READ THIS. The threshold is not 「would it catch something」 —
+ * it is 「will it still be running in a month」. A check that fires on correct work gets switched
+ * off, and after that its NAME survives: in the codebase, in the log, in someone's memory of
+ * 「we have a guard for that」. 一個檢查嘅存在，會被記成覆蓋 — the existence of a check is
+ * remembered as coverage, which makes a disabled guard strictly worse than no guard at all.
+ * When the ratio is bad, fix the instance and RECORD the gap (see docs/MAINTENANCE-BACKLOG M-7).
+ *
  * ⛔ WHAT IS NOT DETECTED, AND THE HONESTY THAT MATTERS MORE THAN THE COVERAGE:
  * this finds ONE family. An assertion can be vacuous in ways no scanner sees — a fixture that
  * cannot produce the state under test, a matcher loose enough that any string passes, a loop

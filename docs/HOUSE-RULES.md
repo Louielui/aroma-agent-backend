@@ -2394,6 +2394,21 @@ Each read correctly. Each was wrong. Reading code you have just written tells yo
 > ### watch it fire. A broken detector and a clean codebase produce the same output, and the
 > ### difference is invisible from the result alone.
 
+## ⛔ AND THE COROLLARY THAT DECIDES WHETHER TO BUILD ONE AT ALL
+
+> ### 一個檢查嘅存在，會被記成覆蓋。
+>
+> ### The existence of a check is remembered as coverage.
+
+A noisy check is not merely useless. It gets switched off — and after that its NAME remains in
+the codebase, in the commit log, in someone's memory of 「we have a guard for that」. It is then
+strictly worse than never having built it, because absence is honest and a disabled guard is not.
+
+**So the threshold for building a check is not 「would it catch something」. It is 「will it still
+be running in a month」.** A fence that fires on seven correct lines to catch one wrong one fails
+that test, and the right action is to fix the one and RECORD the gap — see M-7, where exactly
+that judgement was made and written down rather than papered over with a check nobody would keep.
+
 **Corollary — where the sample must come from.** The probe cases must be REAL instances, copied
 from the code that motivated the detector, not examples invented alongside it. An invented case
 tests the same misunderstanding twice.

@@ -18,6 +18,7 @@
  */
 
 const { test, describe } = require('node:test')
+const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const { readInvoiceBacklog, FOLDERS, BACKLOG_STATE, sentenceFor } = require('./invoiceBacklog')
 
@@ -120,8 +121,11 @@ describe('invoice backlog — the honest sentence', () => {
     assert.match(s, /53/)
     // The Owner's ruling: keep this line verbatim. It is the difference between a number he
     // can act on and a number he will misread as an invoice count.
+    // ⛔ KEPT AS WORDING, in BOTH languages. The Owner's ruling was that this line stays
+    // verbatim: it is the difference between a number he can act on and one he misreads as an
+    // invoice count. Verbatim in Chinese only would have been half the ruling.
     assert.ok(
-      s.includes('我只數到檔案，數唔到入面有幾多張發票'),
+      s.includes(CATALOGUE['backlog.countCaveat'].zh),
       'the third line must be present verbatim'
     )
   })
@@ -173,7 +177,7 @@ describe('invoice backlog — the honest sentence', () => {
       scanned: { state: BACKLOG_STATE.READ_FAILED, fileCount: null, reason: 'timeout' },
       inbox: { state: BACKLOG_STATE.READ_FAILED, fileCount: null, reason: 'timeout' }
     })
-    assert.ok(s && /睇唔到/.test(s), 'a read failure must produce a sentence, not silence')
+    assert.ok(s && /看不到/.test(s), 'a read failure must produce a sentence, not silence')
     assert.ok(!/^0 /.test(s))
   })
 
@@ -182,7 +186,7 @@ describe('invoice backlog — the honest sentence', () => {
       scanned: { state: BACKLOG_STATE.FILES_WAITING, fileCount: 64, batchCount: 7, nonEmptyBatchCount: 4, oldestBatchAgeDays: 53 },
       inbox: { state: BACKLOG_STATE.EMPTY, fileCount: 0 }
     })
-    assert.ok(!/\d+\s*張發票/.test(s.replace('數唔到入面有幾多張發票', '')),
+    assert.ok(!/\d+\s*張發票/.test(s.replace('數不到裡面有多少張發票', '')),
       'must not assert a count of invoices anywhere')
   })
 })
