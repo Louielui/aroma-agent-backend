@@ -286,12 +286,49 @@ const INTENTS = Object.freeze([
 /** The Aroma routing subset, in its original order — what planFor has always used. */
 const AROMA_INTENTS = Object.freeze(INTENTS.filter((i) => i.method !== null))
 
+/**
+ * ── SEPARABLE COMPOUNDS: 訂…貨 IS STILL 訂貨 ──────────────────────────────────
+ *
+ * > **Owner: 「fix the mechanism rather than adding words. 訂…貨 with something in the middle
+ * > will recur in every intent, and adding 訂什麼貨 to a list is the 「improve the matching」
+ * > shape we removed from the recall check.」**
+ *
+ * `s.includes('訂貨')` is false for 「訂什麼貨」, and on 2026-08-08 that routed a stock question
+ * to CONVERSATION, read nothing, and left her free to answer 「我沒有…讀取權限」 about a source
+ * that is switched on. A contiguous substring is defeated by any word placed inside it.
+ *
+ * 訂貨 / 補貨 / 落單 / 叫貨 are verb-object compounds, and in Chinese those SEPARATE — the
+ * question word lands between the halves. 採購單 and 供應商 are lexical nouns and do not.
+ * So the gap is allowed ONLY between the two halves of a TWO-character term, which is where
+ * the phenomenon is, and it may not cross clause punctuation.
+ *
+ * ⛔ THE BOUND OF 2 WAS MEASURED, NOT PICKED. Over a 15-phrase corpus: N=1 changes nothing
+ * (什麼 is two characters); N=2 fixes the real case and moves nothing else; N=3 drags in
+ * 「訂位嗰啲貨物資料」, which is a TABLE BOOKING. N=2 is the largest bound with no false
+ * positive, and 什麼/咩嘢/幾多/邊啲 are all one or two characters. See intentSeparable.test.js.
+ */
+const CJK_GAP = '[^。！？!?，、；;\\s]{0,2}'
+const SEPARABLE_RE = new Map()
+function separableMatcher (kw) {
+  let re = SEPARABLE_RE.get(kw)
+  if (re === undefined) {
+    // Only two-character terms separate. Everything else stays an exact substring.
+    re = kw.length === 2 ? new RegExp(kw[0] + CJK_GAP + kw[1]) : null
+    SEPARABLE_RE.set(kw, re)
+  }
+  return re
+}
+
 /** The intent a message expresses, or null when nothing matched. */
 function intentFor (text) {
   const s = String(text == null ? '' : text)
   const low = s.toLowerCase()
   for (const intent of INTENTS) {
-    if (intent.cjk.some((t) => s.includes(t))) return intent
+    if (intent.cjk.some((t) => {
+      if (s.includes(t)) return true
+      const re = separableMatcher(t)
+      return re ? re.test(s) : false
+    })) return intent
     // Whole-word for latin: a word inside a longer word is not a mention of it.
     if (intent.latin.some((w) => new RegExp('(^|[^a-z0-9])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '($|[^a-z0-9])', 'i').test(low))) return intent
   }

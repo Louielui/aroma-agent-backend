@@ -584,3 +584,66 @@ deploys), or something unattended starts depending on an owner session surviving
 > A property that is obvious from the code and invisible from the screen will be mistaken for a
 > defect in whatever was touched most recently. Writing it down is cheaper than re-diagnosing it,
 > and this is the second time it has cost a diagnosis.
+
+---
+
+# P-2 — NAMING A SOURCE DOES NOTHING. THE ROUTER NEVER LOOKS AT IT.
+
+> **Owner: 「I named the source and it did nothing, which means every time I have thought I was
+> directing her somewhere I was not. That is worth knowing independently of this bug.」**
+
+Recorded separately from the 2026-08-08 capability-denial bug because it is not a bug. It is how
+the router works, it is invisible from the screen, and it silently invalidates a mental model the
+Owner has been operating under.
+
+## THE MEASUREMENT
+
+`turnRouter.routeTurn()` decides whether anything is read. Its only content input is
+`businessIntentOf(text)` → `readContext.intentFor(text)`, which tests the message against each
+intent's KEYWORD lists. **There is no step, anywhere, that looks for a source name.**
+
+Measured directly:
+
+| message | route | sources |
+|---|---|---|
+| `到aroma system睇下倉存` | BUSINESS_QUERY | `[aroma_system]` |
+| `香香, 到aroma system, 看看今天要向costco訂什麼貨` | CONVERSATION | `[]` |
+
+Both name the source identically and in the same position. The first read; the second did not.
+**The difference is entirely 「倉存」 vs 「訂什麼貨」** — the intent keyword, not the source name.
+
+## WHAT THIS MEANS IN PRACTICE
+
+> **「到 aroma system」 contributes exactly nothing to routing.** Writing it does not point her
+> anywhere, does not enable anything, and does not raise the chance a read happens. A message
+> with the right intent keyword and no source name reads; a message naming the source with no
+> intent keyword does not.
+
+So an instruction the Owner reasonably believes is doing the steering has never had any effect,
+and its apparent success or failure has tracked an unrelated word each time. When it worked, it
+worked for a reason he was not told about; when it failed, the failure looked like a capability
+problem — which is exactly how 2026-08-08 was read.
+
+## WHY IT IS THIS WAY, AND WHETHER TO CHANGE IT
+
+The design is defensible and was deliberate: the intent table declares WHICH source answers a
+question, so the entity determines the source. Letting a typed source name select a source would
+let the message pick its own read target, and 「only the ONE source its intent names」 is a
+governance property, not a convenience.
+
+**But 「the name is ignored」 and 「the name is not a selector」 are different, and only the second
+was intended.** A source name is at minimum evidence that the Owner wants a lookup. Two cheap
+options, neither taken yet, both needing a decision rather than an implementation:
+
+1. **Treat a named source as a read request** — it already contributes to `enforceNoReadClaim`'s
+   trigger (added 2026-08-08), so the note now fires when he names a source and nothing is read.
+   That is the minimum and it is DONE; it makes the silence audible without changing routing.
+2. **Let a named source narrow, never widen** — if an intent matched and the message also names
+   a source the intent does not declare, that is a contradiction worth surfacing rather than
+   silently resolving in the table's favour. Not built.
+
+## THE GENERAL FORM
+
+> A mechanism that ignores an input the user believes is significant will be credited and blamed
+> for outcomes it had no part in. The cost is not the ignored input — it is every conclusion the
+> user draws from the correlation they think they are seeing.
