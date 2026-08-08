@@ -122,17 +122,30 @@ async function withEnv (over, fn) {
   }
 }
 
-test('*** the reasoning step reports ok:false, and the reason is the planner veto ***', async () => {
+/**
+ * ⛔ WHAT AN UNDER-SPECIFIED REQUEST COSTS, END TO END.
+ *
+ * This originally asserted the observed symptom: the model asked for `aroma_system`, the loop
+ * reported decisionType:'read' ok:false, and the connector count was zero.
+ *
+ * That exact turn is no longer reachable, and the reason IS the fix: `aroma_system` is not a
+ * read operation any more, so a bare-source request is refused at the allowlist, out in the
+ * open, instead of being silently vetoed downstream by a planner asking a question the model
+ * had already answered. firstReadInitiation.test.js H3 pins that refusal.
+ *
+ * What this now pins is the half that MUST NOT CHANGE: on the AUTOMATIC path, a message with
+ * no business intent still reads nothing at all.
+ */
+test('*** the AUTOMATIC read is still vetoed by notAsked, end to end ***', async () => {
   await withEnv({}, async () => {
     const fc = fakeConnector()
     const a = scriptedAdapter('claude', [
-      { intent: 'question', mode: 'chat', reply: '等我睇睇。', nextRead: { capability: 'aroma_system' } },
-      { intent: 'question', mode: 'chat', reply: '我讀唔到。', nextRead: null, answerPlan: null }
+      { intent: 'question', mode: 'chat', reply: '我需要知道你想睇邊一部分。', nextRead: null, answerPlan: null }
     ])
-    const events = []
+    const lines = []
     const realLog = console.log
     console.log = (...args) => {
-      if (args[0] === '[AROMA-REASONING]') { try { events.push(JSON.parse(args[1])) } catch (_) {} }
+      if (args[0] === '[AROMA-READ-SOURCE]') { try { lines.push(JSON.parse(args[1])) } catch (_) {} }
     }
     try {
       await processIntake(OWNER_MESSAGE, a, [], {
@@ -140,14 +153,15 @@ test('*** the reasoning step reports ok:false, and the reason is the planner vet
         interactionMode: 'chat',
         providerHint: 'claude',
         requestId: '11111111-2222-4333-8444-555555555555',
-        readContextDeps: { connector: fc.connector, sources: ['aroma_system'] }
+        // forceSources bypasses the ROUTE narrowing, so the source really does reach the
+        // planner and the veto under test is the planner's, not the router's.
+        readContextDeps: { connector: fc.connector, sources: ['aroma_system'], forceSources: true }
       })
     } finally { console.log = realLog }
 
-    const readStep = events.find((e) => e && e.decisionType === 'read')
-    assert.ok(readStep, 'the model DID make a read decision — the request was never the problem')
-    assert.equal(readStep.capability, 'aroma_system')
-    assert.equal(readStep.ok, false, '⛔ the read produced no observation')
-    assert.deepEqual(fc.reads, [], '⛔ and the connector was never reached')
+    assert.deepEqual(fc.reads, [], '⛔ no business intent, no automatic read — the rule that stays')
+    const line = lines.find((l) => l && l.source === 'aroma_system')
+    assert.ok(line, 'the skip is on the record')
+    assert.equal(line.trust, 'not_asked', 'and it is not_asked — never a false read-failure claim')
   })
 })

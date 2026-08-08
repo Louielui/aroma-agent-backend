@@ -238,8 +238,11 @@ const DISTILL_WITH_PLAN_SCHEMA = Object.freeze({
       type: ['object', 'null'],
       additionalProperties: false,
       required: ['capability'],
-      description: '需要先讀取資料才能回答時填寫；可以直接回答就不要填。只能填本回合已獲授權的來源名稱。',
-      properties: { capability: { type: 'string', description: '已授權的來源名稱，例如 aroma_system。' } }
+      // ⛔ AN OPERATION, NOT A SOURCE. 「aroma_system」 named six different reads and left the
+      // server to guess which — which is the whole first-read defect. The enum is pinned per
+      // call by withReadChoices(); this text is the fallback when nothing pinned it.
+      description: '需要先讀取資料才能回答時填寫；可以直接回答就不要填。只能填本回合列出的讀取操作。若不確定要讀邊一部分，改為 mode="ask" 問一句，不要亂揀。',
+      properties: { capability: { type: 'string', description: '本回合已授權的讀取操作，例如 aroma_system.invoices。' } }
     },
     mode: { type: 'string', enum: ['commit', 'recommend', 'ask', 'chat'] },
     reply: { type: 'string', description: '一句自然的說話。逐項清單由系統渲染，不要在這裡覆述。' },
@@ -1356,7 +1359,19 @@ const DISTILL_WITH_READ_DECISION_SCHEMA = Object.freeze({
     nextRead: DISTILL_WITH_PLAN_SCHEMA.properties.nextRead
   }
 })
-function withReadChoices (schema, available) {
+/**
+ * ⛔ THE ENUM CARRIES OPERATIONS, NOT SOURCES (A3 first-read initiation).
+ *
+ * `aroma_system` alone told the model nothing about WHICH of the six restaurant views it was
+ * asking for, so the server had to re-derive that from the Owner's message — and vetoed the
+ * read whenever the message named the system rather than a business entity. The enum is now
+ * `aroma_system.invoices`, `aroma_system.inventory`, … so the choice IS the request.
+ *
+ * `description` is the Owner-facing gloss for those names (see readOperations.describeOperations).
+ * It is MODEL TEXT: an opaque `aroma_system.purchasing` is a guess waiting to happen. Generated
+ * from the same frozen table as the enum, so they cannot disagree.
+ */
+function withReadChoices (schema, available, description) {
   const out = JSON.parse(JSON.stringify(schema))
   const nr = out.properties && out.properties.nextRead
   if (!nr) return out
@@ -1366,6 +1381,7 @@ function withReadChoices (schema, available) {
     return out
   }
   nr.properties.capability.enum = list
+  if (typeof description === 'string' && description) nr.properties.capability.description = description
   return out
 }
 module.exports = {

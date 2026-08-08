@@ -168,10 +168,21 @@ test('a source that genuinely fails is still reported as unavailable', () => {
 
 /* ═══ 4. ZERO ROWS MEANS SHE ANSWERS FREELY — PROVEN, NOT ASSUMED ══════════ */
 
-test('*** zero rows → no responseFormat, so no Answer Plan is forced ***', async () => {
-  // The Owner asked for this to be proved rather than asserted. answerPlanFormat() returns
-  // undefined when turnItems is empty, and the only observable proof is what the adapter is
-  // actually handed — so this reads the real call options from a spy, through processIntake.
+test('*** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***', async () => {
+  // The Owner asked for this to be proved rather than asserted. The only observable proof is
+  // what the adapter is actually handed — so this reads the real call options from a spy,
+  // through processIntake.
+  //
+  // ⛔ WHAT CHANGED, AND WHAT DID NOT (A3 first-read initiation). This used to assert
+  // `responseFormat === null`: NO schema at all. That was too strong, and it was the second
+  // half of the first-read defect — with no schema there is no `nextRead`, so on a zero-read
+  // turn the model had no structural way to ASK for a read, and 「你能看到 aroma system 嗎？」
+  // came back as 「我無法確認」 with the connector authorised and working.
+  //
+  // The property this test exists to protect is UNCHANGED and still asserted below: nothing
+  // forces her to produce an ANSWER PLAN — sections, sourceIds, cited rows — when there is no
+  // evidence to build one from. That is what made her describe herself in the fields of a
+  // cabbage. The decision schema carries no answerPlan at all.
   const { processIntake } = require('../intake/intakeService')
   const calls = []
   const adapter = {
@@ -195,7 +206,13 @@ test('*** zero rows → no responseFormat, so no Answer Plan is forced ***', asy
     })
     assert.deepEqual(spy.calls, [], 'nothing was read')
     assert.equal(calls.length, 1, 'the model was called once')
-    assert.equal(calls[0].responseFormat, null, 'and handed NO schema — she answers freely')
+    const fmt = calls[0].responseFormat
+    assert.equal(fmt.name, 'distill_with_read_decision',
+      'the DECISION schema — read or do not — never the Answer Plan')
+    assert.equal(fmt.schema.properties.answerPlan, undefined,
+      '⛔ no evidence exists, so nothing may demand sections, sourceIds or cited rows')
+    assert.deepEqual(Object.keys(fmt.schema.properties).sort(), ['intent', 'mode', 'nextRead', 'reply'],
+      'the ordinary reply shape plus one decision, and nothing else')
   } finally {
     for (const k of Object.keys(process.env)) if (!(k in saved)) delete process.env[k]
     Object.assign(process.env, saved)

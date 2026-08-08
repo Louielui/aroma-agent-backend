@@ -146,6 +146,12 @@ const FILE_CLASS = Object.freeze({
   'adapters/fixtures/demoTurns.js': CLASS.MODEL,      //   4
   'intake/groundedReply.js': CLASS.MODEL,             //   4
   'intake/intakeService.js': CLASS.MODEL,             //   6
+  'context/readOperations.js': CLASS.MODEL,           //   7 — the Owner-facing gloss for each
+  //                                                          read operation (aroma_system.purchasing
+  //                                                          ＝採購單). She is TOLD it, in the schema
+  //                                                          description, and it decides WHICH view
+  //                                                          she asks for. Translating it away
+  //                                                          leaves six opaque names to guess among.
 
   // ── MATCHING — his words are compared against this. ────────────────────────
   'intake/scopeNotes.js': CLASS.MATCHING,             //   3 — 「哪個倉」/「邊個倉」 both spellings

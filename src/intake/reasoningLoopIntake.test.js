@@ -59,6 +59,9 @@ function scriptedAdapter (label, envelopes) {
   }
 }
 
+// ⛔ A CONCRETE OPERATION, NOT A BARE SOURCE. `aroma_system` alone named six different reads and
+// left the server to rediscover which from the Owner's message — the first-read defect. It is no
+// longer in the vocabulary at all; see readOperations.js and firstReadInitiation.test.js H3.
 const READ_ENV = (capability) => ({ intent: 'chit_chat', mode: 'chat', reply: '等我睇睇。', nextRead: { capability }, answerPlan: null })
 const FINAL_ENV = (reply) => ({ intent: 'chit_chat', mode: 'chat', reply, answerPlan: null })
 
@@ -83,7 +86,7 @@ const run = (adapter, deps, extra) => processIntake('今日要訂咩貨？', ada
 test('*** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***', async () => {
   await withEnv({}, async () => {
     const fc = fakeConnector()
-    const a = scriptedAdapter('claude', [READ_ENV('aroma_system'), FINAL_ENV('讀完，答你。')])
+    const a = scriptedAdapter('claude', [READ_ENV('aroma_system.inventory'), FINAL_ENV('讀完，答你。')])
     const out = await run(a, { connector: fc.connector, sources: ['aroma_system'] })
 
     assert.equal(a.calls.length, 2, 'exactly two model calls in ONE user turn')
@@ -104,7 +107,7 @@ test('*** ⛔ END TO END: nextRead → real connector read → observation in pr
 test('*** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***', async () => {
   await withEnv({ MULTI_AI_ROUTER: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const fc = fakeConnector()
-    const gpt = scriptedAdapter('openai', [READ_ENV('aroma_system'), FINAL_ENV('GPT 答咗。')])
+    const gpt = scriptedAdapter('openai', [READ_ENV('aroma_system.inventory'), FINAL_ENV('GPT 答咗。')])
     const claude = scriptedAdapter('claude', [FINAL_ENV('CLAUDE MUST NOT BE CALLED')])
 
     // ⛔ THE HINT IS FORCED. The old version relied on router ambiguity and then carried
@@ -129,7 +132,7 @@ test('*** a result with NO provider field is still attributed correctly ***', as
   // , so inferring identity from the RESULT read every GPT turn as Claude.
   await withEnv({ MULTI_AI_ROUTER: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const fc = fakeConnector()
-    const gpt = scriptedAdapter('openai', [READ_ENV('aroma_system'), FINAL_ENV('ok')])
+    const gpt = scriptedAdapter('openai', [READ_ENV('aroma_system.inventory'), FINAL_ENV('ok')])
     const claude = scriptedAdapter('claude', [FINAL_ENV('NOT ME')])
     await run(claude, { connector: fc.connector, sources: ['aroma_system'] },
       { openaiAdapter: gpt, providerHint: 'openai' })
@@ -148,7 +151,7 @@ test('*** a result with NO provider field is still attributed correctly ***', as
 test('*** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***', async () => {
   await withEnv({ READ_ACCESS: 'off' }, async () => {
     const fc = fakeConnector()
-    const a = scriptedAdapter('claude', [READ_ENV('aroma_system'), FINAL_ENV('冇讀到。')])
+    const a = scriptedAdapter('claude', [READ_ENV('aroma_system.inventory'), FINAL_ENV('冇讀到。')])
     await run(a, { connector: fc.connector, sources: ['aroma_system'] })
     assert.equal(fc.reads.length, 0, 'the reasoning loop may not create a weaker rule than the first read')
   })
@@ -184,9 +187,9 @@ test('*** ⛔ READ → READ → READ: no fourth call, and the pending prose is N
     const fc = fakeConnector()
     const PENDING_PROSE = 'PENDING_NOT_AN_ANSWER'
     const a = scriptedAdapter('claude', [
-      READ_ENV('aroma_system'),
-      { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system' }, answerPlan: null },
-      { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system' }, answerPlan: null }
+      READ_ENV('aroma_system.inventory'),
+      { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system.invoices' }, answerPlan: null },
+      { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system.invoices' }, answerPlan: null }
     ])
     const out = await run(a, { connector: fc.connector, sources: ['aroma_system'] })
 

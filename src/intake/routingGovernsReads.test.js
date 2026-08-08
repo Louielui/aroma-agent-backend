@@ -140,10 +140,29 @@ test('*** a capability question performs ZERO connector calls ***', async () => 
   assert.deepEqual(t.sources, [])
 })
 
-test('*** and carries NO responseFormat — no rows, and not a business route either ***', async () => {
+/**
+ * ⛔ NO ANSWER PLAN — WHICH IS NOT THE SAME AS NO SCHEMA (A3 first-read initiation).
+ *
+ * These three assertions used to read `responseFormat === null`. That was stronger than the
+ * rule they exist to protect, and the extra strength was itself a defect: with no schema there
+ * is no `nextRead`, so on a zero-row turn the model had no structural way to ask for a read,
+ * and 「你能看到 aroma system 嗎？」 was answered 「我無法確認」 with the connector authorised
+ * and working.
+ *
+ * The rule is unchanged and is what is checked now: the ROUTE decides whether an evidence-shaped
+ * ANSWER PLAN may be demanded, independently of the row count. A read DECISION is not evidence
+ * and forces nothing to be cited.
+ */
+function assertNoPlanDemanded (fmt, why) {
+  assert.notEqual(fmt, null, why + ': the decision surface must still exist')
+  assert.equal(fmt.name, 'distill_with_read_decision', why)
+  assert.equal(fmt.schema.properties.answerPlan, undefined, why + ': nothing evidence-shaped is demanded')
+}
+
+test('*** and demands NO Answer Plan — no rows, and not a business route either ***', async () => {
   const t = await turn('你可以幫我做什麼？')
   assert.equal(t.model.length, 1, 'the model was called once')
-  assert.equal(t.model[0].responseFormat, null, 'she answers freely')
+  assertNoPlanDemanded(t.model[0].responseFormat, 'she answers freely')
 })
 
 test('*** an ordinary conversational turn reads nothing ***', async () => {
@@ -202,10 +221,10 @@ test('*** a business question with rows DOES get the plan schema ***', async () 
   assert.equal(t.model[0].responseFormat.type, 'json_schema')
 })
 
-test('*** a business route with NO rows still gets no schema ***', async () => {
+test('*** a business route with NO rows still demands no plan ***', async () => {
   const t = await turn('最近有咩發票？', {}, [])
   assert.deepEqual(t.sources, ['aroma_system'], 'it did read')
-  assert.equal(t.model[0].responseFormat, null, 'but nothing came back, so nothing to cite')
+  assertNoPlanDemanded(t.model[0].responseFormat, 'nothing came back, so nothing to cite')
 })
 
 /* ── the gate does not lean on there being no rows ────────────────────────── */
@@ -223,7 +242,7 @@ test('*** rows on a NON-business route can never force a plan ***', async () => 
     // forceSources bypasses the route's own list — the only way to create the situation.
     readContextDeps: { connector: c.connector, sources: ALL, forceSources: true }
   }))
-  assert.equal(a.calls[0].responseFormat, null, 'route, not row count, decides the schema')
+  assertNoPlanDemanded(a.calls[0].responseFormat, 'route, not row count, decides the plan')
 })
 
 /* ── rollback ─────────────────────────────────────────────────────────────── */

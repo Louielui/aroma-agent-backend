@@ -2,6 +2,10 @@
 
 const { logReadSource } = require('../utils/readContextLog') // one allowlisted line per source
 const { startOfLocalDay: ownerStartOfLocalDay } = require('../utils/localTime') // THE single source of the Owner's clock
+// ⛔ ONE-WAY EDGE. readOperations.js requires NOTHING from here — its agreement with
+// AROMA_INTENTS is asserted by readOperations.test.js instead, so the two tables cannot drift
+// and there is still no import cycle.
+const { resolveReadOperation } = require('./readOperations')
 
 /**
  * readContext.js — builds ONE bounded, cited, dated context block from the connected
@@ -432,7 +436,7 @@ function aromaMethodFor (text) {
  * route ordinary repo questions into the index and quietly remove the commit view.
  */
 const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
-function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS } = {}) {
+function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null } = {}) {
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
   // Intent is read from what the Owner actually typed; the keywords are the fallback for
@@ -506,6 +510,28 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
     // The source is therefore ABSENT from the turn: no row in perSource, no line in the
     // block, no EvidenceSet. Logged as trust:'not_asked' so it is visible and distinct from
     // both of the other two states — fail soft, but never silent.
+    //
+    // ── TWO WAYS TO CHOOSE A VIEW, AND ONLY ONE OF THEM READS THE MESSAGE ────
+    //
+    // AUTOMATIC READ — nobody has decided anything yet, so the view is derived from what the
+    // Owner typed, exactly as below, `notAsked` and all. UNCHANGED.
+    //
+    // MODEL-DIRECTED READ — the reasoning model already picked a CONCRETE operation from a
+    // closed, server-generated enum (readOperations.js). Re-running aromaMethodFor() over the
+    // original message would throw that decision away and ask a question that has already been
+    // answered — which is precisely how 「你能看到 aroma system 嗎？」 died: the model asked for
+    // the read, the message carried no business intent, and the planner vetoed it as
+    // `notAsked` before the connector was ever reached.
+    //
+    // ⛔ THE MODEL NEVER SUPPLIES A METHOD. `operation` is a NAME from a frozen table;
+    // resolveReadOperation maps it to one of the six existing read methods or to null. An
+    // invented name, a raw method name and a path all resolve to null and fall through to the
+    // automatic planner — they cannot manufacture a call. The source must also match, so an
+    // operation belonging to another source cannot redirect this one.
+    const directed = operation ? resolveReadOperation(operation) : null
+    if (directed && directed.method && directed.source === source) {
+      return { method: directed.method, params: { limit: n } }
+    }
     const method = aromaMethodFor(matchText)
     if (!method) return { notAsked: 'no business intent in the message' }
     return { method, params: { limit: n } }
@@ -671,7 +697,7 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], evidenceSets: [] }
@@ -691,7 +717,9 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   async function fetchOne (source) {
     const startedAt = Date.now()
     try {
-      const plan = planFor(source, { keywords, message, now: asOf, env, caps })
+      // `operation` is ABSENT on every automatic read — the one-shot path passes no such
+      // argument — so this call is byte-identical to before for every existing caller.
+      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation })
       // NOT ASKED is not NOT AVAILABLE. Checked first so it can never fall into the branch
       // below and become a false read-failure claim.
       if (plan.notAsked) {

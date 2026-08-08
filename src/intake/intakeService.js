@@ -23,7 +23,7 @@ const { buildConversationRecall } = require('../lab/conversationRecall')      //
 const { replyCitesContext } = require('../lab/citationDetector')              // A′ narrowed: omit only when the REPLY drew on the context
 const { listDecisions, listTasks } = require('../store/store')                // read-only store fns for recall
 // Read Context Wiring v1 (chat-lane only, flag-gated OFF by default, fail-soft).
-const { buildReadContext } = require('../context/readContext')
+const { buildReadContext, aromaMethodFor } = require('../context/readContext')
 const { logReadSource } = require('../utils/readContextLog') // fail-soft, but never silent
 const { createLiveReadConnector, enabledSources } = require('../context/liveClients')
 const { resolveFlag } = require('../context/flags')
@@ -49,6 +49,9 @@ const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // 
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+// ⛔ THE CLOSED VOCABULARY the model may pick a read from. It EXPANDS authorised sources; it
+// never adds one. See readOperations.js.
+const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -356,6 +359,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const enabled = readDeps && Array.isArray(readDeps.sources) ? readDeps.sources : enabledSources(process.env)
     return sourcesForProvider(providerName, enabled, process.env)
   }
+  /**
+   * ⛔ THE CLOSED READ-OPERATION VOCABULARY FOR THIS PROVIDER, derived from — never wider
+   * than — the sources authorisedSourcesFor() already granted. aroma_system expands to its six
+   * concrete views; every other source is its own single operation and is unchanged.
+   *
+   * The expansion is the fix for the first-read defect: offering the bare source name made the
+   * model's request under-specified, so the server fell back to re-deriving the view from the
+   * Owner's message and vetoed the read when the message named no business entity.
+   */
+  function authorisedOperationsFor (providerName) {
+    return operationsForSources(authorisedSourcesFor(providerName))
+  }
+  /**
+   * Operations ALREADY EXECUTED this turn. Not sources: reading inventory says nothing about
+   * invoices, and hiding the whole source after one view would put the model back where it
+   * started — able to see that aroma_system exists and unable to ask it anything else.
+   */
+  const turnOperations = new Set()
   // ── A3 REASONING LOOP: observations gathered mid-turn, in the order they arrived. ──
   // Each entry is a read-context block produced by the SAME buildReadContext the one-shot
   // path uses. Empty on an ordinary turn, so the prompt is byte-identical to before.
@@ -452,6 +473,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
               if (row && row.source) turnPerSource.set(row.source, row)
+              // WHICH OPERATION THE AUTOMATIC READ ACTUALLY WAS, so the model is not offered a
+              // view it has already been given. Recomputed with the SAME deterministic function
+              // planFor used a moment ago — no new plumbing, and no guess: for aroma_system the
+              // view came from the message, for every other source the operation IS the source.
+              if (row && row.source === 'aroma_system') {
+                const op = operationForAromaMethod(aromaMethodFor(message))
+                if (op) turnOperations.add(op)
+              } else if (row && row.source) {
+                turnOperations.add(row.source)
+              }
             }
             for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) {
               if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)
@@ -553,8 +584,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // first read; nextRead is the model REQUESTING one. The router keeps its job and loses
     // only its power to silence the question.
     const planApplies = !(routeGoverns && (!routeDecision || routeDecision.route !== 'BUSINESS_QUERY')) && turnItems.size > 0
-    const readAlready = new Set(Array.from(turnPerSource.values()).filter((r) => r && r.trust === 'live').map((r) => r.source))
-    const openChoices = authorisedSourcesFor(activeProvider || primaryProvider).filter((sn) => !readAlready.has(sn))
+    // ⛔ OPERATIONS, MINUS THE ONES ALREADY PERFORMED. Filtering by SOURCE used to hide all six
+    // Aroma views the moment any one of them was read; an operation grain hides only what has
+    // actually been answered.
+    const openChoices = authorisedOperationsFor(activeProvider || primaryProvider).filter((op) => !turnOperations.has(op))
+    const choiceGloss = describeOperations(openChoices)
     if (!planApplies) {
       // Nothing to plan over yet — offer the DECISION only, never a fabricated plan.
       // No reads left, or not the chat lane: behave exactly as before this change.
@@ -563,7 +597,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {
         type: 'json_schema',
         name: 'distill_with_read_decision',
-        schema: withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, openChoices)
+        schema: withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, openChoices, choiceGloss)
       }
     }
     const refs = []
@@ -577,7 +611,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
-    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), openChoices)
+    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), openChoices, choiceGloss)
     return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null
@@ -821,14 +855,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Set above, at the branch that produced the accepted envelope. Not re-derived here.
     // ⛔ BLOCKER 3: the SAME authorisation boundary as the first read, for the ACTIVE
     // provider. READ_ACCESS off yields [], so every reasoning read is refused.
-    const allowed = (activeAdapter && activeProvider) ? authorisedSourcesFor(activeProvider) : []
+    // The vocabulary generated from the SAME authorised sources, at the operation grain the
+    // schema offered. Already-performed operations are NOT removed here: the schema narrows
+    // what is offered, the allowlist decides what is permitted, and conflating the two would
+    // make a repeat request look like a permission failure in the log.
+    const allowed = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
     let pending = distilled.nextRead
     const loop = await runReasoningLoop({
       capabilities: allowed,
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: async ({ capability }) => {
+        // ⛔ RESOLVE BEFORE THE CONNECTOR, AND REFUSE WITHOUT TOUCHING IT.
+        // Two independent checks, and the connector is reached only past both: the name must be
+        // in the vocabulary this turn generated, and it must resolve in the frozen table. An
+        // invented operation therefore costs zero reads — it is refused as an observation and
+        // handed back to the model, exactly like any other refusal in the loop.
+        const resolved = allowed.includes(capability) ? resolveReadOperation(capability) : null
+        if (!resolved) return { capability, ok: false, error: 'unknown_read_operation', summary: null }
         const connector = (readDeps && readDeps.connector) || createLiveReadConnector({ env: process.env }).connector
-        const rc = await buildReadContext({ connector, message, sources: [capability], env: process.env })
+        // `operation` is what makes this a MODEL-DIRECTED read: for aroma_system it selects the
+        // view the model already chose, instead of re-deriving one from the Owner's message —
+        // the re-derivation that vetoed this very read as `notAsked`. For every other source it
+        // changes nothing; their plans were never intent-derived.
+        const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, env: process.env })
+        turnOperations.add(capability)
         if (rc && rc.block) extraObservationBlocks.push(rc.block)
         for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(row.source, row)
         for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(g.source, g.items)

@@ -154,7 +154,14 @@ test('a turn that read NOTHING does not ask for a plan', async () => {
       providerHint: 'claude',
       readContextDeps: { connector: { async read () { return { asOf: NOW, source: 'aroma_system', count: 0, results: [] } } }, sources: ['aroma_system'] }
     })
-    assert.equal(spy.calls[0].responseFormat, undefined, 'nothing is requested "just in case"')
+    // ⛔ NO PLAN — but a DECISION is not a plan. This asserted `responseFormat === undefined`,
+    // which also removed `nextRead` and left the model unable to ask for a read at all on a
+    // zero-row turn (A3 first-read initiation). The guarantee under test is unchanged: nothing
+    // demands an evidence-shaped answer when there is no evidence.
+    const fmt = spy.calls[0].responseFormat
+    assert.equal(fmt.name, 'distill_with_read_decision', 'the decision surface, not the plan')
+    assert.equal(fmt.schema.properties.answerPlan, undefined, 'nothing is requested "just in case"')
+    assert.equal(fmt.schema.required.includes('answerPlan'), false)
   })
 })
 

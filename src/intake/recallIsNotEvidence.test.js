@@ -250,7 +250,13 @@ test('a turn that read NOTHING is still not asked for a plan at all', async () =
       readContextDeps: { connector: { async read () { return { asOf: NOW, source: 'aroma_system', count: 0, results: [] } } }, sources: ['aroma_system'] },
       conversationRecallDeps: { readRecordsFn: () => ARCHIVE_RECORDS }
     })
-    assert.equal(spy.calls[0].opts.responseFormat, undefined, 'the minItems rule must not leak into ordinary chat')
+    // ⛔ NOT A PLAN — and a read DECISION is not a plan. Asserting `responseFormat === undefined`
+    // also withdrew `nextRead`, which is how a zero-read turn lost the ability to ask for a read
+    // at all (A3 first-read initiation). The rule this protects is unchanged: nothing
+    // evidence-shaped may be demanded of an ordinary chat turn.
+    const fmt = spy.calls[0].opts.responseFormat
+    assert.equal(fmt.name, 'distill_with_read_decision')
+    assert.equal(fmt.schema.properties.answerPlan, undefined, 'the minItems rule must not leak into ordinary chat')
   })
 })
 
