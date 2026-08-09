@@ -34,8 +34,18 @@
 /**
  * ⛔ THE BOUND. One constant, no configuration system, no environment variable.
  * Three model DECISIONS — so at most two reads before the final answer.
+ *
+ * ⛔ AND IT REMAINS THE DEFAULT FOR EVERY TURN. A caller may pass `maxSteps` to raise it for
+ * ONE turn that has a structural reason (see `beforeFinal`), but there is deliberately no env
+ * var, no config file and no global. Unset means 3, today and after this change.
  */
 const MAX_REASONING_STEPS = 3
+
+/**
+ * The ceiling on any caller-supplied `maxSteps`. A bound a caller can set to anything is not
+ * a bound; this one costs at most one extra paid call beyond the default.
+ */
+const MAX_REASONING_STEPS_CEILING = 4
 
 const STOP = Object.freeze({
   FINAL: 'final',
@@ -43,7 +53,11 @@ const STOP = Object.freeze({
   // A caller-supplied pre-read hook ended the turn before the reader was touched. The loop
   // does not know why — that is the caller's business, and keeping it that way is what lets
   // this module stay domain-neutral.
-  BEFORE_READ: 'before_read'
+  BEFORE_READ: 'before_read',
+  // A caller-supplied pre-FINAL hook would not release the answer, and did not hand back a
+  // usable refusal either. No result and nothing invented: the caller renders its own
+  // deterministic fallback, exactly as it does at the step limit.
+  BEFORE_FINAL: 'before_final'
 })
 
 /**
@@ -93,7 +107,13 @@ async function runReasoningLoop (input = {}) {
     } catch (_) { /* telemetry must never break a turn */ }
   }
 
-  for (let step = 1; step <= MAX_REASONING_STEPS; step++) {
+  // ⛔ THE BOUND IS PER-TURN, CLAMPED, AND DEFAULTS TO TODAY'S. Unset — which is every
+  // existing caller — is 3, unchanged. A caller with a structural reason may ask for one more
+  // decision and no further: a bound the caller picks freely is not a bound.
+  const requested = Number.isFinite(input.maxSteps) ? Math.floor(input.maxSteps) : MAX_REASONING_STEPS
+  const maxSteps = Math.max(1, Math.min(requested, MAX_REASONING_STEPS_CEILING))
+
+  for (let step = 1; step <= maxSteps; step++) {
     // Accounting is reported for EVERY invocation, before the call is made, so a call that
     // throws is still counted — a turn that billed and then failed must not look free.
     if (onModelCall) { try { onModelCall({ step }) } catch (_) {} }
@@ -102,6 +122,49 @@ async function runReasoningLoop (input = {}) {
     const type = decision && typeof decision === 'object' ? decision.type : null
 
     if (type === 'final') {
+      // ══════════════════════════════════════════════════════════════════════
+      // ⛔ THE OPTIONAL beforeFinal HOOK — AND THIS LOOP DOES NOT KNOW WHY.
+      //
+      // A caller may have a STRUCTURAL reason why an answer is not finishable yet: something
+      // the turn was required to do has not happened. The model cannot be trusted to remember
+      // such a condition — measured, it read one world, found the other missing, and wrote an
+      // honest apology instead of going to get it.
+      //
+      // So the caller gets one chance to refuse the final. What it may hand back is an
+      // OBSERVATION, on exactly the same terms as a refused read: structural, enum-shaped, and
+      // fed to the next model call. This module learns nothing about worlds, sources, domains
+      // or the reason — it forwards an opaque record and continues the loop.
+      //
+      // ⛔ NO HOOK, NO CHANGE. Every existing caller passes none, `gate` is undefined, and the
+      // branch is a single falsy check before the identical return.
+      //
+      // ⛔ AND IT FAILS CLOSED AGAINST A PREMATURE FINAL. A hook that throws, or returns
+      // something unrecognised, does NOT release the answer — the same discipline as
+      // beforeRead. A guard whose failure mode is 「carry on」 is not a guard; and here
+      // carrying on means publishing the very answer the caller said was incomplete.
+      // ══════════════════════════════════════════════════════════════════════
+      if (typeof input.beforeFinal === 'function') {
+        let gate
+        try {
+          gate = await input.beforeFinal({ step, decision, observations: observations.slice() })
+        } catch (_) {
+          gate = null // a throw is a refusal, never a release
+        }
+        if (gate && gate.type === 'refuse') {
+          // The refusal becomes an ordinary observation and the loop continues, so the model
+          // can act on it inside the same bound. `observation` is passed through untouched:
+          // the caller owns its shape, and this module must not learn to read it.
+          if (gate.observation && typeof gate.observation === 'object') observations.push(gate.observation)
+          emit(step, 'refused', { refusal: 'before_final' })
+          continue
+        }
+        if (!gate || gate.type !== 'allow') {
+          // Unrecognised: not an allow, so not released. The turn stops here with no result and
+          // the caller renders its deterministic fallback, exactly as at the step limit.
+          emit(step, null, { stopReason: STOP.BEFORE_FINAL })
+          return { result: null, steps: step, stopReason: STOP.BEFORE_FINAL, observations }
+        }
+      }
       emit(step, 'final', { stopReason: STOP.FINAL })
       return { result: decision.result || null, steps: step, stopReason: STOP.FINAL, observations }
     }
@@ -179,8 +242,10 @@ async function runReasoningLoop (input = {}) {
 
   // ⛔ THE STEP LIMIT IS NOT AN ANSWER. No fourth call, and nothing invented. The caller
   // renders a deterministic fallback from whatever WAS gathered, which is returned here.
-  emit(MAX_REASONING_STEPS, null, { stopReason: STOP.STEP_LIMIT })
-  return { result: null, steps: MAX_REASONING_STEPS, stopReason: STOP.STEP_LIMIT, observations }
+  // ⛔ THE BOUND THAT ACTUALLY APPLIED, not the constant. On a turn granted a fourth decision
+  // these differ, and reporting 3 would make the log state a step count that never happened.
+  emit(maxSteps, null, { stopReason: STOP.STEP_LIMIT })
+  return { result: null, steps: maxSteps, stopReason: STOP.STEP_LIMIT, observations }
 }
 
-module.exports = { runReasoningLoop, MAX_REASONING_STEPS, STOP, WRITE_SHAPED }
+module.exports = { runReasoningLoop, MAX_REASONING_STEPS, MAX_REASONING_STEPS_CEILING, STOP, WRITE_SHAPED }

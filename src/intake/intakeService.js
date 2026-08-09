@@ -57,6 +57,7 @@ const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, 
 // ⛔ A4-2A: a public SEARCH is keyed per query, not per operation.
 const { publicReadKey } = require('../context/publicReadIdentity')
 const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
+const { createTurnMixedCache, missingWorld, logMixedRequirement } = require('./mixedKnowledgeRequirement')
 // ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
 // itself is injected.
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
@@ -1037,11 +1038,48 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       interactionMode === 'chat'
     const worlds = availableWorlds(allowed)
     let ambiguityUsed = false
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ A4-MIX1 — EXPLICIT MIXED IS NOT AMBIGUITY, AND IT IS NOT COMPLETE UNTIL BOTH.
+    //
+    // 「Aroma 實際牛肉成本升幅同市場相比合理嗎？」 failed live twice, in two places:
+    //   · the ambiguity verifier answered `ask` — although its own frozen rules say
+    //     「要兩邊 ≠ 含糊」. Asked whether his meaning was unclear, it read the two sides AS
+    //     the ambiguity.
+    //   · with that gate off, the model read internal evidence and went straight to FINAL,
+    //     honestly reporting it had no market data rather than going to get some.
+    //
+    // Both are one missing concept. A turn could be 「clear」 or 「ambiguous」, and an explicit
+    // request for two worlds is neither — it is the clearest kind of request there is, and it
+    // needs two reads. `requiredWorlds` is that concept, and it is deliberately tiny: two
+    // booleans, set once, for this turn only.
+    // ══════════════════════════════════════════════════════════════════════════
+    const mixedCache = createTurnMixedCache()
+    let requiredWorlds = null
+    const completedWorlds = { internal: false, public: false }
+    const resolveMixed = async () => {
+      if (mixedCache.settled) return requiredWorlds
+      const startedAt = Date.now()
+      const r = await mixedCache.get({
+        // ⛔ HIS WORDS ONLY — same Owner-role allowlist as the egress planner, and for the
+        // same reason: her turns are where evidence has already been spoken aloud.
+        verify: (readDeps && readDeps.mixedVerifier) || null,
+        message,
+        history
+      })
+      logMixedRequirement({ requestId, outcome: r.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+      requiredWorlds = r.requiredWorlds
+      return requiredWorlds
+    }
     const beforeRead = (gateOn && worlds.length > 1)
       ? async ({ capability }) => {
           // Once per turn, and only before the FIRST read actually happens.
           if (ambiguityUsed || turnOperations.size > 0) return { type: 'allow' }
           ambiguityUsed = true
+          // ⛔ MIXED IS ASKED FIRST, AND A MIXED TURN SKIPS THE AMBIGUITY ASK.
+          // Not because ambiguity stopped mattering, but because the question it asks —
+          // 「did he say which side」 — has already been answered: he said both. Running it
+          // anyway is what produced the wrong ASK.
+          if (await resolveMixed()) return { type: 'allow' }
           const proposedWorld = worldForCapability(capability)
           const startedAt = Date.now()
           const gate = await runSourceAmbiguityGate({
@@ -1063,9 +1101,55 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         }
       : undefined
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ THE COMPLETION GUARD. A required world that was never read is not an answer.
+    //
+    // Measured: the model read internal evidence, found no market data, and wrote a careful
+    // apology instead of requesting the second world. That is not dishonesty — it is a model
+    // holding a requirement in prose across three calls. It must not be asked to.
+    //
+    // ⛔ IT NAMES A WORLD, NEVER A CAPABILITY. The server does not choose the tool: it says
+    // which half of the question is still unanswered, and the model picks from the operations
+    // it was already authorised for. The one established exception stays exactly as it was —
+    // when public follows internal, the server owns the QUERY through the Owner-only planner.
+    //
+    // ⛔ AND A WORLD IS COMPLETED ONLY BY A LIVE READ. Refused, unavailable, duplicate-blocked
+    // and failed reads do not count, which is the A3 three-state rule applied to a second
+    // question: treating an attempt as completion is the exact defect 「attempted ≠ read」 was
+    // raised to end.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ DELIBERATELY NOT GATED ON THE AMBIGUITY FLAG. The two guards answer different
+    // questions: one prevents reading the wrong world, this one prevents answering half a
+    // question. Binding completion to the ambiguity switch would mean turning off the ASK
+    // silently also turned off the requirement that both worlds be read. With no verifier
+    // injected the requirement resolves to not_mixed without a call, so this costs nothing
+    // where it does not apply.
+    const mixedOn = a4SemanticRoutingEnabled(process.env) && interactionMode === 'chat' && worlds.length > 1
+    const beforeFinal = mixedOn
+      ? async () => {
+          if (!requiredWorlds) return { type: 'allow' }
+          const missing = missingWorld(requiredWorlds, completedWorlds)
+          if (!missing) return { type: 'allow' }
+          // A structural observation, on the same terms as any refused read: an enum and a
+          // world name. No business evidence, no prose, no reasoning.
+          return { type: 'refuse', observation: { capability: null, ok: false, error: 'required_world_missing', requiredWorld: missing, summary: null } }
+        }
+      : undefined
+
     const loop = await runReasoningLoop({
       capabilities: allowed,
       beforeRead,
+      beforeFinal,
+      // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery
+      // path is read → premature final (refused) → second read → final, which is four
+      // decisions. Every other turn keeps the bound of three, and there is no env var: the
+      // grant is computed here, from a requirement this turn actually established.
+      //
+      // `requiredWorlds` is set by beforeRead, which runs INSIDE the loop — so at this point
+      // it is still null. The bound must therefore be decided from the same question, asked
+      // before the loop starts; the cache makes that free, because beforeRead will reuse this
+      // answer rather than spending a second call.
+      maxSteps: (mixedOn && (await resolveMixed())) ? 4 : undefined,
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: async ({ capability, args }) => {
         // ⛔ A4-0A: ACCEPTED, RECORDED, AND DELIBERATELY NOT CONSUMED.
@@ -1254,6 +1338,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // `unavailable` read is excluded here, so a failed read can never open the grounding
         // path — the same three-state rule as recordOperation, applied to a second question.
         if (trust === 'live') modelDirectedLiveOperations.add(turnKey)
+        // ⛔ A4-MIX1: A WORLD IS COMPLETED BY A LIVE READ AND BY NOTHING ELSE. Recorded on the
+        // same `trust === 'live'` test the line above uses, so a refused, unavailable or
+        // duplicate-blocked read can never mark a world done — every one of those returns
+        // earlier and never reaches here.
+        if (trust === 'live') {
+          const w = worldForCapability(capability)
+          if (w === 'public') completedWorlds.public = true
+          else completedWorlds.internal = true
+        }
         return { capability, ok: trust === 'live', summary: null }
       },
       callModel: async ({ step }) => {
