@@ -143,13 +143,34 @@ const PLANNER_SYSTEM = `你嘅工作只有一個：將 Louie 想知嘅嘢，變�
 - location：Louie 講過地方先填，否則 null。`
 
 /**
- * ⛔ THE OUTPUT SHAPE IS THE EXISTING ONE. Deliberately `READ_ARGS_SCHEMA` itself, not a
- * lookalike: a second three-field schema would be a rival contract to keep in step, and the
- * whole A4-0A slice exists to prove this exact shape travels. There is no `reason`,
- * `rationale` or `confidence` field, for the same reason the ambiguity verifier has none — an
- * explanation field is chain-of-thought wearing a respectable name.
+ * ⛔ THE SAME THREE FIELDS — DERIVED, NOT RETYPED — WITH A NON-NULLABLE ROOT.
+ *
+ * The first cut of this was `PLANNER_SCHEMA = READ_ARGS_SCHEMA`, with a test asserting the
+ * identity and a comment congratulating it for not being a rival lookalike. A live call
+ * returned HTTP 400.
+ *
+ * READ_ARGS_SCHEMA is `type: ['object','null']` because as a NESTED field it must be able to
+ * say 「no arguments」 — for an internal operation, the operation IS the query, so null is the
+ * honest value. As a ROOT structured-output schema a nullable union is invalid: strict mode
+ * requires the root to be an object. The two roles genuinely differ, and reusing one object
+ * for both was wrong in a way that reads as discipline.
+ *
+ * So `properties` and `required` are TAKEN FROM the existing contract — they cannot drift,
+ * and a field added there arrives here — while the root type is pinned to a plain object. A
+ * planner returning 「no query」 is not a valid plan anyway; that case is a refusal, not a null.
+ *
+ * ⛔ AND ONLY A LIVE CALL COULD HAVE FOUND THIS. Every deterministic test injects a fake
+ * planner, so the schema was never handed to a provider. The canary is not ceremony.
+ *
+ * No `reason`, `rationale` or `confidence` field, for the same reason the ambiguity verifier
+ * has none — an explanation field is chain-of-thought wearing a respectable name.
  */
-const PLANNER_SCHEMA = READ_ARGS_SCHEMA
+const PLANNER_SCHEMA = Object.freeze({
+  type: 'object',
+  additionalProperties: false,
+  required: READ_ARGS_SCHEMA.required,
+  properties: READ_ARGS_SCHEMA.properties
+})
 
 /** Why no query left. Enums, never text. */
 const OUTCOME = Object.freeze({

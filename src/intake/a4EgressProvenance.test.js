@@ -415,9 +415,20 @@ test('*** P17 — the module is provider-neutral, proven statically ***', () => 
   }
 })
 
-test('*** P18 — the output schema IS the existing READ_ARGS shape, strict, with no rationale ***', () => {
+test('*** P18 — ⛔ the ROOT is a plain object, and the fields are DERIVED not retyped ***', () => {
   const { READ_ARGS_SCHEMA } = require('./a4Contract')
-  assert.equal(PLANNER_SCHEMA, READ_ARGS_SCHEMA, 'not a rival lookalike contract')
+  // SEEN TO FAIL LIVE. This was `assert.equal(PLANNER_SCHEMA, READ_ARGS_SCHEMA)` and it passed
+  // while a real provider call returned HTTP 400: READ_ARGS_SCHEMA's root is ['object','null']
+  // because as a NESTED field it must be able to say 「no arguments」, and strict Structured
+  // Outputs forbids a nullable ROOT. Every deterministic test injects a fake planner, so the
+  // schema never reached a provider — the identity assertion was proving discipline, not
+  // correctness.
+  assert.equal(PLANNER_SCHEMA.type, 'object', '⛔ a nullable root is rejected at the provider')
+  assert.ok(Array.isArray(READ_ARGS_SCHEMA.type) && READ_ARGS_SCHEMA.type.includes('null'),
+    'the nested contract is still nullable — the two roles genuinely differ')
+  // DERIVED, so a field added to the arg contract arrives here and cannot silently drift.
+  assert.equal(PLANNER_SCHEMA.properties, READ_ARGS_SCHEMA.properties)
+  assert.equal(PLANNER_SCHEMA.required, READ_ARGS_SCHEMA.required)
   assert.equal(PLANNER_SCHEMA.additionalProperties, false)
   assert.deepEqual(PLANNER_SCHEMA.required.slice().sort(), ['freshness', 'location', 'query'])
   for (const banned of ['reason', 'rationale', 'analysis', 'thought', 'thinking', 'confidence', 'chainOfThought']) {
