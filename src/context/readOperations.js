@@ -74,7 +74,32 @@ const AROMA_OPERATIONS = Object.freeze([
   Object.freeze({ intentKey: 'invoice', operation: 'aroma_system.invoices', source: AROMA_SOURCE, method: 'listInvoices', label: '發票' })
 ])
 
-const BY_OPERATION = new Map(AROMA_OPERATIONS.map((o) => [o.operation, o]))
+/**
+ * ⛔ A4-2A — THE PUBLIC PLANE, AS A CONTRACT ONLY.
+ *
+ * ONE operation, because the model describes WHAT it needs and the server owns HOW. A model
+ * that can name a provider has been handed procurement; one that can name a URL has been
+ * handed egress. Neither is a reasoning decision, so neither is expressible here.
+ *
+ * ⛔ AND IT IS NOT WIRED TO ANYTHING REAL. `public_knowledge` is deliberately ABSENT from
+ * liveClients' ALL_SOURCES and from flags' SOURCE_FLAG, so production's enabledSources() can
+ * never produce it and no launcher switch exists to turn it on. It becomes reachable only
+ * when a caller INJECTS it through the existing read-dependency seam — which is what the
+ * deterministic tests and the isolated canary harness do, with a fake executor. A test
+ * asserts the production path still offers nothing.
+ */
+const PUBLIC_SOURCE = 'public_knowledge'
+const PUBLIC_OPERATIONS = Object.freeze([
+  Object.freeze({
+    operation: 'public_knowledge.search',
+    source: PUBLIC_SOURCE,
+    method: 'search',
+    label: '公開／外部即時資訊'
+  })
+])
+
+const ALL_OPERATIONS = Object.freeze([...AROMA_OPERATIONS, ...PUBLIC_OPERATIONS])
+const BY_OPERATION = new Map(ALL_OPERATIONS.map((o) => [o.operation, o]))
 const BY_METHOD = new Map(AROMA_OPERATIONS.map((o) => [o.method, o]))
 
 /**
@@ -91,7 +116,7 @@ function operationsForSources (sources = []) {
   const out = []
   for (const s of Array.isArray(sources) ? sources : []) {
     if (typeof s !== 'string' || !s) continue
-    if (s === AROMA_SOURCE) { for (const o of AROMA_OPERATIONS) out.push(o.operation) } else out.push(s)
+    if (s === AROMA_SOURCE) { for (const o of AROMA_OPERATIONS) out.push(o.operation) } else if (s === PUBLIC_SOURCE) { for (const o of PUBLIC_OPERATIONS) out.push(o.operation) } else out.push(s)
   }
   return [...new Set(out)]
 }

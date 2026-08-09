@@ -6,6 +6,8 @@ const { startOfLocalDay: ownerStartOfLocalDay } = require('../utils/localTime') 
 // AROMA_INTENTS is asserted by readOperations.test.js instead, so the two tables cannot drift
 // and there is still no import cycle.
 const { resolveReadOperation } = require('./readOperations')
+// ⛔ A4-2A: a public SEARCH is not a public OPERATION — see publicReadIdentity.js.
+const { publicReadKey } = require('./publicReadIdentity')
 
 /**
  * readContext.js — builds ONE bounded, cited, dated context block from the connected
@@ -439,7 +441,7 @@ function aromaMethodFor (text) {
  * route ordinary repo questions into the index and quietly remove the commit view.
  */
 const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
-function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null } = {}) {
+function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null } = {}) {
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
   // Intent is read from what the Owner actually typed; the keywords are the fallback for
@@ -538,6 +540,30 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
     const method = aromaMethodFor(matchText)
     if (!method) return { notAsked: 'no business intent in the message' }
     return { method, params: { limit: n } }
+  }
+
+  if (source === 'public_knowledge') {
+    // ⛔ A4-2A. The MODEL supplies meaning; the SERVER supplies mechanism. The only things that
+    // travel are the three closed A4-0A arguments — there is no url, domain, provider,
+    // endpoint, header or result count to pass, because none exists in the contract.
+    //
+    // ⛔ NO FALLBACK. A public search that matched nothing is a true answer about the outside
+    // world, exactly as an empty Aroma table is; falling back to "recent items" would answer a
+    // question about beef prices with whatever the executor happened to hold.
+    //
+    // The executor itself is INJECTED. Nothing in this repository performs a network call for
+    // this source: production cannot even offer it (see readOperations.js), and the tests and
+    // canary harness supply a deterministic fake.
+    const a = args && typeof args === 'object' ? args : {}
+    return {
+      method: 'search',
+      params: {
+        query: typeof a.query === 'string' ? capQuery(a.query) : null,
+        freshness: typeof a.freshness === 'string' ? a.freshness : null,
+        location: typeof a.location === 'string' ? a.location : null,
+        limit: n
+      }
+    }
   }
 
   if (source === 'github') {
@@ -708,7 +734,7 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], evidenceSets: [] }
@@ -740,11 +766,15 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     // A model-directed operation for a DIFFERENT source cannot rename this one: the guard is
     // the same one planFor uses, so the two can never disagree about what was directed.
     const directed = operation ? resolveReadOperation(operation) : null
-    const readKey = (directed && directed.method && directed.source === source) ? operation : source
+    // ⛔ A4-2A: a public read is keyed per SEARCH, not per operation — one turn may run several
+    // and they are different reads. Internal readKeys are byte-identical to before.
+    const readKey = (directed && directed.method && directed.source === source)
+      ? (source === 'public_knowledge' ? publicReadKey(operation, args) : operation)
+      : source
     try {
       // `operation` is ABSENT on every automatic read — the one-shot path passes no such
       // argument — so this call is byte-identical to before for every existing caller.
-      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation })
+      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args })
       // NOT ASKED is not NOT AVAILABLE. Checked first so it can never fall into the branch
       // below and become a false read-failure claim.
       if (plan.notAsked) {

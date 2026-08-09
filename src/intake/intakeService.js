@@ -53,7 +53,9 @@ const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs
 // never adds one. See readOperations.js.
 const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
 // ⛔ A4-0A: the gate. Off (the default) ⇒ every line below that mentions A4 is inert.
-const { a4ContractEnabled, a4SemanticRoutingEnabled } = require('./a4Contract')
+const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, MIN_LEAKABLE_CHARS } = require('./a4Contract')
+// ⛔ A4-2A: a public SEARCH is keyed per query, not per operation.
+const { publicReadKey } = require('../context/publicReadIdentity')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -1043,20 +1045,82 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // handed back to the model, exactly like any other refusal in the loop.
         const resolved = allowed.includes(capability) ? resolveReadOperation(capability) : null
         if (!resolved) return { capability, ok: false, error: 'unknown_read_operation', summary: null }
+
+        // ══════════════════════════════════════════════════════════════════════
+        // ⛔ A4-2A — THE EGRESS GUARD. A4-EGRESS-1 stops being a note and starts refusing.
+        //
+        // An INTERNAL read has already put the restaurant's own data into this turn. A PUBLIC
+        // read sends its query to a third party. Composing the two is the natural, helpful
+        // thing a model does — and it is how a supplier name and a unit price leave the
+        // building inside a search string. A prompt instruction cannot be the control here.
+        //
+        // It runs AFTER the model proposes the read and BEFORE the executor is reached, and it
+        // FAILS CLOSED: nothing is called, no EvidenceSet exists, and the loop is handed an
+        // ordinary refused observation — no new trust state, because no read happened.
+        //
+        // ⛔ THE OWNER'S OWN WORDS ARE NOT A LEAK. A value he typed himself is his to send;
+        // blocking it because internal evidence happens to contain it too would refuse the very
+        // question he asked. So the candidate set is internal values MINUS anything already in
+        // his message.
+        //
+        // ⛔ NOTHING HERE IS LOGGED. Not the query, not the value, not the match. The
+        // observation carries one enum.
+        // ══════════════════════════════════════════════════════════════════════
+        if (resolved.source === 'public_knowledge') {
+          const internalValues = []
+          for (const g of turnItems.values()) {
+            if (!g || g.source === 'public_knowledge' || !Array.isArray(g.items)) continue
+            for (const it of g.items) {
+              for (const v of Object.values((it && it.fields) || {})) internalValues.push(v)
+              if (it && it.title) internalValues.push(it.title)
+            }
+          }
+          const ownerText = String(message == null ? '' : message).toLowerCase()
+          const notFromOwner = internalValues.filter((v) => {
+            const s = String(v == null ? '' : v).trim().toLowerCase()
+            return s.length >= MIN_LEAKABLE_CHARS && !ownerText.includes(s)
+          })
+          if (wouldLeakInternalEvidence(readArgs, notFromOwner)) {
+            return { capability, ok: false, error: 'PUBLIC_QUERY_EGRESS_BLOCKED', summary: null }
+          }
+        }
+
+        // ⛔ THE READ GRAIN, COMPUTED BEFORE THE EXECUTOR. For a public search that is the
+        // INSTANCE (operation + canonical args); for everything else it is the operation.
+        const turnKey = resolved.source === 'public_knowledge' ? publicReadKey(capability, readArgs) : capability
+
+        // ⛔ AND AN EXACT REPEAT IS NOT EXECUTED TWICE. `public_knowledge.search` stays
+        // re-offerable — the schema hides INSTANCES, not the operation, so a second, different
+        // search is allowed and that is the point. But the identical search inside one turn
+        // would return the identical evidence at a second cost, and inside a bounded loop a
+        // model that repeats itself must not be able to spend the bound on one question.
+        // Refused deterministically, without touching the executor.
+        if (turnOperations.has(turnKey)) {
+          return { capability, ok: false, error: 'duplicate_read_this_turn', summary: null }
+        }
+
         const connector = (readDeps && readDeps.connector) || createLiveReadConnector({ env: process.env }).connector
         // `operation` is what makes this a MODEL-DIRECTED read: for aroma_system it selects the
         // view the model already chose, instead of re-deriving one from the Owner's message —
         // the re-derivation that vetoed this very read as `notAsked`. For every other source it
         // changes nothing; their plans were never intent-derived.
-        const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, env: process.env })
+        // ⛔ ARGS REACH THE PUBLIC EXECUTOR AND NOTHING ELSE. A4-0A proved the channel and
+        // deliberately did not connect it; this is the one capability that has any business
+        // with it. Internal adapters still receive byte-identical params (test E).
+        const publicArgs = resolved.source === 'public_knowledge' ? readArgs : null
+        const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, args: publicArgs, env: process.env })
         if (rc && rc.block) extraObservationBlocks.push(rc.block)
         // ⛔ MODEL-DIRECTED READ: the readKey is the OPERATION, because that is the grain at
         // which the model actually read. Keying by source here is what let
         // aroma_system.purchasing erase aroma_system.replenishment. The values still carry
         // their own real `source`, so every ref downstream is unchanged.
-        for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(capability, row)
-        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(capability, { source: g.source, readKey: g.readKey || capability, items: g.items })
-        for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(capability, e)
+        // ⛔ THE TURN KEY IS THE READ GRAIN. For a public search that is the INSTANCE, not the
+        // operation — two searches in one turn are two reads, and keying by operation would let
+        // the second erase the first exactly as purchasing once erased replenishment.
+
+        for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(turnKey, row)
+        for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(turnKey, { source: g.source, readKey: g.readKey || turnKey, items: g.items })
+        for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(turnKey, e)
 
         // ⛔ ATTEMPTED IS NOT READ. This used to be an unconditional `turnOperations.add()` and
         // an `ok` computed from `!!rc.block` — but a FAILED read still produces a block: it
@@ -1069,13 +1133,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // which is the safe direction: it is never described as retrieved, and it is not retried.
         const row = (rc && Array.isArray(rc.perSource)) ? rc.perSource.find((r) => r && r.source === resolved.source) : null
         const trust = row ? row.trust : null
-        recordOperation(capability, trust)
+        recordOperation(turnKey, trust)
         // ⛔ TRUTH CLOSURE: PROVENANCE IS RECORDED AT THE ONLY PLACE THAT KNOWS IT.
         // This line is inside the loop's executeRead, so reaching it IS the proof the read was
         // model-directed; and `trust === 'live'` is the proof it produced evidence. An
         // `unavailable` read is excluded here, so a failed read can never open the grounding
         // path — the same three-state rule as recordOperation, applied to a second question.
-        if (trust === 'live') modelDirectedLiveOperations.add(capability)
+        if (trust === 'live') modelDirectedLiveOperations.add(turnKey)
         return { capability, ok: trust === 'live', summary: null }
       },
       callModel: async ({ step }) => {
