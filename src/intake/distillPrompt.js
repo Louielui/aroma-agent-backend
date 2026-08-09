@@ -3,7 +3,7 @@
 // ⛔ A4-0A — the FIRST dependency this module has ever had, and it is deliberately narrow:
 // the gate plus a pure admission filter, both of which are inert while A4 is off. The parser
 // still constructs a closed envelope from known fields and still grants no permission.
-const { a4ContractEnabled, admitReadArgs } = require('./a4Contract')
+const { a4ContractEnabled, admitReadArgs, a4SemanticRoutingEnabled, A4_SEMANTIC_GUIDANCE } = require('./a4Contract')
 
 /**
  * distillPrompt.js — COO behaviour (not a chatbot).
@@ -122,13 +122,27 @@ FINAL（nextRead = null）
 // costs a little context; mislabelling his as hers is the defect above.
 // Machine-verified against the client's own role literals by historyAttribution.test.js —
 // a hardcoded role name that nothing produces is how this survived.
-function buildDistillPrompt (message, history = []) {
+function buildDistillPrompt (message, history = [], opts = {}) {
   let convo = ''
   if (Array.isArray(history) && history.length) {
     convo = '對話歷史(舊到新):\n' + history.slice(-8)
       .map(h => `${h.role === 'assistant' ? '香香' : 'Louie'}: ${h.text}`).join('\n') + '\n\n'
   }
-  return { system: SYSTEM_PROMPT, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
+  // ⛔ A4-1: THE SEMANTIC GUIDANCE IS APPENDED, GATED, AND CHAT-LANE ONLY.
+  //
+  // SYSTEM_PROMPT itself is untouched — it is exported and asserted on elsewhere, and an
+  // A4-off turn must be byte-identical to 40a0f223.
+  //
+  // ⛔ `chatLane` IS REQUIRED, and the first version of this was wrong without it. A4-1 governs
+  // knowledge READ INITIATION IN CHAT and nothing else, but this builder composes the system
+  // string for EVERY lane — so appending unconditionally changed the proposal and email_draft
+  // system strings too, and conversationContract's byte-identity assertion caught it. A lane
+  // that cannot read has no use for guidance about when to read.
+  //
+  // 'shadow' does NOT append it either: shadow changes no behaviour.
+  const a4Chat = opts && opts.chatLane === true && a4SemanticRoutingEnabled(process.env)
+  const system = a4Chat ? SYSTEM_PROMPT + '\n' + A4_SEMANTIC_GUIDANCE : SYSTEM_PROMPT
+  return { system, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 
 // --- Slice A: strict Distill output-contract parser (Option C) ----------------

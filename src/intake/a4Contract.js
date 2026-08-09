@@ -48,10 +48,55 @@ function resolveA4 (env = process.env) {
   return 'off'
 }
 
-/** Is the A4 contract exposed at all? shadow and on are identical in THIS slice. */
+/** Is the A4 contract exposed at all? shadow and on both expose the A4-0A argument channel. */
 function a4ContractEnabled (env = process.env) {
   return resolveA4(env) !== 'off'
 }
+
+/**
+ * ⛔ A4-1: DOES SEMANTIC ROUTING GOVERN THIS TURN? ONLY 'on'.
+ *
+ * `shadow` deliberately does NOT qualify. Shadow's job elsewhere in this codebase is to
+ * COMPUTE a decision beside the live one and change nothing — and the only honest way to
+ * shadow a semantic routing decision is to ask the model, which is a second paid call on
+ * every turn. That is a real cost with no owner yet, so shadow stays at the A4-0A contract
+ * exposure and touches no routing. A test asserts the difference rather than a comment
+ * promising it.
+ */
+function a4SemanticRoutingEnabled (env = process.env) {
+  return resolveA4(env) === 'on'
+}
+
+/**
+ * ⛔ MODEL TEXT (governance/textClasses.js, class MODEL). She is TOLD this, and it decides
+ * whether she reads at all. Translating it is a behaviour change wearing a translation's
+ * clothes — see the class note on this file.
+ *
+ * ⛔ WHY THIS IS PROSE AND NOT A KEYWORD LIST. The defect A4 exists to fix is that
+ * 「食材採購價平均增加 3%」 read purchase orders: a word about a domain was treated as a
+ * request for that domain's records. Adding 「採購 unless followed by 價」 would be the same
+ * architecture with a longer list. The rule below is about what the QUESTION NEEDS, which is
+ * a judgement only the reader of the sentence can make.
+ *
+ * ⛔ AND IT NEVER NAMES A TOOL TO THE OWNER. The clarification asks which BUSINESS MEANING he
+ * wants — 我哋入貨價 vs 外面市場行情 — never which source or operation. He is not the router.
+ */
+const A4_SEMANTIC_GUIDANCE = `
+【判斷要唔要查資料 —— 先諗清楚，唔好見字就查】
+- 句子入面有業務字眼（採購、成本、安排、供應商、發票、庫存…）唔等於要查嘢。要唔要查，睇嘅係「答呢條問題仲缺乜嘢」，唔係出現咗邊個字。
+- Louie 已經喺訊息入面俾晒數字或事實 → 直接用嗰啲數字去分析，nextRead 填 null，唔好去查。
+- 問題明顯係問我哋自己嘅營運真相（我哋、我哋供應商、我哋間鋪…）→ 直接揀最合適嗰一個內部讀取操作，唔好反問。
+- 問題明顯係問出面世界嘅即時／公開資訊（市場行情、天氣、新聞、法規、匯率…）→ 今日仲未有呢個能力。照直講你需要外部即時資料而家攞唔到；【唔好】攞我哋內部資料當佢，亦【唔好】靠估砌一個數字出嚟。
+- 【最重要】如果一句嘢有兩個都講得通、而且答案會完全唔同嘅意思（我哋自己盤數 vs 出面市場嘅數），而 Louie 又冇講明係邊個 —— 唔好估。設 mode="ask"、nextRead=null，用一句短問題問清楚。
+  例：「最近牛肉比上個月升跌幾多？」
+  → 問：「你想睇我哋供應商實際入貨價，定係外面市場牛肉行情？如果你想，我亦可以兩邊都睇。」
+- 但唔好變成乜都問：
+  · 已經講明「我哋／我哋供應商」→ 內部，直接讀。
+  · 已經講明「加拿大／市場／行情」→ 公開，唔好當成內部資料答。
+  · 「我哋成本升幅同市場比正常嗎」→ 呢個唔含糊，係同時需要兩邊。唔好問佢揀邊邊。
+  · 淨係因為某個能力而家未有 → 唔係反問 Louie 嘅理由，照直講就得。
+- 一個回合最多問一條 clarification，而且要問最有價值嗰條。
+- 問嘅時候用生意語言（我哋入貨價／出面市場行情）。【絕對唔好】叫 Louie 揀工具、來源或者操作名。`
 
 /**
  * ⛔ THE CLOSED ARGUMENT SHAPE. Three fields, and the list is meant to be argued with rather
@@ -181,6 +226,8 @@ module.exports = {
   A4_STATES,
   resolveA4,
   a4ContractEnabled,
+  a4SemanticRoutingEnabled,
+  A4_SEMANTIC_GUIDANCE,
   READ_ARGS_SCHEMA,
   ARG_KEYS,
   FRESHNESS,

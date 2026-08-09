@@ -53,7 +53,7 @@ const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs
 // never adds one. See readOperations.js.
 const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
 // ⛔ A4-0A: the gate. Off (the default) ⇒ every line below that mentions A4 is inert.
-const { a4ContractEnabled } = require('./a4Contract')
+const { a4ContractEnabled, a4SemanticRoutingEnabled } = require('./a4Contract')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -248,7 +248,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   // ── STEP 2: LLM DISTILLATION ──────────────────────────────────────────────
-  const { system, prompt } = buildDistillPrompt(message, history)
+  // ⛔ A4-1 is CHAT-ONLY: the lane is passed explicitly so the proposal and email_draft
+  // system strings can never pick up read guidance for a lane that cannot read.
+  const { system, prompt } = buildDistillPrompt(message, history, { chatLane: (opts && opts.interactionMode === 'chat') === true })
   // DEMO (flag ON): trusted persona identity via `system`; untrusted project
   // context via a sanitized prompt data block. Both cross the SAME LLMAdapter
   // boundary as plain strings — no provider SDK here. Context Card sanitization
@@ -534,7 +536,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           : enabled
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
         // gets that minus anything the Owner has withheld from it.
-        const sources = sourcesForProvider(providerName, all, process.env)
+        //
+        // ══════════════════════════════════════════════════════════════════════
+        // ⛔ A4-1: THE KEYWORD ROUTE LOSES THE POWER TO INITIATE A READ.
+        //
+        // This is the whole architectural change, and it is deliberately ONE condition rather
+        // than a rewrite. `routeTurn` still runs, still classifies BUSINESS_QUERY, still names
+        // its source, and still logs all of it — the telemetry, the entity vocabulary and the
+        // A4-off path are untouched. What it no longer owns is the decision to READ.
+        //
+        // WHY HERE AND NOT IN turnRouter. The router answers 「which source could hold this
+        // entity」 and it is RIGHT about that; 「食材採購價平均增加 3%」 genuinely mentions
+        // purchasing. What it cannot answer is 「does answering this question require our
+        // records at all」, because that is a judgement about the QUESTION, not the words. A
+        // negative regex for 採購 would be the same architecture with a longer list — which is
+        // exactly what this slice was told not to build.
+        //
+        // With the read withheld, the turn reaches the model with zero rows, which is precisely
+        // the A3 first-read-initiation path: the decision schema offers every authorised
+        // operation and the model chooses READ / ASK / FINAL. No capability is added and no
+        // authorisation moves — `authorisedOperationsFor` is still the only boundary.
+        //
+        // ⛔ 'shadow' DOES NOT REACH HERE. Only 'on'. Shadowing a semantic decision means
+        // asking the model, i.e. a second paid call per turn; that is not free and has no
+        // owner yet, so shadow changes nothing about routing.
+        // ══════════════════════════════════════════════════════════════════════
+        const a4Semantic = a4SemanticRoutingEnabled(process.env)
+        const sources = a4Semantic ? [] : sourcesForProvider(providerName, all, process.env)
         if (sources.length > 0) {
           const key = sources.join(',')
           if (!readBlockCache.has(key)) {
