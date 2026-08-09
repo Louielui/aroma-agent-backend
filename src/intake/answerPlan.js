@@ -1423,6 +1423,43 @@ const DISTILL_WITH_READ_DECISION_SCHEMA = Object.freeze({
  *
  * ⛔ IT GRANTS NOTHING. This widens what a read REQUEST may say, never what may be read.
  */
+/**
+ * ⛔ A4-1C: THE CHAT LANE MAY NOT OFFER `commit` — MADE STRUCTURALLY IMPOSSIBLE.
+ *
+ * ── THE CONTRADICTION THIS RESOLVES ──────────────────────────────────────────
+ * The classifier tells the model that an operational request — anything with 做/建立/改/停/
+ * 查 — is `mode:"commit"`. laneRouter and the intake governance already disagree: a
+ * read/look/check/find request is a KNOWLEDGE READ, not an action, and a chat turn cannot
+ * execute anything. So on 「幫我查下…」 the model was being told two different things at once,
+ * and the A4 semantic guidance was arguing with the classifier rather than extending it.
+ *
+ * Two calibrations of that prose failed in opposite directions — the second moved the failure
+ * from over-asking to under-asking without ever removing it. The lesson is not "write better
+ * prose": it is that an invalid state was REPRESENTABLE, so the model kept representing it.
+ *
+ * ⛔ THIS REMOVES NO CAPABILITY. intakeService already intercepts `mode:'commit'` on a chat
+ * turn and creates NO Decision, NO Task, NO Proposal and no dispatch — the chat opts do not
+ * even carry the proposal seam. Real actions reach the proposal lane through laneRouter,
+ * BEFORE any content is fetched, and that boundary is untouched. This narrows the model's
+ * output contract to what the server was always going to honour, and nothing else.
+ *
+ * ⛔ OFF RETURNS THE SAME OBJECT, not an equal one, so an A4-off turn cannot differ by key
+ * order. Applied ONLY for A4 ON + chat; the proposal and email_draft lanes keep `commit`.
+ */
+const CHAT_KNOWLEDGE_MODES = Object.freeze(['recommend', 'ask', 'chat'])
+
+function withChatKnowledgeModes (schema, enabled) {
+  if (!enabled) return schema
+  const modeNode = schema && schema.properties && schema.properties.mode
+  if (!modeNode || !Array.isArray(modeNode.enum)) return schema
+  // Preserve the repository's canonical ORDER; only `commit` is removed.
+  const narrowed = modeNode.enum.filter((m) => m !== 'commit')
+  if (narrowed.length === modeNode.enum.length) return schema
+  const out = JSON.parse(JSON.stringify(schema))
+  out.properties.mode.enum = narrowed
+  return out
+}
+
 function withReadArgs (schema, enabled) {
   if (!enabled) return schema
   const nr = schema && schema.properties && schema.properties.nextRead
@@ -1456,6 +1493,8 @@ module.exports = {
   withRowRefs,
   withReadChoices,
   withReadArgs,
+  withChatKnowledgeModes,
+  CHAT_KNOWLEDGE_MODES,
   DISTILL_WITH_READ_DECISION_SCHEMA,
   STATUS_LABELS,
   ENTITY_LABELS,

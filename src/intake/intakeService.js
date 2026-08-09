@@ -48,7 +48,7 @@ const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // 
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, withChatKnowledgeModes, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 // ⛔ THE CLOSED VOCABULARY the model may pick a read from. It EXPANDS authorised sources; it
 // never adds one. See readOperations.js.
 const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
@@ -675,6 +675,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ⛔ A4-0A. Off (the default, and production today) ⇒ withReadArgs returns the schema
     // OBJECT ITSELF, so an A4-off turn cannot differ from f836534 by even a key order.
     const a4On = a4ContractEnabled(process.env)
+    // ⛔ A4-1C: the chat lane may not offer 'commit'. Gated on SEMANTIC routing (only 'on') AND
+    // the chat lane, so shadow, A4-off and the proposal/email_draft lanes are all untouched.
+    // This removes no capability: intakeService already intercepts a chat-lane commit and
+    // creates nothing. It aligns the model's contract with the authority the server has always
+    // had, which is what two rounds of prose calibration could not do.
+    const a4ChatModes = a4SemanticRoutingEnabled(process.env) && !!(opts && opts.interactionMode === 'chat')
     // TWO INDEPENDENT CONDITIONS, and the Owner asked for exactly that. Rows can no longer
     // force a plan on a route that did not ask for data — and the gate does NOT lean on
     // reads being governed. With reads governed there should be no rows on a CONVERSATION
@@ -731,7 +737,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {
         type: 'json_schema',
         name: 'distill_with_read_decision',
-        schema: withReadChoices(withReadArgs(DISTILL_WITH_READ_DECISION_SCHEMA, a4On), openChoices, choiceGloss)
+        schema: withReadChoices(withReadArgs(withChatKnowledgeModes(DISTILL_WITH_READ_DECISION_SCHEMA, a4ChatModes), a4On), openChoices, choiceGloss)
       }
     }
     // ⛔ THE REF COMES FROM THE GROUP'S OWN SOURCE, NEVER FROM THE MAP KEY. The key is now the
@@ -749,7 +755,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
-    const shaped = withReadChoices(withReadArgs(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), a4On), openChoices, choiceGloss)
+    const shaped = withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss)
     return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null
