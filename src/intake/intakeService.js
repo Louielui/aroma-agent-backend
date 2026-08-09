@@ -58,6 +58,7 @@ const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, 
 const { publicReadKey } = require('../context/publicReadIdentity')
 const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
 const { createTurnMixedCache, missingWorld, logMixedRequirement } = require('./mixedKnowledgeRequirement')
+const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
 // ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
 // itself is injected.
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
@@ -467,6 +468,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // paid call — and rather than deriving a DIFFERENT safe string, which would slip past the
   // executor dedupe that keys on canonical args.
   const egressPlans = createTurnPlanCache()
+  // ⛔ ONE INITIAL-FINAL VERDICT PER TURN. Turn-scoped and dropped with the request; a later
+  // FINAL reuses the obligation rather than re-asking a question whose input has not changed.
+  const finalObligations = createTurnFinalCache()
 
   async function buildPromptFor (providerName) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
@@ -1005,7 +1009,61 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //
   // Provider neutrality: the loop module is handed a closure and never learns what is
   // behind it. All provider routing stays above, behind the adapter boundary.
-  if (interactionMode === 'chat' && distilled && distilled.nextRead) {
+  // ══════════════════════════════════════════════════════════════════════════
+  // ⛔ A4-FINAL1 — THE INITIAL FINAL IS VALIDATED BEFORE IT IS BELIEVED.
+  //
+  // Three live turns failed the same way: asked for outside-world information, the main model
+  // at LOW proposed NO read and answered that it could not obtain external data — while
+  // `public_knowledge.search` sat in the authorised enum it had just been handed. Verified
+  // directly: the capability WAS offered.
+  //
+  // Every guard built so far hangs off the model PROPOSING a read. A model that proposes
+  // nothing sails past all of them — the worst case being 「兩邊都睇。」, where no read was
+  // proposed and the whole MIX1 chain never engaged.
+  //
+  // So when the initial decision is FINAL, one narrow verifier decides whether the question is
+  // answerable WITHOUT retrieval. ⛔ IT IS NOT A ROUTER: a turn that proposes a read never
+  // reaches it, and it names a WORLD, never a capability. The model still chooses how to read.
+  // ══════════════════════════════════════════════════════════════════════════
+  let initialObligation = null
+  // ⛔ AN ASK IS NOT AN ANSWER, AND A COMMIT IS NOT A QUESTION.
+  //
+  // The gate validates a FINAL ANSWER. A turn whose mode is 'ask' is the model asking the
+  // Owner to clarify — it answers nothing, reads nothing and claims nothing, so there is no
+  // answer to validate; running the gate on it withheld a legitimate clarification and left
+  // the Owner with silence. Caught by the ambiguity suite, which asserts exactly that reply.
+  // 'commit' belongs to the proposal path and never had a knowledge obligation.
+  const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
+    a4SemanticRoutingEnabled(process.env) && distilled.mode !== 'commit' && distilled.mode !== 'ask'
+  if (initialFinalGate) {
+    const allowedNow = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
+    const w = availableWorlds(allowedNow)
+    const startedAt = Date.now()
+    const verdict = await finalObligations.get({
+      verify: (readDeps && readDeps.finalVerifier) || null,
+      message,
+      history,
+      availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
+    })
+    logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+    if (!verdict.ok) {
+      // ⛔ FAIL CLOSED, AND NOTE THE DIRECTION. For the mixed gate, failing safe meant claiming
+      // NO requirement. Here the dangerous direction is publishing an unverified answer, so an
+      // unusable verdict withholds it. No connector ran, no EvidenceSet exists, nothing is
+      // fabricated — the turn falls through to the same deterministic rendering the step limit
+      // uses, which speaks only from what was actually read (nothing).
+      distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
+      try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: 1, decisionType: 'final', stopReason: 'final_validation_unavailable' })) } catch (_) {}
+    } else if (verdict.decision === 'clarify') {
+      // An ordinary conversation result, exactly as the ambiguity ASK is — no new response
+      // type, zero reads, no EvidenceSet, no trust state.
+      distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: verdict.question, nextRead: null, answerPlan: null })
+    } else if (verdict.requiredWorlds) {
+      initialObligation = verdict.requiredWorlds
+    }
+  }
+
+  if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation)) {
     const { runReasoningLoop, STOP } = require('./reasoningLoop')
     // ⛔ BLOCKER 2: THE PROVIDER THAT PRODUCED THE VALID FIRST ENVELOPE CONTINUES THE TURN.
     // Step 2 used to call the Claude adapter even when OpenAI produced step 1 — a silent
@@ -1020,7 +1078,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // what is offered, the allowlist decides what is permitted, and conflating the two would
     // make a repeat request look like a permission failure in the log.
     const allowed = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
-    let pending = distilled.nextRead
+    // ⛔ NULL ON AN INITIAL-FINAL TURN. The loop is entered with no read to replay, so step 1
+    // is a real recovery call rather than a replay — see callModel.
+    let pending = distilled.nextRead || null
     // ══════════════════════════════════════════════════════════════════════════
     // ⛔ A4-AMB1 — THE SOURCE-AMBIGUITY GATE, ONCE PER TURN, BEFORE ANY CONNECTOR.
     //
@@ -1054,7 +1114,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // booleans, set once, for this turn only.
     // ══════════════════════════════════════════════════════════════════════════
     const mixedCache = createTurnMixedCache()
-    let requiredWorlds = null
+    // ⛔ SEEDED FROM THE INITIAL-FINAL VERDICT, when there was one. ONE obligation state, not
+    // two: MIX1's completion guard reads this same variable, so an obligation discovered from
+    // a refused FINAL and one discovered from a first READ are enforced by identical code.
+    let requiredWorlds = initialObligation
+    if (initialObligation) {
+      // ⛔ AND THE MODEL MUST BE ABLE TO SEE IT. Refused observations reach the LOOP but never
+      // reached the MODEL — only successful read blocks are added to the prompt. A guard the
+      // model cannot see cannot be honoured, and calling that 「the model refuses to recover」
+      // would have blamed it for something it was never shown.
+      const first = missingWorld(initialObligation, {})
+      const block = renderRequiredWorldObservation(first)
+      if (block) extraObservationBlocks.push(block)
+    }
     const completedWorlds = { internal: false, public: false }
     const resolveMixed = async () => {
       if (mixedCache.settled) return requiredWorlds
@@ -1079,7 +1151,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // Not because ambiguity stopped mattering, but because the question it asks —
           // 「did he say which side」 — has already been answered: he said both. Running it
           // anyway is what produced the wrong ASK.
-          if (await resolveMixed()) return { type: 'allow' }
+          // ⛔ AN ESTABLISHED OBLIGATION SETTLES THE MEANING TOO. The initial-FINAL verifier
+          // has already classified this turn (internal / public / both), so re-asking either
+          // gate would spend a paid call re-litigating a closed question — and the ambiguity
+          // gate could ASK about a meaning that has just been decided.
+          if (initialObligation || await resolveMixed()) return { type: 'allow' }
           const proposedWorld = worldForCapability(capability)
           const startedAt = Date.now()
           const gate = await runSourceAmbiguityGate({
@@ -1125,11 +1201,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // injected the requirement resolves to not_mixed without a call, so this costs nothing
     // where it does not apply.
     const mixedOn = a4SemanticRoutingEnabled(process.env) && interactionMode === 'chat' && worlds.length > 1
-    const beforeFinal = mixedOn
+    // ⛔ ENABLED WHENEVER AN OBLIGATION COULD EXIST — including a SINGLE-world one, which the
+    // `worlds.length > 1` test alone would have missed: `require_internal` on a turn that can
+    // only reach internal is a real obligation, and gating completion on there being two
+    // worlds would have silently released exactly those answers. It no-ops when nothing is
+    // required, so the broader condition costs nothing.
+    const beforeFinal = (mixedOn || initialObligation)
       ? async () => {
           if (!requiredWorlds) return { type: 'allow' }
           const missing = missingWorld(requiredWorlds, completedWorlds)
           if (!missing) return { type: 'allow' }
+          // ⛔ AND THE REFUSAL IS PUT WHERE THE MODEL CAN SEE IT. The loop observation alone was
+          // invisible to her: the prompt is built from read-context blocks only. Named as a
+          // WORLD, never a capability — she still chooses the operation.
+          const block = renderRequiredWorldObservation(missing)
+          if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
           // A structural observation, on the same terms as any refused read: an enum and a
           // world name. No business evidence, no prose, no reasoning.
           return { type: 'refuse', observation: { capability: null, ok: false, error: 'required_world_missing', requiredWorld: missing, summary: null } }
@@ -1149,7 +1235,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // it is still null. The bound must therefore be decided from the same question, asked
       // before the loop starts; the cache makes that free, because beforeRead will reuse this
       // answer rather than spending a second call.
-      maxSteps: (mixedOn && (await resolveMixed())) ? 4 : undefined,
+      // ⛔ THREE BUDGETS, EACH TIED TO A PATH THAT STRUCTURALLY NEEDS IT.
+      //
+      //   no obligation                     3  (unchanged default, every ordinary turn)
+      //   single-world from initial FINAL   3  (final refused → read → final)
+      //   mixed from a first READ           4  (read → premature final refused → read → final)
+      //   mixed from an initial FINAL       5  (final refused → read A → final refused →
+      //                                          read B → final)
+      //
+      // The 5 exists only because the initial FINAL consumes a decision before any read has
+      // happened. No env var, no global change, and every other turn keeps 3.
+      // ⛔ AND AN ESTABLISHED OBLIGATION DOES NOT RE-ASK. When the initial-FINAL verifier has
+      // already settled what this turn owes, running the mixed verifier too would spend a
+      // second paid call to answer a question that is closed — and could answer it
+      // differently, giving one turn two obligation states.
+      maxSteps: initialObligation
+        ? ((initialObligation.internal === true && initialObligation.public === true) ? 5 : undefined)
+        : ((mixedOn && (await resolveMixed())) ? 4 : undefined),
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: async ({ capability, args }) => {
         // ⛔ A4-0A: ACCEPTED, RECORDED, AND DELIBERATELY NOT CONSUMED.
@@ -1354,7 +1456,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // decision.args to executeRead — the seam existed and was closed at BOTH ends, so the
         // channel looked wired and carried nothing. With A4 off the parser never sets
         // pending.args, so this is null and the decision is identical to today's.
-        if (step === 1) return { type: 'read', capability: String(pending.capability || ''), args: pending.args || null }
+        // ⛔ ONLY WHEN THERE IS ONE TO REPLAY. On an initial-FINAL turn `pending` is null: the
+        // model already spoke, its answer was withheld, and step 1 IS the recovery call.
+        if (step === 1 && pending) return { type: 'read', capability: String(pending.capability || ''), args: pending.args || null }
         const prompt = await buildPromptFor(activeProvider)
         const fmt = answerPlanFormat()
         const next = await activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) })
@@ -1376,6 +1480,22 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // call and nothing is invented — the turn falls through to the EXISTING deterministic
     // rendering, which now runs over every observation gathered (they are already in
     // turnEvidence / turnItems / turnPerSource) rather than over a half-finished sentence.
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ A REFUSED ANSWER MUST NOT COME BACK THROUGH THE SIDE DOOR.
+    //
+    // `callModel` assigns `distilled = parsed` the moment an envelope carries no nextRead —
+    // BEFORE beforeFinal has judged it. So a FINAL the completion guard refused was still
+    // installed as the turn's envelope, and the deterministic fallback then rendered its
+    // `reply`: the Owner received the half answer anyway, with the guard reporting a refusal.
+    // Caught by the two tests that assert the withheld prose never reaches him.
+    //
+    // The obligation is re-checked here against what was actually read, not against what the
+    // loop happened to return, so this holds however the loop ended.
+    // ══════════════════════════════════════════════════════════════════════════
+    if (requiredWorlds && missingWorld(requiredWorlds, completedWorlds)) {
+      distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
+      try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: 'final', stopReason: 'required_world_missing' })) } catch (_) {}
+    }
     if (loop.stopReason === STOP.STEP_LIMIT) {
       distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null })
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: null, stopReason: loop.stopReason, observations: loop.observations.length })) } catch (_) {}

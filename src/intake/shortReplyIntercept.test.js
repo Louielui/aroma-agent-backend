@@ -45,6 +45,13 @@ const HISTORY = [
 
 /* ── the fix ──────────────────────────────────────────────────────────────── */
 
+// ⛔ A4 OFF FOR THIS FILE — it asserts NON-A4 contracts.
+// A4-FINAL1 withholds a FINAL that no verifier has validated, and 'no verifier wired' is one
+// of the fail-closed cases by Owner ruling. With A4 on and no verifier injected, every direct
+// answer in this file would be withheld and every assertion about the reply would fail — which
+// says nothing about the contract under test. Pinned so these keep proving what they were
+// written to prove. See a4FinalObligation.test.js for the gate's own coverage.
+process.env.A4_KNOWLEDGE_ROUTING = 'off'
 test('*** 「1」 after a numbered list keeps 香香\'s real answer ***', async () => {
   const res = await processIntake('1', fake(COMMIT), HISTORY, { demo: true, interactionMode: 'chat' })
   assert.equal(res.reply, '好，我幫你睇咗第一個選項：先接 POS，因為佢影響每日落單。',

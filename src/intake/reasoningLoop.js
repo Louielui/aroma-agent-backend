@@ -43,9 +43,15 @@ const MAX_REASONING_STEPS = 3
 
 /**
  * The ceiling on any caller-supplied `maxSteps`. A bound a caller can set to anything is not
- * a bound; this one costs at most one extra paid call beyond the default.
+ * a bound.
+ *
+ * ⛔ RAISED FROM 4 TO 5 FOR ONE STRUCTURAL PATH, and the reason is arithmetic rather than
+ * generosity: when an obligation is discovered by refusing the model's INITIAL answer, that
+ * refusal has already consumed a decision before any read has happened. The worst acceptable
+ * bounded path is then final-refused → read A → final-refused → read B → final. Five.
+ * The DEFAULT is still 3 and every ordinary turn still gets 3.
  */
-const MAX_REASONING_STEPS_CEILING = 4
+const MAX_REASONING_STEPS_CEILING = 5
 
 const STOP = Object.freeze({
   FINAL: 'final',

@@ -91,6 +91,13 @@ async function turn (message, env = {}) {
 
 /* ═══ 1. THE QUESTION THAT STARTED THIS ════════════════════════════════════ */
 
+// ⛔ A4 OFF FOR THIS FILE — it asserts NON-A4 contracts.
+// A4-FINAL1 withholds a FINAL that no verifier has validated, and 'no verifier wired' is one
+// of the fail-closed cases by Owner ruling. With A4 on and no verifier injected, every direct
+// answer in this file would be withheld and every assertion about the reply would fail — which
+// says nothing about the contract under test. Pinned so these keep proving what they were
+// written to prove. See a4FinalObligation.test.js for the gate's own coverage.
+process.env.A4_KNOWLEDGE_ROUTING = 'off'
 test('*** 「現在是幾點？」 reads NOTHING and calls no model ***', async () => {
   const t = await turn('現在是幾點？')
   assert.deepEqual(t.reads, [], 'THE DEFECT: this read Drive, Gmail, Calendar and inventory')

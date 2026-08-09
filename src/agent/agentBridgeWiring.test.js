@@ -32,6 +32,13 @@ const validWO = (over = {}) => Object.assign({
 afterEach(() => { delete process.env.AGENT_BRIDGE; delete process.env.WORKER_INVOCATION; delete process.env.DEVELOP_DISPATCH })
 
 /* ── flag OFF: nothing constructed, byte-identical authorization ───────────── */
+// ⛔ A4 OFF FOR THIS FILE — it asserts NON-A4 contracts.
+// A4-FINAL1 withholds a FINAL that no verifier has validated, and 'no verifier wired' is one
+// of the fail-closed cases by Owner ruling. With A4 on and no verifier injected, every direct
+// answer in this file would be withheld and every assertion about the reply would fail — which
+// says nothing about the contract under test. Pinned so these keep proving what they were
+// written to prove. See a4FinalObligation.test.js for the gate's own coverage.
+process.env.A4_KNOWLEDGE_ROUTING = 'off'
 test('flag OFF -> agentRunnerConfigured false, NO runner constructed, lane unauthorized', () => {
   delete process.env.AGENT_BRIDGE
   const app = createApp(APP_OPTS)

@@ -96,6 +96,13 @@ async function withEnv (vars, fn) {
 
 const lines = (root) => fs.readFileSync(path.join(root, 'archive.jsonl'), 'utf8')
 
+// ⛔ A4 OFF FOR THIS FILE — it asserts NON-A4 contracts.
+// A4-FINAL1 withholds a FINAL that no verifier has validated, and 'no verifier wired' is one
+// of the fail-closed cases by Owner ruling. With A4 on and no verifier injected, every direct
+// answer in this file would be withheld and every assertion about the reply would fail — which
+// says nothing about the contract under test. Pinned so these keep proving what they were
+// written to prove. See a4FinalObligation.test.js for the gate's own coverage.
+process.env.A4_KNOWLEDGE_ROUTING = 'off'
 test('*** END TO END: a Gmail turn whose reply CITES the mail stores the question and omits the answer ***', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-'))
   await withEnv({
