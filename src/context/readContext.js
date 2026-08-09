@@ -830,7 +830,34 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
     itemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
-    evidenceSets.push(got.evidence || describeRead(got.entry.source, null, [], got.entry.usedFallback === true, asOf))
+    // ⛔ UNAVAILABLE IS NOT EVIDENCE — AND THE CALLER DECIDES WHETHER AN EvidenceSet EXISTS.
+    //
+    // This was `got.evidence || describeRead(...)`. An unavailable read deliberately carries no
+    // `got.evidence`, so it fell through to the synthesiser — whose default shape declares
+    // `trust: 'live'`. One failed read therefore became three contradictory things at once:
+    // perSource said unavailable, the observation line said UNAVAILABLE, and the EvidenceSet
+    // said live with shownCount 0.
+    //
+    // That is not cosmetic. renderScopeLine only renders LIVE evidence, so the model could be
+    // handed a SCOPE line for data never retrieved — and because the synthetic set carried no
+    // readKey it rendered under the bare SOURCE, mislabelling the failed read as a successful
+    // one. evidenceIndex and claimBinding also consume EvidenceSets, so it could enter the
+    // truth layer as something a claim may bind to.
+    //
+    // ⛔ NOT FIXED BY DISCARDING EMPTY READS. A live read that matched zero rows IS evidence —
+    // of an empty result — and keeps its EvidenceSet, readKey and SCOPE identity. The line
+    // below turns on `trust`, never on row count.
+    //
+    // describeRead is left alone: it is not asked to manufacture an 'unavailable' EvidenceSet,
+    // because the honest representation of a read that produced nothing is NO ENTRY AT ALL.
+    // The failed state survives in perSource and in its UNAVAILABLE line, which is where it
+    // belongs.
+    if (got.entry.trust === 'live') {
+      evidenceSets.push(got.evidence || Object.assign(
+        describeRead(got.entry.source, null, [], got.entry.usedFallback === true, asOf),
+        { readKey: got.entry.readKey || got.entry.source }
+      ))
+    }
     if (got.overflow) truncated = true
 
     // ONE ALLOWLISTED LINE PER SOURCE. Without this a source that returned nothing and a
