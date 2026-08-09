@@ -140,8 +140,15 @@ function buildDistillPrompt (message, history = [], opts = {}) {
   // that cannot read has no use for guidance about when to read.
   //
   // 'shadow' does NOT append it either: shadow changes no behaviour.
+  //
+  // ⛔ AND IT GOES BEFORE THE CLASSIFIER, NEVER AFTER IT. The repository contract is
+  // persona → guards → Conversation Contract → SYSTEM_PROMPT, with the classifier VERBATIM AND
+  // LAST; buildPersonaSystemFromPersona appends `distillSystem` last precisely to hold that.
+  // The first version appended the guidance after SYSTEM_PROMPT, which broke
+  // 「classifier preserved verbatim at the END」. Prepending keeps that invariant intact and
+  // still puts the guidance after the contract, because this whole string is the last segment.
   const a4Chat = opts && opts.chatLane === true && a4SemanticRoutingEnabled(process.env)
-  const system = a4Chat ? SYSTEM_PROMPT + '\n' + A4_SEMANTIC_GUIDANCE : SYSTEM_PROMPT
+  const system = a4Chat ? A4_SEMANTIC_GUIDANCE + '\n\n' + SYSTEM_PROMPT : SYSTEM_PROMPT
   return { system, prompt: `${convo}Louie 現在說:「${message}」\n\n請先判斷 intent,再依規則輸出 JSON。` }
 }
 

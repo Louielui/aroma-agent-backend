@@ -200,15 +200,42 @@ test('*** R — A4 off: no A4 wording reaches the system prompt ***', () => {
   } finally { if (saved === undefined) delete process.env[A4_FLAG]; else process.env[A4_FLAG] = saved }
 })
 
-test('*** A4 on + CHAT lane: the guidance is appended, and SYSTEM_PROMPT is never mutated ***', () => {
+test('*** A4 on + CHAT lane: guidance appears ONCE, BEFORE a verbatim, LAST SYSTEM_PROMPT ***', () => {
   const saved = process.env[A4_FLAG]
   process.env[A4_FLAG] = 'on'
   try {
     const { system } = buildDistillPrompt('你好', [], { chatLane: true })
-    assert.ok(system.startsWith(SYSTEM_PROMPT), 'the base prompt is intact and first')
-    assert.ok(system.includes(A4_SEMANTIC_GUIDANCE.trim().slice(0, 20)), 'the guidance follows it')
-    assert.equal(SYSTEM_PROMPT.includes('判斷要唔要查資料'), false, 'the exported constant is unchanged')
+    // ⛔ THE CLASSIFIER PLACEMENT INVARIANT. persona → guards → contract → SYSTEM_PROMPT, with
+    // the classifier VERBATIM AND LAST. The first version appended the guidance after it and
+    // broke exactly this; the fence now states it rather than trusting the comment.
+    assert.ok(system.endsWith(SYSTEM_PROMPT), '⛔ the classifier must remain the FINAL segment')
+    assert.ok(system.includes(A4_SEMANTIC_GUIDANCE), 'the guidance is present, whole')
+    assert.ok(system.indexOf(A4_SEMANTIC_GUIDANCE) < system.indexOf(SYSTEM_PROMPT), 'and it comes BEFORE it')
+    // exactly once
+    const marker = '【判斷次序'
+    assert.equal(system.split(marker).length - 1, 1, 'injected exactly once')
+    assert.equal(SYSTEM_PROMPT.includes(marker), false, 'the exported classifier constant is unchanged')
   } finally { if (saved === undefined) delete process.env[A4_FLAG]; else process.env[A4_FLAG] = saved }
+})
+
+test('*** the guidance carries no test/holdout sentence — no teaching to the test ***', () => {
+  // The first calibration failed partly because the ASK example was a near-duplicate of a
+  // canary input. The guidance must contrast the worlds ABSTRACTLY, with unrelated domains.
+  for (const holdout of ['牛肉', '加拿大', 'Gordon', '客流', '外賣比例', '毛利', '批發']) {
+    assert.equal(A4_SEMANTIC_GUIDANCE.includes(holdout), false,
+      '⛔ ' + holdout + ' is TEST DATA and must never appear in the model prompt')
+  }
+})
+
+test('*** ambiguity is RESIDUAL: the guidance orders the check and says so ***', () => {
+  const g = A4_SEMANTIC_GUIDANCE
+  const iInternal = g.indexOf('2｜')
+  const iPublic = g.indexOf('3｜')
+  const iMixed = g.indexOf('4｜')
+  const iAsk = g.indexOf('5｜')
+  assert.ok(iInternal > 0 && iPublic > iInternal && iMixed > iPublic && iAsk > iMixed,
+    'INTERNAL, PUBLIC and MIXED are all evaluated BEFORE asking')
+  assert.ok(g.includes('含糊係最後先剩低嘅結果，唔係起點'), 'and residual-ness is stated outright')
 })
 
 test('*** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***', () => {
