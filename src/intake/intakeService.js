@@ -59,6 +59,39 @@ const { publicReadKey } = require('../context/publicReadIdentity')
 const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
 const { createTurnMixedCache, missingWorld, logMixedRequirement } = require('./mixedKnowledgeRequirement')
 const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
+const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./recoveryDecisionWorker')
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ A4-RR1 — WHERE THE SECOND PROVIDER IS CHOSEN, AND NOWHERE ELSE.
+ *
+ * recoveryDecisionWorker.js names no provider and no model; it is handed this closure. That
+ * separation is the same one verifier EFFORT already uses — the semantic module states the
+ * contract, the composition layer decides who answers it.
+ *
+ * ⛔ THE MODEL IS PINNED TO THE EXACT DATED BUILD THAT WAS MEASURED. `claude-haiku-4-5-20251001`
+ * scored 40/40 on this contract with the currently configured key. It is written here rather
+ * than taken from the adapter default ON PURPOSE: that default is `claude-3-5-haiku-20241022`,
+ * which is RETIRED and returns HTTP 404 — a live defect for any caller relying on it. Fixing
+ * the global default is deliberately NOT part of this slice; it is recorded as a separate
+ * follow-up (CLAUDE ADAPTER DEFAULT MODEL RETIRED) so one change is not smuggled inside another.
+ *
+ * ⛔ AND IT IS NOT THE MAIN BRAIN. This closure is reached only after the main model has been
+ * told what is missing and has declined a second time. It returns one capability name, never
+ * prose, and its output can never become the Owner's reply.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const RECOVERY_WORKER_MODEL = 'claude-haiku-4-5-20251001'
+
+async function defaultRecoveryWorker (input) {
+  const { ClaudeAdapter } = require('../adapters/ClaudeAdapter')
+  const adapter = new ClaudeAdapter({ model: RECOVERY_WORKER_MODEL })
+  const r = await adapter.complete(buildWorkerPrompt(input), {
+    system: input.system,
+    responseFormat: { type: 'json_schema', name: 'recovery_decision', schema: input.schema, strict: true }
+  })
+  return r.text
+}
 // ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
 // itself is injected.
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
@@ -1152,6 +1185,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // needs two reads. `requiredWorlds` is that concept, and it is deliberately tiny: two
     // booleans, set once, for this turn only.
     // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ TURN-SCOPED, PER MISSING WORLD. `terminalRefusals` is what gives the main brain its
+    // first attempt; `workerUsed` is what stops the fallback becoming a loop. Both are dropped
+    // with the turn, and a mixed turn tracks its two worlds independently — public may need the
+    // worker while internal does not.
+    const terminalRefusals = { internal: 0, public: 0 }
+    const workerUsed = { internal: false, public: false }
     const mixedCache = createTurnMixedCache()
     // ⛔ SEEDED FROM THE INITIAL-FINAL VERDICT, when there was one. ONE obligation state, not
     // two: MIX1's completion guard reads this same variable, so an obligation discovered from
@@ -1255,47 +1294,59 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // WORLD, never a capability — she still chooses the operation.
           const block = renderRequiredWorldObservation(missing)
           if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
+
+          // ══════════════════════════════════════════════════════════════════
+          // ⛔ A4-RR1 — THE BOUNDED RECOVERY WORKER, AND ONLY AFTER THE MAIN BRAIN HAS TRIED.
+          //
+          // Measured on one byte-identical recovery input: the main model chose the correct
+          // read 3/7 at LOW and 2/7 at MEDIUM. Raising effort made it WORSE, so there was no
+          // effort to buy and nothing left to tune. A separate narrow worker, asked only
+          // 「which authorised operation satisfies the world we already know is missing」,
+          // scored 40/40 on the same four classes.
+          //
+          // ⛔ THE MAIN BRAIN STILL GOES FIRST. `terminalRefusals` counts refusals for THIS
+          // missing world: the first one is simply handed back, so a turn where the model
+          // recovers on its own never spends a worker call and never leaves GPT. Only a SECOND
+          // refusal for the same world — the model told what is missing and declining again —
+          // invokes the worker, exactly once per obligation instance.
+          //
+          // ⛔ AND IT NEVER ANSWERS LOUIE. It returns one capability name; the read runs
+          // through performRead, the same path with the same guards; the reply is still
+          // composed by the main model afterwards, from the evidence the read produced.
+          // ══════════════════════════════════════════════════════════════════
+          terminalRefusals[missing] = (terminalRefusals[missing] || 0) + 1
+          if (terminalRefusals[missing] >= 2 && !workerUsed[missing]) {
+            workerUsed[missing] = true // once per missing-world obligation, never a loop
+            const startedAt = Date.now()
+            const decided = await runRecoveryWorker({
+              // ⛔ HIS WORDS, THE MISSING WORLD, WHAT IS DONE, AND THE AUTHORISED LIST.
+              // No evidence parameter exists to forget to strip.
+              decide: (readDeps && readDeps.recoveryWorker) || defaultRecoveryWorker,
+              message,
+              history,
+              requiredWorld: missing,
+              completedWorlds,
+              capabilities: allowed
+            })
+            logRecoveryWorker({ requestId, outcome: decided.outcome, requiredWorld: missing, capability: decided.capability, durationMs: Date.now() - startedAt })
+            if (decided.ok) {
+              // ⛔ ARGS ARE NOT THE WORKER'S. For a public read the Owner-only egress planner
+              // constructs them inside performRead; for an internal one the operation IS the
+              // query. Passing null is what keeps a second provider out of the egress path.
+              try { await performRead({ capability: decided.capability, args: null }) } catch (_) {}
+            }
+          }
           // A structural observation, on the same terms as any refused read: an enum and a
           // world name. No business evidence, no prose, no reasoning.
           return { type: 'refuse', observation: { capability: null, ok: false, error: 'required_world_missing', requiredWorld: missing, summary: null } }
         }
       : undefined
 
-    const loop = await runReasoningLoop({
-      capabilities: allowed,
-      beforeRead,
-      // ⛔ TERMINAL, NOT FINAL. An ASK reaches the loop as a terminal decision exactly like an
-      // ANSWER does, so this one hook closes both exits: with an obligation outstanding the
-      // model can neither answer nor ask its way out of the turn.
-      beforeTerminal,
-      // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery
-      // path is read → premature final (refused) → second read → final, which is four
-      // decisions. Every other turn keeps the bound of three, and there is no env var: the
-      // grant is computed here, from a requirement this turn actually established.
-      //
-      // `requiredWorlds` is set by beforeRead, which runs INSIDE the loop — so at this point
-      // it is still null. The bound must therefore be decided from the same question, asked
-      // before the loop starts; the cache makes that free, because beforeRead will reuse this
-      // answer rather than spending a second call.
-      // ⛔ THREE BUDGETS, EACH TIED TO A PATH THAT STRUCTURALLY NEEDS IT.
-      //
-      //   no obligation                     3  (unchanged default, every ordinary turn)
-      //   single-world from initial FINAL   3  (final refused → read → final)
-      //   mixed from a first READ           4  (read → premature final refused → read → final)
-      //   mixed from an initial FINAL       5  (final refused → read A → final refused →
-      //                                          read B → final)
-      //
-      // The 5 exists only because the initial FINAL consumes a decision before any read has
-      // happened. No env var, no global change, and every other turn keeps 3.
-      // ⛔ AND AN ESTABLISHED OBLIGATION DOES NOT RE-ASK. When the initial-FINAL verifier has
-      // already settled what this turn owes, running the mixed verifier too would spend a
-      // second paid call to answer a question that is closed — and could answer it
-      // differently, giving one turn two obligation states.
-      maxSteps: initialObligation
-        ? ((initialObligation.internal === true && initialObligation.public === true) ? 5 : undefined)
-        : ((mixedOn && (await resolveMixed())) ? 4 : undefined),
-      onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
-      executeRead: async ({ capability, args }) => {
+    // ⛔ ONE READ IMPLEMENTATION, TWO CALLERS. Extracted verbatim so the recovery worker
+    // executes reads through EXACTLY the path the model-directed loop uses — the same
+    // allowlist, egress guard, dedupe, trust rule and world accounting. A second read path
+    // would be a second place for those guarantees to drift.
+    async function performRead ({ capability, args }) {
         // ⛔ A4-0A: ACCEPTED, RECORDED, AND DELIBERATELY NOT CONSUMED.
         //
         // This signature used to be `({ capability })`, so every argument the loop forwarded
@@ -1492,7 +1543,43 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           else completedWorlds.internal = true
         }
         return { capability, ok: trust === 'live', summary: null }
-      },
+    }
+
+    const loop = await runReasoningLoop({
+      capabilities: allowed,
+      beforeRead,
+      // ⛔ TERMINAL, NOT FINAL. An ASK reaches the loop as a terminal decision exactly like an
+      // ANSWER does, so this one hook closes both exits: with an obligation outstanding the
+      // model can neither answer nor ask its way out of the turn.
+      beforeTerminal,
+      // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery
+      // path is read → premature final (refused) → second read → final, which is four
+      // decisions. Every other turn keeps the bound of three, and there is no env var: the
+      // grant is computed here, from a requirement this turn actually established.
+      //
+      // `requiredWorlds` is set by beforeRead, which runs INSIDE the loop — so at this point
+      // it is still null. The bound must therefore be decided from the same question, asked
+      // before the loop starts; the cache makes that free, because beforeRead will reuse this
+      // answer rather than spending a second call.
+      // ⛔ THREE BUDGETS, EACH TIED TO A PATH THAT STRUCTURALLY NEEDS IT.
+      //
+      //   no obligation                     3  (unchanged default, every ordinary turn)
+      //   single-world from initial FINAL   3  (final refused → read → final)
+      //   mixed from a first READ           4  (read → premature final refused → read → final)
+      //   mixed from an initial FINAL       5  (final refused → read A → final refused →
+      //                                          read B → final)
+      //
+      // The 5 exists only because the initial FINAL consumes a decision before any read has
+      // happened. No env var, no global change, and every other turn keeps 3.
+      // ⛔ AND AN ESTABLISHED OBLIGATION DOES NOT RE-ASK. When the initial-FINAL verifier has
+      // already settled what this turn owes, running the mixed verifier too would spend a
+      // second paid call to answer a question that is closed — and could answer it
+      // differently, giving one turn two obligation states.
+      maxSteps: initialObligation
+        ? ((initialObligation.internal === true && initialObligation.public === true) ? 5 : undefined)
+        : ((mixedOn && (await resolveMixed())) ? 4 : undefined),
+      onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
+      executeRead: performRead,
       callModel: async ({ step }) => {
         // ⛔ A4-0A: THE ARGUMENTS TRAVEL WITH THE DECISION. reasoningLoop already forwarded
         // decision.args to executeRead — the seam existed and was closed at BOTH ends, so the
