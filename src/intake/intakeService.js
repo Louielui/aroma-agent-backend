@@ -57,7 +57,12 @@ const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, 
 // ⛔ A4-2A: a public SEARCH is keyed per query, not per operation.
 const { publicReadKey } = require('../context/publicReadIdentity')
 const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
-const { createTurnMixedCache, missingWorld, logMixedRequirement } = require('./mixedKnowledgeRequirement')
+// ⛔ ONLY THE COMPLETENESS GUARD SURVIVES FROM MIX1. `missingWorld` is plain code answering
+// 「given that both worlds are required, are both actually read?」 — a different question from
+// 「does he want both?」, which is now the resolver's alone. The mixed VERIFIER (a model call
+// that could classify a request as mixed) is deliberately no longer imported or wired: two
+// components able to establish the same fact is a coincidence waiting to diverge.
+const { missingWorld } = require('./mixedKnowledgeRequirement')
 const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
 const { createTurnIntentCache, readMatchesIntent, buildIntentPrompt, logOwnerSourceIntent } = require('./ownerSourceIntentResolver')
 const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./recoveryDecisionWorker')
@@ -1216,7 +1221,6 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // worker while internal does not.
     const terminalRefusals = { internal: 0, public: 0 }
     const workerUsed = { internal: false, public: false }
-    const mixedCache = createTurnMixedCache()
     // ⛔ SEEDED FROM THE INITIAL-FINAL VERDICT, when there was one. ONE obligation state, not
     // two: MIX1's completion guard reads this same variable, so an obligation discovered from
     // a refused FINAL and one discovered from a first READ are enforced by identical code.
@@ -1230,58 +1234,73 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const block = renderRequiredWorldObservation(first)
       if (block) extraObservationBlocks.push(block)
     }
+    // ⛔ WHEN A WORLD OBLIGATION CAN EXIST AT ALL: A4 on, chat lane, and two worlds actually
+    // reachable. With only one world there is nothing to choose between and nothing to owe.
+    // Deliberately NOT gated on the ambiguity flag — that switch governs a guard that no longer
+    // runs, and completion is a different guarantee from meaning.
+    const mixedOn = a4SemanticRoutingEnabled(process.env) && interactionMode === 'chat' && worlds.length > 1
     const completedWorlds = { internal: false, public: false }
-    const resolveMixed = async () => {
-      if (mixedCache.settled) return requiredWorlds
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ ONE SOURCE-WORLD AUTHORITY, AND THIS IS WHERE THE SECOND ONE WAS REMOVED.
+    //
+    // MIX1's mixed VERIFIER used to run here and could establish 「both worlds」 on its own,
+    // before the resolver was ever consulted — so two components could classify the same
+    // request. They never disagreed in testing, but 「two authorities that happen to agree」 is
+    // a coincidence, not an architecture, and the next divergence would have been silent.
+    //
+    // The resolver now answers 「which world did he mean」 for EVERY read path, including the
+    // explicit-mixed one. What survives of MIX1 is its COMPLETENESS GUARD — `missingWorld()`
+    // against `completedWorlds`, plain code with no model call — which answers only 「given
+    // that both worlds are required, are both actually read?」. That is a different question
+    // and it is still asked, in beforeTerminal.
+    //
+    // ⛔ RESOLVED BEFORE THE LOOP, NOT INSIDE IT. The step budget depends on whether this turn
+    // owes two worlds, and the budget is chosen when the loop is constructed. The turn-local
+    // cache keys on the Owner context, so beforeRead's later lookup is the same answer at no
+    // additional cost.
+    // ══════════════════════════════════════════════════════════════════════════
+    let sourceIntentLogged = false
+    const resolveIntent = async () => {
+      if (initialObligation) return { intent: null, requiredWorlds: initialObligation }
       const startedAt = Date.now()
-      const r = await mixedCache.get({
-        // ⛔ HIS WORDS ONLY — same Owner-role allowlist as the egress planner, and for the
-        // same reason: her turns are where evidence has already been spoken aloud.
-        verify: (readDeps && readDeps.mixedVerifier) || null,
+      const r = await sourceIntents.get({
+        resolve: (readDeps && readDeps.sourceIntentResolver) || null,
         message,
         history
       })
-      logMixedRequirement({ requestId, outcome: r.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
-      requiredWorlds = r.requiredWorlds
-      return requiredWorlds
+      if (!sourceIntentLogged) {
+        sourceIntentLogged = true
+        logOwnerSourceIntent({ requestId, outcome: r.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+      }
+      return r
     }
-    const beforeRead = (gateOn && worlds.length > 1)
-      ? async ({ capability }) => {
+    // The turn's world obligation, settled once, from his meaning alone.
+    if (!initialObligation && mixedOn) {
+      const r = await resolveIntent()
+      if (r.requiredWorlds) requiredWorlds = r.requiredWorlds
+    }
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ THE PRE-READ GATE IS NOW ONE QUESTION: DID HE LEAVE THE WORLD OPEN?
+    //
+    // The obligation was already settled above, from his meaning alone. All that remains here
+    // is the case where his meaning is genuinely open — then the turn asks and reads nothing.
+    // Everything else is allowed through: a read in the wrong world is refused inside
+    // performRead, which hands the model an ordinary refused observation and its normal
+    // recovery opportunity, so the wrong world is never executed and nothing here has to end
+    // the turn to prevent it.
+    //
+    // ⛔ AND A VALID FIRST HALF OF A MIXED TURN IS NOT A WRONG WORLD. With both worlds
+    // required, either side may be read first; the completeness guard keeps the other side
+    // outstanding until it is actually read.
+    // ══════════════════════════════════════════════════════════════════════════
+    const beforeRead = mixedOn
+      ? async () => {
           // Once per turn, and only before the FIRST read actually happens.
           if (ambiguityUsed || turnOperations.size > 0) return { type: 'allow' }
           ambiguityUsed = true
-          // ⛔ MIXED IS ASKED FIRST, AND A MIXED TURN SKIPS THE AMBIGUITY ASK.
-          // Not because ambiguity stopped mattering, but because the question it asks —
-          // 「did he say which side」 — has already been answered: he said both. Running it
-          // anyway is what produced the wrong ASK.
-          // ⛔ AN ESTABLISHED OBLIGATION SETTLES THE MEANING TOO. The initial-FINAL verifier
-          // has already classified this turn (internal / public / both), so re-asking either
-          // gate would spend a paid call re-litigating a closed question — and the ambiguity
-          // gate could ASK about a meaning that has just been decided.
-          if (initialObligation || await resolveMixed()) return { type: 'allow' }
-          // ══════════════════════════════════════════════════════════════════
-          // ⛔ ONE SOURCE-WORLD AUTHORITY: THE OWNER SOURCE INTENT RESOLVER.
-          //
-          // The old ambiguity gate asked 「may I proceed with this world?」 and was structurally
-          // unable to answer it — `proposedWorld` never reached its prompt, so a clear PUBLIC
-          // question with an INTERNAL read proposed returned `allow`. It also over-asked on
-          // clear questions: GPT 2/10, Claude 0/10 on that one cell, and rewording moved the
-          // error rather than removing it.
-          //
-          // This resolves what he MEANT — independently, without being told what the system
-          // wants or can reach — and the server routes afterwards. Measured on 60 distinct
-          // cases: 60/60, plus 24/24 on a fresh holdout and 20/20 on paraphrased boundaries.
-          //
-          // ⛔ AND IT IS THE ONLY AUTHORITY. The old gate is no longer consulted at runtime, so
-          // there is never a second opinion to reconcile.
-          // ══════════════════════════════════════════════════════════════════
-          const startedAt = Date.now()
-          const resolved = await sourceIntents.get({
-            resolve: (readDeps && readDeps.sourceIntentResolver) || null,
-            message,
-            history
-          })
-          logOwnerSourceIntent({ requestId, outcome: resolved.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+          if (initialObligation) return { type: 'allow' }
+          const resolved = await resolveIntent()
           if (resolved.intent === 'ambiguous') {
             // ⛔ ASK IS AN ORDINARY CONVERSATION RESULT, NOT A NEW RESPONSE TYPE. It reuses the
             // existing Distill envelope, so nothing downstream learns that a resolver exists.
@@ -1289,11 +1308,6 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             // state — a question about meaning is not a read failure.
             return { type: 'final', result: { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null } }
           }
-          // ⛔ THE OBLIGATION COMES FROM HIS MEANING, NOT FROM WHAT THE MODEL PROPOSED. A read
-          // in the wrong world is refused inside performRead, which hands the model an ordinary
-          // refused observation and its normal recovery opportunity — the wrong world is never
-          // executed, and nothing here has to end the turn to prevent it.
-          requiredWorlds = resolved.requiredWorlds
           return { type: 'allow' }
         }
       : undefined
@@ -1315,13 +1329,6 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // question: treating an attempt as completion is the exact defect 「attempted ≠ read」 was
     // raised to end.
     // ══════════════════════════════════════════════════════════════════════════
-    // ⛔ DELIBERATELY NOT GATED ON THE AMBIGUITY FLAG. The two guards answer different
-    // questions: one prevents reading the wrong world, this one prevents answering half a
-    // question. Binding completion to the ambiguity switch would mean turning off the ASK
-    // silently also turned off the requirement that both worlds be read. With no verifier
-    // injected the requirement resolves to not_mixed without a call, so this costs nothing
-    // where it does not apply.
-    const mixedOn = a4SemanticRoutingEnabled(process.env) && interactionMode === 'chat' && worlds.length > 1
     // ⛔ ENABLED WHENEVER AN OBLIGATION COULD EXIST — including a SINGLE-world one, which the
     // `worlds.length > 1` test alone would have missed: `require_internal` on a turn that can
     // only reach internal is a real obligation, and gating completion on there being two
@@ -1635,7 +1642,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // differently, giving one turn two obligation states.
       maxSteps: initialObligation
         ? ((initialObligation.internal === true && initialObligation.public === true) ? 5 : undefined)
-        : ((mixedOn && (await resolveMixed())) ? 4 : undefined),
+        : ((mixedOn && (await resolveIntent()).intent === 'mixed') ? 4 : undefined),
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: performRead,
       callModel: async ({ step }) => {

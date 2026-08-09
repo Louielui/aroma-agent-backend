@@ -105,8 +105,12 @@ function scriptedAdapter (label, envelopes) {
     calls,
     async complete (prompt, opts = {}) {
       calls.push({ prompt: String(prompt) })
-      const body = envelopes[calls.length - 1]
-      if (!body) throw new Error(label + ' called more times than scripted: ' + calls.length)
+      // MIGRATED (SIR3): when the script runs out, REPEAT the last envelope instead of throwing.
+      // A mixed source intent keeps the second world outstanding, so the completion guard can
+      // legitimately ask the model once more. These suites assert the READ COUNT and what left
+      // the process — never the number of model calls — and the loop bound still ends the turn.
+      const body = envelopes[Math.min(calls.length - 1, envelopes.length - 1)]
+      if (!body) throw new Error(label + ' called with no envelopes at all')
       return { text: JSON.stringify(body), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, model: label, latencyMs: 1, stopReason: 'end_turn' }
     }
   }
@@ -142,9 +146,16 @@ async function withEnv (over, fn) {
 }
 
 const BOTH = ['aroma_system', 'public_knowledge']
+// MIGRATED (SIR3): the Owner Source Intent Resolver now runs before the FIRST read of every
+// A4-ON turn — it is no longer gated on the ambiguity flag, because meaning must be settled
+// wherever a read can happen. With none wired a turn correctly fails closed to a question, so
+// these suites (which test EGRESS and the public capability, not meaning) supply a default.
+// 'mixed' is used because it permits either world as a valid first half, leaving each test's
+// own read sequence exactly as it was.
+const DEFAULT_SIR = async () => ({ intent: 'mixed' })
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
-  readContextDeps: deps
+  readContextDeps: Object.assign({ sourceIntentResolver: DEFAULT_SIR }, deps)
 })
 
 /* ═══════════════════════════════════════════════════════════════════════════

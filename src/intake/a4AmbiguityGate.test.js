@@ -366,10 +366,12 @@ test('*** H / I — verifier ALLOW lets the proposed world execute ***', async (
 
 test('*** J — egress still blocks AFTER the ambiguity gate allows ***', async () => {
   await withEnv({}, async () => {
-    const c = twoWorldConnector(); const v = verifierSpy('allow')
-    // read internal first so its values are in the turn, then try to send one outward
-    const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market for Brisket', freshness: 'current', location: null }), FINAL('公開嗰邊冇查到。')])
-    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('mixed') })
+    const c = twoWorldConnector()
+    // read internal first so its values are in the turn, then try to send one outward.
+    // MIGRATED (SIR3): the world authority is the resolver; the egress guard is INDEPENDENT of
+    // it, which is the whole point — a settled world is not permission to send anything.
+    const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market for Brisket', freshness: 'current', location: null }), FINAL('公開嗰邊冇查到。'), FINAL('仍然冇。')])
+    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: SIR('mixed') })
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 0, '⛔ ambiguity ALLOW is not egress ALLOW — the guards are independent')
   })
@@ -463,12 +465,16 @@ test('*** V — the semantic guidance is byte-identical (no fifth calibration) *
   assert.equal(A4_SEMANTIC_GUIDANCE.length, 843)
 })
 
-test('*** Y — with the gate OFF the turn behaves exactly as A4-2A did ***', async () => {
+test('*** Y — the OLD gate flag no longer governs anything ***', async () => {
+  // MIGRATED (SIR3). This asserted that A4_SOURCE_AMBIGUITY=off restored pre-gate behaviour.
+  // That flag governed a gate that is no longer consulted at runtime, and meaning must be
+  // settled wherever a read can happen — so the resolver runs regardless of it, and the old
+  // verifier is never called whatever the flag says.
   await withEnv({ [A4_AMBIGUITY_FLAG]: null }, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('ask', 'x')
     const a = scriptedAdapter([READ(INV), FINAL('ok')])
-    await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous') })
-    assert.equal(v.calls.length, 0)
-    assert.equal(c.internalReads.length, 1, 'the read proceeds, as before this slice')
+    await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('internal') })
+    assert.equal(v.calls.length, 0, 'the old verifier is dead whatever the flag says')
+    assert.equal(c.internalReads.length, 1, 'and the resolver still governs the world')
   })
 })

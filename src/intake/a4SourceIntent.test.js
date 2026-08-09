@@ -384,3 +384,77 @@ test('*** the clarification asks about MEANING, never about a tool ***', () => {
   assert.equal(/public_knowledge|aroma_system|connector|API|search|工具|系統/i.test(CLARIFY_QUESTION), false)
   assert.ok(CLARIFY_QUESTION.length > 0 && CLARIFY_QUESTION.length <= 60)
 })
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * SIR3 — THE LAST DUAL AUTHORITY IS GONE
+ *
+ * The mixed VERIFIER used to run before the resolver on the first-READ path and could
+ * establish 「both worlds」 by itself. Two components able to classify the same request is a
+ * coincidence waiting to diverge, so it is unwired. What survives of MIX1 is its COMPLETENESS
+ * guard — plain code, no model call — answering only 「given both are required, are both read?」
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+test('*** SIR3 — the mixed verifier can no longer establish a world, even when wired ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    // It is injected AND told 'mixed'. It must be ignored, and the resolver must decide.
+    const m = { calls: [], fn: async (i) => { m.calls.push(i); return { decision: 'mixed' } } }
+    const a = scriptedAdapter([READ(INV), FINAL('內部就夠。')])
+    const out = await run('我哋自己嘅成本點', a, DEPS(c, { mixedVerifier: m.fn, sourceIntentResolver: SIR('internal') }))
+    assert.equal(m.calls.length, 0, '⛔ the second authority is still being consulted')
+    assert.equal(c.internalReads.length, 1)
+    assert.equal(c.publicReads.length, 0, '⛔ a public obligation appeared from somewhere other than his meaning')
+    assert.equal(out.reply, '內部就夠。', 'and the single-world turn finishes normally')
+  })
+})
+
+test('*** SIR3 — every first-READ path resolves source intent first ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const v = sirSpy('internal')
+    const a = scriptedAdapter([READ(INV), FINAL('ok')])
+    await run('我哋自己嘅成本點', a, DEPS(c, { sourceIntentResolver: v.fn }))
+    assert.equal(v.calls.length, 1, 'the resolver ran before the first read')
+    assert.equal(c.internalReads.length, 1)
+  })
+})
+
+test('*** SIR3 — mixed + first INTERNAL read: internal executes, public stays outstanding ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    // A valid first half must NOT be rejected merely because the other half is not done.
+    const a = scriptedAdapter([READ(INV), FINAL('得一半'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊齊。')])
+    const out = await run('我哋同出面比', a, DEPS(c, { sourceIntentResolver: SIR('mixed') }))
+    assert.equal(c.internalReads.length, 1, 'the first half executed')
+    assert.equal(c.publicReads.length, 1, 'and the outstanding half was still required')
+    assert.equal(out.reply, '兩邊齊。')
+    assert.equal(String(out.reply).includes('得一半'), false, '⛔ a half answer was released')
+  })
+})
+
+test('*** SIR3 — mixed + first PUBLIC read: public executes, internal stays outstanding ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const a = scriptedAdapter([READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('得一半'), READ(INV), FINAL('兩邊齊。')])
+    const out = await run('出面同我哋比', a, DEPS(c, { sourceIntentResolver: SIR('mixed') }))
+    assert.equal(c.publicReads.length, 1)
+    assert.equal(c.internalReads.length, 1)
+    assert.equal(out.reply, '兩邊齊。')
+  })
+})
+
+test('*** SIR3 — the resolver is not re-asked when FinalKnowledge later demands more ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const v = sirSpy('public')
+    // Initial terminal → FinalKnowledge require_* → resolver decides the world → read → answer.
+    const a = scriptedAdapter([FINAL('未查。'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('查咗。')])
+    const out = await run('出面行情點', a, DEPS(c, { finalVerifier: async () => ({ decision: 'require_internal', question: null }), sourceIntentResolver: v.fn }))
+    assert.equal(v.calls.length, 1, 'one resolution per stable Owner context')
+    // ⛔ AND THE FinalKnowledge SUFFIX IS NOT AUTHORITATIVE: it said require_INTERNAL, his
+    // meaning said public, and the public world is what was read.
+    assert.equal(c.publicReads.length, 1)
+    assert.equal(c.internalReads.length, 0)
+    assert.equal(out.reply, '查咗。')
+  })
+})

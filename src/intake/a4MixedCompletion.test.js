@@ -203,13 +203,20 @@ test('*** H — the mixed verifier runs at most ONCE per turn ***', async () => 
   assert.equal(cache.calls, 1)
 })
 
-test('*** H2 — end to end, one turn spends exactly one mixed verifier call ***', async () => {
+test('*** H2 — end to end, ONE authority call per turn, and it is the resolver ***', async () => {
+  // MIGRATED (SIR3): the mixed VERIFIER no longer runs — it could establish 「both worlds」 on
+  // its own, which made two components able to classify the same request. What survives of
+  // MIX1 is its completeness guard, which is plain code and spends no call.
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const m = spy('mixed')
+    const sir = { calls: [], fn: async (i) => { sir.calls.push(i); return { intent: 'mixed' } } }
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
-    assert.equal(m.calls.length, 1)
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, sourceIntentResolver: sir.fn }))
+    assert.equal(m.calls.length, 0, '⛔ the second authority must be gone, not merely unused')
+    assert.equal(sir.calls.length, 1)
+    assert.equal(c.internalReads.length, 1)
+    assert.equal(c.publicReads.length, 1)
   })
 })
 
