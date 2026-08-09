@@ -56,6 +56,9 @@ const { operationsForSources, resolveReadOperation, operationForAromaMethod, des
 const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, MIN_LEAKABLE_CHARS } = require('./a4Contract')
 // ⛔ A4-2A: a public SEARCH is keyed per query, not per operation.
 const { publicReadKey } = require('../context/publicReadIdentity')
+// ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
+// itself is injected.
+const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -1009,8 +1012,52 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // make a repeat request look like a permission failure in the log.
     const allowed = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
     let pending = distilled.nextRead
+    // ══════════════════════════════════════════════════════════════════════════
+    // ⛔ A4-AMB1 — THE SOURCE-AMBIGUITY GATE, ONCE PER TURN, BEFORE ANY CONNECTOR.
+    //
+    // Four attempts to make the MAIN model ask on a genuinely ambiguous question have failed.
+    // This asks a different model call ONE binary question with everything else removed, and
+    // it runs at the only point where the answer still costs nothing: after the allowlist and
+    // the write guard, before the reader.
+    //
+    // ⛔ ONLY WHEN THE QUESTION IS REAL. If just one knowledge world is reachable there is
+    // nothing to be ambiguous BETWEEN, so the gate does not run and no call is spent. It is
+    // also skipped once any read has already been allowed this turn — the meaning was settled
+    // by the first decision, and re-litigating it would spend a call per step.
+    const gateOn = a4SemanticRoutingEnabled(process.env) &&
+      ambiguityGateEnabled(process.env) &&
+      interactionMode === 'chat'
+    const worlds = availableWorlds(allowed)
+    let ambiguityUsed = false
+    const beforeRead = (gateOn && worlds.length > 1)
+      ? async ({ capability }) => {
+          // Once per turn, and only before the FIRST read actually happens.
+          if (ambiguityUsed || turnOperations.size > 0) return { type: 'allow' }
+          ambiguityUsed = true
+          const proposedWorld = worldForCapability(capability)
+          const startedAt = Date.now()
+          const gate = await runSourceAmbiguityGate({
+            // ⛔ THE VERIFIER SEES MEANING, NEVER MECHANISM: the Owner's own words, the bounded
+            // history, and two world names. No capability name, no evidence, no credentials.
+            verify: (readDeps && readDeps.ambiguityVerifier) || null,
+            message,
+            history,
+            proposedWorld,
+            availableWorlds: worlds
+          })
+          logAmbiguityGate({ requestId, outcome: gate.outcome, proposedWorld, availableWorldCount: worlds.length, durationMs: Date.now() - startedAt })
+          if (gate.decision === 'allow') return { type: 'allow' }
+          // ⛔ ASK IS AN ORDINARY CONVERSATION RESULT, NOT A NEW RESPONSE TYPE. It reuses the
+          // existing Distill envelope, so nothing downstream learns that a gate exists. And
+          // because the read never happened there is no EvidenceSet, no perSource row and no
+          // trust state — ambiguity is not a read failure.
+          return { type: 'final', result: { intent: 'unclear', mode: 'ask', reply: gate.question, nextRead: null, answerPlan: null } }
+        }
+      : undefined
+
     const loop = await runReasoningLoop({
       capabilities: allowed,
+      beforeRead,
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: async ({ capability, args }) => {
         // ⛔ A4-0A: ACCEPTED, RECORDED, AND DELIBERATELY NOT CONSUMED.
@@ -1172,6 +1219,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (loop.stopReason === STOP.STEP_LIMIT) {
       distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null })
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: null, stopReason: loop.stopReason, observations: loop.observations.length })) } catch (_) {}
+    }
+    // ⛔ A PRE-READ STOP IS THE ANSWER, and it must REPLACE the envelope that asked to read.
+    // `distilled` still holds the first envelope, whose nextRead is set and whose mode is not
+    // 'ask' — shipping that would show the Owner 「等我睇睇」 for a turn that read nothing.
+    // With no usable result the turn still must not read, so it falls back to the same safe
+    // clarification the gate itself uses.
+    if (loop.stopReason === STOP.BEFORE_READ) {
+      const asked = loop.result && typeof loop.result.reply === 'string' && loop.result.reply.trim()
+        ? loop.result
+        : { intent: 'unclear', mode: 'ask', reply: AMBIGUITY_FALLBACK_QUESTION, nextRead: null, answerPlan: null }
+      distilled = Object.assign({}, distilled, asked, { nextRead: null, answerPlan: null })
     }
   }
   if (interactionMode === 'chat' && distilled.mode === 'commit') {

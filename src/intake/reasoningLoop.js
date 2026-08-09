@@ -39,7 +39,11 @@ const MAX_REASONING_STEPS = 3
 
 const STOP = Object.freeze({
   FINAL: 'final',
-  STEP_LIMIT: 'step_limit'
+  STEP_LIMIT: 'step_limit',
+  // A caller-supplied pre-read hook ended the turn before the reader was touched. The loop
+  // does not know why — that is the caller's business, and keeping it that way is what lets
+  // this module stay domain-neutral.
+  BEFORE_READ: 'before_read'
 })
 
 /**
@@ -123,6 +127,38 @@ async function runReasoningLoop (input = {}) {
       observations.push(refusal(capability, 'write_not_permitted_here'))
       emit(step, 'read', { refusal: 'write_not_permitted_here' })
       continue
+    }
+
+    // ⛔ AN OPTIONAL PRE-READ HOOK, AND IT KNOWS NOTHING ABOUT WHAT IT IS GUARDING.
+    //
+    // It runs AFTER the allowlist and the write-shape guard — a capability that was never
+    // permitted must be refused without consulting anything — and BEFORE executeRead, so a
+    // hook that stops the turn costs zero connector calls.
+    //
+    // This module still understands exactly two outcomes: proceed, or stop with a final
+    // result. It has no notion of sources, worlds, ambiguity or Aroma, and a test greps this
+    // file for such tokens. The caller owns the meaning; the loop owns the bound.
+    //
+    // ⛔ FAIL CLOSED. A hook that throws, or returns anything that is not a recognised
+    // instruction, STOPS the read. A guard whose failure mode is 「carry on」 is not a guard —
+    // and the loop cannot tell a broken hook from a permissive one, so it must not try.
+    if (typeof input.beforeRead === 'function') {
+      let gate
+      try {
+        gate = await input.beforeRead({ capability, args: decision.args || {}, step, observations: observations.slice() })
+      } catch (_) {
+        emit(step, 'read', { refusal: 'before_read_failed' })
+        return { result: null, steps: step, stopReason: STOP.BEFORE_READ, observations }
+      }
+      if (gate && gate.type === 'final') {
+        emit(step, 'final', { stopReason: STOP.BEFORE_READ })
+        return { result: gate.result || null, steps: step, stopReason: STOP.BEFORE_READ, observations }
+      }
+      if (gate !== null && gate !== undefined && !(gate && gate.type === 'allow')) {
+        // Not an allow, not a final — unrecognised. The read does not happen.
+        emit(step, 'read', { refusal: 'before_read_invalid' })
+        return { result: null, steps: step, stopReason: STOP.BEFORE_READ, observations }
+      }
     }
 
     let observation

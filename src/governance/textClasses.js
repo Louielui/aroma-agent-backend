@@ -146,6 +146,13 @@ const FILE_CLASS = Object.freeze({
   'adapters/fixtures/demoTurns.js': CLASS.MODEL,      //   4
   'intake/groundedReply.js': CLASS.MODEL,             //   4
   'intake/intakeService.js': CLASS.MODEL,             //   6
+  'intake/sourceAmbiguityGate.js': CLASS.MODEL,      //   2 — the verifier's own system
+  //                                                          instruction and its ONE safe
+  //                                                          fallback question. She is TOLD
+  //                                                          them, and they decide allow vs
+  //                                                          ask; the fallback is what Louie
+  //                                                          actually reads when a question
+  //                                                          is unusable.
   'intake/a4Contract.js': CLASS.MODEL,                //   5 — the JSON-schema `description`
   //                                                          fields on the A4 read-argument
   //                                                          shape. She is TOLD them, and they
