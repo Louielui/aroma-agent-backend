@@ -250,6 +250,14 @@ async function withEnv (over, fn) {
   }
 }
 const BOTH = ['aroma_system', 'public_knowledge']
+// MIGRATED (SIR2): the Owner Source Intent Resolver is now the ONE source-world authority and
+// the old ambiguity gate is no longer consulted at runtime. Each fixture states the ground truth
+// for its OWN message — the same thing the benchmark corpus does. A stub for a model, never a
+// classifier in production.
+const SIR = (intent) => async () => ({ intent })
+/** Recording variant, for the tests that assert WHAT the authority was handed. */
+const sirSpy = (intent) => { const calls = []; return { calls, fn: async (i) => { calls.push(i); return { intent } } } }
+
 /**
  * MIGRATED FIXTURE — Owner-only public query provenance.
  *
@@ -285,7 +293,7 @@ test('*** A / B / C — the gate is silent unless BOTH flags and the chat lane a
     await withEnv(env, async () => {
       const c = twoWorldConnector(); const v = verifierSpy('ask', 'should not be asked')
       const a = scriptedAdapter([READ(INV), FINAL('ok')])
-      await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn }, [], mode)
+      await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous') }, [], mode)
       assert.equal(v.calls.length, 0, label + ': the verifier must not be called')
     })
   }
@@ -295,7 +303,7 @@ test('*** D — only ONE world available ⇒ no verifier call, no cost ***', asy
   await withEnv({}, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('ask', 'x')
     const a = scriptedAdapter([READ(INV), FINAL('ok')])
-    await run('最近點', a, { connector: c.connector, sources: ['aroma_system'], ambiguityVerifier: v.fn })
+    await run('最近點', a, { connector: c.connector, sources: ['aroma_system'], ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous') })
     assert.equal(v.calls.length, 0, 'nothing to be ambiguous between')
     assert.equal(c.internalReads.length, 1, 'and the read proceeds normally')
   })
@@ -306,7 +314,7 @@ test('*** E / F — a main model that FINALs or ASKs never reaches the gate ***'
     await withEnv({}, async () => {
       const c = twoWorldConnector(); const v = verifierSpy('allow')
       const a = scriptedAdapter([env])
-      await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+      await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous') })
       assert.equal(v.calls.length, 0, 'the gate guards READS, nothing else')
     })
   }
@@ -315,9 +323,11 @@ test('*** E / F — a main model that FINALs or ASKs never reaches the gate ***'
 test('*** G — ⛔ verifier ASK: zero reads, zero evidence, and it is not a read failure ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
-    const v = verifierSpy('ask', '你想睇我哋自己嘅數，定係出面市場？')
+    // MIGRATED (SIR2): the ASK guarantee is unchanged; the authority that produces it is now
+    // the source-intent resolver, and the old gate is no longer consulted at runtime.
+    const v = sirSpy('ambiguous')
     const a = scriptedAdapter([READ(INV)])
-    const out = await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    const out = await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: v.fn })
 
     assert.equal(v.calls.length, 1)
     assert.equal(c.internalReads.length, 0, '⛔ the internal connector was never touched')
@@ -328,7 +338,10 @@ test('*** G — ⛔ verifier ASK: zero reads, zero evidence, and it is not a rea
     assert.equal(out.mode, 'ask', 'it surfaces through the existing READ / ASK / FINAL contract')
     // , not equality: the pre-existing traditional-Chinese guard appends a note to
     // replies. That guard is out of scope here and its noisiness is already on record.
-    assert.ok(String(out.reply).includes('你想睇我哋自己嘅數，定係出面市場？'), 'the Owner gets the meaning question')
+    // The wording is now the resolver's own clarification — a MEANING question, naming no
+    // system, tool or source. Asserted through the module's exported constant so a future
+    // rewording cannot silently change what he is asked.
+    assert.ok(String(out.reply).includes(require('./ownerSourceIntentResolver').CLARIFY_QUESTION), 'the Owner gets the meaning question')
     // ⛔ AMBIGUITY IS NOT UNAVAILABILITY. No read was attempted, so no trust state exists.
     assert.equal(/讀唔到|目前讀不到|UNAVAILABLE/.test(String(out.reply)), false)
   })
@@ -338,14 +351,14 @@ test('*** H / I — verifier ALLOW lets the proposed world execute ***', async (
   await withEnv({}, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('allow')
     const a = scriptedAdapter([READ(INV), FINAL('內部讀咗。')])
-    await run('我哋最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    await run('我哋最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('internal') })
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 0)
   })
   await withEnv({}, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('allow')
     const a = scriptedAdapter([READ(PUB, { query: 'market index', freshness: 'current', location: null }), FINAL('公開讀咗。')])
-    await run('市場最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    await run('市場最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('public') })
     assert.equal(c.publicReads.length, 1, 'the gate allowed, then the egress guard passed, then the executor ran')
     assert.equal(c.internalReads.length, 0)
   })
@@ -356,7 +369,7 @@ test('*** J — egress still blocks AFTER the ambiguity gate allows ***', async 
     const c = twoWorldConnector(); const v = verifierSpy('allow')
     // read internal first so its values are in the turn, then try to send one outward
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market for Brisket', freshness: 'current', location: null }), FINAL('公開嗰邊冇查到。')])
-    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('mixed') })
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 0, '⛔ ambiguity ALLOW is not egress ALLOW — the guards are independent')
   })
@@ -364,14 +377,14 @@ test('*** J — egress still blocks AFTER the ambiguity gate allows ***', async 
 
 test('*** K — the verifier is called at most ONCE per turn ***', async () => {
   await withEnv({}, async () => {
-    const c = twoWorldConnector(); const v = verifierSpy('allow')
+    const c = twoWorldConnector(); const v = sirSpy('mixed')
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
     // MIGRATED — Owner-only public query provenance. Public-after-internal now re-authors the
     // query from Owner context, so a planner is a REQUIRED dependency of this path; without one
     // it fails closed and no public read happens. This test is about the AMBIGUITY gate's call
     // count, so the planner is supplied as fixture plumbing. See a4EgressProvenance.test.js.
-    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: SAFE_PLANNER })
-    assert.equal(v.calls.length, 1, '⛔ one paid gate call per turn — the meaning is settled once')
+    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: v.fn, publicQueryPlanner: SAFE_PLANNER })
+    assert.equal(v.calls.length, 1, '⛔ one paid call per turn — the meaning is settled once')
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1)
   })
@@ -379,10 +392,13 @@ test('*** K — the verifier is called at most ONCE per turn ***', async () => {
 
 test('*** L / O — an explicit mixed need is ALLOWED, and both reads proceed ***', async () => {
   await withEnv({}, async () => {
-    const c = twoWorldConnector(); const v = verifierSpy('allow')
+    const c = twoWorldConnector(); const v = sirSpy('mixed')
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market', freshness: null, location: null }), FINAL('比較完。')])
-    const out = await run('我哋成本同市場比正常嗎', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
-    assert.equal(v.calls[0].availableWorlds.length, 2, 'the verifier was told both worlds exist')
+    const out = await run('我哋成本同市場比正常嗎', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: v.fn, publicQueryPlanner: SAFE_PLANNER })
+    // ⛔ INVERTED ON PURPOSE. The old gate was told which worlds existed; the resolver is NOT —
+    // availability must not decide meaning. It sees his words and nothing else.
+    assert.equal(v.calls[0].availableWorlds, undefined, 'availability may not bias meaning')
+    assert.deepEqual(Object.keys(v.calls[0]).sort(), ['ownerMessages', 'schema', 'system'])
     assert.equal(String(out.reply).includes('你想睇'), false, 'mixed is not ambiguity — it does not re-ask')
   })
 })
@@ -393,10 +409,11 @@ test('*** M / N — the verifier sees the bounded history for a continuation ***
     { role: 'assistant', text: '你想睇我哋自己嘅數，定係出面市場？' }
   ]
   await withEnv({}, async () => {
-    const c = twoWorldConnector(); const v = verifierSpy('allow')
+    const c = twoWorldConnector(); const v = sirSpy('internal')
     const a = scriptedAdapter([READ(INV), FINAL('我哋嗰邊。')])
-    await run('我哋供應商。', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn }, AFTER)
-    assert.equal(v.calls[0].history.length, 2, 'history reached the verifier')
+    await run('我哋供應商。', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: v.fn }, AFTER)
+    // ⛔ OWNER-ONLY, AND THAT IS THE POINT: his prior line carries forward, her question does not.
+    assert.deepEqual(v.calls[0].ownerMessages, ['幫我查下最近點', '我哋供應商。'])
     assert.equal(c.internalReads.length, 1)
   })
 })
@@ -420,23 +437,22 @@ test('*** P / Q / R end-to-end — a broken verifier reads NOTHING ***', async (
 
 test('*** T — the gate telemetry is content-free ***', async () => {
   await withEnv({}, async () => {
-    const c = twoWorldConnector(); const v = verifierSpy('ask', '你想睇我哋自己嘅數，定係出面市場？')
+    const c = twoWorldConnector()
     const lines = []
     const orig = console.log
-    console.log = (...a) => { if (a[0] === '[AROMA-AMBIGUITY]') { try { lines.push(JSON.parse(a[1])) } catch (_) {} } }
+    console.log = (...a) => { if (a[0] === '[AROMA-SOURCE-INTENT]') { try { lines.push(JSON.parse(a[1])) } catch (_) {} } }
     try {
-      const a = scriptedAdapter([READ(INV)])
-      await run('幫我查下 Gordon 最近牛肉價', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+      const a = scriptedAdapter([READ(INV), FINAL('ok')])
+      await run('幫我查下 Gordon 最近牛肉價', a, { connector: c.connector, sources: BOTH, sourceIntentResolver: SIR('internal') })
     } finally { console.log = orig }
     assert.equal(lines.length, 1, 'exactly one line')
     assert.deepEqual(Object.keys(lines[0]).sort(),
-      ['availableWorldCount', 'decision', 'durationMs', 'event', 'proposedWorld', 'requestId', 'timestamp'])
+      ['durationMs', 'event', 'outcome', 'ownerMessageCount', 'requestId', 'timestamp'])
     const blob = JSON.stringify(lines[0])
     for (const leak of ['Gordon', '牛肉', '你想睇', '幫我查']) {
       assert.equal(blob.includes(leak), false, '⛔ ' + leak + ' must never reach telemetry')
     }
-    assert.equal(lines[0].decision, 'ask')
-    assert.equal(lines[0].availableWorldCount, 2)
+    assert.equal(lines[0].outcome, 'internal')
   })
 })
 
@@ -451,7 +467,7 @@ test('*** Y — with the gate OFF the turn behaves exactly as A4-2A did ***', as
   await withEnv({ [A4_AMBIGUITY_FLAG]: null }, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('ask', 'x')
     const a = scriptedAdapter([READ(INV), FINAL('ok')])
-    await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    await run('幫我查下最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous') })
     assert.equal(v.calls.length, 0)
     assert.equal(c.internalReads.length, 1, 'the read proceeds, as before this slice')
   })

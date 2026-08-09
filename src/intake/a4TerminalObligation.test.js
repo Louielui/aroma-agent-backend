@@ -91,7 +91,9 @@ const ASK = (reply) => ({ intent: 'question', mode: 'ask', reply: reply || ASK_S
 
 const finalSpy = (decision, question) => {
   const calls = []
-  return { calls, fn: async (i) => { calls.push(i); return { decision, question: decision === 'clarify' ? (question || '你想睇我哋自己定係出面？') : null } } }
+  const fn = async (i) => { calls.push(i); return { decision, question: decision === 'clarify' ? (question || '你想睇我哋自己定係出面？') : null } }
+  fn.decision = decision // read by DEPS to derive the fixture's source intent
+  return { calls, fn }
 }
 const SAFE_PLANNER = async () => ({ query: 'wholesale market price trend', freshness: 'current', location: null })
 
@@ -109,7 +111,17 @@ const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
 })
-const DEPS = (c, extra = {}) => Object.assign({ connector: c.connector, sources: BOTH, publicQueryPlanner: SAFE_PLANNER }, extra)
+// MIGRATED (SIR2): the Owner Source Intent Resolver is now the ONE source-world authority,
+// so a turn that reads must have a resolved intent. These suites test obligation/terminal/worker
+// mechanics, not meaning resolution, so the fixture derives the intent from the decision the
+// test's own FinalKnowledge stub was built with. A test that cares about intent overrides it.
+const INTENT_FOR = { require_public: 'public', require_internal: 'internal', require_mixed: 'mixed' }
+const DEPS = (c, extra = {}) => Object.assign({
+  connector: c.connector,
+  sources: BOTH,
+  publicQueryPlanner: SAFE_PLANNER,
+  sourceIntentResolver: async () => ({ intent: INTENT_FOR[extra.finalVerifier && extra.finalVerifier.decision] || 'mixed' })
+}, extra)
 
 /* ═══ A, B, C — require_* SUPPRESSES AN INITIAL ASK ═════════════════════ */
 
@@ -284,14 +296,22 @@ test('*** O — with NO obligation, an ordinary ASK is untouched ***', async () 
 
 /* ═══ P, Q, R — NEIGHBOURS AND FAILURE ═════════════════════════════════ */
 
-test('*** P — the pre-read ambiguity ASK is unchanged ***', async () => {
+test('*** P — the pre-read ASK still happens, now owned by the source-intent resolver ***', async () => {
+  // MIGRATED (SIR2). This asserted the OLD ambiguity gate's pre-read ASK. That gate is no
+  // longer consulted at runtime — it could not express 「would reading THIS world preserve his
+  // meaning」 and over-asked on clear questions (GPT 2/10, Claude 0/10 on that cell). The
+  // guarantee it protected is unchanged and now belongs to the resolver: a genuinely open
+  // meaning asks, and reads nothing.
   await withEnv({}, async () => {
     const c = twoWorldConnector()
-    const ambi = async () => ({ decision: 'ask', question: '你想睇邊邊？' })
     const a = scriptedAdapter([READ(INV), FINAL('唔應該到呢度')])
-    const out = await run('最近點', a, DEPS(c, { ambiguityVerifier: ambi, finalVerifier: finalSpy('clarify').fn }))
+    const out = await run('最近點', a, DEPS(c, {
+      sourceIntentResolver: async () => ({ intent: 'ambiguous' }),
+      finalVerifier: finalSpy('clarify').fn
+    }))
     assert.equal(out.mode, 'ask')
-    assert.equal(c.internalReads.length, 0)
+    assert.equal(c.internalReads.length, 0, '⛔ an open meaning must read nothing')
+    assert.equal(c.publicReads.length, 0)
   })
 })
 

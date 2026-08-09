@@ -102,6 +102,11 @@ async function withEnv (over, fn) {
 }
 
 const BOTH = ['aroma_system', 'public_knowledge']
+// MIGRATED (SIR2): the Owner Source Intent Resolver is the ONE source-world authority; the old
+// ambiguity gate is no longer consulted at runtime. Each fixture states the ground truth for its
+// OWN message, exactly as the benchmark corpus does — a stub for a model, not a production rule.
+const SIR = (intent) => async () => ({ intent })
+
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
@@ -203,7 +208,7 @@ test('*** H2 — end to end, one turn spends exactly one mixed verifier call ***
     const c = twoWorldConnector()
     const m = spy('mixed')
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(m.calls.length, 1)
   })
 })
@@ -215,7 +220,7 @@ test('*** I — ⛔ mixed SKIPS the ambiguity verifier entirely ***', async () =
     const c = twoWorldConnector()
     const m = spy('mixed'); const amb = ambiSpy('ask')
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: amb.fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: amb.fn, sourceIntentResolver: SIR('mixed') }))
     // The ambiguity verifier is scripted to ASK — the exact live failure. It is never asked.
     assert.equal(amb.calls.length, 0, '⛔ the ambiguity gate ran on an explicitly mixed turn')
     assert.equal(c.internalReads.length, 1)
@@ -223,13 +228,15 @@ test('*** I — ⛔ mixed SKIPS the ambiguity verifier entirely ***', async () =
   })
 })
 
-test('*** J — not_mixed still invokes the ambiguity verifier, unchanged ***', async () => {
+test('*** J — not_mixed hands the meaning to the source-intent resolver ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
-    const m = spy('not_mixed'); const amb = ambiSpy('ask')
+    // MIGRATED (SIR2): the old gate no longer runs; the resolver owns the meaning, and an open
+    // meaning still asks and still reads nothing. The guarantee is unchanged, the authority is not.
+    const m = spy('not_mixed'); const sir = { calls: [], fn: async (i) => { sir.calls.push(i); return { intent: 'ambiguous' } } }
     const a = scriptedAdapter([READ(INV), FINAL('唔應該到呢度。')])
-    const out = await run('最近點', a, MIXED_DEPS(c, { mixedVerifier: m.fn, ambiguityVerifier: amb.fn }))
-    assert.equal(amb.calls.length, 1, 'the existing gate is still in control')
+    const out = await run('最近點', a, MIXED_DEPS(c, { mixedVerifier: m.fn, sourceIntentResolver: sir.fn }))
+    assert.equal(sir.calls.length, 1, 'the resolver is the authority now')
     assert.equal(out.mode, 'ask')
     assert.equal(c.internalReads.length, 0)
     assert.equal(c.publicReads.length, 0)
@@ -242,7 +249,7 @@ test('*** K — explicit mixed, INTERNAL first → allowed ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('ok')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('ask').fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('ask').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1)
   })
@@ -252,7 +259,7 @@ test('*** L — explicit mixed, PUBLIC first → allowed, no forced ordering ***
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const a = scriptedAdapter([READ(PUB, { query: 'market', freshness: null, location: null }), READ(INV), FINAL('ok')])
-    await run('市場同我哋比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('ask').fn }))
+    await run('市場同我哋比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('ask').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(c.publicReads.length, 1)
     assert.equal(c.internalReads.length, 1)
   })
@@ -270,7 +277,7 @@ test('*** M — ⛔ premature FINAL with PUBLIC missing is REFUSED, and the mode
     try {
       // THE EXACT LIVE FAILURE: read internal, then try to answer.
       const a = scriptedAdapter([READ(INV), FINAL('冇市場數據，唔答得。'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-      out = await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+      out = await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     } finally { console.log = orig }
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1, '⛔ the premature final was released')
@@ -285,7 +292,7 @@ test('*** N — premature FINAL with INTERNAL missing is REFUSED ***', async () 
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const a = scriptedAdapter([READ(PUB, { query: 'market', freshness: null, location: null }), FINAL('得市場嗰邊。'), READ(INV), FINAL('兩邊都齊。')])
-    const out = await run('市場同我哋比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    const out = await run('市場同我哋比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(c.publicReads.length, 1)
     assert.equal(c.internalReads.length, 1)
     assert.equal(out.reply, '兩邊都齊。')
@@ -296,7 +303,7 @@ test('*** O — both worlds live → FINAL is allowed immediately ***', async ()
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-    const out = await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    const out = await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(out.reply, '兩邊都睇咗。')
   })
 })
@@ -316,7 +323,7 @@ test('*** P — ⛔ an UNAVAILABLE public read does not satisfy the public world
   await withEnv({}, async () => {
     const c = twoWorldConnector({ publicFails: true })
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('試過，唔得。'), FINAL('再試都唔得。')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     // The public read was ATTEMPTED and failed. The requirement is still unmet, so the first
     // FINAL is refused — attempted is not read, applied to completion.
     assert.equal(c.publicReads.length, 1, 'it was attempted')
@@ -329,7 +336,7 @@ test('*** Q — ⛔ a REFUSED internal read does not satisfy the internal world 
     const c = twoWorldConnector()
     // An invented capability is refused before the connector: no read, no world.
     const a = scriptedAdapter([READ('aroma_system.invented'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('唔齊。'), FINAL('仍然唔齊。')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(c.internalReads.length, 0, 'nothing internal was ever read')
     assert.equal(a.calls.length, 4, 'so the final was intercepted')
   })
@@ -371,7 +378,7 @@ test('*** S2 — end to end: ONLY a mixed turn gets the fourth decision ***', as
     // never requested. Scripting only three proves it — a fourth call would throw.
     const c = twoWorldConnector()
     const a = scriptedAdapter([READ(INV), READ(INV), FINAL('三步。')])
-    await run('我哋自己嘅數', a, MIXED_DEPS(c, { mixedVerifier: spy('not_mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    await run('我哋自己嘅數', a, MIXED_DEPS(c, { mixedVerifier: spy('not_mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('internal') }))
     assert.equal(a.calls.length, 3)
   })
 })
@@ -496,7 +503,7 @@ test('*** Y — Owner-only egress provenance is untouched by mixed turns ***', a
     const planner = async (i) => { seen.push(i); return { query: 'safe market query', freshness: 'current', location: null } }
     const leaky = `${TITLE} ${SUPPLIER} ${SECRET}`
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: leaky, freshness: 'current', location: null }), FINAL('ok')])
-    await run('我哋成本同市場比', a, MIXED_DEPS(c, { publicQueryPlanner: planner, mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
+    await run('我哋成本同市場比', a, MIXED_DEPS(c, { publicQueryPlanner: planner, mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     // Still re-authored, still from his words only, still nothing internal leaving.
     assert.equal(seen.length, 1)
     assert.equal(JSON.stringify(seen[0]).includes(leaky), false, '⛔ the raw query reached the planner')
@@ -506,15 +513,15 @@ test('*** Y — Owner-only egress provenance is untouched by mixed turns ***', a
   })
 })
 
-test('*** Z — with no mixed verifier wired, behaviour is exactly as before MIX1 ***', async () => {
+test('*** Z — with no mixed verifier wired, the resolver still governs the world ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
-    const amb = ambiSpy('allow')
+    const sir = { calls: [], fn: async (i) => { sir.calls.push(i); return { intent: 'internal' } } }
     const a = scriptedAdapter([READ(INV), FINAL('照舊。')])
-    // No mixedVerifier: not_mixed without a call, no requirement, no completion guard, and the
-    // ambiguity gate is in control exactly as it was.
-    const out = await run('我哋自己嘅數', a, MIXED_DEPS(c, { ambiguityVerifier: amb.fn }))
-    assert.equal(amb.calls.length, 1)
+    // MIGRATED (SIR2): no mixedVerifier means no MIX1 requirement, and the resolver supplies the
+    // single world. The internal read satisfies it, so the FINAL is released normally.
+    const out = await run('我哋自己嘅數', a, MIXED_DEPS(c, { sourceIntentResolver: sir.fn }))
+    assert.equal(sir.calls.length, 1)
     assert.equal(out.reply, '照舊。', 'a single-world FINAL is released, unguarded')
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 0)

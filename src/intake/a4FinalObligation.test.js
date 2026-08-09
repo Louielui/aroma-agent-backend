@@ -91,7 +91,9 @@ const FINAL = (reply) => ({ intent: 'question', mode: 'chat', reply, nextRead: n
 
 const finalSpy = (decision, question) => {
   const calls = []
-  return { calls, fn: async (i) => { calls.push(i); return { decision, question: decision === 'clarify' ? (question || '你想睇邊邊？') : null } } }
+  const fn = async (i) => { calls.push(i); return { decision, question: decision === 'clarify' ? (question || '你想睇邊邊？') : null } }
+  fn.decision = decision // read by DEPS to derive the fixture's source intent
+  return { calls, fn }
 }
 const ambiSpy = (decision) => { const calls = []; return { calls, fn: async (i) => { calls.push(i); return { decision, question: decision === 'ask' ? '含糊問題' : null } } } }
 const mixedSpy = (decision) => { const calls = []; return { calls, fn: async (i) => { calls.push(i); return { decision } } } }
@@ -111,7 +113,17 @@ const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
 })
-const DEPS = (c, extra = {}) => Object.assign({ connector: c.connector, sources: BOTH, publicQueryPlanner: SAFE_PLANNER }, extra)
+// MIGRATED (SIR2): the Owner Source Intent Resolver is now the ONE source-world authority,
+// so a turn that reads must have a resolved intent. These suites test obligation/terminal/worker
+// mechanics, not meaning resolution, so the fixture derives the intent from the decision the
+// test's own FinalKnowledge stub was built with. A test that cares about intent overrides it.
+const INTENT_FOR = { require_public: 'public', require_internal: 'internal', require_mixed: 'mixed' }
+const DEPS = (c, extra = {}) => Object.assign({
+  connector: c.connector,
+  sources: BOTH,
+  publicQueryPlanner: SAFE_PLANNER,
+  sourceIntentResolver: async () => ({ intent: INTENT_FOR[extra.finalVerifier && extra.finalVerifier.decision] || 'mixed' })
+}, extra)
 const AW = { internal: true, public: true }
 
 /* ═══ A–H — THE VERIFIER'S CLASSIFICATION ═══════════════════════════════ */

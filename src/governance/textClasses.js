@@ -151,6 +151,7 @@ const FILE_CLASS = Object.freeze({
   'intake/mixedKnowledgeRequirement.js': CLASS.MODEL, //   1 — the mixed verifier's own system
   'intake/finalKnowledgeRequirement.js': CLASS.MODEL, //   3 — the final gate's system + world labels
   'intake/recoveryDecisionWorker.js': CLASS.MODEL,   //   3 — the worker's system + world labels
+  'intake/ownerSourceIntentResolver.js': CLASS.MODEL, //   3 — the resolver's system + clarification
   //                                                          instruction and its ONE safe
   //                                                          fallback question. She is TOLD
   //                                                          them, and they decide allow vs

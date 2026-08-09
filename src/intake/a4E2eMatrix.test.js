@@ -105,6 +105,11 @@ async function withEnv (over, fn) {
 }
 
 const BOTH = ['aroma_system', 'public_knowledge']
+// MIGRATED (SIR2): the Owner Source Intent Resolver is the ONE source-world authority; the old
+// ambiguity gate is no longer consulted at runtime. Each fixture states the ground truth for its
+// OWN message, exactly as the benchmark corpus does — a stub for a model, not a production rule.
+const SIR = (intent) => async () => ({ intent })
+
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
@@ -118,7 +123,7 @@ test('*** E2E 1 — AMBIGUOUS → ASK, and ZERO reads of either world ***', asyn
     const v = verifier('ask')
     const p = planner()
     const a = scriptedAdapter([READ(INV), FINAL('唔應該去到呢度。')])
-    const out = await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: p.fn })
+    const out = await run('最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous'), publicQueryPlanner: p.fn })
 
     assert.equal(c.internalReads.length, 0, '⛔ ambiguity is not a reason to read one side and see')
     assert.equal(c.publicReads.length, 0)
@@ -136,7 +141,7 @@ test('*** E2E 2 — CLEAR INTERNAL → internal only, public untouched ***', asy
     const v = verifier('allow')
     const p = planner()
     const a = scriptedAdapter([READ(INV), FINAL('我哋自己嘅數喺度。')])
-    await run('我哋自己嘅牛肉成本點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: p.fn })
+    await run('我哋自己嘅牛肉成本點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('internal'), publicQueryPlanner: p.fn })
 
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 0, '⛔ nothing left the building')
@@ -152,7 +157,7 @@ test('*** E2E 3 — CLEAR PUBLIC → public only, and the model own query travel
     const v = verifier('allow')
     const p = planner()
     const a = scriptedAdapter([READ(PUB, { query: 'canada beef market index', freshness: 'recent', location: null }), FINAL('市場嗰邊喺度。')])
-    await run('市場牛肉價最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: p.fn })
+    await run('市場牛肉價最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('public'), publicQueryPlanner: p.fn })
 
     assert.equal(c.internalReads.length, 0)
     assert.equal(c.publicReads.length, 1)
@@ -173,7 +178,7 @@ test('*** E2E 4 — ⛔ MIXED → BOTH worlds, public query re-authored from Own
     // behaviour, it is why inspection could not win, and it is discarded unread.
     const leaky = `${TITLE} ${SUPPLIER} ${PRICE} ${SECRET} wholesale`
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: leaky, freshness: 'current', location: null }), FINAL('我哋同市場都睇咗，升幅合理。')])
-    const out = await run('Aroma 實際牛肉成本升幅同市場相比合理嗎？', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: p.fn })
+    const out = await run('Aroma 實際牛肉成本升幅同市場相比合理嗎？', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('mixed'), publicQueryPlanner: p.fn })
 
     // BOTH WORLDS. This is the line that failed under the previous design.
     assert.equal(c.internalReads.length, 1, 'internal world read')
@@ -200,7 +205,7 @@ test('*** E2E 5 — SUPPLIED FACTS → ZERO reads; he already told her ***', asy
     const v = verifier('allow')
     const p = planner()
     const a = scriptedAdapter([FINAL('用你俾嘅數，升幅係 9%。')])
-    await run('我哋牛肉上個月 8.00，今個月 8.72，升幅係幾多百分比？', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: p.fn })
+    await run('我哋牛肉上個月 8.00，今個月 8.72，升幅係幾多百分比？', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('ambiguous'), publicQueryPlanner: p.fn })
 
     assert.equal(c.internalReads.length, 0, '⛔ nothing to look up — the facts were supplied')
     assert.equal(c.publicReads.length, 0)
@@ -216,16 +221,17 @@ test('*** E2E — the five outcomes are genuinely different, not one behaviour *
   // while the system does one thing. Read-count signatures must be five distinct pairs.
   const seen = new Set()
   const cases = [
-    ['ambiguous', 'ask', [READ(INV), FINAL('x')], '最近點'],
-    ['internal', 'allow', [READ(INV), FINAL('x')], '我哋自己嘅牛肉成本點'],
-    ['public', 'allow', [READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('x')], '市場牛肉價最近點'],
-    ['mixed', 'allow', [READ(INV), READ(PUB, { query: 'leak ' + SECRET, freshness: null, location: null }), FINAL('x')], 'Aroma 成本同市場比'],
-    ['supplied', 'allow', [FINAL('x')], '8.00 升到 8.72 係幾多 %']
+    ['ambiguous', 'ambiguous', [READ(INV), FINAL('x')], '最近點'],
+    ['internal', 'internal', [READ(INV), FINAL('x')], '我哋自己嘅牛肉成本點'],
+    ['public', 'public', [READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('x')], '市場牛肉價最近點'],
+    ['mixed', 'mixed', [READ(INV), READ(PUB, { query: 'leak ' + SECRET, freshness: null, location: null }), FINAL('x')], 'Aroma 成本同市場比'],
+    ['supplied', 'ambiguous', [FINAL('x')], '8.00 升到 8.72 係幾多 %']
   ]
-  for (const [name, decision, envelopes, msg] of cases) {
+  // MIGRATED (SIR2): the second field is now the resolved OWNER INTENT, not an old ASK/ALLOW.
+  for (const [name, intent, envelopes, msg] of cases) {
     await withEnv({}, async () => {
       const c = twoWorldConnector()
-      await run(msg, scriptedAdapter(envelopes), { connector: c.connector, sources: BOTH, ambiguityVerifier: verifier(decision).fn, publicQueryPlanner: planner().fn })
+      await run(msg, scriptedAdapter(envelopes), { connector: c.connector, sources: BOTH, sourceIntentResolver: SIR(intent), publicQueryPlanner: planner().fn })
       seen.add(`${name}:${c.internalReads.length}/${c.publicReads.length}`)
     })
   }

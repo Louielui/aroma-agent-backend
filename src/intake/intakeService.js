@@ -59,6 +59,7 @@ const { publicReadKey } = require('../context/publicReadIdentity')
 const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
 const { createTurnMixedCache, missingWorld, logMixedRequirement } = require('./mixedKnowledgeRequirement')
 const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
+const { createTurnIntentCache, readMatchesIntent, buildIntentPrompt, logOwnerSourceIntent } = require('./ownerSourceIntentResolver')
 const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./recoveryDecisionWorker')
 
 /**
@@ -504,6 +505,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ⛔ ONE INITIAL-FINAL VERDICT PER TURN. Turn-scoped and dropped with the request; a later
   // FINAL reuses the obligation rather than re-asking a question whose input has not changed.
   const finalObligations = createTurnFinalCache()
+  // ⛔ ONE source-world authority per turn, resolved at most once per stable Owner context.
+  const sourceIntents = createTurnIntentCache()
 
   async function buildPromptFor (providerName) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
@@ -1128,10 +1131,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // PREFERS, and this is a knowledge gate, not an Owner-intent gate. Turning every
       // no-retrieval ASK into a forced answer would be a new defect wearing this one's clothes.
     } else if (verdict.requiredWorlds) {
-      // require_* on an ASK SUPPRESSES it: the meaning is not open, it is answerable, and the
-      // turn owes a read. The model's question is dropped here and never rendered — the
-      // post-loop obligation check keeps it from returning through the fallback.
-      initialObligation = verdict.requiredWorlds
+      // ══════════════════════════════════════════════════════════════════════
+      // ⛔ FinalKnowledge DECIDES *WHETHER*; THE RESOLVER DECIDES *WHICH*.
+      //
+      // require_internal / require_public / require_mixed are kept for compatibility, but their
+      // world suffix is NO LONGER authoritative — all three mean only 「more knowledge is
+      // needed」. Which world that is comes from the Owner's resolved meaning, so there is one
+      // authority instead of two enums that can disagree.
+      //
+      // If his meaning is genuinely open, the turn ASKS: no obligation, no read, no recovery
+      // worker. That is the case A4 has failed on since the beginning.
+      // ══════════════════════════════════════════════════════════════════════
+      const startedAt2 = Date.now()
+      const resolved = await sourceIntents.get({
+        resolve: (readDeps && readDeps.sourceIntentResolver) || null,
+        message,
+        history
+      })
+      logOwnerSourceIntent({ requestId, outcome: resolved.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt2 })
+      if (resolved.intent === 'ambiguous') {
+        distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null })
+      } else {
+        // require_* on an ASK also SUPPRESSES it: the meaning is settled, it is answerable, and
+        // the turn owes a read. The model's question is dropped here and never rendered — the
+        // post-loop obligation check keeps it from returning through the fallback.
+        initialObligation = resolved.requiredWorlds
+      }
     }
   }
 
@@ -1234,24 +1259,42 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // gate would spend a paid call re-litigating a closed question — and the ambiguity
           // gate could ASK about a meaning that has just been decided.
           if (initialObligation || await resolveMixed()) return { type: 'allow' }
-          const proposedWorld = worldForCapability(capability)
+          // ══════════════════════════════════════════════════════════════════
+          // ⛔ ONE SOURCE-WORLD AUTHORITY: THE OWNER SOURCE INTENT RESOLVER.
+          //
+          // The old ambiguity gate asked 「may I proceed with this world?」 and was structurally
+          // unable to answer it — `proposedWorld` never reached its prompt, so a clear PUBLIC
+          // question with an INTERNAL read proposed returned `allow`. It also over-asked on
+          // clear questions: GPT 2/10, Claude 0/10 on that one cell, and rewording moved the
+          // error rather than removing it.
+          //
+          // This resolves what he MEANT — independently, without being told what the system
+          // wants or can reach — and the server routes afterwards. Measured on 60 distinct
+          // cases: 60/60, plus 24/24 on a fresh holdout and 20/20 on paraphrased boundaries.
+          //
+          // ⛔ AND IT IS THE ONLY AUTHORITY. The old gate is no longer consulted at runtime, so
+          // there is never a second opinion to reconcile.
+          // ══════════════════════════════════════════════════════════════════
           const startedAt = Date.now()
-          const gate = await runSourceAmbiguityGate({
-            // ⛔ THE VERIFIER SEES MEANING, NEVER MECHANISM: the Owner's own words, the bounded
-            // history, and two world names. No capability name, no evidence, no credentials.
-            verify: (readDeps && readDeps.ambiguityVerifier) || null,
+          const resolved = await sourceIntents.get({
+            resolve: (readDeps && readDeps.sourceIntentResolver) || null,
             message,
-            history,
-            proposedWorld,
-            availableWorlds: worlds
+            history
           })
-          logAmbiguityGate({ requestId, outcome: gate.outcome, proposedWorld, availableWorldCount: worlds.length, durationMs: Date.now() - startedAt })
-          if (gate.decision === 'allow') return { type: 'allow' }
-          // ⛔ ASK IS AN ORDINARY CONVERSATION RESULT, NOT A NEW RESPONSE TYPE. It reuses the
-          // existing Distill envelope, so nothing downstream learns that a gate exists. And
-          // because the read never happened there is no EvidenceSet, no perSource row and no
-          // trust state — ambiguity is not a read failure.
-          return { type: 'final', result: { intent: 'unclear', mode: 'ask', reply: gate.question, nextRead: null, answerPlan: null } }
+          logOwnerSourceIntent({ requestId, outcome: resolved.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+          if (resolved.intent === 'ambiguous') {
+            // ⛔ ASK IS AN ORDINARY CONVERSATION RESULT, NOT A NEW RESPONSE TYPE. It reuses the
+            // existing Distill envelope, so nothing downstream learns that a resolver exists.
+            // No read happened, so there is no EvidenceSet, no perSource row and no trust
+            // state — a question about meaning is not a read failure.
+            return { type: 'final', result: { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null } }
+          }
+          // ⛔ THE OBLIGATION COMES FROM HIS MEANING, NOT FROM WHAT THE MODEL PROPOSED. A read
+          // in the wrong world is refused inside performRead, which hands the model an ordinary
+          // refused observation and its normal recovery opportunity — the wrong world is never
+          // executed, and nothing here has to end the turn to prevent it.
+          requiredWorlds = resolved.requiredWorlds
+          return { type: 'allow' }
         }
       : undefined
 
@@ -1379,6 +1422,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // handed back to the model, exactly like any other refusal in the loop.
         const resolved = allowed.includes(capability) ? resolveReadOperation(capability) : null
         if (!resolved) return { capability, ok: false, error: 'unknown_read_operation', summary: null }
+
+        // ⛔ A READ IN A WORLD HE DID NOT ASK FOR IS NOT EXECUTED.
+        //
+        // Once a world obligation exists — from his resolved meaning, or from the initial
+        // terminal validator — a proposed read outside it is refused HERE, before the
+        // connector. Refused as an ordinary observation rather than a thrown error, so the
+        // model gets its normal recovery opportunity inside the same bound and the turn still
+        // completes. The old gate could not do this at all: 「his meaning is clear」 returned
+        // `allow` even when the clear meaning pointed at the other world.
+        if (requiredWorlds && !readMatchesIntent(capability, requiredWorlds.internal && requiredWorlds.public ? 'mixed' : (requiredWorlds.public ? 'public' : 'internal'))) {
+          const missing = missingWorld(requiredWorlds, completedWorlds)
+          const block = missing ? renderRequiredWorldObservation(missing) : null
+          if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
+          return { capability, ok: false, error: 'wrong_world_for_owner_intent', summary: null }
+        }
 
         // ══════════════════════════════════════════════════════════════════════
         // ⛔ A4-2A — THE EGRESS GUARD. A4-EGRESS-1 stops being a note and starts refusing.

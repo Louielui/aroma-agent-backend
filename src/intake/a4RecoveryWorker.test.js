@@ -81,7 +81,7 @@ const READ = (capability, args) => ({ intent: 'question', mode: 'chat', reply: '
 const FINAL = (reply) => ({ intent: 'question', mode: 'chat', reply, nextRead: null, answerPlan: null })
 const ASK = (reply) => ({ intent: 'question', mode: 'ask', reply, nextRead: null, answerPlan: null })
 
-const finalSpy = (decision) => { const calls = []; return { calls, fn: async (i) => { calls.push(i); return { decision, question: null } } } }
+const finalSpy = (decision) => { const calls = []; const fn = async (i) => { calls.push(i); return { decision, question: null } }; fn.decision = decision; return { calls, fn } }
 /** A worker that always picks the given capability, and records everything it was handed. */
 const workerSpy = (capability) => {
   const calls = []
@@ -103,7 +103,17 @@ const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
 })
-const DEPS = (c, extra = {}) => Object.assign({ connector: c.connector, sources: BOTH, publicQueryPlanner: SAFE_PLANNER }, extra)
+// MIGRATED (SIR2): the Owner Source Intent Resolver is now the ONE source-world authority,
+// so a turn that reads must have a resolved intent. These suites test obligation/terminal/worker
+// mechanics, not meaning resolution, so the fixture derives the intent from the decision the
+// test's own FinalKnowledge stub was built with. A test that cares about intent overrides it.
+const INTENT_FOR = { require_public: 'public', require_internal: 'internal', require_mixed: 'mixed' }
+const DEPS = (c, extra = {}) => Object.assign({
+  connector: c.connector,
+  sources: BOTH,
+  publicQueryPlanner: SAFE_PLANNER,
+  sourceIntentResolver: async () => ({ intent: INTENT_FOR[extra.finalVerifier && extra.finalVerifier.decision] || 'mixed' })
+}, extra)
 
 /* ═══ INVOCATION POLICY — THE MAIN BRAIN GOES FIRST ═════════════════════ */
 
