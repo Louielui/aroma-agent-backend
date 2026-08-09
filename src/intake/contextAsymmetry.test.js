@@ -73,7 +73,13 @@ const RECALL_DEPS = {
 //
 // THE COST, recorded rather than left implicit: this guarantee is now proven on the
 // legacy path only. See MAINTENANCE-BACKLOG.md M-4.
-const BASE_ENV = { DECISION_RECALL: 'on', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', MULTI_AI_ROUTER: 'off', TURN_ROUTER: 'off' }
+// ⛔ A4_KNOWLEDGE_ROUTING:'off' ADDED — these tests assert the AUTOMATIC-READ contract.
+// A4-1 deliberately takes read initiation away from the keyword route: with A4 on, the turn
+// reaches the model with zero rows and the model must ASK for the read. These suites script
+// adapters that answer directly, so under A4 on they correctly read nothing — the contract
+// they pin is the A4-off one, which remains a supported rollback and must stay provable.
+// Same reasoning, and same recorded cost, as the TURN_ROUTER:'off' pins already here.
+const BASE_ENV = { A4_KNOWLEDGE_ROUTING: 'off', DECISION_RECALL: 'on', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', MULTI_AI_ROUTER: 'off', TURN_ROUTER: 'off' }
 
 async function withEnv (vars, fn) {
   const saved = {}

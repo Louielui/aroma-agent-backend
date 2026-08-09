@@ -60,7 +60,7 @@ function readDeps (sources = ['gmail']) {
   }
 }
 
-const READ_ON = { READ_ACCESS: 'on', CONTEXT_GMAIL: 'on', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off' }
+const READ_ON = { A4_KNOWLEDGE_ROUTING: 'off', READ_ACCESS: 'on', CONTEXT_GMAIL: 'on', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off' }
 const READ_OFF = { READ_ACCESS: 'off', CONTEXT_GMAIL: 'off', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off' }
 
 async function withEnv (vars, fn) {

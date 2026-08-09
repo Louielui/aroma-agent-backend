@@ -15,7 +15,13 @@ const { CAPS, SAFETY_HEADER, OPEN, CLOSE, extractKeywords, planFor, buildReadCon
 const { createLiveReadConnector, enabledSources, ALL_SOURCES } = require('./liveClients')
 const { processIntake } = require('../intake/intakeService')
 
-const FLAGS_ON = { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on' }
+// ⛔ A4_KNOWLEDGE_ROUTING:'off' ADDED — these tests assert the AUTOMATIC-READ contract.
+// A4-1 deliberately takes read initiation away from the keyword route: with A4 on, the turn
+// reaches the model with zero rows and the model must ASK for the read. These suites script
+// adapters that answer directly, so under A4 on they correctly read nothing — the contract
+// they pin is the A4-off one, which remains a supported rollback and must stay provable.
+// Same reasoning, and same recorded cost, as the TURN_ROUTER:'off' pins already here.
+const FLAGS_ON = { A4_KNOWLEDGE_ROUTING: 'off', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on' }
 const NOW = '2026-07-25T12:00:00.000Z'
 const live = (over = {}) => Object.assign({ source: 'drive', sourceId: 'x1', title: 'T', retrievedAt: NOW, originalDate: '2026-07-01', content: 'body', link: 'https://l/1', trust: 'live', error: null }, over)
 

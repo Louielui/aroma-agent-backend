@@ -100,6 +100,10 @@ test('*** END TO END: a Gmail turn whose reply CITES the mail stores the questio
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-'))
   await withEnv({
     XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
+    // ⛔ A4 off: this asserts an AUTOMATIC Gmail read reaches the reply. Under A4-1 the model
+    // must request the read, and this scripted adapter answers directly — so the archive
+    // behaviour under test would never get a row to archive.
+    A4_KNOWLEDGE_ROUTING: 'off',
     READ_ACCESS: 'on', CONTEXT_GMAIL: 'on', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off'
   }, async () => {
     const app = makeApp(realPipelineWith(readDeps(['gmail'])))
@@ -161,6 +165,10 @@ test('*** END TO END: read happened, reply CITES NOTHING → the answer is kept,
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-e2e-nocite-'))
   await withEnv({
     XIANGXIANG_ARCHIVE: 'on', XIANGXIANG_ARCHIVE_ROOT: root,
+    // ⛔ A4 off: this asserts an AUTOMATIC Gmail read reaches the reply. Under A4-1 the model
+    // must request the read, and this scripted adapter answers directly — so the archive
+    // behaviour under test would never get a row to archive.
+    A4_KNOWLEDGE_ROUTING: 'off',
     READ_ACCESS: 'on', CONTEXT_GMAIL: 'on', DECISION_RECALL: 'off', MULTI_AI_ROUTER: 'off'
   }, async () => {
     const app = makeApp(realPipelineWith(readDeps(['gmail'])), CHAT_ENVELOPE_NO_CITE)

@@ -113,6 +113,18 @@ async function withEnv (over, fn) {
 }
 
 const BOTH = ['aroma_system', 'public_knowledge']
+/**
+ * MIGRATED FIXTURE — Owner-only public query provenance.
+ *
+ * A PUBLIC read requested after INTERNAL evidence exists no longer carries the main model's
+ * own query: it is discarded and re-authored from Owner-authored context. That makes a
+ * planner a REQUIRED dependency of this path, and its absence fails closed. Tests below that
+ * are about something ELSE (the ambiguity gate, evidence shape, continuation) supply this
+ * deterministic planner as plumbing. The provenance rules themselves are proven in
+ * a4EgressProvenance.test.js, not here.
+ */
+const SAFE_PLANNER = async () => ({ query: 'wholesale beef market price trend', freshness: 'current', location: null })
+
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: deps
@@ -304,7 +316,10 @@ test('*** M — a value the OWNER typed himself is not a leak ***', async () => 
       FINAL('查咗。')
     ])
     // ⛔ THE OWNER SUPPLIED IT. Blocking here would refuse the very question he asked.
-    await run('幫我查 ' + SECRET + ' 喺市場嘅參考價，同我哋比較', a, { connector: c.connector, sources: BOTH })
+    // MIGRATED — the query is now re-authored from HIS words, so the planner echoes them.
+    // The rule is unchanged in substance: what he typed himself is his to send.
+    const ownerPlanner = async () => ({ query: 'market reference for ' + SECRET, freshness: 'current', location: null })
+    await run('幫我查 ' + SECRET + ' 喺市場嘅參考價，同我哋比較', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: ownerPlanner })
     assert.equal(c.publicReads.length, 1, 'his own words may travel')
   })
 })
@@ -459,7 +474,8 @@ test('*** continuation 「兩邊都睇。」 → both, no repeated clarification
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const a = scriptedAdapter('claude', [READ(INV), READ(PUB, A('beef market movement', 'recent')), FINAL('兩邊都喺度。')])
-    const out = await run('兩邊都睇。', a, { connector: c.connector, sources: BOTH }, AFTER_ASK)
+    // MIGRATED — public-after-internal re-authors the query; see the SAFE_PLANNER note above.
+    const out = await run('兩邊都睇。', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: SAFE_PLANNER }, AFTER_ASK)
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1)
     assert.equal(String(out.reply).includes('你想睇'), false, 'it does not ask again')

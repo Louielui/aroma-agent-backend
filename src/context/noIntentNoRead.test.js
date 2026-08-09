@@ -194,7 +194,7 @@ test('*** zero rows → no ANSWER PLAN is forced (the decision surface is a diff
   }
   const saved = { ...process.env }
   Object.assign(process.env, {
-    TURN_ROUTER: 'off', READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on'
+    A4_KNOWLEDGE_ROUTING: 'off', TURN_ROUTER: 'off', READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on'
   })
   try {
     const spy = spyConnector()
@@ -232,7 +232,7 @@ test('*** and a business question with rows DOES get the plan schema ***', async
     }
   }
   const saved = { ...process.env }
-  Object.assign(process.env, { TURN_ROUTER: 'off', READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on' })
+  Object.assign(process.env, { A4_KNOWLEDGE_ROUTING: 'off', TURN_ROUTER: 'off', READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on' })
   try {
     const spy = spyConnector([{ sourceId: '1', title: 'INV-001', originalDate: '2026-08-01' }])
     await processIntake('最近有咩發票？', adapter, [], {

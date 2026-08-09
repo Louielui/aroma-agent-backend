@@ -54,7 +54,13 @@ function deadCalendar () {
   return { sources: ['calendar'], connector: { async read () { throw new Error('token expired') } } }
 }
 
-const BASE_ENV = { READ_ACCESS: 'on', CONTEXT_CALENDAR: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_DEMO: 'on' }
+// ⛔ A4_KNOWLEDGE_ROUTING:'off' ADDED — these tests assert the AUTOMATIC-READ contract.
+// A4-1 deliberately takes read initiation away from the keyword route: with A4 on, the turn
+// reaches the model with zero rows and the model must ASK for the read. These suites script
+// adapters that answer directly, so under A4 on they correctly read nothing — the contract
+// they pin is the A4-off one, which remains a supported rollback and must stay provable.
+// Same reasoning, and same recorded cost, as the TURN_ROUTER:'off' pins already here.
+const BASE_ENV = { A4_KNOWLEDGE_ROUTING: 'off', READ_ACCESS: 'on', CONTEXT_CALENDAR: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_DEMO: 'on' }
 
 async function withEnv (vars, fn) {
   const saved = {}

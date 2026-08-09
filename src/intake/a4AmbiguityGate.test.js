@@ -250,6 +250,18 @@ async function withEnv (over, fn) {
   }
 }
 const BOTH = ['aroma_system', 'public_knowledge']
+/**
+ * MIGRATED FIXTURE — Owner-only public query provenance.
+ *
+ * A PUBLIC read requested after INTERNAL evidence exists no longer carries the main model's
+ * own query: it is discarded and re-authored from Owner-authored context. That makes a
+ * planner a REQUIRED dependency of this path, and its absence fails closed. Tests below that
+ * are about something ELSE (the ambiguity gate, evidence shape, continuation) supply this
+ * deterministic planner as plumbing. The provenance rules themselves are proven in
+ * a4EgressProvenance.test.js, not here.
+ */
+const SAFE_PLANNER = async () => ({ query: 'wholesale beef market price trend', freshness: 'current', location: null })
+
 
 function verifierSpy (decision, question) {
   const calls = []
@@ -354,7 +366,11 @@ test('*** K — the verifier is called at most ONCE per turn ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('allow')
     const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'market', freshness: null, location: null }), FINAL('兩邊都睇咗。')])
-    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn })
+    // MIGRATED — Owner-only public query provenance. Public-after-internal now re-authors the
+    // query from Owner context, so a planner is a REQUIRED dependency of this path; without one
+    // it fails closed and no public read happens. This test is about the AMBIGUITY gate's call
+    // count, so the planner is supplied as fixture plumbing. See a4EgressProvenance.test.js.
+    await run('我哋同市場比', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, publicQueryPlanner: SAFE_PLANNER })
     assert.equal(v.calls.length, 1, '⛔ one paid gate call per turn — the meaning is settled once')
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1)

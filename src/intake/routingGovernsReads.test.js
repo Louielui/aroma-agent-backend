@@ -104,6 +104,8 @@ const withEnv = async (vars, fn) => {
 
 const LIVE = {
   TURN_ROUTER: 'on',
+    // ⛔ A4 off: this pins the AUTOMATIC-READ contract, which A4-1 deliberately replaces.
+    A4_KNOWLEDGE_ROUTING: 'off',
   READ_ACCESS: 'on',
   CONTEXT_DRIVE: 'on',
   CONTEXT_GMAIL: 'on',

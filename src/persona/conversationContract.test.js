@@ -38,8 +38,20 @@ test('resolveConversationContract: strict on only; unset/empty/invalid → off',
 /* ── FLAG OFF: byte-identical to today ────────────────────────────────────── */
 test('FLAG OFF → adapter system is BYTE-IDENTICAL to the pre-contract composition', async () => {
   delete process.env.CONVERSATION_CONTRACT
+  // ⛔ A4 off. This asserts BYTE-IDENTITY of the whole system string, and A4-1 prepends its
+  // semantic guidance in the chat lane. A4's own invariant is the weaker, deliberate one —
+  // `system.endsWith(SYSTEM_PROMPT)`, asserted in a4SemanticRouting.test.js. Both are real
+  // contracts; pinning here keeps them apart, so a guidance change cannot hide inside a test
+  // about a different flag.
+  const savedA4 = process.env.A4_KNOWLEDGE_ROUTING
+  process.env.A4_KNOWLEDGE_ROUTING = 'off'
   const a = recAdapter()
-  await processIntake('聊天', a, [], { demo: true, interactionMode: 'chat' })
+  try {
+    await processIntake('聊天', a, [], { demo: true, interactionMode: 'chat' })
+  } finally {
+    if (savedA4 === undefined) delete process.env.A4_KNOWLEDGE_ROUTING
+    else process.env.A4_KNOWLEDGE_ROUTING = savedA4
+  }
   // exactly what the system string was before this feature existed
   const expected = buildPersonaSystemFromPersona(PERSONA_IDENTITY, SYSTEM_PROMPT, { extraGuards: [ACTION_HONESTY_GUARD] })
   assert.equal(a.calls[0].system, expected)

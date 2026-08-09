@@ -308,7 +308,9 @@ test('*** hostile retrieved content that ARRIVES reaches no dispatch — both pr
   const { processIntake } = require('./intakeService')
   const saved = {}
   for (const k of ['AGENT_BRIDGE', 'READ_ACCESS', 'CONTEXT_DRIVE', 'DECISION_RECALL', 'MULTI_AI_ROUTER']) saved[k] = process.env[k]
-  Object.assign(process.env, { AGENT_BRIDGE: 'on', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', DECISION_RECALL: 'on', MULTI_AI_ROUTER: 'off', TURN_ROUTER: 'off' })
+  // ⛔ A4 off for the same reason TURN_ROUTER is: this pins the LEGACY path on purpose, and
+  // under A4-1 the content would not arrive at all — a different, weaker guarantee.
+  Object.assign(process.env, { A4_KNOWLEDGE_ROUTING: 'off', AGENT_BRIDGE: 'on', READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', DECISION_RECALL: 'on', MULTI_AI_ROUTER: 'off', TURN_ROUTER: 'off' })
   try {
     const CHAT_ENV = JSON.stringify({ intent: 'chit_chat', mode: 'chat', reply: 'ok' })
     const rec = () => { const seen = []; return { seen, async complete (p) { seen.push(p); return { text: CHAT_ENV, usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, model: 'f', latencyMs: 1 } } } }

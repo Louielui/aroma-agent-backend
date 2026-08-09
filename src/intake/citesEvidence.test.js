@@ -94,7 +94,13 @@ async function withLogCapture (fn) {
   console.log = (...a) => { if (a[0] === '[AROMA-ANSWER-PLAN]') { try { captured.push(JSON.parse(a[1])) } catch (_) {} } }
   try { return { result: await fn(), captured } } finally { console.log = original }
 }
-const FLAGS = { READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on' }
+// ⛔ A4_KNOWLEDGE_ROUTING:'off' ADDED — these tests assert the AUTOMATIC-READ contract.
+// A4-1 deliberately takes read initiation away from the keyword route: with A4 on, the turn
+// reaches the model with zero rows and the model must ASK for the read. These suites script
+// adapters that answer directly, so under A4 on they correctly read nothing — the contract
+// they pin is the A4-off one, which remains a supported rollback and must stay provable.
+// Same reasoning, and same recorded cost, as the TURN_ROUTER:'off' pins already here.
+const FLAGS = { A4_KNOWLEDGE_ROUTING: 'off', READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on' }
 async function withEnv (fn) {
   const saved = {}
   for (const k of Object.keys(FLAGS)) { saved[k] = process.env[k]; process.env[k] = FLAGS[k] }

@@ -55,7 +55,15 @@ function filesWithQuotedHan (root) {
       if (!/\.(js|html)$/.test(n) || /\.test\.js$/.test(n)) continue
       const stripped = stripComments(fs.readFileSync(p, 'utf8'))
       const quoted = stripped.split('\n').some((l) => /(['"`])[^'"`]*[一-鿿][^'"`]*\1/.test(l))
-      if (quoted) out.push(path.relative(root, p).split(path.sep).join('/'))
+      // ⛔ A MULTI-LINE TEMPLATE LITERAL IS A STRING TOO, and the line-by-line test could not
+      // see one: neither backtick shares a line with the Chinese between them. That is not an
+      // edge case here — it is the exact shape every model-facing system prompt uses, so the
+      // fence was blind to the highest-consequence text in the codebase. Found when a new MODEL
+      // file was classified correctly and the staleness check asked for the entry to be REMOVED.
+      // Measured when added: it newly covers publicQueryEgressPlanner.js and confirms
+      // readResultView.js, which was already classified. No other file changes.
+      const templated = /`[^`]*[一-鿿][^`]*`/.test(stripped)
+      if (quoted || templated) out.push(path.relative(root, p).split(path.sep).join('/'))
     }
   }
   walk(root)
