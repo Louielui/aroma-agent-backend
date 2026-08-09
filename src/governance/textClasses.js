@@ -146,6 +146,13 @@ const FILE_CLASS = Object.freeze({
   'adapters/fixtures/demoTurns.js': CLASS.MODEL,      //   4
   'intake/groundedReply.js': CLASS.MODEL,             //   4
   'intake/intakeService.js': CLASS.MODEL,             //   6
+  'intake/a4Contract.js': CLASS.MODEL,                //   5 — the JSON-schema `description`
+  //                                                          fields on the A4 read-argument
+  //                                                          shape. She is TOLD them, and they
+  //                                                          decide whether she fills query /
+  //                                                          freshness / location at all.
+  //                                                          Translating them changes what she
+  //                                                          sends, not what he reads.
   'context/readOperations.js': CLASS.MODEL,           //   7 — the Owner-facing gloss for each
   //                                                          read operation (aroma_system.purchasing
   //                                                          ＝採購單). She is TOLD it, in the schema

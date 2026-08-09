@@ -36,6 +36,8 @@
  */
 
 const { ENTITY_TYPES } = require('../context/contextResult')
+// ⛔ A4-0A: the gated read-argument shape. Nothing here is used while the A4 gate is off.
+const { READ_ARGS_SCHEMA } = require('./a4Contract')
 const { t } = require('../i18n/t')
 
 /**
@@ -1408,6 +1410,30 @@ const DISTILL_WITH_READ_DECISION_SCHEMA = Object.freeze({
  * It is MODEL TEXT: an opaque `aroma_system.purchasing` is a guess waiting to happen. Generated
  * from the same frozen table as the enum, so they cannot disagree.
  */
+/**
+ * ⛔ A4-0A: ADD THE READ-ARGUMENT CHANNEL, GATED.
+ *
+ * With the gate off this returns the schema UNTOUCHED — not a clone with the same content, the
+ * same object — so an A4-off turn cannot differ from today by even a key order.
+ *
+ * With the gate on, `nextRead` gains `args` under the strict-mode rules the last two live 400s
+ * taught: `args` joins `required`, optionality is a NULL UNION, and additionalProperties is
+ * false at the new boundary. Applied BEFORE withReadChoices, so a turn with nothing left to
+ * read still collapses `nextRead` to null-only and the argument channel goes with it.
+ *
+ * ⛔ IT GRANTS NOTHING. This widens what a read REQUEST may say, never what may be read.
+ */
+function withReadArgs (schema, enabled) {
+  if (!enabled) return schema
+  const nr = schema && schema.properties && schema.properties.nextRead
+  if (!nr || !nr.properties || nr.properties.args) return schema
+  const out = JSON.parse(JSON.stringify(schema))
+  const node = out.properties.nextRead
+  node.properties.args = JSON.parse(JSON.stringify(READ_ARGS_SCHEMA))
+  node.required = [...new Set([...(Array.isArray(node.required) ? node.required : []), 'args'])]
+  return out
+}
+
 function withReadChoices (schema, available, description) {
   const out = JSON.parse(JSON.stringify(schema))
   const nr = out.properties && out.properties.nextRead
@@ -1429,6 +1455,7 @@ module.exports = {
   DISTILL_WITH_PLAN_SCHEMA,
   withRowRefs,
   withReadChoices,
+  withReadArgs,
   DISTILL_WITH_READ_DECISION_SCHEMA,
   STATUS_LABELS,
   ENTITY_LABELS,

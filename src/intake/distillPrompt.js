@@ -1,5 +1,10 @@
 'use strict'
 
+// ⛔ A4-0A — the FIRST dependency this module has ever had, and it is deliberately narrow:
+// the gate plus a pure admission filter, both of which are inert while A4 is off. The parser
+// still constructs a closed envelope from known fields and still grants no permission.
+const { a4ContractEnabled, admitReadArgs } = require('./a4Contract')
+
 /**
  * distillPrompt.js — COO behaviour (not a chatbot).
  * Aroma understands, JUDGES, RECOMMENDS, and PROPOSES (Proposal-first) — and never
@@ -292,6 +297,20 @@ function parseDistillResponse (text, diag) {
   // never a permission.
   if (p.nextRead && typeof p.nextRead === 'object' && typeof p.nextRead.capability === 'string' && p.nextRead.capability) {
     base.nextRead = { capability: p.nextRead.capability }
+    // ⛔ A4-0A: THE ARGUMENT CHANNEL, GATED AND CLOSED.
+    //
+    // With the gate off, `args` is not read at all and the envelope above is byte-identical to
+    // today — a provider that sends args on an A4-off turn has them dropped exactly like any
+    // other unknown field, because this function CONSTRUCTS a closed envelope rather than
+    // copying one.
+    //
+    // With the gate on, admitReadArgs() rebuilds the same way: three known fields, or null.
+    // `url`, `provider`, `endpoint` and friends are not blocked by a list — they have nowhere
+    // to be written to. And this still grants nothing: authorisation remains
+    // intakeService.authorisedSourcesFor() and the allowlist in reasoningLoop.js.
+    if (a4ContractEnabled(process.env)) {
+      base.nextRead.args = admitReadArgs(p.nextRead.args)
+    }
   }
 
   if (mode === 'recommend') {

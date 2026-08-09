@@ -48,10 +48,12 @@ const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // 
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 // ⛔ THE CLOSED VOCABULARY the model may pick a read from. It EXPANDS authorised sources; it
 // never adds one. See readOperations.js.
 const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
+// ⛔ A4-0A: the gate. Off (the default) ⇒ every line below that mentions A4 is inert.
+const { a4ContractEnabled } = require('./a4Contract')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 
@@ -642,6 +644,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // rows this turn retrieved makes the wrong answer unrepresentable rather than merely
   // detectable, which is the same reason the plan itself is bought at the API layer.
   const answerPlanFormat = () => {
+    // ⛔ A4-0A. Off (the default, and production today) ⇒ withReadArgs returns the schema
+    // OBJECT ITSELF, so an A4-off turn cannot differ from f836534 by even a key order.
+    const a4On = a4ContractEnabled(process.env)
     // TWO INDEPENDENT CONDITIONS, and the Owner asked for exactly that. Rows can no longer
     // force a plan on a route that did not ask for data — and the gate does NOT lean on
     // reads being governed. With reads governed there should be no rows on a CONVERSATION
@@ -698,7 +703,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {
         type: 'json_schema',
         name: 'distill_with_read_decision',
-        schema: withReadChoices(DISTILL_WITH_READ_DECISION_SCHEMA, openChoices, choiceGloss)
+        schema: withReadChoices(withReadArgs(DISTILL_WITH_READ_DECISION_SCHEMA, a4On), openChoices, choiceGloss)
       }
     }
     // ⛔ THE REF COMES FROM THE GROUP'S OWN SOURCE, NEVER FROM THE MAP KEY. The key is now the
@@ -716,7 +721,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
-    const shaped = withReadChoices(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), openChoices, choiceGloss)
+    const shaped = withReadChoices(withReadArgs(withRowRefs(DISTILL_WITH_PLAN_SCHEMA, refs), a4On), openChoices, choiceGloss)
     return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null
@@ -971,7 +976,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const loop = await runReasoningLoop({
       capabilities: allowed,
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
-      executeRead: async ({ capability }) => {
+      executeRead: async ({ capability, args }) => {
+        // ⛔ A4-0A: ACCEPTED, RECORDED, AND DELIBERATELY NOT CONSUMED.
+        //
+        // This signature used to be `({ capability })`, so every argument the loop forwarded
+        // was destructured into nothing. Accepting it here is the last link in the chain the
+        // whole slice exists to prove.
+        //
+        // ⛔ IT IS NOT PASSED TO buildReadContext. Every current operation is INTERNAL, and an
+        // internal operation IS its own query — the closed table already fixes its method and
+        // params. Forwarding args now would change what today's adapters receive, which is
+        // precisely what this slice promised not to do. The public plane (A4-2) is where a
+        // capability first has anything to do with them, and it must not arrive by accident.
+        //
+        // The observer below is a TEST SEAM, on the same terms as readContextDeps.forceSources:
+        // production passes nothing, so it is undefined and never called. It exists because
+        // 「the argument reached the reader with exactly these values」 cannot be asserted from
+        // outside the pipeline any other way, and structural telemetry must not carry values.
+        // ⛔ ONE REPRESENTATION FOR 「no arguments」. reasoningLoop.js has always defaulted
+        // `decision.args || {}`, so a null decision arrives here as an empty object — meaning a
+        // turn that declared nothing and a turn that declared {} would be indistinguishable, and
+        // A4-2 will branch on presence. Normalised here rather than by redesigning the loop,
+        // which this slice has no reason to touch.
+        const readArgs = (args && typeof args === 'object' && !Array.isArray(args) && Object.keys(args).length > 0) ? args : null
+        if (readDeps && typeof readDeps.onModelDirectedRead === 'function') {
+          try { readDeps.onModelDirectedRead({ capability, args: readArgs }) } catch (_) {}
+        }
         // ⛔ RESOLVE BEFORE THE CONNECTOR, AND REFUSE WITHOUT TOUCHING IT.
         // Two independent checks, and the connector is reached only past both: the name must be
         // in the vocabulary this turn generated, and it must resolve in the frozen table. An
@@ -1015,7 +1045,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         return { capability, ok: trust === 'live', summary: null }
       },
       callModel: async ({ step }) => {
-        if (step === 1) return { type: 'read', capability: String(pending.capability || '') }
+        // ⛔ A4-0A: THE ARGUMENTS TRAVEL WITH THE DECISION. reasoningLoop already forwarded
+        // decision.args to executeRead — the seam existed and was closed at BOTH ends, so the
+        // channel looked wired and carried nothing. With A4 off the parser never sets
+        // pending.args, so this is null and the decision is identical to today's.
+        if (step === 1) return { type: 'read', capability: String(pending.capability || ''), args: pending.args || null }
         const prompt = await buildPromptFor(activeProvider)
         const fmt = answerPlanFormat()
         const next = await activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) })
@@ -1029,7 +1063,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // ⛔ BLOCKER 4: a STILL-PENDING envelope is NOT adopted as the answer. If the loop
         // now hits the step limit, distilled still holds the last FINISHED envelope and the
         // prose that was mid-request never reaches the Owner as though it were complete.
-        return { type: 'read', capability: String(pending.capability || '') }
+        // Each step carries ITS OWN args, from the envelope that requested it — never step 1's.
+        return { type: 'read', capability: String(pending.capability || ''), args: pending.args || null }
       }
     })
     // ⛔ BLOCKER 4: the result is USED, not voided. At the step limit there is no fourth
