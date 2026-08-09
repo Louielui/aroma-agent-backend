@@ -36,6 +36,10 @@
  */
 
 const { ENTITY_TYPES } = require('../context/contextResult')
+// ⛔ A2 P2 — THE EXISTING GATE, NOT A NEW ONE. `checkEvidence` has existed and been tested
+// since A1 and has never been called from the real answer path. This wires it in SHADOW mode
+// only: same verdict function enforce mode would later use, zero effect on what the Owner reads.
+const { checkEvidence, GATE } = require('../agent/evidenceGate')
 // ⛔ A4-0A: the gated read-argument shape. Nothing here is used while the A4 gate is off.
 const { READ_ARGS_SCHEMA } = require('./a4Contract')
 const { t } = require('../i18n/t')
@@ -306,6 +310,22 @@ function logAnswerPlan (entry, sink) {
     // apart cost a hand investigation across the archive and the live API.
     modelItemCount: Number.isFinite(entry.modelItemCount) ? entry.modelItemCount : 0,
     keptItemCount: Number.isFinite(entry.keptItemCount) ? entry.keptItemCount : 0,
+    // ⛔ A2 P2 EVIDENCE GATE, SHADOW. The whole point of shadow mode is this line: what the
+    // gate WOULD have removed, before it is given the power to remove anything. Rebuilt field
+    // by field from primitives — `reasons` is copied key by key with the keys checked against
+    // the GATE enum and the values coerced to numbers, so nothing from a verdict object can
+    // ride in. `detail` quotes the claim and is never projected.
+    // null (not {}) when the gate is off, so "did not run" cannot be misread as "found nothing".
+    evidenceGate: (entry.evidenceGate && typeof entry.evidenceGate === 'object')
+      ? {
+          mode: String(entry.evidenceGate.mode || 'off'),
+          checked: Number.isFinite(entry.evidenceGate.checked) ? entry.evidenceGate.checked : 0,
+          refused: Number.isFinite(entry.evidenceGate.refused) ? entry.evidenceGate.refused : 0,
+          reasons: Object.keys(entry.evidenceGate.reasons || {})
+            .filter((k) => Object.prototype.hasOwnProperty.call(GATE, k))
+            .reduce((acc, k) => { acc[k] = Number(entry.evidenceGate.reasons[k]) || 0; return acc }, {})
+        }
+      : null,
     // Identifiers only. The projection is explicit rather than a spread, so a new key on a
     // drop record cannot ride into the log unnoticed.
     dropped: drops.map((d) => {
@@ -1051,6 +1071,98 @@ const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/)
  */
 const EMPTY_LABELS = new Map()
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ A2 P2 — EVIDENCE GATE, SHADOW MODE.
+ *
+ * `checkEvidence` has existed since A1, is tested, and has never once run on a real answer.
+ * A guard nobody calls is a guard nobody has. This connects it to the ONE place that already
+ * decides what the Owner reads — validatePlan's directAnswer sentence loop — and, for now,
+ * only watches.
+ *
+ * ⛔ SHADOW IS THE SAME FUNCTION ENFORCE WILL USE. Not a copy, not a simplified preview: the
+ * imported `checkEvidence`, on the sentences that SURVIVED every existing check, i.e. exactly
+ * the ones enforce mode would later have the power to remove. A shadow that measured
+ * something else would tell us nothing about the mode it is meant to de-risk.
+ *
+ * ⛔ IT CANNOT CHANGE A REPLY, AND IT CANNOT BREAK A TURN. Nothing here writes to `kept`,
+ * `directAnswer`, `droppedSentences` or any drop record, and every call is wrapped — a gate
+ * that crashed a turn while claiming to be inert would be worse than not running it.
+ *
+ * FAILS CLOSED THE OTHER WAY, ON PURPOSE: unrecognised flag values (including 'enforce',
+ * which does not exist yet) resolve to 'off'. Enabling enforcement will be a deliberate edit,
+ * never a typo in an env var.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ KNOWN LIMITATIONS OF THE SHADOW NUMBERS — RECORDED, NOT FIXED.
+ *
+ * These are real and they are ACCEPTED for shadow. They are written here because a refusal
+ * count read without them will be over-read, and because each one is a decision for the
+ * review that follows enforcement — not something to quietly repair now.
+ *
+ * (1) SENTENCE → SOURCE BINDING DOES NOT EXIST. Every sentence is judged against the WHOLE
+ *     `evidenceSets` array, so an unrelated source's coverage can refuse a sentence about a
+ *     different one: a sentence about invoices can be refused because a Gmail read in the
+ *     same turn was truncated. See claimBinding.js BLOCKER 1 — this is that blocker, live.
+ *     ⇒ SHADOW REFUSALS ARE AN UPPER BOUND. Enforcement on these numbers would over-refuse.
+ *
+ * (2) `UNIVERSAL` IS A REGEX OVER PROSE. It decides what counts as a total claim by pattern
+ *     ('all', 'every', 全部, 所有, 一共…). It will miss universal claims phrased around it and
+ *     will catch the words used incidentally. It is not a semantic judgement and does not
+ *     claim to be.
+ *
+ * (3) SENTENCE SPLITTING IS THE EXISTING `splitSentences`. A claim spanning two sentences is
+ *     judged as two, each with less context than the Owner reads.
+ *
+ * Shadow is still meaningful despite all three, which is the test that mattered: the numbers
+ * bound how often the gate would act and on which GATE reason, and (1) biases them in the
+ * safe direction — toward over-counting, never toward a false all-clear.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const EVIDENCE_GATE_FLAG = 'EVIDENCE_GATE'
+
+function evidenceGateMode (env = process.env) {
+  const raw = env && typeof env[EVIDENCE_GATE_FLAG] === 'string' ? env[EVIDENCE_GATE_FLAG].trim() : ''
+  return raw === 'shadow' ? 'shadow' : 'off'
+}
+
+/**
+ * Run the gate over the surviving sentences and return COUNTS ONLY.
+ * @returns {{mode:string, checked:number, refused:number, reasons:object}|null} null = not running
+ */
+function runEvidenceGateShadow (sentences, evidenceSets, plan, env = process.env) {
+  if (evidenceGateMode(env) !== 'shadow') return null
+  // ⛔ SUPPLIED CORRECTLY, AND CURRENTLY INERT — say both out loud.
+  // evidenceGate.js:85-105 records the A1 final decision: this parameter used to be a blanket
+  // bypass placed before every check, and it was removed rather than fixed. It is accepted,
+  // documented as inert, and asserted inert by test. It is passed here anyway, with the honest
+  // value, so that this call site is already correct if a claim-local scope signal ever
+  // revives it — and so nobody has to guess later whether the omission was deliberate.
+  const admitsLimitation = Array.isArray(plan && plan.limitations) && plan.limitations.length > 0
+  const reasons = {}
+  let checked = 0
+  let refused = 0
+  for (const claim of (Array.isArray(sentences) ? sentences : [])) {
+    checked++
+    let verdict = null
+    try {
+      verdict = checkEvidence({ claim, evidence: Array.isArray(evidenceSets) ? evidenceSets : [], admitsLimitation })
+    } catch (_) {
+      // A shadow observer may never break the turn it is observing. An unusable verdict is
+      // simply not counted — it is not a refusal, and it must not become one.
+      continue
+    }
+    if (verdict && verdict.ok === false) {
+      refused++
+      // ⛔ THE ENUM ONLY. `verdict.detail` is a sentence that quotes the claim and the filter;
+      // it is diagnostic prose and never reaches the log.
+      const r = Object.prototype.hasOwnProperty.call(GATE, verdict.reason) ? verdict.reason : 'UNKNOWN'
+      reasons[r] = (reasons[r] || 0) + 1
+    }
+  }
+  return { mode: 'shadow', checked, refused, reasons }
+}
+
 function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = '' } = {}) {
   const index = evidenceIndex(evidenceSets, itemsBySource)
   const metrics = metricLabelMap(evidenceSets)
@@ -1103,6 +1215,11 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     if (barredTitles.some((t) => s.includes(t))) { droppedSentences++; continue }
     kept.push(s)
   }
+  // ⛔ A2 P2 — THE INSERTION POINT. Immediately after the surviving sentences are known and
+  // BEFORE they are joined into the reply. `kept` is exactly the set enforce mode would gate,
+  // so shadow measures the real decision. Nothing below reads its result.
+  const evidenceGate = runEvidenceGateShadow(kept, evidenceSets, plan)
+
   let directAnswer = kept.join('').slice(0, LIMITS.maxDirectAnswerChars)
 
   // ── sections: an item must be a row we actually retrieved ───────────────────
@@ -1275,7 +1392,10 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     // lets the caller tell "a thin answer" from "an answer with nothing left in it".
     modelItemCount,
     keptItemCount,
-    answerSurvived
+    answerSurvived,
+    // ⛔ A2 P2 SHADOW. Counts and GATE enums only, and null when the gate is not running —
+    // an absent field and a zero-refusal field must not look the same to a reviewer.
+    evidenceGate
   }
 }
 
@@ -1465,6 +1585,11 @@ module.exports = {
   LIMITS,
   TELEMETRY_RE,
   logAnswerPlan,
+  // A2 P2 — exported so the flag resolution and the shadow verdict can be tested directly,
+  // without a live turn and without a paid call.
+  EVIDENCE_GATE_FLAG,
+  evidenceGateMode,
+  runEvidenceGateShadow,
   evidenceIndex,
   nearnessOf,
   validatePlan,

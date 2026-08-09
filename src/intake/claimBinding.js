@@ -5,8 +5,14 @@
  * STRUCTURALLY, and verify that binding server-side.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * NOTHING HERE ENFORCES ANYTHING. It classifies and verifies. No reply is changed, no
- * sentence is dropped, `checkEvidence` is not called, and no mode flag exists yet.
+ * NOTHING HERE ENFORCES ANYTHING. It classifies and verifies. No reply is changed and no
+ * sentence is dropped.
+ *
+ * ⛔ UPDATED — A2 P2 SHADOW WIRING. This header used to end 「`checkEvidence` is not called,
+ * and no mode flag exists yet.」 Both halves are now false: answerPlan.js calls the gate on the
+ * surviving directAnswer sentences under EVIDENCE_GATE=shadow, and BLOCKER 1 below is
+ * therefore no longer hypothetical — it is a LIVE, ACCEPTED limitation of the shadow numbers.
+ * It is recorded in answerPlan.js beside the wiring and is deliberately NOT solved here.
  * ══════════════════════════════════════════════════════════════════════════════
  *
  * ── THE TWO BLOCKERS THIS REMOVES ────────────────────────────────────────────

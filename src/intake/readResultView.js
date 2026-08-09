@@ -352,6 +352,10 @@ function renderValidatedPlan (input) {
     drops: v.drops,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
+    // ⛔ A2 P2 SHADOW. Plumbed in the SAME commit that starts counting it — the note above is
+    // what happens otherwise: a counter that existed at both ends and in neither middle, so
+    // every line read zero while the thing it counted was happening.
+    evidenceGate: v.evidenceGate,
     scopeNotesSuppressed: scopePrune.concepts.length ? scopePrune.concepts : null,
     requestId: input.requestId || null
   }

@@ -285,8 +285,12 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
     requestId: 'r2'
   }, (l) => lines.push(l))
   const l = lines[0]
+  // `evidenceGate` added by A2 P2 shadow wiring. It is null on this entry (the gate did not
+  // run) but the KEY is always present, which is the point of a pinned list: a new log field
+  // is a decision someone reviews, not something that appears.
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'evidenceGate', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+  assert.equal(l.evidenceGate, null)
   assert.equal(l.modelItemCount, 3)
   assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)
