@@ -63,7 +63,12 @@ const STOP = Object.freeze({
   // A caller-supplied pre-FINAL hook would not release the answer, and did not hand back a
   // usable refusal either. No result and nothing invented: the caller renders its own
   // deterministic fallback, exactly as it does at the step limit.
-  BEFORE_FINAL: 'before_final'
+  // ⛔ TERMINAL, NOT 'FINAL'. An answer and a question-back both END the Owner's turn without
+  // another read, so both are terminal. The old name described one of them, and that is
+  // precisely how the other became an escape hatch.
+  BEFORE_TERMINAL: 'before_terminal',
+  /** @deprecated the old name for BEFORE_TERMINAL; kept so existing callers keep comparing true. */
+  BEFORE_FINAL: 'before_terminal'
 })
 
 /**
@@ -129,7 +134,7 @@ async function runReasoningLoop (input = {}) {
 
     if (type === 'final') {
       // ══════════════════════════════════════════════════════════════════════
-      // ⛔ THE OPTIONAL beforeFinal HOOK — AND THIS LOOP DOES NOT KNOW WHY.
+      // ⛔ THE OPTIONAL beforeTerminal HOOK — AND THIS LOOP DOES NOT KNOW WHY.
       //
       // A caller may have a STRUCTURAL reason why an answer is not finishable yet: something
       // the turn was required to do has not happened. The model cannot be trusted to remember
@@ -149,10 +154,21 @@ async function runReasoningLoop (input = {}) {
       // beforeRead. A guard whose failure mode is 「carry on」 is not a guard; and here
       // carrying on means publishing the very answer the caller said was incomplete.
       // ══════════════════════════════════════════════════════════════════════
-      if (typeof input.beforeFinal === 'function') {
+      // ⛔ TERMINAL, NOT 'FINAL'. A decision that ends the Owner's turn without another read is
+      // terminal whatever the caller calls it — an ANSWER and a QUESTION BACK are the same
+      // shape from here, and both are ways to stop. Naming the hook after one of them is how
+      // the second became an escape hatch: with an obligation outstanding, the model could
+      // simply ask instead of answering and the guard would never see it.
+      //
+      // ⛔ beforeFinal IS STILL HONOURED, unchanged, for every caller that passes it. The two
+      // are one seam under two names, and a test asserts they behave identically.
+      const terminalHook = typeof input.beforeTerminal === 'function'
+        ? input.beforeTerminal
+        : (typeof input.beforeFinal === 'function' ? input.beforeFinal : null)
+      if (terminalHook) {
         let gate
         try {
-          gate = await input.beforeFinal({ step, decision, observations: observations.slice() })
+          gate = await terminalHook({ step, decision, observations: observations.slice() })
         } catch (_) {
           gate = null // a throw is a refusal, never a release
         }
@@ -161,14 +177,14 @@ async function runReasoningLoop (input = {}) {
           // can act on it inside the same bound. `observation` is passed through untouched:
           // the caller owns its shape, and this module must not learn to read it.
           if (gate.observation && typeof gate.observation === 'object') observations.push(gate.observation)
-          emit(step, 'refused', { refusal: 'before_final' })
+          emit(step, 'refused', { refusal: 'before_terminal' })
           continue
         }
         if (!gate || gate.type !== 'allow') {
           // Unrecognised: not an allow, so not released. The turn stops here with no result and
           // the caller renders its deterministic fallback, exactly as at the step limit.
-          emit(step, null, { stopReason: STOP.BEFORE_FINAL })
-          return { result: null, steps: step, stopReason: STOP.BEFORE_FINAL, observations }
+          emit(step, null, { stopReason: STOP.BEFORE_TERMINAL })
+          return { result: null, steps: step, stopReason: STOP.BEFORE_TERMINAL, observations }
         }
       }
       emit(step, 'final', { stopReason: STOP.FINAL })

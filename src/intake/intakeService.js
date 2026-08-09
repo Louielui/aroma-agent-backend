@@ -1026,15 +1026,36 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // reaches it, and it names a WORLD, never a capability. The model still chooses how to read.
   // ══════════════════════════════════════════════════════════════════════════
   let initialObligation = null
-  // ⛔ AN ASK IS NOT AN ANSWER, AND A COMMIT IS NOT A QUESTION.
+  // ⛔ AN ASK IS ALSO A WAY TO STOP — AND THAT WAS THE LAST ESCAPE HATCH.
   //
-  // The gate validates a FINAL ANSWER. A turn whose mode is 'ask' is the model asking the
-  // Owner to clarify — it answers nothing, reads nothing and claims nothing, so there is no
-  // answer to validate; running the gate on it withheld a legitimate clarification and left
-  // the Owner with silence. Caught by the ambiguity suite, which asserts exactly that reply.
+  // A4-FINAL1 excluded mode:'ask' because gating it withheld legitimate clarifications and
+  // left the Owner with silence. Correct as far as it went, and it left one hole: asked
+  // 「加拿大牛肉批發市場價點？」 — a question naming the country, the commodity and the market
+  // — the model returned an ASK, reproducibly, and the gate never ran. The Owner got a
+  // pointless clarification instead of an answer, and no read happened.
+  //
+  // An ASK and a FINAL both END the turn without reading. So both are validated, by the SAME
+  // verifier, on the same Owner-only input. What differs is what a verdict may DO:
+  //
+  //   FINAL  · require_* → refuse and oblige   · allow_final → release   · unusable → withhold
+  //   ASK    · require_* → SUPPRESS and oblige · allow_final → KEEP ASK  · unusable → KEEP ASK
+  //
+  // ⛔ ONLY A POSITIVE require_* MAY OVERRIDE AN ASK, and that asymmetry is the whole design.
+  // `allow_final` on an ASK means 「no retrieval is needed」 — which does NOT mean the question
+  // was pointless: the model may be asking which of two things the OWNER PREFERS, and this is
+  // a KNOWLEDGE gate, not an Owner-intent gate. Forcing an answer there would be a new defect
+  // wearing this one's clothes.
+  //
+  // ⛔ AND AN UNUSABLE VERDICT KEEPS THE ASK. The direction is opposite to FINAL's on purpose:
+  // a FINAL asserts things, so an unverified one is withheld; an ASK asserts nothing and reads
+  // nothing, so the safe failure is to let the Owner be asked. No obligation is invented and
+  // no read is performed on a verdict that did not arrive.
+  //
   // 'commit' belongs to the proposal path and never had a knowledge obligation.
+  const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
+  const initialIsAsk = initialTerminalMode === 'ask'
   const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
-    a4SemanticRoutingEnabled(process.env) && distilled.mode !== 'commit' && distilled.mode !== 'ask'
+    a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
   if (initialFinalGate) {
     const allowedNow = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
     const w = availableWorlds(allowedNow)
@@ -1047,18 +1068,36 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     })
     logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
     if (!verdict.ok) {
-      // ⛔ FAIL CLOSED, AND NOTE THE DIRECTION. For the mixed gate, failing safe meant claiming
-      // NO requirement. Here the dangerous direction is publishing an unverified answer, so an
-      // unusable verdict withholds it. No connector ran, no EvidenceSet exists, nothing is
-      // fabricated — the turn falls through to the same deterministic rendering the step limit
-      // uses, which speaks only from what was actually read (nothing).
-      distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
-      try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: 1, decisionType: 'final', stopReason: 'final_validation_unavailable' })) } catch (_) {}
+      // ⛔ FAIL CLOSED — IN THE DIRECTION THAT MATCHES WHAT WAS SAID.
+      //
+      // A FINAL asserts things, so an unverified one is withheld: no connector ran, no
+      // EvidenceSet exists, nothing is fabricated, and the turn falls through to the same
+      // deterministic rendering the step limit uses.
+      //
+      // An ASK asserts nothing and reads nothing. Withholding it would leave the Owner with
+      // silence — the exact defect that made A4-FINAL1 exclude ASK in the first place. So the
+      // question stands, no obligation is invented, and no read is performed on a verdict that
+      // never arrived.
+      if (!initialIsAsk) {
+        distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
+      }
+      try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: 1, decisionType: initialIsAsk ? 'ask' : 'final', stopReason: initialIsAsk ? 'ask_validation_unavailable' : 'final_validation_unavailable' })) } catch (_) {}
     } else if (verdict.decision === 'clarify') {
-      // An ordinary conversation result, exactly as the ambiguity ASK is — no new response
-      // type, zero reads, no EvidenceSet, no trust state.
+      // The ASK is legitimate — either the model already asked, or its FINAL was premature and
+      // the meaning genuinely is open. Either way this is an ordinary conversation result, as
+      // the ambiguity ASK is: no new response type, zero reads, no EvidenceSet, no trust state.
+      // The verifier's own validated question is preferred over the model's wording, which the
+      // verifier was never shown.
       distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: verdict.question, nextRead: null, answerPlan: null })
+    } else if (verdict.decision === 'allow_final' && initialIsAsk) {
+      // ⛔ THE ASK SURVIVES, UNTOUCHED. `allow_final` means no retrieval is needed — not that
+      // the question was pointless. The model may be asking which of two things the OWNER
+      // PREFERS, and this is a knowledge gate, not an Owner-intent gate. Turning every
+      // no-retrieval ASK into a forced answer would be a new defect wearing this one's clothes.
     } else if (verdict.requiredWorlds) {
+      // require_* on an ASK SUPPRESSES it: the meaning is not open, it is answerable, and the
+      // turn owes a read. The model's question is dropped here and never rendered — the
+      // post-loop obligation check keeps it from returning through the fallback.
       initialObligation = verdict.requiredWorlds
     }
   }
@@ -1206,7 +1245,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // only reach internal is a real obligation, and gating completion on there being two
     // worlds would have silently released exactly those answers. It no-ops when nothing is
     // required, so the broader condition costs nothing.
-    const beforeFinal = (mixedOn || initialObligation)
+    const beforeTerminal = (mixedOn || initialObligation)
       ? async () => {
           if (!requiredWorlds) return { type: 'allow' }
           const missing = missingWorld(requiredWorlds, completedWorlds)
@@ -1225,7 +1264,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const loop = await runReasoningLoop({
       capabilities: allowed,
       beforeRead,
-      beforeFinal,
+      // ⛔ TERMINAL, NOT FINAL. An ASK reaches the loop as a terminal decision exactly like an
+      // ANSWER does, so this one hook closes both exits: with an obligation outstanding the
+      // model can neither answer nor ask its way out of the turn.
+      beforeTerminal,
       // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery
       // path is read → premature final (refused) → second read → final, which is four
       // decisions. Every other turn keeps the bound of three, and there is no env var: the

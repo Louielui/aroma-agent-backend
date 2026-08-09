@@ -274,7 +274,9 @@ test('*** M — ⛔ premature FINAL with PUBLIC missing is REFUSED, and the mode
     } finally { console.log = orig }
     assert.equal(c.internalReads.length, 1)
     assert.equal(c.publicReads.length, 1, '⛔ the premature final was released')
-    assert.ok(events.some((e) => e && e.refusal === 'before_final'), 'the interception is on the record')
+    // RENAMED to 'before_terminal' by A4-FINAL2: an ANSWER and a QUESTION BACK both end the
+    // turn, so the guard covers both and the telemetry says so.
+    assert.ok(events.some((e) => e && e.refusal === 'before_terminal'), 'the interception is on the record')
     assert.equal(out.reply, '兩邊都睇咗。', 'the ANSWER is the complete one, not the apology')
   })
 })
