@@ -147,6 +147,7 @@ const FILE_CLASS = Object.freeze({
   'intake/groundedReply.js': CLASS.MODEL,             //   4
   'intake/intakeService.js': CLASS.MODEL,             //   6
   'intake/sourceAmbiguityGate.js': CLASS.MODEL,      //   2 — the verifier's own system
+  'intake/publicQueryEgressPlanner.js': CLASS.MODEL, //   1 — the planner's own system
   //                                                          instruction and its ONE safe
   //                                                          fallback question. She is TOLD
   //                                                          them, and they decide allow vs

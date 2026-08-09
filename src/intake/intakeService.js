@@ -56,6 +56,7 @@ const { operationsForSources, resolveReadOperation, operationForAromaMethod, des
 const { a4ContractEnabled, a4SemanticRoutingEnabled, wouldLeakInternalEvidence, MIN_LEAKABLE_CHARS } = require('./a4Contract')
 // ⛔ A4-2A: a public SEARCH is keyed per query, not per operation.
 const { publicReadKey } = require('../context/publicReadIdentity')
+const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./publicQueryEgressPlanner')
 // ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
 // itself is injected.
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
@@ -458,6 +459,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // Each entry is a read-context block produced by the SAME buildReadContext the one-shot
   // path uses. Empty on an ordinary turn, so the prompt is byte-identical to before.
   const extraObservationBlocks = []
+  // ⛔ ONE SAFE PUBLIC QUERY PLAN PER OWNER CONTEXT, FOR THIS TURN ONLY. Constructed here and
+  // dropped with the turn, so no plan can outlive the request that authored it. The main model
+  // may ask for PUBLIC more than once inside the bounded loop; the Owner's words do not change
+  // between those asks, so the second one reuses the first plan rather than spending another
+  // paid call — and rather than deriving a DIFFERENT safe string, which would slip past the
+  // executor dedupe that keys on canonical args.
+  const egressPlans = createTurnPlanCache()
 
   async function buildPromptFor (providerName) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
@@ -1113,6 +1121,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // ⛔ NOTHING HERE IS LOGGED. Not the query, not the value, not the match. The
         // observation carries one enum.
         // ══════════════════════════════════════════════════════════════════════
+        let outboundArgs = readArgs
         if (resolved.source === 'public_knowledge') {
           const internalValues = []
           for (const g of turnItems.values()) {
@@ -1127,14 +1136,72 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const s = String(v == null ? '' : v).trim().toLowerCase()
             return s.length >= MIN_LEAKABLE_CHARS && !ownerText.includes(s)
           })
-          if (wouldLeakInternalEvidence(readArgs, notFromOwner)) {
+
+          // ══════════════════════════════════════════════════════════════════
+          // ⛔ OWNER-ONLY PUBLIC QUERY PROVENANCE — the author is replaced, not audited.
+          //
+          // > **Owner: 「If PUBLIC is requested AFTER INTERNAL evidence has been read, the raw
+          // > main-model public query is UNTRUSTED and MUST NOT leave the process.」**
+          //
+          // Blocking-on-inspection was correct and unwinnable: the MIXED question REQUIRES
+          // reading internal evidence first, and a model that has just read 「Beef Brisket /
+          // Gordon / 8.72」 composes a query containing them because that is the helpful thing
+          // to do. Three phrasings measured, two blocked, each block right — and the Owner got
+          // half an answer every time. A substring check also only ever catches the literal
+          // value; it cannot catch a paraphrase, and a guard that is decorative on paraphrase
+          // is not a guard.
+          //
+          // So once ANY internal evidence exists this turn, `readArgs` is DISCARDED UNREAD and
+          // the query is re-authored from a context that has never contained internal evidence
+          // (see publicQueryEgressPlanner.js). Contamination becomes impossible rather than
+          // undetected.
+          //
+          // ⛔ AND IT FAILS CLOSED. No planner, a throw, a timeout, malformed output, an empty
+          // query, no Owner text — every one means NO PUBLIC READ. It never reverts to the
+          // main model's string, because that reversion IS the thing forbidden, and it would
+          // be silent: the search would succeed and look entirely normal.
+          // ══════════════════════════════════════════════════════════════════
+          if (internalValues.length > 0) {
+            const startedAt = Date.now()
+            const planned = await egressPlans.get({
+              plan: (readDeps && readDeps.publicQueryPlanner) || null,
+              message,
+              history
+            })
+            logEgressPlan({
+              requestId,
+              outcome: planned.outcome,
+              rawQueryDiscarded: true,
+              ownerMessageCount: ownerAuthoredContext(message, history).length,
+              durationMs: Date.now() - startedAt
+            })
+            if (!planned.ok) {
+              // A safe unavailable observation. No EvidenceSet, no perSource row, no trust
+              // state — nothing was read, so nothing is recorded as read.
+              return { capability, ok: false, error: 'PUBLIC_QUERY_UNAVAILABLE', summary: null }
+            }
+            outboundArgs = planned.args
+          }
+
+          // ⛔ THE SECOND FENCE, ON WHATEVER IS ACTUALLY ABOUT TO LEAVE.
+          //
+          // Kept deliberately after the re-author. The planner cannot have learned an internal
+          // value — it was never shown one — so on the MIXED path this should never fire, and a
+          // test asserts the safe query survives it. It stays because it is the only check that
+          // reads the FINAL string: it still covers the no-internal-evidence path where the
+          // main model's own query travels, and if a future edit ever leaked evidence into the
+          // planner's context, this is what turns that bug into a refusal instead of a send.
+          if (wouldLeakInternalEvidence(outboundArgs, notFromOwner)) {
             return { capability, ok: false, error: 'PUBLIC_QUERY_EGRESS_BLOCKED', summary: null }
           }
         }
 
         // ⛔ THE READ GRAIN, COMPUTED BEFORE THE EXECUTOR. For a public search that is the
         // INSTANCE (operation + canonical args); for everything else it is the operation.
-        const turnKey = resolved.source === 'public_knowledge' ? publicReadKey(capability, readArgs) : capability
+        // ⛔ KEYED ON WHAT ACTUALLY LEAVES, NOT ON WHAT WAS PROPOSED. After the re-author these
+        // differ, and keying on the discarded string would make two identical safe searches
+        // look like two different reads — the dedupe below would miss the repeat it exists for.
+        const turnKey = resolved.source === 'public_knowledge' ? publicReadKey(capability, outboundArgs) : capability
 
         // ⛔ AND AN EXACT REPEAT IS NOT EXECUTED TWICE. `public_knowledge.search` stays
         // re-offerable — the schema hides INSTANCES, not the operation, so a second, different
@@ -1154,7 +1221,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // ⛔ ARGS REACH THE PUBLIC EXECUTOR AND NOTHING ELSE. A4-0A proved the channel and
         // deliberately did not connect it; this is the one capability that has any business
         // with it. Internal adapters still receive byte-identical params (test E).
-        const publicArgs = resolved.source === 'public_knowledge' ? readArgs : null
+        const publicArgs = resolved.source === 'public_knowledge' ? outboundArgs : null
         const rc = await buildReadContext({ connector, message, sources: [resolved.source], operation: capability, args: publicArgs, env: process.env })
         if (rc && rc.block) extraObservationBlocks.push(rc.block)
         // ⛔ MODEL-DIRECTED READ: the readKey is the OPERATION, because that is the grain at
