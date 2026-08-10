@@ -832,10 +832,18 @@ test('*** one transient retry at most is permitted, and none is implemented here
 
 /* ═══ 25/26/27/28 — PRODUCTION REACH AND BOUNDARIES ════════════════════ */
 
-test('*** 25 — production still cannot construct the public source at all ***', () => {
-  assert.equal(ALL_SOURCES.includes('public_knowledge'), false, '⛔ not in the live registry')
-  const everything = { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on', CONTEXT_AROMA_SYSTEM: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on' }
-  assert.equal(enabledSources(everything).includes('public_knowledge'), false, '⛔ and no flag turns it on')
+test('*** 25 — the public source is GOVERNED now, and still off by default ***', () => {
+  // ⛔ A4-3A CHANGED THIS DELIBERATELY. It used to be absent from the registry entirely, which
+  // made it unreachable rather than governed — and unreachable-by-omission is the state that
+  // becomes reachable-by-accident the moment someone adds a line. It is now a first-class
+  // source subject to the ordinary two-flag rule, and OFF unless every condition is met.
+  assert.equal(ALL_SOURCES.includes('public_knowledge'), true, 'in the registry, so it can be governed')
+  assert.equal(enabledSources({}).includes('public_knowledge'), false, '⛔ default is off')
+  assert.equal(enabledSources({ CONTEXT_PUBLIC_KNOWLEDGE: 'on' }).includes('public_knowledge'), false,
+    '⛔ its own flag alone is not enough — READ_ACCESS gates it too')
+  assert.equal(enabledSources({ READ_ACCESS: 'on' }).includes('public_knowledge'), false,
+    '⛔ and the master flag alone is not enough either')
+  assert.equal(enabledSources({ READ_ACCESS: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on' }).includes('public_knowledge'), true)
 })
 
 test('*** 26/27/28 — ⛔ the semantic layer never learns the vendor, and cannot write ***', () => {

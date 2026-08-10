@@ -26,11 +26,20 @@ const { createDriveReadAdapter } = require('./adapters/driveRead')
 const { createGmailReadAdapter } = require('./adapters/gmailRead')
 const { createCalendarReadAdapter } = require('./adapters/calendarRead')
 const { createAromaSystemReadAdapter, KEY_ENV: AROMA_KEY_ENV } = require('./adapters/aromaSystemRead')
+const { createPublicKnowledgeReadAdapter } = require('./adapters/publicKnowledgeRead')
+const { createOpenAIWebSearchProvider } = require('./providers/openaiWebSearchProvider')
+const { a4SemanticRoutingEnabled } = require('../intake/a4Contract')
 
 // development_record is LOCAL: it is derived from this build's own docs/ directory, so it
 // needs no token, no scope and no network. It is listed here because the read layer routes
 // by source key, not because it is an external connector.
-const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record'])
+//
+// ⛔ `public_knowledge` IS IN THE ARCHITECTURE AND STILL OFF. A4-2B deliberately kept it out of
+// this list so nothing could construct it at all; that made it unreachable rather than
+// governed. It is now a first-class source subject to the ordinary rules — and to two extra
+// ones below — so activation is a decision someone makes, not a line someone has to add.
+const PUBLIC_KEY_ENV = 'OPENAI_API_KEY'
+const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record', 'public_knowledge'])
 
 /** Sources whose master+per-source flags are both exactly 'on'. */
 function enabledSources (env = process.env) {
@@ -77,6 +86,32 @@ function createLiveReadConnector (options = {}) {
       return options.aromaSystemAdapterFactory
         ? options.aromaSystemAdapterFactory({ env, clock: options.clock })
         : createAromaSystemReadAdapter({ env, clock: options.clock })
+    },
+    /**
+     * ⛔ THE OUTSIDE WORLD, BEHIND FOUR CONDITIONS.
+     *
+     * Master READ_ACCESS and its own CONTEXT_PUBLIC_KNOWLEDGE flag are checked by the loop
+     * below, like every other source. Two more are checked here, because this is the only
+     * source with an EGRESS side — reading it sends words out of the building:
+     *
+     *   · an API key must exist. The reason names the MISSING VARIABLE, never a value.
+     *   · A4 must be on. The Owner-only Public Query Egress Planner, the source-intent
+     *     resolver and the world obligations all live in A4; without them a public read has
+     *     no authority deciding what may leave. Registering this source outside A4 would be
+     *     an egress path with its governance switched off.
+     *
+     * ⛔ AND NO SECOND VENDOR. If this provider cannot be built the source is simply absent —
+     * there is no alternative search provider to fall back to, because a silent vendor swap
+     * would move the Owner's words to a company he never agreed to.
+     */
+    public_knowledge: () => {
+      const key = env[PUBLIC_KEY_ENV]
+      if (!key) throw new Error(PUBLIC_KEY_ENV + ' not set')
+      if (!a4SemanticRoutingEnabled(env)) throw new Error('A4_KNOWLEDGE_ROUTING off')
+      const provider = options.publicSearchProviderFactory
+        ? options.publicSearchProviderFactory({ env, apiKey: key })
+        : createOpenAIWebSearchProvider({ apiKey: key })
+      return createPublicKnowledgeReadAdapter({ provider, clock: options.clock })
     }
   }
 
@@ -94,4 +129,4 @@ function createLiveReadConnector (options = {}) {
   return { connector, registered, skipped }
 }
 
-module.exports = { ALL_SOURCES, enabledSources, createLiveReadConnector }
+module.exports = { ALL_SOURCES, enabledSources, createLiveReadConnector, PUBLIC_KEY_ENV }
