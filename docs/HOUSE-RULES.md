@@ -3095,3 +3095,52 @@ performs unless they already suspect the answer.
    the first summariser that touches it.
 4. **Three states, not two, whenever the answer can be unknown.** A boolean forces a claim; the
    claim it forces is the one nobody checked.
+
+---
+
+# HR-59 — THE SAME BRIEF PRODUCED A SECOND COPY THREE TIMES, AND THE OWNER NAMED IT FIRST
+
+> **Owner: 「I have now asked for a second copy of three different things — that is a pattern in
+> how I brief, not in how you build.」**
+
+## THE THREE
+
+| # | asked for | already existed | how it was caught |
+|---|---|---|---|
+| 1 | a browser for public reads | the whole browser safety stack — origin policy, request fence, payment stop, session composition | **stated in the brief.** The GO itself said 不可新造另一套 generic browser engine |
+| 2 | a result/completion contract for browse | A1's evidence descriptor — `filtersApplied`, `rowShape`, `completeness`, `readState` | **found in review, after it shipped** (HR-58) |
+| 3 | a goal decomposer | `intake/reasoningLoop.js`, already wired at `intakeService.js:1172` | **found in the audit before writing code**, by looking for it |
+
+The trend is the thing worth recording: caught in the brief, caught after shipping, caught before
+building. **The only one that cost anything was the one nobody went looking for.**
+
+## WHY A CORRECT BRIEF PRODUCES A DUPLICATE
+
+Each of the three briefs was accurate. 「Build a conversational public read」, 「a browser task must
+not count as done just because text was found」, 「the model call that decides what facts are
+needed」 — every one describes a real gap, in the Owner's own terms, which is how a request
+*should* be written.
+
+**What none of them can carry is what the codebase already calls that thing.** The Owner briefs
+from the goal; the name lives three directories away and under different vocabulary — a
+「completion contract」 is `filtersApplied` and `completeness`, a 「goal decomposer」 is next to
+`runReasoningLoop`. Nothing in a well-written requirement points at either.
+
+> **So the duplicate is not a failure of the brief and not a failure of care. It is the predictable
+> output of describing a need in goal language to someone who has not yet searched for it in
+> implementation language.** The fix belongs to whoever holds the codebase, and it is one step.
+
+## THE RULE
+
+1. **Before building anything named as a capability — a contract, a loop, a registry, an engine —
+   search the repository for it FIRST, and report what was found before writing a line.** Not
+   「does this exist?」 but 「what does this system already call this?」
+2. **Search by MECHANISM, not by the brief's words.** 「Goal decomposer」 matches nothing;
+   `reasoningLoop` was found by asking what already chooses reads. 「Completion contract」 matches
+   nothing; the descriptor was found by asking what already says 「unknown」. A grep for the brief's
+   own vocabulary is the search most likely to come back empty and feel conclusive.
+3. **Report the search as part of the design, even when it finds nothing.** A design that opens
+   with 「X already exists and here is why this is not X」 is checkable; one that is silent about it
+   asks the reviewer to notice an absence.
+4. **A second copy is worse than the original by default** (HR-58), so the burden is on the new
+   thing to justify existing — never on the reviewer to discover the old one.
