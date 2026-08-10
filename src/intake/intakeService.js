@@ -77,10 +77,13 @@ const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./r
  *
  * ⛔ THE MODEL IS PINNED TO THE EXACT DATED BUILD THAT WAS MEASURED. `claude-haiku-4-5-20251001`
  * scored 40/40 on this contract with the currently configured key. It is written here rather
- * than taken from the adapter default ON PURPOSE: that default is `claude-3-5-haiku-20241022`,
- * which is RETIRED and returns HTTP 404 — a live defect for any caller relying on it. Fixing
- * the global default is deliberately NOT part of this slice; it is recorded as a separate
- * follow-up (CLAUDE ADAPTER DEFAULT MODEL RETIRED) so one change is not smuggled inside another.
+ * than inherited ON PURPOSE: a safety component must not be re-pointed by a setting that
+ * exists to steer some other lane.
+ *
+ * The follow-up this comment used to describe — the adapter's retired hardcoded default — has
+ * since been repaired: ClaudeAdapter now resolves an explicit pin, then CLAUDE_MODEL, then
+ * FAILS CLOSED with no built-in model at all. This pin is what keeps that fix invisible here:
+ * an explicit model always wins over the environment.
  *
  * ⛔ AND IT IS NOT THE MAIN BRAIN. This closure is reached only after the main model has been
  * told what is missing and has declined a second time. It returns one capability name, never
