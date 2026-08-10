@@ -21,7 +21,7 @@ const { assertResponseFormat } = require('./adapterErrors')
 class ClaudeAdapter extends LLMAdapter {
   /**
    * @param {{ model?: string, apiKey?: string }} [config]
-   *   model   — defaults to 'claude-3-5-haiku-20241022' (fast, cost-effective)
+   *   model   — explicit role pin, else CLAUDE_MODEL. There is NO built-in default.
    *   apiKey  — defaults to process.env.ANTHROPIC_API_KEY (preferred)
    */
   constructor (config = {}) {
@@ -29,7 +29,28 @@ class ClaudeAdapter extends LLMAdapter {
     // API key: env var takes precedence; constructor injection is for testing only.
     // NEVER pass a real key via constructor in production code.
     this._apiKey = config.apiKey || process.env.ANTHROPIC_API_KEY || ''
-    this._model = config.model || process.env.CLAUDE_MODEL || 'claude-3-5-haiku-20241022'
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * ⛔ NO HARDCODED MODEL. EXPLICIT PIN, THEN ENVIRONMENT, THEN NOTHING.
+     *
+     * This used to end `|| 'claude-3-5-haiku-20241022'`. That model is retired, so any process
+     * that constructed this adapter WITHOUT the launcher — a canary, a script, a test harness,
+     * a future service — silently selected a dead model and got HTTP 404 from Anthropic.
+     * Measured, not theorised: it is exactly what blocked the A4-3B Stage 1 viability gate.
+     *
+     * The resident launcher happens to set CLAUDE_MODEL, so the live service never saw it. That
+     * is the dangerous shape of this bug — a fallback nobody can observe until the one day the
+     * launcher is not in the picture, and then the failure looks like a provider outage rather
+     * than a line of source.
+     *
+     * ⛔ MODEL CHOICE IS DEPLOYMENT AND ROLE CONFIGURATION, NOT TRANSPORT'S BUSINESS. This class
+     * speaks HTTP to Anthropic; it is not the authority on which model is current. A model
+     * retirement must be a config change someone makes, never a hidden string someone has to
+     * go and find.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    const pick = (v) => (typeof v === 'string' && v.trim() !== '') ? v.trim() : null
+    this._model = pick(config.model) || pick(process.env.CLAUDE_MODEL) || null
     this._apiBase = 'https://api.anthropic.com/v1'
     this._anthropicVersion = '2023-06-01'
     // Injectable transport for tests ONLY. Production uses axios.post; the default
@@ -53,6 +74,23 @@ class ClaudeAdapter extends LLMAdapter {
       throw new Error(
         'ClaudeAdapter: ANTHROPIC_API_KEY is not set. ' +
         'Set it as an environment variable on Aroma Brain.'
+      )
+    }
+
+    /**
+     * ⛔ FAIL CLOSED BEFORE THE NETWORK, AND NEVER SUBSTITUTE.
+     *
+     * No model means no request. The alternative — picking one — is what this repair removes:
+     * a substituted model answers the Owner in a voice and at a price nobody chose, and it does
+     * so invisibly. Refusing here costs one clear error message; guessing costs trust in every
+     * answer that follows.
+     *
+     * ⛔ THE MESSAGE NAMES THE VARIABLE, NEVER A VALUE — same rule as the key check above.
+     */
+    if (!this._model) {
+      throw new Error(
+        'ClaudeAdapter: CLAUDE_MODEL is not set and no model was pinned by the caller. ' +
+        'Set CLAUDE_MODEL, or construct the adapter with an explicit model.'
       )
     }
 
