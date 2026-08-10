@@ -165,22 +165,6 @@ const FILE_CLASS = Object.freeze({
   //                                                          freshness / location at all.
   //                                                          Translating them changes what she
   //                                                          sends, not what he reads.
-  'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction.
-  //                                                          She is TOLD it, and it decides how
-  //                                                          the question is broken up. ⛔ The
-  //                                                          line 「唔好就近搵一個似樣嘅頂替」 is
-  //                                                          the SOFT half of the no-substitution
-  //                                                          rule; the hard half is the entity
-  //                                                          check in goalPlanContract, which is
-  //                                                          why translating this away weakens
-  //                                                          nothing that actually holds.
-  'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — the JSON-schema `description`
-  //                                                          fields, which shape what she
-  //                                                          returns. The file also carries two
-  //                                                          Owner-facing 「missing」 sentences,
-  //                                                          so it is MIXED and takes the more
-  //                                                          consequential class (answerPlan.js
-  //                                                          has the same problem).
   'context/readOperations.js': CLASS.MODEL,           //   7 — the Owner-facing gloss for each
   //                                                          read operation (aroma_system.purchasing
   //                                                          ＝採購單). She is TOLD it, in the schema
