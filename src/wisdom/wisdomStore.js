@@ -22,6 +22,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const crypto = require('node:crypto')
 const { resolveDataDir } = require('../store/dataDir')
 const C = require('./wisdomContract')
 
@@ -171,6 +172,17 @@ function createWisdomStore (options = {}) {
   const lockFile = file + '.lock'
   const clock = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
   const lockTimeoutMs = Number.isFinite(options.lockTimeoutMs) ? options.lockTimeoutMs : LOCK_TIMEOUT_MS
+  /**
+   * ⛔ TEST SEAM ONLY, AND PRODUCTION PASSES NOTHING. A path a reclaimer waits for between its
+   * observation and its reclamation, so a test can make the dangerous interleaving deterministic
+   * instead of hoping for it. It changes no production semantics: unset, nothing waits.
+   */
+  const raceGate = typeof options.__raceGateFile === 'string' ? options.__raceGateFile : null
+  const raceGateTimeoutMs = Number.isFinite(options.__raceGateTimeoutMs) ? options.__raceGateTimeoutMs : 15000
+  const waitForGate = (gate) => {
+    const deadline = Date.now() + raceGateTimeoutMs
+    while (!fs.existsSync(gate)) { if (Date.now() > deadline) return; sleepSync(2) }
+  }
 
   /* ── read ──────────────────────────────────────────────────────────── */
 
@@ -185,8 +197,19 @@ function createWisdomStore (options = {}) {
     try {
       raw = fs.readFileSync(file, 'utf8')
     } catch (err) {
+      // ⛔ ABSENT IS THE ONLY LEGITIMATE EMPTY. First run, nothing learned yet — a true answer.
       if (err && err.code === 'ENOENT') return emptyDb()
-      throw err
+      /**
+       * ⛔ AND EVERY OTHER READ FAILURE IS UNREADABLE, NOT EMPTY.
+       *
+       * The previous version let a raw fs error escape here while the comment above `load()`
+       * promised one common 「unreadable」 contract. A permission error, a locked file, an I/O
+       * fault or a directory where the store should be would each have surfaced as something
+       * else entirely — and a caller that catches broadly would then have had every excuse to
+       * treat it as 「no lessons」. The error CODE is carried for diagnosis; the file's contents
+       * are not, because they could not be read.
+       */
+      throw unreadable('read failed: ' + ((err && err.code) || 'unknown'))
     }
     let db
     try {
@@ -230,52 +253,160 @@ function createWisdomStore (options = {}) {
    * A waiter is still bounded by `lockTimeoutMs`, so 「never break a live lock」 can never mean
    * 「wait forever」.
    */
-  function breakLockIfStale () {
-    let ageMs
-    try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs } catch (_) { return false }
+  /** Read the lock's own description of itself. `null` when absent or unparseable. */
+  function readLockInfo () {
+    let raw
+    try { raw = fs.readFileSync(lockFile, 'utf8') } catch (_) { return null }
+    try {
+      const info = JSON.parse(raw)
+      return (info && typeof info === 'object' && !Array.isArray(info)) ? info : null
+    } catch (_) { return null }
+  }
 
-    let info = null
-    try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8')) } catch (_) { info = null }
+  /**
+   * Is this lock reclaimable? A pure judgement on ONE observation — it destroys nothing.
+   *
+   * Age is a FALLBACK for the case where nobody can be identified, never a verdict on someone
+   * who can be. The three cases are disjoint and exhaustive:
+   *
+   *   A. valid PID, ALIVE   → never. A slow writer keeps its lock however long it takes.
+   *   B. valid PID, DEAD    → yes. A crashed holder must not block anybody.
+   *   C. no usable PID      → age only. After LOCK_STALE_MS, because there is nobody to ask.
+   */
+  function isReclaimable (info, ageMs) {
     const holderPid = (info && Number.isInteger(info.pid) && info.pid > 0) ? info.pid : null
+    if (holderPid !== null) return !pidAlive(holderPid)
+    return ageMs > LOCK_STALE_MS
+  }
 
-    if (holderPid !== null) {
-      // A. identified and alive — the lock is legitimately held, whatever its age.
-      if (pidAlive(holderPid)) return false
-      // B. identified and dead.
-      try { fs.unlinkSync(lockFile) } catch (_) { /* someone else broke it first */ }
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ RECLAMATION IS TIED TO THE INSTANCE THAT WAS JUDGED — NOT TO THE PATHNAME.
+   *
+   * The previous version decided on the file it had READ and then called
+   * `unlink(lockFile)`, which acts on whatever occupies the PATH at that instant. That is a
+   * TOCTOU hole with a concrete, harmful interleaving:
+   *
+   *   A reads the dead lock and decides 「reclaimable」
+   *   B reads the same dead lock, removes it, and acquires a NEW lock carrying B's live pid
+   *   A now calls unlink(path) — and deletes B's LIVE lock
+   *   A acquires the path too; TWO writers believe they hold the exclusive lock
+   *
+   * The R1 test could not catch it: it had exactly one reclaimer, so the interleaving never
+   * existed. A guarantee with only one participant is not a guarantee.
+   *
+   * ⛔ THE FIX IS TO MAKE TAKING THE FILE THE ATOMIC STEP, NOT DELETING IT. `rename` moves one
+   * specific file object and only ONE caller can succeed on a given source: after it returns we
+   * exclusively possess whatever was at the path, and can read it at leisure to see whether it
+   * is what we judged.
+   *
+   *   · it carries the token we judged  → correct instance. Destroy it; the path is now free.
+   *   · it carries a DIFFERENT token    → we took a newer owner's lock. PUT IT BACK, untouched,
+   *                                        and report that we reclaimed nothing.
+   *
+   * A blind `unlink` can never be reached, so 「delete the winner's live lock」 has no code path.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  function reclaimObservedLock (observedToken) {
+    const priv = lockFile + '.reclaim-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
+    try {
+      fs.renameSync(lockFile, priv)
+    } catch (_) {
+      // Someone else moved or removed it first. Nothing of ours to clean up, and — crucially —
+      // nothing of theirs was touched.
+      return false
+    }
+
+    // We now hold the file object exclusively; no other process can also have won this rename.
+    let taken = null
+    try {
+      const raw = fs.readFileSync(priv, 'utf8')
+      taken = JSON.parse(raw)
+    } catch (_) { taken = null }
+
+    const sameInstance = observedToken !== null &&
+      taken && typeof taken === 'object' && taken.token === observedToken
+    // An unidentifiable lock has no token to match. It was judged on AGE, and age belongs to the
+    // file we just took, so taking it IS the verification.
+    const wasUnidentified = observedToken === null && (!taken || taken.token === undefined)
+
+    if (sameInstance || wasUnidentified) {
+      try { fs.unlinkSync(priv) } catch (_) {}
       return true
     }
 
-    // C. unidentifiable holder: empty, truncated, or without a usable pid. Age is all there is.
-    if (ageMs <= LOCK_STALE_MS) return false
-    try { fs.unlinkSync(lockFile) } catch (_) {}
-    return true
+    // ⛔ NOT THE INSTANCE WE JUDGED. Restore it exactly as it was — we have no right to it.
+    try { fs.renameSync(priv, lockFile) } catch (_) { try { fs.unlinkSync(priv) } catch (_) {} }
+    return false
   }
 
+  /** One attempt to free the path, from observation through to verified reclamation. */
+  function tryReclaim () {
+    let ageMs
+    try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs } catch (_) { return false }
+    const info = readLockInfo()
+    if (!isReclaimable(info, ageMs)) return false
+    const observedToken = (info && typeof info.token === 'string') ? info.token : null
+
+    // ⛔ A NARROW TEST SEAM, AND PRODUCTION NEVER SETS IT. It lets a test hold a reclaimer
+    // between its observation and its reclamation so a second process can win the race in
+    // between — the only way to make this interleaving deterministic rather than hoped for.
+    if (raceGate) waitForGate(raceGate)
+
+    return reclaimObservedLock(observedToken)
+  }
+
+  /**
+   * Acquire the lock and return the OWNERSHIP TOKEN.
+   *
+   * ⛔ THE TOKEN IS THE PROOF OF OWNERSHIP, and it is what makes release safe: a process may
+   * only delete a lock it can show is its own.
+   */
   function acquireLock () {
     const deadline = Date.now() + lockTimeoutMs
     for (;;) {
+      const token = crypto.randomBytes(12).toString('hex')
       try {
         // `wx` is the whole mechanism: atomic create-or-fail, cross-process.
         const fd = fs.openSync(lockFile, 'wx')
-        try { fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString() })) } finally { fs.closeSync(fd) }
-        return
+        try { fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token })) } finally { fs.closeSync(fd) }
+        return token
       } catch (err) {
         if (!err || err.code !== 'EEXIST') throw err
-        if (breakLockIfStale()) continue
+        if (tryReclaim()) continue
         if (Date.now() >= deadline) throw new Error('wisdom store is busy (lock timeout)')
         sleepSync(15)
       }
     }
   }
 
-  const releaseLock = () => { try { fs.unlinkSync(lockFile) } catch (_) {} }
+  /** ⛔ ONLY MY OWN LOCK. Releasing someone else's would be the same defect wearing a friendly name. */
+  function releaseLock (token) {
+    const info = readLockInfo()
+    if (!info || info.token !== token) return false
+    try { fs.unlinkSync(lockFile) } catch (_) {}
+    return true
+  }
 
-  /** Every mutation is one locked read-modify-write. No caller may skip it. */
+  /** Am I still the owner? Checked at the last moment before anything is written. */
+  function assertStillOwner (token) {
+    const info = readLockInfo()
+    if (!info || info.token !== token) {
+      throw new Error('wisdom store lock was lost before commit — refusing to write')
+    }
+  }
+
+  /**
+   * Every mutation is one locked read-modify-write.
+   *
+   * ⛔ OWNERSHIP IS RE-CHECKED AT COMMIT TIME. Holding the lock at the start is not the same
+   * claim as holding it at the moment of writing, and this is the check that turns any residual
+   * loss of the lock into a refusal rather than a lost update.
+   */
   function withLock (fn) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    acquireLock()
-    try { return fn() } finally { releaseLock() }
+    const token = acquireLock()
+    try { return fn(token) } finally { releaseLock(token) }
   }
 
   /* ── write ─────────────────────────────────────────────────────────── */
@@ -333,11 +464,13 @@ function createWisdomStore (options = {}) {
 
   function createCandidate (input = {}) {
     const lesson = C.buildCandidate(input, { clock })
-    return withLock(() => {
+    return withLock((token) => {
       const db = load()
       sweepStaleTemps()
       db.lessons.push(lesson)
       pushEvent(db, C.EVENT.CANDIDATE_CREATED, { lessonId: lesson.id, state: lesson.validation.state, createdBy: lesson.provenance.createdBy })
+      // ⛔ THE LAST THING BEFORE THE WRITE: am I still the owner?
+      assertStillOwner(token)
       save(db)
       return JSON.parse(JSON.stringify(lesson))
     })
@@ -355,7 +488,7 @@ function createWisdomStore (options = {}) {
   /** One judged transition, with the authority gate and the transition table both applied. */
   function judge (id, input, targetState, eventType, mutate) {
     const judgement = C.buildJudgement(input)
-    return withLock(() => {
+    return withLock((token) => {
       const db = load()
       const lesson = findLesson(db, id)
       if (!lesson) throw new C.WisdomContractError('unknown lesson: ' + id, 'NOT_FOUND')
@@ -367,6 +500,8 @@ function createWisdomStore (options = {}) {
       lesson.validation.evidenceRefs = judgement.evidenceRefs
       if (targetState === C.STATE.VALIDATED) lesson.validation.validatedAt = clock()
       pushEvent(db, eventType, { lessonId: lesson.id, state: targetState, authority: judgement.authority })
+      // ⛔ THE LAST THING BEFORE THE WRITE: am I still the owner?
+      assertStillOwner(token)
       save(db)
       return JSON.parse(JSON.stringify(lesson))
     })
@@ -404,7 +539,7 @@ function createWisdomStore (options = {}) {
   function recordApplication (input = {}) {
     const lessonId = C.boundedId(input.lessonId, 'lessonId')
     const contextRef = C.normaliseRefs(input.contextRef == null ? [] : [input.contextRef], 'contextRef')[0] || null
-    return withLock(() => {
+    return withLock((token) => {
       const db = load()
       const lesson = findLesson(db, lessonId)
       if (!lesson) throw new C.WisdomContractError('unknown lesson: ' + lessonId, 'NOT_FOUND')
@@ -428,6 +563,8 @@ function createWisdomStore (options = {}) {
       }
       db.applications.push(record)
       pushEvent(db, C.EVENT.APPLIED, { lessonId, applicationId: record.id })
+      // ⛔ THE LAST THING BEFORE THE WRITE: am I still the owner?
+      assertStillOwner(token)
       save(db)
       return JSON.parse(JSON.stringify(record))
     })
@@ -447,7 +584,7 @@ function createWisdomStore (options = {}) {
     const { redact } = require('../lab/redaction')
     const redacted = noteText == null ? { text: null, hits: [] } : redact(noteText)
 
-    return withLock(() => {
+    return withLock((token) => {
       const db = load()
       const record = db.applications.find((a) => a && a.id === applicationId)
       if (!record) throw new C.WisdomContractError('unknown application: ' + applicationId, 'NOT_FOUND')
@@ -458,6 +595,8 @@ function createWisdomStore (options = {}) {
       record.redactedKinds = [...new Set(redacted.hits)].sort()
       record.outcomeRecordedAt = clock()
       pushEvent(db, C.EVENT.APPLICATION_OUTCOME, { lessonId: record.lessonId, applicationId, outcome })
+      // ⛔ THE LAST THING BEFORE THE WRITE: am I still the owner?
+      assertStillOwner(token)
       save(db)
       return JSON.parse(JSON.stringify(record))
     })
@@ -483,4 +622,4 @@ function createWisdomStore (options = {}) {
   }
 }
 
-module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb, assertPersistedShape, LOCK_STALE_MS }
+module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb, assertPersistedShape, LOCK_STALE_MS, unreadable }

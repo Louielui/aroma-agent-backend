@@ -490,3 +490,225 @@ test('*** a well-formed store still round-trips through the validator untouched 
   // ⛔ READ-ONLY: validation must not normalise, repair or rewrite anything.
   assert.equal(fs.readFileSync(path.join(dir, 'wisdom.json'), 'utf8'), before)
 })
+
+/* ═══ THE TOCTOU RACE — TWO RECLAIMERS, ONE DEAD LOCK ══════════════════ */
+
+test('*** STALE_LOCK_RECLAIM_DOES_NOT_DELETE_NEW_LIVE_OWNER — a losing reclaimer cannot delete the winner ***', async () => {
+  /**
+   * ⛔ THE RACE THE R1 TEST COULD NOT SEE, BECAUSE IT HAD ONLY ONE RECLAIMER.
+   *
+   *   A reads the dead lock and decides 「reclaimable」
+   *   B reads the same dead lock, reclaims it, and acquires a NEW lock with B's LIVE pid
+   *   A calls unlink(path) — and deletes B's LIVE lock
+   *   A acquires the path too; TWO writers believe they hold the exclusive lock
+   *
+   * A guarantee with only one participant is not a guarantee. This test forces exactly that
+   * interleaving with a parent-controlled gate, so the dangerous ordering happens EVERY run
+   * rather than occasionally.
+   */
+  const dir = tempDir()
+  const file = path.join(dir, 'wisdom.json')
+  const lockFile = file + '.lock'
+  const gate = path.join(dir, 'RELEASE_A')
+  fs.mkdirSync(dir, { recursive: true })
+
+  // A lock left by a process that is definitely gone: spawn one and let it exit.
+  const corpse = spawn(process.execPath, ['-e', 'process.exit(0)'], { stdio: 'ignore' })
+  const deadPid = corpse.pid
+  await new Promise((r) => corpse.once('exit', r))
+  assert.ok(await waitFor(() => !pidAliveInTest(deadPid)), 'the previous holder is really dead')
+  const deadLock = JSON.stringify({ pid: deadPid, at: new Date().toISOString(), token: 'DEAD-TOKEN' })
+  fs.writeFileSync(lockFile, deadLock)
+
+  /**
+   * A: observes the dead lock, then BLOCKS at the gate — still holding its stale verdict —
+   * while B goes on to win. When released, A walks straight into the reclamation path with an
+   * observation that is now out of date. That is precisely the dangerous moment.
+   */
+  const aScript = [
+    'const { createWisdomStore } = require(' + JSON.stringify(path.resolve(__dirname, 'wisdomStore.js')) + ')',
+    'const s = createWisdomStore({',
+    '  file: ' + JSON.stringify(file) + ',',
+    '  lockTimeoutMs: 1500,',
+    '  __raceGateFile: ' + JSON.stringify(gate) + ',',
+    '  __raceGateTimeoutMs: 20000',
+    '})',
+    'process.send({ ready: true, pid: process.pid })',
+    'try {',
+    '  s.createCandidate({ situation: "s", action: "a", outcome: "o", lesson: "A wrote", provenance: { sourceType: "manual", createdBy: "system" } })',
+    '  process.send({ result: "wrote" })',
+    '} catch (e) { process.send({ result: "refused", message: String(e.message).slice(0, 80) }) }',
+    'process.exit(0)'
+  ].join('\n')
+
+  const a = spawn(process.execPath, ['-e', aScript], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const aMessages = []
+  a.on('message', (m) => aMessages.push(m))
+  await new Promise((resolve, reject) => {
+    const onMsg = (m) => { if (m && m.ready) { a.off('message', onMsg); resolve() } }
+    a.on('message', onMsg)
+    a.once('exit', (c) => reject(new Error('A exited before READY: ' + c)))
+  })
+
+  // Give A time to reach the gate: it must have observed the dead lock by now.
+  await new Promise((r) => setTimeout(r, 250))
+  assert.equal(fs.existsSync(lockFile), true, 'the dead lock is still in place while A waits')
+
+  /**
+   * B: the WINNER. It reclaims the dead lock, acquires its own, and then holds it — alive —
+   * for long enough that A's stale reclamation attempt lands squarely on B's live lock.
+   */
+  const bScript = [
+    'const fs = require("node:fs")',
+    'const { createWisdomStore } = require(' + JSON.stringify(path.resolve(__dirname, 'wisdomStore.js')) + ')',
+    'const s = createWisdomStore({ file: ' + JSON.stringify(file) + ', lockTimeoutMs: 5000 })',
+    // A long-running mutation: B holds the lock while A is released into its stale decision.
+    'const done = s.createCandidate({ situation: "s", action: "a", outcome: "o", lesson: "B wrote", provenance: { sourceType: "manual", createdBy: "system" } })',
+    'process.send({ wrote: done.id })',
+    'process.exit(0)'
+  ].join('\n')
+
+  // B runs to completion first, so the lock A is about to judge has already been replaced and
+  // released — then we re-create a LIVE lock owned by a real, living process, which is the
+  // thing A must not be able to delete.
+  const b = spawn(process.execPath, ['-e', bScript], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const bWrote = await new Promise((resolve, reject) => {
+    b.on('message', (m) => { if (m && m.wrote) resolve(m.wrote) })
+    b.once('exit', (c) => reject(new Error('B exited without writing: ' + c)))
+  })
+  await new Promise((r) => b.once('exit', r))
+  assert.ok(bWrote, 'B won the reclamation and wrote')
+
+  // A LIVE owner now holds the lock — exactly what A's stale verdict would destroy.
+  const holderScript = [
+    'const fs = require("node:fs")',
+    'fs.writeFileSync(' + JSON.stringify(lockFile) + ', JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token: "LIVE-WINNER" }))',
+    'process.send({ ready: true, pid: process.pid })',
+    'setInterval(() => {}, 1000)'
+  ].join('\n')
+  const holder = spawn(process.execPath, ['-e', holderScript], { stdio: ['ignore', 'ignore', 'pipe', 'ipc'] })
+  const holderPid = await new Promise((resolve, reject) => {
+    holder.once('message', (m) => (m && m.ready ? resolve(m.pid) : reject(new Error('bad handshake'))))
+    holder.once('exit', (c) => reject(new Error('holder exited early: ' + c)))
+  })
+  assert.equal(pidAliveInTest(holderPid), true)
+
+  // ⛔ RELEASE A INTO ITS STALE DECISION.
+  fs.writeFileSync(gate, 'go')
+  const aExit = await new Promise((r) => a.once('exit', r))
+
+  // ⛔ THE CORE ASSERTIONS — inside try/finally so a FAILING run still reaps the holder.
+  // Without this, an assertion throwing before kill() leaves a live child and the test runner
+  // waits forever, which turns a clear failure into a hang.
+  try {
+    assert.equal(fs.existsSync(lockFile), true, '⛔ the LIVE winner\'s lock was DELETED by a stale reclaimer')
+    const stillOwned = JSON.parse(fs.readFileSync(lockFile, 'utf8'))
+    assert.equal(stillOwned.token, 'LIVE-WINNER', '⛔ the live owner\'s lock was replaced')
+    assert.equal(stillOwned.pid, holderPid)
+    assert.equal(pidAliveInTest(holderPid), true, 'the winner is still alive and still owns it')
+
+    const outcome = aMessages.find((m) => m && m.result)
+    assert.ok(outcome, 'A reported an outcome')
+    assert.equal(outcome.result, 'refused', '⛔ A entered the critical section while the winner held the lock')
+    assert.match(outcome.message, /busy|lock timeout/)
+    assert.equal(aExit, 0)
+  } finally {
+    holder.kill()
+    await new Promise((r) => holder.once('exit', r))
+  }
+
+  assert.ok(await waitFor(() => !pidAliveInTest(holderPid)))
+  try { fs.unlinkSync(lockFile) } catch (_) {}
+
+  const s = createWisdomStore({ file })
+  const lessons = s.listLessons()
+  assert.equal(lessons.length, 1, '⛔ a write was lost')
+  assert.equal(lessons[0].lesson, 'B wrote')
+  assert.deepEqual(fs.readdirSync(dir).filter((n) => n.includes('.tmp-') || n.includes('.reclaim-')), [],
+    'no reclamation or temp debris left behind')
+})
+
+test('*** reclamation never blind-unlinks: there is no unlink of the lock path outside release ***', () => {
+  // ⛔ THE STRUCTURAL COMPANION TO THE RACE TEST. Reclamation now takes the file by rename and
+  // verifies what it took; a bare unlink of the lock path would reintroduce the whole defect.
+  const src = fs.readFileSync(path.resolve(__dirname, 'wisdomStore.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  const unlinksOfLockPath = (src.match(/unlinkSync\(lockFile\)/g) || []).length
+  assert.equal(unlinksOfLockPath, 1, 'the ONLY unlink of the lock path is the owner releasing its own lock')
+  // And that one sits inside releaseLock, after the token check.
+  const release = src.slice(src.indexOf('function releaseLock'), src.indexOf('function assertStillOwner'))
+  assert.ok(/info\.token !== token/.test(release), 'release verifies ownership first')
+  assert.ok(/unlinkSync\(lockFile\)/.test(release))
+  // Reclamation moves the file rather than deleting a pathname.
+  assert.ok(/renameSync\(lockFile, priv\)/.test(src), 'reclamation takes the file by rename')
+})
+
+test('*** a lock lost mid-critical-section is refused at commit, never written through ***', () => {
+  // ⛔ THE LAST LINE OF DEFENCE. Holding the lock at the start is not the same claim as holding
+  // it at the moment of writing, so ownership is re-checked immediately before the write.
+  const dir = tempDir()
+  const file = path.join(dir, 'wisdom.json')
+  const s = createWisdomStore({ file })
+  const lockFile = file + '.lock'
+
+  const original = fs.readFileSync
+  let sabotaged = false
+  fs.readFileSync = function (p, ...rest) {
+    // Steal the lock the moment the store re-reads it to confirm ownership.
+    if (!sabotaged && String(p) === lockFile) {
+      sabotaged = true
+      original.call(fs, p, ...rest) // let the real read happen first
+      fs.writeFileSync(lockFile, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token: 'SOMEONE-ELSE' }))
+    }
+    return original.call(fs, p, ...rest)
+  }
+  try {
+    assert.throws(() => s.createCandidate(CANDIDATE), /lock was lost before commit/)
+  } finally { fs.readFileSync = original }
+
+  assert.equal(fs.existsSync(file), false, '⛔ a write happened after the lock was lost')
+  try { fs.unlinkSync(lockFile) } catch (_) {}
+})
+
+/* ═══ THE UNREADABLE CONTRACT IS HONEST ════════════════════════════════ */
+
+test('*** UNREADABLE_EXISTING_FILE_FAILS_LOUD — every existing-but-unreadable file uses ONE contract ***', () => {
+  /**
+   * ⛔ THE COMMENT PROMISED ONE ERROR SHAPE AND THE CODE HAD TWO.
+   *
+   * ENOENT returned empty (correct), JSON/schema corruption was wrapped (correct), and every
+   * OTHER read failure — permission, I/O, a directory where the store should be — escaped raw.
+   * A caller catching broadly would then have had every excuse to treat it as 「no lessons」.
+   */
+  // A directory where the file should be: a real, non-ENOENT read failure.
+  const dir = tempDir()
+  const file = path.join(dir, 'wisdom.json')
+  fs.mkdirSync(file, { recursive: true })
+  const s = createWisdomStore({ file })
+  assert.throws(() => s.listLessons(), /unreadable|refusing to treat it as empty/,
+    'a non-ENOENT read failure must use the common contract')
+  assert.equal(fs.existsSync(file), true, 'and nothing was modified')
+
+  // An injected EACCES-style failure takes the same path.
+  const dir2 = tempDir()
+  const file2 = path.join(dir2, 'wisdom.json')
+  fs.writeFileSync(file2, JSON.stringify({ schemaVersion: 1, lessons: [], applications: [], events: [] }))
+  const s2 = createWisdomStore({ file: file2 })
+  const original = fs.readFileSync
+  fs.readFileSync = function (p, ...rest) {
+    if (String(p) === file2) { const e = new Error('permission denied'); e.code = 'EACCES'; throw e }
+    return original.call(fs, p, ...rest)
+  }
+  try {
+    assert.throws(() => s2.listLessons(), (e) => {
+      assert.match(e.message, /unreadable/)
+      assert.match(e.message, /refusing to treat it as empty/)
+      assert.match(e.message, /EACCES/, 'the error CODE is carried for diagnosis')
+      return true
+    })
+  } finally { fs.readFileSync = original }
+
+  // ⛔ AND ENOENT REMAINS THE ONLY LEGITIMATE EMPTY.
+  const fresh = createWisdomStore({ file: path.join(tempDir(), 'wisdom.json') })
+  assert.deepEqual(fresh.listLessons(), [])
+})
