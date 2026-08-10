@@ -29,7 +29,6 @@ const C = require('./wisdomContract')
 /** ⛔ AN HONEST LABEL, CARRIED IN CODE so a future reader cannot miss it. */
 const DURABILITY_STATUS = 'UNVERIFIED'
 
-const LOCK_STALE_MS = 10000
 const LOCK_TIMEOUT_MS = 5000
 const RENAME_RETRY_MS = 500
 const TMP_SWEEP_MS = 60000
@@ -172,17 +171,6 @@ function createWisdomStore (options = {}) {
   const lockFile = file + '.lock'
   const clock = typeof options.clock === 'function' ? options.clock : () => new Date().toISOString()
   const lockTimeoutMs = Number.isFinite(options.lockTimeoutMs) ? options.lockTimeoutMs : LOCK_TIMEOUT_MS
-  /**
-   * ⛔ TEST SEAM ONLY, AND PRODUCTION PASSES NOTHING. A path a reclaimer waits for between its
-   * observation and its reclamation, so a test can make the dangerous interleaving deterministic
-   * instead of hoping for it. It changes no production semantics: unset, nothing waits.
-   */
-  const raceGate = typeof options.__raceGateFile === 'string' ? options.__raceGateFile : null
-  const raceGateTimeoutMs = Number.isFinite(options.__raceGateTimeoutMs) ? options.__raceGateTimeoutMs : 15000
-  const waitForGate = (gate) => {
-    const deadline = Date.now() + raceGateTimeoutMs
-    while (!fs.existsSync(gate)) { if (Date.now() > deadline) return; sleepSync(2) }
-  }
 
   /* ── read ──────────────────────────────────────────────────────────── */
 
@@ -235,24 +223,36 @@ function createWisdomStore (options = {}) {
   /* ── lock ──────────────────────────────────────────────────────────── */
 
   /**
-   * ⛔ AN IDENTIFIABLE LIVE HOLDER IS NEVER BROKEN — NOT EVEN AN OLD ONE.
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ FAIL CLOSED. W0 HAS NO AUTOMATIC CRASH RECOVERY, ON PURPOSE.
    *
-   * The first version read `if (!holderDead && ageMs <= LOCK_STALE_MS) return false`, which
-   * says the opposite of what its own comment claimed: a LIVE writer whose lock had simply
-   * aged past the window was deleted out from under it. Two processes then hold the lock at
-   * once and the whole read-modify-write guarantee is gone — quietly, because both writes
-   * appear to succeed and only one survives.
+   * Earlier versions tried to reclaim a lock left behind by a dead process — first by age,
+   * then by pid, then by an atomic rename with an identity check. Each round closed the hole
+   * it was aimed at and left a smaller one: reclaim-then-restore has a window where the
+   * replacement owner's lock is briefly absent, and 「check the token, then unlink the path」 is
+   * two operations however tightly they are written. Recovery cannot be made safe with the
+   * primitives available here, and a guarantee that is ALMOST true about mutual exclusion is
+   * not a guarantee at all.
    *
-   * Age is a FALLBACK for the case where nobody can be identified, never a verdict on someone
-   * who can be. The three cases are disjoint and exhaustive:
+   * So W0 does not attempt it. If the lock file exists, EVERY case is the same answer:
    *
-   *   A. valid PID, ALIVE   → never break. A slow writer keeps its lock however long it takes.
-   *   B. valid PID, DEAD    → break immediately. A crashed holder must not block anybody.
-   *   C. no usable PID      → age only. Break after LOCK_STALE_MS, because there is nobody to ask.
+   *     live pid, fresh      → BUSY        dead pid, fresh      → BUSY
+   *     live pid, very old   → BUSY        dead pid, very old   → BUSY
+   *     malformed or empty   → BUSY        no pid at all        → BUSY
    *
-   * A waiter is still bounded by `lockTimeoutMs`, so 「never break a live lock」 can never mean
-   * 「wait forever」.
+   * Nothing on the mutation path deletes, renames, replaces, repairs or reclaims an existing
+   * lock. A waiter waits out its bounded timeout and then refuses, having changed nothing.
+   *
+   * ⛔ THE COST IS STATED PLAINLY: a crashed writer leaves Wisdom unavailable until somebody
+   * removes the file by hand. For a subsystem that is unwired, not production-active and whose
+   * durability is UNVERIFIED, temporary unavailability is a far better failure than two writers
+   * who both believe they own the store. False progress is worse than an honest stop.
+   *
+   * ⛔ CRASH RECOVERY = NOT IMPLEMENTED. Stale-lock recovery is MANUAL / FUTURE GOVERNED
+   * MAINTENANCE ONLY, with its own Owner GO. It is deliberately not built here.
+   * ══════════════════════════════════════════════════════════════════════════
    */
+
   /** Read the lock's own description of itself. `null` when absent or unparseable. */
   function readLockInfo () {
     let raw
@@ -264,123 +264,48 @@ function createWisdomStore (options = {}) {
   }
 
   /**
-   * Is this lock reclaimable? A pure judgement on ONE observation — it destroys nothing.
+   * Acquire the lock, or refuse.
    *
-   * Age is a FALLBACK for the case where nobody can be identified, never a verdict on someone
-   * who can be. The three cases are disjoint and exhaustive:
-   *
-   *   A. valid PID, ALIVE   → never. A slow writer keeps its lock however long it takes.
-   *   B. valid PID, DEAD    → yes. A crashed holder must not block anybody.
-   *   C. no usable PID      → age only. After LOCK_STALE_MS, because there is nobody to ask.
-   */
-  function isReclaimable (info, ageMs) {
-    const holderPid = (info && Number.isInteger(info.pid) && info.pid > 0) ? info.pid : null
-    if (holderPid !== null) return !pidAlive(holderPid)
-    return ageMs > LOCK_STALE_MS
-  }
-
-  /**
-   * ══════════════════════════════════════════════════════════════════════════
-   * ⛔ RECLAMATION IS TIED TO THE INSTANCE THAT WAS JUDGED — NOT TO THE PATHNAME.
-   *
-   * The previous version decided on the file it had READ and then called
-   * `unlink(lockFile)`, which acts on whatever occupies the PATH at that instant. That is a
-   * TOCTOU hole with a concrete, harmful interleaving:
-   *
-   *   A reads the dead lock and decides 「reclaimable」
-   *   B reads the same dead lock, removes it, and acquires a NEW lock carrying B's live pid
-   *   A now calls unlink(path) — and deletes B's LIVE lock
-   *   A acquires the path too; TWO writers believe they hold the exclusive lock
-   *
-   * The R1 test could not catch it: it had exactly one reclaimer, so the interleaving never
-   * existed. A guarantee with only one participant is not a guarantee.
-   *
-   * ⛔ THE FIX IS TO MAKE TAKING THE FILE THE ATOMIC STEP, NOT DELETING IT. `rename` moves one
-   * specific file object and only ONE caller can succeed on a given source: after it returns we
-   * exclusively possess whatever was at the path, and can read it at leisure to see whether it
-   * is what we judged.
-   *
-   *   · it carries the token we judged  → correct instance. Destroy it; the path is now free.
-   *   · it carries a DIFFERENT token    → we took a newer owner's lock. PUT IT BACK, untouched,
-   *                                        and report that we reclaimed nothing.
-   *
-   * A blind `unlink` can never be reached, so 「delete the winner's live lock」 has no code path.
-   * ══════════════════════════════════════════════════════════════════════════
-   */
-  function reclaimObservedLock (observedToken) {
-    const priv = lockFile + '.reclaim-' + process.pid + '-' + Math.random().toString(16).slice(2, 10)
-    try {
-      fs.renameSync(lockFile, priv)
-    } catch (_) {
-      // Someone else moved or removed it first. Nothing of ours to clean up, and — crucially —
-      // nothing of theirs was touched.
-      return false
-    }
-
-    // We now hold the file object exclusively; no other process can also have won this rename.
-    let taken = null
-    try {
-      const raw = fs.readFileSync(priv, 'utf8')
-      taken = JSON.parse(raw)
-    } catch (_) { taken = null }
-
-    const sameInstance = observedToken !== null &&
-      taken && typeof taken === 'object' && taken.token === observedToken
-    // An unidentifiable lock has no token to match. It was judged on AGE, and age belongs to the
-    // file we just took, so taking it IS the verification.
-    const wasUnidentified = observedToken === null && (!taken || taken.token === undefined)
-
-    if (sameInstance || wasUnidentified) {
-      try { fs.unlinkSync(priv) } catch (_) {}
-      return true
-    }
-
-    // ⛔ NOT THE INSTANCE WE JUDGED. Restore it exactly as it was — we have no right to it.
-    try { fs.renameSync(priv, lockFile) } catch (_) { try { fs.unlinkSync(priv) } catch (_) {} }
-    return false
-  }
-
-  /** One attempt to free the path, from observation through to verified reclamation. */
-  function tryReclaim () {
-    let ageMs
-    try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs } catch (_) { return false }
-    const info = readLockInfo()
-    if (!isReclaimable(info, ageMs)) return false
-    const observedToken = (info && typeof info.token === 'string') ? info.token : null
-
-    // ⛔ A NARROW TEST SEAM, AND PRODUCTION NEVER SETS IT. It lets a test hold a reclaimer
-    // between its observation and its reclamation so a second process can win the race in
-    // between — the only way to make this interleaving deterministic rather than hoped for.
-    if (raceGate) waitForGate(raceGate)
-
-    return reclaimObservedLock(observedToken)
-  }
-
-  /**
-   * Acquire the lock and return the OWNERSHIP TOKEN.
-   *
-   * ⛔ THE TOKEN IS THE PROOF OF OWNERSHIP, and it is what makes release safe: a process may
-   * only delete a lock it can show is its own.
+   * ⛔ EXCLUSIVITY COMES FROM ONE THING: `wx` is an atomic create-or-fail, and no code path in
+   * this store removes a lock it did not create. Those two facts together are the guarantee.
+   * The ownership token below is for safe release and diagnosis — it is NOT what makes the
+   * critical section exclusive.
    */
   function acquireLock () {
     const deadline = Date.now() + lockTimeoutMs
     for (;;) {
       const token = crypto.randomBytes(12).toString('hex')
       try {
-        // `wx` is the whole mechanism: atomic create-or-fail, cross-process.
         const fd = fs.openSync(lockFile, 'wx')
-        try { fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token })) } finally { fs.closeSync(fd) }
+        try {
+          fs.writeSync(fd, JSON.stringify({ pid: process.pid, at: new Date().toISOString(), token }))
+        } finally { fs.closeSync(fd) }
         return token
       } catch (err) {
         if (!err || err.code !== 'EEXIST') throw err
-        if (tryReclaim()) continue
-        if (Date.now() >= deadline) throw new Error('wisdom store is busy (lock timeout)')
+        // ⛔ NO INSPECTION, NO JUDGEMENT, NO RECOVERY. The lock exists; that is the whole answer.
+        if (Date.now() >= deadline) {
+          throw new Error('wisdom store is busy (lock timeout) — an existing lock was found and W0 never reclaims one')
+        }
         sleepSync(15)
       }
     }
   }
 
-  /** ⛔ ONLY MY OWN LOCK. Releasing someone else's would be the same defect wearing a friendly name. */
+  /**
+   * Release MY lock.
+   *
+   * ⛔ AN HONEST DESCRIPTION OF WHAT THIS GUARANTEES. Reading the token and then unlinking the
+   * path is two operations, so this is NOT an atomic compare-and-delete and is not claimed to
+   * be one. It does not need to be: with automatic reclamation gone, nothing in this store can
+   * replace my lock while I hold it, so the file I read is the file I remove. The token check
+   * is a DEFENCE against interference from outside the store — a maintenance script, a person —
+   * and in that case the safe answer is to leave the file alone.
+   *
+   * ⛔ WHEN IN DOUBT, LEAVE IT. An orphan lock makes Wisdom unavailable until someone looks at
+   * it. Deleting a lock that might be somebody else's breaks mutual exclusion. Those are not
+   * comparable costs.
+   */
   function releaseLock (token) {
     const info = readLockInfo()
     if (!info || info.token !== token) return false
@@ -388,7 +313,14 @@ function createWisdomStore (options = {}) {
     return true
   }
 
-  /** Am I still the owner? Checked at the last moment before anything is written. */
+  /**
+   * A defensive re-check immediately before writing.
+   *
+   * ⛔ THIS IS NOT THE FOUNDATION OF EXCLUSIVITY AND MUST NOT BE DESCRIBED AS ONE. The gap
+   * between this check and the write is not atomic. Exclusivity comes from the exclusive
+   * creation of the lock plus the absence of any reclamation path. This only catches the case
+   * where something OUTSIDE this store interfered mid-write, and turns it into a refusal.
+   */
   function assertStillOwner (token) {
     const info = readLockInfo()
     if (!info || info.token !== token) {
@@ -396,13 +328,7 @@ function createWisdomStore (options = {}) {
     }
   }
 
-  /**
-   * Every mutation is one locked read-modify-write.
-   *
-   * ⛔ OWNERSHIP IS RE-CHECKED AT COMMIT TIME. Holding the lock at the start is not the same
-   * claim as holding it at the moment of writing, and this is the check that turns any residual
-   * loss of the lock into a refusal rather than a lost update.
-   */
+  /** Every mutation is one exclusive read-modify-write. No caller may skip it. */
   function withLock (fn) {
     fs.mkdirSync(path.dirname(file), { recursive: true })
     const token = acquireLock()
@@ -622,4 +548,4 @@ function createWisdomStore (options = {}) {
   }
 }
 
-module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb, assertPersistedShape, LOCK_STALE_MS, unreadable }
+module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb, assertPersistedShape, unreadable }
