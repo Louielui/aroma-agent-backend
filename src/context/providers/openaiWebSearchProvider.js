@@ -131,6 +131,49 @@ function stripCitationMarkers (s) {
 }
 
 /**
+ * ⛔ A MARKER OWNS ITS CLAIM, NOT EVERYTHING BEHIND IT.
+ *
+ * The claim for a marker-style citation is 「the text since the last marker」 — which is far too
+ * much when there WAS no last marker. A paragraph the model wrote from its own memory, sitting
+ * above the first cited sentence, was handed to that source as evidence. The retrieval
+ * instruction forbids unsourced prose; it does not prevent it, and a parser that trusts an
+ * instruction is not a fence.
+ *
+ * So only the LAST sentence of the region is attributable. The boundary is STRUCTURAL — sentence
+ * -ending punctuation followed by whitespace, or a line break. ⛔ NO SEMANTICS AND NO NLP: this
+ * cannot read a sentence, it can only see where one ends.
+ *
+ * ⛔ THE `(?=\s)` IS LOAD-BEARING. Without it 「**$16.00 per hour**」 splits at the decimal point
+ * and the claim becomes 「00 per hour**.」 — a number silently rewritten by a parser.
+ *
+ * A region with no internal boundary is ONE unbroken run of text, so it is the claim entire.
+ * That is the honest reading, and it is also why the residual gap is stated rather than hidden:
+ * an uncited lead written with no sentence-ending punctuation at all cannot be separated from
+ * the claim by structure. Detecting that would require judging meaning, which this layer must
+ * not do.
+ *
+ * The cost is deliberate: a marker supporting several sentences now contributes only its last.
+ * Under-reporting a source is recoverable; attributing unsourced prose to one is not.
+ */
+const SENTENCE_BOUNDARY = /[.!?…](?=\s)|[。！？]|\n/g
+
+function lastClaimIn (region) {
+  const r = String(region == null ? '' : region).replace(/\s+$/, '')
+  if (!r) return ''
+  let cut = -1
+  SENTENCE_BOUNDARY.lastIndex = 0
+  let m
+  while ((m = SENTENCE_BOUNDARY.exec(r)) !== null) {
+    const end = m.index + m[0].length
+    // ⛔ THE CLAIM'S OWN FULL STOP IS NOT A BOUNDARY. A CJK 「。」 needs no trailing space, so
+    // without this the terminator at the very end of the region cuts the whole sentence away
+    // and the row silently becomes empty.
+    if (end < r.length) cut = end
+  }
+  return (cut >= 0 ? r.slice(cut) : r).trim()
+}
+
+/**
  * ⛔ IS THIS SPAN THE FACT, OR JUST THE FOOTNOTE?
  *
  * Measured against the live provider on 2026-08-09, `url_citation` does NOT delimit the claim —
@@ -258,9 +301,16 @@ function extractResults (payload) {
           const span = text.slice(a.start_index, a.end_index).trim()
           // ⛔ THE REGION IS ACCOUNTED FOR EVEN WHEN IT YIELDS NOTHING. Advancing the cursor is
           // what stops the next marker inheriting this citation's text.
+          // ⛔ ONLY THE LAST SENTENCE OF THE REGION. Everything earlier in it is text no citation
+          // has claimed — the model's own preamble, or an aside between two sources.
           const claim = !span
             ? ''
-            : (isCitationMarker(span) ? stripCitationMarkers(text.slice(cursor, a.start_index)) : stripCitationMarkers(span))
+            : (isCitationMarker(span)
+                // ⛔ SEGMENT ON THE RAW REGION, THEN STRIP. stripCitationMarkers collapses all
+                // whitespace, so stripping first would erase the line breaks that separate one
+                // stated fact from the next.
+                ? stripCitationMarkers(lastClaimIn(text.slice(cursor, a.start_index)))
+                : stripCitationMarkers(span))
           cursor = Math.max(cursor, a.end_index)
 
           // ⛔ A MARKER WITH NOTHING IN FRONT OF IT IS STILL NOT A FACT, and a citation with no
@@ -417,5 +467,6 @@ module.exports = {
   citedSpan,
   isCitationMarker,
   stripCitationMarkers,
+  lastClaimIn,
   reasonForStatus
 }

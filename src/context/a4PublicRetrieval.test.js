@@ -26,7 +26,7 @@ const { createReadConnector } = require('./readConnector')
 const { createPublicKnowledgeReadAdapter, PUBLIC_ENTITY_TYPE } = require('./adapters/publicKnowledgeRead')
 const {
   createOpenAIWebSearchProvider, PROVIDER_ID, DEFAULT_MODEL, DEFAULT_EFFORT, RESPONSES_URL,
-  toUserLocation, extractResults, citedSpan, isCitationMarker, stripCitationMarkers, reasonForStatus
+  toUserLocation, extractResults, citedSpan, isCitationMarker, stripCitationMarkers, lastClaimIn, reasonForStatus
 } = require('./providers/openaiWebSearchProvider')
 const {
   SEARCH_STATUS, UNAVAILABLE_REASON, CONTENT_KIND, isAttributable, hasAttributableContent,
@@ -376,6 +376,8 @@ function markerText (segments, opts = {}) {
   const marks = []
   for (const s of segments) {
     if (text && !/\s$/.test(text)) text += ' '
+    // Uncited prose sitting between the previous marker and this claim.
+    if (s.before) text += s.before + ' '
     text += s.claim + ' '
     const start = text.length
     text += '([' + s.host + '](' + s.url + '))'
@@ -510,6 +512,93 @@ test('*** G/H/I — overlap stops, order does not matter, one page may carry two
     assert.equal(out.results.length, 1)
     assert.equal(out.results[0].content, CLAIM_A + ' … ' + CLAIM_B)
   }
+})
+
+/* ═══ UNCITED LEAD — A MARKER OWNS ITS CLAIM, NOT THE PAGE ═════════════
+ *
+ * ⛔ 「THE TEXT SINCE THE LAST MARKER」 IS TOO MUCH WHEN THERE WAS NO LAST MARKER.
+ *
+ * The fence in a7748bd stopped a claim reaching back across a BROKEN citation. It did not stop
+ * the FIRST citation reaching back to character zero — so a paragraph the model wrote from its
+ * own memory, sitting above the first cited sentence, was handed to that source as evidence.
+ * The retrieval instruction forbids unsourced prose; it does not prevent it, and a parser that
+ * trusts the instruction is not a fence.
+ *
+ * The claim is the LAST sentence before the marker, bounded structurally — sentence-ending
+ * punctuation followed by whitespace, or a line break. No semantics, no NLP.
+ */
+const UNCITED_LEAD = 'Here is a summary I put together from what I already knew.'
+
+test('*** 1 — an uncited lead before the FIRST marker never becomes that source\'s evidence ***', async () => {
+  const { text, marks } = markerText([{ claim: CLAIM_A, host: HOST_A, url: URL_A }], { lead: UNCITED_LEAD + ' ' })
+  const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, [ann(marks[0])])))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(JSON.stringify(out.results).includes(UNCITED_LEAD), false,
+    '⛔ prose no source was cited for was attributed to a source')
+  // The claim is isolated by structure alone, so it survives.
+  assert.equal(contentFor(out.results, URL_A), CLAIM_A)
+})
+
+test('*** 2 — uncited lead → good → good: each source keeps only its own sentence ***', async () => {
+  const { text, marks } = markerText([
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B }
+  ], { lead: UNCITED_LEAD + ' ' })
+  const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, marks.map((m) => ann(m)))))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(JSON.stringify(out.results).includes(UNCITED_LEAD), false)
+  assert.equal(contentFor(out.results, URL_A), CLAIM_A)
+  assert.equal(contentFor(out.results, URL_B), CLAIM_B)
+})
+
+test('*** 3 — a blank / newline lead is not content, and does not corrupt the claim ***', async () => {
+  for (const lead of ['\n\n', '   ', '\n \n\t']) {
+    const { text, marks } = markerText([{ claim: CLAIM_A, host: HOST_A, url: URL_A }], { lead })
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, [ann(marks[0])])))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(contentFor(out.results, URL_A), CLAIM_A, 'lead=' + JSON.stringify(lead))
+  }
+})
+
+test('*** 6 — a substantive uncited sentence BETWEEN two citations is inherited by neither ***', async () => {
+  const INTERJECTION = 'In my view this trend will continue for some time.'
+  const { text, marks } = markerText([
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B, before: INTERJECTION }
+  ])
+  const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, marks.map((m) => ann(m)))))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(JSON.stringify(out.results).includes(INTERJECTION), false,
+    '⛔ an uncited opinion was attached to the later source')
+  assert.equal(contentFor(out.results, URL_A), CLAIM_A)
+  assert.equal(contentFor(out.results, URL_B), CLAIM_B)
+})
+
+test('*** lastClaimIn segments on STRUCTURE, and never inside a number ***', () => {
+  // ⛔ THE TRAP THIS EXISTS TO AVOID: splitting at the decimal point would hand the answer layer
+  // 「00 per hour**.」 — a figure silently rewritten by a parser.
+  assert.equal(lastClaimIn('Manitoba pays **$16.00 per hour**.'), 'Manitoba pays **$16.00 per hour**.')
+  assert.equal(lastClaimIn('Lead sentence. The claim sentence.'), 'The claim sentence.')
+  assert.equal(lastClaimIn('Lead line\nThe claim line'), 'The claim line')
+  // ⛔ CJK NEEDS NO TRAILING SPACE, so 「。」 is a boundary on its own — and the claim's OWN final
+  // 「。」 must not be one, or the row would come back empty.
+  assert.equal(lastClaimIn('前段。呢句先係重點。'), '呢句先係重點。')
+  assert.equal(lastClaimIn('政策利率目標為 2.25%。'), '政策利率目標為 2.25%。')
+  assert.equal(lastClaimIn('唔關事嘅開場白。最低工資係 **$16.00**。'), '最低工資係 **$16.00**。')
+  assert.equal(lastClaimIn('One unbroken run with no boundary at all'), 'One unbroken run with no boundary at all')
+  assert.equal(lastClaimIn('   \n  '), '')
+  assert.equal(lastClaimIn(''), '')
+  assert.equal(lastClaimIn(null), '')
+})
+
+test('*** the deliberate cost: one marker over several sentences keeps only the last ***', async () => {
+  // Under-reporting a source is recoverable. Attributing prose nobody sourced is not — and from
+  // the parser's side those two cases are the same shape, so it must choose the safe one.
+  const { text, marks } = markerText([{ claim: 'First supporting sentence. ' + CLAIM_A, host: HOST_A, url: URL_A }])
+  const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, [ann(marks[0])])))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.results[0].content, CLAIM_A)
+  assert.equal(out.results[0].content.includes('First supporting sentence'), false)
 })
 
 test('*** J — a poisoned content part does not poison a separate, sound one ***', async () => {
