@@ -3017,3 +3017,81 @@ evidence a relationship might exist. A test name is evidence a property was meas
 4. **A pass count is not a coverage statement.** 「19 green」 answers how many questions were
    asked, never which ones. Before trusting a suite about a property, name the layer each test
    actually ran at — the list is short, and writing it is what exposes the empty door.
+
+---
+
+# HR-58 — THE DUPLICATE WAS WORSE THAN THE ORIGINAL, AND ONLY SIDE BY SIDE DID THAT SHOW
+
+> **Owner: 「filtersApplied: null versus [] is a distinction I had to be taught; you rewrote past
+> it in Chinese prose.」**
+
+The companion to HR-57. That one is about a fence on one of two doors. This one is about building
+a second door because you never looked for the first.
+
+## THE TWO, SIDE BY SIDE
+
+The system had already answered 「did something filter these rows, and do we know?」:
+
+```js
+// aromaSystemRead.js — A1, Owner review, correction 3
+filtersApplied: null,
+// ⛔ NULL, NOT []. An empty array asserts 「known to have NO filters」 — but the server applies
+// predicates the reader cannot authoritatively enumerate. Unknown.
+rowShape: { hasLocation: false, ... }
+```
+
+I wrote this instead, in `browseResult.js`, without looking:
+
+```js
+locationDependent: true          // a static flag on the site registry
+'（未揀分店，價格可能因店而異）'   // a sentence appended to the answer
+```
+
+## WHY THE DUPLICATE IS WORSE, NOT MERELY REDUNDANT
+
+**1. It is a property of the SITE, not of the READ.** `locationDependent` is decided once, when
+someone writes the registry entry. `filtersApplied` is a fact about the read that actually
+happened. A static flag cannot be wrong about a particular run, because it was never about one.
+
+**2. It is a boolean where the truth has three states.** `[]` means 「known to have no filters」,
+a list means 「these filters, known」, and `null` means 「unknown」. A boolean has no way to say
+unknown — it forces a claim in one direction or the other. **And unknown is exactly the state a
+browse run is in**: the site applies a store predicate we did not choose and cannot enumerate.
+The one state that mattered was the one state the duplicate could not represent.
+
+**3. And the one that makes it a downgrade rather than a copy: it is PROSE.** `filtersApplied:
+null` is a field. Code downstream can branch on it, a gate can refuse on it, a test can assert
+it. 「未揀分店，價格可能因店而異」 is a caveat inside a rendered sentence, checkable only by a
+human who reads Chinese.
+
+> **A second vocabulary does not just duplicate the first. It converts a machine-checkable fact
+> into an uncheckable sentence — and then the caveat travels in the one medium the system has
+> already recorded that it cannot verify.**
+
+`evidenceGate.js` says of its own claim parameter: 「a gate that reads prose is a gate that can be
+talked past.」 I moved a structural fact INTO prose while that sentence was in the repository.
+
+## WHY I COULD NOT SEE IT
+
+I implemented the requirement literally. The GO said 「store/location context when price is
+store-dependent」, and `locationDependent` + a caveat is a faithful, working rendering of that
+sentence. Every test I wrote for it passed. Read on its own, the module is fine.
+
+**Nothing about writing it prompted the question 「what does this codebase already call this?」**
+The requirement was in front of me and the existing field was three directories away, and the
+side-by-side comparison that makes the defect obvious in ten seconds is a comparison nobody
+performs unless they already suspect the answer.
+
+## THE RULE
+
+1. **Before inventing a field that describes the trustworthiness of evidence, find what the
+   codebase already calls it.** The A-line exists so 「unknown」 has one definition; a new name for
+   it is a fork of the definition, whatever the intent.
+2. **Satisfying the requirement is not evidence you did not duplicate.** A literal, passing,
+   well-tested implementation of a spec sentence is the normal way a second vocabulary enters —
+   it never arrives looking like a mistake.
+3. **A caveat belongs in a FIELD, and the renderer reads the field.** If a limitation is only
+   expressible as a sentence, it cannot be gated, tested, or counted, and it will be dropped by
+   the first summariser that touches it.
+4. **Three states, not two, whenever the answer can be unknown.** A boolean forces a claim; the
+   claim it forces is the one nobody checked.
