@@ -175,6 +175,14 @@ function extractResults (payload) {
   const consulted = new Map()
   // url -> { url, title, spans:[], publishedAt } built from CITATIONS only
   const cited = new Map()
+  /**
+   * ⛔ EVERY SOURCE THE SEARCH SURFACED, INCLUDING THE ONES WE REFUSED TO TRUST.
+   * This is the only thing separating 「the world has nothing」 from 「the world answered and we
+   * could not read it」. A turn whose citations were all fenced off has seen sources; calling
+   * that LIVE_ZERO would report an empty public record on the strength of our own parser
+   * giving up.
+   */
+  const seenUrls = new Set()
 
   for (const item of output) {
     if (!item || typeof item !== 'object') continue
@@ -191,33 +199,73 @@ function extractResults (payload) {
           title: s.title || null,
           publishedAt: s.published_at || s.publishedAt || null
         })
+        seenUrls.add(url)
       }
       continue
     }
 
     if (item.type === 'message') {
       const content = Array.isArray(item.content) ? item.content : []
+      // ⛔ ONE CURSOR AND ONE FENCE PER CONTENT PART. Offsets are relative to their own text;
+      // carrying either across parts would segment one part with another's positions.
       for (const c of content) {
         const text = c && typeof c.text === 'string' ? c.text : ''
-        const anns = (Array.isArray(c && c.annotations) ? c.annotations : [])
-          .filter((a) => a && a.type === 'url_citation' && typeof a.url === 'string' && a.url)
+        const citations = (Array.isArray(c && c.annotations) ? c.annotations : [])
+          .filter((a) => a && a.type === 'url_citation')
+        // Counted BEFORE any trust judgement: a citation we then fence off is still a source
+        // the search surfaced, and that is what keeps a fenced turn out of LIVE_ZERO.
+        for (const a of citations) if (typeof a.url === 'string' && a.url) seenUrls.add(a.url)
+
+        const inRange = (n) => Number.isInteger(n) && n >= 0 && n <= text.length
+        const wellFormed = (a) => inRange(a.start_index) && inRange(a.end_index) && a.end_index > a.start_index
+
+        /**
+         * ⛔ WHERE DOES TRUST RUN OUT?
+         *
+         * A claim is 「the text since the last marker」, so skipping a malformed citation without
+         * fencing it lets the NEXT valid marker reach backwards and swallow a sentence that
+         * belonged to the malformed one — or to nobody. Fail-closed on one citation is worthless
+         * if its text simply lands on the next source.
+         *
+         * So a malformed citation ends trust at the earliest position we can honestly place it:
+         *   · its `start_index`, when that alone is a real offset into this text
+         *   · position 0 otherwise — an annotation we cannot locate could govern ANY region, so
+         *     no part of this content part can be segmented safely.
+         *
+         * ⛔ NOTHING IS GUESSED. An out-of-range index is not quietly read as 「the end」, and a
+         * malformed span's text is never reassigned to another URL. Claims already closed off
+         * BEFORE the fence stay — they were segmented across trustworthy ground.
+         */
+        let fence = Infinity
+        for (const a of citations) {
+          if (wellFormed(a)) continue
+          fence = inRange(a.start_index) ? Math.min(fence, a.start_index) : 0
+          if (fence === 0) break
+        }
+
         // In document order, so 「the text before this marker」 means the text since the LAST
         // marker — not the whole answer replayed under every citation.
-        const ordered = anns.slice().sort((x, y) =>
-          (Number.isInteger(x.start_index) ? x.start_index : Infinity) -
-          (Number.isInteger(y.start_index) ? y.start_index : Infinity))
+        const ordered = citations.filter(wellFormed).sort((x, y) => x.start_index - y.start_index)
 
         let cursor = 0
         for (const a of ordered) {
-          const span = citedSpan(text, a)
-          if (!span) continue // fail closed — a citation we cannot locate carries no claim
-          const claim = isCitationMarker(span)
-            ? stripCitationMarkers(text.slice(cursor, a.start_index))
-            : stripCitationMarkers(span)
+          // At or past the fence: the path to this citation crosses unreadable ground.
+          if (a.end_index > fence) break
+          // ⛔ OVERLAPPING CITATIONS CANNOT BE SEGMENTED. One region cannot be two sources'
+          // evidence, and 「whichever sorted first wins」 is arbitration, not attribution.
+          if (a.start_index < cursor) break
+
+          const span = text.slice(a.start_index, a.end_index).trim()
+          // ⛔ THE REGION IS ACCOUNTED FOR EVEN WHEN IT YIELDS NOTHING. Advancing the cursor is
+          // what stops the next marker inheriting this citation's text.
+          const claim = !span
+            ? ''
+            : (isCitationMarker(span) ? stripCitationMarkers(text.slice(cursor, a.start_index)) : stripCitationMarkers(span))
           cursor = Math.max(cursor, a.end_index)
-          // ⛔ A MARKER WITH NOTHING IN FRONT OF IT IS STILL NOT A FACT. Fail closed rather than
-          // reach further back and attach some other source's sentence to this URL.
-          if (!claim) continue
+
+          // ⛔ A MARKER WITH NOTHING IN FRONT OF IT IS STILL NOT A FACT, and a citation with no
+          // URL cannot own one — but both have now fenced their region, which is the point.
+          if (!claim || typeof a.url !== 'string' || !a.url) continue
           const row = cited.get(a.url) || { url: a.url, title: null, spans: [] }
           if (!row.title && a.title) row.title = a.title
           // Two citations to one page are two claims from that page, not a duplicate row.
@@ -244,7 +292,7 @@ function extractResults (payload) {
 
   // Everything the search surfaced, cited or not. Used ONLY to tell 「found nothing」 apart from
   // 「found pages but could not attribute any text to them」.
-  const sourcesSeen = new Set([...consulted.keys(), ...cited.keys()]).size
+  const sourcesSeen = seenUrls.size
 
   return { results, webSearchCalls, searchPerformed, sourcesSeen }
 }

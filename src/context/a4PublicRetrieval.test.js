@@ -254,8 +254,7 @@ test('*** F — invalid citation indices FAIL CLOSED, with no whole-text fallbac
     assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT, label)
     assert.equal(JSON.stringify(out).includes(CLAIM_B), false, '⛔ ' + label + ': whole text was substituted')
   }
-  // One sound citation beside a broken one keeps the sound one and drops the broken one.
-  const { provider } = providerWith(async () => jsonRes(200, {
+  const beside = (badAnn) => providerWith(async () => jsonRes(200, {
     output: [
       { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [] } },
       {
@@ -265,15 +264,32 @@ test('*** F — invalid citation indices FAIL CLOSED, with no whole-text fallbac
           text,
           annotations: [
             { type: 'url_citation', url: 'https://good/1', start_index: 0, end_index: CLAIM_A.length },
-            { type: 'url_citation', url: 'https://bad/2', start_index: 999, end_index: 1200 }
+            badAnn
           ]
         }]
       }
     ]
-  }))
-  const out = await provider.search({ query: 'q' })
-  assert.deepEqual(out.results.map((r) => r.url), ['https://good/1'])
-  assert.equal(out.results[0].content, CLAIM_A)
+  })).provider
+
+  // ⛔ AN UNLOCATABLE BROKEN CITATION POISONS THE WHOLE CONTENT PART — and this assertion is a
+  // DELIBERATE TIGHTENING. It used to keep the sound citation beside it. But `start_index: 999`
+  // in a 137-character text does not mean 「at the end」; it means we do not know what region
+  // this source governs, and it could be the very span the sound citation claims. Reading the
+  // out-of-range number as 「after everything」 would be a guess, and the fence rule forbids
+  // guessing precisely where a guess is most tempting.
+  const unlocatable = await beside({ type: 'url_citation', url: 'https://bad/2', start_index: 999, end_index: 1200 })
+    .search({ query: 'q' })
+  assert.deepEqual(unlocatable.results, [])
+  assert.equal(unlocatable.status, SEARCH_STATUS.UNAVAILABLE)
+  assert.equal(unlocatable.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT,
+    '⛔ and it is NOT live_zero — the search did surface sources')
+
+  // ⛔ BUT A LOCATABLE ONE ONLY FENCES WHAT FOLLOWS IT. Claims already closed off across
+  // trustworthy ground survive, so one bad annotation does not discard a whole good answer.
+  const locatable = await beside({ type: 'url_citation', url: 'https://bad/2', start_index: text.length - 5, end_index: 2 })
+    .search({ query: 'q' })
+  assert.deepEqual(locatable.results.map((r) => r.url), ['https://good/1'])
+  assert.equal(locatable.results[0].content, CLAIM_A)
 })
 
 /**
@@ -336,6 +352,199 @@ test('*** ⛔ a marker with no claim in front of it fails closed ***', async () 
   const out = await provider.search({ query: 'q' })
   assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE, '⛔ a bare footnote is not evidence')
   assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT)
+})
+
+/* ═══ CITATION SEGMENTATION — MALFORMED ORDER MATRIX ═══════════════════
+ *
+ * ⛔ AN INVALID CITATION MUST CREATE AN ATTRIBUTION BOUNDARY.
+ *
+ * The claim for a marker-style citation is 「the text since the last marker」. A citation that
+ * was SKIPPED for bad indices used to leave the cursor where it was, so the NEXT valid marker
+ * reached backwards across it and swallowed a sentence that belonged to another source — or to
+ * no source at all. Fail-closed on one citation is worthless if the failure just hands its text
+ * to the next one.
+ */
+
+const HOST_A = 'a.example'
+const HOST_B = 'b.example'
+const URL_A = 'https://a.example/1'
+const URL_B = 'https://b.example/2'
+
+/** Build marker-style text the way the live provider writes it, with REAL offsets. */
+function markerText (segments, opts = {}) {
+  let text = opts.lead == null ? '' : opts.lead
+  const marks = []
+  for (const s of segments) {
+    if (text && !/\s$/.test(text)) text += ' '
+    text += s.claim + ' '
+    const start = text.length
+    text += '([' + s.host + '](' + s.url + '))'
+    marks.push({ url: s.url, start, end: text.length })
+  }
+  return { text, marks }
+}
+const markerPayload = (text, annotations, sources) => ({
+  output: [
+    { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: sources || [] } },
+    { type: 'message', status: 'completed', content: [{ type: 'output_text', text, annotations }] }
+  ]
+})
+const ann = (m, over = {}) => Object.assign({ type: 'url_citation', url: m.url, start_index: m.start, end_index: m.end }, over)
+const contentFor = (results, url) => (results.find((r) => r.url === url) || { content: '' }).content
+
+test('*** C · ⛔ BLOCKER — a broken citation must not hand its text to the next source ***', async () => {
+  const { text, marks } = markerText([
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B }
+  ])
+  // A is malformed (inverted indices). B is a perfectly good marker citation.
+  const payload = markerPayload(text, [
+    ann(marks[0], { start_index: 12, end_index: 4 }),
+    ann(marks[1])
+  ])
+  const { provider } = providerWith(async () => jsonRes(200, payload))
+  const out = await provider.search({ query: 'q' })
+
+  // ⛔ THE REGRESSION ITSELF: A's sentence may never appear under B's URL.
+  assert.equal(contentFor(out.results, URL_B).includes(CLAIM_A), false,
+    '⛔ CLAIM_A bled across the broken citation into URL_B')
+  assert.equal(JSON.stringify(out.results).includes(CLAIM_A), false,
+    '⛔ text governed by a broken citation became evidence somewhere')
+  // Nothing after the boundary is trustworthy, so the read fails closed.
+  assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE)
+  assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT)
+})
+
+test('*** E · an uncited lead before a broken citation reaches no source ***', async () => {
+  const LEAD = 'Here is a summary I put together from memory.'
+  const { text, marks } = markerText([
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B }
+  ], { lead: LEAD + ' ' })
+  const payload = markerPayload(text, [
+    ann(marks[0], { start_index: 3, end_index: 1 }), // malformed, locatable at 3
+    ann(marks[1])
+  ])
+  const { provider } = providerWith(async () => jsonRes(200, payload))
+  const out = await provider.search({ query: 'q' })
+  const blob = JSON.stringify(out.results)
+  assert.equal(blob.includes(LEAD), false, '⛔ uncited lead became evidence')
+  assert.equal(blob.includes(CLAIM_A), false)
+  assert.equal(blob.includes(CLAIM_B), false, '⛔ B reached back across the broken citation')
+})
+
+test('*** A/B/D — good→good keeps both; good→broken keeps the good; broken→good→good keeps none ***', async () => {
+  const three = [
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B },
+    { claim: 'A third statement with its own source.', host: 'c.example', url: 'https://c.example/3' }
+  ]
+
+  // A — good → good. Both survive, each with its OWN sentence.
+  {
+    const { text, marks } = markerText(three.slice(0, 2))
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, marks.map((m) => ann(m)))))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(out.status, SEARCH_STATUS.LIVE)
+    assert.equal(contentFor(out.results, URL_A), CLAIM_A)
+    assert.equal(contentFor(out.results, URL_B), CLAIM_B, '⛔ B must be its own sentence only')
+  }
+
+  // B — good → broken. The good one is BEFORE the boundary and is kept.
+  {
+    const { text, marks } = markerText(three.slice(0, 2))
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text,
+      [ann(marks[0]), ann(marks[1], { start_index: marks[1].start, end_index: marks[1].start - 5 })])))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(out.status, SEARCH_STATUS.LIVE)
+    assert.deepEqual(out.results.map((r) => r.url), [URL_A])
+    assert.equal(out.results[0].content, CLAIM_A)
+  }
+
+  // D — broken → good → good. The boundary is early, so nothing after it is trustworthy.
+  {
+    const { text, marks } = markerText(three)
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text,
+      [ann(marks[0], { start_index: 2, end_index: 1 }), ann(marks[1]), ann(marks[2])])))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE)
+    assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT)
+  }
+})
+
+test('*** G/H/I — overlap stops, order does not matter, one page may carry two claims ***', async () => {
+  const two = [
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B }
+  ]
+
+  // H — annotations arriving out of document order must give the SAME answer.
+  {
+    const { text, marks } = markerText(two)
+    const forward = providerWith(async () => jsonRes(200, markerPayload(text, marks.map((m) => ann(m)))))
+    const reversed = providerWith(async () => jsonRes(200, markerPayload(text, marks.slice().reverse().map((m) => ann(m)))))
+    const a = await forward.provider.search({ query: 'q' })
+    const b = await reversed.provider.search({ query: 'q' })
+    assert.deepEqual(b.results.map((r) => [r.url, r.content]).sort(), a.results.map((r) => [r.url, r.content]).sort())
+    assert.equal(contentFor(a.results, URL_B), CLAIM_B)
+  }
+
+  // G — a citation that starts before the running cursor cannot be segmented; stop there.
+  {
+    const { text, marks } = markerText(two)
+    const overlapping = ann(marks[1], { start_index: Math.max(0, marks[0].end - 3) })
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, [ann(marks[0]), overlapping])))
+    const out = await provider.search({ query: 'q' })
+    assert.deepEqual(out.results.map((r) => r.url), [URL_A], '⛔ an overlapping citation produced a claim')
+    assert.equal(out.results[0].content, CLAIM_A)
+  }
+
+  // I — two citations to ONE page are two claims, joined and visibly separated.
+  {
+    const { text, marks } = markerText([
+      { claim: CLAIM_A, host: HOST_A, url: URL_A },
+      { claim: CLAIM_B, host: HOST_A, url: URL_A }
+    ])
+    const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, marks.map((m) => ann(m)))))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(out.results.length, 1)
+    assert.equal(out.results[0].content, CLAIM_A + ' … ' + CLAIM_B)
+  }
+})
+
+test('*** J — a poisoned content part does not poison a separate, sound one ***', async () => {
+  const bad = markerText([{ claim: CLAIM_A, host: HOST_A, url: URL_A }])
+  const good = markerText([{ claim: CLAIM_B, host: HOST_B, url: URL_B }])
+  const { provider } = providerWith(async () => jsonRes(200, {
+    output: [
+      { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [] } },
+      {
+        type: 'message',
+        status: 'completed',
+        content: [
+          { type: 'output_text', text: bad.text, annotations: [ann(bad.marks[0], { start_index: null, end_index: null })] },
+          { type: 'output_text', text: good.text, annotations: [ann(good.marks[0])] }
+        ]
+      }
+    ]
+  }))
+  const out = await provider.search({ query: 'q' })
+  assert.deepEqual(out.results.map((r) => r.url), [URL_B], 'each content part carries its own cursor and its own fence')
+  assert.equal(out.results[0].content, CLAIM_B)
+  assert.equal(JSON.stringify(out.results).includes(CLAIM_A), false)
+})
+
+test('*** a citation with NO url still fences the region it governs ***', async () => {
+  // It cannot produce a row, but its text is spoken for — the next marker must not inherit it.
+  const { text, marks } = markerText([
+    { claim: CLAIM_A, host: HOST_A, url: URL_A },
+    { claim: CLAIM_B, host: HOST_B, url: URL_B }
+  ])
+  const urlless = Object.assign(ann(marks[0]), { url: undefined })
+  const { provider } = providerWith(async () => jsonRes(200, markerPayload(text, [urlless, ann(marks[1])])))
+  const out = await provider.search({ query: 'q' })
+  assert.deepEqual(out.results.map((r) => r.url), [URL_B])
+  assert.equal(out.results[0].content, CLAIM_B, '⛔ the url-less citation\'s sentence was inherited')
 })
 
 test('*** stripCitationMarkers removes links and leaves the sentence intact ***', () => {
