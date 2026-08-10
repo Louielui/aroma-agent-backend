@@ -374,6 +374,95 @@ test('*** C — A4 ON, public ON: a clear public question reaches public_knowled
   })
 })
 
+/* ═══ A4-3B REPAIR — THE TWO DEFECTS THE LIVE CANARY FOUND ═════════════ */
+
+test('*** A4-3B/A — a public read SLOWER than the shared cap survives, end to end ***', async () => {
+  await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
+    // ⛔ THE EXACT CANARY FAILURE. The live retrieval answered fine and the connector killed it
+    // at 10s. Here the shared cap is 25ms and the provider answers at 60ms — the same shape,
+    // in milliseconds. It survives only because the adapter declares its own bound.
+    const t = webSearchTransport(async (u, i) => { await new Promise((r) => setTimeout(r, 60)); return okResponse() })
+    const { connector } = createLiveReadConnector({
+      env: process.env,
+      caps: { timeoutMs: 25 },
+      publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
+    })
+    const rows = await connector.read('public_knowledge', 'search', { query: 'wholesale beef index', freshness: 'current', location: null })
+    assert.equal(rows.trust, undefined, '⛔ the slow-but-healthy retrieval was cut off again')
+    assert.equal(rows.results.length, 1)
+    assert.equal(rows.results[0].content, CLAIM)
+
+    // The control: the same connector, the same speed, a source that declares nothing.
+    const { connector: c2 } = createLiveReadConnector({ env: process.env, caps: { timeoutMs: 25 } })
+    const slow = { source: 'aroma_system', methods: { async search () { await new Promise((r) => setTimeout(r, 60)); return [] } } }
+    c2.register(slow)
+    const inv = await c2.read('aroma_system', 'search', {})
+    assert.equal(inv.trust, 'unavailable', 'ordinary sources keep the shared cap')
+  })
+})
+
+test('*** A4-3B/B — the PLANNER owns the outbound query on a pure-public route turn ***', async () => {
+  await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
+    const t = webSearchTransport()
+    const model = scriptedModel({ envelopes: [READ(PUB, { query: 'RAW MODEL WORDS', freshness: 'current', location: null }), FINAL('市場睇咗。')] })
+    const roles = roleAdapters({
+      intent: { intent: 'public' },
+      plannedQuery: { decision: 'query', query: 'canada wholesale beef price', freshness: 'current', location: null }
+    })
+    const live = createLiveReadConnector({
+      env: process.env,
+      publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
+    })
+    await chat(chatApp({ model, verifierFactory: roles.factory, readDepsOverride: { connector: live.connector } }),
+      '加拿大牛肉批發價最近升咗幾多？')
+
+    assert.ok(roles.asked.some((a) => a.role === 'publicQueryPlanner'), '⛔ the planner was not consulted on a pure-public turn')
+    assert.equal(t.sent.length, 1, 'exactly one outbound retrieval')
+    assert.equal(t.sent[0].body.input, 'canada wholesale beef price', 'the planner\'s words are what travelled')
+    assert.equal(JSON.stringify(t.sent[0]).includes('RAW MODEL WORDS'), false, '⛔ the raw main-model query LEFT THE PROCESS')
+  })
+})
+
+test('*** A4-3B/B — a recovery-shaped public read (args=null) never sends an empty query ***', async () => {
+  await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
+    // ⛔ THE CANARY'S SECOND DEFECT, EXACTLY. The recovery worker returns a CAPABILITY and no
+    // args; the provider used to receive `query: ''` and answer MALFORMED without searching.
+    const t = webSearchTransport()
+    const model = scriptedModel({ envelopes: [READ(PUB, null), FINAL('市場睇咗。')] })
+    const roles = roleAdapters({
+      intent: { intent: 'public' },
+      plannedQuery: { decision: 'query', query: 'canada wholesale beef price', freshness: 'current', location: null }
+    })
+    const live = createLiveReadConnector({
+      env: process.env,
+      publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
+    })
+    await chat(chatApp({ model, verifierFactory: roles.factory, readDepsOverride: { connector: live.connector } }),
+      '加拿大牛肉批發價最近升咗幾多？')
+
+    assert.equal(t.sent.length, 1, '⛔ no search was issued at all')
+    assert.equal(t.sent[0].body.input, 'canada wholesale beef price')
+    assert.equal(String(t.sent[0].body.input || '').trim() === '', false, '⛔ an EMPTY query reached the vendor')
+  })
+})
+
+test('*** A4-3B/B — no planner means no public read, even with a valid raw query ***', async () => {
+  await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
+    const t = webSearchTransport()
+    const model = scriptedModel({ envelopes: [READ(PUB, { query: 'perfectly innocuous query', freshness: 'current', location: null }), FINAL('讀唔到。')] })
+    // The planner role refuses; every other role answers normally.
+    const roles = roleAdapters({ intent: { intent: 'public' }, plannedQuery: { decision: 'refuse' } })
+    const live = createLiveReadConnector({
+      env: process.env,
+      publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
+    })
+    await chat(chatApp({ model, verifierFactory: roles.factory, readDepsOverride: { connector: live.connector } }),
+      '加拿大牛肉批發價最近升咗幾多？')
+
+    assert.equal(t.sent.length, 0, '⛔ FELL OPEN — a raw query travelled when planning failed')
+  })
+})
+
 test('*** I — a provider error is unavailable, never a fabricated empty world ***', async () => {
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     for (const [label, impl] of [
