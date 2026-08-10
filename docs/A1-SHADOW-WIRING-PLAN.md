@@ -7,6 +7,26 @@ Written before any code, because the measurement design decides what gets built.
 
 ---
 
+## ⛔ READ THIS BEFORE CITING ANY NUMBER IN THIS REPORT
+
+> **Owner: 「The danger is not a blind gate. It is a blind gate with evidence.」**
+
+Before this phase, nobody could claim `checkEvidence` worked — there was nothing to point at. After
+a shadow report exists, somebody can, **with a chart**. A reassuring number produced by a detector
+that cannot see most of what it is looking for is a *stronger* argument for enforcement than having
+no data at all, and it will still be sitting in this repository long after the caveats have been
+forgotten.
+
+**So the failure mode this document is built against is not the gate staying blind. It is the gate
+staying blind and acquiring evidence.**
+
+Every number below is reported against a stated denominator, alongside what the detector was
+capable of seeing when it produced that number. **A block rate quoted from this document without
+its denominator and without the blind-spot review is a misuse of it**, and this paragraph exists so
+that misuse cannot be innocent.
+
+---
+
 ## 0. RECORDED ORDERING RULING
 
 > **Owner: 「Do not touch #37 while A1 is in shadow.」**
@@ -79,18 +99,67 @@ Without the inputs, a question asked later can only be answered by re-running pr
 
 ### Layer 1 — split the denominator
 
-The gate has an opinion only when a claim is universal AND the evidence is weak. So four numbers,
-never one:
+> **Owner: 「A turn with no descriptor at all — conversation, utility, a refusal — is neither
+> eligible nor ineligible. Excluded or counted, and which choice makes the 5% threshold
+> meaningful?」**
+
+**The question exposed a gap in the first draft of this design, and the gap is worth stating
+before the answer.** I had assumed 「no descriptor」 meant 「the gate is silent」. It does not.
+`checkEvidence`'s *first* verdict is:
+
+```js
+NO_EVIDENCE: 'a conclusion was drawn with no evidence attached'
+```
+
+So a turn with no descriptor splits in two, and the halves belong on opposite sides of the line:
 
 | | |
 |---|---|
-| **A** | turns evaluated |
-| **B** | turns whose evidence was **structurally weak** — derived from the descriptor alone, no prose read |
-| **C** | turns the gate had **any opinion** on (gate-eligible) |
+| **no descriptor, no factual claim** — greeting, clarifying question, refusal, 「而家幾點」 | genuinely outside. The gate has nothing to be right or wrong about. |
+| **no descriptor, but a factual claim was made** | **`NO_EVIDENCE` — gate-eligible by definition, and the most serious category there is.** An assertion with nothing behind it is the failure the gate was written for, and the first draft of this instrument would have filed it under 「not applicable」. |
+
+### The three populations
+
+| | in a denominator? |
+|---|---|
+| **OUT OF SCOPE** — no claim made | **No.** Counted and reported separately, never a denominator. |
+| **IN SCOPE, with descriptor** | Yes |
+| **IN SCOPE, no descriptor** (`NO_EVIDENCE`) | Yes |
+
+**The 5% threshold is against IN SCOPE**, and excluding OUT OF SCOPE is what makes it mean
+anything. Include conversation and the 「gate-eligible %」 becomes mostly a measure of **how much of
+that week was chat versus data questions**. A talkative week would make the gate look inert and a
+data-heavy week would make it look sharp — the number would move for reasons that have nothing to
+do with the gate, and the threshold would be measuring Chef's usage mix while appearing to measure
+the gate's competence.
+
+Then, within IN SCOPE, the four numbers:
+
+| | |
+|---|---|
+| **A** | in-scope turns |
+| **B** | of those, evidence **structurally weak** — derived from the descriptor alone, no prose read |
+| **C** | of those, turns the gate had **any opinion** on (gate-eligible) |
 | **D** | would-have-blocked, **reported against C** |
 
 「2% of all turns blocked」 and 「the gate had an opinion on 5% of turns and refused 40% of those」
 are the same data and opposite conclusions. Only the second is a statement about the gate.
+
+### ⚠ The scoping must be STRUCTURAL, or the circularity just moves
+
+If 「was a factual claim made?」 were decided by reading the sentence, the prose-reading problem
+would have been evicted from the numerator and re-admitted at the denominator — where it is harder
+to see. Scope is therefore read off the plan OBJECT, never the prose: `citesEvidence`, declared
+`sections`, `answerClaims`, `keptItemCount`.
+
+**Known blind spot of the INSTRUMENT — not of the gate.** A turn where the model declares
+`citesEvidence: false`, declares no sections, and then discusses inventory in fluent prose lands in
+OUT OF SCOPE and is invisible here. `answerPlan.js` already computes `sectionsNotDeclared` for
+exactly that contradiction; it is reported as its own number rather than folded into any rate.
+
+**And one result the naive denominator would have hidden:** if IN SCOPE is itself a small share of
+all turns, that is the finding — it would mean the entire A-line guards a narrow slice of what
+Aroma does, and that belongs in the report next to everything else.
 
 ### Layer 2 — the blind-spot set. This is the discriminator.
 
