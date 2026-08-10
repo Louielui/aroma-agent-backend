@@ -289,10 +289,17 @@ test('*** P7 — a failed plan creates NO EvidenceSet and no trust state ***', a
   })
 })
 
-test('*** P8 — with NO internal evidence, the main model query still travels unchanged ***', async () => {
-  // The re-author is triggered by internal evidence EXISTING, not by the public path itself.
-  // A pure-public turn has nothing to protect, and narrowing it would be a behaviour change
-  // nobody asked for — it would also spend a paid planner call on every public search.
+test('*** P7/P8 — with NO internal evidence the planner STILL owns the outbound words ***', async () => {
+  // ⛔ THIS ASSERTION IS INVERTED ON PURPOSE, AND THE PRODUCTION CANARY IS WHY.
+  //
+  // It used to read 「the main model query still travels unchanged」, on the reasoning that a
+  // pure-public turn has nothing private to protect. A4-3B showed that made the WRONG fact the
+  // trigger: with no internal evidence the planner never ran, so the recovery worker's public
+  // read — which carries a CAPABILITY and `args: null`, never args — reached the provider with
+  // an empty query and came back MALFORMED without searching. The same gap let the main
+  // model's own raw string leave on any turn that had read nothing internal first.
+  //
+  // The loop decides WHETHER the outside world is needed. It never decides WHAT WORDS GO.
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const p = recordingPlanner(SAFE_PLAN)
@@ -300,8 +307,54 @@ test('*** P8 — with NO internal evidence, the main model query still travels u
     await run('市場牛肉價點', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: p.fn })
 
     assert.equal(c.publicReads.length, 1)
-    assert.equal(c.publicReads[0].params.query, 'winnipeg beef market', 'unchanged — nothing internal to protect')
-    assert.equal(p.seen.length, 0, 'and no planner call was spent')
+    assert.equal(c.publicReads[0].params.query, SAFE_PLAN.query, '⛔ the raw main-model query travelled')
+    assert.equal(c.publicReads[0].params.query.includes('winnipeg beef market'), false)
+    assert.equal(p.seen.length, 1, 'the planner was consulted on a pure-public turn')
+  })
+})
+
+test('*** P2 — a recovery-shaped public read with args=null still reaches the provider ***', async () => {
+  // ⛔ THE EXACT A4-3B REGRESSION. The recovery worker routes `performRead({capability, args:
+  // null})` because args are not its business. Under the old rule that produced an empty query;
+  // under the new rule the planner supplies them, so the search actually happens.
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const p = recordingPlanner(SAFE_PLAN)
+    const a = scriptedAdapter('claude', [READ(PUB, null), FINAL('市場睇咗。')])
+    await run('市場牛肉價點', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: p.fn })
+
+    assert.equal(c.publicReads.length, 1, '⛔ the public read never reached the executor')
+    assert.equal(c.publicReads[0].params.query, SAFE_PLAN.query)
+    assert.equal(String(c.publicReads[0].params.query || '').trim() === '', false, '⛔ an EMPTY query left the process')
+  })
+})
+
+test('*** P3 — a pure-public turn with NO planner performs NO read, valid raw query or not ***', async () => {
+  // The raw query here is perfectly innocuous. It still does not travel: authority over the
+  // outbound words is not conditional on them looking safe.
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const a = scriptedAdapter('claude', [READ(PUB, { query: 'canada beef wholesale price', freshness: 'current', location: null }), FINAL('讀唔到。')])
+    await run('市場牛肉價點', a, { connector: c.connector, sources: BOTH })
+
+    assert.equal(c.publicReads.length, 0, '⛔ FELL OPEN — a raw query travelled with no planner')
+    assert.equal(c.internalReads.length, 0, 'and no other world was read in its place')
+  })
+})
+
+test('*** P8b — one plan per turn, even across two public attempts ***', async () => {
+  await withEnv({}, async () => {
+    const c = twoWorldConnector()
+    const p = recordingPlanner(SAFE_PLAN)
+    // Two public reads in one turn: the second is a different INSTANCE, so dedupe permits it.
+    const a = scriptedAdapter('claude', [
+      READ(PUB, { query: 'first raw', freshness: 'current', location: null }),
+      READ(PUB, null),
+      FINAL('睇咗。')
+    ])
+    await run('市場牛肉價點', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: p.fn })
+
+    assert.equal(p.seen.length, 1, '⛔ the turn cache must bill the planner once per Owner context')
   })
 })
 

@@ -358,7 +358,11 @@ test('*** H / I — verifier ALLOW lets the proposed world execute ***', async (
   await withEnv({}, async () => {
     const c = twoWorldConnector(); const v = verifierSpy('allow')
     const a = scriptedAdapter([READ(PUB, { query: 'market index', freshness: 'current', location: null }), FINAL('公開讀咗。')])
-    await run('市場最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('public') })
+    // ⛔ A4-3B: EVERY public read is now authored by the Owner-only planner, so a harness that
+    // drives one must supply it. Without a planner the correct outcome is 「no public read」,
+    // which would make this test silently about egress authority instead of the gate.
+    const planner = async () => ({ query: 'safe market words', freshness: 'current', location: null })
+    await run('市場最近點', a, { connector: c.connector, sources: BOTH, ambiguityVerifier: v.fn, sourceIntentResolver: SIR('public'), publicQueryPlanner: planner })
     assert.equal(c.publicReads.length, 1, 'the gate allowed, then the egress guard passed, then the executor ran')
     assert.equal(c.internalReads.length, 0)
   })

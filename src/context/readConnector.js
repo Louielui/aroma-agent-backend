@@ -21,6 +21,29 @@ const { readAccessEnabled } = require('./flags')
 
 const DEFAULT_CAPS = Object.freeze({ timeoutMs: 10000, maxResults: 25, maxItemBytes: 20000 })
 
+/**
+ * ⛔ ONE SOURCE MAY NEED LONGER, AND SAYS SO ITSELF.
+ *
+ * 10 seconds is right for an API that answers from a database. It is WRONG for a source whose
+ * read is a live web search: the A4-3B production canary watched a perfectly good public
+ * retrieval get killed at 10s by this connector while the provider was still inside its own
+ * 30s budget, and the turn reported 「讀唔到」 about a world that was answering fine.
+ *
+ * Raising the shared cap would have bought that one source a longer rope by lengthening
+ * everyone's. So an adapter declares its own bound instead, and the connector honours it —
+ * ⛔ WITHOUT LEARNING WHY. Nothing here knows what a web search is; it knows that a source may
+ * publish a number, and that a bad number is ignored.
+ */
+function timeoutForAdapter (adapter, caps) {
+  const declared = adapter && adapter.readTimeoutMs
+  // ⛔ A BAD DECLARATION FALLS BACK, IT NEVER DISABLES. 0, negative, NaN, Infinity and
+  // non-numbers all land on the shared cap — there is no value an adapter can publish that
+  // removes its own timeout.
+  return (typeof declared === 'number' && Number.isFinite(declared) && declared > 0)
+    ? declared
+    : caps.timeoutMs
+}
+
 // Wall 1: any method whose NAME looks like a mutation is refused at registration
 // and at call time. Read methods are named list*/get*/search*/read* only.
 const WRITE_RE = /^(create|update|delete|remove|send|post|put|patch|write|modify|move|share|insert|trash|batch|append|revoke|set|add|upload|import|export|copy|rename|drop|purge|clear|archive|label|unlabel|reply|forward|compose)/i
@@ -70,13 +93,21 @@ function createReadConnector (options = {}) {
     if (typeof fn !== 'function' || WRITE_RE.test(method)) return makeUnavailable({ source, reason: `unknown or forbidden read method '${method}'`, retrievedAt: asOf })
 
     let out
+    const timeoutMs = timeoutForAdapter(adapter, caps)
+    // ⛔ THE LOSING TIMER IS ALWAYS CLEARED. `Promise.race` settles, but the timer it lost to
+    // does not stop existing — and a 35-second public timeout left pending on every fast read
+    // keeps the event loop alive and delays process exit. The handle is held so `finally` can
+    // cancel it whichever branch wins.
+    let timer = null
     try {
       out = await Promise.race([
         Promise.resolve().then(() => fn(params)),
-        new Promise((_, reject) => setTimeout(() => reject(new Error(`timeout after ${caps.timeoutMs}ms`)), caps.timeoutMs))
+        new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(`timeout after ${timeoutMs}ms`)), timeoutMs) })
       ])
     } catch (e) {
       return makeUnavailable({ source, reason: `read failed: ${(e && e.message) || String(e)}`, retrievedAt: asOf })
+    } finally {
+      if (timer) clearTimeout(timer)
     }
 
     // AN ADAPTER MAY DESCRIBE ITS OWN READ. Returning `{ results, evidence }` instead of a
@@ -100,4 +131,4 @@ function createReadConnector (options = {}) {
   return { register, read, sources, hasWriteMethod, caps }
 }
 
-module.exports = { createReadConnector, DEFAULT_CAPS, WRITE_RE }
+module.exports = { createReadConnector, DEFAULT_CAPS, WRITE_RE, timeoutForAdapter }

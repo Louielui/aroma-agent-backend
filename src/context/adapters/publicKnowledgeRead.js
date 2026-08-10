@@ -12,10 +12,9 @@
  * pipeline applies unchanged: the connector's write refusal, the evidence envelope, trust
  * states, the Answer Plan's grounding checks.
  *
- * ⛔ IT IS STILL NOT REACHABLE BY DEFAULT. `public_knowledge` is deliberately absent from
- * liveClients' ALL_SOURCES, so production cannot construct it and no flag turns it on. This
- * adapter is reached only when a caller injects it, which keeps A4-2B a candidate rather than
- * a deployment.
+ * ⛔ IT IS STILL OFF BY DEFAULT — but governed rather than absent (A4-3A). liveClients builds
+ * it only when master READ_ACCESS, CONTEXT_PUBLIC_KNOWLEDGE, an API key AND A4 itself are all
+ * present, and every one of those defaults off.
  *
  * ⛔ AND THE QUERY IS NOT ITS BUSINESS. Whatever string arrives here was authored by the
  * Owner-only Public Query Egress Planner; this file never composes, rewrites or enriches it.
@@ -27,6 +26,21 @@ const { SEARCH_STATUS, logPublicSearch } = require('../providers/publicSearchPro
 
 /** Enough to answer, few enough that other sources still fit beside it in the block. */
 const MAX_RESULTS = 5
+
+/**
+ * ⛔ THIS SOURCE'S READ IS A LIVE WEB SEARCH, AND IT SAYS SO OUT LOUD.
+ *
+ * The connector's shared 10s cap is right for an API answering from a database and wrong here:
+ * the A4-3B production canary watched a healthy retrieval killed at 10s while the provider was
+ * still well inside its own 30s budget, and the Owner was told the outside world could not be
+ * read.
+ *
+ * ⛔ LONGER THAN THE PROVIDER'S OWN BOUND, DELIBERATELY. At 35s the provider's 30s abort always
+ * fires first, so a slow search fails with the reason it actually had — a timeout the provider
+ * classified — instead of being cut off by an outer stopwatch that knows nothing about it.
+ * The two numbers are ordered on purpose; they are not the same guard twice.
+ */
+const PUBLIC_READ_TIMEOUT_MS = 35000
 
 /**
  * ⛔ A PUBLIC ITEM IS NOT ONE OF THE RESTAURANT'S ENTITIES.
@@ -120,7 +134,14 @@ function createPublicKnowledgeReadAdapter (options = {}) {
     }
   }
 
-  return { source: 'public_knowledge', methods, ready: () => !!(provider && typeof provider.search === 'function') }
+  return {
+    source: 'public_knowledge',
+    methods,
+    // Declared as adapter metadata, honoured generically by the connector. Nothing in the
+    // connector learns what this source is; it only reads a number.
+    readTimeoutMs: PUBLIC_READ_TIMEOUT_MS,
+    ready: () => !!(provider && typeof provider.search === 'function')
+  }
 }
 
-module.exports = { createPublicKnowledgeReadAdapter, MAX_RESULTS, PUBLIC_ENTITY_TYPE }
+module.exports = { createPublicKnowledgeReadAdapter, MAX_RESULTS, PUBLIC_ENTITY_TYPE, PUBLIC_READ_TIMEOUT_MS }

@@ -1498,46 +1498,63 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // value; it cannot catch a paraphrase, and a guard that is decorative on paraphrase
           // is not a guard.
           //
-          // So once ANY internal evidence exists this turn, `readArgs` is DISCARDED UNREAD and
-          // the query is re-authored from a context that has never contained internal evidence
-          // (see publicQueryEgressPlanner.js). Contamination becomes impossible rather than
-          // undetected.
+          // So `readArgs` is DISCARDED UNREAD and the query is re-authored from a context that
+          // has never contained internal evidence (see publicQueryEgressPlanner.js).
+          // Contamination becomes impossible rather than undetected.
+          //
+          // ⛔ FOR EVERY PUBLIC READ — NOT ONLY AFTER INTERNAL EVIDENCE EXISTS.
+          //
+          // This used to be `if (internalValues.length > 0)`, which made 「has the model already
+          // seen something private?」 the trigger for owning the outbound words. The A4-3B
+          // production canary showed why that is the wrong question. On a PURE PUBLIC turn
+          // there is no internal evidence, so the planner never ran; the recovery worker then
+          // routed a public read with `args: null` — it returns a CAPABILITY, never args — and
+          // the provider received an empty query and answered MALFORMED without ever searching.
+          //
+          // The same gap admitted the main model's own raw string on any turn that happened to
+          // have read nothing internal first. Both are the same defect: the authority over what
+          // leaves the building was conditional on an unrelated fact.
+          //
+          // ⛔ THE LOOP DECIDES *WHETHER* THE OUTSIDE WORLD IS NEEDED. IT NEVER DECIDES *WHAT
+          // WORDS GO*. Raw readArgs are untrusted input on this path, always — not merely when
+          // they look dangerous, and not merely when something private has already been read.
           //
           // ⛔ AND IT FAILS CLOSED. No planner, a throw, a timeout, malformed output, an empty
           // query, no Owner text — every one means NO PUBLIC READ. It never reverts to the
           // main model's string, because that reversion IS the thing forbidden, and it would
           // be silent: the search would succeed and look entirely normal.
+          //
+          // Cost is unchanged: `createTurnPlanCache` keys on the Owner's own context, so a
+          // second public attempt in the same turn reuses the one plan — and a refusal is
+          // cached too, so a broken planner is asked once.
           // ══════════════════════════════════════════════════════════════════
-          if (internalValues.length > 0) {
-            const startedAt = Date.now()
-            const planned = await egressPlans.get({
-              plan: (readDeps && readDeps.publicQueryPlanner) || null,
-              message,
-              history
-            })
-            logEgressPlan({
-              requestId,
-              outcome: planned.outcome,
-              rawQueryDiscarded: true,
-              ownerMessageCount: ownerAuthoredContext(message, history).length,
-              durationMs: Date.now() - startedAt
-            })
-            if (!planned.ok) {
-              // A safe unavailable observation. No EvidenceSet, no perSource row, no trust
-              // state — nothing was read, so nothing is recorded as read.
-              return { capability, ok: false, error: 'PUBLIC_QUERY_UNAVAILABLE', summary: null }
-            }
-            outboundArgs = planned.args
+          const startedAt = Date.now()
+          const planned = await egressPlans.get({
+            plan: (readDeps && readDeps.publicQueryPlanner) || null,
+            message,
+            history
+          })
+          logEgressPlan({
+            requestId,
+            outcome: planned.outcome,
+            rawQueryDiscarded: true,
+            ownerMessageCount: ownerAuthoredContext(message, history).length,
+            durationMs: Date.now() - startedAt
+          })
+          if (!planned.ok) {
+            // A safe unavailable observation. No EvidenceSet, no perSource row, no trust
+            // state — nothing was read, so nothing is recorded as read.
+            return { capability, ok: false, error: 'PUBLIC_QUERY_UNAVAILABLE', summary: null }
           }
+          outboundArgs = planned.args
 
           // ⛔ THE SECOND FENCE, ON WHATEVER IS ACTUALLY ABOUT TO LEAVE.
           //
           // Kept deliberately after the re-author. The planner cannot have learned an internal
-          // value — it was never shown one — so on the MIXED path this should never fire, and a
-          // test asserts the safe query survives it. It stays because it is the only check that
-          // reads the FINAL string: it still covers the no-internal-evidence path where the
-          // main model's own query travels, and if a future edit ever leaked evidence into the
-          // planner's context, this is what turns that bug into a refusal instead of a send.
+          // value — it was never shown one — so this should never fire, and a test asserts the
+          // safe query survives it. It stays because it is the only check that reads the FINAL
+          // string: if a future edit ever leaked evidence into the planner's context, this is
+          // what turns that bug into a refusal instead of a send.
           if (wouldLeakInternalEvidence(outboundArgs, notFromOwner)) {
             return { capability, ok: false, error: 'PUBLIC_QUERY_EGRESS_BLOCKED', summary: null }
           }

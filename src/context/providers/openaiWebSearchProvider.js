@@ -460,6 +460,8 @@ module.exports = {
   PROVIDER_ID,
   DEFAULT_MODEL,
   DEFAULT_EFFORT,
+  // Exported so the read layer can PROVE the outer connector bound outlasts this one.
+  DEFAULT_TIMEOUT_MS,
   RETRIEVAL_INSTRUCTION,
   RESPONSES_URL,
   toUserLocation,

@@ -151,7 +151,7 @@ test('*** E2E 2 — CLEAR INTERNAL → internal only, public untouched ***', asy
 
 /* ═══ 3 — CLEAR PUBLIC ══════════════════════════════════════════════════ */
 
-test('*** E2E 3 — CLEAR PUBLIC → public only, and the model own query travels ***', async () => {
+test('*** E2E 3 — CLEAR PUBLIC → public only, and the PLANNER\'s query travels ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const v = verifier('allow')
@@ -161,9 +161,14 @@ test('*** E2E 3 — CLEAR PUBLIC → public only, and the model own query travel
 
     assert.equal(c.internalReads.length, 0)
     assert.equal(c.publicReads.length, 1)
-    // No internal evidence exists, so there is nothing to protect and no planner call is spent.
-    assert.equal(c.publicReads[0].params.query, 'canada beef market index')
-    assert.equal(p.calls.length, 0)
+    // ⛔ MIGRATED BY A4-3B. This used to read 「no internal evidence exists, so there is nothing
+    // to protect and no planner call is spent」. The production canary showed that made an
+    // unrelated fact — 「has anything private been read yet?」 — the trigger for owning the
+    // outbound words, which let the recovery path send an empty query and let the model's own
+    // string leave on any turn that had read nothing internal first.
+    assert.equal(c.publicReads[0].params.query, SAFE_QUERY, '⛔ the raw model query travelled')
+    assert.equal(c.publicReads[0].params.query === 'canada beef market index', false)
+    assert.equal(p.calls.length, 1, 'the planner is consulted for EVERY public read')
   })
 })
 

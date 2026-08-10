@@ -136,9 +136,15 @@ const SAFE_PLANNER = async () => ({ query: 'wholesale beef market price trend', 
 // 'mixed' is used because it permits either world as a valid first half, leaving each test's
 // own read sequence exactly as it was.
 const DEFAULT_SIR = async () => ({ intent: 'mixed' })
+/**
+ * ⛔ A4-3B: THE PLANNER NOW OWNS EVERY PUBLIC QUERY, so a harness that drives public reads must
+ * supply one. Without it the correct answer is 「no public read」, and every case below would be
+ * quietly re-testing egress authority instead of the closed vocabulary, dedupe and evidence
+ * shape it exists for. Cases that are ABOUT egress pass their own planner explicitly.
+ */
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
-  readContextDeps: Object.assign({ sourceIntentResolver: DEFAULT_SIR }, deps)
+  readContextDeps: Object.assign({ sourceIntentResolver: DEFAULT_SIR, publicQueryPlanner: SAFE_PLANNER }, deps)
 })
 
 /* ═══ A — THE PUBLIC CAPABILITY IS GOVERNED, AND OFF ═════════════════════ */
@@ -184,10 +190,15 @@ test('*** D — exactly the closed args reach the fake public executor ***', asy
     const c = twoWorldConnector()
     const args = A('canada wholesale beef index', 'current', 'Winnipeg')
     const a = scriptedAdapter('claude', [READ(PUB, Object.assign({ url: 'https://evil', provider: 'acme' }, args)), FINAL('讀咗。')])
-    await run('市場點', a, { connector: c.connector, sources: BOTH })
+    const planner = async () => ({ query: 'planned market words', freshness: 'current', location: 'Winnipeg' })
+    await run('市場點', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: planner })
     assert.equal(c.publicReads.length, 1)
     const p = c.publicReads[0].params
-    assert.equal(p.query, args.query)
+    // ⛔ THE SHAPE IS THE CONTRACT, AND THE VALUES ARE NOW THE PLANNER'S. A4-3B moved authorship
+    // of the outbound words to the Owner-only planner for EVERY public read, so the model's own
+    // `query` is discarded here exactly as `url` and `provider` always were.
+    assert.equal(p.query, 'planned market words')
+    assert.equal(p.query === args.query, false, '⛔ the raw model query reached the executor')
     assert.equal(p.freshness, 'current')
     assert.equal(p.location, 'Winnipeg')
     assert.equal(p.url, undefined, '⛔ url has nowhere to be written to')
@@ -239,24 +250,40 @@ test('*** H — the raw query never appears in the readKey ***', () => {
 
 /* ═══ I — TWO SEARCHES, SAME ITEM ID, NO COLLISION ═════════════════════ */
 
-test('*** I — two public searches returning the SAME item id keep separate identities ***', async () => {
+test('*** I — ONE planned query per turn, so a second public read IS the same instance ***', async () => {
+  /**
+   * ⛔ MIGRATED BY A4-3B, AND THE NEW BEHAVIOUR IS THE DELIBERATE ONE.
+   *
+   * This used to drive two DIFFERENT public searches in one turn and assert both ran. That is
+   * no longer reachable, and not by accident: the Owner-only planner authors the outbound words
+   * from HIS context, and `createTurnPlanCache` returns one plan per turn. So a second public
+   * attempt in the same turn carries the same query — it is an exact duplicate by construction,
+   * and dedupe refuses it. Duplicate protection is not weakened here; it simply now has more to
+   * catch, because the model can no longer author a second, different query of its own.
+   */
   await withEnv({}, async () => {
     const c = twoWorldConnector({ publicItemId: 'PUB-001' })
     const a = scriptedAdapter('claude', [
       READ(PUB, A('beef index', 'current')),
       READ(PUB, A('pork index', 'current')),
-      FINAL('兩個都睇咗。')
+      FINAL('睇咗。')
     ])
     await run('市場點', a, { connector: c.connector, sources: BOTH })
 
-    assert.equal(c.publicReads.length, 2, 'both searches really ran')
-    const finalPrompt = a.calls[2].prompt
-    const refs = [...finalPrompt.matchAll(/ref=(public_knowledge\.search@[a-f0-9]+#PUB-001)/g)].map((m) => m[1])
-    assert.equal(new Set(refs).size, 2,
-      '⛔ same item id, two searches — two DISTINCT canonical refs, nothing overwritten')
-    const scopes = [...finalPrompt.matchAll(/SCOPE \[(public_knowledge\.search@[a-f0-9]+)\]/g)].map((m) => m[1])
-    assert.equal(new Set(scopes).size, 2, 'and two EvidenceSets survive')
+    assert.equal(c.publicReads.length, 1, 'the second attempt was the same planned instance')
+    assert.equal(c.publicReads[0].params.query, 'wholesale beef market price trend', 'the planner\'s words')
   })
+})
+
+test('*** I2 — the INSTANCE identity mechanism itself is intact ***', () => {
+  // The property case I used to demonstrate end-to-end, asserted where it actually lives: two
+  // different arg bags are two different reads, and nothing collapses them.
+  const { publicReadKey, isPublicReadKey } = require('../context/publicReadIdentity')
+  const k1 = publicReadKey(PUB, A('beef index', 'current'))
+  const k2 = publicReadKey(PUB, A('pork index', 'current'))
+  assert.notEqual(k1, k2, '⛔ two different searches must not share one identity')
+  assert.equal(publicReadKey(PUB, A('beef index', 'current')), k1, 'and the same search is stable')
+  assert.ok(isPublicReadKey(k1))
 })
 
 /* ═══ J / K — REPEATABLE, BUT NOT INFINITELY ═══════════════════════════ */
@@ -267,8 +294,10 @@ test('*** J — public_knowledge.search stays offerable after one search ***', a
     const a = scriptedAdapter('claude', [READ(PUB, A('beef index')), READ(PUB, A('pork index')), FINAL('ok')])
     await run('市場點', a, { connector: c.connector, sources: BOTH })
     assert.ok(a.calls[1].readChoices.includes(PUB),
-      '⛔ the schema hides INSTANCES, not the operation — a second, different search is allowed')
-    assert.equal(c.publicReads.length, 2)
+      '⛔ the schema hides INSTANCES, not the operation — the capability stays offerable')
+    // ⛔ OFFERABLE IS NOT THE SAME AS EXECUTED. Since A4-3B the turn has ONE planned query, so
+    // the second offer resolves to the same instance and dedupe declines to spend it twice.
+    assert.equal(c.publicReads.length, 1)
   })
 })
 
@@ -302,24 +331,45 @@ test('*** L — ⛔ internal evidence may not ride out inside a public query ***
       out = await run('我哋成本同市場比', a, { connector: c.connector, sources: BOTH })
     } finally { console.log = orig }
 
+    /**
+     * ⛔ MIGRATED BY A4-3B: THE PROTECTION MOVED FROM REFUSAL TO RE-AUTHORSHIP, and that is a
+     * strictly better outcome. This used to assert the executor was never reached, because the
+     * leaky raw query was caught by inspection and the whole read was refused — the Owner got
+     * half an answer every time. Now the raw query is discarded unread and the planner's words
+     * travel instead, so the search happens AND the value never leaves. The guarantee under
+     * test is unchanged and is asserted directly: SECRET reaches neither the vendor nor the log.
+     */
     assert.equal(c.internalReads.length, 1, 'the internal read happened')
-    assert.equal(c.publicReads.length, 0, '⛔ THE EXECUTOR WAS NEVER REACHED')
-    const finalPrompt = a => a
+    assert.equal(c.publicReads.length, 1, 'and the public read now succeeds on safe words')
+    assert.equal(JSON.stringify(c.publicReads[0].params).includes(SECRET), false,
+      '⛔ THE INTERNAL VALUE REACHED THE EXECUTOR')
+    assert.equal(c.publicReads[0].params.query.includes(SECRET), false)
     assert.equal(logs.join('\n').includes(SECRET), false, '⛔ and the value is nowhere in telemetry')
     assert.ok(typeof out.reply === 'string')
   })
 })
 
-test('*** L2 — the block is reported as a safe enum, never as evidence ***', async () => {
+test('*** L2 — the SECOND FENCE still fires if the PLANNER itself returns a contaminated query ***', async () => {
+  /**
+   * ⛔ THE FENCE IS NOT DECORATION NOW THAT THE PLANNER OWNS THE WORDS.
+   *
+   * On the normal path it can never fire — the planner is never shown an internal value. It
+   * exists for the day a future edit leaks evidence into the planner's context, and this test
+   * is what proves it would still catch that. The refusal is a safe enum, with no value in it.
+   */
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const events = []
     const orig = console.log
     console.log = (...x) => { if (x[0] === '[AROMA-REASONING]') { try { events.push(JSON.parse(x[1])) } catch (_) {} } }
     try {
-      const a = scriptedAdapter('claude', [READ(INV), READ(PUB, A('x ' + SECRET)), FINAL('ok')])
-      await run('我哋成本同市場比', a, { connector: c.connector, sources: BOTH })
+      // A planner that has somehow learned an internal value it was never given.
+      const contaminated = async () => ({ query: 'market price for ' + SECRET, freshness: 'current', location: null })
+      const a = scriptedAdapter('claude', [READ(INV), READ(PUB, A('x')), FINAL('ok')])
+      await run('我哋成本同市場比', a, { connector: c.connector, sources: BOTH, publicQueryPlanner: contaminated })
     } finally { console.log = orig }
+
+    assert.equal(c.publicReads.length, 0, '⛔ a contaminated PLANNED query reached the executor')
     const refused = events.find((e) => e && e.decisionType === 'read' && e.ok === false)
     assert.ok(refused, 'the refusal is on the record')
     assert.equal(JSON.stringify(events).includes(SECRET), false, 'without the value')
