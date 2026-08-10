@@ -443,10 +443,24 @@ test('*** NO_AUTOMATIC_RECLAIM_PATH — the reclamation machinery is gone, not m
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/[^\n]*/g, '$1')
 
   // ⛔ EVERY MECHANISM THE EARLIER ROUNDS BUILT, ASSERTED ABSENT FROM EXECUTABLE CODE.
+  //
+  // `pidAlive` is on this list for a reason worth stating: after the reclamation machinery was
+  // removed it survived as an orphan — defined, never called, and still carrying the shape of
+  // 「decide whether the holder is dead」. Dead code that encodes a rejected design is an
+  // invitation to wire it back up, so the absence of the CAPABILITY is asserted, not merely the
+  // absence of a call site.
   for (const gone of ['breakLockIfStale', 'tryReclaim', 'reclaimObservedLock', 'isReclaimable',
-    'LOCK_STALE_MS', '__raceGateFile', '__raceGateTimeoutMs', 'waitForGate', '.reclaim-']) {
+    'LOCK_STALE_MS', '__raceGateFile', '__raceGateTimeoutMs', 'waitForGate', '.reclaim-', 'pidAlive']) {
     assert.equal(code.includes(gone), false, '⛔ «' + gone + '» is still live in the store')
   }
+
+  // ⛔ AND NO LIVENESS PROBE BY ANY NAME. Renaming `pidAlive` would defeat a name-based check,
+  // so the PRIMITIVE it needs is banned from the production store outright. This test file uses
+  // `process.kill(pid, 0)` freely — the assertion is about wisdomStore.js, not about tests.
+  assert.equal(/process\s*\.\s*kill\s*\(/.test(code), false,
+    '⛔ the production store can probe whether a lock holder is alive')
+  assert.equal(/\bsignal\b|\bSIGKILL\b|\bkill\b/.test(code), false,
+    '⛔ a process-signalling concept reappeared in the store')
   // No rename of the lock path at all, and exactly one unlink — the owner releasing its own.
   assert.equal(/renameSync\([^)]*lockFile/.test(code), false, '⛔ the lock path is still renamed somewhere')
   assert.equal((code.match(/unlinkSync\(lockFile\)/g) || []).length, 1, 'exactly one unlink: releaseLock')

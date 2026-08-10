@@ -153,11 +153,6 @@ function sleepSync (ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
 
-function pidAlive (pid) {
-  if (!Number.isInteger(pid) || pid <= 0) return false
-  try { process.kill(pid, 0); return true } catch (e) { return !!(e && e.code === 'EPERM') }
-}
-
 /**
  * Create a Wisdom store bound to one file.
  *
