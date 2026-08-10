@@ -2944,3 +2944,76 @@ questions, one field name, and the name answers none of them.**
 > Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
 > **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
 > be measured, and in all three cases measuring it was cheap and nobody had.
+
+---
+
+# HR-57 — A FENCE ON ONE OF TWO DOORS, AND THE GREEN LIGHT THAT COVERED THE OTHER
+
+> **Owner: 「Record the coverage illusion as its own finding. It explains why 19 green tests
+> coexisted with an unbound COMPLETED, and it is the same shape as everything the fences were
+> built for — this time in the test suite rather than the code.」**
+
+## WHAT HAPPENED
+
+E0-B1 shipped with a test named, in full:
+
+```
+*** 11 — the model/client cannot supply or widen a target origin ***
+```
+
+It is a real test. It passes. It asserts the property honestly and it would catch a regression.
+It runs against `browseOrder.buildBrowseOrder`, which refuses `origin`, `url`, `allowedWrites`
+and `permissions` from a caller with `CALLER_SUPPLIED_REACH`.
+
+One module away, `browseResult.classifyBrowseResult` **never receives the sealed order at all**.
+Its `isBrowserPrice` accepts `source: 'browser'` on the caller's word and checks `sourceOrigin`
+with `/^https?:\/\//` — that it LOOKS like a URL, not that it is the one origin the order
+allowed. A `COMPLETED` verdict could therefore be minted from an observation naming an origin the
+request fence would have blocked.
+
+So the reach property was fenced at the door where the order is BUILT, and unfenced at the door
+where the result is BELIEVED.
+
+## WHY THIS IS NOT HR-12, AND NOT THE A1 DEFECT EITHER
+
+Worth separating, because the remedy differs:
+
+| | what went wrong | what the green light meant |
+|---|---|---|
+| **A1's defect** | a test asserted 14 complete-within-a-window orders supported 「所有採購單都已收貨」 | the green was **false** — a fence installed backwards |
+| **HR-12** | a check ran on a filtered set | the green was **true of the sample**, silent about the removed rows |
+| **HR-57** | a check ran at one layer of a property that spans two | the green was **entirely true**, and the conclusion drawn from it was false |
+
+**This is the hardest of the three to see, because there is nothing wrong with the test.** No
+assertion is weak, nothing is backwards, nothing is skipped. Reviewing the test teaches you
+nothing. The defect is not in the test — it is in the sentence I said afterwards: 「origin cannot
+be client-supplied or widened」, dropping the clause 「in `browseOrder`」 that was the only part
+measured.
+
+> **A test proves a property AT A LAYER. A test NAME states a property about the system. The gap
+> between those two sentences is where the confidence comes from, and nothing in a passing suite
+> reports it.**
+
+Nineteen green tests did not fail to catch the unbound `COMPLETED`. They were never asked about
+it, and the count made it feel as though they had been.
+
+## THE GENERAL FORM
+
+The same mistake HR-56 named — **treating a NAME as if it carried a FACT** — with the name now
+belonging to a test rather than to a database field or an intent keyword. `supplierId` was
+evidence a relationship might exist. A test name is evidence a property was measured
+**somewhere**. Neither says where, and both read as if they did.
+
+## THE RULE
+
+1. **A test name must not claim more than the test measured.** If it runs against one module,
+   the module belongs in the name — 「the ORDER cannot be client-supplied」, not 「origin cannot
+   be client-supplied」. The unqualified sentence is the illusion, written down.
+2. **A property that spans layers needs an assertion at every layer that can violate it** — or,
+   better, one chokepoint every layer must pass through.
+3. **Prefer structural impossibility over repeated assertion.** `classifyBrowseResult` could not
+   have had this defect if it were impossible to call without the order. Make the property a
+   consequence of the shape, then assert it once.
+4. **A pass count is not a coverage statement.** 「19 green」 answers how many questions were
+   asked, never which ones. Before trusting a suite about a property, name the layer each test
+   actually ran at — the list is short, and writing it is what exposes the empty door.
