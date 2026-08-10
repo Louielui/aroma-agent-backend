@@ -473,14 +473,7 @@ test('*** NO_AUTOMATIC_RECLAIM_PATH — the reclamation machinery is gone, not m
 
   // ⛔ AND THE HONESTY REQUIREMENT: the file must not claim recovery it does not do.
   // Comment prose wraps across lines, so continuation markers are flattened before matching.
-  //
-  // ⛔ CARRIAGE RETURNS ARE DROPPED FIRST, and the reason is worth keeping. On a CRLF checkout
-  // the `\r` sits BEFORE the `\n` this pattern consumes, so it survives the flattening and lands
-  // in the middle of the phrase — 「GOVERNED\r MAINTENANCE」 — and the honesty assertion fails on
-  // Windows while passing everywhere else. The source said exactly what it was supposed to say;
-  // only the reader was broken. A guard that fails for a reason unrelated to what it guards
-  // teaches people to ignore it.
-  const prose = src.replace(/\r/g, '').replace(/\n\s*\*\s?/g, ' ')
+  const prose = src.replace(/\n\s*\*\s?/g, ' ')
   assert.ok(/CRASH RECOVERY = NOT IMPLEMENTED/.test(prose), 'crash recovery status is stated in the source')
   assert.ok(/MANUAL \/ FUTURE GOVERNED MAINTENANCE ONLY/.test(prose), 'and recovery is named as future governed maintenance')
 })
