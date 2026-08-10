@@ -112,6 +112,23 @@ $env:CONTEXT_GITHUB    = 'on'
 # The API key comes from .env (AROMA_SYSTEM_KEY), which dotenv loads at startup — never from
 # here. No key => the source is simply not registered and reports unavailable.
 $env:CONTEXT_AROMA_SYSTEM = 'on'
+
+# A4 Universal Knowledge Routing — PRODUCTION ACTIVATION (Owner GO 2026-08-10).
+# 香香 now establishes WHICH knowledge world a question belongs to before answering it:
+# internal (Aroma System), public (the outside world), both, or neither — and asks when the
+# Owner's meaning is genuinely open, instead of answering from model memory.
+#
+# public_knowledge is READ-ONLY and stays governed: the Owner-only Public Query Egress
+# Planner authors the outbound words for EVERY public read, so the main model decides
+# whether the outside world is needed and never decides what words leave the building.
+# Its API key comes from .env (OPENAI_API_KEY), never from here; no key => the source is
+# simply not registered and reports unavailable.
+#
+# Rollback without a rebuild: set either flag to 'off'. A4 off restores the previous
+# answering path entirely and constructs none of its verifiers.
+$env:A4_KNOWLEDGE_ROUTING       = 'on'
+$env:CONTEXT_PUBLIC_KNOWLEDGE   = 'on'
+
 # Conversation Experience Contract v1 (Owner GO) — trusted expression/epistemic frame in
 # the system string; governs the prose inside `reply` only, never the output schema.
 $env:CONVERSATION_CONTRACT = 'on'
