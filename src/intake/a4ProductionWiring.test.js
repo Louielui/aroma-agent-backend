@@ -25,10 +25,12 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const express = require('express')
+const fs = require('node:fs')
+const path = require('node:path')
 
 const intakeRouter = require('../routes/intakeRouter')
 const { createDemoRouter } = require('../routes/demoRouter')
-const { createA4RuntimeDependencies, RECOVERY_WORKER_MODEL } = require('./a4Runtime')
+const { createA4RuntimeDependencies, RECOVERY_WORKER_MODEL, A4_ROLES } = require('./a4Runtime')
 const { createLiveReadConnector, ALL_SOURCES, PUBLIC_KEY_ENV } = require('../context/liveClients')
 const { createOpenAIWebSearchProvider } = require('../context/providers/openaiWebSearchProvider')
 const { A4_FLAG } = require('./a4Contract')
@@ -86,7 +88,34 @@ const FINAL = (reply) => ({ intent: 'question', mode: 'chat', reply, nextRead: n
  * records which of them were actually asked. A verifier that production never wired shows up
  * here as a schema that was never requested.
  */
-function scriptedModel ({ envelopes = [], intent = null, finalDecision = null, plannedQuery = null, recovery = null } = {}) {
+const VERIFIER_SCHEMAS = ['owner_source_intent', 'final_knowledge_requirement', 'public_query_plan', 'a4_verifier']
+
+/**
+ * The ROLE adapter fake — one per pinned verifier role. It records which role and which model
+ * it was constructed for, so a test can prove the pin without a network call.
+ */
+function roleAdapters ({ intent = null, finalDecision = null, plannedQuery = null } = {}) {
+  const built = []
+  const asked = []
+  const factory = ({ role, provider, model, effort, apiKey }) => {
+    built.push({ role, provider, model, effort, hasKey: !!apiKey })
+    return {
+      async complete (prompt, opts = {}) {
+        const name = opts.responseFormat ? opts.responseFormat.name : null
+        asked.push({ role, name, effort: opts.reasoningEffort })
+        const reply = (obj) => ({ text: JSON.stringify(obj), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, model, latencyMs: 1, stopReason: 'end_turn' })
+        const props = Object.keys((opts.responseFormat.schema && opts.responseFormat.schema.properties) || {}).sort().join(',')
+        if (props === 'intent') return reply(intent || { intent: 'ambiguous' })
+        if (props === 'freshness,location,query') return reply(plannedQuery || { decision: 'refuse' })
+        if (props === 'decision,question') return reply(finalDecision || { decision: 'allow_final' })
+        throw new Error('unrecognised A4 verifier schema: ' + props)
+      }
+    }
+  }
+  return { factory, built, asked }
+}
+
+function scriptedModel ({ envelopes = [], recovery = null } = {}) {
   const schemas = []
   let mainCalls = 0
   return {
@@ -98,21 +127,10 @@ function scriptedModel ({ envelopes = [], intent = null, finalDecision = null, p
       schemas.push({ name, system: opts.system ? String(opts.system).slice(0, 40) : null, prompt: String(prompt) })
       const reply = (obj) => ({ text: JSON.stringify(obj), usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 }, model: 'scripted', latencyMs: 1, stopReason: 'end_turn' })
 
-      if (name === 'a4_verifier') {
-        /**
-         * ⛔ TOLD APART BY SCHEMA SHAPE, NOT BY WORDS IN THE PROMPT.
-         *
-         * The first version of this fake matched /intent/i and /query/i against the system
-         * text — but those contracts are written in Chinese, so BOTH patterns missed and every
-         * verifier fell through to the final-decision branch. Two cases still went green,
-         * because a mis-answered resolver happens to fail closed into the same result the test
-         * expected. A fake that can pass for the wrong reason is worse than no fake.
-         */
-        const props = Object.keys((opts.responseFormat.schema && opts.responseFormat.schema.properties) || {}).sort().join(',')
-        if (props === 'intent') return reply(intent || { intent: 'ambiguous' })
-        if (props === 'freshness,location,query') return reply(plannedQuery || { decision: 'refuse' })
-        if (props === 'decision,question') return reply(finalDecision || { decision: 'allow_final' })
-        throw new Error('unrecognised A4 verifier schema: ' + props)
+      // ⛔ THE MAIN MODEL MUST NEVER BE ASKED AN A4 QUESTION. Verifiers are role-pinned to their
+      // own adapters now, so a verifier schema arriving here is the defect this fix exists for.
+      if (VERIFIER_SCHEMAS.includes(name)) {
+        throw new Error('⛔ the MAIN adapter was asked an A4 verifier question: ' + name)
       }
       if (name === 'recovery_decision') return reply(recovery || { decision: 'none', capability: 'none' })
 
@@ -126,10 +144,11 @@ function scriptedModel ({ envelopes = [], intent = null, finalDecision = null, p
 /* ═══ THE REAL APP ═════════════════════════════════════════════════════ */
 
 /** The formal intake route — /api/v1/intake. It has no chat lane. */
-function formalApp ({ model }) {
+function formalApp ({ model, verifierFactory }) {
   const app = express()
   app.use(express.json())
   app.locals.adapterFactory = () => model
+  if (verifierFactory) app.locals.a4VerifierAdapterFactory = verifierFactory
   app.use('/api/v1/intake', intakeRouter)
   return app
 }
@@ -143,11 +162,12 @@ function formalApp ({ model }) {
  * could reach: correct construction, still-inert feature. Both routes now build A4 from the
  * same composer, and the acceptance chain runs here because this is the lane that has one.
  */
-function chatApp ({ model, readDepsOverride }) {
+function chatApp ({ model, readDepsOverride, verifierFactory }) {
   const app = express()
   app.use(express.json())
   app.locals.conversationDemo = true
   if (readDepsOverride) app.locals.a4ReadDepsOverride = readDepsOverride
+  if (verifierFactory) app.locals.a4VerifierAdapterFactory = verifierFactory
   app.use(createDemoRouter({ getAdapterFn: () => model }))
   return app
 }
@@ -194,12 +214,11 @@ async function withEnv (over, fn) {
 /* ═══ THE GAP ITSELF ═══════════════════════════════════════════════════ */
 
 test('*** the composer is the ONE place A4 dependencies are built ***', () => {
-  const model = scriptedModel({})
-  const off = createA4RuntimeDependencies({ adapter: model, env: { [A4_FLAG]: 'off' } })
+  const off = createA4RuntimeDependencies({ env: { [A4_FLAG]: 'off', OPENAI_API_KEY: 'k' } })
   assert.equal(off.deps, null, '⛔ A4 off must build nothing at all')
   assert.deepEqual(off.built, [])
 
-  const on = createA4RuntimeDependencies({ adapter: model, env: { [A4_FLAG]: 'on' } })
+  const on = createA4RuntimeDependencies({ env: { [A4_FLAG]: 'on', OPENAI_API_KEY: 'k' } })
   assert.deepEqual(on.built.slice().sort(),
     ['finalVerifier', 'publicQueryPlanner', 'recoveryWorker', 'sourceIntentResolver'])
   for (const k of ['sourceIntentResolver', 'finalVerifier', 'publicQueryPlanner', 'recoveryWorker']) {
@@ -211,20 +230,63 @@ test('*** the composer is the ONE place A4 dependencies are built ***', () => {
   assert.equal('sources' in on.deps, false)
 })
 
-test('*** no adapter means NO verifier, and never a legacy fallback ***', () => {
-  const r = createA4RuntimeDependencies({ adapter: null, env: { [A4_FLAG]: 'on' } })
+test('*** D(pin) — no OpenAI key means NO verifier, and never a fallback to Claude ***', () => {
+  const r = createA4RuntimeDependencies({ env: { [A4_FLAG]: 'on' } })
   assert.equal(r.deps.sourceIntentResolver, undefined)
   assert.equal(r.deps.finalVerifier, undefined)
   assert.equal(r.deps.publicQueryPlanner, undefined)
-  assert.deepEqual(r.skipped.map((s) => s.name).sort(), ['finalVerifier', 'publicQueryPlanner', 'sourceIntentResolver'])
+  assert.deepEqual(r.skipped.map((x) => x.name).sort(), ['finalVerifier', 'publicQueryPlanner', 'sourceIntentResolver'])
+  for (const x of r.skipped) assert.equal(x.reason, 'OPENAI_API_KEY not set', 'the reason names the variable, never a value')
+  // ⛔ AND THE RECOVERY WORKER IS NOT PROMOTED INTO THE GAP. It answers a different question.
+  assert.equal(typeof r.deps.recoveryWorker, 'function')
+  assert.deepEqual(r.built, ['recoveryWorker'])
   // The runners then fail closed on their own terms — proven in their own suites.
+})
+
+test('*** A/B — the role -> provider -> model map is FIXED, whatever the main adapter is ***', () => {
+  assert.deepEqual(A4_ROLES.sourceIntentResolver, { provider: 'openai', model: 'gpt-5.6-terra', effort: 'medium' })
+  assert.deepEqual(A4_ROLES.finalVerifier, { provider: 'openai', model: 'gpt-5.6-terra', effort: 'medium' })
+  assert.deepEqual(A4_ROLES.publicQueryPlanner, { provider: 'openai', model: 'gpt-5.6-terra', effort: 'medium' })
+  assert.deepEqual(A4_ROLES.recoveryWorker, { provider: 'anthropic', model: RECOVERY_WORKER_MODEL, effort: null })
+
+  // ⛔ STRUCTURALLY UNREACHABLE, NOT MERELY UNUSED. The composer has no parameter through which
+  // a conversational adapter could arrive, so 「A: main is Claude」 and 「B: main is OpenAI」 are
+  // the SAME construction — there is nothing for the main model to influence.
+  for (const mainProvider of ['claude', 'openai', 'mock']) {
+    process.env.LLM_PROVIDER = mainProvider
+    const seen = []
+    const r = createA4RuntimeDependencies({
+      env: { [A4_FLAG]: 'on', OPENAI_API_KEY: 'k', LLM_PROVIDER: mainProvider, OPENAI_MODEL: 'gpt-should-be-ignored' },
+      verifierAdapterFactory: (spec) => { seen.push(spec); return { async complete () { return { text: '{"intent":"internal"}' } } } }
+    })
+    return r.deps.sourceIntentResolver({ ownerMessages: ['x'], system: 's', schema: { properties: { intent: {} } } })
+      .then(() => {
+        assert.equal(seen.length, 1)
+        assert.equal(seen[0].provider, 'openai', mainProvider)
+        assert.equal(seen[0].model, 'gpt-5.6-terra', '⛔ OPENAI_MODEL must not re-point a verifier')
+        assert.equal(seen[0].effort, 'medium', mainProvider)
+      })
+  }
+})
+
+test('*** F(pin) — the module cannot even name a conversational adapter ***', () => {
+  // Comments stripped with the repo's own pattern — the ':' guard keeps 'https://' intact.
+  const src = fs.readFileSync(path.resolve(__dirname, './a4Runtime.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1')
+  for (const tok of ['getAdapter', 'adapterFactory', 'createOpenAIAdapterIfConfigured', 'OPENAI_MODEL', 'LLM_PROVIDER']) {
+    assert.equal(src.includes(tok), false, '⛔ «' + tok + '» would let the conversational lane steer a verifier')
+  }
+  // The ONE Anthropic construction that remains is the recovery worker's, and it is pinned.
+  // Two textual hits, one construction: the module path and the export name.
+  assert.equal((src.match(/ClaudeAdapter/g) || []).length, 2)
+  assert.equal(src.split("new (require('../adapters/ClaudeAdapter').ClaudeAdapter)").length - 1, 1)
 })
 
 test('*** the recovery worker keeps its PINNED model, not the session model ***', async () => {
   const seen = []
   const r = createA4RuntimeDependencies({
-    adapter: scriptedModel({}),
-    env: { [A4_FLAG]: 'on' },
+    env: { [A4_FLAG]: 'on', OPENAI_API_KEY: 'k' },
     recoveryAdapterFactory: (model) => { seen.push(model); return { async complete () { return { text: '{"decision":"none","capability":"none"}' } } } }
   })
   await r.deps.recoveryWorker({ ownerMessages: ['x'], requiredWorld: 'public', completedWorlds: {}, capabilities: [], system: 's', schema: {} })
@@ -271,14 +333,25 @@ test('*** H — a missing API key leaves the source unavailable and startup inta
 })
 
 test('*** B — A4 ON, public flag OFF: the public world is honestly unavailable ***', async () => {
-  await withEnv({ [A4_FLAG]: 'on' }, async () => {
+  await withEnv({ [A4_FLAG]: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const { registered } = createLiveReadConnector({ env: process.env })
     assert.equal(registered.includes('public_knowledge'), false)
-    const model = scriptedModel({ intent: { intent: 'public' }, envelopes: [FINAL('出面嗰邊而家讀唔到。')] })
-    const out = await chat(chatApp({ model }), '查公開資料：市場行情點')
+    const model = scriptedModel({ envelopes: [FINAL('出面嗰邊而家讀唔到。')] })
+    const roles = roleAdapters({ intent: { intent: 'public' } })
+    const out = await chat(chatApp({ model, verifierFactory: roles.factory }), '查公開資料：市場行情點')
     assert.equal(out.status, 200)
-    // ⛔ THE RESOLVER WAS ACTUALLY CONSULTED — that is the wiring this package exists to prove.
-    assert.equal(model.schemas.some((s) => s.name === 'a4_verifier'), true)
+    // ⛔ A VERIFIER WAS ACTUALLY CONSULTED, ON ITS OWN PINNED ROLE ADAPTER — that is the wiring
+    // this package exists to prove. This turn opens with a FINAL, so the gate that fires is the
+    // final-knowledge verifier; the resolver is only needed once a world is actually required.
+    assert.ok(roles.asked.length > 0, '⛔ no A4 verifier was reached on the live route')
+    assert.ok(roles.asked.some((a) => a.role === 'finalVerifier'))
+    for (const b of roles.built) {
+      assert.equal(b.provider, 'openai')
+      assert.equal(b.model, 'gpt-5.6-terra')
+      assert.equal(b.effort, 'medium')
+      assert.equal(b.hasKey, true)
+    }
+    for (const a of roles.asked) assert.equal(a.effort, 'medium', '⛔ effort must be per-call, not inherited')
   })
 })
 
@@ -324,9 +397,10 @@ test('*** I — a provider error is unavailable, never a fabricated empty world 
 test('*** D — a clear INTERNAL question never reaches the public provider ***', async () => {
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const t = webSearchTransport()
-    const model = scriptedModel({ intent: { intent: 'internal' }, envelopes: [READ(INV), FINAL('我哋自己數口。')] })
+    const model = scriptedModel({ envelopes: [READ(INV), FINAL('我哋自己數口。')] })
     const app = chatApp({
       model,
+      verifierFactory: roleAdapters({ intent: { intent: 'internal' } }).factory,
       readDepsOverride: { connector: createLiveReadConnector({ env: process.env, publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn }) }).connector }
     })
     await chat(app, '我哋自己嘅成本點')
@@ -338,10 +412,10 @@ test('*** G — with internal evidence live, only the PLANNER\'s words may leave
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const t = webSearchTransport()
     const leaky = `${TITLE} ${SUPPLIER} ${PRICE} ${SECRET} wholesale`
-    const model = scriptedModel({
+    const model = scriptedModel({ envelopes: [READ(INV), READ(PUB, { query: leaky, freshness: 'current', location: null }), FINAL('齊。')] })
+    const roles = roleAdapters({
       intent: { intent: 'mixed' },
-      plannedQuery: { decision: 'query', query: 'wholesale beef market index', freshness: 'current', location: null },
-      envelopes: [READ(INV), READ(PUB, { query: leaky, freshness: 'current', location: null }), FINAL('齊。')]
+      plannedQuery: { decision: 'query', query: 'wholesale beef market index', freshness: 'current', location: null }
     })
 
     const internalRows = [{
@@ -364,7 +438,7 @@ test('*** G — with internal evidence live, only the PLANNER\'s words may leave
       }
     }
 
-    await chat(chatApp({ model, readDepsOverride: { connector } }), '我哋成本同出面比')
+    await chat(chatApp({ model, readDepsOverride: { connector }, verifierFactory: roles.factory }), '我哋成本同出面比')
 
     assert.equal(t.sent.length, 1, 'exactly one outbound retrieval')
     const outbound = JSON.stringify(t.sent[0])
@@ -378,10 +452,10 @@ test('*** E — a mixed turn completes BOTH required worlds through the real com
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const t = webSearchTransport()
     const reads = []
-    const model = scriptedModel({
+    const model = scriptedModel({ envelopes: [READ(INV), READ(PUB, { query: 'wholesale beef index outside', freshness: 'current', location: null }), FINAL('兩邊都睇咗。')] })
+    const roles = roleAdapters({
       intent: { intent: 'mixed' },
-      plannedQuery: { decision: 'query', query: 'wholesale beef market index', freshness: 'current', location: null },
-      envelopes: [READ(INV), READ(PUB, { query: 'wholesale beef index outside', freshness: 'current', location: null }), FINAL('兩邊都睇咗。')]
+      plannedQuery: { decision: 'query', query: 'wholesale beef market index', freshness: 'current', location: null }
     })
     const live = createLiveReadConnector({
       env: process.env,
@@ -403,7 +477,7 @@ test('*** E — a mixed turn completes BOTH required worlds through the real com
         }
       }
     }
-    const out = await chat(chatApp({ model, readDepsOverride: { connector } }), '我哋成本同出面比')
+    const out = await chat(chatApp({ model, readDepsOverride: { connector }, verifierFactory: roles.factory }), '我哋成本同出面比')
     assert.equal(out.status, 200)
     assert.ok(reads.includes('aroma_system'), 'the internal world was read')
     assert.ok(reads.includes('public_knowledge'), 'the public world was read')
@@ -415,7 +489,8 @@ test('*** F — an ambiguous question ASKS, and reads nothing at all ***', async
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const t = webSearchTransport()
     const reads = []
-    const model = scriptedModel({ intent: { intent: 'ambiguous' }, envelopes: [READ(INV), FINAL('唔應該行到呢度')] })
+    const model = scriptedModel({ envelopes: [READ(INV), FINAL('唔應該行到呢度')] })
+    const roles = roleAdapters({ intent: { intent: 'ambiguous' } })
     const live = createLiveReadConnector({
       env: process.env,
       publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
@@ -427,7 +502,7 @@ test('*** F — an ambiguous question ASKS, and reads nothing at all ***', async
         return { asOf: 'x', source, count: 0, results: [], evidence: { source, endpoint: method, entityType: null, rowShape: {}, metrics: {}, matchingTotal: 0, shownCount: 0, sourceTotal: null, queryScope: {}, completeness: 'complete', usedFallback: false, retrievedAt: 'x', trust: 'live', provenance: 'FAKE' } }
       }
     }
-    const out = await chat(chatApp({ model, readDepsOverride: { connector } }), '最近點')
+    const out = await chat(chatApp({ model, readDepsOverride: { connector }, verifierFactory: roles.factory }), '最近點')
     assert.equal(out.status, 200)
     assert.equal(t.sent.length, 0, '⛔ an ambiguous turn spent a paid retrieval')
     assert.equal(reads.length, 0, '⛔ an ambiguous turn read a world before asking')
@@ -438,7 +513,11 @@ test('*** the composition log is names and reasons — never a prompt or a key *
   const { logA4Composition } = require('./a4Runtime')
   let line = null
   logA4Composition({ built: ['recoveryWorker'], skipped: [{ name: 'finalVerifier', reason: 'no adapter' }] }, (l) => { line = l })
-  assert.deepEqual(Object.keys(line).sort(), ['built', 'event', 'skipped', 'timestamp'])
+  assert.deepEqual(Object.keys(line).sort(), ['built', 'event', 'roles', 'skipped', 'timestamp'])
+  // ⛔ THE PIN IS OBSERVABLE AT RUNTIME — provider:model per role, so a running process can be
+  // asked what its verifiers actually are without reading the source.
+  assert.equal(line.roles.sourceIntentResolver, 'openai:gpt-5.6-terra')
+  assert.equal(line.roles.recoveryWorker, 'anthropic:' + RECOVERY_WORKER_MODEL)
   const blob = JSON.stringify(line)
   for (const v of INTERNAL_VALUES.concat(['sk-', 'Bearer'])) assert.equal(blob.includes(v), false)
 })

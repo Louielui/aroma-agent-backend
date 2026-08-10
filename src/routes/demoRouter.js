@@ -324,7 +324,11 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
          * all — the opts bag is byte-identical to what it has always been.
          */
         if (interactionMode === 'chat') {
-          const composed = a4Runtime.createA4RuntimeDependencies({ adapter, env: process.env })
+          const composed = a4Runtime.createA4RuntimeDependencies({
+            env: process.env,
+            // Test seam only — production sets nothing and gets the pinned role adapters.
+            verifierAdapterFactory: req.app.locals && req.app.locals.a4VerifierAdapterFactory
+          })
           if (composed.deps) {
             a4Runtime.logA4Composition(composed, req.app.locals && req.app.locals.a4CompositionSink)
             opts.readContextDeps = Object.assign(

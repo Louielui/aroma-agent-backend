@@ -23,9 +23,14 @@ const router = express.Router()
  * — no connector override, no source list override, nothing for the service to resolve
  * differently.
  */
-function a4DepsFor (adapter, locals) {
+function a4DepsFor (locals) {
   if (locals && locals.a4RuntimeDependencies) return locals.a4RuntimeDependencies // test seam
-  const composed = createA4RuntimeDependencies({ adapter, env: process.env })
+  // ⛔ THE MAIN ADAPTER IS NOT PASSED. A4 verifiers are role-pinned; see a4Runtime.
+  const composed = createA4RuntimeDependencies({
+    env: process.env,
+    // Test seam only — production sets nothing and gets the pinned role adapters.
+    verifierAdapterFactory: locals && locals.a4VerifierAdapterFactory
+  })
   if (!composed.deps) return null
   logA4Composition(composed, locals && locals.a4CompositionSink)
   return composed.deps
@@ -81,7 +86,7 @@ router.post(
       // Production sets nothing, so this is `getAdapter()` exactly as before.
       const adapter = typeof locals.adapterFactory === 'function' ? locals.adapterFactory() : getAdapter()
 
-      const a4Deps = a4DepsFor(adapter, locals)
+      const a4Deps = a4DepsFor(locals)
 
       // B2-2 Conversation Demo — flag-gated. OFF (default): identical 3-arg call.
       const demoOn = locals.conversationDemo === true
