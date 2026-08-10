@@ -26,10 +26,11 @@ const { createReadConnector } = require('./readConnector')
 const { createPublicKnowledgeReadAdapter, PUBLIC_ENTITY_TYPE } = require('./adapters/publicKnowledgeRead')
 const {
   createOpenAIWebSearchProvider, PROVIDER_ID, DEFAULT_MODEL, DEFAULT_EFFORT, RESPONSES_URL,
-  toUserLocation, extractResults, reasonForStatus
+  toUserLocation, extractResults, citedSpan, isCitationMarker, stripCitationMarkers, reasonForStatus
 } = require('./providers/openaiWebSearchProvider')
 const {
-  SEARCH_STATUS, UNAVAILABLE_REASON, isAttributable, makeSearchResult, logPublicSearch
+  SEARCH_STATUS, UNAVAILABLE_REASON, CONTENT_KIND, isAttributable, hasAttributableContent,
+  makeSearchResult, logPublicSearch
 } = require('./providers/publicSearchProvider')
 const { ALL_SOURCES, enabledSources } = require('./liveClients')
 const { A4_FLAG } = require('../intake/a4Contract')
@@ -54,6 +55,41 @@ function okPayload (sources, opts = {}) {
     usage: { input_tokens: 11, output_tokens: 22, total_tokens: 33 }
   }
 }
+
+/**
+ * ⛔ THE DOCUMENTED SHAPE, BUILT HONESTLY — indices are COMPUTED from the text, never guessed.
+ *
+ * This is what the live provider actually sends, measured over three real searches on
+ * 2026-08-09: `action.sources[]` carrying `{type, url}` and NOTHING ELSE — no snippet, no
+ * title, no date — plus one `output_text` whose `url_citation` annotations point at real
+ * spans. A fixture that invented a snippet would have kept the original bug invisible, which
+ * is precisely how it survived to review.
+ */
+function citedPayload (claims, opts = {}) {
+  let text = opts.lead == null ? '' : opts.lead
+  const annotations = []
+  for (const c of claims) {
+    const start = text.length
+    text += c.text
+    annotations.push(Object.assign(
+      { type: 'url_citation', url: c.url, start_index: start, end_index: text.length },
+      c.title ? { title: c.title } : {}
+    ))
+    text += ' '
+  }
+  if (opts.tail) text += opts.tail
+  // ⛔ SOURCES DEFAULT TO URL-ONLY — the real payload's shape, not a convenient one.
+  const sources = opts.sources || claims.map((c) => ({ type: 'url', url: c.url }))
+  return {
+    output: [
+      { type: 'web_search_call', status: opts.callStatus || 'completed', action: { type: 'search', query: 'q', sources } },
+      { type: 'message', status: 'completed', content: [{ type: 'output_text', text, annotations: opts.annotations || annotations }] }
+    ],
+    usage: { input_tokens: 11, output_tokens: 22, total_tokens: 33 }
+  }
+}
+const CLAIM_A = 'The overnight rate was held at 2.25 percent in July 2026.'
+const CLAIM_B = 'Food handler certification is required for at least one supervisor on each shift.'
 
 /** Records exactly what would leave the process. */
 function fakeTransport (impl) {
@@ -123,21 +159,191 @@ test('*** 7/8 — location is admitted when present and OMITTED when absent ***'
 
 /* ═══ 9–15 — TRUST STATES ══════════════════════════════════════════════ */
 
-test('*** 9/16/17 — success → LIVE, with titles, URLs and a SERVER-side timestamp ***', async () => {
-  const { provider } = providerWith(async () => jsonRes(200, okPayload([
-    { url: 'https://a.example/1', title: 'Alpha', published_at: '2026-07-01' },
-    { url: 'https://b.example/2', title: 'Beta' }
-  ])))
+test('*** A · 9/16/17 — the documented shape yields NON-EMPTY, LABELLED, sourced content ***', async () => {
+  const { provider } = providerWith(async () => jsonRes(200, citedPayload(
+    [{ url: 'https://a.example/1', title: 'Alpha', text: CLAIM_A },
+      { url: 'https://b.example/2', title: 'Beta', text: CLAIM_B }],
+    { sources: [{ type: 'url', url: 'https://a.example/1', published_at: '2026-07-01' }, { type: 'url', url: 'https://b.example/2' }] }
+  )))
   const out = await provider.search({ query: 'q' })
   assert.equal(out.status, SEARCH_STATUS.LIVE)
   assert.equal(out.provider, PROVIDER_ID)
   assert.equal(out.retrievedAt, NOW, 'the clock is ours, not the provider\'s')
   assert.deepEqual(out.results.map((r) => r.url), ['https://a.example/1', 'https://b.example/2'])
   assert.equal(out.results[0].title, 'Alpha')
+  // ⛔ THE FIX ITSELF: a row carries the attributed CLAIM, not just the link that supports it.
+  assert.equal(out.results[0].content, CLAIM_A)
+  assert.equal(out.results[1].content, CLAIM_B)
+  assert.equal(out.results[0].contentKind, CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY)
+  assert.equal(out.results[0].contentKind !== CONTENT_KIND.PUBLISHER_TEXT, true,
+    '⛔ a model\'s cited sentence is never presented as the publisher\'s own text')
   assert.equal(out.results[0].publishedAt, '2026-07-01')
   assert.equal(out.results[1].publishedAt, null, '⛔ a date the publisher did not give is not invented')
+  assert.equal(out.results[0].consulted, true)
   assert.deepEqual(out.usage, { inputTokens: 11, outputTokens: 22, totalTokens: 33 })
   assert.equal(out.webSearchCalls, 1)
+})
+
+test('*** B — sources carry NO snippet, and evidence is still factual ***', async () => {
+  // The measured live shape: url-only sources. Content can therefore come from ONE place —
+  // the cited spans — and this test fails the moment anything starts reading `snippet` again.
+  const payload = citedPayload([{ url: 'https://a.example/1', title: 'Alpha', text: CLAIM_A }],
+    { sources: [{ type: 'url', url: 'https://a.example/1' }, { type: 'url', url: 'https://unrelated.example/9' }] })
+  const src = payload.output[0].action.sources
+  for (const s of src) assert.equal('snippet' in s, false, 'the fixture must not invent a field the vendor omits')
+  const { provider } = providerWith(async () => jsonRes(200, payload))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.status, SEARCH_STATUS.LIVE)
+  assert.equal(out.results.length, 1, '⛔ a consulted URL with no cited claim is NOT a row')
+  assert.equal(out.results[0].content, CLAIM_A)
+  assert.equal(out.sourcesSeen, 2, 'both consulted URLs are still counted as sources seen')
+})
+
+test('*** C — uncited model prose is discarded, however confident it sounds ***', async () => {
+  const UNCITED = 'Beef prices will certainly fall next quarter.'
+  const { provider } = providerWith(async () => jsonRes(200, citedPayload(
+    [{ url: 'https://a.example/1', title: 'Alpha', text: CLAIM_A }],
+    { lead: UNCITED + ' ', tail: ' ' + UNCITED }
+  )))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.results.length, 1)
+  assert.equal(out.results[0].content, CLAIM_A)
+  assert.equal(JSON.stringify(out).includes(UNCITED), false,
+    '⛔ text no source was cited for has no path into evidence')
+})
+
+test('*** D/E — sources but no attributable content is UNAVAILABLE, NEVER live and NEVER zero ***', async () => {
+  // The search ran and found pages; we simply could not tie any sentence to any of them.
+  const { provider } = providerWith(async () => jsonRes(200, okPayload([
+    { type: 'url', url: 'https://a.example/1' }, { type: 'url', url: 'https://b.example/2' }
+  ])))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE, '⛔ bare URLs are not live evidence')
+  assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT)
+  assert.deepEqual(out.results, [])
+  // ⛔ E — and it must be DISTINGUISHABLE from the genuine 「the world has nothing」.
+  assert.notEqual(out.status, SEARCH_STATUS.LIVE_ZERO,
+    '⛔ an extraction failure must not tell the Owner the public record is empty')
+  const empty = providerWith(async () => jsonRes(200, okPayload([])))
+  const zero = await empty.provider.search({ query: 'q' })
+  assert.equal(zero.status, SEARCH_STATUS.LIVE_ZERO, 'a search that surfaced nothing is still a true answer')
+  assert.equal(zero.reason, null)
+})
+
+test('*** F — invalid citation indices FAIL CLOSED, with no whole-text fallback ***', async () => {
+  const text = CLAIM_A + ' ' + CLAIM_B
+  const broken = [
+    ['missing indices', { type: 'url_citation', url: 'https://a/1', title: 'A' }],
+    ['non-integer', { type: 'url_citation', url: 'https://a/1', start_index: 0.5, end_index: 10 }],
+    ['negative start', { type: 'url_citation', url: 'https://a/1', start_index: -3, end_index: 10 }],
+    ['inverted', { type: 'url_citation', url: 'https://a/1', start_index: 20, end_index: 5 }],
+    ['equal', { type: 'url_citation', url: 'https://a/1', start_index: 5, end_index: 5 }],
+    ['past the end', { type: 'url_citation', url: 'https://a/1', start_index: 0, end_index: text.length + 50 }],
+    ['whitespace-only span', { type: 'url_citation', url: 'https://a/1', start_index: CLAIM_A.length, end_index: CLAIM_A.length + 1 }]
+  ]
+  for (const [label, ann] of broken) {
+    assert.equal(citedSpan(text, ann), null, label)
+    const { provider } = providerWith(async () => jsonRes(200, {
+      output: [
+        { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [{ type: 'url', url: 'https://a/1' }] } },
+        { type: 'message', content: [{ type: 'output_text', text, annotations: [ann] }] }
+      ]
+    }))
+    const out = await provider.search({ query: 'q' })
+    assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE, label + ' → must not become evidence')
+    assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT, label)
+    assert.equal(JSON.stringify(out).includes(CLAIM_B), false, '⛔ ' + label + ': whole text was substituted')
+  }
+  // One sound citation beside a broken one keeps the sound one and drops the broken one.
+  const { provider } = providerWith(async () => jsonRes(200, {
+    output: [
+      { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [] } },
+      {
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text,
+          annotations: [
+            { type: 'url_citation', url: 'https://good/1', start_index: 0, end_index: CLAIM_A.length },
+            { type: 'url_citation', url: 'https://bad/2', start_index: 999, end_index: 1200 }
+          ]
+        }]
+      }
+    ]
+  }))
+  const out = await provider.search({ query: 'q' })
+  assert.deepEqual(out.results.map((r) => r.url), ['https://good/1'])
+  assert.equal(out.results[0].content, CLAIM_A)
+})
+
+/**
+ * ⛔ THE VERBATIM LIVE PAYLOAD — captured from the real provider on 2026-08-09 for the query
+ * 「current general minimum wage rate」 with location Winnipeg. Text and offsets are EXACTLY as
+ * they arrived. This fixture exists because the first version of the fix passed every invented
+ * fixture and still produced garbage against reality.
+ */
+const LIVE_TEXT = 'In Manitoba, the current general minimum wage is **$16.00 per hour**. ([gov.mb.ca](https://www.gov.mb.ca/labour/standards/doc%2Cminimum-wage%2Cfactsheet.html?utm_source=openai))\n\nIt will increase to **$16.40 per hour on October 1, 2026**. ([news.gov.mb.ca](https://news.gov.mb.ca/news/index.html?item=73242&utm_source=openai))'
+const LIVE_PAYLOAD = {
+  output: [
+    { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [{ type: 'url', url: 'https://www.gov.mb.ca/labour/standards/doc%2Cminimum-wage%2Cfactsheet.html?utm_source=openai' }] } },
+    {
+      type: 'message',
+      status: 'completed',
+      content: [{
+        type: 'output_text',
+        text: LIVE_TEXT,
+        annotations: [
+          { type: 'url_citation', url: 'https://www.gov.mb.ca/labour/standards/doc%2Cminimum-wage%2Cfactsheet.html?utm_source=openai', title: 'What is Minimum Wage?', start_index: 70, end_index: 177 },
+          { type: 'url_citation', url: 'https://news.gov.mb.ca/news/index.html?item=73242&utm_source=openai', title: 'Minimum wage increase', start_index: 239, end_index: 326 }
+        ]
+      }]
+    }
+  ],
+  usage: { input_tokens: 1, output_tokens: 2, total_tokens: 3 }
+}
+
+test('*** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***', async () => {
+  // The annotation delimits 「([gov.mb.ca](https://…))」. Slicing it yielded a 107-character
+  // 「fact」 that was a URL in prose — the review\'s own defect, one layer along.
+  assert.equal(LIVE_TEXT.slice(70, 177).startsWith('([gov.mb.ca]'), true, 'the fixture really is a marker span')
+  assert.equal(isCitationMarker(LIVE_TEXT.slice(70, 177)), true)
+  assert.equal(isCitationMarker('The wage is $16.00 per hour.'), false)
+
+  const { provider } = providerWith(async () => jsonRes(200, LIVE_PAYLOAD))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.status, SEARCH_STATUS.LIVE)
+  assert.equal(out.results.length, 2)
+  assert.equal(out.results[0].content, 'In Manitoba, the current general minimum wage is **$16.00 per hour**.')
+  assert.equal(out.results[1].content, 'It will increase to **$16.40 per hour on October 1, 2026**.')
+  // ⛔ THE SECOND CLAIM STARTS AFTER THE FIRST MARKER — a shared cursor, not the whole answer
+  // replayed under every citation.
+  assert.equal(out.results[1].content.includes('$16.00'), false, '⛔ claims bled across sources')
+  for (const r of out.results) {
+    assert.equal(/https?:\/\//.test(r.content), false, '⛔ a link ended up inside the FACT field')
+    assert.equal(r.content.includes(']('), false, '⛔ markdown citation syntax survived into evidence')
+    assert.ok(/\d/.test(r.content), 'the claim carries the number the Owner asked about')
+  }
+})
+
+test('*** ⛔ a marker with no claim in front of it fails closed ***', async () => {
+  const text = '([a.example](https://a.example/1))'
+  const { provider } = providerWith(async () => jsonRes(200, {
+    output: [
+      { type: 'web_search_call', status: 'completed', action: { type: 'search', sources: [{ type: 'url', url: 'https://a.example/1' }] } },
+      { type: 'message', content: [{ type: 'output_text', text, annotations: [{ type: 'url_citation', url: 'https://a.example/1', start_index: 0, end_index: text.length }] }] }
+    ]
+  }))
+  const out = await provider.search({ query: 'q' })
+  assert.equal(out.status, SEARCH_STATUS.UNAVAILABLE, '⛔ a bare footnote is not evidence')
+  assert.equal(out.reason, UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT)
+})
+
+test('*** stripCitationMarkers removes links and leaves the sentence intact ***', () => {
+  assert.equal(stripCitationMarkers('Wage is $16.00. ([g.ca](https://g.ca/x))'), 'Wage is $16.00.')
+  assert.equal(stripCitationMarkers('[g.ca](https://g.ca/x)'), '')
+  assert.equal(stripCitationMarkers('no links here at all'), 'no links here at all')
+  assert.equal(stripCitationMarkers(''), '')
+  assert.equal(stripCitationMarkers(null), '')
 })
 
 test('*** 10 — a completed search with no usable rows is LIVE-ZERO, not a failure ***', async () => {
@@ -188,34 +394,35 @@ test('*** ⛔ an incomplete tool call is not a completed search ***', async () =
   assert.equal(out.reason, UNAVAILABLE_REASON.NO_SEARCH_PERFORMED)
 })
 
-test('*** 15 — ⛔ a result with no attributable URL is never promoted to evidence ***', async () => {
-  const { provider } = providerWith(async () => jsonRes(200, okPayload([
-    { title: 'no url at all' },
-    { url: 'not-a-url', title: 'bad scheme' },
-    { url: 'ftp://x.example/f', title: 'wrong protocol' },
-    { url: 'https://good.example/1', title: 'kept' }
+test('*** 15 — ⛔ a claim with no attributable URL is never promoted to evidence ***', async () => {
+  const { provider } = providerWith(async () => jsonRes(200, citedPayload([
+    { url: 'not-a-url', title: 'bad scheme', text: 'Claim one.' },
+    { url: 'ftp://x.example/f', title: 'wrong protocol', text: 'Claim two.' },
+    { url: 'https://good.example/1', title: 'kept', text: CLAIM_A }
   ])))
   const out = await provider.search({ query: 'q' })
   assert.deepEqual(out.results.map((r) => r.url), ['https://good.example/1'])
+  assert.equal(out.results[0].content, CLAIM_A)
   assert.equal(isAttributable({ url: 'https://x' }), true)
   assert.equal(isAttributable({ url: '' }), false)
   assert.equal(isAttributable(null), false)
 })
 
-test('*** the answer PROSE never becomes evidence — only sources and citations do ***', async () => {
-  const { provider } = providerWith(async () => jsonRes(200, okPayload([], {
-    annotations: [{ type: 'url_citation', url: 'https://cited.example/9', title: 'Cited' }]
-  })))
-  const out = await provider.search({ query: 'q' })
-  assert.equal(out.status, SEARCH_STATUS.LIVE)
-  assert.deepEqual(out.results.map((r) => r.url), ['https://cited.example/9'])
-  assert.equal(JSON.stringify(out.results).includes('prose that must never become evidence'), false)
+test('*** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***', () => {
+  const full = { url: 'https://a/1', content: 'a real claim', contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY }
+  assert.equal(hasAttributableContent(full), true)
+  assert.equal(hasAttributableContent(Object.assign({}, full, { content: '' })), false, 'source identity alone')
+  assert.equal(hasAttributableContent(Object.assign({}, full, { content: '   ' })), false, 'whitespace is not content')
+  assert.equal(hasAttributableContent(Object.assign({}, full, { url: 'ftp://a/1' })), false, 'content with no citable URL')
+  assert.equal(hasAttributableContent(Object.assign({}, full, { contentKind: undefined })), false,
+    '⛔ a provider that will not say what kind of text this is cannot have it promoted')
+  assert.equal(hasAttributableContent(Object.assign({}, full, { contentKind: 'something_invented' })), false)
 })
 
 /* ═══ THE READ ADAPTER ═════════════════════════════════════════════════ */
 
-test('*** the adapter registers read-shaped and produces sourced evidence ***', async () => {
-  const provider = { provider: PROVIDER_ID, model: DEFAULT_MODEL, search: async () => makeSearchResult({ provider: PROVIDER_ID, query: 'q', retrievedAt: NOW, results: [{ url: 'https://a.example/1', title: 'Alpha', snippet: 'snip', publishedAt: '2026-07-01' }] }) }
+test('*** the adapter registers read-shaped and produces sourced, CONTENTFUL evidence ***', async () => {
+  const provider = { provider: PROVIDER_ID, model: DEFAULT_MODEL, search: async () => makeSearchResult({ provider: PROVIDER_ID, query: 'q', retrievedAt: NOW, results: [{ url: 'https://a.example/1', title: 'Alpha', content: CLAIM_A, contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY, publishedAt: '2026-07-01', consulted: true }] }) }
   const adapter = createPublicKnowledgeReadAdapter({ provider, clock: () => NOW, logSink: () => {} })
   assert.equal(adapter.source, 'public_knowledge')
   assert.deepEqual(Object.keys(adapter.methods), ['search'])
@@ -232,9 +439,22 @@ test('*** the adapter registers read-shaped and produces sourced evidence ***', 
   assert.equal(rows[0].originalDate, '2026-07-01', 'the publisher\'s date, when given')
   assert.equal(rows[0].retrievedAt, NOW)
   assert.equal(rows[0].trust, 'live')
+  // ⛔ THE ROW CARRIES A FACT, not an empty string beside a link.
+  assert.equal(rows[0].content, CLAIM_A)
+  assert.equal(rows[0].content.trim() === '', false)
   // 18 — provenance travels as DATA for the answer layer to present.
   assert.equal(rows[0].fields.url, 'https://a.example/1')
   assert.equal(rows[0].fields.provider, PROVIDER_ID)
+  assert.equal(rows[0].fields.sourceTitle, 'Alpha')
+  assert.equal(rows[0].fields.contentKind, CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY)
+  assert.equal(rows[0].fields.consulted, true)
+})
+
+test('*** an untitled source keeps a usable label, and the FIELD still tells the truth ***', async () => {
+  const provider = { provider: PROVIDER_ID, search: async () => makeSearchResult({ provider: PROVIDER_ID, query: 'q', retrievedAt: NOW, results: [{ url: 'https://a.example/1', content: CLAIM_A, contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY }] }) }
+  const rows = await createPublicKnowledgeReadAdapter({ provider, clock: () => NOW, logSink: () => {} }).methods.search({ query: 'q' })
+  assert.equal(rows[0].title, 'https://a.example/1', 'a row must be renderable')
+  assert.equal(rows[0].fields.sourceTitle, null, '⛔ a link is not a publication name')
 })
 
 test('*** ⛔ the adapter THROWS on unavailable — it never returns zero rows ***', async () => {
@@ -274,6 +494,22 @@ test('*** 29/30 — ⛔ the accounting line carries counts, never the query, URL
   assert.equal(bad.reason, null)
   assert.equal(bad.webSearchCalls, 0)
   assert.equal(JSON.stringify(bad).includes(SECRET), false)
+})
+
+test('*** J — the accounting line stays content-free now that rows carry content ***', async () => {
+  // Rows now hold real retrieved text. The counting line must still be countable-only: a fact
+  // is retrieval CONTENT, and an accounting log is not the place to keep a second copy of it.
+  const lines = []
+  const provider = { provider: PROVIDER_ID, model: DEFAULT_MODEL, search: async () => Object.assign(makeSearchResult({ provider: PROVIDER_ID, query: 'a query with the word Gordon in it', retrievedAt: NOW, results: [{ url: 'https://a.example/1', title: 'Alpha', content: CLAIM_A, contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY }] }), { usage: { inputTokens: 1, outputTokens: 2, totalTokens: 3 }, webSearchCalls: 1, latencyMs: 5 }) }
+  await createPublicKnowledgeReadAdapter({ provider, clock: () => NOW, logSink: (l) => lines.push(l) }).methods.search({ query: 'q' })
+  assert.equal(lines.length, 1)
+  const blob = JSON.stringify(lines[0])
+  assert.equal(blob.includes(CLAIM_A), false, '⛔ retrieved content was logged')
+  assert.equal(blob.includes('https://a.example/1'), false, '⛔ a URL was logged')
+  assert.equal(blob.includes('Alpha'), false, '⛔ a source title was logged')
+  assert.equal(blob.includes('Gordon'), false, '⛔ the query was logged')
+  assert.equal(lines[0].resultCount, 1, 'the COUNT is what accounting is for')
+  assert.equal(lines[0].contentKind, undefined, 'no per-row detail belongs on a counting line')
 })
 
 test('*** ⛔ the API key never appears in a result, error or accounting line ***', async () => {
@@ -346,15 +582,43 @@ test('*** reasonForStatus maps every documented failure class ***', () => {
   assert.equal(reasonForStatus(400), UNAVAILABLE_REASON.MALFORMED)
 })
 
-test('*** consulted sources are preferred, and duplicates collapse to one row ***', () => {
-  const { results } = extractResults({
+test('*** consulted sources ENRICH a cited row; they never manufacture one ***', () => {
+  const text = CLAIM_A + ' ' + CLAIM_B
+  const { results, sourcesSeen } = extractResults({
     output: [
-      { type: 'web_search_call', status: 'completed', action: { sources: [{ url: 'https://a/1', title: 'FromSearch' }] } },
-      { type: 'message', content: [{ annotations: [{ type: 'url_citation', url: 'https://a/1', title: 'FromProse' }] }] }
+      {
+        type: 'web_search_call',
+        status: 'completed',
+        action: {
+          sources: [
+            { type: 'url', url: 'https://a/1', published_at: '2026-07-01' },
+            // ⛔ CONSULTED BUT NEVER CITED — the search read it, no claim rests on it, so it is
+            // NOT evidence. This is the whole review finding in one line.
+            { type: 'url', url: 'https://never-cited/9' }
+          ]
+        }
+      },
+      {
+        type: 'message',
+        content: [{
+          type: 'output_text',
+          text,
+          annotations: [
+            { type: 'url_citation', url: 'https://a/1', title: 'FromCitation', start_index: 0, end_index: CLAIM_A.length },
+            // Two citations to ONE page are two claims, not a duplicate row.
+            { type: 'url_citation', url: 'https://a/1', start_index: CLAIM_A.length + 1, end_index: text.length }
+          ]
+        }]
+      }
     ]
   })
-  assert.equal(results.length, 1)
-  assert.equal(results[0].title, 'FromSearch', 'the search\'s own metadata wins over the prose')
+  assert.equal(results.length, 1, '⛔ a consulted-only URL produced a row')
+  assert.deepEqual(results.map((r) => r.url), ['https://a/1'])
+  assert.equal(results[0].title, 'FromCitation', 'the citation names the source; the live search sends no title')
+  assert.equal(results[0].content, CLAIM_A + ' … ' + CLAIM_B, 'both claims survive, visibly separated')
+  assert.equal(results[0].publishedAt, '2026-07-01', 'the consulted entry enriches the date')
+  assert.equal(results[0].consulted, true)
+  assert.equal(sourcesSeen, 2, 'the uncited page is still a source the search surfaced')
 })
 
 /* ═══ 18–24 — THE PIPELINE STILL OWNS THE TURN ═════════════════════════ */
@@ -400,9 +664,10 @@ async function withEnv (over, fn) {
 const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history || [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555', readContextDeps: deps
 })
-const liveProvider = () => ({ provider: PROVIDER_ID, model: DEFAULT_MODEL, search: async ({ query }) => makeSearchResult({ provider: PROVIDER_ID, query, retrievedAt: NOW, results: [{ url: 'https://idx.example/beef', title: 'Wholesale index', snippet: 'index 112.4', publishedAt: '2026-07-31' }] }) })
+const PUB_CLAIM = 'The wholesale beef index rose 5.1 percent to 112.4 in July 2026.'
+const liveProvider = () => ({ provider: PROVIDER_ID, model: DEFAULT_MODEL, search: async ({ query }) => makeSearchResult({ provider: PROVIDER_ID, query, retrievedAt: NOW, results: [{ url: 'https://idx.example/beef', title: 'Wholesale index', content: PUB_CLAIM, contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY, publishedAt: '2026-07-31', consulted: true }] }) })
 
-test('*** 19/20 — evidence reaches GPT and the FINAL ANSWER is still GPT\'s ***', async () => {
+test('*** G/H · 19/20 — URL, TITLE and CONTENT all reach GPT, and GPT still writes the answer ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector(liveProvider())
     const a = scriptedAdapter([READ(PUB, { query: 'wholesale beef index', freshness: 'current', location: null }), FINAL('MAIN_MODEL_ANSWER')])
@@ -412,10 +677,16 @@ test('*** 19/20 — evidence reaches GPT and the FINAL ANSWER is still GPT\'s **
       publicQueryPlanner: async () => ({ query: 'wholesale beef index', freshness: 'current', location: null })
     })
     assert.equal(c.publicCalls.length, 1, 'the real read path executed')
+    // ⛔ H — the retrieval worker's text is raw material; the reply is the main model's.
     assert.equal(out.reply, 'MAIN_MODEL_ANSWER', '⛔ the retrieval worker must never author the reply')
-    // 18/17 — the source survives into the turn for the answer layer to cite.
+    assert.equal(out.reply.includes(PUB_CLAIM), false, '⛔ retrieval prose was handed to the Owner verbatim')
+
+    // ⛔ G — ALL THREE, not just the link. Before this fix the prompt carried the URL and an
+    // empty string, so the answer layer could cite a page it had been told nothing about.
     const prompt = a.calls[a.calls.length - 1]
-    assert.ok(prompt.includes('https://idx.example/beef') || prompt.includes('Wholesale index'), 'the source identity reached the answer layer')
+    assert.ok(prompt.includes('https://idx.example/beef'), 'the URL reached the answer layer')
+    assert.ok(prompt.includes('Wholesale index'), 'the title reached the answer layer')
+    assert.ok(prompt.includes(PUB_CLAIM), '⛔ THE FACT ITSELF reached the answer layer')
   })
 })
 
@@ -442,7 +713,7 @@ test('*** 21/22/23/25 — questions that need no outside world make ZERO web cal
 
 test('*** 24 — a mixed turn reads BOTH worlds, and nothing internal leaves ***', async () => {
   await withEnv({}, async () => {
-    const t = fakeTransport(async () => jsonRes(200, okPayload([{ url: 'https://idx.example/beef', title: 'Index' }])))
+    const t = fakeTransport(async () => jsonRes(200, citedPayload([{ url: 'https://idx.example/beef', title: 'Index', text: PUB_CLAIM }])))
     const provider = createOpenAIWebSearchProvider({ apiKey: 'k', transport: t.fn, clock: () => NOW })
     const c = twoWorldConnector(provider)
     // ⛔ THE SECURITY CANARY, ON THE REAL PROVIDER SEAM. Internal evidence is live in the turn

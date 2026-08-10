@@ -47,33 +47,79 @@ const UNAVAILABLE_REASON = Object.freeze({
   NETWORK: 'network',
   MALFORMED: 'malformed',
   REFUSED: 'refused',
-  NO_SEARCH_PERFORMED: 'no_search_performed'
+  NO_SEARCH_PERFORMED: 'no_search_performed',
+  /**
+   * ⛔ THE SEARCH RAN, SOURCES EXIST, AND STILL NOTHING TRUSTWORTHY COULD BE BUILT.
+   * That is 「we could not construct evidence」, which is OUR failure — not 「the web has
+   * nothing」, which is a claim about the world. See the LIVE_ZERO ruling below.
+   */
+  NO_ATTRIBUTABLE_CONTENT: 'no_attributable_content'
 })
+
+/**
+ * ⛔ WHAT KIND OF TEXT THIS ROW'S CONTENT ACTUALLY IS.
+ *
+ * A sentence a retrieval model wrote while reading a page is NOT the page. It is a derived,
+ * cited summary — usually accurate, occasionally a paraphrase that shifts a number's scope —
+ * and labelling it as though the publisher had printed it would launder a summary into a
+ * quotation. So the kind travels with the content, and no layer downstream has to guess.
+ *
+ * PUBLISHER_TEXT is declared because the distinction is the point, not because anything
+ * produces it today: no current provider returns publisher-direct body text.
+ */
+const CONTENT_KIND = Object.freeze({
+  WEB_SEARCH_CITED_SUMMARY: 'web_search_cited_summary',
+  PUBLISHER_TEXT: 'publisher_direct_text'
+})
+const CONTENT_KINDS = new Set(Object.values(CONTENT_KIND))
 
 /**
  * ⛔ A RESULT WITHOUT AN ATTRIBUTABLE SOURCE IS NOT EVIDENCE.
  *
  * A retrieval model can write a confident sentence with nothing behind it. Promoting that to
  * live public evidence would manufacture exactly the unsourced claim this whole project
- * removes elsewhere — so a row survives only if it carries a URL. Everything else is dropped,
- * and if nothing survives the read is LIVE_ZERO rather than a set of pretty sentences.
+ * removes elsewhere — so a row survives only if it carries a URL.
  */
 function isAttributable (r) {
   return !!(r && typeof r.url === 'string' && /^https?:\/\//i.test(r.url.trim()))
 }
 
 /**
+ * ⛔ AND A SOURCE WITHOUT CONTENT IS NOT EVIDENCE EITHER — THIS IS THE A4-2B REVIEW FIX.
+ *
+ * The first build treated a URL as a row and took its text from `snippet`. Against the real
+ * provider that field does not exist: 67 consulted sources across three live searches carried
+ * `{type, url}` and nothing else. Every public row therefore reached the main model as a bare
+ * link with `content: ''` — source identity dressed as evidence, with no fact inside it.
+ *
+ * So content is now REQUIRED, and it must be LABELLED: a provider that cannot say what kind
+ * of text it is handing over cannot have it promoted to evidence.
+ */
+function hasAttributableContent (r) {
+  return !!(isAttributable(r) &&
+    typeof r.content === 'string' && r.content.trim() !== '' &&
+    CONTENT_KINDS.has(r.contentKind))
+}
+
+/**
  * Normalise one provider row into the shape A4 consumes.
  * ⛔ `publishedAt` is passed through ONLY when the provider actually supplied one. A date this
  * layer invented would be indistinguishable downstream from one the publisher printed.
+ * ⛔ `title` stays NULL when absent. It used to fall back to the URL, which put a link in the
+ * field an answer reads as a publication's name.
  */
 function normaliseResult (r) {
   const url = String(r.url).trim()
+  const title = (r.title == null || String(r.title).trim() === '') ? null : String(r.title).trim()
   return {
-    title: (r.title == null || String(r.title).trim() === '') ? url : String(r.title).trim(),
+    title,
     url,
-    snippet: r.snippet == null ? null : String(r.snippet),
-    publishedAt: r.publishedAt == null ? null : String(r.publishedAt)
+    content: String(r.content).trim(),
+    contentKind: r.contentKind,
+    publishedAt: r.publishedAt == null ? null : String(r.publishedAt),
+    // Enrichment only: was this URL among those the search actually consulted, or is it known
+    // solely because the retrieval model cited it? Never a substitute for content.
+    consulted: r.consulted === true
   }
 }
 
@@ -86,22 +132,36 @@ function normaliseResult (r) {
  * @param {string} input.retrievedAt server clock, never the provider's
  * @param {object[]} [input.results]
  * @param {string} [input.reason]   UNAVAILABLE_REASON when nothing was learned
+ * @param {number} [input.sourcesSeen]  how many distinct sources the search actually surfaced,
+ *   whether or not any of them yielded content. This is what separates 「the world is empty」
+ *   from 「we could not read what the world gave us」.
  */
-function makeSearchResult ({ provider, query, retrievedAt, results, reason = null, unavailable = false }) {
+function makeSearchResult ({ provider, query, retrievedAt, results, reason = null, unavailable = false, sourcesSeen = 0 }) {
   if (unavailable) {
     return { status: SEARCH_STATUS.UNAVAILABLE, provider, query, retrievedAt, reason: reason || UNAVAILABLE_REASON.MALFORMED, results: [] }
   }
-  const usable = (Array.isArray(results) ? results : []).filter(isAttributable).map(normaliseResult)
-  return {
-    // ⛔ ZERO USABLE ROWS IS A TRUE ANSWER, NOT A FAILURE — but only because the provider
-    // genuinely answered. The caller reaches this branch solely on a completed request.
-    status: usable.length ? SEARCH_STATUS.LIVE : SEARCH_STATUS.LIVE_ZERO,
-    provider,
-    query,
-    retrievedAt,
-    reason: null,
-    results: usable
+  const usable = (Array.isArray(results) ? results : []).filter(hasAttributableContent).map(normaliseResult)
+  if (usable.length) {
+    return { status: SEARCH_STATUS.LIVE, provider, query, retrievedAt, reason: null, results: usable }
   }
+
+  /**
+   * ⛔ NOTHING USABLE SPLITS INTO TWO DIFFERENT FACTS, AND THEY MUST NOT SHARE A STATUS.
+   *
+   * The search surfaced sources but none of them produced safely attributable text → we
+   * failed to build evidence. Reporting that as LIVE_ZERO would put 「there is no public
+   * information about this」 in front of the Owner on the strength of an extraction problem.
+   * Only a search that genuinely surfaced nothing is LIVE_ZERO, and that remains a true and
+   * useful answer about the world.
+   */
+  const seen = Number.isFinite(sourcesSeen) ? sourcesSeen : 0
+  if (seen > 0) {
+    return {
+      status: SEARCH_STATUS.UNAVAILABLE, provider, query, retrievedAt,
+      reason: UNAVAILABLE_REASON.NO_ATTRIBUTABLE_CONTENT, results: []
+    }
+  }
+  return { status: SEARCH_STATUS.LIVE_ZERO, provider, query, retrievedAt, reason: null, results: [] }
 }
 
 /**
@@ -135,7 +195,10 @@ function logPublicSearch (entry, sink) {
 module.exports = {
   SEARCH_STATUS,
   UNAVAILABLE_REASON,
+  CONTENT_KIND,
+  CONTENT_KINDS,
   isAttributable,
+  hasAttributableContent,
   normaliseResult,
   makeSearchResult,
   logPublicSearch

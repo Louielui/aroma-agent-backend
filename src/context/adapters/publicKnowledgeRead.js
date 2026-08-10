@@ -89,18 +89,33 @@ function createPublicKnowledgeReadAdapter (options = {}) {
         // Stable within the turn and derived from position, so two rows from one page cannot
         // collide. The URL is the real identity and travels in `link` and `fields`.
         sourceId: 'web-' + (i + 1),
-        title: r.title,
+        // A row needs a label to be rendered at all; the URL is the honest one when the source
+        // gave no title. ⛔ `fields.sourceTitle` keeps the truth — null means null — so nothing
+        // downstream can mistake a link for a publication's name.
+        title: r.title || r.url,
         // ⛔ THE PUBLISHER'S DATE OR NOTHING. A retrieval date is not a publication date, and
         // filling this with `retrievedAt` would let a page from 2019 read as today's news.
         originalDate: r.publishedAt,
-        content: r.snippet == null ? '' : r.snippet,
+        // ⛔ THE ATTRIBUTED CLAIM ITSELF — the whole point of the A4-2B review fix. This used to
+        // read `r.snippet`, a field the live provider never sends, so every public row arrived
+        // at the main model as an empty string beside a URL.
+        content: r.content,
         link: r.url,
         retrievedAt,
         entityType: PUBLIC_ENTITY_TYPE,
         // ⛔ PROVENANCE TRAVELS AS DATA, NOT AS PROSE. The final answer layer decides how to
         // present a citation; the retrieval model's own citation formatting is never the
         // Owner-facing mechanism.
-        fields: { url: r.url, sourceTitle: r.title, provider: out.provider, publishedAt: r.publishedAt }
+        // ⛔ `contentKind` travels WITH the content so no downstream layer can quote a derived
+        // summary as though the publisher had printed it.
+        fields: {
+          url: r.url,
+          sourceTitle: r.title,
+          provider: out.provider,
+          publishedAt: r.publishedAt,
+          contentKind: r.contentKind,
+          consulted: r.consulted === true
+        }
       }))
     }
   }

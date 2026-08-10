@@ -33,7 +33,7 @@
  */
 
 const {
-  SEARCH_STATUS, UNAVAILABLE_REASON, makeSearchResult
+  SEARCH_STATUS, UNAVAILABLE_REASON, CONTENT_KIND, makeSearchResult
 } = require('./publicSearchProvider')
 
 const PROVIDER_ID = 'openai_web_search'
@@ -56,10 +56,18 @@ const MAX_OUTPUT_TOKENS = 1500
  * ⛔ MINIMAL RETRIEVAL INSTRUCTION — MODEL TEXT, and deliberately not a persona.
  * It asks for retrieval and forbids the two failure modes that would corrupt evidence:
  * answering from memory, and asserting anything it did not find a source for.
+ *
+ * ⛔ IT NO LONGER ASKS FOR BREVITY, AND THAT IS THE A4-2B REVIEW FIX, NOT A TUNING PASS.
+ * The old line ended 「Keep it brief; the sources matter more than the prose」 — written when
+ * content was expected to arrive in `action.sources[].snippet`. It does not: the live payload
+ * carries `{type, url}` per source and nothing else, so the CITED SENTENCES ARE THE ONLY
+ * FACTUAL CONTENT THERE IS. An instruction to minimise them was an instruction to minimise the
+ * evidence. It now asks for the facts as separate cited statements, because each citation
+ * span becomes one evidence row.
  */
 const RETRIEVAL_INSTRUCTION = 'Search the web for the request below and report only what the sources say. ' +
   'Do not answer from prior knowledge. Do not state any fact you did not find a source for. ' +
-  'Keep it brief; the sources matter more than the prose.'
+  'State each key fact as its own short sentence and cite the source it came from.'
 
 /** freshness is MEANING, not a vendor parameter — rendered as a hint the search can honour. */
 const FRESHNESS_HINT = Object.freeze({
@@ -92,18 +100,81 @@ function reasonForStatus (status) {
 }
 
 /**
- * Pull attributable sources out of a Responses payload.
+ * ⛔ THE CITED SPAN, OR NOTHING. Fail-closed index handling.
  *
- * ⛔ THE CONSULTED-SOURCE METADATA IS PREFERRED OVER THE PROSE. `web_search_call.action.sources`
- * is what the search actually consulted; annotations are what the model chose to cite. Both are
- * real, but the first is the better provenance, so it is read first and annotations only fill
- * in titles. Nothing is taken from the answer text itself.
+ * `url_citation` marks the stretch of the answer text a source supports. Slicing exactly that
+ * span is what makes the sentence attributable to that URL. If the indices are missing, not
+ * integers, inverted, negative or past the end of the text, THIS FUNCTION RETURNS NULL and the
+ * citation yields no content at all.
+ *
+ * ⛔ THERE IS DELIBERATELY NO FALLBACK TO THE WHOLE TEXT. That fallback is the exact shape of
+ * the bug being fixed: it would attach every sentence in the answer — including the ones a
+ * different source supports, and the ones no source supports — to whichever URL happened to
+ * carry a broken index.
+ */
+function citedSpan (text, a) {
+  if (typeof text !== 'string' || !text) return null
+  const s = a.start_index
+  const e = a.end_index
+  if (!Number.isInteger(s) || !Number.isInteger(e)) return null
+  if (s < 0 || e <= s || e > text.length) return null
+  const span = text.slice(s, e).trim()
+  return span || null
+}
+
+/** Remove inline markdown links — `([host](https://…))` or `[host](https://…)` — from a string. */
+function stripCitationMarkers (s) {
+  return String(s == null ? '' : s)
+    .replace(/\(?\s*\[[^\]]*\]\(\s*https?:\/\/[^\s)]*\s*\)\s*\)?/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
+ * ⛔ IS THIS SPAN THE FACT, OR JUST THE FOOTNOTE?
+ *
+ * Measured against the live provider on 2026-08-09, `url_citation` does NOT delimit the claim —
+ * it delimits the MARKDOWN CITATION MARKER printed after it:
+ *
+ *   「In Manitoba, the current general minimum wage is **$16.00 per hour**. ([gov.mb.ca](https://…))」
+ *    ↑ the fact                                                            ↑ start_index … end_index
+ *
+ * Slicing the span therefore produced a 107-character 「fact」 that was a URL in prose form —
+ * the SAME defect the review found in `action.sources`, one layer along, and it would have
+ * shipped looking like a pass. So a span that is nothing but markers means the claim is the
+ * text BEFORE it; a span with real words is taken as the claim itself.
+ */
+function isCitationMarker (span) {
+  const left = stripCitationMarkers(span)
+  return left === '' || /^[\s.,;:·—–()-]*$/.test(left)
+}
+
+/**
+ * Pull ATTRIBUTABLE FACTUAL CONTENT out of a Responses payload.
+ *
+ * ── WHY THIS IS NOT THE ORIGINAL DESIGN ─────────────────────────────────────
+ * The first build read `web_search_call.action.sources[].snippet` and treated the answer text
+ * as prose to be discarded. That inverted the documented guarantees. The contract promises the
+ * consulted URLs, the message text, and `url_citation` annotations tying spans of that text to
+ * those URLs — it does NOT promise a snippet, and the live provider does not send one. Measured
+ * over three real searches: 67 sources, key set `{type, url}`, ZERO snippets, ZERO titles.
+ *
+ * So the roles swap. ⛔ THE CITED SPANS ARE THE FACTS; the consulted-source list is provenance
+ * that ENRICHES a row and can never create one. A URL the search merely read, with no cited
+ * sentence attached, contributes no evidence — source identity is not a fact.
+ *
+ * ⛔ UNCITED PROSE IS DISCARDED ENTIRELY. Only text inside a valid citation span survives, so a
+ * confident sentence the model wrote with nothing behind it has no path into an EvidenceSet.
  */
 function extractResults (payload) {
-  const out = new Map() // url -> row, first writer wins
   const output = Array.isArray(payload && payload.output) ? payload.output : []
   let webSearchCalls = 0
   let searchPerformed = false
+
+  // url -> what the SEARCH knows about it (identity and, if a vendor ever sends one, a date)
+  const consulted = new Map()
+  // url -> { url, title, spans:[], publishedAt } built from CITATIONS only
+  const cited = new Map()
 
   for (const item of output) {
     if (!item || typeof item !== 'object') continue
@@ -115,8 +186,11 @@ function extractResults (payload) {
       const sources = Array.isArray(action.sources) ? action.sources : []
       for (const s of sources) {
         const url = s && (s.url || s.link)
-        if (!url || out.has(url)) continue
-        out.set(url, { url, title: s.title || null, snippet: s.snippet || null, publishedAt: s.published_at || s.publishedAt || null })
+        if (!url || consulted.has(url)) continue
+        consulted.set(url, {
+          title: s.title || null,
+          publishedAt: s.published_at || s.publishedAt || null
+        })
       }
       continue
     }
@@ -124,17 +198,55 @@ function extractResults (payload) {
     if (item.type === 'message') {
       const content = Array.isArray(item.content) ? item.content : []
       for (const c of content) {
-        const anns = Array.isArray(c && c.annotations) ? c.annotations : []
-        for (const a of anns) {
-          if (!a || a.type !== 'url_citation' || !a.url) continue
-          const existing = out.get(a.url)
-          if (existing) { if (!existing.title && a.title) existing.title = a.title; continue }
-          out.set(a.url, { url: a.url, title: a.title || null, snippet: null, publishedAt: null })
+        const text = c && typeof c.text === 'string' ? c.text : ''
+        const anns = (Array.isArray(c && c.annotations) ? c.annotations : [])
+          .filter((a) => a && a.type === 'url_citation' && typeof a.url === 'string' && a.url)
+        // In document order, so 「the text before this marker」 means the text since the LAST
+        // marker — not the whole answer replayed under every citation.
+        const ordered = anns.slice().sort((x, y) =>
+          (Number.isInteger(x.start_index) ? x.start_index : Infinity) -
+          (Number.isInteger(y.start_index) ? y.start_index : Infinity))
+
+        let cursor = 0
+        for (const a of ordered) {
+          const span = citedSpan(text, a)
+          if (!span) continue // fail closed — a citation we cannot locate carries no claim
+          const claim = isCitationMarker(span)
+            ? stripCitationMarkers(text.slice(cursor, a.start_index))
+            : stripCitationMarkers(span)
+          cursor = Math.max(cursor, a.end_index)
+          // ⛔ A MARKER WITH NOTHING IN FRONT OF IT IS STILL NOT A FACT. Fail closed rather than
+          // reach further back and attach some other source's sentence to this URL.
+          if (!claim) continue
+          const row = cited.get(a.url) || { url: a.url, title: null, spans: [] }
+          if (!row.title && a.title) row.title = a.title
+          // Two citations to one page are two claims from that page, not a duplicate row.
+          if (!row.spans.includes(claim)) row.spans.push(claim)
+          cited.set(a.url, row)
         }
       }
     }
   }
-  return { results: [...out.values()], webSearchCalls, searchPerformed }
+
+  const results = [...cited.values()].map((row) => {
+    const enrich = consulted.get(row.url) || null
+    return {
+      url: row.url,
+      title: row.title || (enrich && enrich.title) || null,
+      // ⛔ JOINED WITH AN ELLIPSIS, NOT A SPACE. Two cited spans are separate statements; running
+      // them together would read as one continuous sentence the source never wrote.
+      content: row.spans.join(' … '),
+      contentKind: CONTENT_KIND.WEB_SEARCH_CITED_SUMMARY,
+      publishedAt: (enrich && enrich.publishedAt) || null,
+      consulted: consulted.has(row.url)
+    }
+  })
+
+  // Everything the search surfaced, cited or not. Used ONLY to tell 「found nothing」 apart from
+  // 「found pages but could not attribute any text to them」.
+  const sourcesSeen = new Set([...consulted.keys(), ...cited.keys()]).size
+
+  return { results, webSearchCalls, searchPerformed, sourcesSeen }
 }
 
 /**
@@ -219,7 +331,7 @@ function createOpenAIWebSearchProvider (options = {}) {
       return Object.assign(fail(UNAVAILABLE_REASON.MALFORMED), { usage: null, latencyMs })
     }
 
-    const { results, webSearchCalls, searchPerformed } = extractResults(payload)
+    const { results, webSearchCalls, searchPerformed, sourcesSeen } = extractResults(payload)
 
     // ⛔ A TURN WHERE THE TOOL NEVER RAN IS NOT A LIVE-ZERO. The model may answer from its own
     // memory without searching; that produces prose with no provenance, and calling it 「the
@@ -228,8 +340,8 @@ function createOpenAIWebSearchProvider (options = {}) {
       return Object.assign(fail(UNAVAILABLE_REASON.NO_SEARCH_PERFORMED), { usage: usageOf(payload), latencyMs, webSearchCalls })
     }
 
-    const out = makeSearchResult({ provider: PROVIDER_ID, query, retrievedAt, results })
-    return Object.assign(out, { usage: usageOf(payload), latencyMs, webSearchCalls, model })
+    const out = makeSearchResult({ provider: PROVIDER_ID, query, retrievedAt, results, sourcesSeen })
+    return Object.assign(out, { usage: usageOf(payload), latencyMs, webSearchCalls, model, sourcesSeen })
   }
 
   function usageOf (payload) {
@@ -254,5 +366,8 @@ module.exports = {
   RESPONSES_URL,
   toUserLocation,
   extractResults,
+  citedSpan,
+  isCitationMarker,
+  stripCitationMarkers,
   reasonForStatus
 }
