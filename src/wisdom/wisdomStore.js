@@ -36,6 +36,119 @@ const MAX_APPLICATION_NOTE = C.MAX_NOTE_CHARS
 
 const emptyDb = () => ({ schemaVersion: C.SCHEMA_VERSION, lessons: [], applications: [], events: [] })
 
+/** The one error shape every unreadable-store path uses. */
+const unreadable = (why) => new Error(
+  'wisdom store is unreadable (' + why + ') — refusing to treat it as empty. The file was NOT modified.'
+)
+
+const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v)
+const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== ''
+
+/**
+ * ⛔ READ-ONLY VALIDATION. It answers 「is this the shape we wrote?」 and nothing else.
+ *
+ * It never truncates, defaults, redacts, rewrites, drops a bad record or skips one. A reader
+ * that repairs what it reads destroys the evidence that something went wrong — and a store
+ * that quietly drops the malformed third lesson reports two where three were learned.
+ */
+function assertPersistedRef (ref, where) {
+  if (!isPlainObject(ref)) throw unreadable(where + ' is not an object')
+  const keys = Object.keys(ref).sort()
+  if (keys.length !== 2 || keys[0] !== 'id' || keys[1] !== 'kind') throw unreadable(where + ' must carry exactly {kind, id}')
+  if (!C.REF_KINDS.has(ref.kind)) throw unreadable(where + '.kind is not a known ref kind')
+  if (!isNonEmptyString(ref.id) || ref.id.length > C.MAX_ID_CHARS) throw unreadable(where + '.id is invalid')
+}
+
+function assertPersistedRefs (refs, where) {
+  if (!Array.isArray(refs)) throw unreadable(where + ' is not an array')
+  if (refs.length > C.MAX_REFS) throw unreadable(where + ' exceeds the bounded ref count')
+  refs.forEach((r, i) => assertPersistedRef(r, where + '[' + i + ']'))
+}
+
+function assertPersistedLesson (l, i) {
+  const at = 'lessons[' + i + ']'
+  if (!isPlainObject(l)) throw unreadable(at + ' is not an object')
+  if (l.schemaVersion !== C.SCHEMA_VERSION) throw unreadable(at + '.schemaVersion is unsupported')
+  if (!isNonEmptyString(l.id) || l.id.length > C.MAX_ID_CHARS) throw unreadable(at + '.id is invalid')
+
+  for (const f of ['situation', 'action', 'outcome', 'lesson']) {
+    if (!isNonEmptyString(l[f])) throw unreadable(at + '.' + f + ' is missing or not a string')
+    if (l[f].length > C.MAX_SEMANTIC_CHARS) throw unreadable(at + '.' + f + ' exceeds its bound')
+  }
+
+  const c = l.confidence
+  if (!isPlainObject(c)) throw unreadable(at + '.confidence is not an object')
+  if (c.value !== null) {
+    if (typeof c.value !== 'number' || !Number.isFinite(c.value) || c.value < 0 || c.value > 1) {
+      throw unreadable(at + '.confidence.value is invalid')
+    }
+    // ⛔ A stored number with no basis is a number nobody can argue with.
+    if (!C.CONFIDENCE_BASES.has(c.basis)) throw unreadable(at + '.confidence.basis is required with a value')
+  } else if (c.basis !== null && !C.CONFIDENCE_BASES.has(c.basis)) {
+    throw unreadable(at + '.confidence.basis is not a known basis')
+  }
+
+  const v = l.validation
+  if (!isPlainObject(v)) throw unreadable(at + '.validation is not an object')
+  if (!C.STATES.has(v.state)) throw unreadable(at + '.validation.state is not a known state')
+  if (v.authority !== null && !C.AUTHORITIES.has(v.authority)) throw unreadable(at + '.validation.authority is not permitted')
+  if (v.reason !== null && !isNonEmptyString(v.reason)) throw unreadable(at + '.validation.reason is invalid')
+  if (v.validatedAt !== null && !isNonEmptyString(v.validatedAt)) throw unreadable(at + '.validation.validatedAt is invalid')
+  if (v.supersededBy !== null && !isNonEmptyString(v.supersededBy)) throw unreadable(at + '.validation.supersededBy is invalid')
+  // ⛔ A validated lesson with no authority would be a belief nobody blessed.
+  if (v.state === C.STATE.VALIDATED && !C.AUTHORITIES.has(v.authority)) throw unreadable(at + ' is validated with no owner authority')
+  assertPersistedRefs(v.evidenceRefs, at + '.validation.evidenceRefs')
+
+  const p = l.provenance
+  if (!isPlainObject(p)) throw unreadable(at + '.provenance is not an object')
+  if (!C.SOURCE_TYPES.has(p.sourceType)) throw unreadable(at + '.provenance.sourceType is not a known source type')
+  if (!C.CREATED_BYS.has(p.createdBy)) throw unreadable(at + '.provenance.createdBy is not a known creator')
+  if (!isNonEmptyString(p.createdAt)) throw unreadable(at + '.provenance.createdAt is missing')
+  assertPersistedRefs(p.sourceRefs, at + '.provenance.sourceRefs')
+
+  if (!Array.isArray(l.redactedKinds)) throw unreadable(at + '.redactedKinds is not an array')
+  if (!isPlainObject(l.scope)) throw unreadable(at + '.scope is not an object')
+  if (!Array.isArray(l.scope.tags)) throw unreadable(at + '.scope.tags is not an array')
+}
+
+function assertPersistedApplication (a, i) {
+  const at = 'applications[' + i + ']'
+  if (!isPlainObject(a)) throw unreadable(at + ' is not an object')
+  if (a.schemaVersion !== C.SCHEMA_VERSION) throw unreadable(at + '.schemaVersion is unsupported')
+  if (!isNonEmptyString(a.id) || a.id.length > C.MAX_ID_CHARS) throw unreadable(at + '.id is invalid')
+  if (!isNonEmptyString(a.lessonId) || a.lessonId.length > C.MAX_ID_CHARS) throw unreadable(at + '.lessonId is invalid')
+  // ⛔ Only a validated lesson may ever have been applied, so any other stored state is corrupt.
+  if (a.lessonStateAtApplication !== C.STATE.VALIDATED) throw unreadable(at + '.lessonStateAtApplication is invalid')
+  if (!isNonEmptyString(a.appliedAt)) throw unreadable(at + '.appliedAt is missing')
+  if (a.outcome !== null && !C.APPLICATION_OUTCOMES.has(a.outcome)) throw unreadable(at + '.outcome is not a known outcome')
+  if (a.note !== null && typeof a.note !== 'string') throw unreadable(at + '.note is invalid')
+  if (!Array.isArray(a.redactedKinds)) throw unreadable(at + '.redactedKinds is not an array')
+  if (a.contextRef !== null) assertPersistedRef(a.contextRef, at + '.contextRef')
+  if (a.outcomeEvidenceRef !== null) assertPersistedRef(a.outcomeEvidenceRef, at + '.outcomeEvidenceRef')
+}
+
+const EVENT_TYPES = new Set(Object.values(C.EVENT))
+
+function assertPersistedEvent (e, i) {
+  const at = 'events[' + i + ']'
+  if (!isPlainObject(e)) throw unreadable(at + ' is not an object')
+  if (!EVENT_TYPES.has(e.type)) throw unreadable(at + '.type is not a known event type')
+  if (!isNonEmptyString(e.at)) throw unreadable(at + '.at is missing')
+}
+
+/** Top level first, then every record. Anything wrong makes the whole store unavailable. */
+function assertPersistedShape (db) {
+  if (!isPlainObject(db)) throw unreadable('top level is not an object')
+  if (db.schemaVersion !== C.SCHEMA_VERSION) throw unreadable('schemaVersion is missing or unsupported')
+  for (const key of ['lessons', 'applications', 'events']) {
+    if (!Array.isArray(db[key])) throw unreadable(key + ' is not an array')
+  }
+  db.lessons.forEach(assertPersistedLesson)
+  db.applications.forEach(assertPersistedApplication)
+  db.events.forEach(assertPersistedEvent)
+  return db
+}
+
 function sleepSync (ms) {
   Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 }
@@ -78,32 +191,64 @@ function createWisdomStore (options = {}) {
     let db
     try {
       db = JSON.parse(raw)
-      if (!db || typeof db !== 'object' || Array.isArray(db)) throw new Error('not an object')
     } catch (err) {
-      throw new Error('wisdom store is unreadable (' + ((err && err.message) || 'invalid') +
-        ') — refusing to treat it as empty. The file was NOT modified.')
+      throw unreadable((err && err.message) || 'invalid JSON')
     }
-    const base = emptyDb()
-    return {
-      schemaVersion: db.schemaVersion || base.schemaVersion,
-      lessons: Array.isArray(db.lessons) ? db.lessons : base.lessons,
-      applications: Array.isArray(db.applications) ? db.applications : base.applications,
-      events: Array.isArray(db.events) ? db.events : base.events
-    }
+    /**
+     * ⛔ NO COERCION. A FILE THAT EXISTS MUST BE THE RIGHT SHAPE.
+     *
+     * The first version ended `Array.isArray(db.lessons) ? db.lessons : base.lessons`, which
+     * turns `"lessons": {}` — structurally corrupt, and perfectly valid JSON — into `[]`. The
+     * store then answers 「nothing was ever learned」 with total confidence. That is the exact
+     * failure `load()` exists to prevent, reintroduced one line below the comment forbidding it.
+     *
+     * Absent means first run. Present means it must parse AND validate, or the store is
+     * unavailable and the file is left exactly as it was found.
+     */
+    assertPersistedShape(db)
+    return db
   }
 
   /* ── lock ──────────────────────────────────────────────────────────── */
 
+  /**
+   * ⛔ AN IDENTIFIABLE LIVE HOLDER IS NEVER BROKEN — NOT EVEN AN OLD ONE.
+   *
+   * The first version read `if (!holderDead && ageMs <= LOCK_STALE_MS) return false`, which
+   * says the opposite of what its own comment claimed: a LIVE writer whose lock had simply
+   * aged past the window was deleted out from under it. Two processes then hold the lock at
+   * once and the whole read-modify-write guarantee is gone — quietly, because both writes
+   * appear to succeed and only one survives.
+   *
+   * Age is a FALLBACK for the case where nobody can be identified, never a verdict on someone
+   * who can be. The three cases are disjoint and exhaustive:
+   *
+   *   A. valid PID, ALIVE   → never break. A slow writer keeps its lock however long it takes.
+   *   B. valid PID, DEAD    → break immediately. A crashed holder must not block anybody.
+   *   C. no usable PID      → age only. Break after LOCK_STALE_MS, because there is nobody to ask.
+   *
+   * A waiter is still bounded by `lockTimeoutMs`, so 「never break a live lock」 can never mean
+   * 「wait forever」.
+   */
   function breakLockIfStale () {
     let ageMs
     try { ageMs = Date.now() - fs.statSync(lockFile).mtimeMs } catch (_) { return false }
+
     let info = null
     try { info = JSON.parse(fs.readFileSync(lockFile, 'utf8')) } catch (_) { info = null }
-    const holderDead = info && Number.isInteger(info.pid) && !pidAlive(info.pid)
-    // ⛔ AGE ALONE IS NOT ENOUGH, AND A DEAD HOLDER ALONE IS ENOUGH. A slow writer that is
-    // still alive keeps its lock however long it takes; a crashed one never blocks anybody.
-    if (!holderDead && ageMs <= LOCK_STALE_MS) return false
-    try { fs.unlinkSync(lockFile) } catch (_) { /* someone else broke it first */ }
+    const holderPid = (info && Number.isInteger(info.pid) && info.pid > 0) ? info.pid : null
+
+    if (holderPid !== null) {
+      // A. identified and alive — the lock is legitimately held, whatever its age.
+      if (pidAlive(holderPid)) return false
+      // B. identified and dead.
+      try { fs.unlinkSync(lockFile) } catch (_) { /* someone else broke it first */ }
+      return true
+    }
+
+    // C. unidentifiable holder: empty, truncated, or without a usable pid. Age is all there is.
+    if (ageMs <= LOCK_STALE_MS) return false
+    try { fs.unlinkSync(lockFile) } catch (_) {}
     return true
   }
 
@@ -338,4 +483,4 @@ function createWisdomStore (options = {}) {
   }
 }
 
-module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb }
+module.exports = { createWisdomStore, DURABILITY_STATUS, emptyDb, assertPersistedShape, LOCK_STALE_MS }
