@@ -19,7 +19,12 @@ const SOURCE_FLAG = Object.freeze({
   // Local: derived from this build's own docs/. It still gets a flag and still defaults OFF,
   // because "needs no credential" is not a reason to be exempt from the switch — the repo
   // default for every source is off, and the launcher is where activation lives.
-  development_record: 'CONTEXT_DEVELOPMENT_RECORD'
+  development_record: 'CONTEXT_DEVELOPMENT_RECORD',
+  // ⛔ THE ONLY SOURCE THAT READS OUTSIDE THE BUILDING. It obeys the same two-flag rule as every
+  // other source and defaults OFF like every other source; liveClients adds two further
+  // conditions on top (an API key, and A4 itself) because a public read has an egress side that
+  // the other sources do not.
+  public_knowledge: 'CONTEXT_PUBLIC_KNOWLEDGE'
 })
 
 function resolveFlag (env, name) {

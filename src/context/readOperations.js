@@ -81,12 +81,16 @@ const AROMA_OPERATIONS = Object.freeze([
  * that can name a provider has been handed procurement; one that can name a URL has been
  * handed egress. Neither is a reasoning decision, so neither is expressible here.
  *
- * ⛔ AND IT IS NOT WIRED TO ANYTHING REAL. `public_knowledge` is deliberately ABSENT from
- * liveClients' ALL_SOURCES and from flags' SOURCE_FLAG, so production's enabledSources() can
- * never produce it and no launcher switch exists to turn it on. It becomes reachable only
- * when a caller INJECTS it through the existing read-dependency seam — which is what the
- * deterministic tests and the isolated canary harness do, with a fake executor. A test
- * asserts the production path still offers nothing.
+ * ⛔ AND IT IS NOW GOVERNED RATHER THAN ABSENT (A4-3A). This used to say `public_knowledge`
+ * was deliberately missing from liveClients' ALL_SOURCES and flags' SOURCE_FLAG, so nothing
+ * could construct it. That made it unreachable by OMISSION — the state that turns into
+ * reachable-by-accident the moment someone adds the missing line, with no flag, no key check
+ * and no review in the way.
+ *
+ * It is a first-class source now, and OFF unless FOUR conditions hold together: master
+ * READ_ACCESS on, CONTEXT_PUBLIC_KNOWLEDGE on, an API key present, and A4 itself on — because
+ * without A4 there is no egress planner deciding what may leave. Every one of them defaults
+ * off. Tests assert each condition independently.
  */
 const PUBLIC_SOURCE = 'public_knowledge'
 const PUBLIC_OPERATIONS = Object.freeze([

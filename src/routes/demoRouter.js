@@ -27,6 +27,7 @@ const { body, validationResult } = require('express-validator')
 const { v4: uuidv4 } = require('uuid')
 const { getAdapter } = require('../adapters/adapterFactory')
 const { processIntake } = require('../intake/intakeService')
+const a4Runtime = require('../intake/a4Runtime')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML, BUILD_STAMP } = require('../demo/demoHtml')
@@ -308,6 +309,39 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           providerHint
         })
         opts.telemetry = telemetry
+
+        /**
+         * ⛔ A4'S RUNTIME DEPENDENCIES — ATTACHED HERE BECAUSE THIS IS WHERE CHAT LIVES.
+         *
+         * Every A4 gate in intakeService is `interactionMode === 'chat'`, and this router is
+         * the only production caller that sets it. So wiring the composer into /api/v1/intake
+         * alone would have been a bundle nothing could reach: that route has no chat lane, and
+         * A4 would have stayed inert with its flag on.
+         *
+         * ⛔ CHAT ONLY, on the same terms as `providerHint`. The email_draft and proposal
+         * shapes are literally unable to carry this, so no A4 dependency can influence a lane
+         * that is not chat. With A4 off the composer returns null and nothing is attached at
+         * all — the opts bag is byte-identical to what it has always been.
+         */
+        if (interactionMode === 'chat') {
+          const composed = a4Runtime.createA4RuntimeDependencies({
+            env: process.env,
+            // Test seam only — production sets nothing and gets the pinned role adapters.
+            verifierAdapterFactory: req.app.locals && req.app.locals.a4VerifierAdapterFactory
+          })
+          if (composed.deps) {
+            a4Runtime.logA4Composition(composed, req.app.locals && req.app.locals.a4CompositionSink)
+            opts.readContextDeps = Object.assign(
+              {},
+              // Test seam, on the same terms as this router's other injected dependencies:
+              // production sets nothing, so this contributes nothing.
+              (req.app.locals && req.app.locals.a4ReadDepsOverride) || null,
+              composed.deps
+            )
+            const over = req.app.locals && req.app.locals.a4ReadDepsOverride
+            if (over && over.connector) opts.readContextDeps.connector = over.connector
+          }
+        }
 
         /**
          * ⛔ ROUND B — THE SECTION ATTACHMENT. The browser sends a section ID and NOTHING ELSE.

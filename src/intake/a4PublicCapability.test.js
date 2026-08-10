@@ -141,15 +141,25 @@ const run = (msg, adapter, deps, history) => processIntake(msg, adapter, history
   readContextDeps: Object.assign({ sourceIntentResolver: DEFAULT_SIR }, deps)
 })
 
-/* ═══ A — PRODUCTION STILL HAS NO PUBLIC CAPABILITY ══════════════════════ */
+/* ═══ A — THE PUBLIC CAPABILITY IS GOVERNED, AND OFF ═════════════════════ */
 
-test('*** A — production cannot offer public_knowledge at all ***', () => {
-  assert.equal(ALL_SOURCES.includes('public_knowledge'), false,
-    '⛔ not in the live source registry — production cannot construct it')
-  const full = { READ_ACCESS: 'on', CONTEXT_DRIVE: 'on', CONTEXT_GMAIL: 'on', CONTEXT_CALENDAR: 'on', CONTEXT_GITHUB: 'on', CONTEXT_AROMA_SYSTEM: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on' }
-  assert.equal(enabledSources(full).includes('public_knowledge'), false,
-    '⛔ and no flag can turn it on — there is no flag')
-  assert.equal(operationsForSources(enabledSources(full)).includes(PUB), false)
+test('*** A — production offers public_knowledge only when the Owner switches it on ***', () => {
+  // ⛔ A4-3A CHANGED THIS DELIBERATELY. It used to assert the source did not exist anywhere —
+  // true, and the wrong kind of safety: unreachable by OMISSION, one forgotten line away from
+  // reachable with no flag and no key check in the way. It is a governed source now, and the
+  // assertion moved from 「it cannot exist」 to 「it is off unless every gate is open」.
+  assert.equal(ALL_SOURCES.includes('public_knowledge'), true, 'in the registry, so it can be governed')
+  assert.equal(enabledSources({}).includes('public_knowledge'), false, '⛔ default off')
+  assert.equal(enabledSources({ READ_ACCESS: 'on' }).includes('public_knowledge'), false,
+    '⛔ the master flag alone does not open it')
+  assert.equal(enabledSources({ CONTEXT_PUBLIC_KNOWLEDGE: 'on' }).includes('public_knowledge'), false,
+    '⛔ nor does its own flag alone')
+  assert.equal(operationsForSources(enabledSources({})).includes(PUB), false,
+    '⛔ and with it off, the capability is not even in the closed vocabulary')
+
+  const full = { READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on' }
+  assert.equal(enabledSources(full).includes('public_knowledge'), true)
+  assert.equal(operationsForSources(enabledSources(full)).includes(PUB), true)
 })
 
 /* ═══ B / C — THE CLOSED PUBLIC VOCABULARY ══════════════════════════════ */

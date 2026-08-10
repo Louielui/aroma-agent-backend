@@ -7,8 +7,34 @@ const { v4: uuidv4 } = require('uuid')
 const { processIntake } = require('../intake/intakeService')
 const { getAdapter } = require('../adapters/adapterFactory')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
+const { createA4RuntimeDependencies, logA4Composition } = require('../intake/a4Runtime')
 
 const router = express.Router()
+
+/**
+ * ⛔ THE PRODUCTION A4 COMPOSITION, ON THE REAL ROUTE.
+ *
+ * This route used to call processIntake with no read dependencies at all, so every A4
+ * dependency was `null` in production and A4 could not route even with its flag on. The bundle
+ * is built here, per request, from the same adapter that answers the Owner.
+ *
+ * ⛔ WITH A4 OFF THIS RETURNS null AND THE CALL SHAPE IS UNCHANGED. `readContextDeps` is only
+ * attached when there is something in it, so the OFF path passes exactly what it passed before
+ * — no connector override, no source list override, nothing for the service to resolve
+ * differently.
+ */
+function a4DepsFor (locals) {
+  if (locals && locals.a4RuntimeDependencies) return locals.a4RuntimeDependencies // test seam
+  // ⛔ THE MAIN ADAPTER IS NOT PASSED. A4 verifiers are role-pinned; see a4Runtime.
+  const composed = createA4RuntimeDependencies({
+    env: process.env,
+    // Test seam only — production sets nothing and gets the pinned role adapters.
+    verifierAdapterFactory: locals && locals.a4VerifierAdapterFactory
+  })
+  if (!composed.deps) return null
+  logA4Composition(composed, locals && locals.a4CompositionSink)
+  return composed.deps
+}
 
 /**
  * POST /api/v1/intake
@@ -55,12 +81,24 @@ router.post(
 
     try {
       // Get the active adapter (swappable via LLM_PROVIDER env var)
-      const adapter = getAdapter()
+      const locals = req.app.locals || {}
+      // ⛔ THE ADAPTER SEAM IS `app.locals`, the same channel `promoteToProposal` already uses.
+      // Production sets nothing, so this is `getAdapter()` exactly as before.
+      const adapter = typeof locals.adapterFactory === 'function' ? locals.adapterFactory() : getAdapter()
+
+      const a4Deps = a4DepsFor(locals)
 
       // B2-2 Conversation Demo — flag-gated. OFF (default): identical 3-arg call.
-      const demoOn = req.app.locals && req.app.locals.conversationDemo === true
-      const result = demoOn
-        ? await processIntake(message, adapter, history || [], { requestId: correlationId, demo: true, contextCard, promoteToProposal: req.app.locals.promoteToProposal })
+      const demoOn = locals.conversationDemo === true
+      // ⛔ ONE OPTIONS BAG, AND IT STAYS ABSENT WHEN THERE IS NOTHING TO PUT IN IT. A4 off and
+      // demo off must remain the original 3-argument call, byte for byte.
+      const opts = demoOn
+        ? { requestId: correlationId, demo: true, contextCard, promoteToProposal: locals.promoteToProposal }
+        : (a4Deps ? {} : null)
+      if (opts && a4Deps) opts.readContextDeps = a4Deps
+
+      const result = opts
+        ? await processIntake(message, adapter, history || [], opts)
         : await processIntake(message, adapter, history || [])
       return res.status(200).json(result)
     } catch (err) {
