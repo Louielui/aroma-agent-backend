@@ -44,7 +44,7 @@ test('*** the catalogue is assembled from the frozen tables, and every operation
 
 test('*** ⛔ the prompt catalogue carries SHAPES and not one data row ***', () => {
   const forPrompt = cat.catalogueForPrompt()
-  const allowed = ['operation', 'label', 'entity', 'numbers', 'fields', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit']
+  const allowed = ['operation', 'label', 'entity', 'numbers', 'fields', 'arrays', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit']
   for (const row of forPrompt) {
     for (const k of Object.keys(row)) assert.ok(allowed.includes(k), '⛔ unexpected key reaching the model: ' + k)
   }
@@ -274,4 +274,60 @@ test('*** ⛔ B is not wired into the runtime, and is not a second reasoning loo
     .split('\n').filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) }).join('\n')
   assert.equal(/MAX_(REASONING_)?STEPS|maxSteps|for\s*\(|while\s*\(/.test(dec), false, '⛔ a step loop appeared in the decomposer')
   assert.equal(/runReasoningLoop|capability|dispatch/i.test(dec), false, '⛔ the decomposer started executing things')
+})
+
+/* ═══ SPARSE, AND THE RATIO THAT TRAVELS ══════════════════════════════════ */
+
+test('*** ⛔ SPARSE is ALWAYS_EMPTY\'s neighbour — 3/36 cannot wear the same label as 55/55 ***', () => {
+  assert.equal(cat.fieldTier('aroma_system.suppliers', 'email'), cat.FIELD_TIER.SPARSE)
+  assert.equal(cat.fieldTier(REPLEN, 'latest_price'), cat.FIELD_TIER.SPARSE)
+  assert.equal(cat.fieldTier(REPLEN, 'incoming_qty'), cat.FIELD_TIER.PRESENT)
+
+  // ⛔ AND IT COSTS THE FACT. An answer built on 3 of 36 speaks for 8% of suppliers and is
+  // silent about the rest — the invoices.supplierId failure with a smaller denominator.
+  const r = plan([{ id: 'c', need: '點聯絡供應商', operation: 'aroma_system.suppliers', entity: 'supplier', fields: ['email'] }])
+  assert.equal(r.plan.facts[0].status, STATUS.PARTIAL)
+  assert.equal(r.plan.facts[0].reason, REASON.SPARSE_FIELD)
+  assert.ok(/3\/36/.test(r.plan.facts[0].detail), 'the measured ratio is in the reason, not just a label')
+})
+
+test('*** ⛔ the ratio travels on BOTH sides of every threshold ***', () => {
+  // Usable, and honest about how usable. 32 of 55 is an answer with a stated denominator,
+  // not a refusal and not a silent generalisation.
+  const r = plan([{ id: 'p', need: '入貨包裝', operation: REPLEN, entity: 'order_suggestion', fields: ['pack_size'] }])
+  assert.equal(r.plan.facts[0].status, STATUS.AVAILABLE)
+  const t = r.plan.facts[0].fieldTiers[0]
+  assert.equal(t.tier, cat.FIELD_TIER.PARTIAL_COVERAGE)
+  assert.deepEqual({ n: t.coverage.nonEmpty, d: t.coverage.present }, { n: 32, d: 55 })
+
+  // And on a field that is complete, the ratio is still carried rather than dropped.
+  const full = plan([{ id: 'i', need: '在途', operation: REPLEN, entity: 'order_suggestion', fields: ['incoming_qty'] }])
+  assert.equal(full.plan.facts[0].fieldTiers[0].coverage.ratio, 1)
+})
+
+/* ═══ ONE LEVEL DEEPER ════════════════════════════════════════════════════ */
+
+test('*** ⛔ purchase-order items carry a NAME and no ingredient id — the join is a spelling match ***', () => {
+  const items = cat.arrayShapeOf('aroma_system.purchasing', 'items')
+  assert.equal(items.elements, 207)
+  const names = items.fields.map((f) => f.name)
+  assert.deepEqual(names, ['itemName', 'purchaseOrderId', 'quantity', 'supplierItemName', 'unit'])
+
+  // ⛔ THE FINDING. No ingredientId, no ingredient_id, nothing that resolves to order planning
+  // except a display name — so matching PO lines to shortfall rows is a string comparison,
+  // which is HR-56's defect sitting inside the join rather than beside it.
+  assert.equal(names.some((n) => /ingredient/i.test(n)), false)
+
+  // And the one field that might have carried a supplier's own code is sparse: 13 of 207.
+  const sup = items.fields.find((f) => f.name === 'supplierItemName')
+  assert.deepEqual({ n: sup.nonEmpty, d: sup.present }, { n: 13, d: 207 })
+})
+
+test('*** ⛔ daily-count items are 50 empty arrays — the count-vs-stock case has no per-item data at all ***', () => {
+  const items = cat.arrayShapeOf(COUNTS, 'items')
+  assert.equal(items.elements, 0, 'not one element across 50 rows')
+  assert.equal(cat.fieldTier(COUNTS, 'items'), cat.FIELD_TIER.ALWAYS_EMPTY)
+  // A name-only capture would have blessed this: present on 50 of 50 rows, correctly typed
+  // as an array, and carrying nothing. It is what would have made 「上次盤點同存量對唔對得上」
+  // look answerable right up until someone tried to read an item out of it.
 })

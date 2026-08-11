@@ -40,7 +40,7 @@
  */
 
 const {
-  operationEntry, operationNames, entityTypes, fieldTier, FIELD_TIER
+  operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER
 } = require('./operationCatalogue')
 
 /** ⛔ Matches the Owner's max-4-reads bound, expressed at plan time. */
@@ -62,7 +62,9 @@ const REASON = Object.freeze({
   /** Seen on every row of a real capture, and empty on every one of them. */
   ALWAYS_EMPTY_FIELD: 'field_is_present_on_this_operation_and_never_carries_a_value',
   /** The endpoint returned no rows, so nothing was learned. Not evidence of absence. */
-  UNOBSERVED_FIELD: 'the_endpoint_returned_no_rows_so_this_field_is_unobserved'
+  UNOBSERVED_FIELD: 'the_endpoint_returned_no_rows_so_this_field_is_unobserved',
+  /** Populated on a small enough share of rows that an answer would speak for almost nobody. */
+  SPARSE_FIELD: 'field_is_populated_on_too_few_rows_to_answer_from'
 })
 
 const JOIN_STATUS = Object.freeze({ UNVERIFIED: 'UNVERIFIED', NO_SHARED_TIME_BASIS: 'NO_SHARED_TIME_BASIS' })
@@ -133,7 +135,9 @@ function judgeFact (fact) {
 
   if (!base.fields.length) return Object.assign({}, base, { status: STATUS.UNAVAILABLE, reason: REASON.NO_FIELDS })
 
-  const tiers = base.fields.map((f) => ({ field: f, tier: fieldTier(base.operation, f) }))
+  // ⛔ THE RATIO TRAVELS WITH EVERY FIELD, on both sides of every threshold. A caller that
+  // wants to say 「32 of 55 carry a pack size」 must not have to re-derive it from a label.
+  const tiers = base.fields.map((f) => ({ field: f, tier: fieldTier(base.operation, f), coverage: coverageOf(base.operation, f) }))
   const unknown = tiers.filter((t) => t.tier === FIELD_TIER.UNKNOWN)
   if (unknown.length) {
     return Object.assign({}, base, { status: STATUS.UNAVAILABLE, reason: REASON.UNKNOWN_FIELD, detail: unknown.map((u) => u.field).join(', '), fieldTiers: tiers })
@@ -145,6 +149,18 @@ function judgeFact (fact) {
   const empty = tiers.filter((t) => t.tier === FIELD_TIER.ALWAYS_EMPTY)
   if (empty.length) {
     return Object.assign({}, base, { status: STATUS.PARTIAL, reason: REASON.ALWAYS_EMPTY_FIELD, detail: empty.map((c) => c.field).join(', '), fieldTiers: tiers })
+  }
+  // ⛔ SPARSE IS ALWAYS_EMPTY'S NEIGHBOUR. `suppliers.email` at 3 of 36 is not a contact
+  // method; an answer built on it would speak confidently for 8% of suppliers and say nothing
+  // about the other 92%. Capped at PARTIAL, with the measured ratio in the reason.
+  const sparse = tiers.filter((t) => t.tier === FIELD_TIER.SPARSE)
+  if (sparse.length) {
+    return Object.assign({}, base, {
+      status: STATUS.PARTIAL,
+      reason: REASON.SPARSE_FIELD,
+      detail: sparse.map((c) => c.field + ' ' + (c.coverage ? c.coverage.nonEmpty + '/' + c.coverage.present : '')).join(', '),
+      fieldTiers: tiers
+    })
   }
   const unobserved = tiers.filter((t) => t.tier === FIELD_TIER.UNOBSERVED)
   if (unobserved.length) {

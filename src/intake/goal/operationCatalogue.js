@@ -97,11 +97,75 @@ const CANDIDATE_FIELDS = Object.freeze([
 const FIELD_TIER = Object.freeze({
   VERIFIED: 'VERIFIED',
   PRESENT: 'PRESENT',
+  /** Populated on some rows, few enough that an answer built on it speaks for almost nobody. */
+  SPARSE: 'SPARSE',
+  /** Populated on a real share of rows but not all. Usable — with the ratio stated. */
+  PARTIAL_COVERAGE: 'PARTIAL_COVERAGE',
   ALWAYS_EMPTY: 'ALWAYS_EMPTY',
   UNOBSERVED: 'UNOBSERVED',
   CANDIDATE: 'CANDIDATE',
   UNKNOWN: 'UNKNOWN'
 })
+
+/**
+ * ⛔ THE TWO CUTS ARE PROPOSED, NOT SETTLED — Owner ruling pending.
+ *
+ * > **Owner: 「3/36 and 55/55 cannot share a label. Propose the threshold rather than picking
+ * > one, and say what it costs to get wrong in each direction.」**
+ *
+ * The real defence is not the cut. It is that `coverage` TRAVELS with every field regardless of
+ * which side of a line it lands on, so a plan can say 「32 of 55 carry a pack size」 instead of
+ * a label that has already discarded the number. A single boolean was the mistake; two booleans
+ * would be a smaller version of the same mistake.
+ *
+ * Measured coverage across the six endpoints, which is what these cuts were set against:
+ *
+ *   0%     suppliers.cutoffTime, dailyCounts.dueDate, dailyCounts.items
+ *   6%     purchaseOrders.items[].supplierItemName   (13 of 207)
+ *   8%     suppliers.email                           (3 of 36)
+ *   9%     orderPlanning.latest_price                (5 of 55)  ← the unpriced-ingredient gap
+ *   11%    suppliers.minimumOrderValue               (4 of 36)
+ *   31–58% orderLeadDays, deliveryDays, preferredOrderMethod, pack_size
+ *   72–96% phone, purchase_unit, supplier_id, supplier_name
+ *   97–100% parLevel, live_qty, incoming_qty, and every identifier
+ *
+ * There is a natural gap between 11% and 31%, and another between 58% and 72%. The proposed
+ * cuts sit in those gaps rather than on round numbers.
+ *
+ * ⛔ COST OF GETTING SPARSE_MAX TOO LOW: `suppliers.email` at 8% rates usable, a plan reaches for
+ * 「email the supplier」, and the answer speaks confidently for 3 of 36 suppliers. That is the
+ * `invoices.supplierId` failure — a confident answer from a column that is empty for almost
+ * everyone (HR-56).
+ *
+ * ⛔ COST OF GETTING IT TOO HIGH: `pack_size` at 58% rates unusable, B refuses to plan around it,
+ * and the system says 「cannot answer」 about something it could answer for most items. That is
+ * two weeks of correct work producing nothing usable — the failure the Owner is actually living
+ * with, and the more expensive one right now.
+ *
+ * So the cuts are deliberately asymmetric: SPARSE is drawn LOW, to catch only the fields that are
+ * effectively absent, and everything between is allowed through carrying its ratio.
+ */
+const SPARSE_MAX = 0.20
+const DENSE_MIN = 0.90
+
+/**
+ * ⛔ KNOWN LIMIT OF THIS MEASURE, FOUND WHILE PROPOSING IT AND NOT YET FIXED.
+ *
+ * `nonEmpty` counts a field as carrying something when it is not null, undefined, '' or [].
+ * Every quantity on these endpoints is a STRING, so `'0.0000'` counts as carrying something.
+ *
+ * Measured: `orderPlanning.incoming_qty` is non-empty on 55 of 55 rows and NUMERICALLY ZERO on
+ * 47 of them. It rates PRESENT at 100%, and for 85% of rows it says 「nothing is on the way」.
+ *
+ * That is not the same failure as ALWAYS_EMPTY or SPARSE and it is not covered here. A third
+ * question — 「how many rows carry a value that MEANS something」 — needs the numeric zero
+ * separated from the absent, and only for fields that are quantities.
+ *
+ * ⛔ It is written down rather than fixed because the Owner asked for a report and a stop, and
+ * because a coverage number that silently changed meaning between two rounds would be worse
+ * than one with a stated hole in it.
+ */
+const COVERAGE_COUNTS_STRING_ZERO_AS_PRESENT = true
 
 /** When the metric tables were measured against the live API. Carried, not assumed. */
 const METRICS_MEASURED_ON = '2026-08-03'
@@ -154,7 +218,13 @@ function fieldTier (operation, field) {
   const seen = capturedFieldsFor(operation)
   if (seen) {
     const hit = seen.fields.find((f) => f.name === field)
-    if (hit) return hit.nonEmpty > 0 ? FIELD_TIER.PRESENT : FIELD_TIER.ALWAYS_EMPTY
+    if (hit) {
+      if (hit.nonEmpty === 0) return FIELD_TIER.ALWAYS_EMPTY
+      const coverage = hit.present > 0 ? hit.nonEmpty / hit.present : 0
+      if (coverage < SPARSE_MAX) return FIELD_TIER.SPARSE
+      if (coverage < DENSE_MIN) return FIELD_TIER.PARTIAL_COVERAGE
+      return FIELD_TIER.PRESENT
+    }
     // Rows came back and this field was not among them: absence is now measured, not assumed.
     if (seen.rowsSeen > 0) return FIELD_TIER.UNKNOWN
     return FIELD_TIER.UNOBSERVED
@@ -164,11 +234,43 @@ function fieldTier (operation, field) {
   return FIELD_TIER.UNKNOWN
 }
 
+/**
+ * The measured fill ratio for a field, or null when unmeasured.
+ * ⛔ THIS TRAVELS WITH THE FACT whichever side of a threshold it falls on — the label is a
+ * convenience and the ratio is the fact.
+ */
+function coverageOf (operation, field) {
+  const seen = capturedFieldsFor(operation)
+  const hit = seen && seen.fields.find((f) => f.name === field)
+  if (!hit || !hit.present) return null
+  return { nonEmpty: hit.nonEmpty, present: hit.present, ratio: hit.nonEmpty / hit.present }
+}
+
 /** What the capture saw for this operation, or null if the operation is not mapped. */
 function capturedFieldsFor (operation) {
   const op = AROMA_OPERATIONS.find((o) => o.operation === operation)
   const key = op && ENDPOINT_OF_INTENT[op.intentKey]
   return (key && CAPTURED[key]) || null
+}
+
+/**
+ * The measured fill ratio for a field, or null when unmeasured.
+ *
+ * ⛔ THIS TRAVELS WITH THE FACT whichever side of a threshold it lands on. The label is a
+ * convenience; the ratio is the fact. 「32 of 55 carry a pack size」 is something an answer can
+ * be honest about — `PARTIAL_COVERAGE` on its own has already thrown that away.
+ */
+function coverageOf (operation, field) {
+  const seen = capturedFieldsFor(operation)
+  const hit = seen && seen.fields.find((f) => f.name === field)
+  if (!hit || !hit.present) return null
+  return Object.freeze({ nonEmpty: hit.nonEmpty, present: hit.present, ratio: hit.nonEmpty / hit.present })
+}
+
+/** The element shape of an array field, from the second capture. `null` when never described. */
+function arrayShapeOf (operation, field) {
+  const seen = capturedFieldsFor(operation)
+  return (seen && seen.arrays && seen.arrays[field]) || null
 }
 
 /**
@@ -193,7 +295,25 @@ function catalogueForPrompt () {
      * it would just move the same surprise one layer later.
      */
     fields: (capturedFieldsFor(e.operation) || { fields: [] }).fields
-      .map((f) => f.name + (f.nonEmpty === 0 ? '(空)' : '')),
+      .map((f) => {
+        // ⛔ THE MEASURED FILL RATIO, NOT A LABEL. A planner told 「sparse」 has to trust the
+        // word; one told 「3/36」 can decide for itself whether that answers the question.
+        if (f.nonEmpty === 0) return f.name + '(空)'
+        if (f.nonEmpty < f.present) return f.name + '(' + f.nonEmpty + '/' + f.present + ')'
+        return f.name
+      }),
+    /**
+     * ⛔ WHAT IS INSIDE THE ARRAYS, because the decomposer asked before the capture did.
+     * Purchase-order items turn out to carry `itemName` and NO ingredient id — so planning and
+     * purchasing can only be matched by NAME, and a plan that assumes an id join is wrong.
+     */
+    arrays: Object.entries((capturedFieldsFor(e.operation) || { arrays: {} }).arrays || {})
+      .reduce((acc, [name, a]) => {
+        acc[name] = a.scalarElements > 0 && !a.fields.length
+          ? 'scalars×' + a.elements
+          : (a.elements === 0 ? '空' : a.fields.map((f) => f.name + (f.nonEmpty < f.present ? '(' + f.nonEmpty + '/' + f.present + ')' : '')).join(','))
+        return acc
+      }, {}),
     hasLocation: e.rowShape ? e.rowShape.hasLocation === true : null,
     hasTimestamp: e.rowShape ? e.rowShape.hasAsOf === true : null,
     note: e.rowShape ? e.rowShape.note : null,
@@ -205,13 +325,19 @@ function catalogueForPrompt () {
 module.exports = {
   CATALOGUE,
   CANDIDATE_FIELDS,
+  CAPTURED_ON,
   ENDPOINT_OF_INTENT,
   FIELD_TIER,
+  SPARSE_MAX,
+  DENSE_MIN,
   METRICS_MEASURED_ON,
   buildCatalogue,
   operationEntry,
   operationNames,
   entityTypes,
   fieldTier,
+  coverageOf,
+  arrayShapeOf,
+  capturedFieldsFor,
   catalogueForPrompt
 }
