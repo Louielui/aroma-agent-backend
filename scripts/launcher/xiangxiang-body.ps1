@@ -110,11 +110,25 @@ $env:LLM_PROVIDER      = 'claude'
 # rebuild is involved. The previous value is kept in the comment below precisely so going
 # back is a copy rather than an act of archaeology:
 #
-#     $env:CLAUDE_MODEL = 'claude-haiku-4-5-20251001'   # the previous value
+#     $env:CLAUDE_MODEL = 'claude-opus-5'   # the other value, reachable on this account
 #
-# Verified reachable on this account before switching: GET /v1/models returned 200 and listed
-# claude-opus-5 among ten models. Checked, not assumed.
-$env:CLAUDE_MODEL      = 'claude-opus-5'
+# ⛔ ROLLED BACK 2026-08-11, SAME DAY, ON EVIDENCE. opus-5 was live for roughly an hour and
+# reached its answer WITHOUT the answer-plan validation on 2 of 2 answered turns
+# (`reason: no_plan_returned`) — the citation binding and row checks this system exists to
+# perform were skipped. haiku goes through that gate on 3 of 3.
+#
+# It also produced THREE distinct failure modes in about eight calls: no plan, an
+# `empty_response` from the distill parse, and one 30-second adapter timeout. That is not
+# 「slower」; on this path it is unstable.
+#
+# ⛔ AND WHY THE SMALLER MODEL WINS HERE. Owner ruling: 「I would rather be on a smaller model
+# that goes through the gate than a stronger one that does not.」 The rollback costs one line
+# and a restart. Being wrong the other way costs a fortnight of answers about the business
+# that nobody proved.
+#
+# NOT YET KNOWN, and deliberately not asserted: whether this is opus, this prompt, or this
+# schema. Diagnosis continues with opus reachable in the harness only.
+$env:CLAUDE_MODEL      = 'claude-haiku-4-5-20251001'
 $env:AROMA_BIND_HOST   = '127.0.0.1'
 $env:PORT              = '8090'
 # DECISION_RECALL enabled for this resident entry (Owner GO) — chat-lane recall active.
