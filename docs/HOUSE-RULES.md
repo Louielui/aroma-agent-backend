@@ -3636,3 +3636,78 @@ carefulness. It is a fact about one unreadable envelope and a `catch` that renam
 4. **When two models differ on a structural counter, suspect the path before the models.** The
    difference here was not competence; it was which of them happened to emit a parseable
    envelope on step two.
+
+---
+
+# HR-68 — IT WAS NOT THE MODEL. THE ADAPTER HAD NEVER MET A REASONING MODEL.
+
+**The fourth reframing of the same week, and the last one is the true one.**
+
+## THE MEASUREMENT
+
+Identical raw request — same prompt, same JSON schema, same `max_tokens: 2048` — to both models:
+
+```
+claude-opus-5              stop: max_tokens   out_tokens: 2048
+  content blocks: 1
+    [0] type=thinking   hasText=false   len=0
+  ADAPTER READS content[0].text -> len 0
+
+claude-haiku-4-5-20251001  stop: end_turn     out_tokens: 633
+  content blocks: 1
+    [0] type=text       hasText=true    len=1120
+  ADAPTER READS content[0].text -> len 1120
+```
+
+**opus-5 returns a `thinking` block. `ClaudeAdapter:167` reads `data.content?.[0]?.text`, gets
+`undefined`, yields `''` — and the parser reports `empty_response`.**
+
+## TWO OF OUR DEFECTS, COMPOUNDING
+
+1. **The adapter reads one block and assumes it is text.** It has been on the list since the
+   opus round began, filed as 「a real fragility, not today's cause」. It was today's cause.
+2. **`max_tokens` counts thinking tokens.** opus spent the entire 2048 on thinking and never
+   reached the text block — `stop: max_tokens`. Our budgets (2048 chat, 1024 default, 400 for
+   the intent classifier) were all sized against a model that does not think before answering.
+
+## WHAT THIS OVERTURNS
+
+Every characterisation of opus this week traces to these two lines:
+
+| what was said | what was happening |
+|---|---|
+| 「opus skips plan validation」 | the envelope was unreadable, so no plan could exist |
+| 「opus is unstable — three failure modes」 | one cause, three symptoms |
+| 「opus is slower, it hit the 30s timeout」 | it was thinking, and haiku hit that timeout too on re-run |
+| 「haiku is more careful」 | haiku does not emit thinking blocks, so our reader happens to work on it |
+
+**The model was doing exactly what it is built to do. We were reading the wrong field and
+cutting it off mid-thought.**
+
+## THE CHAIN, AND WHY IT TOOK FOUR REFRAMINGS
+
+```
+adapter reads content[0].text        -> '' on a thinking model
+parser says empty_response           -> a THROW at the loop boundary
+bare catch returns { type:'final' }  -> a failure printed as a completion   (HR-67)
+renderer records no_plan_returned    -> a message blaming the MODEL
+Owner reads 「opus falls back」        -> a fortnight of judgement about a model
+```
+
+**Five layers, each behaving correctly given its input, converting 「we cannot read this」 into
+「the model is worse」.** Every layer was individually defensible. The composition was a slander.
+
+## THE RULE
+
+1. **An adapter must handle every block type its provider can return, and treat an unexpected
+   shape as an ERROR — never as empty.** `content[0].text || ''` turns 「I do not understand
+   this response」 into 「the model said nothing」, which is the same lie as HR-67 one layer down.
+2. **A token budget on a reasoning model is not a length limit; it is a thinking limit.** Any
+   ceiling sized against a non-thinking model is a different constraint on a thinking one, and
+   it binds before the answer starts.
+3. **When a new model performs badly, audit the code that reads it BEFORE characterising it.**
+   The first hypothesis for 「the model is worse」 should be 「our reader is older than the
+   model」, because the reader is the thing that has not been tested against it.
+4. **A fragility deferred as 「not today's cause」 must carry the evidence for that claim.** This
+   one was dismissed on a raw call with a SHORT prompt, which did not trigger thinking. The
+   dismissal was measured, and measured on the wrong case.
