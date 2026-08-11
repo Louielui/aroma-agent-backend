@@ -2944,3 +2944,1039 @@ questions, one field name, and the name answers none of them.**
 > Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
 > **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
 > be measured, and in all three cases measuring it was cheap and nobody had.
+
+---
+
+# HR-57 — A FENCE ON ONE OF TWO DOORS, AND THE GREEN LIGHT THAT COVERED THE OTHER
+
+> **Owner: 「Record the coverage illusion as its own finding. It explains why 19 green tests
+> coexisted with an unbound COMPLETED, and it is the same shape as everything the fences were
+> built for — this time in the test suite rather than the code.」**
+
+## WHAT HAPPENED
+
+E0-B1 shipped with a test named, in full:
+
+```
+*** 11 — the model/client cannot supply or widen a target origin ***
+```
+
+It is a real test. It passes. It asserts the property honestly and it would catch a regression.
+It runs against `browseOrder.buildBrowseOrder`, which refuses `origin`, `url`, `allowedWrites`
+and `permissions` from a caller with `CALLER_SUPPLIED_REACH`.
+
+One module away, `browseResult.classifyBrowseResult` **never receives the sealed order at all**.
+Its `isBrowserPrice` accepts `source: 'browser'` on the caller's word and checks `sourceOrigin`
+with `/^https?:\/\//` — that it LOOKS like a URL, not that it is the one origin the order
+allowed. A `COMPLETED` verdict could therefore be minted from an observation naming an origin the
+request fence would have blocked.
+
+So the reach property was fenced at the door where the order is BUILT, and unfenced at the door
+where the result is BELIEVED.
+
+## WHY THIS IS NOT HR-12, AND NOT THE A1 DEFECT EITHER
+
+Worth separating, because the remedy differs:
+
+| | what went wrong | what the green light meant |
+|---|---|---|
+| **A1's defect** | a test asserted 14 complete-within-a-window orders supported 「所有採購單都已收貨」 | the green was **false** — a fence installed backwards |
+| **HR-12** | a check ran on a filtered set | the green was **true of the sample**, silent about the removed rows |
+| **HR-57** | a check ran at one layer of a property that spans two | the green was **entirely true**, and the conclusion drawn from it was false |
+
+**This is the hardest of the three to see, because there is nothing wrong with the test.** No
+assertion is weak, nothing is backwards, nothing is skipped. Reviewing the test teaches you
+nothing. The defect is not in the test — it is in the sentence I said afterwards: 「origin cannot
+be client-supplied or widened」, dropping the clause 「in `browseOrder`」 that was the only part
+measured.
+
+> **A test proves a property AT A LAYER. A test NAME states a property about the system. The gap
+> between those two sentences is where the confidence comes from, and nothing in a passing suite
+> reports it.**
+
+Nineteen green tests did not fail to catch the unbound `COMPLETED`. They were never asked about
+it, and the count made it feel as though they had been.
+
+## THE GENERAL FORM
+
+The same mistake HR-56 named — **treating a NAME as if it carried a FACT** — with the name now
+belonging to a test rather than to a database field or an intent keyword. `supplierId` was
+evidence a relationship might exist. A test name is evidence a property was measured
+**somewhere**. Neither says where, and both read as if they did.
+
+## THE RULE
+
+1. **A test name must not claim more than the test measured.** If it runs against one module,
+   the module belongs in the name — 「the ORDER cannot be client-supplied」, not 「origin cannot
+   be client-supplied」. The unqualified sentence is the illusion, written down.
+2. **A property that spans layers needs an assertion at every layer that can violate it** — or,
+   better, one chokepoint every layer must pass through.
+3. **Prefer structural impossibility over repeated assertion.** `classifyBrowseResult` could not
+   have had this defect if it were impossible to call without the order. Make the property a
+   consequence of the shape, then assert it once.
+4. **A pass count is not a coverage statement.** 「19 green」 answers how many questions were
+   asked, never which ones. Before trusting a suite about a property, name the layer each test
+   actually ran at — the list is short, and writing it is what exposes the empty door.
+
+---
+
+# HR-58 — THE DUPLICATE WAS WORSE THAN THE ORIGINAL, AND ONLY SIDE BY SIDE DID THAT SHOW
+
+> **Owner: 「filtersApplied: null versus [] is a distinction I had to be taught; you rewrote past
+> it in Chinese prose.」**
+
+The companion to HR-57. That one is about a fence on one of two doors. This one is about building
+a second door because you never looked for the first.
+
+## THE TWO, SIDE BY SIDE
+
+The system had already answered 「did something filter these rows, and do we know?」:
+
+```js
+// aromaSystemRead.js — A1, Owner review, correction 3
+filtersApplied: null,
+// ⛔ NULL, NOT []. An empty array asserts 「known to have NO filters」 — but the server applies
+// predicates the reader cannot authoritatively enumerate. Unknown.
+rowShape: { hasLocation: false, ... }
+```
+
+I wrote this instead, in `browseResult.js`, without looking:
+
+```js
+locationDependent: true          // a static flag on the site registry
+'（未揀分店，價格可能因店而異）'   // a sentence appended to the answer
+```
+
+## WHY THE DUPLICATE IS WORSE, NOT MERELY REDUNDANT
+
+**1. It is a property of the SITE, not of the READ.** `locationDependent` is decided once, when
+someone writes the registry entry. `filtersApplied` is a fact about the read that actually
+happened. A static flag cannot be wrong about a particular run, because it was never about one.
+
+**2. It is a boolean where the truth has three states.** `[]` means 「known to have no filters」,
+a list means 「these filters, known」, and `null` means 「unknown」. A boolean has no way to say
+unknown — it forces a claim in one direction or the other. **And unknown is exactly the state a
+browse run is in**: the site applies a store predicate we did not choose and cannot enumerate.
+The one state that mattered was the one state the duplicate could not represent.
+
+**3. And the one that makes it a downgrade rather than a copy: it is PROSE.** `filtersApplied:
+null` is a field. Code downstream can branch on it, a gate can refuse on it, a test can assert
+it. 「未揀分店，價格可能因店而異」 is a caveat inside a rendered sentence, checkable only by a
+human who reads Chinese.
+
+> **A second vocabulary does not just duplicate the first. It converts a machine-checkable fact
+> into an uncheckable sentence — and then the caveat travels in the one medium the system has
+> already recorded that it cannot verify.**
+
+`evidenceGate.js` says of its own claim parameter: 「a gate that reads prose is a gate that can be
+talked past.」 I moved a structural fact INTO prose while that sentence was in the repository.
+
+## WHY I COULD NOT SEE IT
+
+I implemented the requirement literally. The GO said 「store/location context when price is
+store-dependent」, and `locationDependent` + a caveat is a faithful, working rendering of that
+sentence. Every test I wrote for it passed. Read on its own, the module is fine.
+
+**Nothing about writing it prompted the question 「what does this codebase already call this?」**
+The requirement was in front of me and the existing field was three directories away, and the
+side-by-side comparison that makes the defect obvious in ten seconds is a comparison nobody
+performs unless they already suspect the answer.
+
+## THE RULE
+
+1. **Before inventing a field that describes the trustworthiness of evidence, find what the
+   codebase already calls it.** The A-line exists so 「unknown」 has one definition; a new name for
+   it is a fork of the definition, whatever the intent.
+2. **Satisfying the requirement is not evidence you did not duplicate.** A literal, passing,
+   well-tested implementation of a spec sentence is the normal way a second vocabulary enters —
+   it never arrives looking like a mistake.
+3. **A caveat belongs in a FIELD, and the renderer reads the field.** If a limitation is only
+   expressible as a sentence, it cannot be gated, tested, or counted, and it will be dropped by
+   the first summariser that touches it.
+4. **Three states, not two, whenever the answer can be unknown.** A boolean forces a claim; the
+   claim it forces is the one nobody checked.
+
+---
+
+# HR-59 — THE SAME BRIEF PRODUCED A SECOND COPY THREE TIMES, AND THE OWNER NAMED IT FIRST
+
+> **Owner: 「I have now asked for a second copy of three different things — that is a pattern in
+> how I brief, not in how you build.」**
+
+## THE THREE
+
+| # | asked for | already existed | how it was caught |
+|---|---|---|---|
+| 1 | a browser for public reads | the whole browser safety stack — origin policy, request fence, payment stop, session composition | **stated in the brief.** The GO itself said 不可新造另一套 generic browser engine |
+| 2 | a result/completion contract for browse | A1's evidence descriptor — `filtersApplied`, `rowShape`, `completeness`, `readState` | **found in review, after it shipped** (HR-58) |
+| 3 | a goal decomposer | `intake/reasoningLoop.js`, already wired at `intakeService.js:1172` | **found in the audit before writing code**, by looking for it |
+
+The trend is the thing worth recording: caught in the brief, caught after shipping, caught before
+building. **The only one that cost anything was the one nobody went looking for.**
+
+## WHY A CORRECT BRIEF PRODUCES A DUPLICATE
+
+Each of the three briefs was accurate. 「Build a conversational public read」, 「a browser task must
+not count as done just because text was found」, 「the model call that decides what facts are
+needed」 — every one describes a real gap, in the Owner's own terms, which is how a request
+*should* be written.
+
+**What none of them can carry is what the codebase already calls that thing.** The Owner briefs
+from the goal; the name lives three directories away and under different vocabulary — a
+「completion contract」 is `filtersApplied` and `completeness`, a 「goal decomposer」 is next to
+`runReasoningLoop`. Nothing in a well-written requirement points at either.
+
+> **So the duplicate is not a failure of the brief and not a failure of care. It is the predictable
+> output of describing a need in goal language to someone who has not yet searched for it in
+> implementation language.** The fix belongs to whoever holds the codebase, and it is one step.
+
+## THE RULE
+
+1. **Before building anything named as a capability — a contract, a loop, a registry, an engine —
+   search the repository for it FIRST, and report what was found before writing a line.** Not
+   「does this exist?」 but 「what does this system already call this?」
+2. **Search by MECHANISM, not by the brief's words.** 「Goal decomposer」 matches nothing;
+   `reasoningLoop` was found by asking what already chooses reads. 「Completion contract」 matches
+   nothing; the descriptor was found by asking what already says 「unknown」. A grep for the brief's
+   own vocabulary is the search most likely to come back empty and feel conclusive.
+3. **Report the search as part of the design, even when it finds nothing.** A design that opens
+   with 「X already exists and here is why this is not X」 is checkable; one that is silent about it
+   asks the reviewer to notice an absence.
+4. **A second copy is worse than the original by default** (HR-58), so the burden is on the new
+   thing to justify existing — never on the reviewer to discover the old one.
+
+---
+
+# HR-60 — A BUDGET IN DOLLARS, APPROVED ALL WEEK, WITH NOTHING THAT CONVERTS TOKENS TO DOLLARS
+
+> **Owner: 「Cost caps are meaningless if nothing can convert tokens to dollars, and I have been
+> approving budgets in dollars all week.」**
+
+## THE GAP
+
+Asked for the per-query cost of one model call, the honest answer was tokens and wall time and
+**no price** — because there is no pricing table anywhere in this repository. A grep for
+`per_1m`, `pricing`, `USD_PER`, `costPer` returns two unrelated hits inside `paymentStop.js`.
+
+Every paid phase this month was authorised in dollars: 「hard ceiling US$2.00」, 「max 24 paid
+requests」, 「≤5 additional paid requests」. Those ceilings were enforced by **counting requests**
+and by the author's arithmetic in a report — never by the system, which cannot perform the
+conversion at all.
+
+## WHY THIS IS A GAP AND NOT A MISSING FEATURE
+
+A request count is not a cost. Requests differ by an order of magnitude in both directions:
+
+- a decomposer call measured **1,113 in / 383 out**
+- the same call after one prompt change measured **1,416 in / 401 out**
+- a reasoning model can bill invisible reasoning tokens as output, which is why
+  `OpenAIAdapter` surfaces `reasoningTokens` separately
+
+**So 「four calls」 bounds nothing.** The ceiling that was actually approved — dollars — is the one
+quantity the system has never been able to compute, and every report that stated one was doing
+arithmetic no code could check.
+
+> **A limit expressed in a unit the system cannot measure is not a limit. It is a hope with a
+> number attached, and the number makes it look enforced.**
+
+## THE RULE
+
+1. **A cost ceiling must be expressed in a unit the system can measure**, or it is not a ceiling.
+2. **Tokens are the measurable unit today.** Until a priced table exists, budgets stated in
+   dollars must be accompanied by the token equivalent, and the conversion shown.
+3. **A price table is per-model and goes stale.** It carries the model id and the date it was
+   taken from the provider's published rates, and an unknown model prices as **unknown** — never
+   as the nearest known model, which is HR-56's nearest-neighbour substitution wearing a price
+   tag.
+4. **Report tokens even once a price exists.** The price is a conversion; the measurement is the
+   tokens, and only one of the two is a fact about what happened.
+
+---
+
+# HR-61 — A JOIN THAT CAN ONLY MATCH ON NAMES, AND TWO COUNTS THAT LOOK FULL
+
+Three limits found by capturing one level deeper than the first pass. Recorded as HARD LIMITS
+rather than as observations, because each one makes a question look answerable that is not.
+
+## ⛔ LIMIT 1 — ORDERING CANNOT BE CONNECTED TO PURCHASING BY ID. THERE IS NO ID.
+
+`purchaseOrders.items` — 207 elements across 13 orders — carries exactly:
+
+```
+itemName   purchaseOrderId   quantity   supplierItemName (13/207)   unit
+```
+
+**No `ingredientId`. No `ingredient_id`. Nothing that resolves to an ingredient at all.**
+
+Order planning keys everything on `ingredient_id`. So matching a purchase-order line to a
+shortfall row can only be done by comparing `ingredient_name` to `itemName` — a **string
+comparison between two display names maintained by different parts of the system**.
+
+That is HR-56's defect — one spelling of a thing — and it is in the worst possible position:
+**inside the join rather than beside it.** A mismatched name does not raise an error. It produces
+a row that silently fails to match, so the answer is 「nothing on order for this item」 when
+something is, and nothing anywhere reports that a comparison failed.
+
+> **HARD LIMIT: any question that connects ordering to purchasing is answerable only up to a
+> name match, and must say so.** 「有冇落咗單」 cannot be answered with confidence for an item
+> whose name differs between the two systems, and the system cannot tell which items those are.
+>
+> `supplierItemName`, the one field that might have carried a supplier's own code, is populated
+> on **13 of 207** lines.
+
+## ⛔ LIMIT 2 — `dailyCounts.items` IS FIFTY EMPTY ARRAYS
+
+Present on 50 of 50 rows, correctly typed as an array, and **zero elements in total**.
+
+A count row carries `itemCount` — a NUMBER — and no items. So 「上次盤點同存量對唔對得上」 has no
+per-item data on the count side at all, on top of the timestamp problem already recorded.
+
+**A name-only capture would have blessed this**: the field is there, on every row, with the right
+type. It is exactly what makes the case look answerable right up until someone tries to read an
+item out of it.
+
+## ⛔ LIMIT 3 — SEMANTIC ZERO. RECORDED, NOT FIXED.
+
+> **Owner: 「incoming_qty being 100% PRESENT while meaning 『nothing incoming』 on 85% of rows is
+> the exact shape of every count that has lied to me this month.」**
+
+Every quantity on these endpoints is a STRING, so `'0.0000'` counts as carrying a value.
+`orderPlanning.incoming_qty` is non-empty on **55 of 55** and numerically **zero on 47**. It rates
+`PRESENT` at 100% coverage while telling 85% of rows that nothing is on the way.
+
+This is a third kind of emptiness, distinct from the two already separated:
+
+| | what it means |
+|---|---|
+| `ALWAYS_EMPTY` | the key is there and never holds a value |
+| `SPARSE` | few rows hold a value |
+| **semantic zero** | **every row holds a value, and the value is 「none」** |
+
+### What it would take to close it
+
+1. **Know which fields are QUANTITIES.** `METRICS_OF` already declares this per endpoint for the
+   fields it covers; `incoming_qty` is not among them, so the meaning layer has to be extended
+   before the check can even be applied. **That is the same declaration gap that makes B
+   over-plan** — nothing tells the system `incoming_qty` answers 「在途」.
+2. **Count zeros separately from empties** in the capture — one more counter, no values read.
+3. **Decide what a zero-heavy field means for a PLAN, which is not obvious.** 47 of 55 reading
+   zero does not make the field useless: it is a true and useful answer for those 47 items. It
+   would be wrong to downgrade it the way `SPARSE` is downgraded, and a fourth tier that behaved
+   like the others would be the wrong shape.
+
+**Left unfixed deliberately.** A coverage number that silently changed meaning between two rounds
+would be worse than one with a documented hole, and the third point above is a design decision
+the Owner has not been asked yet.
+
+---
+
+# HR-62 — A FLAG THAT READS AS CONFIGURED AND IS INERT, BECAUSE SOMETHING ARRIVES FIRST
+
+> **Owner: 「I thought I was running GPT. Everything I called 『不夠聰明』 this fortnight was
+> haiku-4-5. A flag named MULTI_AI_ROUTER='on' that is inert for the main lane because a hint
+> arrives first is a setting that reads as configured and is not.」**
+
+## THE MECHANISM, IN THREE LINES OF REAL CODE
+
+The launcher sets `MULTI_AI_ROUTER = 'on'`, and the router's own documentation says what that
+means: *`MULTI_AI_ROUTER === 'on' AND mode === 'chat' -> 'openai'`.*
+
+`selectPrimaryProvider` (`src/routing/modelRouter.js`):
+
+```js
+if (isChat) {
+  const hinted = normalizeProviderHint(opts && opts.providerHint)
+  if (hinted) return hinted          // ← returns BEFORE the flag is ever read
+}
+if (resolveMultiAiRouter(env) !== 'on') return CLAUDE
+return isChat ? OPENAI : CLAUDE      // ← the documented rule, unreachable for chat
+```
+
+And the browser (`src/demo/assets/app.js:82`):
+
+```js
+var provider = 'claude'              // ← the initial value, sent on EVERY request
+```
+
+The picker does not send a hint only when the Owner picks something. It sends its current
+value every turn, and its current value starts at `claude`. **So the flag's chat rule is
+unreachable in normal use** — not overridden occasionally, but never consulted.
+
+## MEASURED, NOT INFERRED
+
+`data/conversations`, 58 recorded assistant turns:
+
+| served by | turns |
+|---|---:|
+| `claude` | **45** |
+| `openai` | 6 |
+| not recorded | 7 |
+
+## WHY THIS IS A DEFECT AND NOT A PREFERENCE
+
+Every individual piece is defensible. The hint is validated against a closed allowlist. It is
+confined to the chat lane. Checking it first is deliberate and documented — *「with the router
+flag off the hint is still honoured for chat」* — and for a UI control that is the correct
+precedence.
+
+**The defect is that nothing anywhere reports the combination.** The flag is `'on'`. Its
+documented rule describes a behaviour that never happens. The Owner read the launcher, read the
+rule, and concluded — correctly, from everything visible to him — that chat ran on GPT. He then
+spent a fortnight judging a system on the output of the smallest model available to it, and
+attributed what he saw to the design rather than to the model.
+
+> **A setting whose stated effect is unreachable is worse than a missing setting. A missing one
+> prompts a question; a present one answers it, wrongly, and closes the enquiry.**
+
+## AND THE LANE THE PICKER CANNOT REACH AT ALL
+
+`optsForMode` (`src/routes/demoRouter.js`) attaches `providerHint` to the **chat** shape only.
+The `proposal` and `email_draft` shapes cannot carry it, and `selectPrimaryProvider` returns
+`claude` for every non-chat mode regardless of the flag.
+
+**So proposals and work orders — the path that produces the thing the Owner types EXECUTE
+against — run on `claude-haiku-4-5-20251001`, by construction rather than by decision, and no
+control in the interface can change it.** That was a consequence of the lane design, not a
+choice anyone made about which model should draft an executable proposal.
+
+## THE RULE
+
+1. **A flag must be able to report whether it is having its stated effect**, not merely whether
+   it is set. `'on'` and 「in force」 are different facts and this system spelled them the same.
+2. **When a precedence chain exists, the thing that wins must be visible where the decision is
+   read.** The router documents its rule at the top of the file; the client default that defeats
+   it lives in another language in another directory.
+3. **A default in a UI control is a policy decision.** `var provider = 'claude'` was written as
+   an initial render value and became the model selection for every turn the system has served.
+4. **State which model served a turn, in the turn.** `servedBy` records the PROVIDER (`claude`),
+   not the model (`claude-haiku-4-5-20251001`). Had it recorded the model string, the Owner would
+   have seen this on day one instead of after a fortnight.
+
+---
+
+# HR-63 — A GATE THAT FIRES ON EVERY EDIT IS A GATE PEOPLE LEARN TO STEP OVER
+
+> **Owner: 「Write it down as a defect rather than a note in a commit message. A gate that fires
+> on every edit to a file is a gate people learn to step over, and I would rather fix the file's
+> line endings once than have you explain the exception each time.」**
+
+## WHAT HAPPENED
+
+`git diff --cached --check` failed on every added line of `src/demo/assets/app.js`, reporting
+「trailing whitespace」 on lines that had none. The cause was line endings: that file was stored
+in git with CRLF, `--check` inspects ADDED lines only, and the CR at end of line reads as
+trailing whitespace.
+
+**Measured: of 729 tracked text files, exactly ONE was CRLF.** Every other file uses LF. So this
+was not a repository-wide convention with an awkward edge — it was a single file out of step,
+and it happened to be the largest interface file in the project, edited more often than most.
+
+## WHY IT IS A DEFECT AND NOT AN INCONVENIENCE
+
+The first response to it was the wrong one, and it is worth keeping: the exception was explained
+in a commit message. 「The gate fired, here is why it does not count.」
+
+That is a defect-shaped response. It works once. The second time it is shorter. By the fifth
+time nobody reads the explanation, and the check has been converted from **a gate into a
+formality** — still running, still red, still passed over. At that point a real trailing-space
+defect in that file would be indistinguishable from the noise, because the reader has already
+learned that red on this file means nothing.
+
+> **A check that is always wrong about one thing does not stay a check that is right about
+> everything else. It becomes a check that is ignored.**
+
+And the cost of fixing was one command against one file.
+
+## THE FIX, BOTH HALVES
+
+1. **The instance.** `src/demo/assets/app.js` normalised to LF — one whole-file diff, once.
+   `git diff --cached --check` now exits 0.
+2. **The class.** The repository had **no `.gitattributes` at all** and relied on whatever
+   `core.autocrlf` each machine happened to have. `* text=auto eol=lf` now pins it, so the same
+   drift cannot reach another file and require the same explanation again.
+
+## THE RULE
+
+1. **When a check fires falsely, fix the cause or remove the check.** Explaining it is the
+   third option and it is the one that decays.
+2. **Measure how widespread the exception is before accepting it.** 「This file is CRLF」 sounds
+   like a convention; 「one file out of 729」 is a defect, and the two are one command apart.
+3. **A repository with no `.gitattributes` has no line-ending policy** — it has whatever each
+   contributor's git was configured with, which is a policy nobody chose and nobody can read.
+4. **The first explanation is the warning sign.** If a gate needs a note in a commit message to
+   be understood as passed, the next commit will need one too.
+
+---
+
+# HR-64 — THE HARNESS WAS KINDER THAN PRODUCTION, FOR THE FOURTH TIME — AND A TOOL CAUGHT IT
+
+> **Owner: 「That is the fourth time this month the harness was kinder than production, and the
+> first time a tool caught it rather than a question from me.」**
+
+## THE INSTANCE
+
+`startupSmoke.js` was written, run through a wrapper, and passed twice:
+
+```
+asked claude -> PASS   asked openai -> PASS
+```
+
+The same file, launched the way it actually ships, failed twice:
+
+```
+[router] falling back to claude (reason: openai_unavailable)
+asked claude -> FAIL (empty reply)   asked openai -> FAIL (empty reply)
+```
+
+**The wrapper loaded `.env`. The launcher does not.** `src/app.js:18` calls
+`require('dotenv').config()`, and the smoke script never loads `app.js` — so under the launcher
+it ran with no `OPENAI_API_KEY`, A4's verifier could not be built, the final gate reported
+unavailable, and both probes returned nothing.
+
+**A smoke test whose environment differs from the server's is testing a system nobody runs.**
+
+## WHY THIS ONE IS DIFFERENT FROM THE OTHER THREE
+
+The previous three were found by the Owner asking a question. This one was found by the check
+itself, on its first real execution, because it was finally run the way it ships instead of the
+way it was developed.
+
+> **The harness does not drift toward being kinder. It is BORN kinder — it is assembled by the
+> person who wants it to work, out of the pieces they already had in hand.** The wrapper had
+> `.env` loaded because the author needed it loaded to develop the thing. That convenience is
+> invisible from inside, and it survives every review that reads the code rather than running it.
+
+## THE RULE
+
+1. **Run it the way it ships, once, before believing any result from it.** Not the same
+   command with the same arguments — the same INVOCATION, from the same parent, with the same
+   environment.
+2. **A test harness must construct its environment the way the production entry point does, by
+   calling the same code** — not by reproducing the effect. `require('dotenv').config()` with
+   the same explicit path, not a hand-rolled parser that happens to agree today.
+3. **List what the harness supplies that the caller does not.** For this one it was `.env`, the
+   A4 dependency composition, and `providerHint`. Two of the three were wrong.
+4. **A green harness result is evidence about the harness until it has been run in situ once.**
+
+---
+
+# HR-65 — AN INTENTION IN PROSE, BESIDE CODE THAT CONTRADICTS IT
+
+> **Owner: 「You wrote 『it never blocks the hand-back』 and then wrote an invocation that did —
+> an intention stated in prose next to code that contradicts it, which is the shape we have
+> removed five times. The 120-second cap is the mechanism; the sentence was not.」**
+
+## THE INSTANCE
+
+`startupSmoke.js` opens with a section headed **⛔ IT DOES NOT REFUSE TO HAND BACK. IT HANDS
+BACK LOUDLY**, explaining the L2-1 reasoning at length and stating that the check never blocks
+startup. Exit code is `process.exit(0)`, always — that part was real.
+
+The launcher then called it like this:
+
+```powershell
+$smoke = & node (Join-Path $Repo 'scripts\launcher\startupSmoke.js') 2>&1
+```
+
+The node process ran and exited. **The launcher did not return for sixteen minutes.**
+
+Every guarantee in the file was about the CHILD. Not one of them was about the call site, and
+the call site is where the blocking happened.
+
+## THE GENERAL FORM
+
+A comment describes the author's intention. A mechanism constrains the outcome. They are only
+the same thing while the author is looking, and the author had just finished writing the
+paragraph that made him confident he did not need to look.
+
+> **The more carefully an intention is argued in prose, the less likely anyone is to check
+> whether the code does it — including the person who wrote both.** Twelve lines explaining why
+> it must never block are twelve lines of evidence that it does not, to every future reader.
+
+## THE RULE
+
+1. **A guarantee stated in a comment must name the mechanism that enforces it, in the same
+   sentence.** 「Never blocks (exit code is always 0)」 would have been checkable — and would
+   have revealed immediately that the exit code was not the thing at risk.
+2. **A guarantee about a CHILD says nothing about the CALL SITE.** They are separate claims and
+   need separate mechanisms; here the mechanism is `WaitForExit(120000)` and a kill.
+3. **Prefer the smallest bound over the best argument.** The 120-second cap is worth more than
+   all twelve lines, and it is one line.
+
+---
+
+# HR-66 — THE CORRECT KNOWLEDGE WAS TEN FILES AWAY AND DID NOT TRAVEL
+
+> **Owner: 「The reason is the finding, not the defect: the same lesson was already written in
+> the sibling adapter and did not travel. A comment is not a mechanism, and this is now the
+> sixth instance of that shape — the first where the correct knowledge existed in the same repo,
+> ten files away.」**
+
+## THE INSTANCE
+
+First restart onto `claude-opus-5`, caught by the startup smoke test:
+
+```
+Claude API error 400: `temperature` is deprecated for this model.
+```
+
+`src/adapters/OpenAIAdapter.js` already carried the finding, in a comment, on the body it
+builds:
+
+> *Reasoning models reject sampling parameters: a GPT-5-family request carrying `temperature`
+> fails with HTTP 400 … That unconditional temperature is what made every Stage-2 GPT attempt
+> throw before returning text.*
+
+Ten files away, `ClaudeAdapter` sent `temperature: 0.3` on every request.
+
+## AND THE VALUE WAS NEVER CHOSEN
+
+`0.3` was the adapter's own default, applied to the chat lane, the proposal lane and the
+dispatcher alike. No caller asked for it. Exactly one test asserted it — deliberately, saying
+that changing it 「belongs to the adapter capability work, with its own decision behind it」.
+That guard was right to stand there, and it held until a decision arrived.
+
+## WHY THE COMMENT DID NOT TRAVEL
+
+It was **true, specific, well-argued, and filed under the wrong subject.** It reads as a fact
+about OpenAI. It is a fact about *newer models*, and nothing in the repository connected the
+two adapters at the level the lesson lives at.
+
+> **A lesson recorded next to the code it was learned on protects that code and nothing else.
+> It does not know it is general, and neither does the next person to write a sibling.**
+
+## THE RULE
+
+1. **When a defect is found in one adapter/provider/client, check every sibling before closing
+   it** — and record the check, including a sibling that turned out to be fine.
+2. **A finding that is really about a CLASS belongs where the class is defined**, not where the
+   instance was hit. This one belonged on `LLMAdapter`, which both adapters implement.
+3. **Send nothing 「just in case」.** Both defects were an unrequested default travelling to a
+   provider that had never been asked whether it wanted one.
+4. **Six instances is a pattern, not a coincidence.** The distinguishing feature this time is
+   that no research, no vendor documentation and no new knowledge was needed — the answer was
+   already written down, in this repository, by us.
+
+---
+
+# HR-67 — A PARSE FAILURE WAS REPORTED TO THE LOOP AS A COMPLETED ANSWER
+
+> **Owner: 「Is that opus deciding it had enough — which would be a reasonable judgement that
+> happens to skip the plan-producing call — or is it something structural? … I have been reading
+> 『haiku validated, opus fallback』 as 『haiku is more careful』.」**
+
+**Answer: structural, and it is worse than either framing. The reading was wrong, and so was
+mine.**
+
+## THE LINE
+
+`src/intake/intakeService.js`, inside the reasoning loop's `decide` callback:
+
+```js
+let parsed = null
+try { parsed = parseDistillResponse(next.text, tel) } catch (_) { return { type: 'final', result: null } }
+```
+
+**An unreadable envelope returns `{ type: 'final' }`.** The loop is told the model finished. It
+faithfully logs `decisionType: 'final', stopReason: 'final'` — the same line it logs when the
+model genuinely completed — and the reason is discarded by `catch (_)`.
+
+## HOW IT WAS ESTABLISHED
+
+Probes on all eight `answerPlan: null` sites and after every parse; same question, same code,
+two models:
+
+```
+haiku  PARSED@1012 none -> step1 read -> PARSED@1683 HAS -> step2 read
+                        -> PARSED@1683 HAS -> step3 final -> validated
+opus   PARSED@1012 none -> step1 read -> step2 final
+                        -> PARSED@1683 NEVER FIRED   -> fallback / no_plan_returned
+```
+
+The probe sits on the line after the assignment. The loop only emits `final` when `decide()`
+returns one. The only `return { type: 'final' }` reachable before that probe is the catch.
+**Therefore the parse threw.** Not one of the eight null branches fired: the plan was never
+discarded, it was never produced.
+
+## THE THREE READINGS, AND WHY THE FIRST TWO ARE WRONG
+
+| reading | verdict |
+|---|---|
+| 「haiku is more careful than opus」 | **wrong.** Nothing about care was measured. haiku's envelopes parsed; one of opus's did not. |
+| 「the plan-producing call is optional, so a confident model can walk past the gate」 | **wrong, and it was my working hypothesis too.** The gate is not walked past by confidence. |
+| **「a failure is indistinguishable from a completion at the loop boundary」** | **this one.** |
+
+## WHY IT IS THE DANGEROUS SHAPE
+
+The loop's whole contract is 「keep going until the model says it is done」. That contract is
+sound only if 「done」 means done. Here the one signal the loop trusts is emitted by the failure
+path, so:
+
+- a failed step **shortens** the turn instead of extending it
+- it consumes a step from the bound while producing nothing
+- and the turn arrives at the renderer with no plan, where it is recorded as
+  `no_plan_returned` — a message about the MODEL not returning a plan, when what happened is
+  that the SERVER could not read one
+
+> **Every layer downstream then reasons correctly from a false premise. The most convincing
+> wrong diagnosis is the one assembled from accurate observations of a mislabelled event.**
+
+And it explains a month of judgement: the Owner read 「opus falls back」 as a fact about opus's
+carefulness. It is a fact about one unreadable envelope and a `catch` that renamed it.
+
+## THE RULE
+
+1. **A failure path may never emit the same signal as the success path.** If `final` means both
+   「the model finished」 and 「we could not read the model」, no caller can tell them apart, and
+   every caller will assume the first.
+2. **`catch (_)` on a control-flow decision is a lie by omission.** The error carried the reason
+   and it was discarded at the one place the reason changes what the system should do.
+3. **A counter named after someone else's behaviour must be checked before it is believed.**
+   `no_plan_returned` names the model. The model may have returned one.
+4. **When two models differ on a structural counter, suspect the path before the models.** The
+   difference here was not competence; it was which of them happened to emit a parseable
+   envelope on step two.
+
+---
+
+# HR-68 — IT WAS NOT THE MODEL. THE ADAPTER HAD NEVER MET A REASONING MODEL.
+
+**The fourth reframing of the same week, and the last one is the true one.**
+
+## THE MEASUREMENT
+
+Identical raw request — same prompt, same JSON schema, same `max_tokens: 2048` — to both models:
+
+```
+claude-opus-5              stop: max_tokens   out_tokens: 2048
+  content blocks: 1
+    [0] type=thinking   hasText=false   len=0
+  ADAPTER READS content[0].text -> len 0
+
+claude-haiku-4-5-20251001  stop: end_turn     out_tokens: 633
+  content blocks: 1
+    [0] type=text       hasText=true    len=1120
+  ADAPTER READS content[0].text -> len 1120
+```
+
+**opus-5 returns a `thinking` block. `ClaudeAdapter:167` reads `data.content?.[0]?.text`, gets
+`undefined`, yields `''` — and the parser reports `empty_response`.**
+
+## TWO OF OUR DEFECTS, COMPOUNDING
+
+1. **The adapter reads one block and assumes it is text.** It has been on the list since the
+   opus round began, filed as 「a real fragility, not today's cause」. It was today's cause.
+2. **`max_tokens` counts thinking tokens.** opus spent the entire 2048 on thinking and never
+   reached the text block — `stop: max_tokens`. Our budgets (2048 chat, 1024 default, 400 for
+   the intent classifier) were all sized against a model that does not think before answering.
+
+## WHAT THIS OVERTURNS
+
+Every characterisation of opus this week traces to these two lines:
+
+| what was said | what was happening |
+|---|---|
+| 「opus skips plan validation」 | the envelope was unreadable, so no plan could exist |
+| 「opus is unstable — three failure modes」 | one cause, three symptoms |
+| 「opus is slower, it hit the 30s timeout」 | it was thinking, and haiku hit that timeout too on re-run |
+| 「haiku is more careful」 | haiku does not emit thinking blocks, so our reader happens to work on it |
+
+**The model was doing exactly what it is built to do. We were reading the wrong field and
+cutting it off mid-thought.**
+
+## THE CHAIN, AND WHY IT TOOK FOUR REFRAMINGS
+
+```
+adapter reads content[0].text        -> '' on a thinking model
+parser says empty_response           -> a THROW at the loop boundary
+bare catch returns { type:'final' }  -> a failure printed as a completion   (HR-67)
+renderer records no_plan_returned    -> a message blaming the MODEL
+Owner reads 「opus falls back」        -> a fortnight of judgement about a model
+```
+
+**Five layers, each behaving correctly given its input, converting 「we cannot read this」 into
+「the model is worse」.** Every layer was individually defensible. The composition was a slander.
+
+## THE RULE
+
+1. **An adapter must handle every block type its provider can return, and treat an unexpected
+   shape as an ERROR — never as empty.** `content[0].text || ''` turns 「I do not understand
+   this response」 into 「the model said nothing」, which is the same lie as HR-67 one layer down.
+2. **A token budget on a reasoning model is not a length limit; it is a thinking limit.** Any
+   ceiling sized against a non-thinking model is a different constraint on a thinking one, and
+   it binds before the answer starts.
+3. **When a new model performs badly, audit the code that reads it BEFORE characterising it.**
+   The first hypothesis for 「the model is worse」 should be 「our reader is older than the
+   model」, because the reader is the thing that has not been tested against it.
+4. **A fragility deferred as 「not today's cause」 must carry the evidence for that claim.** This
+   one was dismissed on a raw call with a SHORT prompt, which did not trigger thinking. The
+   dismissal was measured, and measured on the wrong case.
+
+---
+
+# HR-69 — FIVE LAYERS, EACH CORRECT ON ITS INPUT, AND THE SUM WAS A FALSE CONCLUSION ABOUT A MODEL
+
+> **Owner: 「Every layer behaved correctly on its input and the sum was a false conclusion about
+> a model — that is the most complete example of this failure mode we have.」**
+
+## THE CHAIN
+
+```
+1  ClaudeAdapter      content[0].text || ''      -> ''        on a thinking model
+2  parseDistillResponse                          -> THROW     "empty_response"
+3  loop boundary      catch (_) { return final } -> "final"   a failure printed as a completion
+4  readResultView                                -> logs      "no_plan_returned"
+5  the Owner          reads 「opus falls back」    -> a week    of judgement about a model
+```
+
+**Not one of those five is wrong about its own input.**
+
+- The adapter was asked for text and found none where it looked.
+- The parser was handed an empty string and empty is not a valid envelope.
+- The loop was told 「final」 and a loop that is told final must stop.
+- The renderer found no plan and recorded that no plan arrived.
+- The Owner read a counter that says the model returned no plan, and concluded the model
+  returned no plan.
+
+**Every step is defensible in isolation. The composition is a slander, and it cost a fortnight,
+a model rollback, and a set of briefs written on a premise that was never true.**
+
+## WHERE THE TRUTH WAS DESTROYED
+
+At layer 1, and only there. `|| ''` converted 「I do not understand this response」 into 「the
+response was empty」. Everything after that was faithful transmission of a corrupted fact —
+which is exactly why it was so hard to see. **There was no wrong reasoning anywhere to find.**
+
+Layer 3 made it invisible rather than merely wrong: by printing the failure with the success
+vocabulary, it removed the last place a reader could have noticed something was off.
+
+## THE PROPERTY THESE LAYERS LACKED
+
+Each layer preserved its own correctness and **none preserved PROVENANCE**. Not one of them
+carried 「this value is derived from something I could not read」 forward. A single bit — 「this
+is a substitute, not an observation」 — travelling from layer 1 would have stopped the chain at
+any of the four points after it.
+
+That bit is what `source: 'browser'` does in the browse result contract, what
+`declaredBy: 'reader'` does on `queryScope`, and what `filtersApplied: null` does instead of
+`[]`. **The project already knows this technique. The adapter did not use it.**
+
+## THE RULE
+
+1. **A degraded value must be labelled as degraded at the point of degradation.** Every layer
+   after it inherits the label; no layer after it can invent one.
+2. **When a conclusion about an external party (a model, a vendor, a supplier) is assembled from
+   internal counters, audit the whole chain before stating it.** The counter that names someone
+   else — `no_plan_returned` — is the one most likely to be measuring us.
+3. **「Every layer is correct」 is not evidence the system is correct.** It is the signature of
+   this failure, because a corrupted input propagates through correct layers untouched.
+4. **Look for the first substitution, not the first symptom.** Four rounds of investigation
+   examined layers 3, 4 and 5. The defect was at layer 1 the entire time, and each round's
+   finding was real — which is what kept the search one layer too high.
+
+---
+
+# HR-70 — A DETECTOR PROVEN AGAINST A CASE THAT CANNOT EXHIBIT THE DEFECT IS NOT PROVEN
+
+> **Owner: 「You measured before concluding, and measured the wrong case. A short prompt cannot
+> trigger thinking, so the probe could only have returned the reassuring answer.」**
+
+**Beside HR-47.** That rule is about a check that fires so often it stops being read. This is its
+twin: **a check that CANNOT fire, run once, and taken as evidence of absence.**
+
+## THE INSTANCE
+
+`ClaudeAdapter:167`'s single-block read was flagged during the opus round and then dismissed:
+
+> *「Not today's cause (a raw call returned a single text block), but a real fragility.」*
+
+The dismissal was **measured**, which is why it was believed. It was measured with a
+**twenty-word prompt**. A reasoning model does not emit a thinking block for a trivial question,
+so the probe was structurally incapable of producing the failing case. It could only ever have
+returned the reassuring answer.
+
+The same probe against a production-shaped prompt returns `type=thinking, hasText=false` on the
+first attempt.
+
+## WHY THIS IS WORSE THAN NOT CHECKING
+
+An unchecked suspicion stays open. **A checked one is closed, and it is closed with the
+authority of a measurement.** The note said 「not today's cause」 in the confident voice that only
+evidence earns, and three further rounds of investigation routed around it.
+
+## THE RULE
+
+1. **Before trusting a negative result, ask whether the probe COULD have produced a positive
+   one.** If the answer is no, the result is not evidence.
+2. **Reproduce the suspected defect first, then show the fix removes it.** A probe that has never
+   once shown the failure has not been calibrated, only executed.
+3. **Record the CASE a dismissal was measured on, not just that it was measured.** 「A raw call
+   returned a single text block」 was true and omitted the only fact that mattered: the prompt was
+   twenty words long.
+4. **A deferred fragility must carry its own falsification.** 「This would matter if X」 — then
+   test X, or say plainly that X was not tested.
+
+---
+
+# THE ROLLBACK, RESTATED
+
+**opus-5 was rolled back because WE CANNOT READ IT YET — not because it is worse.**
+
+Stated the other way for a week, including in the rollback commit itself, on the strength of
+counters that were measuring our own adapter. The rollback remains correct: the system genuinely
+could not use the model. The reason given for it was wrong.
+
+The adapter now reads every block and reports an unreadable response as an error. Whether opus
+returns is a separate decision, and the four-cell measurement that follows the fix is the first
+one that will be measuring **the model** rather than **our reader**.
+
+---
+
+# HR-71 — THE FOURTH INSTANCE, AND THIS TIME THE DUPLICATE WAS BILLING
+
+**HR-59's fourth instance, with the same note the Owner wrote the first time:**
+
+> **Owner: 「I asked for a capability that already existed, again.」**
+
+## THE FOUR
+
+| # | asked for | already existed | caught |
+|---|---|---|---|
+| 1 | a browser for public reads | the whole browser safety stack | **in the brief** |
+| 2 | a completion contract for browse | A1's evidence descriptor | **after it shipped** (HR-58) |
+| 3 | a goal decomposer | `intake/reasoningLoop.js`, wired | **before writing code** |
+| 4 | **a deterministic router for the split** | **`intake/turnRouter.js`, wired, with an `ACTION` route** | **before writing code** |
+
+## WHAT MAKES THE FOURTH DIFFERENT
+
+The first three duplicates were **unbuilt**. This one is **already running, on every turn, and
+paying for a model call to do what a deterministic function beside it already does.**
+
+`turnRouter.routeTurn()` returns `['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATION']` with
+zero model calls and a `confidence` on every outcome. `ACTION` **is** the routing half of the
+400-token classifier call. Both run. Every turn.
+
+> **So this piece of work is not 「add a deterministic router」. It is 「delete a second router
+> that has been billing on every turn since it was built」.** That is a smaller change, a cheaper
+> one, and the opposite of what the brief described.
+
+## AND THE COST WAS NOT ONLY MONEY
+
+The duplicate was the more dangerous of the two:
+
+- it authored the work-order text as a side effect of classifying (§HR-71 note below), so a
+  routing decision and an EXECUTE-path authoring decision shared one 400-token budget
+- it was the call whose failure became a lost instruction, because its two-outcome shape had
+  nowhere to put 「we could not find out」
+- and it was invisible as a duplicate because the two live in different vocabularies:
+  one says `intent: 'develop'`, the other says `route: 'ACTION'`
+
+**Neither name contains the other. A search for either finds one.**
+
+## THE RULE (extending HR-59)
+
+1. **Search by OUTPUT, not by name.** 「What already decides whether this turn is an action?」
+   finds `routeTurn`. 「Is there an intent classifier?」 does not, and 「is there a router?」 finds
+   the wrong one.
+2. **A duplicate that is already running is worse than one that is merely proposed**, because
+   its cost is recurring and its existence is evidence to the next reader that it was needed.
+3. **When two components decide the same thing in different vocabularies, one of them is
+   younger and was written by someone who searched for the wrong word.** Ask which.
+4. **The Owner's brief is not the specification of the change.** Four times it has described the
+   goal correctly and implied a build where a deletion or a wiring was the actual work.
+
+---
+
+# HR-72 — 「DID WE DECLINE, OR DID WE NOT FINISH?」 — THE TEST THAT STOPS OUTCOMES MULTIPLYING
+
+Three `chat()` returns in `intent.js` report a model that CLAIMED `develop` and then failed
+validation: no concrete task, a `production` target, an unknown `targetProject`. All three were
+the same shape as the lost instruction — a thing that was not a conversation, reported as one.
+
+**The obvious response was to add three outcomes. That would have been the fifth duplicate.**
+
+## THE TEST
+
+> **Did we DECLINE, or did we NOT FINISH?**
+
+| | | outcome |
+|---|---|---|
+| **declined** | a decision was made and the answer is no | `refused` — with its reason, visible AS a decision |
+| **did not finish** | nothing was decided; we could not find out | `unavailable` — with which kind |
+| **detail missing** | the intent was recognised, one part is absent | **ask** — one plain question |
+| **no work was requested** | | `chat` |
+
+Applied to the three:
+
+- **`production` is never a valid target** → **declined.** The Owner is right that this is an
+  answer, not a failure to hear. But it is not a CHAT answer: `chat` means 「you were not asking
+  for work」, and here work was asked for and refused.
+- **no concrete task** → **ask.** The intent was recognised; the target is missing.
+- **invalid `targetProject`** → **ask.** 「backend 定 frontend?」 is one short question and the
+  work intent survives it.
+
+**One new outcome, and two that route to `requestInference` — a component that already exists
+for exactly this: 「ask ONLY for what is genuinely missing, and ask it in one sentence rather
+than a form.」**
+
+## WHY THE TEST MATTERS MORE THAN THE ANSWER
+
+Every failure mode this month arrived as a proposal to add a state: a fourth tier for semantic
+zero, a status for browse, three refusal outcomes here. **Outcomes multiply when the question is
+「what happened?」 and stop multiplying when the question is 「which of the four kinds of
+not-succeeding was it?」** The four are exhaustive, they are about the SYSTEM's position rather
+than the event's flavour, and each has one correct handling.
+
+---
+
+# HR-73 — THE PLAN LAYER ARRIVED BEFORE THE ANSWERS IT WAS BUILT TO PROVE
+
+> **Owner: 「The evidence layer, the four-cell design, the answer plan — none of it engages on
+> the questions I actually ask. I would rather know that now than discover it in another
+> fortnight.」**
+
+Measured: five real messages drawn across his actual length range. **`plan: none` on every one**
+except a single `fallback`. The answer-plan machinery — evidence sets, citation binding, row
+validation, the whole A-line — **does not engage on his traffic at all.**
+
+## THE READING THAT IS WRONG
+
+「It was wasted.」 It was not. A1's descriptor, the loop boundary (HR-67), the adapter (HR-68),
+the classifier outcome — every one was found THROUGH that work, and every one was a live defect
+on the path he does use.
+
+## THE READING THAT FITS, AND IT IS UNCOMFORTABLE FOR A DIFFERENT REASON
+
+**The plan layer was built for a class of question the system cannot yet answer well enough for
+him to ask it.**
+
+- 「上次盤點同存量對唔對得上」 is unanswerable because inventory carries **no timestamp**
+- the Costco question needed **one read and no join** — the machinery had nothing to prove
+- connecting ordering to purchasing is a **name match**, because PO lines carry no ingredient id
+
+**He does not ask those questions because they do not work yet.** The machinery to PROVE the
+answers arrived before the answers did. That is a sequencing fact, not a waste one.
+
+## ⛔ THE PREDICTION, RECORDED SO IT CAN BE WRONG
+
+> **If `inventory` gains a timestamp and PO lines gain an ingredient id, his traffic should shift
+> toward the questions the plan layer was built for.**
+>
+> **If it does not shift, the plan layer was aimed at questions he would never have asked
+> regardless — and that is worth knowing.**
+
+Checkable against the same source that produced this finding: `data/conversations`, the same
+extraction, run again after the data gaps close. No new instrumentation is needed.
+
+**Until then: no further investment in the plan layer.** It is correct, it is tested, and
+nothing currently asks it for anything.
+
+## THE RULE
+
+1. **Machinery that proves answers is worth exactly as much as the answers it can reach.**
+   Build the answer first; the proof layer has no traffic until something is worth proving.
+2. **A capability with no traffic is not evidence of a good design or a bad one.** It is
+   evidence of an ORDERING, and the ordering is checkable — measure the traffic before and
+   after the blocker is removed.
+3. **State the prediction that would falsify the charitable reading.** 「It will be useful
+   later」 is not checkable; 「traffic should shift when X and Y land」 is.
