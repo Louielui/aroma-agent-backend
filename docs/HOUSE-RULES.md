@@ -3405,3 +3405,154 @@ And the cost of fixing was one command against one file.
    contributor's git was configured with, which is a policy nobody chose and nobody can read.
 4. **The first explanation is the warning sign.** If a gate needs a note in a commit message to
    be understood as passed, the next commit will need one too.
+
+---
+
+# HR-64 — THE HARNESS WAS KINDER THAN PRODUCTION, FOR THE FOURTH TIME — AND A TOOL CAUGHT IT
+
+> **Owner: 「That is the fourth time this month the harness was kinder than production, and the
+> first time a tool caught it rather than a question from me.」**
+
+## THE INSTANCE
+
+`startupSmoke.js` was written, run through a wrapper, and passed twice:
+
+```
+asked claude -> PASS   asked openai -> PASS
+```
+
+The same file, launched the way it actually ships, failed twice:
+
+```
+[router] falling back to claude (reason: openai_unavailable)
+asked claude -> FAIL (empty reply)   asked openai -> FAIL (empty reply)
+```
+
+**The wrapper loaded `.env`. The launcher does not.** `src/app.js:18` calls
+`require('dotenv').config()`, and the smoke script never loads `app.js` — so under the launcher
+it ran with no `OPENAI_API_KEY`, A4's verifier could not be built, the final gate reported
+unavailable, and both probes returned nothing.
+
+**A smoke test whose environment differs from the server's is testing a system nobody runs.**
+
+## WHY THIS ONE IS DIFFERENT FROM THE OTHER THREE
+
+The previous three were found by the Owner asking a question. This one was found by the check
+itself, on its first real execution, because it was finally run the way it ships instead of the
+way it was developed.
+
+> **The harness does not drift toward being kinder. It is BORN kinder — it is assembled by the
+> person who wants it to work, out of the pieces they already had in hand.** The wrapper had
+> `.env` loaded because the author needed it loaded to develop the thing. That convenience is
+> invisible from inside, and it survives every review that reads the code rather than running it.
+
+## THE RULE
+
+1. **Run it the way it ships, once, before believing any result from it.** Not the same
+   command with the same arguments — the same INVOCATION, from the same parent, with the same
+   environment.
+2. **A test harness must construct its environment the way the production entry point does, by
+   calling the same code** — not by reproducing the effect. `require('dotenv').config()` with
+   the same explicit path, not a hand-rolled parser that happens to agree today.
+3. **List what the harness supplies that the caller does not.** For this one it was `.env`, the
+   A4 dependency composition, and `providerHint`. Two of the three were wrong.
+4. **A green harness result is evidence about the harness until it has been run in situ once.**
+
+---
+
+# HR-65 — AN INTENTION IN PROSE, BESIDE CODE THAT CONTRADICTS IT
+
+> **Owner: 「You wrote 『it never blocks the hand-back』 and then wrote an invocation that did —
+> an intention stated in prose next to code that contradicts it, which is the shape we have
+> removed five times. The 120-second cap is the mechanism; the sentence was not.」**
+
+## THE INSTANCE
+
+`startupSmoke.js` opens with a section headed **⛔ IT DOES NOT REFUSE TO HAND BACK. IT HANDS
+BACK LOUDLY**, explaining the L2-1 reasoning at length and stating that the check never blocks
+startup. Exit code is `process.exit(0)`, always — that part was real.
+
+The launcher then called it like this:
+
+```powershell
+$smoke = & node (Join-Path $Repo 'scripts\launcher\startupSmoke.js') 2>&1
+```
+
+The node process ran and exited. **The launcher did not return for sixteen minutes.**
+
+Every guarantee in the file was about the CHILD. Not one of them was about the call site, and
+the call site is where the blocking happened.
+
+## THE GENERAL FORM
+
+A comment describes the author's intention. A mechanism constrains the outcome. They are only
+the same thing while the author is looking, and the author had just finished writing the
+paragraph that made him confident he did not need to look.
+
+> **The more carefully an intention is argued in prose, the less likely anyone is to check
+> whether the code does it — including the person who wrote both.** Twelve lines explaining why
+> it must never block are twelve lines of evidence that it does not, to every future reader.
+
+## THE RULE
+
+1. **A guarantee stated in a comment must name the mechanism that enforces it, in the same
+   sentence.** 「Never blocks (exit code is always 0)」 would have been checkable — and would
+   have revealed immediately that the exit code was not the thing at risk.
+2. **A guarantee about a CHILD says nothing about the CALL SITE.** They are separate claims and
+   need separate mechanisms; here the mechanism is `WaitForExit(120000)` and a kill.
+3. **Prefer the smallest bound over the best argument.** The 120-second cap is worth more than
+   all twelve lines, and it is one line.
+
+---
+
+# HR-66 — THE CORRECT KNOWLEDGE WAS TEN FILES AWAY AND DID NOT TRAVEL
+
+> **Owner: 「The reason is the finding, not the defect: the same lesson was already written in
+> the sibling adapter and did not travel. A comment is not a mechanism, and this is now the
+> sixth instance of that shape — the first where the correct knowledge existed in the same repo,
+> ten files away.」**
+
+## THE INSTANCE
+
+First restart onto `claude-opus-5`, caught by the startup smoke test:
+
+```
+Claude API error 400: `temperature` is deprecated for this model.
+```
+
+`src/adapters/OpenAIAdapter.js` already carried the finding, in a comment, on the body it
+builds:
+
+> *Reasoning models reject sampling parameters: a GPT-5-family request carrying `temperature`
+> fails with HTTP 400 … That unconditional temperature is what made every Stage-2 GPT attempt
+> throw before returning text.*
+
+Ten files away, `ClaudeAdapter` sent `temperature: 0.3` on every request.
+
+## AND THE VALUE WAS NEVER CHOSEN
+
+`0.3` was the adapter's own default, applied to the chat lane, the proposal lane and the
+dispatcher alike. No caller asked for it. Exactly one test asserted it — deliberately, saying
+that changing it 「belongs to the adapter capability work, with its own decision behind it」.
+That guard was right to stand there, and it held until a decision arrived.
+
+## WHY THE COMMENT DID NOT TRAVEL
+
+It was **true, specific, well-argued, and filed under the wrong subject.** It reads as a fact
+about OpenAI. It is a fact about *newer models*, and nothing in the repository connected the
+two adapters at the level the lesson lives at.
+
+> **A lesson recorded next to the code it was learned on protects that code and nothing else.
+> It does not know it is general, and neither does the next person to write a sibling.**
+
+## THE RULE
+
+1. **When a defect is found in one adapter/provider/client, check every sibling before closing
+   it** — and record the check, including a sibling that turned out to be fine.
+2. **A finding that is really about a CLASS belongs where the class is defined**, not where the
+   instance was hit. This one belonged on `LLMAdapter`, which both adapters implement.
+3. **Send nothing 「just in case」.** Both defects were an unrequested default travelling to a
+   provider that had never been asked whether it wanted one.
+4. **Six instances is a pattern, not a coincidence.** The distinguishing feature this time is
+   that no research, no vendor documentation and no new knowledge was needed — the answer was
+   already written down, in this repository, by us.
