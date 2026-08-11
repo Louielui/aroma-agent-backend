@@ -3202,3 +3202,71 @@ and the module name does not.
 ⛔ **And when the search finds something 70% right, the answer is PROMOTION, not a new module.**
 Building the general version fresh, above six existing deciders, would be the fifth second copy
 and the largest — because it would sit on top of everything the others do.
+
+---
+
+### HR-71 — the capture is in the LIVE path, and the dangerous direction is coverage
+
+Named 2026-08-11 at the Owner's instruction, before wiring B. Not built — named.
+
+`capturedShapes.js` is not a fixture. It is required at module load, `buildCatalogue()` runs
+once at require time, and it reaches production twice:
+
+```
+goalDecomposer.js:74      catalogueForPrompt()  → what the MODEL is told exists
+goalPlanContract.js:159   fieldTier(), coverageOf()
+goalPlanContract.js:271                         → what the SERVER judges to be available
+```
+
+**So a dated snapshot decides both what is proposed and what is believed.** Every day it ages.
+
+#### The two directions are not equally dangerous
+
+| drift | B's behaviour | harm |
+|---|---|---|
+| a field now EXISTS that the capture never saw | refuses, `UNOBSERVED` | ⚠ annoying, honest, visible |
+| a field the capture saw FULL has since emptied | says AVAILABLE, plan proceeds | ⛔ **a wrong answer he would believe** |
+
+⛔ **Coverage drift is the dangerous axis and nothing watches it.** A field NAME changing is rare
+and loud. A field quietly emptying is common and silent — and `latest_price 5/55 → SPARSE` is
+precisely the protection that would degrade without anything going red.
+
+#### The rule, in shape rather than in numbers
+
+1. **No expiry timer.** An 「refuse after N days」 rule would be picking a number that feels safe,
+   which is the error already recorded against the 30-second timeout.
+2. **The capture date travels with the plan.** An answer built on three-month-old field knowledge
+   should say so, the same way `QUERY_SCOPE` carries `declaredBy: 'reader'` rather than hiding
+   that its windows were read out of another repo's source.
+3. **Regeneration is triggered by SHAPE CHANGE, never by calendar.** `scripts/verify/captureShapes.js`
+   already reads all six without `--write`; a dry run that diffs field names and tiers against the
+   artefact is a check, not a schedule.
+4. ⛔ **And the gap is stated rather than closed: today nothing runs that diff, so coverage drift
+   is invisible until it produces an answer.**
+
+#### Why the artefact is not regenerated
+
+> **Owner: 「The pinned ratios are a dated measurement and rewriting them would delete the
+> evidence while looking like an update. And 55→37 on orderPlanning is live data moving, which
+> is a fact about my business, not instrument drift.」**
+
+`goal.test.js` pins 32/55 and 13/207. Those are evidence, not fixtures. Regeneration happens when
+something changes SHAPE, and it is a deliberate act with the assertions rewritten knowingly.
+
+---
+
+### HR-72 — the survey test caught a 31-commit revert that review would not have
+
+Recorded 2026-08-11. Wiring B, I took `governance/textClasses.js` from B's branch along with
+B's own files. B's branch was 31 commits behind, so its copy of that file was missing every
+entry added since — a silent revert inside a merge that looked like taking a dependency.
+
+**`textClasses.test.js` went red immediately: 「every file carrying Chinese has been classified」.**
+
+⛔ **Nothing about the diff looked wrong.** It was one file, taken from the branch that owned the
+feature, to satisfy a real dependency. A reviewer would have read it as correct — you would have
+had to already know which entries existed on the other side.
+
+This is the survey-test pattern (HR-66) doing exactly the job it was built for, on a mistake with
+no other detector. Filed beside HR-69's flow rule as the worked example of why a category rule
+earns its test.
