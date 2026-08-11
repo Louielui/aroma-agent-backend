@@ -3556,3 +3556,83 @@ two adapters at the level the lesson lives at.
 4. **Six instances is a pattern, not a coincidence.** The distinguishing feature this time is
    that no research, no vendor documentation and no new knowledge was needed — the answer was
    already written down, in this repository, by us.
+
+---
+
+# HR-67 — A PARSE FAILURE WAS REPORTED TO THE LOOP AS A COMPLETED ANSWER
+
+> **Owner: 「Is that opus deciding it had enough — which would be a reasonable judgement that
+> happens to skip the plan-producing call — or is it something structural? … I have been reading
+> 『haiku validated, opus fallback』 as 『haiku is more careful』.」**
+
+**Answer: structural, and it is worse than either framing. The reading was wrong, and so was
+mine.**
+
+## THE LINE
+
+`src/intake/intakeService.js`, inside the reasoning loop's `decide` callback:
+
+```js
+let parsed = null
+try { parsed = parseDistillResponse(next.text, tel) } catch (_) { return { type: 'final', result: null } }
+```
+
+**An unreadable envelope returns `{ type: 'final' }`.** The loop is told the model finished. It
+faithfully logs `decisionType: 'final', stopReason: 'final'` — the same line it logs when the
+model genuinely completed — and the reason is discarded by `catch (_)`.
+
+## HOW IT WAS ESTABLISHED
+
+Probes on all eight `answerPlan: null` sites and after every parse; same question, same code,
+two models:
+
+```
+haiku  PARSED@1012 none -> step1 read -> PARSED@1683 HAS -> step2 read
+                        -> PARSED@1683 HAS -> step3 final -> validated
+opus   PARSED@1012 none -> step1 read -> step2 final
+                        -> PARSED@1683 NEVER FIRED   -> fallback / no_plan_returned
+```
+
+The probe sits on the line after the assignment. The loop only emits `final` when `decide()`
+returns one. The only `return { type: 'final' }` reachable before that probe is the catch.
+**Therefore the parse threw.** Not one of the eight null branches fired: the plan was never
+discarded, it was never produced.
+
+## THE THREE READINGS, AND WHY THE FIRST TWO ARE WRONG
+
+| reading | verdict |
+|---|---|
+| 「haiku is more careful than opus」 | **wrong.** Nothing about care was measured. haiku's envelopes parsed; one of opus's did not. |
+| 「the plan-producing call is optional, so a confident model can walk past the gate」 | **wrong, and it was my working hypothesis too.** The gate is not walked past by confidence. |
+| **「a failure is indistinguishable from a completion at the loop boundary」** | **this one.** |
+
+## WHY IT IS THE DANGEROUS SHAPE
+
+The loop's whole contract is 「keep going until the model says it is done」. That contract is
+sound only if 「done」 means done. Here the one signal the loop trusts is emitted by the failure
+path, so:
+
+- a failed step **shortens** the turn instead of extending it
+- it consumes a step from the bound while producing nothing
+- and the turn arrives at the renderer with no plan, where it is recorded as
+  `no_plan_returned` — a message about the MODEL not returning a plan, when what happened is
+  that the SERVER could not read one
+
+> **Every layer downstream then reasons correctly from a false premise. The most convincing
+> wrong diagnosis is the one assembled from accurate observations of a mislabelled event.**
+
+And it explains a month of judgement: the Owner read 「opus falls back」 as a fact about opus's
+carefulness. It is a fact about one unreadable envelope and a `catch` that renamed it.
+
+## THE RULE
+
+1. **A failure path may never emit the same signal as the success path.** If `final` means both
+   「the model finished」 and 「we could not read the model」, no caller can tell them apart, and
+   every caller will assume the first.
+2. **`catch (_)` on a control-flow decision is a lie by omission.** The error carried the reason
+   and it was discarded at the one place the reason changes what the system should do.
+3. **A counter named after someone else's behaviour must be checked before it is believed.**
+   `no_plan_returned` names the model. The model may have returned one.
+4. **When two models differ on a structural counter, suspect the path before the models.** The
+   difference here was not competence; it was which of them happened to emit a parseable
+   envelope on step two.
