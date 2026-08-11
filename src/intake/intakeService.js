@@ -166,7 +166,26 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 // Per-lane output limits for the distill call. DEFAULT is the historical value and
 // applies to the proposal lane and to any legacy/unset interactionMode.
 const DEFAULT_MAX_TOKENS = 1024
-const CHAT_MAX_TOKENS = 2048
+/**
+ * ⛔ ON A THINKING MODEL THIS IS A THINKING CAP, NOT A LENGTH CAP. (Owner decision, 8192.)
+ *
+ * 2048 was fitted to a model that answers without reasoning first. Measured on the same
+ * prompt and the same schema:
+ *
+ *   opus-5 @ 2048   stop: max_tokens   out: 2048   thinking only, NO answer
+ *   opus-5 @ 16000  stop: end_turn     out: 6712   thinking + a 2748-char answer
+ *   haiku  @ 2048   stop: end_turn     out:  633   answer, no thinking block
+ *
+ * Roughly ten times the output for the same task, because the reasoning is billed as output.
+ *
+ * 8192 covers the one observed completion with about 22% headroom. 16384 was rejected: it
+ * raises the per-turn ceiling eightfold against today for a need nobody has measured.
+ *
+ * ⛔ ONE COMPLETION IS DIRECTION, NOT RATE. How reasoning scales with question difficulty is
+ * unmeasured. A harder question that needs more will arrive as `stop_reason: max_tokens` —
+ * which now reports itself honestly through the adapter rather than as an empty string.
+ */
+const CHAT_MAX_TOKENS = 8192
 
 // DECISION_RECALL runtime flag (same env-flag style as CONVERSATION_DEMO): only exact 'on'
 // enables; unset/empty/any other value → fail-closed OFF.
