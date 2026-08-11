@@ -109,3 +109,61 @@ it is not close.
 
 ⛔ **This should have been named in week one.** It was not, and two weeks of work were spent
 without the alternative ever being written down as the thing to beat.
+
+---
+
+# ⛔ STOPPED — 2026-08-11. COSTED, NOT ABANDONED.
+
+> **Owner: 「Worth building if I would use it to decide whether to drive, not worth it if I need
+> the number to be right. For peanut butter, I need the number to be right, and ringing the
+> store is thirty seconds.」**
+
+**This line is stopped by decision, on evidence, with the work costed.** It is recorded here so
+that nobody restarting it in three months mistakes a costing for an abandonment.
+
+## THE BENCHMARK, WHICH SHOULD HAVE BEEN NAMED IN WEEK ONE
+
+**Ringing the store is thirty seconds and definitive.**
+
+It establishes today's shelf price, promotions, member pricing and whether the item is actually
+in stock. **This feature cannot establish any of those four at any level of effort** — its
+ceiling is the website's price for a store, which is not the till price.
+
+| | ring the store | this, fully built |
+|---|---|---|
+| latency | ~30s, human | ~1–2 min, unattended |
+| authority | the shelf | the website |
+| in stock? | yes | no |
+| promotions / member price | yes | unreliably |
+| a wrong answer is visible | you would hear the doubt | **no** |
+| twenty items, three sites | no | **yes** |
+
+**It wins on BREADTH and on nothing else.** One item, now, correctly: the phone wins and it is
+not close.
+
+⛔ **Neither of us said this out loud for a fortnight**, and a fortnight of work proceeded on the
+unexamined assumption that a browser was the answer. The benchmark was cheap to name and was
+never named. That is the most transferable lesson in this file.
+
+## WHAT WAS BUILT AND IS KEPT
+
+The reach and evidence layers are complete, tested and **unwired**: deterministic detection, the
+sealed order, the profile-less session, the A1 descriptor, and a renderer whose price sentence
+carries its own provenance. `browseResult.js` and its second vocabulary are gone. **None of it
+is wasted if the decision is ever revisited, and none of it runs today.**
+
+## WHAT WAS NOT BUILT, AND WHY — SO THE COST IS ON RECORD
+
+- **The observation extractor.** Page → `{product, price}`. Site-specific, and the failure mode
+  is the worst in this project: **a wrong DOM node yields a structurally perfect observation** —
+  real product string, real price, true origin, true timestamp, from a page genuinely loaded.
+  **Every fence passes, because every fence checks PROVENANCE and none checks CORRESPONDENCE.**
+  Nothing would make it visible short of the Owner opening the page himself.
+- **Store selection.** Necessary and not sufficient. A price claim survives A1's gate only from
+  a PRODUCT PAGE (a complete read of one item), not a search row (a truncated sample) — so the
+  real work is store selection *plus* product-page navigation, plus a store preference held
+  server-side (never a browser profile, which would restore the credential reachability the
+  design removed), against a 12-action budget that barely fits.
+- **R2.x in full** — no acknowledgement turn, no status line, and **no STOP control**, which
+  becomes a hard requirement the moment anything executes.
+
