@@ -188,7 +188,18 @@ test('*** D2 — the args shape is CLOSED: no url, provider, endpoint, headers, 
     assert.equal(READ_ARGS_SCHEMA.properties[forbidden], undefined,
       '⛔ ' + forbidden + ' would hand the model mechanism; it supplies MEANING only')
   }
-  assert.deepEqual(READ_ARGS_SCHEMA.properties.freshness.enum, ['current', 'recent', 'any', null])
+  // ⛔ THE CLOSED VALUE SET IS UNCHANGED; ONLY ITS SPELLING IS.
+  //
+  // This used to read `.enum` off a `type: ['string','null']` field. That spelling is accepted
+  // by OpenAI and REFUSED by Anthropic — 'Enum value 'current' does not match declared type' —
+  // which returned HTTP 400 on every Claude chat turn with A4 on. anyOf says the same thing in
+  // a form both providers accept, so the assertion follows the shape rather than the union.
+  const f = READ_ARGS_SCHEMA.properties.freshness
+  assert.ok(Array.isArray(f.anyOf), 'anyOf, not a union type carrying an enum')
+  assert.equal(f.enum, undefined, 'no top-level enum beside anyOf — that is the shape that 400s')
+  const strings = f.anyOf.find((b) => b.type === 'string')
+  assert.deepEqual(strings.enum, ['current', 'recent', 'any'], 'the same three values')
+  assert.ok(f.anyOf.some((b) => b.type === 'null'), 'and null is still admissible')
 })
 
 test('*** E — unknown properties are not admitted, and cannot ride along ***', () => {

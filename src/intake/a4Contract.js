@@ -137,9 +137,31 @@ const READ_ARGS_SCHEMA = Object.freeze({
   description: '需要向來源說明「要查甚麼」時填寫；內部操作本身已經表達了查甚麼，通常填 null。',
   properties: {
     query: { type: ['string', 'null'], description: '要查嘅內容，用自然語言。冇需要就填 null。' },
+    /**
+     * ⛔ anyOf, NOT a union type carrying an enum. THIS FIELD TOOK THE CHAT LANE DOWN.
+     *
+     * It was `type: ['string','null']` with `enum: ['current','recent','any', null]`. OpenAI
+     * accepts that. Anthropic's schema validator refuses it outright:
+     *
+     *   output_config.format.schema: Invalid schema:
+     *   Enum value 'current' does not match declared type '['string','null']'
+     *
+     * The result was HTTP 400 on EVERY Claude chat turn with A4 on — and because the fallback
+     * runs openai→claude only, a Claude primary that throws has nothing behind it, so a single
+     * malformed field became a total outage rather than a degraded answer.
+     *
+     * It was never seen because the flag that switches this schema on was committed to the
+     * launcher 45 seconds AFTER the running process started, so the live service has been
+     * running without it. The next restart would have armed it.
+     *
+     * anyOf is plain JSON Schema, accepted by both providers, and the accepted values are
+     * unchanged. VERIFIED with one real Claude call, not by reasoning about the spec.
+     */
     freshness: {
-      type: ['string', 'null'],
-      enum: ['current', 'recent', 'any', null],
+      anyOf: [
+        { type: 'string', enum: ['current', 'recent', 'any'] },
+        { type: 'null' }
+      ],
       description: 'current＝要最新即時資料；recent＝近期即可；any＝時效唔重要。唔確定就填 null。'
     },
     location: { type: ['string', 'null'], description: '地點，例如 Winnipeg。與地點無關就填 null。' }
