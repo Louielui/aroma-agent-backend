@@ -3884,3 +3884,99 @@ The duplicate was the more dangerous of the two:
    younger and was written by someone who searched for the wrong word.** Ask which.
 4. **The Owner's brief is not the specification of the change.** Four times it has described the
    goal correctly and implied a build where a deletion or a wiring was the actual work.
+
+---
+
+# HR-72 — 「DID WE DECLINE, OR DID WE NOT FINISH?」 — THE TEST THAT STOPS OUTCOMES MULTIPLYING
+
+Three `chat()` returns in `intent.js` report a model that CLAIMED `develop` and then failed
+validation: no concrete task, a `production` target, an unknown `targetProject`. All three were
+the same shape as the lost instruction — a thing that was not a conversation, reported as one.
+
+**The obvious response was to add three outcomes. That would have been the fifth duplicate.**
+
+## THE TEST
+
+> **Did we DECLINE, or did we NOT FINISH?**
+
+| | | outcome |
+|---|---|---|
+| **declined** | a decision was made and the answer is no | `refused` — with its reason, visible AS a decision |
+| **did not finish** | nothing was decided; we could not find out | `unavailable` — with which kind |
+| **detail missing** | the intent was recognised, one part is absent | **ask** — one plain question |
+| **no work was requested** | | `chat` |
+
+Applied to the three:
+
+- **`production` is never a valid target** → **declined.** The Owner is right that this is an
+  answer, not a failure to hear. But it is not a CHAT answer: `chat` means 「you were not asking
+  for work」, and here work was asked for and refused.
+- **no concrete task** → **ask.** The intent was recognised; the target is missing.
+- **invalid `targetProject`** → **ask.** 「backend 定 frontend?」 is one short question and the
+  work intent survives it.
+
+**One new outcome, and two that route to `requestInference` — a component that already exists
+for exactly this: 「ask ONLY for what is genuinely missing, and ask it in one sentence rather
+than a form.」**
+
+## WHY THE TEST MATTERS MORE THAN THE ANSWER
+
+Every failure mode this month arrived as a proposal to add a state: a fourth tier for semantic
+zero, a status for browse, three refusal outcomes here. **Outcomes multiply when the question is
+「what happened?」 and stop multiplying when the question is 「which of the four kinds of
+not-succeeding was it?」** The four are exhaustive, they are about the SYSTEM's position rather
+than the event's flavour, and each has one correct handling.
+
+---
+
+# HR-73 — THE PLAN LAYER ARRIVED BEFORE THE ANSWERS IT WAS BUILT TO PROVE
+
+> **Owner: 「The evidence layer, the four-cell design, the answer plan — none of it engages on
+> the questions I actually ask. I would rather know that now than discover it in another
+> fortnight.」**
+
+Measured: five real messages drawn across his actual length range. **`plan: none` on every one**
+except a single `fallback`. The answer-plan machinery — evidence sets, citation binding, row
+validation, the whole A-line — **does not engage on his traffic at all.**
+
+## THE READING THAT IS WRONG
+
+「It was wasted.」 It was not. A1's descriptor, the loop boundary (HR-67), the adapter (HR-68),
+the classifier outcome — every one was found THROUGH that work, and every one was a live defect
+on the path he does use.
+
+## THE READING THAT FITS, AND IT IS UNCOMFORTABLE FOR A DIFFERENT REASON
+
+**The plan layer was built for a class of question the system cannot yet answer well enough for
+him to ask it.**
+
+- 「上次盤點同存量對唔對得上」 is unanswerable because inventory carries **no timestamp**
+- the Costco question needed **one read and no join** — the machinery had nothing to prove
+- connecting ordering to purchasing is a **name match**, because PO lines carry no ingredient id
+
+**He does not ask those questions because they do not work yet.** The machinery to PROVE the
+answers arrived before the answers did. That is a sequencing fact, not a waste one.
+
+## ⛔ THE PREDICTION, RECORDED SO IT CAN BE WRONG
+
+> **If `inventory` gains a timestamp and PO lines gain an ingredient id, his traffic should shift
+> toward the questions the plan layer was built for.**
+>
+> **If it does not shift, the plan layer was aimed at questions he would never have asked
+> regardless — and that is worth knowing.**
+
+Checkable against the same source that produced this finding: `data/conversations`, the same
+extraction, run again after the data gaps close. No new instrumentation is needed.
+
+**Until then: no further investment in the plan layer.** It is correct, it is tested, and
+nothing currently asks it for anything.
+
+## THE RULE
+
+1. **Machinery that proves answers is worth exactly as much as the answers it can reach.**
+   Build the answer first; the proof layer has no traffic until something is worth proving.
+2. **A capability with no traffic is not evidence of a good design or a bad one.** It is
+   evidence of an ORDERING, and the ordering is checkable — measure the traffic before and
+   after the blocker is removed.
+3. **State the prediction that would falsify the charitable reading.** 「It will be useful
+   later」 is not checkable; 「traffic should shift when X and Y land」 is.
