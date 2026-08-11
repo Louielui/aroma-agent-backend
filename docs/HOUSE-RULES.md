@@ -3085,3 +3085,77 @@ worthless — it will report a clean sweep of exactly the cases that were never 
 
 Both shortcuts are therefore rejected for triage, and the count goes to a hand-read sample
 with the Owner labelling blind.
+
+---
+
+### HR-69 — the codebase is a body of law with ~500 statutes and 27 of them enforced
+
+Measured 2026-08-11. Owner labelled 40 markers blind — no file names, no context, no sight of
+the strata or of my sealed prediction (`1601c9d`, committed before the draw).
+
+```
+                    labelled CLASS   population   rate
+  prefilter HIT          9 / 12          61       75.0%
+  prefilter MISS        13 / 25         852       52.0%
+  ─────────────────────────────────────────────────────
+  ESTIMATE                             489        53.5% of 913
+  95% CI                           321 .. 656
+```
+
+#### The prediction, and how wrong it was
+
+| | predicted | measured |
+|---|---|---|
+| HIT rate | 35% | **75%** |
+| MISS rate | 10% | **52%** |
+| total | **~105**, range 60–160 | **489**, CI 321–656 |
+
+⛔ **Wrong by 4.6×, and wrong in the direction I had explicitly ruled out.** The sealed
+prediction states: 「I expect to be GENEROUS… if the count comes in materially below 105, that
+is my bias measured」. It came in nearly five times ABOVE. **Both the magnitude and the sign
+were wrong**, which is worse than a large error in the predicted direction — the stated
+self-knowledge was not merely imprecise, it was inverted.
+
+#### The prefilter has almost no discriminating power
+
+52% → 75% while excluding 93% of the population. **A filter that leaves the base rate over half
+in the material it rejects is not a filter.** Third confirmation, after the 49-sentence regex
+and HR-68's duplicate detector, that lexical shape does not identify this class of sentence.
+
+#### What 489 means, and it is not a backlog
+
+> **Owner: 「If it is 400, it is a property of how this codebase is written and no amount of
+> survey tests closes it — and I would want that stated rather than left as an open task.」**
+
+**That is the correct reading and it is hereby stated rather than filed.** More than half of
+every ⛔ marker here is a rule ranging over a category. That is the house style: this code is
+written as law. 489 survey tests is not a project anyone would finish, and most of them would
+be low-value.
+
+⛔ **THIS IS THEREFORE NOT AN OPEN TASK, AND MUST NOT BE LOGGED AS ONE.** A backlog item that
+cannot be completed is a permanent accusation, not a plan.
+
+Two things follow that ARE actionable:
+
+1. **Stop the stock growing.** When a new ⛔ ranges over a category, the survey test goes in the
+   SAME commit. This converts a stock problem into a flow problem: the 489 stay, but they stop
+   becoming 500.
+2. **Triage by blast radius, never by count.** The question is not 「is this a class rule」 —
+   half of them are. It is: **if this rule were silently violated, would the Owner be handed a
+   wrong answer he would believe?** The read-failure contract was exactly that, which is why it
+   was worth a fix; most of the 489 are not, and would produce a visible crash or nothing.
+
+#### And the labelling held up
+
+Four labels were selected for challenge BEFORE reading their context, on the suspicion that
+they ranged over a single thing. All four survived:
+
+- 「SHOW THE MODEL ITS ACTUAL CHOICES」 — ranges over every capability offered to the model.
+- 「`title` stays NULL when absent」 — the line directly ABOVE states the same rule for
+  `publishedAt`. Two fields, one rule, already hand-propagated inside a single function.
+- 「`scheduled` IS MEASURED, NOT DECLARED」 — ranges over every state the interface asserts.
+- 「ITS JOB IS TO RECORD, ESPECIALLY WHEN THE ERRAND FAILS」 — every path, including failures.
+
+Zero disagreements out of 22 is a suspicious number and is reported as such. The guard against
+deference is that the four were picked before reading, not after — and reading is what
+overturned them.
