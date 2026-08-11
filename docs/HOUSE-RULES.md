@@ -2944,3 +2944,96 @@ questions, one field name, and the name answers none of them.**
 > Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
 > **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
 > be measured, and in all three cases measuring it was cheap and nobody had.
+
+---
+
+### HR-66 third instance — the rule was already written, in capitals, in the next file along
+
+Recorded 2026-08-11, at the Owner's instruction.
+
+`aromaSystemRead.js` returns `trust:'unavailable'` on the RESULT while the other six connectors
+throw. `publicKnowledgeRead.js` had written the contract down nine days earlier, in plain
+language, in capitals: 「UNAVAILABLE THROWS, IT DOES NOT RETURN ZERO ROWS」. The seventh
+connector was written anyway.
+
+**This needed no research and no new knowledge. Only reading what was already there.**
+
+#### Is it detectable? Partly — and NOT the same class as the deleted assertion.
+
+The two look alike and are not:
+
+| | deleted assertion (R3.1) | HR-66 |
+|---|---|---|
+| was the property ever executable? | **yes**, then the executable form was removed | **no**, it was always prose |
+| what you are trying to see | an **absence** — something that no longer names itself | a **new file** that does not conform |
+| can a mechanism see it? | no. Nothing observes the absence of a thing that stopped existing | **yes**, if the rule ranges over the category |
+
+⛔ **You cannot watch for "did the author read the sibling file" — that is unobservable.** But
+you do not need to. Make the rule executable over the CATEGORY, and not reading it stops
+mattering: the non-conforming file is red the day it is written, by an author who never heard
+of the rule.
+
+That mechanism is the **survey test** — one that walks a DIRECTORY instead of naming files, so
+it covers files that do not exist yet. `context/readFailureContract.test.js` now does exactly
+this for this rule: it reads every file in the connector directory and fails if any connector
+other than `aromaSystemRead.js` uses `makeUnavailable`.
+
+#### The exposure, measured
+
+```
+survey tests that range over a directory        27
+⛔ prose rules in production source            913  across 100 files
+```
+
+Most house rules in this codebase are **prose**, not executable. Not all 913 should be tests —
+most explain WHY something is the way it is, and that is the right form. The dividing line:
+
+> **A rule that says 「every X must Y」 names a CATEGORY, and belongs in a survey test over the
+> directory. A rule that explains 「this is like this because…」 stays prose.**
+
+Every category-shaped rule still living in a header is HR-66 ammunition, loaded and waiting for
+the next author who does not read that file.
+
+#### The residue, which IS undetectable
+
+⛔ **A rule about a category that nobody recognised AS a category.** If it was never seen to
+range over anything, no survey test was written, and there is nothing to notice its violation.
+That part is the same class as the deleted assertion: real, recurring, and beyond any mechanism
+here.
+
+---
+
+### HR-67 — the read key has no expiry anything can read, and both watchers are after-the-fact
+
+Recorded 2026-08-11. The Owner's question: the wrong-key defect was a loaded gun that would have
+fired the day the key expired, on a schedule that arrives by itself and gives no warning. So
+does anything watch key expiry?
+
+**Nothing watches `AROMA_SYSTEM_KEY`.** `agent/credentialHealth.js` genuinely does expiry work —
+reads `expiresAt`, warns under 7 days, refuses when expired — but it watches the **Claude CLI
+OAuth login**, and it is wired to `agentRunner` only. It has never had anything to do with the
+read key.
+
+⛔ **And there is nothing for it to read.** `AROMA_SYSTEM_KEY` is a static env string. No
+`notAfter`, no `exp`, no validity window. Its remaining life is not a fact the system possesses,
+so no amount of checking could produce advance warning.
+
+#### What would tell the Owner, and when
+
+1. **His own next business question — first, and in ordinary use.** This is the fix at
+   `a677525`, not the smoke test. Before it, a 401 was measured as
+   `{"source":"aroma_system","trust":"live","count":0,"error":null}` and the answer was
+   「今日冇嘢要落單」 said with total confidence. After it, the failure marker survives and the
+   turn reports the read failed. **The gun was disarmed by the fix, not by a watcher.**
+2. **The startup smoke test — second, and only at a restart.** It is restart-triggered, not
+   time-triggered. A system that runs for three weeks without restarting learns nothing from it.
+
+#### What is still missing
+
+**Both are after-the-fact.** They say the key is dead; neither says it is about to die. That is
+inherent to a static key and is not a gap a watcher could close.
+
+⚠ **And one question of fact this codebase cannot answer: whether that key expires at all.** If
+it is static until the Owner rotates it, the risk is not an expiry date arriving on its own
+schedule — it is a rotation, which he performs and therefore already knows about. Worth
+confirming, because it decides whether anything further is warranted here.
