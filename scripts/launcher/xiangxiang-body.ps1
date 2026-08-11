@@ -248,9 +248,32 @@ if ($ok) {
   #
   # Costs two model calls per start. That is the price of not discovering a dead chat lane by
   # typing into it.
+  # ⛔ BOUNDED, AND IT WAS NOT ON THE FIRST TRY. The first version called `& node ...` inline.
+  # The node process ran and exited, and the launcher never came back — the hand-back sat
+  # blocked behind a check whose entire stated purpose was never to block the hand-back.
+  # Exactly the shape this was written to avoid, in the file that says so.
+  #
+  # So: a separate process, output to a file, and a HARD WAIT with a ceiling. Two model calls
+  # take about 8 seconds; 120 gives room for a slow provider without ever becoming a hang. If
+  # the ceiling is reached the child is killed and the launcher continues — a smoke test that
+  # cannot answer must not be able to hold the system hostage either.
   Write-Log 'startup smoke: one chat turn per provider'
-  $smoke = & node (Join-Path $Repo 'scripts\launcher\startupSmoke.js') 2>&1
-  foreach ($l in $smoke) { Write-Log ("smoke: " + $l) }
+  $smokeOut = Join-Path $env:TEMP 'aroma-startup-smoke.out'
+  $smokeErr = Join-Path $env:TEMP 'aroma-startup-smoke.err'
+  $smoke = @()
+  try {
+    $sp = Start-Process node -ArgumentList (Join-Path $Repo 'scripts\launcher\startupSmoke.js') `
+      -NoNewWindow -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
+    if (-not $sp.WaitForExit(120000)) {
+      try { $sp.Kill() } catch {}
+      Write-Log 'smoke: TIMED OUT after 120s — killed; the system is still being handed back'
+    }
+    if (Test-Path $smokeOut) { $smoke += Get-Content $smokeOut }
+    if (Test-Path $smokeErr) { $smoke += Get-Content $smokeErr }
+  } catch {
+    Write-Log ('smoke: could not run (' + $_.Exception.Message + ') — the system is still being handed back')
+  }
+  foreach ($l in $smoke) { if ($l) { Write-Log ("smoke: " + $l) } }
   $verdict = $smoke | Where-Object { $_ -match 'STARTUP_SMOKE_VERDICT' } | Select-Object -Last 1
   if ($verdict -and $verdict -match '"outcome":"FAIL"') {
     $saying = '香香啟動咗，但有一邊答唔到。系統照樣開咗，詳情睇 C:\Aroma\xiangxiang.log。'
