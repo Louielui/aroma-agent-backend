@@ -3190,3 +3190,80 @@ arithmetic no code could check.
    tag.
 4. **Report tokens even once a price exists.** The price is a conversion; the measurement is the
    tokens, and only one of the two is a fact about what happened.
+
+---
+
+# HR-61 — A JOIN THAT CAN ONLY MATCH ON NAMES, AND TWO COUNTS THAT LOOK FULL
+
+Three limits found by capturing one level deeper than the first pass. Recorded as HARD LIMITS
+rather than as observations, because each one makes a question look answerable that is not.
+
+## ⛔ LIMIT 1 — ORDERING CANNOT BE CONNECTED TO PURCHASING BY ID. THERE IS NO ID.
+
+`purchaseOrders.items` — 207 elements across 13 orders — carries exactly:
+
+```
+itemName   purchaseOrderId   quantity   supplierItemName (13/207)   unit
+```
+
+**No `ingredientId`. No `ingredient_id`. Nothing that resolves to an ingredient at all.**
+
+Order planning keys everything on `ingredient_id`. So matching a purchase-order line to a
+shortfall row can only be done by comparing `ingredient_name` to `itemName` — a **string
+comparison between two display names maintained by different parts of the system**.
+
+That is HR-56's defect — one spelling of a thing — and it is in the worst possible position:
+**inside the join rather than beside it.** A mismatched name does not raise an error. It produces
+a row that silently fails to match, so the answer is 「nothing on order for this item」 when
+something is, and nothing anywhere reports that a comparison failed.
+
+> **HARD LIMIT: any question that connects ordering to purchasing is answerable only up to a
+> name match, and must say so.** 「有冇落咗單」 cannot be answered with confidence for an item
+> whose name differs between the two systems, and the system cannot tell which items those are.
+>
+> `supplierItemName`, the one field that might have carried a supplier's own code, is populated
+> on **13 of 207** lines.
+
+## ⛔ LIMIT 2 — `dailyCounts.items` IS FIFTY EMPTY ARRAYS
+
+Present on 50 of 50 rows, correctly typed as an array, and **zero elements in total**.
+
+A count row carries `itemCount` — a NUMBER — and no items. So 「上次盤點同存量對唔對得上」 has no
+per-item data on the count side at all, on top of the timestamp problem already recorded.
+
+**A name-only capture would have blessed this**: the field is there, on every row, with the right
+type. It is exactly what makes the case look answerable right up until someone tries to read an
+item out of it.
+
+## ⛔ LIMIT 3 — SEMANTIC ZERO. RECORDED, NOT FIXED.
+
+> **Owner: 「incoming_qty being 100% PRESENT while meaning 『nothing incoming』 on 85% of rows is
+> the exact shape of every count that has lied to me this month.」**
+
+Every quantity on these endpoints is a STRING, so `'0.0000'` counts as carrying a value.
+`orderPlanning.incoming_qty` is non-empty on **55 of 55** and numerically **zero on 47**. It rates
+`PRESENT` at 100% coverage while telling 85% of rows that nothing is on the way.
+
+This is a third kind of emptiness, distinct from the two already separated:
+
+| | what it means |
+|---|---|
+| `ALWAYS_EMPTY` | the key is there and never holds a value |
+| `SPARSE` | few rows hold a value |
+| **semantic zero** | **every row holds a value, and the value is 「none」** |
+
+### What it would take to close it
+
+1. **Know which fields are QUANTITIES.** `METRICS_OF` already declares this per endpoint for the
+   fields it covers; `incoming_qty` is not among them, so the meaning layer has to be extended
+   before the check can even be applied. **That is the same declaration gap that makes B
+   over-plan** — nothing tells the system `incoming_qty` answers 「在途」.
+2. **Count zeros separately from empties** in the capture — one more counter, no values read.
+3. **Decide what a zero-heavy field means for a PLAN, which is not obvious.** 47 of 55 reading
+   zero does not make the field useless: it is a true and useful answer for those 47 items. It
+   would be wrong to downgrade it the way `SPARSE` is downgraded, and a fourth tier that behaved
+   like the others would be the wrong shape.
+
+**Left unfixed deliberately.** A coverage number that silently changed meaning between two rounds
+would be worse than one with a documented hole, and the third point above is a design decision
+the Owner has not been asked yet.
