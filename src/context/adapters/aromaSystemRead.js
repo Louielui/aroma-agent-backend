@@ -586,6 +586,11 @@ function createAromaSystemReadAdapter (options = {}) {
 
 module.exports = {
   DERIVATIONS_OF,
+  // ⛔ Exported for the goal decomposer's catalogue, READ-ONLY. These tables stay the single
+  // declaration of what each endpoint carries and what its numbers mean; a consumer that
+  // re-describes them would be a second vocabulary (HR-58).
+  METRICS_OF,
+  ENTITY_OF,
   FIELD_LABELS_OF,
   ROW_SHAPE,
   QUERY_SCOPE,

@@ -123,6 +123,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** A4-3B/B — a recovery-shaped public read (args=null) never sends an empty query ***
 *** A4-3B/B — no planner means no public read, even with a valid raw query ***
 *** A4-3B/B — the PLANNER owns the outbound query on a pure-public route turn ***
+*** ACCEPTANCE 1 — Costco is ANSWERABLE, in ONE read and with NO join ***
+*** ACCEPTANCE 2 — 「上次盤點同存量對唔對得上」 is NOT ANSWERABLE, and that is the PASS ***
 *** ACTION and BUSINESS_QUERY are out of scope ***
 *** ANY two of the FOUR on ⇒ configuration_conflict ⇒ zero execution ***
 *** APPROXIMATE values, sampled from a screenshot — flagged as such in the source ***
@@ -578,6 +580,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a corrupt line is skipped; the rest of the memory survives ***
 *** a date is not a subtraction ***
 *** a decimal is NOT treated as a separated-digit sequence ***
+*** a decomposer that fails is a refusal, never a guessed plan ***
 *** a demo router built with NO store does not write to real data ***
 *** a derivation is kept even when four ordinary facts already fill the item ***
 *** a derivation whose inputs are missing on the row is dropped, not guessed ***
@@ -638,6 +641,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a phone number from the event DESCRIPTION is now verifiable ***
 *** a phone number matches across separator styles, and only across separators ***
 *** a plan echoing the ref validates ***
+*** a plan over the fact bound is REFUSED, never quietly truncated ***
 *** a plan whose every item is unprovable does NOT report success ***
 *** a plan with no answerClaims yields NO bindings — UNBOUND, not guessed ***
 *** a polite request phrased as a question is REFUSED — and that is the safe side ***
@@ -725,6 +729,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an UNREADABLE settings file THROWS — it is not "no settings yet" ***
 *** an UNWIRED store is reported, not mistaken for a save ***
 *** an abbreviation that RESOLVES is still rejected ***
+*** an absent necessity is REQUIRED — a plan that forgets to say must not shrink ***
+*** an absent usage block stays null — it is not a zero ***
 *** an action with no Chinese label is REPORTED, never dropped ***
 *** an address, a URL or a path is never carried, however short ***
 *** an already-read operation is stated as READ, never left to look missing ***
@@ -823,6 +829,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** corrected now (was missed):
 *** crash debris is swept by the next successful write ***
 *** dark mode overrides the same names, so every rule follows it ***
+*** decomposeGoal: one call, schema-forced, usage carried verbatim ***
 *** defaults and coercions are frozen ***
 *** delete asks first ***
 *** delete is hover-revealed, keyboard-reachable, and still asks ***
@@ -878,6 +885,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** exactly at the boundary is still a warning, and outside it is silence ***
 *** exactly at the cap is fine ***
 *** facts[] never consult claimBindings ***
+*** field tiers after the capture — the four states 「CANDIDATE」 was hiding ***
 *** first run is legitimately empty ***
 *** focus is still VISIBLE — removing the colour must not remove the indicator ***
 *** generic sources keep their own names and are unchanged ***
@@ -1113,6 +1121,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the calendar window starts at TODAY 00:00, not at the current instant ***
 *** the canned assistant bubble is GONE ***
 *** the card tells the Owner that no PR will be opened ***
+*** the catalogue is assembled from the frozen tables, and every operation resolves ***
 *** the chat surface still knows nothing about the bridge ***
 *** the check is available on its own, so the refusal has one implementation ***
 *** the check rejects an entry that a human would call spoken ***
@@ -1360,6 +1369,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
+*** ⛔ B is not wired into the runtime, and is not a second reasoning loop ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
@@ -1371,7 +1381,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ REVIEW 2: order-planning is capped at 100 ***
 *** ⛔ REVIEW 3: unknown filters are null, never [] ***
 *** ⛔ REVIEW 4: limitKnown separates 「no limit」 from 「limit unknown」 ***
+*** ⛔ RULE 1 — a need nothing carries is UNAVAILABLE, decided by the enum and not the model ***
+*** ⛔ RULE 1 — costing answered from INVOICES is refused on the ENTITY, with nobody reading the need ***
+*** ⛔ RULE 2 — an empty field and an unobserved one cap a fact at PARTIAL; an absent one kills it ***
+*** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
+*** ⛔ SPARSE is ALWAYS_EMPTY\
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
@@ -1405,6 +1420,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ additionalProperties:false still holds, at every level ***
 *** ⛔ admitsLimitation cannot license a claim from a TRUNCATED read ***
 *** ⛔ admitsLimitation cannot license a universal claim with sourceTotal unknown ***
+*** ⛔ an ENRICHING read is listed and not performed, and cannot sink the plan ***
 *** ⛔ an INVALID claim declaration still changes nothing ***
 *** ⛔ an absent model is NULL, never backfilled with the provider name ***
 *** ⛔ an incomplete tool call is not a completed search ***
@@ -1415,6 +1431,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ clicking Save after a failed read sends NOTHING ***
 *** ⛔ complete WITHIN SCOPE does not support a SOURCE-WIDE universal claim ***
 *** ⛔ createdBy confers NO validation authority, whatever it says ***
+*** ⛔ daily-count items are 50 empty arrays — the count-vs-stock case has no per-item data at all ***
 *** ⛔ every property is in required, at every node — strict-mode compatibility ***
 *** ⛔ every unusable resolver result fails closed to a QUESTION, never a read ***
 *** ⛔ facts[] survive a TRUNCATED source — row-local truth is not set-wide ***
@@ -1435,6 +1452,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ one source\
 *** ⛔ propose() reports unavailable and creates NO proposal ***
 *** ⛔ provider-neutral, network-free, write-free ***
+*** ⛔ purchase-order items carry a NAME and no ingredient id — the join is a spelling match ***
 *** ⛔ requiring the domain creates no files anywhere ***
 *** ⛔ rowShape and queryScope cannot be confused ***
 *** ⛔ servedBy carries the MODEL ID the adapter actually returned ***
@@ -1451,6 +1469,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the event ledger holds ids and states, never lesson content ***
 *** ⛔ the extractor sees the shapes this suite actually uses ***
 *** ⛔ the false positives the measurement rejected stay rejected ***
+*** ⛔ the model\
+*** ⛔ the prompt catalogue carries SHAPES and not one data row ***
+*** ⛔ the ratio travels on BOTH sides of every threshold ***
 *** ⛔ the resolver is NOT told the proposed world or what is available ***
 *** ⛔ the resolver sees Owner words only — and is told nothing about the system ***
 *** ⛔ the schema is closed, portable, and carries no reasoning field ***
@@ -1458,8 +1479,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the success line and the failure line are not the same line ***
 *** ⛔ the universal-claim gate fires when completeness is UNKNOWN ***
 *** ⛔ there is no WISDOM flag anywhere — not in the launcher, not in flags.js ***
+*** ⛔ there is no cost entity and no costing operation to name in the first place ***
 *** ⛔ there is no field through which raw evidence could reach the block ***
 *** ⛔ there is no reflection worker and no candidate auto-writer ***
+*** ⛔ three facts against one endpoint are ONE read ***
 *** ⛔ totalCount is GONE — not aliased ***
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ wisdomRecall has no default store reach-through ***
