@@ -53,7 +53,21 @@ const ALIASES = Object.freeze({
   'real canadian superstore': 'superstore',
   realcanadiansuperstore: 'superstore',
   rcss: 'superstore',
-  超市: 'superstore'
+  /**
+   * ⛔ 超市 IS NOT HERE, AND ITS ABSENCE IS THE POINT.
+   *
+   * It used to map to `superstore`. 超市 is the generic word for ANY supermarket — Costco,
+   * Save-On, the shop on the corner — and binding it to one specific vendor meant
+   * 「幫我去超市查下花生醬幾錢」 silently chose Real Canadian Superstore on the Owner's behalf
+   * and reported its prices as though he had named it.
+   *
+   * That is exactly the capability this file's own header says it refuses to have: 「inventing
+   * one is exactly the capability this module refuses to have」. The header claimed a guarantee
+   * the table did not provide — the pattern the reviewers have caught repeatedly.
+   *
+   * With it gone, 「去超市查嘢」 resolves to NO_SITE and no browse is offered. That is correct:
+   * we do not know which shop he means, and asking is cheap while guessing is not.
+   */
 })
 
 /** Anything that even looks like an address is refused outright, not parsed. */
