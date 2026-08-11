@@ -112,9 +112,25 @@ function renderBrowseAnswer (evidence, ctx = {}) {
    *                              `locationDependent` boolean and its Chinese sentence)
    *   rowShape.hasLocation    -> which branch, or that none was chosen
    */
+  /**
+   * ⛔ THE PROVENANCE IS IN THE SENTENCE, NOT UNDER IT. THIS IS THE ONLY REAL GUARD.
+   *
+   * > **Owner: 「If the reply says a price, it says 『Superstore 一個搜尋結果頁上嘅一行』 in the
+   * > same breath. Not a caveat below, not a conditional warning. Part of the sentence.」**
+   *
+   * The gate that would otherwise catch 「one row rendered as the price」 is
+   * `SAMPLE_TREATED_AS_WHOLE`, and it fires only when a prose regex matches. That regex was
+   * MEASURED at recall 1/6 on this Owner's own replies, and three of its four firings landed on
+   * sentences that were declaring their own limits. It has never once fired correctly on this
+   * shape.
+   *
+   * So nothing here waits for a gate to object. A caveat on the next line survives copying,
+   * quoting and summarising for about one hop; a clause inside the sentence travels with the
+   * number wherever the number goes. **The price literally cannot be written without its
+   * provenance, because they are one string.**
+   */
   const lines = [
-    `${label}：${first.product}${size} 標價 ${first.price}`,
-    `⚠ 呢個係搜尋結果第一頁見到嘅其中一項，唔係 ${label} 嘅「售價」。`
+    `${label} 一個搜尋結果頁上嘅一行：${first.product}${size} 標價 ${first.price}（唔係 ${label} 嘅「售價」）`
   ]
   if (evidence.matchingTotal == null) lines.push('· 一共有幾多款，頁面冇講，我哋數唔到。')
   if (evidence.filtersApplied === null) lines.push('· 網站用咗咩篩選（例如分店），我哋唔知道。')
