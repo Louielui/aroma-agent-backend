@@ -406,8 +406,20 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         emit('success', 200, null)
         // WHO ACTUALLY ANSWERED. The Owner can pick a provider, but a failed attempt
         // falls back, so the pick is not a promise. `servedBy` is read from the
-        // pipeline's own telemetry — the provider that really produced this reply — and
-        // is a short enum only ('claude' | 'openai'), never a model id, never a body.
+        // pipeline's own telemetry — what really produced this reply.
+        //
+        // ⛔ THE MODEL ID, NOT THE PROVIDER NAME. This field used to carry a two-value enum
+        // and the comment here used to say 「never a model id」 on purpose. That decision cost
+        // a fortnight: the launcher set MULTI_AI_ROUTER='on', the picker defaulted to
+        // 'claude' and won the precedence, and every turn came back labelled 「Claude」 — true,
+        // and silent about the fact that Claude meant `claude-haiku-4-5-20251001`, the
+        // smallest model available. The Owner judged the system on that and had no way to
+        // see it. (HR-62.)
+        //
+        // ⛔ AND ABSENT STAYS ABSENT. `telemetry.model` is the id the ADAPTER returned for the
+        // call that happened. If it is missing, this is null — it is NOT backfilled with the
+        // provider name, because 「claude」 in a field that now means 「which model」 is exactly
+        // the plausible substitute this change exists to remove.
         //
         // CHAT LANE ONLY. It is the only lane whose provider can vary and the only one
         // with a picker; email_draft and proposal keep a byte-identical passthrough
@@ -416,7 +428,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         const answered = (isChat && result && typeof result === 'object' && !Array.isArray(result))
           ? Object.assign({}, result, {
               lane: interactionMode,
-              servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null,
+              servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null,
               fallbackUsed: telemetry.fallbackUsed === true
             })
           : result
@@ -531,7 +543,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
                 id: conversationId,
                 userText: message,
                 replyText: shown,
-                servedBy: (telemetry && typeof telemetry.provider === 'string') ? telemetry.provider : null
+                servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null
               })
             }
           } catch (err) {

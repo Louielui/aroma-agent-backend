@@ -1313,9 +1313,31 @@
   // A pick is not a promise: if the chosen provider fails, the orchestrator falls back to
   // Claude, so the reply may not come from whoever the Owner selected. The label reads the
   // SERVER's report of what actually answered — never the local pick.
+  // ⛔ THE MODEL ID IS THE LABEL NOW, NOT THE PROVIDER FAMILY.
+  //
+  // 「香香（Claude）」 was true on every turn for a fortnight and told the Owner nothing: the
+  // Claude behind it was `claude-haiku-4-5-20251001`, the smallest model on the account, and
+  // no screen anywhere said so (HR-62). The family name is kept as a prefix because he reads
+  // it at a glance, and the id is appended because that is the part he could not see.
+  //
+  // ⛔ LEGACY TURNS ARE NOT BACKFILLED. Conversations recorded before this change stored the
+  // PROVIDER ('claude' | 'openai'). Those rows genuinely do not know which model answered, so
+  // they keep rendering the family name alone. Guessing 「it was probably haiku」 would put an
+  // invented fact on the screen, which is the whole defect being fixed.
+  var LEGACY_PROVIDERS = { claude: 1, openai: 1 }
+  function servedByName (servedBy) {
+    if (LEGACY_PROVIDERS[servedBy]) {
+      return servedBy === 'openai' ? t('provider.gpt') : t('provider.claude')
+    }
+    // A family is only claimed when the id says so. `mock` belongs to neither and is shown
+    // bare rather than filed under whichever name happens to be the else-branch.
+    if (/^claude/i.test(servedBy)) return t('provider.claude') + ' · ' + servedBy
+    if (/^(gpt|o[0-9])/i.test(servedBy)) return t('provider.gpt') + ' · ' + servedBy
+    return servedBy
+  }
   function labelServedBy (tEl, res) {
-    if (!tEl || !tEl.body || !res || typeof res.servedBy !== 'string') return
-    var name = res.servedBy === 'openai' ? t('provider.gpt') : t('provider.claude')
+    if (!tEl || !tEl.body || !res || typeof res.servedBy !== 'string' || !res.servedBy) return
+    var name = servedByName(res.servedBy)
     var text = res.fallbackUsed
       ? t('served.byFallback', { name: name })
       : t('served.by', { name: name })
