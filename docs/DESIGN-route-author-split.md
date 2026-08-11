@@ -185,3 +185,25 @@ unrun. On the one short prompt timed, opus returned text with no thinking block 
 shape as haiku, at the same speed.
 
 **Next after this lands: PR #37, rewritten against A1's vocabulary rather than its own.**
+
+---
+
+## ⛔ KNOWN GAP, LEFT OPEN DELIBERATELY — THE SPLIT DID NOT CLOSE IT
+
+> **Owner: 「Record what that leaves open, so nobody reads the split as having closed it.」**
+
+**A genuinely ambiguous short message still routes by whatever the model says.**
+
+`routeTurn` reaches `CONVERSATION` with `reason: 'default'` when nothing matched — which on a
+nine-character median is most ordinary chat. The split takes the deterministic decision only
+where the router speaks POSITIVELY (`UTILITY`, `BUSINESS_QUERY`, `ACTION`). Everything else
+keeps today's behaviour exactly.
+
+So `「第二行改成 line 3」` with no preceding context still has its develop-or-not decided by the
+model, and a model that gets it wrong there gets it wrong exactly as it did before.
+
+**This is not a defect to fix now.** Closing it needs a 「looks like a change request」 detector
+that `routeTurn` does not provide, and inventing one inside this change would have been the
+fifth duplicate (HR-71). The candidate is `requestInference`, which already extracts a concrete
+target out of a sentence — if it finds one on a default-routed turn, that is the ambiguous case
+worth asking about. **Proposed, not built, and not measured.**
