@@ -80,6 +80,10 @@ const FILE_CLASS = Object.freeze({
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels
+  // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
+  'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
+  'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction
+  'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — JSON-schema `description` text
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   'intake/readResultView.js': CLASS.INTERFACE,        //  19
