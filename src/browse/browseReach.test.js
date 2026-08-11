@@ -87,3 +87,31 @@ test('*** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE *
   // A1 already says, and its four statuses were two different A1 concepts wearing one enum.
   assert.equal(fs.existsSync(path.join(__dirname, 'browseResult.js')), false)
 })
+
+test('*** REACH (session) — ⛔ R3.1: the credential path is UNREACHABLE, not merely unused ***', () => {
+  /**
+   * ⛔ RESTORED BY THE AUDIT. The rewrite deleted e0b1PublicRead.test.js, which carried five
+   * assertions on this property, and replaced none of them. The audit found it before wiring —
+   * which is the whole reason the audit came first. A deleted test removes a guarantee
+   * silently: nothing goes red, and the property simply stops being true-by-check.
+   *
+   * `browserSession.js` opens the Owner's real Chrome profile behind four probes. That path is
+   * correct for an errand he authorised and wrong for a public price check, and a capability
+   * that does not need credentials must not be able to reach them.
+   */
+  const src = fs.readFileSync(path.resolve(__dirname, 'ephemeralBrowseSession.js'), 'utf8')
+  const code = src.split('\n')
+    .filter((l) => { const t = l.trim(); return !(t.startsWith('//') || t.startsWith('*') || t.startsWith('/*')) })
+    .join('\n')
+
+  assert.equal(/launchPersistentContext/.test(code), false,
+    '⛔ the persistent-profile constructor must not appear in executable code')
+  assert.equal(/profileDir/.test(code), false,
+    '⛔ there is no profile directory to pass, so none can be passed')
+  assert.match(code, /\.launch\(/, 'it launches a fresh browser')
+  assert.match(code, /newContext\(/, 'and a non-persistent context')
+
+  // ⛔ AND THE SIGNATURE ITSELF REFUSES IT. A caller cannot supply a profile even by mistake.
+  const { openEphemeralBrowseSession } = require('./ephemeralBrowseSession')
+  assert.equal(/profileDir/.test(openEphemeralBrowseSession.toString()), false)
+})
