@@ -2944,3 +2944,154 @@ questions, one field name, and the name answers none of them.**
 > Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
 > **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
 > be measured, and in all three cases measuring it was cheap and nobody had.
+
+---
+
+# HR-57 — A FENCE ON ONE OF TWO DOORS, AND THE GREEN LIGHT THAT COVERED THE OTHER
+
+> **Owner: 「Record the coverage illusion as its own finding. It explains why 19 green tests
+> coexisted with an unbound COMPLETED, and it is the same shape as everything the fences were
+> built for — this time in the test suite rather than the code.」**
+
+## WHAT HAPPENED
+
+E0-B1 shipped with a test named, in full:
+
+```
+*** 11 — the model/client cannot supply or widen a target origin ***
+```
+
+It is a real test. It passes. It asserts the property honestly and it would catch a regression.
+It runs against `browseOrder.buildBrowseOrder`, which refuses `origin`, `url`, `allowedWrites`
+and `permissions` from a caller with `CALLER_SUPPLIED_REACH`.
+
+One module away, `browseResult.classifyBrowseResult` **never receives the sealed order at all**.
+Its `isBrowserPrice` accepts `source: 'browser'` on the caller's word and checks `sourceOrigin`
+with `/^https?:\/\//` — that it LOOKS like a URL, not that it is the one origin the order
+allowed. A `COMPLETED` verdict could therefore be minted from an observation naming an origin the
+request fence would have blocked.
+
+So the reach property was fenced at the door where the order is BUILT, and unfenced at the door
+where the result is BELIEVED.
+
+## WHY THIS IS NOT HR-12, AND NOT THE A1 DEFECT EITHER
+
+Worth separating, because the remedy differs:
+
+| | what went wrong | what the green light meant |
+|---|---|---|
+| **A1's defect** | a test asserted 14 complete-within-a-window orders supported 「所有採購單都已收貨」 | the green was **false** — a fence installed backwards |
+| **HR-12** | a check ran on a filtered set | the green was **true of the sample**, silent about the removed rows |
+| **HR-57** | a check ran at one layer of a property that spans two | the green was **entirely true**, and the conclusion drawn from it was false |
+
+**This is the hardest of the three to see, because there is nothing wrong with the test.** No
+assertion is weak, nothing is backwards, nothing is skipped. Reviewing the test teaches you
+nothing. The defect is not in the test — it is in the sentence I said afterwards: 「origin cannot
+be client-supplied or widened」, dropping the clause 「in `browseOrder`」 that was the only part
+measured.
+
+> **A test proves a property AT A LAYER. A test NAME states a property about the system. The gap
+> between those two sentences is where the confidence comes from, and nothing in a passing suite
+> reports it.**
+
+Nineteen green tests did not fail to catch the unbound `COMPLETED`. They were never asked about
+it, and the count made it feel as though they had been.
+
+## THE GENERAL FORM
+
+The same mistake HR-56 named — **treating a NAME as if it carried a FACT** — with the name now
+belonging to a test rather than to a database field or an intent keyword. `supplierId` was
+evidence a relationship might exist. A test name is evidence a property was measured
+**somewhere**. Neither says where, and both read as if they did.
+
+## THE RULE
+
+1. **A test name must not claim more than the test measured.** If it runs against one module,
+   the module belongs in the name — 「the ORDER cannot be client-supplied」, not 「origin cannot
+   be client-supplied」. The unqualified sentence is the illusion, written down.
+2. **A property that spans layers needs an assertion at every layer that can violate it** — or,
+   better, one chokepoint every layer must pass through.
+3. **Prefer structural impossibility over repeated assertion.** `classifyBrowseResult` could not
+   have had this defect if it were impossible to call without the order. Make the property a
+   consequence of the shape, then assert it once.
+4. **A pass count is not a coverage statement.** 「19 green」 answers how many questions were
+   asked, never which ones. Before trusting a suite about a property, name the layer each test
+   actually ran at — the list is short, and writing it is what exposes the empty door.
+
+---
+
+# HR-58 — THE DUPLICATE WAS WORSE THAN THE ORIGINAL, AND ONLY SIDE BY SIDE DID THAT SHOW
+
+> **Owner: 「filtersApplied: null versus [] is a distinction I had to be taught; you rewrote past
+> it in Chinese prose.」**
+
+The companion to HR-57. That one is about a fence on one of two doors. This one is about building
+a second door because you never looked for the first.
+
+## THE TWO, SIDE BY SIDE
+
+The system had already answered 「did something filter these rows, and do we know?」:
+
+```js
+// aromaSystemRead.js — A1, Owner review, correction 3
+filtersApplied: null,
+// ⛔ NULL, NOT []. An empty array asserts 「known to have NO filters」 — but the server applies
+// predicates the reader cannot authoritatively enumerate. Unknown.
+rowShape: { hasLocation: false, ... }
+```
+
+I wrote this instead, in `browseResult.js`, without looking:
+
+```js
+locationDependent: true          // a static flag on the site registry
+'（未揀分店，價格可能因店而異）'   // a sentence appended to the answer
+```
+
+## WHY THE DUPLICATE IS WORSE, NOT MERELY REDUNDANT
+
+**1. It is a property of the SITE, not of the READ.** `locationDependent` is decided once, when
+someone writes the registry entry. `filtersApplied` is a fact about the read that actually
+happened. A static flag cannot be wrong about a particular run, because it was never about one.
+
+**2. It is a boolean where the truth has three states.** `[]` means 「known to have no filters」,
+a list means 「these filters, known」, and `null` means 「unknown」. A boolean has no way to say
+unknown — it forces a claim in one direction or the other. **And unknown is exactly the state a
+browse run is in**: the site applies a store predicate we did not choose and cannot enumerate.
+The one state that mattered was the one state the duplicate could not represent.
+
+**3. And the one that makes it a downgrade rather than a copy: it is PROSE.** `filtersApplied:
+null` is a field. Code downstream can branch on it, a gate can refuse on it, a test can assert
+it. 「未揀分店，價格可能因店而異」 is a caveat inside a rendered sentence, checkable only by a
+human who reads Chinese.
+
+> **A second vocabulary does not just duplicate the first. It converts a machine-checkable fact
+> into an uncheckable sentence — and then the caveat travels in the one medium the system has
+> already recorded that it cannot verify.**
+
+`evidenceGate.js` says of its own claim parameter: 「a gate that reads prose is a gate that can be
+talked past.」 I moved a structural fact INTO prose while that sentence was in the repository.
+
+## WHY I COULD NOT SEE IT
+
+I implemented the requirement literally. The GO said 「store/location context when price is
+store-dependent」, and `locationDependent` + a caveat is a faithful, working rendering of that
+sentence. Every test I wrote for it passed. Read on its own, the module is fine.
+
+**Nothing about writing it prompted the question 「what does this codebase already call this?」**
+The requirement was in front of me and the existing field was three directories away, and the
+side-by-side comparison that makes the defect obvious in ten seconds is a comparison nobody
+performs unless they already suspect the answer.
+
+## THE RULE
+
+1. **Before inventing a field that describes the trustworthiness of evidence, find what the
+   codebase already calls it.** The A-line exists so 「unknown」 has one definition; a new name for
+   it is a fork of the definition, whatever the intent.
+2. **Satisfying the requirement is not evidence you did not duplicate.** A literal, passing,
+   well-tested implementation of a spec sentence is the normal way a second vocabulary enters —
+   it never arrives looking like a mistake.
+3. **A caveat belongs in a FIELD, and the renderer reads the field.** If a limitation is only
+   expressible as a sentence, it cannot be gated, tested, or counted, and it will be dropped by
+   the first summariser that touches it.
+4. **Three states, not two, whenever the answer can be unknown.** A boolean forces a claim; the
+   claim it forces is the one nobody checked.
