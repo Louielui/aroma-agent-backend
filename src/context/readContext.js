@@ -713,7 +713,37 @@ async function runStep (connector, source, step, caps) {
     out = await connector.read(source, step.method, step.params)
   } catch (e) { return { results: [], unavailable: (e && e.message) || String(e) } }
   if (out && out.trust === 'unavailable') return { results: [], unavailable: out.error || 'unavailable' }
-  let results = (out && Array.isArray(out.results) ? out.results : []).filter((r) => r && r.trust === 'live')
+
+  /**
+   * ⛔ A FAILURE SIGNALLED PER-RESULT MUST NOT BE FILTERED AWAY AS 「no rows」.
+   *
+   * The check above reads `trust` at the TOP LEVEL, which is right for six of the seven
+   * connectors: they THROW on unavailability and the catch above turns that into
+   * `unavailable`. `publicKnowledgeRead` even writes the contract down — 「UNAVAILABLE THROWS,
+   * IT DOES NOT RETURN ZERO ROWS」.
+   *
+   * `aromaSystemRead` is the seventh. It RETURNS `{ readState, results: [makeUnavailable(...)] }`,
+   * putting `trust: 'unavailable'` on the RESULT rather than the response. The top-level check
+   * misses it, the filter below discards it as non-live, and the caller then sees zero rows and
+   * reports 「read succeeded, nothing matched」 with `trust: 'live', error: null`.
+   *
+   * ⛔ MEASURED. With a deliberately wrong AROMA_SYSTEM_KEY a 401 produced:
+   *
+   *     {"source":"aroma_system","trust":"live","count":0,"error":null}
+   *
+   * — indistinguishable from a good day with nothing to order. So 「今日冇嘢要落單」 was the
+   * answer to an expired key, said with total confidence, and nothing anywhere could see it.
+   *
+   * This is checked HERE rather than by making the connector throw, because a caller that
+   * silently discards its source's failure markers is wrong on its own terms — whatever the
+   * connectors do next.
+   */
+  const raw = (out && Array.isArray(out.results)) ? out.results : []
+  let results = raw.filter((r) => r && r.trust === 'live')
+  if (results.length === 0 && raw.length > 0) {
+    const failed = raw.find((r) => r && r.trust === 'unavailable')
+    if (failed) return { results: [], unavailable: failed.reason || failed.error || 'unavailable' }
+  }
 
   // Bounded hydration for list endpoints that return ids only (Gmail).
   if (step.hydrate && results.length) {
