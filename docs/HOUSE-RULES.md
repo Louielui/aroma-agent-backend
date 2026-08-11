@@ -3037,3 +3037,51 @@ inherent to a static key and is not a gap a watcher could close.
 it is static until the Owner rotates it, the risk is not an expiry date arriving on its own
 schedule — it is a rotation, which he performs and therefore already knows about. Worth
 confirming, because it decides whether anything further is warranted here.
+
+---
+
+### HR-68 — a detector blind by DEFINITION, not by accident
+
+Recorded 2026-08-11, at the Owner's instruction, as the sharpest instance of this family yet.
+
+Triaging 913 prose markers, the second mechanical shortcut looked excellent. **A rule restated
+by hand in more than one file is a class rule** — not a lexical guess but a structural fact:
+someone found the same rule true in two places and copied it, which is precisely the situation
+a survey test exists for. It ran in seconds and found 6, with high precision:
+
+```
+  [5 files] Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48)
+  [6 files] MODEL TEXT (governance/textClasses.js, class MODEL)
+  [2 files] A4-1C: THE CHAT LANE MAY NOT OFFER `commit`
+  … and 3 more
+```
+
+⛔ **It cannot find the rule HR-66 is about.** 「UNAVAILABLE THROWS, IT DOES NOT RETURN ZERO
+ROWS」 was written **once**, in `publicKnowledgeRead.js`, and never copied. The seventh connector
+was written nine days later by an author who did not read it.
+
+#### Why this is sharper than the regex
+
+The 49-sentence regex was blind **accidentally** — it keyed on vocabulary, the vocabulary
+drifted, and a better regex would have done better. Nothing about the target made it unfindable.
+
+This is different:
+
+> **The defect IS the absence of duplication. A detector that keys on duplication is looking for
+> the presence of the thing whose absence defines the fault.** Its blindness is not a gap in
+> coverage that a better implementation could close — it is the detector's operating principle
+> applied to its own target population.
+
+A rule copied into five files is a rule that got propagated: authors saw it and carried it.
+That is the **healthy** case. The dangerous case — stated once, never propagated, silently
+violated — is invisible to this method **by construction**, and would remain invisible however
+well it were built.
+
+#### The rule to carry
+
+⛔ **Before trusting a detector, ask what its target looks like at the moment of failure.** If
+the failing instance lacks the property being keyed on, precision on the healthy population is
+worthless — it will report a clean sweep of exactly the cases that were never at risk.
+
+Both shortcuts are therefore rejected for triage, and the count goes to a hand-read sample
+with the Owner labelling blind.
