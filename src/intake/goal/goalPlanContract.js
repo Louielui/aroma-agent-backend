@@ -58,7 +58,11 @@ const REASON = Object.freeze({
   ENTITY_MISMATCH: 'the_named_operation_does_not_produce_this_kind_of_record',
   NO_FIELDS: 'no_field_was_named',
   UNKNOWN_FIELD: 'field_is_not_on_this_operation',
-  UNVERIFIED_FIELD: 'field_exists_somewhere_but_is_unverified_here'
+  UNVERIFIED_FIELD: 'field_exists_somewhere_but_is_unverified_here',
+  /** Seen on every row of a real capture, and empty on every one of them. */
+  ALWAYS_EMPTY_FIELD: 'field_is_present_on_this_operation_and_never_carries_a_value',
+  /** The endpoint returned no rows, so nothing was learned. Not evidence of absence. */
+  UNOBSERVED_FIELD: 'the_endpoint_returned_no_rows_so_this_field_is_unobserved'
 })
 
 const JOIN_STATUS = Object.freeze({ UNVERIFIED: 'UNVERIFIED', NO_SHARED_TIME_BASIS: 'NO_SHARED_TIME_BASIS' })
@@ -135,7 +139,17 @@ function judgeFact (fact) {
     return Object.assign({}, base, { status: STATUS.UNAVAILABLE, reason: REASON.UNKNOWN_FIELD, detail: unknown.map((u) => u.field).join(', '), fieldTiers: tiers })
   }
 
-  // ⛔ RULE 2. A candidate spelling cannot carry a fact to AVAILABLE.
+  // ⛔ RULE 2, AFTER THE CAPTURE. Three different ways a field can fail to be usable, and
+  // they are no longer spelled the same. Each is PARTIAL — readable, but not something an
+  // answer can stand on — and each says which one it is.
+  const empty = tiers.filter((t) => t.tier === FIELD_TIER.ALWAYS_EMPTY)
+  if (empty.length) {
+    return Object.assign({}, base, { status: STATUS.PARTIAL, reason: REASON.ALWAYS_EMPTY_FIELD, detail: empty.map((c) => c.field).join(', '), fieldTiers: tiers })
+  }
+  const unobserved = tiers.filter((t) => t.tier === FIELD_TIER.UNOBSERVED)
+  if (unobserved.length) {
+    return Object.assign({}, base, { status: STATUS.PARTIAL, reason: REASON.UNOBSERVED_FIELD, detail: unobserved.map((c) => c.field).join(', '), fieldTiers: tiers })
+  }
   const candidates = tiers.filter((t) => t.tier === FIELD_TIER.CANDIDATE)
   if (candidates.length) {
     return Object.assign({}, base, { status: STATUS.PARTIAL, reason: REASON.UNVERIFIED_FIELD, detail: candidates.map((c) => c.field).join(', '), fieldTiers: tiers })

@@ -165,6 +165,12 @@ const FILE_CLASS = Object.freeze({
   //                                                          freshness / location at all.
   //                                                          Translating them changes what she
   //                                                          sends, not what he reads.
+  'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker appended to a
+  //                                                          field the capture found present on
+  //                                                          every row and empty on every row.
+  //                                                          She is TOLD it, and it is how she
+  //                                                          avoids planning around a column that
+  //                                                          has never carried anything.
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction.
   //                                                          She is TOLD it, and it decides how
   //                                                          the question is broken up. ⛔ The

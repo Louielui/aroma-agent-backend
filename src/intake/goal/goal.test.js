@@ -44,7 +44,7 @@ test('*** the catalogue is assembled from the frozen tables, and every operation
 
 test('*** ⛔ the prompt catalogue carries SHAPES and not one data row ***', () => {
   const forPrompt = cat.catalogueForPrompt()
-  const allowed = ['operation', 'label', 'entity', 'numbers', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit']
+  const allowed = ['operation', 'label', 'entity', 'numbers', 'fields', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit']
   for (const row of forPrompt) {
     for (const k of Object.keys(row)) assert.ok(allowed.includes(k), '⛔ unexpected key reaching the model: ' + k)
   }
@@ -54,13 +54,29 @@ test('*** ⛔ the prompt catalogue carries SHAPES and not one data row ***', () 
     '⛔ the decomposer reached for a reader')
 })
 
-test('*** field tiers: a metric is VERIFIED here, a spelling is only a CANDIDATE ***', () => {
+test('*** field tiers after the capture — the four states 「CANDIDATE」 was hiding ***', () => {
+  // A declared metric, and a field the capture found carrying values. Both usable.
   assert.equal(cat.fieldTier(REPLEN, 'live_qty'), cat.FIELD_TIER.VERIFIED)
-  assert.equal(cat.fieldTier(REPLEN, 'supplierId'), cat.FIELD_TIER.CANDIDATE)
-  assert.equal(cat.fieldTier(REPLEN, 'unit_cost'), cat.FIELD_TIER.UNKNOWN)
-  // ⛔ A NEIGHBOUR'S METRIC IS NOT THIS ENDPOINT'S. `total` is on invoices, never on planning.
-  assert.equal(cat.fieldTier(INVOICES, 'total'), cat.FIELD_TIER.VERIFIED)
+  assert.equal(cat.fieldTier(REPLEN, 'incoming_qty'), cat.FIELD_TIER.PRESENT)
+  assert.equal(cat.fieldTier(REPLEN, 'supplier_name'), cat.FIELD_TIER.PRESENT)
+
+  // ⛔ PRESENT ON EVERY ROW AND EMPTY ON EVERY ROW. The invoices.supplierId shape, now
+  // measured on two other endpoints. A name-only capture would have called these usable.
+  assert.equal(cat.fieldTier('aroma_system.suppliers', 'cutoffTime'), cat.FIELD_TIER.ALWAYS_EMPTY)
+  assert.equal(cat.fieldTier(COUNTS, 'items'), cat.FIELD_TIER.ALWAYS_EMPTY)
+
+  // ⛔ NOTHING WAS LEARNED, WHICH IS NOT THE SAME AS NOTHING IS THERE. Invoices returned
+  // zero rows — a 30-day window with no invoices in it.
+  assert.equal(cat.fieldTier(INVOICES, 'supplierId'), cat.FIELD_TIER.UNOBSERVED)
+
+  // ⛔ AND MEASURED ABSENCE. Order planning spells it snake_case; the camelCase guess that
+  // used to rate CANDIDATE is now known not to be there. The capture demoted it.
+  assert.equal(cat.fieldTier(REPLEN, 'supplierId'), cat.FIELD_TIER.UNKNOWN)
+  assert.equal(cat.fieldTier(REPLEN, 'supplier_id'), cat.FIELD_TIER.PRESENT)
+
+  // A neighbour's metric is still not this endpoint's.
   assert.equal(cat.fieldTier(REPLEN, 'total'), cat.FIELD_TIER.UNKNOWN)
+  assert.equal(cat.fieldTier(REPLEN, 'unit_cost'), cat.FIELD_TIER.UNKNOWN)
 })
 
 /* ═══ RULE 1 — NO NEAREST-NEIGHBOUR SUBSTITUTION ══════════════════════════ */
@@ -93,10 +109,16 @@ test('*** ⛔ there is no cost entity and no costing operation to name in the fi
 
 /* ═══ RULE 2 — A FIELD NAME IS NOT A FIELD ════════════════════════════════ */
 
-test('*** ⛔ RULE 2 — a CANDIDATE field caps a fact at PARTIAL, and an UNKNOWN one kills it ***', () => {
-  const partial = plan([{ id: 'sup', need: '供應商', operation: REPLEN, entity: 'order_suggestion', fields: ['supplierId'] }])
-  assert.equal(partial.plan.facts[0].status, STATUS.PARTIAL)
-  assert.equal(partial.plan.facts[0].reason, REASON.UNVERIFIED_FIELD)
+test('*** ⛔ RULE 2 — an empty field and an unobserved one cap a fact at PARTIAL; an absent one kills it ***', () => {
+  // ⛔ THE FIELD IS THERE AND IT HAS NEVER HELD ANYTHING. An answer cannot stand on it, and
+  // the reason says which of the three failures this is rather than lumping them together.
+  const empty = plan([{ id: 'cut', need: '落單截止時間', operation: 'aroma_system.suppliers', entity: 'supplier', fields: ['cutoffTime'] }])
+  assert.equal(empty.plan.facts[0].status, STATUS.PARTIAL)
+  assert.equal(empty.plan.facts[0].reason, REASON.ALWAYS_EMPTY_FIELD)
+
+  const unseen = plan([{ id: 'inv', need: '發票供應商', operation: INVOICES, entity: 'invoice', fields: ['supplierId'] }])
+  assert.equal(unseen.plan.facts[0].status, STATUS.PARTIAL)
+  assert.equal(unseen.plan.facts[0].reason, REASON.UNOBSERVED_FIELD)
 
   const dead = plan([{ id: 'c', need: '成本', operation: REPLEN, entity: 'order_suggestion', fields: ['unit_cost'] }])
   assert.equal(dead.plan.facts[0].status, STATUS.UNAVAILABLE)
@@ -136,25 +158,31 @@ test('*** a plan over the fact bound is REFUSED, never quietly truncated ***', (
 
 /* ═══ ACCEPTANCE CASE 1 — COSTCO ══════════════════════════════════════════ */
 
-test('*** ACCEPTANCE 1 — Costco: shortfall is answerable; supplier and incoming are not yet ***', () => {
+test('*** ACCEPTANCE 1 — Costco is ANSWERABLE, in ONE read and with NO join ***', () => {
+  // ⛔ THE CAPTURE, NOT A WIDENED TABLE, IS WHY THIS PASSES NOW. `incoming_qty` is on 55 of 55
+  // order-planning rows and non-empty on 55 of 55; `supplier_name` on 55 and non-empty on 53.
+  // METRICS_OF was not touched — it still holds numbers only, and these are promoted by
+  // measurement in a separate captured table.
+  //
+  // AND THE ANSWER IS BETTER THAN THE DESIGN EXPECTED: supplier is a column ON the
+  // order-planning row, so the shortfall × supplier × incoming question needs one read and no
+  // join at all. The design assumed an edge to `suppliers` that does not need traversing.
   const r = plan([
-    { id: 'shortfall', need: '邊啲貨低過安全存量、爭幾多', operation: REPLEN, entity: 'order_suggestion', fields: ['live_qty', 'par_level', 'suggested_order_qty'] },
+    { id: 'shortfall', need: '邊啲貨低過安全存量、爭幾多', operation: REPLEN, entity: 'order_suggestion', fields: ['ingredient_name', 'live_qty', 'par_level', 'suggested_order_qty'] },
     { id: 'incoming', need: '有冇貨喺途中', operation: REPLEN, entity: 'order_suggestion', fields: ['incoming_qty'] },
-    { id: 'supplier', need: '邊個供應商', operation: REPLEN, entity: 'order_suggestion', fields: ['supplierId'] }
+    { id: 'supplier', need: '邊個供應商', operation: REPLEN, entity: 'order_suggestion', fields: ['supplier_name'] }
   ])
 
   const by = Object.fromEntries(r.plan.facts.map((f) => [f.id, f]))
-  // The one the Owner can actually use today.
   assert.equal(by.shortfall.status, STATUS.AVAILABLE)
-  assert.deepEqual(r.plan.reads, [REPLEN])
+  assert.equal(by.incoming.status, STATUS.AVAILABLE)
+  assert.equal(by.supplier.status, STATUS.AVAILABLE)
 
-  // ⛔ AND THE TWO THAT ARE NOT. `incoming_qty` was referenced by a real reply, which is not an
-  // audit — it is absent from the measured metric table, so it is UNKNOWN here and says so.
-  assert.equal(by.incoming.status, STATUS.UNAVAILABLE)
-  assert.equal(by.incoming.reason, REASON.UNKNOWN_FIELD)
-  assert.equal(by.supplier.status, STATUS.PARTIAL)
-  assert.equal(r.plan.sufficient, false)
-  assert.ok(r.plan.missing.length >= 2)
+  assert.equal(r.plan.joins.length, 0, 'no edge to traverse — supplier is on the row')
+  assert.equal(r.plan.scopeHazards.length, 0, 'order planning carries no window')
+  assert.equal(r.plan.sufficient, true, '⛔ THE FIRST QUESTION THIS SYSTEM CAN FULLY ANSWER')
+  assert.deepEqual(r.plan.missing, [])
+  assert.deepEqual(r.plan.reads, [REPLEN, REPLEN, REPLEN])
 })
 
 /* ═══ ACCEPTANCE CASE 2 — 上次盤點同存量 ══════════════════════════════════ */

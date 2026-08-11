@@ -43,6 +43,7 @@ const { AROMA_OPERATIONS } = require('../../context/readOperations')
 const {
   METRICS_OF, ENTITY_OF, ROW_SHAPE, QUERY_SCOPE, SERVER_LIMITS, LIMIT_KNOWN
 } = require('../../context/adapters/aromaSystemRead')
+const { CAPTURED, CAPTURED_ON } = require('./capturedShapes')
 
 /**
  * intent key → the endpoint key the descriptor tables are keyed by.
@@ -73,7 +74,34 @@ const CANDIDATE_FIELDS = Object.freeze([
   'submittedAt', 'submitted_at', 'countedAt', 'counted_at', 'createdAt', 'created_at'
 ])
 
-const FIELD_TIER = Object.freeze({ VERIFIED: 'VERIFIED', CANDIDATE: 'CANDIDATE', UNKNOWN: 'UNKNOWN' })
+/**
+ * ⛔ FIVE TIERS, BECAUSE 「CANDIDATE」 WAS HIDING THREE DIFFERENT STATES.
+ *
+ * > **Owner: 「Some CANDIDATEs are candidates because of what that table was built for, not
+ * > because the field is uncertain. 『verified present』 and 『never had a place to be recorded』
+ * > are different states and both are currently spelled CANDIDATE.」**
+ *
+ * He was right, and the capture separated them:
+ *
+ *   VERIFIED        a metric named for this endpoint in METRICS_OF
+ *   PRESENT         the capture saw it on this endpoint, carrying values. It was only ever a
+ *                   CANDIDATE because METRICS_OF holds NUMBERS — `supplier_name` was never
+ *                   uncertain, it just had nowhere to be recorded
+ *   ALWAYS_EMPTY    the capture saw it on every row and it was empty on every row. Present,
+ *                   correctly typed, and carrying nothing — `invoices.supplierId` exactly
+ *   UNOBSERVED      the endpoint returned no rows, so nothing about its fields was learned.
+ *                   Not evidence of absence
+ *   CANDIDATE       a spelling that exists on some OTHER endpoint. Still a guess here
+ *   UNKNOWN         neither named nor seen
+ */
+const FIELD_TIER = Object.freeze({
+  VERIFIED: 'VERIFIED',
+  PRESENT: 'PRESENT',
+  ALWAYS_EMPTY: 'ALWAYS_EMPTY',
+  UNOBSERVED: 'UNOBSERVED',
+  CANDIDATE: 'CANDIDATE',
+  UNKNOWN: 'UNKNOWN'
+})
 
 /** When the metric tables were measured against the live API. Carried, not assumed. */
 const METRICS_MEASURED_ON = '2026-08-03'
@@ -119,8 +147,28 @@ function fieldTier (operation, field) {
   const e = operationEntry(operation)
   if (!e || typeof field !== 'string' || !field.trim()) return FIELD_TIER.UNKNOWN
   if (e.metricFields.some((m) => m.name === field)) return FIELD_TIER.VERIFIED
+
+  // ⛔ THE CAPTURE OUTRANKS THE GUESS, IN BOTH DIRECTIONS. It can promote a field the tables
+  // never had room for, and it can demote one that is present on every row and empty on every
+  // row — which no list of names could ever have told us.
+  const seen = capturedFieldsFor(operation)
+  if (seen) {
+    const hit = seen.fields.find((f) => f.name === field)
+    if (hit) return hit.nonEmpty > 0 ? FIELD_TIER.PRESENT : FIELD_TIER.ALWAYS_EMPTY
+    // Rows came back and this field was not among them: absence is now measured, not assumed.
+    if (seen.rowsSeen > 0) return FIELD_TIER.UNKNOWN
+    return FIELD_TIER.UNOBSERVED
+  }
+
   if (CANDIDATE_FIELDS.includes(field)) return FIELD_TIER.CANDIDATE
   return FIELD_TIER.UNKNOWN
+}
+
+/** What the capture saw for this operation, or null if the operation is not mapped. */
+function capturedFieldsFor (operation) {
+  const op = AROMA_OPERATIONS.find((o) => o.operation === operation)
+  const key = op && ENDPOINT_OF_INTENT[op.intentKey]
+  return (key && CAPTURED[key]) || null
 }
 
 /**
@@ -133,6 +181,19 @@ function catalogueForPrompt () {
     label: e.label,
     entity: e.entityType,
     numbers: e.metricFields.map((m) => m.name + '(' + m.label + ')'),
+    /**
+     * ⛔ THE REAL FIELD NAMES, AND THE FIRST PAID RUN IS WHY THEY ARE HERE.
+     *
+     * Without them the decomposer had no names to name, so it described what it wanted in
+     * prose — 「item identifier/name」, 「delivery/shipment status」 — and every fact was
+     * refused as an unknown field. The plan was structurally correct and completely useless.
+     *
+     * ⛔ EMPTY ONES ARE LISTED AS EMPTY rather than hidden. A field that exists and never
+     * carries anything is something the planner should be able to see and avoid, and hiding
+     * it would just move the same surprise one layer later.
+     */
+    fields: (capturedFieldsFor(e.operation) || { fields: [] }).fields
+      .map((f) => f.name + (f.nonEmpty === 0 ? '(空)' : '')),
     hasLocation: e.rowShape ? e.rowShape.hasLocation === true : null,
     hasTimestamp: e.rowShape ? e.rowShape.hasAsOf === true : null,
     note: e.rowShape ? e.rowShape.note : null,
