@@ -3829,3 +3829,58 @@ could not use the model. The reason given for it was wrong.
 The adapter now reads every block and reports an unreadable response as an error. Whether opus
 returns is a separate decision, and the four-cell measurement that follows the fix is the first
 one that will be measuring **the model** rather than **our reader**.
+
+---
+
+# HR-71 — THE FOURTH INSTANCE, AND THIS TIME THE DUPLICATE WAS BILLING
+
+**HR-59's fourth instance, with the same note the Owner wrote the first time:**
+
+> **Owner: 「I asked for a capability that already existed, again.」**
+
+## THE FOUR
+
+| # | asked for | already existed | caught |
+|---|---|---|---|
+| 1 | a browser for public reads | the whole browser safety stack | **in the brief** |
+| 2 | a completion contract for browse | A1's evidence descriptor | **after it shipped** (HR-58) |
+| 3 | a goal decomposer | `intake/reasoningLoop.js`, wired | **before writing code** |
+| 4 | **a deterministic router for the split** | **`intake/turnRouter.js`, wired, with an `ACTION` route** | **before writing code** |
+
+## WHAT MAKES THE FOURTH DIFFERENT
+
+The first three duplicates were **unbuilt**. This one is **already running, on every turn, and
+paying for a model call to do what a deterministic function beside it already does.**
+
+`turnRouter.routeTurn()` returns `['UTILITY', 'ACTION', 'BUSINESS_QUERY', 'CONVERSATION']` with
+zero model calls and a `confidence` on every outcome. `ACTION` **is** the routing half of the
+400-token classifier call. Both run. Every turn.
+
+> **So this piece of work is not 「add a deterministic router」. It is 「delete a second router
+> that has been billing on every turn since it was built」.** That is a smaller change, a cheaper
+> one, and the opposite of what the brief described.
+
+## AND THE COST WAS NOT ONLY MONEY
+
+The duplicate was the more dangerous of the two:
+
+- it authored the work-order text as a side effect of classifying (§HR-71 note below), so a
+  routing decision and an EXECUTE-path authoring decision shared one 400-token budget
+- it was the call whose failure became a lost instruction, because its two-outcome shape had
+  nowhere to put 「we could not find out」
+- and it was invisible as a duplicate because the two live in different vocabularies:
+  one says `intent: 'develop'`, the other says `route: 'ACTION'`
+
+**Neither name contains the other. A search for either finds one.**
+
+## THE RULE (extending HR-59)
+
+1. **Search by OUTPUT, not by name.** 「What already decides whether this turn is an action?」
+   finds `routeTurn`. 「Is there an intent classifier?」 does not, and 「is there a router?」 finds
+   the wrong one.
+2. **A duplicate that is already running is worse than one that is merely proposed**, because
+   its cost is recurring and its existence is evidence to the next reader that it was needed.
+3. **When two components decide the same thing in different vocabularies, one of them is
+   younger and was written by someone who searched for the wrong word.** Ask which.
+4. **The Owner's brief is not the specification of the change.** Four times it has described the
+   goal correctly and implied a build where a deletion or a wiring was the actual work.
