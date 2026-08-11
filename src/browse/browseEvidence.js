@@ -19,6 +19,19 @@
  * and NEVER 「沒有」. One is a fact about our search; the other is a claim about the world.
  * ══════════════════════════════════════════════════════════════════════════════
  *
+ * ── ⛔ A MERGED #37 DOES NOT TURN THE EVIDENCE GATE ON ───────────────────────
+ *
+ * This module speaks A1's vocabulary and calls `checkEvidence`. Neither fact activates A1.
+ *
+ * `checkEvidence` has ZERO production call sites and had zero before this existed. E0-B1 is
+ * itself unwired — an isolation test asserts no production file imports it. So this is unwired
+ * code depending on unwired code, which is legitimate and is NOT activation.
+ *
+ * ⛔ WRITTEN HERE BECAUSE THIS IS WHERE SOMEONE WOULD READ IT BACKWARDS. Six weeks from now the
+ * imports, the descriptor and the gate call all look like a live evidence path. They are not.
+ * Turning A1 on is a separate, measured phase with its own plan (docs/A1-SHADOW-WIRING-PLAN.md)
+ * and it has not happened.
+ *
  * ── ⛔ A SEARCH RESULTS PAGE IS A SAMPLE, AND THAT IS THE WHOLE REASON THIS WAITED FOR A1 ──
  *
  * > **Owner: 「It must never render as 『Superstore 賣 $4.99』 — it is one row from a page we

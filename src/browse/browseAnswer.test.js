@@ -19,13 +19,32 @@ const obs = (o) => Object.assign({
 }, o || {})
 const render = (input, q) => renderBrowseAnswer(describeBrowseRun(Object.assign({ order: ORDER }, input)), { query: q || 'peanut butter' })
 
-test('*** RENDERER — ⛔ it NEVER says the shop sells it at that price ***', () => {
-  const a = render({ observations: [obs()], searchPerformed: true })
-  // The deleted file rendered 「查到：<product> — <price>」, which is a claim about what the shop
-  // charges. What we hold is one row of page one, filtered by a predicate nobody chose.
-  assert.equal(/賣|售價係|price is/.test(a.text.split('\n')[0]), false, 'the lead line is not a price claim')
-  assert.match(a.text, /標價/, 'it reports what the page displayed')
-  assert.match(a.text, /唔係.*「售價」/, 'and says outright that it is not the shop price')
+test('*** RENDERER — ⛔ ANY LINE CARRYING A PRICE CARRIES ITS PROVENANCE IN THE SAME LINE ***', () => {
+  // Owner ruling: 「Not a caveat below, not a conditional warning. Part of the sentence.」
+  //
+  // The gate that would otherwise catch 「one row rendered as the price」 is
+  // SAMPLE_TREATED_AS_WHOLE, and it fires only when a prose regex matches — measured at recall
+  // 1/6 on this Owner's own replies, with three of four firings on self-limiting sentences. It
+  // has never fired correctly on this shape, so nothing here waits for it.
+  //
+  // A caveat on the next line survives quoting for about one hop. A clause inside the sentence
+  // travels with the number wherever the number goes.
+  for (const input of [
+    { observations: [obs()], searchPerformed: true },
+    { observations: [obs()], storeContext: 'Winnipeg Grant Park' },
+    { observations: [obs()], pageStatedTotal: 87 },
+    { observations: [obs(), obs({ product: 'Skippy', price: '$4.49' })], searchPerformed: true }
+  ]) {
+    const a = render(input)
+    for (const line of a.text.split('\n')) {
+      if (!/\$\d/.test(line)) continue
+      assert.match(line, /搜尋結果頁上嘅一行|同頁其他標價/,
+        '⛔ a price appeared on a line that does not say what it is: ' + line)
+    }
+    const lead = a.text.split('\n')[0]
+    assert.match(lead, /搜尋結果頁上嘅一行/)
+    assert.match(lead, /唔係.*「售價」/, 'and it is one string with the price — not separable')
+  }
 })
 
 test('*** RENDERER — ⛔ 「搵唔到」 is said, and 「冇貨」 is refused, IN THE WORDS ***', () => {
@@ -47,7 +66,9 @@ test('*** RENDERER — a blocked read says we never got there, and claims nothin
 
 test('*** RENDERER — ⛔ every qualifier comes from a DESCRIPTOR FIELD, not a hand-written caveat ***', () => {
   const noStore = render({ observations: [obs()], searchPerformed: true })
-  assert.match(noStore.text, /第一頁/, 'completeness: sample')
+  // completeness:'sample' — now carried INSIDE the price sentence rather than as a line below
+  // it, which is the Owner's ruling and a stronger placement than the one this test first had.
+  assert.match(noStore.text, /搜尋結果頁上嘅一行/, 'completeness: sample')
   assert.match(noStore.text, /數唔到/, 'matchingTotal: null')
   assert.match(noStore.text, /篩選/, 'filtersApplied: null — HR-58, replacing the old prose sentence')
   assert.match(noStore.text, /未揀分店/, 'rowShape.hasLocation: false')
