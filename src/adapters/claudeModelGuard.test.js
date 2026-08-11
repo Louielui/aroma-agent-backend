@@ -149,22 +149,41 @@ test('*** F — the A4 Recovery Worker pin is untouched by this repair ***', () 
 
 /* ═══ G / H — NOTHING ELSE MOVED ═══════════════════════════════════════ */
 
-test('*** H — the request shape for a configured model is unchanged, temperature included ***', async () => {
+test('*** H — NO sampling parameter is sent, in either direction ***', async () => {
   await withEnv({ CLAUDE_MODEL: PINNED, ANTHROPIC_API_KEY: KEY }, async () => {
     const t = spy()
     await new ClaudeAdapter({ transport: t.fn }).complete('hi')
     const body = t.calls[0].body
-    // ⛔ TEMPERATURE IS DELIBERATELY OUT OF SCOPE HERE. It is pinned by this test precisely so
-    // that this repair cannot quietly become a second one; changing it belongs to the adapter
-    // capability work, with its own decision behind it.
-    assert.equal(body.temperature, 0.3)
+
+    /**
+     * ⛔ THIS ASSERTION USED TO PIN `temperature: 0.3`, AND SAID SO ON PURPOSE — 「changing it
+     * belongs to the adapter capability work, with its own decision behind it.」 The guard was
+     * right to stand there, and this is that decision arriving rather than the incidental
+     * change it was written to stop.
+     *
+     * The startup smoke test, on the first restart onto `claude-opus-5`:
+     *
+     *   Claude API error 400: `temperature` is deprecated for this model.
+     *
+     * `OpenAIAdapter` already carried the same finding for the GPT-5 family — an
+     * unconditional sampling parameter made every attempt throw. It was never applied here.
+     *
+     * And 0.3 was never chosen by anyone: it was this adapter's own default, applied to the
+     * chat lane, the proposal lane and the dispatcher alike, asked for by no caller and
+     * asserted by no test but this one.
+     */
+    assert.equal('temperature' in body, false, '⛔ no sampling parameter, not even a default')
+    assert.equal('top_p' in body, false)
     assert.equal(body.max_tokens, 1024)
     assert.equal(body.model, PINNED)
     assert.deepEqual(body.messages, [{ role: 'user', content: 'hi' }])
-    // An explicit temperature still overrides, exactly as before.
+
+    // ⛔ AND AN EXPLICIT ONE IS NOT FORWARDED EITHER. Honouring it would 400 on exactly the
+    // model this system now runs, so a caller asking for determinism must get it from the
+    // schema and the parser — which reject a wrong-shaped answer whatever the sampler did.
     const t2 = spy()
     await new ClaudeAdapter({ transport: t2.fn }).complete('hi', { temperature: 0 })
-    assert.equal(t2.calls[0].body.temperature, 0)
+    assert.equal('temperature' in t2.calls[0].body, false)
   })
 })
 

@@ -95,12 +95,31 @@ class ClaudeAdapter extends LLMAdapter {
     }
 
     const maxTokens = opts.maxTokens || 1024
-    const temperature = opts.temperature !== undefined ? opts.temperature : 0.3
 
+    /**
+     * ⛔ NO SAMPLING PARAMETER IS SENT. THE SIBLING ADAPTER LEARNED THIS FIRST.
+     *
+     * `OpenAIAdapter` carries the note a few files away: reasoning models reject sampling
+     * parameters outright, and an unconditional `temperature` made every Stage-2 GPT attempt
+     * throw before returning text. The same lesson was never applied here, and on the first
+     * restart onto `claude-opus-5` the startup smoke test came back:
+     *
+     *   Claude API error 400: `temperature` is deprecated for this model.
+     *
+     * ⛔ AND THE VALUE WAS NEVER CHOSEN BY ANYONE. `0.3` was this adapter's own default,
+     * applied to every call that did not name one — the chat lane, the proposal lane, the
+     * dispatcher. No caller asked for it and no test asserted it; it was simply what the
+     * body had always contained.
+     *
+     * The neutral `LLMAdapter` contract still ACCEPTS `opts.temperature`. This adapter no
+     * longer forwards it, in either direction: nothing is sent 「just in case」, and an
+     * explicit request for one is not quietly honoured on a model that refuses it. A caller
+     * that needs determinism gets it from the schema and the parser, which reject a
+     * wrong-shaped answer whatever the sampler did.
+     */
     const body = {
       model: this._model,
       max_tokens: maxTokens,
-      temperature,
       messages: [
         { role: 'user', content: prompt }
       ]
