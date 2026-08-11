@@ -182,6 +182,26 @@ function createProposalStore (options = {}) {
     const conversationId = src.conversationId
     const classification = await classifyIntent(src.message, src.llm)
 
+    /**
+     * ⛔ 「WE COULD NOT FIND OUT」 IS NOT 「IT WAS A CHAT」.
+     *
+     * The `!== 'develop'` test below is correct for a classification that HAPPENED. It was
+     * also catching the case where none happened — a timeout, an unreadable response — and
+     * turning the Owner's work request into a conversation with no Proposal and no trace he
+     * would ever see. A lost instruction, not a degraded answer.
+     *
+     * This branch must stay ABOVE that test. Ordering is the whole fix: a third outcome added
+     * below it would be unreachable, and would look correct in review.
+     */
+    if (classification.intent === 'unavailable') {
+      return {
+        intent: 'unavailable',
+        reason: classification.reason || 'error',
+        detail: classification.detail || null,
+        proposal: null
+      }
+    }
+
     // Conversation stays conversation: no Proposal, and above all no Run.
     if (classification.intent !== 'develop') {
       return {

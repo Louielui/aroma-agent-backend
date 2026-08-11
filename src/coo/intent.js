@@ -42,6 +42,34 @@ function chat (explanation) {
 }
 
 /**
+ * ⛔ THE THIRD OUTCOME. There were two — chat and develop — and every way of failing had to
+ * pick one of them. Failing picked `chat`, which is why a lost instruction looked like a reply.
+ *
+ * `unavailable` asserts nothing about what the Owner asked for. It says only that we could not
+ * find out, which is the honest position and the one the caller must not paper over.
+ */
+function unavailable (reason, detail) {
+  return {
+    intent: 'unavailable',
+    reason: isNonEmptyString(reason) ? reason : 'error',
+    detail: isNonEmptyString(detail) ? detail : null
+  }
+}
+
+/**
+ * Which KIND of not-finding-out it was. The adapter already distinguishes these — a timeout
+ * means the model was still working, an unreadable response means we could not parse what came
+ * back — and losing that here would rebuild the same flattening one layer up.
+ */
+function reasonOf (err) {
+  if (!err) return 'error'
+  if (err.isTimeout === true) return 'timeout'
+  if (err.unreadableResponse === true) return 'unreadable'
+  if (/\boverloaded\b/i.test(String(err.message || ''))) return 'overloaded'
+  return 'error'
+}
+
+/**
  * Classify one message as 'chat' or 'develop'.
  *
  * @param {string} message — Louie's raw message.
@@ -60,17 +88,37 @@ async function classifyIntent (message, llm) {
     return chat('empty message — nothing to classify')
   }
 
-  // Ask the injected model. Any throw is contained: an unusable model answer is
-  // simply not a development request.
+  /**
+   * ⛔ A CLASSIFIER FAILURE IS A FAILURE. IT IS NOT A CONVERSATION.
+   *
+   * This used to be `catch (err) { return chat('classifier unavailable: …') }`, and the
+   * comment above it said 「any throw is contained: an unusable model answer is simply not a
+   * development request」. That reasoning is sound for a model that ANSWERED and said no. It is
+   * false for a model that never answered.
+   *
+   * The consequence: the Owner asks for work, the call times out, and `propose()` sees an
+   * intent that is not 'develop' and returns `{intent:'chat', proposal:null}`. **The
+   * instruction is not degraded — it is LOST, and he is told it was a chat.** He would never
+   * know he had asked for something.
+   *
+   * ⛔ HR-67, ONE SUBSYSTEM OVER: a failure emitting the success path's vocabulary. And it gets
+   * likelier the moment authoring runs a reasoning model at a 120-second ceiling.
+   *
+   * ⛔ AND THE FIX IS NOT A LONGER TIMEOUT. A longer timeout makes this rarer. Only naming it
+   * makes it visible, and a lost instruction the Owner cannot see is not made acceptable by
+   * being rare.
+   */
   let raw
   try {
     raw = await llm(message)
   } catch (err) {
-    return chat(`classifier unavailable: ${err && err.message ? err.message : String(err)}`)
+    return unavailable(reasonOf(err), err && err.message ? String(err.message).slice(0, 200) : String(err))
   }
 
+  // Nothing usable came back. The model may have answered, but not in a shape that can be
+  // read — which is the same position as not having answered at all, and is reported as such.
   if (!raw || typeof raw !== 'object') {
-    return chat('classifier returned no usable result')
+    return unavailable('unreadable', 'the classifier returned no usable result')
   }
 
   // Anything that is not an explicit, well-formed 'develop' is conversation.

@@ -381,7 +381,14 @@ function createAromaRouter ({ runStore, proposalStore, workerDeps, authorize, re
       })
       // 201 when a Proposal was created (the response includes the verbatim task
       // string for display); 200 for an ordinary chat reply.
-      res.status(result.intent === 'develop' ? 201 : 200).json(result)
+      //
+      // ⛔ AND 503 WHEN WE COULD NOT FIND OUT. A classifier that timed out or returned
+      // something unreadable used to arrive here as an ordinary 200 chat reply, so the Owner's
+      // work request vanished into a conversation. 503 is the honest code: the request was not
+      // refused and was not answered — the upstream that decides could not be reached, and he
+      // should send it again rather than assume it was heard.
+      const status = result.intent === 'develop' ? 201 : (result.intent === 'unavailable' ? 503 : 200)
+      res.status(status).json(result)
     } catch (err) {
       res.status(err.statusCode || 400).json({ error: err.message })
     }
