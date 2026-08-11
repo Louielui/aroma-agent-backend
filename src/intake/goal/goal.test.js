@@ -23,7 +23,8 @@ const INVOICES = 'aroma_system.invoices'
 const COUNTS = 'aroma_system.daily_counts'
 const INVENTORY = 'aroma_system.inventory'
 
-const plan = (facts, joins) => judgeGoalPlan({ question_restated: 'q', facts, joins: joins || [] })
+// Facts default to required so existing cases keep their meaning.
+const plan = (facts, joins) => judgeGoalPlan({ question_restated: 'q', facts: facts.map((f) => Object.assign({ necessity: 'required' }, f)), joins: joins || [] })
 
 /* ═══ THE CATALOGUE ASSEMBLES, AND DESCRIBES NOTHING ITSELF ════════════════ */
 
@@ -182,7 +183,10 @@ test('*** ACCEPTANCE 1 — Costco is ANSWERABLE, in ONE read and with NO join **
   assert.equal(r.plan.scopeHazards.length, 0, 'order planning carries no window')
   assert.equal(r.plan.sufficient, true, '⛔ THE FIRST QUESTION THIS SYSTEM CAN FULLY ANSWER')
   assert.deepEqual(r.plan.missing, [])
-  assert.deepEqual(r.plan.reads, [REPLEN, REPLEN, REPLEN])
+  // ⛔ ONE read, not three. Three facts against one endpoint is one call, and the previous
+  // version of this assertion demanded the wrong answer.
+  assert.deepEqual(r.plan.reads, [REPLEN])
+  assert.equal(r.plan.minimality.readCount, 1)
 })
 
 /* ═══ ACCEPTANCE CASE 2 — 上次盤點同存量 ══════════════════════════════════ */
@@ -330,4 +334,49 @@ test('*** ⛔ daily-count items are 50 empty arrays — the count-vs-stock case 
   // A name-only capture would have blessed this: present on 50 of 50 rows, correctly typed
   // as an array, and carrying nothing. It is what would have made 「上次盤點同存量對唔對得上」
   // look answerable right up until someone tried to read an item out of it.
+})
+
+/* ═══ MINIMALITY — THE JUDGE CARES, SO THE PLAN CANNOT PAD ════════════════ */
+
+test('*** ⛔ three facts against one endpoint are ONE read ***', () => {
+  const r = plan([
+    { id: 'a', need: '缺口', operation: REPLEN, entity: 'order_suggestion', fields: ['live_qty'] },
+    { id: 'b', need: '供應商', operation: REPLEN, entity: 'order_suggestion', fields: ['supplier_name'] },
+    { id: 'c', need: '在途', operation: REPLEN, entity: 'order_suggestion', fields: ['incoming_qty'] }
+  ])
+  assert.deepEqual(r.plan.reads, [REPLEN])
+  assert.equal(r.plan.minimality.readCount, 1)
+  assert.equal(r.plan.minimality.factCount, 3, 'facts and reads are different counts')
+})
+
+test('*** ⛔ an ENRICHING read is listed and not performed, and cannot sink the plan ***', () => {
+  const facts = [
+    { id: 'a', need: '缺口', operation: REPLEN, entity: 'order_suggestion', fields: ['live_qty', 'par_level'], necessity: 'required' },
+    { id: 'c', need: '在途', operation: REPLEN, entity: 'order_suggestion', fields: ['incoming_qty'], necessity: 'required' },
+    { id: 'd', need: '採購單細節', operation: 'aroma_system.purchasing', entity: 'purchase_order', fields: ['poNumber', 'status'], necessity: 'enriching' }
+  ]
+  const r = judgeGoalPlan({ question_restated: 'q', facts, joins: [] }).plan
+  assert.deepEqual(r.reads, [REPLEN], 'only required facts become reads')
+  assert.deepEqual(r.minimality.enrichingReads, ['aroma_system.purchasing'])
+
+  // ⛔ AND THE HAZARD ON THE ENRICHING READ DOES NOT COUNT. Purchasing carries a 30-day
+  // window; a limitation on a read nobody performs is not a limitation on the answer.
+  assert.equal(r.sufficient, true, 'the Costco shape, answered from one endpoint')
+
+  // Marked required instead, the same fact costs a read AND brings its window with it.
+  const asRequired = judgeGoalPlan({
+    question_restated: 'q', joins: [],
+    facts: facts.map((f) => f.id === 'd' ? Object.assign({}, f, { necessity: 'required' }) : f)
+  }).plan
+  assert.equal(asRequired.reads.length, 2)
+  assert.equal(asRequired.sufficient, false)
+})
+
+test('*** an absent necessity is REQUIRED — a plan that forgets to say must not shrink ***', () => {
+  const r = judgeGoalPlan({
+    question_restated: 'q', joins: [],
+    facts: [{ id: 'a', need: '缺口', operation: REPLEN, entity: 'order_suggestion', fields: ['live_qty'] }]
+  }).plan
+  assert.equal(r.facts[0].necessity, 'required')
+  assert.deepEqual(r.reads, [REPLEN])
 })

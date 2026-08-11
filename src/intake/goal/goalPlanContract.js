@@ -88,14 +88,30 @@ function goalPlanSchema () {
         items: {
           type: 'object',
           additionalProperties: false,
-          required: ['id', 'need', 'operation', 'entity', 'fields'],
+          required: ['id', 'need', 'operation', 'entity', 'fields', 'necessity'],
           properties: {
             id: { type: 'string' },
             need: { type: 'string', description: '呢個 fact 要答嘅係咩' },
             // ⛔ null is a first-class answer: 「nothing here carries this」.
             operation: { type: ['string', 'null'], enum: operationNames().concat([null]) },
             entity: { type: ['string', 'null'], enum: entityTypes().concat([null]) },
-            fields: { type: 'array', items: { type: 'string' }, maxItems: 8 }
+            fields: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+            /**
+             * ⛔ THE ONE THING THE MODEL IS ALLOWED TO DECIDE, AND THE REASON IT IS ALLOWED.
+             *
+             * Availability is arithmetic and the judge owns it outright. NECESSITY is not:
+             * whether 「有冇貨喺途中」 is answered by a quantity or wants the purchase order
+             * behind it is a question about what was ASKED, and no table can settle it.
+             *
+             * So the model declares it, and the judge still applies redundancy arithmetic on
+             * top — a required fact whose fields are all obtainable elsewhere is dropped
+             * regardless of what it called itself. Only `required` facts become reads.
+             */
+            necessity: {
+              type: 'string',
+              enum: ['required', 'enriching'],
+              description: 'required = 唔讀就答唔到；enriching = 讀咗會更詳細，但問題本身唔需要'
+            }
           }
         }
       },
@@ -118,7 +134,10 @@ function goalPlanSchema () {
 
 /** One fact, judged against the catalogue. The model's own opinion never reaches this. */
 function judgeFact (fact) {
-  const base = { id: String(fact.id || ''), need: String(fact.need || ''), operation: fact.operation || null, entity: fact.entity || null, fields: Array.isArray(fact.fields) ? fact.fields : [] }
+    // An absent or unrecognised necessity is treated as REQUIRED: a plan that forgets to say
+  // must not quietly shrink to nothing.
+  const necessity = fact.necessity === 'enriching' ? 'enriching' : 'required'
+  const base = { id: String(fact.id || ''), need: String(fact.need || ''), operation: fact.operation || null, entity: fact.entity || null, fields: Array.isArray(fact.fields) ? fact.fields : [], necessity }
 
   // ⛔ RULE 1, first half. No operation named ⇒ nothing in this system carries it. The
   // absence of an enum member decides this, not the model's judgement.
@@ -206,6 +225,73 @@ function scopeHazards (facts) {
 }
 
 /**
+ * ⛔ MINIMALITY, JUDGED — because a judge that does not care is why B over-plans.
+ *
+ * > **Owner: 「A plan carrying a redundant read scoring the same as a minimal one is the reason
+ * > B over-plans, and no wording will fix a judge that does not care.」**
+ *
+ * Two things are arithmetic and both are enforced here:
+ *
+ *   1. READS ARE DISTINCT OPERATIONS. Three facts against order planning are ONE read.
+ *   2. A READ MUST EARN ITS PLACE — it must contribute at least one field that no OTHER
+ *      planned operation can supply. An operation whose entire field set is obtainable from
+ *      another operation already in the plan is redundant, and saying so costs nothing.
+ *
+ * ⛔ AND ONE THING THAT IS NOT ARITHMETIC, STATED RATHER THAN PRETENDED.
+ *
+ * The Costco plan reads order planning AND purchasing. Purchasing genuinely carries fields
+ * order planning does not — `poNumber`, `status`, `items` — so rule 2 does NOT flag it, and it
+ * is right not to. The redundancy there is SEMANTIC: `incoming_qty` already answers 「有冇貨喺
+ * 途中」, so the PO detail is enrichment rather than requirement.
+ *
+ * No field-overlap arithmetic can see that. Catching it needs a MEANING declared for
+ * `incoming_qty` — which is a gap in the descriptor tables, not in this function and not in the
+ * prompt. Recorded next to the semantic-zero hole, unfixed, and NOT worked around here.
+ */
+function judgeMinimality (facts) {
+  // ⛔ ONLY REQUIRED FACTS BECOME READS. Enrichment is listed, never executed by default.
+  const usable = facts.filter((f) => (f.status === STATUS.AVAILABLE || f.status === STATUS.PARTIAL) && f.necessity === 'required')
+  const enriching = facts.filter((f) => f.necessity === 'enriching' && f.operation)
+  const planned = []
+  for (const f of usable) if (f.operation && !planned.includes(f.operation)) planned.push(f.operation)
+
+  const fieldsNeededPer = {}
+  for (const f of usable) {
+    if (!f.operation) continue
+    fieldsNeededPer[f.operation] = (fieldsNeededPer[f.operation] || []).concat(f.fields)
+  }
+
+  const redundant = []
+  for (const op of planned) {
+    const others = planned.filter((o) => o !== op)
+    const needed = fieldsNeededPer[op] || []
+    // Every field this read is for, obtainable from something else already being read?
+    const elsewhere = needed.length > 0 && needed.every((field) =>
+      others.some((o) => {
+        const tier = fieldTier(o, field)
+        return tier === FIELD_TIER.VERIFIED || tier === FIELD_TIER.PRESENT || tier === FIELD_TIER.PARTIAL_COVERAGE
+      }))
+    if (elsewhere) redundant.push(op)
+  }
+
+  const reads = Object.freeze(planned.filter((o) => !redundant.includes(o)))
+  const enrichingReads = Object.freeze(
+    Array.from(new Set(enriching.map((f) => f.operation))).filter((o) => !reads.includes(o)))
+  return Object.freeze({
+    reads,
+    readCount: reads.length,
+    /** ⛔ LISTED, NEVER EXECUTED BY DEFAULT. What a richer answer would have cost. */
+    enrichingReads,
+    factCount: facts.length,
+    redundantReads: Object.freeze(redundant),
+    /** ⛔ Every read that was dropped is named. A silent cap reads as coverage it never gave. */
+    note: redundant.length
+      ? redundant.join(', ') + ' 唔會讀：佢要嘅欄位，計劃入面另一個 operation 已經有'
+      : null
+  })
+}
+
+/**
  * Judge a raw decomposer plan.
  * @returns {{ok:boolean, reason?:string, plan?:object}}
  */
@@ -220,7 +306,10 @@ function judgeGoalPlan (raw) {
 
   const facts = raw.facts.map(judgeFact)
   const joins = (Array.isArray(raw.joins) ? raw.joins : []).map(judgeJoin)
-  const hazards = scopeHazards(facts)
+  // ⛔ HAZARDS ARE ABOUT WHAT WILL ACTUALLY BE READ. A 30-day window on an ENRICHING read that
+  // nobody is going to perform is not a limitation on the answer, and counting it would let an
+  // optional extra drag a complete plan down to 「insufficient」.
+  const hazards = scopeHazards(facts.filter((f) => f.necessity === 'required'))
 
   const missing = []
   for (const f of facts) {
@@ -233,6 +322,7 @@ function judgeGoalPlan (raw) {
   // ⛔ SUFFICIENT IS EARNED, NOT DECLARED. Every fact available, no unresolved join, no
   // hazard. The model's own `sufficient` never reaches this line.
   const sufficient = facts.every((f) => f.status === STATUS.AVAILABLE) && joins.length === 0 && hazards.length === 0
+  const minimality = judgeMinimality(facts)
 
   return {
     ok: true,
@@ -243,8 +333,13 @@ function judgeGoalPlan (raw) {
       scopeHazards: Object.freeze(hazards),
       sufficient,
       missing: Object.freeze(missing),
-      /** What A may actually read: available facts only, capped at the read bound. */
-      reads: Object.freeze(facts.filter((f) => f.status === STATUS.AVAILABLE).map((f) => f.operation))
+      /**
+       * ⛔ DISTINCT OPERATIONS. Three facts against one endpoint are ONE read, and the
+       * previous version returned it three times — a plan that looked three times as
+       * expensive as it was, with a test of mine asserting the wrong answer.
+       */
+      reads: minimality.reads,
+      minimality
     })
   }
 }
