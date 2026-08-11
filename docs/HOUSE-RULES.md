@@ -3711,3 +3711,121 @@ Owner reads 「opus falls back」        -> a fortnight of judgement about a mod
 4. **A fragility deferred as 「not today's cause」 must carry the evidence for that claim.** This
    one was dismissed on a raw call with a SHORT prompt, which did not trigger thinking. The
    dismissal was measured, and measured on the wrong case.
+
+---
+
+# HR-69 — FIVE LAYERS, EACH CORRECT ON ITS INPUT, AND THE SUM WAS A FALSE CONCLUSION ABOUT A MODEL
+
+> **Owner: 「Every layer behaved correctly on its input and the sum was a false conclusion about
+> a model — that is the most complete example of this failure mode we have.」**
+
+## THE CHAIN
+
+```
+1  ClaudeAdapter      content[0].text || ''      -> ''        on a thinking model
+2  parseDistillResponse                          -> THROW     "empty_response"
+3  loop boundary      catch (_) { return final } -> "final"   a failure printed as a completion
+4  readResultView                                -> logs      "no_plan_returned"
+5  the Owner          reads 「opus falls back」    -> a week    of judgement about a model
+```
+
+**Not one of those five is wrong about its own input.**
+
+- The adapter was asked for text and found none where it looked.
+- The parser was handed an empty string and empty is not a valid envelope.
+- The loop was told 「final」 and a loop that is told final must stop.
+- The renderer found no plan and recorded that no plan arrived.
+- The Owner read a counter that says the model returned no plan, and concluded the model
+  returned no plan.
+
+**Every step is defensible in isolation. The composition is a slander, and it cost a fortnight,
+a model rollback, and a set of briefs written on a premise that was never true.**
+
+## WHERE THE TRUTH WAS DESTROYED
+
+At layer 1, and only there. `|| ''` converted 「I do not understand this response」 into 「the
+response was empty」. Everything after that was faithful transmission of a corrupted fact —
+which is exactly why it was so hard to see. **There was no wrong reasoning anywhere to find.**
+
+Layer 3 made it invisible rather than merely wrong: by printing the failure with the success
+vocabulary, it removed the last place a reader could have noticed something was off.
+
+## THE PROPERTY THESE LAYERS LACKED
+
+Each layer preserved its own correctness and **none preserved PROVENANCE**. Not one of them
+carried 「this value is derived from something I could not read」 forward. A single bit — 「this
+is a substitute, not an observation」 — travelling from layer 1 would have stopped the chain at
+any of the four points after it.
+
+That bit is what `source: 'browser'` does in the browse result contract, what
+`declaredBy: 'reader'` does on `queryScope`, and what `filtersApplied: null` does instead of
+`[]`. **The project already knows this technique. The adapter did not use it.**
+
+## THE RULE
+
+1. **A degraded value must be labelled as degraded at the point of degradation.** Every layer
+   after it inherits the label; no layer after it can invent one.
+2. **When a conclusion about an external party (a model, a vendor, a supplier) is assembled from
+   internal counters, audit the whole chain before stating it.** The counter that names someone
+   else — `no_plan_returned` — is the one most likely to be measuring us.
+3. **「Every layer is correct」 is not evidence the system is correct.** It is the signature of
+   this failure, because a corrupted input propagates through correct layers untouched.
+4. **Look for the first substitution, not the first symptom.** Four rounds of investigation
+   examined layers 3, 4 and 5. The defect was at layer 1 the entire time, and each round's
+   finding was real — which is what kept the search one layer too high.
+
+---
+
+# HR-70 — A DETECTOR PROVEN AGAINST A CASE THAT CANNOT EXHIBIT THE DEFECT IS NOT PROVEN
+
+> **Owner: 「You measured before concluding, and measured the wrong case. A short prompt cannot
+> trigger thinking, so the probe could only have returned the reassuring answer.」**
+
+**Beside HR-47.** That rule is about a check that fires so often it stops being read. This is its
+twin: **a check that CANNOT fire, run once, and taken as evidence of absence.**
+
+## THE INSTANCE
+
+`ClaudeAdapter:167`'s single-block read was flagged during the opus round and then dismissed:
+
+> *「Not today's cause (a raw call returned a single text block), but a real fragility.」*
+
+The dismissal was **measured**, which is why it was believed. It was measured with a
+**twenty-word prompt**. A reasoning model does not emit a thinking block for a trivial question,
+so the probe was structurally incapable of producing the failing case. It could only ever have
+returned the reassuring answer.
+
+The same probe against a production-shaped prompt returns `type=thinking, hasText=false` on the
+first attempt.
+
+## WHY THIS IS WORSE THAN NOT CHECKING
+
+An unchecked suspicion stays open. **A checked one is closed, and it is closed with the
+authority of a measurement.** The note said 「not today's cause」 in the confident voice that only
+evidence earns, and three further rounds of investigation routed around it.
+
+## THE RULE
+
+1. **Before trusting a negative result, ask whether the probe COULD have produced a positive
+   one.** If the answer is no, the result is not evidence.
+2. **Reproduce the suspected defect first, then show the fix removes it.** A probe that has never
+   once shown the failure has not been calibrated, only executed.
+3. **Record the CASE a dismissal was measured on, not just that it was measured.** 「A raw call
+   returned a single text block」 was true and omitted the only fact that mattered: the prompt was
+   twenty words long.
+4. **A deferred fragility must carry its own falsification.** 「This would matter if X」 — then
+   test X, or say plainly that X was not tested.
+
+---
+
+# THE ROLLBACK, RESTATED
+
+**opus-5 was rolled back because WE CANNOT READ IT YET — not because it is worse.**
+
+Stated the other way for a week, including in the rollback commit itself, on the strength of
+counters that were measuring our own adapter. The rollback remains correct: the system genuinely
+could not use the model. The reason given for it was wrong.
+
+The adapter now reads every block and reports an unreadable response as an error. Whether opus
+returns is a separate decision, and the four-cell measurement that follows the fix is the first
+one that will be measuring **the model** rather than **our reader**.
