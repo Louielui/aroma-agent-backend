@@ -25,6 +25,22 @@
  * count it. See HR-12.
  * ══════════════════════════════════════════════════════════════════════════════
  *
+ * ── ⛔ 「網唔係閘」 IS NEVER A REASON TO LOOSEN THIS ───────────────────────────
+ *
+ * Owner ruling, 2026-08-11. A0 (the reasoning planner) sits ABOVE this file, and the evidence
+ * layer is being re-described as a NET rather than a GATE. That re-description is about
+ * EXPECTATION, not about strength:
+ *
+ * > **The net sits UNDER the brain. It does not replace the railings.**
+ *
+ * The distinction is real — a gate stops things arriving, a net catches what falls through —
+ * and it was made because the gates could not catch 「給我 Aroma System 的 website」: a gate's
+ * input is an ANSWER, so it can never see a question that was never understood.
+ *
+ * ⛔ **BUT NOT ONE LINE OF THIS FILE WEAKENS BECAUSE OF IT.** Same code, same position, same
+ * refusals. If anyone ever cites 「it's a net now, not a gate」 as grounds for relaxing a check
+ * here, that is the reading to refuse, and this paragraph is the refusal.
+ *
  * ── WHAT IT DOES NOT DO, STATED SO IT IS NOT MISTAKEN FOR MORE ───────────────
  * It does not detect an unmeasured assumption. Detecting an absence in reasoning is not
  * possible from a record — the INNER JOIN diagnosis had no marker anywhere, because nobody

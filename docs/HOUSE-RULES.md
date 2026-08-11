@@ -3159,3 +3159,46 @@ they ranged over a single thing. All four survived:
 Zero disagreements out of 22 is a suspicious number and is reported as such. The guard against
 deference is that the four were picked before reading, not after — and reading is what
 overturned them.
+
+---
+
+### HR-70 — search by OUTPUT, not by name
+
+Recorded 2026-08-11 at the Owner's instruction. **Cited in conversation as 「HR-71」 on the same
+day; it had never actually been written down. This is it, at the next free number.**
+
+> **Before designing anything, ask what already PRODUCES this output — under any name, in any
+> vocabulary. A name is not a search key. What a thing returns is.**
+
+#### Why it needed writing
+
+This project has built a second copy of something at least four times: a second browser engine,
+a second evidence vocabulary, a second reasoning loop, a second classifier. Each time the
+duplicate was written because a search for the NAME found nothing.
+
+⛔ **The rule then ate its own best example.** Asked to design 「A0, a general reasoning
+planner」, a search for 「planner」 finds almost nothing. A search for the OUTPUT — *what decides
+what a question needs* — finds:
+
+| output | what already produces it | name it wears |
+|---|---|---|
+| goal → required facts → what is unavailable | `intake/goal/goalDecomposer.js` | 「B, the goal decomposer」 |
+| reason → read → observe → final | `intake/reasoningLoop.js` | 「a bounded loop」 |
+| which world does he mean | `intake/ownerSourceIntentResolver.js` | 「a resolver」 |
+| route + which sources answer it | `intake/turnRouter.js` | 「a router」 |
+| capability → worker → dispatch | `workers/registry.js` + `dispatch/dispatcher.js` | 「a registry」 |
+| typed capability contracts, versioned, risk-tiered | `capability/registry.js` | 「a registry」 — **a different one** |
+
+**A0 was ~70% built under four names, and the last two rows are themselves a duplicate pair
+that this very search found.** Nothing named 「planner」 exists; nearly all of a planner does.
+
+#### How to apply it
+
+Search for the RETURN VALUE and the decision, never the noun:
+「what decides X」, 「what returns a list of Y」, 「what turns a sentence into Z」. Grep for the
+shape of the output — enum values, field names, status strings — because those survive renaming
+and the module name does not.
+
+⛔ **And when the search finds something 70% right, the answer is PROMOTION, not a new module.**
+Building the general version fresh, above six existing deciders, would be the fifth second copy
+and the largest — because it would sit on top of everything the others do.
