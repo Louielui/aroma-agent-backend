@@ -146,24 +146,39 @@ test('the hint cannot change the lane, the mode, or anything executable', async 
 test('the reply reports the provider that REALLY served it, from telemetry', async () => {
   // the pipeline fills opts.telemetry; the route reads the truth from there, not from
   // what the browser asked for
+  // ⛔ `servedBy` NOW CARRIES THE MODEL ID, NOT THE PROVIDER FAMILY (HR-62). What this test
+  // protects is unchanged — it reports who ANSWERED, not who was asked — and it protects it
+  // at finer resolution, because 「claude」 was the label that hid haiku for a fortnight.
   const spy = async (m, a, h, opts) => {
-    opts.telemetry.provider = 'claude'      // the fallback answered
+    opts.telemetry.provider = 'claude' // the fallback answered
+    opts.telemetry.model = 'claude-haiku-4-5-20251001'
     opts.telemetry.fallbackUsed = true
     return { mode: 'chat', talkOnly: true, reply: 'ok' }
   }
   const r = await post(appWith(spy), { message: 'hi', interactionMode: 'chat', providerHint: 'openai' })
   assert.equal(r.status, 200)
-  assert.equal(r.json.servedBy, 'claude', 'reports who answered, not who was asked')
+  assert.equal(r.json.servedBy, 'claude-haiku-4-5-20251001', 'reports what answered, not what was asked')
   assert.equal(r.json.fallbackUsed, true)
 
-  // and a straight success reports the provider that served it
+  // and a straight success reports the model that served it
   const spy2 = async (m, a, h, opts) => {
     opts.telemetry.provider = 'openai'
+    opts.telemetry.model = 'gpt-5.6-terra'
     return { mode: 'chat', talkOnly: true, reply: 'ok' }
   }
   const r2 = await post(appWith(spy2), { message: 'hi', interactionMode: 'chat', providerHint: 'openai' })
-  assert.equal(r2.json.servedBy, 'openai')
+  assert.equal(r2.json.servedBy, 'gpt-5.6-terra')
   assert.equal(r2.json.fallbackUsed, false)
+
+  // ⛔ THE PROVIDER ALONE IS NO LONGER ENOUGH. A pipeline that reports the family but not the
+  // model is recorded as UNKNOWN rather than downgraded to 「claude」 — the substitute this
+  // change exists to remove.
+  const spy4 = async (m, a, h, opts) => {
+    opts.telemetry.provider = 'claude'
+    return { mode: 'chat', talkOnly: true, reply: 'ok' }
+  }
+  const r4 = await post(appWith(spy4), { message: 'hi', interactionMode: 'chat', providerHint: 'claude' })
+  assert.equal(r4.json.servedBy, null)
 
   // no telemetry at all ⇒ honest null, never a guess
   const spy3 = async () => ({ mode: 'chat', talkOnly: true, reply: 'ok' })
