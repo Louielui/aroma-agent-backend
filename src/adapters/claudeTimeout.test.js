@@ -22,12 +22,12 @@ const thrower = (err) => async () => { throw err }
 
 test('*** ⛔ a timeout is FLAGGED as a timeout, not filed as a network failure ***', async () => {
   await withEnv(async () => {
-    const axiosTimeout = Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' })
+    const axiosTimeout = Object.assign(new Error('timeout of 120000ms exceeded'), { code: 'ECONNABORTED' })
     const a = new ClaudeAdapter({ transport: thrower(axiosTimeout) })
     const e = await a.complete('hi').then(() => null, (x) => x)
     assert.ok(e, 'it still throws — this is not a silent success')
     assert.equal(e.isTimeout, true, '⛔ the caller can tell 「she was still working」 from 「it failed」')
-    assert.equal(e.timeoutMs, 30000, 'and the number it waited is quotable to the Owner')
+    assert.equal(e.timeoutMs, 120000, 'and the number it waited is quotable to the Owner')
   })
 })
 
@@ -59,7 +59,7 @@ test('*** ⛔ a real failure is NOT dressed up as patience ***', async () => {
 
 test('*** the key never appears in a timeout error ***', async () => {
   await withEnv(async () => {
-    const a = new ClaudeAdapter({ transport: thrower(Object.assign(new Error('timeout of 30000ms exceeded'), { code: 'ECONNABORTED' })) })
+    const a = new ClaudeAdapter({ transport: thrower(Object.assign(new Error('timeout of 120000ms exceeded'), { code: 'ECONNABORTED' })) })
     const e = await a.complete('hi').then(() => null, (x) => x)
     assert.equal(/\bk\b/.test(e.message.replace(/timeout|exceeded|Claude|API|network|error|of|ms/gi, '')), false)
   })

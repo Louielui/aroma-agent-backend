@@ -10,12 +10,29 @@ const { assertResponseFormat } = require('./adapterErrors')
  * Named rather than inlined because it is quoted to the Owner when it is reached — 「超過 30
  * 秒未答完」 is only checkable if the number has one home.
  *
- * ⚠ ONE observed breach so far (opus-5, 2026-08-11). One observation is direction, not rate,
- * and this value is deliberately NOT raised on the strength of it. The Owner's ruling is that
- * it must tell the truth before it is made longer; a longer timeout that still reports
- * 「failed」 tells the same untruth later.
+ * ⛔ 30000 -> 120000, and only after it started telling the truth. The Owner's ruling was that
+ * order: a longer timeout that still reports 「failed」 tells the same untruth later, so the
+ * `isTimeout` flag shipped first and the ceiling moved second.
+ *
+ * MEASURED before choosing, single call, 8192-token budget, same prompt and schema:
+ *
+ *   claude-opus-5   7.6s · 30.9s · 46.8s · 65.1s   (thinking+text on all but the shortest)
+ *   haiku-4-5       7.8s
+ *
+ * 120s is ~1.85x the slowest observation. 90s was rejected: at 1.38x it sits inside the noise
+ * of a four-point sample whose range spans eight-fold, and it would have risked repeating the
+ * whole exercise. It also reuses the startup smoke test's existing ceiling rather than adding a
+ * second number to the system.
+ *
+ * ⚠ THE TAIL IS NOT CHARACTERISED. Four points are a range, not a distribution, and latency
+ * tracks THINKING, which tracks question difficulty — an axis sampled at three values. A breach
+ * now reports itself as `isTimeout` rather than as a failure, which is what makes an
+ * under-estimate survivable.
+ *
+ * ⚠ AND NO CEILING FIXES `Overloaded`. The provider's own overload is a separate arrival shape,
+ * observed once, and it needs a retry policy this system does not have.
  */
-const REQUEST_TIMEOUT_MS = 30000
+const REQUEST_TIMEOUT_MS = 120000
 
 /**
  * Did this fail because we stopped waiting? Axios reports its own timeout as `ECONNABORTED`
