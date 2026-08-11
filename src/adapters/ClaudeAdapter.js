@@ -29,6 +29,65 @@ function isTimeout (err) {
 }
 
 /**
+ * Block types this adapter knows how to see. Anything else is an ERROR, never silence.
+ *
+ * `thinking` and `redacted_thinking` are a reasoning model's private working. They are not the
+ * answer and are never returned as one — but they are EXPECTED, so encountering them is not a
+ * failure by itself. Running out of budget inside them is.
+ */
+const TEXT_BLOCK = 'text'
+const THINKING_BLOCKS = Object.freeze(['thinking', 'redacted_thinking'])
+
+/**
+ * ⛔ EVERY BLOCK, AND AN UNREADABLE RESPONSE IS AN ERROR — NOT AN EMPTY STRING.
+ *
+ * This was `data.content?.[0]?.text || ''`: the FIRST block, assumed to be text, with `|| ''`
+ * catching everything it did not understand.
+ *
+ * `claude-opus-5` returns a `thinking` block. Measured, same prompt, same schema, same
+ * `max_tokens: 2048`:
+ *
+ *   opus-5  stop: max_tokens  out: 2048  content[0] type=thinking  hasText=false
+ *   haiku   stop: end_turn    out:  633  content[0] type=text      len=1120
+ *
+ * So the adapter yielded `''`, the parser said `empty_response`, the loop boundary printed that
+ * failure as a completed answer (HR-67), the renderer recorded 「the model returned no plan」 —
+ * and a model was characterised for a week on the strength of it. Five layers, each correct on
+ * its input, converting 「we cannot read this」 into 「the model is worse」. (HR-68, HR-69.)
+ *
+ * ⛔ `|| ''` IS THE SAME SHAPE AS `|| []` AND AS A SILENT `NO_EVIDENCE`: silence in the place
+ * where the truth was 「I could not read this」. An adapter that cannot understand a response
+ * must say so, loudly, with the shape it saw.
+ */
+function extractText (data, model) {
+  const blocks = Array.isArray(data && data.content) ? data.content : null
+  if (!blocks) {
+    const e = new Error('Claude response carried no content array — cannot read this response')
+    e.unreadableResponse = true
+    throw e
+  }
+
+  const kinds = blocks.map((b) => (b && typeof b.type === 'string') ? b.type : 'unknown')
+  const text = blocks
+    .filter((b) => b && b.type === TEXT_BLOCK && typeof b.text === 'string')
+    .map((b) => b.text)
+    .join('')
+
+  if (text) return text
+
+  // ⛔ NO TEXT. Say WHICH of the reasons it was, because they need different responses.
+  const onlyThinking = kinds.length > 0 && kinds.every((k) => THINKING_BLOCKS.includes(k))
+  const e = new Error(onlyThinking
+    // The most actionable message in this file: the budget is the fix, not the model.
+    ? `Claude returned only reasoning blocks and no answer (stop_reason=${data.stop_reason || 'unknown'}, model=${model || 'unknown'}) — the token budget was spent thinking`
+    : `Claude response had no readable text block (blocks: ${kinds.join(', ') || 'none'}, stop_reason=${data.stop_reason || 'unknown'})`)
+  e.unreadableResponse = true
+  e.blockKinds = kinds
+  e.spentOnThinking = onlyThinking
+  throw e
+}
+
+/**
  * ClaudeAdapter — concrete LLMAdapter implementation for Anthropic Claude.
  *
  * Security rules (conditions 1–4):
@@ -210,7 +269,7 @@ class ClaudeAdapter extends LLMAdapter {
     const latencyMs = Date.now() - t0
 
     const data = response.data
-    const text = data.content?.[0]?.text || ''
+    const text = extractText(data, this._model)
     const usage = {
       inputTokens: data.usage?.input_tokens || 0,
       outputTokens: data.usage?.output_tokens || 0,

@@ -19,7 +19,11 @@ function makeTransport(responseData) {
   return { calls, post };
 }
 const FAKE_API_DATA = {
-  content: [{ text: '{"ok":true}' }],
+  // ⛔ `type` IS PART OF THE REAL SHAPE. This fixture omitted it, which was harmless while the
+  // adapter read `content[0].text` blindly and became a failure the moment it started checking.
+  // The API sets `type` on every block; a fixture that does not is modelling a response the
+  // provider never sends, and it was the incomplete fixture that made the blind read look safe.
+  content: [{ type: 'text', text: '{"ok":true}' }],
   usage: { input_tokens: 5, output_tokens: 7 },
   model: 'test-model',
 };
