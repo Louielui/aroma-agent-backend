@@ -38,10 +38,14 @@ function recAdapter (text, extra = {}) {
 // says nothing about the contract under test. Pinned so these keep proving what they were
 // written to prove. See a4FinalObligation.test.js for the gate's own coverage.
 process.env.A4_KNOWLEDGE_ROUTING = 'off'
-test('CHAT lane requests maxTokens 2048', async () => {
+// ⛔ 8192, NOT 2048 (Owner decision). On a reasoning model this bound caps THINKING, not
+// length: opus-5 at 2048 returned stop_reason max_tokens with 2048 output tokens of thinking
+// and no answer at all. The lane constant moved; the contract this test protects — that the
+// CHAT lane asks for its own limit and the other lanes do not inherit it — did not.
+test('CHAT lane requests maxTokens 8192', async () => {
   const a = recAdapter(CHAT)
   await processIntake('聊天', a, [], { demo: true, interactionMode: 'chat' })
-  assert.equal(a.calls[0].opts.maxTokens, 2048)
+  assert.equal(a.calls[0].opts.maxTokens, 8192)
 })
 
 test('PROPOSAL lane still requests 1024', async () => {
@@ -77,7 +81,7 @@ test('EMAIL_DRAFT lane is untouched: U1 early-return, U1_MAX_TOKENS still 1024',
   const a = { async complete (p, o) { calls.push({ opts: o }); return inner.complete(p, o) } }
   const res = await processIntake('email rob', a, [], { u1DraftShadow: true })
   assert.equal(res.stage, 'SHADOW_ONLY') // proves the U1 early return ran
-  assert.equal(calls[0].opts.maxTokens, 1024) // U1 asked for its own constant, not 2048
+  assert.equal(calls[0].opts.maxTokens, 1024) // U1 asked for its own constant, not the chat lane's
 })
 
 test('the ClaudeAdapter default limit is untouched (still 1024 when no maxTokens is given)', () => {
@@ -108,7 +112,8 @@ test('ClaudeAdapter maps stop_reason → stopReason (and null when absent)', () 
 const TRUNCATED = '```json\n{"intent":"chit_chat","mode":"chat","reply":"我而家未能直接修改程式碼'
 
 test('fence_malformed from a TRUNCATED reply logs exactly the 8 forensic fields', async () => {
-  const a = recAdapter(TRUNCATED, { stopReason: 'max_tokens', usage: { inputTokens: 7000, outputTokens: 2048, totalTokens: 9048 } })
+  const a = recAdapter(TRUNCATED, // A genuine truncation means the output REACHED the cap, so this must track the constant.
+  { stopReason: 'max_tokens', usage: { inputTokens: 7000, outputTokens: 8192, totalTokens: 15192 } })
   let thrown = null
   try {
     await processIntake('你可以直接幫我修改呢個 bug 嗎?', a, [], { demo: true, interactionMode: 'chat' })
@@ -123,8 +128,8 @@ test('fence_malformed from a TRUNCATED reply logs exactly the 8 forensic fields'
   // the error carries the pipeline's own requestId, which correctly wins over ctx
   assert.ok(typeof e.correlationId === 'string' && e.correlationId.length > 0, 'correlationId recorded')
   assert.equal(e.interactionMode, 'chat')
-  assert.equal(e.configuredMaxTokens, 2048)
-  assert.equal(e.outputTokens, 2048)
+  assert.equal(e.configuredMaxTokens, 8192)
+  assert.equal(e.outputTokens, 8192)
   assert.equal(e.rawTextChars, TRUNCATED.length)
   assert.equal(e.rawTextBytes, Buffer.byteLength(TRUNCATED, 'utf8'))
   assert.ok(e.rawTextBytes > e.rawTextChars, 'CJK bytes exceed chars — true byte size recorded')
