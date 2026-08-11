@@ -232,6 +232,32 @@ $waited = [int][Math]::Round($sw.Elapsed.TotalSeconds)
 if ($ok) {
   if ($waited -gt 15) { Write-Log ("health probe matched after start — SLOW: " + $waited + "s (median is ~1s)") }
   else { Write-Log 'health probe matched after start' }
+
+  # ── STARTUP SMOKE: one real chat turn per provider, before this is handed back ──────────
+  #
+  # /health proves the PROCESS is up. It does not prove she can answer. On 2026-08-10 those
+  # two facts came apart: A4_KNOWLEDGE_ROUTING was committed 45 seconds after the running
+  # process started, and it made every Claude chat turn return HTTP 400. /health would have
+  # been green the whole time.
+  #
+  # ⛔ IT NEVER BLOCKS THE HAND-BACK. Owner ruling, and the L2-1 shape is the reason: a gate
+  # that can refuse to start can refuse for a reason that is not real, and then the tool that
+  # would fix it is the one that will not run. The recorded history of that class here is one
+  # false positive and zero true positives. So this reports and gets out of the way — the
+  # system is handed back either way, with the failure said out loud.
+  #
+  # Costs two model calls per start. That is the price of not discovering a dead chat lane by
+  # typing into it.
+  Write-Log 'startup smoke: one chat turn per provider'
+  $smoke = & node (Join-Path $Repo 'scripts\launcher\startupSmoke.js') 2>&1
+  foreach ($l in $smoke) { Write-Log ("smoke: " + $l) }
+  $verdict = $smoke | Where-Object { $_ -match 'STARTUP_SMOKE_VERDICT' } | Select-Object -Last 1
+  if ($verdict -and $verdict -match '"outcome":"FAIL"') {
+    $saying = '香香啟動咗，但有一邊答唔到。系統照樣開咗，詳情睇 C:\Aroma\xiangxiang.log。'
+    if ($verdict -match '"saying":"([^"]*)"') { $saying = $Matches[1] }
+    Notify-Owner '啟動咗，但答唔到' $saying
+  }
+
   if ($Mode -eq 'Open') { Start-Process $Url }
 } elseif ($proc -and $proc.HasExited) {
   # ⛔ AN UNREADABLE CODE MUST SAY SO. If EnableRaisingEvents failed above, ExitCode is empty
