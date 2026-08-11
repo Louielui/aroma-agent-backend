@@ -5,6 +5,30 @@ const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
 
 /**
+ * ⛔ THE CEILING ON OUR PATIENCE, NOT ON HER THINKING.
+ *
+ * Named rather than inlined because it is quoted to the Owner when it is reached — 「超過 30
+ * 秒未答完」 is only checkable if the number has one home.
+ *
+ * ⚠ ONE observed breach so far (opus-5, 2026-08-11). One observation is direction, not rate,
+ * and this value is deliberately NOT raised on the strength of it. The Owner's ruling is that
+ * it must tell the truth before it is made longer; a longer timeout that still reports
+ * 「failed」 tells the same untruth later.
+ */
+const REQUEST_TIMEOUT_MS = 30000
+
+/**
+ * Did this fail because we stopped waiting? Axios reports its own timeout as `ECONNABORTED`
+ * with a message naming the value; `ETIMEDOUT` is the socket-level equivalent. Both are matched
+ * because they mean the same thing to the Owner, and neither means the model failed.
+ */
+function isTimeout (err) {
+  if (!err) return false
+  if (err.code === 'ECONNABORTED' || err.code === 'ETIMEDOUT') return true
+  return typeof err.message === 'string' && /timeout of \d+ms exceeded/i.test(err.message)
+}
+
+/**
  * ClaudeAdapter — concrete LLMAdapter implementation for Anthropic Claude.
  *
  * Security rules (conditions 1–4):
@@ -152,14 +176,36 @@ class ClaudeAdapter extends LLMAdapter {
       response = await this._post(
         `${this._apiBase}/messages`,
         body,
-        { headers, timeout: 30000 }
+        { headers, timeout: REQUEST_TIMEOUT_MS }
       )
     } catch (err) {
       // Re-throw without leaking the API key in the error message
       const safeMsg = err.response
         ? `Claude API error ${err.response.status}: ${JSON.stringify(err.response.data)}`
         : `Claude API network error: ${err.message}`
-      throw new Error(safeMsg)
+      const e = new Error(safeMsg)
+
+      /**
+       * ⛔ A TIMEOUT IS NOT A FAILURE. IT IS US DECIDING TO STOP WAITING.
+       *
+       * > **Owner: 「『佢仲喺度諗』 is a different fact from 『失敗咗』 and only one of them is
+       * > true. I would rather wait than be told nothing happened.」**
+       *
+       * Until now a timeout arrived as `Claude API network error: timeout of 30000ms
+       * exceeded` — the same shape as a refused schema, a dropped connection and an invalid
+       * key. Every one of those means the model produced nothing. A timeout means the model
+       * was still working and WE gave up: the only party that failed was the caller's
+       * patience, and the answer may well have completed a second later.
+       *
+       * Flagged here so the layers above can say which happened. ⛔ AND THE FLAG IS SET
+       * BEFORE ANY THOUGHT OF RAISING THE CEILING: a longer timeout that still reports
+       * 「failed」 just tells the same untruth later.
+       */
+      if (isTimeout(err)) {
+        e.isTimeout = true
+        e.timeoutMs = REQUEST_TIMEOUT_MS
+      }
+      throw e
     }
     const latencyMs = Date.now() - t0
 
