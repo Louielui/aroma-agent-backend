@@ -429,6 +429,21 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           ? Object.assign({}, result, {
               lane: interactionMode,
               servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null,
+              /**
+               * ⛔ PER CALL, BECAUSE ONE TURN CAN INVOLVE MORE THAN ONE MODEL.
+               *
+               * `servedBy` above names the model that produced the ANSWER. Once routing is
+               * deterministic and authoring runs a different model, one label describes
+               * neither — HR-62 rebuilt deliberately, which is why the Owner made this a
+               * precondition rather than a nicety.
+               *
+               * The routing entry appears with `deterministic: true` and `model: null`. That
+               * null means 「no model was asked」; an answer entry's null means 「a model was
+               * asked and we cannot say which」. They are told apart by `deterministic`, never
+               * by absence — a list that omitted the routing step would read as the second
+               * when it was the first.
+               */
+              calls: (telemetry && Array.isArray(telemetry.calls)) ? telemetry.calls : [],
               fallbackUsed: telemetry.fallbackUsed === true
             })
           : result

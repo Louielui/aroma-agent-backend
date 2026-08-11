@@ -273,6 +273,34 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
 
+  /**
+   * ⛔ THE ROUTING DECISION IS A FIRST-CLASS ENTRY, NOT AN ABSENT ONE.
+   *
+   * > **Owner: 「A list missing its routing entry reads as 『we do not know』 rather than
+   * > 『nothing was asked』 — and that is `|| ''` one layer up.」**
+   *
+   * A turn can involve more than one model. A single turn-level label describes none of them
+   * (HR-62), so the turn reports a LIST — and the deterministic step has to appear in it, or a
+   * reader counts the model calls and silently concludes the routing was one of them.
+   *
+   * `model: null` here means 「no model was asked」, which is a FACT. Elsewhere in this file
+   * `model: null` means 「we could not find out」. They are told apart by `deterministic`, never
+   * by the absence of a value — the distinction HR-68 was about.
+   */
+  // ⛔ `opts.telemetry`, NOT `tel`. The `tel` alias is declared ~600 lines below this point, so
+  // reading it here is a temporal-dead-zone throw on EVERY turn — and one that only appears at
+  // runtime, since requiring the module never executes the function body.
+  const routeTel = (opts && opts.telemetry && typeof opts.telemetry === 'object') ? opts.telemetry : null
+  if (routeDecision && routeTel) {
+    routeTel.calls = (routeTel.calls || []).concat([{
+      role: 'route',
+      deterministic: true,
+      model: null,
+      route: routeDecision.route || null,
+      confidence: routeDecision.confidence || null
+    }])
+  }
+
   // ── STEP 1b: THE UTILITY ROUTE — LIVE, and it answers before anything else ─
   //
   // Placed AFTER the red-line check (which must stay first — a message carrying a bank
@@ -873,6 +901,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // the configured id; MockAdapter returns 'mock'), so an absent value here means the result
     // shape changed and is recorded as absent rather than filled in with a plausible guess.
     tel.model = (result && typeof result.model === 'string' && result.model) ? result.model : null
+
+    /**
+     * ⛔ ONE ENTRY PER CALL. `tel.provider`/`tel.model` describe the LAST provider that
+     * returned, which was adequate while a turn used one model and describes nothing once it
+     * uses two (HR-62). The list is what the Owner reads on the card.
+     *
+     * ⛔ AND ABSENT STAYS ABSENT: an entry whose model could not be read carries `null` with
+     * `deterministic: false`, which says 「a model was asked and we do not know which」 — a
+     * different fact from the routing entry's `null`, and the two must never collapse.
+     */
+    tel.calls = (tel.calls || []).concat([{
+      role: 'answer',
+      deterministic: false,
+      provider: name || null,
+      model: tel.model,
+      ms: (result && Number.isFinite(result.latencyMs)) ? result.latencyMs : null
+    }])
     // EXTERNAL READ CONTEXT, resolved for the provider that produced THIS answer. noteProvider
     // is called once per provider that returned, so the last call — the one whose reply is
     // used — is the one that lands here. A GPT answer is correctly false (GPT is never sent
