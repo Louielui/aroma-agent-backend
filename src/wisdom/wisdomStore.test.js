@@ -472,8 +472,15 @@ test('*** NO_AUTOMATIC_RECLAIM_PATH — the reclamation machinery is gone, not m
   assert.ok(/EEXIST/.test(acquire) && /lock timeout/.test(acquire), 'it waits, then refuses')
 
   // ⛔ AND THE HONESTY REQUIREMENT: the file must not claim recovery it does not do.
-  // Comment prose wraps across lines, so continuation markers are flattened before matching.
-  const prose = src.replace(/\n\s*\*\s?/g, ' ')
+  /**
+   * Comment prose wraps across lines, so continuation markers are flattened before matching.
+   *
+   * ⛔ CRLF FIRST. `/\n\s*\*\s?/` leaves the `\r` behind on a Windows checkout, so
+   * `…GOVERNED\r MAINTENANCE ONLY` never matches a literal space and the assertion failed
+   * while the prose it demands was sitting in the file, correct, all along. Same family as
+   * the earlier CRLF finding; `agent/ownerDecisionCard.test.js` already normalises first.
+   */
+  const prose = src.replace(/\r\n/g, '\n').replace(/\n\s*\*\s?/g, ' ')
   assert.ok(/CRASH RECOVERY = NOT IMPLEMENTED/.test(prose), 'crash recovery status is stated in the source')
   assert.ok(/MANUAL \/ FUTURE GOVERNED MAINTENANCE ONLY/.test(prose), 'and recovery is named as future governed maintenance')
 })
