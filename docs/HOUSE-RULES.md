@@ -3144,3 +3144,49 @@ from the goal; the name lives three directories away and under different vocabul
    asks the reviewer to notice an absence.
 4. **A second copy is worse than the original by default** (HR-58), so the burden is on the new
    thing to justify existing — never on the reviewer to discover the old one.
+
+---
+
+# HR-60 — A BUDGET IN DOLLARS, APPROVED ALL WEEK, WITH NOTHING THAT CONVERTS TOKENS TO DOLLARS
+
+> **Owner: 「Cost caps are meaningless if nothing can convert tokens to dollars, and I have been
+> approving budgets in dollars all week.」**
+
+## THE GAP
+
+Asked for the per-query cost of one model call, the honest answer was tokens and wall time and
+**no price** — because there is no pricing table anywhere in this repository. A grep for
+`per_1m`, `pricing`, `USD_PER`, `costPer` returns two unrelated hits inside `paymentStop.js`.
+
+Every paid phase this month was authorised in dollars: 「hard ceiling US$2.00」, 「max 24 paid
+requests」, 「≤5 additional paid requests」. Those ceilings were enforced by **counting requests**
+and by the author's arithmetic in a report — never by the system, which cannot perform the
+conversion at all.
+
+## WHY THIS IS A GAP AND NOT A MISSING FEATURE
+
+A request count is not a cost. Requests differ by an order of magnitude in both directions:
+
+- a decomposer call measured **1,113 in / 383 out**
+- the same call after one prompt change measured **1,416 in / 401 out**
+- a reasoning model can bill invisible reasoning tokens as output, which is why
+  `OpenAIAdapter` surfaces `reasoningTokens` separately
+
+**So 「four calls」 bounds nothing.** The ceiling that was actually approved — dollars — is the one
+quantity the system has never been able to compute, and every report that stated one was doing
+arithmetic no code could check.
+
+> **A limit expressed in a unit the system cannot measure is not a limit. It is a hope with a
+> number attached, and the number makes it look enforced.**
+
+## THE RULE
+
+1. **A cost ceiling must be expressed in a unit the system can measure**, or it is not a ceiling.
+2. **Tokens are the measurable unit today.** Until a priced table exists, budgets stated in
+   dollars must be accompanied by the token equivalent, and the conversion shown.
+3. **A price table is per-model and goes stale.** It carries the model id and the date it was
+   taken from the provider's published rates, and an unknown model prices as **unknown** — never
+   as the nearest known model, which is HR-56's nearest-neighbour substitution wearing a price
+   tag.
+4. **Report tokens even once a price exists.** The price is a conversion; the measurement is the
+   tokens, and only one of the two is a fact about what happened.
