@@ -3351,3 +3351,57 @@ choice anyone made about which model should draft an executable proposal.
 4. **State which model served a turn, in the turn.** `servedBy` records the PROVIDER (`claude`),
    not the model (`claude-haiku-4-5-20251001`). Had it recorded the model string, the Owner would
    have seen this on day one instead of after a fortnight.
+
+---
+
+# HR-63 — A GATE THAT FIRES ON EVERY EDIT IS A GATE PEOPLE LEARN TO STEP OVER
+
+> **Owner: 「Write it down as a defect rather than a note in a commit message. A gate that fires
+> on every edit to a file is a gate people learn to step over, and I would rather fix the file's
+> line endings once than have you explain the exception each time.」**
+
+## WHAT HAPPENED
+
+`git diff --cached --check` failed on every added line of `src/demo/assets/app.js`, reporting
+「trailing whitespace」 on lines that had none. The cause was line endings: that file was stored
+in git with CRLF, `--check` inspects ADDED lines only, and the CR at end of line reads as
+trailing whitespace.
+
+**Measured: of 729 tracked text files, exactly ONE was CRLF.** Every other file uses LF. So this
+was not a repository-wide convention with an awkward edge — it was a single file out of step,
+and it happened to be the largest interface file in the project, edited more often than most.
+
+## WHY IT IS A DEFECT AND NOT AN INCONVENIENCE
+
+The first response to it was the wrong one, and it is worth keeping: the exception was explained
+in a commit message. 「The gate fired, here is why it does not count.」
+
+That is a defect-shaped response. It works once. The second time it is shorter. By the fifth
+time nobody reads the explanation, and the check has been converted from **a gate into a
+formality** — still running, still red, still passed over. At that point a real trailing-space
+defect in that file would be indistinguishable from the noise, because the reader has already
+learned that red on this file means nothing.
+
+> **A check that is always wrong about one thing does not stay a check that is right about
+> everything else. It becomes a check that is ignored.**
+
+And the cost of fixing was one command against one file.
+
+## THE FIX, BOTH HALVES
+
+1. **The instance.** `src/demo/assets/app.js` normalised to LF — one whole-file diff, once.
+   `git diff --cached --check` now exits 0.
+2. **The class.** The repository had **no `.gitattributes` at all** and relied on whatever
+   `core.autocrlf` each machine happened to have. `* text=auto eol=lf` now pins it, so the same
+   drift cannot reach another file and require the same explanation again.
+
+## THE RULE
+
+1. **When a check fires falsely, fix the cause or remove the check.** Explaining it is the
+   third option and it is the one that decays.
+2. **Measure how widespread the exception is before accepting it.** 「This file is CRLF」 sounds
+   like a convention; 「one file out of 729」 is a defect, and the two are one command apart.
+3. **A repository with no `.gitattributes` has no line-ending policy** — it has whatever each
+   contributor's git was configured with, which is a policy nobody chose and nobody can read.
+4. **The first explanation is the warning sign.** If a gate needs a note in a commit message to
+   be understood as passed, the next commit will need one too.
