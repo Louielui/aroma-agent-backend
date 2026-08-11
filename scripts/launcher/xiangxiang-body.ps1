@@ -95,7 +95,26 @@ $env:ANTHROPIC_API_KEY = $key
 $env:HUB_TOKEN         = $hub
 $env:CONVERSATION_DEMO = 'on'
 $env:LLM_PROVIDER      = 'claude'
-$env:CLAUDE_MODEL      = 'claude-haiku-4-5-20251001'
+# ── THE CHAT AND EXECUTE MODEL (Owner GO 2026-08-10) ──────────────────────────────────────
+#
+# claude-haiku-4-5-20251001 was the smallest model on the account, and it was in this slot by
+# default rather than by decision. It answered the chat lane AND the proposal / work-order
+# lane — the path that produces the thing the Owner types EXECUTE against — because the
+# picker's hint reaches chat only and every other lane returns 'claude' regardless.
+#
+# The Owner spent a fortnight judging the system on it while believing the router had sent
+# chat to GPT. It had not: the picker defaults to 'claude' and its hint is read BEFORE the
+# MULTI_AI_ROUTER flag, so the flag's chat rule never ran. (HR-62.)
+#
+# ⛔ ROLLBACK IS THIS ONE LINE. Swap the value back and restart; nothing else changes and no
+# rebuild is involved. The previous value is kept in the comment below precisely so going
+# back is a copy rather than an act of archaeology:
+#
+#     $env:CLAUDE_MODEL = 'claude-haiku-4-5-20251001'   # the previous value
+#
+# Verified reachable on this account before switching: GET /v1/models returned 200 and listed
+# claude-opus-5 among ten models. Checked, not assumed.
+$env:CLAUDE_MODEL      = 'claude-opus-5'
 $env:AROMA_BIND_HOST   = '127.0.0.1'
 $env:PORT              = '8090'
 # DECISION_RECALL enabled for this resident entry (Owner GO) — chat-lane recall active.
