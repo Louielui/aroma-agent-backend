@@ -3267,3 +3267,87 @@ This is a third kind of emptiness, distinct from the two already separated:
 **Left unfixed deliberately.** A coverage number that silently changed meaning between two rounds
 would be worse than one with a documented hole, and the third point above is a design decision
 the Owner has not been asked yet.
+
+---
+
+# HR-62 — A FLAG THAT READS AS CONFIGURED AND IS INERT, BECAUSE SOMETHING ARRIVES FIRST
+
+> **Owner: 「I thought I was running GPT. Everything I called 『不夠聰明』 this fortnight was
+> haiku-4-5. A flag named MULTI_AI_ROUTER='on' that is inert for the main lane because a hint
+> arrives first is a setting that reads as configured and is not.」**
+
+## THE MECHANISM, IN THREE LINES OF REAL CODE
+
+The launcher sets `MULTI_AI_ROUTER = 'on'`, and the router's own documentation says what that
+means: *`MULTI_AI_ROUTER === 'on' AND mode === 'chat' -> 'openai'`.*
+
+`selectPrimaryProvider` (`src/routing/modelRouter.js`):
+
+```js
+if (isChat) {
+  const hinted = normalizeProviderHint(opts && opts.providerHint)
+  if (hinted) return hinted          // ← returns BEFORE the flag is ever read
+}
+if (resolveMultiAiRouter(env) !== 'on') return CLAUDE
+return isChat ? OPENAI : CLAUDE      // ← the documented rule, unreachable for chat
+```
+
+And the browser (`src/demo/assets/app.js:82`):
+
+```js
+var provider = 'claude'              // ← the initial value, sent on EVERY request
+```
+
+The picker does not send a hint only when the Owner picks something. It sends its current
+value every turn, and its current value starts at `claude`. **So the flag's chat rule is
+unreachable in normal use** — not overridden occasionally, but never consulted.
+
+## MEASURED, NOT INFERRED
+
+`data/conversations`, 58 recorded assistant turns:
+
+| served by | turns |
+|---|---:|
+| `claude` | **45** |
+| `openai` | 6 |
+| not recorded | 7 |
+
+## WHY THIS IS A DEFECT AND NOT A PREFERENCE
+
+Every individual piece is defensible. The hint is validated against a closed allowlist. It is
+confined to the chat lane. Checking it first is deliberate and documented — *「with the router
+flag off the hint is still honoured for chat」* — and for a UI control that is the correct
+precedence.
+
+**The defect is that nothing anywhere reports the combination.** The flag is `'on'`. Its
+documented rule describes a behaviour that never happens. The Owner read the launcher, read the
+rule, and concluded — correctly, from everything visible to him — that chat ran on GPT. He then
+spent a fortnight judging a system on the output of the smallest model available to it, and
+attributed what he saw to the design rather than to the model.
+
+> **A setting whose stated effect is unreachable is worse than a missing setting. A missing one
+> prompts a question; a present one answers it, wrongly, and closes the enquiry.**
+
+## AND THE LANE THE PICKER CANNOT REACH AT ALL
+
+`optsForMode` (`src/routes/demoRouter.js`) attaches `providerHint` to the **chat** shape only.
+The `proposal` and `email_draft` shapes cannot carry it, and `selectPrimaryProvider` returns
+`claude` for every non-chat mode regardless of the flag.
+
+**So proposals and work orders — the path that produces the thing the Owner types EXECUTE
+against — run on `claude-haiku-4-5-20251001`, by construction rather than by decision, and no
+control in the interface can change it.** That was a consequence of the lane design, not a
+choice anyone made about which model should draft an executable proposal.
+
+## THE RULE
+
+1. **A flag must be able to report whether it is having its stated effect**, not merely whether
+   it is set. `'on'` and 「in force」 are different facts and this system spelled them the same.
+2. **When a precedence chain exists, the thing that wins must be visible where the decision is
+   read.** The router documents its rule at the top of the file; the client default that defeats
+   it lives in another language in another directory.
+3. **A default in a UI control is a policy decision.** `var provider = 'claude'` was written as
+   an initial render value and became the model selection for every turn the system has served.
+4. **State which model served a turn, in the turn.** `servedBy` records the PROVIDER (`claude`),
+   not the model (`claude-haiku-4-5-20251001`). Had it recorded the model string, the Owner would
+   have seen this on day one instead of after a fortnight.
