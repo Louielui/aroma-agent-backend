@@ -27,6 +27,17 @@ test('*** REACH — the acceptance utterance is detected deterministically, with
   assert.match(d.query, /peanut butter/i)
 })
 
+test('*** REACH — ⛔ a GENERIC shop word resolves to no site, and never picks one ***', () => {
+  // 超市 means any supermarket. Binding it to one vendor made 「幫我去超市查下花生醬幾錢」 silently
+  // choose Real Canadian Superstore and report its prices as though the Owner had named it —
+  // while this module's own header claimed it refuses to invent destinations.
+  const generic = detectBrowseRequest('幫我去超市查下花生醬幾錢')
+  assert.equal(generic.isBrowse, false)
+  assert.equal(generic.outcome, OUTCOME.NO_SITE, 'ask which shop; do not guess one')
+  // A named site is unaffected.
+  assert.equal(detectBrowseRequest('幫我去superstore查下花生醬幾錢').siteKey, 'superstore')
+})
+
 test('*** REACH — near-misses do not trigger, and a purchase is REFUSED not downgraded ***', () => {
   assert.equal(detectBrowseRequest('superstore 嘅嘢好貴').isBrowse, false)
   assert.equal(detectBrowseRequest('幫我查下我哋牛肉價').outcome, OUTCOME.NO_SITE)
