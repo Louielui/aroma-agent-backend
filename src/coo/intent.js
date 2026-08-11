@@ -61,6 +61,24 @@ function unavailable (reason, detail) {
  * means the model was still working, an unreadable response means we could not parse what came
  * back — and losing that here would rebuild the same flattening one layer up.
  */
+/**
+ * The deterministic route, or `null` if the router cannot be consulted.
+ *
+ * ⛔ A ROUTER FAILURE FALLS BACK TO THE MODEL, NEVER TO A GUESS. If `routeTurn` throws, this
+ * returns null and the caller behaves exactly as it did before the split — one model call that
+ * decides. Failing closed to 「it must be chat」 here would be the lost-instruction defect
+ * rebuilt in the component added to prevent paying for it.
+ */
+function safeRoute (message) {
+  try {
+    const { routeTurn } = require('../intake/turnRouter')
+    const r = routeTurn(message)
+    return (r && typeof r.route === 'string') ? r : null
+  } catch (_) {
+    return null
+  }
+}
+
 function reasonOf (err) {
   if (!err) return 'error'
   if (err.isTimeout === true) return 'timeout'
@@ -87,6 +105,62 @@ async function classifyIntent (message, llm) {
   if (!isNonEmptyString(message)) {
     return chat('empty message — nothing to classify')
   }
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ ROUTE FIRST, DETERMINISTICALLY — AND THE ROUTER ALREADY EXISTED.
+   *
+   * This call used to do two jobs with opposite requirements in one 400-token budget: decide
+   * whether the message is a change request, and AUTHOR the task string a worker executes.
+   * Routing wants cheap, closed and deterministic. Authoring wants reasoning and headroom.
+   *
+   * `turnRouter.routeTurn` has returned ['UTILITY','ACTION','BUSINESS_QUERY','CONVERSATION']
+   * with zero model calls since before this file's classifier was written, and it runs on every
+   * turn already. `ACTION` IS the routing half of what the model was being paid to do — so this
+   * is a DELETION of a second router, not the addition of a first. (HR-71.)
+   *
+   * ── ⛔ THE BOUNDARY IS NARROWER THAN THE DESIGN PROPOSED, AND HERE IS WHY ──
+   *
+   * The design said: ambiguous ⇒ ask. `routeTurn` cannot express that ambiguity. `ACTION` and
+   * `CONVERSATION` are both returned with confidence 'high' — 'low' appears only where a
+   * UTILITY pattern collides with a business noun. CONVERSATION is the FALLBACK, reached with
+   * `reason: 'default'` when nothing matched, and on this Owner's traffic (median message: nine
+   * characters) most ordinary chat lands there. Asking 「你想我改嘢定係答你？」 on every
+   * default-routed turn would interrogate him for saying 你好.
+   *
+   * So the split is applied only where the router SPEAKS POSITIVELY:
+   *
+   *   ACTION                      -> author (the model call, now the only one)
+   *   UTILITY | BUSINESS_QUERY    -> chat, WITH NO MODEL CALL — something matched, and it
+   *                                  was not a change request
+   *   CONVERSATION via 'default'  -> unchanged: the model still decides
+   *
+   * The residue keeps today's behaviour exactly rather than being degraded by a signal that
+   * does not exist. The ask-branch needs a detector of 「looks like a change request」 that
+   * `routeTurn` does not provide, and inventing one here would be the fifth duplicate.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  /**
+   * ⛔ AND THE SAVING I FIRST CLAIMED HERE DID NOT EXIST. MY OWN TEST CAUGHT IT.
+   *
+   * The first version returned `chat(...)` immediately on a positively-routed non-action, with
+   * no model call — 「three of five real messages now cost nothing」. That was true and it was
+   * dropping the reply: THIS CALL AUTHORS THREE THINGS, not two. It routes, it authors the work
+   * order's task, AND it authors the ordinary chat reply that `propose()` returns to its caller
+   * as `reply`. Skipping the call skipped the answer.
+   *
+   * So the split on this path is NOT a cost saving. It is a correctness one, and it is worth
+   * more than the saving was:
+   *
+   *   the ROUTE decides develop-or-not, deterministically
+   *   the MODEL only writes prose, and its `intent` claim is IGNORED where the router spoke
+   *
+   * A model that hallucinates `intent: 'develop'` on 「聽日幾號？」 can no longer create a work
+   * order, because a deterministic router already said UTILITY and that is not overridable by
+   * a sentence. The 400-token budget stops being the thing that decides.
+   */
+  const route = safeRoute(message)
+  const routedNotAnAction = !!(route && route.route !== 'ACTION' && route.reason !== 'default')
 
   /**
    * ⛔ A CLASSIFIER FAILURE IS A FAILURE. IT IS NOT A CONVERSATION.
@@ -119,6 +193,19 @@ async function classifyIntent (message, llm) {
   // read — which is the same position as not having answered at all, and is reported as such.
   if (!raw || typeof raw !== 'object') {
     return unavailable('unreadable', 'the classifier returned no usable result')
+  }
+
+  /**
+   * ⛔ THE ROUTER OUTRANKS THE MODEL'S CLAIM. This is the correctness half of the split.
+   *
+   * When `routeTurn` positively matched UTILITY or BUSINESS_QUERY, the message is not a change
+   * request and no sentence the model returns can make it one. Its prose is still used as the
+   * reply — that is the job it is genuinely good at — but its `intent` is discarded.
+   */
+  if (routedNotAnAction && raw.intent === 'develop') {
+    return isNonEmptyString(raw.reply)
+      ? { intent: 'chat', reply: raw.reply, explanation: `routed ${route.route} deterministically; the model's develop claim was not accepted` }
+      : chat(`routed ${route.route} deterministically; the model's develop claim was not accepted`)
   }
 
   // Anything that is not an explicit, well-formed 'develop' is conversation.
