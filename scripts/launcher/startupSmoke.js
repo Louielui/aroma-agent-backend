@@ -58,6 +58,22 @@ const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-startup-smoke-'))
 process.env.AROMA_DATA_DIR = scratch
 
 const ROOT = path.resolve(__dirname, '..', '..')
+
+/**
+ * ⛔ .env, THE SAME FILE THE SERVER READS — AND THE LAUNCHER RUN IS HOW THIS WAS FOUND.
+ *
+ * `src/app.js:18` calls `require('dotenv').config()`. This script never loads app.js, so the
+ * first launcher-run smoke had no `OPENAI_API_KEY` at all: the router logged
+ * `openai_unavailable`, A4's verifier could not be built, the final gate reported unavailable,
+ * and BOTH probes came back with an empty reply. Two green PASSes when run through a wrapper
+ * that happened to load `.env`, two FAILs when run the way it actually ships.
+ *
+ * A smoke test whose environment differs from the server's is testing a system nobody runs.
+ * The path is explicit rather than cwd-relative, because the launcher's working directory is
+ * not this repository and dotenv's default would have quietly found nothing here too.
+ */
+require(path.join(ROOT, 'node_modules/dotenv')).config({ path: path.join(ROOT, '.env') })
+
 const { getAdapter } = require(path.join(ROOT, 'src/adapters/adapterFactory'))
 const { processIntake } = require(path.join(ROOT, 'src/intake/intakeService'))
 const a4Runtime = require(path.join(ROOT, 'src/intake/a4Runtime'))

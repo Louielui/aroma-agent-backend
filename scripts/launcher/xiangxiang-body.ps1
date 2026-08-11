@@ -268,8 +268,8 @@ if ($ok) {
       try { $sp.Kill() } catch {}
       Write-Log 'smoke: TIMED OUT after 120s — killed; the system is still being handed back'
     }
-    if (Test-Path $smokeOut) { $smoke += Get-Content $smokeOut }
-    if (Test-Path $smokeErr) { $smoke += Get-Content $smokeErr }
+    if (Test-Path $smokeOut) { $smoke += Get-Content $smokeOut -Encoding UTF8 }
+    if (Test-Path $smokeErr) { $smoke += Get-Content $smokeErr -Encoding UTF8 }
   } catch {
     Write-Log ('smoke: could not run (' + $_.Exception.Message + ') — the system is still being handed back')
   }
