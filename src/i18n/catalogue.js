@@ -602,6 +602,15 @@ const CATALOGUE = Object.freeze({
     zh: '由 {name} 回答（你揀的那個失敗了，已自動改用它）',
     en: 'Answered by {name} (the one you picked failed, so this one was used instead)'
   },
+  /**
+   * ⛔ A CUT-OFF REPLY MUST LOOK CUT OFF. Without this the answer simply ends — sometimes
+   * mid-sentence, sometimes at a plausible full stop — and nothing tells him whether she
+   * finished or the token budget did. He must never have to wonder which he is reading.
+   */
+  'served.truncated': {
+    zh: '⚠ 此回覆未完成即達到長度上限，結尾缺失，並非完整答覆。',
+    en: '⚠ This reply hit the length limit before finishing. The end is missing — it is not a complete answer.'
+  },
   'served.noExternalModel': { zh: '未送外部模型，未執行任何動作', en: 'No external model was called; nothing was executed' },
 
   // ── email draft ──

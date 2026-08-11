@@ -464,6 +464,16 @@ button[disabled] { opacity: .45; cursor: default; }
 /* which 心燈 actually answered (a pick is not a promise — a fallback can change it) */
 .served { font-size: var(--small-size); color: var(--faint); margin-top: 6px; }
 .served.fallback { color: var(--warn); }
+/* ⛔ A CUT-OFF REPLY IS NOT A FOOTNOTE. The attribution row is deliberately faint; this one
+   must not inherit that, or the warning is styled to be skipped. Warn colour, full weight,
+   and a rule above it so the eye stops at the boundary the answer actually ended on. */
+.served.truncated {
+  color: var(--warn);
+  font-weight: var(--weight-medium);
+  font-size: var(--ui-size);
+  border-top: 1px solid var(--warn);
+  padding-top: 6px;
+}
 
 .hidden { display: none !important; }
 

@@ -1244,7 +1244,10 @@
         : (o.body && o.body.stage === 'SHADOW_ONLY') ? 'email_draft'
           : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
             : previousLane
-      labelServedBy(render(o.status, o.body, conv), o.body)
+      var rendered = render(o.status, o.body, conv)
+      // Warning first, attribution second: what is wrong with the answer outranks who gave it.
+      labelTruncated(rendered, o.body)
+      labelServedBy(rendered, o.body)
       if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
       // The server has just written this turn, so the conversation is now history: it
       // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
@@ -1335,6 +1338,16 @@
     if (/^(gpt|o[0-9])/i.test(servedBy)) return t('provider.gpt') + ' · ' + servedBy
     return servedBy
   }
+  // ⛔ THE TRUNCATION WARNING IS ITS OWN LINE, ABOVE THE ATTRIBUTION, AND IT IS NOT A FOOTER.
+  //
+  // A cut-off reply is a fact about the ANSWER, not about who produced it, so it does not
+  // belong in the same quiet grey row as 「由 X 回答」. It is rendered even when servedBy is
+  // absent, because a truncated reply from an unknown model is still a truncated reply.
+  function labelTruncated (tEl, res) {
+    if (!tEl || !tEl.body || !res || res.truncated !== true) return
+    tEl.body.appendChild(el('div', 'served truncated', t('served.truncated')))
+  }
+
   function labelServedBy (tEl, res) {
     if (!tEl || !tEl.body || !res || typeof res.servedBy !== 'string' || !res.servedBy) return
     var name = servedByName(res.servedBy)

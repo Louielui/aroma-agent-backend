@@ -429,7 +429,18 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           ? Object.assign({}, result, {
               lane: interactionMode,
               servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null,
-              fallbackUsed: telemetry.fallbackUsed === true
+              fallbackUsed: telemetry.fallbackUsed === true,
+              /**
+               * ⛔ A REPLY THAT WAS CUT OFF SAYS SO. Both adapters normalise the provider's
+               * own signal to the same token — Anthropic's `stop_reason` and OpenAI's
+               * `incomplete_details.reason: 'max_output_tokens'` both arrive as 'max_tokens'.
+               *
+               * Without this the failure is INVISIBLE: the reply simply ends, mid-sentence if
+               * you are lucky and at a plausible full stop if you are not, and nothing
+               * distinguishes 「she finished」 from 「the budget ran out」. That is the silent
+               * failure this project exists to remove, and it is one boolean away.
+               */
+              truncated: telemetry.stopReason === 'max_tokens'
             })
           : result
 

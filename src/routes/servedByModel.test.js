@@ -86,3 +86,67 @@ test('*** ⛔ an absent model is NULL, never backfilled with the provider name *
     assert.equal(r.json.servedBy, null)
   })
 })
+
+/* ═══ A TRUNCATED REPLY IS VISIBLY TRUNCATED ══════════════════════════════ */
+
+function appWithStop (stopReason) {
+  const app = express()
+  app.use(express.json())
+  app.locals.conversationDemo = true
+  app.use('/', createDemoRouter({
+    getAdapterFn: () => ({ complete: async () => ({ text: 'ok', usage: {}, model: 'claude-opus-5', stopReason }) }),
+    processIntakeFn: async (message, adapter, history, opts) => {
+      const res = await adapter.complete(message, {})
+      if (opts && opts.telemetry) {
+        opts.telemetry.provider = 'claude'
+        opts.telemetry.model = res.model
+        opts.telemetry.stopReason = res.stopReason
+      }
+      return { reply: 'ok', requestId: opts.requestId }
+    }
+  }))
+  return app
+}
+
+test('*** ⛔ a reply cut off by the token budget reports truncated:true ***', async () => {
+  const app = appWithStop('max_tokens')
+  await withServer(app, async () => {
+    const r = await post(app, { message: '你好', interactionMode: 'chat' })
+    // ⛔ THE WHOLE POINT: a reply that just ends is indistinguishable from one that finished.
+    // Both adapters normalise to this same token — Anthropic's stop_reason and OpenAI's
+    // incomplete_details.reason === 'max_output_tokens'.
+    assert.equal(r.json.truncated, true)
+  })
+})
+
+test('*** a complete reply is not marked truncated ***', async () => {
+  const app = appWithStop('end_turn')
+  await withServer(app, async () => {
+    const r = await post(app, { message: '你好', interactionMode: 'chat' })
+    assert.equal(r.json.truncated, false)
+  })
+})
+
+test('*** an unknown stop reason is not silently treated as complete OR as truncated ***', async () => {
+  // 'content_filter' is neither. It must not raise the truncation warning, and the absence of
+  // a warning must not be read as a guarantee the reply finished — that is what stopReason
+  // telemetry is for, and it is recorded whether or not this flag is set.
+  const app = appWithStop('content_filter')
+  await withServer(app, async () => {
+    const r = await post(app, { message: '你好', interactionMode: 'chat' })
+    assert.equal(r.json.truncated, false)
+  })
+})
+
+test('*** the truncation warning is styled to be seen, not to be skipped ***', () => {
+  const css = require('node:fs').readFileSync(require('node:path').resolve(__dirname, '..', 'demo', 'assets', 'app.css'), 'utf8')
+  const block = css.slice(css.indexOf('.served.truncated'))
+  // The attribution row is deliberately faint. A warning that inherited that styling would be
+  // a warning designed to be missed.
+  assert.ok(/color:\s*var\(--warn\)/.test(block), 'warn colour')
+  // ⛔ THE TOKEN, NOT A RAW WEIGHT. The design system declares exactly two weights and a
+  // guard enforces it; my first version of this rule hardcoded 600 and that guard caught it.
+  // Asserting the raw number here would have re-created the violation in the test.
+  assert.ok(/font-weight:\s*var\(--weight-medium\)/.test(block), 'the medium token, the only step up')
+  assert.equal(/\.served\.truncated\s*\{[^}]*var\(--faint\)/.test(css), false, 'never the faint footer colour')
+})
