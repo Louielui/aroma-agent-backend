@@ -49,6 +49,31 @@ The recurring root cause, in the Owner's words: **「an unknown answered as a fa
   visible, not silent.
 - **No new dependencies.** `node:test` only.
 
+### ⛔ WRITING A ⛔ THAT RANGES OVER A CATEGORY? THE SURVEY TEST GOES IN THE SAME COMMIT.
+
+A rule that says **「every X must Y」** names a category and belongs in a test that walks the
+**DIRECTORY** — so files that do not exist yet are covered, and a non-conforming new file is red
+the day it is written, by an author who never read the rule. A rule that explains **「this is
+like this because…」** stays prose, correctly.
+
+**Ask this before writing the test — it is the filter, not 「is it a class rule」:**
+
+> ### **If this rule were quietly violated, would the Owner get a wrong answer he would believe?**
+
+Yes → the survey test is required. No → prose is enough. The read-failure contract answered
+**yes** (a 401 read as 「今日冇嘢要落單」), which is why it mattered; most category rules answer no
+and would crash visibly or do nothing.
+
+Measured 2026-08-11 (HR-69): **~489 of 913 ⛔ markers are category rules; 27 survey tests enforce
+them.** That stock is a property of how this codebase is written, not a backlog — **it is not a
+task and must never be logged as one.**
+
+> ### 「一個完成唔到嘅 backlog 係一項長期指控，唔係計劃。」
+> **A backlog that cannot be completed is a standing accusation, not a plan.** (Applies to any
+> such list here, not only this one.)
+
+**This rule is about FLOW, and that is the whole of it: 489 stays 489, and does not become 500.**
+
 House rules HR-1..HR-9 are in `docs/HOUSE-RULES.md` and are binding.
 
 ## 4. GOVERNANCE — the central idea
