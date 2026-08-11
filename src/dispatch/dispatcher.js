@@ -44,6 +44,21 @@ function createDispatchesForTasks (tasks, decisionId) {
   })
 }
 
+/**
+ * ⛔ WAS 700, A BESPOKE NUMBER NOBODY DERIVED. Now the system's own declared default.
+ *
+ * `intakeService.DEFAULT_MAX_TOKENS` is 1024 and `CHAT_MAX_TOKENS` is 2048; 700 sat between
+ * them belonging to neither, fitted to whatever the model of the day produced.
+ *
+ * ⛔ AND IT IS NOT RAISED ON SPECULATION. Dispatch results are not persisted anywhere, so the
+ * size of this call's output has never been measured — the nearest measured artifact is the
+ * assistant chat reply (58 recorded: median 95 chars, p95 397, max 470). Choosing a bigger
+ * bespoke number would replace one underived constant with another. Matching the declared
+ * default removes the bespoke number and leaves the question to `stopReason`, which is now
+ * visible on screen and will say plainly if this bound is ever the one that binds.
+ */
+const DISPATCH_MAX_TOKENS = 1024
+
 /** Execute one dispatch with the connected knowledge worker (心燈/Claude). Real, not simulated. */
 async function executeDispatch (dispatchId, adapter, context = {}) {
   const d = store.getDispatch(dispatchId)
@@ -69,7 +84,7 @@ async function executeDispatch (dispatchId, adapter, context = {}) {
 你【不能】也【不會】真的動檔案、改程式或碰 production——只給出可用的文字成果。
 用繁體中文,簡潔、具體、可直接使用。最後用一行「自我檢查:」總結你對這份成果的信心與提醒。`
     const prompt = `任務:${task ? task.title : ''}\n背景:${task ? task.note : ''}\n相關決定:${context.decisionStatement || ''}\n\n請完成這個任務並給出成果。`
-    const out = await adapter.complete(prompt, { system, maxTokens: 700 })
+    const out = await adapter.complete(prompt, { system, maxTokens: DISPATCH_MAX_TOKENS })
     store.recordLLMUsage({ model: out.model, totalTokens: out.usage && out.usage.totalTokens, latencyMs: out.latencyMs, blocked: false })
     store.updateDispatch(dispatchId, { status: 'completed', result: (out.text || '').trim() })
   } catch (err) {

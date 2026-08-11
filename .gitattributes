@@ -1,0 +1,9 @@
+# ⛔ ONE FILE OUT OF 729 WAS STORED WITH CRLF, AND IT COST A GATE.
+#
+# src/demo/assets/app.js was committed with CRLF line endings while every other tracked
+# text file uses LF. `git diff --check` inspects ADDED lines only, so the CR at end of line
+# read as trailing whitespace on every line of every edit to that one file — a gate that
+# fires on every change is a gate people learn to step over. (HR-63.)
+#
+# Normalising the file fixes the instance; this file stops it recurring in any other.
+* text=auto eol=lf

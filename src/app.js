@@ -210,7 +210,20 @@ async function intentLlm (message) {
     'When unsure, choose {"intent":"chat"}.'
   ].join(' ')
 
-  const result = await intentAdapter.complete(message, { system, maxTokens: 400, temperature: 0 })
+  /**
+   * ⛔ 400 STAYS, AND THIS TIME IT IS DERIVED RATHER THAN CHOSEN.
+   *
+   * This call emits one strict JSON object: `{"intent":"chat"}`, or an intent plus a one-line
+   * `task` and a two-value `targetProject`. Measured across every stored run and proposal, the
+   * largest `task` ever produced is 97 characters; the whole envelope has never plausibly
+   * exceeded ~130 tokens. 400 is roughly three times the largest real output.
+   *
+   * ⛔ AND MORE TOKENS WOULD NOT FIX THE RISK A STRONGER MODEL ACTUALLY BRINGS. The failure to
+   * fear here is a prose preamble before the JSON — `parseIntentJson` rejects that no matter
+   * how large the budget is. Raising this would buy nothing and would hide the symptom.
+   */
+  const INTENT_MAX_TOKENS = 400
+  const result = await intentAdapter.complete(message, { system, maxTokens: INTENT_MAX_TOKENS, temperature: 0 })
   return parseIntentJson(result && result.text)
 }
 

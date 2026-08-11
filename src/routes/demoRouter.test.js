@@ -203,10 +203,13 @@ for (const [label, envelope] of [
       // The chat lane additionally reports WHICH provider answered — the model picker
       // needs it, because a fallback means the reply may not come from the chosen one.
       // The engine envelope itself must still pass through untouched.
-      const { servedBy, fallbackUsed, lane, inferred, ...rest } = r.json
+      // `truncated` joins servedBy/fallbackUsed/lane as a TRANSPORT field: it reports that the
+      // token budget cut the reply off, which the ENGINE envelope has no way to express.
+      const { servedBy, fallbackUsed, lane, inferred, truncated, ...rest } = r.json
       assert.deepEqual(rest, envelope, 'the engine envelope is passed through unchanged')
       assert.ok(servedBy === null || typeof servedBy === 'string')
       assert.equal(typeof fallbackUsed, 'boolean')
+      assert.equal(typeof truncated, 'boolean')
     } else {
       // `inferred` is a TRANSPORT field, added the same way servedBy/fallbackUsed/lane are:
       // it reports what the server read out of the Owner's own words, so the page can stop
