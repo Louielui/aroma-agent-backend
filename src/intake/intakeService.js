@@ -1680,7 +1680,47 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         await recordProviderUsage(next)                                     // ⛔ accounting, per call
         llmResult = next
         let parsed = null
-        try { parsed = parseDistillResponse(next.text, tel) } catch (_) { return { type: 'final', result: null } }
+        try {
+          parsed = parseDistillResponse(next.text, tel)
+        } catch (err) {
+          /**
+           * ⛔ AN UNREADABLE ENVELOPE IS NOT A COMPLETED ANSWER. IT USED TO LOOK LIKE ONE.
+           *
+           * This was `catch (_) { return { type: 'final', result: null } }`. The loop's one
+           * signal for 「the model is done」 was therefore also emitted by the failure path, and
+           * the loop logged `decisionType: 'final', stopReason: 'final'` — the SAME line it
+           * logs for a genuine completion. The reason was discarded by the bare catch.
+           *
+           * A month of judgement rests on the difference. `opus-5` was read as 「less careful
+           * than haiku」 because it produced 「fallback」 twice; what actually happened is that
+           * one envelope did not parse and a catch renamed the failure a completion. The
+           * renderer then recorded `no_plan_returned` — a message about the MODEL not returning
+           * a plan, when the SERVER could not read one. Every layer downstream reasoned
+           * correctly from a false premise. (HR-67.)
+           *
+           * ⛔ AND A FAILING STEP SHORTENED THE TURN. Returning 'final' ends the loop, so a
+           * step that produced nothing consumed the budget AND cut the conversation short —
+           * the opposite of what a failure should do.
+           *
+           * WHAT THIS CHANGE DOES AND DOES NOT DO. It makes the failure VISIBLE — in the log,
+           * in telemetry, and on the decision object — and it changes the control flow not at
+           * all. The turn still terminates exactly as it did. Whether an unreadable envelope
+           * should instead be handed back as a refused observation is a real question with a
+           * real risk attached, and it is NOT decided here.
+           */
+          const reason = (err && err.reason) ? String(err.reason) : ((err && err.message) ? String(err.message).slice(0, 120) : 'unknown')
+          tel.envelopeUnreadable = true
+          tel.envelopeUnreadableReason = reason
+          // ⛔ ITS OWN EVENT NAME. A distinguishing field inside the existing line would have
+          // been missed the same way the last one was; a reader greps for what went wrong.
+          try {
+            console.log('[AROMA-REASONING]', JSON.stringify({
+              requestId, event: 'ENVELOPE_UNREADABLE', reasoningStep: step, reason,
+              note: 'the turn ends here, and this is NOT a completed answer'
+            }))
+          } catch (_) {}
+          return { type: 'final', result: null, unreadable: true }
+        }
         pending = parsed && parsed.nextRead ? parsed.nextRead : null
         if (!pending) { distilled = parsed || distilled; return { type: 'final', result: parsed } }
         // ⛔ BLOCKER 4: a STILL-PENDING envelope is NOT adopted as the answer. If the loop
