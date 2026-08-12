@@ -111,6 +111,10 @@ const FILE_CLASS = Object.freeze({
    * fence. Recorded, not fixed here: widening the scan is its own change.
    */
   'governance/internalSystemAnswer.js': CLASS.MATCHING, //  ~8 — axis vocabularies + 2 facts
+  // ⛔ INTERFACE — he reads it — but its SHAPE is load-bearing and a test pins it: the sentence
+  // must announce itself as a FAULT. A neutral placeholder would read as an answer, which is
+  // the silence defect moved one layer up. Reword freely; do not make it sound like content.
+  'governance/nonEmptyReply.js': CLASS.INTERFACE,     //   1 — the empty-reply defect sentence
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never

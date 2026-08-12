@@ -112,6 +112,8 @@ const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
 // A post-generation check: she may not ask the Owner what his own system is (02e430e, twice).
 const { enforceInternalSystemAnswer } = require('../governance/internalSystemAnswer')
+// ⛔ No path ships silence. Measured 17:18: a completed call stored content:"".
+const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -2179,17 +2181,36 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
      * which location are all questions she is still entitled to ask.
      */
     const selfDesc = enforceInternalSystemAnswer({ reply: guarded.reply, message })
-    if (selfDesc.corrected || selfDesc.supplied.length) {
+    if (selfDesc.composed || selfDesc.corrected) {
       guarded.reply = selfDesc.reply
       try {
         console.log('[AROMA-SELFDESC-CORRECTED]', JSON.stringify({
-          requestId, removedSentences: selfDesc.removed.length, supplied: selfDesc.supplied
+          requestId, composed: selfDesc.composed, supplied: selfDesc.supplied, removedSentences: selfDesc.removed.length
         }))
       } catch (_) { /* telemetry is never load-bearing */ }
     }
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)
     guarded.reply = lang.reply
+    /**
+     * ⛔ THE FLOOR: NO PATH SHIPS SILENCE. Measured 17:18 — a completed call (`servedBy`
+     * populated) stored `content: ""`, and the UI rendered its meta label and nothing else.
+     * An empty reply is worse than a wrong one: a wrong answer says something is broken,
+     * silence is indistinguishable from a dropped message or a closed tab.
+     *
+     * ⛔ THIS IS A FLOOR, NOT A FIX. It does not know what emptied the text and must never be
+     * read as having repaired it. Placed LAST, after every guard that can rewrite, because a
+     * floor upstream of a remover guarantees nothing.
+     */
+    const floored = ensureNonEmptyReply(guarded.reply)
+    if (floored.wasEmpty) {
+      guarded.reply = floored.reply
+      try {
+        console.log('[AROMA-EMPTY-REPLY]', JSON.stringify({
+          requestId, note: 'a completed turn produced no text; shipped the defect sentence'
+        }))
+      } catch (_) { /* telemetry is never load-bearing */ }
+    }
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
     /**
      * ⛔ THE MAIN CHAT PATH. The first placement of this sat beside `enforceNoReadClaim` on the

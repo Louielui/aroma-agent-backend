@@ -657,6 +657,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a reader never observes an empty or partial store while a writer runs ***
 *** a reader never sees "no such conversation" while a writer is appending ***
 *** a real number with an invented unit is still an invention ***
+*** a real reply passes through byte-identical ***
 *** a recall failure is fail-soft but never silent ***
 *** a refresh token inside the warning window runs, but says so ***
 *** a refused save is 422 with a readable reason, not 500 ***
@@ -1384,13 +1385,15 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
-*** ⛔ A CORRECT reply is left alone — no duplication, no rewrite ***
+*** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
+*** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
+*** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
@@ -1402,6 +1405,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
 *** ⛔ LEGITIMATE clarification on another axis passes through UNTOUCHED ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
+*** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
@@ -1430,6 +1434,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
+*** ⛔ TURN 1 — the URL ships and NO internal-vs-public question survives ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
 *** ⛔ ZERO ROWS FROM A HEALTHY READ IS STILL SUCCESS — the fix must not cry wolf ***
 *** ⛔ a 30-day count cannot become a source-total claim, end to end ***
@@ -1503,6 +1508,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ propose() reports unavailable and creates NO proposal ***
 *** ⛔ provider-neutral, network-free, write-free ***
 *** ⛔ purchase-order items carry a NAME and no ingredient id — the join is a spelling match ***
+*** ⛔ removal emptying the text cannot ship: composition + non-empty compose safely ***
 *** ⛔ requiring the domain creates no files anywhere ***
 *** ⛔ rowShape and queryScope cannot be confused ***
 *** ⛔ servedBy carries the MODEL ID the adapter actually returned ***
@@ -1515,9 +1521,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the adapter THROWS on unavailable — it never returns zero rows ***
 *** ⛔ the bare catch is gone from the loop boundary ***
 *** ⛔ the concurrency case does not use spawnSync — that is what made it fake ***
+*** ⛔ the defect sentence SAYS it is a defect — it must not read as an answer ***
 *** ⛔ the denominator moving with the business is NOT drift ***
 *** ⛔ the deterministic step is PRESENT with model:null — not omitted ***
-*** ⛔ the disambiguation removal still applies, and the fact replaces it ***
+*** ⛔ the disambiguation cannot ship, and the fact does — now by construction ***
 *** ⛔ the event ledger holds ids and states, never lesson content ***
 *** ⛔ the extractor sees the shapes this suite actually uses ***
 *** ⛔ the false positives the measurement rejected stay rejected ***
@@ -1540,6 +1547,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ what she CANNOT answer is named, not left to be discovered ***
 *** ⛔ wisdomRecall has no default store reach-through ***
+*** ⛔ 「我哋現有」 — the exact phrasing that leaked — cannot survive ***
 *** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***
 *** 「1」 after a numbered list keeps 香香\
 *** 「A 定 B」 is not one question — it becomes no question, not an invented one ***

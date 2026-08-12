@@ -31,11 +31,22 @@ test('*** the guarantee is on the SHIPPED reply, not on what the model was offer
   }
 })
 
-test('*** ⛔ A CORRECT reply is left alone — no duplication, no rewrite ***', () => {
+test('*** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***', () => {
+  /**
+   * ⛔ THIS ASSERTION WAS CHANGED DELIBERATELY, under the Owner's work order, when the covered
+   * path moved from FILTERING to COMPOSING.
+   *
+   * It used to assert byte-identical passthrough when the model already had the URL. That is
+   * no longer true and is no longer wanted: on a covered turn the reply is composed from the
+   * registry and model output is discarded, precisely so that no phrasing has to be
+   * anticipated. The property still worth pinning is that the Owner never sees the URL twice
+   * or a mangled splice — which was the real risk the old assertion guarded.
+   */
   const good = '你嘅 Aroma System 網址係 ' + URL + '。'
   const out = enforceInternalSystemAnswer({ reply: good, message: ASK_URL })
-  assert.equal(out.supplied.length, 0, 'nothing to supply — it is already there')
-  assert.equal(out.reply, good, 'byte-identical')
+  const occurrences = out.reply.split(URL).length - 1
+  assert.equal(occurrences, 1, '⛔ the URL appears ' + occurrences + ' times: ' + out.reply)
+  assert.equal(out.composed, true, 'and it came from the registry, not from the model')
 })
 
 test('*** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***', () => {
@@ -77,11 +88,19 @@ test('*** precondition: a message that does not name her system supplies nothing
   assert.equal(out.reply, REFUSAL)
 })
 
-test('*** ⛔ the disambiguation removal still applies, and the fact replaces it ***', () => {
+test('*** ⛔ the disambiguation cannot ship, and the fact does — now by construction ***', () => {
+  /**
+   * ⛔ CHANGED DELIBERATELY with the move to composition. It used to assert `corrected === true`
+   * — i.e. that the REMOVAL path fired. On a covered turn there is nothing to remove, because
+   * nothing the model wrote is used at all. The property being protected is unchanged and is
+   * now stronger: the question does not reach him, and the fact does, for ANY model output
+   * rather than for the phrasings a vocabulary happens to list.
+   */
   const asked = '你講嘅 aroma system 係我哋內部系統，定係公開網站？'
   const out = enforceInternalSystemAnswer({ reply: asked, message: ASK_URL })
-  assert.equal(out.corrected, true, 'the question was removed')
-  assert.ok(out.reply.includes(URL), 'and the answer supplied: ' + out.reply)
+  assert.equal(out.composed, true, 'composed rather than filtered')
+  assert.equal(out.reply.includes('定係公開網站'), false, '⛔ the question shipped: ' + out.reply)
+  assert.ok(out.reply.includes(URL), 'and the answer is present: ' + out.reply)
 })
 
 test('*** rubbish input never throws and supplies nothing ***', () => {

@@ -210,28 +210,41 @@ function replyCarries (reply, key, d) {
 function enforceInternalSystemAnswer (input) {
   const inp = (input && typeof input === 'object') ? input : {}
   const message = typeof inp.message === 'string' ? inp.message : ''
-
-  // 1. the disambiguation with a known answer never ships
-  const step1 = correctInternalSystemReply({ reply: inp.reply, message })
-
-  // 2. and the known answer does
   const wanted = wantedRegistryFacts(message)
-  if (!wanted.length) return { reply: step1.reply, corrected: step1.corrected, supplied: [], removed: step1.removed }
 
-  const d = selfDescription(inp.deps || {})
-  const missing = wanted.filter((k) => !replyCarries(step1.reply, k, d))
-  if (!missing.length) return { reply: step1.reply, corrected: step1.corrected, supplied: [], removed: step1.removed }
-
-  // ⛔ The fact LEADS. It is what he asked for; anything the model said comes after it, so a
-  // refusal becomes a qualifier on an answer rather than the answer itself.
-  const facts = missing.map((k) => factSentence(k, d)).filter(Boolean).join('')
-  const rest = String(step1.reply || '').trim()
-  return {
-    reply: rest ? (facts + '\n\n' + rest) : facts,
-    corrected: step1.corrected,
-    supplied: missing,
-    removed: step1.removed
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ COMPOSED, NOT FILTERED — AND THIS REVERSES MY OWN CHOICE OF LAST ROUND.
+   *
+   * Last round I argued for inspecting model output rather than composing, because a template
+   * would have discarded session 07d3fbcf turn [3]'s good answer. That reasoning was sound and
+   * has been outweighed by measurement.
+   *
+   * 17:18, real UI: 「你嘅 Aroma System 網址係 https://… 。你係想要我哋現有 Aroma System 嘅網址，
+   * 定係公開網站網址？」 — the URL delivered AND the same question appended, because
+   * 「我哋現有」 is not 「我哋自己」 and INTERNAL_REF never saw it.
+   *
+   * > **Owner: 「We are matching a vocabulary against a model that composes freely. Adding
+   * > 「我哋現有」 buys one phrasing and loses the next.」**
+   *
+   * ⛔ SO ON A COVERED TURN NOTHING THE MODEL WROTE REACHES HIM. No vocabulary has to
+   * anticipate a phrasing, because no phrasing is inspected. The filter below still exists for
+   * turns this does NOT cover, and remains as leaky as it was — that is stated, not hidden.
+   *
+   * ⛔ AND THE SCOPE IS THE CLOSED MAP, NOTHING WIDER. `wanted` is empty for every question
+   * outside url/identity, and those turns fall through to exactly today's behaviour, including
+   * the honest refusal.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  if (wanted.length) {
+    const d = selfDescription(inp.deps || {})
+    const facts = wanted.map((k) => factSentence(k, d)).filter(Boolean).join('')
+    return { reply: facts, corrected: false, composed: true, supplied: wanted, removed: [] }
   }
+
+  // Not covered: the old removal path still applies, and is still a vocabulary match.
+  const step1 = correctInternalSystemReply({ reply: inp.reply, message })
+  return { reply: step1.reply, corrected: step1.corrected, composed: false, supplied: [], removed: step1.removed }
 }
 
 module.exports = {
