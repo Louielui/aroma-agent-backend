@@ -86,6 +86,9 @@ const FILE_CLASS = Object.freeze({
   'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — JSON-schema `description` text
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
+  // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never
+  // what the check decides — the alarm/report split lives in shapeDrift.js, which has no text.
+  'errands/shapeDriftRunner.js': CLASS.INTERFACE,     //   6 — the drift summary sentence
   'intake/readResultView.js': CLASS.INTERFACE,        //  19
   'demo/assets/settings.js': CLASS.INTERFACE,         //  18
   'home/errandKinds.js': CLASS.INTERFACE,             //  18 — titles + duration words

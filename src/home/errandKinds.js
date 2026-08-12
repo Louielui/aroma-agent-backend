@@ -66,6 +66,28 @@ const KINDS = Object.freeze([
     // write」 is a property of what it is able to reach, not a promise about its behaviour.
     // 「唔可能」,唔係「唔准」. Adding a kind here is adding it to the timer: needs its own GO.
     readOnly: true
+  }),
+  Object.freeze({
+    id: 'shapedrift',
+    get title () { return t('errand.shapeDriftTitle') },
+    prefix: 'shapedrift-',
+    everyMs: DAY,
+    graceMs: 6 * HOUR,
+    /**
+     * ⛔ FALSE FOR THE SAME REASON `recall` IS FALSE, AND IT IS NOT A PLACEHOLDER. She has no
+     * scheduler. Declaring `true` here would make the briefing say this runs daily while in
+     * truth it runs when someone remembers — 「scheduled, while I happen to be up」. It flips
+     * when a trigger exists, and the DUE sentence changes meaning with it.
+     */
+    scheduled: false,
+    manualHow: 'node scripts/runShapeDriftErrand.js',
+    /**
+     * ⛔ ON THE TIMER'S ALLOWLIST BY THE OWNER'S GO, 2026-08-11: 「Daily, beside the recall
+     * check.」 Six GETs against the AI read endpoints, zero writes, zero model tokens —
+     * measured at 10.8s and 112 KB. `readOnly` is a property of what this kind can REACH,
+     * not a promise about how it behaves.
+     */
+    readOnly: true
   })
 ])
 
