@@ -40,15 +40,39 @@ test('*** an ACTION still authors, and the task passes through verbatim ***', as
   assert.equal(r.task, 'edit line 2')
 })
 
-test('*** ⛔ the CONVERSATION fallback is UNCHANGED — the model still decides ***', async () => {
-  // routeTurn returns CONVERSATION with reason 'default' when nothing matched, at confidence
-  // 'high'. It cannot express 「might be either」, and on a nine-character median most ordinary
-  // chat lands here. Short-circuiting it would lose work requests; asking on it would
-  // interrogate the Owner for saying 你好. So it keeps today's behaviour exactly.
+test('*** ⛔ the CONVERSATION fallback narrows: the model decides only where a CHANGE is proposed ***', async () => {
+  /**
+   * ⛔ THIS ASSERTION WAS NARROWED ON PURPOSE, 2026-08-11, UNDER AN OWNER GO (HR-75).
+   *
+   * It used to assert that `classifyIntent('你好', …)` returns `develop` when the model says so
+   * — 「the CONVERSATION fallback is UNCHANGED, the model still decides」. That was true, and it
+   * is the hole the Owner walked into: 「給我 Aroma System 的 website」 also routes
+   * CONVERSATION/'default', so his ordinary request became 「尚未建立任何提案」.
+   *
+   * ⛔ AND THE OLD ASSERTION CONTRADICTED THIS FILE'S OWN STATED INTENT, which is that 「a model
+   * that hallucinates intent:'develop' on 「聽日幾號？」 can no longer create a work order」.
+   * 「你好」 is that case exactly. The test was pinning the hallucination.
+   *
+   * NARROWED, NOT DELETED. The property it protects — a work request must never be lost to a
+   * short-circuit — is asserted immediately below, and more strongly than before.
+   */
   const c = counter(DEVELOP)
   const r = await classifyIntent('你好', c.llm)
   assert.equal(c.calls, 1, 'the residue still costs one call, as it did before the split')
-  assert.equal(r.intent, 'develop', 'and the model, not the router, decided it')
+  assert.equal(r.intent, 'chat', '⛔ 「你好」 proposes no change; a develop claim on it is refused')
+})
+
+test('*** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\'S TO DECIDE ***', async () => {
+  // The half that matters more. Every genuine work request routes CONVERSATION/'default' too —
+  // measured — so the guard MUST stay out of the way whenever a change is actually proposed.
+  // A lost instruction is worse than a spurious proposal: the Owner asks for work, is told it
+  // was a conversation, and never learns he asked.
+  for (const m of ['幫我加一個匯出按鈕', '修復登入嗰個 bug', '部署最新版本上去']) {
+    const c = counter(DEVELOP)
+    const r = await classifyIntent(m, c.llm)
+    assert.equal(r.intent, 'develop', '⛔ WORK REQUEST WOULD BE LOST: ' + m)
+    assert.equal(c.calls, 1, 'and it still costs exactly one call')
+  }
 })
 
 test('*** ⛔ a router failure falls back to the MODEL, never to a guess ***', async () => {

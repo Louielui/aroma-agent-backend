@@ -97,38 +97,130 @@ function line (obj) { try { console.log('[AROMA-STARTUP-SMOKE]', JSON.stringify(
  */
 const PROVIDERS = ['claude', 'openai']
 
-async function probe (providerHint) {
+/**
+ * ⛔ A GREETING PROVES ALMOST NOTHING, AND THAT IS WHY THIS EXISTS.
+ *
+ * 「你好」 reads nothing, routes to CONVERSATION, touches no endpoint and engages no plan. Every
+ * defect that cost this fortnight was SILENT BREAKAGE OF A PATH THE OWNER USES, waiting for him
+ * to walk into it — and a greeting walks into none of it. If the Aroma System key expires or an
+ * endpoint changes shape, the greeting still passes and he finds out at 7am.
+ *
+ * This one question exercises the real chain: routeTurn -> BUSINESS_QUERY -> an aroma_system
+ * read -> the descriptor -> the answer.
+ */
+const BUSINESS_PROBE = '今日有咩貨要落單？'
+
+/**
+ * ⛔ THE SHAPE, NEVER THE CONTENT. (Owner ruling.)
+ *
+ * Pinning business data would make this fail every time the inventory changes, and a check that
+ * cries wolf gets stepped over — which is HR-63, and it would take this whole mechanism down
+ * with it.
+ *
+ * ⛔ AND 「今日冇嘢要落單」 IS A CORRECT ANSWER. A read that succeeds and returns nothing is the
+ * system working. The signal is therefore not 「rows came back」 but 「a read was PERFORMED and
+ * the source answered」: the reasoning loop's own read step, reporting ok.
+ *
+ * `telemetry.readContextUsed` was the obvious candidate and is WRONG — measured false on a
+ * BUSINESS_QUERY turn that read and answered correctly, because it describes what went into the
+ * first prompt, not what the loop did afterwards.
+ */
+function sawSuccessfulRead (logs) {
+  /**
+   * ⛔ THE FIRST VERSION OF THIS FUNCTION REPORTED SUCCESS ON A FAILURE, AND SEEN-TO-FAIL
+   * CAUGHT IT.
+   *
+   * It looked for `REASONING_STEP { decisionType: 'read', ok: true }`. Run with a deliberately
+   * wrong `AROMA_SYSTEM_KEY`, the business probe still returned PASS with readPerformed:true —
+   * because that `ok` means 「the loop performed a read STEP」, not 「the source answered」. A
+   * check that cannot tell a dead endpoint from a live one is the exact defect this whole
+   * fortnight was spent removing, rebuilt inside the detector for it.
+   *
+   * ⛔ AND THE SECOND GUESS WAS ALSO WRONG. `sourcesRead` on the TURN_ROUTE line looked right —
+   * it filters `trust === 'live'` — but TURN_ROUTE is emitted BEFORE the reads run, so it is
+   * `[]` on a perfectly healthy turn. That version failed with the real key: a false alarm,
+   * which is the failure mode that gets a check ignored (HR-63).
+   *
+   * MEASURED, not guessed, on the third attempt:
+   *
+   *   [AROMA-READ-SOURCE] {"source":"aroma_system","trust":"live","count":4,"error":null}
+   *
+   * That line is emitted per source, after the read, and carries the two facts that matter.
+   * `makeUnavailable` stamps `trust: 'unavailable'`, so a source that refused, 401'd or was
+   * never configured cannot produce a live line.
+   */
+  for (const line of logs) {
+    const i = line.indexOf('{')
+    if (i < 0 || !line.includes('READ_SOURCE')) continue
+    try {
+      const j = JSON.parse(line.slice(i))
+      if (j.event !== 'READ_SOURCE') continue
+      // ⛔ NOT `count > 0`. 「今日冇嘢要落單」 is a correct answer from a healthy system, and a
+      // smoke test that demanded rows would cry wolf on a good day with nothing to order.
+      // The question is whether the SOURCE ANSWERED, not what it said.
+      if (j.trust === 'live' && !j.error) return true
+    } catch (_) {}
+  }
+  return false
+}
+
+async function probe (providerHint, opts0 = {}) {
   const started = Date.now()
   const telemetry = {}
+  const question = opts0.question || PROBE
+  const kind = opts0.kind || 'greeting'
+  const needsRead = opts0.needsRead === true
+
+  // Capture the pipeline's own log lines for the duration of this probe. The read evidence is
+  // in them; nothing else exposes it.
+  const logs = []
+  const realLog = console.log
+  console.log = (...a) => { try { logs.push(a.map(String).join(' ')) } catch (_) {} }
+  const restore = () => { console.log = realLog }
+
   try {
     // The SAME composition the route performs. If a flag makes this throw, that is the point.
     const composed = a4Runtime.createA4RuntimeDependencies({ env: process.env })
-    const opts = { requestId: 'startup_smoke_' + providerHint, interactionMode: 'chat', demo: true, telemetry, providerHint }
+    const opts = { requestId: 'startup_smoke_' + kind + '_' + providerHint, interactionMode: 'chat', demo: true, telemetry, providerHint }
     if (composed && composed.deps) opts.readContextDeps = composed.deps
 
-    const result = await processIntake(PROBE, getAdapter(), [], opts)
+    const result = await processIntake(question, getAdapter(), [], opts)
     const reply = (result && typeof result.reply === 'string') ? result.reply : ''
+    restore()
+
+    const readOk = needsRead ? sawSuccessfulRead(logs) : null
 
     // ⛔ A REPLY, NOT AN ABSENCE OF THROW. The fail-closed gates here deliberately return no
     // text rather than a wrong one, so a check that accepted 「it did not throw」 would pass
     // on exactly the state those gates produce.
+    //
+    // ⛔ AND FOR THE BUSINESS PROBE, A REPLY IS NOT ENOUGH EITHER. She can answer fluently
+    // about an endpoint she never reached. The read must have happened and the source must
+    // have answered — whether it answered with rows or with nothing.
+    const failed = reply.length === 0 || (needsRead && readOk !== true)
     return {
       asked: providerHint,
-      outcome: reply.length > 0 ? 'PASS' : 'FAIL',
+      kind,
+      outcome: failed ? 'FAIL' : 'PASS',
       elapsedMs: Date.now() - started,
       servedBy: telemetry.model || null,
       provider: telemetry.provider || null,
       stopReason: telemetry.stopReason || null,
       parseResult: telemetry.parseResult || null,
       replyLength: reply.length,
-      detail: reply.length > 0 ? null : 'the turn completed and produced no reply text'
+      readPerformed: readOk,
+      detail: reply.length === 0
+        ? 'the turn completed and produced no reply text'
+        : (failed ? 'the turn answered without a successful read — the source was never reached' : null)
     }
   } catch (e) {
+    restore()
     // The cause carries the provider's own diagnosis — an HTTP 400 on a schema, for example.
     // Never the prompt, never a body, never a credential.
     const cause = e && e.cause && e.cause.message ? String(e.cause.message).slice(0, 300) : null
     return {
       asked: providerHint,
+      kind,
       outcome: 'FAIL',
       elapsedMs: Date.now() - started,
       servedBy: telemetry.model || null,
@@ -136,6 +228,9 @@ async function probe (providerHint) {
       stopReason: telemetry.stopReason || null,
       parseResult: telemetry.parseResult || null,
       replyLength: 0,
+      // A throw means the read never got to report anything, which is a different fact from
+      // 「it reported and said no」 — so this is false, not null.
+      readPerformed: needsRead ? false : null,
       detail: (e && e.message ? e.message : String(e)) + (cause ? ' | cause: ' + cause : '')
     }
   }
@@ -143,18 +238,28 @@ async function probe (providerHint) {
 
 ;(async () => {
   const results = []
-  for (const p of PROVIDERS) results.push(await probe(p)) // sequential: two calls, not a load test
+  for (const p of PROVIDERS) results.push(await probe(p)) // sequential: not a load test
+  // ⛔ ONE business probe, on the provider the picker actually defaults to. Two would double
+  // the cost to re-prove the same chain.
+  results.push(await probe('claude', { question: BUSINESS_PROBE, kind: 'business', needsRead: true }))
   for (const r of results) line(Object.assign({ event: 'STARTUP_SMOKE' }, r))
 
   const failed = results.filter((r) => r.outcome === 'FAIL')
   line({
     event: 'STARTUP_SMOKE_VERDICT',
     outcome: failed.length ? 'FAIL' : 'PASS',
-    failedProviders: failed.map((r) => r.asked),
+    // ⛔ NAMED BY WHAT BROKE, not only by provider. 「claude」 appearing twice told a reader
+    // nothing; 「claude/business」 says the chat lane answers and the read path does not, which
+    // are different mornings.
+    failed: failed.map((r) => r.asked + '/' + r.kind),
     // ⛔ SAID OUT LOUD, because a verdict that only a log reader sees is not a verdict.
     saying: failed.length
-      ? '香香啟動咗，但' + failed.map((r) => r.asked).join('／') + '嗰邊答唔到。系統照樣交返畀你，但呢半邊唔可信。'
-      : '香香啟動咗，兩邊都答到。'
+      ? (failed.some((r) => r.kind === 'business') && !failed.some((r) => r.kind === 'greeting')
+        // The most confusing failure to receive, so it is spelled out: she is talking normally
+        // and cannot see the business data. Without this line it reads as 「she is fine」.
+        ? '香香啟動咗，傾偈冇問題，但佢讀唔到 Aroma System 嘅資料。問佢倉存／落單嗰啲嘢，答案唔可信。'
+        : '香香啟動咗，但' + failed.map((r) => r.asked + '（' + r.kind + '）').join('／') + '答唔到。系統照樣交返畀你，但嗰部分唔可信。')
+      : '香香啟動咗：傾偈同讀 Aroma System 都試過，兩樣都掂。'
   })
 
   try { fs.rmSync(scratch, { recursive: true, force: true }) } catch (_) {}

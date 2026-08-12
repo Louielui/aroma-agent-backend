@@ -2944,3 +2944,641 @@ questions, one field name, and the name answers none of them.**
 > Three different layers — an intent keyword, a guard pattern, a join key — and the same mistake:
 > **treating a NAME as if it carried a FACT.** The name is a label someone chose. The fact has to
 > be measured, and in all three cases measuring it was cheap and nobody had.
+
+---
+
+### HR-66 third instance — the rule was already written, in capitals, in the next file along
+
+Recorded 2026-08-11, at the Owner's instruction.
+
+`aromaSystemRead.js` returns `trust:'unavailable'` on the RESULT while the other six connectors
+throw. `publicKnowledgeRead.js` had written the contract down nine days earlier, in plain
+language, in capitals: 「UNAVAILABLE THROWS, IT DOES NOT RETURN ZERO ROWS」. The seventh
+connector was written anyway.
+
+**This needed no research and no new knowledge. Only reading what was already there.**
+
+#### Is it detectable? Partly — and NOT the same class as the deleted assertion.
+
+The two look alike and are not:
+
+| | deleted assertion (R3.1) | HR-66 |
+|---|---|---|
+| was the property ever executable? | **yes**, then the executable form was removed | **no**, it was always prose |
+| what you are trying to see | an **absence** — something that no longer names itself | a **new file** that does not conform |
+| can a mechanism see it? | no. Nothing observes the absence of a thing that stopped existing | **yes**, if the rule ranges over the category |
+
+⛔ **You cannot watch for "did the author read the sibling file" — that is unobservable.** But
+you do not need to. Make the rule executable over the CATEGORY, and not reading it stops
+mattering: the non-conforming file is red the day it is written, by an author who never heard
+of the rule.
+
+That mechanism is the **survey test** — one that walks a DIRECTORY instead of naming files, so
+it covers files that do not exist yet. `context/readFailureContract.test.js` now does exactly
+this for this rule: it reads every file in the connector directory and fails if any connector
+other than `aromaSystemRead.js` uses `makeUnavailable`.
+
+#### The exposure, measured
+
+```
+survey tests that range over a directory        27
+⛔ prose rules in production source            913  across 100 files
+```
+
+Most house rules in this codebase are **prose**, not executable. Not all 913 should be tests —
+most explain WHY something is the way it is, and that is the right form. The dividing line:
+
+> **A rule that says 「every X must Y」 names a CATEGORY, and belongs in a survey test over the
+> directory. A rule that explains 「this is like this because…」 stays prose.**
+
+Every category-shaped rule still living in a header is HR-66 ammunition, loaded and waiting for
+the next author who does not read that file.
+
+#### The residue, which IS undetectable
+
+⛔ **A rule about a category that nobody recognised AS a category.** If it was never seen to
+range over anything, no survey test was written, and there is nothing to notice its violation.
+That part is the same class as the deleted assertion: real, recurring, and beyond any mechanism
+here.
+
+---
+
+### HR-67 — the read key has no expiry anything can read, and both watchers are after-the-fact
+
+Recorded 2026-08-11. The Owner's question: the wrong-key defect was a loaded gun that would have
+fired the day the key expired, on a schedule that arrives by itself and gives no warning. So
+does anything watch key expiry?
+
+**Nothing watches `AROMA_SYSTEM_KEY`.** `agent/credentialHealth.js` genuinely does expiry work —
+reads `expiresAt`, warns under 7 days, refuses when expired — but it watches the **Claude CLI
+OAuth login**, and it is wired to `agentRunner` only. It has never had anything to do with the
+read key.
+
+⛔ **And there is nothing for it to read.** `AROMA_SYSTEM_KEY` is a static env string. No
+`notAfter`, no `exp`, no validity window. Its remaining life is not a fact the system possesses,
+so no amount of checking could produce advance warning.
+
+#### What would tell the Owner, and when
+
+1. **His own next business question — first, and in ordinary use.** This is the fix at
+   `a677525`, not the smoke test. Before it, a 401 was measured as
+   `{"source":"aroma_system","trust":"live","count":0,"error":null}` and the answer was
+   「今日冇嘢要落單」 said with total confidence. After it, the failure marker survives and the
+   turn reports the read failed. **The gun was disarmed by the fix, not by a watcher.**
+2. **The startup smoke test — second, and only at a restart.** It is restart-triggered, not
+   time-triggered. A system that runs for three weeks without restarting learns nothing from it.
+
+#### What is still missing
+
+**Both are after-the-fact.** They say the key is dead; neither says it is about to die. That is
+inherent to a static key and is not a gap a watcher could close.
+
+⚠ **And one question of fact this codebase cannot answer: whether that key expires at all.** If
+it is static until the Owner rotates it, the risk is not an expiry date arriving on its own
+schedule — it is a rotation, which he performs and therefore already knows about. Worth
+confirming, because it decides whether anything further is warranted here.
+
+---
+
+### HR-68 — a detector blind by DEFINITION, not by accident
+
+Recorded 2026-08-11, at the Owner's instruction, as the sharpest instance of this family yet.
+
+Triaging 913 prose markers, the second mechanical shortcut looked excellent. **A rule restated
+by hand in more than one file is a class rule** — not a lexical guess but a structural fact:
+someone found the same rule true in two places and copied it, which is precisely the situation
+a survey test exists for. It ran in seconds and found 6, with high precision:
+
+```
+  [5 files] Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48)
+  [6 files] MODEL TEXT (governance/textClasses.js, class MODEL)
+  [2 files] A4-1C: THE CHAT LANE MAY NOT OFFER `commit`
+  … and 3 more
+```
+
+⛔ **It cannot find the rule HR-66 is about.** 「UNAVAILABLE THROWS, IT DOES NOT RETURN ZERO
+ROWS」 was written **once**, in `publicKnowledgeRead.js`, and never copied. The seventh connector
+was written nine days later by an author who did not read it.
+
+#### Why this is sharper than the regex
+
+The 49-sentence regex was blind **accidentally** — it keyed on vocabulary, the vocabulary
+drifted, and a better regex would have done better. Nothing about the target made it unfindable.
+
+This is different:
+
+> **The defect IS the absence of duplication. A detector that keys on duplication is looking for
+> the presence of the thing whose absence defines the fault.** Its blindness is not a gap in
+> coverage that a better implementation could close — it is the detector's operating principle
+> applied to its own target population.
+
+A rule copied into five files is a rule that got propagated: authors saw it and carried it.
+That is the **healthy** case. The dangerous case — stated once, never propagated, silently
+violated — is invisible to this method **by construction**, and would remain invisible however
+well it were built.
+
+#### The rule to carry
+
+⛔ **Before trusting a detector, ask what its target looks like at the moment of failure.** If
+the failing instance lacks the property being keyed on, precision on the healthy population is
+worthless — it will report a clean sweep of exactly the cases that were never at risk.
+
+Both shortcuts are therefore rejected for triage, and the count goes to a hand-read sample
+with the Owner labelling blind.
+
+---
+
+### HR-69 — the codebase is a body of law with ~500 statutes and 27 of them enforced
+
+Measured 2026-08-11. Owner labelled 40 markers blind — no file names, no context, no sight of
+the strata or of my sealed prediction (`1601c9d`, committed before the draw).
+
+```
+                    labelled CLASS   population   rate
+  prefilter HIT          9 / 12          61       75.0%
+  prefilter MISS        13 / 25         852       52.0%
+  ─────────────────────────────────────────────────────
+  ESTIMATE                             489        53.5% of 913
+  95% CI                           321 .. 656
+```
+
+#### The prediction, and how wrong it was
+
+| | predicted | measured |
+|---|---|---|
+| HIT rate | 35% | **75%** |
+| MISS rate | 10% | **52%** |
+| total | **~105**, range 60–160 | **489**, CI 321–656 |
+
+⛔ **Wrong by 4.6×, and wrong in the direction I had explicitly ruled out.** The sealed
+prediction states: 「I expect to be GENEROUS… if the count comes in materially below 105, that
+is my bias measured」. It came in nearly five times ABOVE. **Both the magnitude and the sign
+were wrong**, which is worse than a large error in the predicted direction — the stated
+self-knowledge was not merely imprecise, it was inverted.
+
+#### The prefilter has almost no discriminating power
+
+52% → 75% while excluding 93% of the population. **A filter that leaves the base rate over half
+in the material it rejects is not a filter.** Third confirmation, after the 49-sentence regex
+and HR-68's duplicate detector, that lexical shape does not identify this class of sentence.
+
+#### What 489 means, and it is not a backlog
+
+> **Owner: 「If it is 400, it is a property of how this codebase is written and no amount of
+> survey tests closes it — and I would want that stated rather than left as an open task.」**
+
+**That is the correct reading and it is hereby stated rather than filed.** More than half of
+every ⛔ marker here is a rule ranging over a category. That is the house style: this code is
+written as law. 489 survey tests is not a project anyone would finish, and most of them would
+be low-value.
+
+⛔ **THIS IS THEREFORE NOT AN OPEN TASK, AND MUST NOT BE LOGGED AS ONE.** A backlog item that
+cannot be completed is a permanent accusation, not a plan.
+
+Two things follow that ARE actionable:
+
+1. **Stop the stock growing.** When a new ⛔ ranges over a category, the survey test goes in the
+   SAME commit. This converts a stock problem into a flow problem: the 489 stay, but they stop
+   becoming 500.
+2. **Triage by blast radius, never by count.** The question is not 「is this a class rule」 —
+   half of them are. It is: **if this rule were silently violated, would the Owner be handed a
+   wrong answer he would believe?** The read-failure contract was exactly that, which is why it
+   was worth a fix; most of the 489 are not, and would produce a visible crash or nothing.
+
+#### And the labelling held up
+
+Four labels were selected for challenge BEFORE reading their context, on the suspicion that
+they ranged over a single thing. All four survived:
+
+- 「SHOW THE MODEL ITS ACTUAL CHOICES」 — ranges over every capability offered to the model.
+- 「`title` stays NULL when absent」 — the line directly ABOVE states the same rule for
+  `publishedAt`. Two fields, one rule, already hand-propagated inside a single function.
+- 「`scheduled` IS MEASURED, NOT DECLARED」 — ranges over every state the interface asserts.
+- 「ITS JOB IS TO RECORD, ESPECIALLY WHEN THE ERRAND FAILS」 — every path, including failures.
+
+Zero disagreements out of 22 is a suspicious number and is reported as such. The guard against
+deference is that the four were picked before reading, not after — and reading is what
+overturned them.
+
+---
+
+### HR-70 — search by OUTPUT, not by name
+
+Recorded 2026-08-11 at the Owner's instruction. **Cited in conversation as 「HR-71」 on the same
+day; it had never actually been written down. This is it, at the next free number.**
+
+> **Before designing anything, ask what already PRODUCES this output — under any name, in any
+> vocabulary. A name is not a search key. What a thing returns is.**
+
+#### Why it needed writing
+
+This project has built a second copy of something at least four times: a second browser engine,
+a second evidence vocabulary, a second reasoning loop, a second classifier. Each time the
+duplicate was written because a search for the NAME found nothing.
+
+⛔ **The rule then ate its own best example.** Asked to design 「A0, a general reasoning
+planner」, a search for 「planner」 finds almost nothing. A search for the OUTPUT — *what decides
+what a question needs* — finds:
+
+| output | what already produces it | name it wears |
+|---|---|---|
+| goal → required facts → what is unavailable | `intake/goal/goalDecomposer.js` | 「B, the goal decomposer」 |
+| reason → read → observe → final | `intake/reasoningLoop.js` | 「a bounded loop」 |
+| which world does he mean | `intake/ownerSourceIntentResolver.js` | 「a resolver」 |
+| route + which sources answer it | `intake/turnRouter.js` | 「a router」 |
+| capability → worker → dispatch | `workers/registry.js` + `dispatch/dispatcher.js` | 「a registry」 |
+| typed capability contracts, versioned, risk-tiered | `capability/registry.js` | 「a registry」 — **a different one** |
+
+**A0 was ~70% built under four names, and the last two rows are themselves a duplicate pair
+that this very search found.** Nothing named 「planner」 exists; nearly all of a planner does.
+
+#### How to apply it
+
+Search for the RETURN VALUE and the decision, never the noun:
+「what decides X」, 「what returns a list of Y」, 「what turns a sentence into Z」. Grep for the
+shape of the output — enum values, field names, status strings — because those survive renaming
+and the module name does not.
+
+⛔ **And when the search finds something 70% right, the answer is PROMOTION, not a new module.**
+Building the general version fresh, above six existing deciders, would be the fifth second copy
+and the largest — because it would sit on top of everything the others do.
+
+---
+
+### HR-71 — the capture is in the LIVE path, and the dangerous direction is coverage
+
+Named 2026-08-11 at the Owner's instruction, before wiring B. Not built — named.
+
+`capturedShapes.js` is not a fixture. It is required at module load, `buildCatalogue()` runs
+once at require time, and it reaches production twice:
+
+```
+goalDecomposer.js:74      catalogueForPrompt()  → what the MODEL is told exists
+goalPlanContract.js:159   fieldTier(), coverageOf()
+goalPlanContract.js:271                         → what the SERVER judges to be available
+```
+
+**So a dated snapshot decides both what is proposed and what is believed.** Every day it ages.
+
+#### The two directions are not equally dangerous
+
+| drift | B's behaviour | harm |
+|---|---|---|
+| a field now EXISTS that the capture never saw | refuses, `UNOBSERVED` | ⚠ annoying, honest, visible |
+| a field the capture saw FULL has since emptied | says AVAILABLE, plan proceeds | ⛔ **a wrong answer he would believe** |
+
+⛔ **Coverage drift is the dangerous axis and nothing watches it.** A field NAME changing is rare
+and loud. A field quietly emptying is common and silent — and `latest_price 5/55 → SPARSE` is
+precisely the protection that would degrade without anything going red.
+
+#### The rule, in shape rather than in numbers
+
+1. **No expiry timer.** An 「refuse after N days」 rule would be picking a number that feels safe,
+   which is the error already recorded against the 30-second timeout.
+2. **The capture date travels with the plan.** An answer built on three-month-old field knowledge
+   should say so, the same way `QUERY_SCOPE` carries `declaredBy: 'reader'` rather than hiding
+   that its windows were read out of another repo's source.
+3. **Regeneration is triggered by SHAPE CHANGE, never by calendar.** `scripts/verify/captureShapes.js`
+   already reads all six without `--write`; a dry run that diffs field names and tiers against the
+   artefact is a check, not a schedule.
+4. ⛔ **And the gap is stated rather than closed: today nothing runs that diff, so coverage drift
+   is invisible until it produces an answer.**
+
+#### Why the artefact is not regenerated
+
+> **Owner: 「The pinned ratios are a dated measurement and rewriting them would delete the
+> evidence while looking like an update. And 55→37 on orderPlanning is live data moving, which
+> is a fact about my business, not instrument drift.」**
+
+`goal.test.js` pins 32/55 and 13/207. Those are evidence, not fixtures. Regeneration happens when
+something changes SHAPE, and it is a deliberate act with the assertions rewritten knowingly.
+
+---
+
+### HR-72 — the survey test caught a 31-commit revert that review would not have
+
+Recorded 2026-08-11. Wiring B, I took `governance/textClasses.js` from B's branch along with
+B's own files. B's branch was 31 commits behind, so its copy of that file was missing every
+entry added since — a silent revert inside a merge that looked like taking a dependency.
+
+**`textClasses.test.js` went red immediately: 「every file carrying Chinese has been classified」.**
+
+⛔ **Nothing about the diff looked wrong.** It was one file, taken from the branch that owned the
+feature, to satisfy a real dependency. A reviewer would have read it as correct — you would have
+had to already know which entries existed on the other side.
+
+This is the survey-test pattern (HR-66) doing exactly the job it was built for, on a mistake with
+no other detector. Filed beside HR-69's flow rule as the worked example of why a category rule
+earns its test.
+
+---
+
+### HR-73 — the ratio reaches the judge intact and the judge drops it
+
+Measured 2026-08-11. **Recorded ABOVE HR-71 in importance at the Owner's instruction**, because
+regenerating the artefact would change nothing and staleness is therefore the smaller half.
+
+The drift check found real movement on its first live run — `orderPlanning` coverage falling
+across five fields since the capture:
+
+```
+order_lead_days        65% → 49%   (18/37)
+delivery_days          65% → 54%   (20/37)
+pack_size              58% → 49%   (18/37)
+purchase_unit          85% → 78%   (29/37)
+supplier_product_name  85% → 78%   (29/37)
+```
+
+⛔ **B calls all five `AVAILABLE`, before and after, and a fresh capture would not change that.**
+`SPARSE_MAX = 0.20`, `DENSE_MIN = 0.90`: every one of those numbers sits inside the same band on
+both sides of the drift.
+
+#### ⛔ AND THE CORRECTION THAT MAKES IT WORSE THAN 「A LOSSY PROJECTION」
+
+The first reading — mine and the Owner's — was that the tier is a lossy projection of the ratio,
+a third instance of `CANDIDATE` hiding states. **That reading is wrong, and the truth is worse.**
+
+`FIELD_TIER` has eight values and one of them is exactly this case:
+
+> `PARTIAL_COVERAGE` — *「Populated on a real share of rows but not all. Usable — with the ratio
+> stated.」*
+
+And `coverage` is attached to every field: `tiers = base.fields.map((f) => ({ field, tier, coverage }))`.
+
+**So nothing is lost in projection.** The distinction was drawn, named, given a tier, and the
+measured ratio was carried alongside it all the way to the decision. Then `judgeFact` filters on
+`UNKNOWN`, `ALWAYS_EMPTY`, `SPARSE`, `UNOBSERVED` and `CANDIDATE` — and `PARTIAL_COVERAGE` is
+simply not in the chain, so it falls through to `AVAILABLE` carrying no qualification.
+
+> **The information does not decay upstream. It arrives complete at the one place that decides,
+> and that place does not look at it.**
+
+⛔ **This is a different and more dangerous failure than a lossy projection.** A lossy projection
+announces itself the moment you need the detail — it is not there. This one passes every audit:
+the tier exists, the ratio is populated, `fieldTiers` is on the returned object, and a reader
+checking 「is the coverage available」 finds yes. Only the consumer's filter list is short, and a
+missing entry in a filter list is invisible in every direction.
+
+#### The shape to carry
+
+**Do not ask 「is this information preserved」. Ask 「does the thing that decides consume it」.**
+Preservation is easy to check and proves nothing. Consumption is what the answer rests on, and
+between the two sits a filter list nobody reads.
+
+Not fixed, per the Owner's instruction: *「Do not fix it. Tell me, and we decide after B works.」*
+
+---
+
+### HR-74 — protection is proportional to how much was read
+
+**Recorded 2026-08-11, and it sits ABOVE everything else recorded today at the Owner's
+instruction. It is not a missing feature. It is the shape of every guard in this system.**
+
+> **Owner: 「保護力和讀了多少成正比——而在模型純粹靠記憶講話那刻，即是它最可能錯那刻，保護是零。」**
+
+Every protection here is a RELATION between a claim and evidence: claim binding binds claims to
+rows, `checkEvidence` compares a conclusion to its descriptor, `enforceReadState` compares a
+reply to what was read. **With no evidence there is no relation to violate, so every guard is
+vacuously satisfied.**
+
+#### The worked example. Keep it.
+
+> 「Aroma System 目前沒有專門的網站，現在我們有三間門市」
+
+Specific, plausible, wrong in a way the Owner could not check, and produced by a turn that read
+nothing. No gate objected, and each gate was correct on its own input.
+
+#### Two facts that make this concrete
+
+**1. Zero reads means no plan at all.** `intakeService.js`:
+
+```js
+const automaticPlanApplies = ... && turnItems.size > 0
+```
+
+No rows → no answer plan → no claim binding, no row refs, no citation check.
+
+⛔ **And the ADJACENT case was already closed, deliberately.** The comment immediately below it
+reads: 「A live read that matched ZERO rows … is exactly the answer most likely to be embroidered
+— 「我睇過，冇嘢」 is cheap to say and expensive to be wrong about. It gets grounded like any
+other read.」 **「read, found nothing」 was protected. 「never read at all」 was not.** One word
+apart, and all the protection is on one side of it.
+
+**2. The gate for this EXISTS and is not called.** `evidenceGate.js` line 75:
+
+```js
+return refuse(GATE.NO_EVIDENCE, 'a conclusion was drawn with no evidence attached')
+```
+
+Named for exactly this failure. Its only production call site is `browse/browseAnswer.js` — the
+browse line the Owner closed. **Zero call sites in the chat path.**
+
+So this is HR-73's shape a second time in one day: the mechanism reaches the decision point and
+the decision does not consume it — except here it is never invoked at all.
+
+---
+
+### HR-75 — the guard is disabled precisely when the router has no opinion
+
+Measured 2026-08-11, diagnosing what looked like an empty reply.
+
+「給我 Aroma System 的 website」 returned 「…目前尚未建立任何提案」. That is **not an empty reply**
+— it is `groundedReply.js`'s proposal-lane clarification. The turn was classified `develop`,
+went to the proposal lane, and the lane correctly reported no actionable task.
+
+The guard built to prevent exactly that, `coo/intent.js:163`:
+
+```js
+const routedNotAnAction = !!(route && route.route !== 'ACTION' && route.reason !== 'default')
+```
+
+⛔ **`route.reason !== 'default'` is the defect.** Measured, no model call needed:
+
+```
+⛔ GUARD OFF  route=CONVERSATION   reason=default    給我 Aroma System 的 website
+   GUARD ON   route=CONVERSATION   reason=question   Aroma System 的 website 是什麼？
+   GUARD ON   route=UTILITY        reason=utility_time
+   GUARD ON   route=BUSINESS_QUERY reason=intent_order_planning
+```
+
+**The same question, phrased as a REQUEST instead of a QUESTION, turns the guard off.** The
+router marks an unrecognised imperative `CONVERSATION/'default'`, the guard reads 「default」 as
+「the router has no opinion, defer to the model」, and the model's `develop` claim stands
+unchallenged.
+
+⛔ **So the deterministic override protects questions and not requests** — and 「給我 X」 is how
+the Owner asks for most things. The guard covers every case except the ordinary one.
+
+**Not caused by B.** B was 400ing at the time, had no opinion, and changed nothing on this path.
+
+---
+
+### HR-76 — the fence caught its own author, third time this week
+
+The provider-schema fence was written to stop one specific move: inferring a rule beyond what
+was measured. Its first version banned `maxItems` **and `minItems`** — the 400 had named only
+`maxItems`. It immediately flagged `answerPlan.js`, whose `minItems: 1` is live and correct.
+
+Measured separately, one call each:
+
+```
+minItems only  → ACCEPTED
+maxItems only  → REJECTED   For 'array' type, property 'maxItems' is not supported
+```
+
+⛔ **I inferred a family from one member, inside the fence built to stop exactly that.** Narrowed
+to what the evidence supports, and the control test now asserts the fence's RESTRAINT
+(`minItems` stays unflagged) as well as its reach. A fence that fires on a healthy file teaches
+people to ignore fences.
+
+---
+
+### HR-77 — the shape is real and this method cannot count it
+
+Recorded 2026-08-11 at the Owner's instruction, **in place of a number**.
+
+The Owner found, by hand, a new shape: `routeAuthorSplit.test.js` asserted that a model's
+`develop` claim on 「你好」 is honoured, while `intent.js`'s own comment says a hallucinated
+`develop` 「can no longer create a work order」. **A test and its own file's stated rule
+contradicting each other, with the test winning by being executable.**
+
+Asked whether anything else in the suite does this, a detector was built and run against a
+known-positive control — the pre-fix commit. Three iterations:
+
+| | result | why |
+|---|---|---|
+| 1. scan the file HEADER | **0 found** | this codebase puts prohibitions BESIDE the code they govern. `intent.js`'s sits at line ~145. The one place the rule was not. |
+| 2. scan all ⛔ comments | 3 found, **control FAILED** | ⛔ the `intent.js` prohibition **carries no ⛔ marker**. |
+| 3. any must-not sentence | control PASSED, 69 candidates | ⛔ **polarity inverted.** |
+
+#### ⛔ WHY THERE IS NO NUMBER
+
+`capability/dispatcher.js` says 「'deny' → return immediately … never route」. Its test asserts
+`assert.equal(denied.verdict, 'deny')`. **That test is PROVING the prohibition holds.**
+
+> **The same token appears on both sides of a rule and its confirmation, and they are
+> opposites. No token-matching method separates 「the test confirms the rule」 from 「the test
+> asserts the rule is violated」.**
+
+The hand-found instance was findable only semantically: 「你好」 and 「聽日幾號」 are the same
+CLASS of input, not the same string. **69 is a candidate population, not a count, and reporting
+it would have read as reassurance about the wrong thing.**
+
+#### The second iteration deserves its own line
+
+⛔ **A detector keyed on ⛔ is blind exactly where the convention broke down.** The prohibition
+that started all of this was never marked. That is the **third instrument this week blind to the
+case it was built for, and all three definitionally rather than accidentally**:
+
+- **HR-68** — duplicate-detection cannot find the rule nobody duplicated; being un-duplicated IS the defect.
+- **HR-73's context** — a fence keyed on a convention cannot see where the convention lapsed.
+- **this** — ⛔-keyed scanning misses the unmarked prohibition, and unmarked is why it was missed by people too.
+
+**Before trusting an instrument, ask what its target looks like at the moment of failure.** If
+the failing instance lacks the property being keyed on, precision on the healthy population is
+worthless.
+
+---
+
+### HR-78 — asking is the terminal branch AND the fail-closed default
+
+**Recorded above the fix it prompted, at the Owner's instruction.**
+
+Five turns, five clarifying questions, zero reads, ending in 「你講嘅 Aroma System 係我哋內部
+使用嘅系統，定係外部公司／服務嘅網站？」 — about a system she reads every day.
+
+`buildIntentPrompt` sends the resolver the Owner's own messages **and nothing else**, so a
+proper noun that IS one of her six sources looks exactly like an outside company. Unresolvable
+→ `ambiguous`. And `ambiguous` returns `{type:'final'}`, which **ends the turn**.
+
+> ⛔ **Asking is not merely cheaper than reading. It is the terminal branch AND the fail-closed
+> default for every resolver error — so uncertainty and failure leave by the same cheapest
+> door, and the system's most common visible behaviour is also its error path.**
+
+That is the finding. The fix (identity, not availability; rescuing only the ambiguous case)
+follows from it and is the smaller half.
+
+---
+
+### HR-79 — the shadow failed on the half it was built for
+
+**Recorded as a FAILURE OF THE INSTRUMENT, not filed as a limitation.**
+
+The no-evidence shadow was built for one sentence:
+「Aroma System 目前沒有專門的網站，現在我們有三間門市」.
+
+On its first real day it caught **`三間門市`** and was silent on **「目前沒有專門的網站」** — the
+half that was actually false. Measured on all three live clarifying replies: silent, silent,
+silent.
+
+⛔ **It caught one token in one sentence and missed the false claim beside it.** Calling that a
+「known limitation」 would be filing a failure as a design note. The instrument does not do the
+job it was built for; it does a fraction of it, and the fraction is the part with a number in it.
+
+It stays, unturned, because the Owner's traffic is what decides the 「一」 trade-off — but it is
+recorded as insufficient rather than as scoped.
+
+---
+
+### HR-80 — built, tested, reached by nothing: the one shape that IS countable
+
+Three instances this month, each found by hand, each after it mattered: **B** (23 tests green,
+zero call sites, a week), **`checkEvidence`** (named for the exact failure, zero call sites in
+chat), **`selfDescription.describe`** (8 tests green, zero call sites — she answered from
+memory while the registry holding the answer sat unused).
+
+⛔ **Unlike the last three sweeps, this target is a GRAPH EDGE, not a judgement.** HR-77's
+detector failed because a token sits on both sides of a rule and its confirmation; this one
+asks only 「does a require path reach here from `index.js`」, which has one answer.
+
+`scripts/verify/unreachedModules.js`. **Measured: 238 production modules, 178 reachable, 60
+reached by nothing.** Control passes in both directions — `intake/goal/`, `selfDescription.js`
+and `noEvidenceShadow.js` vanish from the list the moment they are wired, and
+`agent/evidenceGate.js` remains because it genuinely has no live call site.
+
+⚠ **60 is a population, not a defect count.** Much of it is the deliberately-closed browse line.
+And the detector is coarser than use: a module that is REQUIRED but whose export is never
+CALLED reads as reached — `checkEvidence` would, if `browseAnswer.js` were live.
+
+---
+
+### HR-81 — six environment gaps, and every one was the layer that decided
+
+**2026-08-12. Recorded as one entry at the Owner's instruction, because they are one finding.**
+
+> **Owner: 「Today produced no working fix and one real finding: I have been reading PASSes
+> from an environment that could not become mine.」**
+
+| # | gap | the PASS that did not survive |
+|---|---|---|
+| 1 | **provider** | B's acceptance passed on OpenAI. Production runs Claude, which 400s the schema twice over. |
+| 2 | **lane** | the startup smoke test passed on a path the defect could not reach. |
+| 3 | **caller** | 「verified on a live turn」 meant `processIntake()` called directly, with an options bag I built. His turn carries `demo`, `contextCard`, `providerHint`, `previousLane`, real history and the route's own `readContextDeps`. |
+| 4 | **build** | the node process had started **two hours before** the commit under test. Node reads files once; a running server is a snapshot. |
+| 5 | **restart semantics** | 「restart」 meant two different things. The launcher skips starting a healthy server — five `skip start` lines between 07:25 and 10:17. The page reopened, she answered, the process never moved. |
+| 6 | **branch** | ⛔ **the launcher fail-closes unless the repo is on `main`.** Every fix today was on a feature branch, so none of it could EVER have run on his machine. |
+
+⛔ **Each one was the layer that decided the outcome, and each was invisible from where I stood.**
+Not one was a wrong judgement about code. All six were facts about the environment that nobody
+had written down, and five of them I discovered only by being told the fix did not work.
+
+#### What follows, and it is not a resolution
+
+Rules about carefulness were written all month and each failed at least once. The only thing
+that broke the pattern was a script that **cannot produce a verdict when its premises fail**:
+
+- `scripts/verify/liveTurn.js` — refuses unless the server answers, `bootCommit` equals the
+  working tree HEAD, the tree is clean, and the turn goes through `POST /api/v1/demo/intake`.
+- `/health` carries `bootCommit`, read once at module load. Gap 4 is now observable.
+- The launcher says on screen, not in a log, when 「already up」 means old code. Gap 5.
+- Routes stamp `viaRoute`; an unstamped bag prints `[AROMA-NOT-VERIFICATION]`. Gap 3.
+
+⛔ **Gaps 1, 2 and 6 have no mechanism yet.** Provider and lane are named in HR-63's family and
+still rest on remembering. Branch is the sharpest of the three: the launcher already knows, and
+says so only to a log — the same shape as gap 5, one layer up.
+
+#### The rule to carry
+
+> **A PASS is a claim about an environment. Name the environment in the sentence, or the claim
+> is about the harness.** Which provider, which caller, which commit — the way `QUERY_SCOPE`
+> carries `declaredBy: 'reader'` rather than hiding that its windows came from another repo.

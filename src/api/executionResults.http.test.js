@@ -36,7 +36,16 @@ function buildApp () {
 
 async function seedConfirmed (built) {
   const develop = async () => ({ intent: 'develop', task: 'do x', targetProject: 'frontend' })
-  const { proposal } = await built.locals.proposalStore.propose({ conversationId: 'c', message: 'm', llm: develop })
+  /**
+   * ⛔ THE MESSAGE MUST ACTUALLY PROPOSE A CHANGE. It used to be the placeholder `'m'`.
+   *
+   * These tests are about /execution-results HTTP semantics and only need A proposal to exist,
+   * so the message was never meaningful — but the imperative guard (HR-75) now rejects a
+   * `develop` claim on a sentence containing no change verb, and `'m'` contains none. The
+   * guard is right and the fixture was lying: no real turn saying 「m」 should ever become a
+   * work order. Replaced with a sentence that genuinely asks for work.
+   */
+  const { proposal } = await built.locals.proposalStore.propose({ conversationId: 'c', message: 'fix the login bug', llm: develop })
   const runId = built.locals.proposalStore.confirmProposal(proposal.id, 'louie')
   return { proposal: built.locals.proposalStore.getProposal(proposal.id), runId }
 }
