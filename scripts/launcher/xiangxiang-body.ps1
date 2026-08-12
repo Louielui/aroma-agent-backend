@@ -161,7 +161,30 @@ $env:CONTEXT_AROMA_SYSTEM = 'on'
 # ⛔ FAIL-SAFE, NOT FAIL-SHUT. If B errors, times out, or returns an unusable plan it has NO
 # OPINION and the turn proceeds exactly as it did before B existed. It is a requirement
 # declaration, never a gate. Set to anything other than 'on' (or remove the line) to disable.
-$env:GOAL_DECOMPOSER   = 'off'   # ⛔ OFF 2026-08-11: empty-reply regression under diagnosis
+# ⛔ OFF — AND THE REASON ORIGINALLY WRITTEN HERE WAS WRONG. Corrected 2026-08-12 from records.
+#
+# This line used to read 「empty-reply regression under diagnosis」, which attributed an empty
+# reply to B. The timestamps refute it:
+#
+#   07:25:47  the answering process started
+#   07:31:03  'GOAL_DECOMPOSER = on' first reached main — SIX MINUTES LATER
+#   07:39:10  the empty reply
+#
+# Node reads its files once at start, so the process that produced that reply was spawned by a
+# launcher with no GOAL_DECOMPOSER line at all. B was not running. A second empty reply on
+# 2026-08-12 22:18:29Z occurred on 91b0a0a with B off, and [AROMA-GOAL] appears zero times in
+# every server log that day — B has never run in production.
+#
+# ⛔ WHAT DID CAUSE THE SECOND ONE, from C:\Aroma\logs (requestId 48fd8c80): the model chose
+# public_knowledge.search, the read FAILED, the completion guard refused the next two attempts
+# with 'before_terminal', the loop hit its step limit, and the turn ended
+# 'required_world_missing' — logged as outcome:success, httpStatus:200, with no text.
+#
+# ⛔ STILL UNSETTLED: whether the 07:39 reply shares that cause. Its own log predates the
+# per-boot files under C:\Aroma\logs, so its pipeline is not on disk.
+#
+# It stays OFF because turning it on is a separate authorisation, NOT because it caused this.
+$env:GOAL_DECOMPOSER   = 'off'
 
 # A4 Universal Knowledge Routing — PRODUCTION ACTIVATION (Owner GO 2026-08-10).
 # 香香 now establishes WHICH knowledge world a question belongs to before answering it:

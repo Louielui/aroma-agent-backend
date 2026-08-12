@@ -110,7 +110,19 @@ function logNoEvidenceShadow (turn, requestId) {
       path: turn && turn.path ? turn.path : null,
       wouldFire: r.wouldFire,
       reason: r.reason,
-      tokens: r.tokens.slice(0, 8),
+      /**
+       * ⛔ THE TOKENS THEMSELVES ARE NOT LOGGED, AND THEY USED TO BE.
+       *
+       * `tokens` holds numerals lifted verbatim out of her REPLY — 「三間」, a price, a date.
+       * That is reply content, and a log line may carry status, counts, routes, capability
+       * names, timings and requestIds, never content. The count is the measurement; the
+       * strings were convenience.
+       *
+       * The shadow's purpose survives intact: how OFTEN it would fire, and on how many
+       * tokens, is what produces the false-positive rate. Which numeral it was is readable
+       * from the conversation store, which is the record that is supposed to hold text.
+       */
+      tokenCount: r.tokens.length,
       replyChars: textOf(turn.reply).length
     }))
   } catch (_) { /* a measurement may never break a turn */ }

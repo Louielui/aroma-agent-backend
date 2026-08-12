@@ -1166,6 +1166,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the fallback distinguishes a successful READ from a failed COMPOSITION ***
 *** the fallback is written Chinese ***
 *** the fallback text cannot itself trip the read-state guard ***
+*** the fence can see the shape it is built for ***
 *** the first time, the fixed scope property is shown ***
 *** the fix instruction carries the absolute path and says why ***
 *** the flag fails closed on anything but exactly "on" ***
@@ -1480,6 +1481,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ an unknowable value is null, never a default wearing a fact\
 *** ⛔ an unknown block type is an ERROR that names what it saw ***
 *** ⛔ an unreadable store is LOUD — corruption is never read as "nothing learned" ***
+*** ⛔ and no logger interpolates a secret ***
 *** ⛔ body.count is never called matchingTotal before it has been qualified ***
 *** ⛔ candidate, rejected and superseded NEVER appear ***
 *** ⛔ clicking Save after a failed read sends NOTHING ***
@@ -1501,6 +1503,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ no interface string is written in Cantonese oral register ***
 *** ⛔ no keyword classifier, no domain rule, no holdout string ***
 *** ⛔ no keyword router, and no holdout literal in the production prompt ***
+*** ⛔ no logger field carries a turn\
 *** ⛔ no network primitive exists on the public path ***
 *** ⛔ no production runtime file imports the wisdom domain ***
 *** ⛔ no production schema pairs a union type with an enum — use anyOf ***
@@ -2332,6 +2335,7 @@ confirmProposal is the only path that calls runStore.startRun, passing the conve
 confirmProposal rejects a proposal that is not pending
 confirmedBy is always set by the server and can never be supplied by the caller/model
 connector REFUSES a write-shaped method at registration
+console.log('[X]', JSON.stringify({ reply: r.text }))
 containment: a prefixed symlink/junction escaping tmpDir is SKIPPED — target NEVER deleted
 containmentCheck === assertSandboxUnderTmpdir (canonical) and rejects a non-tmp path
 content that says "香香 do X" is returned as data; no write path to act on it
@@ -2715,6 +2719,7 @@ promote endpoint: token required, 404 unknown task, promotes+binds, idempotent
 promotion failure → no fabricated Proposal; error surfaced from official result
 promotion success → exactly the official pending Proposal; no run/dispatch
 prompt-injection: delimiter breakout neutralized; instruction text kept as DATA; warned
+prompt: p,
 proposal confirmed but no execution → 200 pending; execution but no result → 200 running
 proposal lane + flags ON → NO context injected, ZERO reads (chat-lane only)
 proposal → 4-arg with interactionMode:proposal, demo:true, promoteToProposal fn
@@ -3171,6 +3176,7 @@ timeout → unavailable
 title + note → "Title: <t>\n\nDetails: <n>"
 title only (missing note) → title-only
 titles and dates come from the row, and a missing date stays missing
+tokens: r.tokens.slice(0, 8),
 traversal / malformed id → 400 and the store is NEVER touched
 two different DOM nodes never share a ref, however alike they look
 two entries render INLINE — collapsing three lines is worse than reading them
