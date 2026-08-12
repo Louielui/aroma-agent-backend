@@ -69,6 +69,29 @@ function unavailable (reason, detail) {
  * decides. Failing closed to 「it must be chat」 here would be the lost-instruction defect
  * rebuilt in the component added to prevent paying for it.
  */
+/**
+ * Does this sentence propose CHANGING or MAKING something?
+ *
+ * ⛔ DELIBERATELY WIDE, AND THE DIRECTION OF THE ERROR IS THE POINT. This only ever decides
+ * whether the deterministic cover may REJECT the model's `develop` claim. Over-matching leaves
+ * the model in charge — today's behaviour, no regression. Under-matching EATS A REAL
+ * INSTRUCTION, silently, and the Owner is told it was a chat. So when in doubt, match.
+ *
+ * ⛔ IT IS NOT `laneRouter`'s CHANGE_ACT AND MUST NOT BE MERGED WITH IT. That one is narrow on
+ * purpose: paired with a file object it OPENS the proposal lane, so a wide version there would
+ * route loose talk into work orders. This one only CLOSES a claim. Same words, opposite
+ * consequence of being wrong — which is why they are two lists and not one (HR-58: a shared
+ * vocabulary whose two callers need opposite error directions is not a shared vocabulary).
+ *
+ * Measured on the Owner's phrasings: 6 of 6 work requests preserved, 4 of 5 asks protected.
+ * The miss is 「講吓你可以做咩」 — 「做」 inside 「做咩」 — recorded rather than tuned away.
+ */
+const CHANGE_ISH = /(改|更新|修正|修復|整|做|加|新增|加入|建立|開發|刪|移除|重寫|重構|部署|發佈|安裝|設定|配置|寫|生成|產生|實作|實現|update|modify|edit|fix|change|refactor|remove|delete|add|build|create|make|deploy|install|implement|write|generate)/i
+
+function proposesAChange (message) {
+  return typeof message === 'string' && CHANGE_ISH.test(message)
+}
+
 function safeRoute (message) {
   try {
     const { routeTurn } = require('../intake/turnRouter')
@@ -160,7 +183,25 @@ async function classifyIntent (message, llm) {
    * a sentence. The 400-token budget stops being the thing that decides.
    */
   const route = safeRoute(message)
-  const routedNotAnAction = !!(route && route.route !== 'ACTION' && route.reason !== 'default')
+  /**
+   * ⛔ TWO WAYS TO BE POSITIVELY NOT-AN-ACTION, AND THE SECOND ONE IS NEW (HR-75).
+   *
+   * (a) the router positively matched something — UTILITY, BUSINESS_QUERY, or a question.
+   * (b) the sentence proposes no change at all.
+   *
+   * (b) exists because `reason` is only INTERROGATIVE-or-not (`laneRouter.js:121`), so (a)
+   * alone protected QUESTIONS and not REQUESTS. 「給我 Aroma System 的 website」 routed
+   * CONVERSATION/'default', the cover switched off, and the model's `develop` claim turned an
+   * ordinary request into 「尚未建立任何提案」.
+   *
+   * ⛔ AND THE BLANKET FIX WAS MEASURED AND REJECTED. Simply dropping `!== 'default'` looks
+   * right and is not: EVERY genuine work request also routes CONVERSATION/'default', because
+   * the PROPOSAL lane needs a change verb AND a file object AND no question mark. Blanket
+   * would convert every development request into chat — the LOST INSTRUCTION failure this
+   * file already names, where the Owner asks for work and is told it was a conversation.
+   */
+  const routedNotAnAction = !!(route && route.route !== 'ACTION' &&
+    (route.reason !== 'default' || !proposesAChange(message)))
 
   /**
    * ⛔ A CLASSIFIER FAILURE IS A FAILURE. IT IS NOT A CONVERSATION.
@@ -235,4 +276,7 @@ async function classifyIntent (message, llm) {
   }
 }
 
-module.exports = { classifyIntent, TARGET_PROJECTS }
+module.exports = {
+  // Exported for its own test: the guard's new half is a rule about the Owner's phrasings
+  // and must be provable without a model call.
+  proposesAChange, classifyIntent, TARGET_PROJECTS }
