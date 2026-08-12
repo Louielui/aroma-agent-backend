@@ -110,6 +110,8 @@ const { answerUtility } = require('./utilityAnswer') // the server answers, or i
 const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
 const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
+// A post-generation check: she may not ask the Owner what his own system is (02e430e, twice).
+const { correctInternalSystemReply } = require('../governance/internalSystemAnswer')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -2162,6 +2164,29 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // The ordinary chat path — this is the one the 「我目前讀唔到你的日程」 turn came down
     // while the calendar telemetry said trust:'live'.
     const guarded = enforceReadState(distilled.reply, Array.from(turnPerSource.values()), message)
+    /**
+     * ⛔ SHE MAY NOT ASK THE OWNER WHAT HIS OWN SYSTEM IS. Observed twice on 02e430e through
+     * the real UI, in one session, in two different model-authored phrasings — while the same
+     * session's earlier turn used the registry correctly. The fact reaches the prompt on every
+     * one of those turns by the same code path; the model used it once and ignored it twice.
+     *
+     * ⛔ SO THIS IS A POST-GENERATION CHECK, NOT A STRONGER INSTRUCTION. Owner's ruling and the
+     * standing CONTRACT_RELIABILITY finding: a fact supplied by prompt is followed
+     * inconsistently, and reinforcing the sentence changes the odds rather than the guarantee.
+     *
+     * It fires only when the OWNER's own message names her system, removes only the offending
+     * sentence, and leaves every other clarification alone — which endpoint, which range,
+     * which location are all questions she is still entitled to ask.
+     */
+    const selfDesc = correctInternalSystemReply({ reply: guarded.reply, message })
+    if (selfDesc.corrected) {
+      guarded.reply = selfDesc.reply
+      try {
+        console.log('[AROMA-SELFDESC-CORRECTED]', JSON.stringify({
+          requestId, removedSentences: selfDesc.removed.length
+        }))
+      } catch (_) { /* telemetry is never load-bearing */ }
+    }
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)
     guarded.reply = lang.reply

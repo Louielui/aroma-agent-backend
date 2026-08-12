@@ -1048,6 +1048,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** rows on a NON-business route can never force a plan ***
 *** rows returned but none in the asked-for period has a name and words ***
 *** rubbish input measures nothing and never throws ***
+*** rubbish input never throws and never claims a correction ***
 *** running text is never bold: only two weights exist, 400 and 500 ***
 *** running this very file did not write to the production store ***
 *** saving a bad timezone is refused, all-or-nothing ***
@@ -1265,6 +1266,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the picker note names every source, generated — not a stale four ***
 *** the policy governs prose only — it may never touch source data ***
 *** the policy is inside the block that crosses the adapter boundary ***
+*** the precondition holds: no user mention of her system, no correction ***
 *** the projected key set is exactly this, in this order ***
 *** the projection stays CLOSED — answerPlan is the one named exception ***
 *** the prompt only branches on roles the client actually sends ***
@@ -1384,6 +1386,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
+*** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
@@ -1391,7 +1394,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
+*** ⛔ LEGITIMATE clarification on another axis passes through UNTOUCHED ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
+*** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
 *** ⛔ PROHIBITION 2 — the sentence is derived, so a count cannot drift ***
@@ -1411,6 +1416,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
+*** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
@@ -1461,6 +1467,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ candidate, rejected and superseded NEVER appear ***
 *** ⛔ clicking Save after a failed read sends NOTHING ***
 *** ⛔ complete WITHIN SCOPE does not support a SOURCE-WIDE universal claim ***
+*** ⛔ content that is NOT the disambiguation survives the correction ***
 *** ⛔ createdBy confers NO validation authority, whatever it says ***
 *** ⛔ daily-count items are 50 empty arrays — the count-vs-stock case has no per-item data at all ***
 *** ⛔ empty and non-string inputs propose nothing, and never throw ***
