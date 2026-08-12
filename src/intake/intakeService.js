@@ -1165,6 +1165,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     } catch (_) { /* shadow telemetry is never load-bearing */ }
   }
 
+  /**
+   * ⛔ AND IT HAPPENED AGAIN, TWENTY LINES FROM THIS WARNING. 2026-08-11.
+   *
+   * The comment above records a first draft that would have 「thrown silently every turn and
+   * produced no shadow data at all — a telemetry feature that logs nothing while appearing to
+   * work」. The no-evidence shadow was then wired beside `enforceNoReadClaim`, which is the
+   * PROPOSAL-FALLBACK reply path, and emitted nothing on a real turn for exactly that reason.
+   *
+   * ⛔ IT WAS FOUND BY RUNNING ONE TURN, NOT BY READING THE CODE — and the warning it repeats
+   * was already written, in this file, a screen away. Reading did not transfer it; running did.
+   * Both reply paths now carry the shadow, each labelled with `path`, so a path that goes quiet
+   * shows up as an absent label rather than as calm.
+   *
+   * The lesson is placed HERE rather than in the house rules on the Owner's instruction: a
+   * warning about silent telemetry belongs where telemetry is written.
+   */
+
   // Parse the structured JSON response. DistillParseError (Slice A) propagates
   // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
   // On failure we attach NUMERIC/enum diagnostics only, so a truncation can be proven
