@@ -92,6 +92,10 @@ const FILE_CLASS = Object.freeze({
   // against her own output. Translating it would delete the detector silently — the code still
   // runs and simply stops matching what she actually writes. The most dangerous of the classes.
   'intake/noEvidenceShadow.js': CLASS.MATCHING,       //   2 — CJK numerals + measure words
+  // ⛔ MATCHING + INTERFACE in one file. The NAME list is matched against his words (translating
+  // it deletes the detector silently); the describe() sentence he reads. MATCHING is the
+  // stricter of the two, so it governs.
+  'governance/selfDescription.js': CLASS.MATCHING,    //   6 — the internal-system name list
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never
