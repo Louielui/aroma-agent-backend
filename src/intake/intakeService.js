@@ -109,7 +109,7 @@ const { answerUtility } = require('./utilityAnswer') // the server answers, or i
 // SHADOW ONLY: measures unsourced specific claims on zero-evidence turns. Decides nothing.
 const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
-const { namesInternalSystem } = require('../governance/selfDescription')
+const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -840,6 +840,26 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * there is nothing to read, or it does not travel at all.
          */
         if (goalBlock) effPrompt = goalBlock + '\n\n' + effPrompt
+
+        /**
+         * ⛔ SELF-DESCRIPTION, AND IT IS NOT A READ.
+         *
+         * She asked the Owner what Aroma System is. Naming it internal stopped the question,
+         * but she still answered 「目前沒有獨立的 website」 from memory — because the registry
+         * that holds the base URL had ZERO CALL SITES. Built, tested, reachable by nothing.
+         *
+         * ⛔ INJECTED AS FACTS, NEVER AS PERMISSION. This is a deterministic sentence built
+         * from frozen tables and runtime values (`describe()` — no model, no template a model
+         * can extend). It says what she IS; it does not say any source is reachable, and it
+         * grants no authorisation. `reachable` is null in the registry precisely so a flag can
+         * never answer a capability question through this door.
+         *
+         * Only on turns that name her own system, so an ordinary business question does not
+         * pay for prompt it will not use.
+         */
+        if (namesInternalSystem(message)) {
+          effPrompt = '【關於你自己（呢啲係事實，唔係推測）】\n' + describeSelf() + '\n\n' + effPrompt
+        }
       } catch (err) {
         // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
         // failure therefore produced a turn that looked normal, with no context and no
