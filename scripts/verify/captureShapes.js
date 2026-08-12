@@ -206,7 +206,18 @@ function render (results, capturedOn) {
   return lines.join('\n')
 }
 
+/**
+ * ⛔ EXPORTED SO THE DRIFT CHECK REUSES THESE READERS RATHER THAN COPYING THEM.
+ *
+ * A second implementation of `shapeOf` would be the fifth second copy (HR-70): the drift check
+ * exists precisely to compare against what THIS function produced, so a divergence between two
+ * copies would read as drift in the data. The instrument and the check must be the same code.
+ */
+module.exports = { ENDPOINTS, readOne, shapeOf, arrayShapes, isEmptyValue }
+
 ;(async () => {
+  // ⛔ GUARDED. Without this the whole capture — six live reads — would fire on `require`.
+  if (require.main !== module) return
   if (!KEY) { console.error('⛔ AROMA_SYSTEM_KEY absent. Run with --env-file=.env'); process.exit(2) }
   console.log('base ' + BASE + '   key PRESENT (not printed)')
   console.log('')
