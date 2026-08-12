@@ -71,11 +71,11 @@ function demoGuard (req, res, next) {
 function optsForMode (interactionMode, { requestId, contextCard, promoteToProposal, providerHint }) {
   if (interactionMode === 'email_draft') {
     // U1 early-return path: SHADOW_ONLY. No demo, no promoteToProposal.
-    return { requestId, u1DraftShadow: true, contextCard }
+    return { requestId, u1DraftShadow: true, contextCard, viaRoute: 'demo' }
   }
   if (interactionMode === 'chat') {
     // Keep demo:true → persona + ACTION_HONESTY_GUARD + sanitized contextCard.
-    return { requestId, interactionMode: 'chat', demo: true, contextCard, providerHint: normalizeProviderHint(providerHint) }
+    return { requestId, interactionMode: 'chat', demo: true, contextCard, providerHint: normalizeProviderHint(providerHint), viaRoute: 'demo' }
   }
   // proposal — proposal-only via the existing demo path + injected domain seam.
   return { requestId, interactionMode: 'proposal', demo: true, contextCard, promoteToProposal }

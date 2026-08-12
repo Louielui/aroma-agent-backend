@@ -146,6 +146,23 @@ $env:CONTEXT_GITHUB    = 'on'
 # here. No key => the source is simply not registered and reports unavailable.
 $env:CONTEXT_AROMA_SYSTEM = 'on'
 
+# B, the goal decomposer — LOAD-BEARING (Owner GO 2026-08-11). One model call before the read
+# decides WHAT FACTS the question needs; the server then reads only the operations named, and
+# a fact nothing carries is reported as UNAVAILABLE instead of substituted.
+#
+# Acceptance case, measured before this was switched on: 「給我 Aroma System 的 website」 used to
+# read four stock counts and fail to assemble an answer. With B it names the required fact as
+# the system's own URL, finds no operation providing it, and reads ZERO sources.
+#
+# Costs one extra model call per BUSINESS_QUERY turn (measured 1652 in / 68 out / 2.5s on the
+# acceptance case). UTILITY and CONVERSATION never reach it — 聽日幾號 and arithmetic return
+# hundreds of lines earlier, so they pay nothing.
+#
+# ⛔ FAIL-SAFE, NOT FAIL-SHUT. If B errors, times out, or returns an unusable plan it has NO
+# OPINION and the turn proceeds exactly as it did before B existed. It is a requirement
+# declaration, never a gate. Set to anything other than 'on' (or remove the line) to disable.
+$env:GOAL_DECOMPOSER   = 'off'   # ⛔ OFF 2026-08-11: empty-reply regression under diagnosis
+
 # A4 Universal Knowledge Routing — PRODUCTION ACTIVATION (Owner GO 2026-08-10).
 # 香香 now establishes WHICH knowledge world a question belongs to before answering it:
 # internal (Aroma System), public (the outside world), both, or neither — and asks when the

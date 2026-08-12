@@ -80,8 +80,23 @@ const FILE_CLASS = Object.freeze({
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels
+  // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
+  'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
+  'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction
+  'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — JSON-schema `description` text
+  // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
+  // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
+  // her behaviour rather than changing what he sees.
+  'intake/goal/goalGate.js': CLASS.MODEL,             //   8 — the requirement block
+  // ⛔ MATCHING, not INTERFACE. The Chinese here is the numeral and measure-word SET matched
+  // against her own output. Translating it would delete the detector silently — the code still
+  // runs and simply stops matching what she actually writes. The most dangerous of the classes.
+  'intake/noEvidenceShadow.js': CLASS.MATCHING,       //   2 — CJK numerals + measure words
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
+  // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never
+  // what the check decides — the alarm/report split lives in shapeDrift.js, which has no text.
+  'errands/shapeDriftRunner.js': CLASS.INTERFACE,     //   6 — the drift summary sentence
   'intake/readResultView.js': CLASS.INTERFACE,        //  19
   'demo/assets/settings.js': CLASS.INTERFACE,         //  18
   'home/errandKinds.js': CLASS.INTERFACE,             //  18 — titles + duration words
@@ -122,6 +137,18 @@ const FILE_CLASS = Object.freeze({
   'routes/ownerAuthRouter.js': CLASS.INTERFACE,       //   1
   'routes/workRequestRoute.js': CLASS.INTERFACE,      //   1
   'i18n/catalogue.js': CLASS.INTERFACE,               //   9 — already extracted; it IS the words
+  'browse/browseAnswer.js': CLASS.INTERFACE,          //   9 — the answer he reads after a public
+  //                                                          read. Replaces browseResult.js, which
+  //                                                          was DELETED rather than refactored.
+  //                                                          ⛔ TWO PHRASES ARE PINNED by
+  //                                                          browseAnswer.test.js and cannot be
+  //                                                          extracted silently: 「搵唔到」, which
+  //                                                          must never become 「冇貨」, and the line
+  //                                                          saying the price seen is NOT the
+  //                                                          shop's 「售價」. Both carry a
+  //                                                          distinction A1 enforces in a FIELD;
+  //                                                          translating them away would delete it
+  //                                                          from the only place he reads.
 
   /**
    * ⛔ DELIBERATELY ABSENT, so nobody reads their absence as an oversight:
@@ -181,6 +208,16 @@ const FILE_CLASS = Object.freeze({
   'lab/citationDetector.js': CLASS.MATCHING,          //   1
   'lab/conversationRecall.js': CLASS.MATCHING,        //   1
   'intake/routeEvidenceGuard.js': CLASS.MATCHING,     //   1
+  'browse/browseIntent.js': CLASS.MATCHING,           //   4 — the whole file IS the guard: the
+  //                                                          browse verbs (查/睇下), the web
+  //                                                          markers (網站/官網), the PURCHASE
+  //                                                          words (買/落單/加入購物車) and the
+  //                                                          price field (幾多錢/價錢) are matched
+  //                                                          against what Louie types.
+  //                                                          ⛔ Translating the purchase list does
+  //                                                          not break a test or remove a line of
+  //                                                          code — it silently turns 「幫我買」
+  //                                                          from REFUSED into an ordinary read.
 
   // ── FROZEN — hash-verified. Not ours to edit, in any language. ─────────────
   'core/memory/shadow/behavioralMapping.js': CLASS.FROZEN, // 2

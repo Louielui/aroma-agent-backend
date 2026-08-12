@@ -17,6 +17,7 @@
 
 require('dotenv').config()
 
+const { BOOT_COMMIT, BOOTED_AT } = require('./governance/bootCommit')
 const os = require('node:os')
 const path = require('node:path')
 
@@ -806,6 +807,14 @@ function createApp (options = {}) {
       service: 'aroma-hub',
       version: '0.1.0',
       capability_layer: 'v1',
+      /**
+       * ⛔ WHICH COMMIT IS RUNNING — unguarded, because a verification script must be able to
+       * ask before it has a session. `version` identifies the product and has never changed;
+       * this identifies the code, and its absence is why a PASS could be reported against a
+       * server two hours older than the fix it was testing.
+       */
+      bootCommit: BOOT_COMMIT,
+      bootedAt: BOOTED_AT,
       timestamp: new Date().toISOString()
     })
   })

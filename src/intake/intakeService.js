@@ -106,6 +106,12 @@ async function defaultRecoveryWorker (input) {
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
+// SHADOW ONLY: measures unsourced specific claims on zero-evidence turns. Decides nothing.
+const { logNoEvidenceShadow } = require('./noEvidenceShadow')
+// B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
+// question NEEDS; the server then reads only what was named. A failure has no opinion.
+const { decomposeGoal } = require('./goal/goalDecomposer')
+const { goalDecomposerEnabled, sourcesForPlan, requirementBlock } = require('./goal/goalGate')
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -214,6 +220,31 @@ async function processIntake (message, adapter, history = [], opts = {}) {
 
 async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
+
+  /**
+   * ⛔ THIS TURN DID NOT COME FROM A ROUTE, SO IT IS NOT VERIFICATION.
+   *
+   * Four PASSes this month did not survive the Owner's machine, and one cause was that
+   * 「verified on a live turn」 meant calling this function DIRECTLY with an options bag the
+   * harness built itself — `{interactionMode:'chat'}` and nothing else. His turn arrives
+   * through `POST /api/v1/demo/intake`, carrying `demo`, `contextCard`, `providerHint`,
+   * `previousLane`, real history, and the route's own `readContextDeps` assembly. Same
+   * function, different inputs, and the inputs are what steer routing.
+   *
+   * The routes now stamp `viaRoute`. A bag without it was hand-made.
+   *
+   * ⛔ IT WARNS AND DOES NOT REFUSE. Refusing would break every unit test that legitimately
+   * calls this directly — and a guard whose failure mode is a broken suite gets deleted. The
+   * point is only that the cheap path can no longer look like the real one in a transcript.
+   *
+   * ⛔ AND IT IS SILENT UNDER THE TEST RUNNER, measured rather than assumed:
+   * `node --test` sets NODE_TEST_CONTEXT="child-v8". Unit tests are not pretending to verify.
+   */
+  if (!process.env.NODE_TEST_CONTEXT && !(opts && opts.viaRoute)) {
+    console.warn('[AROMA-NOT-VERIFICATION] processIntake was called directly, not through a route. ' +
+      'This turn exercises a hand-built options bag and is NOT evidence about 香香. ' +
+      'Use: node --env-file=.env scripts/verify/liveTurn.js "<message>"')
+  }
   // B2-2 Conversation Demo — additive, flag-gated. When `demo` is false (default,
   // i.e. no opts) every demo branch below is skipped and the pipeline is unchanged.
   const demo = opts && opts.demo === true                  // CONVERSATION_DEMO gate; default false
@@ -417,6 +448,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // who is being asked, and a provider is never handed a block it is not permitted.
   const promptCache = new Map()   // provider -> assembled prompt
   const readBlockCache = new Map() // source-set key -> read-context block (one fetch per set)
+  /**
+   * ⛔ B RUNS AT MOST ONCE PER TURN, AND THE MEMO IS THE PRICE CONTROL.
+   *
+   * `buildPromptFor` is called per provider AND again on every reasoning-loop step. Calling the
+   * decomposer from inside it without this cache would buy one paid call per provider per step
+   * — the turn that costs 「four connectors and thirteen rows」 all over again, in tokens.
+   *
+   * Three states, deliberately: `undefined` not attempted, a promise in flight, and a resolved
+   * value that may itself be `null` for 「B had no opinion」. A rejected promise is impossible —
+   * `decomposeOnce` never throws, because B failing must not be able to fail the turn.
+   */
+  let goalPlanPromise // undefined = not attempted; Promise<plan|null> once started
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
@@ -563,6 +606,50 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ⛔ ONE source-world authority per turn, resolved at most once per stable Owner context.
   const sourceIntents = createTurnIntentCache()
 
+  /**
+   * B, once. Returns the judged plan, or `null` for 「no opinion」.
+   *
+   * ⛔ IT NEVER THROWS AND IT NEVER REJECTS. The Owner's rule: 「B failing falls back to the
+   * existing reasoning loop, never to no answer.」 Every failure — flag off, no adapter, a
+   * provider error, an unparseable envelope, a plan the contract refuses — resolves to `null`,
+   * and `sourcesForPlan(null, …)` then narrows nothing. The turn proceeds exactly as it did
+   * before B existed.
+   */
+  function decomposeOnce () {
+    if (goalPlanPromise !== undefined) return goalPlanPromise
+    goalPlanPromise = (async () => {
+      try {
+        const out = await decomposeGoal({
+          question: message,
+          // Provider-neutral by construction: B is handed a closure and never learns what is
+          // behind it — the same arrangement reasoningLoop uses.
+          callModel: async ({ prompt, responseFormat }) => {
+            const r = await adapter.complete(prompt, { system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
+            return { text: r && r.text, usage: r && r.usage }
+          }
+        })
+        // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
+        // be taken from real runs rather than estimated, and a refusal that costs a call is
+        // still a cost.
+        try {
+          console.log('[AROMA-GOAL]', JSON.stringify({
+            requestId,
+            ok: !!(out && out.ok),
+            reason: (out && out.reason) || null,
+            facts: (out && out.ok && out.plan && Array.isArray(out.plan.facts)) ? out.plan.facts.length : null,
+            unavailable: (out && out.ok && out.plan && Array.isArray(out.plan.facts))
+              ? out.plan.facts.filter((f) => f && f.status === 'UNAVAILABLE').length : null,
+            usage: (out && out.usage) || null
+          }))
+        } catch (_) { /* telemetry is never load-bearing */ }
+        return (out && out.ok && out.plan) ? out.plan : null
+      } catch (_) {
+        return null
+      }
+    })()
+    return goalPlanPromise
+  }
+
   async function buildPromptFor (providerName) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
@@ -640,9 +727,36 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // INTERSECTED with what is enabled, never unioned: the route can only ever narrow
         // what the Owner's own switches already allow.
         const forced = deps && deps.forceSources === true // tests only, to prove the plan gate
-        const all = (routeGoverns && !forced)
+        let all = (routeGoverns && !forced)
           ? enabled.filter((s) => routeDecision.sources.includes(s))
           : enabled
+
+        /**
+         * ── ⛔ B DECIDES WHAT IS NEEDED, AND THE SERVER READS ONLY THAT ──────
+         *
+         * The route answers 「which source could hold this entity」 from keywords. B answers a
+         * different question — 「what facts would ANSWER this」 — and it can return the one
+         * thing a keyword table structurally cannot: **nothing here carries that.**
+         *
+         * 「給我 Aroma System 的 website」 is the case. The keyword route sees 「system」 and
+         * names stock; B names the required fact as the system's own URL, finds no operation
+         * that provides it, and `sourcesForPlan` therefore returns `[]`. The turn reaches the
+         * model with zero rows and a stated gap instead of four stock counts and a shrug.
+         *
+         * ⛔ NARROW ONLY. Intersected inside `sourcesForPlan` against what is already enabled,
+         * never unioned — a requirement is not an authorisation.
+         *
+         * ⛔ AND `null` IS NOT `[]`. A plan that could not be produced narrows NOTHING and the
+         * turn is byte-for-byte what it was before B existed; only a real plan can say 「read
+         * nothing」. That distinction is the whole of the fail-safe.
+         */
+        let goalBlock = null
+        if (goalDecomposerEnabled(process.env) && !forced) {
+          const plan = await decomposeOnce()
+          const wanted = sourcesForPlan(plan, all)
+          if (wanted !== null) all = wanted
+          goalBlock = requirementBlock(plan)
+        }
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
         // gets that minus anything the Owner has withheld from it.
         //
@@ -714,6 +828,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             readContextUsedBy.set(providerName, sources.slice())
           }
         }
+
+        /**
+         * ⛔ INJECTED OUTSIDE THE `sources.length > 0` BRANCH, AND THAT IS THE ACCEPTANCE CASE.
+         *
+         * When B finds that nothing carries the required fact, there are ZERO sources — so a
+         * requirement block placed inside the read branch would be built and then never
+         * reach the prompt, on precisely the turn it exists for. The gap has to travel when
+         * there is nothing to read, or it does not travel at all.
+         */
+        if (goalBlock) effPrompt = goalBlock + '\n\n' + effPrompt
       } catch (err) {
         // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
         // failure therefore produced a turn that looked normal, with no context and no
@@ -1065,6 +1189,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       })
     } catch (_) { /* shadow telemetry is never load-bearing */ }
   }
+
+  /**
+   * ⛔ AND IT HAPPENED AGAIN, TWENTY LINES FROM THIS WARNING. 2026-08-11.
+   *
+   * The comment above records a first draft that would have 「thrown silently every turn and
+   * produced no shadow data at all — a telemetry feature that logs nothing while appearing to
+   * work」. The no-evidence shadow was then wired beside `enforceNoReadClaim`, which is the
+   * PROPOSAL-FALLBACK reply path, and emitted nothing on a real turn for exactly that reason.
+   *
+   * ⛔ IT WAS FOUND BY RUNNING ONE TURN, NOT BY READING THE CODE — and the warning it repeats
+   * was already written, in this file, a screen away. Reading did not transfer it; running did.
+   * Both reply paths now carry the shadow, each labelled with `path`, so a path that goes quiet
+   * shows up as an absent label rather than as calm.
+   *
+   * The lesson is placed HERE rather than in the house rules on the Owner's instruction: a
+   * warning about silent telemetry belongs where telemetry is written.
+   */
 
   // Parse the structured JSON response. DistillParseError (Slice A) propagates
   // untouched — it owns .reason/.diagnostic; the outer wrapper tags correlationId.
@@ -1875,6 +2016,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const unread = enforceNoReadClaim(guarded.reply, Array.from(turnPerSource.values()), message, routeDecision)
     guarded.reply = unread.reply
     if (unread.flagged) logNoReadClaim(routeDecision, requestId)
+    /**
+     * ⛔ SHADOW ONLY (HR-74). Placed HERE, beside `enforceNoReadClaim`, because they are the two
+     * halves of one question and only one of them is currently asked.
+     *
+     * `enforceNoReadClaim` catches 「she CLAIMED a read that never happened」. It has nothing to
+     * say about 「she stated a specific fact about the business with no read behind it」 —
+     * 「現在我們有三間門市」 claims no read, so that guard correctly passes it.
+     *
+     * This measures the second half and DECIDES NOTHING. Zero model calls, so unlike B the
+     * shadow is free; the Owner's real traffic produces the false-positive rate, and only then
+     * is there anything to decide. It must never grow a refusal: an empty reply is worse than
+     * a wrong one, and a gate whose failure mode is silence recreates the defect it was built
+     * against.
+     */
+    try {
+      let shadowRows = 0
+      for (const g of turnItems.values()) shadowRows += (g && Array.isArray(g.items)) ? g.items.length : 0
+      logNoEvidenceShadow({
+        reply: guarded.reply,
+        question: message,
+        rowsRead: shadowRows,
+        rowsText: shadowRows > 0 ? JSON.stringify(Array.from(turnItems.values())) : ''
+      }, requestId)
+    } catch (_) { /* a measurement may never break a turn */ }
     // ⛔ SECOND OUTPUT GUARD. Detect + record + flag; never rewrite — 簡轉繁 is not one-to-one.
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)
@@ -1944,6 +2109,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     logTraditionalFlag(lang, requestId)
     guarded.reply = lang.reply
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    /**
+     * ⛔ THE MAIN CHAT PATH. The first placement of this sat beside `enforceNoReadClaim` on the
+     * proposal-fallback path and emitted NOTHING on a real turn — found by running one, not by
+     * reading it. That is exactly the hazard `logTurnRoute` warns about above: a telemetry
+     * feature that logs nothing while appearing to work. Both reply paths carry it now, each
+     * labelled, so a path that goes quiet is visible rather than assumed.
+     */
+    try {
+      let shadowRows = 0
+      for (const g of turnItems.values()) shadowRows += (g && Array.isArray(g.items)) ? g.items.length : 0
+      logNoEvidenceShadow({
+        reply: guarded.reply,
+        question: message,
+        rowsRead: shadowRows,
+        rowsText: shadowRows > 0 ? JSON.stringify(Array.from(turnItems.values())) : '',
+        path: 'chat'
+      }, requestId)
+    } catch (_) { /* a measurement may never break a turn */ }
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,

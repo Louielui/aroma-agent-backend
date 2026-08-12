@@ -440,6 +440,7 @@ const CATALOGUE = Object.freeze({
   },
 
   'errand.recallTitle': { zh: '回收檢查', en: 'Recall check' },
+  'errand.shapeDriftTitle': { zh: '欄位形狀檢查', en: 'Field shape check' },
 
   /**
    * ⛔ SENTENCE JOINING IS INTERFACE TOO, AND ENGLISH NEEDS IT WHERE CHINESE DOES NOT.
