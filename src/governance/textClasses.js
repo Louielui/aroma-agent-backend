@@ -84,6 +84,10 @@ const FILE_CLASS = Object.freeze({
   'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction
   'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — JSON-schema `description` text
+  // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
+  // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
+  // her behaviour rather than changing what he sees.
+  'intake/goal/goalGate.js': CLASS.MODEL,             //   8 — the requirement block
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never

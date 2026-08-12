@@ -641,6 +641,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a phone number from the event DESCRIPTION is now verifiable ***
 *** a phone number matches across separator styles, and only across separators ***
 *** a plan echoing the ref validates ***
+*** a plan naming one operation reads only that operation\
 *** a plan over the fact bound is REFUSED, never quietly truncated ***
 *** a plan whose every item is unprovable does NOT report success ***
 *** a plan with no answerClaims yields NO bindings — UNBOUND, not guessed ***
@@ -1275,6 +1276,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the rendered reply shows the row instead of the fallback ***
 *** the renderer mutates nothing it is given ***
 *** the request that produced nothing now produces an offer ***
+*** the requirement block STATES the gap rather than hiding it ***
 *** the response envelope is unchanged by persistence ***
 *** the right password opens everything that was refused ***
 *** the route exists on the approval surface, GET-only ***
@@ -1370,15 +1372,19 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
+*** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
-*** ⛔ B is not wired into the runtime, and is not a second reasoning loop ***
+*** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
+*** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
+*** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
+*** ⛔ OPTIONAL facts do not authorise a read on their own ***
 *** ⛔ READ → READ → READ: no fourth call, and the pending prose is NOT the answer ***
 *** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***
 *** ⛔ REVIEW 1: a capped count is NOT a matching total ***
@@ -1391,6 +1397,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
+*** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
@@ -1411,6 +1418,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ a missing claim structure is UNBOUND — never row_local, never source_wide ***
 *** ⛔ a missing content array is an error, not silence ***
 *** ⛔ a per-RESULT unavailable marker is not filtered away as 「no rows」 ***
+*** ⛔ a plan with nothing required produces no block rather than an empty heading ***
 *** ⛔ a real failure is NOT dressed up as patience ***
 *** ⛔ a record is included WHOLE or not at all ***
 *** ⛔ a router failure falls back to the MODEL, never to a guess ***
