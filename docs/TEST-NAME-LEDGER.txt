@@ -1139,6 +1139,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the composer carries NO accent colour, resting or focused ***
 *** the composer is the ONE place A4 dependencies are built ***
 *** the composition log is names and reasons — never a prompt or a key ***
+*** the connector survey is recorded, because the shape is what recurs ***
 *** the contract no longer authorises Cantonese output ***
 *** the cookie is Secure — it must never cross a plaintext connection ***
 *** the correction states counts and states only — never content ***
@@ -1328,6 +1329,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the title and the dot are hidden while the conversation is empty ***
 *** the title is the first user message, trimmed — and never changes after ***
 *** the title was NOT touched — that question is separately deferred ***
+*** the top-level check is KEPT — six of seven connectors rely on it ***
 *** the transition table is closed, and every backwards move is refused ***
 *** the two old implementations are gone ***
 *** the unit codes the live rows actually carry are declared ***
@@ -1407,6 +1409,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
+*** ⛔ ZERO ROWS FROM A HEALTHY READ IS STILL SUCCESS — the fix must not cry wolf ***
 *** ⛔ a 30-day count cannot become a source-total claim, end to end ***
 *** ⛔ a READ in the world he did NOT mean is refused before the connector ***
 *** ⛔ a REAL chat answer is still chat — the fix must not swallow the ordinary case ***
@@ -1419,6 +1422,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ a marker with no claim in front of it fails closed ***
 *** ⛔ a missing claim structure is UNBOUND — never row_local, never source_wide ***
 *** ⛔ a missing content array is an error, not silence ***
+*** ⛔ a per-RESULT unavailable marker is not filtered away as 「no rows」 ***
 *** ⛔ a plan with nothing required produces no block rather than an empty heading ***
 *** ⛔ a real failure is NOT dressed up as patience ***
 *** ⛔ a record is included WHOLE or not at all ***
