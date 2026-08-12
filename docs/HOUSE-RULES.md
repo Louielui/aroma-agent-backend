@@ -3270,3 +3270,59 @@ had to already know which entries existed on the other side.
 This is the survey-test pattern (HR-66) doing exactly the job it was built for, on a mistake with
 no other detector. Filed beside HR-69's flow rule as the worked example of why a category rule
 earns its test.
+
+---
+
+### HR-73 — the ratio reaches the judge intact and the judge drops it
+
+Measured 2026-08-11. **Recorded ABOVE HR-71 in importance at the Owner's instruction**, because
+regenerating the artefact would change nothing and staleness is therefore the smaller half.
+
+The drift check found real movement on its first live run — `orderPlanning` coverage falling
+across five fields since the capture:
+
+```
+order_lead_days        65% → 49%   (18/37)
+delivery_days          65% → 54%   (20/37)
+pack_size              58% → 49%   (18/37)
+purchase_unit          85% → 78%   (29/37)
+supplier_product_name  85% → 78%   (29/37)
+```
+
+⛔ **B calls all five `AVAILABLE`, before and after, and a fresh capture would not change that.**
+`SPARSE_MAX = 0.20`, `DENSE_MIN = 0.90`: every one of those numbers sits inside the same band on
+both sides of the drift.
+
+#### ⛔ AND THE CORRECTION THAT MAKES IT WORSE THAN 「A LOSSY PROJECTION」
+
+The first reading — mine and the Owner's — was that the tier is a lossy projection of the ratio,
+a third instance of `CANDIDATE` hiding states. **That reading is wrong, and the truth is worse.**
+
+`FIELD_TIER` has eight values and one of them is exactly this case:
+
+> `PARTIAL_COVERAGE` — *「Populated on a real share of rows but not all. Usable — with the ratio
+> stated.」*
+
+And `coverage` is attached to every field: `tiers = base.fields.map((f) => ({ field, tier, coverage }))`.
+
+**So nothing is lost in projection.** The distinction was drawn, named, given a tier, and the
+measured ratio was carried alongside it all the way to the decision. Then `judgeFact` filters on
+`UNKNOWN`, `ALWAYS_EMPTY`, `SPARSE`, `UNOBSERVED` and `CANDIDATE` — and `PARTIAL_COVERAGE` is
+simply not in the chain, so it falls through to `AVAILABLE` carrying no qualification.
+
+> **The information does not decay upstream. It arrives complete at the one place that decides,
+> and that place does not look at it.**
+
+⛔ **This is a different and more dangerous failure than a lossy projection.** A lossy projection
+announces itself the moment you need the detail — it is not there. This one passes every audit:
+the tier exists, the ratio is populated, `fieldTiers` is on the returned object, and a reader
+checking 「is the coverage available」 finds yes. Only the consumer's filter list is short, and a
+missing entry in a filter list is invisible in every direction.
+
+#### The shape to carry
+
+**Do not ask 「is this information preserved」. Ask 「does the thing that decides consume it」.**
+Preservation is easy to check and proves nothing. Consumption is what the answer rests on, and
+between the two sits a filter list nobody reads.
+
+Not fixed, per the Owner's instruction: *「Do not fix it. Tell me, and we decide after B works.」*
