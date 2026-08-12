@@ -88,6 +88,10 @@ const FILE_CLASS = Object.freeze({
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.
   'intake/goal/goalGate.js': CLASS.MODEL,             //   8 — the requirement block
+  // ⛔ MATCHING, not INTERFACE. The Chinese here is the numeral and measure-word SET matched
+  // against her own output. Translating it would delete the detector silently — the code still
+  // runs and simply stops matching what she actually writes. The most dangerous of the classes.
+  'intake/noEvidenceShadow.js': CLASS.MATCHING,       //   2 — CJK numerals + measure words
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never

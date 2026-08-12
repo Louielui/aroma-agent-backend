@@ -106,6 +106,8 @@ async function defaultRecoveryWorker (input) {
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
+// SHADOW ONLY: measures unsourced specific claims on zero-evidence turns. Decides nothing.
+const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -1972,6 +1974,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const unread = enforceNoReadClaim(guarded.reply, Array.from(turnPerSource.values()), message, routeDecision)
     guarded.reply = unread.reply
     if (unread.flagged) logNoReadClaim(routeDecision, requestId)
+    /**
+     * ⛔ SHADOW ONLY (HR-74). Placed HERE, beside `enforceNoReadClaim`, because they are the two
+     * halves of one question and only one of them is currently asked.
+     *
+     * `enforceNoReadClaim` catches 「she CLAIMED a read that never happened」. It has nothing to
+     * say about 「she stated a specific fact about the business with no read behind it」 —
+     * 「現在我們有三間門市」 claims no read, so that guard correctly passes it.
+     *
+     * This measures the second half and DECIDES NOTHING. Zero model calls, so unlike B the
+     * shadow is free; the Owner's real traffic produces the false-positive rate, and only then
+     * is there anything to decide. It must never grow a refusal: an empty reply is worse than
+     * a wrong one, and a gate whose failure mode is silence recreates the defect it was built
+     * against.
+     */
+    try {
+      let shadowRows = 0
+      for (const g of turnItems.values()) shadowRows += (g && Array.isArray(g.items)) ? g.items.length : 0
+      logNoEvidenceShadow({
+        reply: guarded.reply,
+        question: message,
+        rowsRead: shadowRows,
+        rowsText: shadowRows > 0 ? JSON.stringify(Array.from(turnItems.values())) : ''
+      }, requestId)
+    } catch (_) { /* a measurement may never break a turn */ }
     // ⛔ SECOND OUTPUT GUARD. Detect + record + flag; never rewrite — 簡轉繁 is not one-to-one.
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)
@@ -2041,6 +2067,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     logTraditionalFlag(lang, requestId)
     guarded.reply = lang.reply
     if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    /**
+     * ⛔ THE MAIN CHAT PATH. The first placement of this sat beside `enforceNoReadClaim` on the
+     * proposal-fallback path and emitted NOTHING on a real turn — found by running one, not by
+     * reading it. That is exactly the hazard `logTurnRoute` warns about above: a telemetry
+     * feature that logs nothing while appearing to work. Both reply paths carry it now, each
+     * labelled, so a path that goes quiet is visible rather than assumed.
+     */
+    try {
+      let shadowRows = 0
+      for (const g of turnItems.values()) shadowRows += (g && Array.isArray(g.items)) ? g.items.length : 0
+      logNoEvidenceShadow({
+        reply: guarded.reply,
+        question: message,
+        rowsRead: shadowRows,
+        rowsText: shadowRows > 0 ? JSON.stringify(Array.from(turnItems.values())) : '',
+        path: 'chat'
+      }, requestId)
+    } catch (_) { /* a measurement may never break a turn */ }
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,

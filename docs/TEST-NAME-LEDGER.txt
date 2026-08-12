@@ -634,6 +634,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a non-metric fact still goes through valueMatches, unrelaxed ***
 *** a nonce is bound to its POSITION — step 2\
 *** a normal append leaves no temp debris ***
+*** a number that came from a READ row is sourced ***
+*** a number the OWNER supplied is sourced, and is not a finding ***
 *** a one-character paraphrase is scored as one ***
 *** a paraphrase reusing a distinctive noun still counts as citation ***
 *** a patch is written, and the bytes are the patch ***
@@ -1044,6 +1046,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** rows carry a time and a turn count — the only things that separate them ***
 *** rows on a NON-business route can never force a plan ***
 *** rows returned but none in the asked-for period has a name and words ***
+*** rubbish input measures nothing and never throws ***
 *** running text is never bold: only two weights exist, 400 and 500 ***
 *** running this very file did not write to the production store ***
 *** saving a bad timezone is refused, all-or-nothing ***
@@ -1400,9 +1403,11 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
+*** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
+*** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
 *** ⛔ ZERO ROWS FROM A HEALTHY READ IS STILL SUCCESS — the fix must not cry wolf ***
 *** ⛔ a 30-day count cannot become a source-total claim, end to end ***
@@ -1421,6 +1426,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ a plan with nothing required produces no block rather than an empty heading ***
 *** ⛔ a real failure is NOT dressed up as patience ***
 *** ⛔ a record is included WHOLE or not at all ***
+*** ⛔ a reply with no specific claim is silent — most turns must be ***
 *** ⛔ a router failure falls back to the MODEL, never to a guess ***
 *** ⛔ a row_local claim cannot reference a sourceId that was not retrieved ***
 *** ⛔ a row_local claim stays VERIFIED when its source is truncated ***
@@ -1452,6 +1458,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ facts[] survive a TRUNCATED source — row-local truth is not set-wide ***
 *** ⛔ intentFor is UNCHANGED — the first match, exactly as before ***
 *** ⛔ intentKeys may only ever contain KEYS from the closed intent table ***
+*** ⛔ it decides NOTHING — there is no refuse/allow in the surface ***
+*** ⛔ it does NOT run when rows were read — claim binding owns that turn ***
 *** ⛔ kind is structural — replacing the TEXT changes no verdict ***
 *** ⛔ live internal evidence never reaches the resolver ***
 *** ⛔ no capability, tool, provider or network vocabulary ***
