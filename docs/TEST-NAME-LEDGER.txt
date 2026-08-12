@@ -166,6 +166,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** C2 — two operations sharing a sourceId ARE citable as distinct entities ***
 *** C3 — FORMERLY A LIMITATION PIN: a shared sourceId no longer mis-attributes ***
 *** CHAT lane projection is frozen ***
+*** CLASS 3 — an explicitly PUBLIC question takes the public path, untouched ***
 *** COMMIT / proposal lane projection is frozen ***
 *** COMPUTER_OPERATOR alone authorizes NOTHING without a configured supervisor ***
 *** CONCURRENCY: parallel writers all survive ***
@@ -631,6 +632,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a name that is NOT in the description is still rejected ***
 *** a network failure disables Save ***
 *** a no-intent message still reads NOTHING automatically — notAsked survives ***
+*** a non-business route with a named internal source does not qualify ***
 *** a non-clarify decision may not smuggle a question ***
 *** a non-metric fact still goes through valueMatches, unrelaxed ***
 *** a nonce is bound to its POSITION — step 2\
@@ -1051,6 +1053,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** rows on a NON-business route can never force a plan ***
 *** rows returned but none in the asked-for period has a name and words ***
 *** rubbish input measures nothing and never throws ***
+*** rubbish input never throws and defaults to ASKING ***
 *** rubbish input never throws and never claims a correction ***
 *** rubbish input never throws and supplies nothing ***
 *** running text is never bold: only two weights exist, 400 and 500 ***
@@ -1399,6 +1402,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
+*** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
+*** ⛔ CLASS 2 — internal context + capability UNAVAILABLE → no reads, no clarification ***
+*** ⛔ CLASS 4 — genuine context-free ambiguity STILL ASKS ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
@@ -1556,6 +1562,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ what she CANNOT answer is named, not left to be discovered ***
 *** ⛔ wisdomRecall has no default store reach-through ***
 *** ⛔ 「我哋現有」 — the exact phrasing that leaked — cannot survive ***
+*** ⛔ 「給我 Aroma System 的 website」 MUST NOT REGRESS — it asked nothing and read nothing ***
 *** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***
 *** 「1」 after a numbered list keeps 香香\
 *** 「A 定 B」 is not one question — it becomes no question, not an invented one ***

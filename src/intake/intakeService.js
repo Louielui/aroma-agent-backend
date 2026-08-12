@@ -106,6 +106,18 @@ async function defaultRecoveryWorker (input) {
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
+// An 'I cannot tell' may not outrank a deterministic classification (B canary, 052761bc).
+const { decideWorldAsk } = require('./worldAskDecision')
+
+/** ⛔ Status and reason only — never his words, never the question text (logContent fence). */
+function logWorldAsk (requestId, resolverIntent, decision, asked) {
+  try {
+    console.log('[AROMA-WORLD-ASK]', JSON.stringify({
+      requestId, resolverIntent, asked, reason: decision.reason,
+      obligation: decision.requiredWorlds ? 'internal' : null
+    }))
+  } catch (_) { /* telemetry is never load-bearing */ }
+}
 // SHADOW ONLY: measures unsourced specific claims on zero-evidence turns. Decides nothing.
 const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
@@ -1388,8 +1400,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         history
       })
       logOwnerSourceIntent({ requestId, outcome: resolved.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt2 })
-      if (resolved.intent === 'ambiguous') {
+      // ⛔ SAME DECISION, SAME INPUTS, BOTH GATE SITES. Two places converting `ambiguous` into
+      // a terminal ASK is how one of them drifts; the rule lives in one function.
+      const worldAsk0 = decideWorldAsk({
+        resolverIntent: resolved.intent,
+        route: routeDecision ? routeDecision.route : null,
+        routerSources: (routeDecision && routeDecision.sources) || [],
+        authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider)
+      })
+      logWorldAsk(requestId, resolved.intent, worldAsk0, worldAsk0.ask)
+      if (worldAsk0.ask) {
         distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null })
+      } else if (worldAsk0.requiredWorlds) {
+        initialObligation = worldAsk0.requiredWorlds
+      } else if (resolved.intent === 'ambiguous') {
+        // Routed internal but unreachable: no obligation, no question, no read. The reply's
+        // honesty about that is the read-state guards' job, not this gate's.
+        initialObligation = null
       } else {
         // require_* on an ASK also SUPPRESSES it: the meaning is settled, it is answerable, and
         // the turn owes a read. The model's question is dropped here and never rendered — the
@@ -1570,13 +1597,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           ambiguityUsed = true
           if (initialObligation) return { type: 'allow' }
           const resolved = await resolveIntent()
-          if (resolved.intent === 'ambiguous') {
+          /**
+           * ⛔ AN 「I CANNOT TELL」 NO LONGER OUTRANKS A DETERMINISTIC CLASSIFICATION.
+           *
+           * Measured on the B canary (052761bc): route BUSINESS_QUERY / intent_inventory /
+           * aroma_system, B facts:2 unavailable:0 — and this gate still returned `ambiguous`
+           * and ended the turn `before_read`. The router and B had both already answered the
+           * question this was about to ask him.
+           */
+          const worldAsk = decideWorldAsk({
+            resolverIntent: resolved.intent,
+            route: routeDecision ? routeDecision.route : null,
+            routerSources: (routeDecision && routeDecision.sources) || [],
+            authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider)
+          })
+          if (worldAsk.ask) {
             // ⛔ ASK IS AN ORDINARY CONVERSATION RESULT, NOT A NEW RESPONSE TYPE. It reuses the
             // existing Distill envelope, so nothing downstream learns that a resolver exists.
             // No read happened, so there is no EvidenceSet, no perSource row and no trust
             // state — a question about meaning is not a read failure.
+            logWorldAsk(requestId, resolved.intent, worldAsk, true)
             return { type: 'final', result: { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null } }
           }
+          logWorldAsk(requestId, resolved.intent, worldAsk, false)
+          if (worldAsk.requiredWorlds) initialObligation = worldAsk.requiredWorlds
           return { type: 'allow' }
         }
       : undefined
