@@ -55,9 +55,32 @@ const { AROMA_OPERATIONS, operationsForSources } = require('../context/readOpera
  * an outside company, and it did not: it asked. Identity is a fact about language; availability
  * is a fact about the network. Only the first belongs in a question about meaning.
  */
+/**
+ * ⛔ EVERY ENTRY MUST DESIGNATE THE SYSTEM. BRAND NAMES WERE REMOVED, MEASURED.
+ *
+ * 17:34 local, real UI, on 91b0a0a:
+ *
+ *   user   「aroma bistro有公開網站嗎?」
+ *   reply  「Aroma System 係你自己間餐廳嘅內部系統，唔係出面嘅公司或者網站。」
+ *
+ * He asked about AROMA BISTRO — the restaurant — and received the identity fact about Aroma
+ * System, a different subject. `Aroma` and `阿羅瑪` name the BUSINESS; they matched, `WANTED`
+ * resolved `identity`, and the composed path then discarded whatever the model would have
+ * said. **His actual question was never answered.** A guarantee that discards model output
+ * must be certain it is answering the question that was asked.
+ *
+ * ⛔ AND THE FIX IS NOT A NEGATIVE LIST. Adding 「aroma bistro」 as an exclusion buys one
+ * collision and loses the next — the vocabulary-chasing this line of work already abandoned
+ * when the filter leaked on 「我哋現有」. The rule is positive and about SUBJECT: a token
+ * qualifies only if it names the system itself. 「Aroma」 alone does not; 「Aroma System」 does.
+ *
+ * The cost is stated: a message naming ONLY the restaurant now receives no composed answer and
+ * no identity fact — it falls through to ordinary handling, which is what it always should
+ * have had.
+ */
 const INTERNAL_NAMES = Object.freeze([
   'Aroma System', 'aroma system', 'aroma_system', 'AromaSystem',
-  'Aroma', '阿羅瑪', '我哋個系統', '餐廳系統', '內部系統'
+  '我哋個系統', '餐廳系統', '內部系統'
 ])
 
 /** Is this proper noun one of her own? Case-insensitive, exact-substring. */
