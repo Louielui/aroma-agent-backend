@@ -3477,3 +3477,65 @@ case it was built for, and all three definitionally rather than accidentally**:
 **Before trusting an instrument, ask what its target looks like at the moment of failure.** If
 the failing instance lacks the property being keyed on, precision on the healthy population is
 worthless.
+
+---
+
+### HR-78 — asking is the terminal branch AND the fail-closed default
+
+**Recorded above the fix it prompted, at the Owner's instruction.**
+
+Five turns, five clarifying questions, zero reads, ending in 「你講嘅 Aroma System 係我哋內部
+使用嘅系統，定係外部公司／服務嘅網站？」 — about a system she reads every day.
+
+`buildIntentPrompt` sends the resolver the Owner's own messages **and nothing else**, so a
+proper noun that IS one of her six sources looks exactly like an outside company. Unresolvable
+→ `ambiguous`. And `ambiguous` returns `{type:'final'}`, which **ends the turn**.
+
+> ⛔ **Asking is not merely cheaper than reading. It is the terminal branch AND the fail-closed
+> default for every resolver error — so uncertainty and failure leave by the same cheapest
+> door, and the system's most common visible behaviour is also its error path.**
+
+That is the finding. The fix (identity, not availability; rescuing only the ambiguous case)
+follows from it and is the smaller half.
+
+---
+
+### HR-79 — the shadow failed on the half it was built for
+
+**Recorded as a FAILURE OF THE INSTRUMENT, not filed as a limitation.**
+
+The no-evidence shadow was built for one sentence:
+「Aroma System 目前沒有專門的網站，現在我們有三間門市」.
+
+On its first real day it caught **`三間門市`** and was silent on **「目前沒有專門的網站」** — the
+half that was actually false. Measured on all three live clarifying replies: silent, silent,
+silent.
+
+⛔ **It caught one token in one sentence and missed the false claim beside it.** Calling that a
+「known limitation」 would be filing a failure as a design note. The instrument does not do the
+job it was built for; it does a fraction of it, and the fraction is the part with a number in it.
+
+It stays, unturned, because the Owner's traffic is what decides the 「一」 trade-off — but it is
+recorded as insufficient rather than as scoped.
+
+---
+
+### HR-80 — built, tested, reached by nothing: the one shape that IS countable
+
+Three instances this month, each found by hand, each after it mattered: **B** (23 tests green,
+zero call sites, a week), **`checkEvidence`** (named for the exact failure, zero call sites in
+chat), **`selfDescription.describe`** (8 tests green, zero call sites — she answered from
+memory while the registry holding the answer sat unused).
+
+⛔ **Unlike the last three sweeps, this target is a GRAPH EDGE, not a judgement.** HR-77's
+detector failed because a token sits on both sides of a rule and its confirmation; this one
+asks only 「does a require path reach here from `index.js`」, which has one answer.
+
+`scripts/verify/unreachedModules.js`. **Measured: 238 production modules, 178 reachable, 60
+reached by nothing.** Control passes in both directions — `intake/goal/`, `selfDescription.js`
+and `noEvidenceShadow.js` vanish from the list the moment they are wired, and
+`agent/evidenceGate.js` remains because it genuinely has no live call site.
+
+⚠ **60 is a population, not a defect count.** Much of it is the deliberately-closed browse line.
+And the detector is coarser than use: a module that is REQUIRED but whose export is never
+CALLED reads as reached — `checkEvidence` would, if `browseAnswer.js` were live.
