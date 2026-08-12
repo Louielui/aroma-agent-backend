@@ -209,6 +209,21 @@ async function probe (providerHint, opts0 = {}) {
       parseResult: telemetry.parseResult || null,
       replyLength: reply.length,
       readPerformed: readOk,
+      /**
+       * ⛔ WHICH FAILURE, BECAUSE THEY MEAN OPPOSITE THINGS TO THE OWNER.
+       *
+       * 2026-08-12, first real firing: Anthropic returned 529 overloaded, the call never came
+       * back, and this probe told him 「佢讀唔到 Aroma System 嘅資料。問佢倉存／落單嗰啲嘢，
+       * 答案唔可信。」 — while the six endpoints were healthy and she reads them correctly.
+       *
+       * > **Owner: 「A false alarm that teaches me to distrust a correct answer is the most
+       * > expensive kind, and I would have spent tomorrow doubting her inventory numbers over
+       * > an Anthropic outage.」**
+       *
+       * `model_call` — the provider failed (529, timeout, schema 400). Says NOTHING about reads.
+       * `read`       — she answered fluently and never reached the source. THAT is untrustworthy.
+       */
+      failureKind: !failed ? null : (reply.length === 0 ? 'model_call' : 'read'),
       detail: reply.length === 0
         ? 'the turn completed and produced no reply text'
         : (failed ? 'the turn answered without a successful read — the source was never reached' : null)
@@ -231,9 +246,51 @@ async function probe (providerHint, opts0 = {}) {
       // A throw means the read never got to report anything, which is a different fact from
       // 「it reported and said no」 — so this is false, not null.
       readPerformed: needsRead ? false : null,
+      // ⛔ A THROW IS ALWAYS THE MODEL CALL, NEVER THE READ. The read is downstream of it and
+      // never ran. This is the branch the 529 took, and the branch that produced the wrong
+      // sentence on 2026-08-12.
+      failureKind: 'model_call',
       detail: (e && e.message ? e.message : String(e)) + (cause ? ' | cause: ' + cause : '')
     }
   }
+}
+
+/**
+ * The sentence the Owner reads. ⛔ THE CAUSE DECIDES THE WORDS.
+ *
+ * Before 2026-08-12 there was ONE business-failure sentence and it named the read every time.
+ * An Anthropic 529 therefore told him her inventory answers were untrustworthy, on a morning
+ * when the six endpoints were healthy and she read them correctly. A false alarm that teaches
+ * him to distrust a CORRECT answer costs more than silence would have.
+ *
+ * ⛔ AND THE PROBE WAS STILL RIGHT TO FIRE. The business lane genuinely did not work. It was
+ * right about THAT and wrong about WHY — a failure described in another failure's vocabulary,
+ * which is the shape this whole week has been about, appearing for the first time inside
+ * something built to prevent it.
+ */
+function sayingFor (failed) {
+  if (!failed.length) return '香香啟動咗：傾偈同讀 Aroma System 都試過，兩樣都掂。'
+
+  const biz = failed.filter((r) => r.kind === 'business')
+  const greetingFailed = failed.some((r) => r.kind === 'greeting')
+
+  if (biz.length && !greetingFailed) {
+    // ⛔ THE PROVIDER FAILED — this says NOTHING about whether she can read.
+    if (biz.every((r) => r.failureKind === 'model_call')) {
+      return '香香啟動咗，傾偈冇問題。業務嗰條問題今次係模型嗰邊冇答到（供應商過載／逾時／schema），' +
+             '未去到讀取嗰步，所以呢個唔代表佢讀唔到你盤數。等陣再問一次，或者睇 detail。'
+    }
+    // ⛔ THE READ FAILED — she answered fluently without reaching the source. This one IS the
+    // dangerous morning, and it keeps the original wording.
+    if (biz.every((r) => r.failureKind === 'read')) {
+      return '香香啟動咗，傾偈冇問題，但佢答咗業務問題而完全冇讀到 Aroma System。' +
+             '問佢倉存／落單嗰啲嘢，答案唔可信。'
+    }
+    return '香香啟動咗，傾偈冇問題，但業務嗰條問題有問題（一部分係模型冇答到，一部分係讀唔到）。睇 detail。'
+  }
+
+  return '香香啟動咗，但' + failed.map((r) => r.asked + '（' + r.kind + '）').join('／') +
+         '答唔到。系統照樣交返畀你，但嗰部分唔可信。'
 }
 
 ;(async () => {
@@ -253,13 +310,7 @@ async function probe (providerHint, opts0 = {}) {
     // are different mornings.
     failed: failed.map((r) => r.asked + '/' + r.kind),
     // ⛔ SAID OUT LOUD, because a verdict that only a log reader sees is not a verdict.
-    saying: failed.length
-      ? (failed.some((r) => r.kind === 'business') && !failed.some((r) => r.kind === 'greeting')
-        // The most confusing failure to receive, so it is spelled out: she is talking normally
-        // and cannot see the business data. Without this line it reads as 「she is fine」.
-        ? '香香啟動咗，傾偈冇問題，但佢讀唔到 Aroma System 嘅資料。問佢倉存／落單嗰啲嘢，答案唔可信。'
-        : '香香啟動咗，但' + failed.map((r) => r.asked + '（' + r.kind + '）').join('／') + '答唔到。系統照樣交返畀你，但嗰部分唔可信。')
-      : '香香啟動咗：傾偈同讀 Aroma System 都試過，兩樣都掂。'
+    saying: sayingFor(failed)
   })
 
   try { fs.rmSync(scratch, { recursive: true, force: true }) } catch (_) {}
