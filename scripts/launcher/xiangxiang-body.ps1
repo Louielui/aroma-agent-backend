@@ -161,7 +161,7 @@ $env:CONTEXT_AROMA_SYSTEM = 'on'
 # ⛔ FAIL-SAFE, NOT FAIL-SHUT. If B errors, times out, or returns an unusable plan it has NO
 # OPINION and the turn proceeds exactly as it did before B existed. It is a requirement
 # declaration, never a gate. Set to anything other than 'on' (or remove the line) to disable.
-$env:GOAL_DECOMPOSER   = 'on'
+$env:GOAL_DECOMPOSER   = 'off'   # ⛔ OFF 2026-08-11: empty-reply regression under diagnosis
 
 # A4 Universal Knowledge Routing — PRODUCTION ACTIVATION (Owner GO 2026-08-10).
 # 香香 now establishes WHICH knowledge world a question belongs to before answering it:
