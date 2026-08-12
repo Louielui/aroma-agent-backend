@@ -183,8 +183,16 @@ $env:CONTEXT_AROMA_SYSTEM = 'on'
 # ⛔ STILL UNSETTLED: whether the 07:39 reply shares that cause. Its own log predates the
 # per-boot files under C:\Aroma\logs, so its pipeline is not on disk.
 #
-# It stays OFF because turning it on is a separate authorisation, NOT because it caused this.
-$env:GOAL_DECOMPOSER   = 'off'
+# ⛔ ON — CONTROLLED CANARY, Owner GO 2026-08-12. NOT a finding that B is stable.
+#
+# It is on to measure two things and nothing else: whether B identifies a requirement its
+# catalogue cannot serve and STOPS unrelated reads, and whether it still requires the right
+# reads when the question is a real business one.
+#
+# ⛔ ROLLBACK IS THIS ONE LINE BACK TO 'off', then restart. Nothing else changes and no rebuild
+# is involved. Roll back FIRST and diagnose afterwards on any of: an empty reply, a crash, a
+# timeout, or a read of a source unrelated to the question.
+$env:GOAL_DECOMPOSER   = 'on'
 
 # A4 Universal Knowledge Routing — PRODUCTION ACTIVATION (Owner GO 2026-08-10).
 # 香香 now establishes WHICH knowledge world a question belongs to before answering it:
