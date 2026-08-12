@@ -112,9 +112,133 @@ function correctInternalSystemReply (input) {
   }
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ SUPPRESSION IS NOT AN ANSWER.
+ *
+ * Measured 17:06 local, real UI, empty history, on the merged detector:
+ *
+ *   user   「aroma system的網址我沒有了, 給我一下」
+ *   reply  「我讀到 public_knowledge 1 項記錄。…我組不出一個可靠的答案，所以不會亂說。」
+ *
+ * The detector did its job — she did not ask internal-vs-public. And the URL was in the
+ * registry the whole time. **We removed the wrong sentence without supplying the right one.**
+ *
+ * ── ⛔ AFTER GENERATION, NOT BEFORE, AND HERE IS WHY ────────────────────────
+ *
+ * A before-generation short-circuit would be simpler and is the wrong shape:
+ *   · it would fire on any turn MENTIONING the system, hijacking questions that merely
+ *     name it on the way to something else;
+ *   · it would bypass `enforceReadState` / `enforceNoReadClaim` / the answer plan, which are
+ *     the guards that keep a reply honest about what was read;
+ *   · and it would discard a CORRECT model answer — turn [3] of session 07d3fbcf answered
+ *     well, and a short-circuit would have replaced it with a template.
+ *
+ * After generation, the test is on the SHIPPED TEXT: does the reply the Owner will read
+ * contain the fact he asked for? That is the guarantee he asked for, and it is the one that
+ * cannot be satisfied by 「the model was told」 — which has now failed twice, measured.
+ *
+ * ── ⛔ AND IT MAY NOT CLAIM MORE THAN THE REGISTRY HOLDS ────────────────────
+ * `WANTED` is a CLOSED map from a question shape to a registry field. A question outside it
+ * supplies nothing and the existing honest refusal survives byte-identical. The registry is a
+ * small set of facts, not a licence to answer freely.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+const { selfDescription } = require('./selfDescription')
+
+/** ⛔ MATCHING vocabulary — translating these deletes the trigger without removing code. */
+const ASKS_URL = /(網址|网址|網站地址|連結|链接|\bURL\b|\blink\b|\bwebsite\b|\bweb site\b|地址)/i
+/**
+ * ⛔ THE INTERNAL/PUBLIC AXIS ONLY — NOT 「係咩」.
+ *
+ * The first version included 係咩／是什麼／what is, and a test caught it claiming the identity
+ * fact for 「aroma system 個資料庫密碼係咩？」. That question names her system and asks 「what
+ * is」 about a DIFFERENT NOUN, and answering it with 「it is your internal system」 would be
+ * answering a question nobody asked — the over-claim constraint #4 exists to prevent.
+ *
+ * ⚠ SO IT MISSES a bare 「Aroma System 係咩嚟？」 with no internal/public framing. That is the
+ * same gap already recorded on the detector side, and it is left open rather than closed with
+ * a pattern that cannot tell which noun the question is about.
+ */
+const ASKS_IDENTITY = /(內部|内部|公開網站|公开网站|對外網站|\binternal\b)/i
+
+/**
+ * ⛔ A READ IS NOT A REGISTRY FACT. 「有幾多張發票」 names her system and asks for business
+ * data — that is a read, it goes through the read path, and this must keep its hands off it.
+ * Without this the supply path would answer business questions from a config file.
+ */
+const IS_A_READ = /(幾多|几多|多少|有冇|有沒有|邊啲|哪些|列出|落單|訂貨|倉存|库存|庫存|發票|发票|盤點|盘点|採購|采购|供應商|供应商|今日|今天|本週|本周)/i
+
+/**
+ * Which registry-backed facts is the Owner asking for?
+ * @returns {string[]} subset of ['url','identity'] — empty when the registry does not cover it
+ */
+function wantedRegistryFacts (message) {
+  const m = typeof message === 'string' ? message : ''
+  if (!m.trim()) return []
+  if (!namesInternalSystem(m)) return []
+  if (IS_A_READ.test(m)) return []
+  const out = []
+  if (ASKS_URL.test(m)) out.push('url')
+  if (ASKS_IDENTITY.test(m)) out.push('identity')
+  return out
+}
+
+/** The registry's own words for each fact. No model composes these. */
+function factSentence (key, d) {
+  if (key === 'url') return '你嘅 Aroma System 網址係 ' + d.aromaSystem.baseUrl + '。'
+  if (key === 'identity') return 'Aroma System 係你自己間餐廳嘅內部系統，唔係出面嘅公司或者網站。'
+  return null
+}
+
+/** Is the fact already in the shipped text? Then leave the reply alone. */
+function replyCarries (reply, key, d) {
+  const r = String(reply || '')
+  if (key === 'url') return r.includes(d.aromaSystem.baseUrl)
+  if (key === 'identity') return /內部/.test(r) && !asksInternalVsPublic(r)
+  return false
+}
+
+/**
+ * The single entry point for the chat lane: remove the question that has a known answer, and
+ * make sure the known answer is actually present.
+ *
+ * @param {{reply:string, message:string, deps?:object}} input
+ * @returns {{reply:string, corrected:boolean, supplied:string[], removed:string[]}}
+ */
+function enforceInternalSystemAnswer (input) {
+  const inp = (input && typeof input === 'object') ? input : {}
+  const message = typeof inp.message === 'string' ? inp.message : ''
+
+  // 1. the disambiguation with a known answer never ships
+  const step1 = correctInternalSystemReply({ reply: inp.reply, message })
+
+  // 2. and the known answer does
+  const wanted = wantedRegistryFacts(message)
+  if (!wanted.length) return { reply: step1.reply, corrected: step1.corrected, supplied: [], removed: step1.removed }
+
+  const d = selfDescription(inp.deps || {})
+  const missing = wanted.filter((k) => !replyCarries(step1.reply, k, d))
+  if (!missing.length) return { reply: step1.reply, corrected: step1.corrected, supplied: [], removed: step1.removed }
+
+  // ⛔ The fact LEADS. It is what he asked for; anything the model said comes after it, so a
+  // refusal becomes a qualifier on an answer rather than the answer itself.
+  const facts = missing.map((k) => factSentence(k, d)).filter(Boolean).join('')
+  const rest = String(step1.reply || '').trim()
+  return {
+    reply: rest ? (facts + '\n\n' + rest) : facts,
+    corrected: step1.corrected,
+    supplied: missing,
+    removed: step1.removed
+  }
+}
+
 module.exports = {
   asksInternalVsPublic,
   correctInternalSystemReply,
+  wantedRegistryFacts,
+  enforceInternalSystemAnswer,
   // exported for the fence tests that assert the vocabulary is a list, not a phrasing
   INTERNAL_REF,
   PUBLIC_REF,

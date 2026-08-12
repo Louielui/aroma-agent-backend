@@ -111,7 +111,7 @@ const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
 const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
 // A post-generation check: she may not ask the Owner what his own system is (02e430e, twice).
-const { correctInternalSystemReply } = require('../governance/internalSystemAnswer')
+const { enforceInternalSystemAnswer } = require('../governance/internalSystemAnswer')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -2178,12 +2178,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
      * sentence, and leaves every other clarification alone — which endpoint, which range,
      * which location are all questions she is still entitled to ask.
      */
-    const selfDesc = correctInternalSystemReply({ reply: guarded.reply, message })
-    if (selfDesc.corrected) {
+    const selfDesc = enforceInternalSystemAnswer({ reply: guarded.reply, message })
+    if (selfDesc.corrected || selfDesc.supplied.length) {
       guarded.reply = selfDesc.reply
       try {
         console.log('[AROMA-SELFDESC-CORRECTED]', JSON.stringify({
-          requestId, removedSentences: selfDesc.removed.length
+          requestId, removedSentences: selfDesc.removed.length, supplied: selfDesc.supplied
         }))
       } catch (_) { /* telemetry is never load-bearing */ }
     }

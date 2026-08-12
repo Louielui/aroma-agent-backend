@@ -96,6 +96,21 @@ const FILE_CLASS = Object.freeze({
   // it deletes the detector silently); the describe() sentence he reads. MATCHING is the
   // stricter of the two, so it governs.
   'governance/selfDescription.js': CLASS.MATCHING,    //   6 — the internal-system name list
+  /**
+   * ⛔ MATCHING, and it holds INTERFACE text too — the stricter class governs.
+   *
+   * MATCHING: the internal/public/choice vocabularies matched against HER OWN OUTPUT, and the
+   * read-question vocabulary matched against HIS. Translating any of them deletes a guard with
+   * no code removed and nothing failing.
+   * INTERFACE: the two fact sentences he reads.
+   *
+   * ⚠ AND THIS FILE IS WHY A GAP IN THIS FENCE IS NOW KNOWN. Its FIRST version carried Chinese
+   * only inside REGEX LITERALS and the coverage scan did not see it — the scan matches Chinese
+   * inside a quoted string (`textClasses.test.js:57`). It only became visible this round when
+   * quoted fact sentences were added. Regex-literal MATCHING vocabulary is invisible to this
+   * fence. Recorded, not fixed here: widening the scan is its own change.
+   */
+  'governance/internalSystemAnswer.js': CLASS.MATCHING, //  ~8 — axis vocabularies + 2 facts
   'governance/profileProbe.js': CLASS.INTERFACE,      //  24 — the `saying:` fields
   'errands/recallCheck.js': CLASS.INTERFACE,          //  23 — blocked reasons
   // The coverage line the Owner reads. INTERFACE: rewording it changes what he sees, never

@@ -1017,6 +1017,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** other separable forms of the same compounds ***
 *** over the cap is REFUSED with the numbers, and nothing is saved ***
 *** over-bound text is REJECTED, never silently truncated ***
+*** precondition: a message that does not name her system supplies nothing ***
 *** preferences are marked as outranking recalled conversation ***
 *** previous conversations become a readable block, newest conversation first ***
 *** priority is UTILITY → ACTION → BUSINESS_QUERY → CONVERSATION ***
@@ -1049,6 +1050,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** rows returned but none in the asked-for period has a name and words ***
 *** rubbish input measures nothing and never throws ***
 *** rubbish input never throws and never claims a correction ***
+*** rubbish input never throws and supplies nothing ***
 *** running text is never bold: only two weights exist, 400 and 500 ***
 *** running this very file did not write to the production store ***
 *** saving a bad timezone is refused, all-or-nothing ***
@@ -1179,6 +1181,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the gloss carries STRUCTURE only — never an error, a body or a value ***
 *** the greeting is large and quiet, and centred ***
 *** the greeting route sits under a prefix the owner gate already covers ***
+*** the guarantee is on the SHIPPED reply, not on what the model was offered ***
 *** the guard is actually on the conversational reply path ***
 *** the guard is pure and names a WORLD, never a capability ***
 *** the guards that matter do not read settings — that is what actually holds ***
@@ -1190,6 +1193,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the header tells the model it DOES NOT KNOW what it said ***
 *** the hint gives the exact apply command ***
 *** the hook has NO parameter that could carry retrieved content ***
+*** the identity fact — 「係咪內部嘅」 — is also registry-backed ***
 *** the indicator reuses the existing blink, and respects reduced motion ***
 *** the indicator sits at the LEFT of the title ***
 *** the inert default still satisfies the read routes — it is empty, not broken ***
@@ -1380,7 +1384,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
+*** ⛔ A CORRECT reply is left alone — no duplication, no rewrite ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
+*** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
@@ -1413,6 +1419,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
+*** ⛔ THE 17:06 TURN — the registry URL reaches the shipped reply ***
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
@@ -1510,6 +1517,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the concurrency case does not use spawnSync — that is what made it fake ***
 *** ⛔ the denominator moving with the business is NOT drift ***
 *** ⛔ the deterministic step is PRESENT with model:null — not omitted ***
+*** ⛔ the disambiguation removal still applies, and the fact replaces it ***
 *** ⛔ the event ledger holds ids and states, never lesson content ***
 *** ⛔ the extractor sees the shapes this suite actually uses ***
 *** ⛔ the false positives the measurement rejected stay rejected ***
