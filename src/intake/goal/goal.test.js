@@ -100,11 +100,27 @@ test('*** ⛔ RULE 1 — costing answered from INVOICES is refused on the ENTITY
 
 test('*** ⛔ there is no cost entity and no costing operation to name in the first place ***', () => {
   const schema = goalPlanSchema()
-  const ops = schema.properties.facts.items.properties.operation.enum
-  const ents = schema.properties.facts.items.properties.entity.enum
+
+  /**
+   * ⛔ READ THROUGH `anyOf`, BECAUSE THE VALUES MOVED THERE AND DID NOT DIE.
+   *
+   * `operation` used to be `type: ['string','null']` with the enum alongside. Anthropic 400s
+   * that shape — measured — so it is now `anyOf: [{string, enum}, {null}]`. Every property
+   * this test protects is unchanged; only where the values live changed.
+   */
+  const branchesOf = (prop) => {
+    assert.ok(Array.isArray(prop.anyOf), 'the nullable-enum spelling is anyOf (Anthropic 400s the union form)')
+    const withEnum = prop.anyOf.find((b) => Array.isArray(b.enum))
+    const withNull = prop.anyOf.find((b) => b.type === 'null')
+    assert.ok(withEnum, 'one branch carries the closed list')
+    assert.ok(withNull, 'null must be sayable — it is the honest answer, and it is its own branch now')
+    return withEnum.enum
+  }
+
+  const ops = branchesOf(schema.properties.facts.items.properties.operation)
+  const ents = branchesOf(schema.properties.facts.items.properties.entity)
   assert.equal(ops.some((o) => o && /cost/i.test(o)), false)
   assert.equal(ents.some((e) => e && /cost/i.test(e)), false)
-  assert.ok(ops.includes(null), 'null must be sayable — it is the honest answer')
   assert.equal(ops.filter(Boolean).length, AROMA_OPERATIONS.length, 'the enum IS the closed list')
 })
 

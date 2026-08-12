@@ -84,7 +84,23 @@ function goalPlanSchema () {
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
       facts: {
-        type: 'array', maxItems: MAX_FACTS, minItems: 1,
+        /**
+         * ⛔ NO `maxItems`/`minItems` HERE, AND THE REASON IS A MEASURED 400.
+         *
+         *   Claude API error 400: output_config.format.schema:
+         *     For 'array' type, property 'maxItems' is not supported
+         *
+         * Anthropic rejects the whole request. OpenAI accepts it — which is why this passed
+         * every harness run and failed 100% of production turns, in 265ms, silently falling
+         * back to 「no opinion」. B never once worked on the provider 香香 actually uses.
+         *
+         * Nothing is lost by removing them: `judgeGoalPlan` ALREADY enforces both bounds and
+         * is the authoritative check — `TOO_MANY_FACTS` refuses (never truncates) and
+         * `NO_FACTS` refuses an empty plan. The schema keywords were belt-and-braces on top of
+         * a server-side rule, and this codebase's own principle is that the model proposes and
+         * the server proves. The braces were the part that did not travel.
+         */
+        type: 'array',
         items: {
           type: 'object',
           additionalProperties: false,
@@ -92,10 +108,38 @@ function goalPlanSchema () {
           properties: {
             id: { type: 'string' },
             need: { type: 'string', description: '呢個 fact 要答嘅係咩' },
-            // ⛔ null is a first-class answer: 「nothing here carries this」.
-            operation: { type: ['string', 'null'], enum: operationNames().concat([null]) },
-            entity: { type: ['string', 'null'], enum: entityTypes().concat([null]) },
-            fields: { type: 'array', items: { type: 'string' }, maxItems: 8 },
+            /**
+             * ⛔ null is a first-class answer: 「nothing here carries this」 — and it is spelled
+             * with `anyOf`, NOT a union type carrying an enum. Measured:
+             *
+             *   Claude API error 400: Invalid schema: Enum value 'aroma_system.inventory'
+             *     does not match declared type '['string', 'null']'
+             *
+             * ⛔ THIS IS THE SAME DEFECT `a4Contract.js` ALREADY FIXED, at 237b732, whose
+             * commit message reads 「anyOf, not a union type carrying an enum — the field that
+             * 400s Claude」. B was written in parallel and repeated it. A rule that lives as a
+             * comment in one file does not reach the author of the next (HR-66), and this is
+             * that rule's fourth instance — the first one caught by the defect rather than by
+             * anybody reading.
+             *
+             * anyOf is plain JSON Schema, accepted by both providers, and the accepted values
+             * are unchanged.
+             */
+            operation: {
+              anyOf: [
+                { type: 'string', enum: operationNames() },
+                { type: 'null' }
+              ]
+            },
+            entity: {
+              anyOf: [
+                { type: 'string', enum: entityTypes() },
+                { type: 'null' }
+              ]
+            },
+            // ⛔ maxItems removed here too — same 400. Field lists are bounded by the closed
+            // field vocabulary the judge checks against, not by a keyword the provider rejects.
+            fields: { type: 'array', items: { type: 'string' } },
             /**
              * ⛔ THE ONE THING THE MODEL IS ALLOWED TO DECIDE, AND THE REASON IT IS ALLOWED.
              *
@@ -116,7 +160,8 @@ function goalPlanSchema () {
         }
       },
       joins: {
-        type: 'array', maxItems: 3,
+        // ⛔ and here — see the note on `facts` above.
+        type: 'array',
         items: {
           type: 'object',
           additionalProperties: false,
