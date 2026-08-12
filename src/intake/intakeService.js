@@ -108,6 +108,8 @@ const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') /
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 // SHADOW ONLY: measures unsourced specific claims on zero-evidence turns. Decides nothing.
 const { logNoEvidenceShadow } = require('./noEvidenceShadow')
+// She must never have to ask the Owner what Aroma System is: identity, not availability.
+const { namesInternalSystem } = require('../governance/selfDescription')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
@@ -1471,6 +1473,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     let sourceIntentLogged = false
     const resolveIntent = async () => {
       if (initialObligation) return { intent: null, requiredWorlds: initialObligation }
+      /**
+       * ⛔ SHE MUST NEVER HAVE TO ASK WHAT AROMA SYSTEM IS.
+       *
+       * Measured: five turns, five clarifying questions, zero reads — ending in 「你講嘅 Aroma
+       * System 係我哋內部使用嘅系統，定係外部公司／服務嘅網站？」. She reads it every day.
+       *
+       * The cause is structural. `buildIntentPrompt` sends the resolver the Owner's own
+       * messages AND NOTHING ELSE, so a proper noun that IS one of her six sources looks
+       * exactly like an outside company. Unresolvable → `ambiguous` → and `ambiguous` returns
+       * `{type:'final'}`, which ENDS THE TURN. Asking is not merely cheaper than reading: it
+       * is the terminal branch AND the fail-closed default for every resolver error, so every
+       * uncertainty and every failure leave by the same cheapest door.
+       *
+       * ⛔ AND THIS DOES NOT RELAX THE RESOLVER'S OWN RULE. Its header refuses
+       * `availableWorlds` because 「what he means」 and 「what we can currently reach」 are
+       * different questions and mixing them lets availability decide meaning. That stands.
+       * This is not availability — it is IDENTITY. 「Aroma System」 denoting the Owner's own
+       * system is a fact about language, not about the network, and a resolver that does not
+       * know the name cannot tell an internal system from a supplier. Nothing here says a
+       * source is reachable; the server still decides that afterwards, exactly as before.
+       */
       const startedAt = Date.now()
       const r = await sourceIntents.get({
         resolve: (readDeps && readDeps.sourceIntentResolver) || null,
@@ -1480,6 +1503,20 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (!sourceIntentLogged) {
         sourceIntentLogged = true
         logOwnerSourceIntent({ requestId, outcome: r.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+      }
+      /**
+       * ⛔ ONLY THE AMBIGUOUS CASE, AND ONLY BY NAME. The first version of this short-circuited
+       * BEFORE the resolver and forced `internal` on any message naming her system — which
+       * broke MIXED, where a question about her system genuinely needs the outside world too.
+       * The tests caught it. The name is not a better resolver; it is a floor under the one
+       * outcome that ends the turn.
+       *
+       * When the resolver CAN decide, its answer stands untouched. When it cannot, and the
+       * message names one of her own six sources, 「internal」 is a better answer than asking
+       * the Owner what his own system is.
+       */
+      if (r && r.intent === 'ambiguous' && namesInternalSystem(message)) {
+        return { intent: 'internal', requiredWorlds: { internal: true, public: false }, outcome: 'internal_by_name' }
       }
       return r
     }

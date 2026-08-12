@@ -782,6 +782,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an unrecognised claimKind is UNVERIFIED, not coerced to a known kind ***
 *** an unrecognised decision TYPE is refused, not guessed ***
 *** an unrecognised value resolves toward READING LESS, not more ***
+*** an unrelated proper noun is NOT hers ***
 *** an unsafe approvalId cannot steer the filename ***
 *** an unsupported sentence is dropped; the verified row is KEPT ***
 *** an untitled source keeps a usable label, and the FIELD still tells the truth ***
@@ -1120,6 +1121,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the avatar orange became a token instead of a second literal ***
 *** the backup doc no longer says this is unbuilt ***
 *** the band follows the SETTING, not the machine ***
+*** the base URL reports which source it came from ***
 *** the block is bounded, and stops at a whole conversation ***
 *** the block says what it is, and what it cannot do ***
 *** the block states EXACTLY what wisdom is not ***
@@ -1391,6 +1393,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
+*** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
+*** ⛔ PROHIBITION 2 — the sentence is derived, so a count cannot drift ***
+*** ⛔ PROHIBITION 3 — reachable is ALWAYS null; a flag never answers a capability ***
 *** ⛔ READ → READ → READ: no fourth call, and the pending prose is NOT the answer ***
 *** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***
 *** ⛔ REVIEW 1: a capped count is NOT a matching total ***
@@ -1404,6 +1409,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
+*** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
@@ -1448,6 +1454,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ an endpoint that returned no rows makes NO claim about its fields ***
 *** ⛔ an endpoint the fresh read could not produce is an ALARM, never a silence ***
 *** ⛔ an incomplete tool call is not a completed search ***
+*** ⛔ an unknowable value is null, never a default wearing a fact\
 *** ⛔ an unknown block type is an ERROR that names what it saw ***
 *** ⛔ an unreadable store is LOUD — corruption is never read as "nothing learned" ***
 *** ⛔ body.count is never called matchingTotal before it has been qualified ***
@@ -1516,6 +1523,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ three facts against one endpoint are ONE read ***
 *** ⛔ totalCount is GONE — not aliased ***
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
+*** ⛔ what she CANNOT answer is named, not left to be discovered ***
 *** ⛔ wisdomRecall has no default store reach-through ***
 *** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***
 *** 「1」 after a numbered list keeps 香香\
