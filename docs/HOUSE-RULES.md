@@ -3430,3 +3430,50 @@ maxItems only  → REJECTED   For 'array' type, property 'maxItems' is not suppo
 to what the evidence supports, and the control test now asserts the fence's RESTRAINT
 (`minItems` stays unflagged) as well as its reach. A fence that fires on a healthy file teaches
 people to ignore fences.
+
+---
+
+### HR-77 — the shape is real and this method cannot count it
+
+Recorded 2026-08-11 at the Owner's instruction, **in place of a number**.
+
+The Owner found, by hand, a new shape: `routeAuthorSplit.test.js` asserted that a model's
+`develop` claim on 「你好」 is honoured, while `intent.js`'s own comment says a hallucinated
+`develop` 「can no longer create a work order」. **A test and its own file's stated rule
+contradicting each other, with the test winning by being executable.**
+
+Asked whether anything else in the suite does this, a detector was built and run against a
+known-positive control — the pre-fix commit. Three iterations:
+
+| | result | why |
+|---|---|---|
+| 1. scan the file HEADER | **0 found** | this codebase puts prohibitions BESIDE the code they govern. `intent.js`'s sits at line ~145. The one place the rule was not. |
+| 2. scan all ⛔ comments | 3 found, **control FAILED** | ⛔ the `intent.js` prohibition **carries no ⛔ marker**. |
+| 3. any must-not sentence | control PASSED, 69 candidates | ⛔ **polarity inverted.** |
+
+#### ⛔ WHY THERE IS NO NUMBER
+
+`capability/dispatcher.js` says 「'deny' → return immediately … never route」. Its test asserts
+`assert.equal(denied.verdict, 'deny')`. **That test is PROVING the prohibition holds.**
+
+> **The same token appears on both sides of a rule and its confirmation, and they are
+> opposites. No token-matching method separates 「the test confirms the rule」 from 「the test
+> asserts the rule is violated」.**
+
+The hand-found instance was findable only semantically: 「你好」 and 「聽日幾號」 are the same
+CLASS of input, not the same string. **69 is a candidate population, not a count, and reporting
+it would have read as reassurance about the wrong thing.**
+
+#### The second iteration deserves its own line
+
+⛔ **A detector keyed on ⛔ is blind exactly where the convention broke down.** The prohibition
+that started all of this was never marked. That is the **third instrument this week blind to the
+case it was built for, and all three definitionally rather than accidentally**:
+
+- **HR-68** — duplicate-detection cannot find the rule nobody duplicated; being un-duplicated IS the defect.
+- **HR-73's context** — a fence keyed on a convention cannot see where the convention lapsed.
+- **this** — ⛔-keyed scanning misses the unmarked prohibition, and unmarked is why it was missed by people too.
+
+**Before trusting an instrument, ask what its target looks like at the moment of failure.** If
+the failing instance lacks the property being keyed on, precision on the healthy population is
+worthless.
