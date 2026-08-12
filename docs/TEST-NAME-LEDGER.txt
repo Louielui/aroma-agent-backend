@@ -1232,6 +1232,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the module has no path that could log or return a token ***
 *** the module never logs, and never returns a body or a row wholesale ***
 *** the module never reads the OS zone as a fallback ***
+*** the net is deliberately WIDE, and the direction of its error is stated ***
 *** the note names WHY nothing was read when the reason is known ***
 *** the note names the source that was not consulted ***
 *** the observation block names a world and never a capability ***
@@ -1376,10 +1377,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
+*** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
+*** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
@@ -1447,6 +1450,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ complete WITHIN SCOPE does not support a SOURCE-WIDE universal claim ***
 *** ⛔ createdBy confers NO validation authority, whatever it says ***
 *** ⛔ daily-count items are 50 empty arrays — the count-vs-stock case has no per-item data at all ***
+*** ⛔ empty and non-string inputs propose nothing, and never throw ***
 *** ⛔ every property is in required, at every node — strict-mode compatibility ***
 *** ⛔ every unusable resolver result fails closed to a QUESTION, never a read ***
 *** ⛔ facts[] survive a TRUNCATED source — row-local truth is not set-wide ***
@@ -1475,7 +1479,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ servedBy carries the MODEL ID the adapter actually returned ***
 *** ⛔ src/wisdom makes no network or model call, in executable code ***
 *** ⛔ the API key never appears in a result, error or accounting line ***
-*** ⛔ the CONVERSATION fallback is UNCHANGED — the model still decides ***
+*** ⛔ the CONVERSATION fallback narrows: the model decides only where a CHANGE is proposed ***
 *** ⛔ the OTHER guard on this boundary reports the same way (routeEvidenceGuard) ***
 *** ⛔ the ROUTER outranks the model: a hallucinated develop cannot become a work order ***
 *** ⛔ the adapter NEVER invents a model, whatever is missing ***
@@ -1505,6 +1509,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ totalCount is GONE — not aliased ***
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ wisdomRecall has no default store reach-through ***
+*** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***
 *** 「1」 after a numbered list keeps 香香\
 *** 「A 定 B」 is not one question — it becomes no question, not an invented one ***
 *** 「Aroma System」 now reaches the Owner AS 「Aroma System」 ***

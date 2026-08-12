@@ -107,8 +107,10 @@ test('cancel → restart → status/cancelledBy/cancelledAt persist', async () =
 test('list/get identical across restart — order preserved (most-recent-first)', async () => {
   const file = tmpStoreFile()
   const a = storeOver(file)
-  const p1 = (await a.store.propose({ conversationId: 'c5a', message: 'one', llm: developLlm })).proposal
-  const p2 = (await a.store.propose({ conversationId: 'c5b', message: 'two', llm: developLlm })).proposal
+  // ⛔ 'one'/'two' were placeholders carrying no change verb, so the imperative guard (HR-75)
+  // now correctly refuses a develop claim on them. Every other test here already says 'add ts'.
+  const p1 = (await a.store.propose({ conversationId: 'c5a', message: 'add one', llm: developLlm })).proposal
+  const p2 = (await a.store.propose({ conversationId: 'c5b', message: 'add two', llm: developLlm })).proposal
   const before = a.store.listProposals()
 
   const b = storeOver(file)
