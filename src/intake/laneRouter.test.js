@@ -257,7 +257,12 @@ test('*** a ROUTED email takes the identical U1 path as an explicitly chosen one
 
   // and the shape itself is still the clean U1 one
   assert.equal(routed.u1DraftShadow, true)
-  assert.deepEqual(Object.keys(routed).sort(), ['contextCard', 'u1DraftShadow'])
+  // ⛔ 'viaRoute' added 2026-08-12: the routes now stamp every options bag they build, so a
+  // bag WITHOUT it was hand-made by a harness and is not verification. The property this line
+  // guards is unchanged and still asserted — no demo, no promoteToProposal on the U1 path.
+  assert.deepEqual(Object.keys(routed).sort(), ['contextCard', 'u1DraftShadow', 'viaRoute'])
+  assert.equal('demo' in routed, false, 'the shadow path still takes no demo wiring')
+  assert.equal('promoteToProposal' in routed, false, 'nor the promote seam')
   for (const k of ['demo', 'interactionMode', 'promoteToProposal', 'providerHint', 'readContextDeps', 'decisionRecallDeps']) {
     assert.equal(k in routed, false, 'the email lane must not carry ' + k)
   }
