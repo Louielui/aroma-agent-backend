@@ -3326,3 +3326,107 @@ Preservation is easy to check and proves nothing. Consumption is what the answer
 between the two sits a filter list nobody reads.
 
 Not fixed, per the Owner's instruction: *「Do not fix it. Tell me, and we decide after B works.」*
+
+---
+
+### HR-74 — protection is proportional to how much was read
+
+**Recorded 2026-08-11, and it sits ABOVE everything else recorded today at the Owner's
+instruction. It is not a missing feature. It is the shape of every guard in this system.**
+
+> **Owner: 「保護力和讀了多少成正比——而在模型純粹靠記憶講話那刻，即是它最可能錯那刻，保護是零。」**
+
+Every protection here is a RELATION between a claim and evidence: claim binding binds claims to
+rows, `checkEvidence` compares a conclusion to its descriptor, `enforceReadState` compares a
+reply to what was read. **With no evidence there is no relation to violate, so every guard is
+vacuously satisfied.**
+
+#### The worked example. Keep it.
+
+> 「Aroma System 目前沒有專門的網站，現在我們有三間門市」
+
+Specific, plausible, wrong in a way the Owner could not check, and produced by a turn that read
+nothing. No gate objected, and each gate was correct on its own input.
+
+#### Two facts that make this concrete
+
+**1. Zero reads means no plan at all.** `intakeService.js`:
+
+```js
+const automaticPlanApplies = ... && turnItems.size > 0
+```
+
+No rows → no answer plan → no claim binding, no row refs, no citation check.
+
+⛔ **And the ADJACENT case was already closed, deliberately.** The comment immediately below it
+reads: 「A live read that matched ZERO rows … is exactly the answer most likely to be embroidered
+— 「我睇過，冇嘢」 is cheap to say and expensive to be wrong about. It gets grounded like any
+other read.」 **「read, found nothing」 was protected. 「never read at all」 was not.** One word
+apart, and all the protection is on one side of it.
+
+**2. The gate for this EXISTS and is not called.** `evidenceGate.js` line 75:
+
+```js
+return refuse(GATE.NO_EVIDENCE, 'a conclusion was drawn with no evidence attached')
+```
+
+Named for exactly this failure. Its only production call site is `browse/browseAnswer.js` — the
+browse line the Owner closed. **Zero call sites in the chat path.**
+
+So this is HR-73's shape a second time in one day: the mechanism reaches the decision point and
+the decision does not consume it — except here it is never invoked at all.
+
+---
+
+### HR-75 — the guard is disabled precisely when the router has no opinion
+
+Measured 2026-08-11, diagnosing what looked like an empty reply.
+
+「給我 Aroma System 的 website」 returned 「…目前尚未建立任何提案」. That is **not an empty reply**
+— it is `groundedReply.js`'s proposal-lane clarification. The turn was classified `develop`,
+went to the proposal lane, and the lane correctly reported no actionable task.
+
+The guard built to prevent exactly that, `coo/intent.js:163`:
+
+```js
+const routedNotAnAction = !!(route && route.route !== 'ACTION' && route.reason !== 'default')
+```
+
+⛔ **`route.reason !== 'default'` is the defect.** Measured, no model call needed:
+
+```
+⛔ GUARD OFF  route=CONVERSATION   reason=default    給我 Aroma System 的 website
+   GUARD ON   route=CONVERSATION   reason=question   Aroma System 的 website 是什麼？
+   GUARD ON   route=UTILITY        reason=utility_time
+   GUARD ON   route=BUSINESS_QUERY reason=intent_order_planning
+```
+
+**The same question, phrased as a REQUEST instead of a QUESTION, turns the guard off.** The
+router marks an unrecognised imperative `CONVERSATION/'default'`, the guard reads 「default」 as
+「the router has no opinion, defer to the model」, and the model's `develop` claim stands
+unchallenged.
+
+⛔ **So the deterministic override protects questions and not requests** — and 「給我 X」 is how
+the Owner asks for most things. The guard covers every case except the ordinary one.
+
+**Not caused by B.** B was 400ing at the time, had no opinion, and changed nothing on this path.
+
+---
+
+### HR-76 — the fence caught its own author, third time this week
+
+The provider-schema fence was written to stop one specific move: inferring a rule beyond what
+was measured. Its first version banned `maxItems` **and `minItems`** — the 400 had named only
+`maxItems`. It immediately flagged `answerPlan.js`, whose `minItems: 1` is live and correct.
+
+Measured separately, one call each:
+
+```
+minItems only  → ACCEPTED
+maxItems only  → REJECTED   For 'array' type, property 'maxItems' is not supported
+```
+
+⛔ **I inferred a family from one member, inside the fence built to stop exactly that.** Narrowed
+to what the evidence supports, and the control test now asserts the fence's RESTRAINT
+(`minItems` stays unflagged) as well as its reach. A fence that fires on a healthy file teaches
+people to ignore fences.
