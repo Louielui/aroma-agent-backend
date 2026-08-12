@@ -1460,6 +1460,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ no keyword router, and no holdout literal in the production prompt ***
 *** ⛔ no network primitive exists on the public path ***
 *** ⛔ no production runtime file imports the wisdom domain ***
+*** ⛔ no production schema pairs a union type with an enum — use anyOf ***
+*** ⛔ no production schema uses maxItems — Anthropic rejects the request ***
 *** ⛔ no test NAME has disappeared since the ledger was written ***
 *** ⛔ no test in this file can reach the Owner\
 *** ⛔ nothing outside src/wisdom requires the wisdom domain at all ***
@@ -1485,6 +1487,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the event ledger holds ids and states, never lesson content ***
 *** ⛔ the extractor sees the shapes this suite actually uses ***
 *** ⛔ the false positives the measurement rejected stay rejected ***
+*** ⛔ the fence can see the shapes it is built for ***
 *** ⛔ the model\
 *** ⛔ the prompt catalogue carries SHAPES and not one data row ***
 *** ⛔ the ratio travels on BOTH sides of every threshold ***
