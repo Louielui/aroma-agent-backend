@@ -763,6 +763,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an orphan lock is left alone rather than deleted by a non-owner ***
 *** an outcome is recorded once, bounded, and changes NO confidence ***
 *** an unattributed claim is no longer "generic" — it stays silent ***
+*** an unchanged rate is not news ***
 *** an unconfigured provider is unavailable, not empty ***
 *** an unconfigured server cannot be logged into at all ***
 *** an unknown IANA name THROWS — it does not become UTC or the OS zone ***
@@ -886,6 +887,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** exactly at the cap is fine ***
 *** facts[] never consult claimBindings ***
 *** field tiers after the capture — the four states 「CANDIDATE」 was hiding ***
+*** field-set changes ALARM, because no threshold exists to be chosen ***
 *** first run is legitimately empty ***
 *** focus is still VISIBLE — removing the colour must not remove the indicator ***
 *** generic sources keep their own names and are unchanged ***
@@ -1192,6 +1194,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the keyword table still matches these sentences — that is not what changed ***
 *** the language policy no longer spells the forms it forbids ***
 *** the lantern assets and their assembler are removed, not orphaned ***
+*** the largest FALL leads, because that is the direction that is believed ***
 *** the launcher and the repo default now agree ***
 *** the ledger is not empty, and not stale to the point of meaninglessness ***
 *** the lesson cap is respected ***
@@ -1366,6 +1369,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** with the demo flag off, every conversation route is 403 ***
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
+*** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
@@ -1401,6 +1405,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ a capability denial is NOT corrected when the source really was not read ***
 *** ⛔ a claim cannot bind to a source that was not read ***
 *** ⛔ a claimed scope that CONTRADICTS the evidence scope is unverified ***
+*** ⛔ a field that HALVED is reported — a tier-only diff would call it unchanged ***
 *** ⛔ a filtered endpoint may not produce an existence claim ***
 *** ⛔ a marker with no claim in front of it fails closed ***
 *** ⛔ a missing claim structure is UNBOUND — never row_local, never source_wide ***
@@ -1423,6 +1428,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ an ENRICHING read is listed and not performed, and cannot sink the plan ***
 *** ⛔ an INVALID claim declaration still changes nothing ***
 *** ⛔ an absent model is NULL, never backfilled with the provider name ***
+*** ⛔ an endpoint that returned no rows makes NO claim about its fields ***
+*** ⛔ an endpoint the fresh read could not produce is an ALARM, never a silence ***
 *** ⛔ an incomplete tool call is not a completed search ***
 *** ⛔ an unknown block type is an ERROR that names what it saw ***
 *** ⛔ an unreadable store is LOUD — corruption is never read as "nothing learned" ***
@@ -1465,6 +1472,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ the adapter THROWS on unavailable — it never returns zero rows ***
 *** ⛔ the bare catch is gone from the loop boundary ***
 *** ⛔ the concurrency case does not use spawnSync — that is what made it fake ***
+*** ⛔ the denominator moving with the business is NOT drift ***
 *** ⛔ the deterministic step is PRESENT with model:null — not omitted ***
 *** ⛔ the event ledger holds ids and states, never lesson content ***
 *** ⛔ the extractor sees the shapes this suite actually uses ***
