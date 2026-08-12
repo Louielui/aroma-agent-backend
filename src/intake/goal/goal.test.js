@@ -256,7 +256,19 @@ test('*** a decomposer that fails is a refusal, never a guessed plan ***', async
 
 /* ═══ NOT WIRED, AND NOT A SECOND LOOP ════════════════════════════════════ */
 
-test('*** ⛔ B is not wired into the runtime, and is not a second reasoning loop ***', () => {
+test('*** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***', () => {
+  /**
+   * ⛔ THIS ASSERTION WAS INVERTED ON PURPOSE, 2026-08-11, UNDER AN OWNER GO.
+   *
+   * It used to read 「B is not wired into the runtime」 and assert `offenders` was EMPTY — which
+   * was true and load-bearing for as long as B was unproven. Wiring it made that test red, and
+   * the red was correct: a guarantee changed, and something had to say so out loud.
+   *
+   * It is REPLACED rather than deleted, because a deleted assertion removes a guarantee in
+   * silence (the R3.1 defect, and the reason `docs/TEST-NAME-LEDGER.txt` exists). The property
+   * being protected has moved, not died: B may reach production, but through exactly one seam,
+   * so a second entry point cannot appear without this going red again.
+   */
   const SRC = path.resolve(__dirname, '..', '..')
   const offenders = []
   const walk = (d) => {
@@ -265,12 +277,22 @@ test('*** ⛔ B is not wired into the runtime, and is not a second reasoning loo
       if (fs.statSync(p).isDirectory()) { if (n !== 'node_modules' && n !== 'goal') walk(p); continue }
       if (!/\.js$/.test(n) || /\.test\.js$/.test(n)) continue
       if (/require\([^)]*goal\/(goalDecomposer|goalPlanContract|operationCatalogue)/.test(fs.readFileSync(p, 'utf8'))) {
-        offenders.push(path.relative(SRC, p))
+        // Separators normalised: this ran green on POSIX and would have failed only on Windows,
+        // which is the machine it actually runs on.
+        offenders.push(path.relative(SRC, p).replace(/\\/g, '/'))
       }
     }
   }
   walk(SRC)
-  assert.deepEqual(offenders, [], '⛔ B reached production before it was proven')
+  assert.deepEqual(offenders, ['intake/intakeService.js'],
+    '⛔ B has exactly ONE call site. A second one is a second entry point with its own price ' +
+    'and its own failure mode, and it must be a deliberate act rather than a discovery.')
+
+  // ⛔ AND IT IS OFF UNLESS THE OWNER SAYS OTHERWISE. The wiring is load-bearing when the flag
+  // is on, so the default is the thing that must not drift.
+  const { goalDecomposerEnabled } = require('./goalGate')
+  assert.equal(goalDecomposerEnabled({}), false, '⛔ GOAL_DECOMPOSER defaults OFF')
+  assert.equal(goalDecomposerEnabled(process.env), false, '⛔ and it is not on in this environment')
 
   // ⛔ AND NO SECOND LOOP. The existing reasoningLoop owns stepping and dispatch; this file
   // must contain neither, or the third instance of 「build a second copy」 has happened again.

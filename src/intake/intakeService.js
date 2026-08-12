@@ -106,6 +106,10 @@ async function defaultRecoveryWorker (input) {
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
+// B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
+// question NEEDS; the server then reads only what was named. A failure has no opinion.
+const { decomposeGoal } = require('./goal/goalDecomposer')
+const { goalDecomposerEnabled, sourcesForPlan, requirementBlock } = require('./goal/goalGate')
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -417,6 +421,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // who is being asked, and a provider is never handed a block it is not permitted.
   const promptCache = new Map()   // provider -> assembled prompt
   const readBlockCache = new Map() // source-set key -> read-context block (one fetch per set)
+  /**
+   * ⛔ B RUNS AT MOST ONCE PER TURN, AND THE MEMO IS THE PRICE CONTROL.
+   *
+   * `buildPromptFor` is called per provider AND again on every reasoning-loop step. Calling the
+   * decomposer from inside it without this cache would buy one paid call per provider per step
+   * — the turn that costs 「four connectors and thirteen rows」 all over again, in tokens.
+   *
+   * Three states, deliberately: `undefined` not attempted, a promise in flight, and a resolved
+   * value that may itself be `null` for 「B had no opinion」. A rejected promise is impossible —
+   * `decomposeOnce` never throws, because B failing must not be able to fail the turn.
+   */
+  let goalPlanPromise // undefined = not attempted; Promise<plan|null> once started
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
@@ -563,6 +579,50 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // ⛔ ONE source-world authority per turn, resolved at most once per stable Owner context.
   const sourceIntents = createTurnIntentCache()
 
+  /**
+   * B, once. Returns the judged plan, or `null` for 「no opinion」.
+   *
+   * ⛔ IT NEVER THROWS AND IT NEVER REJECTS. The Owner's rule: 「B failing falls back to the
+   * existing reasoning loop, never to no answer.」 Every failure — flag off, no adapter, a
+   * provider error, an unparseable envelope, a plan the contract refuses — resolves to `null`,
+   * and `sourcesForPlan(null, …)` then narrows nothing. The turn proceeds exactly as it did
+   * before B existed.
+   */
+  function decomposeOnce () {
+    if (goalPlanPromise !== undefined) return goalPlanPromise
+    goalPlanPromise = (async () => {
+      try {
+        const out = await decomposeGoal({
+          question: message,
+          // Provider-neutral by construction: B is handed a closure and never learns what is
+          // behind it — the same arrangement reasoningLoop uses.
+          callModel: async ({ prompt, responseFormat }) => {
+            const r = await adapter.complete(prompt, { system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
+            return { text: r && r.text, usage: r && r.usage }
+          }
+        })
+        // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
+        // be taken from real runs rather than estimated, and a refusal that costs a call is
+        // still a cost.
+        try {
+          console.log('[AROMA-GOAL]', JSON.stringify({
+            requestId,
+            ok: !!(out && out.ok),
+            reason: (out && out.reason) || null,
+            facts: (out && out.ok && out.plan && Array.isArray(out.plan.facts)) ? out.plan.facts.length : null,
+            unavailable: (out && out.ok && out.plan && Array.isArray(out.plan.facts))
+              ? out.plan.facts.filter((f) => f && f.status === 'UNAVAILABLE').length : null,
+            usage: (out && out.usage) || null
+          }))
+        } catch (_) { /* telemetry is never load-bearing */ }
+        return (out && out.ok && out.plan) ? out.plan : null
+      } catch (_) {
+        return null
+      }
+    })()
+    return goalPlanPromise
+  }
+
   async function buildPromptFor (providerName) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
@@ -640,9 +700,36 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // INTERSECTED with what is enabled, never unioned: the route can only ever narrow
         // what the Owner's own switches already allow.
         const forced = deps && deps.forceSources === true // tests only, to prove the plan gate
-        const all = (routeGoverns && !forced)
+        let all = (routeGoverns && !forced)
           ? enabled.filter((s) => routeDecision.sources.includes(s))
           : enabled
+
+        /**
+         * ── ⛔ B DECIDES WHAT IS NEEDED, AND THE SERVER READS ONLY THAT ──────
+         *
+         * The route answers 「which source could hold this entity」 from keywords. B answers a
+         * different question — 「what facts would ANSWER this」 — and it can return the one
+         * thing a keyword table structurally cannot: **nothing here carries that.**
+         *
+         * 「給我 Aroma System 的 website」 is the case. The keyword route sees 「system」 and
+         * names stock; B names the required fact as the system's own URL, finds no operation
+         * that provides it, and `sourcesForPlan` therefore returns `[]`. The turn reaches the
+         * model with zero rows and a stated gap instead of four stock counts and a shrug.
+         *
+         * ⛔ NARROW ONLY. Intersected inside `sourcesForPlan` against what is already enabled,
+         * never unioned — a requirement is not an authorisation.
+         *
+         * ⛔ AND `null` IS NOT `[]`. A plan that could not be produced narrows NOTHING and the
+         * turn is byte-for-byte what it was before B existed; only a real plan can say 「read
+         * nothing」. That distinction is the whole of the fail-safe.
+         */
+        let goalBlock = null
+        if (goalDecomposerEnabled(process.env) && !forced) {
+          const plan = await decomposeOnce()
+          const wanted = sourcesForPlan(plan, all)
+          if (wanted !== null) all = wanted
+          goalBlock = requirementBlock(plan)
+        }
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
         // gets that minus anything the Owner has withheld from it.
         //
@@ -714,6 +801,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             readContextUsedBy.set(providerName, sources.slice())
           }
         }
+
+        /**
+         * ⛔ INJECTED OUTSIDE THE `sources.length > 0` BRANCH, AND THAT IS THE ACCEPTANCE CASE.
+         *
+         * When B finds that nothing carries the required fact, there are ZERO sources — so a
+         * requirement block placed inside the read branch would be built and then never
+         * reach the prompt, on precisely the turn it exists for. The gap has to travel when
+         * there is nothing to read, or it does not travel at all.
+         */
+        if (goalBlock) effPrompt = goalBlock + '\n\n' + effPrompt
       } catch (err) {
         // FAIL-SOFT, BUT NEVER SILENT. This used to be `catch (_) {}`. A whole-block
         // failure therefore produced a turn that looked normal, with no context and no
