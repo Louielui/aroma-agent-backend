@@ -68,7 +68,36 @@ function Probe-Server {
 
 $state = Probe-Server
 if ($state -eq 'ours') {
-  Write-Log 'health probe matched: 香香 already up; skip start'
+  # ⛔ 「ALREADY UP」 MUST NOT QUIETLY MEAN 「RUNNING OLD CODE」.
+  #
+  # Measured 2026-08-12: this branch fired five times between 07:25 and 10:17 and wrote
+  # 'skip start' to a log nobody reads. From the Owner's side each one LOOKED like a restart —
+  # the page reopened and she answered — while the process underneath was untouched for three
+  # hours. He reported 「restarted, and she still asks」 twice about code that had never loaded.
+  #
+  # Node reads its files once, at start. A running server is a SNAPSHOT, and the only honest
+  # thing this branch can do is say which snapshot, ON SCREEN, where he is standing.
+  $bootCommit = $null
+  try {
+    $h = Invoke-WebRequest -Uri "http://127.0.0.1:$Port/health" -TimeoutSec 4 -UseBasicParsing
+    $bootCommit = ($h.Content | ConvertFrom-Json).bootCommit
+  } catch { $bootCommit = $null }
+  $headCommit = (& git -C $Repo rev-parse HEAD 2>$null)
+  $short = { param($c) if ($c) { $c.Substring(0, [Math]::Min(12, $c.Length)) } else { '(unknown)' } }
+
+  if (-not $bootCommit) {
+    Write-Log 'health probe matched: 香香 already up; skip start — server predates bootCommit, cannot say what it runs'
+    Notify-Owner '香香已經開緊（冇重啟）' ("佢行緊嘅 process 講唔到自己載住邊個 commit（開機時間早過呢個功能）。`n`n" +
+      "如果你頭先改咗嘢想生效，就要真係停咗佢再開——行 launcher 唔會重啟一個健康嘅 process。")
+  } elseif ($headCommit -and ($bootCommit -ne $headCommit)) {
+    $behind = (& git -C $Repo rev-list --count "$bootCommit..HEAD" 2>$null)
+    Write-Log ("health probe matched: 香香 already up; skip start — RUNNING " + (& $short $bootCommit) + ", repo HEAD " + (& $short $headCommit) + ", behind by " + $behind)
+    Notify-Owner '香香已經開緊，但行緊舊 code' ("行緊：" + (& $short $bootCommit) + "`n倉庫 HEAD：" + (& $short $headCommit) +
+      "`n落後 " + $behind + " 個 commit`n`n行 launcher 唔會重啟一個健康嘅 process。要新 code 生效，要真係停咗佢再開。")
+  } else {
+    Write-Log ('health probe matched: 香香 already up; skip start — running HEAD ' + (& $short $bootCommit))
+  }
+
   if ($Mode -eq 'Open') { Start-Process $Url }
   return
 }

@@ -3539,3 +3539,46 @@ and `noEvidenceShadow.js` vanish from the list the moment they are wired, and
 ⚠ **60 is a population, not a defect count.** Much of it is the deliberately-closed browse line.
 And the detector is coarser than use: a module that is REQUIRED but whose export is never
 CALLED reads as reached — `checkEvidence` would, if `browseAnswer.js` were live.
+
+---
+
+### HR-81 — six environment gaps, and every one was the layer that decided
+
+**2026-08-12. Recorded as one entry at the Owner's instruction, because they are one finding.**
+
+> **Owner: 「Today produced no working fix and one real finding: I have been reading PASSes
+> from an environment that could not become mine.」**
+
+| # | gap | the PASS that did not survive |
+|---|---|---|
+| 1 | **provider** | B's acceptance passed on OpenAI. Production runs Claude, which 400s the schema twice over. |
+| 2 | **lane** | the startup smoke test passed on a path the defect could not reach. |
+| 3 | **caller** | 「verified on a live turn」 meant `processIntake()` called directly, with an options bag I built. His turn carries `demo`, `contextCard`, `providerHint`, `previousLane`, real history and the route's own `readContextDeps`. |
+| 4 | **build** | the node process had started **two hours before** the commit under test. Node reads files once; a running server is a snapshot. |
+| 5 | **restart semantics** | 「restart」 meant two different things. The launcher skips starting a healthy server — five `skip start` lines between 07:25 and 10:17. The page reopened, she answered, the process never moved. |
+| 6 | **branch** | ⛔ **the launcher fail-closes unless the repo is on `main`.** Every fix today was on a feature branch, so none of it could EVER have run on his machine. |
+
+⛔ **Each one was the layer that decided the outcome, and each was invisible from where I stood.**
+Not one was a wrong judgement about code. All six were facts about the environment that nobody
+had written down, and five of them I discovered only by being told the fix did not work.
+
+#### What follows, and it is not a resolution
+
+Rules about carefulness were written all month and each failed at least once. The only thing
+that broke the pattern was a script that **cannot produce a verdict when its premises fail**:
+
+- `scripts/verify/liveTurn.js` — refuses unless the server answers, `bootCommit` equals the
+  working tree HEAD, the tree is clean, and the turn goes through `POST /api/v1/demo/intake`.
+- `/health` carries `bootCommit`, read once at module load. Gap 4 is now observable.
+- The launcher says on screen, not in a log, when 「already up」 means old code. Gap 5.
+- Routes stamp `viaRoute`; an unstamped bag prints `[AROMA-NOT-VERIFICATION]`. Gap 3.
+
+⛔ **Gaps 1, 2 and 6 have no mechanism yet.** Provider and lane are named in HR-63's family and
+still rest on remembering. Branch is the sharpest of the three: the launcher already knows, and
+says so only to a log — the same shape as gap 5, one layer up.
+
+#### The rule to carry
+
+> **A PASS is a claim about an environment. Name the environment in the sentence, or the claim
+> is about the harness.** Which provider, which caller, which commit — the way `QUERY_SCOPE`
+> carries `declaredBy: 'reader'` rather than hiding that its windows came from another repo.
