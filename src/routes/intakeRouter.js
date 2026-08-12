@@ -93,7 +93,7 @@ router.post(
       // ⛔ ONE OPTIONS BAG, AND IT STAYS ABSENT WHEN THERE IS NOTHING TO PUT IN IT. A4 off and
       // demo off must remain the original 3-argument call, byte for byte.
       const opts = demoOn
-        ? { requestId: correlationId, demo: true, contextCard, promoteToProposal: locals.promoteToProposal }
+        ? { requestId: correlationId, demo: true, contextCard, promoteToProposal: locals.promoteToProposal, viaRoute: 'intake' }
         : (a4Deps ? {} : null)
       if (opts && a4Deps) opts.readContextDeps = a4Deps
 

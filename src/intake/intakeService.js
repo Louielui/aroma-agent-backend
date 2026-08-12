@@ -222,6 +222,31 @@ async function processIntake (message, adapter, history = [], opts = {}) {
 
 async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
+
+  /**
+   * ⛔ THIS TURN DID NOT COME FROM A ROUTE, SO IT IS NOT VERIFICATION.
+   *
+   * Four PASSes this month did not survive the Owner's machine, and one cause was that
+   * 「verified on a live turn」 meant calling this function DIRECTLY with an options bag the
+   * harness built itself — `{interactionMode:'chat'}` and nothing else. His turn arrives
+   * through `POST /api/v1/demo/intake`, carrying `demo`, `contextCard`, `providerHint`,
+   * `previousLane`, real history, and the route's own `readContextDeps` assembly. Same
+   * function, different inputs, and the inputs are what steer routing.
+   *
+   * The routes now stamp `viaRoute`. A bag without it was hand-made.
+   *
+   * ⛔ IT WARNS AND DOES NOT REFUSE. Refusing would break every unit test that legitimately
+   * calls this directly — and a guard whose failure mode is a broken suite gets deleted. The
+   * point is only that the cheap path can no longer look like the real one in a transcript.
+   *
+   * ⛔ AND IT IS SILENT UNDER THE TEST RUNNER, measured rather than assumed:
+   * `node --test` sets NODE_TEST_CONTEXT="child-v8". Unit tests are not pretending to verify.
+   */
+  if (!process.env.NODE_TEST_CONTEXT && !(opts && opts.viaRoute)) {
+    console.warn('[AROMA-NOT-VERIFICATION] processIntake was called directly, not through a route. ' +
+      'This turn exercises a hand-built options bag and is NOT evidence about 香香. ' +
+      'Use: node --env-file=.env scripts/verify/liveTurn.js "<message>"')
+  }
   // B2-2 Conversation Demo — additive, flag-gated. When `demo` is false (default,
   // i.e. no opts) every demo branch below is skipped and the pipeline is unchanged.
   const demo = opts && opts.demo === true                  // CONVERSATION_DEMO gate; default false
