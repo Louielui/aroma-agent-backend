@@ -108,6 +108,8 @@ const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') /
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 // An 'I cannot tell' may not outrank a deterministic classification (B canary, 052761bc).
 const { decideWorldAsk } = require('./worldAskDecision')
+// Observability only — see askForkTrace.js. Emits; never decides.
+const { STAGE: FORK_STAGE, BRANCH: FORK_BRANCH, ASK_ORIGIN: FORK_ASK, logAskFork, sourceClassOf } = require('./askForkTrace')
 
 /** ⛔ Status and reason only — never his words, never the question text (logContent fence). */
 function logWorldAsk (requestId, resolverIntent, decision, asked) {
@@ -1343,6 +1345,30 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const initialIsAsk = initialTerminalMode === 'ask'
   const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
+
+  /**
+   * ⛔ OBSERVABILITY ONLY. Emits a line; returns nothing; nothing branches on it.
+   * Every argument-side call is inside the try, so a telemetry failure cannot fail a turn.
+   */
+  const forkTrace = (stage, branch, extra) => {
+    try {
+      logAskFork(Object.assign({
+        requestId,
+        stage,
+        branch,
+        route: routeDecision ? routeDecision.route : null,
+        sourceClass: sourceClassOf(authorisedSourcesFor(activeProvider || primaryProvider))
+      }, extra || {}))
+    } catch (_) { /* never */ }
+  }
+
+  // The fork the 2026-08-12 A/B pair could not show: whether this gate ran at all, and why not.
+  forkTrace(FORK_STAGE.INITIAL_FINAL_GATE,
+    initialFinalGate
+      ? FORK_BRANCH.GATE_ENTERED
+      : ((distilled && distilled.nextRead) ? FORK_BRANCH.GATE_SKIPPED_READ_PROPOSED : FORK_BRANCH.GATE_SKIPPED_NOT_ELIGIBLE),
+    { askOrigin: initialIsAsk ? FORK_ASK.MODEL_INITIAL_ASK : FORK_ASK.NONE })
+
   if (initialFinalGate) {
     const allowedNow = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
     const w = availableWorlds(allowedNow)
@@ -1369,6 +1395,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
       }
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: 1, decisionType: initialIsAsk ? 'ask' : 'final', stopReason: initialIsAsk ? 'ask_validation_unavailable' : 'final_validation_unavailable' })) } catch (_) {}
+      forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_UNUSABLE, {
+        askOrigin: initialIsAsk ? FORK_ASK.MODEL_INITIAL_ASK : FORK_ASK.NONE, shortCircuit: true
+      })
     } else if (verdict.decision === 'clarify') {
       // The ASK is legitimate — either the model already asked, or its FINAL was premature and
       // the meaning genuinely is open. Either way this is an ordinary conversation result, as
@@ -1376,11 +1405,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // The verifier's own validated question is preferred over the model's wording, which the
       // verifier was never shown.
       distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: verdict.question, nextRead: null, answerPlan: null })
+      /**
+       * ⛔ THIS IS THE 19:28 EXIT (requestId 068bd217). It sets neither `nextRead` nor
+       * `initialObligation`, so the loop guard below is false and the reasoning loop is never
+       * entered — which is why that turn has no REASONING, no READ-SOURCE and no TURN_COST.
+       * It also never reaches the resolver, so `worldAskDecision` is not consulted at all.
+       */
+      forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_CLARIFY, {
+        askOrigin: FORK_ASK.FINAL_OBLIGATION_CLARIFY, shortCircuit: true
+      })
     } else if (verdict.decision === 'allow_final' && initialIsAsk) {
       // ⛔ THE ASK SURVIVES, UNTOUCHED. `allow_final` means no retrieval is needed — not that
       // the question was pointless. The model may be asking which of two things the OWNER
       // PREFERS, and this is a knowledge gate, not an Owner-intent gate. Turning every
       // no-retrieval ASK into a forced answer would be a new defect wearing this one's clothes.
+      forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_ALLOW_FINAL, {
+        askOrigin: FORK_ASK.MODEL_INITIAL_ASK, shortCircuit: true
+      })
     } else if (verdict.requiredWorlds) {
       // ══════════════════════════════════════════════════════════════════════
       // ⛔ FinalKnowledge DECIDES *WHETHER*; THE RESOLVER DECIDES *WHICH*.
@@ -1409,22 +1450,43 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider)
       })
       logWorldAsk(requestId, resolved.intent, worldAsk0, worldAsk0.ask)
+      // ⛔ THIS IS THE 19:26 PATH (requestId d0c1cae6). Reaching here at all means the verdict
+      // was require_*, not clarify — which is the divergence the A/B pair could not show.
+      forkTrace(FORK_STAGE.SOURCE_INTENT, FORK_BRANCH.VERDICT_REQUIRE, { intent: resolved.intent })
       if (worldAsk0.ask) {
         distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null })
+        forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_ASK, {
+          intent: resolved.intent, askOrigin: FORK_ASK.WORLD_ASK_AMBIGUOUS, shortCircuit: true
+        })
       } else if (worldAsk0.requiredWorlds) {
         initialObligation = worldAsk0.requiredWorlds
+        forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_OBLIGATION, { intent: resolved.intent })
       } else if (resolved.intent === 'ambiguous') {
         // Routed internal but unreachable: no obligation, no question, no read. The reply's
         // honesty about that is the read-state guards' job, not this gate's.
         initialObligation = null
+        forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_UNREACHABLE, { intent: resolved.intent, shortCircuit: true })
       } else {
         // require_* on an ASK also SUPPRESSES it: the meaning is settled, it is answerable, and
         // the turn owes a read. The model's question is dropped here and never rendered — the
         // post-loop obligation check keeps it from returning through the fallback.
         initialObligation = resolved.requiredWorlds
+        forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_REQUIRED_FALLTHROUGH, { intent: resolved.intent })
       }
     }
   }
+
+  /**
+   * ⛔ THE FORK ITSELF, NOW ON THE RECORD.
+   *
+   * Everything above either sets `nextRead`, sets `initialObligation`, or does neither. Only
+   * the first two enter the reasoning loop; the third ends the turn having read nothing. That
+   * third case was invisible in the log — a turn simply stopped appearing.
+   */
+  const willEnterLoop = !!(interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation))
+  forkTrace(FORK_STAGE.LOOP_ENTRY,
+    willEnterLoop ? FORK_BRANCH.LOOP_ENTERED : FORK_BRANCH.LOOP_SKIPPED,
+    { reasoningEntered: willEnterLoop, shortCircuit: !willEnterLoop })
 
   if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation)) {
     const { runReasoningLoop, STOP } = require('./reasoningLoop')
