@@ -1443,6 +1443,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
+*** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
 *** ⛔ A. WITHHOLD 「${c.name}」 STILL SHIPS A NON-EMPTY REPLY ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
@@ -1451,7 +1452,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ AN UNRETRIEVED NAME RECORDS name_not_in_evidence ***
 *** ⛔ AN UNSUPPORTED NUMBER RECORDS number_not_in_evidence ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
+*** ⛔ AND A VALID DERIVATION WITH NO OTHER NUMBER STILL PASSES CLEAN ***
 *** ⛔ AND THE DETAIL RIDES ON A FIELD THE SERIALIZER ALREADY SHIPPED ***
+*** ⛔ AND THE NUMERAL-BEFORE-LABEL CASE IS STILL derived_unbound ***
 *** ⛔ AND THE SYSTEM IS STILL RECOGNISED, by every spelling that denotes IT ***
 *** ⛔ AND THE TRACE ITSELF NEVER PRINTS THE TURN ***
 *** ⛔ AND droppedSentences COUNTING IS UNCHANGED ***
@@ -1550,6 +1553,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND beforeTerminal ***
 *** ⛔ THE RESTAURANT IS NOT THE SYSTEM — no composed answer ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
+*** ⛔ THE TWO ARE TOLD APART ON OTHERWISE IDENTICAL INPUT ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
 *** ⛔ THE WORKING TURN STILL WORKS — the URL, clean ***
 *** ⛔ TURN 1 — the URL ships and NO internal-vs-public question survives ***

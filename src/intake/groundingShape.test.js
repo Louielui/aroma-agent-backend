@@ -174,3 +174,44 @@ test('*** ⛔ AND THE DETAIL RIDES ON A FIELD THE SERIALIZER ALREADY SHIPPED ***
   assert.equal(d.why, 'number_not_in_evidence', 'the compatible top-level reason')
   assert.equal(d.shape, 'derived_wrong_value', '⛔ the detail did not survive the projection')
 })
+
+/* ═══ ⛔ MIXED CASE — A VALID DERIVATION PLUS AN UNRELATED BAD NUMBER ════ */
+
+/**
+ * ⛔ THE EYE MUST NOT MISREPORT. `labelSeen` alone said 「a declared label appeared」, so any
+ * later unsupported numeral was blamed on the derivation layer — even when the derivation had
+ * worked perfectly. This observability exists precisely to stop us repairing the wrong layer;
+ * an eye that misreports is worse than none, because we would follow it.
+ *
+ * None of the first ten tests covered this: they each had a single numeral.
+ */
+test('*** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***', () => {
+  // 缺口 70 is correct, server-validated and consumed. 12345 is the real problem.
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70，預測 12345。`), ctx(ONE_ROW))
+  assert.equal(r.plan.directAnswer, '', 'the sentence still drops — behaviour unchanged')
+  assert.equal(whyOf(r), 'number_not_in_evidence', 'top-level why unchanged')
+  assert.equal(shapeOf(r), 'raw_unsupported',
+    '⛔ a working derivation was blamed for an unrelated numeral: ' + shapeOf(r))
+})
+
+test('*** ⛔ AND THE NUMERAL-BEFORE-LABEL CASE IS STILL derived_unbound ***', () => {
+  // Nothing bound here, so the derivation layer IS the right place to look.
+  const r = validatePlan(PLAN(`${NAPA} 12345 係缺口。`), ctx(ONE_ROW))
+  assert.equal(shapeOf(r), 'derived_unbound', '⛔ the genuine unbound case was reclassified')
+})
+
+test('*** ⛔ THE TWO ARE TOLD APART ON OTHERWISE IDENTICAL INPUT ***', () => {
+  // Same row, same label, same unsupported numeral. The ONLY difference is whether a
+  // derivation successfully bound — so that is the only thing that can be deciding.
+  const mixed = shapeOf(validatePlan(PLAN(`${NAPA} 缺口 70，預測 12345。`), ctx(ONE_ROW)))
+  const unbound = shapeOf(validatePlan(PLAN(`${NAPA} 12345，缺口。`), ctx(ONE_ROW)))
+  assert.notEqual(mixed, unbound, '⛔ bound and unbound collapse to one shape')
+  assert.equal(mixed, 'raw_unsupported')
+  assert.equal(unbound, 'derived_unbound')
+})
+
+test('*** ⛔ AND A VALID DERIVATION WITH NO OTHER NUMBER STILL PASSES CLEAN ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70。`), ctx(ONE_ROW))
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70。`)
+  assert.deepEqual((r.drops || []).filter((d) => d && d.kind === 'sentence'), [])
+})

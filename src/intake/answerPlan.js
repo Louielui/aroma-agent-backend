@@ -1110,7 +1110,7 @@ const SIGNED_TOKEN_RE = /-?\d+(?:[.,]\d+)*/g
  */
 function applyDerivations (sentence, index) {
   const list = (index && Array.isArray(index.derived)) ? index.derived : []
-  if (list.length === 0) return { text: sentence, refuse: null, labelSeen: false }
+  if (list.length === 0) return { text: sentence, refuse: null, labelSeen: false, bound: false }
 
   /**
    * ⛔ BLOCKER 1 — CO-OCCURRENCE IS NOT ATTRIBUTION, AND FAILING CLOSED IS THE ONLY HONEST
@@ -1180,22 +1180,22 @@ function applyDerivations (sentence, index) {
   }
 
   // No declared label carries a number: nothing is claimed under a derivation, nothing to check.
-  if (claims.length === 0) return { text: sentence, refuse: null, labelSeen }
+  if (claims.length === 0) return { text: sentence, refuse: null, labelSeen, bound: false }
 
   // ⛔ A CLAIM WE CANNOT VALIDATE IS REFUSED, NOT WAVED THROUGH. Zero or several candidate rows
   // means no server value exists to compare against — and falling through would re-open the
   // very laundering this rule closes.
-  if (rows.size !== 1) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_NO_ONE_ROW, labelSeen }
+  if (rows.size !== 1) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_NO_ONE_ROW, labelSeen, bound: false }
 
   const expected = new Map(named.map((d) => [d.label, String(d.value)]))
   for (const c of claims) {
-    if (expected.get(c.label) !== c.token) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_WRONG_VALUE, labelSeen }
+    if (expected.get(c.label) !== c.token) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_WRONG_VALUE, labelSeen, bound: false }
   }
 
   const values = new Set(
     named.filter((d) => sentence.includes(d.label)).map((d) => String(d.value))
   )
-  if (values.size === 0) return { text: sentence, refuse: null, labelSeen }
+  if (values.size === 0) return { text: sentence, refuse: null, labelSeen, bound: false }
 
   /**
    * ⛔ BLOCKER 2 — A WHOLE NUMERIC TOKEN, NEVER A PREFIX.
@@ -1209,7 +1209,9 @@ function applyDerivations (sentence, index) {
    * token is compared. `70.5` and `70,000` are single tokens that are not equal to `70`, so
    * neither is consumed and both are rejected downstream as before.
    */
-  return { text: sentence.replace(SIGNED_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok), refuse: null, labelSeen }
+  // Every claim matched the server's own arithmetic and is consumed below: a derivation
+  // genuinely BOUND on this sentence, which is a different fact from a label merely appearing.
+  return { text: sentence.replace(SIGNED_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok), refuse: null, labelSeen, bound: true }
 }
 
 /**
@@ -1266,7 +1268,8 @@ function checkSentenceNumbers (sentence, index) {
      * shapes, which are the two limits left open by decision. Distinguished here so the next
      * decision rests on a count, not on my guess about which one production hits.
      */
-    return { ok: false, shape: applied.labelSeen ? GROUNDING_SHAPE.DERIVED_UNBOUND : GROUNDING_SHAPE.RAW_UNSUPPORTED }
+    const unbound = applied.labelSeen && !applied.bound
+    return { ok: false, shape: unbound ? GROUNDING_SHAPE.DERIVED_UNBOUND : GROUNDING_SHAPE.RAW_UNSUPPORTED }
   }
 
   for (const m of s.matchAll(CJK_COUNT_RE)) {
