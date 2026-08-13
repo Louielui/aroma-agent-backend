@@ -1421,7 +1421,6 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A. WITHHOLD 「${c.name}」 STILL SHIPS A NON-EMPTY REPLY ***
-*** ⛔ A2. AND THE FLOOR IS REACHABLE FROM THIS PATH AT ALL ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
 *** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***

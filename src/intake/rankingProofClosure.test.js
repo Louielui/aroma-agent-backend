@@ -26,7 +26,6 @@ const assert = require('node:assert/strict')
 
 const { processIntake } = require('./intakeService')
 const { RANKING_METRIC } = require('./rankingProof')
-const { EMPTY_REPLY_DEFECT } = require('../governance/nonEmptyReply')
 const { A4_FLAG } = require('./a4Contract')
 const { A4_AMBIGUITY_FLAG } = require('./sourceAmbiguityGate')
 
@@ -215,11 +214,27 @@ for (const c of WITHHOLD_CASES) {
   })
 }
 
-test('*** ⛔ A2. AND THE FLOOR IS REACHABLE FROM THIS PATH AT ALL ***', () => {
-  // If the defect sentence is what ships, that is acceptable and visible. What is NOT
-  // acceptable is an empty string. Confirms the floor exists and has a stateable output.
-  assert.ok(typeof EMPTY_REPLY_DEFECT === 'string' && EMPTY_REPLY_DEFECT.trim().length > 0)
-})
+/**
+ * ⛔ WHAT PROTECTS THIS PATH, AND WHAT DOES NOT. Measured this round, not reasoned:
+ *
+ *   bypass `ensureNonEmptyReply`  → these four tests STAYED GREEN
+ *   empty `minimalAnswer`         → all four went red, shipping ""
+ *
+ * So the non-empty reply comes from `minimalAnswer` upstream, and the floor at
+ * `intakeService.js:2380` is NOT reached on this path — the answer-plan branch returns at
+ * `:2305`, before it.
+ *
+ * ⛔ AND THE WEAKER CLAIM IS THE ACCURATE ONE (Owner's wording, recorded verbatim so it does
+ * not drift): that unreachability is **reliability debt and a potential contributor**. It is
+ * NOT established as the cause of the 22:18:29Z empty reply, which remains UNSETTLED. A
+ * separate work item; nothing here moves the floor.
+ *
+ * ⛔ A TEST NAMED 「A2. AND THE FLOOR IS REACHABLE FROM THIS PATH AT ALL」 STOOD HERE AND WAS
+ * DELETED, because it asserted only that `EMPTY_REPLY_DEFECT` is a non-empty string — which
+ * `governance/composedAnswer.test.js:83–84` already pins more strictly — while its NAME
+ * asserted the opposite of what was measured above. The test-name ledger is a system contract,
+ * so a name known to be false is worse than no test at all.
+ */
 
 /* ═══ B — CLAIM STRENGTH DECIDES PROOF STRENGTH ══════════════════════════ */
 
