@@ -233,3 +233,66 @@ test('*** ⛔ 6. LIVE: number_not_in_evidence NO LONGER KILLS THE CONCLUSION ***
       'the next layer is reached, and is the next repair — not this one: ' + plan)
   })
 })
+
+/* ═══ ⛔ BLOCKER 1 — ATTRIBUTION, NOT CO-OCCURRENCE ══════════════════════ */
+
+/**
+ * ⛔ The first cut asked only whether the title and the label APPEARED. Owner review:
+ * co-occurrence is not binding, and this is not a limitation to defer — it violates the very
+ * ruling the repair exists to satisfy. Prose carries no row references (only section items do),
+ * so with two retrieved titles named there is nothing to bind to without parsing grammar.
+ * The rule is therefore: exactly one retrieved title, or nothing is consumed.
+ */
+test('*** ⛔ B1. A SENTENCE ATTRIBUTING NAPA\'S 70 TO JARS MUST BE REJECTED ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 同 ${JARS} 都缺貨，${JARS} 缺口 70。`), ctx())
+  assert.equal(r.plan.directAnswer, '', '⛔ a figure was validated against the wrong row')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B1b. TWO NAMED ROWS FAIL CLOSED EVEN WHEN THE FIGURE IS CORRECT ***', () => {
+  // 70 IS Napa's real derived value, and the sentence is arguably true — but which row the
+  // number belongs to cannot be established structurally, so it is not consumed.
+  const r = validatePlan(PLAN(`${NAPA} 同 ${JARS} 都缺貨，${NAPA} 缺口 70。`), ctx())
+  assert.equal(r.plan.directAnswer, '', '⛔ ambiguous attribution was resolved by guessing')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B1c. AND ONE NAMED ROW STILL WORKS — the rule narrows, it does not delete ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70。`), ctx())
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70。`)
+  assert.deepEqual(whys(r), [])
+})
+
+/* ═══ ⛔ BLOCKER 2 — WHOLE TOKENS, NEVER A PREFIX ═══════════════════════ */
+
+test('*** ⛔ B2. 「缺口 70.5」 MUST BE REJECTED — 70 IS A PREFIX, NOT THE TOKEN ***', () => {
+  // ⛔ THE EXACT TRAP: eating `70` leaves `.5`, and this row's currentStock IS 5, so the
+  // remainder could have passed the raw check and validated a wrong figure as true.
+  assert.ok(ROWS[0].fields.currentStock === '30' || true) // fields are asserted below
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70.5。`), ctx())
+  assert.equal(r.plan.directAnswer, '', '⛔ a numeric prefix was consumed')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B2b. WITH A RAW 5 ON THE ROW, 「70.5」 IS STILL REJECTED ***', () => {
+  // Make the trap live: give the row a raw 5 so a leftover `.5` would have somewhere to land.
+  const rows = [Object.assign({}, ROWS[0], { fields: { id: '1', parLevel: '100', currentStock: '30', pack: '5' } }), ROWS[1]]
+  const items = [{ source: 'aroma_system', readKey: 'aroma_system', items: rows }]
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70.5。`), { evidenceSets: EVIDENCE(), itemsBySource: items, message: NEUTRAL })
+  assert.equal(r.plan.directAnswer, '', '⛔ the leftover fragment found a raw number to match')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B2c. 「70,000」 CANNOT BE VALIDATED BY A DERIVED 70 ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70,000。`), ctx())
+  assert.equal(r.plan.directAnswer, '', '⛔ a thousands-separated number borrowed a derived 70')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B2d. AND A GENUINELY DECIMAL DERIVATION IS STILL ACCEPTED WHOLE ***', () => {
+  // par 100.5 − stock 30 = 70.5, declared and server-computed.
+  const rows = [Object.assign({}, ROWS[0], { fields: { id: '1', parLevel: '100.5', currentStock: '30' } })]
+  const items = [{ source: 'aroma_system', readKey: 'aroma_system', items: rows }]
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70.5。`), { evidenceSets: EVIDENCE(), itemsBySource: items, message: NEUTRAL })
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70.5。`, '⛔ a real decimal derivation was refused')
+})

@@ -1062,6 +1062,16 @@ const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項
  * Chinese numerals by default; checking only the exception is checking nothing.
  */
 /**
+ * ⛔ ONE NUMERIC-TOKEN GRAMMAR, USED BY BOTH THE VALIDATOR AND THE CONSUMER.
+ *
+ * These two must agree about where a number starts and ends, or the consumer can eat a PREFIX
+ * of a token the validator would have read whole — which is exactly how `70.5` became `.5`.
+ * Declared once so they cannot drift apart. (`.replace()` and `.match()` both reset `lastIndex`
+ * on a /g regex, so sharing this object is safe.)
+ */
+const NUMERIC_TOKEN_RE = /\d+(?:[.,]\d+)*/g
+
+/**
  * ⛔ CONSUME A DECLARED DERIVATION, AND ONLY WHERE ALL THREE PARTS ARE PRESENT.
  *
  * Mirrors `consumeVerifiedMoments`: a value the server itself computed is removed from the
@@ -1083,22 +1093,54 @@ const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項
 function consumeVerifiedDerivations (sentence, index) {
   const list = (index && Array.isArray(index.derived)) ? index.derived : []
   if (list.length === 0) return sentence
-  let s = sentence
-  for (const d of list) {
-    if (!s.includes(d.title) || !s.includes(d.label)) continue
-    // ⛔ DIGIT BOUNDARIES. Blind replacement of 「70」 would cut 「700」 into 「0」 and hand the
-    // raw rule a number nobody wrote.
-    const escaped = String(d.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    s = s.replace(new RegExp('(?<!\\d)' + escaped + '(?!\\d)', 'g'), ' ')
-  }
-  return s
+
+  /**
+   * ⛔ BLOCKER 1 — CO-OCCURRENCE IS NOT ATTRIBUTION, AND FAILING CLOSED IS THE ONLY HONEST
+   * ANSWER AVAILABLE HERE.
+   *
+   * The first cut asked only `sentence.includes(title) && sentence.includes(label)`. So
+   * 「Napa Cabbage 同 Jars for Red Chili Oil 都缺貨，Jars 缺口 70。」 consumed Napa's 70 while
+   * the sentence attributed it to Jars — a false figure validated as true.
+   *
+   * ⛔ THERE IS NO STRUCTURAL BINDING TO USE. Section items carry `sourceId`, so a fact is
+   * tied to a row by reference; PROSE carries no refs at all — `proseIsGrounded` only tests
+   * token membership. Deciding which of two named rows a number belongs to would mean parsing
+   * grammar, which is guessing, and guessing is what this whole layer exists to avoid.
+   *
+   * So: exactly ONE retrieved row title in the sentence, or nothing is consumed. Two titles is
+   * ambiguous and the derived number falls through to the ordinary rejection. Zero titles has
+   * nothing to bind to. Neither is a silent pass — both end in the normal `number_not_in_evidence`.
+   */
+  const titles = new Set()
+  for (const d of list) if (sentence.includes(d.title)) titles.add(d.title)
+  if (titles.size !== 1) return sentence
+
+  const [only] = titles
+  const values = new Set(
+    list.filter((d) => d.title === only && sentence.includes(d.label)).map((d) => String(d.value))
+  )
+  if (values.size === 0) return sentence
+
+  /**
+   * ⛔ BLOCKER 2 — A WHOLE NUMERIC TOKEN, NEVER A PREFIX.
+   *
+   * `(?<!\d)70(?!\d)` stopped digits but not a decimal point or a comma. Against a server
+   * value of 70, 「缺口 70.5」 had its `70` eaten and left `.5` behind — and Napa's raw
+   * evidence carries a `5`, so the remainder could pass the generic raw check. A wrong figure
+   * would have been validated as true.
+   *
+   * The tokens are cut with the SAME grammar the prose validator itself uses, and the WHOLE
+   * token is compared. `70.5` and `70,000` are single tokens that are not equal to `70`, so
+   * neither is consumed and both are rejected downstream as before.
+   */
+  return sentence.replace(NUMERIC_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok)
 }
 
 function sentenceIsSupported (sentence, index) {
   // Dates and times the evidence agrees with are consumed BEFORE the digit rule sees them.
   // Declared derivations likewise — the server computed them, so they are evidence.
   const s = consumeVerifiedDerivations(consumeVerifiedMoments(sentence, index), index)
-  const nums = s.match(/\d+(?:[.,]\d+)*/g) || []
+  const nums = s.match(NUMERIC_TOKEN_RE) || []
   if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
 
   for (const m of s.matchAll(CJK_COUNT_RE)) {

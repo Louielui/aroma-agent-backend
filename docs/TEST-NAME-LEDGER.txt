@@ -1454,7 +1454,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
 *** ⛔ B1. A RANKING WITH THE CORRECT FULL SEQUENCE IS ALLOWED ***
+*** ⛔ B1. A SENTENCE ATTRIBUTING NAPA\
+*** ⛔ B1b. TWO NAMED ROWS FAIL CLOSED EVEN WHEN THE FIGURE IS CORRECT ***
+*** ⛔ B1c. AND ONE NAMED ROW STILL WORKS — the rule narrows, it does not delete ***
 *** ⛔ B2. NAPA FIRST BUT THE TAIL REORDERED MUST NOT SHIP AS A RANKING ***
+*** ⛔ B2. 「缺口 70.5」 MUST BE REJECTED — 70 IS A PREFIX, NOT THE TOKEN ***
+*** ⛔ B2b. WITH A RAW 5 ON THE ROW, 「70.5」 IS STILL REJECTED ***
+*** ⛔ B2c. 「70,000」 CANNOT BE VALIDATED BY A DERIVED 70 ***
+*** ⛔ B2d. AND A GENUINELY DECIMAL DERIVATION IS STILL ACCEPTED WHOLE ***
 *** ⛔ B3. A BARE SUPERLATIVE NEEDS FIRST PLACE ONLY — NO TAIL VALIDATION ***
 *** ⛔ B4. AN ORDINARY LIST IS NOT A RANKING CLAIM ***
 *** ⛔ B5. AND A WRONG FIRST PLACE STILL FAILS, RANKING OR NOT ***
