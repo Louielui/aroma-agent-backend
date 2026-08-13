@@ -33,7 +33,13 @@
 
 /**
  * ⛔ THE BOUND. One constant, no configuration system, no environment variable.
- * Three model DECISIONS — so at most two reads before the final answer.
+ *
+ * ⛔ CORRECTED 2026-08-12. This said "three model DECISIONS — so at most two reads before the
+ * final answer". That was never what the code did: the loop spends every step on a READ if the
+ * model asks for one, so three steps can be three reads and none left to answer (requestId
+ * a389dd4d-…). The constant bounds READS. On top of it, a turn that gathered something and ran
+ * out gets exactly ONE reserved compose call, which cannot read. Worst case per turn is
+ * therefore `maxSteps + 1` model calls — 4 by default, 6 at the ceiling.
  *
  * ⛔ AND IT REMAINS THE DEFAULT FOR EVERY TURN. A caller may pass `maxSteps` to raise it for
  * ONE turn that has a structural reason (see `beforeFinal`), but there is deliberately no env
@@ -56,6 +62,11 @@ const MAX_REASONING_STEPS_CEILING = 5
 const STOP = Object.freeze({
   FINAL: 'final',
   STEP_LIMIT: 'step_limit',
+  /** Reads consumed the budget, the reserved compose call ran, and an answer came back. */
+  COMPOSED_AFTER_READS: 'composed_after_reads',
+  /** ⛔ Reads consumed the budget AND the reserved call still produced nothing. Not the same
+   *  as a model that had budget left and failed to plan — that reports 'final'. */
+  STEP_LIMIT_NO_COMPOSE: 'step_limit_no_compose',
   // A caller-supplied pre-read hook ended the turn before the reader was touched. The loop
   // does not know why — that is the caller's business, and keeping it that way is what lets
   // this module stay domain-neutral.
@@ -97,9 +108,18 @@ function refusal (capability, error) {
  * @param {function} [input.onEvent]           structural telemetry only
  * @returns {{result: object|null, steps: number, stopReason: string, observations: object[]}}
  */
-async function runReasoningLoop (input = {}) {
+async function runLoopInner (input, counter) {
   const capabilities = new Set(Array.isArray(input.capabilities) ? input.capabilities.map(String) : [])
-  const callModel = input.callModel
+  /**
+   * ⛔ THE COUNT IS TAKEN HERE, NOT DERIVED FROM `steps`.
+   *
+   * `steps` and the number of paid model calls happen to agree today. If they ever stop
+   * agreeing, a derived number would report the assumption and hide the fact. This counts the
+   * calls themselves, and counts a call that THROWS — a turn that billed and then failed must
+   * not read as free.
+   */
+  const rawCallModel = input.callModel
+  const callModel = async (arg) => { counter.n++; return rawCallModel(arg) }
   const executeRead = input.executeRead
   const onModelCall = typeof input.onModelCall === 'function' ? input.onModelCall : null
   const onEvent = typeof input.onEvent === 'function' ? input.onEvent : null
@@ -262,12 +282,115 @@ async function runReasoningLoop (input = {}) {
     emit(step, 'read', { capability, ok: observation.ok === true })
   }
 
-  // ⛔ THE STEP LIMIT IS NOT AN ANSWER. No fourth call, and nothing invented. The caller
-  // renders a deterministic fallback from whatever WAS gathered, which is returned here.
-  // ⛔ THE BOUND THAT ACTUALLY APPLIED, not the constant. On a turn granted a fourth decision
-  // these differ, and reporting 3 would make the log state a step count that never happened.
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ ONE RESERVED CALL TO SAY WHAT WAS READ — READS AND COMPOSITION NO LONGER COMPETE.
+   *
+   * Measured, requestId a389dd4d-…, commit 7c64ac4: three reads, all ok:true, then
+   * `stopReason:"step_limit"` and `[AROMA-ANSWER-PLAN] outcome:"fallback"
+   * reason:"no_plan_returned" modelItemCount:0`. The model never failed to plan — **it was
+   * never asked.** Every complaint about that answer came from a fallback that had no plan
+   * to render.
+   *
+   * ⛔ WHY A RESERVED CALL AND NOT A HIGHER CEILING. Raising `MAX_REASONING_STEPS` would be
+   * picking a number that feels safe, which this file already refuses elsewhere, and it would
+   * buy MORE READS rather than an answer — the same starvation one step further out. Shrinking
+   * the read budget to reserve a step was the other option and costs read capacity the turn
+   * genuinely needed: it used all three.
+   *
+   * ⛔ AND IT IS BOUNDED, WHICH IS THE WHOLE POINT. The reserved call is passed
+   * `composeOnly: true` and a `read` from it is REFUSED, so it cannot extend the turn. Worst
+   * case is therefore maxSteps + 1 model calls — 4 by default, 6 at the ceiling — and never
+   * more, whatever the model returns.
+   *
+   * ⛔ ONLY WHEN SOMETHING WAS ACTUALLY GATHERED. With zero observations there is nothing to
+   * compose FROM, and granting a call would just buy a second attempt at planning. That turn
+   * still ends STEP_LIMIT.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  /**
+   * ⛔ SOMETHING WAS ACTUALLY READ — NOT MERELY 「there are observations」.
+   *
+   * The first version tested `observations.length > 0`, and a REFUSAL is an observation: an
+   * unknown capability, a write-shaped name or an unrecognised decision type all push one.
+   * So a turn that spent three steps producing nothing but refusals was granted a reserved
+   * compose call, which is a free extra model call bought by failing. Caught by the
+   * never-read test. Composition needs something to compose FROM.
+   */
+  const gathered = observations.filter((o) => o && o.ok === true)
+  if (gathered.length > 0) {
+    const composeStep = maxSteps + 1
+    if (onModelCall) { try { onModelCall({ step: composeStep }) } catch (_) {} }
+    let composed = null
+    try {
+      composed = await callModel({ step: composeStep, observations: observations.slice(), composeOnly: true })
+    } catch (_) {
+      composed = null
+    }
+    if (composed && composed.type === 'final' && composed.result) {
+      /**
+       * ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND THE COMPLETION GUARD.
+       *
+       * The first version returned `composed.result` directly and skipped `beforeTerminal`
+       * entirely — so an answer the guard would have refused (「a required world that was never
+       * read is not an answer」) could ship simply by arriving one step later. Adding a new
+       * terminal path that bypasses the terminal check would have been a worse defect than the
+       * starvation it was built to fix. Found because six existing tests' call counts moved on
+       * turns whose required world was NOT satisfied.
+       *
+       * A refusal here cannot 「continue」 — there is no budget left — so it ends the turn with
+       * no result and the caller renders its fallback, exactly as a refused final does.
+       */
+      const hook = typeof input.beforeTerminal === 'function'
+        ? input.beforeTerminal
+        : (typeof input.beforeFinal === 'function' ? input.beforeFinal : null)
+      if (hook) {
+        let gate
+        try {
+          gate = await hook({ step: composeStep, decision: composed, observations: observations.slice() })
+        } catch (_) {
+          gate = null // a throw is a refusal, never a release
+        }
+        if (!gate || gate.type !== 'allow') {
+          emit(composeStep, null, { stopReason: STOP.BEFORE_TERMINAL })
+          return { result: null, steps: composeStep, stopReason: STOP.BEFORE_TERMINAL, observations }
+        }
+      }
+      emit(composeStep, 'final', { stopReason: STOP.COMPOSED_AFTER_READS })
+      return { result: composed.result, steps: composeStep, stopReason: STOP.COMPOSED_AFTER_READS, observations }
+    }
+    /**
+     * ⛔ DISTINGUISHABLE FROM A GENUINE PLANNING FAILURE, AND THAT IS A REQUIREMENT.
+     * `STEP_LIMIT_NO_COMPOSE` says: the budget was spent on reads, the reserved call was
+     * granted, and it STILL produced nothing. A model that returns an empty final while it
+     * still has budget reports `final` instead. Two causes, two words in the log.
+     */
+    emit(composeStep, null, { stopReason: STOP.STEP_LIMIT_NO_COMPOSE })
+    return { result: null, steps: composeStep, stopReason: STOP.STEP_LIMIT_NO_COMPOSE, observations }
+  }
+
+  // ⛔ THE STEP LIMIT IS NOT AN ANSWER, and with nothing gathered there is nothing to say.
+  // The caller renders a deterministic fallback from whatever WAS gathered — here, nothing.
   emit(maxSteps, null, { stopReason: STOP.STEP_LIMIT })
   return { result: null, steps: maxSteps, stopReason: STOP.STEP_LIMIT, observations }
+}
+
+/**
+ * ⛔ EVERY EXIT CARRIES THE COUNT.
+ *
+ * The loop returns from about a dozen places. Stamping `modelCalls` at each one guarantees the
+ * next exit added does not silently return a turn with no cost recorded.
+ */
+async function runReasoningLoop (input = {}) {
+  const counter = { n: 0 }
+  try {
+    const out = await runLoopInner(input, counter)
+    return Object.assign({}, out, { modelCalls: counter.n })
+  } catch (err) {
+    // A turn that threw still cost whatever it had already spent. Do not lose that.
+    if (err && typeof err === 'object') { try { err.modelCalls = counter.n } catch (_) {} }
+    throw err
+  }
 }
 
 module.exports = { runReasoningLoop, MAX_REASONING_STEPS, MAX_REASONING_STEPS_CEILING, STOP, WRITE_SHAPED }

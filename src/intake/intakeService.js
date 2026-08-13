@@ -2060,10 +2060,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null, reply: null })
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: 'final', stopReason: 'required_world_missing' })) } catch (_) {}
     }
-    if (loop.stopReason === STOP.STEP_LIMIT) {
+    /**
+     * ⛔ STEP_LIMIT_NO_COMPOSE IS A STEP LIMIT TOO — it is the budget running out WITH the
+     * reserved compose call also failing to produce a plan. It must clear the envelope exactly
+     * as STEP_LIMIT does. COMPOSED_AFTER_READS is deliberately NOT here: that is the reserved
+     * call succeeding, and its plan is the entire point of the reserve.
+     */
+    if (loop.stopReason === STOP.STEP_LIMIT || loop.stopReason === STOP.STEP_LIMIT_NO_COMPOSE) {
       distilled = Object.assign({}, distilled, { answerPlan: null, nextRead: null })
       try { console.log('[AROMA-REASONING]', JSON.stringify({ requestId, event: 'REASONING_STEP', reasoningStep: loop.steps, decisionType: null, stopReason: loop.stopReason, observations: loop.observations.length })) } catch (_) {}
     }
+    /**
+     * ⛔ ONE COST LINE PER TURN, UNCONDITIONALLY.
+     *
+     * The bound moved from 3 model calls to 4 by Owner decision, so the cost of that decision
+     * has to be observable in the ordinary logs rather than inferred. Counts and timings only —
+     * no prompts, no message bodies, no source content (HR log-content fence).
+     */
+    try {
+      console.log('[AROMA-REASONING]', JSON.stringify({
+        requestId,
+        event: 'TURN_COST',
+        modelCallCount: typeof loop.modelCalls === 'number' ? loop.modelCalls : null,
+        reads: loop.observations.length,
+        steps: loop.steps,
+        stopReason: loop.stopReason
+      }))
+    } catch (_) {}
     // ⛔ A PRE-READ STOP IS THE ANSWER, and it must REPLACE the envelope that asked to read.
     // `distilled` still holds the first envelope, whose nextRead is set and whose mode is not
     // 'ask' — shipping that would show the Owner 「等我睇睇」 for a turn that read nothing.

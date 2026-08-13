@@ -424,15 +424,20 @@ test('*** V2 — beforeTerminal takes precedence when BOTH are supplied ***', as
 
 /* ═══ W, X, Y — BUDGETS UNCHANGED ══════════════════════════════════════ */
 
-test('*** W — the default bound is still 3 ***', async () => {
+// ⛔ Owner ruling 2026-08-12: the cost guarantee is 4 model calls, the READ bound is still 3.
+// Asserted `steps === 3`; now asserts reads === 3 and names the reserved compose call.
+test('*** W — the default read bound is still 3 ***', async () => {
   assert.equal(MAX_REASONING_STEPS, 3)
   let steps = 0
-  await runReasoningLoop({
+  let reads = 0
+  const out = await runReasoningLoop({
     capabilities: ['gmail'],
     callModel: async ({ step }) => { steps = step; return { type: 'read', capability: 'gmail' } },
-    executeRead: async () => ({ capability: 'gmail', ok: true, summary: null })
+    executeRead: async () => { reads++; return { capability: 'gmail', ok: true, summary: null } }
   })
-  assert.equal(steps, 3)
+  assert.equal(reads, 3, '⛔ the READ bound moved')
+  assert.equal(steps, 4, 'plus the reserved compose call')
+  assert.equal(out.modelCalls, 4)
 })
 
 test('*** X — a single-world obligation from a suppressed ASK keeps 3 ***', async () => {

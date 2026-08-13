@@ -110,13 +110,28 @@ test('*** 4. no extra call after FINAL ***', async () => {
 
 /* ═══ 5. STEP LIMIT ══════════════════════════════════════════════════════════ */
 
-test('*** 5. a model that never finishes is stopped at MAX_REASONING_STEPS ***', async () => {
-  assert.equal(MAX_REASONING_STEPS, 3, 'the MVP bound is explicit and is three')
+test('*** 5. reads are stopped at MAX_REASONING_STEPS, then ONE reserved call to compose ***', async () => {
+  /**
+   * ⛔ OWNER RULING, 2026-08-12: THE COST GUARANTEE CHANGED FROM 3 MODEL CALLS TO 4.
+   *
+   * This asserted `calls.length === 3` and 「NO FOURTH MODEL CALL」. The bound of 3 was a COST
+   * AND LATENCY ceiling, not a correctness boundary — and a legitimate class of business
+   * question was measured spending all three on necessary reads, leaving nothing to compose
+   * with (requestId a389dd4d-…, three reads all ok:true, then outcome:"fallback"
+   * reason:"no_plan_returned").
+   *
+   * ⛔ WHAT IS UNCHANGED AND STILL ASSERTED BELOW: reads are still bounded at 3. The fourth
+   * call is synthesis ONLY — a read decision in it is refused — so this is not the entry to a
+   * further read loop. `MAX_REASONING_STEPS` is still 3 and still means 「reads」.
+   */
+  assert.equal(MAX_REASONING_STEPS, 3, 'the READ bound is explicit and is still three')
   const m = fakeModel([READ('aroma_system'), READ('gmail'), READ('aroma_system'), READ('gmail')])
   const r = fakeReader({ aroma_system: { ok: true, summary: 'a' }, gmail: { ok: true, summary: 'b' } })
   const out = await runReasoningLoop(base({ callModel: m.fn, executeRead: r.fn }))
-  assert.equal(m.calls.length, 3, 'NO FOURTH MODEL CALL')
-  assert.equal(out.stopReason, STOP.STEP_LIMIT)
+  assert.equal(m.calls.length, 4, 'three reads plus ONE reserved compose call — and never five')
+  assert.equal(r.calls.length, 3, '⛔ still exactly three READS — the fourth call cannot read')
+  // This model answers READ on every call, including the reserved one, so it composes nothing.
+  assert.equal(out.stopReason, STOP.STEP_LIMIT_NO_COMPOSE)
   assert.equal(out.result, null, 'and no answer is invented — the caller falls back deterministically')
   assert.equal(out.observations.length, 3, 'what WAS gathered is returned for the fallback to use')
 })

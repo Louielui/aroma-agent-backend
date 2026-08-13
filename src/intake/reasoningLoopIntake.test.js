@@ -189,18 +189,31 @@ test('*** an invented capability executes zero reads through the real path ***',
 
 /* ═══ BLOCKER 4 — THE STEP LIMIT ENTERS THE REAL FALLBACK ═══════════════════ */
 
-test('*** ⛔ READ → READ → READ: no fourth call, and the pending prose is NOT the answer ***', async () => {
+test('*** ⛔ READ → READ → READ: a fourth call to COMPOSE, and pending prose is still NOT the answer ***', async () => {
+  /**
+   * ⛔ OWNER RULING, 2026-08-12: THE COST GUARANTEE CHANGED FROM 3 MODEL CALLS TO 4.
+   *
+   * This asserted `calls.length === 3` and 「NO FOURTH MODEL CALL」. The ceiling was cost and
+   * latency, not correctness, and a real business turn spent all three calls on necessary
+   * reads and had none left to answer with.
+   *
+   * ⛔ WHAT THIS TEST WAS REALLY PROTECTING IS UNCHANGED AND STILL ASSERTED: prose that is
+   * still asking for another read is NOT a finished answer, and the deterministic fallback
+   * still speaks from what was gathered. That property is the reason this test exists, and it
+   * survives the number changing.
+   */
   await withEnv({}, async () => {
     const fc = fakeConnector()
     const PENDING_PROSE = 'PENDING_NOT_AN_ANSWER'
     const a = scriptedAdapter('claude', [
       READ_ENV('aroma_system.inventory'),
       { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system.invoices' }, answerPlan: null },
+      { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system.invoices' }, answerPlan: null },
       { intent: 'chit_chat', mode: 'chat', reply: PENDING_PROSE, nextRead: { capability: 'aroma_system.invoices' }, answerPlan: null }
     ])
     const out = await run(a, { connector: fc.connector, sources: ['aroma_system'] })
 
-    assert.equal(a.calls.length, 3, 'NO FOURTH MODEL CALL')
+    assert.equal(a.calls.length, 4, 'three reasoning/read calls plus ONE reserved compose call')
     assert.equal(String(out.reply).includes(PENDING_PROSE), false,
       'a reply that was still asking for another read is not a finished answer')
     assert.ok(typeof out.reply === 'string' && out.reply.length > 0,

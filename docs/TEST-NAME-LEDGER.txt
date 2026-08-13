@@ -71,8 +71,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** 5 — a hook returning nonsense stops the read (fail closed) ***
 *** 5 — an Owner-supplied value MAY travel, because he typed it ***
 *** 5 — row_local verifies on canonical refs, and refuses ambiguous aliases ***
-*** 5. a model that never finishes is stopped at MAX_REASONING_STEPS ***
 *** 5. flag OFF writes NOTHING and loads nothing ***
+*** 5. reads are stopped at MAX_REASONING_STEPS, then ONE reserved call to compose ***
 *** 5b — a canonical ref from a read the claim did not declare is refused ***
 *** 5b. the ONLY live-path change is one guarded block ***
 *** 6 — a substantive uncited sentence BETWEEN two citations is inherited by neither ***
@@ -436,7 +436,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** R — A4 off: no A4 wording reaches the system prompt ***
 *** R — no injected verifier while enabled ⇒ ASK, never a silent skip ***
 *** R — ⛔ an unusable verifier on an initial ASK invents nothing and reads nothing ***
-*** R — ⛔ the DEFAULT bound is still exactly 3 ***
+*** R — ⛔ the default READ bound is still exactly 3, plus one reserved compose ***
 *** R/S/T — require_mixed: refused until BOTH worlds are live ***
 *** REACH (browseOrder) — the ORDER cannot be supplied or widened by a caller ***
 *** REACH (session) — ⛔ R3.1: the credential path is UNREACHABLE, not merely unused ***
@@ -452,10 +452,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** RENDERER — ⛔ THE CEILING: mayAssertClaim is false, and it is false ALWAYS ***
 *** RENDERER — ⛔ every qualifier comes from a DESCRIPTOR FIELD, not a hand-written caveat ***
 *** RENDERER — ⛔ 「搵唔到」 is said, and 「冇貨」 is refused, IN THE WORDS ***
-*** S — a mixed-required turn may use 4, and no caller may exceed the ceiling ***
 *** S — an ASK question carrying implementation vocabulary is replaced ***
 *** S — one invocation per obligation, never a loop ***
 *** S — shadow does not touch routing, and adds no model call ***
+*** S — the caller may widen READS to 4, and no caller may exceed the ceiling ***
 *** S — zero automatic read before the model decision, unchanged ***
 *** S — ⛔ a rejected ASK never reaches the Owner through the fallback render ***
 *** S-A — a successful operation is withdrawn from OPEN and described as READ ***
@@ -496,7 +496,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** U — the A4 semantic guidance is byte-identical to the A4-1R checkpoint ***
 *** U — ⛔ a hook that throws or returns nonsense does NOT release the answer ***
 *** U — ⛔ no hook at all: legacy loop behaviour is identical ***
-*** U — ⛔ the DEFAULT bound is still 3, and the ceiling is explicit ***
+*** U — ⛔ the DEFAULT read bound is still 3, and the ceiling is explicit ***
 *** U1 ask: a clarifying question with a null draft is byte-identical ***
 *** U1 draft with a null recipient is byte-identical ***
 *** U1 draft: the parsed envelope is byte-identical to today ***
@@ -514,7 +514,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** V — ⛔ with A4 OFF the worker never runs ***
 *** V2 — beforeTerminal takes precedence when BOTH are supplied ***
 *** W — a MIXED obligation from an initial FINAL may use 5, and no more ***
-*** W — the default bound is still 3 ***
+*** W — the default read bound is still 3 ***
 *** W — ⛔ no chain-of-thought field, in the schema or anywhere near it ***
 *** W — ⛔ no write path, and no provider anywhere in the module ***
 *** WORLDS_FOR is total over the enum and frozen ***
@@ -767,6 +767,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an ordinary conversational turn reads nothing ***
 *** an ordinary text response is unchanged ***
 *** an ordinary turn is UNCHANGED — A′ did not quietly stop storing replies ***
+*** an ordinary turn that finishes early is unchanged — no reserved call ***
 *** an orphan lock is left alone rather than deleted by a non-owner ***
 *** an outcome is recorded once, bounded, and changes NO confidence ***
 *** an unattributed claim is no longer "generic" — it stays silent ***
@@ -1168,6 +1169,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the face sentence is DERIVED — drop an action and it disappears ***
 *** the fallback distinguishes a successful READ from a failed COMPOSITION ***
 *** the fallback is written Chinese ***
+*** the fallback path survives — a genuine no-plan still returns no result ***
 *** the fallback text cannot itself trip the read-state guard ***
 *** the fence can see the shape it is built for ***
 *** the first time, the fixed scope property is shown ***
@@ -1393,6 +1395,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
+*** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
@@ -1409,6 +1412,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
 *** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
+*** ⛔ EXHAUSTION AND GENUINE PLAN FAILURE ARE DIFFERENT STOP REASONS ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
@@ -1417,10 +1421,11 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
+*** ⛔ ORDINARY TURNS PAY NOTHING EXTRA — the reserve is not a general raise ***
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
 *** ⛔ PROHIBITION 2 — the sentence is derived, so a count cannot drift ***
 *** ⛔ PROHIBITION 3 — reachable is ALWAYS null; a flag never answers a capability ***
-*** ⛔ READ → READ → READ: no fourth call, and the pending prose is NOT the answer ***
+*** ⛔ READ → READ → READ: a fourth call to COMPOSE, and pending prose is still NOT the answer ***
 *** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***
 *** ⛔ REVIEW 1: a capped count is NOT a matching total ***
 *** ⛔ REVIEW 2: order-planning is capped at 100 ***
@@ -1435,6 +1440,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE 17:06 TURN — the registry URL reaches the shipped reply ***
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
+*** ⛔ THE CANARY TURN — three reads consume the budget and it STILL composes ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE CLASS, not the instance — other subjects that merely carry a token ***
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
@@ -1442,6 +1448,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
+*** ⛔ THE RESERVED CALL IS BOUNDED — it may not read, so it cannot extend the turn ***
+*** ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND beforeTerminal ***
 *** ⛔ THE RESTAURANT IS NOT THE SYSTEM — no composed answer ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
@@ -1505,6 +1513,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ it does NOT run when rows were read — claim binding owns that turn ***
 *** ⛔ kind is structural — replacing the TEXT changes no verdict ***
 *** ⛔ live internal evidence never reaches the resolver ***
+*** ⛔ modelCalls IS COUNTED, NOT DERIVED — and 4 is the default worst case ***
 *** ⛔ no capability, tool, provider or network vocabulary ***
 *** ⛔ no interface string is written in Cantonese oral register ***
 *** ⛔ no keyword classifier, no domain rule, no holdout string ***

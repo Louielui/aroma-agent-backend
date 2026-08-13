@@ -348,18 +348,27 @@ test('*** S2 — one world alone never releases a mixed obligation ***', async (
 
 /* ═══ U, V, W, X — STEP BUDGETS ═════════════════════════════════════════ */
 
-test('*** U — ⛔ the DEFAULT bound is still 3, and the ceiling is explicit ***', async () => {
+/**
+ * ⛔ OWNER RULING 2026-08-12: the per-turn cost guarantee moved from 3 model calls to 4.
+ * The READ bound is unchanged at 3 — what is new is one reserved compose call that cannot read.
+ * This test asserted `steps === 3`; it now asserts the reads are still 3 and names the extra
+ * call explicitly, so a future widening of the READ bound still fails here.
+ */
+test('*** U — ⛔ the DEFAULT read bound is still 3, and the ceiling is explicit ***', async () => {
   assert.equal(MAX_REASONING_STEPS, 3)
   assert.equal(MAX_REASONING_STEPS_CEILING, 5)
   let steps = 0
+  let reads = 0
   const out = await runReasoningLoop({
     capabilities: ['gmail'],
     callModel: async ({ step }) => { steps = step; return { type: 'read', capability: 'gmail' } },
-    executeRead: async () => ({ capability: 'gmail', ok: true, summary: null })
+    executeRead: async () => { reads++; return { capability: 'gmail', ok: true, summary: null } }
   })
-  assert.equal(steps, 3)
-  assert.equal(out.steps, 3)
-  assert.equal(out.stopReason, STOP.STEP_LIMIT)
+  assert.equal(reads, 3, '⛔ the READ bound moved')
+  assert.equal(steps, 4, 'three reads plus the one reserved compose call')
+  assert.equal(out.steps, 4)
+  assert.equal(out.modelCalls, 4, '⛔ four is the default worst case, not five')
+  assert.equal(out.stopReason, STOP.STEP_LIMIT_NO_COMPOSE)
 })
 
 test('*** U2 — an ordinary A4 turn with no obligation still gets 3 ***', async () => {
@@ -403,7 +412,9 @@ test('*** X — MIX1 first-READ turns keep their existing max-4 behaviour ***', 
     const a = scriptedAdapter([READ(INV), FINAL('b'), FINAL('c'), FINAL('d'), FINAL('e')])
     await run('我哋成本同市場比', a, DEPS(c, { finalVerifier: f.fn, mixedVerifier: mixedSpy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn }))
     assert.equal(f.calls.length, 0, '⛔ the final gate must not run when a read was proposed')
-    assert.equal(a.calls.length, 4, 'MIX1 keeps 4')
+    // ⛔ 4 → 5 (Owner ruling 2026-08-12): MIX1 keeps its 4 READ steps, plus the reserved
+    // compose call. The property under test — the final gate does not run — is untouched.
+    assert.equal(a.calls.length, 5, 'MIX1 keeps its 4 reads, plus the reserved compose')
   })
 })
 

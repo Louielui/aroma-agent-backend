@@ -329,12 +329,20 @@ test('*** the guard is pure and names a WORLD, never a capability ***', () => {
 test('*** P — ⛔ an UNAVAILABLE public read does not satisfy the public world ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector({ publicFails: true })
-    const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('試過，唔得。'), FINAL('再試都唔得。')])
+    const a = scriptedAdapter([READ(INV), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('試過，唔得。'), FINAL('再試都唔得。'), FINAL('第五次都係唔得。')])
     await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     // The public read was ATTEMPTED and failed. The requirement is still unmet, so the first
     // FINAL is refused — attempted is not read, applied to completion.
     assert.equal(c.publicReads.length, 1, 'it was attempted')
-    assert.equal(a.calls.length, 4, 'and the final was still intercepted once')
+    /**
+     * ⛔ OWNER RULING 2026-08-12: 4 → 5 here because a reserved compose call now follows the
+     * exhausted budget (this is a mixed turn, so its read bound is 4, plus one compose).
+     *
+     * ⛔ AND THE PROPERTY THIS TEST EXISTS FOR IS UNCHANGED: the requirement is still unmet,
+     * so the completion guard refuses the reserved final TOO. An answer the guard would refuse
+     * must not become shippable by arriving one call later.
+     */
+    assert.equal(a.calls.length, 5, 'the final was intercepted, and the reserved compose was too')
   })
 })
 
@@ -342,41 +350,61 @@ test('*** Q — ⛔ a REFUSED internal read does not satisfy the internal world 
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     // An invented capability is refused before the connector: no read, no world.
-    const a = scriptedAdapter([READ('aroma_system.invented'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('唔齊。'), FINAL('仍然唔齊。')])
+    const a = scriptedAdapter([READ('aroma_system.invented'), READ(PUB, { query: 'q', freshness: null, location: null }), FINAL('唔齊。'), FINAL('仍然唔齊。'), FINAL('第五次都唔齊。')])
     await run('我哋成本同市場比', a, MIXED_DEPS(c, { mixedVerifier: spy('mixed').fn, ambiguityVerifier: ambiSpy('allow').fn, sourceIntentResolver: SIR('mixed') }))
     assert.equal(c.internalReads.length, 0, 'nothing internal was ever read')
-    assert.equal(a.calls.length, 4, 'so the final was intercepted')
+    // ⛔ 4 → 5 for the reserved compose call (Owner ruling 2026-08-12). The property is
+    // unchanged: the internal world was never satisfied, so the guard refuses that call too.
+    assert.equal(a.calls.length, 5, 'the final was intercepted, and so was the reserved compose')
   })
 })
 
 /* ═══ R, S — THE STEP BOUND ═════════════════════════════════════════════ */
 
-test('*** R — ⛔ the DEFAULT bound is still exactly 3 ***', async () => {
+/**
+ * ⛔ OWNER RULING, 2026-08-12: THE COST GUARANTEE CHANGED FROM 3 MODEL CALLS TO 4.
+ *
+ * R and S asserted a DEFAULT of 3 and a ceiling clamp on the total number of model calls. The
+ * bound was a cost and latency ceiling, not a correctness boundary, and a real business turn
+ * spent all three calls on necessary reads with none left to compose (requestId a389dd4d-…).
+ *
+ * ⛔ THE PROPERTY THEY PROTECT IS UNCHANGED AND IS NOW ASSERTED MORE PRECISELY: a caller
+ * cannot widen the READ bound. What is new is exactly one reserved compose call on top, which
+ * cannot read — so the reads stay clamped and the total is reads + 1.
+ */
+test('*** R — ⛔ the default READ bound is still exactly 3, plus one reserved compose ***', async () => {
   assert.equal(MAX_REASONING_STEPS, 3)
   let steps = 0
+  let reads = 0
   const out = await runReasoningLoop({
     capabilities: ['gmail'],
     callModel: async ({ step }) => { steps = step; return { type: 'read', capability: 'gmail' } },
-    executeRead: async () => ({ capability: 'gmail', ok: true, summary: null })
+    executeRead: async () => { reads++; return { capability: 'gmail', ok: true, summary: null } }
   })
-  assert.equal(steps, 3, 'unset maxSteps must not change today\'s bound')
-  assert.equal(out.stopReason, STOP.STEP_LIMIT)
-  assert.equal(out.steps, 3)
+  assert.equal(reads, 3, '⛔ unset maxSteps must not change the READ bound')
+  assert.equal(steps, 4, 'and the reserved compose call is the fourth, never a fifth')
+  // This model answers READ even on the reserved call, so nothing is composed.
+  assert.equal(out.stopReason, STOP.STEP_LIMIT_NO_COMPOSE)
+  assert.equal(out.steps, 4)
 })
 
-test('*** S — a mixed-required turn may use 4, and no caller may exceed the ceiling ***', async () => {
+test('*** S — the caller may widen READS to 4, and no caller may exceed the ceiling ***', async () => {
   let steps = 0
-  const loop = (maxSteps) => runReasoningLoop({
-    capabilities: ['gmail'],
-    maxSteps,
-    callModel: async ({ step }) => { steps = step; return { type: 'read', capability: 'gmail' } },
-    executeRead: async () => ({ capability: 'gmail', ok: true, summary: null })
-  })
-  await loop(4); assert.equal(steps, 4)
-  // ⛔ A bound the caller picks freely is not a bound.
-  await loop(99); assert.equal(steps, MAX_REASONING_STEPS_CEILING, 'clamped to the ceiling')
-  await loop(0); assert.equal(steps, 1, 'and never below one')
-  await loop(undefined); assert.equal(steps, 3, 'unset is still 3')
+  let reads = 0
+  const loop = (maxSteps) => {
+    reads = 0
+    return runReasoningLoop({
+      capabilities: ['gmail'],
+      maxSteps,
+      callModel: async ({ step }) => { steps = step; return { type: 'read', capability: 'gmail' } },
+      executeRead: async () => { reads++; return { capability: 'gmail', ok: true, summary: null } }
+    })
+  }
+  await loop(4); assert.equal(reads, 4, 'four reads'); assert.equal(steps, 5, 'plus the reserved compose')
+  // ⛔ A bound the caller picks freely is not a bound. The READ clamp is what matters.
+  await loop(99); assert.equal(reads, MAX_REASONING_STEPS_CEILING, '⛔ reads clamped to the ceiling')
+  await loop(0); assert.equal(reads, 1, 'and never below one')
+  await loop(undefined); assert.equal(reads, 3, 'unset is still 3 reads')
 })
 
 test('*** S2 — end to end: ONLY a mixed turn gets the fourth decision ***', async () => {
