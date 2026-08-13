@@ -1046,6 +1046,24 @@ function sentenceIsSupported (sentence, index) {
 const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/).map((s) => s.trim()).filter(Boolean)
 
 /**
+ * ⛔ WHY A `directAnswer` SENTENCE WAS REMOVED. A CLOSED ENUM, AND NOTHING ELSE.
+ *
+ * Four different removers used to share one counter and record nothing, so a turn that lost
+ * its conclusion looked identical whichever one killed it. These names say WHY without ever
+ * saying WHAT — the same discipline the fact drops already follow.
+ */
+const SENTENCE_DROP = Object.freeze({
+  /** A number in the sentence is not in any retrieved row. */
+  NUMBER_NOT_IN_EVIDENCE: 'number_not_in_evidence',
+  /** The sentence talked about the machinery rather than the business. */
+  TELEMETRY: 'telemetry',
+  /** A name this turn did not retrieve — recall is not evidence. */
+  NAME_NOT_IN_EVIDENCE: 'name_not_in_evidence',
+  /** Rule 7: a plan that cites nothing may not name rows. */
+  ROW_NAME_NOT_CITED: 'row_name_not_cited'
+})
+
+/**
  * VALIDATE. Returns the plan with unsupported material removed, plus what was dropped.
  * Nothing here rewrites meaning: a claim is kept as written or removed entirely.
  */
@@ -1089,18 +1107,32 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   let modelItemCount = 0
   let keptItemCount = 0
 
-  // ── directAnswer: sentence by sentence ──────────────────────────────────────
+  /**
+   * ── directAnswer: sentence by sentence ────────────────────────────────────
+   *
+   * ⛔ WHY EACH REMOVER NOW NAMES ITSELF. Diagnosing the 2026-08-13 turns (bootCommit
+   * 5dfb8fd, requestIds 264e6934 / c55f0c37 / 5f703ed0) established that the model DID write
+   * a `directAnswer` and it did not survive — but not WHICH of these four removed it, because
+   * all four incremented the same counter and recorded nothing else. Those two possibilities
+   * have completely different repairs, so the record has to tell them apart.
+   *
+   * ⛔ IDENTIFIER ONLY. `why` is a closed enum from SENTENCE_DROP; the sentence itself is
+   * never pushed, and `kind: 'sentence'` carries no sourceId because a sentence has none.
+   * `droppedSentences` is incremented exactly where it was before — this adds a record beside
+   * the counter, it does not change the counting.
+   */
+  const dropSentence = (why) => { droppedSentences++; drops.push({ kind: 'sentence', why }) }
   const kept = []
   for (const raw of splitSentences(plan.directAnswer || '')) {
     // Relabel FIRST, so the check runs on the text the Owner will actually read.
     const s = relabel(raw)
-    if (!sentenceIsSupported(s, index)) { droppedSentences++; continue }
-    if (TELEMETRY_RE.test(s)) { droppedSentences++; continue }
+    if (!sentenceIsSupported(s, index)) { dropSentence(SENTENCE_DROP.NUMBER_NOT_IN_EVIDENCE); continue }
+    if (TELEMETRY_RE.test(s)) { dropSentence(SENTENCE_DROP.TELEMETRY); continue }
     // RECALL IS NOT EVIDENCE. A name this turn did not retrieve does not reach the Owner,
     // whatever the model believes it remembers.
-    if (!proseIsGrounded(s, index)) { droppedSentences++; continue }
+    if (!proseIsGrounded(s, index)) { dropSentence(SENTENCE_DROP.NAME_NOT_IN_EVIDENCE); continue }
     // RULE 7: not citing evidence means not naming rows — unless the Owner named it first.
-    if (barredTitles.some((t) => s.includes(t))) { droppedSentences++; continue }
+    if (barredTitles.some((t) => s.includes(t))) { dropSentence(SENTENCE_DROP.ROW_NAME_NOT_CITED); continue }
     kept.push(s)
   }
   let directAnswer = kept.join('').slice(0, LIMITS.maxDirectAnswerChars)
@@ -1280,7 +1312,18 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   })
   if (!rankingCheck.ok) {
     // IDENTIFIERS ONLY, never the sentence — the same rule the rest of `drops` follows.
-    drops.push({ field: 'ranking', reason: rankingCheck.verdict })
+    /**
+     * ⛔ `why`, NOT `reason` — THE VERDICT WAS BEING COMPUTED AND THROWN AWAY.
+     *
+     * This pushed `reason: rankingCheck.verdict`, but the drop serializer above whitelists
+     * `why` and has never carried `reason`. So the one field that says whether a good answer
+     * died for want of a declaration, or was refused on its merits, existed in memory and
+     * never reached a log line. Found while diagnosing 264e6934 / c55f0c37 / 5f703ed0.
+     *
+     * The verdict is already a closed enum (rankingProof.VERDICT), which is exactly what `why`
+     * is for. Nothing is widened: the value moves onto a field that already ships.
+     */
+    drops.push({ field: 'ranking', why: rankingCheck.verdict })
     if (directAnswer.trim().length > 0) droppedSentences++
     directAnswer = ''
     // ⛔ AN ORDERED LIST IS ITSELF THE CLAIM. When the answer's order contradicts the proof,
@@ -1322,7 +1365,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
       keptItemCount -= lost
     }
     // IDENTIFIERS ONLY — never the heading, never a row value.
-    drops.push({ field: 'ranking_section', reason: RANK_VERDICT.ORDER_CONTRADICTS_PROOF })
+    drops.push({ field: 'ranking_section', why: RANK_VERDICT.ORDER_CONTRADICTS_PROOF })
   }
 
   const answerSurvived = directAnswer.trim().length > 0
