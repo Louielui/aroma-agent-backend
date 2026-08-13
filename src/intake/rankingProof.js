@@ -254,6 +254,50 @@ function presentedOrder (text, rows) {
  *
  * @returns {number[]} indices of sections whose declared ordering contradicts the proof
  */
+
+/**
+ * ⛔ WHY A RANKING SECTION WAS REFUSED. Closed, identifier-only, and every name <= 20 chars —
+ * the drop serializer truncates at 20 and two truncated names could collide.
+ * ("membership_contradicts_proof" and "order_contradicts_proof" are 28 and 23; shortened here.)
+ */
+const VIOLATION = Object.freeze({
+  NO_RANKING_PROOF: 'no_ranking_proof',
+  METRIC_NOT_PROVEN: 'metric_not_proven',
+  RANKING_INCOMPLETE: 'ranking_incomplete',
+  MEMBERSHIP_MISMATCH: 'membership_mismatch',
+  ORDER_MISMATCH: 'order_mismatch'
+})
+
+/** What happened to a section, for the record. Counts and enums only. */
+const SECTION_STATUS = Object.freeze({
+  NOT_DETECTED: 'not_detected',
+  ALLOWED: 'evaluated_allowed',
+  REJECTED: 'evaluated_rejected'
+})
+
+/** The canonical identity of a retrieved row: readKey#sourceId, as everywhere else here. */
+function canonicalOf (row) {
+  if (!row) return null
+  if (typeof row.canonical === 'string' && row.canonical) return row.canonical
+  const key = row.readKey || row.source
+  return (key && row.sourceId != null) ? key + '#' + row.sourceId : null
+}
+
+/**
+ * Resolve a section item to a proven row's identity.
+ * ⛔ Canonical ref first. A title resolves ONLY when exactly one proven row carries it —
+ * two rows sharing a title must not collapse into one.
+ */
+function resolveItemId (item, rowIds) {
+  if (!item) return null
+  const ref = typeof item.sourceId === 'string' ? item.sourceId : null
+  if (ref && rowIds.some((r) => r.id === ref)) return ref
+  const title = typeof item.title === 'string' ? item.title.trim() : ''
+  if (!title) return null
+  const hits = rowIds.filter((r) => r.title === title)
+  return hits.length === 1 ? hits[0].id : null
+}
+
 function rankingSectionViolations (input = {}) {
   const i = input || {}
   const rows = Array.isArray(i.rankedRows) ? i.rankedRows : []
@@ -301,16 +345,23 @@ function rankingSectionViolations (input = {}) {
   // claim fails closed from that moment. Turns with no ranking claim are untouched.
 
   const out = []
+  const rowIds = rows.map((r) => ({ id: canonicalOf(r), title: (r && typeof r.title === "string") ? r.title.trim() : "" })).filter((x) => x.id)
+  const provenIds = rowIds.map((x) => x.id)
+  // ⛔ Observability only: enum + count, never a heading, title, value or message.
+  const note = typeof i.onVerdict === "function" ? i.onVerdict : null
+  const say = (status, reason) => { if (note) { try { note({ status, reason: reason || null, rankedSourceCount }) } catch (_) {} } }
+  const reject = (n, reason) => { out.push(n); say(SECTION_STATUS.REJECTED, reason) }
+  const allow = () => say(SECTION_STATUS.ALLOWED, null)
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
     const claim = sec ? classifySectionHeading(sec.heading) : { claim: false }
-    if (!claim.claim) return // an ordinary set heading — not this gate's business
+    if (!claim.claim) { say(SECTION_STATUS.NOT_DETECTED, null); return } // an ordinary set heading
 
     // ⛔ GATE ORDER IS PINNED. From the moment a heading is RECOGNISED as a ranking claim
     // this section fails closed, and only then are the reasons considered. Checking any
     // precondition before recognition is how the zero-source exit became a bypass.
-    if (rankedSourceCount === 0) { out.push(idx); return } // claimed a ranking, proved none
-    if (claim.metric === null) { out.push(idx); return } // an ordering nothing here proves
+    if (rankedSourceCount === 0) { reject(idx, VIOLATION.NO_RANKING_PROOF); return }
+    if (claim.metric === null) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
 
     /**
      * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
@@ -318,22 +369,62 @@ function rankingSectionViolations (input = {}) {
      * there are no rows to compare against — and checking rows first is exactly how the
      * section escaped validation instead of failing closed.
      */
-    if (rankedSourceCount > 1) { out.push(idx); return } // ambiguous attribution
-
-    const titles = (Array.isArray(sec.items) ? sec.items : [])
-      .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
-      .filter((t) => t && proven.includes(t))
-    if (titles.length === 0) return
+    if (rankedSourceCount > 1) { reject(idx, VIOLATION.NO_RANKING_PROOF); return } // ambiguous attribution
 
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
-    if (!entitled) { out.push(idx); return }
+    if (!entitled) { reject(idx, VIOLATION.RANKING_INCOMPLETE); return }
+
+    /**
+     * ⛔ CANONICAL IDENTITY, NOT TITLE STRINGS. Two retrieved rows may share a title, and
+     * comparing display strings would collapse them into one — the same defect closed for the
+     * derived-prose path. A title is used only as a fallback, and only when it is UNIQUE among
+     * the proven rows; an ambiguous or unresolvable item fails the claim closed.
+     */
+    const claimedIds = (Array.isArray(sec.items) ? sec.items : []).map((it) => resolveItemId(it, rowIds))
+
+    if (claim.kind !== CLAIM_KIND.ORDERING) {
+      /**
+       * ⛔ A TOP-N OR SUPERLATIVE HEADING CLAIMS MEMBERSHIP, NOT MERELY ORDER.
+       *
+       * 「目前最缺的四項」 asserts these are THE four worst, in order. A subsequence is a correct
+       * answer to 「排序」 and a FALSE answer to 「最缺的四項」 — `A B C E` is not the top four
+       * when `D` outranks `E`, however neatly it is sorted.
+       */
+      if (claimedIds.length === 0 || claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+      /**
+       * An explicit N claims exactly N; a bare superlative claims a prefix of its own length.
+       *
+       * ⛔ THERE IS NO SEPARATE COUNT CHECK, AND THAT IS DELIBERATE. One was written here and
+       * a mutation removing it stayed GREEN — the set-equality test below already compares
+       * `head.length` with `claimedIds.length`, so a count mismatch cannot survive it. Rather
+       * than keep a line no test could kill, it was removed: three items under 「四項」 fail as
+       * a membership mismatch, which is what they are.
+       */
+      const n = claim.kind === CLAIM_KIND.TOP_N ? claim.n : claimedIds.length
+      if (n > provenIds.length) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+      const head = provenIds.slice(0, n)
+      // ⛔ Membership first, then order — they fail for different reasons and a repair needs to
+      // know which. Same set in the wrong order is an ORDER failure, not a membership one.
+      const sameSet = head.length === claimedIds.length && head.every((id) => claimedIds.includes(id))
+      if (!sameSet) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+      if (claimedIds.some((id, k) => id !== head[k])) { reject(idx, VIOLATION.ORDER_MISMATCH); return }
+      allow(idx)
+      return
+    }
+
+    // ── ORDERING headings keep the existing legitimate-subsequence behaviour ──────
+    const titles = (Array.isArray(sec.items) ? sec.items : [])
+      .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
+      .filter((t) => t && proven.includes(t))
+    if (titles.length === 0) { allow(idx); return }
 
     // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
     // clearest honest answer there is — 「排序：第一位 Napa」.
-    if (titles.length < 2) return
+    if (titles.length < 2) { allow(idx); return }
     const expected = proven.filter((t) => titles.includes(t))
-    if (titles.length !== expected.length || titles.some((t, n) => t !== expected[n])) out.push(idx)
+    if (titles.length !== expected.length || titles.some((t, n) => t !== expected[n])) reject(idx, VIOLATION.ORDER_MISMATCH)
+    else allow(idx)
   })
   return out
 }
@@ -434,6 +525,8 @@ module.exports = {
   VERDICT,
   asksForRanking,
   presentsAsRanking,
+  VIOLATION,
+  SECTION_STATUS,
   classifySectionHeading,
   CLAIM_KIND,
   asksProportionally,

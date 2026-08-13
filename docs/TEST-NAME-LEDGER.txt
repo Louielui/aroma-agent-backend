@@ -1492,15 +1492,19 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ B5f. AND 「缺口 -5」 IS STILL ACCEPTED ON THAT ROW ***
 *** ⛔ B5g. A DUPLICATE-TITLE CLAIM CANNOT BE LAUNDERED EITHER ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
+*** ⛔ CANONICAL IDENTITY — DUPLICATE TITLES DO NOT COLLAPSE ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
 *** ⛔ CLASS 2 — internal context + capability UNAVAILABLE → no reads, no clarification ***
 *** ⛔ CLASS 4 — genuine context-free ambiguity STILL ASKS ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
+*** ⛔ EACH OUTCOME IS REPORTED AS AN ENUM PLUS A COUNT ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
 *** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
 *** ⛔ EXHAUSTION AND GENUINE PLAN FAILURE ARE DIFFERENT STOP REASONS ***
+*** ⛔ EXPLICIT TOP-N: exact membership, exact count, correct order ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
+*** ⛔ INTEGRATION: THE PRODUCTION SECTION IS REFUSED AND THE REPLY IS NOT EMPTY ***
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
 *** ⛔ LEGITIMATE clarification on another axis passes through UNTOUCHED ***
@@ -1512,15 +1516,19 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***
 *** ⛔ M5. ZERO RANKED SOURCES — A CLAIM FAILS CLOSED, AN ORDINARY SECTION DOES NOT ***
 *** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAPE ***
+*** ⛔ METRIC MISMATCH FAILS CLOSED, WHATEVER THE ORDER ***
 *** ⛔ MULTIPLE RANKED SOURCES STAY FAIL CLOSED ***
 *** ⛔ NO CALL SITE READS THE TRACER\
 *** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
+*** ⛔ NO HEADING, TITLE, VALUE OR MESSAGE REACHES THE VERDICT ***
 *** ⛔ NO REPLY, SENTENCE, NAME OR ROW VALUE REACHES THE LOG ***
 *** ⛔ NO SENTENCE, TITLE, NUMERAL, LABEL OR USER TEXT REACHES THE LOG ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
+*** ⛔ ONE-ITEM SUPERLATIVE: only the proven first qualifies ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
+*** ⛔ ORDERING HEADINGS KEEP THE LEGITIMATE SUBSEQUENCE BEHAVIOUR ***
 *** ⛔ ORDINARY SET HEADINGS ARE NOT RANKINGS ***
 *** ⛔ ORDINARY TURNS PAY NOTHING EXTRA — the reserve is not a general raise ***
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
@@ -1538,6 +1546,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
+*** ⛔ SUPERLATIVE WITH NO N: the items must be a proven PREFIX ***
 *** ⛔ TELEMETRY PROSE RECORDS telemetry ***
 *** ⛔ THE 17:06 TURN — the registry URL reaches the shipped reply ***
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
