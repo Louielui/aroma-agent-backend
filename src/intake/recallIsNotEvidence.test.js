@@ -147,7 +147,7 @@ const run = (adapter) => processIntake('而家倉存入面有咩？', adapter, [
 const plan = (over = {}) => Object.assign({
   directAnswer: '餐廳系統有 199 項存貨記錄。',
   unanswerable: false,
-  sections: [{ heading: '缺口最大', items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] }] }],
+  sections: [{ heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */, items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] }] }],
   limitations: [],
   followUp: null
 }, over)

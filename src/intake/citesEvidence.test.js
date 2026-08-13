@@ -269,7 +269,7 @@ test('*** an inventory question still renders real data ***', async () => {
   const plan = {
     directAnswer: '餐廳系統有 199 項存貨記錄。',
     citesEvidence: true,
-    sections: [{ heading: '缺口最大', items: [{ sourceId: REF, title: 'x', facts: [{ field: '現有存量', value: '18.000' }, { field: '安全存量', value: '75.000' }] }] }],
+    sections: [{ heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */, items: [{ sourceId: REF, title: 'x', facts: [{ field: '現有存量', value: '18.000' }, { field: '安全存量', value: '75.000' }] }] }],
     limitations: [], followUp: null, unanswerable: false
   }
   const { result, captured } = await withEnv(() => withLogCapture(() => run(spyAdapter(envelope(plan)), '而家倉存入面有咩？')))

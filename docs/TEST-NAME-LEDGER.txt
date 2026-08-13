@@ -815,6 +815,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** and no switch exists for a source that is not registered ***
 *** and she does NOT claim the system was unreadable ***
 *** and so does the phrasing that already worked — one behaviour ***
+*** and the correct top-four in the proven order is ALLOWED ***
 *** and the durable approval trail records the entry point ***
 *** and the false-positive class STAYS closed ***
 *** and the heading goes with it — no empty 資料限制 block ***
@@ -1398,7 +1399,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** with TURN_ROUTER off, a clock question behaves exactly as before ***
 *** with no choices left, nextRead collapses to null-only and takes args with it ***
 *** with no key the adapter is not ready and refuses cleanly ***
-*** with no ranked rows there is nothing to contradict ***
+*** with no ranked rows a ranking CLAIM fails closed, and an ordinary section does not ***
 *** with nothing asked and nothing read, there is no block at all ***
 *** with nothing left to read, nextRead is NULL-ONLY — never an empty enum ***
 *** with nothing said before, the scope note is KEPT ***
@@ -1441,6 +1442,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
+*** ⛔ A SUPERLATIVE OVER AN UNPROVEN MEASURE CARRIES metric: null ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
@@ -1448,9 +1450,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
 *** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***
+*** ⛔ AN INCOMPLETE PROOF IS REFUSED EVEN IN THE RIGHT ORDER ***
 *** ⛔ AN INCOMPLETE RANKING IS REFUSED EVEN WHEN THE ORDER IS RIGHT ***
+*** ⛔ AN UNPROVEN METRIC IS REFUSED BEFORE ANY ORDER CHECK ***
 *** ⛔ AN UNRETRIEVED NAME RECORDS name_not_in_evidence ***
 *** ⛔ AN UNSUPPORTED NUMBER RECORDS number_not_in_evidence ***
+*** ⛔ AND A NON-CLAIM SECTION IS STILL UNTOUCHED WITH ZERO SOURCES ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
 *** ⛔ AND A VALID DERIVATION WITH NO OTHER NUMBER STILL PASSES CLEAN ***
 *** ⛔ AND THE DETAIL RIDES ON A FIELD THE SERIALIZER ALREADY SHIPPED ***
@@ -1505,8 +1510,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ M2. TWO COMPLETE PROOFS IS STILL AMBIGUOUS — FAIL CLOSED ***
 *** ⛔ M3. AN ORDINARY SECTION IN A TWO-SOURCE TURN IS UNTOUCHED ***
 *** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***
-*** ⛔ M5. ZERO RANKED SOURCES — NOT A GENERIC RANKING DETECTOR ***
+*** ⛔ M5. ZERO RANKED SOURCES — A CLAIM FAILS CLOSED, AN ORDINARY SECTION DOES NOT ***
 *** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAPE ***
+*** ⛔ MULTIPLE RANKED SOURCES STAY FAIL CLOSED ***
 *** ⛔ NO CALL SITE READS THE TRACER\
 *** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
 *** ⛔ NO REPLY, SENTENCE, NAME OR ROW VALUE REACHES THE LOG ***
@@ -1515,6 +1521,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
+*** ⛔ ORDINARY SET HEADINGS ARE NOT RANKINGS ***
 *** ⛔ ORDINARY TURNS PAY NOTHING EXTRA — the reserve is not a general raise ***
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
 *** ⛔ PROHIBITION 2 — the sentence is derived, so a count cannot drift ***
@@ -1546,6 +1553,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
 *** ⛔ THE OWNER\
+*** ⛔ THE PRODUCTION DEFECT: 「目前最缺的四項」 IN THE WRONG ORDER IS REFUSED ***
 *** ⛔ THE READING TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
@@ -1556,6 +1564,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE TWO ARE TOLD APART ON OTHERWISE IDENTICAL INPUT ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
 *** ⛔ THE WORKING TURN STILL WORKS — the URL, clean ***
+*** ⛔ THE ZERO-SOURCE BYPASS IS CLOSED — a claim with NO proof is refused ***
 *** ⛔ TURN 1 — the URL ships and NO internal-vs-public question survives ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
 *** ⛔ WIRED: a contradicting order is WITHHELD by validatePlan, not just judged ***
@@ -1678,6 +1687,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ what she CANNOT answer is named, not left to be discovered ***
 *** ⛔ wisdomRecall has no default store reach-through ***
+*** ⛔ 「${heading}」 IS A RANKING CLAIM (${kind}) ***
 *** ⛔ 「我哋現有」 — the exact phrasing that leaked — cannot survive ***
 *** ⛔ 「給我 Aroma System 的 website」 MUST NOT REGRESS — it asked nothing and read nothing ***
 *** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***

@@ -279,8 +279,24 @@ test('*** only the OFFENDING section is dropped, not its neighbour ***', () => {
   assert.deepEqual(v, [1], 'the ordinary section at index 0 survives')
 })
 
-test('*** with no ranked rows there is nothing to contradict ***', () => {
-  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [JARS, NAPA])], rankedRows: [] }), [])
+/**
+ * ⛔ REVISED, NOT DELETED — OWNER CONTRACT CHANGE, TASK 001.
+ *
+ * This asserted that a ranking section with NO ranked rows is nothing to worry about. That
+ * early exit was the bypass: a superlative section could ship with no ranking proof at all,
+ * which is how 「目前最缺的四項」 reached the Owner in requestId a3a51702.
+ *
+ * > **Owner: the `rankedSourceCount === 0 → return []` early exit must NOT apply to a
+ * > recognised ranking claim.**
+ *
+ * The property worth keeping — a turn that read nothing orderable is not turned into a generic
+ * ranking detector — is unchanged and asserted below: an ORDINARY section is still untouched.
+ */
+test('*** with no ranked rows a ranking CLAIM fails closed, and an ordinary section does not ***', () => {
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [JARS, NAPA])], rankedRows: [] }), [0],
+    '⛔ a ranking claim shipped with no proof behind it')
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨狀況', [JARS, NAPA])], rankedRows: [] }), [],
+    '⛔ an ordinary section was treated as a ranking')
 })
 
 /* ═══ ENTITLEMENT — THE PROOF MUST BE COMPLETE, NOT MERELY CORRECT ═══════ */
@@ -383,8 +399,15 @@ test('*** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***', () => {
   assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], PROOF_INCOMPLETE, 1), [0], 'unproven still dropped')
 })
 
-test('*** ⛔ M5. ZERO RANKED SOURCES — NOT A GENERIC RANKING DETECTOR ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], null, 0), [],
+/**
+ * ⛔ REVISED, NOT DELETED — OWNER CONTRACT CHANGE, TASK 001. See the note above.
+ * A ranking CLAIM with zero ranked sources now fails closed; what must stay true is that the
+ * gate does not become a generic detector, which is asserted on the ordinary heading.
+ */
+test('*** ⛔ M5. ZERO RANKED SOURCES — A CLAIM FAILS CLOSED, AN ORDINARY SECTION DOES NOT ***', () => {
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], null, 0), [0],
+    '⛔ a ranking claim shipped with no ranking proof')
+  assert.deepEqual(bad([SEC('缺貨狀況', [NAPA, NOLA])], null, 0), [],
     '⛔ the gate fired on a turn that read nothing orderable')
 })
 

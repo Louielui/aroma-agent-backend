@@ -147,7 +147,7 @@ const run = (adapter, connector = fakeConnector()) => processIntake('而家倉�
 const PLAN = {
   directAnswer: '餐廳系統有 199 項存貨記錄。',
   unanswerable: false,
-  sections: [{ heading: '缺口最大', items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] }] }],
+  sections: [{ heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */, items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] }] }],
   limitations: [],
   followUp: null
 }
@@ -250,7 +250,7 @@ test('the truncation note stays, and is consistent with the counts rather than a
 const factPlan = (value) => ({
   directAnswer: '睇咗。',
   unanswerable: false,
-  sections: [{ heading: '缺口最大', items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value }] }] }],
+  sections: [{ heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */, items: [{ sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value }] }] }],
   limitations: [],
   followUp: null
 })
@@ -348,7 +348,7 @@ test('*** droppedItems is counted separately from droppedFacts ***', () => {
     directAnswer: '睇咗。',
     unanswerable: false,
     sections: [{
-      heading: '缺口最大',
+      heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */,
       items: [
         { sourceId: 'napa-cabbage', title: 'X', facts: [{ field: '現有', value: '18.000' }] },
         { sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '一萬' }] }
@@ -381,7 +381,7 @@ test('*** the log records WHAT was dropped — identity, never values ***', () =
 
 test('*** a plan whose every item is unprovable does NOT report success ***', async () => {
   const bad = Object.assign({}, PLAN, {
-    sections: [{ heading: '缺口最大', items: [{ sourceId: 'napa-cabbage', title: 'X', facts: [] }] }]
+    sections: [{ heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */, items: [{ sourceId: 'napa-cabbage', title: 'X', facts: [] }] }]
   })
   const { captured, result } = await withEnv(() => withLogCapture(() => run(spyAdapter(envelope(bad)))))
   assert.equal(captured.length, 1)
@@ -396,7 +396,7 @@ test('*** a plan whose every item is unprovable does NOT report success ***', as
 test('*** a section that loses SOME items states the omission rather than shrinking silently ***', async () => {
   const partial = Object.assign({}, PLAN, {
     sections: [{
-      heading: '缺口最大',
+      heading: '缺貨狀況' /* not 缺口最大 — that is a ranking claim now (task 001) */,
       items: [
         { sourceId: '2', title: 'Napa Cabbage', facts: [{ field: '現有', value: '18.000' }] },
         { sourceId: 'ghost', title: 'Nothing', facts: [] }

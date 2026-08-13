@@ -76,6 +76,91 @@ function presentsAsRanking (text) {
   return RANKING_PRESENTATION_RE.test(String(text || ''))
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ MEASURED IN PRODUCTION, requestId a3a51702-b136-430d-8994-7a20e890f0f9 on bootCommit
+ * ebd6071. The Owner asked 「現在缺貨最嚴重的是什麼？」 and the reply carried a section headed
+ *
+ *     「目前最缺的四項」   Jars 20 → Napa 75 → New Orleans 39 → Dark Soy 37
+ *
+ * — a TOP-N claim whose order contradicts the proven absolute-shortfall ranking. It shipped
+ * because `RANKING_PRESENTATION_RE` looks for an ordering WORD (排序/排名) or an enumerator,
+ * and 「最缺」 is superlative wording with neither.
+ *
+ * ⛔ A BOOLEAN IS NOT ENOUGH. 「the heading is a ranking」 cannot say how many items were
+ * claimed, or which measure. 「目前最缺的四項」 claims exactly four; 「最緊急缺貨項目」 claims a
+ * prefix of unstated length; 「最新入貨」 claims an ordering by a date nothing here proves. Those
+ * are three different verdicts, so the classifier returns a shape rather than a flag.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const CLAIM_KIND = Object.freeze({
+  /** 「目前最缺的四項」 — an explicit N. Membership, count and order are all claimed. */
+  TOP_N: 'top_n',
+  /** 「最緊急缺貨項目」 — a superlative with no N. The items must be a proven PREFIX. */
+  SUPERLATIVE: 'superlative',
+  /** 「缺貨排序」 — an ordering word. Legitimate subsequences are allowed, as before. */
+  ORDERING: 'ordering'
+})
+
+/**
+ * ⛔ ONLY SHORTAGE SUPERLATIVES MAP TO THE PROVEN METRIC. Everything else is a claim about a
+ * measure nothing in this turn ordered — 「最新」 and 「最近」 are dates, 「最少要補」 is the
+ * OPPOSITE end, 「最平」/「最貴」 are prices. Reusing the absolute-shortfall proof for any of
+ * them would be the metric-switch defect wearing a heading.
+ */
+/** Superlatives that name the shortage end outright. 「最缺」/「最嚴重」/「最緊急」. */
+const SHORTAGE_WORD_RE = /最(缺|嚴重|緊急)|缺得最|最需要補/
+/** Generic 「most」 superlatives — shortage ONLY beside a shortage term, e.g. 「缺口最大」. */
+const MOST_WORD_RE = /最(大|多|高)/
+const SHORTAGE_TERM_RE = /缺口|缺貨|短缺/
+/**
+ * ⛔ THE OPPOSITE END IS NOT THE SAME CLAIM. 「最少要補」/「缺口最小」 rank ascending, and the
+ * adapter sorts descending — reusing that proof would invert the answer while looking verified.
+ */
+const LEAST_WORD_RE = /最(少|小|低)/
+const ANY_SUPERLATIVE_RE = /最[一-鿿]|\bmost\b|\bworst\b|\btop\b/i
+
+/** CJK numerals used as counts in headings. Deliberately small — 一 to 十 covers real headings. */
+const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 })
+const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十])\s*(項|個|樣|款|種)/
+const ARABIC_COUNT_IN_HEADING = /(\d+)\s*(項|個|樣|款|種)|\btop\s*(\d+)/i
+
+/**
+ * Classify a section heading as a ranking CLAIM.
+ * @returns {{claim:boolean, kind:string|null, n:number|null, metric:string|null}}
+ *   `metric` is null when the heading claims an ordering this turn cannot prove.
+ */
+function classifySectionHeading (heading) {
+  const h = String(heading || '')
+  const none = { claim: false, kind: null, n: null, metric: null }
+  if (!h) return none
+
+  // ⛔ 「缺口最大」 was MISSED by a shortage-word list and would have been refused as an
+  // unproven measure — found by running the existing suite, not by reading. A generic 「most」
+  // counts as the shortage metric only beside a shortage term, and the least-end words never do.
+  const shortage = !LEAST_WORD_RE.test(h) &&
+    (SHORTAGE_WORD_RE.test(h) || (MOST_WORD_RE.test(h) && SHORTAGE_TERM_RE.test(h)))
+  const superlative = shortage || ANY_SUPERLATIVE_RE.test(h)
+  const ordering = presentsAsRanking(h)
+  if (!superlative && !ordering) return none
+
+  // ⛔ A shortage superlative claims the metric the adapter actually sorts on; any other
+  // superlative claims something unproven, and `metric: null` makes the gate refuse it.
+  const metric = shortage ? RANKING_METRIC.ABSOLUTE_SHORTFALL : (ordering && !superlative ? RANKING_METRIC.ABSOLUTE_SHORTFALL : null)
+
+  let n = null
+  const cjk = h.match(CJK_COUNT_IN_HEADING)
+  if (cjk) n = CJK_DIGITS[cjk[1]] || null
+  if (n === null) {
+    const ar = h.match(ARABIC_COUNT_IN_HEADING)
+    if (ar) n = Number(ar[1] || ar[3]) || null
+  }
+
+  if (superlative && n !== null) return { claim: true, kind: CLAIM_KIND.TOP_N, n, metric }
+  if (superlative) return { claim: true, kind: CLAIM_KIND.SUPERLATIVE, n: null, metric }
+  return { claim: true, kind: CLAIM_KIND.ORDERING, n, metric }
+}
+
 function asksProportionally (text) {
   return PROPORTIONAL_RE.test(String(text || ''))
 }
@@ -210,12 +295,22 @@ function rankingSectionViolations (input = {}) {
    * ⛔ ZERO RANKED SOURCES IS NOT THIS GATE'S BUSINESS. Firing here would turn a proof checker
    * into a generic ranking detector, refusing headings on turns that read nothing orderable.
    */
-  if (rankedSourceCount === 0) return []
+  // ⛔ THE ZERO-SOURCE EARLY EXIT IS THE BYPASS, so it no longer runs ahead of detection.
+  // A superlative section could ship today with NO ranking proof at all simply because the
+  // turn read nothing orderable. Detection now happens per section, below, and a recognised
+  // claim fails closed from that moment. Turns with no ranking claim are untouched.
 
   const out = []
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
-    if (!sec || !presentsAsRanking(sec.heading)) return
+    const claim = sec ? classifySectionHeading(sec.heading) : { claim: false }
+    if (!claim.claim) return // an ordinary set heading — not this gate's business
+
+    // ⛔ GATE ORDER IS PINNED. From the moment a heading is RECOGNISED as a ranking claim
+    // this section fails closed, and only then are the reasons considered. Checking any
+    // precondition before recognition is how the zero-source exit became a bypass.
+    if (rankedSourceCount === 0) { out.push(idx); return } // claimed a ranking, proved none
+    if (claim.metric === null) { out.push(idx); return } // an ordering nothing here proves
 
     /**
      * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
@@ -223,7 +318,7 @@ function rankingSectionViolations (input = {}) {
      * there are no rows to compare against — and checking rows first is exactly how the
      * section escaped validation instead of failing closed.
      */
-    if (rankedSourceCount > 1) { out.push(idx); return }
+    if (rankedSourceCount > 1) { out.push(idx); return } // ambiguous attribution
 
     const titles = (Array.isArray(sec.items) ? sec.items : [])
       .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
@@ -339,6 +434,8 @@ module.exports = {
   VERDICT,
   asksForRanking,
   presentsAsRanking,
+  classifySectionHeading,
+  CLAIM_KIND,
   asksProportionally,
   metricAskedFor,
   proofsFrom,
