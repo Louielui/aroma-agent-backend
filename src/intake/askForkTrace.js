@@ -45,6 +45,13 @@ const BRANCH = Object.freeze({
   VERDICT_CLARIFY: 'verdict_clarify',
   VERDICT_ALLOW_FINAL: 'verdict_allow_final',
   VERDICT_REQUIRE: 'verdict_require',
+  /**
+   * ⛔ A `clarify` verdict that did NOT get to end the turn, because the deterministic route had
+   * already established internal business work against a reachable source. The turn continues
+   * through the same downstream authority as require_*. Distinct from VERDICT_REQUIRE so the
+   * Owner can count how often the restraint actually fires.
+   */
+  CLARIFY_RESTRAINED_TO_ROUTE: 'clarify_restrained_to_route',
   RESOLVER_ASK: 'resolver_ask',
   RESOLVER_OBLIGATION: 'resolver_obligation',
   RESOLVER_UNREACHABLE: 'resolver_unreachable',

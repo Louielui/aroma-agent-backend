@@ -661,6 +661,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a reader never sees "no such conversation" while a writer is appending ***
 *** a real number with an invented unit is still an invention ***
 *** a real reply passes through byte-identical ***
+*** a real requestId survives, because correlation is the point ***
 *** a recall failure is fail-soft but never silent ***
 *** a refresh token inside the warning window runs, but says so ***
 *** a refused save is 422 with a readable reason, not 500 ***
@@ -795,6 +796,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** and NOT when the totals are known but differ ***
 *** and \
 *** and a business question with rows DOES get the plan schema ***
+*** and an UNRESTRAINED clarify still reports verdict_clarify ***
 *** and demands NO Answer Plan — no rows, and not a business route either ***
 *** and end to end, 「5磅是多少公斤？」 reads nothing ***
 *** and it is REPLACED by a positive default, not merely deleted ***
@@ -827,7 +829,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** citesEvidence:false may not name a retrieved row in prose ***
 *** citesEvidence:false with sections supplied — the sections are dropped and logged ***
 *** claimKind is a CLOSED enum — a model cannot invent a fourth kind ***
-*** clarify returns mode=ask with zero reads and no tool talk ***
+*** clarify on a NON-established route returns mode=ask with zero reads and no tool talk ***
 *** clicking one loads the FULL transcript ***
 *** coercion also warns, naming the field ***
 *** completeness travels, and the model is told which number is the total ***
@@ -1073,6 +1075,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** something the evidence never held is scored as unrelated ***
 *** source kinds only — a source payload cannot ride in on readContextSources ***
 *** source order is preserved and duplicates collapse ***
+*** sourceClass is a class, never the source list ***
 *** sourceTotal=null can never support an unqualified source-wide universal ***
 *** source_wide VERIFIES only when matchingTotal === sourceTotal ***
 *** source_wide is structurally distinct from row_local ***
@@ -1143,6 +1146,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the check is available on its own, so the refusal has one implementation ***
 *** the check rejects an entry that a human would call spoken ***
 *** the clarification asks about MEANING, never about a tool ***
+*** the clarify exit is recorded as the exit it is ***
 *** the classifier-unavailable contract survives the split ***
 *** the client calls the route instead of only greying out ***
 *** the client never computes the greeting from the browser clock ***
@@ -1391,9 +1395,18 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** with the demo flag off, every conversation route is 403 ***
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
+*** ⛔ 1. ESTABLISHED INTERNAL + REACHABLE + clarify → NOT a terminal verifier ASK ***
+*** ⛔ 1b. AND THE TRAFFIC WENT THROUGH THE SHARED AUTHORITY, not a private branch ***
+*** ⛔ 2. ESTABLISHED INTERNAL + UNREACHABLE → no invented obligation, no read ***
+*** ⛔ 3. EXPLICIT public / mixed verdicts are unchanged ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
+*** ⛔ 4. CONTEXT-FREE AMBIGUITY STILL CLARIFIES — the path is narrowed, not deleted ***
+*** ⛔ 4b. AND A TURN THE ROUTER NEVER ESTABLISHED IS NOT RESTRAINED ***
+*** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
+*** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
+*** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
@@ -1402,6 +1415,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
 *** ⛔ AND THE SYSTEM IS STILL RECOGNISED, by every spelling that denotes IT ***
+*** ⛔ AND THE TRACE ITSELF NEVER PRINTS THE TURN ***
 *** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
@@ -1417,6 +1431,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
 *** ⛔ LEGITIMATE clarification on another axis passes through UNTOUCHED ***
+*** ⛔ NO CALL SITE READS THE TRACER\
+*** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
@@ -1442,10 +1458,13 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
 *** ⛔ THE CANARY TURN — three reads consume the budget and it STILL composes ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
+*** ⛔ THE CLARIFY TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE CLASS, not the instance — other subjects that merely carry a token ***
+*** ⛔ THE ENUMS ARE CLOSED — an unrecognised value is never echoed ***
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
+*** ⛔ THE READING TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
 *** ⛔ THE RESERVED CALL IS BOUNDED — it may not read, so it cannot extend the turn ***

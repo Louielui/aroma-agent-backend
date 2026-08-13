@@ -420,7 +420,23 @@ test('*** X — MIX1 first-READ turns keep their existing max-4 behaviour ***', 
 
 /* ═══ CLARIFY, AND THE AMBIGUITY PRODUCT RULE ═══════════════════════════ */
 
-test('*** clarify returns mode=ask with zero reads and no tool talk ***', async () => {
+/**
+ * ⛔ REVISED, NOT DELETED — OWNER CONTRACT CHANGE, 2026-08-12.
+ *
+ * This test used to stand for 「clarify means zero reads」, full stop. That reading was pinning
+ * the defect: production evidence on bootCommit 4f8780b showed a `clarify` verdict terminal-
+ * vetoing an already-established BUSINESS_QUERY route against a reachable `aroma_system`, four
+ * times out of eight identical turns (requestIds 068bd217, 7e0532e2, 007c2e26, 2027951c,
+ * 4333b38f). The Owner ruled that a stochastic verdict may not overrule a deterministic route.
+ *
+ * ⛔ THE ASSERTIONS BELOW ARE UNCHANGED, AND STILL CORRECT — because this message is the case
+ * the clarification actually exists for: 「最近牛肉係咪升咗？」 names no entity the router can
+ * positively classify, so nothing established a world and the question is the right answer.
+ * What changed is this test's SCOPE, made explicit below rather than left implied.
+ *
+ * The established-route case now lives in `clarifyAuthority.test.js`.
+ */
+test('*** clarify on a NON-established route returns mode=ask with zero reads and no tool talk ***', async () => {
   await withEnv({}, async () => {
     const c = twoWorldConnector()
     const out = await run('最近牛肉係咪升咗？', scriptedAdapter([FINAL('我估係升。')]), DEPS(c, { finalVerifier: finalSpy('clarify', '你想睇我哋自己定係外面市場？').fn }))

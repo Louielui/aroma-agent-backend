@@ -26,6 +26,15 @@ const { A4_AMBIGUITY_FLAG } = require('./sourceAmbiguityGate')
 
 /** The Owner's actual sentence from the 2026-08-12 A/B pair. If this appears in a log, we failed. */
 const OWNER_MESSAGE = '現在缺貨最嚴重的是什麼？'
+/**
+ * ⛔ A SENTENCE THAT STILL TAKES THE TERMINAL CLARIFY EXIT, after the Owner's 2026-08-12
+ * contract change. `OWNER_MESSAGE` establishes a BUSINESS_QUERY route against a reachable
+ * `aroma_system`, so a `clarify` verdict on it is now RESTRAINED and the turn reads instead —
+ * see `clarifyAuthority.test.js`. These two tests are about logging invariance and the terminal
+ * exit's label, so they need a turn that genuinely still ends there: this one names no entity
+ * the router can classify.
+ */
+const CONTEXT_FREE_MESSAGE = '最近牛肉係咪升咗？'
 const OWNER_REPLY = '你想問我哋目前邊款貨品缺貨最嚴重，定係市場上邊類貨品最缺？'
 const FAKE_SECRET = 'sk-ant-NOT-A-REAL-KEY-0000'
 
@@ -199,7 +208,7 @@ test('*** ⛔ THE CLARIFY TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***', a
     for (const broken of [false, true]) {
       const c = connector()
       const a = scriptedAdapter([FINAL('我估係牛肉。')])
-      const out = await outcomeWith(broken, () => run(OWNER_MESSAGE, a, CLARIFY_DEPS(c)))
+      const out = await outcomeWith(broken, () => run(CONTEXT_FREE_MESSAGE, a, CLARIFY_DEPS(c)))
       results.push({ mode: out.mode, reply: out.reply, reads: c.internalReads.length, calls: a.calls.length })
     }
     assert.deepEqual(results[0], results[1],
@@ -232,7 +241,7 @@ test('*** ⛔ AND THE TRACE ITSELF NEVER PRINTS THE TURN ***', async () => {
     console.log = (...args) => { captured.push(args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')) }
     try {
       const c = connector()
-      await run(OWNER_MESSAGE, scriptedAdapter([FINAL('我估係牛肉。')]), CLARIFY_DEPS(c))
+      await run(CONTEXT_FREE_MESSAGE, scriptedAdapter([FINAL('我估係升。')]), CLARIFY_DEPS(c))
     } finally { console.log = realLog }
     const forkLines = captured.filter((l) => l.includes('[AROMA-ASK-FORK]'))
     assert.ok(forkLines.length > 0, 'the fork was actually traced — otherwise this proves nothing')
@@ -250,7 +259,7 @@ test('*** the clarify exit is recorded as the exit it is ***', async () => {
     console.log = (...args) => { captured.push(args.map((a) => typeof a === 'string' ? a : JSON.stringify(a)).join(' ')) }
     try {
       const c = connector()
-      await run(OWNER_MESSAGE, scriptedAdapter([FINAL('我估係牛肉。')]), CLARIFY_DEPS(c))
+      await run(CONTEXT_FREE_MESSAGE, scriptedAdapter([FINAL('我估係升。')]), CLARIFY_DEPS(c))
     } finally { console.log = realLog }
     const fork = captured.filter((l) => l.includes('[AROMA-ASK-FORK]')).join('\n')
     assert.ok(fork.includes('"branch":"verdict_clarify"'), '⛔ the 19:28 exit is unlabelled: ' + fork)

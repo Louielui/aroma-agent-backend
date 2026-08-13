@@ -107,7 +107,7 @@ const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbi
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 // An 'I cannot tell' may not outrank a deterministic classification (B canary, 052761bc).
-const { decideWorldAsk } = require('./worldAskDecision')
+const { decideWorldAsk, ASK_REASON } = require('./worldAskDecision')
 // Observability only — see askForkTrace.js. Emits; never decides.
 const { STAGE: FORK_STAGE, BRANCH: FORK_BRANCH, ASK_ORIGIN: FORK_ASK, logAskFork, sourceClassOf } = require('./askForkTrace')
 
@@ -1380,6 +1380,46 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
     })
     logFinalRequirement({ requestId, outcome: verdict.outcome, requiredWorlds: verdict.requiredWorlds, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt })
+
+    /**
+     * ══════════════════════════════════════════════════════════════════════
+     * ⛔ A STOCHASTIC VERDICT MAY NOT TERMINAL-VETO A DETERMINISTIC ROUTE.
+     *
+     * ⛔ MEASURED IN PRODUCTION, 2026-08-12, bootCommit 4f8780b, real UI path. The same
+     * sentence 「現在缺貨最嚴重的是什麼？」, one turn per fresh conversation, same build, same
+     * route (BUSINESS_QUERY / intent_inventory / routerSources ["aroma_system"]), minutes
+     * apart — eight turns, roughly half each way:
+     *
+     *   read and answered   19:26 · 20:14 · 20:23 · 20:23
+     *   terminal ASK, 0 reads  19:28 · 20:22 · 20:22 · 20:24   ← requestIds 7e0532e2,
+     *                                                            007c2e26, 2027951c, 4333b38f
+     *
+     * And when the gate DID run, `clarify` was unanimous — five of five. It was not flapping;
+     * it was consistently overruling a classification that had already been made
+     * deterministically, before the verifier ever saw the turn.
+     *
+     * > **Owner: a stochastic `clarify` verdict must not terminal-veto an already-established
+     * > deterministic internal business route when the routed internal source is reachable.**
+     *
+     * ── ⛔ WHAT THIS IS NOT ──────────────────────────────────────────────
+     * Not a forced `require_internal`, not a keyword list, not a retry, not a temperature
+     * change, and not a narrowing of the verifier. `finalKnowledgeRequirement` is documented
+     * as NOT a router; this restores that boundary rather than tuning its output.
+     *
+     * ── ⛔ AND THE RULE STILL LIVES IN ONE FUNCTION ──────────────────────
+     * The condition is NOT re-derived here. `decideWorldAsk` is already the single authority
+     * on 「does the route plus what we can reach establish internal work?」, so it is asked.
+     * `resolverIntent: null` is not a fake input — at this point the resolver genuinely has
+     * not run, and an unrecognised intent is exactly what that function treats as unsettled.
+     * A second copy of this test is how the two drift apart.
+     * ══════════════════════════════════════════════════════════════════════
+     */
+    const clarifyRestrained = verdict.decision === 'clarify' && decideWorldAsk({
+      resolverIntent: null,
+      route: routeDecision ? routeDecision.route : null,
+      routerSources: (routeDecision && routeDecision.sources) || [],
+      authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider)
+    }).reason === ASK_REASON.ROUTE_ESTABLISHED_INTERNAL
     if (!verdict.ok) {
       // ⛔ FAIL CLOSED — IN THE DIRECTION THAT MATCHES WHAT WAS SAID.
       //
@@ -1398,7 +1438,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_UNUSABLE, {
         askOrigin: initialIsAsk ? FORK_ASK.MODEL_INITIAL_ASK : FORK_ASK.NONE, shortCircuit: true
       })
-    } else if (verdict.decision === 'clarify') {
+    } else if (verdict.decision === 'clarify' && !clarifyRestrained) {
       // The ASK is legitimate — either the model already asked, or its FINAL was premature and
       // the meaning genuinely is open. Either way this is an ordinary conversation result, as
       // the ambiguity ASK is: no new response type, zero reads, no EvidenceSet, no trust state.
@@ -1422,7 +1462,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_ALLOW_FINAL, {
         askOrigin: FORK_ASK.MODEL_INITIAL_ASK, shortCircuit: true
       })
-    } else if (verdict.requiredWorlds) {
+    } else if (verdict.requiredWorlds || clarifyRestrained) {
+      // ⛔ A RESTRAINED `clarify` ENTERS HERE — the SAME downstream authority, with the same
+      // route, routerSources and authorisedSources the require_* path already uses. It is not
+      // converted into an obligation on the way in: if the resolver and `decideWorldAsk` decide
+      // the meaning really is open, the turn still asks, one branch below.
       // ══════════════════════════════════════════════════════════════════════
       // ⛔ FinalKnowledge DECIDES *WHETHER*; THE RESOLVER DECIDES *WHICH*.
       //
@@ -1452,7 +1496,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       logWorldAsk(requestId, resolved.intent, worldAsk0, worldAsk0.ask)
       // ⛔ THIS IS THE 19:26 PATH (requestId d0c1cae6). Reaching here at all means the verdict
       // was require_*, not clarify — which is the divergence the A/B pair could not show.
-      forkTrace(FORK_STAGE.SOURCE_INTENT, FORK_BRANCH.VERDICT_REQUIRE, { intent: resolved.intent })
+      forkTrace(FORK_STAGE.SOURCE_INTENT,
+        clarifyRestrained ? FORK_BRANCH.CLARIFY_RESTRAINED_TO_ROUTE : FORK_BRANCH.VERDICT_REQUIRE,
+        { intent: resolved.intent })
       if (worldAsk0.ask) {
         distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null })
         forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_ASK, {
