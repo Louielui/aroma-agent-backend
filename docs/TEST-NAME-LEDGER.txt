@@ -696,6 +696,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a stock claim the evidence cannot support is removed ***
 *** a stop is FIRST-WINS — the record says what actually stopped it ***
 *** a store failure never takes the answer away ***
+*** a superlative question is recognised by SHAPE, not by a topic vocabulary ***
 *** a test process with no AROMA_DATA_DIR does NOT get the production dir ***
 *** a three-character term is NOT separated — the phenomenon is specific to pairs ***
 *** a timeout and a network error are READ_FAILED, never a throw ***
@@ -796,6 +797,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** and NOT when the totals are known but differ ***
 *** and \
 *** and a business question with rows DOES get the plan schema ***
+*** and a superlative over an UNRANKED source is not refused either ***
 *** and an UNRESTRAINED clarify still reports verdict_clarify ***
 *** and demands NO Answer Plan — no rows, and not a business route either ***
 *** and end to end, 「5磅是多少公斤？」 reads nothing ***
@@ -1026,6 +1028,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** over-bound text is REJECTED, never silently truncated ***
 *** precondition: a message that does not name her system supplies nothing ***
 *** preferences are marked as outranking recalled conversation ***
+*** presentedOrder reads FIRST MENTION, and ignores rows never named ***
 *** previous conversations become a readable block, newest conversation first ***
 *** priority is UTILITY → ACTION → BUSINESS_QUERY → CONVERSATION ***
 *** proper nouns keep their original spelling ***
@@ -1396,12 +1399,19 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
 *** ⛔ 1. ESTABLISHED INTERNAL + REACHABLE + clarify → NOT a terminal verifier ASK ***
+*** ⛔ 1. SUPERLATIVE + PROVEN ABSOLUTE RANKING → SHIPS, naming the proven first ***
 *** ⛔ 1b. AND THE TRAFFIC WENT THROUGH THE SHARED AUTHORITY, not a private branch ***
+*** ⛔ 2. AN ANSWER CONTRADICTING THE PROVEN ORDER DOES NOT SHIP ***
 *** ⛔ 2. ESTABLISHED INTERNAL + UNREACHABLE → no invented obligation, no read ***
+*** ⛔ 3. A PROPORTIONAL SUPERLATIVE IS REFUSED — no proportional ordering exists ***
 *** ⛔ 3. EXPLICIT public / mixed verdicts are unchanged ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
+*** ⛔ 3b. AND THE METRIC MAY NOT BE SWITCHED SILENTLY IN EITHER DIRECTION ***
 *** ⛔ 4. CONTEXT-FREE AMBIGUITY STILL CLARIFIES — the path is narrowed, not deleted ***
+*** ⛔ 4. orderPlanning: the server cut precedes the sort → no global first ***
 *** ⛔ 4b. AND A TURN THE ROUTER NEVER ESTABLISHED IS NOT RESTRAINED ***
+*** ⛔ 5. PROSE ALONE MAY NOT ASSERT A FIRST PLACE ***
+*** ⛔ 6. NON-SUPERLATIVE QUESTIONS ARE NOT THIS GATE\
 *** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
 *** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
@@ -1464,6 +1474,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
+*** ⛔ THE OWNER\
 *** ⛔ THE READING TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
@@ -1475,6 +1486,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE WORKING TURN STILL WORKS — the URL, clean ***
 *** ⛔ TURN 1 — the URL ships and NO internal-vs-public question survives ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
+*** ⛔ WIRED: a contradicting order is WITHHELD by validatePlan, not just judged ***
+*** ⛔ WIRED: an ORDINARY question is untouched — no new refusals ***
+*** ⛔ WIRED: an undeclared superlative is WITHHELD ***
 *** ⛔ ZERO ROWS FROM A HEALTHY READ IS STILL SUCCESS — the fix must not cry wolf ***
 *** ⛔ a 30-day count cannot become a source-total claim, end to end ***
 *** ⛔ a READ in the world he did NOT mean is refused before the connector ***
@@ -1528,6 +1542,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ facts[] survive a TRUNCATED source — row-local truth is not set-wide ***
 *** ⛔ intentFor is UNCHANGED — the first match, exactly as before ***
 *** ⛔ intentKeys may only ever contain KEYS from the closed intent table ***
+*** ⛔ inventory MAY assert its ranking; orderPlanning MAY NOT ***
 *** ⛔ it decides NOTHING — there is no refuse/allow in the surface ***
 *** ⛔ it does NOT run when rows were read — claim binding owns that turn ***
 *** ⛔ kind is structural — replacing the TEXT changes no verdict ***

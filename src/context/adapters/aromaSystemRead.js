@@ -228,9 +228,17 @@ const METRICS_OF = Object.freeze({
  * saying so is better than presenting whichever four rows the API happened to return
  * first, which is exactly what used to happen.
  */
+/**
+ * ⛔ `by` IS PROSE; `metric` IS THE CONTRACT.
+ *
+ * `by` was written for a human reading a log. A gate cannot compare English, so each ranking
+ * now also carries a machine name. See `src/intake/rankingProof.js` — the superlative gate
+ * matches a DECLARED metric against these, and a mismatch (a proportional claim over an
+ * absolute ordering) is refused rather than reworded.
+ */
 const RANKING_OF = Object.freeze({
-  inventory: { by: 'parLevel - currentStock desc', fn: (r) => Number(r.parLevel || 0) - Number(r.currentStock || 0) },
-  orderPlanning: { by: 'suggested_order_qty desc', fn: (r) => Number(r.suggested_order_qty || 0) },
+  inventory: { by: 'parLevel - currentStock desc', metric: 'absolute_shortfall', direction: 'desc', fn: (r) => Number(r.parLevel || 0) - Number(r.currentStock || 0) },
+  orderPlanning: { by: 'suggested_order_qty desc', metric: 'suggested_order_qty', direction: 'desc', fn: (r) => Number(r.suggested_order_qty || 0) },
   suppliers: null,
   invoices: null,
   purchaseOrders: null,
@@ -433,6 +441,26 @@ function describe (endpointKey, retrievedAt, bodyCount, shownCount, isSample, op
     // a synonym for completeWithinScope and the two answer different questions.
     completeness: isSample ? 'sample' : 'complete',
     rankedBy: rank ? rank.by : null,
+
+    // ── ⛔ THE RANKING PROOF. Machine-checkable, and deliberately NOT sourceTotal. ────
+    //
+    // `sourceTotal` is null on every endpoint and is a statement about the whole table. This
+    // is a narrower and answerable question: was the ordering applied to everything the
+    // SERVER was willing to send, or did a server-side cut happen first?
+    //
+    // ⛔ THE SORT IS CLIENT-SIDE (see the ranking block below), so it can only order what
+    // arrived. `inventory` is audited unbounded — the whole table arrives, the sort sees all
+    // of it, and an absolute-shortfall first place is therefore provable. `orderPlanning`
+    // carries a server `LIMIT 100` that is applied BEFORE this sort ever runs, so its first
+    // place is first-of-what-came-back and nothing wider.
+    //
+    // ⛔ CONSERVATIVE ON PURPOSE. A limit that did not BIND (39 rows under a cap of 100) did
+    // not actually cut anything, so that ranking may well be global — but proving it requires
+    // trusting the server's own row count as complete, which is the exact substitution that
+    // produced DEFECT-009. An endpoint that can cut is treated as one that did.
+    rankingMetric: rank ? rank.metric : null,
+    rankingDirection: rank ? rank.direction : null,
+    rankingCompleteWithinScope: !!rank && limit === null && truncated === false,
 
     // ⛔ NOT retrievedAt. When we read is not how current the data is, and nothing in the
     // response says the latter.

@@ -1245,6 +1245,50 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   if (followUp && !(sentenceIsSupported(followUp, index) && proseIsGrounded(followUp, index))) followUp = null
 
   // A directAnswer that lost every sentence cannot stand in for one.
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ THE SUPERLATIVE GATE. The machinery below was 「computed and acted on by nothing」;
+   * this is the one place a ranking claim is actually consumed before it reaches the Owner.
+   *
+   * Observed 2026-08-12, bootCommit 0bcdc2f: replies that printed 「最緊急缺貨項目」 and put
+   * Jars for Red Chili Oil (shortfall 20) ahead of Napa Cabbage (shortfall 70). Nothing
+   * stopped them, because nothing looked.
+   *
+   * ⛔ IT REORDERS NOTHING AND REWORDS NOTHING. A refused superlative is DROPPED, and the
+   * caller renders its deterministic fallback — the same direction every other validator here
+   * fails in. Rewriting the model's ranking would be inventing one.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  const { verifyRanking, VERDICT: RANK_VERDICT } = require('./rankingProof')
+  /**
+   * The rows in PROVEN order, taken from the group whose evidence carries the ranking.
+   * ⛔ Only when exactly one ranked group exists. With two, 「which ordering does this
+   * sentence report?」 has no structural answer, and guessing is how a gate produces false
+   * refusals — the claim and metric checks below still apply, only the order check is skipped.
+   */
+  const rankedEvidence = (Array.isArray(evidenceSets) ? evidenceSets : [])
+    .filter((e) => e && e.trust === 'live' && typeof e.rankingMetric === 'string' && e.rankingMetric)
+  const rankedGroup = rankedEvidence.length === 1
+    ? (Array.isArray(itemsBySource) ? itemsBySource : []).find((g) => g && g.source === rankedEvidence[0].source)
+    : null
+  const rankingCheck = verifyRanking({
+    message,
+    directAnswer,
+    evidenceSets,
+    rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
+    claims: plan.answerClaims
+  })
+  if (!rankingCheck.ok) {
+    // IDENTIFIERS ONLY, never the sentence — the same rule the rest of `drops` follows.
+    drops.push({ field: 'ranking', reason: rankingCheck.verdict })
+    if (directAnswer.trim().length > 0) droppedSentences++
+    directAnswer = ''
+    // ⛔ AN ORDERED LIST IS ITSELF THE CLAIM. When the answer's order contradicts the proof,
+    // leaving the rendered rows in place would ship the same assertion with the sentence
+    // removed — which is the defect wearing a quieter costume.
+    if (rankingCheck.verdict === RANK_VERDICT.ORDER_CONTRADICTS_PROOF) sections.length = 0
+  }
+
   const answerSurvived = directAnswer.trim().length > 0
   if (!answerSurvived) directAnswer = ''
 
