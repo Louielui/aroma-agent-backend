@@ -1420,6 +1420,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
+*** ⛔ A. WITHHOLD 「${c.name}」 STILL SHIPS A NON-EMPTY REPLY ***
+*** ⛔ A2. AND THE FLOOR IS REACHABLE FROM THIS PATH AT ALL ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
 *** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***
@@ -1428,6 +1430,11 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ AND THE TRACE ITSELF NEVER PRINTS THE TURN ***
 *** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
+*** ⛔ B1. A RANKING WITH THE CORRECT FULL SEQUENCE IS ALLOWED ***
+*** ⛔ B2. NAPA FIRST BUT THE TAIL REORDERED MUST NOT SHIP AS A RANKING ***
+*** ⛔ B3. A BARE SUPERLATIVE NEEDS FIRST PLACE ONLY — NO TAIL VALIDATION ***
+*** ⛔ B4. AN ORDINARY LIST IS NOT A RANKING CLAIM ***
+*** ⛔ B5. AND A WRONG FIRST PLACE STILL FAILS, RANKING OR NOT ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
 *** ⛔ CLASS 2 — internal context + capability UNAVAILABLE → no reads, no clarification ***

@@ -58,6 +58,24 @@ function asksForRanking (text) {
   return SUPERLATIVE_RE.test(String(text || ''))
 }
 
+/**
+ * ⛔ THE STRENGTH OF THE CLAIM DECIDES THE STRENGTH OF THE PROOF.
+ *
+ * > **Owner: a reply that only states 「Napa Cabbage 最嚴重」 needs first-place proof only and
+ * > must NOT be required to enumerate or validate the tail. A reply that presents itself as an
+ * > ordered ranking or numbered list must have the ENTIRE presented sequence respect the
+ * > proven ranking.**
+ *
+ * Detected from the ANSWER's own presentation, never from the question: an enumeration
+ * (「1. … 2. …」) or an explicit ordering word. Naming several items in a sentence is NOT a
+ * ranking — an ordinary factual list must not be forced to become one.
+ */
+const RANKING_PRESENTATION_RE = /(^|[\n\s])\d+\s*[.、)）：:]|排序|排名|由高到低|由多到少|\brank(ing|ed)\b|\btop\s*\d/i
+
+function presentsAsRanking (text) {
+  return RANKING_PRESENTATION_RE.test(String(text || ''))
+}
+
 function asksProportionally (text) {
   return PROPORTIONAL_RE.test(String(text || ''))
 }
@@ -196,9 +214,27 @@ function verifyRanking (input = {}) {
   const rows = Array.isArray(i.rankedRows) ? i.rankedRows : []
   const order = presentedOrder(i.directAnswer, rows)
   if (order.length > 0) {
-    const provenFirst = rows.find((r) => r && typeof r.title === 'string' && r.title.trim())
-    const provenTitle = provenFirst ? provenFirst.title.trim() : null
-    if (provenTitle && order[0] !== provenTitle) return out(VERDICT.ORDER_CONTRADICTS_PROOF, metric)
+    const provenTitles = rows
+      .filter((r) => r && typeof r.title === 'string' && r.title.trim())
+      .map((r) => r.title.trim())
+
+    if (presentsAsRanking(i.directAnswer)) {
+      /**
+       * ⛔ AN ENUMERATED LIST ASSERTS EVERY POSITION IN IT, so every position is checked.
+       * The proven order is restricted to the items actually named — a ranking may legitimately
+       * show the top three — and the presented sequence must equal it. Skipping an item is
+       * fine; putting one out of order is not.
+       */
+      const expected = provenTitles.filter((t) => order.includes(t))
+      if (order.length !== expected.length || order.some((t, n) => t !== expected[n])) {
+        return out(VERDICT.ORDER_CONTRADICTS_PROOF, metric)
+      }
+    } else if (provenTitles.length > 0 && order[0] !== provenTitles[0]) {
+      // ⛔ A BARE SUPERLATIVE CLAIMS ONE THING: first place. The tail is not asserted, so it
+      // is not validated — requiring otherwise would refuse honest answers for mentioning a
+      // second item.
+      return out(VERDICT.ORDER_CONTRADICTS_PROOF, metric)
+    }
   }
 
   return out(VERDICT.ALLOW, metric)
@@ -209,6 +245,7 @@ module.exports = {
   DEFAULT_SHORTAGE_METRIC,
   VERDICT,
   asksForRanking,
+  presentsAsRanking,
   asksProportionally,
   metricAskedFor,
   proofsFrom,
