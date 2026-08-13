@@ -29,8 +29,14 @@ const CLAIMS = [
   ['目前最缺的四項', CLAIM_KIND.TOP_N, 4, RANKING_METRIC.ABSOLUTE_SHORTFALL],
   ['最嚴重的三項', CLAIM_KIND.TOP_N, 3, RANKING_METRIC.ABSOLUTE_SHORTFALL],
   ['最緊急缺貨項目', CLAIM_KIND.SUPERLATIVE, null, RANKING_METRIC.ABSOLUTE_SHORTFALL],
-  ['缺貨排序', CLAIM_KIND.ORDERING, null, RANKING_METRIC.ABSOLUTE_SHORTFALL],
-  ['缺貨排名', CLAIM_KIND.ORDERING, null, RANKING_METRIC.ABSOLUTE_SHORTFALL]
+  /**
+   * ⛔ REVISED IN COMMIT C. These asserted that a bare 「排序」 claims absolute_shortfall. It does
+   * not — it asserts only that the rows are in order, whichever single proof is bound to them.
+   * Saying otherwise would refuse a legitimate 「訂貨建議排序」 over `suggested_order_qty`, and
+   * would have hidden the real hole: entitlement never compared the proof's metric at all.
+   */
+  ['缺貨排序', CLAIM_KIND.ORDERING, null, null],
+  ['缺貨排名', CLAIM_KIND.ORDERING, null, null]
 ]
 
 for (const [heading, kind, n, metric] of CLAIMS) {

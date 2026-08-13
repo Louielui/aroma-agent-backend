@@ -121,9 +121,33 @@ const LEAST_WORD_RE = /最(少|小|低)/
 const ANY_SUPERLATIVE_RE = /最[一-鿿]|\bmost\b|\bworst\b|\btop\b/i
 
 /** CJK numerals used as counts in headings. Deliberately small — 一 to 十 covers real headings. */
-const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 })
-const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十])\s*(項|個|樣|款|種)/
+const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 })
+/**
+ * ⛔ THE WHOLE NUMERAL RUN, NEVER A SUFFIX OF IT.
+ *
+ * A single-character match took the TRAILING digit: 「最缺十一項」 matched 「一項」 and became
+ * N=1, 「最缺十二項」 became N=2. That is not 「11 and 12 unsupported」 — it silently converts one
+ * count claim into a different, smaller one, so a top-12 section showing 2 items would have
+ * passed as a correct top-2. The run is now captured whole and parsed exactly; anything that
+ * does not parse is still a CLAIM and fails closed rather than becoming a number nobody wrote.
+ */
+const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十]+)\s*(項|個|樣|款|種)/
 const ARABIC_COUNT_IN_HEADING = /(\d+)\s*(項|個|樣|款|種)|\btop\s*(\d+)/i
+
+/** Exact 十-based parse for 1–99. Returns null on anything it cannot read precisely. */
+function parseCjkNumeral (run) {
+  const s = String(run || '')
+  if (!s) return null
+  if (!s.includes('十')) return s.length === 1 ? (CJK_DIGITS[s] || null) : null
+  const [head, tail, ...rest] = s.split('十')
+  if (rest.length > 0) return null // 十…十… is not a number this parser reads
+  const tens = head === '' ? 1 : (CJK_DIGITS[head] || null)
+  if (tens === null) return null
+  if (tail === '') return tens * 10
+  if (tail.length !== 1) return null
+  const ones = CJK_DIGITS[tail]
+  return ones ? tens * 10 + ones : null
+}
 
 /**
  * Classify a section heading as a ranking CLAIM.
@@ -144,21 +168,32 @@ function classifySectionHeading (heading) {
   const ordering = presentsAsRanking(h)
   if (!superlative && !ordering) return none
 
-  // ⛔ A shortage superlative claims the metric the adapter actually sorts on; any other
-  // superlative claims something unproven, and `metric: null` makes the gate refuse it.
-  const metric = shortage ? RANKING_METRIC.ABSOLUTE_SHORTFALL : (ordering && !superlative ? RANKING_METRIC.ABSOLUTE_SHORTFALL : null)
+  /**
+   * ⛔ A SUPERLATIVE ASSERTS A MEASURE; A BARE ORDERING DOES NOT.
+   *
+   * 「最缺」 says WHICH ordering it means, so the proof must be that ordering — and a proof of
+   * `suggested_order_qty` is a real proof of the WRONG thing. 「缺貨排序」 asserts only that the
+   * rows are in order, so it may use whichever single proof is bound to its own rows.
+   * `assertsMetric` is what keeps those two apart; `metric: null` alone could not.
+   */
+  const assertsMetric = superlative
+  const metric = shortage ? RANKING_METRIC.ABSOLUTE_SHORTFALL : null
 
   let n = null
+  let countUnparsed = false
   const cjk = h.match(CJK_COUNT_IN_HEADING)
-  if (cjk) n = CJK_DIGITS[cjk[1]] || null
-  if (n === null) {
+  if (cjk) {
+    n = parseCjkNumeral(cjk[1])
+    if (n === null) countUnparsed = true // a count was written and could not be read exactly
+  }
+  if (n === null && !countUnparsed) {
     const ar = h.match(ARABIC_COUNT_IN_HEADING)
     if (ar) n = Number(ar[1] || ar[3]) || null
   }
 
-  if (superlative && n !== null) return { claim: true, kind: CLAIM_KIND.TOP_N, n, metric }
-  if (superlative) return { claim: true, kind: CLAIM_KIND.SUPERLATIVE, n: null, metric }
-  return { claim: true, kind: CLAIM_KIND.ORDERING, n, metric }
+  if (superlative && (n !== null || countUnparsed)) return { claim: true, kind: CLAIM_KIND.TOP_N, n, metric, assertsMetric, countUnparsed }
+  if (superlative) return { claim: true, kind: CLAIM_KIND.SUPERLATIVE, n: null, metric, assertsMetric, countUnparsed: false }
+  return { claim: true, kind: CLAIM_KIND.ORDERING, n, metric, assertsMetric, countUnparsed }
 }
 
 function asksProportionally (text) {
@@ -265,7 +300,9 @@ const VIOLATION = Object.freeze({
   METRIC_NOT_PROVEN: 'metric_not_proven',
   RANKING_INCOMPLETE: 'ranking_incomplete',
   MEMBERSHIP_MISMATCH: 'membership_mismatch',
-  ORDER_MISMATCH: 'order_mismatch'
+  ORDER_MISMATCH: 'order_mismatch',
+  /** A count was written in the heading and could not be parsed exactly. */
+  COUNT_UNPARSED: 'count_unparsed'
 })
 
 /** What happened to a section, for the record. Counts and enums only. */
@@ -290,7 +327,16 @@ function canonicalOf (row) {
  */
 function resolveItemId (item, rowIds) {
   if (!item) return null
-  const ref = typeof item.sourceId === 'string' ? item.sourceId : null
+  const ref = item.sourceId != null ? String(item.sourceId) : null
+  if (ref && rowIds.some((r) => r.id === ref)) return ref
+  // ⛔ PRODUCTION PUSHES THE RAW sourceId, not a canonical ref — validatePlan stores the
+  // model's own string. Resolving it WITHIN the single ranked source is what makes this
+  // work at runtime; a canonical-only test proved something production never supplies.
+  if (ref) {
+    const byRaw = rowIds.filter((r) => r.raw === ref)
+    if (byRaw.length === 1) return byRaw[0].id
+    if (byRaw.length > 1) return null
+  }
   if (ref && rowIds.some((r) => r.id === ref)) return ref
   const title = typeof item.title === 'string' ? item.title.trim() : ''
   if (!title) return null
@@ -345,7 +391,7 @@ function rankingSectionViolations (input = {}) {
   // claim fails closed from that moment. Turns with no ranking claim are untouched.
 
   const out = []
-  const rowIds = rows.map((r) => ({ id: canonicalOf(r), title: (r && typeof r.title === "string") ? r.title.trim() : "" })).filter((x) => x.id)
+  const rowIds = rows.map((r) => ({ id: canonicalOf(r), raw: (r && r.sourceId != null) ? String(r.sourceId) : null, title: (r && typeof r.title === "string") ? r.title.trim() : "" })).filter((x) => x.id)
   const provenIds = rowIds.map((x) => x.id)
   // ⛔ Observability only: enum + count, never a heading, title, value or message.
   const note = typeof i.onVerdict === "function" ? i.onVerdict : null
@@ -361,7 +407,9 @@ function rankingSectionViolations (input = {}) {
     // this section fails closed, and only then are the reasons considered. Checking any
     // precondition before recognition is how the zero-source exit became a bypass.
     if (rankedSourceCount === 0) { reject(idx, VIOLATION.NO_RANKING_PROOF); return }
-    if (claim.metric === null) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
+    // ⛔ ONLY A CLAIM THAT NAMES A MEASURE CAN NAME AN UNPROVEN ONE. A bare 「排序」 asserts no
+    // measure, so `metric: null` there means 「none claimed」, not 「claimed something unprovable」.
+    if (claim.assertsMetric && claim.metric === null) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
 
     /**
      * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
@@ -370,6 +418,18 @@ function rankingSectionViolations (input = {}) {
      * section escaped validation instead of failing closed.
      */
     if (rankedSourceCount > 1) { reject(idx, VIOLATION.NO_RANKING_PROOF); return } // ambiguous attribution
+
+    /**
+     * ⛔ THE PROOF MUST BE THE ORDERING THE CLAIM NAMES. Entitlement checked only that ONE
+     * complete proof existed — never that it was the right measure. `inventory` proves
+     * absolute_shortfall and `orderPlanning` proves suggested_order_qty; both are real, so a
+     * shortage superlative could be validated against a suggested-order ordering whenever the
+     * two happened to agree. A bare 「排序」 asserts no measure and is exempt.
+     */
+    if (claim.assertsMetric && evidence && claim.metric !== evidence.rankingMetric) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
+
+    // ⛔ Blocker 4: a count that could not be read exactly must not become a different count.
+    if (claim.countUnparsed) { reject(idx, VIOLATION.COUNT_UNPARSED); return }
 
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
@@ -413,17 +473,21 @@ function rankingSectionViolations (input = {}) {
       return
     }
 
-    // ── ORDERING headings keep the existing legitimate-subsequence behaviour ──────
-    const titles = (Array.isArray(sec.items) ? sec.items : [])
-      .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
-      .filter((t) => t && proven.includes(t))
-    if (titles.length === 0) { allow(idx); return }
+    /**
+     * ── ORDERING keeps legitimate subsequences, on the SAME identity ────────────
+     * ⛔ It used to match on TITLES and ALLOW when none matched — so a section headed
+     * 「採購單排序」 listing only purchase orders matched zero proven titles and shipped on the
+     * inventory proof. One source's proof entitling another source's ranking, already ruled
+     * out for the other kinds.
+     */
+    if (claimedIds.length === 0) { allow(idx); return } // an empty section asserts nothing
+    if (claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
 
     // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
     // clearest honest answer there is — 「排序：第一位 Napa」.
-    if (titles.length < 2) { allow(idx); return }
-    const expected = proven.filter((t) => titles.includes(t))
-    if (titles.length !== expected.length || titles.some((t, n) => t !== expected[n])) reject(idx, VIOLATION.ORDER_MISMATCH)
+    if (claimedIds.length < 2) { allow(idx); return }
+    const expected = provenIds.filter((id) => claimedIds.includes(id))
+    if (claimedIds.length !== expected.length || claimedIds.some((id, n) => id !== expected[n])) reject(idx, VIOLATION.ORDER_MISMATCH)
     else allow(idx)
   })
   return out

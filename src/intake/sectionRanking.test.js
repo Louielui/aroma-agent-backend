@@ -230,8 +230,10 @@ test('*** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORD
 
 /* ═══ THE BOUNDARY, AT MODULE LEVEL ══════════════════════════════════════ */
 
-const SEC = (heading, titles) => ({ heading, items: titles.map((t) => ({ title: t })) })
-const ROWS = RANKED.map((r) => ({ title: r.title }))
+// ⛔ PRODUCTION SHAPE: validatePlan pushes { sourceId, title, facts } with the RAW sourceId,
+// so fixtures must too — a fixture the runtime never supplies proves nothing (task 001 C).
+const SEC = (heading, titles) => ({ heading, items: titles.map((t) => ({ sourceId: BY_TITLE.get(t).id, title: t })) })
+const ROWS = RANKED.map((r) => ({ source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: r.id, title: r.title }))
 
 /**
  * ⛔ ENTITLEMENT IS PART OF THE INPUT NOW. A section gate that sees only the order can say a

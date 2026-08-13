@@ -1592,6 +1592,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    * beside it is untouched, because removing evidence the Owner is entitled to would be a new
    * defect rather than a fix.
    */
+  const rankingVerdicts = []
   const badRankingSections = rankingSectionViolations({
     sections,
     rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
@@ -1602,7 +1603,19 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      * through the empty-rows path.
      */
     rankingEvidence: rankedEvidence.length === 1 ? rankedEvidence[0] : null,
-    rankedSourceCount: rankedEvidence.length
+    rankedSourceCount: rankedEvidence.length,
+    /**
+     * ⛔ THE VERDICT HAS TO REACH THE LOG, OR IT IS NOT OBSERVABILITY.
+     *
+     * `onVerdict` existed and production never supplied it, so every section rejection was
+     * recorded as `order_contradicts_proof` whatever the true cause. That is the third time
+     * this project has shipped a mechanism the real path never called — `artifactStore`
+     * undefined in assembly, and the claim-binding block this file itself described as
+     * 「computed, returned, and acted on by nothing」.
+     *
+     * Enum and count only: status, a closed reason, and how many ranked sources the turn had.
+     */
+    onVerdict: (v) => { if (v && v.status !== 'not_detected') rankingVerdicts.push(v) }
   })
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {
@@ -1612,7 +1625,12 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
       keptItemCount -= lost
     }
     // IDENTIFIERS ONLY — never the heading, never a row value.
-    drops.push({ field: 'ranking_section', why: RANK_VERDICT.ORDER_CONTRADICTS_PROOF })
+    // ⛔ THE REAL REASON, not a constant. Each rejected section reports its own closed
+    // verdict; `length` carries rankedSourceCount, a plain count the serializer already ships.
+    for (const v of rankingVerdicts) {
+      if (v.status !== 'evaluated_rejected') continue
+      drops.push({ kind: 'ranking_section', field: 'ranking_section', why: v.reason, shape: v.status, length: v.rankedSourceCount })
+    }
   }
 
   const answerSurvived = directAnswer.trim().length > 0

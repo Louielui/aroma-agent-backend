@@ -231,6 +231,9 @@ const FILE_CLASS = Object.freeze({
   'lab/citationDetector.js': CLASS.MATCHING,          //   1
   'lab/conversationRecall.js': CLASS.MATCHING,        //   1
   'intake/routeEvidenceGuard.js': CLASS.MATCHING,     //   1
+  // ⛔ The characters ARE the guard: 「最缺」/「排序」/「十」 detect a ranking CLAIM and parse its
+  // count. Translating any of them would delete the detection silently — the MATCHING shape.
+  'intake/rankingProof.js': CLASS.MATCHING,           //   the section-claim classifier
   'browse/browseIntent.js': CLASS.MATCHING,           //   4 — the whole file IS the guard: the
   //                                                          browse verbs (查/睇下), the web
   //                                                          markers (網站/官網), the PURCHASE

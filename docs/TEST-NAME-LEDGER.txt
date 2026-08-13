@@ -162,9 +162,21 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** C — the SAME source at the SAME speed dies without the declaration ***
 *** C — uncited model prose is discarded, however confident it sounds ***
 *** C1 — under id collision, BOTH operations\
+*** C1. ⛔ THE REAL LOG DISTINGUISHES EVERY VERDICT — not one constant ***
+*** C1b. ⛔ THE LOGGED DROP CARRIES ENUM AND COUNT ONLY — no content ***
 *** C2 — the view just read is declared READ, not left looking unavailable ***
 *** C2 — two operations sharing a sourceId ARE citable as distinct entities ***
+*** C2. ⛔ A SHORTAGE SUPERLATIVE MAY NOT USE A suggested_order_qty PROOF ***
+*** C2b. AND A BARE 「排序」 MAY STILL USE THAT PROOF — it names no measure ***
+*** C2c. and the matching proof still passes ***
 *** C3 — FORMERLY A LIMITATION PIN: a shared sourceId no longer mis-attributes ***
+*** C3. ⛔ DUPLICATE TITLES, DIFFERENT RAW IDS — A CORRECT TOP-N STILL PASSES ***
+*** C3b. ⛔ AN ITEM FROM ANOTHER SOURCE FAILS THE CLAIM CLOSED ***
+*** C3c. ⛔ ORDERING NO LONGER SHIPS ON ZERO MATCHES — the borrowed-proof bypass ***
+*** C3d. and an ORDERING subsequence of its OWN rows still passes ***
+*** C4. ⛔ 「十一項」 AND 「十二項」 PARSE WHOLE, NEVER AS 1 AND 2 ***
+*** C4b. ⛔ A TOP-12 CLAIM SHOWING 2 ITEMS IS REFUSED, NOT READ AS TOP-2 ***
+*** C4c. ⛔ AN UNREADABLE COUNT IS A CLAIM AND FAILS CLOSED ***
 *** CHAT lane projection is frozen ***
 *** CLASS 3 — an explicitly PUBLIC question takes the public path, untouched ***
 *** COMMIT / proposal lane projection is frozen ***
