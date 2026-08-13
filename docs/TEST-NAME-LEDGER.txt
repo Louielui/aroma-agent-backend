@@ -578,6 +578,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a completed turn is appended and survives a reload ***
 *** a concept the EvidenceSet does not assert is never suppressed ***
 *** a conversation that SPANS the change still matches across spellings ***
+*** a correct SUBSEQUENCE is a legitimate ranking — a top-2 need not carry the tail ***
 *** a corrupt line is skipped; the rest of the memory survives ***
 *** a date is not a subtraction ***
 *** a decimal is NOT treated as a separated-digit sequence ***
@@ -684,6 +685,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a short reply NEVER escalates — not into proposal, never into execution ***
 *** a short reply continues the previous turn instead of arriving as fresh input ***
 *** a short reply still creates NOTHING — no decision, task, proposal or dispatch ***
+*** a single-item ranking section cannot be out of order ***
 *** a source named in a DIFFERENT clause does not anchor the claim ***
 *** a source read but NOT live cannot carry a binding ***
 *** a source that was NOT ASKED is distinguishable from one that is empty ***
@@ -1018,6 +1020,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** only ITEM lines become needles — our own header never does ***
 *** only a VALIDATED lesson may be applied ***
 *** only exact values are honoured — three states, no near misses ***
+*** only the OFFENDING section is dropped, not its neighbour ***
 *** only the parts the Owner filled in appear ***
 *** operation names are unique ***
 *** optionality is expressed as a NULL UNION, never by omission ***
@@ -1392,18 +1395,22 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** with TURN_ROUTER off, a clock question behaves exactly as before ***
 *** with no choices left, nextRead collapses to null-only and takes args with it ***
 *** with no key the adapter is not ready and refuses cleanly ***
+*** with no ranked rows there is nothing to contradict ***
 *** with nothing asked and nothing read, there is no block at all ***
 *** with nothing left to read, nextRead is NULL-ONLY — never an empty enum ***
 *** with nothing said before, the scope note is KEPT ***
 *** with the demo flag off, every conversation route is 403 ***
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
+*** ⛔ 1. A 「缺貨項目排序」 SECTION IN THE WRONG ORDER MUST NOT SHIP ***
 *** ⛔ 1. ESTABLISHED INTERNAL + REACHABLE + clarify → NOT a terminal verifier ASK ***
 *** ⛔ 1. SUPERLATIVE + PROVEN ABSOLUTE RANKING → SHIPS, naming the proven first ***
 *** ⛔ 1b. AND THE TRAFFIC WENT THROUGH THE SHARED AUTHORITY, not a private branch ***
 *** ⛔ 2. AN ANSWER CONTRADICTING THE PROVEN ORDER DOES NOT SHIP ***
 *** ⛔ 2. ESTABLISHED INTERNAL + UNREACHABLE → no invented obligation, no read ***
+*** ⛔ 2. THE SAME SECTION IN THE PROVEN ORDER IS ALLOWED ***
 *** ⛔ 3. A PROPORTIONAL SUPERLATIVE IS REFUSED — no proportional ordering exists ***
+*** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORDER ***
 *** ⛔ 3. EXPLICIT public / mixed verdicts are unchanged ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
 *** ⛔ 3b. AND THE METRIC MAY NOT BE SWITCHED SILENTLY IN EITHER DIRECTION ***
@@ -1536,6 +1543,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ an unreadable store is LOUD — corruption is never read as "nothing learned" ***
 *** ⛔ and no logger interpolates a secret ***
 *** ⛔ body.count is never called matchingTotal before it has been qualified ***
+*** ⛔ but a REORDERED subsequence is not ***
 *** ⛔ candidate, rejected and superseded NEVER appear ***
 *** ⛔ clicking Save after a failed read sends NOTHING ***
 *** ⛔ complete WITHIN SCOPE does not support a SOURCE-WIDE universal claim ***

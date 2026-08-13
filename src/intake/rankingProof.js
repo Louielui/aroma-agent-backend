@@ -151,6 +151,49 @@ function presentedOrder (text, rows) {
 }
 
 /**
+ * ⛔ A SECTION CAN ASSERT AN ORDERING, AND NOTHING USED TO LOOK AT ONE.
+ *
+ * MEASURED LIVE on `main@befaed0`, 5 fresh conversations: one turn shipped a section headed
+ * 「缺貨項目排序」 whose items ran Jars 20 → Napa 70 → New Orleans 39 → Dark Soy 37, against a
+ * proven order of Napa → New Orleans → Dark Soy → Jars. The sentence gate had already fired on
+ * that turn and emptied `directAnswer` — and the section sailed past it, because
+ * `answerPlan.js:1274` handed this module `directAnswer` and nothing else.
+ *
+ * ⛔ THE HEADING IS THE CLAIM. A section called 「缺貨項目排序」 asserts an order; one called
+ * 「缺貨狀況」 or 「現有庫存」 asserts a set. The SAME detector as the prose path decides which,
+ * so the two can never drift apart — and a superlative QUESTION does not make an ordinary
+ * section into a ranking.
+ *
+ * ⛔ A CORRECT SUBSEQUENCE IS NOT A VIOLATION. A top-2 or top-3 is a legitimate ranking; only
+ * items out of their proven relative order are refused.
+ *
+ * @returns {number[]} indices of sections whose declared ordering contradicts the proof
+ */
+function rankingSectionViolations (input = {}) {
+  const i = input || {}
+  const rows = Array.isArray(i.rankedRows) ? i.rankedRows : []
+  const proven = rows
+    .filter((r) => r && typeof r.title === 'string' && r.title.trim())
+    .map((r) => r.title.trim())
+  if (proven.length === 0) return []
+
+  const out = []
+  const list = Array.isArray(i.sections) ? i.sections : []
+  list.forEach((sec, idx) => {
+    if (!sec || !presentsAsRanking(sec.heading)) return
+    const titles = (Array.isArray(sec.items) ? sec.items : [])
+      .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
+      .filter((t) => t && proven.includes(t))
+    // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
+    // clearest honest answer there is — 「排序：第一位 Napa」.
+    if (titles.length < 2) return
+    const expected = proven.filter((t) => titles.includes(t))
+    if (titles.length !== expected.length || titles.some((t, n) => t !== expected[n])) out.push(idx)
+  })
+  return out
+}
+
+/**
  * Verify a superlative before it ships.
  *
  * @param {object} input
@@ -251,5 +294,6 @@ module.exports = {
   proofsFrom,
   provenFor,
   presentedOrder,
+  rankingSectionViolations,
   verifyRanking
 }

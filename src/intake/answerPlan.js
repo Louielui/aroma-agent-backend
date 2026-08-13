@@ -1259,7 +1259,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    * fails in. Rewriting the model's ranking would be inventing one.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  const { verifyRanking, VERDICT: RANK_VERDICT } = require('./rankingProof')
+  const { verifyRanking, rankingSectionViolations, VERDICT: RANK_VERDICT } = require('./rankingProof')
   /**
    * The rows in PROVEN order, taken from the group whose evidence carries the ranking.
    * ⛔ Only when exactly one ranked group exists. With two, 「which ordering does this
@@ -1287,6 +1287,34 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     // leaving the rendered rows in place would ship the same assertion with the sentence
     // removed — which is the defect wearing a quieter costume.
     if (rankingCheck.verdict === RANK_VERDICT.ORDER_CONTRADICTS_PROOF) sections.length = 0
+  }
+
+  /**
+   * ⛔ AND A SECTION ASSERTS AN ORDER TOO — THE HOLE THE LIVE TURN WENT THROUGH.
+   *
+   * Measured on `main@befaed0`: the sentence gate above fired, emptied `directAnswer`, and a
+   * section headed 「缺貨項目排序」 still shipped with Jars (20) above Napa (70). It was never
+   * examined, because only `directAnswer` was ever handed to the gate.
+   *
+   * ⛔ RUN INDEPENDENTLY OF THE SENTENCE VERDICT. A heading is its own claim: it can be wrong
+   * on a turn whose sentence was fine, and — as the live turn proved — on a turn whose
+   * sentence was already withheld. Only the offending SECTION is dropped; a correct section
+   * beside it is untouched, because removing evidence the Owner is entitled to would be a new
+   * defect rather than a fix.
+   */
+  const badRankingSections = rankingSectionViolations({
+    sections,
+    rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : []
+  })
+  if (badRankingSections.length > 0) {
+    for (let n = badRankingSections.length - 1; n >= 0; n--) {
+      const removed = sections.splice(badRankingSections[n], 1)[0]
+      const lost = (removed && Array.isArray(removed.items)) ? removed.items.length : 0
+      droppedItems += lost
+      keptItemCount -= lost
+    }
+    // IDENTIFIERS ONLY — never the heading, never a row value.
+    drops.push({ field: 'ranking_section', reason: RANK_VERDICT.ORDER_CONTRADICTS_PROOF })
   }
 
   const answerSurvived = directAnswer.trim().length > 0
