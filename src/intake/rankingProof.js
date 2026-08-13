@@ -177,6 +177,21 @@ function rankingSectionViolations (input = {}) {
     .map((r) => r.title.trim())
   if (proven.length === 0) return []
 
+  /**
+   * ⛔ ENTITLEMENT BEFORE ORDER, AND THIS WAS THE GAP.
+   *
+   * The first cut of this function judged only whether the sequence was RIGHT — never whether
+   * the ranking was entitled to be claimed at all. So a section headed 「訂貨建議排名」 over
+   * `orderPlanning`, whose few items happened to sit in correct relative order, would have
+   * shipped: the server cuts that endpoint at LIMIT 100 BEFORE the client sorts, so its first
+   * place is first-of-what-arrived and nothing wider. `directAnswer` was already refused for
+   * exactly that (VERDICT.RANKING_INCOMPLETE) while the section walked past — which is the
+   * same defect as the live one, one layer along.
+   *
+   * A section is a claim, so it carries the same strength of proof as a sentence.
+   */
+  const anyProofComplete = proofsFrom(i.evidenceSets).some((p) => p.complete === true)
+
   const out = []
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
@@ -184,6 +199,12 @@ function rankingSectionViolations (input = {}) {
     const titles = (Array.isArray(sec.items) ? sec.items : [])
       .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
       .filter((t) => t && proven.includes(t))
+    if (titles.length === 0) return
+
+    // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
+    // unprovable ordering is a coincidence, not a proof.
+    if (!anyProofComplete) { out.push(idx); return }
+
     // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
     // clearest honest answer there is — 「排序：第一位 Napa」.
     if (titles.length < 2) return

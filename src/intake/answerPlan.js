@@ -1304,7 +1304,11 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    */
   const badRankingSections = rankingSectionViolations({
     sections,
-    rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : []
+    rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
+    // ⛔ THE ENTITLEMENT, NOT JUST THE ORDER. Without this the gate can say a sequence is
+    // correct but not whether the ordering was ever provable — and `orderPlanning` is cut at
+    // 100 by the server before it is sorted.
+    evidenceSets
   })
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {

@@ -208,7 +208,23 @@ test('*** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORD
 
 const SEC = (heading, titles) => ({ heading, items: titles.map((t) => ({ title: t })) })
 const ROWS = RANKED.map((r) => ({ title: r.title }))
-const bad = (sections) => rankingSectionViolations({ sections, rankedRows: ROWS })
+
+/**
+ * ⛔ ENTITLEMENT IS PART OF THE INPUT NOW. A section gate that sees only the order can say a
+ * sequence is right but not whether the ordering was ever provable — see PROOF_INCOMPLETE.
+ */
+const PROOF_COMPLETE = [{
+  source: 'aroma_system', endpoint: 'inventory', trust: 'live',
+  rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingCompleteWithinScope: true
+}]
+/** `orderPlanning`: server LIMIT 100 applied BEFORE the client sort. */
+const PROOF_INCOMPLETE = [{
+  source: 'aroma_system', endpoint: 'orderPlanning', trust: 'live',
+  rankingMetric: RANKING_METRIC.SUGGESTED_ORDER_QTY, rankingCompleteWithinScope: false
+}]
+
+const bad = (sections, evidenceSets = PROOF_COMPLETE) =>
+  rankingSectionViolations({ sections, rankedRows: ROWS, evidenceSets })
 
 test('*** a correct SUBSEQUENCE is a legitimate ranking — a top-2 need not carry the tail ***', () => {
   assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])]), [], 'top-2')
@@ -232,4 +248,77 @@ test('*** only the OFFENDING section is dropped, not its neighbour ***', () => {
 
 test('*** with no ranked rows there is nothing to contradict ***', () => {
   assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [JARS, NAPA])], rankedRows: [] }), [])
+})
+
+/* ═══ ENTITLEMENT — THE PROOF MUST BE COMPLETE, NOT MERELY CORRECT ═══════ */
+
+test('*** ⛔ AN INCOMPLETE RANKING IS REFUSED EVEN WHEN THE ORDER IS RIGHT ***', () => {
+  // ⛔ Identical section, identical (correct) order. Only the entitlement differs, so the
+  // entitlement is the only thing that can be doing the work here.
+  const section = [SEC('訂貨建議排名', [NAPA, NOLA, SOY])]
+  assert.deepEqual(bad(section, PROOF_COMPLETE), [], 'proven ranking, correct order → allowed')
+  assert.deepEqual(bad(section, PROOF_INCOMPLETE), [0],
+    '⛔ a ranking the server cut before sorting shipped because its order happened to be right')
+})
+
+test('*** ⛔ and a SINGLE-ITEM ranking section is refused when unproven ***', () => {
+  // Order cannot be wrong with one item, so only entitlement can refuse it — and it must,
+  // because 「排名第一」 over an unprovable ordering is still a first-place claim.
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA])], PROOF_COMPLETE), [])
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA])], PROOF_INCOMPLETE), [0])
+})
+
+test('*** an ORDINARY section is untouched by entitlement ***', () => {
+  assert.deepEqual(bad([SEC('缺貨狀況', [JARS, NAPA, SOY])], PROOF_INCOMPLETE), [],
+    '⛔ entitlement must not turn a non-ranking section into a violation')
+})
+
+test('*** absent evidence is not entitlement — fails closed ***', () => {
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [NAPA, NOLA])], rankedRows: ROWS }), [0],
+    '⛔ a missing descriptor must not read as a proven ranking')
+})
+
+/* ═══ ⛔ THE LIVE-SHAPED ENTITLEMENT REGRESSION ══════════════════════════ */
+
+/** Same rows, same shape — but the descriptor says the sort did NOT see everything. */
+function incompleteRankingConnector () {
+  const base = rankedConnector()
+  return {
+    connector: {
+      async read (source) {
+        const out = await base.connector.read(source)
+        out.evidence.endpoint = 'orderPlanning'
+        out.evidence.rankingMetric = RANKING_METRIC.SUGGESTED_ORDER_QTY
+        // The server cut at LIMIT 100 before the client sorted.
+        out.evidence.rankingCompleteWithinScope = false
+        out.evidence.limit = 100
+        out.evidence.truncated = null
+        return out
+      }
+    }
+  }
+}
+
+test('*** ⛔ LIVE: AN UNPROVEN RANKING SECTION IN CORRECT ORDER STILL MUST NOT SHIP ***', async () => {
+  await withEnv({}, async () => {
+    const out = await run(ASK, scriptedAdapter([
+      // ⛔ CORRECT relative order. Only the entitlement is missing, so only the entitlement
+      // check can refuse it — and it must, or the class we just closed reopens.
+      READ, SECTION_PLAN('訂貨建議排名', [NAPA, NOLA, SOY, JARS], '')
+    ]), incompleteRankingConnector())
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.deepEqual(shippedOrder(reply), [],
+      '⛔ an unprovable ranking shipped because its order happened to be right: ' + JSON.stringify(reply))
+    assert.ok(reply.trim().length > 0, '⛔ SILENCE — shipped: ' + JSON.stringify(reply))
+  })
+})
+
+test('*** ⛔ LIVE: and an ORDINARY section over the same unproven source still ships ***', async () => {
+  await withEnv({}, async () => {
+    const out = await run(ASK, scriptedAdapter([
+      READ, SECTION_PLAN('缺貨狀況', [JARS, NAPA, NOLA, SOY], '')
+    ]), incompleteRankingConnector())
+    assert.deepEqual(shippedOrder(out && out.reply), [JARS, NAPA, NOLA, SOY],
+      '⛔ entitlement leaked onto a non-ranking section')
+  })
 })
