@@ -625,7 +625,7 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
    */
   const derived = []
   const derivSpecs = derivationMap(evidenceSets)
-  for (const row of byId.values()) {
+  for (const [canonical, row] of byId.entries()) {
     const specs = derivSpecs.get(row && row.source)
     if (!specs) continue
     const title = (row && typeof row.title === 'string') ? row.title.trim() : ''
@@ -633,7 +633,10 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     for (const [label, spec] of specs) {
       const value = computeDerivation(spec, row)
       if (value === null) continue // both inputs must be present and numeric on THIS row
-      derived.push({ title, label, value })
+      // ⛔ THE CANONICAL REF TRAVELS WITH THE VALUE. A title is a display string and two
+      // distinct rows may share one; `readKey#sourceId` is what identifies a row here and
+      // everywhere else in this file.
+      derived.push({ canonical, title, label, value })
     }
   }
 
@@ -1072,6 +1075,21 @@ const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項
 const NUMERIC_TOKEN_RE = /\d+(?:[.,]\d+)*/g
 
 /**
+ * ⛔ THE CONSUMER READS THE SIGN; THE VALIDATOR DELIBERATELY DOES NOT.
+ *
+ * `NUMERIC_TOKEN_RE` has no sign, so against a server value of 70 the prose 「缺口 -70」 was
+ * tokenised as `70`, consumed, and left a bare `-` — a figure of the OPPOSITE sign validated
+ * as true. The consumer therefore matches the sign as part of the token and compares the whole
+ * signed token, so `-70` is simply not equal to `70` and nothing is consumed.
+ *
+ * ⛔ AND THE VALIDATOR'S GRAMMAR IS NOT TOUCHED. Widening the shared constant would change
+ * RAW number grounding for every sentence in the system — prose 「-70」 against a row carrying
+ * 70 currently passes, and altering that is a different decision from this one. Only what may
+ * be CONSUMED as a declared derivation is tightened here.
+ */
+const SIGNED_TOKEN_RE = /-?\d+(?:[.,]\d+)*/g
+
+/**
  * ⛔ CONSUME A DECLARED DERIVATION, AND ONLY WHERE ALL THREE PARTS ARE PRESENT.
  *
  * Mirrors `consumeVerifiedMoments`: a value the server itself computed is removed from the
@@ -1111,13 +1129,19 @@ function consumeVerifiedDerivations (sentence, index) {
    * ambiguous and the derived number falls through to the ordinary rejection. Zero titles has
    * nothing to bind to. Neither is a silent pass — both end in the normal `number_not_in_evidence`.
    */
-  const titles = new Set()
-  for (const d of list) if (sentence.includes(d.title)) titles.add(d.title)
-  if (titles.size !== 1) return sentence
+  /**
+   * ⛔ ONE TITLE IS NOT ONE ROW. The first version counted distinct TITLE STRINGS, but `byId`
+   * permits two distinct canonical rows to carry the same title — two `Napa Cabbage` rows
+   * collapse to one string, and either row's derived value could then be authorised. Evidence
+   * identity everywhere else in this file keys on `readKey#sourceId`; this now does too, and
+   * a duplicate title fails closed rather than picking first, last, or by source.
+   */
+  const named = list.filter((d) => sentence.includes(d.title))
+  const rows = new Set(named.map((d) => d.canonical))
+  if (rows.size !== 1) return sentence
 
-  const [only] = titles
   const values = new Set(
-    list.filter((d) => d.title === only && sentence.includes(d.label)).map((d) => String(d.value))
+    named.filter((d) => sentence.includes(d.label)).map((d) => String(d.value))
   )
   if (values.size === 0) return sentence
 
@@ -1133,7 +1157,7 @@ function consumeVerifiedDerivations (sentence, index) {
    * token is compared. `70.5` and `70,000` are single tokens that are not equal to `70`, so
    * neither is consumed and both are rejected downstream as before.
    */
-  return sentence.replace(NUMERIC_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok)
+  return sentence.replace(SIGNED_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok)
 }
 
 function sentenceIsSupported (sentence, index) {

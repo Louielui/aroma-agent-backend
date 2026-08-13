@@ -296,3 +296,72 @@ test('*** ⛔ B2d. AND A GENUINELY DECIMAL DERIVATION IS STILL ACCEPTED WHOLE **
   const r = validatePlan(PLAN(`${NAPA} 缺口 70.5。`), { evidenceSets: EVIDENCE(), itemsBySource: items, message: NEUTRAL })
   assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70.5。`, '⛔ a real decimal derivation was refused')
 })
+
+/* ═══ ⛔ BLOCKER 3 — ONE TITLE IS NOT ONE ROW ═══════════════════════════ */
+
+/** Two DISTINCT canonical rows carrying the SAME title, with different derived values. */
+const DUP_ROWS = [
+  { source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: '1', title: NAPA, entityType: 'inventory_item', content: 'a', fields: { id: '1', parLevel: '100', currentStock: '30' }, trust: 'live' },
+  { source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: '9', title: NAPA, entityType: 'inventory_item', content: 'b', fields: { id: '9', parLevel: '50', currentStock: '30' }, trust: 'live' }
+]
+const DUP_CTX = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: DUP_ROWS }], message: NEUTRAL }
+
+test('*** ⛔ B3. TWO CANONICAL ROWS SHARING A TITLE — NEITHER VALUE IS BORROWABLE ***', () => {
+  // Row 1 derives 70, row 9 derives 20. The title alone cannot say which row the prose means.
+  for (const v of ['70', '20']) {
+    const r = validatePlan(PLAN(`${NAPA} 缺口 ${v}。`), DUP_CTX)
+    assert.equal(r.plan.directAnswer, '', `⛔ a duplicate-title row authorised ${v}`)
+    assert.deepEqual(whys(r), ['number_not_in_evidence'])
+  }
+})
+
+test('*** ⛔ B3b. ONE CANONICAL ROW STILL PASSES — identity narrows, it does not delete ***', () => {
+  const one = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: [DUP_ROWS[0]] }], message: NEUTRAL }
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70。`), one)
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70。`)
+  assert.deepEqual(whys(r), [])
+})
+
+/* ═══ ⛔ BLOCKER 4 — THE SIGN IS PART OF THE CLAIM ══════════════════════ */
+
+test('*** ⛔ B4. DERIVED 70 MUST NOT VALIDATE PROSE -70 ***', () => {
+  // ⛔ The trap: an unsigned token grammar consumes the `70` and leaves a bare `-`, so the
+  // sentence validates with nothing left to check and the opposite sign ships as true.
+  const r = validatePlan(PLAN(`${NAPA} 缺口 -70。`), ctx())
+  assert.equal(r.plan.directAnswer, '', '⛔ a sign-flipped figure was validated')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+/** par 25 − stock 30 = -5. A genuine negative derivation. */
+const NEG_ROWS = [{ source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: '1', title: NAPA, entityType: 'inventory_item', content: 'a', fields: { id: '1', parLevel: '25', currentStock: '30' }, trust: 'live' }]
+const NEG_CTX = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: NEG_ROWS }], message: NEUTRAL }
+
+test('*** ⛔ B4b. DERIVED -5 VALIDATES PROSE -5 ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 -5。`), NEG_CTX)
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 -5。`, '⛔ a genuine negative derivation was refused')
+  assert.deepEqual(whys(r), [])
+})
+
+test('*** ⛔ B4c. DERIVED -5 DOES NOT VALIDATE PROSE 5 ***', () => {
+  // 5 appears in no raw field on this row (25 and 30 are whole tokens), so it is not
+  // independently supported either.
+  const r = validatePlan(PLAN(`${NAPA} 缺口 5。`), NEG_CTX)
+  assert.equal(r.plan.directAnswer, '', '⛔ the sign was dropped from the claim')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B4d. AND AN INDEPENDENTLY SUPPORTED 5 IS STILL ALLOWED ***', () => {
+  // Same negative derivation, but this row genuinely carries a raw 5 — that claim is about a
+  // real field and raw grounding is unchanged by this repair.
+  const rows = [Object.assign({}, NEG_ROWS[0], { fields: { id: '1', parLevel: '25', currentStock: '30', pack: '5' } })]
+  const c = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: rows }], message: NEUTRAL }
+  const r = validatePlan(PLAN(`${NAPA} 每箱 5。`), c)
+  assert.equal(r.plan.directAnswer, `${NAPA} 每箱 5。`, 'raw grounding is untouched')
+})
+
+test('*** ⛔ B4e. THE 70.5 / 70,000 / 700 PROTECTIONS SURVIVE THE SIGNED GRAMMAR ***', () => {
+  for (const bad of ['70.5', '70,000', '700']) {
+    const r = validatePlan(PLAN(`${NAPA} 缺口 ${bad}。`), ctx())
+    assert.equal(r.plan.directAnswer, '', '⛔ regression on ' + bad)
+  }
+})

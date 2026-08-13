@@ -1463,7 +1463,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ B2c. 「70,000」 CANNOT BE VALIDATED BY A DERIVED 70 ***
 *** ⛔ B2d. AND A GENUINELY DECIMAL DERIVATION IS STILL ACCEPTED WHOLE ***
 *** ⛔ B3. A BARE SUPERLATIVE NEEDS FIRST PLACE ONLY — NO TAIL VALIDATION ***
+*** ⛔ B3. TWO CANONICAL ROWS SHARING A TITLE — NEITHER VALUE IS BORROWABLE ***
+*** ⛔ B3b. ONE CANONICAL ROW STILL PASSES — identity narrows, it does not delete ***
 *** ⛔ B4. AN ORDINARY LIST IS NOT A RANKING CLAIM ***
+*** ⛔ B4. DERIVED 70 MUST NOT VALIDATE PROSE -70 ***
+*** ⛔ B4b. DERIVED -5 VALIDATES PROSE -5 ***
+*** ⛔ B4c. DERIVED -5 DOES NOT VALIDATE PROSE 5 ***
+*** ⛔ B4d. AND AN INDEPENDENTLY SUPPORTED 5 IS STILL ALLOWED ***
+*** ⛔ B4e. THE 70.5 / 70,000 / 700 PROTECTIONS SURVIVE THE SIGNED GRAMMAR ***
 *** ⛔ B5. AND A WRONG FIRST PLACE STILL FAILS, RANKING OR NOT ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
