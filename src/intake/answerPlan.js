@@ -1108,9 +1108,9 @@ const SIGNED_TOKEN_RE = /-?\d+(?:[.,]\d+)*/g
  * `presentedOrder` carries, and the same reason: guessing at attribution inside prose is not
  * something this layer can do honestly.
  */
-function consumeVerifiedDerivations (sentence, index) {
+function applyDerivations (sentence, index) {
   const list = (index && Array.isArray(index.derived)) ? index.derived : []
-  if (list.length === 0) return sentence
+  if (list.length === 0) return { text: sentence, refuse: null, labelSeen: false }
 
   /**
    * ⛔ BLOCKER 1 — CO-OCCURRENCE IS NOT ATTRIBUTION, AND FAILING CLOSED IS THE ONLY HONEST
@@ -1169,6 +1169,8 @@ function consumeVerifiedDerivations (sentence, index) {
    * verified derivation.
    */
   const labels = new Set(list.map((d) => d.label))
+  // Identifier-level only: WHETHER a declared label appeared, never which one.
+  const labelSeen = [...labels].some((l) => sentence.includes(l))
   const claims = []
   for (const label of labels) {
     const at = sentence.indexOf(label)
@@ -1178,22 +1180,22 @@ function consumeVerifiedDerivations (sentence, index) {
   }
 
   // No declared label carries a number: nothing is claimed under a derivation, nothing to check.
-  if (claims.length === 0) return sentence
+  if (claims.length === 0) return { text: sentence, refuse: null, labelSeen }
 
   // ⛔ A CLAIM WE CANNOT VALIDATE IS REFUSED, NOT WAVED THROUGH. Zero or several candidate rows
   // means no server value exists to compare against — and falling through would re-open the
   // very laundering this rule closes.
-  if (rows.size !== 1) return null
+  if (rows.size !== 1) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_NO_ONE_ROW, labelSeen }
 
   const expected = new Map(named.map((d) => [d.label, String(d.value)]))
   for (const c of claims) {
-    if (expected.get(c.label) !== c.token) return null // contradicts the server's own arithmetic
+    if (expected.get(c.label) !== c.token) return { text: sentence, refuse: GROUNDING_SHAPE.DERIVED_WRONG_VALUE, labelSeen }
   }
 
   const values = new Set(
     named.filter((d) => sentence.includes(d.label)).map((d) => String(d.value))
   )
-  if (values.size === 0) return sentence
+  if (values.size === 0) return { text: sentence, refuse: null, labelSeen }
 
   /**
    * ⛔ BLOCKER 2 — A WHOLE NUMERIC TOKEN, NEVER A PREFIX.
@@ -1207,27 +1209,77 @@ function consumeVerifiedDerivations (sentence, index) {
    * token is compared. `70.5` and `70,000` are single tokens that are not equal to `70`, so
    * neither is consumed and both are rejected downstream as before.
    */
-  return sentence.replace(SIGNED_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok)
+  return { text: sentence.replace(SIGNED_TOKEN_RE, (tok) => values.has(tok.replace(/,/g, '')) ? ' ' : tok), refuse: null, labelSeen }
 }
 
-function sentenceIsSupported (sentence, index) {
+/**
+ * ⛔ WHICH NUMERIC FAILURE, WITHOUT SAYING WHICH NUMBER.
+ *
+ * MEASURED, requestId 01b900ee-9c7f-4753-b241-d2fb1912430a on bootCommit dfd556b: the derived
+ * repair shipped and `number_not_in_evidence` was STILL first in the drop array. The
+ * live-shaped test had scripted one very clean sentence — 「Napa Cabbage … 缺口 70。」 — and so
+ * proved that the canonical SHAPE passes, not that the model writes it.
+ *
+ * Every distinct failure inside this check has always collapsed to one word, so the log cannot
+ * say which. ⛔ AND IT MUST NOT BE GUESSED: a percentage, two rows in one sentence, a label
+ * that did not match, a numeral written before its label, or an ordinary unsupported number
+ * are five different repairs, and a plausible inference has been wrong six times this week.
+ *
+ * ⛔ NAMES ARE ≤ 20 CHARACTERS ON PURPOSE. They ride on `shape`, which the drop serializer
+ * already ships and already truncates at 20 (`String(d.shape).slice(0, 20)`). A longer name
+ * would be silently cut, and two cut names could collide — a log that quietly renames its own
+ * enum is worse than no log.
+ */
+const GROUNDING_SHAPE = Object.freeze({
+  /** A declared label bound a numeral, and it disagreed with the server's arithmetic. */
+  DERIVED_WRONG_VALUE: 'derived_wrong_value',
+  /** A declared label bound a numeral, but no single canonical row could validate it. */
+  DERIVED_NO_ONE_ROW: 'derived_no_one_row',
+  /** Declared derivations exist for this turn, a label appears, but nothing bound to it. */
+  DERIVED_UNBOUND: 'derived_unbound',
+  /** An ordinary numeral that is in no retrieved row. No derivation involved. */
+  RAW_UNSUPPORTED: 'raw_unsupported',
+  /** A CJK-written count that is in no retrieved row. */
+  CJK_UNSUPPORTED: 'cjk_unsupported'
+})
+
+/**
+ * The numeric check, with the failure SHAPE reported. Pure; decides nothing new.
+ * @returns {{ok: boolean, shape: string|null}}
+ */
+function checkSentenceNumbers (sentence, index) {
   // Dates and times the evidence agrees with are consumed BEFORE the digit rule sees them.
   // Declared derivations likewise — the server computed them, so they are evidence.
-  // ⛔ `null` means a declared-derivation claim contradicted the server's arithmetic, or could
-  // not be validated at all. That is a refusal in its own right — it must NOT fall through to
-  // the raw rule, where an unrelated field could launder it.
-  const s = consumeVerifiedDerivations(consumeVerifiedMoments(sentence, index), index)
-  if (s === null) return false
+  // ⛔ A refusal here means a declared-derivation claim contradicted the server's arithmetic,
+  // or could not be validated at all. It must NOT fall through to the raw rule, where an
+  // unrelated field could launder it.
+  const moments = consumeVerifiedMoments(sentence, index)
+  const applied = applyDerivations(moments, index)
+  if (applied.refuse) return { ok: false, shape: applied.refuse }
+  const s = applied.text
+
   const nums = s.match(NUMERIC_TOKEN_RE) || []
-  if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
+  if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) {
+    /**
+     * ⛔ A LABEL WAS PRESENT AND NOTHING BOUND TO IT. That is a different problem from a
+     * stray unsupported number — it is the numeral-before-its-label and interleaved-label
+     * shapes, which are the two limits left open by decision. Distinguished here so the next
+     * decision rests on a count, not on my guess about which one production hits.
+     */
+    return { ok: false, shape: applied.labelSeen ? GROUNDING_SHAPE.DERIVED_UNBOUND : GROUNDING_SHAPE.RAW_UNSUPPORTED }
+  }
 
   for (const m of s.matchAll(CJK_COUNT_RE)) {
     if (m[2] === '個' && m[1] === '一') continue // 「一個」 is a classifier, not a count
     const n = cjkToNumber(m[1])
     if (n === null) continue
-    if (!index.numbers.has(String(n))) return false
+    if (!index.numbers.has(String(n))) return { ok: false, shape: GROUNDING_SHAPE.CJK_UNSUPPORTED }
   }
-  return true
+  return { ok: true, shape: null }
+}
+
+function sentenceIsSupported (sentence, index) {
+  return checkSentenceNumbers(sentence, index).ok
 }
 
 const splitSentences = (text) => String(text).split(/(?<=[。！？!?])\s*|\n+/).map((s) => s.trim()).filter(Boolean)
@@ -1308,12 +1360,17 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    * `droppedSentences` is incremented exactly where it was before — this adds a record beside
    * the counter, it does not change the counting.
    */
-  const dropSentence = (why) => { droppedSentences++; drops.push({ kind: 'sentence', why }) }
+  // ⛔ `shape` already ships in the drop serializer and is already an enum field, so the
+  // detail rides there rather than widening the whitelist. `why` is unchanged for
+  // compatibility — every numeric failure still reports `number_not_in_evidence` at the top
+  // level, and `shape` says WHICH failure it was.
+  const dropSentence = (why, shape) => { droppedSentences++; drops.push(shape ? { kind: 'sentence', why, shape } : { kind: 'sentence', why }) }
   const kept = []
   for (const raw of splitSentences(plan.directAnswer || '')) {
     // Relabel FIRST, so the check runs on the text the Owner will actually read.
     const s = relabel(raw)
-    if (!sentenceIsSupported(s, index)) { dropSentence(SENTENCE_DROP.NUMBER_NOT_IN_EVIDENCE); continue }
+    const numeric = checkSentenceNumbers(s, index)
+    if (!numeric.ok) { dropSentence(SENTENCE_DROP.NUMBER_NOT_IN_EVIDENCE, numeric.shape); continue }
     if (TELEMETRY_RE.test(s)) { dropSentence(SENTENCE_DROP.TELEMETRY); continue }
     // RECALL IS NOT EVIDENCE. A name this turn did not retrieve does not reach the Owner,
     // whatever the model believes it remembers.

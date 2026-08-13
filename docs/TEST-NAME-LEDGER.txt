@@ -803,6 +803,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** and a business question with rows DOES get the plan schema ***
 *** and a superlative over an UNRANKED source is not refused either ***
 *** and an UNRESTRAINED clarify still reports verdict_clarify ***
+*** and an ordinary raw sentence still passes with no detail ***
 *** and demands NO Answer Plan — no rows, and not a business route either ***
 *** and end to end, 「5磅是多少公斤？」 reads nothing ***
 *** and it is REPLACED by a positive default, not merely deleted ***
@@ -1404,6 +1405,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** with the demo flag off, every conversation route is 403 ***
 *** x as a multiplication sign ***
 *** zero rows → no ANSWER PLAN is forced (the decision surface is a different thing) ***
+*** ⛔ ${c.name} IS REPORTED AS ITS OWN SHAPE ***
 *** ⛔ ${c.name} SURVIVES INTO THE ACTUAL LOG LINE ***
 *** ⛔ 1. A 「缺貨項目排序」 SECTION IN THE WRONG ORDER MUST NOT SHIP ***
 *** ⛔ 1. ESTABLISHED INTERNAL + REACHABLE + clarify → NOT a terminal verifier ASK ***
@@ -1437,6 +1439,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
+*** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
@@ -1448,6 +1451,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ AN UNRETRIEVED NAME RECORDS name_not_in_evidence ***
 *** ⛔ AN UNSUPPORTED NUMBER RECORDS number_not_in_evidence ***
 *** ⛔ AND A REAL WORK REQUEST ON THE SAME FALLBACK IS STILL THE MODEL\
+*** ⛔ AND THE DETAIL RIDES ON A FIELD THE SERIALIZER ALREADY SHIPPED ***
 *** ⛔ AND THE SYSTEM IS STILL RECOGNISED, by every spelling that denotes IT ***
 *** ⛔ AND THE TRACE ITSELF NEVER PRINTS THE TURN ***
 *** ⛔ AND droppedSentences COUNTING IS UNCHANGED ***
@@ -1503,6 +1507,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ NO CALL SITE READS THE TRACER\
 *** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
 *** ⛔ NO REPLY, SENTENCE, NAME OR ROW VALUE REACHES THE LOG ***
+*** ⛔ NO SENTENCE, TITLE, NUMERAL, LABEL OR USER TEXT REACHES THE LOG ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
@@ -1532,6 +1537,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE CLARIFY TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE CLASS, not the instance — other subjects that merely carry a token ***
 *** ⛔ THE ENUMS ARE CLOSED — an unrecognised value is never echoed ***
+*** ⛔ THE FIVE SHAPES ARE DISTINCT, AND ALL FIT THE 20-CHAR LOG FIELD ***
 *** ⛔ THE FOUR ENUMS ARE DISTINCT AND CLOSED ***
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
