@@ -1408,19 +1408,28 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ 1. A 「缺貨項目排序」 SECTION IN THE WRONG ORDER MUST NOT SHIP ***
 *** ⛔ 1. ESTABLISHED INTERNAL + REACHABLE + clarify → NOT a terminal verifier ASK ***
 *** ⛔ 1. SUPERLATIVE + PROVEN ABSOLUTE RANKING → SHIPS, naming the proven first ***
+*** ⛔ 1. 「缺口 70」 IS ACCEPTED IN A SECTION *AND* IN directAnswer ***
 *** ⛔ 1b. AND THE TRAFFIC WENT THROUGH THE SHARED AUTHORITY, not a private branch ***
 *** ⛔ 2. AN ANSWER CONTRADICTING THE PROVEN ORDER DOES NOT SHIP ***
 *** ⛔ 2. ESTABLISHED INTERNAL + UNREACHABLE → no invented obligation, no read ***
 *** ⛔ 2. THE SAME SECTION IN THE PROVEN ORDER IS ALLOWED ***
+*** ⛔ 2. 「缺口 69」 IS STILL REJECTED — the server computed 70 ***
 *** ⛔ 3. A PROPORTIONAL SUPERLATIVE IS REFUSED — no proportional ordering exists ***
 *** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORDER ***
+*** ⛔ 3. ANOTHER RETRIEVED ROW CANNOT BORROW NAPA\
 *** ⛔ 3. EXPLICIT public / mixed verdicts are unchanged ***
 *** ⛔ 3/36 to 2/30 carries noise:true ON THE ROW, not in a footnote ***
 *** ⛔ 3b. AND THE METRIC MAY NOT BE SWITCHED SILENTLY IN EITHER DIRECTION ***
+*** ⛔ 4. AN UNDECLARED LABEL CANNOT VALIDATE A NUMBER ***
 *** ⛔ 4. CONTEXT-FREE AMBIGUITY STILL CLARIFIES — the path is narrowed, not deleted ***
 *** ⛔ 4. orderPlanning: the server cut precedes the sort → no global first ***
 *** ⛔ 4b. AND A TURN THE ROUTER NEVER ESTABLISHED IS NOT RESTRAINED ***
+*** ⛔ 4b. AND WITH NO DECLARED DERIVATIONS AT ALL, NOTHING IS CONSUMED ***
+*** ⛔ 4c. A DERIVED NUMBER WITH NO BINDABLE RETRIEVED ROW STILL FAILS ***
+*** ⛔ 5. A SENTENCE OF ORDINARY RAW EVIDENCE NUMBERS BEHAVES AS BEFORE ***
 *** ⛔ 5. PROSE ALONE MAY NOT ASSERT A FIRST PLACE ***
+*** ⛔ 5b. DIGIT BOUNDARIES — consuming 70 must not cut 700 into 0 ***
+*** ⛔ 6. LIVE: number_not_in_evidence NO LONGER KILLS THE CONCLUSION ***
 *** ⛔ 6. NON-SUPERLATIVE QUESTIONS ARE NOT THIS GATE\
 *** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
 *** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***

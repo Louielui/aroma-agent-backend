@@ -604,7 +604,40 @@ function evidenceIndex (evidenceSets = [], itemsBySource = []) {
     if (Number.isFinite(e.returnedRows)) numbers.add(String(e.returnedRows))
     if (Number.isFinite(e.shownCount)) numbers.add(String(e.shownCount))
   }
-  return { byId, aliasOwners, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys }
+  /**
+   * ── ⛔ DECLARED DERIVATIONS, BOUND TO THE ROW THAT OWNS THEM ───────────────
+   *
+   * MEASURED LIVE, requestId a56638cf-8d6a-4306-974b-a1e536eb42b0 on bootCommit 09e50d0:
+   * the same declared derivation had two different verdicts depending on where it was written.
+   *
+   *   section   「缺口 70」  → computeDerivation() runs server-side → PASS
+   *   sentence  「Napa Cabbage 缺口 70」 → 70 is in no raw field → number_not_in_evidence
+   *
+   * `aromaSystemRead.js:203` already declares `inventory: 缺口 = parLevel - currentStock`, and
+   * the structured path already trusts the SERVER's arithmetic over the model's. Only the
+   * prose path was blind to it. That asymmetry — not model arithmetic in general — is the
+   * defect.
+   *
+   * ⛔ AND THIS IS A BINDING, NOT A PERMISSION. Each entry names ONE row, ONE declared label
+   * and that row's OWN server-computed value. It is deliberately NOT merged into `numbers`:
+   * a global number pool would let any sentence borrow another row's 70, which is a different
+   * false claim wearing the same digits.
+   */
+  const derived = []
+  const derivSpecs = derivationMap(evidenceSets)
+  for (const row of byId.values()) {
+    const specs = derivSpecs.get(row && row.source)
+    if (!specs) continue
+    const title = (row && typeof row.title === 'string') ? row.title.trim() : ''
+    if (!title) continue
+    for (const [label, spec] of specs) {
+      const value = computeDerivation(spec, row)
+      if (value === null) continue // both inputs must be present and numeric on THIS row
+      derived.push({ title, label, value })
+    }
+  }
+
+  return { byId, aliasOwners, values, numbers, numericValues, latin, dateKeys, digitKeys, monthDayKeys, timeKeys, derived }
 }
 
 /**
@@ -1028,9 +1061,43 @@ const CJK_COUNT_RE = /([零〇一二兩三四五六七八九十百千萬]+)([項
  * test that claimed to pin the behaviour asserted the ASCII form. Cantonese writes counts in
  * Chinese numerals by default; checking only the exception is checking nothing.
  */
+/**
+ * ⛔ CONSUME A DECLARED DERIVATION, AND ONLY WHERE ALL THREE PARTS ARE PRESENT.
+ *
+ * Mirrors `consumeVerifiedMoments`: a value the server itself computed is removed from the
+ * sentence BEFORE the raw-digit rule can reject it. Three conditions, all structural:
+ *
+ *   1. the ROW is named in this sentence  — its own retrieved title
+ *   2. the declared LABEL is in this sentence — 「缺口」, from the evidence descriptor
+ *   3. the numeral EQUALS that row's server-computed value
+ *
+ * Any one missing and nothing is consumed, so the ordinary rejection still applies. A wrong
+ * figure (69 against a computed 70) is not removed and fails as before; an undeclared label
+ * has no spec and never reaches here; a row that was not retrieved is not in `byId`.
+ *
+ * ⛔ WHAT THIS DOES NOT DO. It does not parse the sentence's grammar, so a sentence naming two
+ * rows and attributing one's figure to the other is not caught here — the same limit
+ * `presentedOrder` carries, and the same reason: guessing at attribution inside prose is not
+ * something this layer can do honestly.
+ */
+function consumeVerifiedDerivations (sentence, index) {
+  const list = (index && Array.isArray(index.derived)) ? index.derived : []
+  if (list.length === 0) return sentence
+  let s = sentence
+  for (const d of list) {
+    if (!s.includes(d.title) || !s.includes(d.label)) continue
+    // ⛔ DIGIT BOUNDARIES. Blind replacement of 「70」 would cut 「700」 into 「0」 and hand the
+    // raw rule a number nobody wrote.
+    const escaped = String(d.value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    s = s.replace(new RegExp('(?<!\\d)' + escaped + '(?!\\d)', 'g'), ' ')
+  }
+  return s
+}
+
 function sentenceIsSupported (sentence, index) {
   // Dates and times the evidence agrees with are consumed BEFORE the digit rule sees them.
-  const s = consumeVerifiedMoments(sentence, index)
+  // Declared derivations likewise — the server computed them, so they are evidence.
+  const s = consumeVerifiedDerivations(consumeVerifiedMoments(sentence, index), index)
   const nums = s.match(/\d+(?:[.,]\d+)*/g) || []
   if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
 
