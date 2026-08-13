@@ -365,3 +365,74 @@ test('*** ⛔ B4e. THE 70.5 / 70,000 / 700 PROTECTIONS SURVIVE THE SIGNED GRAMMA
     assert.equal(r.plan.directAnswer, '', '⛔ regression on ' + bad)
   }
 })
+
+/* ═══ ⛔ BLOCKER 5 — A TRUE NUMBER MAY NOT LAUNDER A FALSE SHORTFALL ════ */
+
+/**
+ * ⛔ EVERY FIXTURE HERE CARRIES THE WRONG NUMBER AS A REAL RAW FIELD. Without that the
+ * sentence would be rejected anyway and the test would prove nothing — which is exactly what
+ * was wrong with the earlier 「缺口 69」 case.
+ */
+const LAUNDER_ROWS = [{
+  source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: '1', title: NAPA,
+  entityType: 'inventory_item', content: 'a',
+  // par 100 − stock 30 = 70. `pack` is a genuine field carrying 69.
+  fields: { id: '1', parLevel: '100', currentStock: '30', pack: '69' }, trust: 'live'
+}]
+const LAUNDER_CTX = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: LAUNDER_ROWS }], message: NEUTRAL }
+
+test('*** ⛔ B5. A RAW 69 ON THE ROW MUST NOT LAUNDER 「缺口 69」 ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 69。`), LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, '', '⛔ a false shortfall borrowed an unrelated raw field')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B5b. AND 「缺口 70」 ON THAT SAME ROW IS STILL ACCEPTED ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70。`), LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 70。`)
+  assert.deepEqual(whys(r), [])
+})
+
+test('*** ⛔ B5c. THE SAME ROW\'S 69 IS STILL USABLE UNDER ITS OWN LABEL ***', () => {
+  // ⛔ THE RULE MUST NOT SWALLOW ORDINARY RAW FACTS. 69 is real; it just is not the shortfall.
+  const r = validatePlan(PLAN(`${NAPA} 每箱 69。`), LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, `${NAPA} 每箱 69。`, '⛔ raw grounding was broken')
+  assert.deepEqual(whys(r), [])
+})
+
+/** par 25 − stock 30 = -5, and the row genuinely carries a raw 5. */
+const NEG_LAUNDER = [{
+  source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: '1', title: NAPA,
+  entityType: 'inventory_item', content: 'a',
+  fields: { id: '1', parLevel: '25', currentStock: '30', pack: '5' }, trust: 'live'
+}]
+const NEG_LAUNDER_CTX = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: NEG_LAUNDER }], message: NEUTRAL }
+
+test('*** ⛔ B5d. A RAW 5 MUST NOT LAUNDER 「缺口 5」 WHEN THE DERIVATION IS -5 ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 5。`), NEG_LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, '', '⛔ the sign was laundered by an unrelated raw field')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})
+
+test('*** ⛔ B5e. 「每箱 5」 ON THAT SAME ROW IS STILL ORDINARY RAW EVIDENCE ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 每箱 5。`), NEG_LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, `${NAPA} 每箱 5。`)
+})
+
+test('*** ⛔ B5f. AND 「缺口 -5」 IS STILL ACCEPTED ON THAT ROW ***', () => {
+  const r = validatePlan(PLAN(`${NAPA} 缺口 -5。`), NEG_LAUNDER_CTX)
+  assert.equal(r.plan.directAnswer, `${NAPA} 缺口 -5。`)
+})
+
+test('*** ⛔ B5g. A DUPLICATE-TITLE CLAIM CANNOT BE LAUNDERED EITHER ***', () => {
+  // Two canonical rows share the title AND one carries a raw 70, so falling through would
+  // have validated it. With no single row there is no server value to compare against.
+  const rows = [
+    Object.assign({}, DUP_ROWS[0], { fields: { id: '1', parLevel: '100', currentStock: '30', pack: '70' } }),
+    DUP_ROWS[1]
+  ]
+  const c = { evidenceSets: EVIDENCE(), itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: rows }], message: NEUTRAL }
+  const r = validatePlan(PLAN(`${NAPA} 缺口 70。`), c)
+  assert.equal(r.plan.directAnswer, '', '⛔ an unvalidatable derivation claim shipped')
+  assert.deepEqual(whys(r), ['number_not_in_evidence'])
+})

@@ -1471,7 +1471,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ B4c. DERIVED -5 DOES NOT VALIDATE PROSE 5 ***
 *** ⛔ B4d. AND AN INDEPENDENTLY SUPPORTED 5 IS STILL ALLOWED ***
 *** ⛔ B4e. THE 70.5 / 70,000 / 700 PROTECTIONS SURVIVE THE SIGNED GRAMMAR ***
+*** ⛔ B5. A RAW 69 ON THE ROW MUST NOT LAUNDER 「缺口 69」 ***
 *** ⛔ B5. AND A WRONG FIRST PLACE STILL FAILS, RANKING OR NOT ***
+*** ⛔ B5b. AND 「缺口 70」 ON THAT SAME ROW IS STILL ACCEPTED ***
+*** ⛔ B5c. THE SAME ROW\
+*** ⛔ B5d. A RAW 5 MUST NOT LAUNDER 「缺口 5」 WHEN THE DERIVATION IS -5 ***
+*** ⛔ B5e. 「每箱 5」 ON THAT SAME ROW IS STILL ORDINARY RAW EVIDENCE ***
+*** ⛔ B5f. AND 「缺口 -5」 IS STILL ACCEPTED ON THAT ROW ***
+*** ⛔ B5g. A DUPLICATE-TITLE CLAIM CANNOT BE LAUNDERED EITHER ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
 *** ⛔ CLASS 2 — internal context + capability UNAVAILABLE → no reads, no clarification ***

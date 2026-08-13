@@ -1138,7 +1138,57 @@ function consumeVerifiedDerivations (sentence, index) {
    */
   const named = list.filter((d) => sentence.includes(d.title))
   const rows = new Set(named.map((d) => d.canonical))
-  if (rows.size !== 1) return sentence
+
+  /**
+   * ⛔ BLOCKER 5 — A DECLARED LABEL WITH A NUMBER IS A CLAIM, AND IT MUST BE ANSWERED HERE.
+   *
+   * The consumer only ever REMOVED matching tokens. A non-matching one simply fell through to
+   * the generic raw check — so a true number from an unrelated field could launder a false
+   * shortfall:
+   *
+   *     row: parLevel 100, currentStock 30, pack 69   declared 缺口 = 70
+   *     prose: 「Napa Cabbage 缺口 69。」
+   *     70 ≠ 69 so nothing was consumed → 69 IS a raw value on the row → whole sentence PASSED
+   *
+   * ⛔ AND MY OWN 「缺口 69」 TEST HAD NOT PROVEN OTHERWISE. It only held because that fixture
+   * carried no other 69. The Owner found this in review.
+   *
+   * > **Owner ruling: once prose structurally makes a numeric claim under a declared derivation
+   * > label, that numeral must be validated against that derivation. It may not fall through
+   * > and borrow an unrelated raw field.**
+   *
+   * ── THE BINDING, AS NARROW AS IT CAN BE ──────────────────────────────────
+   * For each declared label present, the claim is the FIRST signed numeric token appearing
+   * AFTER that label. Adjacency, not grammar. A label with no number after it is not a numeric
+   * claim and binds nothing.
+   *
+   * ⛔ WHAT IT WILL STILL MISS: a number written BEFORE its label (「69 係缺口」), and which of
+   * several labels a number belongs to when they interleave. Both would need sentence
+   * structure, which this layer does not read. Those cases bind nothing and fall through to
+   * the ordinary raw rule exactly as before — no worse than today, and never laundered as a
+   * verified derivation.
+   */
+  const labels = new Set(list.map((d) => d.label))
+  const claims = []
+  for (const label of labels) {
+    const at = sentence.indexOf(label)
+    if (at < 0) continue
+    const m = sentence.slice(at + label.length).match(/-?\d+(?:[.,]\d+)*/)
+    if (m) claims.push({ label, token: m[0].replace(/,/g, '') })
+  }
+
+  // No declared label carries a number: nothing is claimed under a derivation, nothing to check.
+  if (claims.length === 0) return sentence
+
+  // ⛔ A CLAIM WE CANNOT VALIDATE IS REFUSED, NOT WAVED THROUGH. Zero or several candidate rows
+  // means no server value exists to compare against — and falling through would re-open the
+  // very laundering this rule closes.
+  if (rows.size !== 1) return null
+
+  const expected = new Map(named.map((d) => [d.label, String(d.value)]))
+  for (const c of claims) {
+    if (expected.get(c.label) !== c.token) return null // contradicts the server's own arithmetic
+  }
 
   const values = new Set(
     named.filter((d) => sentence.includes(d.label)).map((d) => String(d.value))
@@ -1163,7 +1213,11 @@ function consumeVerifiedDerivations (sentence, index) {
 function sentenceIsSupported (sentence, index) {
   // Dates and times the evidence agrees with are consumed BEFORE the digit rule sees them.
   // Declared derivations likewise — the server computed them, so they are evidence.
+  // ⛔ `null` means a declared-derivation claim contradicted the server's arithmetic, or could
+  // not be validated at all. That is a refusal in its own right — it must NOT fall through to
+  // the raw rule, where an unrelated field could launder it.
   const s = consumeVerifiedDerivations(consumeVerifiedMoments(sentence, index), index)
+  if (s === null) return false
   const nums = s.match(NUMERIC_TOKEN_RE) || []
   if (!nums.every((n) => index.numbers.has(n.replace(/,/g, '')))) return false
 
