@@ -1459,6 +1459,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ LEGITIMATE clarification on another axis passes through UNTOUCHED ***
 *** ⛔ LIVE: AN UNPROVEN RANKING SECTION IN CORRECT ORDER STILL MUST NOT SHIP ***
 *** ⛔ LIVE: and an ORDINARY section over the same unproven source still ships ***
+*** ⛔ M1. SOURCE A\
+*** ⛔ M2. TWO COMPLETE PROOFS IS STILL AMBIGUOUS — FAIL CLOSED ***
+*** ⛔ M3. AN ORDINARY SECTION IN A TWO-SOURCE TURN IS UNTOUCHED ***
+*** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***
+*** ⛔ M5. ZERO RANKED SOURCES — NOT A GENERIC RANKING DETECTOR ***
+*** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAPE ***
 *** ⛔ NO CALL SITE READS THE TRACER\
 *** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***

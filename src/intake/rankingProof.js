@@ -175,27 +175,56 @@ function rankingSectionViolations (input = {}) {
   const proven = rows
     .filter((r) => r && typeof r.title === 'string' && r.title.trim())
     .map((r) => r.title.trim())
-  if (proven.length === 0) return []
 
   /**
-   * ⛔ ENTITLEMENT BEFORE ORDER, AND THIS WAS THE GAP.
+   * ⛔ ENTITLEMENT COMES FROM **ONE** PROOF — THE ONE THAT OWNS THESE ROWS.
    *
-   * The first cut of this function judged only whether the sequence was RIGHT — never whether
-   * the ranking was entitled to be claimed at all. So a section headed 「訂貨建議排名」 over
-   * `orderPlanning`, whose few items happened to sit in correct relative order, would have
-   * shipped: the server cuts that endpoint at LIMIT 100 BEFORE the client sorts, so its first
-   * place is first-of-what-arrived and nothing wider. `directAnswer` was already refused for
-   * exactly that (VERDICT.RANKING_INCOMPLETE) while the section walked past — which is the
-   * same defect as the live one, one layer along.
+   * Two earlier cuts of this function were wrong in the same direction, and both were caught
+   * by the Owner on review rather than by a test:
    *
-   * A section is a claim, so it carries the same strength of proof as a sentence.
+   *   1. It judged only whether the sequence was RIGHT, never whether the ranking was entitled
+   *      to be claimed. `orderPlanning` is cut at LIMIT 100 by the server BEFORE the client
+   *      sorts, so a section headed 「訂貨建議排名」 whose items happened to fall in correct
+   *      relative order would have shipped.
+   *   2. Entitlement was then made TURN-WIDE — `proofs.some(complete)` — so one source's
+   *      complete proof could entitle a different source's ranking.
+   *
+   * ⛔ AND THE ESCAPE THAT MATTERED MOST. With two ranked sources the caller could not say
+   * which ordering a section reported, so it passed no rows — and this function's own
+   * `proven.length === 0` early return then reported NO violations. A ranking section did not
+   * fail closed; it skipped validation altogether and shipped. That is the opposite of what I
+   * claimed when I closed the previous round.
+   *
+   * > **Owner ruling: a ranking section may rely only on the same single ranking proof that
+   * > owns the ranked rows. One source's complete proof must never entitle another's ranking.**
+   *
+   * A section carries no structural source attribution, so with more than one ranked source
+   * there is no honest way to tell which ordering it claims — and the safe direction for an
+   * unattributable claim is to refuse it.
    */
-  const anyProofComplete = proofsFrom(i.evidenceSets).some((p) => p.complete === true)
+  const rankedSourceCount = Number.isFinite(i.rankedSourceCount) ? i.rankedSourceCount : 0
+  const evidence = (i.rankingEvidence && typeof i.rankingEvidence === 'object') ? i.rankingEvidence : null
+  const entitled = rankedSourceCount === 1 && !!evidence && evidence.rankingCompleteWithinScope === true
+
+  /**
+   * ⛔ ZERO RANKED SOURCES IS NOT THIS GATE'S BUSINESS. Firing here would turn a proof checker
+   * into a generic ranking detector, refusing headings on turns that read nothing orderable.
+   */
+  if (rankedSourceCount === 0) return []
 
   const out = []
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
     if (!sec || !presentsAsRanking(sec.heading)) return
+
+    /**
+     * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
+     * With two ranked sources the caller cannot say which ordering this section reports, so
+     * there are no rows to compare against — and checking rows first is exactly how the
+     * section escaped validation instead of failing closed.
+     */
+    if (rankedSourceCount > 1) { out.push(idx); return }
+
     const titles = (Array.isArray(sec.items) ? sec.items : [])
       .map((it) => (it && typeof it.title === 'string') ? it.title.trim() : '')
       .filter((t) => t && proven.includes(t))
@@ -203,7 +232,7 @@ function rankingSectionViolations (input = {}) {
 
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
-    if (!anyProofComplete) { out.push(idx); return }
+    if (!entitled) { out.push(idx); return }
 
     // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
     // clearest honest answer there is — 「排序：第一位 Napa」.

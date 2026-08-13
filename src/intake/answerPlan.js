@@ -1305,10 +1305,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const badRankingSections = rankingSectionViolations({
     sections,
     rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
-    // ⛔ THE ENTITLEMENT, NOT JUST THE ORDER. Without this the gate can say a sequence is
-    // correct but not whether the ordering was ever provable — and `orderPlanning` is cut at
-    // 100 by the server before it is sorted.
-    evidenceSets
+    /**
+     * ⛔ THE ONE PROOF THAT OWNS THESE ROWS — not the turn's evidence at large. Passing all of
+     * it let one source's complete proof entitle another source's ranking, and the count is
+     * passed too so 「more than one ordering in this turn」 can fail closed rather than fall
+     * through the empty-rows path.
+     */
+    rankingEvidence: rankedEvidence.length === 1 ? rankedEvidence[0] : null,
+    rankedSourceCount: rankedEvidence.length
   })
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {

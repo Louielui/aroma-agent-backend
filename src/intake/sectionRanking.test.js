@@ -143,6 +143,30 @@ const SECTION_PLAN = (heading, titles, directAnswer) => ({
   }
 })
 
+/**
+ * ⛔ CANONICAL REFS, BECAUSE A TWO-READ TURN MAKES BARE IDS AMBIGUOUS.
+ * With two operations owning id '1', alias resolution fails closed and the items are dropped
+ * as inventions BEFORE the ranking gate ever sees them — which is how the first version of the
+ * multi-source test passed without exercising the rule it claimed to pin.
+ */
+const SECTION_PLAN_REF = (heading, titles) => ({
+  intent: 'answer',
+  mode: 'chat',
+  reply: '',
+  nextRead: null,
+  answerPlan: {
+    directAnswer: '',
+    sections: [{
+      heading,
+      items: titles.map((t) => ({ sourceId: 'aroma_system.inventory#' + BY_TITLE.get(t).id, title: t, facts: [] }))
+    }],
+    limitations: [],
+    followUp: null,
+    unanswerable: false,
+    citesEvidence: true
+  }
+})
+
 const run = (msg, adapter, c) => processIntake(msg, adapter, [], {
   demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: '11111111-2222-4333-8444-555555555555',
   readContextDeps: {
@@ -223,8 +247,17 @@ const PROOF_INCOMPLETE = [{
   rankingMetric: RANKING_METRIC.SUGGESTED_ORDER_QTY, rankingCompleteWithinScope: false
 }]
 
-const bad = (sections, evidenceSets = PROOF_COMPLETE) =>
-  rankingSectionViolations({ sections, rankedRows: ROWS, evidenceSets })
+/**
+ * ⛔ THE HELPER TAKES **ONE** PROOF AND THE COUNT OF RANKED SOURCES — not the turn's evidence.
+ * Entitlement that reads the whole turn lets one source's proof entitle another's ranking.
+ */
+const bad = (sections, evidence = PROOF_COMPLETE, count = 1) =>
+  rankingSectionViolations({
+    sections,
+    rankedRows: ROWS,
+    rankingEvidence: Array.isArray(evidence) ? evidence[0] : evidence,
+    rankedSourceCount: count
+  })
 
 test('*** a correct SUBSEQUENCE is a legitimate ranking — a top-2 need not carry the tail ***', () => {
   assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])]), [], 'top-2')
@@ -274,7 +307,7 @@ test('*** an ORDINARY section is untouched by entitlement ***', () => {
 })
 
 test('*** absent evidence is not entitlement — fails closed ***', () => {
-  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [NAPA, NOLA])], rankedRows: ROWS }), [0],
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [NAPA, NOLA])], rankedRows: ROWS, rankedSourceCount: 1 }), [0],
     '⛔ a missing descriptor must not read as a proven ranking')
 })
 
@@ -320,5 +353,75 @@ test('*** ⛔ LIVE: and an ORDINARY section over the same unproven source still 
     ]), incompleteRankingConnector())
     assert.deepEqual(shippedOrder(out && out.reply), [JARS, NAPA, NOLA, SOY],
       '⛔ entitlement leaked onto a non-ranking section')
+  })
+})
+
+/* ═══ ⛔ ONE PROOF, AND IT MUST BE THE ONE THAT OWNS THE ROWS ════════════ */
+
+test('*** ⛔ M1. SOURCE A\'S COMPLETE PROOF MUST NOT ENTITLE SOURCE B\'S RANKING ***', () => {
+  // Two ranked sources in one turn: inventory complete, orderPlanning not. A section carries
+  // no source attribution, so nothing can show which ordering it reports.
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA, NOLA, SOY])], PROOF_COMPLETE, 2), [0],
+    '⛔ a complete proof entitled a ranking that does not belong to it')
+})
+
+test('*** ⛔ M2. TWO COMPLETE PROOFS IS STILL AMBIGUOUS — FAIL CLOSED ***', () => {
+  // Both proven, order correct against inventory. Still refused: 「which ordering is this?」
+  // has no structural answer, and an unattributable claim is not a proven one.
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS])], PROOF_COMPLETE, 2), [0])
+})
+
+test('*** ⛔ M3. AN ORDINARY SECTION IN A TWO-SOURCE TURN IS UNTOUCHED ***', () => {
+  assert.deepEqual(bad([SEC('缺貨狀況', [JARS, NAPA, NOLA])], PROOF_COMPLETE, 2), [],
+    '⛔ ambiguity leaked onto a non-ranking section')
+})
+
+test('*** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***', () => {
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS])], PROOF_COMPLETE, 1), [])
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, SOY])], PROOF_COMPLETE, 1), [], 'subsequence still fine')
+  assert.deepEqual(bad([SEC('缺貨排序', [SOY, NAPA])], PROOF_COMPLETE, 1), [0], 'wrong order still dropped')
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], PROOF_INCOMPLETE, 1), [0], 'unproven still dropped')
+})
+
+test('*** ⛔ M5. ZERO RANKED SOURCES — NOT A GENERIC RANKING DETECTOR ***', () => {
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], null, 0), [],
+    '⛔ the gate fired on a turn that read nothing orderable')
+})
+
+/* ═══ ⛔ THE LIVE-SHAPED MULTI-SOURCE ESCAPE ═════════════════════════════ */
+
+/** Two reads in one turn, each carrying its OWN ranking — inventory and orderPlanning. */
+function twoRankedSourceConnector () {
+  const base = rankedConnector()
+  return {
+    connector: {
+      async read (source, method) {
+        const out = await base.connector.read(source)
+        if (String(method).toLowerCase().includes('order')) {
+          out.evidence.endpoint = 'orderPlanning'
+          out.evidence.rankingMetric = RANKING_METRIC.SUGGESTED_ORDER_QTY
+          out.evidence.rankingCompleteWithinScope = false
+          out.evidence.limit = 100
+        }
+        return out
+      }
+    }
+  }
+}
+
+const READ_ORDER = { intent: 'answer', mode: 'chat', reply: null, nextRead: { capability: 'aroma_system.replenishment' }, answerPlan: null }
+
+test('*** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAPE ***', async () => {
+  await withEnv({}, async () => {
+    // ⛔ The order is CORRECT against inventory. Before this round the caller passed no rows
+    // for a two-source turn and the helper's own empty-rows early return reported no
+    // violations — so this section skipped validation entirely and shipped.
+    const out = await run(ASK, scriptedAdapter([
+      READ, READ_ORDER, SECTION_PLAN_REF('缺貨項目排序', [NAPA, NOLA, SOY, JARS])
+    ]), twoRankedSourceConnector())
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.deepEqual(shippedOrder(reply), [],
+      '⛔ an unattributable ranking section shipped: ' + JSON.stringify(reply))
+    assert.ok(reply.trim().length > 0, '⛔ SILENCE — shipped: ' + JSON.stringify(reply))
   })
 })
