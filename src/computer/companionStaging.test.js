@@ -33,7 +33,16 @@ test('*** the manifest resolves every dependency — nothing is MISSING ***', ()
   assert.deepEqual(m.missing, [], 'every relative require resolved to a real file')
   assert.ok(m.files.length >= 4, 'entry plus its dependencies')
   const names = m.files.map((f) => f.name).sort()
-  assert.deepEqual(names, ['companion-entry.js', 'companion.js', 'ipcChannel.js', 'sessionBoundary.js'])
+  /**
+   * ⛔ WIDENED IN COMMIT C, AND THE WIDENING IS THE POINT OF THE TEST.
+   *
+   * The 3a Companion reached three siblings. The 3b Companion delegates observation and
+   * consults a gate, so its closure is four more files — and this assertion is what makes
+   * that visible rather than incidental. Every addition is INERT: the flag is a string reader,
+   * the gate computes and compares, observation refuses everything, and none of them touches
+   * a desktop. A closure that grew without anyone noticing is what this test exists to stop.
+   */
+  assert.deepEqual(names, ['companion-entry.js', 'companion.js', 'computerOperatorFlag.js', 'ipcChannel.js', 'observation.js', 'sealedOrderGate.js', 'sessionBoundary.js'])
 })
 
 test('extension-less requires are resolved — the case that broke the first walker', () => {
@@ -47,18 +56,32 @@ test('extension-less requires are resolved — the case that broke the first wal
 test('the staged graph pulls in NOTHING beyond the Companion', () => {
   const m = M.buildManifest()
   const names = m.files.map((f) => f.name)
-  // the supervisor, the audit, the work order and the flag are the Service's business.
-  // If any of them appeared here, the Companion would be carrying governance code into
-  // the operator account, which is the opposite of the design.
+  // the supervisor, the audit, the work order and the registry are the Service's business.
+  // If any of them appeared here, the Companion would be carrying governance code into the
+  // operator account, which is the opposite of the design.
+  //
+  // ⛔ computerOperatorFlag.js LEFT THIS LIST IN COMMIT C, AND IT IS A SECURITY CHOICE.
+  //
+  // The 3b Companion asks the gate whether a restricted action is unlocked, and one of the five
+  // conditions is the flag. It reads it from the REAL process environment rather than taking it
+  // as an argument — precisely so a caller who assembles a Companion cannot hand it a fabricated
+  // { on }. That removes an injection point, and the price is that the flag module travels into
+  // the staged closure.
+  //
+  // It is safe to carry: it reads one environment variable, returns a string, and has no side
+  // effect and no I/O. It is not governance CODE — it is the switch governance reads. Everything
+  // that DECIDES anything stays Service-side and is still asserted here.
   for (const notHere of ['computerSupervisor.js', 'computerAudit.js', 'computerWorkOrder.js',
-    'computerOperatorFlag.js', 'evidenceStore.js', 'orderRegistry.js', 'killSwitch.js']) {
+    'evidenceStore.js', 'orderRegistry.js', 'killSwitch.js']) {
     assert.equal(names.includes(notHere), false, 'must not be staged: ' + notHere)
   }
 })
 
-test('the staged copy reaches only two node builtins', () => {
+test('the staged copy reaches only three node builtins, each named', () => {
   const m = M.buildManifest()
-  assert.deepEqual(m.builtins, ['node:net', 'node:path'])
+  // ⛔ node:crypto joins them in Commit C: `sealedOrderGate` hashes an order to verify the
+  // seal. It computes and compares — no fs, no process, no network. Still named, still three.
+  assert.deepEqual(m.builtins, ['node:crypto', 'node:net', 'node:path'])
   // net is the named pipe; path is path joining. No fs, no child_process, no http.
   for (const banned of ['node:fs', 'node:child_process', 'node:http', 'node:https', 'node:os']) {
     assert.equal(m.builtins.includes(banned), false, 'staged Companion must not use ' + banned)

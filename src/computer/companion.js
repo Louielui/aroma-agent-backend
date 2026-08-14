@@ -26,6 +26,12 @@
  */
 
 const { validateEnvelope, ROLE_SERVICE, ROLE_COMPANION } = require('./sessionBoundary')
+const gate = require('./sealedOrderGate')
+const { CAP } = gate
+const { resolveComputerOperator } = require('./computerOperatorFlag')
+// Phase 3b. Observation lives behind its own module so the Companion's cannot-ACT proof
+// stays exactly as strong as it was in 3a - see observation.js and GOV-001.
+const { createObserver, OBSERVATION_ACTIONS } = require('./observation')
 
 /**
  * THE CAPABILITY REGISTER. Every capability the Companion will ever have, and whether it
@@ -33,18 +39,40 @@ const { validateEnvelope, ROLE_SERVICE, ROLE_COMPANION } = require('./sessionBou
  * the running process cannot drift apart — the process answers from the same object the
  * tests assert against.
  */
+/**
+ * THE CAPABILITY REGISTER, IN THREE STATES RATHER THAN TWO.
+ *
+ * A boolean could only say "off" or "on", and the Owner's ruling of 2026-07-31 needs a third
+ * thing: allowed, but ONLY under a sealed, hash-matching, Owner-approved work order. Writing
+ * that as `false` would have been a lie by omission, and writing it as `true` would have been a
+ * far worse one, so it is its own value.
+ *
+ *   false                — not implemented in this build
+ *   'sealed_order_only'  — DEFAULT DENY. Unlocked only by sealedOrderGate.verifyUnlock.
+ *   'never'              — no order unlocks it, ever
+ *
+ * NOTHING here is `true`, and `anyCapabilityEnabled()` still answers false, because nothing is
+ * unconditionally enabled. That is the claim worth keeping, and it survived the change.
+ */
 const CAPABILITIES = Object.freeze({
   // Phase 3b — observation only, each behind its own GO
   list_windows: false,
   read_ui_tree: false,
   capture_own_screen: false,
-  // Never in Phase 3
-  move_mouse: false,
-  send_keys: false,
-  launch_app: false,
-  write_file: false,
-  read_file: false,
-  network: false
+
+  // Default deny; the ONLY unlock is a verified sealed order. Owner ruling 2026-07-31.
+  open_app: CAP.SEALED_ORDER_ONLY,
+  type_text: CAP.SEALED_ORDER_ONLY,
+  send_keys: CAP.SEALED_ORDER_ONLY,
+  launch_app: CAP.SEALED_ORDER_ONLY,
+  save: CAP.SEALED_ORDER_ONLY,
+
+  // No order reaches these. `write_file` staying NEVER while `save` is gated is deliberate:
+  // one is this system writing to disk, the other is an application's own Save As.
+  move_mouse: CAP.NEVER,
+  write_file: CAP.NEVER,
+  read_file: CAP.NEVER,
+  network: CAP.NEVER
 })
 
 const NO_CAPABILITY = 'no_capability_enabled'
@@ -59,6 +87,10 @@ const NO_CAPABILITY = 'no_capability_enabled'
 function createCompanion (deps = {}) {
   const now = typeof deps.now === 'function' ? deps.now : () => Date.now()
   const onAudit = typeof deps.onAudit === 'function' ? deps.onAudit : () => {}
+  const observer = (deps.observer && typeof deps.observer.observe === 'function') ? deps.observer : createObserver({ now })
+  // Injected, never constructed. Absent by default, so the default Companion is exactly as
+  // incapable as it was in 3a — the difference is that an injected one is now possible.
+  const executor = (deps.executor && typeof deps.executor.execute === 'function') ? deps.executor : null
   let aborted = false
   let stopReason = null
 
@@ -88,6 +120,47 @@ function createCompanion (deps = {}) {
       // THE ONLY ANSWER THIS BUILD CAN GIVE. Not "not implemented" — refused, named, and
       // audited, so a Service that somehow sent a real step gets an unambiguous no.
       const wanted = (envelope.step && typeof envelope.step.action === 'string') ? envelope.step.action : null
+
+      // Observation is DELEGATED, never performed here. In stage 1 the observer refuses
+      // everything, so this changes the source of the refusal and nothing else — but it
+      // means the Companion never grows observation code of its own, which is what keeps
+      // its own source scan meaningful.
+      if (wanted && OBSERVATION_ACTIONS.includes(wanted)) {
+        const seen = observer.observe({ action: wanted })
+        onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: seen.ok ? 'observed' : 'refused', refusalReason: seen.ok ? null : seen.refusal, at: now() })
+        return reply(envelope, seen)
+      }
+
+      // ── THE GATED SET ───────────────────────────────────────────────────────
+      // Default deny. The gate is asked BEFORE the executor is so much as named, so a refused
+      // action cannot reach an execution path even if one is wired in. Note what is NOT here:
+      // there is no branch that checks the flag and proceeds. The flag is one of five
+      // conditions the gate requires, and it is the only one an environment variable controls.
+      if (wanted && gate.RESTRICTED_ACTIONS.includes(wanted)) {
+        const unlocked = gate.verifyUnlock({
+          action: wanted,
+          order: envelope.order || null,
+          // No argument, deliberately: the flag is read from the REAL process environment, so
+          // a caller who assembles a Companion cannot hand it a fabricated `{ on }`. There is
+          // no injection point here, and computerOperatorWiring.test.js asserts that.
+          flag: resolveComputerOperator(),
+          killSwitch: { isStopped: () => aborted }
+        })
+        if (!unlocked.ok) {
+          onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: 'refused', refusalReason: unlocked.refusal, at: now() })
+          return reply(envelope, { ok: false, refusal: unlocked.refusal, reason: unlocked.reason, capability: wanted })
+        }
+        // Unlocked — and still incapable, unless an executor was injected. The Companion
+        // never builds one; it cannot reach a desktop by itself and this keeps that true.
+        if (!executor) {
+          onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: 'refused', refusalReason: 'no_executor', at: now() })
+          return reply(envelope, { ok: false, refusal: 'no_executor', capability: wanted })
+        }
+        const ran = executor.execute(envelope.order, { flagOn: true, killSwitch: { isStopped: () => aborted } })
+        onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: ran.ok ? 'executed' : 'refused', refusalReason: ran.ok ? null : ran.refusal, at: now() })
+        return reply(envelope, ran)
+      }
+
       onAudit({ approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, action: wanted, outcome: 'refused', refusalReason: NO_CAPABILITY, at: now() })
       return reply(envelope, { ok: false, refusal: NO_CAPABILITY, capability: wanted })
     }
@@ -116,9 +189,20 @@ function createCompanion (deps = {}) {
   }
 }
 
-/** Is any capability enabled in this build? Phase 3a: must be false. */
+/**
+ * Is any capability UNCONDITIONALLY enabled in this build? Must be false.
+ *
+ * `some(Boolean)` would now answer true, because 'sealed_order_only' is a truthy string — and
+ * answering true would be wrong, because none of those is enabled. The comparison is against
+ * `true` explicitly, and a test asserts no register value is ever `true`.
+ */
 function anyCapabilityEnabled () {
-  return Object.values(CAPABILITIES).some(Boolean)
+  return Object.values(CAPABILITIES).some((v) => v === true)
 }
 
-module.exports = { createCompanion, CAPABILITIES, anyCapabilityEnabled, NO_CAPABILITY }
+/** The names that a verified sealed order — and nothing else — can unlock. */
+function sealedOrderOnlyCapabilities () {
+  return Object.entries(CAPABILITIES).filter(([, v]) => v === CAP.SEALED_ORDER_ONLY).map(([k]) => k)
+}
+
+module.exports = { createCompanion, CAPABILITIES, anyCapabilityEnabled, sealedOrderOnlyCapabilities, NO_CAPABILITY, CAP }

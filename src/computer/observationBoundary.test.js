@@ -155,13 +155,7 @@ test('*** LOCK 1 — a result can only carry declared, non-raw fields ***', () =
 
 /* ── the Companion delegates rather than growing its own eyes ─────────────── */
 
-/**
- * ⛔ TWO CASES DEFERRED TO COMMIT C, WHICH PORTS `companion.js`.
- * They assert the Companion routes observation by the closed set and performs none of it.
- * The 3a Companion on main does not route observation at all, so asserting it here would
- * fail against a module this commit deliberately does not touch. They return with it.
- */
-test.skip('*** the Companion delegates observation and performs none of it ***', () => {
+test('*** the Companion delegates observation and performs none of it ***', () => {
   const code = codeOf('companion.js')
   for (const cap of [
     'screenshot', 'captureScreen', 'BitBlt', 'PrintWindow',
@@ -172,7 +166,7 @@ test.skip('*** the Companion delegates observation and performs none of it ***',
   assert.ok(code.includes('OBSERVATION_ACTIONS'), 'it routes by the closed set')
 })
 
-test.skip('an observation request through the Companion is refused in stage 1', () => {
+test('an observation request through the Companion is refused in stage 1', () => {
   const { createCompanion } = require('./companion')
   const audits = []
   const c = createCompanion({ onAudit: (a) => audits.push(a) })

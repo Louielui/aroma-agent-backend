@@ -85,19 +85,29 @@ test('the pipe is local by construction — no port, no host, no network', () =>
 test('*** the Companion refuses EVERY request — no capability is enabled ***', async () => {
   const w = await wire()
   try {
-    for (const action of ['read_file', 'create_file', 'copy_file', 'list_windows', 'capture_own_screen', 'send_keys']) {
+    for (const action of ['read_file', 'create_file', 'copy_file', 'list_windows', 'capture_own_screen']) {
       const res = await w.ask(step({ step: { action } }))
       assert.equal(res.ok, false, 'refused: ' + action)
       assert.equal(res.refusal, NO_CAPABILITY)
       assert.equal(res.capability, action, 'and it names what it will not do')
     }
+    // The gated names are refused too, and the refusal is MORE specific rather than less:
+    // it says the flag is off, which is the first of five conditions none of which is met.
+    for (const action of ['send_keys', 'open_app', 'type_text', 'launch_app', 'save']) {
+      const res = await w.ask(step({ step: { action } }))
+      assert.equal(res.ok, false, 'refused: ' + action)
+      assert.equal(res.refusal, 'flag_off', action)
+      assert.equal(res.capability, action)
+    }
   } finally { w.service.close(); await w.endpoint.close() }
 })
 
-test('*** every capability in the register is FALSE in this build ***', () => {
+test('*** no capability in the register is unconditionally enabled ***', () => {
+  // Owner ruling 2026-07-31: five names are now 'sealed_order_only'. `false` is no longer the
+  // only permitted value, but `true` is still forbidden everywhere.
   assert.equal(anyCapabilityEnabled(), false)
   for (const [name, enabled] of Object.entries(CAPABILITIES)) {
-    assert.equal(enabled, false, 'Phase 3a has no capability: ' + name)
+    assert.notEqual(enabled, true, 'nothing is unconditionally on: ' + name)
   }
   // the ones Phase 3b will add, and the ones Phase 3 never adds, are both present as
   // declared-and-off rather than absent, so nothing can be enabled by accident of naming

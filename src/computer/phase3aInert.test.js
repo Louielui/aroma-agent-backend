@@ -62,23 +62,49 @@ test('*** the Companion cannot move a mouse, send a key, launch an app or write 
 
 test('*** the Companion imports NOTHING that could reach a desktop or a disk ***', () => {
   const imports = [...codeOf('companion.js').matchAll(/require\(\s*['"]([^'"]+)['"]/g)].map((m) => m[1])
-  // Only the IPC contract. No fs, no child_process, no native binding, no automation lib.
-  assert.deepEqual(imports, ['./sessionBoundary'], 'the Companion imports only the contract')
+  // NARROWED FOR PHASE 3b — GOV-001, Owner GO 2026-07-28. Was ['./sessionBoundary'].
+  // The Companion now DELEGATES observation to observation.js rather than performing it,
+  // which is why this is the only assertion in this file that had to move: companion.js
+  // itself still contains no observation code, so the banned-token scan above and the
+  // capability register assertion below are both unchanged and still enforced.
+  // Still a closed list, still no fs, no child_process, no native binding, no automation lib.
+  // The allowlist grew by two on 2026-07-31, and both additions are things that CANNOT act:
+  // the gate computes and compares, the flag resolver returns a string. computerExecutor and
+  // desktopAdapter are deliberately absent — an executor reaches the Companion by injection,
+  // so the Companion still has no way to build one.
+  assert.deepEqual(imports, ['./sessionBoundary', './sealedOrderGate', './computerOperatorFlag', './observation'],
+    'the Companion imports only the contract, the gate, the flag resolver and the observation boundary')
+  for (const reachesADesktop of ['./computerExecutor', './desktopAdapter']) {
+    assert.equal(imports.includes(reachesADesktop), false, 'the Companion must not import: ' + reachesADesktop)
+  }
   for (const banned of ['node:fs', 'fs', 'node:child_process', 'child_process', 'robotjs',
     '@nut-tree', 'nut-js', 'screenshot-desktop', 'koffi', 'ffi-napi', 'edge-js', 'node-window-manager']) {
     assert.equal(imports.includes(banned), false, 'must not import: ' + banned)
   }
 })
 
-test('*** every capability in the register is declared and OFF ***', () => {
-  const { CAPABILITIES, anyCapabilityEnabled } = require('./companion')
-  assert.equal(anyCapabilityEnabled(), false, 'Phase 3a: zero capability')
-  const off = Object.entries(CAPABILITIES).filter(([, v]) => v === false).map(([k]) => k)
-  assert.equal(off.length, Object.keys(CAPABILITIES).length, 'all of them are off')
-  // The Phase 3b set is present-and-off rather than absent, so enabling one is an edit to
-  // a value a test watches — not a new name nobody is checking.
+test('*** no capability is UNCONDITIONALLY enabled ***', () => {
+  // CHANGED 2026-07-31 by Owner ruling, and the change is narrow enough to state exactly.
+  // This test used to require every register value to be `false`, which encoded "absolute
+  // prohibition". Four names — plus `save` — are now 'sealed_order_only': default deny, with
+  // one unlock condition. What is asserted instead is the claim that actually matters and
+  // that did NOT change: nothing is `true`.
+  const { CAPABILITIES, anyCapabilityEnabled, sealedOrderOnlyCapabilities, CAP } = require('./companion')
+  assert.equal(anyCapabilityEnabled(), false, 'nothing is enabled without an order')
+  for (const [k, v] of Object.entries(CAPABILITIES)) {
+    assert.notEqual(v, true, 'no capability may be unconditionally on: ' + k)
+    assert.ok([false, CAP.SEALED_ORDER_ONLY, CAP.NEVER].includes(v), 'unknown state for ' + k + ': ' + v)
+  }
+  // The Phase 3b observation set is present-and-off rather than absent.
   for (const k of ['list_windows', 'read_ui_tree', 'capture_own_screen']) {
     assert.equal(CAPABILITIES[k], false, 'Phase 3b capability still off: ' + k)
+  }
+  // Exactly these are unlockable. A sixth appearing here is a capability change.
+  assert.deepEqual(sealedOrderOnlyCapabilities().sort(),
+    ['launch_app', 'open_app', 'save', 'send_keys', 'type_text'])
+  // And these remain beyond any order at all.
+  for (const k of ['move_mouse', 'write_file', 'read_file', 'network']) {
+    assert.equal(CAPABILITIES[k], CAP.NEVER, 'no order may unlock: ' + k)
   }
 })
 
@@ -115,17 +141,23 @@ test('*** the flag is still off and the launcher still does not mention it ***',
   assert.equal(appCode.includes('companion'), false)
 })
 
-test('*** Phase 3a leaves the approved test folder exactly as it found it ***', () => {
+test('*** Phase 3a cannot create the approved test folder ***', () => {
+  // CHANGED 2026-07-31 for the same reason as its Phase 1 twin: the folder now exists,
+  // created elevated by the Owner via scripts/computer/prepare-canary-testdir.ps1. Its
+  // absence was never the guarantee — Phase 3a's inability to create it was, and that is
+  // what is asserted now. Weakening would have been to delete the test; this replaces a
+  // proxy with the real claim.
   const { ALLOWED_ROOT } = require('./computerWorkOrder')
-  const { snapshotRoot } = require('./rootUntouched.helper')
-  // Was 「still does not exist」. The canary provisioning created it on 2026-07-31 under the
-  // Owner's approval, so absence stopped being available as a proxy for 「Phase 3a created
-  // nothing」. This asserts the claim itself — and additionally catches Phase 3a WRITING INTO
-  // an existing folder, which the absence check never could.
-  const before = snapshotRoot(ALLOWED_ROOT)
-  require('./computerOperatorFlag')
-  require('./computerWorkOrder')
-  assert.equal(snapshotRoot(ALLOWED_ROOT), before, 'Phase 3a must not create it or write into it')
+  assert.equal(ALLOWED_ROOT, 'C:\\Aroma\\ComputerOperator-Test')
+  // Narrow, and true: no module both knows this path and can create a directory.
+  // evidenceStore.js does mkdir its own evidence folder, so a blanket ban on mkdir would
+  // fail for a correct reason.
+  const MAKERS = ['mkdir', 'mkdirSync', 'ensureDir', 'CreateDirectory']
+  for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
+    const code = codeOf(f)
+    assert.equal(code.includes('ComputerOperator-Test') && MAKERS.some((m) => code.includes(m)), false,
+      f + ' both names the approved root and can create directories')
+  }
 })
 
 /* ── the account is the Owner's step, and the code says so honestly ───────── */
@@ -133,13 +165,33 @@ test('*** Phase 3a leaves the approved test folder exactly as it found it ***', 
 test('*** the Companion account has NOT been created by this code ***', () => {
   const { COMPANION_ACCOUNT } = require('./sessionBoundary')
   assert.equal(COMPANION_ACCOUNT.created, false)
-  // and nothing in this folder could create one: no module can run a process at all
+  // Nothing here can create an account. The `child_process` clause used to carry that on the
+  // back of a broader claim — "no module can run a process at all" — which stopped being true
+  // when the PowerShell transport was unified into one launcher. The narrower claim is the one
+  // that was always the point, and it still holds for every file including the launcher: it can
+  // start ONE interpreter against a frozen script map, and none of those scripts creates a user.
+  const LAUNCHER = 'powershellJsonRunner.js'
   for (const f of fs.readdirSync(DIR).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
     const code = codeOf(f)
-    for (const cap of ['New-LocalUser', 'net user', 'child_process', 'ShellExecute']) {
+    for (const cap of ['New-LocalUser', 'net user', 'ShellExecute']) {
       assert.equal(code.includes(cap), false, f + ' must not be able to create an account: ' + cap)
     }
+    if (f !== LAUNCHER) {
+      assert.equal(code.includes('child_process'), false, f + ' must not be able to run a process at all')
+    }
   }
+  // And the exemption is exactly one file, named — not a category that can quietly grow.
+  const spawners = fs.readdirSync(DIR)
+    .filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))
+    .filter((n) => codeOf(n).includes('child_process'))
+  /**
+   * ⛔ STRICTER HERE THAN ON THE REFERENCE BRANCH, and deliberately so.
+   * There it is `[LAUNCHER]` — one named exemption, because `powershellJsonRunner.js` exists
+   * to run PowerShell. No PowerShell path is ported in this tranche, so the honest assertion
+   * is that NOTHING in src/computer/ can start a process at all. If a later tranche brings
+   * the runner, this line changes back to the named exemption — deliberately, in that commit.
+   */
+  assert.deepEqual(spawners, [], 'no module in this tranche may start a process')
 })
 
 test('the kill-switch register does not claim more than has been shown', () => {
@@ -152,4 +204,22 @@ test('the kill-switch register does not claim more than has been shown', () => {
   // and the claim is still bounded — it names WHEN and WHICH, so it cannot quietly grow
   assert.ok(KILL_SWITCH_BINDINGS.demonstratedOn)
   assert.equal(KILL_SWITCH_BINDINGS.demonstratedBindings.length, 3)
+})
+
+test('*** the Observer is a SECOND entry point and the 3a bindings do not reach it ***', () => {
+  // Phase 3b. The three demonstrated bindings were all proven against the Companion. The
+  // Observer runs in its own process, started by a scheduled task the Companion cannot
+  // touch — so killing the Companion does not stop an observation already in flight.
+  // This is asserted rather than described so the register cannot quietly imply coverage
+  // it does not have.
+  const { KILL_SWITCH_BINDINGS } = require('./killSwitch')
+  assert.equal(KILL_SWITCH_BINDINGS.killingCompanionStopsObserver, false,
+    'if this ever becomes true it must be because it was DEMONSTRATED, not assumed')
+  // ⛔ FLIPPED BY COMMIT B, AND ONLY THIS HALF. The control now exists as real code, so
+  // claiming it does not would be the same false record in the opposite direction. What has
+  // NOT changed is the line below: implemented is not demonstrated, and never becomes it.
+  assert.equal(KILL_SWITCH_BINDINGS.observerKill.implemented, true, 'built in E0-W1 commit B')
+  assert.equal(KILL_SWITCH_BINDINGS.observerKillDemonstrated, false, 'and not demonstrated')
+  // the three that ARE demonstrated must not silently grow to include the observer
+  assert.equal(KILL_SWITCH_BINDINGS.demonstratedBindings.includes('observerKill'), false)
 })

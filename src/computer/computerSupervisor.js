@@ -107,7 +107,11 @@ function createComputerSupervisor (deps = {}) {
   const newId = typeof deps.newId === 'function' ? deps.newId : () => 'caudit_' + Math.abs(now() % 1e9).toString(36)
 
   const killSwitch = deps.killSwitch || createKillSwitch({ now })
-  const registry = deps.orderRegistry || createOrderRegistry({ now })
+  // SEPARATE from the executor's, and NOT single-use. Planning is not authorisation: a
+  // planner that spent approvals would burn the very approval the plan is for. See
+  // orderRegistry.js on singleUse, and computerOperatorWiring.test.js for the proof that
+  // this instance can neither block nor be reached by the executor's.
+  const registry = deps.orderRegistry || createOrderRegistry({ now, singleUse: false })
 
   /**
    * Resolve ONE step: what it targets, what is checked, what cannot be.
@@ -165,9 +169,26 @@ function createComputerSupervisor (deps = {}) {
   function dryRun (wo, opts = {}) {
     const who = typeof opts.who === 'string' ? opts.who : null
     const approvalId = wo && typeof wo.approvalId === 'string' ? wo.approvalId : null
+    // FAIL-CLOSED. There is no longer a shape where a dryRun reports ok:true alongside
+    // auditWritten:false — if the record did not land, the operation did not succeed, and the
+    // caller is told which of the two failed.
     const finish = (result) => {
-      const record = writeAudit(result, wo, who)
-      return Object.assign({}, result, { auditRecordId: record ? record.id : null, auditWritten: !!record })
+      let record
+      try {
+        record = writeAudit(result, wo, who)
+      } catch (err) {
+        return {
+          ok: false,
+          dryRun: true,
+          refusal: 'audit_write_failed',
+          reason: err && err.cause ? err.cause : (err && err.message) || 'audit sink refused the record',
+          steps: [],
+          assurance: ASSURANCE,
+          auditRecordId: null,
+          auditWritten: false
+        }
+      }
+      return Object.assign({}, result, { auditRecordId: record.id, auditWritten: true })
     }
 
     const stopped = killSwitch.guard()
@@ -212,9 +233,22 @@ function createComputerSupervisor (deps = {}) {
     })
   }
 
-  /** Build and persist the computer-audit record. Never throws into the caller's path. */
+  /**
+   * Build and persist the computer-audit record.
+   *
+   * ── FAIL-CLOSED AS OF 2026-07-31 (Owner ruling). IT NOW THROWS. ────────────
+   * It used to be documented as "Never throws into the caller's path", and that was the whole
+   * problem: a failed disk write produced `auditWritten: false` while the operation still
+   * returned its result. An operation whose record did not land is an operation nobody can
+   * audit, and reporting it as successful is exactly the hollow-pass shape this phase spent a
+   * day removing — this one just lived in the audit layer instead of the verdict layer.
+   *
+   * Callers must let this failure reach the caller. `dryRun` converts it to a refusal.
+   */
   function writeAudit (result, wo, who) {
-    if (!auditConfigured) return null
+    // An absent sink is not "no audit needed", it is "we cannot record what we are about to
+    // report". Refuse rather than proceed unrecorded.
+    if (!auditConfigured) throw new Error('audit_not_configured')
     try {
       const record = buildComputerAuditRecord({
         id: newId(),
@@ -240,8 +274,12 @@ function createComputerSupervisor (deps = {}) {
       record.dryRun = true // marked unmistakably, at the top level
       artifactStore.write('computer-audit', record)
       return record
-    } catch (_) {
-      return null
+    } catch (err) {
+      // Re-thrown, deliberately. The old `return null` here is the line that let an unrecorded
+      // operation report success.
+      const e = new Error('audit_write_failed')
+      e.cause = err && err.message ? err.message : String(err)
+      throw e
     }
   }
 

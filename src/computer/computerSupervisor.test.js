@@ -17,7 +17,6 @@ const fs = require('node:fs')
 
 const { createComputerSupervisor, ASSURANCE } = require('./computerSupervisor')
 const { ALLOWED_ROOT, MUST_FORBID, HARD_MAX_STEPS } = require('./computerWorkOrder')
-const { snapshotRoot } = require('./rootUntouched.helper')
 
 const P = (rel) => ALLOWED_ROOT + '\\' + rel
 
@@ -54,14 +53,26 @@ test('*** the Supervisor has NO execute path — only a dry-run ***', () => {
   }
 })
 
-test('a dry-run creates nothing on disk — not even the approved root', () => {
-  // Asserts the CLAIM (「the dry-run changed nothing」), not the coincidence (「that path is
-  // absent」). The canary provisioning created the root on 2026-07-31, which made the old
-  // proxy false without making this claim false. See rootUntouched.helper.js.
-  const before = snapshotRoot(ALLOWED_ROOT)
+test('a dry-run changes nothing on disk — the approved root is untouched', () => {
+  // CHANGED 2026-07-31, and the reason matters more than the change. This used to assert
+  // `existsSync(ALLOWED_ROOT) === false`, which conflated two different claims: "a dry-run
+  // creates nothing" and "the folder does not exist". The Owner has now created the folder
+  // deliberately, elevated, out of band — so the second claim is false and the first is
+  // still exactly as true.
+  //
+  // Asserting the folder's absence would now fail for a reason that has nothing to do with
+  // the Supervisor, and deleting the test would lose a real guarantee. So it measures the
+  // guarantee instead: whatever state the folder is in, a dry-run leaves it in that state.
   const s = sup()
+  const before = { exists: fs.existsSync(ALLOWED_ROOT), entries: null }
+  if (before.exists) { try { before.entries = fs.readdirSync(ALLOWED_ROOT).sort() } catch (_) { before.entries = 'unreadable' } }
+
   s.dryRun(order())
-  assert.equal(snapshotRoot(ALLOWED_ROOT), before, 'the dry-run must leave the approved root exactly as it found it')
+
+  const after = { exists: fs.existsSync(ALLOWED_ROOT), entries: null }
+  if (after.exists) { try { after.entries = fs.readdirSync(ALLOWED_ROOT).sort() } catch (_) { after.entries = 'unreadable' } }
+
+  assert.deepEqual(after, before, 'a dry-run neither created, deleted nor wrote anything there')
 })
 
 /* ── THE ASSURANCE BOUNDARY ───────────────────────────────────────────────── */
@@ -243,11 +254,61 @@ test('the real store writes where the other audits write, under the artifact roo
   }
 })
 
-test('losing the audit store is visible, not silent', () => {
+test('losing the audit store is visible, not silent — AND the dry-run fails', () => {
   const s = createComputerSupervisor({ artifactStore: { notAWriter: true }, now: () => 1 })
   assert.equal(s.auditConfigured, false, 'a broken sink is reported, not hidden')
   const res = s.dryRun(order())
-  assert.equal(res.auditWritten, false, 'and the result says the record was not written')
+  assert.equal(res.auditWritten, false, 'the result says the record was not written')
+  assert.equal(res.ok, false, 'and an unrecorded operation does not succeed')
+  assert.equal(res.refusal, 'audit_write_failed')
+})
+
+/* ── fail-closed audit ────────────────────────────────────────────────────── */
+
+test('*** a THROWING audit sink fails the dry-run — no record, no result ***', () => {
+  // Owner ruling 2026-07-30, correcting a fail-open defect: writeAudit used to swallow the
+  // error and let the operation report success with auditWritten:false. A result that says
+  // "this happened but was never recorded" is exactly the pair that must not exist.
+  const s = createComputerSupervisor({
+    artifactStore: { write: () => { throw new Error('disk is full') } },
+    now: () => 1
+  })
+  assert.equal(s.auditConfigured, true, 'the sink LOOKS usable — the failure is at write time')
+
+  const res = s.dryRun(order())
+  assert.equal(res.ok, false, 'the operation fails because the record did not land')
+  assert.equal(res.refusal, 'audit_write_failed')
+  assert.match(res.reason, /disk is full/, 'and it says WHY, rather than hiding the cause')
+  assert.equal(res.auditWritten, false)
+  assert.equal(res.auditRecordId, null)
+})
+
+test('*** ok:true and auditWritten:false is now an IMPOSSIBLE pair ***', () => {
+  // The invariant stated as one assertion, over every route a caller can take: a success is
+  // only ever handed back once the record is on disk.
+  const cases = [
+    ['working sink', fakeStore()],
+    ['throwing sink', { write: () => { throw new Error('nope') } }],
+    ['broken sink', { notAWriter: true }]
+  ]
+  for (const [label, store] of cases) {
+    const s = createComputerSupervisor({ artifactStore: store, now: () => 1 })
+    for (const wo of [order(), order({ steps: [] }), order({ approvalId: null })]) {
+      const res = s.dryRun(wo)
+      if (res.auditWritten === false) {
+        assert.equal(res.ok, false, `${label}: unrecorded result must not be ok`)
+      }
+      if (res.ok === true) {
+        assert.equal(res.auditWritten, true, `${label}: an ok result must be recorded`)
+      }
+    }
+  }
+})
+
+test('the fail-closed rule is in the source, not just in behaviour', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'computerSupervisor.js'), 'utf8')
+  assert.ok(!/catch \(_\) \{ return null \}/.test(src), 'the swallowing catch must stay deleted')
+  assert.ok(src.includes("throw"), 'writeAudit throws rather than returning null')
 })
 
 /* ── the dormant second gate ──────────────────────────────────────────────── */

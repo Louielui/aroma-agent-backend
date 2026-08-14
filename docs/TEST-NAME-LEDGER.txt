@@ -171,12 +171,15 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** C2c. and the matching proof still passes ***
 *** C3 — FORMERLY A LIMITATION PIN: a shared sourceId no longer mis-attributes ***
 *** C3. ⛔ DUPLICATE TITLES, DIFFERENT RAW IDS — A CORRECT TOP-N STILL PASSES ***
+*** C3. ⛔ THE DEFAULT COMPANION CONSTRUCTS NO EXECUTOR ***
 *** C3b. ⛔ AN ITEM FROM ANOTHER SOURCE FAILS THE CLAIM CLOSED ***
 *** C3c. ⛔ ORDERING NO LONGER SHIPS ON ZERO MATCHES — the borrowed-proof bypass ***
 *** C3d. and an ORDERING subsequence of its OWN rows still passes ***
 *** C4. ⛔ A TOP-12 CLAIM SHOWING 2 ITEMS IS REFUSED — the declared count is checked ***
+*** C4. ⛔ AND THE REFUSAL PATH NAMES THE MISSING EXECUTOR RATHER THAN PROCEEDING ***
 *** C4b. ⛔ A COUNT LARGER THAN THE PROVEN SET IS REFUSED ***
 *** C4c. ⛔ AND A HEADING THAT NAMES A COUNT WITHOUT DECLARING ONE FAILS CLOSED ***
+*** C7. ⛔ NOTHING IN A REQUEST CAN ENABLE A CAPABILITY ***
 *** CHAT lane projection is frozen ***
 *** CLASS 3 — an explicitly PUBLIC question takes the public path, untouched ***
 *** COMMIT / proposal lane projection is frozen ***
@@ -221,6 +224,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** DESCRIPTOR — ⛔ a results page is a SAMPLE, and says so in four fields ***
 *** DESCRIPTOR — ⛔ an observation is admitted by the SEALED ORDER, not by a field it carries ***
 *** DESCRIPTOR — ⛔ filtersApplied is null, NOT [] ***
+*** DPI drifting since the gate invalidates the coordinate arithmetic ***
 *** DST is honoured, not assumed ***
 *** E / F — a main model that FINALs or ASKs never reaches the gate ***
 *** E · an uncited lead before a broken citation reaches no source ***
@@ -378,7 +382,13 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** I — ⛔ mixed SKIPS the ambiguity verifier entirely ***
 *** I/J — malformed output and a throwing worker both fail closed ***
 *** I/J — ⛔ assistant turns and unknown roles never reach the verifier ***
+*** I1. ⛔ app.js HAS ZERO REACH INTO ANY W1 CAPABILITY ***
 *** I2 — the INSTANCE identity mechanism itself is intact ***
+*** I2. ⛔ COMPUTER_OPERATOR IS STILL ZERO-EFFECT AT RUNTIME ***
+*** I3. ⛔ NO OBSERVATION CAPABILITY IS ENABLED, IN EITHER REGISTER ***
+*** I4. ⛔ NOTHING IN src/computer CAN RUN A TASK, A PROCESS OR POWERSHELL ***
+*** I5. THE rootUntouched HELPER AND ITS INVARIANT SURVIVE THE PORT ***
+*** INVALID, not pass —
 *** INVERTED 2026-07-28: all three bindings demonstrated under the operator account ***
 *** INVERTED in Phase 3a: it now stops a real process — all three bindings live ***
 *** INVERTED: Gmail is NOT shown for an invoice question, even when it matched by search ***
@@ -415,10 +425,24 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** K — the verifier is called at most ONCE per turn ***
 *** K — the verifier runs at most once per turn ***
 *** K1. ⛔ A ROW FROM ANOTHER OPERATION MAY NOT RIDE IN ON ITS TITLE ***
+*** K1. ⛔ SUCCESS REQUIRES ALIVE-BEFORE AND ABSENT-AFTER ***
+*** K10. ⛔ THE MODULE IS DORMANT — no side effect at require time ***
+*** K11. NO PRODUCTION CALLER IN THIS TRANCHE ***
 *** K1b. AND THE HONEST CITATION OF THE SAME ROWS STILL PASSES ***
 *** K2 — end to end, one turn spends exactly one final-verifier call ***
 *** K2. ⛔ AT THE RENDER SEAM: the foreign row does not reach the Owner ***
+*** K2. ⛔ NOTHING TO KILL IS A NAMED NON-SUCCESS, NOT A KILL CLAIM ***
 *** K3. THE FALLBACK SURVIVES FOR SHAPES WITH NO SERVER-RESOLVED IDENTITY ***
+*** K3. ⛔ MORE THAN ONE MATCH KILLS NOTHING ***
+*** K3b. ⛔ AND IT NEVER KILLS AN ARBITRARY powershell.exe ***
+*** K3c. ⛔ NO CALLER-SUPPLIED PID, PATH OR PROCESS NAME IS HONOURED ***
+*** K4. ⛔ A FAILED TASK STOP CANNOT BECOME A SUCCESS ***
+*** K5. ⛔ A FAILED TERMINATE CANNOT BECOME A SUCCESS ***
+*** K5b. STOPPING THE TASK IS ENOUGH WHEN IT REALLY STOPS THE PROCESS ***
+*** K6. ⛔ aliveAfter TRUE IS ALWAYS A FAILURE, WHATEVER ELSE SUCCEEDED ***
+*** K7. implemented IS TRUE ONLY BECAUSE THE CODE EXISTS ***
+*** K8. ⛔ observerKillDemonstrated STAYS FALSE ***
+*** K9. ⛔ killingCompanionStopsObserver STAYS FALSE ***
 *** KILL 1 — the SERVICE GATE stops it before anything is sent ***
 *** KILL 2 — the COMPANION ABORT stops it after it is running ***
 *** KILL 3 — the OS FALLBACK: closing the channel leaves it nothing to answer on ***
@@ -443,6 +467,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** LIVE-ZERO reaches the caller as zero rows, and that is a true answer ***
 *** LIVE_LOCK_BUSY — a living holder makes the store busy, and nothing is touched ***
 *** LIVE_OLD_LOCK_BUSY — age never overrules a living holder ***
+*** LOCK 1 — a result can only carry declared, non-raw fields ***
+*** LOCK 1a — observation.js imports one inert sibling, and nothing else ***
+*** LOCK 1b — the observation return path never calls prompt assembly ***
+*** LOCK 3 — the 7-day sweep actually deletes an aged file from disk ***
+*** LOCK 3 — the sweep deletes the names that actually hold raw content ***
+*** LOCK 3 — titles are EPHEMERAL ONLY; a durable record refuses them ***
 *** M / N — the verifier sees the bounded history for a continuation ***
 *** M — a LIVE model-directed read still activates Truth Closure ***
 *** M — a value the OWNER typed himself is not a leak ***
@@ -462,6 +492,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** N2 — the detector catches the exact forbidden composition ***
 *** N2 — ⛔ the refusal is VISIBLE TO THE MODEL, not only to the loop ***
 *** N3 — A4-0A performs no egress at all: args reach no connector ***
+*** NO order unlocks a NEVER action — however perfect the seal ***
 *** NOTHING in the application requires the Computer Operator modules ***
 *** NO_AUTOMATIC_RECLAIM_PATH — the reclamation machinery is gone, not merely unused ***
 *** NULL IS NOT FALSE — an absent title is unknown, not unchanged ***
@@ -487,6 +518,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** P — ⛔ an UNAVAILABLE public read does not satisfy the public world ***
 *** P — ⛔ an UNAVAILABLE read does not satisfy the required world ***
 *** P1 — ⛔ the planner never receives the raw query or any internal evidence ***
+*** P1. AN EPHEMERAL OBSERVATION RESULT MAY CARRY titles ***
 *** P10 — two PUBLIC requests in one turn spend ONE planner call ***
 *** P11 — the cache also remembers a REFUSAL, so a broken planner is asked once ***
 *** P12 — ⛔ assistant turns are excluded, and so is every unknown role ***
@@ -497,14 +529,24 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** P17 — the module is provider-neutral, proven statically ***
 *** P18 — ⛔ the ROOT is a plain object, and the fields are DERIVED not retyped ***
 *** P19 — the log line is counts and enums only ***
+*** P1b. ⛔ BUT A FOREIGN SESSION\
 *** P2 — a recovery-shaped public read with args=null still reaches the provider ***
 *** P2 — ⛔ the public executor receives none of the four internal values ***
+*** P2. ⛔ THE AUDIT RECORD REFUSES titles OUTRIGHT ***
 *** P20 — the planner system text forbids inventing specifics and naming the restaurant ***
+*** P2b. AND THE COUNTS IT REPLACED ARE STILL AUDITABLE ***
 *** P3 — a pure-public turn with NO planner performs NO read, valid raw query or not ***
 *** P3 — ⛔ the public read still executes: MIXED gets BOTH worlds ***
+*** P3. ⛔ THE SERIALIZED RECORD CARRIES NEITHER THE KEY NOR THE VALUE ***
 *** P4 — nothing leaks into telemetry either ***
+*** P4. windowChanged IS DERIVED SERVER-SIDE AND NEITHER TITLE IS KEPT ***
+*** P4b. AND null STAYS DISTINCT FROM false ***
 *** P5 — fail closed: a planner that is ${name} produces NO public read ***
+*** P5. ⛔ observer-result.json IS NOT A PERMANENT RECORD ***
+*** P5b. THE RETENTION TAXONOMY COVERS THE OBSERVER ARTEFACTS ***
+*** P5c. AND THE SWEEP DELETES RAW CONTENT WHILE KEEPING RECORDS ***
 *** P6 — ⛔ a failed plan NEVER falls back to the main model query ***
+*** P6. NO OBSERVATION CAPABILITY IS ENABLED BY THIS TRANCHE ***
 *** P7 — a failed plan creates NO EvidenceSet and no trust state ***
 *** P7/P8 — with NO internal evidence the planner STILL owns the outbound words ***
 *** P8b — one plan per turn, even across two public attempts ***
@@ -518,7 +560,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** POST /api/v1/demo/intake is refused without auth (it spends money) ***
 *** POST /api/v1/intake is refused without auth (it spends money too) ***
 *** POST saves, and the answer says when ***
-*** Phase 3a leaves the approved test folder exactly as it found it ***
+*** Phase 3a cannot create the approved test folder ***
 *** Q — an UNAVAILABLE model-directed read does NOT activate Truth Closure ***
 *** Q — the public operation is read-shaped and exposes no action ***
 *** Q — ⛔ A4 OFF: an ASK behaves exactly as it always did ***
@@ -529,6 +571,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** R — ⛔ an unusable verifier on an initial ASK invents nothing and reads nothing ***
 *** R — ⛔ the default READ bound is still exactly 3, plus one reserved compose ***
 *** R/S/T — require_mixed: refused until BOTH worlds are live ***
+*** R1. ⛔ AN APPROVAL ID CANNOT BE REUSED AFTER close() ***
+*** R2. ⛔ NOR AFTER IT EXPIRES ***
+*** R3. ⛔ A DIFFERENT ORDER REUSING AN ID IS DISTINGUISHED, AND STILL REFUSED ***
+*** R3b. THE DRY-RUN SEAM IS PRESERVED — singleUse:false is deliberate ***
 *** REACH (browseOrder) — the ORDER cannot be supplied or widened by a caller ***
 *** REACH (session) — ⛔ R3.1: the credential path is UNREACHABLE, not merely unused ***
 *** REACH — free text yields an OFFER, never an action ***
@@ -590,6 +636,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** T/U — after the worker\
 *** THE CARVE-OUT: a title the Owner himself typed is not laundering ***
 *** THE COST OF CLAUSE-SCOPING, recorded rather than hidden ***
+*** THE FLAG IS NOT SUFFICIENT — on, with no order, unlocks nothing ***
 *** THE LANE GUARANTEE: only the proposal shape can ever carry promoteToProposal ***
 *** THE LIVE FAILURE: a capability question renders no rows and no omission note ***
 *** THE LIVE FAILURE: a metric value the model mistyped is corrected, not deleted ***
@@ -658,6 +705,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a ROUTED email takes the identical U1 path as an explicitly chosen one ***
 *** a STRIPPED-ENV node child DOES reach production — the honest limit ***
 *** a SUBSTRING of prose still does not match — only the digit run is extracted ***
+*** a THROWING audit sink fails the dry-run — no record, no result ***
 *** a TITLE is never an identifier ***
 *** a bare aroma_system is NOT itself an operation ***
 *** a bare verb is not an instruction ***
@@ -684,6 +732,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a completed chat turn is appended to its conversation ***
 *** a completed turn is appended and survives a reload ***
 *** a concept the EvidenceSet does not assert is never suppressed ***
+*** a contaminated baseline makes later hits unattributable ***
 *** a conversation that SPANS the change still matches across spellings ***
 *** a correct SUBSEQUENCE is a legitimate ranking — a top-2 need not carry the tail ***
 *** a corrupt line is skipped; the rest of the memory survives ***
@@ -714,6 +763,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a forbidden file is named, with the reason ***
 *** a fresh login is ok, even though the ACCESS token expires in hours ***
 *** a garbage return value is unavailable, not chat ***
+*** a gated action reaching the OBSERVER is refused, order or no order ***
 *** a genuine chat is NOT marked — the two cases must not look alike ***
 *** a genuinely unavailable source may be reported as unavailable ***
 *** a good read ENABLES Save — the guard must not lock the page permanently ***
@@ -740,6 +790,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a name that is NOT in the description is still rejected ***
 *** a network failure disables Save ***
 *** a no-intent message still reads NOTHING automatically — notAsked survives ***
+*** a no_target_window result is INVALID, not "the owner window is absent" ***
 *** a non-business route with a named internal source does not qualify ***
 *** a non-clarify decision may not smuggle a question ***
 *** a non-metric fact still goes through valueMatches, unrelaxed ***
@@ -775,6 +826,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a refused save is 422 with a readable reason, not 500 ***
 *** a rejected value is now ON the drop record ***
 *** a relative date carries the timezone exactly as today does ***
+*** a result carrying raw content is REFUSED, not silently trimmed ***
 *** a result with NO provider field is still attributed correctly ***
 *** a row_local claim naming a retrieved row VERIFIES ***
 *** a row_local claim with NO sourceIds is unverified — it is not row-local at all ***
@@ -786,6 +838,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a section that EXISTS must carry an item, and the choice is declared ***
 *** a section that loses SOME items states the omission rather than shrinking silently ***
 *** a sentence carrying a number is dropped — the server owns the figures ***
+*** a sentinel below the detection floor makes its absence meaningless ***
 *** a set_scoped claim MATCHING the evidence scope verifies ***
 *** a set_scoped claim without a structural scope is unverified ***
 *** a settings router built with NO save does not write the real settings file ***
@@ -804,6 +857,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a step outside the approved root never reaches step resolution at all ***
 *** a stock claim the evidence cannot support is removed ***
 *** a stop is FIRST-WINS — the record says what actually stopped it ***
+*** a stopped run unlocks nothing — the 3a binding is not weakened ***
 *** a store failure never takes the answer away ***
 *** a superlative question is recognised by SHAPE, not by a topic vocabulary ***
 *** a test process with no AROMA_DATA_DIR does NOT get the production dir ***
@@ -828,11 +882,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** a well-formed store still round-trips through the validator untouched ***
 *** a write that cannot be serialised THROWS rather than clobbering ***
 *** a written-Chinese scope note is suppressed on repeat, same as the Cantonese one ***
+*** a zero-node UIA read is INVALID, and once was not ***
 *** absent evidence is not entitlement — fails closed ***
 *** active → 啟用中, and a raw enum never reaches the screen ***
 *** after a fallback, provenance names the provider that ACTUALLY answered ***
 *** all EIGHT lifecycle types are accepted ***
+*** all five conditions together, and then it unlocks ***
 *** allIntentsFor keeps what intentFor discards ***
+*** allowedPath must be EXACTLY the one directory ***
 *** ambiguity is RESIDUAL: the guidance orders the check and says so ***
 *** ambiguous → ASK, and ZERO reads ***
 *** an ABSENT field is left alone — the accept is specific to empty-string, not to omission ***
@@ -857,6 +914,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an approval event records who, when, and the work order hash ***
 *** an archive containing ONLY the current conversation yields nothing ***
 *** an automatic read can be recorded as the operation it was ***
+*** an empty UIA artefact is INVALID even if a node count is reported ***
 *** an empty {} DOES clear the persisted record of what he chose ***
 *** an empty {} does NOT wipe the running config — applyFlags only ever writes ***
 *** an endpoint with no window says so explicitly, rather than omitting queryScope ***
@@ -864,6 +922,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an expired refresh token REFUSES, and says exactly how to fix it ***
 *** an explicitly injected store DOES write — the inversion is the default, not the feature ***
 *** an id or a link is citation, and cannot occur by chance ***
+*** an image carrying ONLY the own signature passes ***
+*** an image carrying the OWNER signature adjudicates CONTAINMENT-FAILURE ***
 *** an inert implementation that is not exported cannot be guarded, and fails ***
 *** an instruction with no file asks ONLY about the file ***
 *** an invented capability executes zero reads through the real path ***
@@ -876,6 +936,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an omitted assistant turn is rendered as an explicit absence ***
 *** an omitted record\
 *** an operational number with nothing read is withheld, and said so ***
+*** an order that does not contain the action does not authorise it ***
 *** an order that omits ANY required prohibition is refused ***
 *** an ordinary conversational turn reads nothing ***
 *** an ordinary text response is unchanged ***
@@ -902,6 +963,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** an unrecognised value resolves toward READING LESS, not more ***
 *** an unrelated proper noun is NOT hers ***
 *** an unsafe approvalId cannot steer the filename ***
+*** an unsealed, unapproved or unhashed order unlocks nothing ***
 *** an unsupported sentence is dropped; the verified row is KEPT ***
 *** an untitled source keeps a usable label, and the FIELD still tells the truth ***
 *** an unwritable directory is reported, never thrown ***
@@ -981,8 +1043,6 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** every assistant message carries a copy control ***
 *** every boundary-removing phrase is refused, and the phrase is quoted back ***
 *** every business intent still returns exactly the method it always did ***
-*** every capability in the register is FALSE in this build ***
-*** every capability in the register is declared and OFF ***
 *** every constraint the descriptions expressed is still expressed ***
 *** every corpus case gets the verdict it should ***
 *** every dry-run writes a computer-audit record, marked as a dry-run ***
@@ -1067,6 +1127,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** model_estimate is a permitted CANDIDATE basis and nothing more ***
 *** naming a SOURCE is not citing its CONTENT ***
 *** naming an item THIS turn actually retrieved is still allowed ***
+*** neither signature may sit on the Windows console palette ***
 *** never guess gender ***
 *** newest validated first, ties broken deterministically by id ***
 *** no 500-entry cap on the durable trail ***
@@ -1081,6 +1142,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** no archive file at all → no block, no throw ***
 *** no authorised capabilities at all → cannot route, no call spent ***
 *** no block, no reply, empty, or a broken block → CITES (omit) ***
+*** no capability in the register is unconditionally enabled ***
+*** no capability is UNCONDITIONALLY enabled ***
 *** no disc behind the dot — the dot IS the avatar ***
 *** no followUp means the answer ends without a question ***
 *** no generated operation is write-shaped — the loop would refuse it ***
@@ -1101,6 +1164,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** no retired name is left in anything the Owner READS ***
 *** no route factory defaults a WRITER to a process-wide real instance ***
 *** no rule outside :root restates a font size, except icon glyphs ***
+*** no same-round baseline makes every zero result meaningless ***
 *** no schema description is written in Cantonese ***
 *** no settings file at all → the default, not an error ***
 *** no stale correction: the guard judges what is SHOWN, not discarded prose ***
@@ -1112,6 +1176,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** none of the false triggers produce an offer ***
 *** nothing disappears silently — the hidden count is real ***
 *** nothing in the application imports the Companion or the channel ***
+*** nothing in the application imports the observation boundary ***
 *** nothing is ever dropped — the Owner ruled no cap ***
 *** nothing spawns, writes, connects, clicks, types or captures ***
 *** nothing still tells the Owner to press a button that no longer exists ***
@@ -1120,8 +1185,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** null confidence is PRESERVED as null — never defaulted to 0.5 ***
 *** null confidence renders as "not established", never as a number ***
 *** null is CLEARED, not malformed — it is how the schema spells "not set" ***
+*** observation.js cannot synthesise input, touch disk, or start a process ***
 *** off and shadow still require an exact spelling ***
 *** offerFor returns null, never an empty object — no field appears for nothing ***
+*** ok:true and auditWritten:false is now an IMPOSSIBLE pair ***
 *** on a GPT turn, provenance is GPT\
 *** once she has said it, a REWORDED restatement is dropped ***
 *** one table per concept — the router iterates what the answerer publishes ***
@@ -1140,6 +1207,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** other separable forms of the same compounds ***
 *** over the cap is REFUSED with the numbers, and nothing is saved ***
 *** over-bound text is REJECTED, never silently truncated ***
+*** own signature unrecognised makes the capture unable to support an absence claim ***
+*** owner content becoming visible is CONTAINMENT-FAILURE, not a failed row ***
 *** precondition: a message that does not name her system supplies nothing ***
 *** preferences are marked as outranking recalled conversation ***
 *** presentedOrder reads FIRST MENTION, and ignores rows never named ***
@@ -1196,6 +1265,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** sourceTotal=null can never support an unqualified source-wide universal ***
 *** source_wide VERIFIES only when matchingTotal === sourceTotal ***
 *** source_wide is structurally distinct from row_local ***
+*** stage 1 — every observation capability is declared and OFF ***
 *** startOfLocalDay follows the SETTING, not the operating system ***
 *** start_url points at a page that actually exists ***
 *** stats counts omissions, so an archive of placeholders cannot look full ***
@@ -1204,8 +1274,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** substring matching is NOT the mechanism — 8.0 must be rejected ***
 *** substring matching is still not the mechanism ***
 *** supersession replaces a belief and points at its replacement ***
+*** swallowed per-node failures make the node count meaningless ***
 *** telemetry carries no business content and no model prose ***
 *** text is read from EVERY block, not just the first ***
+*** the 0-byte UIA artefact that started this is swept like any other ***
 *** the A4 shaped schema obeys strict mode at every node ***
 *** the AUTOMATIC read is still vetoed by notAsked, end to end ***
 *** the Aroma System rewrite table is WITHDRAWN ***
@@ -1214,10 +1286,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the Companion account holds no credential and no bank session ***
 *** the Companion cannot capture a screen or read a UI tree ***
 *** the Companion cannot move a mouse, send a key, launch an app or write a file ***
+*** the Companion delegates observation and performs none of it ***
 *** the Companion imports NOTHING that could reach a desktop or a disk ***
 *** the Companion refuses EVERY request — no capability is enabled ***
 *** the HOW-TO half was not deleted — it is in the ＋ menu ***
 *** the Lab store is NOT any production store ***
+*** the Observer is a SECOND entry point and the 3a bindings do not reach it ***
 *** the Owner is never asked to switch language ***
 *** the Owner message carries no Aroma business intent — so aromaMethodFor is null ***
 *** the Owner session cookie is NOT the approval router\
@@ -1297,6 +1371,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the fix instruction carries the absolute path and says why ***
 *** the flag fails closed on anything but exactly "on" ***
 *** the flag is set when the turn is sent, on the conversation itself ***
+*** the flag is still NECESSARY — a perfect order with the flag off is refused ***
 *** the flag is still off and the launcher still does not mention it ***
 *** the flag is unread, so turning it on does nothing ***
 *** the floor is 8 — the Owner\
@@ -1338,6 +1413,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the launcher and the repo default now agree ***
 *** the ledger is not empty, and not stale to the point of meaninglessness ***
 *** the lesson cap is respected ***
+*** the limits are carried IN the order, and bounded ***
 *** the line answers the question that could not be answered ***
 *** the line is emitted for a FALLBACK too, with its reason ***
 *** the list is grouped 今日 / 尋日 / 更早 ***
@@ -1374,6 +1450,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the net is deliberately WIDE, and the direction of its error is stated ***
 *** the note names WHY nothing was read when the reason is known ***
 *** the note names the source that was not consulted ***
+*** the observation action set is closed, and input actions are not in it ***
 *** the observation block names a world and never a capability ***
 *** the offer explains itself, firing or declining ***
 *** the offer is built from inferWorkRequest — not a second reading ***
@@ -1431,6 +1508,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** the rule is concrete again, and still spells no banned form ***
 *** the same date the row stores as a timestamp is accepted as a date ***
 *** the same script yields the same trace whatever is behind callModel ***
+*** the sampling arithmetic is stated in PHYSICAL pixels and still holds after DPI ***
 *** the scan finds the inert implementations that exist ***
 *** the schema no longer demands a section, and declares the choice instead ***
 *** the schema restricts sourceId to THIS turn\
@@ -1496,6 +1574,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** validated lessons are included ***
 *** validation admits only the closed shape, and allow forces question null ***
 *** validation holds with several sources present at once ***
+*** wallpaper colour gamut must not trip either signature ***
 *** what a dry-run CANNOT verify is reported as unknown, never as ok ***
 *** what the picker CLAIMS about each provider must be TRUE, and stated on the option ***
 *** when routing is uncertain it falls to CONVERSATION ***
@@ -1920,6 +1999,7 @@ DEMO_HTML: the approval card is a viewer + four fields of intent, and holds no a
 DEMO_HTML: the emitted browser script is syntactically valid JS
 DISPROVEN and SUPERSEDED are distinct statuses, not one "not current"
 DOM.resolveNode failing is refused too — measured: it can also SUCCEED on a removed node
+DPI is carried on both the result and the audit, not recorded once per machine
 DUE and NEVER_RUN are visually distinct from FRESH, but none of them is an alarm
 Deploy to production WITH approval proceeds to the adapter
 Deploy to production returns require_approval
@@ -2120,6 +2200,7 @@ a Work Order cannot be sealed without a real, pending Proposal
 a backend Run dispatches a snapshot carrying targetProject backend
 a banned key hidden deep inside the input is still caught
 a bare imperative fires — 幫我 is politeness, not a requirement
+a black capture in a disconnected session reports BOTH reasons, not just the first
 a browser-supplied workOrder / allowedFiles / caps is REJECTED, not silently ignored
 a caller cannot ask for an unbounded wait
 a caller cannot supply windowChanged itself — it is derived, never accepted
@@ -2159,7 +2240,7 @@ a digit-heavy value is classified without being quoted
 a directAnswer that loses every sentence does not stand as an answer
 a directory that does not exist yet lists as empty rather than throwing
 a directory, an unreadable file and a path outside the repo all refuse
-a dry-run creates nothing on disk — not even the approved root
+a dry-run changes nothing on disk — the approved root is untouched
 a due date is never used as the row date
 a fact value that is not a real value is dropped
 a failed load can be retried
@@ -2225,6 +2306,7 @@ a mix: one comparable and clean, one with no history → BOTH stated, neither hi
 a money value matches the bare number the row carries
 a month or an invoice number is not an expression
 a name that was ONLY a glyph becomes empty, not a ghost string
+a named mechanism turns a refusal into BOUNDED
 a non-browser caller gets a plain 401 it can act on, not a redirect
 a non-exact interactionMode is NOT treated as chat
 a non-integer is refused rather than coerced
@@ -2381,6 +2463,7 @@ an abbreviation is refused at save time too, with the reason
 an absent order blocks everything
 an absent order refuses too — an absent fence is not an open one
 an accepted knock is written with its time and caller
+an action nobody gated is refused rather than allowed by omission
 an adapter with no client fails-closed to unavailable
 an aged amount is struck, and an expired one is absent rather than decorated
 an ambiguous tag is refused rather than resolved by picking
@@ -2417,6 +2500,7 @@ an item is two lines and carries no 來源 segment
 an item that was never retrieved is an invention and is dropped
 an llm returning a targetProject of production is rejected — no Proposal is created
 an llm that returns text agreeing to proceed does not confirm anything
+an observation request through the Companion is refused in stage 1
 an opaque timeout becomes a named cause, and says what covered it
 an openable section renders a control that opens it
 an ordinary Traditional reply passes untouched
@@ -2468,6 +2552,7 @@ and the output SAYS they cannot be told apart
 and the router hands the same single source through
 and the rule is restored: the live matcher still refuses
 answered, stopped-for-you and blocked-by-site are distinct states
+anything outside the closed set is refused as out of scope, not attempted
 anything under src/governance/ is un-allowlistable, including a file nobody has written
 appendStage (via dispatcher) → restart → stage persists; deriveStatus unchanged
 approveRun can never be steered to dispatch Deploy — only Apply@1
@@ -2489,6 +2574,7 @@ assertResponseFormat rejects ${label} with MALFORMED_RESPONSE_FORMAT
 assertSandboxUnderTmpdir: accepts a real tmp subdir, rejects escapes/symlink-out
 at most three sentences survive
 attachmentFor takes a kind and rows — there is no message parameter
+audit refuses an undeclared field rather than accepting a payload with it
 audit: appends one immutable record per run
 authorizeExecution: all off → not_authorized (default dormant)
 authorizeExecution: any two-of-three on → configuration_conflict → zero
@@ -2680,7 +2766,9 @@ every ingredient checked, nothing new → NOTHING_NEW with a count
 every key is key-shaped, so data can never collide with one
 every mapped status renders as its Owner-facing word, and needs_review never leaks
 every message is bound to one order and one step, so nothing can be replayed
+every not-found refusal is treated the same way, not just the one we hit
 every path passes a timeout to the library
+every raw-content and record rule is reachable and none overlaps
 every reason is a named constant, never a raw library string
 every ref in one read is unique — an ambiguous ref would click the wrong element
 every refusal is a returned value, never a thrown error
@@ -2849,7 +2937,7 @@ load: valid JSON but wrong top-level shape throws ProposalStoreCorruptError
 load: wrong envelope shapes throw RunStoreCorruptError
 logIntakeOutcome never throws, even on a hostile sink or input
 logout clears with the SAME attributes, or it would not actually clear
-losing the audit store is visible, not silent
+losing the audit store is visible, not silent — AND the dry-run fails
 malformed file → construction throws a controlled error; file NOT overwritten, nothing fabricated
 malformed result artifact → controlled 500, no crash, no path leak
 master on but per-source off → still inert
@@ -2898,6 +2986,7 @@ no task installed → DUE still reads as manual, because it IS manual
 no translating file declares a local named t
 no value named → no offer, with its reason
 no write handle — build succeeds with all fs write ops disabled (hermetic no-write proof)
+nodeReadFailures is a COUNT and travels on both the result and the audit
 non-bridge pending proposal (no sourceTaskId) → confirm works exactly as today
 non-chat lanes still read nothing at all
 non-context chat/recommend intents → speech
@@ -2954,6 +3043,7 @@ path escapes / absolute paths are rejected
 pending proposal → restart → still pending (no confirm fields fabricated)
 per-item size cap truncates content + flags it
 permissionMode + addDirs match B2-1
+permitted when it should not be is a VIOLATION
 persona carries the trusted data-boundary guard (context_card is data, not instructions)
 pickRedirectUri: loopback from client, desktop default, OOB and --manual
 picking a provider never changes the lane or reaches execution
@@ -3056,6 +3146,7 @@ service: non-HTTP caller with no requestId still gets a generated correlationId
 service: provider failure → IntakeUpstreamError (typed, carries id + cause)
 set() then get() in the same process returns the new value
 shell:false is preserved everywhere — no shell:true anywhere in the agent
+signature matching honours the declared tolerance in both directions
 silence is reserved for "the feature is off" and nothing else
 sink failure is swallowed — handleIntakeError still returns a safe response
 stackSample: off by default; on only when flag set AND non-production
@@ -3108,6 +3199,7 @@ the SPAWNED child really receives the built env, not the parent env
 the StaticText label of a button does not survive beside the button
 the Supervisor reaches a disk ONLY through the artifact store
 the Supervisor\
+the UIA rules do not fire on the other two actions
 the URL is recorded without its query string — a query can carry a secret
 the `next` parameter cannot be turned into an off-site redirect
 the absent sentence still reads as the calm, normal, manual state
@@ -3206,6 +3298,7 @@ the evidence records aliveness per binding, so a dead target is always visible
 the existing event members are untouched
 the expanded form contains everything the collapsed form hid
 the expected hash is recomputable by hand, and the command is in the file
+the fail-closed rule is in the source, not just in behaviour
 the failure entry NEVER contains the prompt, the user message, or the full output
 the fallback direction is CHAT — the lane that can talk but not act
 the favicon is the padded square, shared with the installed app icon
@@ -3219,9 +3312,12 @@ the four canonical demo turns map to the four distinct outcomes
 the four failure reasons are reported separately, never as one boolean
 the four outcomes are not collapsible into ok/not-ok
 the freshness entry is carried whole
+the gate baseline and the same-round baseline are different obligations
 the generated source really is the server function, not a copy of it
 the generic kind no longer exists at all
 the goal is an argument, never concatenated into a shell string
+the good UIA context adjudicates ACCEPTED — the control for the three cases below
+the good context adjudicates ACCEPTED — the control for every case below
 the grace period stops a run a few minutes late from reading as overdue
 the greeting still renders when the backlog read HANGS past its budget
 the greeting still renders when the backlog read THROWS
@@ -3239,6 +3335,7 @@ the kill-switch register does not claim more than has been shown
 the labels are Traditional Chinese, and the control is reachable without sight
 the launcher body IS in the monthly backup sources
 the launcher is outside the repo and no rule here reaches it
+the limits are inside the hash, so they cannot be edited after approval
 the line carries exactly the allowlisted fields — nothing else survives
 the line is attached when there is something waiting
 the link works at ANY age — 過期嘅係主張，唔係 access
@@ -3262,6 +3359,8 @@ the model reply splits at 下一步, and its prose above is discarded
 the module is pure — building a record touches nothing
 the module requires no model client
 the mushroom line: data survives the frame changing language
+the negative threshold is low on purpose — a partly-visible owner window still trips it
+the never-list and the restricted list do not overlap
 the note is never added twice, and never to a clean reply
 the note is short enough to read as one line
 the number gate still holds for written-Chinese lines
@@ -3346,6 +3445,7 @@ the same hostile content is inert on the CLAUDE path too
 the same node keeps its ref across two independent reads
 the same slots appear in both languages
 the same tree read twice gives the same refs — a ref is not a position
+the sampling grid and its detection floor are declared values, not prose
 the scanner reports what it does NOT cover
 the schema closes every object so nothing can be smuggled past the validator
 the schema still closes every object after the minItems change
@@ -3370,7 +3470,7 @@ the sources are read CONCURRENTLY — the wait is the slowest one, not the total
 the spy connector actually records calls (so a zero below means something)
 the spy records calls — every zero below is measured, not vacuous
 the square icon reads its colour from dot.svg, so the two cannot drift
-the staged copy reaches only two node builtins
+the staged copy reaches only three node builtins, each named
 the staged graph pulls in NOTHING beyond the Companion
 the stamp changes when a stale-able asset changes — otherwise it detects nothing
 the stamp covers app.js, app.css AND index.html
@@ -3385,9 +3485,11 @@ the store snapshots scope + caps at hand-off and measures duration once
 the store writes no approval or authorisation field
 the substitution is the label map, not a guess
 the suite is free of the fall-through and empty-coercion shapes
+the sweep is driven by the injected clock, so the deletion path is reachable in a test
 the switch list is DERIVED, so a new source cannot be forgotten
 the synthetic marker note "由對話蒸餾" no longer appears for empty-task commits
 the tab and installed-app titles are the current name
+the three capability states are distinct and named
 the three outcomes reach the DOM as distinct classes, never merged
 the three states that were already named still are
 the timeline gains stages over time and the status becomes terminal once dispatch completes
@@ -3402,6 +3504,8 @@ the two known inert implementations agree with each other
 the two lines are verbatim distinct, and the header explains both
 the two produce DIFFERENT sentences
 the two render as different things, which is the whole point
+the two signatures are far apart and far from Windows chrome
+the two timeout bounds are declared and the wall clock is the larger
 the typed confirmation is checked on the SERVER — every near-miss is refused
 the untouched defects are NOT marked as anything resembling handled
 the v2 card is a viewer: collapsed section is presentation only, payload unchanged
@@ -3464,6 +3568,7 @@ validateAdapter throws when health is missing
 validateAdapter throws when invoke is missing
 validateProposalId accepts safe ids and rejects traversal/malformed
 verifier round-trip — PASS on good closure; FAIL on any single mutated field
+verifySeal is pure — it neither mutates the order nor touches anything
 version constant is v1
 wait_for spends it — waiting for a change means the DOM changed
 weekday comes from the DATA (event local date), not the model
@@ -3514,6 +3619,7 @@ workspace.prepare: refuse an unsafe approvalId
 workspace.prepare: refuse when a remote survives removal
 write rejects a record without id or createdAt
 write then read round-trips a task and a result
+write_file stays NEVER even though save is unlockable
 writes Execution + linked Result artifacts; sandbox is under os.tmpdir()
 zero results renders "read OK — no matching results", NEVER unavailable
 zoneLabel takes the city, never the whole IANA string
