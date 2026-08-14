@@ -1,25 +1,36 @@
 'use strict'
 
 /**
- * observerKill.test.js — E0-W1 COMMIT B. The stop control the three demonstrated bindings miss.
+ * observerKill.test.js — E0-W1 COMMITS B and E. The stop control the three bindings miss.
  *
  * ══════════════════════════════════════════════════════════════════════════════
  * ⛔ THE GAP, STATED IN CODE ON THE 3b BRANCH AND CORRECT.
  *
  * The Observer is NOT the Companion. It is a separate process started by a fixed scheduled
- * task, so the Companion can neither start it nor stop it. Asked plainly — does killing A stop
- * B — the answer is no, and all three bindings demonstrated in 3a miss it:
- *
- *   serviceGate     stops the NEXT step being dispatched. An observation already running in
- *                   another process is not dispatched through the gate and continues.
- *   companionAbort  stops the Companion. The Observer has no parent-child relationship with it.
- *   osBackstop      destroys the IPC channel. The Observer does not use it to do its work.
+ * task, so the Companion can neither start it nor stop it. All three bindings demonstrated
+ * in 3a miss it: serviceGate stops the NEXT dispatch, companionAbort stops a process that is
+ * not its parent, and osBackstop destroys a channel the Observer does not use to do its work.
  *
  * > **「It will stop by itself shortly」 is not a kill switch.** A bound is not a control.
  *
- * ⛔ AND THIS COMMIT DOES NOT MAKE IT DEMONSTRATED. Code existing is not a demonstration
- * against a real process, and `observerKillDemonstrated` stays false until one happens with
- * the Owner watching. A test may not flip that bit; K8 exists to make sure none does.
+ * ⛔ COMMIT E — RESEMBLANCE WAS BEING TREATED AS OWNERSHIP.
+ *
+ * The first cut identified its target by three things: an interpreter name, the fixed script
+ * path in the command line, and a valid `-Action`. All three are things anything can WRITE.
+ * `TASK_NAME` took no part in establishing that the PID came from the task — it was used
+ * afterwards, only to stop it. So any process running the same script with a similar command
+ * line became a kill target, whether or not the fixed task started it. And `pwsh.exe` was
+ * accepted although the fixed task can never launch it.
+ *
+ * The old K3 cases missed it: a wrong script path, an ordinary PowerShell, Node, and a
+ * caller-supplied pid or path. None of them wrote the EXACT observer command line while
+ * belonging to something else — which is the case that matters.
+ *
+ * This is the fourth time this week that appearance stood in for proof, after access-denied
+ * read as zero, a whole-file diff read as divergence, and missing session proof read as safe.
+ *
+ * ⛔ AND STILL NOT DEMONSTRATED. Every test here runs against a fake adapter; not one real
+ * task or process is touched. K8 exists so no test can quietly flip that bit.
  * ══════════════════════════════════════════════════════════════════════════════
  */
 
@@ -29,13 +40,33 @@ const assert = require('node:assert/strict')
 const K = require('./observerKill')
 const { KILL_SWITCH_BINDINGS } = require('./killSwitch')
 
-/** A deterministic fake OS. No task, no process, no PowerShell is ever touched by this suite. */
+/** The fixed task's own identity, as the adapter must report it. */
+const OWNER = 'AROMABRAIN\\AromaOperator'
+const SESSION = 5
+const EXE = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
+const CMD = EXE + ' -NoProfile -ExecutionPolicy Bypass -File C:\\AromaOperator-Probe\\observer.ps1' +
+  ' -Action list_windows -OutJson C:\\Aroma\\ComputerOperator-Evidence\\observer-result.json'
+
+/** The genuine article: started by the fixed task, in its account and session. */
+const REAL = { pid: 4242, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: CMD }
+
+/**
+ * A deterministic fake OS. `taskInstance` is the evidence that did not exist before Commit E:
+ * it answers 「which PIDs did the fixed task start」 rather than 「which look right」.
+ */
 function fakeOs (over = {}) {
-  const calls = { stopTask: [], terminate: [], listed: 0 }
+  const calls = { stopTask: [], terminate: [], listed: 0, taskAsked: [] }
   let procs = over.procs || []
+  const owned = over.owned === undefined ? [REAL.pid] : over.owned
   return {
     calls,
     listProcesses () { calls.listed++; return procs.slice() },
+    taskInstance (name) {
+      calls.taskAsked.push(name)
+      if (over.noTaskEvidence) return null
+      if (over.taskLookupFails) return { ok: false, reason: 'task_not_found' }
+      return { ok: true, pids: owned.slice(), account: over.account || OWNER, sessionId: over.sessionId === undefined ? SESSION : over.sessionId }
+    },
     stopTask (name) {
       calls.stopTask.push(name)
       if (over.stopTaskFails) return { ok: false, error: 'access denied' }
@@ -51,12 +82,76 @@ function fakeOs (over = {}) {
   }
 }
 
-/** Exactly the shape the fixed task launches. */
-const REAL = {
-  pid: 4242,
-  name: 'powershell.exe',
-  commandLine: 'powershell.exe -NoProfile -ExecutionPolicy Bypass -File C:\\AromaOperator-Probe\\observer.ps1 -Action list_windows -OutJson C:\\Aroma\\ComputerOperator-Evidence\\observer-result.json'
-}
+/* ═══ E1–E4 — ownership, not resemblance ════════════════════════════════════ */
+
+test('*** E1. ⛔ pwsh.exe WITH THE EXACT OBSERVER COMMAND LINE IS REFUSED ***', () => {
+  // The fixed task launches the absolute Windows PowerShell path. It can never start pwsh,
+  // so a pwsh process writing the same command line is something else wearing the costume.
+  const impostor = Object.assign({}, REAL, { name: 'pwsh.exe', executablePath: 'C:\\Program Files\\PowerShell\\7\\pwsh.exe' })
+  const os = fakeOs({ procs: [impostor], owned: [] })
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, false, '⛔ pwsh was accepted as the Observer')
+  assert.equal(r.outcome, 'no_target')
+  assert.deepEqual(os.calls.terminate, [], '⛔ it terminated a process it did not own')
+})
+
+test('*** E2. ⛔ THE EXACT COMMAND LINE, NOT STARTED BY THE FIXED TASK, IS REFUSED ***', () => {
+  /**
+   * ⛔ THE CASE THE FIRST CUT COULD NOT SEE. Byte-identical executable, byte-identical command
+   * line, right account, right session — and the fixed task did not start it. Every visible
+   * attribute agrees, because every visible attribute is something a caller can WRITE. Only the
+   * task association distinguishes them, which is why it is now the requirement rather than a
+   * step performed afterwards.
+   */
+  const twin = Object.assign({}, REAL, { pid: 9999 })
+  const os = fakeOs({ procs: [twin], owned: [4242] }) // the task owns a DIFFERENT pid
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, false, '⛔ a look-alike was accepted as the Observer')
+  assert.equal(r.outcome, 'no_target')
+  assert.deepEqual(os.calls.terminate, [], '⛔ it killed a process the task never started')
+  assert.deepEqual(os.calls.taskAsked, ['AromaComputerOperator-Observer'], 'it asked about the fixed task by name')
+})
+
+test('*** E3. ⛔ THE WRONG ACCOUNT OR SESSION IS REFUSED, EVEN WHEN THE TASK CLAIMS THE PID ***', () => {
+  // Belt and braces: if the task association and the account ever disagree, that disagreement
+  // is itself the finding. Refuse and report rather than trust the more convenient half.
+  const wrongAccount = fakeOs({ procs: [Object.assign({}, REAL, { account: 'AROMABRAIN\\louis' })] })
+  assert.equal(K.killObserver({ os: wrongAccount }).outcome, 'no_target', '⛔ another account was accepted')
+  const wrongSession = fakeOs({ procs: [Object.assign({}, REAL, { sessionId: 1 })] })
+  assert.equal(K.killObserver({ os: wrongSession }).outcome, 'no_target', '⛔ another session was accepted')
+})
+
+test('*** E4. THE GENUINE FIXED-TASK PROCESS IS ACCEPTED, AND IS THE SOLE TARGET ***', () => {
+  const os = fakeOs({ procs: [REAL] })
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(r.pid, 4242)
+  assert.equal(r.matched, 1)
+})
+
+test('*** E5. ⛔ NO TASK EVIDENCE AT ALL IS A REFUSAL, NEVER A FALL-BACK ***', () => {
+  /**
+   * ⛔ THE MUTATION THIS EXISTS TO STOP. An adapter that cannot answer 「did the fixed task
+   * start this PID」 must not cause the control to resume matching on command lines. Missing
+   * evidence is missing evidence — the same rule Commit D applied to session proof.
+   */
+  const noMethod = fakeOs({ procs: [REAL], noTaskEvidence: true })
+  const a = K.killObserver({ os: noMethod })
+  assert.equal(a.ok, false)
+  assert.equal(a.outcome, 'no_task_ownership_evidence')
+  assert.deepEqual(noMethod.calls.terminate, [])
+
+  const lookupFails = fakeOs({ procs: [REAL], taskLookupFails: true })
+  const b = K.killObserver({ os: lookupFails })
+  assert.equal(b.ok, false)
+  assert.equal(b.outcome, 'no_task_ownership_evidence')
+  assert.deepEqual(lookupFails.calls.terminate, [])
+
+  // an adapter with no taskInstance function at all is the same answer
+  const legacy = fakeOs({ procs: [REAL] })
+  delete legacy.taskInstance
+  assert.equal(K.killObserver({ os: legacy }).outcome, 'no_os_adapter')
+})
 
 /* ═══ K1 / K6 — success needs BOTH halves ═══════════════════════════════════ */
 
@@ -66,12 +161,10 @@ test('*** K1. ⛔ SUCCESS REQUIRES ALIVE-BEFORE AND ABSENT-AFTER ***', () => {
   assert.equal(r.ok, true, JSON.stringify(r))
   assert.equal(r.aliveBefore, true, 'it proved the target was running')
   assert.equal(r.aliveAfter, false, 'and proved it is gone')
-  assert.equal(r.pid, 4242)
   assert.deepEqual(os.calls.stopTask, ['AromaComputerOperator-Observer'])
 })
 
 test('*** K6. ⛔ aliveAfter TRUE IS ALWAYS A FAILURE, WHATEVER ELSE SUCCEEDED ***', () => {
-  // Both underlying calls report ok; the process is still there. That is not a kill.
   const os = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true, terminateLeavesAlive: true })
   const r = K.killObserver({ os })
   assert.equal(r.ok, false, '⛔ a survivor was reported as killed')
@@ -83,11 +176,11 @@ test('*** K6. ⛔ aliveAfter TRUE IS ALWAYS A FAILURE, WHATEVER ELSE SUCCEEDED *
 
 test('*** K2. ⛔ NOTHING TO KILL IS A NAMED NON-SUCCESS, NOT A KILL CLAIM ***', () => {
   /**
-   * ⛔ THE VACUOUS PASS THIS WHOLE PROJECT KEEPS FINDING. 「I looked, found nothing, therefore
-   * it is stopped」 is the same shape as an assertion that cannot fail. If the Observer was
-   * never running, the honest answer is that no kill happened — not that one succeeded.
+   * ⛔ THE VACUOUS PASS THIS PROJECT KEEPS FINDING. 「I looked, found nothing, therefore it is
+   * stopped」 is the same shape as an assertion that cannot fail. If the Observer was never
+   * running, the honest answer is that no kill happened — not that one succeeded.
    */
-  const os = fakeOs({ procs: [] })
+  const os = fakeOs({ procs: [], owned: [] })
   const r = K.killObserver({ os })
   assert.equal(r.ok, false, '⛔ an empty search reported success')
   assert.equal(r.outcome, 'no_target')
@@ -96,10 +189,11 @@ test('*** K2. ⛔ NOTHING TO KILL IS A NAMED NON-SUCCESS, NOT A KILL CLAIM ***',
   assert.deepEqual(os.calls.terminate, [], 'nothing was terminated')
 })
 
-/* ═══ K3 — ambiguity kills nothing ══════════════════════════════════════════ */
+/* ═══ K3 / E6 — ambiguity, and strangers ════════════════════════════════════ */
 
-test('*** K3. ⛔ MORE THAN ONE MATCH KILLS NOTHING ***', () => {
-  const os = fakeOs({ procs: [REAL, Object.assign({}, REAL, { pid: 4243 })] })
+test('*** K3. ⛔ MORE THAN ONE TASK-OWNED MATCH KILLS NOTHING ***', () => {
+  const twin = Object.assign({}, REAL, { pid: 4243 })
+  const os = fakeOs({ procs: [REAL, twin], owned: [4242, 4243] })
   const r = K.killObserver({ os })
   assert.equal(r.ok, false)
   assert.equal(r.outcome, 'target_ambiguous')
@@ -109,31 +203,27 @@ test('*** K3. ⛔ MORE THAN ONE MATCH KILLS NOTHING ***', () => {
 })
 
 test('*** K3b. ⛔ AND IT NEVER KILLS AN ARBITRARY powershell.exe ***', () => {
-  /**
-   * ⛔ IDENTITY IS THE WHOLE CONTROL. A stop that matches on process NAME would kill the
-   * Owner's own shell, a backup job, or this very test run. Three independent things must
-   * agree: the exact staged script path, the expected command shape, and the interpreter.
-   */
   const strangers = [
-    { pid: 1, name: 'powershell.exe', commandLine: 'powershell.exe -NoProfile -File C:\\Users\\louis\\something-else.ps1' },
-    { pid: 2, name: 'powershell.exe', commandLine: 'powershell.exe -Command Get-Process' },
-    { pid: 3, name: 'node.exe', commandLine: 'node.exe C:\\AromaOperator-Probe\\observer.ps1 -Action list_windows' },
-    { pid: 4, name: 'powershell.exe', commandLine: 'powershell.exe -File C:\\Elsewhere\\observer.ps1 -Action list_windows' }
+    { pid: 1, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: EXE + ' -NoProfile -File C:\\Users\\louis\\something-else.ps1' },
+    { pid: 2, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: EXE + ' -Command Get-Process' },
+    { pid: 3, name: 'node.exe', executablePath: 'C:\\Program Files\\nodejs\\node.exe', account: OWNER, sessionId: SESSION, commandLine: 'node.exe C:\\AromaOperator-Probe\\observer.ps1 -Action list_windows' },
+    { pid: 4, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: EXE + ' -File C:\\Elsewhere\\observer.ps1 -Action list_windows' }
   ]
-  const os = fakeOs({ procs: strangers })
+  const os = fakeOs({ procs: strangers, owned: [1, 2, 3, 4] }) // even if the task claimed them all
   const r = K.killObserver({ os })
   assert.equal(r.ok, false)
   assert.equal(r.outcome, 'no_target', '⛔ a stranger matched: ' + JSON.stringify(r))
   assert.deepEqual(os.calls.terminate, [], '⛔ it terminated a process it did not identify')
 })
 
-test('*** K3c. ⛔ NO CALLER-SUPPLIED PID, PATH OR PROCESS NAME IS HONOURED ***', () => {
-  // Model or user free text must not be able to name a target. The identity is fixed in code.
-  const os = fakeOs({ procs: [{ pid: 99, name: 'powershell.exe', commandLine: 'powershell.exe -File C:\\Anything\\evil.ps1' }] })
-  const r = K.killObserver({ os, pid: 99, scriptPath: 'C:\\Anything\\evil.ps1', taskName: 'SomethingElse' })
+test('*** K3c. ⛔ NO CALLER-SUPPLIED PID, PATH, TASK OR ACCOUNT IS HONOURED ***', () => {
+  const evil = { pid: 99, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: EXE + ' -File C:\\Anything\\evil.ps1' }
+  const os = fakeOs({ procs: [evil], owned: [99] })
+  const r = K.killObserver({ os, pid: 99, scriptPath: 'C:\\Anything\\evil.ps1', taskName: 'SomethingElse', account: 'AROMABRAIN\\louis' })
   assert.equal(r.ok, false)
   assert.equal(r.outcome, 'no_target', '⛔ a caller redirected the kill: ' + JSON.stringify(r))
   assert.deepEqual(os.calls.stopTask, [], '⛔ a caller-named task was stopped')
+  assert.deepEqual(os.calls.taskAsked, ['AromaComputerOperator-Observer'], '⛔ a caller-named task was queried')
   assert.deepEqual(os.calls.terminate, [])
 })
 
@@ -156,7 +246,7 @@ test('*** K5. ⛔ A FAILED TERMINATE CANNOT BECOME A SUCCESS ***', () => {
 })
 
 test('*** K5b. STOPPING THE TASK IS ENOUGH WHEN IT REALLY STOPS THE PROCESS ***', () => {
-  // ⛔ And then terminate is NOT called. A kill control that always escalates would be
+  // ⛔ And then terminate is NOT called. A control that always escalates would be
   // indistinguishable from one that never checked.
   const os = fakeOs({ procs: [REAL] })
   const r = K.killObserver({ os })
@@ -170,22 +260,19 @@ test('*** K5b. STOPPING THE TASK IS ENOUGH WHEN IT REALLY STOPS THE PROCESS ***'
 test('*** K7. implemented IS TRUE ONLY BECAUSE THE CODE EXISTS ***', () => {
   assert.equal(KILL_SWITCH_BINDINGS.observerKill.implemented, true)
   assert.equal(typeof K.killObserver, 'function', 'the claim is backed by a real function')
-  assert.equal(typeof K.TASK_NAME, 'string')
   assert.equal(K.TASK_NAME, 'AromaComputerOperator-Observer')
 })
 
 test('*** K8. ⛔ observerKillDemonstrated STAYS FALSE ***', () => {
   /**
-   * ⛔ CODE IS NOT A DEMONSTRATION. Every test here runs against a fake OS; not one real task
-   * or process was touched. Flipping this bit requires a live run with the Owner watching, and
-   * no test may do it — which is exactly what this test is for.
+   * ⛔ CODE IS NOT A DEMONSTRATION, and Commit E does not change that. Every test here runs
+   * against a fake adapter; there is still no real Windows adapter at all, so nothing in this
+   * repository can stop anything on Windows today.
    */
   assert.equal(KILL_SWITCH_BINDINGS.observerKillDemonstrated, false)
 })
 
 test('*** K9. ⛔ killingCompanionStopsObserver STAYS FALSE ***', () => {
-  // Building a separate control does not change the fact it was needed. Killing the Companion
-  // still does not kill the Observer; that disclosure must survive this commit.
   assert.equal(KILL_SWITCH_BINDINGS.killingCompanionStopsObserver, false)
   assert.deepEqual([...KILL_SWITCH_BINDINGS.demonstratedBindings], ['serviceGate', 'companionAbort', 'osFallback'],
     'the three demonstrated bindings are unchanged — observerKill is not among them')
@@ -197,7 +284,6 @@ test('*** K10. ⛔ THE MODULE IS DORMANT — no side effect at require time ***'
   const fs = require('node:fs')
   const path = require('node:path')
   const src = fs.readFileSync(path.join(__dirname, 'observerKill.js'), 'utf8')
-  // It builds no OS adapter of its own: one must be injected, so requiring it can do nothing.
   assert.equal(/require\('node:child_process'\)|require\("node:child_process"\)/.test(src), false,
     '⛔ it can spawn a process by itself')
   assert.equal(/execSync|spawnSync|exec\(/.test(src), false, '⛔ it holds an execution path')

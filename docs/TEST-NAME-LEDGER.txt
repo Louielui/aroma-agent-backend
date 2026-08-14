@@ -239,14 +239,19 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** E — ⛔ allow_final + initial ASK → the ASK is PRESERVED, not forced into an answer ***
 *** E — 「我哋供應商。」 continues the original task as an INTERNAL read ***
 *** E — 你好: the model may answer directly — ONE call, ZERO reads ***
+*** E1. ⛔ pwsh.exe WITH THE EXACT OBSERVER COMMAND LINE IS REFUSED ***
 *** E2 — a LIVE read is not cancelled by a later UNAVAILABLE one ***
 *** E2 — an invalid freshness is nulled, never passed through ***
+*** E2. ⛔ THE EXACT COMMAND LINE, NOT STARTED BY THE FIXED TASK, IS REFUSED ***
 *** E2E 1 — AMBIGUOUS → ASK, and ZERO reads of either world ***
 *** E2E 2 — CLEAR INTERNAL → internal only, public untouched ***
 *** E2E 3 — CLEAR PUBLIC → public only, and the PLANNER\
 *** E2E 4 — ⛔ MIXED → BOTH worlds, public query re-authored from Owner words ***
 *** E2E 5 — SUPPLIED FACTS → ZERO reads; he already told her ***
 *** E2E — the five outcomes are genuinely different, not one behaviour ***
+*** E3. ⛔ THE WRONG ACCOUNT OR SESSION IS REFUSED, EVEN WHEN THE TASK CLAIMS THE PID ***
+*** E4. THE GENUINE FIXED-TASK PROCESS IS ACCEPTED, AND IS THE SOLE TARGET ***
+*** E5. ⛔ NO TASK EVIDENCE AT ALL IS A REFUSAL, NEVER A FALL-BACK ***
 *** E8. ⛔ A DIRECTED aroma_system.replenishment TURN FINDS ITS OWN PROOF ***
 *** E8b. ⛔ AND THE SAME TURN STILL REFUSES A WRONG ORDER ***
 *** E8c. ⛔ THE PROOF STILL MAY NOT REACH A DIFFERENT OPERATION\
@@ -433,9 +438,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** K2. ⛔ AT THE RENDER SEAM: the foreign row does not reach the Owner ***
 *** K2. ⛔ NOTHING TO KILL IS A NAMED NON-SUCCESS, NOT A KILL CLAIM ***
 *** K3. THE FALLBACK SURVIVES FOR SHAPES WITH NO SERVER-RESOLVED IDENTITY ***
-*** K3. ⛔ MORE THAN ONE MATCH KILLS NOTHING ***
+*** K3. ⛔ MORE THAN ONE TASK-OWNED MATCH KILLS NOTHING ***
 *** K3b. ⛔ AND IT NEVER KILLS AN ARBITRARY powershell.exe ***
-*** K3c. ⛔ NO CALLER-SUPPLIED PID, PATH OR PROCESS NAME IS HONOURED ***
+*** K3c. ⛔ NO CALLER-SUPPLIED PID, PATH, TASK OR ACCOUNT IS HONOURED ***
 *** K4. ⛔ A FAILED TASK STOP CANNOT BECOME A SUCCESS ***
 *** K5. ⛔ A FAILED TERMINATE CANNOT BECOME A SUCCESS ***
 *** K5b. STOPPING THE TASK IS ENOUGH WHEN IT REALLY STOPS THE PROCESS ***
