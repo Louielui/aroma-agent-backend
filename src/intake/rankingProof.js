@@ -397,6 +397,39 @@ function resolveItemId (item, rowIds) {
   return hits.length === 1 ? hits[0].id : null
 }
 
+/**
+ * ⛔ WHICH OPERATION OWNS THIS SECTION'S ROWS — asked of the SERVER-RESOLVED identity only.
+ *
+ * `validatePlan` stamps `readKey` on every validated item from the row `resolveRowRef` returned.
+ * The model cannot reach the field: the schema does not name it and closes
+ * `additionalProperties`, and even a forged one is never read, because the value written here is
+ * the resolved row's.
+ *
+ * ⛔ ABSENT IS NOT THE SAME AS NULL, and the difference decides which contract applies.
+ *   · no item carries the property  → a legacy or direct-call shape with no server identity,
+ *                                     which keeps the single-group fallback it has always had
+ *   · the property is carried       → AUTHORITATIVE. Exactly one distinct non-null readKey binds
+ *                                     the section; zero, null, or two or more fail closed.
+ * Treating 「absent」 as licence to guess is how a title once bound a row from another operation.
+ *
+ * @returns {{authoritative:boolean, readKey?:(string|null)}}
+ */
+function sectionOwnership (sec) {
+  const items = (sec && Array.isArray(sec.items)) ? sec.items : []
+  let carried = 0
+  const keys = new Set()
+  for (const it of items) {
+    if (!it || !Object.prototype.hasOwnProperty.call(it, 'readKey')) continue
+    carried++
+    if (typeof it.readKey === 'string' && it.readKey) keys.add(it.readKey)
+  }
+  if (carried === 0) return { authoritative: false }
+  // ⛔ A PARTIAL STAMP IS AMBIGUITY, NOT A MAJORITY. If some items carry identity and others do
+  // not, the section cannot be attributed and is refused — never resolved from the ones that did.
+  if (carried !== items.length) return { authoritative: true, readKey: null }
+  return { authoritative: true, readKey: keys.size === 1 ? [...keys][0] : null }
+}
+
 function rankingSectionViolations (input = {}) {
   const i = input || {}
   const rows = Array.isArray(i.rankedRows) ? i.rankedRows : []
@@ -444,13 +477,27 @@ function rankingSectionViolations (input = {}) {
   // claim fails closed from that moment. Turns with no ranking claim are untouched.
 
   const out = []
-  const rowIds = rows.map((r) => ({ id: canonicalOf(r), raw: (r && r.sourceId != null) ? String(r.sourceId) : null, title: (r && typeof r.title === "string") ? r.title.trim() : "" })).filter((x) => x.id)
-  const provenIds = rowIds.map((x) => x.id)
+  const indexRows = (list) => list
+    .map((r) => ({ id: canonicalOf(r), raw: (r && r.sourceId != null) ? String(r.sourceId) : null, title: (r && typeof r.title === "string") ? r.title.trim() : "" }))
+    .filter((x) => x.id)
   // ⛔ Observability only: enum + count, never a heading, title, value or message.
   const note = typeof i.onVerdict === "function" ? i.onVerdict : null
-  const say = (status, reason) => { if (note) { try { note({ status, reason: reason || null, rankedSourceCount }) } catch (_) {} } }
-  const reject = (n, reason) => { out.push(n); say(SECTION_STATUS.REJECTED, reason) }
-  const allow = () => say(SECTION_STATUS.ALLOWED, null)
+  const say = (status, reason, count) => { if (note) { try { note({ status, reason: reason || null, rankedSourceCount: count }) } catch (_) {} } }
+  const reject = (n, reason, count) => { out.push(n); say(SECTION_STATUS.REJECTED, reason, count) }
+  const allow = (count) => say(SECTION_STATUS.ALLOWED, null, count)
+  /**
+   * ⛔ THE PROOFS OF THIS TURN, EACH WITH THE OPERATION IT SPEAKS FOR. Supplied by
+   * `validatePlan`; absent for direct callers, which keeps the legacy path below intact.
+   */
+  const allProofs = Array.isArray(i.rankedProofs) ? i.rankedProofs : null
+  /**
+   * ⛔ AND THE PROOFS MUST THEMSELVES CARRY AN OPERATION, or there is nothing to bind TO.
+   *
+   * Legacy evidence predates readKey entirely (E8e): the rows may know their operation while the
+   * proof does not. Binding a section by a key no proof carries would refuse every legacy turn,
+   * so when no ranked proof is keyed the turn-wide contract applies exactly as before.
+   */
+  const proofs = (allProofs && allProofs.some((p) => p && p.readKey)) ? allProofs : null
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
     /**
@@ -478,13 +525,58 @@ function rankingSectionViolations (input = {}) {
       const presents = (sec && typeof sec.looksLikeRanking === 'boolean')
         ? sec.looksLikeRanking
         : looksLikeRankingHeading(sec ? sec.heading : '')
-      if (presents) { reject(idx, VIOLATION.RANKING_CLAIM_MISSING); return }
-      say(SECTION_STATUS.NOT_DETECTED, null)
+      if (presents) { reject(idx, VIOLATION.RANKING_CLAIM_MISSING, rankedSourceCount); return }
+      say(SECTION_STATUS.NOT_DETECTED, null, rankedSourceCount)
       return // an ordinary set heading, undeclared and not presenting as a ranking
     }
-    if (!declared.valid) { reject(idx, VIOLATION.RANKING_CLAIM_INVALID); return }
+    if (!declared.valid) { reject(idx, VIOLATION.RANKING_CLAIM_INVALID, rankedSourceCount); return }
 
-    if (rankedSourceCount === 0) { reject(idx, VIOLATION.NO_RANKING_PROOF); return }
+    /**
+     * ══════════════════════════════════════════════════════════════════════════
+     * ⛔ SECTION-LOCAL OWNERSHIP. THE ROWS ALREADY KNEW; NOTHING WAS ASKING THEM.
+     *
+     * MEASURED IN PRODUCTION on `c382708`, requestId 34705891: the turn read inventory AND
+     * replenishment, so the TURN-WIDE selector — which binds only when exactly one ranked
+     * evidence exists — bound nothing, and a correct inventory ranking was refused as
+     * `no_ranking_proof` with `rankedSourceCount: 2`.
+     *
+     * Every validated item carries the server-resolved operation it came from, so a section
+     * can name its own proof. The count reported is now THIS SECTION's usable proofs, not the
+     * turn's — one for a bound section, zero for an unattributable one.
+     *
+     * ⛔ NO MODEL AUTHORITY. The readKey is stamped by `validatePlan` from the RESOLVED ROW; the
+     * schema does not expose the field, and a forged one on the model item is never read.
+     * Heading, title, question and metric are all incapable of selecting a proof here.
+     * ══════════════════════════════════════════════════════════════════════════
+     */
+    let sectionEvidence = evidence
+    let sectionRows = rows
+    let sectionCount = rankedSourceCount
+    const owned = proofs ? sectionOwnership(sec) : { authoritative: false }
+    if (owned.authoritative) {
+      /**
+       * ⛔ ZERO OR MORE THAN ONE OPERATION IS NOT A CHOICE TO MAKE. No majority, no first item,
+       * no pruning to the dominant one — a section the server cannot attribute is refused whole,
+       * and `no_ranking_proof` is what 「nothing owns this」 has always been called here.
+       */
+      if (!owned.readKey) { reject(idx, VIOLATION.NO_RANKING_PROOF, 0); return }
+      const matches = proofs.filter((p) => p && p.readKey === owned.readKey)
+      // Exactly one proof, and it must own retrieved rows — a proof whose operation returned no
+      // group speaks for nothing this turn.
+      if (matches.length !== 1 || !matches[0].group || !Array.isArray(matches[0].group.items)) {
+        reject(idx, VIOLATION.NO_RANKING_PROOF, 0)
+        return
+      }
+      sectionEvidence = matches[0].evidence || null
+      sectionRows = matches[0].group.items
+      sectionCount = 1
+    } else if (rankedSourceCount === 0) {
+      reject(idx, VIOLATION.NO_RANKING_PROOF, rankedSourceCount)
+      return
+    }
+    const rowIds = indexRows(sectionRows)
+    const provenIds = rowIds.map((x) => x.id)
+    const sectionEntitled = sectionCount === 1 && !!sectionEvidence && sectionEvidence.rankingCompleteWithinScope === true
 
     /**
      * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
@@ -492,7 +584,7 @@ function rankingSectionViolations (input = {}) {
      * there are no rows to compare against — and checking rows first is exactly how the
      * section escaped validation instead of failing closed.
      */
-    if (rankedSourceCount > 1) { reject(idx, VIOLATION.NO_RANKING_PROOF); return } // ambiguous attribution
+    if (sectionCount > 1) { reject(idx, VIOLATION.NO_RANKING_PROOF, sectionCount); return } // ambiguous attribution
 
     /**
      * ⛔ THE PROOF MUST BE THE ORDERING THE CLAIM NAMES. `inventory` proves absolute_shortfall
@@ -500,11 +592,11 @@ function rankingSectionViolations (input = {}) {
      * otherwise be validated against a suggested-order ordering whenever the two agreed.
      * A claim declaring `metric: null` asserts no measure and is exempt — that is `ordering`.
      */
-    if (declared.metric !== null && (!evidence || declared.metric !== evidence.rankingMetric)) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
+    if (declared.metric !== null && (!sectionEvidence || declared.metric !== sectionEvidence.rankingMetric)) { reject(idx, VIOLATION.METRIC_NOT_PROVEN, sectionCount); return }
 
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
-    if (!entitled) { reject(idx, VIOLATION.RANKING_INCOMPLETE); return }
+    if (!sectionEntitled) { reject(idx, VIOLATION.RANKING_INCOMPLETE, sectionCount); return }
 
     /**
      * ⛔ THE CLAIM IS JUDGED AS DECLARED, NOT AS IT SURVIVED VALIDATION.
@@ -529,7 +621,7 @@ function rankingSectionViolations (input = {}) {
      * per-item drop behaviour is exactly what it was.
      */
     const lostBeforeGate = Number.isFinite(sec.itemsDroppedBeforeGate) ? sec.itemsDroppedBeforeGate : 0
-    if (lostBeforeGate > 0) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+    if (lostBeforeGate > 0) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH, sectionCount); return }
 
     /**
      * ⛔ CANONICAL IDENTITY, NOT TITLE STRINGS. Two retrieved rows may share a title, and
@@ -547,7 +639,7 @@ function rankingSectionViolations (input = {}) {
        * answer to 「排序」 and a FALSE answer to 「最缺的四項」 — `A B C E` is not the top four
        * when `D` outranks `E`, however neatly it is sorted.
        */
-      if (claimedIds.length === 0 || claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+      if (claimedIds.length === 0 || claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH, sectionCount); return }
       /**
        * ⛔ CARDINALITY IS ITS OWN VERDICT, and it is checked BEFORE membership.
        *
@@ -557,15 +649,15 @@ function rankingSectionViolations (input = {}) {
        * Owner reads the reason, not the code.
        */
       const n = declared.kind === CLAIM_KIND.TOP_N ? declared.n : claimedIds.length
-      if (declared.kind === CLAIM_KIND.TOP_N && claimedIds.length !== n) { reject(idx, VIOLATION.CARDINALITY_MISMATCH); return }
-      if (n > provenIds.length) { reject(idx, VIOLATION.CARDINALITY_MISMATCH); return }
+      if (declared.kind === CLAIM_KIND.TOP_N && claimedIds.length !== n) { reject(idx, VIOLATION.CARDINALITY_MISMATCH, sectionCount); return }
+      if (n > provenIds.length) { reject(idx, VIOLATION.CARDINALITY_MISMATCH, sectionCount); return }
       const head = provenIds.slice(0, n)
       // ⛔ Membership first, then order — they fail for different reasons and a repair needs to
       // know which. Same set in the wrong order is an ORDER failure, not a membership one.
       const sameSet = head.length === claimedIds.length && head.every((id) => claimedIds.includes(id))
-      if (!sameSet) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
-      if (claimedIds.some((id, k) => id !== head[k])) { reject(idx, VIOLATION.ORDER_MISMATCH); return }
-      allow(idx)
+      if (!sameSet) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH, sectionCount); return }
+      if (claimedIds.some((id, k) => id !== head[k])) { reject(idx, VIOLATION.ORDER_MISMATCH, sectionCount); return }
+      allow(sectionCount)
       return
     }
 
@@ -576,15 +668,15 @@ function rankingSectionViolations (input = {}) {
      * inventory proof. One source's proof entitling another source's ranking, already ruled
      * out for the other kinds.
      */
-    if (claimedIds.length === 0) { allow(idx); return } // an empty section asserts nothing
-    if (claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+    if (claimedIds.length === 0) { allow(sectionCount); return } // an empty section asserts nothing
+    if (claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH, sectionCount); return }
 
     // ⛔ ONE ITEM CANNOT BE OUT OF ORDER. Refusing a single-row section would refuse the
     // clearest honest answer there is — 「排序：第一位 Napa」.
-    if (claimedIds.length < 2) { allow(idx); return }
+    if (claimedIds.length < 2) { allow(sectionCount); return }
     const expected = provenIds.filter((id) => claimedIds.includes(id))
-    if (claimedIds.length !== expected.length || claimedIds.some((id, n) => id !== expected[n])) reject(idx, VIOLATION.ORDER_MISMATCH)
-    else allow(idx)
+    if (claimedIds.length !== expected.length || claimedIds.some((id, n) => id !== expected[n])) reject(idx, VIOLATION.ORDER_MISMATCH, sectionCount)
+    else allow(sectionCount)
   })
   return out
 }

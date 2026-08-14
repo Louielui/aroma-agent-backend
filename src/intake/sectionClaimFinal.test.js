@@ -135,7 +135,14 @@ test('*** D6. ⛔ AN INVENTORY PROOF MAY NOT VALIDATE A SECTION OF INVOICE ROWS 
   const line = logLine([sec], [invoiceEvidence, invEvidence()], TWO_GROUPS)
   const v = line.rankingGate[0]
   assert.equal(v.status, 'evaluated_rejected', '⛔ invoice rows were validated by the inventory proof')
-  assert.equal(v.reason, 'membership_mismatch', 'reason: ' + v.reason)
+  /**
+   * ⛔ THE REASON CHANGED, THE REFUSAL DID NOT — section-local proof binding.
+   * This used to read `membership_mismatch`: the invoice rows were compared against the
+   * inventory proof and were not in it. Now the section names its own operation first, finds
+   * that `aroma_system.invoices` has no ranking proof at all, and says so. Both are true; the
+   * second is the one a repair can act on.
+   */
+  assert.equal(v.reason, 'no_ranking_proof', 'reason: ' + v.reason)
 })
 
 test('*** D6b. ⛔ AND THE INVENTORY SECTION IN THE SAME TURN STILL PASSES ***', () => {

@@ -1626,7 +1626,26 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
        * Server-computed, never model-authored, and formatted by `canonicalOf` so there is exactly
        * one definition of what readKey#sourceId means.
        */
-      items.push({ sourceId, title: row.title || String(it.title || ''), facts, canonical: canonicalOf(row) })
+      /**
+       * ⛔ AND THE OPERATION, CARRIED AS ITS OWN FIELD RATHER THAN PARSED BACK OUT.
+       *
+       * `canonical` is `readKey#sourceId`, so the operation LOOKS recoverable by splitting it —
+       * but `canonicalOf` falls back to `row.source` when a row carries no readKey, and a SOURCE
+       * is not an OPERATION. That is the Blocker-8 lesson: `aroma_system` names six different
+       * reads. Splitting would hand proof selection a source and call it an operation.
+       *
+       * So the resolved readKey travels as itself, and `null` when the row has none — 「absent」
+       * (a legacy shape) and 「server says none」 are different facts and the gate treats them
+       * differently. Server-computed from the RESOLVED ROW; the model's own item is never spread
+       * into this object, so a forged `readKey` on it cannot reach here.
+       */
+      items.push({
+        sourceId,
+        title: row.title || String(it.title || ''),
+        facts,
+        canonical: canonicalOf(row),
+        readKey: (typeof row.readKey === 'string' && row.readKey) ? row.readKey : null
+      })
       keptItemCount++
     }
     // A SECTION WITH NOTHING LEFT IS STILL NEWS. It is not rendered — a bare heading over
@@ -1840,6 +1859,22 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      * passed too so 「more than one ordering in this turn」 can fail closed rather than fall
      * through the empty-rows path.
      */
+    /**
+     * ⛔ EVERY RANKED PROOF, EACH BESIDE THE GROUP IT OWNS — so a SECTION can name its own.
+     *
+     * The turn-wide `rankingEvidence`/`rankedRows` below stay exactly as they were, for the
+     * sentence path and for callers with no server-resolved item identity. This list is what
+     * lets a section that belongs to inventory be judged against inventory on a turn that also
+     * read replenishment — the live failure on `c382708`, requestId 34705891.
+     *
+     * The group is matched by the proof's own `readKey` and must be UNIQUE: a proof that matches
+     * two groups, or none, owns no rows this turn and entitles nothing.
+     */
+    rankedProofs: rankedEvidence.map((e) => {
+      const key = (e && typeof e.readKey === 'string' && e.readKey) ? e.readKey : null
+      const owned = key ? groups.filter((g) => g && String(g.readKey || g.source) === key) : []
+      return { readKey: key, evidence: e, group: owned.length === 1 ? owned[0] : null }
+    }),
     rankingEvidence: rankedEvidence.length === 1 ? rankedEvidence[0] : null,
     rankedSourceCount: usableRankedSources,
     /**

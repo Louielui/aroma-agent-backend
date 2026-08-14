@@ -361,7 +361,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** H6. ⛔ AN ILL-SHAPED DECLARATION IS REFUSED, NOT REPAIRED ***
 *** H7. normaliseRankingClaim reports presence and validity SEPARATELY ***
 *** H8. ⛔ NO RANKED SOURCE — a declaration does not create a proof ***
-*** H9. ⛔ TWO ORDERINGS IN ONE TURN — attribution is ambiguous, so it is refused ***
+*** H9. ⛔ TWO ORDERINGS IN ONE TURN — AMBIGUITY IS PER SECTION, NOT PER TURN ***
 *** HOOK — an ABSENT replyCitesContext still omits (fail-safe) ***
 *** HOOK — no read context at all → kept, as before ***
 *** HOOK — read happened, reply cites nothing → the text is written ***
@@ -554,8 +554,24 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** S-C — a model-directed read whose connector FAILS is never called retrieved ***
 *** S-D — the same semantics for an AUTOMATIC Aroma read that fails ***
 *** S-E — a source nobody asked stays OPEN: notAsked is neither read nor failed ***
+*** S1. ⛔ TWO PROOFS IN THE TURN, AN INVENTORY-ONLY SECTION IS STILL ENTITLED ***
+*** S10. LEGACY ROWS WITH NO SERVER readKey KEEP THE OLD FALLBACK ***
+*** S11. SINGLE-PROOF TURNS BEHAVE EXACTLY AS BEFORE ***
+*** S12. ⛔ A PROOF WHOSE OPERATION OWNS NO SINGLE GROUP ENTITLES NOTHING ***
+*** S13. ⛔ A SECTION WHOSE METRIC IS NOT ITS OWN PROOF\
+*** S14. ⛔ IDENTITY CONTINUITY: retrieved row → validated item → binding → the reply ***
+*** S15. THE LOG STILL CARRIES ENUM AND COUNT ONLY ON A REFUSAL ***
+*** S16. ⛔ THE SENTENCE GATE IS BYTE-IDENTICAL — not stricter either ***
 *** S2 — end to end: ONLY a mixed turn gets the fourth decision ***
 *** S2 — one world alone never releases a mixed obligation ***
+*** S2. ⛔ AND THE REPLENISHMENT SECTION BINDS TO ITS OWN PROOF, NOT THE FIRST ONE ***
+*** S3. ⛔ METRIC CANNOT IDENTIFY A PROOF — two reads can share one ***
+*** S4. ⛔ A SECTION MIXING TWO OPERATIONS IS REFUSED WHOLE ***
+*** S5. ⛔ NO PRUNING TO THE MAJORITY, EVEN WHEN ONE OPERATION DOMINATES ***
+*** S6. THE MODEL-FACING SECTION SCHEMA EXPOSES NO readKey ***
+*** S7. ⛔ A FORGED readKey ON THE MODEL ITEM HAS ZERO EFFECT ***
+*** S8. ⛔ AND A FORGED readKey CANNOT RESCUE A MIXED SECTION EITHER ***
+*** S9. ⛔ TWO PROOFS: THE SECTION IS ALLOWED, THE SENTENCE IS STILL REFUSED ***
 *** SIR3 — every first-READ path resolves source intent first ***
 *** SIR3 — mixed + first INTERNAL read: internal executes, public stays outstanding ***
 *** SIR3 — mixed + first PUBLIC read: public executes, internal stays outstanding ***

@@ -215,11 +215,34 @@ test('*** H8. ⛔ NO RANKED SOURCE — a declaration does not create a proof ***
   assert.equal(gateOf(line).reason, 'no_ranking_proof', 'reason: ' + gateOf(line).reason)
 })
 
-test('*** H9. ⛔ TWO ORDERINGS IN ONE TURN — attribution is ambiguous, so it is refused ***', () => {
+test('*** H9. ⛔ TWO ORDERINGS IN ONE TURN — AMBIGUITY IS PER SECTION, NOT PER TURN ***', () => {
+  /**
+   * ⛔ REVISED — OWNER CONTRACT CHANGE, section-local proof binding.
+   *
+   * This asserted that a second ranked proof ANYWHERE in the turn refused every ranking
+   * section. Measured in production on `c382708` (requestId 34705891): the reasoning loop read
+   * inventory AND replenishment for one ordinary question, and a correct inventory ranking was
+   * refused as `no_ranking_proof` with `rankedSourceCount: 2`. Safety that depends on the
+   * planner reading fewer sources is not safety.
+   *
+   * The property worth keeping is unchanged and asserted below: a section nobody can attribute
+   * is still refused. What moved is WHERE ambiguity is decided — the section, whose rows carry
+   * the server-resolved operation, rather than the turn, which never could.
+   */
   const second = evidenceOf({ readKey: OP_REPLENISH, endpoint: 'orderPlanning', rankingMetric: RANKING_METRIC.SUGGESTED_ORDER_QTY })
-  const groups = GROUPS.concat([{ source: 'aroma_system', readKey: OP_REPLENISH, items: [rowOf(OP_REPLENISH, '9', 'Z')] }])
-  const line = logLine([SEC('缺貨排序', ['A', 'B'], TOP(2))], [evidenceOf(), second], groups)
+  const other = { source: 'aroma_system', readKey: OP_REPLENISH, items: [rowOf(OP_REPLENISH, '9', 'Z')] }
+  const groups = GROUPS.concat([other])
+
+  // Rows all inventory’s: the second proof is irrelevant to THIS section.
+  const bound = logLine([SEC('缺貨排序', ['A', 'B'], TOP(2))], [evidenceOf(), second], groups)
+  assert.equal(gateOf(bound).status, 'evaluated_allowed', '⛔ still refused: ' + JSON.stringify(gateOf(bound)))
+  assert.equal(gateOf(bound).rankedSourceCount, 1, 'one usable proof for THIS section')
+
+  // Rows spanning both: unattributable, and still refused whole.
+  const mixed = { heading: '缺貨排序', rankingClaim: ORD(), items: [{ sourceId: '1', title: 'A', facts: [] }, { sourceId: '9', title: 'Z', facts: [] }] }
+  const line = logLine([mixed], [evidenceOf(), second], groups)
   assert.equal(gateOf(line).reason, 'no_ranking_proof', 'reason: ' + gateOf(line).reason)
+  assert.equal(gateOf(line).rankedSourceCount, 0)
 })
 
 test('*** H10. ⛔ THE PROOF MUST OWN THESE ROWS — by readKey, not by source name ***', () => {
@@ -876,13 +899,19 @@ test('*** K1. ⛔ A ROW FROM ANOTHER OPERATION MAY NOT RIDE IN ON ITS TITLE ***'
   // ⛔ superlative: one item, and without the fix that one item IS the proven first place.
   const sup = runK(kSection(SUP(), ['77']))
   assert.equal(sup.plan.sections.length, 0, '⛔ superlative: a daily-count row shipped as the worst shortage')
-  assert.equal(sup.rankingVerdicts[0].reason, 'membership_mismatch', 'superlative: ' + sup.rankingVerdicts[0].reason)
+  /**
+   * ⛔ REASON REVISED BY SECTION-LOCAL BINDING, refusal unchanged. The daily-count row used to
+   * be rejected for not being IN the inventory proof; it is now rejected for naming an
+   * operation that has no ranking proof this turn. The title fallback is still never reached —
+   * that is what K2 and the mutations pin.
+   */
+  assert.equal(sup.rankingVerdicts[0].reason, 'no_ranking_proof', 'superlative: ' + sup.rankingVerdicts[0].reason)
 
   // ⛔ ordering: 77 then 2. Read by title, that is inventory#1 then inventory#2 — in the proven
   // order, so it passes. The sequence is right; the rows are not the proof's.
   const ord = runK(kSection(ORD(), ['77', '2']))
   assert.equal(ord.plan.sections.length, 0, '⛔ ordering: a foreign row rode the inventory proof')
-  assert.equal(ord.rankingVerdicts[0].reason, 'membership_mismatch', 'ordering: ' + ord.rankingVerdicts[0].reason)
+  assert.equal(ord.rankingVerdicts[0].reason, 'no_ranking_proof', 'ordering: ' + ord.rankingVerdicts[0].reason)
 })
 
 test('*** K1b. AND THE HONEST CITATION OF THE SAME ROWS STILL PASSES ***', () => {

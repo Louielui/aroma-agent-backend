@@ -453,12 +453,45 @@ test('*** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAP
     // ⛔ The order is CORRECT against inventory. Before this round the caller passed no rows
     // for a two-source turn and the helper's own empty-rows early return reported no
     // violations — so this section skipped validation entirely and shipped.
+    /**
+     * ⛔ REVISED — OWNER CONTRACT CHANGE, section-local proof binding.
+     *
+     * This asserted that NOTHING may ship once a turn holds two ranked proofs. Production on
+     * `c382708` showed what that costs: one ordinary question made the loop read inventory AND
+     * replenishment, and a correct inventory ranking was refused. The rows carry the operation
+     * they came from, so a section that belongs entirely to one proof is now judged against it.
+     *
+     * The escape this test was written for is asserted below, unchanged in force: a section the
+     * server cannot attribute to ONE operation still ships nothing.
+     */
     const out = await run(ASK, scriptedAdapter([
       READ, READ_ORDER, SECTION_PLAN_REF('缺貨項目排序', [NAPA, NOLA, SOY, JARS], ORD)
     ]), twoRankedSourceConnector())
     const reply = String(out && out.reply != null ? out.reply : '')
-    assert.deepEqual(shippedOrder(reply), [],
-      '⛔ an unattributable ranking section shipped: ' + JSON.stringify(reply))
-    assert.ok(reply.trim().length > 0, '⛔ SILENCE — shipped: ' + JSON.stringify(reply))
+    assert.deepEqual(shippedOrder(reply), [NAPA, NOLA, SOY, JARS],
+      '⛔ an attributable inventory ranking was refused because the turn also read replenishment: ' + JSON.stringify(reply))
+
+    // ⛔ AND THE UNATTRIBUTABLE ONE STILL SHIPS NOTHING. Same turn, same two proofs — but the
+    // section names one inventory row and one replenishment row, so no single proof owns it.
+    const mixed = {
+      intent: 'answer', mode: 'chat', reply: '', nextRead: null,
+      answerPlan: {
+        directAnswer: '',
+        sections: [{
+          heading: '缺貨項目排序',
+          rankingClaim: ORD,
+          items: [
+            { sourceId: 'aroma_system.inventory#' + BY_TITLE.get(NAPA).id, title: NAPA, facts: [] },
+            { sourceId: 'aroma_system.replenishment#' + BY_TITLE.get(NOLA).id, title: NOLA, facts: [] }
+          ]
+        }],
+        limitations: [], followUp: null, unanswerable: false, citesEvidence: true
+      }
+    }
+    const out2 = await run(ASK, scriptedAdapter([READ, READ_ORDER, mixed]), twoRankedSourceConnector())
+    const reply2 = String(out2 && out2.reply != null ? out2.reply : '')
+    assert.deepEqual(shippedOrder(reply2), [],
+      '⛔ an unattributable ranking section shipped: ' + JSON.stringify(reply2))
+    assert.ok(reply2.trim().length > 0, '⛔ SILENCE — shipped: ' + JSON.stringify(reply2))
   })
 })
