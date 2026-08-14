@@ -100,7 +100,40 @@ const KILL_SWITCH_BINDINGS = Object.freeze({
   // demonstration against a target it did not first prove alive.
   demonstratedUnderCompanionAccount: true,
   demonstratedOn: '2026-07-28',
-  demonstratedBindings: Object.freeze(['serviceGate', 'companionAbort', 'osFallback'])
+  demonstratedBindings: Object.freeze(['serviceGate', 'companionAbort', 'osFallback']),
+
+  // ── PHASE 3b: A SECOND ENTRY POINT EXISTS, AND THOSE THREE DO NOT COVER IT ──────
+  //
+  // The Observer is NOT the Companion. It is a separate process started by a fixed scheduled
+  // task — the Companion cannot start it and, by the same token, cannot stop it. Asked plainly,
+  // 「does killing A stop B」, the answer is no, and leaving that blank would be the more
+  // comfortable and less honest option:
+  //
+  //   serviceGate    stops the NEXT step being dispatched. An observation already running in
+  //                  another process is not dispatched through the gate and continues.
+  //   companionAbort stops the Companion. The Observer has no parent-child relationship with
+  //                  it and keeps running to completion.
+  //   osBackstop     destroys the IPC channel. The Observer does not use that channel to do
+  //                  its work; it writes to the evidence store and exits.
+  //
+  // So an observation IN FLIGHT survives all three bindings demonstrated in 3a. It is bounded
+  // only by the Observer's own single-shot design and hard timeout — and a bound is not a
+  // control. 「It will stop by itself shortly」 is not a kill switch.
+  //
+  // ⛔ BUILDING THE CONTROL DOES NOT CHANGE THIS VALUE. Killing the Companion still does not
+  // kill the Observer; that is why observerKill.js had to exist at all.
+  killingCompanionStopsObserver: false,
+
+  // The fourth binding. `implemented` became true when src/computer/observerKill.js was
+  // written; `observerKillDemonstrated` is a SEPARATE claim — about a real process dying —
+  // and no amount of code can earn it. Every test of that module runs against a fake OS
+  // adapter, so nothing in the suite has ever stopped a task or terminated a process.
+  observerKill: Object.freeze({
+    implemented: true,
+    module: 'src/computer/observerKill.js',
+    note: 'Stop the Observer itself mid-observation: stop the fixed task, then terminate the exact identified process, then prove it is gone. Built and unit-tested against a fake OS; NOT demonstrated against a live Observer.'
+  }),
+  observerKillDemonstrated: false
 })
 
 module.exports = { createKillSwitch, KILL_SWITCH_BINDINGS, STOP_CONDITIONS }
