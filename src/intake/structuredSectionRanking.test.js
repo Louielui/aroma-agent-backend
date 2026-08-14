@@ -823,3 +823,117 @@ test('*** J4. ⛔ LIVE: A PADDED RANKING HEADING WITH NO DECLARATION SHIPS NOTHI
     assert.ok(reply.trim().length > 0, '⛔ SILENCE')
   })
 })
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   K. THE RESOLVED IDENTITY WAS THROWN AWAY, SO THE GATE RE-GUESSED BY TITLE
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⛔ `validatePlan` ALREADY KNEW WHICH ROW EACH ITEM WAS. `resolveRowRef()` returns it — and
+ * then the validated item kept only the model's raw `sourceId` and the row's title. The
+ * canonical identity was dropped on the floor, so `resolveItemId()` in the gate had to guess it
+ * back: canonical ref, then raw id, then TITLE — and a title binds to any proven row that
+ * carries it uniquely.
+ *
+ *     proof            aroma_system.inventory#1   「Napa Cabbage」   rank #1
+ *     another read     aroma_system.daily_count#77 「Napa Cabbage」
+ *     the model cites  daily_count#77 — a LEGITIMATE ref: the per-turn schema puts every
+ *                      retrieved row into `sourceId.enum`, so this is not an invention
+ *     validatePlan     resolves it correctly to daily_count#77
+ *     the gate         canonical miss → raw miss → TITLE HIT → re-reads it as inventory#1
+ *
+ * A one-item `superlative` then becomes a valid first place over a row the proof does not own.
+ * That is the one rule this whole task rests on, broken by a string comparison.
+ *
+ * ⛔ AND THE TITLES HERE COLLIDE ON PURPOSE. E8c missed this for exactly the opposite reason:
+ * its other-operation rows are titled X and Y while the proof carries P, Q, R, so the title
+ * fallback never had the chance to fire. Inventory, daily count and replenishment share
+ * ingredient names every day of the week — a fixture where they cannot collide proves nothing.
+ */
+
+const OP_DAILY = 'aroma_system.daily_count'
+const NAPA = 'Napa Cabbage'
+
+/** The PROVEN rows. #1 is Napa Cabbage — the title the other operation also carries. */
+const K_PROVEN = [rowOf(OP_INVENTORY, '1', NAPA), rowOf(OP_INVENTORY, '2', 'Onion')]
+/** A different operation, same source, SAME TITLE, and a raw id that collides with nothing. */
+const K_OTHER = [rowOf(OP_DAILY, '77', NAPA)]
+const K_GROUPS = [
+  { source: 'aroma_system', readKey: OP_DAILY, items: K_OTHER },
+  { source: 'aroma_system', readKey: OP_INVENTORY, items: K_PROVEN }
+]
+/** Only inventory carries a ranking proof, so the turn has exactly one ranked source. */
+const K_EVIDENCE = () => {
+  const other = evidenceOf({ readKey: OP_DAILY, endpoint: 'dailyCount' })
+  delete other.rankingMetric
+  delete other.rankingCompleteWithinScope
+  return [other, evidenceOf({ shownCount: 2 })]
+}
+const kSection = (rankingClaim, ids) => ({ heading: '缺貨排序', rankingClaim, items: ids.map((id) => ({ sourceId: id, title: (K_PROVEN.concat(K_OTHER).find((r) => r.sourceId === id) || {}).title, facts: [] })) })
+const runK = (sec) => runPlan([sec], K_EVIDENCE(), K_GROUPS)
+
+test('*** K1. ⛔ A ROW FROM ANOTHER OPERATION MAY NOT RIDE IN ON ITS TITLE ***', () => {
+  // ⛔ superlative: one item, and without the fix that one item IS the proven first place.
+  const sup = runK(kSection(SUP(), ['77']))
+  assert.equal(sup.plan.sections.length, 0, '⛔ superlative: a daily-count row shipped as the worst shortage')
+  assert.equal(sup.rankingVerdicts[0].reason, 'membership_mismatch', 'superlative: ' + sup.rankingVerdicts[0].reason)
+
+  // ⛔ ordering: 77 then 2. Read by title, that is inventory#1 then inventory#2 — in the proven
+  // order, so it passes. The sequence is right; the rows are not the proof's.
+  const ord = runK(kSection(ORD(), ['77', '2']))
+  assert.equal(ord.plan.sections.length, 0, '⛔ ordering: a foreign row rode the inventory proof')
+  assert.equal(ord.rankingVerdicts[0].reason, 'membership_mismatch', 'ordering: ' + ord.rankingVerdicts[0].reason)
+})
+
+test('*** K1b. AND THE HONEST CITATION OF THE SAME ROWS STILL PASSES ***', () => {
+  // ⛔ The point of the fix is not to refuse rankings. Same titles, same turn, same two
+  // operations — but the section cites the rows the proof actually owns.
+  for (const [claim, ids, kind] of [[SUP(), ['1'], 'superlative'], [ORD(), ['1', '2'], 'ordering'], [TOP(2), ['1', '2'], 'top_n']]) {
+    const r = runK(kSection(claim, ids))
+    assert.equal(r.plan.sections.length, 1, '⛔ ' + kind + ' refused: ' + JSON.stringify(r.rankingVerdicts))
+    assert.equal(r.rankingVerdicts[0].status, 'evaluated_allowed', kind)
+  }
+})
+
+test('*** K2. ⛔ AT THE RENDER SEAM: the foreign row does not reach the Owner ***', () => {
+  /**
+   * ⛔ `buildReadResultReply` is the seam `processIntake` calls. The row is REAL and was really
+   * retrieved this turn, so nothing upstream drops it — the only thing that can refuse it is the
+   * gate reading the identity the server resolved, rather than re-deriving one from a string.
+   */
+  const out = buildReadResultReply({
+    message: '而家缺貨最嚴重嘅係咩？',
+    reply: '',
+    answerPlan: {
+      directAnswer: '', answerClaims: null, unanswerable: false, citesEvidence: true,
+      sections: [kSection(SUP(), ['77'])], limitations: [], followUp: null
+    },
+    evidenceSets: K_EVIDENCE(),
+    itemsBySource: K_GROUPS,
+    perSource: [],
+    requestId: '66666666-7777-4888-8999-aaaaaaaaaaaa'
+  })
+  const reply = String(out && out.reply != null ? out.reply : '')
+  assert.equal(reply.includes(NAPA), false, '⛔ a row the proof does not own shipped as a superlative: ' + reply)
+  assert.ok(reply.trim().length > 0, '⛔ SILENCE')
+})
+
+test('*** K3. THE FALLBACK SURVIVES FOR SHAPES WITH NO SERVER-RESOLVED IDENTITY ***', () => {
+  /**
+   * ⛔ NOT DELETED, NARROWED. Direct callers and legacy shapes hand the gate items that never
+   * passed through `validatePlan`, so they carry no resolved identity and must keep resolving by
+   * raw id and by unique title — every A–G test in this repo depends on that, and removing it
+   * would be a rewrite of the ranking architecture rather than this blocker's fix.
+   */
+  const rows = [rowOf(OP_INVENTORY, '1', 'A'), rowOf(OP_INVENTORY, '2', 'B')]
+  const byRaw = rankingSectionViolations({
+    sections: [{ heading: '缺貨排序', rankingClaim: ORD(), items: [{ sourceId: '1', title: 'A' }, { sourceId: '2', title: 'B' }] }],
+    rankedRows: rows, rankingEvidence: evidenceOf(), rankedSourceCount: 1
+  })
+  assert.deepEqual(byRaw, [], 'raw ids still resolve for callers that supply no canonical identity')
+  const byTitle = rankingSectionViolations({
+    sections: [{ heading: '缺貨排序', rankingClaim: ORD(), items: [{ title: 'A' }, { title: 'B' }] }],
+    rankedRows: rows, rankingEvidence: evidenceOf(), rankedSourceCount: 1
+  })
+  assert.deepEqual(byTitle, [], 'a unique title still resolves for those callers')
+})

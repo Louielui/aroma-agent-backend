@@ -39,7 +39,7 @@ const { ENTITY_TYPES } = require('../context/contextResult')
 // ⛔ A4-0A: the gated read-argument shape. Nothing here is used while the A4 gate is off.
 const { READ_ARGS_SCHEMA } = require('./a4Contract')
 const { t } = require('../i18n/t')
-const { looksLikeRankingHeading, normaliseRankingClaim, RANKING_METRIC, CLAIM_KIND } = require('./rankingProof')
+const { looksLikeRankingHeading, normaliseRankingClaim, canonicalOf, RANKING_METRIC, CLAIM_KIND } = require('./rankingProof')
 
 /**
  * ⛔ THE SERVER'S OWN TITLE FOR A PROVEN RANKING.
@@ -1581,7 +1581,18 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         facts.push({ field, value: translate(f.value) })
       }
       // The title is the server's, not the model's: it cannot be edited into something else.
-      items.push({ sourceId, title: row.title || String(it.title || ''), facts })
+      /**
+       * ⛔ THE RESOLVED IDENTITY TRAVELS WITH THE ITEM. It was known here and thrown away.
+       *
+       * `resolveRowRef` has just told us exactly which row this is. Keeping only the model's raw
+       * `sourceId` forced the ranking gate to re-derive the identity, and its last resort is a
+       * TITLE — so a legitimate citation of daily_count#77 「Napa Cabbage」 was re-read as
+       * inventory#1 「Napa Cabbage」 and rode a proof that does not own it.
+       *
+       * Server-computed, never model-authored, and formatted by `canonicalOf` so there is exactly
+       * one definition of what readKey#sourceId means.
+       */
+      items.push({ sourceId, title: row.title || String(it.title || ''), facts, canonical: canonicalOf(row) })
       keptItemCount++
     }
     // A SECTION WITH NOTHING LEFT IS STILL NEWS. It is not rendered — a bare heading over

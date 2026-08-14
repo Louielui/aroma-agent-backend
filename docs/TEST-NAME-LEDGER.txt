@@ -414,7 +414,11 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** K — explicit mixed, INTERNAL first → allowed ***
 *** K — the verifier is called at most ONCE per turn ***
 *** K — the verifier runs at most once per turn ***
+*** K1. ⛔ A ROW FROM ANOTHER OPERATION MAY NOT RIDE IN ON ITS TITLE ***
+*** K1b. AND THE HONEST CITATION OF THE SAME ROWS STILL PASSES ***
 *** K2 — end to end, one turn spends exactly one final-verifier call ***
+*** K2. ⛔ AT THE RENDER SEAM: the foreign row does not reach the Owner ***
+*** K3. THE FALLBACK SURVIVES FOR SHAPES WITH NO SERVER-RESOLVED IDENTITY ***
 *** KILL 1 — the SERVICE GATE stops it before anything is sent ***
 *** KILL 2 — the COMPANION ABORT stops it after it is running ***
 *** KILL 3 — the OS FALLBACK: closing the channel leaves it nothing to answer on ***

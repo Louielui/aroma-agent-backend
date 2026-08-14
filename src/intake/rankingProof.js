@@ -358,6 +358,28 @@ function canonicalOf (row) {
  */
 function resolveItemId (item, rowIds) {
   if (!item) return null
+  /**
+   * ⛔ A SERVER-RESOLVED IDENTITY IS AUTHORITATIVE, AND IT HAS NO FALLBACK.
+   *
+   * `validatePlan` already knew which row each item resolved to — `resolveRowRef()` returned it —
+   * and then kept only the model's raw ref and the row's title. So this function had to guess the
+   * identity back, and its last resort is a TITLE, which binds to whichever proven row carries
+   * that title uniquely:
+   *
+   *     proof         aroma_system.inventory#1     「Napa Cabbage」  rank #1
+   *     another read  aroma_system.daily_count#77  「Napa Cabbage」
+   *     the model cites daily_count#77 — a legitimate ref, since the per-turn schema puts every
+   *     retrieved row into sourceId.enum — and the title fallback re-read it as inventory#1.
+   *
+   * A one-item superlative then became a valid first place over a row the proof does not own.
+   * Inventory, daily count and replenishment share ingredient names constantly, so this is an
+   * ordinary Tuesday, not an exotic collision.
+   *
+   * When the server resolved the row, that answer is the answer: it is either among the proven
+   * ranking rows or the claim fails closed. No downgrade to the raw id, no downgrade to the title.
+   */
+  const resolved = (typeof item.canonical === 'string' && item.canonical) ? item.canonical : null
+  if (resolved) return rowIds.some((r) => r.id === resolved) ? resolved : null
   const ref = item.sourceId != null ? String(item.sourceId) : null
   if (ref && rowIds.some((r) => r.id === ref)) return ref
   // ⛔ PRODUCTION PUSHES THE RAW sourceId, not a canonical ref — validatePlan stores the
@@ -667,6 +689,10 @@ module.exports = {
   SECTION_STATUS,
   looksLikeRankingHeading,
   normaliseRankingClaim,
+  // ⛔ EXPORTED SO THERE IS ONE FORMAT, NOT TWO. `validatePlan` stamps the resolved identity onto
+  // each validated item and this file compares it; two implementations of readKey#sourceId would
+  // agree today and drift the first time either side changed.
+  canonicalOf,
   CLAIM_KIND,
   asksProportionally,
   metricAskedFor,
