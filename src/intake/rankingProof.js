@@ -156,10 +156,28 @@ const ANY_SUPERLATIVE_RE = /最[一-鿿]|\bmost\b|\bworst\b|\btop\b/i
  * factual section titles; a guard that fired on them would refuse the everyday content of the
  * system, which is a defect and not a safety margin.
  */
+/**
+ * ⛔ THE SELECTION WORDS, AND WHY THEY ARE ANCHORED TO THE START OF THE HEADING.
+ *
+ * 「頭四項缺貨」 was NOT detected — and the schema itself teaches that wording: its own `top_n`
+ * description reads 「指定數量的頭 N 項」. We were telling the model to write a shape the guard
+ * could not see, which is the worst possible combination.
+ *
+ * ⛔ AND THIS IS NOT A NUMERAL TABLE. The guard never asks what 四 means — it only sees that
+ * the heading OPENS with a selection word. A numeral list would fail exactly the way it failed
+ * four times before: the first unlisted character becomes a false NEGATIVE, and a false
+ * negative here ships an unproven ranking.
+ *
+ * ⛔ ANCHORED, BECAUSE 「目前」 CONTAINS 「前」. An unanchored 前 fires on 「目前庫存」, one of the
+ * three ordinary headings this guard must never touch. At index 0 it cannot.
+ */
+const SELECTION_WORD_RE = /^[頭前第]/
+
 function looksLikeRankingHeading (heading) {
   const h = String(heading || '')
   if (!h) return false
-  return ANY_SUPERLATIVE_RE.test(h) || SHORTAGE_WORD_RE.test(h) || RANKING_PRESENTATION_RE.test(h)
+  return ANY_SUPERLATIVE_RE.test(h) || SHORTAGE_WORD_RE.test(h) ||
+    RANKING_PRESENTATION_RE.test(h) || SELECTION_WORD_RE.test(h)
 }
 
 /** The two orderings that actually exist. A claim naming anything else is refused by name. */
@@ -454,6 +472,31 @@ function rankingSectionViolations (input = {}) {
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
     if (!entitled) { reject(idx, VIOLATION.RANKING_INCOMPLETE); return }
+
+    /**
+     * ⛔ THE CLAIM IS JUDGED AS DECLARED, NOT AS IT SURVIVED VALIDATION.
+     *
+     * `validatePlan` resolves items first and drops any whose `sourceId` names no retrieved
+     * row. So the gate used to receive a section ALREADY PRUNED — and pruning turns a claim
+     * into a smaller one that passes:
+     *
+     *     proven A B C D · declared `ordering`, items A and a foreign Z
+     *     Z is dropped before the gate → one item → a single item cannot be out of order → ALLOW
+     *     declared `superlative` → prefix of length 1 → A is the proven first → ALLOW
+     *
+     * Both are the v1.2 ruling broken twice over: a member the proof does not own must fail
+     * closed, and a declaration must never be silently narrowed into a different claim.
+     *
+     * ⛔ CHECKED BEFORE CARDINALITY, DELIBERATELY. Once an item has been pruned, `claimedIds`
+     * is no longer what the model declared, so counting it would be measuring a claim nobody
+     * made. The failure is a MEMBERSHIP one — a row that is not in the proof — and it is
+     * reported as one.
+     *
+     * Ordinary non-ranking sections are untouched: they never reach this line, and their
+     * per-item drop behaviour is exactly what it was.
+     */
+    const lostBeforeGate = Number.isFinite(sec.itemsDroppedBeforeGate) ? sec.itemsDroppedBeforeGate : 0
+    if (lostBeforeGate > 0) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
 
     /**
      * ⛔ CANONICAL IDENTITY, NOT TITLE STRINGS. Two retrieved rows may share a title, and

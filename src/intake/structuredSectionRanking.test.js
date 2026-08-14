@@ -288,13 +288,61 @@ test('*** H18. ordering KEEPS A–G LEGAL-SUBSEQUENCE SEMANTICS ***', () => {
   assert.equal(gateOf(logLine([SEC('缺貨排序', ['A', 'C', 'B'], ORD())])).reason, 'order_mismatch', 'A C B')
 })
 
-test('*** H19. ⛔ A ROW THE PROOF DOES NOT OWN BREAKS MEMBERSHIP, IN EVERY KIND ***', () => {
-  const alien = { heading: '缺貨排序', rankingClaim: ORD(), items: [{ sourceId: '1', title: 'A', facts: [] }, { sourceId: '99', title: 'Z', facts: [] }] }
-  const r = runPlan([alien])
-  // The alien row is not retrievable at all, so it is dropped as an invention before the gate;
-  // what must NOT happen is the section passing as a two-row ranking.
-  assert.notEqual(r.rankingVerdicts[0].status, 'evaluated_rejected_never', 'placeholder')
-  assert.equal(r.plan.sections.length <= 1, true)
+/**
+ * ⛔ H19 AS FIRST WRITTEN PROVED NOTHING, AND THE REVIEWER WAS RIGHT TO SAY SO.
+ *
+ * Its two assertions were `status !== 'evaluated_rejected_never'` — a status that does not
+ * exist, so it can never fail — and `sections.length <= 1`, which holds just as well when the
+ * section is ALLOWED. The name promised that a foreign row breaks membership; the body checked
+ * neither membership nor the outcome. Same false-green family as E9d and the first H35.
+ *
+ * ⛔ AND THE DEFECT IT WAS SUPPOSED TO COVER WAS REAL. `validatePlan` resolves items before the
+ * gate and drops the ones that name no retrieved row, so the gate saw A alone: one item cannot
+ * be out of order, and one item IS a valid prefix. The claim was narrowed into a passing one.
+ */
+
+const ALIEN = { sourceId: '99', title: 'Z', facts: [] }
+const withAlien = (rankingClaim) => ({ heading: '缺貨排序', rankingClaim, items: [{ sourceId: '1', title: 'A', facts: [] }, ALIEN] })
+
+test('*** H19. ⛔ AN ITEM DROPPED BEFORE THE GATE REJECTS THE WHOLE SECTION ***', () => {
+  for (const [claim, kind] of [[ORD(), 'ordering'], [SUP(), 'superlative'], [TOP(2), 'top_n']]) {
+    const r = runPlan([withAlien(claim)])
+    assert.equal(r.plan.sections.length, 0, '⛔ ' + kind + ': a narrowed claim shipped')
+    assert.equal(r.rankingVerdicts[0].status, 'evaluated_rejected', kind)
+    assert.equal(r.rankingVerdicts[0].reason, 'membership_mismatch', kind + ': ' + r.rankingVerdicts[0].reason)
+  }
+})
+
+test('*** H19b. AND AN ORDINARY SECTION KEEPS PER-ITEM DROPPING, UNCHANGED ***', () => {
+  // ⛔ The rule must not leak onto non-ranking content: one bad row there costs one row, not
+  // the section. That is today's behaviour and it is deliberately untouched.
+  const r = runPlan([{ heading: '缺貨狀況', rankingClaim: null, items: [{ sourceId: '1', title: 'A', facts: [] }, ALIEN] }])
+  assert.equal(r.plan.sections.length, 1, '⛔ an ordinary section was dropped whole')
+  assert.equal(r.plan.sections[0].items.length, 1, 'the invented row is gone, the real one stays')
+  assert.equal(r.rankingVerdicts[0].status, 'not_detected')
+})
+
+/* ═══ THE LEAK-GUARD AND THE WORDING OUR OWN SCHEMA TEACHES ═════════════ */
+
+/**
+ * ⛔ THE SCHEMA WAS TEACHING A SHAPE THE GUARD COULD NOT SEE. `rankingClaim.kind`'s own
+ * description reads 「top_n＝指定數量的頭 N 項」 — and 「頭四項缺貨」 was classified as an ordinary
+ * section, so a wrong order under that heading shipped unchecked.
+ */
+test('*** H19c. ⛔ 頭 / 前 / 第 OPEN A RANKING, AND WITHOUT A DECLARATION IT FAILS CLOSED ***', () => {
+  for (const h of ['頭四項缺貨', '前四項', '第一名', '頭三個最緊要嘅', '前兩位']) {
+    assert.equal(looksLikeRankingHeading(h), true, '⛔ the guard missed ' + h)
+    const line = logLine([SEC(h, ['A'], null)])
+    assert.equal(gateOf(line).reason, 'ranking_claim_missing', h + ': ' + gateOf(line).reason)
+  }
+})
+
+test('*** H19d. ⛔ AND 「目前庫存」 IS STILL NOT A RANKING — the anchor is what protects it ***', () => {
+  // 「目前」 contains 「前」. An unanchored selection word would refuse one of the three ordinary
+  // headings this guard exists to leave alone.
+  for (const h of ['缺貨狀況', '缺貨項目', '目前庫存', '目前缺口', '存貨清單']) {
+    assert.equal(looksLikeRankingHeading(h), false, '⛔ false positive on ' + h)
+  }
 })
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -595,5 +643,32 @@ test('*** H35. ⛔ LIVE: THE COUNTERS REACH THE REAL ANSWER_PLAN LINE ***', asyn
     assert.ok(/"looksRanking":1/.test(line), '⛔ the ranking-looking section was not counted: ' + line)
     assert.ok(/"missing":1/.test(line), '⛔ the missing declaration was not counted: ' + line)
     assert.equal(line.includes('目前最缺的兩項'), false, '⛔ a heading reached the log')
+  })
+})
+
+test('*** H36. ⛔ LIVE: A FOREIGN ROW SINKS THE WHOLE RANKING SECTION, IN EVERY KIND ***', async () => {
+  /**
+   * ⛔ THE MANDATED FULL-PATH PROOF. H19 runs the validator; this runs the turn. The alien row
+   * is dropped as an invention long before the gate, so without the signal the gate sees a
+   * one-item claim — correct, proven, and NOT what the model declared.
+   */
+  await withEnv(async () => {
+    for (const [claim, kind] of [[ORD(), 'ordering'], [SUP(), 'superlative'], [TOP(2), 'top_n']]) {
+      const sec = { heading: '缺貨排序', rankingClaim: claim, items: [{ sourceId: '1', title: 'A', facts: [] }, { sourceId: '99', title: 'Z', facts: [] }] }
+      const out = await liveTurn([sec])
+      const reply = String(out && out.reply != null ? out.reply : '')
+      assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ ' + kind + ': a narrowed claim reached the Owner: ' + reply)
+      assert.ok(reply.trim().length > 0, '⛔ SILENCE — ' + kind)
+    }
+  })
+})
+
+test('*** H37. ⛔ LIVE: 「頭四項缺貨」 WITH NO DECLARATION SHIPS NOTHING ***', async () => {
+  await withEnv(async () => {
+    // The order is correct and the rows are real. Only recognition can refuse it.
+    const out = await liveTurn([liveSection('頭四項缺貨', ['A', 'B'], null)])
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ an undeclared top-N shipped: ' + reply)
+    assert.ok(reply.trim().length > 0, '⛔ SILENCE')
   })
 })

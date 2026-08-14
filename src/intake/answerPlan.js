@@ -1481,6 +1481,8 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const sectionClaims = []
   /** The leak-guard verdict, taken BEFORE the heading is blanked. A boolean, never text. */
   const sectionLooks = []
+  /** Items the resolver rejected, per section — the signal a ranking claim was narrowed. */
+  const sectionItemDrops = []
   let looksRankingCount = 0
   let declaredCount = 0
   let missingDeclarationCount = 0
@@ -1488,11 +1490,14 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const sectionsNotDeclared = !citesEvidence && declaredSections.length > 0
   for (const sec of (sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)) {
     const items = []
+    let unresolvedItems = 0
     for (const it of (Array.isArray(sec.items) ? sec.items : []).slice(0, LIMITS.maxItemsPerSection)) {
       modelItemCount++
       const sourceId = String(it.sourceId)
       const row = resolveRowRef(index, sourceId)
       if (!row) { // an item that was never retrieved is an invention
+        // ⛔ AND FOR A RANKING SECTION IT IS ALSO A NARROWED CLAIM — counted, not just dropped.
+        unresolvedItems++
         droppedItems++
         drops.push({ kind: 'item', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars) })
         continue
@@ -1592,7 +1597,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     if (declaresRanking) declaredCount++
     if (looksRanking && !declaresRanking) missingDeclarationCount++
     if (declaresRanking || looksRanking) heading = ''
-    if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking) }
+    if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking); sectionItemDrops.push(unresolvedItems) }
   }
 
   // ── limitations: real ones only, never telemetry ────────────────────────────
@@ -1770,7 +1775,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const badRankingSections = rankingSectionViolations({
     // The declaration travels WITH the section; the heading in `sections` is already blank
     // for every ranking section, so the gate has nothing model-authored to read.
-    sections: sections.map((sc, n) => ({ heading: '', items: sc.items, rankingClaim: sectionClaims[n], looksLikeRanking: sectionLooks[n] })),
+    sections: sections.map((sc, n) => ({ heading: '', items: sc.items, rankingClaim: sectionClaims[n], looksLikeRanking: sectionLooks[n], itemsDroppedBeforeGate: sectionItemDrops[n] })),
     rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
     /**
      * ⛔ THE ONE PROOF THAT OWNS THESE ROWS — not the turn's evidence at large. Passing all of

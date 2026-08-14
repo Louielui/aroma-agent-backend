@@ -329,7 +329,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** H16. top_n = EXACTLY proven[0:N], IN ORDER ***
 *** H17. superlative = AN EXACT PREFIX OF WHAT IS DISPLAYED ***
 *** H18. ordering KEEPS A–G LEGAL-SUBSEQUENCE SEMANTICS ***
-*** H19. ⛔ A ROW THE PROOF DOES NOT OWN BREAKS MEMBERSHIP, IN EVERY KIND ***
+*** H19. ⛔ AN ITEM DROPPED BEFORE THE GATE REJECTS THE WHOLE SECTION ***
+*** H19b. AND AN ORDINARY SECTION KEEPS PER-ITEM DROPPING, UNCHANGED ***
+*** H19c. ⛔ 頭 / 前 / 第 OPEN A RANKING, AND WITHOUT A DECLARATION IT FAILS CLOSED ***
+*** H19d. ⛔ AND 「目前庫存」 IS STILL NOT A RANKING — the anchor is what protects it ***
 *** H2 — a raw adapter method is not an operation ***
 *** H2 — end to end, ONE authority call per turn, and it is the resolver ***
 *** H2. THE LEAK-GUARD ANSWERS ONE QUESTION AND RETURNS A BOOLEAN ***
@@ -351,6 +354,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** H33. ⛔ LIVE: A DECLARED METRIC THE TURN DID NOT PROVE SHIPS NOTHING ***
 *** H34. ⛔ LIVE: THE RIGHT COUNT OF THE WRONG ROWS SHIPS NOTHING ***
 *** H35. ⛔ LIVE: THE COUNTERS REACH THE REAL ANSWER_PLAN LINE ***
+*** H36. ⛔ LIVE: A FOREIGN ROW SINKS THE WHOLE RANKING SECTION, IN EVERY KIND ***
+*** H37. ⛔ LIVE: 「頭四項缺貨」 WITH NO DECLARATION SHIPS NOTHING ***
 *** H4. ⛔ AND EVERY SHAPE THAT DEFEATED THE PARSER NOW FAILS CLOSED ***
 *** H5. AN ORDINARY SECTION IS UNTOUCHED — heading and all ***
 *** H6. ⛔ AN ILL-SHAPED DECLARATION IS REFUSED, NOT REPAIRED ***
