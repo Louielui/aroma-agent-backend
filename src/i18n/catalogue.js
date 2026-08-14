@@ -1052,6 +1052,25 @@ const CATALOGUE = Object.freeze({
   },
   'plan.countOf': { zh: '{n} {kind}', en: '{n} {kind}' },
 
+  /**
+   * ⛔ THE SERVER'S OWN TITLE FOR A PROVEN RANKING — answerPlan.js `composeRankingHeading`.
+   *
+   * The model's ranking heading is discarded before the validated plan is built, so these are
+   * the ONLY words a ranking section can be titled with. Every slot is a closed field the gate
+   * verified: `{n}` is the count checked against the proof, `{metric}` is one of the two labels
+   * below, and there is no slot through which model prose could enter.
+   *
+   * ⛔ TEMPLATES, NOT SENTENCES, for the reason stated at the top of this file — except that
+   * here it is stronger: a free-text slot would be a laundering path, not merely a translation
+   * defect.
+   */
+  'rank.headingTop': { zh: '按{metric}排序：頭 {n} 項', en: 'By {metric}: top {n}' },
+  'rank.headingTopPlain': { zh: '按本回合已核對的排序：頭 {n} 項', en: 'In the verified order: top {n}' },
+  'rank.headingOrder': { zh: '按{metric}排序', en: 'Ordered by {metric}' },
+  'rank.headingOrderPlain': { zh: '按本回合已核對的排序', en: 'In the verified order' },
+  'rank.metricShortfall': { zh: '缺口', en: 'shortfall' },
+  'rank.metricOrderQty': { zh: '建議訂貨量', en: 'suggested order quantity' },
+
   // ══════════════════════════════════════════════════════════════════════════
   // THE PROFILE PROBE — governance/profileProbe.js.
   //

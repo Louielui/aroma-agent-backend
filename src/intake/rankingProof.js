@@ -120,195 +120,78 @@ const SHORTAGE_TERM_RE = /缺口|缺貨|短缺/
 const LEAST_WORD_RE = /最(少|小|低)/
 const ANY_SUPERLATIVE_RE = /最[一-鿿]|\bmost\b|\bworst\b|\btop\b/i
 
-/** CJK numerals used as counts in headings. Deliberately small — 一 to 十 covers real headings. */
-const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 })
 /**
- * ⛔ THE WHOLE NUMERAL RUN, NEVER A SUFFIX OF IT.
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ THE COUNT PARSER IS GONE, AND IT IS NOT COMING BACK.
  *
- * A single-character match took the TRAILING digit: 「最缺十一項」 matched 「一項」 and became
- * N=1, 「最缺十二項」 became N=2. That is not 「11 and 12 unsupported」 — it silently converts one
- * count claim into a different, smaller one, so a top-12 section showing 2 items would have
- * passed as a correct top-2. The run is now captured whole and parsed exactly; anything that
- * does not parse is still a CLAIM and fails closed rather than becoming a number nobody wrote.
+ * Four rounds of reviewer blockers, four characters, one shape — each time a heading was
+ * asked HOW MANY and answered with a number nobody wrote:
+ *
+ *   Blocker  9  「最缺一億二項」 → N=2      the numeral run restarted after an unlisted 億
+ *   Blocker 10  「最缺壱十二項」 → N=12     the boundary was still a hand-written list
+ *   Blocker 11  「最缺卄項」    → no count  and no count means 「as many as you listed」
+ *   Blocker 12  「最缺四項食材」 → no count  because an ordinary NOUN follows the counter
+ *
+ * Measured on `superlative-section@b8c3719`: the only variant that satisfied Blocker 12
+ * re-adopted the character list, and reopened Blockers 10 and 11 inside one test run. Two
+ * attempts at a 「complete」 numeral repertoire were both incomplete. Deciding cardinality from
+ * prose needs a vocabulary; every vocabulary was incomplete; every incompleteness shipped.
+ *
+ * > **Owner ruling: cardinality is DECLARED in a closed structure and VERIFIED by the server.
+ * > Heading parsing is demoted to a leak-guard.**
+ *
+ * So this file no longer contains a numeral, a counter word, a particle or a noun pattern.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
-/**
- * ⛔ THE RUN INCLUDES CHARACTERS THIS PARSER CANNOT READ, ON PURPOSE.
- * Without 百/千/萬/零 in the class, matching could RESTART after them: 「最缺一百二項」 matched
- * the trailing 「二項」 and became N=2. Capturing the whole run means such a heading reaches
- * the parser, fails to parse, and is refused as `count_unparsed` — never silently demoted to
- * a smaller, satisfiable count.
- */
-/**
- * ⛔ THE COMPLETE CJK NUMERAL REPERTOIRE, AND A LOOKBEHIND THAT FORBIDS STARTING MID-TOKEN.
- *
- * Adding 百/千/萬 closed 「一百二項」, but a fixed list brings the same bug back with the next
- * character outside it: 「最缺一億二項」 failed at 一 and RESTARTED at 二項 -> N=2, and 「廿二項」
- * did the same. Appending one character per bug found is not a rule, it is a queue.
- *
- * So the class is the whole standard repertoire — digits, tens/hundreds/thousands, the
- * financial forms, and 廿/卅 — and the lookbehind means a run may not BEGIN immediately after
- * another numeral character. The invariant is not 「support every numeral」: it is that not
- * knowing the count may fail closed, but one count must never silently become a smaller one.
- *
- * Only 1-99 built from 一-九 and 十 is PARSED; everything else in the class is captured so it
- * reaches the parser, fails, and is refused as `count_unparsed`.
- */
-/**
- * ⛔ THE COUNT IS NOT SEARCHED FOR. IT IS THE WHOLE SPAN, OR IT IS NOTHING.
- *
- * Every previous attempt matched a numeral RUN and so could always restart after a character
- * the run did not recognise: 「一百二項」 -> 2, then 「一億二項」 -> 2, then 「一万二項」 -> 2 and
- * 「卄二項」 -> 2 and 「壱十二項」 -> 12. Widening the character class each time is a queue, not a
- * rule, and the next unlisted numeral reopens it.
- *
- * ⛔ AND A PURE 「no restart after any ideograph」 BOUNDARY CANNOT WORK HERE: in 「最缺四項」 the
- * 四 is preceded by 缺, an ideograph, so that rule would refuse every real heading — including
- * the production one this whole task began with. Verified before choosing.
- *
- * So there is no search and no boundary. The claim phrase is already known (最缺 / 排序 / …),
- * and the counter word is already known (項/個/樣/款/種). Everything BETWEEN them is the count,
- * taken whole. It parses completely or the claim is refused as `count_unparsed`. A character
- * nobody has ever heard of cannot cause a restart, because nothing ever restarts.
- *
- * The only vocabulary left is 「does this span even attempt to be a number?」, decided by the
- * basic digits — and getting that wrong can only UNDER-read a count, which downgrades a TOP-N
- * claim to the stricter prefix rule. It can never over-read one.
- */
-const COUNTER_RE = /[項個樣款種]/
-/**
- * ⛔ PARTICLES, NOT NUMERALS — and the direction of a mistake here is safe.
- * 「最缺嗰項」 is 「that one」, not a count; 嗰/呢 are demonstratives in the same class as 的/嘅.
- * Missing a particle only makes a heading read as an unreadable COUNT and fail closed; the
- * dangerous direction would be listing something that IS a numeral, and none of these are.
- */
-const COUNT_PARTICLES_RE = /[的嘅之係個嗰呢啲\s]/g
-/**
- * ⛔ A COUNTER WORD IS ONLY A COUNT SITE WHERE A COUNT COULD ACTUALLY BE WRITTEN.
- *
- * 「最緊急缺貨項目」 contains 項 inside the WORD 項目 and claims no quantity; 「最缺四項」 ends
- * on its counter; 「目前最缺的四項排序」 has its counter followed by another claim marker. That
- * is a structural distinction and needs no numeral list — which matters, because deciding
- * presence by a list of numerals is exactly what let 卄 and 壱 read as 「no count at all」.
- */
-const COUNT_SITE_SUFFIX_RE = /^(排序|排名|由高到低|由多到少)/
-const IDEOGRAPH_RE = /^[\u4e00-\u9fff]/
-const LATIN_TOP_N_RE = /\btop\s*(\d+)\b/i
-
-/** The end of the claim phrase — the point after which a count may legitimately appear. */
-function claimPhraseEnd (h) {
-  let bestIndex = Infinity
-  let end = 0
-  for (const re of [SHORTAGE_WORD_RE, MOST_WORD_RE, LEAST_WORD_RE, ANY_SUPERLATIVE_RE, RANKING_PRESENTATION_RE]) {
-    const m = h.match(re)
-    if (!m || m.index == null) continue
-    /**
-     * ⛔ THE EARLIEST MARKER, NOT THE LATEST. Taking the rightmost moved the anchor PAST
-     * 排序 in 「目前最缺的四項排序」, so the 四項 between the two markers was skipped entirely and
-     * a four-item claim became a no-N superlative. Ties resolve to the longest match at that
-     * position, so 「最緊急」 is not cut short to 「最緊」.
-     */
-    if (m.index < bestIndex) { bestIndex = m.index; end = m.index + m[0].length } else if (m.index === bestIndex) { end = Math.max(end, m.index + m[0].length) }
-  }
-  return end
-}
 
 /**
- * @returns {{n:number|null, unparsed:boolean}} `unparsed` means a count was attempted and could
- *   not be read exactly — a CLAIM that must fail closed, never a smaller count.
+ * ⛔ THE LEAK-GUARD. It answers ONE question — 「is this section presenting a ranking?」 — and
+ * returns a boolean. It never reads N, a numeral, a noun, a metric or an intent.
+ *
+ * HIGH RECALL AND FAIL-CLOSED, deliberately in that direction: a heading it wrongly flags is
+ * refused for want of a declaration, which the model can supply. A heading it MISSES would
+ * ship an unproven ranking, which nothing downstream can repair.
+ *
+ * ⛔ AND THE ORDINARY HEADINGS MUST STAY ORDINARY. 「缺貨狀況」, 「缺貨項目」 and 「目前庫存」 are
+ * factual section titles; a guard that fired on them would refuse the everyday content of the
+ * system, which is a defect and not a safety margin.
  */
-function countClaimIn (h) {
-  const rest = h.slice(claimPhraseEnd(h))
-  let hit = null
-  for (let i = 0; i < rest.length; i++) {
-    if (!COUNTER_RE.test(rest[i])) continue
-    const after = rest.slice(i + 1)
-    if (after === "" || !IDEOGRAPH_RE.test(after) || COUNT_SITE_SUFFIX_RE.test(after)) { hit = { index: i }; break }
-  }
-  if (!hit) {
-    const latin = h.match(LATIN_TOP_N_RE)
-    const v = latin ? Number(latin[1]) : null
-    return { n: (Number.isFinite(v) && v > 0) ? v : null, unparsed: false }
-  }
-  const span = rest.slice(0, hit.index).replace(COUNT_PARTICLES_RE, '')
-  /**
-   * ⛔ 「I COULD NOT READ N」 MUST NEVER BE REWRITTEN AS 「THERE WAS NO N」.
-   *
-   * Commit F decided presence with a digit list, so 「最缺卄項」 and 「最缺壱項」 yielded no count
-   * — and the bare-superlative branch then takes n = however many items the section listed.
-   * A heading asserting twenty could pass showing one. Stricter on order, LOOSER on
-   * cardinality, which is the part an explicit-N claim exists to pin.
-   *
-   * So at a count site ANY non-empty span is a count: it parses exactly, or it fails closed.
-   * Only an empty span — a genuine absence — may take the prefix superlative path.
-   */
-  // 「最緊急缺貨項目」 is a superlative with no count, not a broken one.
-  if (!span) return { n: null, unparsed: false }
-  if (/^[0-9０-９]+$/.test(span)) {
-    const v = Number(span.replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xFF10)))
-    return (Number.isFinite(v) && v > 0) ? { n: v, unparsed: false } : { n: null, unparsed: true }
-  }
-  const v = parseCjkNumeral(span)
-  return v === null ? { n: null, unparsed: true } : { n: v, unparsed: false }
-}
-
-// ⛔ CJK_NUMERAL_CHARS, CJK_COUNT_IN_HEADING and ARABIC_COUNT_IN_HEADING are GONE. Each was a
-// character list that a numeral outside it could walk around; `countClaimIn` above needs none.
-
-/** Exact 十-based parse for 1–99. Returns null on anything it cannot read precisely. */
-function parseCjkNumeral (run) {
-  const s = String(run || '')
-  if (!s) return null
-  // ⛔ PARSE ONLY WHAT IS EXACTLY READABLE. Any character outside 一-九 and 十 — including
-  // every one captured purely so the run cannot restart after it — is refused here.
-  if (/[^一二兩三四五六七八九十]/.test(s)) return null
-  if (!s.includes('十')) return s.length === 1 ? (CJK_DIGITS[s] || null) : null
-  const [head, tail, ...rest] = s.split('十')
-  if (rest.length > 0) return null // 十…十… is not a number this parser reads
-  const tens = head === '' ? 1 : (CJK_DIGITS[head] || null)
-  if (tens === null) return null
-  if (tail === '') return tens * 10
-  if (tail.length !== 1) return null
-  const ones = CJK_DIGITS[tail]
-  return ones ? tens * 10 + ones : null
-}
-
-/**
- * Classify a section heading as a ranking CLAIM.
- * @returns {{claim:boolean, kind:string|null, n:number|null, metric:string|null}}
- *   `metric` is null when the heading claims an ordering this turn cannot prove.
- */
-function classifySectionHeading (heading) {
+function looksLikeRankingHeading (heading) {
   const h = String(heading || '')
-  const none = { claim: false, kind: null, n: null, metric: null }
-  if (!h) return none
+  if (!h) return false
+  return ANY_SUPERLATIVE_RE.test(h) || SHORTAGE_WORD_RE.test(h) || RANKING_PRESENTATION_RE.test(h)
+}
 
-  // ⛔ 「缺口最大」 was MISSED by a shortage-word list and would have been refused as an
-  // unproven measure — found by running the existing suite, not by reading. A generic 「most」
-  // counts as the shortage metric only beside a shortage term, and the least-end words never do.
-  const shortage = !LEAST_WORD_RE.test(h) &&
-    (SHORTAGE_WORD_RE.test(h) || (MOST_WORD_RE.test(h) && SHORTAGE_TERM_RE.test(h)))
-  const superlative = shortage || ANY_SUPERLATIVE_RE.test(h)
-  const ordering = presentsAsRanking(h)
-  if (!superlative && !ordering) return none
+/** The two orderings that actually exist. A claim naming anything else is refused by name. */
+const DECLARABLE_METRICS = Object.freeze([RANKING_METRIC.ABSOLUTE_SHORTFALL, RANKING_METRIC.SUGGESTED_ORDER_QTY])
 
-  /**
-   * ⛔ A SUPERLATIVE ASSERTS A MEASURE; A BARE ORDERING DOES NOT.
-   *
-   * 「最缺」 says WHICH ordering it means, so the proof must be that ordering — and a proof of
-   * `suggested_order_qty` is a real proof of the WRONG thing. 「缺貨排序」 asserts only that the
-   * rows are in order, so it may use whichever single proof is bound to its own rows.
-   * `assertsMetric` is what keeps those two apart; `metric: null` alone could not.
-   */
-  const assertsMetric = superlative
-  const metric = shortage ? RANKING_METRIC.ABSOLUTE_SHORTFALL : null
+const NO_CLAIM = Object.freeze({ present: false, valid: false, kind: null, n: null, metric: null })
 
-  const count = countClaimIn(h)
-  const n = count.n
-  const countUnparsed = count.unparsed
-
-  if (superlative && (n !== null || countUnparsed)) return { claim: true, kind: CLAIM_KIND.TOP_N, n, metric, assertsMetric, countUnparsed }
-  if (superlative) return { claim: true, kind: CLAIM_KIND.SUPERLATIVE, n: null, metric, assertsMetric, countUnparsed: false }
-  return { claim: true, kind: CLAIM_KIND.ORDERING, n, metric, assertsMetric, countUnparsed }
+/**
+ * Validate the DECLARED claim as a shape. Nothing here is entitlement — it decides only
+ * whether the declaration says one coherent thing, so the gate below knows what to prove.
+ *
+ * ⛔ PRESENCE AND VALIDITY ARE REPORTED SEPARATELY. 「no declaration」 and 「a declaration that
+ * contradicts itself」 are different failures with different repairs, and collapsing them is how
+ * a missing field would quietly read as a shape error — or worse, as nothing at all.
+ *
+ * ⛔ A DECLARATION IS NEVER REPAIRED. `top_n` with no `n` is not read as a superlative, and a
+ * superlative carrying an `n` is not stripped of it: either would let the server answer a
+ * question the model did not ask, which is the whole class of defect this replaced.
+ */
+function normaliseRankingClaim (raw) {
+  if (raw === null || raw === undefined) return NO_CLAIM
+  const bad = { present: true, valid: false, kind: null, n: null, metric: null }
+  if (typeof raw !== 'object' || Array.isArray(raw)) return bad
+  const kind = raw.kind
+  if (kind !== CLAIM_KIND.TOP_N && kind !== CLAIM_KIND.SUPERLATIVE && kind !== CLAIM_KIND.ORDERING) return bad
+  const n = (raw.n === undefined) ? null : raw.n
+  // ⛔ A POSITIVE INTEGER, checked as one. 「2」, 2.5 and 0 are three different ways of not
+  // being a count, and Number() would have turned two of them into one.
+  if (kind === CLAIM_KIND.TOP_N) { if (!Number.isInteger(n) || n <= 0) return bad } else if (n !== null) return bad
+  const metric = (raw.metric === undefined) ? null : raw.metric
+  if (metric !== null && !DECLARABLE_METRICS.includes(metric)) return bad
+  return { present: true, valid: true, kind, n: kind === CLAIM_KIND.TOP_N ? n : null, metric }
 }
 
 function asksProportionally (text) {
@@ -416,8 +299,12 @@ const VIOLATION = Object.freeze({
   RANKING_INCOMPLETE: 'ranking_incomplete',
   MEMBERSHIP_MISMATCH: 'membership_mismatch',
   ORDER_MISMATCH: 'order_mismatch',
-  /** A count was written in the heading and could not be parsed exactly. */
-  COUNT_UNPARSED: 'count_unparsed'
+  /** A section presents a ranking and declared no claim. Nothing to prove, so nothing ships. */
+  RANKING_CLAIM_MISSING: 'ranking_claim_missing',
+  /** A declaration that contradicts itself — `top_n` with no `n`, a metric nothing sorts by. */
+  RANKING_CLAIM_INVALID: 'ranking_claim_invalid',
+  /** The declared count is not the number of rows shown, or is more than the proof holds. */
+  CARDINALITY_MISMATCH: 'cardinality_mismatch'
 })
 
 /** What happened to a section, for the record. Counts and enums only. */
@@ -515,16 +402,38 @@ function rankingSectionViolations (input = {}) {
   const allow = () => say(SECTION_STATUS.ALLOWED, null)
   const list = Array.isArray(i.sections) ? i.sections : []
   list.forEach((sec, idx) => {
-    const claim = sec ? classifySectionHeading(sec.heading) : { claim: false }
-    if (!claim.claim) { say(SECTION_STATUS.NOT_DETECTED, null); return } // an ordinary set heading
+    /**
+     * ⛔ GATE ORDER IS PINNED, AND IT STARTS AT THE DECLARATION.
+     * claim present → shape valid → ranked source count → operation ownership → metric →
+     * completeness → cardinality → membership → order → ALLOW. Every fixture in
+     * structuredSectionRanking.test.js H27 fails several of these at once, so the ORDER is
+     * what decides the reason — and a reason that depends on evaluation order is not a reason.
+     */
+    const declared = normaliseRankingClaim(sec ? sec.rankingClaim : null)
+    if (!declared.present) {
+      /**
+       * ⛔ NO DECLARATION IS NOT AUTOMATICALLY INNOCENT. A section that PRESENTS a ranking
+       * and declares none is the exact escape this contract exists to close: under the old
+       * rule it needed only a heading the parser could not read.
+       */
+      /**
+       * ⛔ THE GUARD RUNS ON THE HEADING THE MODEL SENT, WHICH IS NOT THE ONE HERE.
+       * `validatePlan` blanks a ranking heading before the validated plan is built, so by
+       * this point there is deliberately nothing left to read. It evaluates the guard first
+       * and passes the ANSWER — a boolean, no content — so the two facts stay together
+       * without the heading itself ever travelling. A caller that supplies neither gets the
+       * heading read directly, which is what the direct-call tests exercise.
+       */
+      const presents = (sec && typeof sec.looksLikeRanking === 'boolean')
+        ? sec.looksLikeRanking
+        : looksLikeRankingHeading(sec ? sec.heading : '')
+      if (presents) { reject(idx, VIOLATION.RANKING_CLAIM_MISSING); return }
+      say(SECTION_STATUS.NOT_DETECTED, null)
+      return // an ordinary set heading, undeclared and not presenting as a ranking
+    }
+    if (!declared.valid) { reject(idx, VIOLATION.RANKING_CLAIM_INVALID); return }
 
-    // ⛔ GATE ORDER IS PINNED. From the moment a heading is RECOGNISED as a ranking claim
-    // this section fails closed, and only then are the reasons considered. Checking any
-    // precondition before recognition is how the zero-source exit became a bypass.
     if (rankedSourceCount === 0) { reject(idx, VIOLATION.NO_RANKING_PROOF); return }
-    // ⛔ ONLY A CLAIM THAT NAMES A MEASURE CAN NAME AN UNPROVEN ONE. A bare 「排序」 asserts no
-    // measure, so `metric: null` there means 「none claimed」, not 「claimed something unprovable」.
-    if (claim.assertsMetric && claim.metric === null) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
 
     /**
      * ⛔ AMBIGUOUS ATTRIBUTION IS DECIDED BEFORE THE ROWS ARE EVEN LOOKED AT.
@@ -535,16 +444,12 @@ function rankingSectionViolations (input = {}) {
     if (rankedSourceCount > 1) { reject(idx, VIOLATION.NO_RANKING_PROOF); return } // ambiguous attribution
 
     /**
-     * ⛔ THE PROOF MUST BE THE ORDERING THE CLAIM NAMES. Entitlement checked only that ONE
-     * complete proof existed — never that it was the right measure. `inventory` proves
-     * absolute_shortfall and `orderPlanning` proves suggested_order_qty; both are real, so a
-     * shortage superlative could be validated against a suggested-order ordering whenever the
-     * two happened to agree. A bare 「排序」 asserts no measure and is exempt.
+     * ⛔ THE PROOF MUST BE THE ORDERING THE CLAIM NAMES. `inventory` proves absolute_shortfall
+     * and `orderPlanning` proves suggested_order_qty; both are real, so a shortage claim could
+     * otherwise be validated against a suggested-order ordering whenever the two agreed.
+     * A claim declaring `metric: null` asserts no measure and is exempt — that is `ordering`.
      */
-    if (claim.assertsMetric && evidence && claim.metric !== evidence.rankingMetric) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
-
-    // ⛔ Blocker 4: a count that could not be read exactly must not become a different count.
-    if (claim.countUnparsed) { reject(idx, VIOLATION.COUNT_UNPARSED); return }
+    if (declared.metric !== null && (!evidence || declared.metric !== evidence.rankingMetric)) { reject(idx, VIOLATION.METRIC_NOT_PROVEN); return }
 
     // ⛔ NOT ENTITLED — refused whatever the order says. A correct sequence over an
     // unprovable ordering is a coincidence, not a proof.
@@ -558,7 +463,7 @@ function rankingSectionViolations (input = {}) {
      */
     const claimedIds = (Array.isArray(sec.items) ? sec.items : []).map((it) => resolveItemId(it, rowIds))
 
-    if (claim.kind !== CLAIM_KIND.ORDERING) {
+    if (declared.kind !== CLAIM_KIND.ORDERING) {
       /**
        * ⛔ A TOP-N OR SUPERLATIVE HEADING CLAIMS MEMBERSHIP, NOT MERELY ORDER.
        *
@@ -568,16 +473,16 @@ function rankingSectionViolations (input = {}) {
        */
       if (claimedIds.length === 0 || claimedIds.some((x) => x === null)) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
       /**
-       * An explicit N claims exactly N; a bare superlative claims a prefix of its own length.
+       * ⛔ CARDINALITY IS ITS OWN VERDICT, and it is checked BEFORE membership.
        *
-       * ⛔ THERE IS NO SEPARATE COUNT CHECK, AND THAT IS DELIBERATE. One was written here and
-       * a mutation removing it stayed GREEN — the set-equality test below already compares
-       * `head.length` with `claimedIds.length`, so a count mismatch cannot survive it. Rather
-       * than keep a line no test could kill, it was removed: three items under 「四項」 fail as
-       * a membership mismatch, which is what they are.
+       * Under the parser this was deliberately folded into set-equality, because a heading-read
+       * count could not be trusted enough to report on its own. A DECLARED count can: 「you said
+       * four and showed three」 is a different repair from 「you showed the wrong three」, and the
+       * Owner reads the reason, not the code.
        */
-      const n = claim.kind === CLAIM_KIND.TOP_N ? claim.n : claimedIds.length
-      if (n > provenIds.length) { reject(idx, VIOLATION.MEMBERSHIP_MISMATCH); return }
+      const n = declared.kind === CLAIM_KIND.TOP_N ? declared.n : claimedIds.length
+      if (declared.kind === CLAIM_KIND.TOP_N && claimedIds.length !== n) { reject(idx, VIOLATION.CARDINALITY_MISMATCH); return }
+      if (n > provenIds.length) { reject(idx, VIOLATION.CARDINALITY_MISMATCH); return }
       const head = provenIds.slice(0, n)
       // ⛔ Membership first, then order — they fail for different reasons and a repair needs to
       // know which. Same set in the wrong order is an ORDER failure, not a membership one.
@@ -706,7 +611,8 @@ module.exports = {
   presentsAsRanking,
   VIOLATION,
   SECTION_STATUS,
-  classifySectionHeading,
+  looksLikeRankingHeading,
+  normaliseRankingClaim,
   CLAIM_KIND,
   asksProportionally,
   metricAskedFor,

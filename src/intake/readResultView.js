@@ -354,6 +354,11 @@ function renderValidatedPlan (input) {
     // produces the ranking-gate verdicts and logAnswerPlan projects them; without this line the
     // two would never meet and every real turn would report an empty summary.
     rankingVerdicts: v.rankingVerdicts,
+    // ⛔ AND THE SAME MISTAKE ONE MORE TIME IF THIS LINE IS MISSING. validatePlan counts the
+    // ranking declarations and logAnswerPlan projects them; without this the two never meet and
+    // every production line reports 0/0/0 — a counter added to end a silent gap, silently gapped.
+    // It has happened twice already on this object: `droppedLimitations` and `rankingVerdicts`.
+    rankingClaims: v.rankingClaims,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
     scopeNotesSuppressed: scopePrune.concepts.length ? scopePrune.concepts : null,

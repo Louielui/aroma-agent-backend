@@ -28,6 +28,16 @@ const { RANKING_METRIC, rankingSectionViolations } = require('./rankingProof')
 const { A4_FLAG } = require('./a4Contract')
 const { A4_AMBIGUITY_FLAG } = require('./sourceAmbiguityGate')
 
+/**
+ * ⛔ TASK 001-H: THE CLAIM IS DECLARED, NOT READ OUT OF THE HEADING.
+ *
+ * Every property this file pins — subsequence legality, entitlement, ambiguity, the three
+ * live regressions — is unchanged. What changed is where the gate learns that a section is a
+ * ranking at all: the model declares it. A heading is now only a leak-guard, so a section
+ * that presents as a ranking and declares nothing is refused rather than parsed.
+ */
+const ORD = { kind: 'ordering', n: null, metric: null }
+
 const NOW = '2026-08-09T00:00:00.000Z'
 const ASK = '現在缺貨最嚴重的是什麼？'
 
@@ -125,7 +135,7 @@ function scriptedAdapter (envelopes) {
 const READ = { intent: 'answer', mode: 'chat', reply: null, nextRead: { capability: 'aroma_system.inventory' }, answerPlan: null }
 
 /** A terminal envelope whose ANSWER lives in a section, with a neutral sentence. */
-const SECTION_PLAN = (heading, titles, directAnswer) => ({
+const SECTION_PLAN = (heading, titles, directAnswer, rankingClaim) => ({
   intent: 'answer',
   mode: 'chat',
   reply: directAnswer || '',
@@ -134,6 +144,7 @@ const SECTION_PLAN = (heading, titles, directAnswer) => ({
     directAnswer: directAnswer || '',
     sections: [{
       heading,
+      rankingClaim: rankingClaim || null,
       items: titles.map((t) => ({ sourceId: BY_TITLE.get(t).id, title: t, facts: [] }))
     }],
     limitations: [],
@@ -149,7 +160,7 @@ const SECTION_PLAN = (heading, titles, directAnswer) => ({
  * as inventions BEFORE the ranking gate ever sees them — which is how the first version of the
  * multi-source test passed without exercising the rule it claimed to pin.
  */
-const SECTION_PLAN_REF = (heading, titles) => ({
+const SECTION_PLAN_REF = (heading, titles, rankingClaim) => ({
   intent: 'answer',
   mode: 'chat',
   reply: '',
@@ -158,6 +169,7 @@ const SECTION_PLAN_REF = (heading, titles) => ({
     directAnswer: '',
     sections: [{
       heading,
+      rankingClaim: rankingClaim || null,
       items: titles.map((t) => ({ sourceId: 'aroma_system.inventory#' + BY_TITLE.get(t).id, title: t, facts: [] }))
     }],
     limitations: [],
@@ -191,7 +203,7 @@ function shippedOrder (reply) {
 test('*** ⛔ 1. A 「缺貨項目排序」 SECTION IN THE WRONG ORDER MUST NOT SHIP ***', async () => {
   await withEnv({}, async () => {
     const out = await run(ASK, scriptedAdapter([
-      READ, SECTION_PLAN('缺貨項目排序', [JARS, NAPA, NOLA, SOY], '')
+      READ, SECTION_PLAN('缺貨項目排序', [JARS, NAPA, NOLA, SOY], '', ORD)
     ]), rankedConnector())
     const reply = String(out && out.reply != null ? out.reply : '')
     const order = shippedOrder(reply)
@@ -208,7 +220,7 @@ test('*** ⛔ 1. A 「缺貨項目排序」 SECTION IN THE WRONG ORDER MUST NOT 
 test('*** ⛔ 2. THE SAME SECTION IN THE PROVEN ORDER IS ALLOWED ***', async () => {
   await withEnv({}, async () => {
     const out = await run(ASK, scriptedAdapter([
-      READ, SECTION_PLAN('缺貨項目排序', [NAPA, NOLA, SOY, JARS], '')
+      READ, SECTION_PLAN('缺貨項目排序', [NAPA, NOLA, SOY, JARS], '', ORD)
     ]), rankedConnector())
     const order = shippedOrder(out && out.reply)
     assert.deepEqual(order, [NAPA, NOLA, SOY, JARS],
@@ -232,7 +244,7 @@ test('*** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORD
 
 // ⛔ PRODUCTION SHAPE: validatePlan pushes { sourceId, title, facts } with the RAW sourceId,
 // so fixtures must too — a fixture the runtime never supplies proves nothing (task 001 C).
-const SEC = (heading, titles) => ({ heading, items: titles.map((t) => ({ sourceId: BY_TITLE.get(t).id, title: t })) })
+const SEC = (heading, titles, rankingClaim) => ({ heading, rankingClaim: rankingClaim || null, items: titles.map((t) => ({ sourceId: BY_TITLE.get(t).id, title: t })) })
 const ROWS = RANKED.map((r) => ({ source: 'aroma_system', readKey: 'aroma_system.inventory', sourceId: r.id, title: r.title }))
 
 /**
@@ -262,22 +274,22 @@ const bad = (sections, evidence = PROOF_COMPLETE, count = 1) =>
   })
 
 test('*** a correct SUBSEQUENCE is a legitimate ranking — a top-2 need not carry the tail ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])]), [], 'top-2')
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, SOY])]), [], 'skipping New Orleans is fine')
-  assert.deepEqual(bad([SEC('缺貨排序', [NOLA, JARS])]), [], 'a tail slice is still in order')
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA], ORD)]), [], 'top-2')
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, SOY], ORD)]), [], 'skipping New Orleans is fine')
+  assert.deepEqual(bad([SEC('缺貨排序', [NOLA, JARS], ORD)]), [], 'a tail slice is still in order')
 })
 
 test('*** ⛔ but a REORDERED subsequence is not ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [SOY, NAPA])]), [0])
-  assert.deepEqual(bad([SEC('排名', [NAPA, JARS, NOLA])]), [0])
+  assert.deepEqual(bad([SEC('缺貨排序', [SOY, NAPA], ORD)]), [0])
+  assert.deepEqual(bad([SEC('排名', [NAPA, JARS, NOLA], ORD)]), [0])
 })
 
 test('*** a single-item ranking section cannot be out of order ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [JARS])]), [], 'one item asserts no sequence')
+  assert.deepEqual(bad([SEC('缺貨排序', [JARS], ORD)]), [], 'one item asserts no sequence')
 })
 
 test('*** only the OFFENDING section is dropped, not its neighbour ***', () => {
-  const v = bad([SEC('缺貨狀況', [JARS, NAPA]), SEC('缺貨排序', [JARS, NAPA])])
+  const v = bad([SEC('缺貨狀況', [JARS, NAPA]), SEC('缺貨排序', [JARS, NAPA], ORD)])
   assert.deepEqual(v, [1], 'the ordinary section at index 0 survives')
 })
 
@@ -295,7 +307,7 @@ test('*** only the OFFENDING section is dropped, not its neighbour ***', () => {
  * ranking detector — is unchanged and asserted below: an ORDINARY section is still untouched.
  */
 test('*** with no ranked rows a ranking CLAIM fails closed, and an ordinary section does not ***', () => {
-  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [JARS, NAPA])], rankedRows: [] }), [0],
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [JARS, NAPA], ORD)], rankedRows: [] }), [0],
     '⛔ a ranking claim shipped with no proof behind it')
   assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨狀況', [JARS, NAPA])], rankedRows: [] }), [],
     '⛔ an ordinary section was treated as a ranking')
@@ -306,7 +318,7 @@ test('*** with no ranked rows a ranking CLAIM fails closed, and an ordinary sect
 test('*** ⛔ AN INCOMPLETE RANKING IS REFUSED EVEN WHEN THE ORDER IS RIGHT ***', () => {
   // ⛔ Identical section, identical (correct) order. Only the entitlement differs, so the
   // entitlement is the only thing that can be doing the work here.
-  const section = [SEC('訂貨建議排名', [NAPA, NOLA, SOY])]
+  const section = [SEC('訂貨建議排名', [NAPA, NOLA, SOY], ORD)]
   assert.deepEqual(bad(section, PROOF_COMPLETE), [], 'proven ranking, correct order → allowed')
   assert.deepEqual(bad(section, PROOF_INCOMPLETE), [0],
     '⛔ a ranking the server cut before sorting shipped because its order happened to be right')
@@ -315,8 +327,8 @@ test('*** ⛔ AN INCOMPLETE RANKING IS REFUSED EVEN WHEN THE ORDER IS RIGHT ***'
 test('*** ⛔ and a SINGLE-ITEM ranking section is refused when unproven ***', () => {
   // Order cannot be wrong with one item, so only entitlement can refuse it — and it must,
   // because 「排名第一」 over an unprovable ordering is still a first-place claim.
-  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA])], PROOF_COMPLETE), [])
-  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA])], PROOF_INCOMPLETE), [0])
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA], ORD)], PROOF_COMPLETE), [])
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA], ORD)], PROOF_INCOMPLETE), [0])
 })
 
 test('*** an ORDINARY section is untouched by entitlement ***', () => {
@@ -325,7 +337,7 @@ test('*** an ORDINARY section is untouched by entitlement ***', () => {
 })
 
 test('*** absent evidence is not entitlement — fails closed ***', () => {
-  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [NAPA, NOLA])], rankedRows: ROWS, rankedSourceCount: 1 }), [0],
+  assert.deepEqual(rankingSectionViolations({ sections: [SEC('缺貨排序', [NAPA, NOLA], ORD)], rankedRows: ROWS, rankedSourceCount: 1 }), [0],
     '⛔ a missing descriptor must not read as a proven ranking')
 })
 
@@ -355,7 +367,7 @@ test('*** ⛔ LIVE: AN UNPROVEN RANKING SECTION IN CORRECT ORDER STILL MUST NOT 
     const out = await run(ASK, scriptedAdapter([
       // ⛔ CORRECT relative order. Only the entitlement is missing, so only the entitlement
       // check can refuse it — and it must, or the class we just closed reopens.
-      READ, SECTION_PLAN('訂貨建議排名', [NAPA, NOLA, SOY, JARS], '')
+      READ, SECTION_PLAN('訂貨建議排名', [NAPA, NOLA, SOY, JARS], '', ORD)
     ]), incompleteRankingConnector())
     const reply = String(out && out.reply != null ? out.reply : '')
     assert.deepEqual(shippedOrder(reply), [],
@@ -379,14 +391,14 @@ test('*** ⛔ LIVE: and an ORDINARY section over the same unproven source still 
 test('*** ⛔ M1. SOURCE A\'S COMPLETE PROOF MUST NOT ENTITLE SOURCE B\'S RANKING ***', () => {
   // Two ranked sources in one turn: inventory complete, orderPlanning not. A section carries
   // no source attribution, so nothing can show which ordering it reports.
-  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA, NOLA, SOY])], PROOF_COMPLETE, 2), [0],
+  assert.deepEqual(bad([SEC('訂貨建議排名', [NAPA, NOLA, SOY], ORD)], PROOF_COMPLETE, 2), [0],
     '⛔ a complete proof entitled a ranking that does not belong to it')
 })
 
 test('*** ⛔ M2. TWO COMPLETE PROOFS IS STILL AMBIGUOUS — FAIL CLOSED ***', () => {
   // Both proven, order correct against inventory. Still refused: 「which ordering is this?」
   // has no structural answer, and an unattributable claim is not a proven one.
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS])], PROOF_COMPLETE, 2), [0])
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS], ORD)], PROOF_COMPLETE, 2), [0])
 })
 
 test('*** ⛔ M3. AN ORDINARY SECTION IN A TWO-SOURCE TURN IS UNTOUCHED ***', () => {
@@ -395,10 +407,10 @@ test('*** ⛔ M3. AN ORDINARY SECTION IN A TWO-SOURCE TURN IS UNTOUCHED ***', ()
 })
 
 test('*** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS])], PROOF_COMPLETE, 1), [])
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, SOY])], PROOF_COMPLETE, 1), [], 'subsequence still fine')
-  assert.deepEqual(bad([SEC('缺貨排序', [SOY, NAPA])], PROOF_COMPLETE, 1), [0], 'wrong order still dropped')
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], PROOF_INCOMPLETE, 1), [0], 'unproven still dropped')
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA, SOY, JARS], ORD)], PROOF_COMPLETE, 1), [])
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, SOY], ORD)], PROOF_COMPLETE, 1), [], 'subsequence still fine')
+  assert.deepEqual(bad([SEC('缺貨排序', [SOY, NAPA], ORD)], PROOF_COMPLETE, 1), [0], 'wrong order still dropped')
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA], ORD)], PROOF_INCOMPLETE, 1), [0], 'unproven still dropped')
 })
 
 /**
@@ -407,7 +419,7 @@ test('*** ⛔ M4. THE SINGLE-SOURCE HAPPY PATH IS UNCHANGED ***', () => {
  * gate does not become a generic detector, which is asserted on the ordinary heading.
  */
 test('*** ⛔ M5. ZERO RANKED SOURCES — A CLAIM FAILS CLOSED, AN ORDINARY SECTION DOES NOT ***', () => {
-  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA])], null, 0), [0],
+  assert.deepEqual(bad([SEC('缺貨排序', [NAPA, NOLA], ORD)], null, 0), [0],
     '⛔ a ranking claim shipped with no ranking proof')
   assert.deepEqual(bad([SEC('缺貨狀況', [NAPA, NOLA])], null, 0), [],
     '⛔ the gate fired on a turn that read nothing orderable')
@@ -442,7 +454,7 @@ test('*** ⛔ M6. LIVE: WITH TWO RANKED SOURCES A RANKING SECTION MUST NOT ESCAP
     // for a two-source turn and the helper's own empty-rows early return reported no
     // violations — so this section skipped validation entirely and shipped.
     const out = await run(ASK, scriptedAdapter([
-      READ, READ_ORDER, SECTION_PLAN_REF('缺貨項目排序', [NAPA, NOLA, SOY, JARS])
+      READ, READ_ORDER, SECTION_PLAN_REF('缺貨項目排序', [NAPA, NOLA, SOY, JARS], ORD)
     ]), twoRankedSourceConnector())
     const reply = String(out && out.reply != null ? out.reply : '')
     assert.deepEqual(shippedOrder(reply), [],

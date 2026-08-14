@@ -24,7 +24,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { classifySectionHeading, RANKING_METRIC } = require('./rankingProof')
+const { RANKING_METRIC } = require('./rankingProof')
 const { validatePlan, logAnswerPlan } = require('./answerPlan')
 
 /* ── shared production-shaped fixtures ────────────────────────────────── */
@@ -44,10 +44,14 @@ const invEvidence = (over) => Object.assign({
   rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingDirection: 'desc', rankingCompleteWithinScope: true
 }, over || {})
 
-const SEC = (heading, ids, rows = invRows) => ({
+const SEC = (heading, ids, rankingClaim, rows = invRows) => ({
   heading,
+  rankingClaim: rankingClaim || null,
   items: ids.map((id) => ({ sourceId: id, title: (rows.find((r) => r.sourceId === id) || {}).title, facts: [] }))
 })
+
+/** ⛔ TASK 001-H: the claim is DECLARED beside the section; the heading only guards leaks. */
+const TOP = (n) => ({ kind: 'top_n', n, metric: RANKING_METRIC.ABSOLUTE_SHORTFALL })
 
 /** Run the REAL validatePlan, then the REAL logAnswerPlan projection. */
 function logLine (sections, evidenceSets, itemsBySource) {
@@ -70,7 +74,7 @@ const invOnly = (sections, evOver) => logLine(sections, [invEvidence(evOver)], [
 
 test('*** D5. ⛔ not_detected AND evaluated_allowed ARE DISTINGUISHABLE IN THE LOG ***', () => {
   const notDetected = invOnly([SEC('缺貨狀況', ['2', '1'])])
-  const allowed = invOnly([SEC('最缺的兩項', ['1', '2'])])
+  const allowed = invOnly([SEC('最缺的兩項', ['1', '2'], TOP(2))])
 
   // ⛔ BOTH used to be an empty `dropped` array and nothing else.
   assert.deepEqual(notDetected.dropped.filter((d) => d.field === 'ranking_section'), [], 'still no drop')
@@ -83,13 +87,13 @@ test('*** D5. ⛔ not_detected AND evaluated_allowed ARE DISTINGUISHABLE IN THE 
 })
 
 test('*** D5b. ⛔ AND A REJECTION CARRIES STATUS, REASON AND COUNT ***', () => {
-  const line = invOnly([SEC('最缺的兩項', ['2', '1'])])
+  const line = invOnly([SEC('最缺的兩項', ['2', '1'], TOP(2))])
   assert.deepEqual(line.rankingGate, [{ status: 'evaluated_rejected', reason: 'order_mismatch', rankedSourceCount: 1 }])
 })
 
 test('*** D5c. ⛔ THE SUMMARY CARRIES NO CONTENT — enum and count only ***', () => {
   const rows = [invRow('1', 'Napa Cabbage'), invRow('2', 'Jars for Red Chili Oil')]
-  const sec = { heading: '目前最缺的兩項', items: [{ sourceId: '2', title: 'Jars for Red Chili Oil', facts: [{ field: '缺口', value: '75' }] }, { sourceId: '1', title: 'Napa Cabbage', facts: [] }] }
+  const sec = { heading: '目前最缺的兩項', rankingClaim: TOP(2), items: [{ sourceId: '2', title: 'Jars for Red Chili Oil', facts: [{ field: '缺口', value: '75' }] }, { sourceId: '1', title: 'Napa Cabbage', facts: [] }] }
   const line = logLine([sec], [invEvidence()], [{ source: 'aroma_system', readKey: 'aroma_system.inventory', items: rows }])
   const json = JSON.stringify(line.rankingGate)
   for (const banned of ['目前最缺的兩項', 'Napa Cabbage', 'Jars for Red Chili Oil', '75', '缺口', '而家倉存情況點']) {
@@ -97,7 +101,9 @@ test('*** D5c. ⛔ THE SUMMARY CARRIES NO CONTENT — enum and count only ***', 
   }
   // Closed vocabulary, and every name inside the field budget.
   const STATUS = new Set(['not_detected', 'evaluated_allowed', 'evaluated_rejected'])
-  const REASON = new Set(['no_ranking_proof', 'metric_not_proven', 'ranking_incomplete', 'membership_mismatch', 'order_mismatch', 'count_unparsed'])
+  const REASON = new Set(['no_ranking_proof', 'metric_not_proven', 'ranking_incomplete',
+    'membership_mismatch', 'order_mismatch', 'cardinality_mismatch',
+    'ranking_claim_missing', 'ranking_claim_invalid'])
   for (const v of line.rankingGate) {
     assert.ok(STATUS.has(v.status), '⛔ unenumerated status: ' + v.status)
     if (v.reason) assert.ok(REASON.has(v.reason), '⛔ unenumerated reason: ' + v.reason)
@@ -125,7 +131,7 @@ const TWO_GROUPS = [
 ]
 
 test('*** D6. ⛔ AN INVENTORY PROOF MAY NOT VALIDATE A SECTION OF INVOICE ROWS ***', () => {
-  const sec = { heading: '最缺的兩項', items: [{ sourceId: '9', title: 'INV-9', facts: [] }, { sourceId: '8', title: 'INV-8', facts: [] }] }
+  const sec = { heading: '最缺的兩項', rankingClaim: TOP(2), items: [{ sourceId: '9', title: 'INV-9', facts: [] }, { sourceId: '8', title: 'INV-8', facts: [] }] }
   const line = logLine([sec], [invoiceEvidence, invEvidence()], TWO_GROUPS)
   const v = line.rankingGate[0]
   assert.equal(v.status, 'evaluated_rejected', '⛔ invoice rows were validated by the inventory proof')
@@ -134,13 +140,13 @@ test('*** D6. ⛔ AN INVENTORY PROOF MAY NOT VALIDATE A SECTION OF INVOICE ROWS 
 
 test('*** D6b. ⛔ AND THE INVENTORY SECTION IN THE SAME TURN STILL PASSES ***', () => {
   // The proof owns the inventory group, so its own correct top-two is allowed.
-  const line = logLine([SEC('最缺的兩項', ['1', '2'])], [invoiceEvidence, invEvidence()], TWO_GROUPS)
+  const line = logLine([SEC('最缺的兩項', ['1', '2'], TOP(2))], [invoiceEvidence, invEvidence()], TWO_GROUPS)
   assert.deepEqual(line.rankingGate, [{ status: 'evaluated_allowed', reason: null, rankedSourceCount: 1 }])
 })
 
 test('*** D6c. ⛔ NO GROUP FOR THE PROOF MEANS NO USABLE PROOF ***', () => {
   // The proof names `inventory`, but only the invoices group was retrieved.
-  const sec = { heading: '最缺的兩項', items: [{ sourceId: '9', title: 'INV-9', facts: [] }] }
+  const sec = { heading: '最缺的兩項', rankingClaim: TOP(2), items: [{ sourceId: '9', title: 'INV-9', facts: [] }] }
   const line = logLine([sec], [invEvidence()], [{ source: 'aroma_system', readKey: 'aroma_system.invoices', items: invcRows }])
   const v = line.rankingGate[0]
   assert.equal(v.status, 'evaluated_rejected')
@@ -150,29 +156,33 @@ test('*** D6c. ⛔ NO GROUP FOR THE PROOF MEANS NO USABLE PROOF ***', () => {
 
 /* ═══ BLOCKER 7 — the run must never restart after an unsupported char ══ */
 
-test('*** D7. ⛔ 「一百項」 AND 「一百二項」 NEVER BECOME A SMALLER COUNT ***', () => {
-  const a = classifySectionHeading('最缺一百項')
-  assert.equal(a.claim, true, 'still a claim')
-  assert.equal(a.n, null)
-  assert.equal(a.countUnparsed, true, '⛔ silently demoted to a superlative with no N')
+/**
+ * ⛔ TASK 001-H — BLOCKER 7 WAS A PARSING BLOCKER TOO, and it was the third of five.
+ *
+ * 「最缺一百二項」 matched the trailing 二項 and became a top-2. The fix widened a character
+ * class; Blockers 9, 10, 11 and 12 then found four more characters and one grammar shape it
+ * did not cover. No count is read from a heading now, so this whole family has no mechanism —
+ * and the property it protected is asserted on the declared count instead.
+ */
 
-  const b = classifySectionHeading('最缺一百二項')
-  assert.equal(b.n, null, '⛔ matched the trailing 二項 and became N=2')
-  assert.equal(b.countUnparsed, true)
+test('*** D7. ⛔ A HEADING NAMING A COUNT IT DID NOT DECLARE FAILS CLOSED ***', () => {
+  // ⛔ '1','2' ARE the proven top two, so anything that quietly became a top-2 would PASS.
+  for (const h of ['最缺一百項', '最缺一百二項', '最缺卄項', '目前最缺四項食材']) {
+    const line = invOnly([SEC(h, ['1', '2'], null)])
+    assert.equal(line.rankingGate[0].status, 'evaluated_rejected', h)
+    assert.equal(line.rankingGate[0].reason, 'ranking_claim_missing', h + ': ' + line.rankingGate[0].reason)
+  }
 })
 
-test('*** D7b. ⛔ AND SUCH A HEADING FAILS CLOSED IN THE GATE ***', () => {
-  // '1','2' ARE the proven top two, so a mis-parsed N=2 would have PASSED.
-  const line = invOnly([SEC('最缺一百二項', ['1', '2'])])
+test('*** D7b. ⛔ AND A DECLARED COUNT LARGER THAN THE SECTION IS REFUSED ***', () => {
+  const line = invOnly([SEC('最缺一百二項', ['1', '2'], TOP(102))])
   assert.equal(line.rankingGate[0].status, 'evaluated_rejected')
-  assert.equal(line.rankingGate[0].reason, 'count_unparsed', 'reason: ' + line.rankingGate[0].reason)
+  assert.equal(line.rankingGate[0].reason, 'cardinality_mismatch', 'reason: ' + line.rankingGate[0].reason)
 })
 
-test('*** D7c. and the readable counts are unchanged ***', () => {
-  assert.equal(classifySectionHeading('最缺十二項').n, 12)
-  assert.equal(classifySectionHeading('最缺二十一項').n, 21)
-  assert.equal(classifySectionHeading('最缺四項').n, 4)
-  assert.equal(classifySectionHeading('最缺十項').n, 10)
+test('*** D7c. and an honest declared count still passes ***', () => {
+  const line = invOnly([SEC('最缺兩項', ['1', '2'], TOP(2))])
+  assert.equal(line.rankingGate[0].status, 'evaluated_allowed', 'reason: ' + line.rankingGate[0].reason)
 })
 
 /* ═══ ⛔ THE SEAM ITSELF — validatePlan -> readResultView -> the log ═════ */
@@ -213,7 +223,7 @@ test('*** D5d. LIVE: THE GATE SUMMARY REACHES THE REAL ANSWER_PLAN LINE ***', as
     let n = 0
     const envelopes = [
       { intent: 'answer', mode: 'chat', reply: null, nextRead: { capability: 'aroma_system.inventory' }, answerPlan: null },
-      { intent: 'answer', mode: 'chat', reply: '', nextRead: null, answerPlan: { directAnswer: '', sections: [{ heading: '最缺的兩項', items: [{ sourceId: '2', title: 'B', facts: [] }, { sourceId: '1', title: 'A', facts: [] }] }], limitations: [], followUp: null, unanswerable: false, citesEvidence: true } }
+      { intent: 'answer', mode: 'chat', reply: '', nextRead: null, answerPlan: { directAnswer: '', sections: [{ heading: '最缺的兩項', rankingClaim: { kind: 'top_n', n: 2, metric: 'absolute_shortfall' }, items: [{ sourceId: '2', title: 'B', facts: [] }, { sourceId: '1', title: 'A', facts: [] }] }], limitations: [], followUp: null, unanswerable: false, citesEvidence: true } }
     ]
     const adapter = { label: 'claude', async complete () { const e = envelopes[Math.min(n++, envelopes.length - 1)]; return { text: JSON.stringify(e), usage: { inputTokens: 1, outputTokens: 1 } } } }
 

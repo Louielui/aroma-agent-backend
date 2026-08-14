@@ -293,9 +293,15 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
    * encoding two different states. `rankingGate` is its own field so neither is inferred from a
    * silence. It carries a closed status, a closed reason and a count; a separate test feeds a
    * heading, row titles, a value and the user message through and asserts none appear.
+   *
+   * ⛔ AND BY ONE MORE — `rankingClaims` (task 001-H). Three integers: how many sections presented
+   * as a ranking, how many declared one, and the gap between them. The gap is the number that says
+   * whether the model has learnt to declare, and it cannot be recovered from `rankingGate`, which
+   * reports only what the gate decided about the sections that reached it. Widened deliberately,
+   * once, with the same rule as every other field here: counts and closed enums, never content.
    */
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingGate', 'reason', 'requestId', 'timestamp'])
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingClaims', 'rankingGate', 'reason', 'requestId', 'timestamp'])
   assert.equal(l.modelItemCount, 3)
   assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)

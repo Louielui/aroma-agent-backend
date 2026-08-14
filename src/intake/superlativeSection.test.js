@@ -21,48 +21,54 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-const { classifySectionHeading, CLAIM_KIND, rankingSectionViolations, RANKING_METRIC } = require('./rankingProof')
+const { looksLikeRankingHeading, rankingSectionViolations, RANKING_METRIC } = require('./rankingProof')
 
 /* ═══ COMMIT A — DETECTION ══════════════════════════════════════════════ */
 
-const CLAIMS = [
-  ['目前最缺的四項', CLAIM_KIND.TOP_N, 4, RANKING_METRIC.ABSOLUTE_SHORTFALL],
-  ['最嚴重的三項', CLAIM_KIND.TOP_N, 3, RANKING_METRIC.ABSOLUTE_SHORTFALL],
-  ['最緊急缺貨項目', CLAIM_KIND.SUPERLATIVE, null, RANKING_METRIC.ABSOLUTE_SHORTFALL],
-  /**
-   * ⛔ REVISED IN COMMIT C. These asserted that a bare 「排序」 claims absolute_shortfall. It does
-   * not — it asserts only that the rows are in order, whichever single proof is bound to them.
-   * Saying otherwise would refuse a legitimate 「訂貨建議排序」 over `suggested_order_qty`, and
-   * would have hidden the real hole: entitlement never compared the proof's metric at all.
-   */
-  ['缺貨排序', CLAIM_KIND.ORDERING, null, null],
-  ['缺貨排名', CLAIM_KIND.ORDERING, null, null]
-]
+/**
+ * ⛔ TASK 001-H — THESE HEADINGS ARE NO LONGER READ, THEY ARE ONLY RECOGNISED.
+ *
+ * This block used to assert what each heading MEANT: its kind, its N, its metric. Four rounds
+ * of blockers established that a heading cannot be asked how many — 「最缺一億二項」 answered 2,
+ * 「最缺卄項」 answered nothing at all, and 「最缺四項食材」 answered nothing because a noun
+ * followed the counter. The count is now DECLARED and the heading is a leak-guard.
+ *
+ * ⛔ SO THE PROPERTY WORTH PINNING FLIPPED. It is no longer 「this heading means top-4」; it is
+ * 「this heading cannot ship without a declaration」 — a strictly stronger statement, because it
+ * holds for every one of the shapes the parser got wrong.
+ */
+const PRESENTS_AS_RANKING = ['目前最缺的四項', '最嚴重的三項', '最緊急缺貨項目', '缺貨排序', '缺貨排名',
+  '最新入貨', '最少要補', '最平嗰幾項', '最貴三項',
+  // the four blockers, each of which once produced a wrong count or none
+  '最缺一億二項', '最缺壱十二項', '最缺卄項', '目前最缺四項食材']
 
-for (const [heading, kind, n, metric] of CLAIMS) {
-  test(`*** ⛔ 「${heading}」 IS A RANKING CLAIM (${kind}) ***`, () => {
-    const c = classifySectionHeading(heading)
-    assert.equal(c.claim, true, '⛔ not recognised as a claim')
-    assert.equal(c.kind, kind)
-    assert.equal(c.n, n, 'claimed N')
-    assert.equal(c.metric, metric)
+for (const heading of PRESENTS_AS_RANKING) {
+  test(`*** ⛔ 「${heading}」 PRESENTS AS A RANKING AND CANNOT SHIP UNDECLARED ***`, () => {
+    assert.equal(looksLikeRankingHeading(heading), true, '⛔ the leak-guard missed it')
   })
 }
+
 
 test('*** ⛔ ORDINARY SET HEADINGS ARE NOT RANKINGS ***', () => {
   // ⛔ The whole gate must stay off ordinary factual sections. A superlative QUESTION does not
   // make 「缺貨狀況」 into a ranking, and neither does this classifier.
   for (const h of ['缺貨狀況', '缺貨項目', '目前庫存', '存貨清單', '']) {
-    assert.equal(classifySectionHeading(h).claim, false, '⛔ false positive on ' + JSON.stringify(h))
+    assert.equal(looksLikeRankingHeading(h), false, '⛔ false positive on ' + JSON.stringify(h))
   }
 })
 
-test('*** ⛔ A SUPERLATIVE OVER AN UNPROVEN MEASURE CARRIES metric: null ***', () => {
-  // 最新/最近 are dates; 最少 is the opposite end; 最平/最貴 are prices. None is ordered here.
+test('*** ⛔ A MEASURE NOTHING ORDERED IS STILL RECOGNISED — and cannot ship undeclared ***', () => {
+  /**
+   * 最新/最近 are dates, 最少 is the opposite end, 最平/最貴 are prices. None is ordered here.
+   * The classifier used to answer 「metric: null」 for these and the gate refused them on that.
+   * ⛔ NOW THERE ARE TWO GUARDS INSTEAD OF ONE, and both are stronger than the word test:
+   *   · undeclared, the leak-guard refuses the section outright (asserted here);
+   *   · declared, the metric must equal the proof's (asserted in the metric tests below).
+   * And a heading naming a measure the turn cannot prove never reaches the Owner either way,
+   * because an allowed ranking section is retitled by the server.
+   */
   for (const h of ['最新入貨', '最近入貨', '最少要補', '最平嗰幾項', '最貴三項']) {
-    const c = classifySectionHeading(h)
-    assert.equal(c.claim, true, h + ' is still a claim')
-    assert.equal(c.metric, null, '⛔ an unproven measure borrowed the shortfall proof: ' + h)
+    assert.equal(looksLikeRankingHeading(h), true, '⛔ an unproven measure could ship undeclared: ' + h)
   }
 })
 
@@ -73,7 +79,14 @@ const JARS = 'Jars for Red Chili Oil'
 const NOLA = 'New Orleans Style Sauce'
 const SOY = 'Dark Soy Sauce'
 
-const SEC = (heading, titles) => ({ heading, items: titles.map((t) => ({ title: t })) })
+const SEC = (heading, titles, rankingClaim) => ({ heading, rankingClaim: rankingClaim || null, items: titles.map((t) => ({ title: t })) })
+
+/** The declarations these fixtures make. A declaration is a statement, never an entitlement. */
+const TOP = (n) => ({ kind: 'top_n', n, metric: RANKING_METRIC.ABSOLUTE_SHORTFALL })
+const SUP = { kind: 'superlative', n: null, metric: RANKING_METRIC.ABSOLUTE_SHORTFALL }
+const ORD = { kind: 'ordering', n: null, metric: null }
+/** ⛔ A REAL ORDERING, AND THE WRONG ONE. `orderPlanning` proves this; `inventory` does not. */
+const OTHER_METRIC = (n) => ({ kind: 'top_n', n, metric: RANKING_METRIC.SUGGESTED_ORDER_QTY })
 /** The proven order, 75 > 39 > 37 > 20. */
 const ROWS = [NAPA, NOLA, SOY, JARS].map((t, i) => ({ title: t, canonical: 'aroma_system.inventory#' + (i + 1) }))
 const PROOF = { rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingCompleteWithinScope: true }
@@ -84,12 +97,12 @@ const gate = (sections, over = {}) => rankingSectionViolations(Object.assign({
 
 test('*** ⛔ THE PRODUCTION DEFECT: 「目前最缺的四項」 IN THE WRONG ORDER IS REFUSED ***', () => {
   // The exact order the Owner received.
-  assert.deepEqual(gate([SEC('目前最缺的四項', [JARS, NAPA, NOLA, SOY])]), [0])
+  assert.deepEqual(gate([SEC('目前最缺的四項', [JARS, NAPA, NOLA, SOY], TOP(4))]), [0])
 })
 
 test('*** ⛔ THE ZERO-SOURCE BYPASS IS CLOSED — a claim with NO proof is refused ***', () => {
   // ⛔ This is the case that used to return before any heading was read.
-  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS])], { rankedSourceCount: 0, rankedRows: [], rankingEvidence: null }), [0],
+  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS], TOP(4))], { rankedSourceCount: 0, rankedRows: [], rankingEvidence: null }), [0],
     '⛔ a ranking claim shipped with no ranking proof at all')
 })
 
@@ -100,22 +113,22 @@ test('*** ⛔ AND A NON-CLAIM SECTION IS STILL UNTOUCHED WITH ZERO SOURCES ***',
 
 test('*** ⛔ AN UNPROVEN METRIC IS REFUSED BEFORE ANY ORDER CHECK ***', () => {
   // Order is irrelevant: nothing proves a 「最新」 ordering, so it cannot ship either way.
-  assert.deepEqual(gate([SEC('最新入貨三項', [NAPA, NOLA, SOY])]), [0])
-  assert.deepEqual(gate([SEC('最少要補三項', [JARS, SOY, NOLA])]), [0])
+  assert.deepEqual(gate([SEC('最新入貨三項', [NAPA, NOLA, SOY], OTHER_METRIC(3))]), [0])
+  assert.deepEqual(gate([SEC('最少要補三項', [JARS, SOY, NOLA], OTHER_METRIC(3))]), [0])
 })
 
 test('*** ⛔ MULTIPLE RANKED SOURCES STAY FAIL CLOSED ***', () => {
-  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS])], { rankedSourceCount: 2 }), [0])
+  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS], TOP(4))], { rankedSourceCount: 2 }), [0])
 })
 
 test('*** ⛔ AN INCOMPLETE PROOF IS REFUSED EVEN IN THE RIGHT ORDER ***', () => {
-  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS])], {
+  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS], TOP(4))], {
     rankingEvidence: { rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingCompleteWithinScope: false }
   }), [0])
 })
 
 test('*** and the correct top-four in the proven order is ALLOWED ***', () => {
-  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS])]), [])
+  assert.deepEqual(gate([SEC('目前最缺的四項', [NAPA, NOLA, SOY, JARS], TOP(4))]), [])
 })
 
 /* ═══ COMMIT B — MEMBERSHIP, N, PREFIX, IDENTITY, METRIC ════════════════ */
@@ -124,39 +137,39 @@ const { VIOLATION, SECTION_STATUS } = require('./rankingProof')
 
 /** Proven order A B C D E, by canonical identity. */
 const ABCDE = ['A', 'B', 'C', 'D', 'E'].map((t, i) => ({ title: t, canonical: 'aroma_system.inventory#' + i }))
-const S = (heading, titles) => ({ heading, items: titles.map((t) => ({ title: t })) })
+const S = (heading, titles, rankingClaim) => ({ heading, rankingClaim: rankingClaim || null, items: titles.map((t) => ({ title: t })) })
 const g5 = (sections) => rankingSectionViolations({
   sections, rankedRows: ABCDE, rankingEvidence: PROOF, rankedSourceCount: 1
 })
 
 test('*** ⛔ EXPLICIT TOP-N: exact membership, exact count, correct order ***', () => {
-  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C', 'D'])]), [], 'A B C D passes')
-  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C', 'Z'])]), [0], '⛔ A B C Z — Z is not in the top four')
-  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C'])]), [0], '⛔ three items under 「四項」')
-  assert.deepEqual(g5([S('最缺的四項', ['B', 'C', 'D', 'E'])]), [0], '⛔ B C D E — a sorted subsequence is not the top four')
-  assert.deepEqual(g5([S('最缺的四項', ['A', 'C', 'B', 'D'])]), [0], '⛔ right set, wrong order')
+  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C', 'D'], TOP(4))]), [], 'A B C D passes')
+  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C', 'Z'], TOP(4))]), [0], '⛔ A B C Z — Z is not in the top four')
+  assert.deepEqual(g5([S('最缺的四項', ['A', 'B', 'C'], TOP(4))]), [0], '⛔ three items under 「四項」')
+  assert.deepEqual(g5([S('最缺的四項', ['B', 'C', 'D', 'E'], TOP(4))]), [0], '⛔ B C D E — a sorted subsequence is not the top four')
+  assert.deepEqual(g5([S('最缺的四項', ['A', 'C', 'B', 'D'], TOP(4))]), [0], '⛔ right set, wrong order')
 })
 
 test('*** ⛔ SUPERLATIVE WITH NO N: the items must be a proven PREFIX ***', () => {
-  assert.deepEqual(g5([S('最緊急缺貨項目', ['A'])]), [], 'A')
-  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'B'])]), [], 'A B')
-  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'B', 'C'])]), [], 'A B C')
-  assert.deepEqual(g5([S('最緊急缺貨項目', ['B'])]), [0], '⛔ B is not the worst')
-  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'C'])]), [0], '⛔ A C skips B')
+  assert.deepEqual(g5([S('最緊急缺貨項目', ['A'], SUP)]), [], 'A')
+  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'B'], SUP)]), [], 'A B')
+  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'B', 'C'], SUP)]), [], 'A B C')
+  assert.deepEqual(g5([S('最緊急缺貨項目', ['B'], SUP)]), [0], '⛔ B is not the worst')
+  assert.deepEqual(g5([S('最緊急缺貨項目', ['A', 'C'], SUP)]), [0], '⛔ A C skips B')
 })
 
 test('*** ⛔ ONE-ITEM SUPERLATIVE: only the proven first qualifies ***', () => {
   // ⛔ Membership is NOT skipped just because there is a single row — that shortcut is exactly
   // how a wrong first place would ship.
-  assert.deepEqual(g5([S('最缺嗰項', ['A'])]), [])
+  assert.deepEqual(g5([S('最缺嗰項', ['A'], SUP)]), [])
   for (const t of ['B', 'C', 'D', 'E']) {
-    assert.deepEqual(g5([S('最缺嗰項', [t])]), [0], '⛔ ' + t + ' shipped as the worst')
+    assert.deepEqual(g5([S('最缺嗰項', [t], SUP)]), [0], '⛔ ' + t + ' shipped as the worst')
   }
 })
 
 test('*** ⛔ ORDERING HEADINGS KEEP THE LEGITIMATE SUBSEQUENCE BEHAVIOUR ***', () => {
-  assert.deepEqual(g5([S('缺貨排序', ['A', 'C', 'E'])]), [], 'a subsequence is a valid ordering')
-  assert.deepEqual(g5([S('缺貨排序', ['C', 'A'])]), [0], '⛔ but not out of order')
+  assert.deepEqual(g5([S('缺貨排序', ['A', 'C', 'E'], ORD)]), [], 'a subsequence is a valid ordering')
+  assert.deepEqual(g5([S('缺貨排序', ['C', 'A'], ORD)]), [0], '⛔ but not out of order')
 })
 
 test('*** ⛔ CANONICAL IDENTITY — DUPLICATE TITLES DO NOT COLLAPSE ***', () => {
@@ -166,11 +179,11 @@ test('*** ⛔ CANONICAL IDENTITY — DUPLICATE TITLES DO NOT COLLAPSE ***', () =
     { title: 'A', canonical: 'aroma_system.inventory#2' },
     { title: 'C', canonical: 'aroma_system.inventory#3' }
   ]
-  const r = rankingSectionViolations({ sections: [S('最缺的兩項', ['A', 'C'])], rankedRows: dup, rankingEvidence: PROOF, rankedSourceCount: 1 })
+  const r = rankingSectionViolations({ sections: [S('最缺的兩項', ['A', 'C'], TOP(2))], rankedRows: dup, rankingEvidence: PROOF, rankedSourceCount: 1 })
   assert.deepEqual(r, [0], '⛔ an ambiguous title resolved to a row')
 
   // With an explicit canonical ref it resolves and passes.
-  const byRef = { heading: '最缺的兩項', items: [{ sourceId: 'aroma_system.inventory#1', title: 'A' }, { sourceId: 'aroma_system.inventory#2', title: 'A' }] }
+  const byRef = { heading: '最缺的兩項', rankingClaim: TOP(2), items: [{ sourceId: 'aroma_system.inventory#1', title: 'A' }, { sourceId: 'aroma_system.inventory#2', title: 'A' }] }
   assert.deepEqual(rankingSectionViolations({ sections: [byRef], rankedRows: dup, rankingEvidence: PROOF, rankedSourceCount: 1 }), [],
     'canonical refs identify the two rows exactly')
 })
@@ -191,28 +204,37 @@ const verdicts = (sections, over = {}) => {
 
 test('*** ⛔ EACH OUTCOME IS REPORTED AS AN ENUM PLUS A COUNT ***', () => {
   assert.deepEqual(verdicts([S('缺貨狀況', ['A'])]), [{ status: SECTION_STATUS.NOT_DETECTED, reason: null, rankedSourceCount: 1 }])
-  assert.deepEqual(verdicts([S('最缺的四項', ['A', 'B', 'C', 'D'])]), [{ status: SECTION_STATUS.ALLOWED, reason: null, rankedSourceCount: 1 }])
-  assert.deepEqual(verdicts([S('最缺的四項', ['A', 'C', 'B', 'D'])]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.ORDER_MISMATCH, rankedSourceCount: 1 }])
-  assert.deepEqual(verdicts([S('最缺的四項', ['B', 'C', 'D', 'E'])]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.MEMBERSHIP_MISMATCH, rankedSourceCount: 1 }])
-  assert.deepEqual(verdicts([S('最新三項', ['A'])]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.METRIC_NOT_PROVEN, rankedSourceCount: 1 }])
-  assert.deepEqual(verdicts([S('最缺的四項', ['A'])], { rankedSourceCount: 0, rankedRows: [], rankingEvidence: null }),
+  assert.deepEqual(verdicts([S('最缺的四項', ['A', 'B', 'C', 'D'], TOP(4))]), [{ status: SECTION_STATUS.ALLOWED, reason: null, rankedSourceCount: 1 }])
+  assert.deepEqual(verdicts([S('最缺的四項', ['A', 'C', 'B', 'D'], TOP(4))]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.ORDER_MISMATCH, rankedSourceCount: 1 }])
+  assert.deepEqual(verdicts([S('最缺的四項', ['B', 'C', 'D', 'E'], TOP(4))]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.MEMBERSHIP_MISMATCH, rankedSourceCount: 1 }])
+  assert.deepEqual(verdicts([S('最新三項', ['A'], OTHER_METRIC(3))]), [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.METRIC_NOT_PROVEN, rankedSourceCount: 1 }])
+  assert.deepEqual(verdicts([S('最缺的四項', ['A'], TOP(4))], { rankedSourceCount: 0, rankedRows: [], rankingEvidence: null }),
     [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.NO_RANKING_PROOF, rankedSourceCount: 0 }])
-  assert.deepEqual(verdicts([S('最缺的四項', ['A'])], { rankingEvidence: { rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingCompleteWithinScope: false } }),
+  assert.deepEqual(verdicts([S('最缺的四項', ['A'], TOP(4))], { rankingEvidence: { rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL, rankingCompleteWithinScope: false } }),
     [{ status: SECTION_STATUS.REJECTED, reason: VIOLATION.RANKING_INCOMPLETE, rankedSourceCount: 1 }])
 })
 
 test('*** ⛔ NO HEADING, TITLE, VALUE OR MESSAGE REACHES THE VERDICT ***', () => {
   const heading = '最缺的四項 SECRET-HEADING'
-  const seen = verdicts([{ heading, items: [{ title: 'Napa Cabbage', facts: [{ field: '缺口', value: '75' }] }] }])
+  const seen = verdicts([{ heading, rankingClaim: TOP(4), items: [{ title: 'Napa Cabbage', facts: [{ field: '缺口', value: '75' }] }] }])
   const json = JSON.stringify(seen)
   for (const banned of [heading, 'SECRET-HEADING', 'Napa Cabbage', '75', '缺口']) {
     assert.ok(!json.includes(banned), '⛔ content reached the verdict: ' + json)
   }
   // Every emitted name is closed and fits the 20-char log field.
   for (const v of seen) {
-    if (v.reason) assert.ok(Object.values(VIOLATION).includes(v.reason) && v.reason.length <= 20, v.reason)
+    if (v.reason) assert.ok(Object.values(VIOLATION).includes(v.reason), v.reason)
     assert.ok(Object.values(SECTION_STATUS).includes(v.status) && v.status.length <= 20, v.status)
   }
+  /**
+   * ⛔ THE REAL CONSTRAINT, MEASURED RATHER THAN GUESSED AT. The earlier rule was 「<= 20 chars」
+   * because two names truncated to the same string would be indistinguishable in the log. The
+   * `why` field is truncated at `maxDropIdChars` (40), not 20 — `shape` is the 20-char field —
+   * so what has to hold is that the names stay DISTINCT after truncation, which is the property
+   * the length rule was standing in for. `ranking_claim_missing` is 21 characters.
+   */
+  const names = Object.values(VIOLATION)
+  assert.equal(new Set(names.map((x) => x.slice(0, 40))).size, names.length, '⛔ two verdicts collide in the log')
 })
 
 /* ═══ ⛔ MANDATORY INTEGRATION — THE OWNER MUST STILL RECEIVE WORDS ═════ */
@@ -284,7 +306,7 @@ test('*** ⛔ INTEGRATION: THE PRODUCTION SECTION IS REFUSED AND THE REPLY IS NO
         nextRead: null,
         answerPlan: {
           directAnswer: '',
-          sections: [{ heading: '目前最缺的四項', items: [JARS, NAPA, NOLA, SOY].map((t) => ({ sourceId: LIVE_ROWS.find((r) => r.title === t).id, title: t, facts: [] })) }],
+          sections: [{ heading: '目前最缺的四項', rankingClaim: { kind: 'top_n', n: 4, metric: 'absolute_shortfall' }, items: [JARS, NAPA, NOLA, SOY].map((t) => ({ sourceId: LIVE_ROWS.find((r) => r.title === t).id, title: t, facts: [] })) }],
           limitations: [], followUp: null, unanswerable: false, citesEvidence: true
         }
       }

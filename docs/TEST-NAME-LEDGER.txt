@@ -174,9 +174,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** C3b. ⛔ AN ITEM FROM ANOTHER SOURCE FAILS THE CLAIM CLOSED ***
 *** C3c. ⛔ ORDERING NO LONGER SHIPS ON ZERO MATCHES — the borrowed-proof bypass ***
 *** C3d. and an ORDERING subsequence of its OWN rows still passes ***
-*** C4. ⛔ 「十一項」 AND 「十二項」 PARSE WHOLE, NEVER AS 1 AND 2 ***
-*** C4b. ⛔ A TOP-12 CLAIM SHOWING 2 ITEMS IS REFUSED, NOT READ AS TOP-2 ***
-*** C4c. ⛔ AN UNREADABLE COUNT IS A CLAIM AND FAILS CLOSED ***
+*** C4. ⛔ A TOP-12 CLAIM SHOWING 2 ITEMS IS REFUSED — the declared count is checked ***
+*** C4b. ⛔ A COUNT LARGER THAN THE PROVEN SET IS REFUSED ***
+*** C4c. ⛔ AND A HEADING THAT NAMES A COUNT WITHOUT DECLARING ONE FAILS CLOSED ***
 *** CHAT lane projection is frozen ***
 *** CLASS 3 — an explicitly PUBLIC question takes the public path, untouched ***
 *** COMMIT / proposal lane projection is frozen ***
@@ -209,9 +209,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** D6. ⛔ AN INVENTORY PROOF MAY NOT VALIDATE A SECTION OF INVOICE ROWS ***
 *** D6b. ⛔ AND THE INVENTORY SECTION IN THE SAME TURN STILL PASSES ***
 *** D6c. ⛔ NO GROUP FOR THE PROOF MEANS NO USABLE PROOF ***
-*** D7. ⛔ 「一百項」 AND 「一百二項」 NEVER BECOME A SMALLER COUNT ***
-*** D7b. ⛔ AND SUCH A HEADING FAILS CLOSED IN THE GATE ***
-*** D7c. and the readable counts are unchanged ***
+*** D7. ⛔ A HEADING NAMING A COUNT IT DID NOT DECLARE FAILS CLOSED ***
+*** D7b. ⛔ AND A DECLARED COUNT LARGER THAN THE SECTION IS REFUSED ***
+*** D7c. and an honest declared count still passes ***
 *** DEAD_LOCK_FAILS_CLOSED — a crashed holder does NOT get cleaned up automatically ***
 *** DEAD_OLD_LOCK_FAILS_CLOSED — dead AND ancient is still not an invitation ***
 *** DESCRIPTOR — a refused observation is COUNTED, never silently dropped ***
@@ -248,10 +248,6 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** E8c. ⛔ THE PROOF STILL MAY NOT REACH A DIFFERENT OPERATION\
 *** E8d. ⛔ A PROOF WHOSE OPERATION HAS NO GROUP REPORTS no_ranking_proof ***
 *** E8e. and LEGACY evidence with no readKey still resolves its single group ***
-*** E9. ⛔ 「一億二項」 AND 「廿二項」 ARE count_unparsed, NEVER N=2 ***
-*** E9b. ⛔ AND SUCH A HEADING FAILS CLOSED WITH TWO CORRECT ITEMS PRESENT ***
-*** E9c. and the readable counts are unchanged ***
-*** E9d. ⛔ THE RULE IS STRUCTURAL, NOT A LIST — an unseen numeral also fails closed ***
 *** END TO END: a Gmail turn whose reply CITES the mail stores the question and omits the answer ***
 *** END TO END: flag OFF still writes nothing at all ***
 *** END TO END: read happened, reply CITES NOTHING → the answer is kept, mail still absent ***
@@ -276,10 +272,6 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** F — 「市場。」 reads nothing internal and invents nothing ***
 *** F(live) — an adapter declaring garbage is still timed out ***
 *** F(pin) — the module cannot even name a conversational adapter ***
-*** F10. ⛔ 「${heading}」 IS count_unparsed, NEVER A SMALLER COUNT (${why}) ***
-*** F10b. ⛔ AND ONE FAILS CLOSED IN THE GATE WITH TWO CORRECT ITEMS PRESENT ***
-*** F10c. THE READABLE COUNTS ARE UNCHANGED — the feature still works ***
-*** F10d. AND A SUPERLATIVE WITH NO COUNT IS NOT MISREAD AS A BROKEN ONE ***
 *** F2 — a clarify question carrying implementation vocabulary is replaced ***
 *** F2 — a source not authorised this turn is never exposed ***
 *** FAIL-SAFE: anything that is not an explicit false omits the body ***
@@ -303,12 +295,6 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** G/H — continuation carries prior OWNER messages, oldest first ***
 *** G/H — unknown and write-shaped capabilities are refused ***
 *** G/H/I — overlap stops, order does not matter, one page may carry two claims ***
-*** G11. ⛔ 「最缺卄項」 LISTING ONE ROW MUST NOT PASS ***
-*** G11b. ⛔ 「最缺壱項」 IS NOT A NO-N SUPERLATIVE ***
-*** G11c. ⛔ 「目前最缺的四項排序」 STILL YIELDS N=4 ***
-*** G11d. ⛔ AND THAT HEADING LISTING ONLY THREE ITEMS IS REJECTED ***
-*** G11e. A GENUINE NO-N SUPERLATIVE IS STILL LEGITIMATE ***
-*** G11f. THE READABLE COUNTS ARE ALL UNCHANGED ***
 *** G2 — with A4 off the same envelope delivers args = null (channel closed) ***
 *** GET /api/v1/context/health is refused without auth ***
 *** GET /api/v1/context/recent — the Gmail/Drive leak — is refused without auth ***
@@ -327,9 +313,50 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** H — the raw query never appears in the readKey ***
 *** H — the rendered block never tells two stories about one read ***
 *** H — ⛔ no_plan_returned is GONE from the model-directed path ***
+*** H-E9. ⛔ EVERY SHAPE THAT DEFEATED THE PARSER IS STILL RECOGNISED ***
+*** H-E9b. ⛔ AND EACH FAILS CLOSED WITH TWO CORRECT ITEMS PRESENT ***
+*** H-G11. ⛔ A TWENTY-CLAIM SHOWING ONE ROW IS REFUSED — Blocker 11, structurally ***
+*** H-G11b. ⛔ A FOUR-CLAIM SHOWING THREE IS REFUSED — the production heading ***
+*** H-G11c. A GENUINE NO-N SUPERLATIVE IS STILL LEGITIMATE ***
+*** H-G11d. AND THE HONEST DECLARED COUNTS ALL PASS ***
+*** H1. ⛔ rankingClaim IS REQUIRED AND NULLABLE, and its enums are closed ***
+*** H10. ⛔ THE PROOF MUST OWN THESE ROWS — by readKey, not by source name ***
+*** H11. ⛔ THE DECLARED METRIC MUST BE THE ONE ACTUALLY SORTED ON ***
+*** H12. ⛔ AN INCOMPLETE ORDERING ENTITLES NOTHING, however neat the sequence ***
+*** H13. ⛔ top_n = EXACTLY N ITEMS. Three under a four-claim is refused ***
+*** H14. ⛔ AND ONE ITEM UNDER A TWENTY-CLAIM IS REFUSED — Blocker 11, structurally ***
+*** H15. ⛔ A CLAIM LARGER THAN THE PROVEN SET IS REFUSED ***
+*** H16. top_n = EXACTLY proven[0:N], IN ORDER ***
+*** H17. superlative = AN EXACT PREFIX OF WHAT IS DISPLAYED ***
+*** H18. ordering KEEPS A–G LEGAL-SUBSEQUENCE SEMANTICS ***
+*** H19. ⛔ A ROW THE PROOF DOES NOT OWN BREAKS MEMBERSHIP, IN EVERY KIND ***
 *** H2 — a raw adapter method is not an operation ***
 *** H2 — end to end, ONE authority call per turn, and it is the resolver ***
+*** H2. THE LEAK-GUARD ANSWERS ONE QUESTION AND RETURNS A BOOLEAN ***
+*** H20. ⛔ ON SUCCESS THE MODEL HEADING IS REPLACED, NOT KEPT ***
+*** H21. ⛔ THE SERVER HEADING NAMES THE VERIFIED CLAIM, and only that ***
+*** H22. ⛔ SENTINEL SURVIVAL — the real seam, the real log, the real reply ***
+*** H23. ⛔ A REJECTED RANKING SECTION TAKES ITS HEADING WITH IT ***
+*** H24. ⛔ ONCE ON THE STRUCTURED PATH, FAILURE NEVER FALLS BACK TO AN ORDINARY SECTION ***
+*** H25. ⛔ THE COUNTERS RECORD SHAPE, NEVER CONTENT ***
+*** H26. THE COUNTERS ARE ZERO ON AN ORDINARY TURN, not absent ***
+*** H27. ⛔ GATE ORDER: the FIRST failing check is the one reported ***
+*** H28. rankingSectionViolations still returns the REJECTED INDICES ***
+*** H29. ⛔ LIVE: A FOUR-CLAIM SHOWING THREE ROWS DOES NOT REACH THE OWNER ***
 *** H3 — a bare aroma_system is no longer a valid request ***
+*** H3. ⛔ A RANKING HEADING WITH NO DECLARATION FAILS CLOSED ***
+*** H30. ⛔ LIVE: THE PROVEN SECTION SHIPS UNDER THE SERVER\
+*** H31. ⛔ A GROUNDED MODEL HEADING IS REPLACED TOO — the blanking is load-bearing ***
+*** H32. ⛔ LIVE: A RANKING HEADING WITH NO DECLARATION SHIPS NO ROWS ***
+*** H33. ⛔ LIVE: A DECLARED METRIC THE TURN DID NOT PROVE SHIPS NOTHING ***
+*** H34. ⛔ LIVE: THE RIGHT COUNT OF THE WRONG ROWS SHIPS NOTHING ***
+*** H35. ⛔ LIVE: THE COUNTERS REACH THE REAL ANSWER_PLAN LINE ***
+*** H4. ⛔ AND EVERY SHAPE THAT DEFEATED THE PARSER NOW FAILS CLOSED ***
+*** H5. AN ORDINARY SECTION IS UNTOUCHED — heading and all ***
+*** H6. ⛔ AN ILL-SHAPED DECLARATION IS REFUSED, NOT REPAIRED ***
+*** H7. normaliseRankingClaim reports presence and validity SEPARATELY ***
+*** H8. ⛔ NO RANKED SOURCE — a declaration does not create a proof ***
+*** H9. ⛔ TWO ORDERINGS IN ONE TURN — attribution is ambiguous, so it is refused ***
 *** HOOK — an ABSENT replyCitesContext still omits (fail-safe) ***
 *** HOOK — no read context at all → kept, as before ***
 *** HOOK — read happened, reply cites nothing → the text is written ***
@@ -1480,10 +1507,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
+*** ⛔ A MEASURE NOTHING ORDERED IS STILL RECOGNISED — and cannot ship undeclared ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
-*** ⛔ A SUPERLATIVE OVER AN UNPROVEN MEASURE CARRIES metric: null ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
@@ -1737,7 +1764,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ what she CANNOT answer is named, not left to be discovered ***
 *** ⛔ wisdomRecall has no default store reach-through ***
-*** ⛔ 「${heading}」 IS A RANKING CLAIM (${kind}) ***
+*** ⛔ 「${heading}」 PRESENTS AS A RANKING AND CANNOT SHIP UNDECLARED ***
 *** ⛔ 「我哋現有」 — the exact phrasing that leaked — cannot survive ***
 *** ⛔ 「給我 Aroma System 的 website」 MUST NOT REGRESS — it asked nothing and read nothing ***
 *** ⛔ 「給我 X」 proposes no change, so the guard may reject a develop claim ***

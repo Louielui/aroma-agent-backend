@@ -231,9 +231,14 @@ const FILE_CLASS = Object.freeze({
   'lab/citationDetector.js': CLASS.MATCHING,          //   1
   'lab/conversationRecall.js': CLASS.MATCHING,        //   1
   'intake/routeEvidenceGuard.js': CLASS.MATCHING,     //   1
-  // ⛔ The characters ARE the guard: 「最缺」/「排序」/「十」 detect a ranking CLAIM and parse its
-  // count. Translating any of them would delete the detection silently — the MATCHING shape.
-  'intake/rankingProof.js': CLASS.MATCHING,           //   the section-claim classifier
+  // ⛔ `intake/rankingProof.js` WAS CLASSIFIED HERE AND IS NOT ANY MORE — task 001-H, and the
+  // staleness rule asked for it, not me. Its quoted Chinese was `CJK_DIGITS` (一: 1, 二: 2, …),
+  // the count parser's numeral table, and the parser was deleted when cardinality became a
+  // declared field. What remains is Chinese inside REGEX literals (最缺/排序), which this fence
+  // has never been able to see — quoted and template strings only. So the entry was removed
+  // because it went stale by the fence's definition, NOT because the file stopped mattering:
+  // translating those patterns would still delete the leak-guard silently. The blind spot is
+  // pre-existing and older than this change; it is reported, not widened here.
   'browse/browseIntent.js': CLASS.MATCHING,           //   4 — the whole file IS the guard: the
   //                                                          browse verbs (查/睇下), the web
   //                                                          markers (網站/官網), the PURCHASE

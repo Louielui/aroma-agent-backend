@@ -39,6 +39,28 @@ const { ENTITY_TYPES } = require('../context/contextResult')
 // ⛔ A4-0A: the gated read-argument shape. Nothing here is used while the A4 gate is off.
 const { READ_ARGS_SCHEMA } = require('./a4Contract')
 const { t } = require('../i18n/t')
+const { looksLikeRankingHeading, normaliseRankingClaim, RANKING_METRIC, CLAIM_KIND } = require('./rankingProof')
+
+/**
+ * ⛔ THE SERVER'S OWN TITLE FOR A PROVEN RANKING.
+ *
+ * Template plus closed fields, and nothing else: `kind` and `metric` are enum members the
+ * validator accepted, and `n` is either the declared count the gate just verified against the
+ * proof or the number of rows actually rendered. There is no parameter through which model
+ * prose could enter, which is the property that makes the replacement boundary provable
+ * rather than merely intended.
+ */
+function composeRankingHeading (claim, shownCount) {
+  const metricLabel = claim.metric === RANKING_METRIC.ABSOLUTE_SHORTFALL
+    ? t('rank.metricShortfall')
+    : (claim.metric === RANKING_METRIC.SUGGESTED_ORDER_QTY ? t('rank.metricOrderQty') : null)
+  if (claim.kind === CLAIM_KIND.ORDERING) {
+    return metricLabel ? t('rank.headingOrder', { metric: metricLabel }) : t('rank.headingOrderPlain')
+  }
+  // A superlative claims a prefix of what it shows, so the verified count IS the count shown.
+  const n = claim.kind === CLAIM_KIND.TOP_N ? claim.n : shownCount
+  return metricLabel ? t('rank.headingTop', { metric: metricLabel, n }) : t('rank.headingTopPlain', { n })
+}
 
 /**
  * THE OWNER-FACING UNIT WORDS. Keys are the codes the LIVE rows carry.
@@ -182,9 +204,44 @@ const ANSWER_PLAN_SCHEMA = Object.freeze({
       items: {
         type: 'object',
         additionalProperties: false,
-        required: ['heading', 'items'],
+        required: ['heading', 'items', 'rankingClaim'],
         properties: {
           heading: { type: 'string' },
+          // ── CARDINALITY IS DECLARED, NOT READ OUT OF THE HEADING ────────────────
+          //
+          // ⛔ REQUIRED AND NULLABLE, like every other optional field here: strict Structured
+          // Outputs express optionality as a NULL UNION and REJECT a schema that omits a
+          // property from `required`. This repo has already taken a live 400 for that.
+          //
+          // ⛔ AND A DECLARATION CONFERS NO AUTHORITY. It says WHAT is being claimed so the
+          // server knows what to prove; every entitlement — proof ownership, metric,
+          // completeness, membership, order — is still earned in rankingProof.js. Four rounds
+          // of blockers went into learning that a heading cannot be asked how many.
+          rankingClaim: {
+            type: ['object', 'null'],
+            additionalProperties: false,
+            required: ['kind', 'n', 'metric'],
+            description: '這一節如果係排名／最高／頭幾項，就要在這裡宣告；普通清單填 null。宣告不等於成立，伺服器會逐項核對。',
+            properties: {
+              kind: {
+                type: 'string',
+                enum: ['ordering', 'superlative', 'top_n'],
+                description: 'ordering＝按次序排列；superlative＝最高的若干項；top_n＝指定數量的頭 N 項。'
+              },
+              n: { type: ['integer', 'null'], description: 'top_n 必須填正整數，而且要等於這一節實際列出的項數；其他填 null。' },
+              // ⛔ anyOf, NOT `type: ['string','null']` BESIDE `enum`. Anthropic rejects that
+              // pairing — 「Enum value X does not match declared type」 — and OpenAI accepts it,
+              // so the defect is invisible on whichever provider the harness happens to use.
+              // providerSchemaFence.test.js caught this one before it was ever sent.
+              metric: {
+                anyOf: [
+                  { type: 'string', enum: ['absolute_shortfall', 'suggested_order_qty'] },
+                  { type: 'null' }
+                ],
+                description: '這個排序依據哪一個量；沒有指明就填 null。'
+              }
+            }
+          },
           items: {
             type: 'array',
             minItems: 1,
@@ -295,7 +352,11 @@ function logAnswerPlan (entry, sink) {
    * Enum and count only — no heading, title, value, message or prose can reach it.
    */
   const RANK_STATUS = new Set(['not_detected', 'evaluated_allowed', 'evaluated_rejected'])
-  const RANK_REASON = new Set(['no_ranking_proof', 'metric_not_proven', 'ranking_incomplete', 'membership_mismatch', 'order_mismatch', 'count_unparsed'])
+  const RANK_REASON = new Set(['no_ranking_proof', 'metric_not_proven', 'ranking_incomplete',
+    'membership_mismatch', 'order_mismatch', 'cardinality_mismatch',
+    // ⛔ A REASON MISSING FROM THIS SET IS PROJECTED AS null — the verdict would be computed,
+    // shipped, and unreadable. Every VIOLATION in rankingProof.js belongs here.
+    'ranking_claim_missing', 'ranking_claim_invalid'])
   const rankingGate = (Array.isArray(entry.rankingVerdicts) ? entry.rankingVerdicts : [])
     .slice(0, LIMITS.maxDropsLogged)
     .map((v) => ({
@@ -303,6 +364,7 @@ function logAnswerPlan (entry, sink) {
       reason: (v && v.reason && RANK_REASON.has(v.reason)) ? v.reason : null,
       rankedSourceCount: Number.isFinite(v && v.rankedSourceCount) ? v.rankedSourceCount : null
     }))
+  const rankingClaims = (entry.rankingClaims && typeof entry.rankingClaims === 'object') ? entry.rankingClaims : {}
   const line = {
     event: 'ANSWER_PLAN',
     timestamp: new Date().toISOString(),
@@ -314,6 +376,18 @@ function logAnswerPlan (entry, sink) {
     droppedSentences: Number.isFinite(entry.droppedSentences) ? entry.droppedSentences : 0,
     // Counted since 2026-08-05: a limitation removed by the filter used to leave no trace.
     droppedLimitations: Number.isFinite(entry.droppedLimitations) ? entry.droppedLimitations : 0,
+    /**
+     * ⛔ HOW MANY SECTIONS PRESENTED A RANKING, HOW MANY DECLARED ONE, AND THE GAP.
+     * Three counts, no content. `missing` is the one that matters: it is the number of
+     * sections that looked like a ranking and declared nothing, which is the escape this
+     * contract closed and the number that says whether the model has learnt to declare.
+     * Always present, never absent — an absent counter and a zero counter must not look alike.
+     */
+    rankingClaims: {
+      looksRanking: Number.isFinite(rankingClaims.looksRanking) ? rankingClaims.looksRanking : 0,
+      declared: Number.isFinite(rankingClaims.declared) ? rankingClaims.declared : 0,
+      missing: Number.isFinite(rankingClaims.missing) ? rankingClaims.missing : 0
+    },
     // WHAT THE MODEL OFFERED, beside what survived. Without the pair, "it sent no sections"
     // and "it sent items with no facts" look identical from the log — and telling them
     // apart cost a hand investigation across the archive and the live API.
@@ -1403,6 +1477,13 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   // anyway: the sections are discarded whole and the contradiction is reported, rather than
   // quietly honouring whichever half of the plan happens to be more convenient.
   const sections = []
+  /** Raw declarations, index-aligned with `sections`. Validated in rankingProof, not here. */
+  const sectionClaims = []
+  /** The leak-guard verdict, taken BEFORE the heading is blanked. A boolean, never text. */
+  const sectionLooks = []
+  let looksRankingCount = 0
+  let declaredCount = 0
+  let missingDeclarationCount = 0
   const declaredSections = Array.isArray(plan.sections) ? plan.sections : []
   const sectionsNotDeclared = !citesEvidence && declaredSections.length > 0
   for (const sec of (sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)) {
@@ -1493,7 +1574,25 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     // instead of printing a bare '###'.
     let heading = relabel(String(sec.heading || ''))
     if (heading && !proseIsGrounded(heading, index)) heading = ''
-    if (items.length > 0) sections.push({ heading, items })
+    /**
+     * ⛔ THE MODEL'S RANKING HEADING DIES HERE, BEFORE ANY GATE RUNS.
+     *
+     * Not compared, not corrected, not kept as a fallback. A section that DECLARES a ranking
+     * gets its heading from `composeRankingHeading` below once the claim is proven; a section
+     * that merely LOOKS like one is about to be refused and takes its heading with it.
+     *
+     * Blanking here rather than at the allow branch is deliberate: it means no ordering of the
+     * gates, and no future bypass of them, can let model-authored ranking prose reach the
+     * validated plan, the rendered reply, the log, or anything downstream of them.
+     */
+    const rawClaim = (sec && sec.rankingClaim !== undefined) ? sec.rankingClaim : null
+    const declaresRanking = rawClaim !== null && rawClaim !== undefined
+    const looksRanking = looksLikeRankingHeading(sec ? sec.heading : '')
+    if (looksRanking) looksRankingCount++
+    if (declaresRanking) declaredCount++
+    if (looksRanking && !declaresRanking) missingDeclarationCount++
+    if (declaresRanking || looksRanking) heading = ''
+    if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking) }
   }
 
   // ── limitations: real ones only, never telemetry ────────────────────────────
@@ -1669,7 +1768,9 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    */
   const rankingVerdicts = []
   const badRankingSections = rankingSectionViolations({
-    sections,
+    // The declaration travels WITH the section; the heading in `sections` is already blank
+    // for every ranking section, so the gate has nothing model-authored to read.
+    sections: sections.map((sc, n) => ({ heading: '', items: sc.items, rankingClaim: sectionClaims[n], looksLikeRanking: sectionLooks[n] })),
     rankedRows: (rankedGroup && Array.isArray(rankedGroup.items)) ? rankedGroup.items : [],
     /**
      * ⛔ THE ONE PROOF THAT OWNS THESE ROWS — not the turn's evidence at large. Passing all of
@@ -1692,6 +1793,32 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      */
     onVerdict: (v) => { if (v) rankingVerdicts.push(v) }
   })
+  /**
+   * ⛔ THE SERVER TITLES WHAT IT PROVED. Composed from a server-owned template and the
+   * VERIFIED closed fields only — kind, the verified N, the proven metric. No model heading,
+   * title, prose, user text or free-text label is interpolated, so there is no path by which
+   * anything the model wrote can reach the screen through this line.
+   *
+   * Composed BEFORE the rejected sections are spliced out, because splicing renumbers them.
+   */
+  for (let n = 0; n < sections.length; n++) {
+    const d = normaliseRankingClaim(sectionClaims[n])
+    if (!d.present || !d.valid || badRankingSections.includes(n)) continue
+    /**
+     * ⛔ THE SERVER WILL NOT TITLE A SECTION THAT STILL CARRIES MODEL PROSE — and this is a
+     * RUNTIME CHECK, not a comment claiming the blanking above happened.
+     *
+     * Found by the mandatory mutation, which is the only reason it exists: removing the blanking
+     * left every test GREEN, because the composition below overwrites an allowed heading and a
+     * refused section is dropped whole. A line no test can kill is the shape this task has
+     * already removed once, in Commit B. Rather than delete a boundary the Owner asked for, the
+     * invariant is asserted here: if anything is left in `heading` at this point the blanking did
+     * not run, so the section ships UNTITLED — verified rows with no claim over them, which is
+     * the safe direction — instead of being titled by the server as though it were clean.
+     */
+    if (sections[n].heading !== '') { sections[n].heading = ''; continue }
+    sections[n].heading = composeRankingHeading(d, sections[n].items.length)
+  }
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {
       const removed = sections.splice(badRankingSections[n], 1)[0]
@@ -1740,6 +1867,8 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      * and the tests pinned that as correct, which is worse than the gap alone.
      */
     rankingVerdicts,
+    /** Shape only: how many sections presented a ranking, declared one, and did neither. */
+    rankingClaims: { looksRanking: looksRankingCount, declared: declaredCount, missing: missingDeclarationCount },
     // How much content the model offered, and how much of it was real. The pair is what
     // lets the caller tell "a thin answer" from "an answer with nothing left in it".
     modelItemCount,
