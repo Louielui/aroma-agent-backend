@@ -130,16 +130,33 @@ test('*** the sweep only ever touches its OWN files ***', () => {
 test('deletion is by file age, so a lost index cannot retain evidence forever', () => {
   // There is no index. Stated as a property: the store keeps no manifest at all, so the
   // failure mode where bookkeeping is lost and files live on cannot occur.
-  const src = fs.readFileSync(path.join(__dirname, 'evidenceStore.js'), 'utf8')
+  const raw = fs.readFileSync(path.join(__dirname, 'evidenceStore.js'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  /**
+   * ⛔ THE MECHANISM NARROWED IN COMMIT A; THE INVARIANT DID NOT.
+   *
+   * This scanned the whole source for the word `manifest`. The retention taxonomy added a
+   * RULE NAMED `manifest` — a pattern matching SOMEONE ELSE'S file, `stage3-manifest.json`,
+   * which the sweep must never delete. That is the opposite of the store keeping an index of
+   * its own, and the regex could not tell the two apart.
+   *
+   * So the classification tables are excluded and everything else is still scanned. The
+   * property is unchanged and still enforced: this store keeps NO bookkeeping of its own, so
+   * the failure mode where an index is lost and files live on cannot occur.
+   */
+  const src = raw.replace(/const (RAW_CONTENT|RECORD)_PATTERNS = Object\.freeze\(\[[\s\S]*?\]\)/g, '')
   assert.equal(/manifest|index\.json|\.db\b/.test(src), false, 'no manifest exists to lose')
+  assert.ok(/RAW_CONTENT_PATTERNS/.test(raw), 'the exclusion above actually matched something')
   assert.ok(src.includes('mtimeMs'), 'age comes from the filesystem itself')
 })
 
 test('sweeping an empty or absent directory is safe', () => {
   const base = path.join(os.tmpdir(), 'aroma-evidence-absent-' + crypto.randomBytes(4).toString('hex'))
   const store = createEvidenceStore({ baseDir: base, now: () => 1 })
-  assert.deepEqual(store.sweep(), { deleted: [], kept: 0, retentionDays: 7 })
+  // ⛔ WIDENED IN COMMIT A, not weakened: the sweep now also reports what it RETAINED and what
+  // it could not classify. An absent directory has none of each, and saying so explicitly is
+  // what keeps 「nothing to do」 distinguishable from 「did not look」.
+  assert.deepEqual(store.sweep(), { deleted: [], kept: 0, retained: [], unclassified: [], retentionDays: 7 })
   assert.deepEqual(store.list(), [])
 })
 
