@@ -153,11 +153,68 @@ const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 
  * Only 1-99 built from 一-九 and 十 is PARSED; everything else in the class is captured so it
  * reaches the parser, fails, and is refused as `count_unparsed`.
  */
-const CJK_NUMERAL_CHARS = '〇零一二兩三四五六七八九十百千萬億兆廿卅壹貳參叁肆伍陸陆柒捌玖拾佰仟'
-const CJK_COUNT_IN_HEADING = new RegExp(
-  '(?<![' + CJK_NUMERAL_CHARS + '])([' + CJK_NUMERAL_CHARS + ']+)\\s*(項|個|樣|款|種)'
-)
-const ARABIC_COUNT_IN_HEADING = /(\d+)\s*(項|個|樣|款|種)|\btop\s*(\d+)/i
+/**
+ * ⛔ THE COUNT IS NOT SEARCHED FOR. IT IS THE WHOLE SPAN, OR IT IS NOTHING.
+ *
+ * Every previous attempt matched a numeral RUN and so could always restart after a character
+ * the run did not recognise: 「一百二項」 -> 2, then 「一億二項」 -> 2, then 「一万二項」 -> 2 and
+ * 「卄二項」 -> 2 and 「壱十二項」 -> 12. Widening the character class each time is a queue, not a
+ * rule, and the next unlisted numeral reopens it.
+ *
+ * ⛔ AND A PURE 「no restart after any ideograph」 BOUNDARY CANNOT WORK HERE: in 「最缺四項」 the
+ * 四 is preceded by 缺, an ideograph, so that rule would refuse every real heading — including
+ * the production one this whole task began with. Verified before choosing.
+ *
+ * So there is no search and no boundary. The claim phrase is already known (最缺 / 排序 / …),
+ * and the counter word is already known (項/個/樣/款/種). Everything BETWEEN them is the count,
+ * taken whole. It parses completely or the claim is refused as `count_unparsed`. A character
+ * nobody has ever heard of cannot cause a restart, because nothing ever restarts.
+ *
+ * The only vocabulary left is 「does this span even attempt to be a number?」, decided by the
+ * basic digits — and getting that wrong can only UNDER-read a count, which downgrades a TOP-N
+ * claim to the stricter prefix rule. It can never over-read one.
+ */
+const COUNTER_RE = /[項個樣款種]/
+const COUNT_PARTICLES_RE = /[的嘅之係個\s]/g
+const ATTEMPTS_A_NUMBER_RE = /[0-9０-９一二兩三四五六七八九十]/
+const LATIN_TOP_N_RE = /\btop\s*(\d+)\b/i
+
+/** The end of the claim phrase — the point after which a count may legitimately appear. */
+function claimPhraseEnd (h) {
+  let end = 0
+  for (const re of [SHORTAGE_WORD_RE, MOST_WORD_RE, LEAST_WORD_RE, ANY_SUPERLATIVE_RE, RANKING_PRESENTATION_RE]) {
+    const m = h.match(re)
+    if (m && m.index != null) end = Math.max(end, m.index + m[0].length)
+  }
+  return end
+}
+
+/**
+ * @returns {{n:number|null, unparsed:boolean}} `unparsed` means a count was attempted and could
+ *   not be read exactly — a CLAIM that must fail closed, never a smaller count.
+ */
+function countClaimIn (h) {
+  const rest = h.slice(claimPhraseEnd(h))
+  const hit = rest.match(COUNTER_RE)
+  if (!hit) {
+    const latin = h.match(LATIN_TOP_N_RE)
+    const v = latin ? Number(latin[1]) : null
+    return { n: (Number.isFinite(v) && v > 0) ? v : null, unparsed: false }
+  }
+  const span = rest.slice(0, hit.index).replace(COUNT_PARTICLES_RE, '')
+  // Nothing between the phrase and the counter, or nothing that even attempts a number:
+  // 「最緊急缺貨項目」 is a superlative with no count, not a broken one.
+  if (!span || !ATTEMPTS_A_NUMBER_RE.test(span)) return { n: null, unparsed: false }
+  if (/^[0-9０-９]+$/.test(span)) {
+    const v = Number(span.replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xFF10)))
+    return (Number.isFinite(v) && v > 0) ? { n: v, unparsed: false } : { n: null, unparsed: true }
+  }
+  const v = parseCjkNumeral(span)
+  return v === null ? { n: null, unparsed: true } : { n: v, unparsed: false }
+}
+
+// ⛔ CJK_NUMERAL_CHARS, CJK_COUNT_IN_HEADING and ARABIC_COUNT_IN_HEADING are GONE. Each was a
+// character list that a numeral outside it could walk around; `countClaimIn` above needs none.
 
 /** Exact 十-based parse for 1–99. Returns null on anything it cannot read precisely. */
 function parseCjkNumeral (run) {
@@ -207,17 +264,9 @@ function classifySectionHeading (heading) {
   const assertsMetric = superlative
   const metric = shortage ? RANKING_METRIC.ABSOLUTE_SHORTFALL : null
 
-  let n = null
-  let countUnparsed = false
-  const cjk = h.match(CJK_COUNT_IN_HEADING)
-  if (cjk) {
-    n = parseCjkNumeral(cjk[1])
-    if (n === null) countUnparsed = true // a count was written and could not be read exactly
-  }
-  if (n === null && !countUnparsed) {
-    const ar = h.match(ARABIC_COUNT_IN_HEADING)
-    if (ar) n = Number(ar[1] || ar[3]) || null
-  }
+  const count = countClaimIn(h)
+  const n = count.n
+  const countUnparsed = count.unparsed
 
   if (superlative && (n !== null || countUnparsed)) return { claim: true, kind: CLAIM_KIND.TOP_N, n, metric, assertsMetric, countUnparsed }
   if (superlative) return { claim: true, kind: CLAIM_KIND.SUPERLATIVE, n: null, metric, assertsMetric, countUnparsed: false }

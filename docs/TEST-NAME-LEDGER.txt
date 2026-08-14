@@ -276,6 +276,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** F — 「市場。」 reads nothing internal and invents nothing ***
 *** F(live) — an adapter declaring garbage is still timed out ***
 *** F(pin) — the module cannot even name a conversational adapter ***
+*** F10. ⛔ 「${heading}」 IS count_unparsed, NEVER A SMALLER COUNT (${why}) ***
+*** F10b. ⛔ AND ONE FAILS CLOSED IN THE GATE WITH TWO CORRECT ITEMS PRESENT ***
+*** F10c. THE READABLE COUNTS ARE UNCHANGED — the feature still works ***
+*** F10d. AND A SUPERLATIVE WITH NO COUNT IS NOT MISREAD AS A BROKEN ONE ***
 *** F2 — a clarify question carrying implementation vocabulary is replaced ***
 *** F2 — a source not authorised this turn is never exposed ***
 *** FAIL-SAFE: anything that is not an explicit false omits the body ***

@@ -161,3 +161,65 @@ test('*** E9d. ⛔ THE RULE IS STRUCTURAL, NOT A LIST — an unseen numeral also
   assert.equal(c.n, null, '⛔ 卅二 became a different count')
   assert.equal(c.countUnparsed, true)
 })
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMMIT F — BLOCKER 10: the boundary was still a hand-written list
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⛔ E9 WAS HOLLOW AND THE REVIEWER WAS RIGHT. The lookbehind only blocked a restart after a
+ * character that was itself IN `CJK_NUMERAL_CHARS`. Any numeral outside that string reopened
+ * the original bug unchanged — measured before the fix:
+ *     「最缺一万二項」  → N=2   (万, simplified 10,000, not in the list)
+ *     「最缺卄二項」    → N=2   (卄, a variant of 廿)
+ *     「最缺壱十二項」  → N=12  (壱, the accounting one)
+ * And E9d proved nothing about it, because 卅 was ALREADY in the list: it showed a listed
+ * character failing closed, not that an unknown one cannot tail-restart.
+ *
+ * ⛔ EVERY CASE BELOW USES A CHARACTER THE OLD LIST NEVER CONTAINED.
+ */
+
+const NEVER_LISTED = [
+  ['最缺一万二項', '万 — simplified 10,000'],
+  ['最缺卄二項', '卄 — a variant of 廿'],
+  ['最缺壱十二項', '壱 — accounting 1'],
+  ['最缺弐十二項', '弐 — accounting 2'],
+  ['最缺陌二項', '陌 — an archaic 100']
+]
+
+for (const [heading, why] of NEVER_LISTED) {
+  test(`*** F10. ⛔ 「${heading}」 IS count_unparsed, NEVER A SMALLER COUNT (${why}) ***`, () => {
+    const c = classifySectionHeading(heading)
+    assert.equal(c.claim, true, 'still a claim')
+    assert.notEqual(c.n, 2, '⛔ tail-restarted into a top-2 claim')
+    assert.notEqual(c.n, 12, '⛔ tail-restarted into a top-12 claim')
+    assert.equal(c.n, null, heading)
+    assert.equal(c.countUnparsed, true, heading)
+  })
+}
+
+test('*** F10b. ⛔ AND ONE FAILS CLOSED IN THE GATE WITH TWO CORRECT ITEMS PRESENT ***', () => {
+  // ⛔ 'P','Q' ARE the proven top two, so any mis-read into N=2 would have PASSED.
+  const line = logLine([SEC('訂貨建議排序一万二項', ['1', '2'], opRows)], [opEvidence()], opGroups)
+  assert.equal(line.rankingGate[0].status, 'evaluated_rejected')
+  assert.equal(line.rankingGate[0].reason, 'count_unparsed', 'reason: ' + line.rankingGate[0].reason)
+})
+
+test('*** F10c. THE READABLE COUNTS ARE UNCHANGED — the feature still works ***', () => {
+  assert.equal(classifySectionHeading('最缺四項').n, 4)
+  assert.equal(classifySectionHeading('最缺十項').n, 10)
+  assert.equal(classifySectionHeading('最缺十二項').n, 12)
+  assert.equal(classifySectionHeading('最缺二十一項').n, 21)
+  assert.equal(classifySectionHeading('目前最缺的四項').n, 4, 'the production heading that began this task')
+  assert.equal(classifySectionHeading('最缺4項').n, 4, 'Arabic digits')
+  assert.equal(classifySectionHeading('top 3 shortages').n, 3, 'Latin top-N')
+})
+
+test('*** F10d. AND A SUPERLATIVE WITH NO COUNT IS NOT MISREAD AS A BROKEN ONE ***', () => {
+  // 「最緊急缺貨項目」 contains 項 but claims no count. It must stay a prefix claim, not
+  // count_unparsed — otherwise the fix would refuse every honest superlative heading.
+  const c = classifySectionHeading('最緊急缺貨項目')
+  assert.equal(c.kind, 'superlative')
+  assert.equal(c.n, null)
+  assert.equal(c.countUnparsed, false, '⛔ a heading with no count was refused as unreadable')
+})
