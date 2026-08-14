@@ -175,16 +175,39 @@ const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 
  * claim to the stricter prefix rule. It can never over-read one.
  */
 const COUNTER_RE = /[項個樣款種]/
-const COUNT_PARTICLES_RE = /[的嘅之係個\s]/g
-const ATTEMPTS_A_NUMBER_RE = /[0-9０-９一二兩三四五六七八九十]/
+/**
+ * ⛔ PARTICLES, NOT NUMERALS — and the direction of a mistake here is safe.
+ * 「最缺嗰項」 is 「that one」, not a count; 嗰/呢 are demonstratives in the same class as 的/嘅.
+ * Missing a particle only makes a heading read as an unreadable COUNT and fail closed; the
+ * dangerous direction would be listing something that IS a numeral, and none of these are.
+ */
+const COUNT_PARTICLES_RE = /[的嘅之係個嗰呢啲\s]/g
+/**
+ * ⛔ A COUNTER WORD IS ONLY A COUNT SITE WHERE A COUNT COULD ACTUALLY BE WRITTEN.
+ *
+ * 「最緊急缺貨項目」 contains 項 inside the WORD 項目 and claims no quantity; 「最缺四項」 ends
+ * on its counter; 「目前最缺的四項排序」 has its counter followed by another claim marker. That
+ * is a structural distinction and needs no numeral list — which matters, because deciding
+ * presence by a list of numerals is exactly what let 卄 and 壱 read as 「no count at all」.
+ */
+const COUNT_SITE_SUFFIX_RE = /^(排序|排名|由高到低|由多到少)/
+const IDEOGRAPH_RE = /^[\u4e00-\u9fff]/
 const LATIN_TOP_N_RE = /\btop\s*(\d+)\b/i
 
 /** The end of the claim phrase — the point after which a count may legitimately appear. */
 function claimPhraseEnd (h) {
+  let bestIndex = Infinity
   let end = 0
   for (const re of [SHORTAGE_WORD_RE, MOST_WORD_RE, LEAST_WORD_RE, ANY_SUPERLATIVE_RE, RANKING_PRESENTATION_RE]) {
     const m = h.match(re)
-    if (m && m.index != null) end = Math.max(end, m.index + m[0].length)
+    if (!m || m.index == null) continue
+    /**
+     * ⛔ THE EARLIEST MARKER, NOT THE LATEST. Taking the rightmost moved the anchor PAST
+     * 排序 in 「目前最缺的四項排序」, so the 四項 between the two markers was skipped entirely and
+     * a four-item claim became a no-N superlative. Ties resolve to the longest match at that
+     * position, so 「最緊急」 is not cut short to 「最緊」.
+     */
+    if (m.index < bestIndex) { bestIndex = m.index; end = m.index + m[0].length } else if (m.index === bestIndex) { end = Math.max(end, m.index + m[0].length) }
   }
   return end
 }
@@ -195,16 +218,31 @@ function claimPhraseEnd (h) {
  */
 function countClaimIn (h) {
   const rest = h.slice(claimPhraseEnd(h))
-  const hit = rest.match(COUNTER_RE)
+  let hit = null
+  for (let i = 0; i < rest.length; i++) {
+    if (!COUNTER_RE.test(rest[i])) continue
+    const after = rest.slice(i + 1)
+    if (after === "" || !IDEOGRAPH_RE.test(after) || COUNT_SITE_SUFFIX_RE.test(after)) { hit = { index: i }; break }
+  }
   if (!hit) {
     const latin = h.match(LATIN_TOP_N_RE)
     const v = latin ? Number(latin[1]) : null
     return { n: (Number.isFinite(v) && v > 0) ? v : null, unparsed: false }
   }
   const span = rest.slice(0, hit.index).replace(COUNT_PARTICLES_RE, '')
-  // Nothing between the phrase and the counter, or nothing that even attempts a number:
+  /**
+   * ⛔ 「I COULD NOT READ N」 MUST NEVER BE REWRITTEN AS 「THERE WAS NO N」.
+   *
+   * Commit F decided presence with a digit list, so 「最缺卄項」 and 「最缺壱項」 yielded no count
+   * — and the bare-superlative branch then takes n = however many items the section listed.
+   * A heading asserting twenty could pass showing one. Stricter on order, LOOSER on
+   * cardinality, which is the part an explicit-N claim exists to pin.
+   *
+   * So at a count site ANY non-empty span is a count: it parses exactly, or it fails closed.
+   * Only an empty span — a genuine absence — may take the prefix superlative path.
+   */
   // 「最緊急缺貨項目」 is a superlative with no count, not a broken one.
-  if (!span || !ATTEMPTS_A_NUMBER_RE.test(span)) return { n: null, unparsed: false }
+  if (!span) return { n: null, unparsed: false }
   if (/^[0-9０-９]+$/.test(span)) {
     const v = Number(span.replace(/[０-９]/g, (d) => String(d.charCodeAt(0) - 0xFF10)))
     return (Number.isFinite(v) && v > 0) ? { n: v, unparsed: false } : { n: null, unparsed: true }

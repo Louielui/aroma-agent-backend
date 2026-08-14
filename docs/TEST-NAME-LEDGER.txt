@@ -303,6 +303,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** G/H — continuation carries prior OWNER messages, oldest first ***
 *** G/H — unknown and write-shaped capabilities are refused ***
 *** G/H/I — overlap stops, order does not matter, one page may carry two claims ***
+*** G11. ⛔ 「最缺卄項」 LISTING ONE ROW MUST NOT PASS ***
+*** G11b. ⛔ 「最缺壱項」 IS NOT A NO-N SUPERLATIVE ***
+*** G11c. ⛔ 「目前最缺的四項排序」 STILL YIELDS N=4 ***
+*** G11d. ⛔ AND THAT HEADING LISTING ONLY THREE ITEMS IS REJECTED ***
+*** G11e. A GENUINE NO-N SUPERLATIVE IS STILL LEGITIMATE ***
+*** G11f. THE READABLE COUNTS ARE ALL UNCHANGED ***
 *** G2 — with A4 off the same envelope delivers args = null (channel closed) ***
 *** GET /api/v1/context/health is refused without auth ***
 *** GET /api/v1/context/recent — the Gmail/Drive leak — is refused without auth ***

@@ -223,3 +223,79 @@ test('*** F10d. AND A SUPERLATIVE WITH NO COUNT IS NOT MISREAD AS A BROKEN ONE *
   assert.equal(c.n, null)
   assert.equal(c.countUnparsed, false, '⛔ a heading with no count was refused as unreadable')
 })
+
+/* ═══════════════════════════════════════════════════════════════════════
+   COMMIT G — BLOCKER 11: "I could not read N" must never become "there was no N"
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⛔ COMMIT F'S OWN CLOSING CLAIM WAS WRONG, AND THE REVIEWER CAUGHT IT.
+ * F said under-reading a count could only be stricter. It is not: a demoted heading takes the
+ * bare-superlative branch, and that branch uses `n = claimedIds.length` — whatever the section
+ * happened to list. So 「最缺卄項」 (卄 = twenty) listing ONE proven row was a prefix of length 1
+ * and PASSED. Stricter on order, plainly looser on cardinality.
+ *
+ * ⛔ AND THE SECOND CASE IS AN EVERYDAY HEADING, not an exotic character:
+ * 「目前最缺的四項排序」 — the anchor took the RIGHTMOST claim marker, moved past 排序, and skipped
+ * the 四項 in between. A four-item claim became a no-N superlative.
+ */
+
+/**
+ * ⛔ A SHORTAGE heading asserts absolute_shortfall, so it needs an INVENTORY proof. Testing it
+ * against the order-planning proof would be refused as metric_not_proven — a true verdict for
+ * the wrong reason, which would tell us nothing about the count.
+ */
+const shortageRows = [rowOf(OP_INVENTORY, '1', 'P'), rowOf(OP_INVENTORY, '2', 'Q'), rowOf(OP_INVENTORY, '3', 'R')]
+const shortageGroups = [{ source: 'aroma_system', readKey: OP_INVENTORY, items: shortageRows }]
+const shortageEvidence = () => opEvidence({ readKey: OP_INVENTORY, endpoint: 'inventory', rankingMetric: RANKING_METRIC.ABSOLUTE_SHORTFALL })
+const shortageLine = (heading, ids) => logLine([SEC(heading, ids, shortageRows)], [shortageEvidence()], shortageGroups)
+
+test('*** G11. ⛔ 「最缺卄項」 LISTING ONE ROW MUST NOT PASS ***', () => {
+  // ⛔ THE EXACT SHAPE THAT PASSED BEFORE: exotic numeral, section lists only proven #1.
+  const c = classifySectionHeading('最缺卄項')
+  assert.equal(c.countUnparsed, true, '⛔ a written count was read as no count at all')
+  assert.equal(c.kind, 'top_n', '⛔ demoted to a bare superlative')
+  const line = shortageLine('最缺卄項', ['1'])
+  assert.equal(line.rankingGate[0].status, 'evaluated_rejected', '⛔ a top-20 claim shipped showing one item')
+  assert.equal(line.rankingGate[0].reason, 'count_unparsed', 'reason: ' + line.rankingGate[0].reason)
+})
+
+test('*** G11b. ⛔ 「最缺壱項」 IS NOT A NO-N SUPERLATIVE ***', () => {
+  const c = classifySectionHeading('最缺壱項')
+  assert.equal(c.countUnparsed, true)
+  assert.notEqual(c.kind, 'superlative', '⛔ an asserted quantity became no quantity')
+})
+
+test('*** G11c. ⛔ 「目前最缺的四項排序」 STILL YIELDS N=4 ***', () => {
+  // ⛔ The anchor must take the EARLIEST claim marker; taking the latest skipped 四項 entirely.
+  const c = classifySectionHeading('目前最缺的四項排序')
+  assert.equal(c.n, 4, '⛔ the count between two claim markers was skipped')
+  assert.equal(c.kind, 'top_n')
+})
+
+test('*** G11d. ⛔ AND THAT HEADING LISTING ONLY THREE ITEMS IS REJECTED ***', () => {
+  // Three items under a four-item claim: correct order, wrong cardinality.
+  const line = shortageLine('目前最缺的四項排序', ['1', '2', '3'])
+  assert.equal(line.rankingGate[0].status, 'evaluated_rejected', '⛔ a four-item claim passed showing three')
+  assert.equal(line.rankingGate[0].reason, 'membership_mismatch', 'reason: ' + line.rankingGate[0].reason)
+})
+
+test('*** G11e. A GENUINE NO-N SUPERLATIVE IS STILL LEGITIMATE ***', () => {
+  // 「最緊急缺貨項目」 contains 項 inside the WORD 項目 and claims no quantity. Only a real
+  // absence may take the prefix path — but it must still be able to.
+  const c = classifySectionHeading('最緊急缺貨項目')
+  assert.equal(c.kind, 'superlative')
+  assert.equal(c.n, null)
+  assert.equal(c.countUnparsed, false, '⛔ a heading with no count was refused as unreadable')
+  const line = shortageLine('最緊急缺貨項目', ['1'])
+  assert.equal(line.rankingGate[0].status, 'evaluated_allowed', 'the proven first row is a valid prefix')
+})
+
+test('*** G11f. THE READABLE COUNTS ARE ALL UNCHANGED ***', () => {
+  assert.equal(classifySectionHeading('最缺四項').n, 4)
+  assert.equal(classifySectionHeading('最缺十二項').n, 12)
+  assert.equal(classifySectionHeading('最缺二十一項').n, 21)
+  assert.equal(classifySectionHeading('最缺4項').n, 4)
+  assert.equal(classifySectionHeading('top 3 shortages').n, 3)
+  assert.equal(classifySectionHeading('目前最缺的四項').n, 4, 'the production heading')
+})
