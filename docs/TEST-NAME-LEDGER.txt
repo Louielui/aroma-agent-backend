@@ -312,7 +312,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** G/H — continuation carries prior OWNER messages, oldest first ***
 *** G/H — unknown and write-shaped capabilities are refused ***
 *** G/H/I — overlap stops, order does not matter, one page may carry two claims ***
+*** G1. ⛔ A PID REUSED BETWEEN THE CHECK AND THE CALL IS NOT KILLED ***
 *** G2 — with A4 off the same envelope delivers args = null (channel closed) ***
+*** G2. SAME PID, SAME INCARNATION — THE TERMINATION PROCEEDS ***
+*** G3. ⛔ AN ADAPTER OFFERING ONLY terminate(pid) IS UNSUPPORTED, NOT A FALLBACK ***
+*** G4. ⛔ SUCCESS MUST NAME WHAT DIED, AND IT MUST BE WHAT WAS AUTHORISED ***
+*** G5. ⛔ THE BARE-PID METHOD IS NEVER CALLED, EVEN WHEN OFFERED ***
+*** G6. ⛔ THE CALLER STILL CANNOT NAME WHAT IS KILLED ***
+*** G7. ⛔ NOTHING HERE IS DEMONSTRATED, AND NOTHING IS ENABLED ***
 *** GET /api/v1/context/health is refused without auth ***
 *** GET /api/v1/context/recent — the Gmail/Drive leak — is refused without auth ***
 *** GET /demo is refused, and a browser is sent to the login form ***

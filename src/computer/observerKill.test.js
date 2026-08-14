@@ -65,7 +65,13 @@ const REAL = { pid: 4242, incarnation: INC, name: 'powershell.exe', executablePa
  * it answers 「which PIDs did the fixed task start」 rather than 「which look right」.
  */
 function fakeOs (over = {}) {
-  const calls = { stopTask: [], terminate: [], listed: 0, taskAsked: [] }
+  /**
+   * ⛔ `terminate` STAYS THE NAME OF THE KILL LEDGER, so every existing 「nothing was
+   * terminated」 assertion keeps its force instead of quietly becoming vacuous when the
+   * method it watched stopped being called. `legacyTerminate` is the separate spy for the
+   * bare-PID method the module must now never reach for at all.
+   */
+  const calls = { stopTask: [], terminate: [], identity: [], legacyTerminate: [], listed: 0, taskAsked: [] }
   let procs = over.procs || []
   // What the task says it started: {pid, incarnation} pairs, never bare pids.
   const owned = (over.owned === undefined ? [{ pid: REAL.pid, incarnation: INC }] : over.owned)
@@ -91,11 +97,40 @@ function fakeOs (over = {}) {
       if (over.stopTaskLeavesAlive !== true) procs = []
       return { ok: true }
     },
+    /**
+     * ⛔ THE BARE-PID METHOD IS STILL OFFERED — AND MUST NEVER BE CALLED.
+     *
+     * Removing it would prove nothing: a module that cannot reach a method obviously does
+     * not call it. Leaving it within reach is what makes the assertion mean something.
+     */
     terminate (pid) {
-      calls.terminate.push(pid)
-      if (over.terminateFails) return { ok: false, error: 'no such process' }
+      calls.legacyTerminate.push(pid)
       if (over.terminateLeavesAlive !== true) procs = procs.filter((p) => p.pid !== pid)
       return { ok: true }
+    },
+
+    /**
+     * ⛔ AN ADAPTER THAT DOES ITS DUTY. The contract requires it to hold, or atomically
+     * re-confirm, the exact incarnation at the moment it terminates — so this fake looks at
+     * who occupies the PID right then, not at who occupied it when it was asked.
+     */
+    terminateIdentity (id) {
+      calls.terminate.push(id && id.pid)
+      calls.identity.push(id)
+      // the race this commit exists for: the proven process exits and the PID is reused
+      // in the instant between the caller's check and this call.
+      if (over.swapBeforeTerminate) { procs = over.swapBeforeTerminate.slice() }
+      const holder = procs.find((q) => q.pid === (id && id.pid))
+      if (!holder || holder.incarnation !== (id && id.incarnation)) {
+        return { ok: false, reason: 'identity_changed', error: 'pid now holds a different process' }
+      }
+      if (over.terminateFails) return { ok: false, error: 'no such process' }
+      // ⛔ an adapter that says 「done」 without saying WHAT it ended
+      if (over.unprovenOk) return { ok: true }
+      // ⛔ an adapter that ended the PID rather than the identity, and admits it
+      if (over.terminatedOther) { procs = procs.filter((q) => q.pid !== id.pid); return { ok: true, terminated: { pid: id.pid, incarnation: 'inc-SOMEONE-ELSE' } } }
+      if (over.terminateLeavesAlive !== true) procs = procs.filter((q) => q.pid !== id.pid)
+      return { ok: true, terminated: { pid: id.pid, incarnation: id.incarnation } }
     }
   }
 }
@@ -446,4 +481,113 @@ test('*** F8. THE MODULE STILL OWNS THE IDENTITY, THE CALLER NEVER DOES ***', ()
   assert.equal(r.ok, true)
   assert.deepEqual(os.calls.taskAsked, [K.TASK_NAME], '⛔ the caller chose which task was asked about')
   assert.deepEqual(os.calls.stopTask, [K.TASK_NAME])
+})
+
+/* ═══ G1–G7 — the blade must fall on the identity, not on the number ═══════ */
+
+test('*** G1. ⛔ A PID REUSED BETWEEN THE CHECK AND THE CALL IS NOT KILLED ***', () => {
+  /**
+   * ⛔ THE LAST WINDOW OF THE SAME KIND, AND IT IS AN INTERFACE DEFECT.
+   *
+   * Commit F closed the gap across `stopTask()`: prove 4242 is incarnation A, look again
+   * afterwards, refuse if it is B. But the sequence still ended `slot()` → 「still A」 →
+   * `terminate(4242)`, and the contract still took a bare PID. A adapter running
+   * `Stop-Process -Id 4242` satisfies that contract completely — and if A exits in the
+   * microseconds between the confirmation and the call, it kills B.
+   *
+   * That is the part that matters beyond this module: the defect is in the SHAPE OF THE
+   * API. Ship a `terminate(pid)` and the next person implements exactly that, correctly,
+   * and still kills the wrong process. The identity has to be carried all the way into the
+   * kill, so an adapter cannot be compliant and wrong at the same time.
+   */
+  const B = Object.assign({}, REAL, { incarnation: 'inc-B-A-STRANGER' })
+  const os = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true, swapBeforeTerminate: [B] })
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, false, '⛔ killing a stranger was reported as success')
+  assert.equal(r.outcome, 'identity_changed', 'outcome was: ' + r.outcome)
+  assert.deepEqual(os.listProcesses(), [B], '⛔ THE STRANGER WAS KILLED')
+  assert.deepEqual(os.calls.legacyTerminate, [], '⛔ it fell back to the bare-PID method')
+})
+
+test('*** G2. SAME PID, SAME INCARNATION — THE TERMINATION PROCEEDS ***', () => {
+  // ⛔ The control must still be able to finish. Refusing everything is not safety.
+  const os = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true })
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(r.escalated, true)
+  assert.equal(r.aliveAfter, false)
+  assert.deepEqual(os.calls.identity, [{ pid: 4242, incarnation: INC }], 'the kill named the identity, not just the pid')
+})
+
+test('*** G3. ⛔ AN ADAPTER OFFERING ONLY terminate(pid) IS UNSUPPORTED, NOT A FALLBACK ***', () => {
+  /**
+   * ⛔ NO SECOND-BEST PATH. This is the whole point of doing it at the interface: if the
+   * module quietly accepts a bare-PID adapter when an identity-bound one is missing, the
+   * contract says one thing and the code permits another, and every future implementer
+   * takes the easier road. Absence of the guarantee is refusal, not permission — the same
+   * rule as missing session proof (D) and missing task evidence (E).
+   */
+  const legacy = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true })
+  delete legacy.terminateIdentity
+  const r = K.killObserver({ os: legacy })
+  assert.equal(r.outcome, 'no_os_adapter', 'outcome was: ' + r.outcome)
+  assert.equal(r.ok, false)
+  assert.deepEqual(legacy.calls.legacyTerminate, [], '⛔ it used the bare-PID method as a fallback')
+  assert.deepEqual(legacy.calls.stopTask, [], '⛔ it stopped the task through an adapter it had refused')
+})
+
+test('*** G4. ⛔ SUCCESS MUST NAME WHAT DIED, AND IT MUST BE WHAT WAS AUTHORISED ***', () => {
+  /**
+   * ⛔ 「ok: true」 IS A CLAIM, NOT A RESULT. An adapter that reports success without saying
+   * which incarnation it ended has told us nothing we can check — and one that reports
+   * ending a DIFFERENT incarnation of the same PID has told us it killed a stranger. Both
+   * are refused; neither is a kill.
+   */
+  const silent = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true, unprovenOk: true })
+  const a = K.killObserver({ os: silent })
+  assert.equal(a.ok, false, '⛔ an unproven ok was accepted as a kill')
+  assert.equal(a.outcome, 'terminate_identity_unproven', 'outcome was: ' + a.outcome)
+
+  const wrong = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true, terminatedOther: true })
+  const b = K.killObserver({ os: wrong })
+  assert.equal(b.ok, false, '⛔ terminating a different incarnation counted as success')
+  assert.equal(b.outcome, 'terminate_identity_unproven', 'outcome was: ' + b.outcome)
+})
+
+test('*** G5. ⛔ THE BARE-PID METHOD IS NEVER CALLED, EVEN WHEN OFFERED ***', () => {
+  // ⛔ The fake still exposes `terminate(pid)`, so this can fail. Every path: the clean
+  //    kill, the escalation, the refusal, the ambiguous case.
+  const cases = [
+    fakeOs({ procs: [REAL] }),
+    fakeOs({ procs: [REAL], stopTaskLeavesAlive: true }),
+    fakeOs({ procs: [Object.assign({}, REAL, { incarnation: 'inc-OTHER' })] }),
+    fakeOs({ procs: [REAL, Object.assign({}, REAL, { pid: 4243 })], owned: [{ pid: 4242, incarnation: INC }, { pid: 4243, incarnation: INC }] })
+  ]
+  for (const os of cases) {
+    K.killObserver({ os })
+    assert.deepEqual(os.calls.legacyTerminate, [], '⛔ a path still reaches for terminate(pid)')
+  }
+})
+
+test('*** G6. ⛔ THE CALLER STILL CANNOT NAME WHAT IS KILLED ***', () => {
+  // ⛔ The identity travelling into the adapter must be the one this run PROVED — not one
+  //    the caller handed in. A new argument is a new way to reopen a door E and F closed.
+  const os = fakeOs({ procs: [REAL], stopTaskLeavesAlive: true })
+  const r = K.killObserver({ os, pid: 999, incarnation: 'inc-CALLER-CHOSE', taskName: 'Other', account: 'AROMABRAIN\\Administrator', scriptPath: 'c:\\evil.ps1' })
+  assert.equal(r.ok, true)
+  assert.deepEqual(os.calls.identity, [{ pid: 4242, incarnation: INC }])
+  assert.deepEqual(os.calls.taskAsked, [K.TASK_NAME])
+  assert.deepEqual(os.calls.stopTask, [K.TASK_NAME])
+})
+
+test('*** G7. ⛔ NOTHING HERE IS DEMONSTRATED, AND NOTHING IS ENABLED ***', () => {
+  // ⛔ Same guard as K8/K9, restated for this commit: a stronger kill contract is not a
+  //    live one, and no capability moved because the contract got narrower.
+  const { CAPABILITIES, anyCapabilityEnabled } = require('./companion')
+  const { OBSERVATION_CAPABILITIES } = require('./observation')
+  assert.equal(KILL_SWITCH_BINDINGS.observerKillDemonstrated, false, '⛔ a test flipped it')
+  assert.equal(KILL_SWITCH_BINDINGS.killingCompanionStopsObserver, false)
+  assert.equal(CAPABILITIES.list_windows, false, '⛔ list_windows moved in the Companion register')
+  assert.equal(OBSERVATION_CAPABILITIES.list_windows, false, '⛔ list_windows moved in the observation register')
+  assert.equal(anyCapabilityEnabled(), false)
 })

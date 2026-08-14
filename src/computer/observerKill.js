@@ -84,6 +84,8 @@ const OUTCOME = Object.freeze({
   NO_TARGET: 'no_target',
   /** The PID is alive but is no longer the process we proved. Nothing may be terminated. */
   IDENTITY_CHANGED: 'identity_changed',
+  /** The adapter reported success without proving WHICH incarnation it ended. Not a kill. */
+  TERMINATE_UNPROVEN: 'terminate_identity_unproven',
   AMBIGUOUS: 'target_ambiguous',
   TASK_STOP_FAILED: 'task_stop_failed',
   TERMINATE_FAILED: 'terminate_failed',
@@ -155,7 +157,33 @@ function identifies (p, instance) {
  *     process reports about itself. An adapter that can only answer with PIDs is refused.
  *   listProcesses() -> [{ pid, incarnation, executablePath, account, sessionId, commandLine }]
  *   stopTask(taskName) -> { ok, error? }
- *   terminate(pid)     -> { ok, error? }
+ *   terminateIdentity({ pid, incarnation })
+ *       -> { ok, terminated?: { pid, incarnation }, reason?, error? }
+ *
+ *     ⛔ COMMIT G — THE KILL IS BOUND TO THE IDENTITY, NOT TO THE NUMBER. This replaces
+ *     `terminate(pid)`, and the replacement is the point: a bare-PID method could be
+ *     implemented perfectly — `Stop-Process -Id 4242` — and still kill the wrong process,
+ *     because between this module confirming that 4242 is the incarnation it proved and the
+ *     adapter acting, that process can exit and Windows can hand the number to someone else.
+ *     An interface that allows a correct implementation to do the wrong thing is the defect.
+ *
+ *     REQUIRED OF ANY IMPLEMENTATION:
+ *     1. It MUST hold an OS-level reference to the exact incarnation named in the argument
+ *        — a handle opened against that process and kept open — or atomically re-confirm
+ *        the incarnation AT THE MOMENT OF TERMINATION. Windows creation time plus a stable
+ *        process handle is one way; this contract does not choose the mechanism.
+ *     2. It MUST NOT terminate by PID alone, and MUST NOT re-resolve the PID to whatever
+ *        occupies it now. Reading the argument and calling a PID-based kill is a violation
+ *        even when it usually works.
+ *     3. If the incarnation no longer matches, it MUST refuse and return
+ *        `{ ok: false, reason: 'identity_changed' }`. It must never fall back to the PID.
+ *     4. On success it MUST report `terminated: { pid, incarnation }` naming exactly what it
+ *        ended. A bare `{ ok: true }` proves nothing and this module refuses it: an
+ *        unverifiable claim of success is the failure mode, not a lesser form of success.
+ *
+ *     An adapter that offers only `terminate(pid)` is UNSUPPORTED — `no_os_adapter`. There
+ *     is deliberately no fall-back: a contract that says one thing while the code accepts
+ *     another teaches every future implementer to take the weaker road.
  *
  * ⛔ EVERY OTHER KEY ON `deps` IS IGNORED ON PURPOSE. A caller — and therefore a model, or a
  * user's free text reaching one — must not be able to name a pid, a path or a task. The
@@ -166,8 +194,13 @@ function identifies (p, instance) {
 function killObserver (deps = {}) {
   const os = deps.os
   const base = { ok: false, outcome: null, aliveBefore: false, aliveAfter: false, pid: null, matched: 0, escalated: false, errors: [] }
+  /**
+   * ⛔ `terminateIdentity` IS REQUIRED AND `terminate` IS NOT CONSULTED AT ALL. Accepting a
+   * bare-PID adapter「just for now」would make the narrower contract advisory, which is the
+   * same as not having it.
+   */
   if (!os || typeof os.listProcesses !== 'function' || typeof os.stopTask !== 'function' ||
-      typeof os.terminate !== 'function' || typeof os.taskInstance !== 'function') {
+      typeof os.terminateIdentity !== 'function' || typeof os.taskInstance !== 'function') {
     return Object.assign({}, base, { outcome: OUTCOME.NO_OS_ADAPTER })
   }
 
@@ -269,12 +302,48 @@ function killObserver (deps = {}) {
 
   if (state === 'same') {
     out.escalated = true
-    const killed = os.terminate(target.pid)
+    /**
+     * ⛔ THE IDENTITY TRAVELS INTO THE KILL. `target` is what this run PROVED — task-owned,
+     * right account, right session, right incarnation — and it is that pair, not the number,
+     * that the adapter is asked to end.
+     */
+    const killed = os.terminateIdentity({ pid: target.pid, incarnation: target.incarnation })
+
+    /**
+     * ⛔ THE ADAPTER REFUSING IS THE CONTROL WORKING. If the incarnation changed in the
+     * instant before the call, the correct adapter kills nothing and says so — and that is
+     * reported as the identity change it is, not as a terminate failure to be retried.
+     */
+    if (killed && killed.ok !== true && killed.reason === 'identity_changed') {
+      return Object.assign(out, {
+        outcome: OUTCOME.IDENTITY_CHANGED,
+        aliveAfter: null,
+        errors: ['pid ' + target.pid + ' changed incarnation before the terminate; the adapter refused and nothing was killed']
+      })
+    }
+
     if (!killed || killed.ok !== true) {
       return Object.assign(out, {
         outcome: OUTCOME.TERMINATE_FAILED,
         aliveAfter: slot() === 'same',
         errors: [String((killed && killed.error) || 'terminate failed')]
+      })
+    }
+
+    /**
+     * ⛔ AND SUCCESS HAS TO NAME ITS SUBJECT. 「ok」 alone is a claim about an unnamed thing;
+     * 「I ended pid 4242」 is a claim about a slot. Only 「I ended this incarnation of 4242」
+     * says the authorised process is the one that died — so anything else, including an
+     * adapter admitting it ended a different incarnation, is refused as unproven.
+     */
+    const done = killed.terminated
+    const proven = done && done.pid === target.pid && typeof done.incarnation === 'string' &&
+      done.incarnation === target.incarnation
+    if (!proven) {
+      return Object.assign(out, {
+        outcome: OUTCOME.TERMINATE_UNPROVEN,
+        aliveAfter: null,
+        errors: ['the adapter reported success without proving it ended the authorised incarnation: ' + JSON.stringify(done === undefined ? null : done)]
       })
     }
     /**
