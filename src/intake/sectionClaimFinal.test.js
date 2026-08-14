@@ -33,7 +33,10 @@ const invRow = (id, title) => ({ source: 'aroma_system', readKey: 'aroma_system.
 const invRows = [invRow('1', 'A'), invRow('2', 'B'), invRow('3', 'C')]
 
 const invEvidence = (over) => Object.assign({
-  source: 'aroma_system', entityType: 'inventory_item', endpoint: 'inventory', trust: 'live',
+  // ⛔ readKey IS what production attaches (readContext.js:840) and is the operation identity.
+  // Omitting it was the false-green shape blocker 8 exposed — the fixture could not fail.
+  source: 'aroma_system', entityType: 'inventory_item', endpoint: 'inventory',
+  readKey: 'aroma_system.inventory', trust: 'live',
   shownCount: 3, matchingTotal: 199, sourceTotal: null,
   queryScope: { field: null, window: null, declaredBy: 'reader' },
   rowShape: { hasLocation: false, hasAsOf: false, note: null },

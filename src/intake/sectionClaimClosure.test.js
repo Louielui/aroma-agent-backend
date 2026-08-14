@@ -117,7 +117,8 @@ test('*** C4c. ⛔ AN UNREADABLE COUNT IS A CLAIM AND FAILS CLOSED ***', () => {
 /* ═══ BLOCKER 1 — the verdict must reach the REAL log ═══════════════════ */
 
 const EVIDENCE = (over) => [Object.assign({
-  source: 'aroma_system', endpoint: 'inventory', trust: 'live',
+  // ⛔ readKey as production attaches it (readContext.js:840) — blocker 8.
+  source: 'aroma_system', endpoint: 'inventory', readKey: 'aroma_system.inventory', trust: 'live',
   shownCount: 4, matchingTotal: 199, sourceTotal: null,
   queryScope: { field: null, window: null, declaredBy: 'reader' },
   rowShape: { hasLocation: false, hasAsOf: false, note: null },

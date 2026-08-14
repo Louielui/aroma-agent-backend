@@ -243,6 +243,15 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** E2E 4 — ⛔ MIXED → BOTH worlds, public query re-authored from Owner words ***
 *** E2E 5 — SUPPLIED FACTS → ZERO reads; he already told her ***
 *** E2E — the five outcomes are genuinely different, not one behaviour ***
+*** E8. ⛔ A DIRECTED aroma_system.replenishment TURN FINDS ITS OWN PROOF ***
+*** E8b. ⛔ AND THE SAME TURN STILL REFUSES A WRONG ORDER ***
+*** E8c. ⛔ THE PROOF STILL MAY NOT REACH A DIFFERENT OPERATION\
+*** E8d. ⛔ A PROOF WHOSE OPERATION HAS NO GROUP REPORTS no_ranking_proof ***
+*** E8e. and LEGACY evidence with no readKey still resolves its single group ***
+*** E9. ⛔ 「一億二項」 AND 「廿二項」 ARE count_unparsed, NEVER N=2 ***
+*** E9b. ⛔ AND SUCH A HEADING FAILS CLOSED WITH TWO CORRECT ITEMS PRESENT ***
+*** E9c. and the readable counts are unchanged ***
+*** E9d. ⛔ THE RULE IS STRUCTURAL, NOT A LIST — an unseen numeral also fails closed ***
 *** END TO END: a Gmail turn whose reply CITES the mail stores the question and omits the answer ***
 *** END TO END: flag OFF still writes nothing at all ***
 *** END TO END: read happened, reply CITES NOTHING → the answer is kept, mail still absent ***

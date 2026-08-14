@@ -1574,8 +1574,22 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    * The readKey of a directed read IS the operation (`aroma_system.inventory`), so the proof's
    * `source` + `endpoint` names the only group it may speak for.
    */
-  const proofOperation = rankedEvidence.length === 1 && rankedEvidence[0].endpoint
-    ? String(rankedEvidence[0].source) + '.' + String(rankedEvidence[0].endpoint)
+  /**
+   * ⛔ USE THE OPERATION IDENTITY THE SYSTEM ALREADY WROTE. DO NOT REBUILD IT.
+   *
+   * Commit D derived it as `source + "." + endpoint`, which works for inventory only because
+   * its endpoint and its operation happen to share a name. Order Planning is the standing
+   * counter-example and is already in production: the operation is `aroma_system.replenishment`
+   * while the adapter's endpoint is `orderPlanning`. Derivation produced
+   * `aroma_system.orderPlanning`, matched nothing, and a real proof was reported as
+   * `no_ranking_proof`.
+   *
+   * `readContext.js:840` attaches the true `readKey` to the evidence and stamps the same value
+   * on every row, so the identity is already present and correct. Rebuilding it is a second
+   * source of truth that can only drift — and a mapping table would be a third.
+   */
+  const proofOperation = rankedEvidence.length === 1 && rankedEvidence[0].readKey
+    ? String(rankedEvidence[0].readKey)
     : null
   /**
    * ⛔ EXACT OPERATION FIRST, AND A FALLBACK THAT CANNOT REOPEN THE HOLE.
@@ -1596,10 +1610,15 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const sameSource = proofSource
     ? groups.filter((g) => g && String(g.source) === proofSource && String(g.readKey || g.source) === proofSource)
     : []
+  /**
+   * ⛔ THE PROOF'S OWN readKey IS AUTHORITATIVE. When it is present there is no guessing and no
+   * fallback: either a group carries that operation or the proof owns no rows this turn.
+   * The same-source fallback exists ONLY for legacy evidence that carries no readKey at all,
+   * and even then only when the single candidate group carries no operation of its own.
+   */
   const rankedGroup = proofOperation
-    ? (groups.find((g) => g && String(g.readKey || g.source) === proofOperation) ||
-       (sameSource.length === 1 ? sameSource[0] : null))
-    : null
+    ? (groups.find((g) => g && String(g.readKey || g.source) === proofOperation) || null)
+    : (rankedEvidence.length === 1 && sameSource.length === 1 ? sameSource[0] : null)
   /**
    * ⛔ NO GROUP FOR THIS PROOF MEANS NO USABLE PROOF. Reporting 1 here would let a claim be
    * judged against rows the proof does not own; reporting 0 is the honest state and makes the

@@ -138,14 +138,34 @@ const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 
  * the parser, fails to parse, and is refused as `count_unparsed` — never silently demoted to
  * a smaller, satisfiable count.
  */
-const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十百千萬零]+)\s*(項|個|樣|款|種)/
+/**
+ * ⛔ THE COMPLETE CJK NUMERAL REPERTOIRE, AND A LOOKBEHIND THAT FORBIDS STARTING MID-TOKEN.
+ *
+ * Adding 百/千/萬 closed 「一百二項」, but a fixed list brings the same bug back with the next
+ * character outside it: 「最缺一億二項」 failed at 一 and RESTARTED at 二項 -> N=2, and 「廿二項」
+ * did the same. Appending one character per bug found is not a rule, it is a queue.
+ *
+ * So the class is the whole standard repertoire — digits, tens/hundreds/thousands, the
+ * financial forms, and 廿/卅 — and the lookbehind means a run may not BEGIN immediately after
+ * another numeral character. The invariant is not 「support every numeral」: it is that not
+ * knowing the count may fail closed, but one count must never silently become a smaller one.
+ *
+ * Only 1-99 built from 一-九 and 十 is PARSED; everything else in the class is captured so it
+ * reaches the parser, fails, and is refused as `count_unparsed`.
+ */
+const CJK_NUMERAL_CHARS = '〇零一二兩三四五六七八九十百千萬億兆廿卅壹貳參叁肆伍陸陆柒捌玖拾佰仟'
+const CJK_COUNT_IN_HEADING = new RegExp(
+  '(?<![' + CJK_NUMERAL_CHARS + '])([' + CJK_NUMERAL_CHARS + ']+)\\s*(項|個|樣|款|種)'
+)
 const ARABIC_COUNT_IN_HEADING = /(\d+)\s*(項|個|樣|款|種)|\btop\s*(\d+)/i
 
 /** Exact 十-based parse for 1–99. Returns null on anything it cannot read precisely. */
 function parseCjkNumeral (run) {
   const s = String(run || '')
   if (!s) return null
-  if (/[百千萬零]/.test(s)) return null // present in the run so it is captured, not parsed
+  // ⛔ PARSE ONLY WHAT IS EXACTLY READABLE. Any character outside 一-九 and 十 — including
+  // every one captured purely so the run cannot restart after it — is refused here.
+  if (/[^一二兩三四五六七八九十]/.test(s)) return null
   if (!s.includes('十')) return s.length === 1 ? (CJK_DIGITS[s] || null) : null
   const [head, tail, ...rest] = s.split('十')
   if (rest.length > 0) return null // 十…十… is not a number this parser reads
