@@ -518,7 +518,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** P — ⛔ an UNAVAILABLE public read does not satisfy the public world ***
 *** P — ⛔ an UNAVAILABLE read does not satisfy the required world ***
 *** P1 — ⛔ the planner never receives the raw query or any internal evidence ***
-*** P1. AN EPHEMERAL OBSERVATION RESULT MAY CARRY titles ***
+*** P1. AN EPHEMERAL RESULT MAY CARRY titles — ONCE THE SESSION IS PROVEN ***
 *** P10 — two PUBLIC requests in one turn spend ONE planner call ***
 *** P11 — the cache also remembers a REFUSAL, so a broken planner is asked once ***
 *** P12 — ⛔ assistant turns are excluded, and so is every unknown role ***

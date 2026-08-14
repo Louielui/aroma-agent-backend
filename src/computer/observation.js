@@ -354,7 +354,30 @@ function validateResult (result, opts = {}) {
    * are now ephemeral-only, so the check belongs where they legitimately appear — otherwise
    * removing the durable path would have quietly removed the isolation proof with it.
    */
-  if (result.titles !== undefined && typeof opts.ownSessionId === 'number') {
+  if (result.titles !== undefined) {
+    /**
+     * ⛔ FAIL CLOSED. THIS GUARD USED TO READ
+     *     if (result.titles !== undefined && typeof opts.ownSessionId === 'number')
+     * so the containment check ran only when a caller HAPPENED to supply the expected session.
+     * Titles passed untouched whenever someone forgot to ask — and the test beside it asserted
+     * that passing result was correct, which held the gap in place with something that looked
+     * like a proof. Absence of proof is not absence of risk.
+     *
+     * The rule is now the other way round: titles REQUIRE independent session proof. All four
+     * conditions or the whole result is refused. This does not make titles durable — the audit
+     * refuses them outright — it means an ephemeral title must be shown to be ours first.
+     */
+    if (!Array.isArray(result.titles)) {
+      // A declared field NAME was enough for the allowlist above, so `titles: 'some sensitive
+      // text'` — one free-text string rather than a list of window names — got through it.
+      return { ok: false, errors: ['titles must be an array'] }
+    }
+    if (typeof opts.ownSessionId !== 'number') {
+      return { ok: false, errors: ['titles require an expected ownSessionId to be proven against'] }
+    }
+    if (typeof result.sessionId !== 'number') {
+      return { ok: false, errors: ['titles require the result to declare the sessionId that produced them'] }
+    }
     if (result.sessionId !== opts.ownSessionId) {
       return { ok: false, errors: ['CONTAINMENT-FAILURE: titles from session ' + result.sessionId + ', own session is ' + opts.ownSessionId] }
     }

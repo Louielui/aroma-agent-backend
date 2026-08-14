@@ -40,12 +40,52 @@ const { createEvidenceStore, classify } = require('./evidenceStore')
 
 /* ═══ P1 — the ephemeral shape is structurally allowed ═══════════════════════ */
 
-test('*** P1. AN EPHEMERAL OBSERVATION RESULT MAY CARRY titles ***', () => {
-  // ⛔ Not a concession — the whole point of `list_windows` is that an authorised caller
-  // learns what is on screen. Refusing here would leave the capability with no output.
+test('*** P1. AN EPHEMERAL RESULT MAY CARRY titles — ONCE THE SESSION IS PROVEN ***', () => {
+  /**
+   * ⛔ REVISED IN COMMIT D. THIS TEST PINNED THE DEFECT.
+   *
+   * As first written it called `validateResult` with `titles: ['A','B']`, no `sessionId` and
+   * no `ownSessionId`, and asserted `ok === true`. That is fail-OPEN: the containment check
+   * next to it only ran when a caller happened to supply the expected session, so titles
+   * sailed through whenever someone forgot to ask. And because a test asserted the passing
+   * result was correct, the gap was held in place by something that looked like a proof.
+   *
+   * It contradicted the invariant the same commit claimed. Absence of proof was being treated
+   * as absence of risk — the same shape as `SilentlyContinue` reading access-denied as zero,
+   * and as the ranking gate that skipped validation instead of failing closed.
+   *
+   * ⛔ THE RULE NOW: titles REQUIRE independent session proof. Not proven is not 「unknown」,
+   * it is refused. This does not make titles durable — the audit still refuses them outright
+   * (P2). It only means an ephemeral title must be shown to be our own before it is returned.
+   */
   assert.ok(O.RESULT_FIELDS.includes('titles'), 'titles is a declared RESULT field')
-  const v = O.validateResult({ ok: true, action: 'list_windows', windowCount: 2, titles: ['A', 'B'], at: 1 })
-  assert.equal(v.ok, true, 'a result carrying titles validates: ' + JSON.stringify(v.errors))
+
+  // 4. array titles + a matching own session — the one shape that is permitted
+  const ok = O.validateResult({ ok: true, action: 'list_windows', windowCount: 2, titles: ['A', 'B'], sessionId: 5, at: 1 }, { ownSessionId: 5 })
+  assert.equal(ok.ok, true, 'a proven own-session result still validates: ' + JSON.stringify(ok.errors))
+
+  // 1. no ownSessionId — the caller asked for no proof, so there is none
+  const noOwn = O.validateResult({ ok: true, action: 'list_windows', titles: ['A', 'B'], sessionId: 5, at: 1 })
+  assert.equal(noOwn.ok, false, '⛔ titles passed with no expected session to compare against')
+  assert.match(noOwn.errors[0], /ownSessionId/, JSON.stringify(noOwn.errors))
+
+  // 2. no sessionId on the result — nothing to compare, so nothing is proven
+  const noSess = O.validateResult({ ok: true, action: 'list_windows', titles: ['A', 'B'], at: 1 }, { ownSessionId: 5 })
+  assert.equal(noSess.ok, false, '⛔ titles passed without saying which session produced them')
+  assert.match(noSess.errors[0], /sessionId/, JSON.stringify(noSess.errors))
+
+  /**
+   * 3. ⛔ AND `titles` MUST BE AN ARRAY. A declared field name was enough to satisfy the
+   * generic allowlist, so `titles: "some sensitive text"` — one free-text string rather than
+   * a list of window names — passed as a declared field. The type is part of the contract.
+   */
+  const notArray = O.validateResult({ ok: true, action: 'list_windows', titles: 'some sensitive text', sessionId: 5, at: 1 }, { ownSessionId: 5 })
+  assert.equal(notArray.ok, false, '⛔ a free-text string passed as titles')
+  assert.match(notArray.errors[0], /array/, JSON.stringify(notArray.errors))
+
+  // and a result with NO titles at all is unaffected — the gate is about titles, not sessions
+  const none = O.validateResult({ ok: true, action: 'list_windows', windowCount: 2, at: 1 })
+  assert.equal(none.ok, true, 'a titleless result needs no session proof: ' + JSON.stringify(none.errors))
 })
 
 test('*** P1b. ⛔ BUT A FOREIGN SESSION\'S TITLES ARE A CONTAINMENT FAILURE, NOT A REDACTION CASE ***', () => {
