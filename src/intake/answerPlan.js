@@ -290,6 +290,19 @@ function withRowRefs (schema, refs) {
  */
 function logAnswerPlan (entry, sink) {
   const drops = Array.isArray(entry.drops) ? entry.drops.slice(0, LIMITS.maxDropsLogged) : []
+  /**
+   * ⛔ THE RANKING-SECTION GATE SUMMARY. Its own field, never inferred from an absence.
+   * Enum and count only — no heading, title, value, message or prose can reach it.
+   */
+  const RANK_STATUS = new Set(['not_detected', 'evaluated_allowed', 'evaluated_rejected'])
+  const RANK_REASON = new Set(['no_ranking_proof', 'metric_not_proven', 'ranking_incomplete', 'membership_mismatch', 'order_mismatch', 'count_unparsed'])
+  const rankingGate = (Array.isArray(entry.rankingVerdicts) ? entry.rankingVerdicts : [])
+    .slice(0, LIMITS.maxDropsLogged)
+    .map((v) => ({
+      status: RANK_STATUS.has(v && v.status) ? v.status : 'other',
+      reason: (v && v.reason && RANK_REASON.has(v.reason)) ? v.reason : null,
+      rankedSourceCount: Number.isFinite(v && v.rankedSourceCount) ? v.rankedSourceCount : null
+    }))
   const line = {
     event: 'ANSWER_PLAN',
     timestamp: new Date().toISOString(),
@@ -308,6 +321,7 @@ function logAnswerPlan (entry, sink) {
     keptItemCount: Number.isFinite(entry.keptItemCount) ? entry.keptItemCount : 0,
     // Identifiers only. The projection is explicit rather than a spread, so a new key on a
     // drop record cannot ride into the log unnoticed.
+    rankingGate,
     dropped: drops.map((d) => {
       const out = { kind: String(d && d.kind ? d.kind : 'unknown'), sourceId: String(d && d.sourceId != null ? d.sourceId : '').slice(0, LIMITS.maxDropIdChars) }
       if (d && d.field != null) out.field = String(d.field).slice(0, LIMITS.maxDropIdChars)
@@ -1547,9 +1561,51 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    */
   const rankedEvidence = (Array.isArray(evidenceSets) ? evidenceSets : [])
     .filter((e) => e && e.trust === 'live' && typeof e.rankingMetric === 'string' && e.rankingMetric)
-  const rankedGroup = rankedEvidence.length === 1
-    ? (Array.isArray(itemsBySource) ? itemsBySource : []).find((g) => g && g.source === rankedEvidence[0].source)
+  /**
+   * ⛔ THE PROOF OWNS AN OPERATION, NOT A SOURCE.
+   *
+   * This selected the group by `g.source === evidence.source`. One `aroma_system` source can
+   * carry SEVERAL operations in one turn — the code itself records that only `readKey#sourceId`
+   * is canonical identity. So a turn that read invoices and then inventory holds an inventory
+   * proof, while `find(g.source === 'aroma_system')` can return the INVOICES group: the
+   * inventory proof then validates a section against invoice rows.
+   *
+   * Commit C fixed identity WITHIN rows. It did not fix WHICH GROUP the proof owns.
+   * The readKey of a directed read IS the operation (`aroma_system.inventory`), so the proof's
+   * `source` + `endpoint` names the only group it may speak for.
+   */
+  const proofOperation = rankedEvidence.length === 1 && rankedEvidence[0].endpoint
+    ? String(rankedEvidence[0].source) + '.' + String(rankedEvidence[0].endpoint)
     : null
+  /**
+   * ⛔ EXACT OPERATION FIRST, AND A FALLBACK THAT CANNOT REOPEN THE HOLE.
+   *
+   * `readKey` is the OPERATION for a directed read (`aroma_system.inventory`) but the bare
+   * SOURCE for an undirected one — both shapes occur. So an exact operation match is preferred,
+   * and a source match is accepted ONLY when that source contributed exactly one group. With
+   * two groups under one source there is no fallback, which is precisely the invoices-then-
+   * inventory case. This also leaves single-group turns — the directAnswer ranking path included
+   * — resolving exactly as before.
+   */
+  const groups = Array.isArray(itemsBySource) ? itemsBySource : []
+  const proofSource = rankedEvidence.length === 1 ? String(rankedEvidence[0].source) : null
+  // ⛔ Only a group that carries NO operation information may fall back. A group whose readKey
+  // IS operation-shaped and differs from the proof's is a DIFFERENT operation, not a candidate —
+  // that is the invoices-only case, and treating it as a match would be the same hole with one
+  // group instead of two.
+  const sameSource = proofSource
+    ? groups.filter((g) => g && String(g.source) === proofSource && String(g.readKey || g.source) === proofSource)
+    : []
+  const rankedGroup = proofOperation
+    ? (groups.find((g) => g && String(g.readKey || g.source) === proofOperation) ||
+       (sameSource.length === 1 ? sameSource[0] : null))
+    : null
+  /**
+   * ⛔ NO GROUP FOR THIS PROOF MEANS NO USABLE PROOF. Reporting 1 here would let a claim be
+   * judged against rows the proof does not own; reporting 0 is the honest state and makes the
+   * gate answer `no_ranking_proof`.
+   */
+  const usableRankedSources = (rankedEvidence.length === 1 && !rankedGroup) ? 0 : rankedEvidence.length
   const rankingCheck = verifyRanking({
     message,
     directAnswer,
@@ -1603,7 +1659,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      * through the empty-rows path.
      */
     rankingEvidence: rankedEvidence.length === 1 ? rankedEvidence[0] : null,
-    rankedSourceCount: rankedEvidence.length,
+    rankedSourceCount: usableRankedSources,
     /**
      * ⛔ THE VERDICT HAS TO REACH THE LOG, OR IT IS NOT OBSERVABILITY.
      *
@@ -1615,7 +1671,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      *
      * Enum and count only: status, a closed reason, and how many ranked sources the turn had.
      */
-    onVerdict: (v) => { if (v && v.status !== 'not_detected') rankingVerdicts.push(v) }
+    onVerdict: (v) => { if (v) rankingVerdicts.push(v) }
   })
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {
@@ -1659,6 +1715,12 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     // contradiction is not, because a caller must be able to tell this from a clean turn.
     sectionsNotDeclared,
     drops: drops.slice(0, LIMITS.maxDropsLogged),
+    /**
+     * ⛔ ABSENCE MUST NOT ENCODE TWO STATES. Only rejections reached `drops`, so 「no claim
+     * was detected」 and 「a claim was evaluated and allowed」 were BOTH an empty array —
+     * and the tests pinned that as correct, which is worse than the gap alone.
+     */
+    rankingVerdicts,
     // How much content the model offered, and how much of it was real. The pair is what
     // lets the caller tell "a thin answer" from "an answer with nothing left in it".
     modelItemCount,

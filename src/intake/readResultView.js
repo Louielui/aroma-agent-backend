@@ -350,6 +350,10 @@ function renderValidatedPlan (input) {
     // records in the SAME entry. A counter added to end a silent drop, itself dropped.
     droppedLimitations: v.droppedLimitations,
     drops: v.drops,
+    // ⛔ THE SAME MISTAKE AS `droppedLimitations` ABOVE, CAUGHT BEFORE IT SHIPPED. validatePlan
+    // produces the ranking-gate verdicts and logAnswerPlan projects them; without this line the
+    // two would never meet and every real turn would report an empty summary.
+    rankingVerdicts: v.rankingVerdicts,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
     scopeNotesSuppressed: scopePrune.concepts.length ? scopePrune.concepts : null,

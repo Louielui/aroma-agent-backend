@@ -131,13 +131,21 @@ const CJK_DIGITS = Object.freeze({ 一: 1, 二: 2, 兩: 2, 三: 3, 四: 4, 五: 
  * passed as a correct top-2. The run is now captured whole and parsed exactly; anything that
  * does not parse is still a CLAIM and fails closed rather than becoming a number nobody wrote.
  */
-const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十]+)\s*(項|個|樣|款|種)/
+/**
+ * ⛔ THE RUN INCLUDES CHARACTERS THIS PARSER CANNOT READ, ON PURPOSE.
+ * Without 百/千/萬/零 in the class, matching could RESTART after them: 「最缺一百二項」 matched
+ * the trailing 「二項」 and became N=2. Capturing the whole run means such a heading reaches
+ * the parser, fails to parse, and is refused as `count_unparsed` — never silently demoted to
+ * a smaller, satisfiable count.
+ */
+const CJK_COUNT_IN_HEADING = /([一二兩三四五六七八九十百千萬零]+)\s*(項|個|樣|款|種)/
 const ARABIC_COUNT_IN_HEADING = /(\d+)\s*(項|個|樣|款|種)|\btop\s*(\d+)/i
 
 /** Exact 十-based parse for 1–99. Returns null on anything it cannot read precisely. */
 function parseCjkNumeral (run) {
   const s = String(run || '')
   if (!s) return null
+  if (/[百千萬零]/.test(s)) return null // present in the run so it is captured, not parsed
   if (!s.includes('十')) return s.length === 1 ? (CJK_DIGITS[s] || null) : null
   const [head, tail, ...rest] = s.split('十')
   if (rest.length > 0) return null // 十…十… is not a number this parser reads

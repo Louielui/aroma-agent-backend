@@ -285,8 +285,17 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
     requestId: 'r2'
   }, (l) => lines.push(l))
   const l = lines[0]
+  /**
+   * ⛔ WIDENED BY ONE FIELD, DELIBERATELY — `rankingGate` (task 001, Commit D).
+   *
+   * The ranking-section gate could only report a REJECTION, through `dropped`. So 「no claim was
+   * detected」 and 「a claim was evaluated and allowed」 were both an empty array — absence
+   * encoding two different states. `rankingGate` is its own field so neither is inferred from a
+   * silence. It carries a closed status, a closed reason and a count; a separate test feeds a
+   * heading, row titles, a value and the user message through and asserts none appear.
+   */
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'reason', 'requestId', 'timestamp'])
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingGate', 'reason', 'requestId', 'timestamp'])
   assert.equal(l.modelItemCount, 3)
   assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)

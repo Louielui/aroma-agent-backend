@@ -202,6 +202,16 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** D/E — sources but no attributable content is UNAVAILABLE, NEVER live and NEVER zero ***
 *** D/E — the worker\
 *** D2 — the args shape is CLOSED: no url, provider, endpoint, headers, count ***
+*** D5. ⛔ not_detected AND evaluated_allowed ARE DISTINGUISHABLE IN THE LOG ***
+*** D5b. ⛔ AND A REJECTION CARRIES STATUS, REASON AND COUNT ***
+*** D5c. ⛔ THE SUMMARY CARRIES NO CONTENT — enum and count only ***
+*** D5d. LIVE: THE GATE SUMMARY REACHES THE REAL ANSWER_PLAN LINE ***
+*** D6. ⛔ AN INVENTORY PROOF MAY NOT VALIDATE A SECTION OF INVOICE ROWS ***
+*** D6b. ⛔ AND THE INVENTORY SECTION IN THE SAME TURN STILL PASSES ***
+*** D6c. ⛔ NO GROUP FOR THE PROOF MEANS NO USABLE PROOF ***
+*** D7. ⛔ 「一百項」 AND 「一百二項」 NEVER BECOME A SMALLER COUNT ***
+*** D7b. ⛔ AND SUCH A HEADING FAILS CLOSED IN THE GATE ***
+*** D7c. and the readable counts are unchanged ***
 *** DEAD_LOCK_FAILS_CLOSED — a crashed holder does NOT get cleaned up automatically ***
 *** DEAD_OLD_LOCK_FAILS_CLOSED — dead AND ancient is still not an invitation ***
 *** DESCRIPTOR — a refused observation is COUNTED, never silently dropped ***
