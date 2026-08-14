@@ -174,7 +174,18 @@ const ANY_SUPERLATIVE_RE = /最[一-鿿]|\bmost\b|\bworst\b|\btop\b/i
 const SELECTION_WORD_RE = /^[頭前第]/
 
 function looksLikeRankingHeading (heading) {
-  const h = String(heading || '')
+  /**
+   * ⛔ TRIMMED, BECAUSE THE SELECTION GUARD IS ANCHORED AND THE HEADING IS NOT CLEAN.
+   * SELECTION_WORD_RE matches the FIRST character, so 「 頭四項缺貨」 — one leading space — was
+   * not a ranking, fell through to the ordinary path, and shipped unproven. Padding is not an
+   * exotic input; it is what a model emits while formatting.
+   *
+   * ⛔ AND IT IS THE ONLY ANCHORED PATTERN IN THIS FILE. Audited: every other guard here is
+   * unanchored, and RANKING_PRESENTATION_RE writes its enumerator branch as (^|[\n\s]), so a
+   * padded 「 1. …」 matches through the whitespace alternative rather than the anchor. Pinned in
+   * structuredSectionRanking.test.js J2b rather than left as a claim about code.
+   */
+  const h = String(heading || '').trimStart()
   if (!h) return false
   return ANY_SUPERLATIVE_RE.test(h) || SHORTAGE_WORD_RE.test(h) ||
     RANKING_PRESENTATION_RE.test(h) || SELECTION_WORD_RE.test(h)

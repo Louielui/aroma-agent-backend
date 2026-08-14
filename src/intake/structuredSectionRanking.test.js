@@ -490,7 +490,12 @@ const { A4_FLAG } = require('./a4Contract')
 const { A4_AMBIGUITY_FLAG } = require('./sourceAmbiguityGate')
 
 const LIVE_NOW = '2026-08-09T00:00:00.000Z'
-const LIVE_ROWS = [['A', '1', 70], ['B', '2', 39], ['C', '3', 37], ['D', '4', 20]]
+/**
+ * ⛔ SIX ROWS, because `LIMITS.maxItemsPerSection` is 5. A six-item declaration in which every
+ * item is REAL is the only fixture that can expose the cap: with five or fewer rows the sixth
+ * item would be an unresolvable id, and the unresolved-item signal would mask the cap.
+ */
+const LIVE_ROWS = [['A', '1', 70], ['B', '2', 39], ['C', '3', 37], ['D', '4', 20], ['E', '5', 15], ['F', '6', 10]]
 
 async function withEnv (fn) {
   const all = { READ_ACCESS: 'on', CONTEXT_AROMA_SYSTEM: 'on', TURN_ROUTER: 'on', MULTI_AI_ROUTER: 'off', [A4_FLAG]: 'on', [A4_AMBIGUITY_FLAG]: 'on' }
@@ -669,6 +674,152 @@ test('*** H37. ⛔ LIVE: 「頭四項缺貨」 WITH NO DECLARATION SHIPS NOTHING
     const out = await liveTurn([liveSection('頭四項缺貨', ['A', 'B'], null)])
     const reply = String(out && out.reply != null ? out.reply : '')
     assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ an undeclared top-N shipped: ' + reply)
+    assert.ok(reply.trim().length > 0, '⛔ SILENCE')
+  })
+})
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   J. THE SECOND WAY AN ITEM VANISHES BEFORE THE GATE — and a padded heading
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/** Six proven rows, so an all-valid six-item declaration still loses one to the cap. */
+const SIX = ['A', 'B', 'C', 'D', 'E', 'F'].map((t, n) => rowOf(OP_INVENTORY, String(n + 1), t))
+const SIX_GROUPS = [{ source: 'aroma_system', readKey: OP_INVENTORY, items: SIX }]
+const sixItems = () => SIX.map((r) => ({ sourceId: r.sourceId, title: r.title, facts: [] }))
+const sixSection = (rankingClaim, heading) => ({ heading: heading || '缺貨排序', rankingClaim, items: sixItems() })
+const runSix = (sec) => runPlan([sec], [evidenceOf()], SIX_GROUPS)
+
+test('*** J1. ⛔ AN ITEM LOST TO THE SECTION CAP NARROWS THE CLAIM TOO ***', () => {
+  /**
+   * ⛔ THE SAME DEFECT THROUGH A DIFFERENT DOOR. The unresolved-item signal closed one route;
+   * `sec.items.slice(0, LIMITS.maxItemsPerSection)` is the other, and it cuts BEFORE the
+   * resolver runs, so the sixth item never becomes an unresolved one — it simply is not there.
+   *
+   *     declared `ordering` A B C D E F → F cut by the cap → the gate validates A B C D E → PASS
+   *     declared `superlative`          → six declared items become a five-item prefix → PASS
+   *
+   * So the invariant is not 「an item failed to resolve」. It is: ANY declared ranking item that
+   * disappears before the gate fails the whole claim closed.
+   */
+  for (const [claim, kind] of [[ORD(), 'ordering'], [SUP(), 'superlative']]) {
+    const r = runSix(sixSection(claim))
+    assert.equal(r.plan.sections.length, 0, '⛔ ' + kind + ': a six-item claim shipped as five')
+    assert.equal(r.rankingVerdicts[0].reason, 'membership_mismatch', kind + ': ' + r.rankingVerdicts[0].reason)
+  }
+})
+
+test('*** J1b. AND A FIVE-ITEM DECLARATION — exactly at the cap — still passes ***', () => {
+  // ⛔ The boundary matters in both directions: a rule that refused everything at the cap would
+  // refuse the largest legitimate ranking the system can render.
+  const sec = { heading: '缺貨排序', rankingClaim: ORD(), items: sixItems().slice(0, 5) }
+  const r = runSix(sec)
+  assert.equal(r.plan.sections.length, 1, 'reason: ' + JSON.stringify(r.rankingVerdicts))
+  assert.equal(r.rankingVerdicts[0].status, 'evaluated_allowed')
+})
+
+test('*** J1c. AN ORDINARY SECTION OVER THE CAP KEEPS TODAY\'S BEHAVIOUR ***', () => {
+  // ⛔ The cap is a rendering limit, not a claim. On a non-ranking section it must still simply
+  // truncate — turning it into a whole-section rejection would delete evidence the Owner is
+  // entitled to, which is a new defect rather than a fix.
+  const r = runSix({ heading: '缺貨狀況', rankingClaim: null, items: sixItems() })
+  assert.equal(r.plan.sections.length, 1, '⛔ an ordinary section was dropped whole')
+  assert.equal(r.plan.sections[0].items.length, 5, 'truncated at the cap, as before')
+  assert.equal(r.rankingVerdicts[0].status, 'not_detected')
+})
+
+test('*** J2. ⛔ THE SELECTION GUARD WAS FAIL-OPEN ON LEADING WHITESPACE ***', () => {
+  /**
+   * `/^[頭前第]/` is anchored to the first character and the heading was never trimmed, so one
+   * leading space turned a recognised ranking into an ordinary section — and with
+   * `rankingClaim: null` that ships unproven. Padding is not an exotic input; it is what a model
+   * emits when it is formatting.
+   */
+  for (const h of [' 頭四項缺貨', '\t第一名', '\n前四項', '  第一位']) {
+    assert.equal(looksLikeRankingHeading(h), true, '⛔ padding defeated the guard: ' + JSON.stringify(h))
+  }
+  for (const h of [' 目前庫存', '\t缺貨狀況', '  缺貨項目']) {
+    assert.equal(looksLikeRankingHeading(h), false, '⛔ false positive on ' + JSON.stringify(h))
+  }
+})
+
+test('*** J2b. AND THE OTHER PADDING-SENSITIVE GUARD IN THIS FILE IS ALREADY TOLERANT ***', () => {
+  /**
+   * ⛔ AUDITED, NOT ASSUMED. `SELECTION_WORD_RE` was the only `^`-anchored pattern in
+   * rankingProof.js. The one other pattern that mentions the start of the string —
+   * `RANKING_PRESENTATION_RE`\u2019s enumerator branch — is written `(^|[\n\s])`, so a padded
+   * enumeration matches through the whitespace alternative rather than the anchor. Measured here
+   * rather than reasoned about, because that is the claim this test exists to keep true.
+   */
+  assert.equal(looksLikeRankingHeading('1. 缺貨'), true, 'unpadded enumeration')
+  assert.equal(looksLikeRankingHeading(' 1. 缺貨'), true, '⛔ a padded enumeration stopped being one')
+  assert.equal(looksLikeRankingHeading('\t1. 缺貨'), true, '⛔ a tabbed enumeration stopped being one')
+})
+
+test('*** J3. ⛔ LIVE: A RANKING BIGGER THAN THE TURN CAN RENDER SHIPS NOTHING ***', async () => {
+  /**
+   * ⛔ THIS TEST PASSED BEFORE THE FIX, AND THAT IS RECORDED HERE RATHER THAN QUIETLY REUSED.
+   *
+   * Measured, not assumed: `readContext` keeps at most `caps.maxItemsPerSource` = 4 rows from a
+   * source, and the section cap is 5. Four is LOWER, so in a live turn a six-item declaration
+   * loses items 5 and 6 to the RESOLVER, not to the cap — the route closed in the previous
+   * commit. The cap route cannot be reached through `processIntake` while 4 < 5.
+   *
+   * ⛔ THAT IS A COINCIDENCE OF TWO UNRELATED NUMBERS, NOT A GUARANTEE. Raise
+   * `maxItemsPerSource` to 6 and the cap becomes the binding constraint on the live path. So the
+   * cap is pinned one layer down, at the render seam, in J3b — and this test keeps the live
+   * end-to-end statement it can honestly make: a declared ranking the turn cannot render whole
+   * does not reach the Owner, whichever of the two routes removed the item.
+   */
+  await withEnv(async () => {
+    const items = LIVE_ROWS.map(([t, id]) => ({ sourceId: id, title: t, facts: [] }))
+    const captured = []
+    const realLog = console.log
+    console.log = (...x) => captured.push(x.map((y) => (typeof y === 'string' ? y : JSON.stringify(y))).join(' '))
+    let out
+    try {
+      out = await liveTurn([{ heading: '缺貨排序', rankingClaim: ORD(), items }])
+    } finally { console.log = realLog }
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ a six-item claim shipped shortened: ' + reply)
+    assert.ok(reply.trim().length > 0, '⛔ SILENCE')
+    const line = captured.filter((l) => l.includes('ANSWER_PLAN')).join('\n')
+    assert.ok(/"reason":"membership_mismatch"/.test(line),
+      '⛔ refused for some other reason — this test would then prove nothing: ' + line)
+  })
+})
+
+test('*** J3b. ⛔ THE CAP ROUTE, AT THE RENDER SEAM, WITH SIX RETRIEVABLE ROWS ***', async () => {
+  /**
+   * ⛔ THE ONLY PLACE THE CAP CAN ACTUALLY BE THE THING THAT CUTS. `buildReadResultReply` is the
+   * seam `processIntake` calls to turn a plan into the reply, and it accepts the retrieved rows
+   * directly — so six REAL rows can be supplied and the sixth item is removed by the section cap
+   * and by nothing else. Without the `overCapItems` term the gate sees a tidy five-item ranking
+   * in the proven order and allows it.
+   */
+  for (const [claim, kind] of [[ORD(), 'ordering'], [SUP(), 'superlative']]) {
+    const out = buildReadResultReply({
+      message: '而家缺貨最嚴重嘅係咩？',
+      reply: '',
+      answerPlan: {
+        directAnswer: '', answerClaims: null, unanswerable: false, citesEvidence: true,
+        sections: [{ heading: '缺貨排序', rankingClaim: claim, items: sixItems() }],
+        limitations: [], followUp: null
+      },
+      evidenceSets: [evidenceOf()],
+      itemsBySource: SIX_GROUPS,
+      perSource: [],
+      requestId: '55555555-6666-4777-8888-999999999999'
+    })
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ ' + kind + ': the cap silently shortened a claim and it shipped: ' + reply)
+  }
+})
+
+test('*** J4. ⛔ LIVE: A PADDED RANKING HEADING WITH NO DECLARATION SHIPS NOTHING ***', async () => {
+  await withEnv(async () => {
+    const out = await liveTurn([liveSection(' 頭四項缺貨', ['A', 'B'], null)])
+    const reply = String(out && out.reply != null ? out.reply : '')
+    assert.equal(/\*\*A\*\*/.test(reply), false, '⛔ one leading space shipped an unproven ranking: ' + reply)
     assert.ok(reply.trim().length > 0, '⛔ SILENCE')
   })
 })

@@ -397,6 +397,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** J — the schema reached by the model-directed path passes strict-mode rules ***
 *** J — ⛔ after require_public, a SECOND ASK cannot end the turn ***
 *** J — 「幫我查下最近發票」: zero auto-read, and the contract cannot say commit ***
+*** J1. ⛔ AN ITEM LOST TO THE SECTION CAP NARROWS THE CLAIM TOO ***
+*** J1b. AND A FIVE-ITEM DECLARATION — exactly at the cap — still passes ***
+*** J1c. AN ORDINARY SECTION OVER THE CAP KEEPS TODAY\
+*** J2. ⛔ THE SELECTION GUARD WAS FAIL-OPEN ON LEADING WHITESPACE ***
+*** J2b. AND THE OTHER PADDING-SENSITIVE GUARD IN THIS FILE IS ALREADY TOLERANT ***
+*** J3. ⛔ LIVE: A RANKING BIGGER THAN THE TURN CAN RENDER SHIPS NOTHING ***
+*** J3b. ⛔ THE CAP ROUTE, AT THE RENDER SEAM, WITH SIX RETRIEVABLE ROWS ***
+*** J4. ⛔ LIVE: A PADDED RANKING HEADING WITH NO DECLARATION SHIPS NOTHING ***
 *** K — UTILITY still routes server-first under A4 ON ***
 *** K — WRITE_SHAPED refusal is untouched ***
 *** K — after require_internal, a second ASK is refused too ***

@@ -1491,7 +1491,20 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   for (const sec of (sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)) {
     const items = []
     let unresolvedItems = 0
-    for (const it of (Array.isArray(sec.items) ? sec.items : []).slice(0, LIMITS.maxItemsPerSection)) {
+    /**
+     * ⛔ THE CAP IS THE SECOND WAY A DECLARED ITEM DISAPPEARS BEFORE THE GATE.
+     *
+     * `unresolvedItems` closed one route — an id naming no retrieved row. This closes the
+     * other, and it is quieter: `slice` cuts BEFORE the resolver runs, so the sixth item of a
+     * six-item ranking is never rejected, never counted, never anywhere. A declared `ordering`
+     * of A B C D E F became a validated ranking of A B C D E and PASSED.
+     *
+     * So the invariant is not 「an item failed to resolve」: it is that ANY declared ranking item
+     * missing from what the gate judges fails the whole claim closed.
+     */
+    const declaredItems = Array.isArray(sec.items) ? sec.items : []
+    const overCapItems = Math.max(0, declaredItems.length - LIMITS.maxItemsPerSection)
+    for (const it of declaredItems.slice(0, LIMITS.maxItemsPerSection)) {
       modelItemCount++
       const sourceId = String(it.sourceId)
       const row = resolveRowRef(index, sourceId)
@@ -1597,7 +1610,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     if (declaresRanking) declaredCount++
     if (looksRanking && !declaresRanking) missingDeclarationCount++
     if (declaresRanking || looksRanking) heading = ''
-    if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking); sectionItemDrops.push(unresolvedItems) }
+    if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking); sectionItemDrops.push(unresolvedItems + overCapItems) }
   }
 
   // ── limitations: real ones only, never telemetry ────────────────────────────
