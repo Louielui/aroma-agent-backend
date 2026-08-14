@@ -47,8 +47,18 @@ const EXE = 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe'
 const CMD = EXE + ' -NoProfile -ExecutionPolicy Bypass -File C:\\AromaOperator-Probe\\observer.ps1' +
   ' -Action list_windows -OutJson C:\\Aroma\\ComputerOperator-Evidence\\observer-result.json'
 
+/**
+ * ⛔ COMMIT F — `incarnation` IS WHAT MAKES A PID AN IDENTITY.
+ *
+ * A PID is a slot, not a thing: Windows hands it to something else the moment the process
+ * ends. The token is whatever a real adapter derives from the OS — creation time, a stable
+ * handle identity — and, like task ownership in Commit E, it is NOT something the process
+ * can author about itself.
+ */
+const INC = 'inc-2026-08-14T18:52:05.707Z-4242'
+
 /** The genuine article: started by the fixed task, in its account and session. */
-const REAL = { pid: 4242, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: CMD }
+const REAL = { pid: 4242, incarnation: INC, name: 'powershell.exe', executablePath: EXE, account: OWNER, sessionId: SESSION, commandLine: CMD }
 
 /**
  * A deterministic fake OS. `taskInstance` is the evidence that did not exist before Commit E:
@@ -57,7 +67,11 @@ const REAL = { pid: 4242, name: 'powershell.exe', executablePath: EXE, account: 
 function fakeOs (over = {}) {
   const calls = { stopTask: [], terminate: [], listed: 0, taskAsked: [] }
   let procs = over.procs || []
-  const owned = over.owned === undefined ? [REAL.pid] : over.owned
+  // What the task says it started: {pid, incarnation} pairs, never bare pids.
+  const owned = (over.owned === undefined ? [{ pid: REAL.pid, incarnation: INC }] : over.owned)
+    .map((o) => (typeof o === 'number' ? { pid: o, incarnation: INC } : o))
+  // A run may replace the process list AFTER stopTask — this is how PID reuse is exercised.
+  const afterStop = over.afterStop
   return {
     calls,
     listProcesses () { calls.listed++; return procs.slice() },
@@ -65,11 +79,15 @@ function fakeOs (over = {}) {
       calls.taskAsked.push(name)
       if (over.noTaskEvidence) return null
       if (over.taskLookupFails) return { ok: false, reason: 'task_not_found' }
-      return { ok: true, pids: owned.slice(), account: over.account || OWNER, sessionId: over.sessionId === undefined ? SESSION : over.sessionId }
+      // ⛔ The pre-Commit-F answer shape: PIDs, and no way to tell one incarnation of a PID
+      //    from the next. An adapter that still answers this way is missing evidence.
+      if (over.legacyEvidence) return { ok: true, pids: owned.map((o) => o.pid), processes: owned.map((o) => ({ pid: o.pid })), account: OWNER, sessionId: SESSION }
+      return { ok: true, processes: owned.slice(), account: over.account || OWNER, sessionId: over.sessionId === undefined ? SESSION : over.sessionId }
     },
     stopTask (name) {
       calls.stopTask.push(name)
       if (over.stopTaskFails) return { ok: false, error: 'access denied' }
+      if (afterStop) { procs = afterStop.slice(); return { ok: true } }
       if (over.stopTaskLeavesAlive !== true) procs = []
       return { ok: true }
     },
@@ -309,4 +327,123 @@ test('*** K11. NO PRODUCTION CALLER IN THIS TRANCHE ***', () => {
   }
   walk(root)
   assert.deepEqual(hits, [], '⛔ something already calls the kill control: ' + hits.join(', '))
+})
+
+/* ═══ F1–F8 — a PID is a slot; the identity is the incarnation occupying it ═ */
+
+test('*** F1. ⛔ A REUSED PID IS NOT THE PROCESS WE PROVED — TERMINATE IS FORBIDDEN ***', () => {
+  /**
+   * ⛔ TIME OF CHECK IS NOT TIME OF USE, ON THE ONE PATH THAT ENDS SOMETHING IRREVERSIBLY.
+   *
+   * The sequence asked the task once, kept the answer, stopped the task, then asked whether
+   * 「the target」 was still alive — against that same stale list, by PID. But stopping the
+   * task is precisely what frees the PID, and Windows reuses it immediately. So: the real
+   * Observer dies, 4242 is handed to something else, and if that newcomer resembles the
+   * costume the stale list still says 4242 is ours. Then we terminate it.
+   *
+   * Commit E answered 「did the fixed task start this PID」. This is the other question:
+   * 「is this PID still the same process I proved a moment ago」. On a read path the gap is
+   * survivable. On a kill path it is the whole risk.
+   *
+   * ⛔ AND IT IS NOT REPORTED AS A KILL. The original may well have stopped — but the slot
+   * now holds a stranger, so that cannot be proven THROUGH it, and a control that says
+   * 「killed」 on an unprovable state is back to appearance standing in for proof.
+   */
+  const reused = Object.assign({}, REAL, { incarnation: 'inc-SOMEONE-ELSE-later' })
+  const os = fakeOs({ procs: [REAL], afterStop: [reused] })
+  const r = K.killObserver({ os })
+  assert.deepEqual(os.calls.terminate, [], '⛔ it terminated a process that merely inherited the PID')
+  assert.equal(r.outcome, 'identity_changed', 'outcome was: ' + r.outcome)
+  assert.equal(r.ok, false, '⛔ a reused PID was reported as a successful kill')
+  assert.equal(r.aliveBefore, true, 'the original was proven alive first')
+})
+
+test('*** F2. SAME PID, SAME INCARNATION, STILL ALIVE — ESCALATION IS PERMITTED ***', () => {
+  // ⛔ The other half, and it has to be here. If the identity is unchanged then the process
+  //    we proved IS the process we terminate, and refusing would leave this control unable
+  //    to do the one thing it exists for — which is its own kind of failure.
+  const os = fakeOs({ procs: [REAL], afterStop: [REAL] })
+  const r = K.killObserver({ os })
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.equal(r.escalated, true, 'stopTask left it alive, so terminate was required')
+  assert.deepEqual(os.calls.terminate, [4242])
+  assert.equal(r.aliveAfter, false)
+})
+
+test('*** F3. ⛔ PID-ONLY OWNERSHIP EVIDENCE IS REFUSED, NOT SILENTLY ACCEPTED ***', () => {
+  /**
+   * ⛔ AN ADAPTER THAT CANNOT NAME THE INCARNATION CANNOT ESTABLISH IDENTITY. The tempting
+   * reading is 「pids are still better than nothing, proceed」 — which is exactly the
+   * fall-back Commit E refused for missing task evidence and Commit D refused for missing
+   * session proof. Not proven is refused, and it is refused BY NAME: 「the Observer is not
+   * running」 and 「I could not establish what the task owns」 are different facts with
+   * different repairs, and collapsing them is how a broken adapter reads as a quiet machine.
+   */
+  const os = fakeOs({ procs: [REAL], legacyEvidence: true })
+  const r = K.killObserver({ os })
+  assert.equal(r.outcome, 'no_task_ownership_evidence', 'outcome was: ' + r.outcome)
+  assert.notEqual(r.outcome, 'no_target', '⛔ missing evidence was reported as an absent Observer')
+  assert.deepEqual(os.calls.terminate, [])
+  assert.deepEqual(os.calls.stopTask, [], '⛔ it stopped the task on evidence it had refused')
+})
+
+test('*** F4. ⛔ NotAromaOperator IS NOT AromaOperator ***', () => {
+  /**
+   * ⛔ THE CHECK WAS `account.endsWith("aromaoperator")`, so `AROMABRAIN\\NotAromaOperator`
+   * satisfied it — as would any account anyone can create whose name happens to end in those
+   * fourteen characters. Same family as the four findings before it: textual similarity
+   * standing in for identity. The final segment of the principal is compared exactly.
+   */
+  const bad = ['AROMABRAIN\\NotAromaOperator', 'AROMABRAIN\\XAromaOperator', 'AROMABRAIN\\aromaoperator2',
+    'AromaOperatorBackup', 'AROMABRAIN\\NOT-AromaOperator', 'aromaoperator\\notaromaoperator']
+  for (const account of bad) {
+    const proc = Object.assign({}, REAL, { account })
+    const os = fakeOs({ procs: [proc], account })
+    const r = K.killObserver({ os })
+    assert.equal(r.outcome, 'no_target', '⛔ accepted as the fixed account: ' + account)
+    assert.deepEqual(os.calls.terminate, [], '⛔ terminated under: ' + account)
+  }
+})
+
+test('*** F5. THE FIXED PRINCIPAL IS STILL ACCEPTED, IN EITHER SEPARATOR AND ANY CASE ***', () => {
+  // ⛔ The narrowing must not become a refusal of the real thing — a kill switch that cannot
+  //    recognise its own target is as useless as one that recognises everything.
+  for (const account of ['AROMABRAIN\\AromaOperator', 'aromabrain\\aromaoperator', 'AromaOperator', '.\\AromaOperator']) {
+    const proc = Object.assign({}, REAL, { account })
+    const os = fakeOs({ procs: [proc], account })
+    assert.equal(K.killObserver({ os }).ok, true, '⛔ refused the fixed account: ' + account)
+  }
+})
+
+test('*** F6. ⛔ A PROCESS THAT REPORTS NO INCARNATION IS NEVER A TARGET ***', () => {
+  // ⛔ Fail closed on the process side too. A record with no incarnation cannot be shown to
+  //    be the one the task owns, so it is not one — 「probably the same」 is not identity.
+  const vague = Object.assign({}, REAL); delete vague.incarnation
+  const os = fakeOs({ procs: [vague] })
+  const r = K.killObserver({ os })
+  assert.equal(r.outcome, 'no_target')
+  assert.deepEqual(os.calls.terminate, [])
+})
+
+test('*** F7. ⛔ A MISMATCHED INCARNATION IS NOT A TARGET EVEN BEFORE THE STOP ***', () => {
+  // ⛔ The same reuse can have happened BEFORE we ever looked: the task is idle, its recorded
+  //    PID has been handed on, and the new holder wears the costume. Identity is checked on
+  //    the way in, not only on the way out.
+  const stale = Object.assign({}, REAL, { incarnation: 'inc-A-DIFFERENT-PROCESS' })
+  const os = fakeOs({ procs: [stale] })
+  const r = K.killObserver({ os })
+  assert.equal(r.outcome, 'no_target', '⛔ a PID-reusing stranger was a kill target')
+  assert.deepEqual(os.calls.terminate, [])
+  assert.deepEqual(os.calls.stopTask, [])
+})
+
+test('*** F8. THE MODULE STILL OWNS THE IDENTITY, THE CALLER NEVER DOES ***', () => {
+  // ⛔ Commit E moved the target from a caller-supplied pid to task ownership. The incarnation
+  //    must not quietly reopen that door: a caller cannot name the incarnation it wants dead
+  //    any more than it can name the pid, the account or the task.
+  const os = fakeOs({ procs: [REAL] })
+  const r = K.killObserver({ os, pid: 4242, incarnation: 'inc-ANYTHING', taskName: 'SomeOtherTask', account: 'AROMABRAIN\\Administrator', scriptPath: 'c:\\evil.ps1' })
+  assert.equal(r.ok, true)
+  assert.deepEqual(os.calls.taskAsked, [K.TASK_NAME], '⛔ the caller chose which task was asked about')
+  assert.deepEqual(os.calls.stopTask, [K.TASK_NAME])
 })

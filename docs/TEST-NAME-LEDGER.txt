@@ -281,8 +281,16 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** F — 「市場。」 reads nothing internal and invents nothing ***
 *** F(live) — an adapter declaring garbage is still timed out ***
 *** F(pin) — the module cannot even name a conversational adapter ***
+*** F1. ⛔ A REUSED PID IS NOT THE PROCESS WE PROVED — TERMINATE IS FORBIDDEN ***
 *** F2 — a clarify question carrying implementation vocabulary is replaced ***
 *** F2 — a source not authorised this turn is never exposed ***
+*** F2. SAME PID, SAME INCARNATION, STILL ALIVE — ESCALATION IS PERMITTED ***
+*** F3. ⛔ PID-ONLY OWNERSHIP EVIDENCE IS REFUSED, NOT SILENTLY ACCEPTED ***
+*** F4. ⛔ NotAromaOperator IS NOT AromaOperator ***
+*** F5. THE FIXED PRINCIPAL IS STILL ACCEPTED, IN EITHER SEPARATOR AND ANY CASE ***
+*** F6. ⛔ A PROCESS THAT REPORTS NO INCARNATION IS NEVER A TARGET ***
+*** F7. ⛔ A MISMATCHED INCARNATION IS NOT A TARGET EVEN BEFORE THE STOP ***
+*** F8. THE MODULE STILL OWNS THE IDENTITY, THE CALLER NEVER DOES ***
 *** FAIL-SAFE: anything that is not an explicit false omits the body ***
 *** FREE TEXT CAN NEVER BECOME AN ACTION NAME ***
 *** G — EVERY timer the connector creates is cleared, on success and on timeout ***

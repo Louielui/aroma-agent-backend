@@ -53,6 +53,21 @@ const STAGED_SCRIPT = 'c:\\aromaoperator-probe\\observer.ps1'
 const TASK_EXECUTABLE = 'c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe'
 /** The fixed account the task runs as. Not a caller's to choose. */
 const TASK_ACCOUNT = 'aromaoperator'
+
+/**
+ * ⛔ THE FINAL SEGMENT OF A WINDOWS PRINCIPAL, WHICH IS THE ACCOUNT ITSELF.
+ *
+ * This existed as `account.endsWith('aromaoperator')`, and a suffix is not a name:
+ * `AROMABRAIN\NotAromaOperator` satisfied it, as would any account anyone can create whose
+ * name happens to end in those fourteen characters. That is the same error as matching a
+ * process by what its command line looks like — similarity of text standing in for identity.
+ */
+function accountName (principal) {
+  const raw = String(principal || '').trim().toLowerCase()
+  if (!raw) return ''
+  const cut = Math.max(raw.lastIndexOf('\\'), raw.lastIndexOf('/'))
+  return cut >= 0 ? raw.slice(cut + 1) : raw
+}
 /**
  * The shape the task's own action line carries. `observer.ps1` takes a mandatory `-Action`
  * from a ValidateSet, so a command line without one is not the observer being run by the task
@@ -67,6 +82,8 @@ const OUTCOME = Object.freeze({
   /** The adapter cannot say which PIDs the fixed task started. Missing evidence, not a fall-back. */
   NO_TASK_EVIDENCE: 'no_task_ownership_evidence',
   NO_TARGET: 'no_target',
+  /** The PID is alive but is no longer the process we proved. Nothing may be terminated. */
+  IDENTITY_CHANGED: 'identity_changed',
   AMBIGUOUS: 'target_ambiguous',
   TASK_STOP_FAILED: 'task_stop_failed',
   TERMINATE_FAILED: 'terminate_failed',
@@ -86,15 +103,27 @@ const OUTCOME = Object.freeze({
  * THE FIXED TASK START THIS PID. The adapter answers it; the rest are corroboration, and
  * they stay because a disagreement between them and the task association is itself a finding.
  *
+ * ⛔ COMMIT F — AND OWNERSHIP IS OF A PROCESS, NOT OF A NUMBER.
+ *
+ * `instance.pids.includes(p.pid)` asked whether the task had ever started something with
+ * that PID. A PID is a slot the OS refills; the process that occupies it now may be a
+ * complete stranger. So the pair is carried and compared: the PID says WHERE to look, the
+ * incarnation says WHETHER it is still the same thing.
+ *
  * @param {object} p        a process record from the adapter
- * @param {object} instance the fixed task instance: { pids, account, sessionId }
+ * @param {object} instance the fixed task instance: { processes, account, sessionId }
  */
 function identifies (p, instance) {
   if (!p || typeof p.commandLine !== 'string' || !Number.isInteger(p.pid)) return false
-  if (!instance || !Array.isArray(instance.pids)) return false
+  if (!instance || !Array.isArray(instance.processes)) return false
 
-  // 1. TASK OWNERSHIP — the only attribute here the process cannot write about itself.
-  if (!instance.pids.includes(p.pid)) return false
+  // 1. TASK OWNERSHIP of THIS process — the two attributes here the process cannot write
+  //    about itself. Both sides must name the incarnation; an unnamed one is not a match,
+  //    because 「probably the same process」 is exactly what this path may not act on.
+  const owned = instance.processes.find((o) => o && o.pid === p.pid)
+  if (!owned) return false
+  if (typeof p.incarnation !== 'string' || !p.incarnation) return false
+  if (p.incarnation !== owned.incarnation) return false
 
   // 2. the fixed account and session the task runs in. If these ever disagree with the task
   //    association, refuse: a disagreement is the finding, not something to resolve in favour
@@ -102,7 +131,7 @@ function identifies (p, instance) {
   const account = String(p.account || '').toLowerCase()
   const want = String(instance.account || '').toLowerCase()
   if (!account || !want || account !== want) return false
-  if (!account.endsWith(TASK_ACCOUNT)) return false
+  if (accountName(account) !== TASK_ACCOUNT) return false
   if (typeof instance.sessionId === 'number' && p.sessionId !== instance.sessionId) return false
 
   // 3. the exact executable the task specifies — a path, not a reported name.
@@ -118,11 +147,13 @@ function identifies (p, instance) {
  * Stop the Observer, and prove it stopped.
  *
  * @param {{ os?: object }} deps — `os` is the INJECTED adapter:
- *   taskInstance(taskName) -> { ok, pids: number[], account: string, sessionId?: number }
- *     ⛔ THE EVIDENCE COMMIT E ADDED. It must answer 「which PIDs did the FIXED TASK start」.
- *     A real implementation has to derive that from the task itself — not by scanning for
- *     processes that look right, which is the thing this replaced.
- *   listProcesses() -> [{ pid, name, executablePath, account, sessionId, commandLine }]
+ *   taskInstance(taskName) -> { ok, processes: [{ pid, incarnation }], account, sessionId? }
+ *     ⛔ THE EVIDENCE COMMIT E ADDED, WITH THE IDENTITY COMMIT F ADDED. It must answer
+ *     「which PROCESSES did the FIXED TASK start」 — and `incarnation` is what makes that a
+ *     process rather than a number: a token the OS can distinguish one occupant of a PID
+ *     from the next by (creation time, a stable handle identity), never anything the
+ *     process reports about itself. An adapter that can only answer with PIDs is refused.
+ *   listProcesses() -> [{ pid, incarnation, executablePath, account, sessionId, commandLine }]
  *   stopTask(taskName) -> { ok, error? }
  *   terminate(pid)     -> { ok, error? }
  *
@@ -152,7 +183,15 @@ function killObserver (deps = {}) {
    * 「be less sure and proceed」 is the whole failure mode. Same rule as the session proof in
    * Commit D: not proven is refused.
    */
-  if (!instance || instance.ok !== true || !Array.isArray(instance.pids)) {
+  const owned = instance && instance.ok === true && Array.isArray(instance.processes) ? instance.processes : null
+  /**
+   * ⛔ AND PID-ONLY EVIDENCE IS MISSING EVIDENCE, NOT PARTIAL EVIDENCE. An adapter that
+   * answers in the pre-Commit-F shape cannot distinguish one occupant of a PID from the
+   * next, so it cannot establish the identity this path acts on. 「Less certain, proceed」
+   * is the failure mode itself.
+   */
+  const wellFormed = owned && owned.every((o) => o && Number.isInteger(o.pid) && typeof o.incarnation === 'string' && o.incarnation)
+  if (!wellFormed) {
     return Object.assign({}, base, { outcome: OUTCOME.NO_TASK_EVIDENCE })
   }
 
@@ -180,30 +219,71 @@ function killObserver (deps = {}) {
   const target = before[0]
   const out = Object.assign({}, base, { aliveBefore: true, pid: target.pid, matched: 1 })
 
+  /**
+   * ⛔ TIME OF CHECK IS NOT TIME OF USE. Everything above proved a fact about a process that
+   * existed a moment ago; stopping the task is precisely what ends it and frees its PID for
+   * immediate reuse. So the state after the stop is read from the SLOT — who holds this PID
+   * NOW — rather than re-filtering against the list we captured before.
+   *
+   * gone    — the identity we proved is not there. Nothing further to do.
+   * same    — still the process we proved, so terminate may act on it.
+   * changed — the PID is alive but is someone else. Terminating it would kill a stranger.
+   */
+  const slot = () => {
+    const list = os.listProcesses()
+    const holder = (Array.isArray(list) ? list : []).find((q) => q && q.pid === target.pid)
+    if (!holder) return 'gone'
+    if (typeof holder.incarnation !== 'string' || holder.incarnation !== target.incarnation) return 'changed'
+    return 'same'
+  }
+
   // 1. the task first: stopping the launcher is what prevents an immediate relaunch.
   const stopped = os.stopTask(TASK_NAME)
   if (!stopped || stopped.ok !== true) {
     return Object.assign(out, {
       outcome: OUTCOME.TASK_STOP_FAILED,
-      aliveAfter: alive().length > 0,
+      aliveAfter: slot() === 'same',
       errors: [String((stopped && stopped.error) || 'stopTask failed')]
     })
   }
 
   // 2. the process, only if it is still there. Escalating unconditionally would make a control
   //    that never checked indistinguishable from one that did.
-  let still = alive()
-  if (still.length > 0) {
+  let state = slot()
+
+  /**
+   * ⛔ A REUSED PID IS NOT A KILL TARGET, AND NOT A KILL EITHER.
+   *
+   * The proven process is no longer in this slot, so terminate is forbidden — that is the
+   * whole point. But it is also not reported as success: the original very likely stopped,
+   * 「very likely」 is not the standard here, and it cannot be shown THROUGH a slot that now
+   * holds a stranger. Named, so the collision is visible instead of smoothed away.
+   */
+  if (state === 'changed') {
+    return Object.assign(out, {
+      outcome: OUTCOME.IDENTITY_CHANGED,
+      aliveAfter: null,
+      errors: ['pid ' + target.pid + ' is alive but is no longer the incarnation this run proved; terminate refused']
+    })
+  }
+
+  if (state === 'same') {
     out.escalated = true
     const killed = os.terminate(target.pid)
     if (!killed || killed.ok !== true) {
       return Object.assign(out, {
         outcome: OUTCOME.TERMINATE_FAILED,
-        aliveAfter: alive().length > 0,
+        aliveAfter: slot() === 'same',
         errors: [String((killed && killed.error) || 'terminate failed')]
       })
     }
-    still = alive()
+    /**
+     * ⛔ AFTER a terminate that acted on the proven identity, a changed slot IS gone: we
+     * ended that process and the OS refilled the number. The asymmetry with the branch
+     * above is deliberate — there we had not acted, and claiming the outcome of something
+     * we did not do is exactly the kind of credit this module refuses to take.
+     */
+    state = slot()
   }
 
   /**
@@ -212,7 +292,7 @@ function killObserver (deps = {}) {
    * and every underlying call reporting `ok` while the process survives is exactly the shape
    * a kill control exists to refuse.
    */
-  const aliveAfter = still.length > 0
+  const aliveAfter = state === 'same'
   if (aliveAfter) return Object.assign(out, { outcome: OUTCOME.STILL_ALIVE, aliveAfter: true })
   return Object.assign(out, { ok: true, outcome: OUTCOME.KILLED, aliveAfter: false })
 }
