@@ -1483,10 +1483,44 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   const sectionLooks = []
   /** Items the resolver rejected, per section — the signal a ranking claim was narrowed. */
   const sectionItemDrops = []
+  const declaredSections = Array.isArray(plan.sections) ? plan.sections : []
+
+  /**
+   * ⛔ DECLARATION TELEMETRY IS MEASURED AT ITS SOURCE, NOT AS A BY-PRODUCT OF RENDERING.
+   *
+   * These three counts were taken inside the render loop below, which iterates
+   * `(sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)`. So a ranking
+   * section removed by the render cap, or by the `citesEvidence` contradiction, was never scanned
+   * and was reported as though the model had never written it:
+   *
+   *     four ordinary sections then a fifth headed 「頭四項缺貨」, undeclared -> looksRanking 0, missing 0
+   *     `citesEvidence: false` with a ranking section present            -> the loop is empty -> 0/0/0
+   *
+   * ⛔ THE OWNER-FACING OUTPUT WAS NEVER AT RISK — those sections do not ship. The NUMBER was, and
+   * in the dangerous direction: `missing` is the only way to tell whether the model has learnt to
+   * declare `rankingClaim` or whether safety is being bought by refusing every ranking it writes.
+   * A falsely healthy rate would let a provider canary pass over a dead feature.
+   *
+   * So it is counted from the RAW model sections: before the contradiction handling, before the
+   * section cap, before item resolution, before the item cap. What the model wrote is the subject;
+   * what survived rendering is a different question, and `rankingGate` is where that one is asked.
+   *
+   * ⛔ RECORDED, NOT FIXED HERE — a known gap between the two. When every item of a declared
+   * ranking section fails to resolve, the section is never pushed, so `declared` counts it while
+   * `rankingGate` stays empty: `declared: 1` with no verdict. Zero items means the section cannot
+   * ship, so this is observability debt rather than an escape, and closing it would mean widening
+   * the ranking architecture. Left visible on purpose.
+   */
   let looksRankingCount = 0
   let declaredCount = 0
   let missingDeclarationCount = 0
-  const declaredSections = Array.isArray(plan.sections) ? plan.sections : []
+  for (const sec of declaredSections) {
+    const declares = sec && sec.rankingClaim !== null && sec.rankingClaim !== undefined
+    const looks = looksLikeRankingHeading(sec ? sec.heading : '')
+    if (looks) looksRankingCount++
+    if (declares) declaredCount++
+    if (looks && !declares) missingDeclarationCount++
+  }
   const sectionsNotDeclared = !citesEvidence && declaredSections.length > 0
   for (const sec of (sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)) {
     const items = []
@@ -1616,10 +1650,9 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
      */
     const rawClaim = (sec && sec.rankingClaim !== undefined) ? sec.rankingClaim : null
     const declaresRanking = rawClaim !== null && rawClaim !== undefined
+    // ⛔ Recomputed here for THIS section's blanking and gate signal only. The telemetry counts
+    // live above, over the raw model sections — this loop never sees the ones it dropped.
     const looksRanking = looksLikeRankingHeading(sec ? sec.heading : '')
-    if (looksRanking) looksRankingCount++
-    if (declaresRanking) declaredCount++
-    if (looksRanking && !declaresRanking) missingDeclarationCount++
     if (declaresRanking || looksRanking) heading = ''
     if (items.length > 0) { sections.push({ heading, items }); sectionClaims.push(rawClaim); sectionLooks.push(looksRanking); sectionItemDrops.push(unresolvedItems + overCapItems) }
   }

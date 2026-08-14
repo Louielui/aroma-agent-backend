@@ -937,3 +937,104 @@ test('*** K3. THE FALLBACK SURVIVES FOR SHAPES WITH NO SERVER-RESOLVED IDENTITY 
   })
   assert.deepEqual(byTitle, [], 'a unique title still resolves for those callers')
 })
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   L. THE DECLARATION RATE IS MODEL TELEMETRY, NOT A RENDER-LOOP BY-PRODUCT
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * ⛔ THE SAME FAMILY AGAIN, IN A NEW COSTUME: a fact measured as a side effect of a downstream
+ * loop instead of at its source.
+ *
+ * The three counters were incremented inside
+ * `(sectionsNotDeclared ? [] : declaredSections).slice(0, LIMITS.maxSections)` — so a ranking
+ * section that the render cap or the `citesEvidence` contradiction removed was never scanned,
+ * and reported as though it had never been written:
+ *
+ *     four ordinary sections then a fifth headed 「頭四項缺貨」, undeclared -> looksRanking 0, missing 0
+ *     `citesEvidence: false` with a ranking section present     -> the loop is empty -> 0/0/0
+ *
+ * ⛔ THE OWNER-FACING OUTPUT WAS NEVER AT RISK — those sections do not ship. The NUMBER was
+ * wrong, and wrong in the dangerous direction: `missing` is the only way to tell whether the
+ * model has learnt to declare `rankingClaim` or whether safety is being bought by refusing every
+ * ranking it writes. A falsely healthy rate would let a provider canary pass over a dead
+ * feature — which is the exact risk raised when this contract was written.
+ */
+
+const ordinarySection = (n) => ({ heading: '缺貨狀況' + n, rankingClaim: null, items: [{ sourceId: '1', title: 'A', facts: [] }] })
+const claimsOf = (sections, over) => runPlan(sections, (over && over.evidenceSets) || undefined, undefined).rankingClaims
+
+test('*** L1. ⛔ A RANKING SECTION BEYOND THE RENDER CAP IS STILL COUNTED ***', () => {
+  // `maxSections` is 4. The fifth section is where the model put its ranking, and it was
+  // invisible to the statistic that exists to watch exactly that.
+  const sections = [ordinarySection(1), ordinarySection(2), ordinarySection(3), ordinarySection(4),
+    SEC('頭四項缺貨', ['A'], null)]
+  const r = runPlan(sections)
+  assert.deepEqual(r.rankingClaims, { looksRanking: 1, declared: 0, missing: 1 })
+  assert.equal(r.plan.sections.length, 4, 'and the render cap itself is untouched')
+})
+
+test('*** L2. ⛔ citesEvidence:false STILL COUNTS WHAT THE MODEL WROTE ***', () => {
+  // The plan contradicts itself and every section is discarded — but the model DID write a
+  // ranking without declaring one, and that is the fact this counter exists to record.
+  const r = validatePlan(
+    { directAnswer: '', sections: [SEC('缺貨排序', ['A', 'B'], null)], limitations: [], followUp: null, unanswerable: false, citesEvidence: false },
+    { evidenceSets: [evidenceOf()], itemsBySource: GROUPS, message: '而家缺貨最嚴重嘅係咩？' })
+  assert.equal(r.plan.sections.length, 0, 'the contradiction is still honoured')
+  assert.equal(r.sectionsNotDeclared, true)
+  assert.deepEqual(r.rankingClaims, { looksRanking: 1, declared: 0, missing: 1 })
+})
+
+test('*** L3. AN ORDINARY FIFTH SECTION MOVES NOTHING ***', () => {
+  // ⛔ The counter must not simply have become 「count more things」. An ordinary section beyond
+  // the cap is still ordinary.
+  const sections = [ordinarySection(1), ordinarySection(2), ordinarySection(3), ordinarySection(4), ordinarySection(5)]
+  assert.deepEqual(runPlan(sections).rankingClaims, { looksRanking: 0, declared: 0, missing: 0 })
+})
+
+test('*** L4. AND A DECLARED RANKING BEYOND THE CAP COUNTS AS DECLARED, NOT MISSING ***', () => {
+  const sections = [ordinarySection(1), ordinarySection(2), ordinarySection(3), ordinarySection(4),
+    SEC('缺貨排序', ['A', 'B'], ORD())]
+  assert.deepEqual(runPlan(sections).rankingClaims, { looksRanking: 1, declared: 1, missing: 0 })
+})
+
+test('*** L5. NO SECTIONS AT ALL IS 0/0/0, and an absent array is too ***', () => {
+  assert.deepEqual(runPlan([]).rankingClaims, { looksRanking: 0, declared: 0, missing: 0 })
+  const r = validatePlan(
+    { directAnswer: '', limitations: [], followUp: null, unanswerable: false, citesEvidence: false },
+    { evidenceSets: [evidenceOf()], itemsBySource: GROUPS, message: '你好' })
+  assert.deepEqual(r.rankingClaims, { looksRanking: 0, declared: 0, missing: 0 })
+})
+
+test('*** L6. ⛔ AT THE RENDER SEAM: the real ANSWER_PLAN line carries the true rate ***', () => {
+  /**
+   * ⛔ THROUGH `buildReadResultReply` AND THE REAL `console.log`, because a counter that is
+   * right inside `validatePlan` and never reaches the log is the defect this repo has now
+   * shipped three times on this very object — `droppedLimitations`, `rankingVerdicts`, and
+   * `rankingClaims` itself, which H35 caught only because the test disagreed with itself.
+   */
+  const captured = []
+  const realLog = console.log
+  console.log = (...a) => captured.push(a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' '))
+  try {
+    buildReadResultReply({
+      message: '而家缺貨最嚴重嘅係咩？',
+      reply: '',
+      answerPlan: {
+        directAnswer: '', answerClaims: null, unanswerable: false, citesEvidence: true,
+        sections: [ordinarySection(1), ordinarySection(2), ordinarySection(3), ordinarySection(4),
+          SEC('頭四項缺貨', ['A'], null)],
+        limitations: [], followUp: null
+      },
+      evidenceSets: [evidenceOf()],
+      itemsBySource: GROUPS,
+      perSource: [],
+      requestId: '77777777-8888-4999-8aaa-bbbbbbbbbbbb'
+    })
+  } finally { console.log = realLog }
+  const emitted = captured.filter((l) => l.includes('ANSWER_PLAN'))
+  assert.equal(emitted.length, 1, 'exactly one ANSWER_PLAN line, this turn\'s')
+  assert.ok(/"rankingClaims":\{"looksRanking":1,"declared":0,"missing":1\}/.test(emitted[0]),
+    '⛔ the real line under-reported the declaration gap: ' + emitted[0])
+  assert.equal(emitted[0].includes('頭四項缺貨'), false, '⛔ a heading reached the log')
+})

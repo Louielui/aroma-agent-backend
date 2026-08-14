@@ -431,8 +431,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** L — ⛔ under require_mixed, an ASK after ONE world is still refused ***
 *** L/M — Owner-only input: assistant turns and unknown roles excluded ***
 *** L/M — ⛔ every unusable verifier result WITHHOLDS the final ***
+*** L1. ⛔ A RANKING SECTION BEYOND THE RENDER CAP IS STILL COUNTED ***
 *** L2 — end to end, an unusable verdict does not publish the model answer ***
 *** L2 — the SECOND FENCE still fires if the PLANNER itself returns a contaminated query ***
+*** L2. ⛔ citesEvidence:false STILL COUNTS WHAT THE MODEL WROTE ***
+*** L3. AN ORDINARY FIFTH SECTION MOVES NOTHING ***
+*** L4. AND A DECLARED RANKING BEYOND THE CAP COUNTS AS DECLARED, NOT MISSING ***
+*** L5. NO SECTIONS AT ALL IS 0/0/0, and an absent array is too ***
+*** L6. ⛔ AT THE RENDER SEAM: the real ANSWER_PLAN line carries the true rate ***
 *** LEGACY envelope — no reply field — is projected the same way ***
 *** LIVE-ZERO reaches the caller as zero rows, and that is a true answer ***
 *** LIVE_LOCK_BUSY — a living holder makes the store busy, and nothing is touched ***
