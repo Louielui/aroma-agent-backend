@@ -108,13 +108,13 @@ function createCompanion (deps = {}) {
     if (envelope.type === 'abort') {
       aborted = true
       stopReason = 'service_abort'
-      return { from: ROLE_COMPANION, to: ROLE_SERVICE, type: 'aborted', approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, at: now() }
+      return { from: ROLE_COMPANION, to: ROLE_SERVICE, type: 'aborted', approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, stepNonce: envelope.stepNonce, at: now() }
     }
     if (aborted) {
       return reply(envelope, { ok: false, refusal: 'aborted', detail: stopReason })
     }
     if (envelope.type === 'ping') {
-      return { from: ROLE_COMPANION, to: ROLE_SERVICE, type: 'pong', approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, capabilities: CAPABILITIES, at: now() }
+      return { from: ROLE_COMPANION, to: ROLE_SERVICE, type: 'pong', approvalId: envelope.approvalId, stepIndex: envelope.stepIndex, stepNonce: envelope.stepNonce, capabilities: CAPABILITIES, at: now() }
     }
     if (envelope.type === 'execute_step') {
       // THE ONLY ANSWER THIS BUILD CAN GIVE. Not "not implemented" — refused, named, and
@@ -167,6 +167,21 @@ function createCompanion (deps = {}) {
     return reply(envelope, { ok: false, refusal: 'unsupported_message_type' })
   }
 
+  /**
+   * ⛔ THE RESPONSE ECHOES THE NONCE IT WAS ASKED WITH — VERBATIM.
+   *
+   * Requests carried `stepNonce` and responses did not, so the Service could correlate a
+   * reply only by (approvalId, stepIndex) — which is exactly the pair a replayed or
+   * out-of-order response also carries. Nothing could tell 「the answer to THIS request」
+   * from 「an answer to that step」, and single-use protection on the way out bought nothing
+   * on the way back.
+   *
+   * ⛔ AND IT IS COPIED, NEVER MANUFACTURED. No generation, no transformation, no `|| null`
+   * fallback: a Companion that can invent a correlation token is a Companion that can claim
+   * to be answering a request nobody made. If the request carried no nonce, the reply carries
+   * none and fails the Service's own envelope check — which is the correct outcome, not a
+   * gap to paper over.
+   */
   function reply (envelope, body) {
     return Object.assign({
       from: ROLE_COMPANION,
@@ -174,6 +189,7 @@ function createCompanion (deps = {}) {
       type: 'step_result',
       approvalId: (envelope && envelope.approvalId) || null,
       stepIndex: (envelope && envelope.stepIndex) !== undefined ? envelope.stepIndex : null,
+      stepNonce: envelope && envelope.stepNonce,
       at: now()
     }, body)
   }

@@ -101,6 +101,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** 9. fail-OPEN is documented AS THE OPPOSITE of the Computer Operator audit ***
 *** 9. the conversation completes and the failure is VISIBLE ***
 *** A / B / C — the gate is silent unless BOTH flags and the chat lane agree ***
+*** A VALID STEP AUTHORISES ONCE ***
 *** A · 9/16/17 — the documented shape yields NON-EMPTY, LABELLED, sourced content ***
 *** A — A4 OFF + chat: the mode enum is EXACTLY production, commit included ***
 *** A — A4 OFF, public OFF: the legacy call shape is untouched ***
@@ -126,6 +127,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ACCEPTANCE 1 — Costco is ANSWERABLE, in ONE read and with NO join ***
 *** ACCEPTANCE 2 — 「上次盤點同存量對唔對得上」 is NOT ANSWERABLE, and that is the PASS ***
 *** ACTION and BUSINESS_QUERY are out of scope ***
+*** AN EXACTLY CORRELATED RESULT IN THE PROVEN SESSION IS BOUND ***
 *** ANY two of the FOUR on ⇒ configuration_conflict ⇒ zero execution ***
 *** APPROXIMATE values, sampled from a screenshot — flagged as such in the source ***
 *** ASK lane projection is frozen ***
@@ -638,6 +640,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** S7. ⛔ A FORGED readKey ON THE MODEL ITEM HAS ZERO EFFECT ***
 *** S8. ⛔ AND A FORGED readKey CANNOT RESCUE A MIXED SECTION EITHER ***
 *** S9. ⛔ TWO PROOFS: THE SECTION IS ALLOWED, THE SENTENCE IS STILL REFUSED ***
+*** SESSION 5 IS NOT HARD-CODED ANYWHERE ***
 *** SIR3 — every first-READ path resolves source intent first ***
 *** SIR3 — mixed + first INTERNAL read: internal executes, public stays outstanding ***
 *** SIR3 — mixed + first PUBLIC read: public executes, internal stays outstanding ***
@@ -654,6 +657,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** T — the gate telemetry is content-free ***
 *** T — ⛔ a rejected FINAL never reaches the Owner either ***
 *** T/U — after the worker\
+*** THE ACCOUNT NAME IS NOT THE ACCOUNT — ONLY THE SID IS COMPARED ***
 *** THE CARVE-OUT: a title the Owner himself typed is not laundering ***
 *** THE COST OF CLAUSE-SCOPING, recorded rather than hidden ***
 *** THE FLAG IS NOT SUFFICIENT — on, with no order, unlocks nothing ***
@@ -662,6 +666,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** THE LIVE FAILURE: a metric value the model mistyped is corrected, not deleted ***
 *** THE LIVE FAILURE: a recalled item name never reaches the Owner ***
 *** THE LIVE FAILURE: a source name as sourceId is still dropped — the check is NOT relaxed ***
+*** THE SCHEMA IS STILL THE SCHEMA — validateResult IS NOT BYPASSED ***
 *** THE WHOLE VALID RANGE IS SCHEMA-VALID — 0 INCLUDED, AND STILL BLACK AT ADJUDICATION ***
 *** THIS process — the real one running these tests — is not pointed at production ***
 *** TURN_ROUTER defaults to on ***
@@ -1643,15 +1648,20 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ 6. LIVE: number_not_in_evidence NO LONGER KILLS THE CONCLUSION ***
 *** ⛔ 6. NON-SUPERLATIVE QUESTIONS ARE NOT THIS GATE\
 *** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
+*** ⛔ 6A — THE BURN HAPPENS LAST, AND A BURNT STEP IS DEAD ***
 *** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***
+*** ⛔ 8A — ONE PREPARED STEP ACCEPTS EXACTLY ONE RESULT ***
+*** ⛔ A BINDING SEAM IS NOT AN ENABLED CAPABILITY, AND IT IS WIRED TO NOTHING ***
 *** ⛔ A CANONICAL CAPTURE FROM THE PINNED PRODUCER VALIDATES ***
 *** ⛔ A COHERENT SCHEMA IS NOT AN ENABLED CAPABILITY ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
+*** ⛔ A CORRELATED REFUSAL IS NEVER RELABELLED AS AN OBSERVATION ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A FOURTH UNKNOWN FIELD STILL FAILS CLOSED ***
 *** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
 *** ⛔ A MEASURE NOTHING ORDERED IS STILL RECOGNISED — and cannot ship undeclared ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
+*** ⛔ A RESPONSE THAT IS NOT THE ANSWER TO THIS REQUEST IS REFUSED ***
 *** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
 *** ⛔ A SUCCESSFUL CAPTURE WITH NO RATIO IS REFUSED ***
@@ -1659,12 +1669,15 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
+*** ⛔ A VALID NONCE BELONGING TO A DIFFERENT PREPARED REQUEST IS REFUSED ***
 *** ⛔ A. WITHHOLD 「${c.name}」 STILL SHIPS A NON-EMPTY REPLY ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
+*** ⛔ AN APPROVAL FOR list_windows DOES NOT AUTHORISE A SCREENSHOT ***
 *** ⛔ AN EMPTY REPLY IS A DEFECT STATE, NEVER SILENCE ***
 *** ⛔ AN INCOMPLETE PROOF IS REFUSED EVEN IN THE RIGHT ORDER ***
 *** ⛔ AN INCOMPLETE RANKING IS REFUSED EVEN WHEN THE ORDER IS RIGHT ***
+*** ⛔ AN UNKNOWN FIELD SURVIVES EXTRACTION AND IS THEN REFUSED ***
 *** ⛔ AN UNPROVEN METRIC IS REFUSED BEFORE ANY ORDER CHECK ***
 *** ⛔ AN UNRETRIEVED NAME RECORDS name_not_in_evidence ***
 *** ⛔ AN UNSUPPORTED NUMBER RECORDS number_not_in_evidence ***
@@ -1713,6 +1726,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ EACH OUTCOME IS REPORTED AS AN ENUM PLUS A COUNT ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
+*** ⛔ EVERY COMPANION RESPONSE ECHOES THE EXACT REQUEST NONCE ***
+*** ⛔ EVERY IDENTITY DIFFERENCE IS A BINDING FAILURE, NOT AN ORDINARY REFUSAL ***
 *** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
 *** ⛔ EXHAUSTION AND GENUINE PLAN FAILURE ARE DIFFERENT STOP REASONS ***
 *** ⛔ EXPLICIT TOP-N: exact membership, exact count, correct order ***
@@ -1750,6 +1765,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RAW CONTENT IS STILL REFUSED BY NAME ***
 *** ⛔ READ → READ → READ: a fourth call to COMPOSE, and pending prose is still NOT the answer ***
 *** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***
+*** ⛔ REPLAY, WRONG STEP AND WRONG APPROVAL ARE ALL REFUSED ***
 *** ⛔ REVIEW 1: a capped count is NOT a matching total ***
 *** ⛔ REVIEW 2: order-planning is capped at 100 ***
 *** ⛔ REVIEW 3: unknown filters are null, never [] ***
@@ -1777,12 +1793,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
 *** ⛔ THE MISSING COUNT HAS ITS OWN ADJUDICATION REASON, NOT THE RATIO ONE ***
+*** ⛔ THE NONCE IS COPIED, NEVER MANUFACTURED ***
 *** ⛔ THE OWNER\
 *** ⛔ THE PRODUCTION DEFECT: 「目前最缺的四項」 IN THE WRONG ORDER IS REFUSED ***
 *** ⛔ THE RATIO IS A FINITE NUMBER IN [0,1] — NO COERCION, NO CLAMPING ***
 *** ⛔ THE READING TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
+*** ⛔ THE REQUEST MUST MATCH THE APPROVED STEP FIELD FOR FIELD ***
 *** ⛔ THE RESERVED CALL IS BOUNDED — it may not read, so it cannot extend the turn ***
 *** ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND beforeTerminal ***
 *** ⛔ THE RESTAURANT IS NOT THE SYSTEM — no composed answer ***
@@ -1796,6 +1814,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ WIRED: a contradicting order is WITHHELD by validatePlan, not just judged ***
 *** ⛔ WIRED: an ORDINARY question is untouched — no new refusals ***
 *** ⛔ WIRED: an undeclared superlative is WITHHELD ***
+*** ⛔ WITHOUT AN INDEPENDENT SESSION PROOF NOTHING IS AUTHORISED ***
 *** ⛔ ZERO ROWS FROM A HEALTHY READ IS STILL SUCCESS — the fix must not cry wolf ***
 *** ⛔ a 30-day count cannot become a source-total claim, end to end ***
 *** ⛔ a READ in the world he did NOT mean is refused before the connector ***
