@@ -166,6 +166,48 @@ function renderItem (item) {
   return `${head}\n${segs.join('｜')}`
 }
 
+/**
+ * ⛔ THE SERVER DECIDES WHAT COUNTS AS 「EVERYTHING」, FROM THE OWNER'S OWN WORDS.
+ *
+ * If a model field could declare a request exhaustive, the model would hold the key to the
+ * one channel that prints the whole table — precisely the authority this design takes away
+ * from it. So the rule reads the message and nothing else: no plan, no claim, no heading.
+ *
+ * ⛔ AND IT IS BIASED TOWARD NOT FIRING. This path prints data. A wrongly-triggered 36-row
+ * dump is noise; the recognised set is deliberately small and literal. The cost of missing a
+ * phrasing is paid by the withheld-count line below, which tells the Owner how many rows he
+ * is not seeing so he can ask again — silence is the failure this whole change exists to fix.
+ */
+const EXHAUSTIVE_PHRASES = Object.freeze([
+  '列出全部', '全部供應商', '所有供應商', '完整供應商名單', '供應商完整名單', '供應商全部名單'
+])
+
+function isExhaustiveListRequest (message) {
+  const m = typeof message === 'string' ? message.trim() : ''
+  if (!m) return false
+  return EXHAUSTIVE_PHRASES.some((phrase) => m.includes(phrase))
+}
+
+/**
+ * ⛔ TWO ARGUMENTS, AND NEITHER CAN CARRY MODEL OUTPUT.
+ *
+ * No `reply`, no `answerPlan`, no `answerClaims`, no heading parameter — there is nowhere
+ * for model text to enter, which is a stronger guarantee than a rule saying it must not.
+ * The heading is a server constant, the values come straight off the retrieval rows, and
+ * the order is retrieval order: no ranking, no sorting, no summarising, no rewriting.
+ */
+function renderCompleteSupplierList (rows, labels) {
+  const list = Array.isArray(rows) ? rows : []
+  const label = (labels && typeof labels.aroma_system === 'string' && labels.aroma_system) || LABELS.aroma_system || 'aroma_system'
+  const lines = ['### ' + label + '（完整名單，共 ' + list.length + ' 項）']
+  list.forEach((r, i) => {
+    const title = (r && typeof r.title === 'string' && r.title) ? r.title : '(untitled)'
+    const ref = r && r.sourceId != null ? String(r.sourceId) : '—'
+    lines.push(String(i + 1) + '. ' + title + '｜' + ref)
+  })
+  return lines.join(String.fromCharCode(10))
+}
+
 /** ONE SECTION PER SOURCE — so two sources can never share a paragraph. */
 function renderSection (source, items) {
   const label = LABELS[source] || source
@@ -463,6 +505,19 @@ function renderValidatedPlan (input) {
   // never checked by the guard, so a false read claim INSIDE the plan reached the Owner
   // unchallenged. The safety control still cannot be lost — it is applied to the finished
   // text rather than carried from an earlier draft of it.
+  /**
+   * ⛔ THE DETERMINISTIC LIST IS NOT AT THE MODEL'S MERCY.
+   *
+   * This path runs when the model sent a plan — including one that failed validation and
+   * collapsed to a fallback. Without this, a bad plan would SILENTLY SUPPRESS an exhaustive
+   * request the Owner made in his own words: the model's failure deciding whether he gets the
+   * data he asked for. The section is built from retrieval rows by a function that cannot be
+   * handed model text, so it belongs on every exit, not only the tidy one.
+   */
+  const planRetrieved = (Array.isArray(input.retrievedItemsBySource) ? input.retrievedItemsBySource : [])
+    .find((g) => g && g.readKey === 'aroma_system.suppliers' && Array.isArray(g.items) && g.items.length > 0)
+  if (planRetrieved && isExhaustiveListRequest(input.message)) out.push(renderCompleteSupplierList(planRetrieved.items, LABELS))
+
   const composed = out.join('\n\n')
   const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [], input.message)
   if (guarded.corrected && guarded.correction) out.push(guarded.correction.trim())
@@ -557,6 +612,29 @@ function buildReadResultReplyInner (input = {}) {
 
   const out = [renderSummary(intent, groups)]
   for (const g of groups) out.push(renderSection(g.source, g.items))
+
+  /**
+   * ⛔ THE COMPLETE SET GOES TO THE SCREEN, NEVER TO THE PROMPT. These rows never entered
+   * the model block, evidence indexing or claim binding — they came straight from retrieval
+   * and are rendered by a function that cannot be handed model text.
+   */
+  const retrievedGroups = Array.isArray(input.retrievedItemsBySource) ? input.retrievedItemsBySource : []
+  const supplierRetrieved = retrievedGroups.find((g) => g && g.readKey === 'aroma_system.suppliers' && Array.isArray(g.items))
+  const exhaustive = isExhaustiveListRequest(input.message)
+  if (exhaustive && supplierRetrieved && supplierRetrieved.items.length > 0) {
+    out.push(renderCompleteSupplierList(supplierRetrieved.items, LABELS))
+  } else if (supplierRetrieved) {
+    /**
+     * ⛔ 7B — WITHHOLDING IS SAID OUT LOUD. Showing five of thirty-six without a word is the
+     * defect this tranche exists to remove; a phrasing outside the recognised set must still
+     * leave the Owner able to see that there is more and ask again.
+     */
+    const shownHere = groups.filter((g) => g.readKey === 'aroma_system.suppliers' || g.source === 'aroma_system')
+      .reduce((n, g) => n + Math.min(g.items.length, CAPS.maxItemsPerSection), 0)
+    const withheld = supplierRetrieved.items.length - shownHere
+    if (withheld > 0) out.push('（供應商共 ' + supplierRetrieved.items.length + ' 項，此處只顯示 ' + shownHere + ' 項，未顯示 ' + withheld + ' 項；想睇齊全部請講「列出全部供應商」。）')
+  }
+
   if (limits) out.push(limits)
   // Her reading of what is above — after the data, before the question.
   const opinion = extractOpinion(original)
@@ -580,6 +658,8 @@ module.exports = {
   renderSummary,
   renderLimits,
   selectRelevant,
+  isExhaustiveListRequest,
+  renderCompleteSupplierList,
   extractOpinion,
   sanitizeOpinion,
   splitModelReply,

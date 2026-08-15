@@ -509,6 +509,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // turnPerSource and for the same reason: the presentation is built from what this turn
   // really retrieved, never reconstructed from the reply afterwards.
   const turnItems = new Map() // readKey -> { source, items[] }
+  // ⛔ THE FULL RETRIEVED SET, FOR THE DETERMINISTIC VIEW ONLY. It never joins the model
+  //    context, the evidence index or claim binding — a model that could cite a row it was
+  //    never shown would be certified by a binding that validates invention.
+  const turnRetrievedItems = new Map() // readKey -> { source, items[] }
   const turnEvidence = new Map() // readKey -> what that read IS (kind, totals, meaning)
   let turnTruncated = false
 
@@ -2016,6 +2020,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
         for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) if (row && row.source) turnPerSource.set(turnKey, row)
         for (const g of (rc && Array.isArray(rc.itemsBySource)) ? rc.itemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnItems.set(turnKey, { source: g.source, readKey: g.readKey || turnKey, items: g.items })
+      for (const g of (rc && Array.isArray(rc.retrievedItemsBySource)) ? rc.retrievedItemsBySource : []) if (g && g.source && Array.isArray(g.items) && g.items.length) turnRetrievedItems.set(turnKey, { source: g.source, readKey: g.readKey || turnKey, items: g.items })
         for (const e of (rc && Array.isArray(rc.evidenceSets)) ? rc.evidenceSets : []) if (e && e.source) turnEvidence.set(turnKey, e)
 
         // ⛔ ATTEMPTED IS NOT READ. This used to be an unconditional `turnOperations.add()` and
@@ -2294,6 +2299,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       provider: (llmResult && llmResult.provider) || null,
       requestId,
       itemsBySource: Array.from(turnItems.values()),
+      retrievedItemsBySource: Array.from(turnRetrievedItems.values()),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated,
       // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope
@@ -2416,6 +2422,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       provider: (llmResult && llmResult.provider) || null,
       requestId,
       itemsBySource: Array.from(turnItems.values()),
+      retrievedItemsBySource: Array.from(turnRetrievedItems.values()),
       perSource: Array.from(turnPerSource.values()),
       truncated: turnTruncated,
       // THIS CONVERSATION SO FAR — read for exactly one purpose: so a source's FIXED scope

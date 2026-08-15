@@ -699,8 +699,27 @@ function describeRead (source, adapterEvidence, kept, usedFallback, asOf) {
     trust: 'live',
     provenance: source
   }
+  /**
+   * ⛔ THREE QUESTIONS, THREE FIELDS. One word 「completeness」 was answering all of them:
+   * did we RETRIEVE everything, is the MODEL seeing everything, is the OWNER seeing
+   * everything. They have different answers on the same read — 36 retrieved, 4 in context —
+   * and a single field forced one of those truths to be discarded.
+   *
+   * ⛔ THE UNQUALIFIED FIELD KEEPS ITS ORIGINAL MEANING: what is in front of the reader.
+   * So 「shown 4, completeness complete」 stays unrepresentable, which is exactly what would
+   * have made a partial fix worse than the defect — today the reply at least says sample.
+   */
+  const retrievedCount = Number.isFinite(base.returnedRows) ? base.returnedRows : kept.length
+  const contextShownCount = kept.length
+  const contextCompleteness = contextShownCount >= retrievedCount ? 'complete' : 'sample'
   return Object.assign({}, base, {
     shownCount: kept.length,
+    // RETRIEVAL: did the reader keep every row the server sent? (the adapter's own verdict)
+    retrievalCompleteness: typeof base.completeness === 'string' ? base.completeness : 'unknown',
+    // MODEL CONTEXT: how many of those rows are in the prompt at all
+    contextShownCount,
+    contextCompleteness,
+    completeness: contextCompleteness,
     usedFallback: usedFallback === true,
     selectedBy: usedFallback ? 'recency' : (base.rankedBy ? 'ranked' : 'api_order')
   })
@@ -767,12 +786,14 @@ async function runStep (connector, source, step, caps) {
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
-    return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], evidenceSets: [] }
+    return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], retrievedItemsBySource: [], evidenceSets: [] }
   }
   const keywords = extractKeywords(message, caps.maxKeywords)
   const perSource = []
   const lineGroups = [] // one array of rendered lines PER SOURCE, in source order
   const itemsBySource = [] // the same rows, unrendered, for the Owner-facing view
+  // ⛔ THE FULL RETRIEVED SET — deterministic presentation only. Never the prompt.
+  const retrievedItemsBySource = []
   const evidenceSets = [] // what each read IS: kind, totals, meaning, ordering, trust
   let truncated = false
 
@@ -845,6 +866,15 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       // `source` is untouched, so every source-keyed lookup downstream (metric labels,
       // derivations, source labels) keeps working exactly as before.
       const stamped = kept.map((r) => Object.assign({}, r, { readKey }))
+      /**
+       * ⛔ THE SET THAT USED TO DIE HERE. `kept` is the MODEL-VISIBLE bound; everything the
+       * connector returned was discarded one line later, so neither the model nor the
+       * deterministic Owner-facing renderer could ever recover it. This second array is
+       * carried for the RENDERER ALONE — it is never serialised into the prompt block and
+       * never reaches evidence indexing or claim binding, because a model that can cite a
+       * row it never saw would be validated by a binding that certifies invention.
+       */
+      const retrievedStamped = step.results.map((r) => Object.assign({}, r, { readKey }))
       return {
         entry: { source, readKey, trust: 'live', count: kept.length, error: null, usedFallback },
         lines: stamped.map((r) => renderItem(r, caps, { recent: usedFallback })),
@@ -852,6 +882,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
         // what was already computed — this changes nothing about what is read or sent to
         // the model; the block above is still the only thing that reaches the prompt.
         items: stamped,
+        retrievedItems: retrievedStamped,
         // WHAT THIS READ IS. From the adapter when it describes itself; otherwise the
         // honest minimum, where an unknown total is NULL rather than the number we happen
         // to hold — a shown count standing in for a total is the exact false claim this
@@ -890,6 +921,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
     itemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
+    retrievedItemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.retrievedItems) ? got.retrievedItems : (Array.isArray(got.items) ? got.items : []) })
     // ⛔ UNAVAILABLE IS NOT EVIDENCE — AND THE CALLER DECIDES WHETHER AN EvidenceSet EXISTS.
     //
     // This was `got.evidence || describeRead(...)`. An unavailable read deliberately carries no
@@ -1012,9 +1044,9 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
   // prose announcing excerpts that are not there, on every unmatched chat turn. Returning
   // null instead is what "read nothing" actually means, and intakeService already treats a
   // null block as "no context to inject".
-  if (perSource.length === 0) return { block: null, status, perSource, itemsBySource, evidenceSets }
+  if (perSource.length === 0) return { block: null, status, perSource, itemsBySource, retrievedItemsBySource, evidenceSets }
 
-  return { block, status, perSource, itemsBySource, evidenceSets }
+  return { block, status, perSource, itemsBySource, retrievedItemsBySource, evidenceSets }
 }
 
 module.exports = {

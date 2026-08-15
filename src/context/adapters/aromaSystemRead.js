@@ -248,7 +248,37 @@ const RANKING_OF = Object.freeze({
 const DEFAULT_BASE_URL = 'https://system.aromabistro741.com'
 const KEY_ENV = 'AROMA_SYSTEM_KEY'
 const DEFAULT_TIMEOUT_MS = 10000
+/**
+ * ⛔ THE CLIENT CAP IS A PER-ENDPOINT POLICY, NOT A UNIVERSAL NUMBER.
+ *
+ * One global 25 was applied to every endpoint, and for suppliers that silently discarded 11
+ * of ~36 rows — rows chosen by nothing, because `RANKING_OF.suppliers` is null. So 「列出全部
+ * 供應商」 could not be answered and the EvidenceSet said 「sample」 with no way to recover
+ * what was dropped.
+ *
+ * ⛔ `null` MEANS 「AUDITED: NO CLIENT-SIDE CAP」, NEVER 「unknown」 — the same distinction
+ * SERVER_LIMITS already makes, and for the same reason: the two states justify different
+ * behaviour and flattening them is how this defect stayed invisible.
+ *
+ * ⛔ AND THIS IS NOT SERVER_LIMITS. A server cap and a reader cap are separate facts about
+ * separate systems; conflating them was the original error and they stay apart.
+ */
+const CLIENT_ROW_LIMITS = Object.freeze({
+  inventory: 25, //       ranked top-25 by absolute shortfall — a deliberate sample
+  suppliers: null, //     AUDITED: no client cap. Unranked, so any cut would be arbitrary.
+  dailyCounts: 25,
+  orderPlanning: 25,
+  purchaseOrders: 25,
+  invoices: 25
+})
+
+/** The fallback for an endpoint with no declared policy. Unchanged. */
 const MAX_ITEMS = 25
+
+/** The declared cap for one endpoint: a number, or null for 「no client cap」. */
+function clientLimitFor (endpointKey) {
+  return Object.prototype.hasOwnProperty.call(CLIENT_ROW_LIMITS, endpointKey) ? CLIENT_ROW_LIMITS[endpointKey] : MAX_ITEMS
+}
 
 /** THE HTTP METHOD. One constant, used once. Nothing here takes a method argument. */
 const METHOD = 'GET'
@@ -573,7 +603,9 @@ function createAromaSystemReadAdapter (options = {}) {
     // the answer can say it is an arbitrary sample rather than implying it is a top-N.
     const rank = RANKING_OF[endpointKey]
     const ordered = rank ? [...rows].sort((a, b) => rank.fn(b) - rank.fn(a)) : rows
-    const kept = ordered.slice(0, MAX_ITEMS)
+    // ⛔ POLICY, NOT A CONSTANT. `null` keeps every row the server sent.
+    const clientLimit = clientLimitFor(endpointKey)
+    const kept = clientLimit === null ? ordered : ordered.slice(0, clientLimit)
 
     return {
       readState: READ_STATE.FOUND,
@@ -602,9 +634,28 @@ function createAromaSystemReadAdapter (options = {}) {
     async listInvoices (opts = {}) { return enveloped('invoices', opts) }
   }
 
+  /**
+   * ⛔ THE ADAPTER DECLARES ITS OWN ROW POLICY; THE CONNECTOR OBEYS IT.
+   *
+   * The connector holds a shared default of 25 and must not learn business semantics — it
+   * has no business knowing what a supplier is. So the policy is declared HERE, beside the
+   * endpoint table it belongs to, keyed by the method the connector already calls. A value
+   * of null means 「no client cap」; anything the connector cannot validate falls back to its
+   * default. Nothing a caller, a user or a model can reach appears in this map.
+   */
+  const rowLimits = Object.freeze({
+    listInventory: clientLimitFor('inventory'),
+    listSuppliers: clientLimitFor('suppliers'),
+    listDailyCounts: clientLimitFor('dailyCounts'),
+    listOrderPlanning: clientLimitFor('orderPlanning'),
+    listPurchaseOrders: clientLimitFor('purchaseOrders'),
+    listInvoices: clientLimitFor('invoices')
+  })
+
   return {
     source: 'aroma_system',
     methods,
+    rowLimits,
     ready: () => apiKey !== '',
     // Exposed for the three-state contract and for tests. It performs a read; it cannot
     // perform anything else, because it is the same closed `request`.
@@ -623,6 +674,7 @@ module.exports = {
   ROW_SHAPE,
   QUERY_SCOPE,
   SERVER_LIMITS,
+  CLIENT_ROW_LIMITS,
   truncationOf,
   matchingTotalOf,
   completeWithinScopeOf,

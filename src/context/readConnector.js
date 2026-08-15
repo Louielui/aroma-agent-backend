@@ -117,12 +117,30 @@ function createReadConnector (options = {}) {
     // description; nothing about the read path or the caps changes either way.
     const enveloped = out && !Array.isArray(out) && Array.isArray(out.results)
     const arr = enveloped ? out.results : (Array.isArray(out) ? out : [out])
-    const capped = arr.slice(0, caps.maxResults).map((r) => capItem(r, caps.maxItemBytes))
+    /**
+     * ⛔ THE ADAPTER DECLARES ITS OWN ROW POLICY; THIS LAYER ONLY VALIDATES IT.
+     *
+     * The shared default of 25 stays the default. An adapter may declare, per method, that
+     * its rows must not be cut — `null` meaning 「no client cap」 — because only the adapter
+     * knows which of its endpoints is a ranked sample and which is a whole small table. This
+     * layer must NOT learn business semantics: it has no business knowing what a supplier is.
+     *
+     * ⛔ AND IT IS NOT A CHANNEL. The declaration comes from the adapter MODULE, never from a
+     * caller, a user or a model, and anything this layer cannot validate — a string, a
+     * negative, a float — falls back to the default rather than being honoured.
+     */
+    const declared = adapter && adapter.rowLimits && Object.prototype.hasOwnProperty.call(adapter.rowLimits, method)
+      ? adapter.rowLimits[method]
+      : undefined
+    const rowLimit = declared === null
+      ? null
+      : (Number.isInteger(declared) && declared > 0 ? declared : caps.maxResults)
+    const capped = (rowLimit === null ? arr : arr.slice(0, rowLimit)).map((r) => capItem(r, caps.maxItemBytes))
     return {
       asOf,
       source,
       count: capped.length,
-      truncatedCount: Math.max(0, arr.length - caps.maxResults),
+      truncatedCount: rowLimit === null ? 0 : Math.max(0, arr.length - rowLimit),
       results: capped,
       evidence: enveloped && out.evidence ? out.evidence : null
     }

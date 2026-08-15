@@ -245,6 +245,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** E — ⛔ allow_final + initial ASK → the ASK is PRESERVED, not forced into an answer ***
 *** E — 「我哋供應商。」 continues the original task as an INTERNAL read ***
 *** E — 你好: the model may answer directly — ONE call, ZERO reads ***
+*** E. AN ORDINARY SUPPLIER QUESTION DOES NOT PRINT THIRTY-SIX ROWS ***
 *** E1. ⛔ pwsh.exe WITH THE EXACT OBSERVER COMMAND LINE IS REFUSED ***
 *** E2 — a LIVE read is not cancelled by a later UNAVAILABLE one ***
 *** E2 — an invalid freshness is nulled, never passed through ***
@@ -610,6 +611,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** REACH — the acceptance utterance is detected deterministically, with no model ***
 *** REACH — ⛔ a GENERIC shop word resolves to no site, and never picks one ***
 *** READ_ACCESS off → readContextUsed is FALSE, so the reply is storable ***
+*** REGRESSION — INVENTORY KEEPS ITS RANKED TOP-25 ***
 *** RENAMED: she is 香香. Every retired name must stay retired ***
 *** RENDERER — a blocked read says we never got there, and claims nothing ***
 *** RENDERER — an unpriced product is reported as unpriced, not as a price ***
@@ -657,6 +659,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** STATIC — the planner still knows nothing about connectors or evidence ***
 *** STATIC — the public planner is NOT gated by internal evidence ***
 *** STRUCTURAL_CORRUPTION_LOUD — a valid-JSON but wrong-shape store is never read as empty ***
+*** SUPPLIER BOUNDARIES: 0, 4, 5, 25, 26, 36 ***
 *** T — A4 ON + chat still cannot output commit ***
 *** T — no beforeFinal: behaviour is identical ***
 *** T — no chain-of-thought field, and no knowledgeRoute label, was added ***
@@ -675,6 +678,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** THE LIVE FAILURE: a metric value the model mistyped is corrected, not deleted ***
 *** THE LIVE FAILURE: a recalled item name never reaches the Owner ***
 *** THE LIVE FAILURE: a source name as sourceId is still dropped — the check is NOT relaxed ***
+*** THE POLICY IS PER ENDPOINT AND DECLARED, NOT A RAISED GLOBAL ***
 *** THE SCHEMA IS STILL THE SCHEMA — validateResult IS NOT BYPASSED ***
 *** THE WHOLE VALID RANGE IS SCHEMA-VALID — 0 INCLUDED, AND STILL BLACK AT ADJUDICATION ***
 *** THIS process — the real one running these tests — is not pointed at production ***
@@ -1659,12 +1663,15 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
 *** ⛔ 6A — THE BURN HAPPENS LAST, AND A BURNT STEP IS DEAD ***
 *** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***
+*** ⛔ 7A. A MODEL-AUTHORED FIELD CANNOT DECLARE A REQUEST EXHAUSTIVE ***
+*** ⛔ 7B. WHEN ROWS ARE WITHHELD THE OWNER IS TOLD HOW MANY ***
 *** ⛔ 8A — ONE PREPARED STEP ACCEPTS EXACTLY ONE RESULT ***
 *** ⛔ A BINDING SEAM IS NOT AN ENABLED CAPABILITY, AND IT IS WIRED TO NOTHING ***
 *** ⛔ A CANONICAL CAPTURE FROM THE PINNED PRODUCER VALIDATES ***
 *** ⛔ A COHERENT SCHEMA IS NOT AN ENABLED CAPABILITY ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A CORRELATED REFUSAL IS NEVER RELABELLED AS AN OBSERVATION ***
+*** ⛔ A DECLARATION IS NOT A CHANNEL — ONLY THE ADAPTER MAY DECLARE IT ***
 *** ⛔ A DIFFERENT COMPANION FORCES A FRESH RESOLUTION — NO CACHING ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A FOURTH UNKNOWN FIELD STILL FAILS CLOSED ***
@@ -1681,6 +1688,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
 *** ⛔ A VALID NONCE BELONGING TO A DIFFERENT PREPARED REQUEST IS REFUSED ***
+*** ⛔ A. THE ADAPTER RETURNS ALL 36 SUPPLIERS, NOT THE FIRST 25 ***
 *** ⛔ A. WITHHOLD 「${c.name}」 STILL SHIPS A NON-EMPTY REPLY ***
 *** ⛔ A4 OFF: the resolver never runs ***
 *** ⛔ A4 on + NON-chat lane: the guidance must NOT appear ***
@@ -1702,6 +1710,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ AND droppedSentences COUNTING IS UNCHANGED ***
 *** ⛔ ANY model output on a covered turn is discarded, however phrased ***
 *** ⛔ B reaches production through ONE call site, and is not a second reasoning loop ***
+*** ⛔ B. THE CONNECTOR PASSES ALL 36 THROUGH ***
 *** ⛔ B1. A RANKING WITH THE CORRECT FULL SEQUENCE IS ALLOWED ***
 *** ⛔ B1. A SENTENCE ATTRIBUTING NAPA\
 *** ⛔ B1b. TWO NAMED ROWS FAIL CLOSED EVEN WHEN THE FIGURE IS CORRECT ***
@@ -1730,10 +1739,12 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ B5g. A DUPLICATE-TITLE CLAIM CANNOT BE LAUNDERED EITHER ***
 *** ⛔ BOTH NEW MODULES ARE PURE, AND TOUCH NO MACHINE MACHINERY ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
+*** ⛔ C. THE CONTEXT SPLITS: RETRIEVED 36, MODEL-VISIBLE 4 ***
 *** ⛔ CANONICAL IDENTITY — DUPLICATE TITLES DO NOT COLLAPSE ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
 *** ⛔ CLASS 2 — internal context + capability UNAVAILABLE → no reads, no clarification ***
 *** ⛔ CLASS 4 — genuine context-free ambiguity STILL ASKS ***
+*** ⛔ D. AN EXHAUSTIVE REQUEST RENDERS EVERY RETRIEVED SUPPLIER ***
 *** ⛔ DEFAULT OFF — an unset flag reads as off, and so does anything but "on" ***
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ EACH OUTCOME IS REPORTED AS AN ENUM PLUS A COUNT ***
@@ -1744,6 +1755,8 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
 *** ⛔ EXHAUSTION AND GENUINE PLAN FAILURE ARE DIFFERENT STOP REASONS ***
 *** ⛔ EXPLICIT TOP-N: exact membership, exact count, correct order ***
+*** ⛔ F. A CLAIM ABOUT A ROW THE MODEL NEVER SAW MUST NOT VALIDATE ***
+*** ⛔ G. NO MODEL-AUTHORED STRING CAN REACH THE EXHAUSTIVE SECTION ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
 *** ⛔ INDEPENDENCE MUST BE ASSERTED, NOT ASSUMED FROM ABSENCE ***
 *** ⛔ INTEGRATION: THE PRODUCTION SECTION IS REFUSED AND THE REPLY IS NOT EMPTY ***
@@ -1824,6 +1837,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE RESERVED CALL IS BOUNDED — it may not read, so it cannot extend the turn ***
 *** ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND beforeTerminal ***
 *** ⛔ THE RESTAURANT IS NOT THE SYSTEM — no composed answer ***
+*** ⛔ THE SERVER DECIDES WHAT IS EXHAUSTIVE — FROM THE OWNERS OWN WORDS ***
 *** ⛔ THE SESSION FIELDS ARE CHECKED, AND THE STATION AND DESKTOP ARE POLICY ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
 *** ⛔ THE TWO ARE TOLD APART ON OTHERWISE IDENTICAL INPUT ***
