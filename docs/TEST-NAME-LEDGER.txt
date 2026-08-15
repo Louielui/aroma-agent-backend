@@ -101,6 +101,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** 9. fail-OPEN is documented AS THE OPPOSITE of the Computer Operator audit ***
 *** 9. the conversation completes and the failure is VISIBLE ***
 *** A / B / C — the gate is silent unless BOTH flags and the chat lane agree ***
+*** A MISSING OR NON-FUNCTION RESOLVER IS MISCONFIGURED, NOT PERMISSIVE ***
+*** A RESOLVER THAT THROWS IS UNAVAILABLE, NOT A CRASH ***
+*** A VALID PATH BURNS THE NONCE EXACTLY ONCE, INSIDE THE BINDING ***
 *** A VALID STEP AUTHORISES ONCE ***
 *** A · 9/16/17 — the documented shape yields NON-EMPTY, LABELLED, sourced content ***
 *** A — A4 OFF + chat: the mode enum is EXACTLY production, commit included ***
@@ -128,6 +131,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ACCEPTANCE 2 — 「上次盤點同存量對唔對得上」 is NOT ANSWERABLE, and that is the PASS ***
 *** ACTION and BUSINESS_QUERY are out of scope ***
 *** AN EXACTLY CORRELATED RESULT IN THE PROVEN SESSION IS BOUND ***
+*** AN INDEPENDENT RESOLUTION YIELDS EXACTLY THE expectedSession SHAPE ***
 *** ANY two of the FOUR on ⇒ configuration_conflict ⇒ zero execution ***
 *** APPROXIMATE values, sampled from a screenshot — flagged as such in the source ***
 *** ASK lane projection is frozen ***
@@ -263,6 +267,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** END TO END: flag OFF still writes nothing at all ***
 *** END TO END: read happened, reply CITES NOTHING → the answer is kept, mail still absent ***
 *** END TO END: with no read access the reply IS stored, and provenance still real ***
+*** EVERY RESOLVER FAILURE FAILS CLOSED, WITH A COARSE STABLE REASON ***
 *** EXACT values, read from Manus computed styles ***
 *** English phrasing works the same way ***
 *** English words in the question do not turn the whole answer English ***
@@ -503,6 +508,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** M — ⛔ premature FINAL with PUBLIC missing is REFUSED, and the model recovers ***
 *** M/N — once the required world is live, FINAL and ASK both behave normally ***
 *** MALFORMED_LOCK_FAILS_CLOSED — an unreadable lock is busy at any age ***
+*** MISSING OR MALFORMED INPUT REFUSES BEFORE ANYTHING IS ASKED ***
 *** N real processes appending M records each lose nothing ***
 *** N — a LIVE public result becomes ordinary A3 evidence ***
 *** N — a LIVE zero-row read is still evidence ***
@@ -658,7 +664,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** T — ⛔ a rejected FINAL never reaches the Owner either ***
 *** T/U — after the worker\
 *** THE ACCOUNT NAME IS NOT THE ACCOUNT — ONLY THE SID IS COMPARED ***
+*** THE BINDING VERDICTS SURVIVE THE COORDINATOR UNCHANGED ***
 *** THE CARVE-OUT: a title the Owner himself typed is not laundering ***
+*** THE COMPANION REFERENCE IS PASSED THROUGH UNREAD ***
+*** THE COORDINATOR ASKS ITS OWN AUTHORITY, AND USES ONLY THAT ***
 *** THE COST OF CLAUSE-SCOPING, recorded rather than hidden ***
 *** THE FLAG IS NOT SUFFICIENT — on, with no order, unlocks nothing ***
 *** THE LANE GUARANTEE: only the proposal shape can ever carry promoteToProposal ***
@@ -1656,6 +1665,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A COHERENT SCHEMA IS NOT AN ENABLED CAPABILITY ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A CORRELATED REFUSAL IS NEVER RELABELLED AS AN OBSERVATION ***
+*** ⛔ A DIFFERENT COMPANION FORCES A FRESH RESOLUTION — NO CACHING ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
 *** ⛔ A FOURTH UNKNOWN FIELD STILL FAILS CLOSED ***
 *** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
@@ -1664,6 +1674,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ A RESPONSE THAT IS NOT THE ANSWER TO THIS REQUEST IS REFUSED ***
 *** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
+*** ⛔ A STRUCTURALLY PERFECT NON-INDEPENDENT RESULT IS REFUSED ***
 *** ⛔ A SUCCESSFUL CAPTURE WITH NO RATIO IS REFUSED ***
 *** ⛔ A SUCCESSFUL list_windows WITH NO COUNT IS THE SAME VACUOUS PASS ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
@@ -1717,6 +1728,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ B5e. 「每箱 5」 ON THAT SAME ROW IS STILL ORDINARY RAW EVIDENCE ***
 *** ⛔ B5f. AND 「缺口 -5」 IS STILL ACCEPTED ON THAT ROW ***
 *** ⛔ B5g. A DUPLICATE-TITLE CLAIM CANNOT BE LAUNDERED EITHER ***
+*** ⛔ BOTH NEW MODULES ARE PURE, AND TOUCH NO MACHINE MACHINERY ***
 *** ⛔ BOTH observed phrasings are caught, and they differ from each other ***
 *** ⛔ CANONICAL IDENTITY — DUPLICATE TITLES DO NOT COLLAPSE ***
 *** ⛔ CLASS 1 — internal context + capability available → READ, no clarification ***
@@ -1726,12 +1738,14 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ E0-B1 is not wired into the runtime, and browseResult.js is GONE ***
 *** ⛔ EACH OUTCOME IS REPORTED AS AN ENUM PLUS A COUNT ***
 *** ⛔ END TO END: nextRead → real connector read → observation in prompt → SAME provider → FINAL ***
+*** ⛔ EVERY AUTHORITY FAILURE LEAVES THE OWNER APPROVAL UNSPENT ***
 *** ⛔ EVERY COMPANION RESPONSE ECHOES THE EXACT REQUEST NONCE ***
 *** ⛔ EVERY IDENTITY DIFFERENCE IS A BINDING FAILURE, NOT AN ORDINARY REFUSAL ***
 *** ⛔ EVERY genuine work request still proposes a change — none may be lost ***
 *** ⛔ EXHAUSTION AND GENUINE PLAN FAILURE ARE DIFFERENT STOP REASONS ***
 *** ⛔ EXPLICIT TOP-N: exact membership, exact count, correct order ***
 *** ⛔ GPT step 1 → READ → GPT step 2. Claude is NEVER called. ***
+*** ⛔ INDEPENDENCE MUST BE ASSERTED, NOT ASSUMED FROM ABSENCE ***
 *** ⛔ INTEGRATION: THE PRODUCTION SECTION IS REFUSED AND THE REPLY IS NOT EMPTY ***
 *** ⛔ IT CAN ONLY EVER NARROW — a named source that is not enabled stays unread ***
 *** ⛔ KNOWN GAP, DELIBERATE: an unattributable denial stays silent ***
@@ -1749,10 +1763,13 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ NO CALL SITE READS THE TRACER\
 *** ⛔ NO FIELD CAN CARRY THE MESSAGE, THE REPLY, OR A SECRET ***
 *** ⛔ NO HEADING, TITLE, VALUE OR MESSAGE REACHES THE VERDICT ***
+*** ⛔ NO IDENTITY EVER LEAVES THE COORDINATOR ***
 *** ⛔ NO REPLY, SENTENCE, NAME OR ROW VALUE REACHES THE LOG ***
 *** ⛔ NO SENTENCE, TITLE, NUMERAL, LABEL OR USER TEXT REACHES THE LOG ***
+*** ⛔ NO SESSION NUMBER AND NO MACHINE SID IS BAKED IN ***
 *** ⛔ NO TEXT DETECTOR: production never inspects her prose for a capability denial ***
 *** ⛔ NOT-COVERED questions are untouched — composition is narrow ***
+*** ⛔ NOTHING ABOUT THE SERVICE OR THE MACHINE LEAVES THE BOUNDARY ***
 *** ⛔ ON DETECTION the disambiguation does not ship, and the FACT does ***
 *** ⛔ ONE-ITEM SUPERLATIVE: only the proven first qualifies ***
 *** ⛔ OPTIONAL facts do not authorise a read on their own ***
@@ -1775,6 +1792,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RULE 2 — an empty field and an unobserved one cap a fact at PARTIAL; an absent one kills it ***
 *** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
+*** ⛔ SELF-ATTESTED PAYLOAD SHAPES ARE REFUSED AT THE BOUNDARY ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
 *** ⛔ SUPERLATIVE WITH NO N: the items must be a proven PREFIX ***
 *** ⛔ TELEMETRY PROSE RECORDS telemetry ***
@@ -1786,7 +1804,9 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE CLARIFY TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE CLASS, not the instance — other subjects that merely carry a token ***
+*** ⛔ THE COMPANION REFERENCE STAYS OPAQUE — NO PID, NO SESSION, NO ACCOUNT ***
 *** ⛔ THE ENUMS ARE CLOSED — an unrecognised value is never echoed ***
+*** ⛔ THE EXPECTED SIDE IS FROZEN AT PREPARE AND NEVER RE-QUERIED ***
 *** ⛔ THE FIVE SHAPES ARE DISTINCT, AND ALL FIT THE 20-CHAR LOG FIELD ***
 *** ⛔ THE FOUR ENUMS ARE DISTINCT AND CLOSED ***
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
@@ -1804,13 +1824,16 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE RESERVED CALL IS BOUNDED — it may not read, so it cannot extend the turn ***
 *** ⛔ THE RESERVED CALL IS NOT AN ESCAPE HATCH AROUND beforeTerminal ***
 *** ⛔ THE RESTAURANT IS NOT THE SYSTEM — no composed answer ***
+*** ⛔ THE SESSION FIELDS ARE CHECKED, AND THE STATION AND DESKTOP ARE POLICY ***
 *** ⛔ THE STOP: planFor returns notAsked, which is checked BEFORE any read ***
 *** ⛔ THE TWO ARE TOLD APART ON OTHERWISE IDENTICAL INPUT ***
 *** ⛔ THE WORKED EXAMPLE — 「三間門市」 on a turn that read nothing ***
 *** ⛔ THE WORKING TURN STILL WORKS — the URL, clean ***
 *** ⛔ THE ZERO-SOURCE BYPASS IS CLOSED — a claim with NO proof is refused ***
+*** ⛔ THERE IS NOWHERE FOR A CALLER TO PUT AN EXPECTED SESSION ***
 *** ⛔ TURN 1 — the URL ships and NO internal-vs-public question survives ***
 *** ⛔ TURN_ROUTER is NOT the A4 rollback — the flags are independent ***
+*** ⛔ VERIFY ACCEPTS NO CALLER EXPECTATION EITHER ***
 *** ⛔ WIRED: a contradicting order is WITHHELD by validatePlan, not just judged ***
 *** ⛔ WIRED: an ORDINARY question is untouched — no new refusals ***
 *** ⛔ WIRED: an undeclared superlative is WITHHELD ***
