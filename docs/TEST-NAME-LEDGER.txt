@@ -662,6 +662,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** THE LIVE FAILURE: a metric value the model mistyped is corrected, not deleted ***
 *** THE LIVE FAILURE: a recalled item name never reaches the Owner ***
 *** THE LIVE FAILURE: a source name as sourceId is still dropped — the check is NOT relaxed ***
+*** THE WHOLE VALID RANGE IS SCHEMA-VALID — 0 INCLUDED, AND STILL BLACK AT ADJUDICATION ***
 *** THIS process — the real one running these tests — is not pointed at production ***
 *** TURN_ROUTER defaults to on ***
 *** TURN_ROUTER=off keeps pre-router behaviour — a live rollback target ***
@@ -1193,6 +1194,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** no token value appears anywhere in the result, in any state ***
 *** no two rows may share an id ***
 *** node --test is detected by the variable NODE ITSELF sets ***
+*** nonBlackRatio:null IS PERMITTED WHERE IT DOES NOT APPLY ***
 *** none of the false triggers produce an offer ***
 *** nothing disappears silently — the hidden count is real ***
 *** nothing in the application imports the Companion or the channel ***
@@ -1642,13 +1644,18 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ 6. NON-SUPERLATIVE QUESTIONS ARE NOT THIS GATE\
 *** ⛔ 6. [AROMA-ASK-FORK] SHOWS THE RESTRAINT AS ITS OWN BRANCH ***
 *** ⛔ 7. THE 3-READ + RESERVED-COMPOSE ARCHITECTURE IS UNCHANGED ***
+*** ⛔ A CANONICAL CAPTURE FROM THE PINNED PRODUCER VALIDATES ***
+*** ⛔ A COHERENT SCHEMA IS NOT AN ENABLED CAPABILITY ***
 *** ⛔ A CORRECT reply produces the URL EXACTLY ONCE — no duplication ***
 *** ⛔ A FAILED OR ABSENT PLAN NARROWS NOTHING — fail-safe, never fail-shut ***
+*** ⛔ A FOURTH UNKNOWN FIELD STILL FAILS CLOSED ***
 *** ⛔ A LOGGER THAT THROWS DOES NOT FAIL THE TURN, AND RETURNS NOTHING ***
 *** ⛔ A MEASURE NOTHING ORDERED IS STILL RECOGNISED — and cannot ship undeclared ***
 *** ⛔ A QUESTION THE REGISTRY DOES NOT COVER KEEPS THE HONEST REFUSAL ***
 *** ⛔ A SENTENCE THAT PASSES EMITS NO FAILURE DETAIL AT ALL ***
 *** ⛔ A SENTENCE THAT SURVIVES PRODUCES NO DROP REASON ***
+*** ⛔ A SUCCESSFUL CAPTURE WITH NO RATIO IS REFUSED ***
+*** ⛔ A SUCCESSFUL list_windows WITH NO COUNT IS THE SAME VACUOUS PASS ***
 *** ⛔ A TURN THAT NEVER READ GETS NO RESERVED CALL — no free extra model call ***
 *** ⛔ A URL IS NOT A FACT — both halves are required, and the kind must be known ***
 *** ⛔ A VALID DERIVATION + AN UNRELATED BAD NUMBER IS raw_unsupported ***
@@ -1740,6 +1747,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ PROHIBITION 1 — the BOUND port wins over the requested one ***
 *** ⛔ PROHIBITION 2 — the sentence is derived, so a count cannot drift ***
 *** ⛔ PROHIBITION 3 — reachable is ALWAYS null; a flag never answers a capability ***
+*** ⛔ RAW CONTENT IS STILL REFUSED BY NAME ***
 *** ⛔ READ → READ → READ: a fourth call to COMPOSE, and pending prose is still NOT the answer ***
 *** ⛔ READ_ACCESS off → nextRead executes ZERO connector reads ***
 *** ⛔ REVIEW 1: a capped count is NOT a matching total ***
@@ -1757,6 +1765,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE 17:06 TURN — the registry URL reaches the shipped reply ***
 *** ⛔ THE ACCEPTANCE CASE — a plan naming NO operation reads NOTHING ***
 *** ⛔ THE ACCEPTANCE CASE — she never has to ask what Aroma System is ***
+*** ⛔ THE AUDIT KEEPS THE MEASUREMENT AND REFUSES BOTH IDENTITY STRINGS ***
 *** ⛔ THE CANARY TURN — three reads consume the budget and it STILL composes ***
 *** ⛔ THE CITED SPAN IS THE FOOTNOTE, NOT THE FACT — proved on the captured live payload ***
 *** ⛔ THE CLARIFY TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
@@ -1767,8 +1776,10 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ THE GOOD ANSWER IS NOT CAUGHT — and it ends in a question too ***
 *** ⛔ THE HAZARD WAS REAL: empty strings overwrite real settings ***
 *** ⛔ THE KNOWN FALSE POSITIVE IS PINNED, NOT HIDDEN ***
+*** ⛔ THE MISSING COUNT HAS ITS OWN ADJUDICATION REASON, NOT THE RATIO ONE ***
 *** ⛔ THE OWNER\
 *** ⛔ THE PRODUCTION DEFECT: 「目前最缺的四項」 IN THE WRONG ORDER IS REFUSED ***
+*** ⛔ THE RATIO IS A FINITE NUMBER IN [0,1] — NO COERCION, NO CLAMPING ***
 *** ⛔ THE READING TURN DECIDES THE SAME WITH LOGGING AND WITHOUT ***
 *** ⛔ THE REAL MESSAGE, 2026-08-08 ***
 *** ⛔ THE REAL TURN: nothing read, he asked for a look → the record is appended ***
@@ -1845,6 +1856,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ it does NOT run when rows were read — claim binding owns that turn ***
 *** ⛔ kind is structural — replacing the TEXT changes no verdict ***
 *** ⛔ live internal evidence never reaches the resolver ***
+*** ⛔ measuredBy AND measuredSid ARE PROVENANCE — PRESENCE IS NOT AUTHORISATION ***
 *** ⛔ modelCalls IS COUNTED, NOT DERIVED — and 4 is the default worst case ***
 *** ⛔ no capability, tool, provider or network vocabulary ***
 *** ⛔ no interface string is written in Cantonese oral register ***
@@ -1898,6 +1910,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ there is no field through which raw evidence could reach the block ***
 *** ⛔ there is no reflection worker and no candidate auto-writer ***
 *** ⛔ three facts against one endpoint are ONE read ***
+*** ⛔ titles:null IS NOT-APPLICABLE, AND A REAL TITLE LIST IS NO EASIER THAN BEFORE ***
 *** ⛔ totalCount is GONE — not aliased ***
 *** ⛔ two kinds of null are told apart by `deterministic`, never by absence ***
 *** ⛔ what she CANNOT answer is named, not left to be discovered ***

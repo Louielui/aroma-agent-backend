@@ -416,7 +416,11 @@ test('*** a result carrying raw content is REFUSED, not silently trimmed ***', (
     const r = O.validateResult({ ok: true, action: 'capture_screen', [bad]: 'x' })
     assert.equal(r.ok, false, bad + ' must be refused')
   }
-  assert.equal(O.validateResult({ ok: true, action: 'capture_screen', evidenceSha256: 'a'.repeat(64) }).ok, true)
+  // ⛔ FIXTURE MODERNISED, NOT WEAKENED. This positive control is here to prove a legitimate
+  //    result still passes while raw content is refused. A successful capture must now carry its
+  //    measurement, so the control carries one — the assertion is still that a valid result is
+  //    accepted, and it would still fail if the allowlist started refusing declared fields.
+  assert.equal(O.validateResult({ ok: true, action: 'capture_screen', evidenceSha256: 'a'.repeat(64), nonBlackRatio: 0.42 }).ok, true)
 })
 
 test('audit refuses an undeclared field rather than accepting a payload with it', () => {

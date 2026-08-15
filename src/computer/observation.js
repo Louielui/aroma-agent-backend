@@ -100,6 +100,19 @@ const RESULT_FIELDS = Object.freeze([
   'sessionId', 'windowStation', 'desktop', 'sessionState',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
   'windowCount', 'nodeCount', 'nodeReadFailures', 'titles', 'at',
+  /**
+   * ⛔ THE THREE THE PINNED PRODUCER ALREADY EMITS. observer.ps1 is the exact historical blob
+   * ac0a39b, pinned by SHA-256 in the registered task and matched byte-for-byte on the machine,
+   * so a canonical observation was being rejected as undeclared. The contract aligns to the
+   * producer; the producer is not edited to fit the contract, because that would break an
+   * integrity chain that took three tranches to establish.
+   *
+   * ⛔ THEY ARE NOT ALIKE. `nonBlackRatio` is EVIDENCE — it is how a capture shows it
+   * photographed a screen rather than a black rectangle — so where it applies it is required.
+   * `measuredBy` and `measuredSid` are PROVENANCE ONLY: strings the producer writes about
+   * itself, shape-checked and never interpreted. See validateResult.
+   */
+  'nonBlackRatio', 'measuredBy', 'measuredSid',
   // DPI travels WITH each capture. Per-monitor awareness means it varies by screen, so a
   // capture recorded without it cannot be reasoned about after the fact — which is exactly
   // what made the earlier 1664x1109 numbers unusable.
@@ -265,13 +278,35 @@ function signatureDistance (a, b) {
   return Math.sqrt((a.r - b.r) ** 2 + (a.g - b.g) ** 2 + (a.b - b.b) ** 2)
 }
 
+/**
+ * ⛔ SHAPE PREDICATES, SHARED BY THE SCHEMA AND THE ADJUDICATOR ON PURPOSE. A measurement
+ * that the validator would refuse must not be one the adjudicator silently accepts, and the
+ * only way to guarantee that is one definition.
+ *
+ * No coercion and no clamping anywhere: '0.42' is what a careless JSON layer produces, and
+ * coercing it would invent a measurement nobody took. NaN is not a low ratio, it is a failed
+ * one. 1.01 is not 1.
+ */
+const isRatio = (v) => typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1
+const isCount = (v) => typeof v === 'number' && Number.isInteger(v) && v >= 0
+
 /* ── THE VACUOUS-PASS RULES ────────────────────────────────────────────────
  * Every one of these was earned. A zero result is only evidence when something in the same
  * run proves the measurement was capable of a non-zero one.
  */
 const VACUOUS_PASS_RULES = Object.freeze([
   { id: 'own-sentinel-absent', when: (c) => c.ownSentinelCreated !== true, why: 'the positive sentinel was never created, so finding nothing proves nothing' },
+  // ⛔ LEFT EXACTLY AS IT WAS. Narrowing this to keep the two reasons from overlapping was an
+  //    unauthorised semantic change to an existing rule, and it was also unnecessary: this
+  //    adjudicator reports EVERY rule that fired, on purpose, so a missing count legitimately
+  //    produces both this and list-count-missing-or-invalid. Do not deduplicate them.
   { id: 'zero-windows', when: (c) => c.action === 'list_windows' && !(c.windowCount > 0), why: 'enumeration returned no windows at all' },
+  /**
+   * ⛔ THE SYMMETRIC RULE TO capture-ratio-missing-or-invalid, AND EARNED THE SAME WAY.
+   * A successful enumeration with no count says 「I looked」 and refuses to say what it saw.
+   * That is a pass with nothing behind it, wearing the other action's clothes.
+   */
+  { id: 'list-count-missing-or-invalid', when: (c) => c.action === 'list_windows' && !isCount(c.windowCount), why: 'the enumeration reported no usable window count, so there is no measurement to be zero or non-zero' },
   { id: 'capture-empty', when: (c) => c.action === 'capture_screen' && !(c.evidenceBytes > 0), why: 'capture returned zero bytes or errored' },
   // FOUND 2026-07-29, and it had already fired unnoticed. list_windows had zero-windows and
   // capture_screen had capture-empty, but read_uia_tree had NO RULE AT ALL — so an
@@ -286,6 +321,13 @@ const VACUOUS_PASS_RULES = Object.freeze([
   // a tree of N nodes could yield zero text while still reporting N. Refuse, do not trim.
   { id: 'uia-node-read-failures', when: (c) => c.action === 'read_uia_tree' && c.nodeReadFailures > 0, why: 'one or more nodes could not be read, so the node count does not describe what was captured' },
   { id: 'owner-sentinel-absent', when: (c) => c.ownerSentinelCreated !== true, why: 'the negative sentinel was never created, so its absence is meaningless' },
+  /**
+   * ⛔ TWO DIFFERENT CLAIMS, AND THE FIRST ONE HAD NO RULE. `black-frame` only ever fired on
+   * a ratio that WAS a number, so a capture carrying no measurement at all sailed past it —
+   * 「nothing was measured」 read as 「nothing was wrong」. That is the vacuous pass this whole
+   * table exists to refuse.
+   */
+  { id: 'capture-ratio-missing-or-invalid', when: (c) => c.action === 'capture_screen' && !isRatio(c.nonBlackRatio), why: 'the capture reported no usable non-black ratio, so it cannot show it photographed a screen at all' },
   { id: 'black-frame', when: (c) => c.action === 'capture_screen' && typeof c.nonBlackRatio === 'number' && c.nonBlackRatio < MIN_NON_BLACK_RATIO, why: 'the capture is black or near-black' },
   { id: 'disconnected-session', when: (c) => c.action === 'capture_screen' && c.sessionState === 'Disc', why: 'a disconnected session is not composited, so a capture proves nothing' },
   { id: 'timed-out', when: (c) => c.timedOut === true, why: 'the measurement did not complete' },
@@ -354,7 +396,14 @@ function validateResult (result, opts = {}) {
    * are now ephemeral-only, so the check belongs where they legitimately appear — otherwise
    * removing the durable path would have quietly removed the isolation proof with it.
    */
-  if (result.titles !== undefined) {
+  /**
+   * ⛔ `null` IS NOT-APPLICABLE, AND IT BUYS NOTHING ELSE. The producer initialises every key
+   * of one ordered hashtable, so a capture genuinely carries `titles = $null` — it had no
+   * titles to report. That must be accepted WITHOUT loosening anything for a result that
+   * carries titles for real: the moment the field holds a value, all four conditions below
+   * apply exactly as before.
+   */
+  if (result.titles !== undefined && result.titles !== null) {
     /**
      * ⛔ FAIL CLOSED. THIS GUARD USED TO READ
      *     if (result.titles !== undefined && typeof opts.ownSessionId === 'number')
@@ -382,6 +431,55 @@ function validateResult (result, opts = {}) {
       return { ok: false, errors: ['CONTAINMENT-FAILURE: titles from session ' + result.sessionId + ', own session is ' + opts.ownSessionId] }
     }
   }
+  /**
+   * ⛔ A SUCCESSFUL CAPTURE MUST CARRY ITS MEASUREMENT.
+   *
+   * `ok: true` with no ratio is indistinguishable from a capture of a black rectangle, and
+   * the difference is the entire purpose of the field. Refused here so it cannot reach
+   * adjudication looking complete. A REFUSED capture owes nothing — it measured nothing and
+   * says so — and a non-capture action has no image to measure.
+   */
+  if (result.action === 'capture_screen' && result.ok === true && !isRatio(result.nonBlackRatio)) {
+    return { ok: false, errors: ['a successful capture_screen must carry nonBlackRatio as a finite number in [0,1]; got ' + JSON.stringify(result.nonBlackRatio)] }
+  }
+  if (result.nonBlackRatio !== undefined && result.nonBlackRatio !== null && !isRatio(result.nonBlackRatio)) {
+    return { ok: false, errors: ['nonBlackRatio must be a finite number in [0,1] when present; got ' + JSON.stringify(result.nonBlackRatio)] }
+  }
+
+  /**
+   * ⛔ AND THE SAME RULE ON THE OTHER ACTION. A successful enumeration with no count is the
+   * identical vacuous pass in different clothes. `titles: null` WITH a count means 「counted,
+   * titles not released」, which is a real and permitted answer; `titles: null` with no count
+   * means nothing was measured at all. Zero windows stays expressible — a bare desktop is a
+   * finding, and only a measured one.
+   */
+  if (result.action === 'list_windows' && result.ok === true && !isCount(result.windowCount)) {
+    return { ok: false, errors: ['a successful list_windows must carry windowCount as a non-negative integer; got ' + JSON.stringify(result.windowCount)] }
+  }
+
+  /**
+   * ⛔ PRESENCE IS NOT AUTHORISATION.
+   *
+   * `measuredBy` and `measuredSid` are strings the producer writes about ITSELF — anything
+   * able to write the result is able to write them. So they are shape-checked and NEVER
+   * interpreted: not compared against an expected identity, not used as a session binding,
+   * not a fallback identity, not consulted by any decision in this module. A foreign account
+   * validates exactly as the expected one does, because this contract makes no identity claim.
+   *
+   * Independent identity proof and session/governance binding are a LATER TRANCHE and do not
+   * exist yet. Treating these fields as either would be worse than their absence: it would
+   * put the appearance of a check where there is none.
+   *
+   * Not required, either — the in-process stage-1 observer returns refusals and has no Windows
+   * identity source to attest from.
+   */
+  for (const k of ['measuredBy', 'measuredSid']) {
+    if (result[k] === undefined) continue
+    if (typeof result[k] !== 'string' || result[k].trim() === '') {
+      return { ok: false, errors: [k + ' is producer-attested provenance and must be a non-empty string when present; got ' + JSON.stringify(result[k])] }
+    }
+  }
+
   for (const k of ['imageBytes', 'buffer', 'pixels', 'uiaText', 'nodes']) {
     if (k in result) return { ok: false, errors: ['raw content field present: ' + k] }
   }
@@ -403,6 +501,15 @@ const AUDIT_FIELDS = Object.freeze([
   'at', 'orderId', 'action', 'outcome', 'refusalReason',
   'evidenceSha256', 'evidenceBytes', 'imageWidth', 'imageHeight',
   'windowCount', 'nodeCount', 'nodeReadFailures', 'sessionId', 'sessionState', 'elapsedMs',
+  /**
+   * ⛔ ONE OF THE THREE IS DURABLE, AND IT IS THE ONE WITH NO PERSON IN IT. A ratio is a
+   * number about pixels. `measuredBy` and `measuredSid` name an ACCOUNT, and a durable record
+   * of who was measured is a different category of thing from a record of what was measured —
+   * the same reasoning that removed `titles` from this list on 2026-08-05. They are refused
+   * here rather than stripped: quietly dropping them would make a record that omits something
+   * look like one that was never offered it.
+   */
+  'nonBlackRatio',
   'dpiAwareness', 'dpiX', 'scalingFactor',
   'logicalWidth', 'logicalHeight', 'physicalWidth', 'physicalHeight',
   'primaryScreen', 'sentinelScreen'
