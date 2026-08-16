@@ -5,7 +5,7 @@ const { startOfLocalDay: ownerStartOfLocalDay } = require('../utils/localTime') 
 // ⛔ ONE-WAY EDGE. readOperations.js requires NOTHING from here — its agreement with
 // AROMA_INTENTS is asserted by readOperations.test.js instead, so the two tables cannot drift
 // and there is still no import cycle.
-const { resolveReadOperation } = require('./readOperations')
+const { resolveReadOperation, operationForAromaMethod, AROMA_SOURCE } = require('./readOperations')
 // ⛔ A4-2A: a public SEARCH is not a public OPERATION — see publicReadIdentity.js.
 const { publicReadKey } = require('./publicReadIdentity')
 
@@ -822,22 +822,63 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     const readKey = (directed && directed.method && directed.source === source)
       ? (source === 'public_knowledge' ? publicReadKey(operation, args) : operation)
       : source
+
+    /**
+     * ⛔ THE THIRD IDENTITY, AND IT IS DELIBERATELY NOT THE readKey.
+     *
+     * An earlier attempt at this fix derived the readKey from the executed method, so an
+     * automatic inventory read became `aroma_system.inventory`. It rendered correctly and it
+     * was wrong: `readKey` is the EVIDENCE NAMESPACE. Row refs, the answerPlan sourceId enum,
+     * the evidence index and claim binding are all built on it, so renaming it silently
+     * rewrote `aroma_system#7` into `aroma_system.inventory#7` — a contract a previous tranche
+     * had pinned on purpose, in a test that says so by name.
+     *
+     * So the operation travels BESIDE the readKey, never instead of it:
+     *   source    — which connector answered            (aroma_system)
+     *   readKey   — the evidence/ref namespace, FROZEN  (aroma_system)
+     *   operation — what business read actually ran      (aroma_system.inventory)
+     *
+     * ⛔ PRESENTATION ONLY. It is not stamped on rows, not put in the EvidenceSet, and not
+     * serialised into the prompt block. Nothing downstream may bind to it — a value invented
+     * for a heading must never become something a claim can be validated against.
+     */
+    let executedOperation = null
     try {
       // `operation` is ABSENT on every automatic read — the one-shot path passes no such
       // argument — so this call is byte-identical to before for every existing caller.
       const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args })
+
+      /**
+       * ⛔ THE IDENTITY EXISTED ALL ALONG AND WAS DISCARDED ONE LINE LATER. On an automatic
+       * read the model names nothing, so nothing upstream recorded WHICH view was read — while
+       * `planFor` had just selected `listInventory`. Every automatic read of all six views
+       * reached the screen as plain 餐廳系統, which is why one heading covered 倉存, 訂貨建議
+       * and 採購單 alike.
+       *
+       * ⛔ THE EXECUTED METHOD DECIDES, NOT THE INTENT MATCHER RE-RUN. Asking the matcher a
+       * second time would be a second opinion about what this turn just did, and the two could
+       * differ; `plan.method` is the read that is actually about to happen.
+       *
+       * ⛔ AROMA ONLY, AND NEVER INVENTED. A source with no operation vocabulary keeps `null`
+       * — including a directed PUBLIC read, whose own heading is not this tranche's business.
+       */
+      if (source === AROMA_SOURCE && plan && plan.method) {
+        executedOperation = (directed && directed.method && directed.source === source)
+          ? operation // already validated against the closed vocabulary upstream
+          : operationForAromaMethod(plan.method)
+      }
       // NOT ASKED is not NOT AVAILABLE. Checked first so it can never fall into the branch
       // below and become a false read-failure claim.
       if (plan.notAsked) {
         return { durationMs: Date.now() - startedAt, skipped: true, source, reason: plan.notAsked }
       }
       if (plan.unavailable) {
-        return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, plan.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, readKey, operation: executedOperation, trust: 'unavailable', count: 0, error: plan.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, plan.unavailable)], overflow: false }
       }
 
       let step = await runStep(connector, source, plan, caps)
       if (step.unavailable) {
-        return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, step.unavailable)], overflow: false }
+        return { durationMs: Date.now() - startedAt, entry: { source, readKey, operation: executedOperation, trust: 'unavailable', count: 0, error: step.unavailable, usedFallback: false }, lines: [unavailableLine(readKey, step.unavailable)], overflow: false }
       }
 
       // Keyword miss → recent-items fallback (still a READ OK, clearly labelled).
@@ -856,7 +897,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
         // second operation's empty result be told apart from the first one's.
         return {
           durationMs: Date.now() - startedAt,
-          entry: { source, readKey, trust: 'live', count: 0, error: null, usedFallback },
+          entry: { source, readKey, operation: executedOperation, trust: 'live', count: 0, error: null, usedFallback },
           lines: [zeroResultLine(readKey)],
           evidence: Object.assign(describeRead(source, step.evidence, [], usedFallback, asOf), { readKey }),
           overflow
@@ -876,7 +917,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
        */
       const retrievedStamped = step.results.map((r) => Object.assign({}, r, { readKey }))
       return {
-        entry: { source, readKey, trust: 'live', count: kept.length, error: null, usedFallback },
+        entry: { source, readKey, operation: executedOperation, trust: 'live', count: kept.length, error: null, usedFallback },
         lines: stamped.map((r) => renderItem(r, caps, { recent: usedFallback })),
         // The rows themselves, carried out unchanged for the Owner-facing view. Returning
         // what was already computed — this changes nothing about what is read or sent to
@@ -892,7 +933,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
       }
     } catch (err) {
       const why = (err && err.message) ? String(err.message).slice(0, 120) : 'read failed'
-      return { durationMs: Date.now() - startedAt, entry: { source, readKey, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(readKey, why)], overflow: false }
+      return { durationMs: Date.now() - startedAt, entry: { source, readKey, operation: executedOperation, trust: 'unavailable', count: 0, error: why, usedFallback: false }, lines: [unavailableLine(readKey, why)], overflow: false }
     }
   }
 
@@ -920,8 +961,11 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
 
     perSource.push(got.entry)
     lineGroups.push(got.lines) // kept PER SOURCE — the assembler interleaves them
-    itemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.items) ? got.items : [] })
-    retrievedItemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, items: Array.isArray(got.retrievedItems) ? got.retrievedItems : (Array.isArray(got.items) ? got.items : []) })
+    // ⛔ GROUP METADATA, NOT ROW METADATA. `operation` rides on the GROUP — the rows keep the
+    //    exact shape they already had, so nothing that reads a row can start depending on a
+    //    presentation value. Absent (non-Aroma, or no plan) it is null, never a guess.
+    itemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, operation: got.entry.operation || null, items: Array.isArray(got.items) ? got.items : [] })
+    retrievedItemsBySource.push({ source: got.entry.source, readKey: got.entry.readKey || got.entry.source, operation: got.entry.operation || null, items: Array.isArray(got.retrievedItems) ? got.retrievedItems : (Array.isArray(got.items) ? got.items : []) })
     // ⛔ UNAVAILABLE IS NOT EVIDENCE — AND THE CALLER DECIDES WHETHER AN EvidenceSet EXISTS.
     //
     // This was `got.evidence || describeRead(...)`. An unavailable read deliberately carries no

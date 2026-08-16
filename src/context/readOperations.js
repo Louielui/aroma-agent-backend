@@ -154,6 +154,29 @@ function operationForAromaMethod (method) {
 }
 
 /**
+ * The Owner-facing name of an OPERATION — 倉存, 訂貨建議, 採購單 — for the RESULT on his screen.
+ *
+ * ⛔ NO NEW TABLE, AND THAT IS THE POINT. Every one of these labels already existed here and
+ * already travels to the model beside the enum; the renderer simply never asked for it and
+ * printed the source name six times instead. A second operation-to-label map would read as
+ * harmless and would be the defect: two lists that must agree, one rename apart from
+ * disagreeing, with the model told one thing and the Owner shown another.
+ *
+ * ⛔ THE FROZEN VOCABULARY IS THE ONLY AUTHORITY. A dotted string is not an operation because
+ * it looks like one. `aroma_system.anything` resolves here or it resolves nowhere, so a value
+ * that reached a group by accident cannot print itself as a heading.
+ *
+ * ⛔ AN UNKNOWN NAME RETURNS null, NEVER A GUESS. A bare source (`aroma_system`), a retired
+ * operation, a typo — none has an Owner-facing name here, and deriving one from the string
+ * would put a label nobody chose above his data. The caller falls back to the source label,
+ * which is at least true.
+ */
+function labelForOperation (operation) {
+  const hit = BY_OPERATION.get(typeof operation === 'string' ? operation.trim() : '')
+  return hit ? hit.label : null
+}
+
+/**
  * The Owner-facing gloss shown to the MODEL beside the enum.
  *
  * ⛔ MODEL TEXT (textClasses.js, class MODEL) — she is told this, and it decides which view she
@@ -218,5 +241,6 @@ module.exports = {
   operationsForSources,
   resolveReadOperation,
   operationForAromaMethod,
+  labelForOperation,
   describeOperations
 }

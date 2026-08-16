@@ -31,6 +31,7 @@
  */
 
 const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
+const { labelForOperation } = require('../context/readOperations') // the OPERATION name, from the one canonical table
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { enforceRouteEvidence } = require('./routeEvidenceGuard') // STEP 4: an answer with nothing behind it
 const { t } = require('../i18n/t')
@@ -198,7 +199,13 @@ function isExhaustiveListRequest (message) {
  */
 function renderCompleteSupplierList (rows, labels) {
   const list = Array.isArray(rows) ? rows : []
-  const label = (labels && typeof labels.aroma_system === 'string' && labels.aroma_system) || LABELS.aroma_system || 'aroma_system'
+  /**
+   * ⛔ STILL TWO ARGUMENTS, AND THE HEADING IS STILL A SERVER CONSTANT. The list is only ever
+   * the supplier read, so the operation is not inferred from anything a caller passed — it is
+   * named here, resolved from the canonical table, and falls back to the source name.
+   */
+  const label = labelForOperation('aroma_system.suppliers') ||
+    (labels && typeof labels.aroma_system === 'string' && labels.aroma_system) || LABELS.aroma_system || 'aroma_system'
   const lines = ['### ' + label + '（完整名單，共 ' + list.length + ' 項）']
   list.forEach((r, i) => {
     const title = (r && typeof r.title === 'string' && r.title) ? r.title : '(untitled)'
@@ -235,9 +242,28 @@ function serverOwnedSupplierList (input) {
   return group ? group.items : null
 }
 
-/** ONE SECTION PER SOURCE — so two sources can never share a paragraph. */
-function renderSection (source, items) {
-  const label = LABELS[source] || source
+/**
+ * THE NAME THE OWNER READS — the operation when the read had one, the source otherwise.
+ *
+ * ⛔ THE FALLBACK CHAIN NEVER EMITS AN UNVETTED STRING. `readKey` is looked UP, never printed
+ * as-is unless it is already a known key, and `source` is looked up too. So a caller that
+ * passes something free-form gets 餐廳系統 — a true if unspecific name — and cannot put a
+ * heading of its own choosing on the Owner's screen through this door.
+ *
+ * ⛔ AND 餐廳系統 IS NOT RETIRED. It remains correct wherever the subject really is the whole
+ * source: an unreadable connector, an empty read, the source list itself.
+ */
+function labelFor (operation, readKey, source) {
+  return labelForOperation(operation) || labelForOperation(readKey) || LABELS[source] || source || readKey || ''
+}
+
+/**
+ * ONE SECTION PER READ — so two sources, or two operations of ONE source, can never share a
+ * paragraph. Keyed by readKey rather than source: 倉存 and 訂貨建議 are both `aroma_system`,
+ * and under the source name they became one indistinguishable block.
+ */
+function renderSection (operation, items, source) {
+  const label = labelFor(operation, null, source)
   const shown = items.slice(0, CAPS.maxItemsPerSection)
   const rest = items.length - shown.length
   const lines = [`### ${label}`]
@@ -276,7 +302,9 @@ function selectRelevant (intent, itemsBySource, perSource) {
  * from the turn: no item detail can leak into it because no item detail is available to it.
  */
 function renderSummary (intent, groups) {
-  const parts = groups.map((g) => `${LABELS[g.source] || g.source} ${g.items.length} ${intent.unit}${intent.noun}`)
+  // ⛔ THE SUMMARY COLLAPSED TOO, AND MORE QUIETLY THAN THE HEADINGS. Two Aroma reads produced
+  //    「餐廳系統 1 項、餐廳系統 1 項」 — the same name twice, saying nothing about which is which.
+  const parts = groups.map((g) => `${labelFor(g.operation, g.readKey, g.source)} ${g.items.length} ${intent.unit}${intent.noun}`)
   const body = parts.length === 0
     ? t('rrv.noDirectMatch', { noun: intent.noun })
     // ⛔ The separator is interface too — 、 between English words reads as a typo.
@@ -294,7 +322,17 @@ function renderLimits (intent, perSource, hidden, opts = {}) {
   const parts = []
   for (const r of rows) {
     if (!intent.sources.includes(r.source)) continue // out of scope: covered by the count
-    const label = LABELS[r.source] || r.source
+    /**
+     * ⛔ THE SAME NAME HERE, AND MEASURED RATHER THAN ASSUMED. The first draft of this comment
+     * claimed a FAILED read would keep the source name because no operation had run. That is
+     * wrong: the key is derived from the PLAN, which exists before the read is attempted, so a
+     * dead connector reports 「訂貨建議：讀不到」 — the view that was attempted, named.
+     *
+     * ⛔ WHICH IS A SECOND VISIBLE CHANGE, AND IT IS MORE SPECIFIC, NOT MORE CERTAIN. The line
+     * says one view could not be read; it does not say the others are fine, and no such claim
+     * is manufactured here. The bare source name still stands where no plan was formed at all.
+     */
+    const label = labelFor(r.operation, r.readKey, r.source)
     if (r.trust !== 'live') parts.push(t('rrv.sourceUnreadable', { label, error: r.error ? t('rrv.sourceError', { error: cap(r.error, 60) }) : '' }))
     else if (r.usedFallback) parts.push(t('rrv.sourceFallback', { label, noun: intent.noun, n: r.count }))
     else if (!r.count) parts.push(t('rrv.sourceEmpty', { label }))
@@ -645,7 +683,7 @@ function buildReadResultReplyInner (input = {}) {
   if (groups.length === 0 && !limits) return { reply: original, applied: false, intent }
 
   const out = [renderSummary(intent, groups)]
-  for (const g of groups) out.push(renderSection(g.source, g.items))
+  for (const g of groups) out.push(renderSection(g.operation || g.readKey, g.items, g.source))
 
   /**
    * ⛔ THE COMPLETE SET GOES TO THE SCREEN, NEVER TO THE PROMPT. These rows never entered
