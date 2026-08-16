@@ -1643,6 +1643,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ 2. ESTABLISHED INTERNAL + UNREACHABLE → no invented obligation, no read ***
 *** ⛔ 2. THE SAME SECTION IN THE PROVEN ORDER IS ALLOWED ***
 *** ⛔ 2. 「缺口 69」 IS STILL REJECTED — the server computed 70 ***
+*** ⛔ 2A. ONE DECISION, TWO EFFECTS — SUPPRESSION CANNOT OUTLIVE THE LIST ***
 *** ⛔ 3. A PROPORTIONAL SUPERLATIVE IS REFUSED — no proportional ordering exists ***
 *** ⛔ 3. A 「缺貨狀況」 SECTION IS NOT A RANKING, WHATEVER ITS ORDER ***
 *** ⛔ 3. ANOTHER RETRIEVED ROW CANNOT BORROW NAPA\
@@ -1806,6 +1807,7 @@ ${page}: the arms show the SAME nodes and differ only by group lines
 *** ⛔ RULE 3 — a declared join is UNVERIFIED, and it costs sufficiency ***
 *** ⛔ SEEN TO FAIL: an omitted property is detected ***
 *** ⛔ SELF-ATTESTED PAYLOAD SHAPES ARE REFUSED AT THE BOUNDARY ***
+*** ⛔ SERVER-OWNED: NO MODEL PROSE BESIDE THE COMPLETE LIST ***
 *** ⛔ SPARSE is ALWAYS_EMPTY\
 *** ⛔ SUPERLATIVE WITH NO N: the items must be a proven PREFIX ***
 *** ⛔ TELEMETRY PROSE RECORDS telemetry ***

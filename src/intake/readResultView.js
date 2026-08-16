@@ -208,6 +208,33 @@ function renderCompleteSupplierList (rows, labels) {
   return lines.join(String.fromCharCode(10))
 }
 
+/**
+ * ⛔ ONE DECISION, EVALUATED ONCE, USED TWICE.
+ *
+ * When the Owner asks for everything and the server HOLDS everything, completeness is the
+ * server's fact, not the model's. The model saw four rows and describes four rows — accurate
+ * about its context and wrong about the reply, because the server appends the other thirty-two
+ * after it has spoken. (Live: requestId b67fa68f-a8c4-45d1-b4ce-f7c2f1b35eab.)
+ *
+ * ⛔ SUPPRESSION, NOT FILTERING. Nothing here inspects the model's words for 「sample」 or
+ * 「incomplete」 or their Chinese forms. A phrase list is a queue that never ends, and editing
+ * a sentence would put words in the model's mouth it never wrote. The comment is withheld in
+ * the one context where it can no longer be true.
+ *
+ * ⛔ AND ONE VALUE DRIVES BOTH EFFECTS. Rendering the list and withholding the prose are two
+ * uses of a single result. Evaluated separately they could drift, and the failure mode of that
+ * drift is suppression with no list — a blank answer, worse than the contradiction being fixed.
+ *
+ * @returns {object[]|null} the complete retrieved supplier rows, or null when this is not one
+ *   of those turns. Null means 「behave exactly as before」.
+ */
+function serverOwnedSupplierList (input) {
+  if (!isExhaustiveListRequest(input && input.message)) return null
+  const groups = Array.isArray(input && input.retrievedItemsBySource) ? input.retrievedItemsBySource : []
+  const group = groups.find((g) => g && g.readKey === 'aroma_system.suppliers' && Array.isArray(g.items) && g.items.length > 0)
+  return group ? group.items : null
+}
+
 /** ONE SECTION PER SOURCE — so two sources can never share a paragraph. */
 function renderSection (source, items) {
   const label = LABELS[source] || source
@@ -514,9 +541,16 @@ function renderValidatedPlan (input) {
    * data he asked for. The section is built from retrieval rows by a function that cannot be
    * handed model text, so it belongs on every exit, not only the tidy one.
    */
-  const planRetrieved = (Array.isArray(input.retrievedItemsBySource) ? input.retrievedItemsBySource : [])
-    .find((g) => g && g.readKey === 'aroma_system.suppliers' && Array.isArray(g.items) && g.items.length > 0)
-  if (planRetrieved && isExhaustiveListRequest(input.message)) out.push(renderCompleteSupplierList(planRetrieved.items, LABELS))
+  /**
+   * ⛔ SERVER-OWNED OUTPUT. Validation and telemetry above ran unchanged — only PRESENTATION
+   * authority moves. What the model wrote is still validated, counted and logged; it simply
+   * does not appear beside a list it never saw.
+   */
+  const serverOwnedRows = serverOwnedSupplierList(input)
+  if (serverOwnedRows) {
+    out.length = 0
+    out.push(renderCompleteSupplierList(serverOwnedRows, LABELS))
+  }
 
   const composed = out.join('\n\n')
   const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [], input.message)
@@ -620,9 +654,11 @@ function buildReadResultReplyInner (input = {}) {
    */
   const retrievedGroups = Array.isArray(input.retrievedItemsBySource) ? input.retrievedItemsBySource : []
   const supplierRetrieved = retrievedGroups.find((g) => g && g.readKey === 'aroma_system.suppliers' && Array.isArray(g.items))
-  const exhaustive = isExhaustiveListRequest(input.message)
-  if (exhaustive && supplierRetrieved && supplierRetrieved.items.length > 0) {
-    out.push(renderCompleteSupplierList(supplierRetrieved.items, LABELS))
+  // ⛔ THE SAME ONE DECISION as the plan path — same helper, same two effects.
+  const serverOwnedRows = serverOwnedSupplierList(input)
+  if (serverOwnedRows) {
+    out.length = 0
+    out.push(renderCompleteSupplierList(serverOwnedRows, LABELS))
   } else if (supplierRetrieved) {
     /**
      * ⛔ 7B — WITHHOLDING IS SAID OUT LOUD. Showing five of thirty-six without a word is the
@@ -635,11 +671,15 @@ function buildReadResultReplyInner (input = {}) {
     if (withheld > 0) out.push('（供應商共 ' + supplierRetrieved.items.length + ' 項，此處只顯示 ' + shownHere + ' 項，未顯示 ' + withheld + ' 項；想睇齊全部請講「列出全部供應商」。）')
   }
 
-  if (limits) out.push(limits)
-  // Her reading of what is above — after the data, before the question.
-  const opinion = extractOpinion(original)
-  if (opinion) out.push(`### ${H.opinion}\n\n${opinion}`)
-  out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
+  // ⛔ In server-owned mode the deterministic list IS the answer: no server limits about
+  //    hidden rows (nothing is hidden), and no model reading of a view it never had.
+  if (!serverOwnedRows) {
+    if (limits) out.push(limits)
+    // Her reading of what is above — after the data, before the question.
+    const opinion = extractOpinion(original)
+    if (opinion) out.push(`### ${H.opinion}\n\n${opinion}`)
+    out.push(`### ${H.next}\n\n${oneQuestion(splitModelReply(original).next, intent)}`)
+  }
 
   // A CORRECTION SURVIVES THE RESTRUCTURING. readStateGuard's note is a safety control,
   // not prose, so it is carried through rather than discarded with the model's text. In

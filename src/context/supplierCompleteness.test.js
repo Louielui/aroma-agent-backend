@@ -330,3 +330,96 @@ test('*** SUPPLIER BOUNDARIES: 0, 4, 5, 25, 26, 36 ***', async () => {
     }
   }
 })
+
+/* ═══ LIVE-SHAPED: the Owner view must not argue with itself ══════════ */
+
+test('*** ⛔ SERVER-OWNED: NO MODEL PROSE BESIDE THE COMPLETE LIST ***', () => {
+  /**
+   * ⛔ REPRODUCES requestId b67fa68f-a8c4-45d1-b4ce-f7c2f1b35eab EXACTLY.
+   *
+   * The model was NOT hallucinating. It saw four rows and said so — accurately. Then the
+   * server appended all thirty-six. Both statements were true about different things, and the
+   * Owner read one reply that said 「只看得到部分樣本」 directly above a complete list of 36.
+   *
+   * ⛔ THE SENTINELS ARE THE LIVE SENTENCES THEMSELVES. Invented tokens like
+   * MODEL_DIRECT_SENTINEL are stripped before rendering by the existing laundering guard
+   * (dropped as `name_not_in_evidence`), so a test built on them would go green for the wrong
+   * reason — measured, not assumed. The production prose survives validation, so the
+   * production prose is what must be proven absent.
+   */
+  const rows = supplierRows(36)
+  const evidence = [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', trust: 'live', entityType: 'supplier', returnedRows: 36, shownCount: 4, matchingTotal: 36, completeness: 'sample' }]
+  const plan = {
+    directAnswer: '系統有 36 個供應商，目前只看得到部分樣本資料。',
+    citesEvidence: true,
+    unanswerable: false,
+    answerClaims: [{ text: 'x', claimKind: 'row_local', evidenceSources: ['aroma_system.suppliers'], sourceIds: ['aroma_system.suppliers#100'] }],
+    sections: [],
+    limitations: ['系統返回的樣本不完整，無法列出全部 36 個供應商的完整詳情'],
+    followUp: '要我幫你整理邊幾間？'
+  }
+  const out = RV.buildReadResultReply({
+    reply: '好的。',
+    message: '列出全部供應商',
+    answerPlan: plan,
+    evidenceSets: evidence,
+    itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', items: rows.slice(0, 4) }],
+    retrievedItemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', items: rows }],
+    perSource: [{ source: 'aroma_system', trust: 'live', count: 4, error: null, usedFallback: false }]
+  })
+
+  // ⛔ every piece of model-authored prose is absent
+  assert.equal(out.reply.includes('目前只看得到部分樣本資料'), false, '⛔ the model directAnswer survived beside the complete list')
+  assert.equal(out.reply.includes('無法列出全部'), false, '⛔ a model limitation contradicted the complete list')
+  assert.equal(out.reply.includes('要我幫你整理邊幾間'), false, '⛔ the model followUp survived')
+
+  // ⛔ and the deterministic list is all of it, in retrieval order
+  const numbered = out.reply.match(/^\d+\. Supplier 1\d\d/gm) || []
+  assert.equal(numbered.length, 36, 'all 36 retrieved rows are rendered')
+  const order = numbered.map((l) => l.replace(/^\d+\. Supplier /, ''))
+  assert.deepEqual(order, rows.map((r) => String(r.sourceId)), 'retrieval order is preserved')
+  assert.match(out.reply, /完整名單，共 36 項/, 'the deterministic heading states completeness and the count')
+})
+
+test('*** ⛔ 2A. ONE DECISION, TWO EFFECTS — SUPPRESSION CANNOT OUTLIVE THE LIST ***', () => {
+  /**
+   * ⛔ THE FAILURE THIS PREVENTS IS A BLANK ANSWER. If the decision to render the list and
+   * the decision to suppress the prose are evaluated separately, someone later changes one
+   * and the Owner gets suppression with no list — worse than the contradiction being fixed.
+   * The two are the same value used twice, so 「suppressed」 without 「rendered」 cannot exist.
+   */
+  const rows = supplierRows(36)
+  // ⛔ A VALID plan, not a stripped one: with no claims the existing validator drops the
+  //    sentence by itself, and the test would then pass for a reason that has nothing to do
+  //    with the decision under test.
+  const plan = {
+    directAnswer: '系統有 36 個供應商，目前只看得到部分樣本資料。',
+    citesEvidence: true,
+    unanswerable: false,
+    answerClaims: [{ text: 'x', claimKind: 'row_local', evidenceSources: ['aroma_system.suppliers'], sourceIds: ['aroma_system.suppliers#100'] }],
+    sections: [],
+    limitations: [],
+    followUp: ''
+  }
+  const evidence = [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', trust: 'live', entityType: 'supplier', returnedRows: 36, shownCount: 4, matchingTotal: 36, completeness: 'sample' }]
+  const call = (over) => RV.buildReadResultReply(Object.assign({
+    reply: '好的。',
+    message: '列出全部供應商',
+    answerPlan: plan,
+    evidenceSets: evidence,
+    itemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', items: rows.slice(0, 4) }],
+    perSource: [{ source: 'aroma_system', trust: 'live', count: 4, error: null, usedFallback: false }]
+  }, over))
+
+  // with a retrieved set: the list is rendered AND the prose is gone — both, or neither
+  const withSet = call({ retrievedItemsBySource: [{ source: 'aroma_system', readKey: 'aroma_system.suppliers', items: rows }] })
+  const listed = (withSet.reply.match(/^\d+\. Supplier 1\d\d/gm) || []).length === 36
+  const suppressed = !withSet.reply.includes('目前只看得到部分樣本資料')
+  assert.equal(listed, suppressed, '⛔ rendering and suppression disagreed — they are one decision')
+  assert.equal(listed, true)
+
+  // with NO retrieved set: neither happens — the prose stays rather than leaving a blank answer
+  const without = call({ retrievedItemsBySource: [] })
+  assert.equal((without.reply.match(/^\d+\. Supplier 1\d\d/gm) || []).length, 0)
+  assert.equal(without.reply.includes('目前只看得到部分樣本資料'), true, '⛔ prose was suppressed with no list to replace it — a blank answer')
+})
