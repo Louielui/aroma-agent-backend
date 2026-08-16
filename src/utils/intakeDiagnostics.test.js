@@ -40,7 +40,12 @@ test('classify: unknown error → internal_error; a same-name impostor is NOT mi
 test('handleIntakeError: status + stable safe body per code', () => {
   const parse = handleIntakeError(new DistillParseError('duplicate_keys', { rawSample: '{}' }), { correlationId: 'cid1' }, { sink () {} })
   assert.equal(parse.status, 500)
-  assert.deepEqual(parse.body, { error: { code: 'invalid_llm_output', message: SAFE_MESSAGES.invalid_llm_output, correlationId: 'cid1', retryable: true } })
+  // ⛔ THE THUNK IS CALLED ON BOTH SIDES NOW. This line used to compare the body against
+  //    `SAFE_MESSAGES.invalid_llm_output` — the FUNCTION — and passed for eight days because
+  //    both sides held the same reference. It never serialised anything, so it could not see
+  //    that `message` was disappearing on the wire. The round-trip proof lives in
+  //    errorMessageContract.test.js; this assertion is corrected so the two agree.
+  assert.deepEqual(parse.body, { error: { code: 'invalid_llm_output', message: SAFE_MESSAGES.invalid_llm_output(), correlationId: 'cid1', retryable: true } })
 
   const up = handleIntakeError(new IntakeUpstreamError({ correlationId: 'cid2' }), {}, { sink () {} })
   assert.equal(up.status, 503)

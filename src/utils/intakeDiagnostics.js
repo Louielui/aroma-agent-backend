@@ -151,9 +151,20 @@ function handleIntakeError (err, ctx = {}, deps = {}) {
     try { console.error('[AROMA-INTAKE] diagnostic_failed correlationId=' + correlationId) } catch (__) {}
   }
 
+  /**
+   * ⛔ CALL THE THUNK. `SAFE_MESSAGES` holds functions (HR-48: a table lookup handed to t() is
+   * a dynamic key), and this line used to put the FUNCTION into the body. `JSON.stringify`
+   * drops function-valued properties silently, so `message` was absent on the wire and the
+   * browser fell back to one generic sentence — every error of every kind, on both intake
+   * routes, from 2026-08-08 (commit 0514caa, which made these thunks) until this fix.
+   *
+   * ⛔ NOTHING WARNED. No throw, no log, no failing test: the object was correct and only the
+   * BYTES were wrong. That is why errorMessageContract.test.js asserts after a real
+   * stringify/parse round trip rather than on this object.
+   */
   return {
     status: STATUS[c.code],
-    body: { error: { code: c.code, message: SAFE_MESSAGES[c.code], correlationId, retryable: RETRYABLE[c.code] } }
+    body: { error: { code: c.code, message: SAFE_MESSAGES[c.code](), correlationId, retryable: RETRYABLE[c.code] } }
   }
 }
 

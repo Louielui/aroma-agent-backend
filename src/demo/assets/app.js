@@ -1269,12 +1269,31 @@
     })
   }
 
+  /**
+   * WHAT THE OWNER READS WHEN A TURN FAILS.
+   *
+   * ⛔ THE SUFFIX IS A CLAIM ABOUT THE FUTURE, SO ONLY THE SERVER MAY MAKE IT. This used to
+   * append 「（可重新送出）」 to every error without exception — the word `retryable` did not
+   * appear anywhere in this file — so the Owner was invited to re-send failures the server
+   * had already marked `retryable: false`. Telling him to retry something that can never
+   * succeed wastes his time and teaches him to distrust the message.
+   *
+   * ⛔ THE GENERIC SENTENCE IS A FALLBACK, NOT A DEFAULT. `message` is preferred whenever the
+   * server sends one; 「系統暫時無法處理這個請求。」 stands in only when there is nothing else,
+   * because a blank error turn says even less.
+   */
+  function errorLine (res) {
+    var e = res && res.error
+    var message = (e && e.message) ? e.message : t('err.serverBusy')
+    return (e && e.retryable === true) ? t('err.retrySuffix', { message: message }) : message
+  }
+
   function render (status, res, conv) {
     res = res || {}
     if (status === 403) return addError(t('err.demoDisabled'), conv)
     if (status === 400) return addError(t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
-      return addError(t('err.retrySuffix', { message: res.error && res.error.message ? res.error.message : t('err.serverBusy') }), conv)
+      return addError(errorLine(res), conv)
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)
