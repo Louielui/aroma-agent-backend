@@ -16,6 +16,22 @@ const { runReasoningLoop, STOP } = require('./reasoningLoop')
  * Three successful reads, and then no budget left to say anything about them. Everything the
  * Owner read — no ranking, PO rows under an inventory heading, the triplicated count — came
  * from the fallback, which never had a plan to work from.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ THESE ARE LOOP-UNIT TESTS. THEY ARE NOT PROOF THAT ANY CONSUMER HONOURS `composeOnly`.
+ *
+ * Every fake below destructures `composeOnly` and composes BECAUSE of it. That proves the loop
+ * PASSES the flag — which it always did. It cannot prove that the thing on the other end reads
+ * it, and for months the only production consumer did not: `intakeService`'s `callModel` was
+ * `async ({ step })`, so the reserved call went out with the ordinary planning prompt and a
+ * schema still advertising `nextRead`. Q9, Q21, Q24 and Q26 of the 30-question benchmark died
+ * there, and this file was green throughout.
+ *
+ * The same shape as the eight-day error-message defect: an assertion comparing the right thing
+ * inside a world the test built itself. The consumer-side contract is proven in
+ * `composeOnlyContract.test.js`, which observes what production actually handed the PROVIDER.
+ * Keep both: this file guards the loop, that one guards the seam.
+ * ══════════════════════════════════════════════════════════════════════════════
  */
 const CAPS = ['aroma_system.purchasing', 'aroma_system.inventory', 'aroma_system.replenishment']
 

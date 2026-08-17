@@ -674,11 +674,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return goalPlanPromise
   }
 
-  async function buildPromptFor (providerName) {
+  async function buildPromptFor (providerName, composeOnly = false) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
-    const cacheKey = providerName + ':' + extraObservationBlocks.length
+    // ⛔ AND IT CARRIES composeOnly, because the reserved call happens at the SAME observation
+    //    count as the step that preceded it. Without this the cache would hand the reserved
+    //    call the ordinary planning prompt and the directive below would never be seen.
+    const cacheKey = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
     if (promptCache.has(cacheKey)) return promptCache.get(cacheKey)
     let effPrompt = baseEffPrompt
     const isChat = !!(opts && opts.interactionMode === 'chat')
@@ -906,6 +909,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     for (const obs of extraObservationBlocks) {
       if (obs) effPrompt = obs + '\n\n' + effPrompt
     }
+    /**
+     * ⛔ THE RESERVED CALL IS TOLD IT IS THE LAST ONE. IT USED TO BE TOLD NOTHING.
+     *
+     * `reasoningLoop` grants one final call with `composeOnly: true` and documents that a read
+     * from it is refused. The flag arrived nowhere — this consumer destructured `{ step }` — so
+     * that call was built like an ordinary planning step and still ADVERTISED nextRead. On its
+     * last chance the model was being invited to ask for another read; when it did, the whole
+     * envelope was discarded (STEP_LIMIT_NO_COMPOSE → no_plan_returned) and the Owner received
+     * the half-finished interim sentence. Q9, Q21, Q24 and Q26 of the benchmark died here.
+     *
+     * ⛔ STRUCTURAL ONLY. It states the call's role and the one structural fact the model needs
+     * — there is no further read — and nothing about HOW to think. The schema is closed in the
+     * same breath (see answerPlanFormat), so this sentence and the contract cannot disagree.
+     */
+    if (composeOnly) {
+      effPrompt = effPrompt + '\n\n【最後一步：綜合作答】呢個係今回合最後一次呼叫，唔會再有下一次。你手上讀到嘅資料就係全部，唔可以再要求讀取（nextRead 必須係 null）。請就手上證據直接作答。'
+    }
     promptCache.set(cacheKey, effPrompt)
     return effPrompt
   }
@@ -948,7 +968,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // for "a real id" and never said which token that was. Pinning the enum to exactly the
   // rows this turn retrieved makes the wrong answer unrepresentable rather than merely
   // detectable, which is the same reason the plan itself is bought at the API layer.
-  const answerPlanFormat = () => {
+  const answerPlanFormat = (composeOnly = false) => {
     // ⛔ A4-0A. Off (the default, and production today) ⇒ withReadArgs returns the schema
     // OBJECT ITSELF, so an A4-off turn cannot differ from f836534 by even a key order.
     const a4On = a4ContractEnabled(process.env)
@@ -994,7 +1014,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ⛔ OPERATIONS, MINUS THE ONES ALREADY PERFORMED. Filtering by SOURCE used to hide all six
     // Aroma views the moment any one of them was read; an operation grain hides only what has
     // actually been answered.
-    const openChoices = authorisedOperationsFor(activeProvider || primaryProvider).filter((op) => !turnOperations.has(op))
+    /**
+     * ⛔ ON THE RESERVED CALL THERE ARE NO CHOICES, BECAUSE THERE IS NO BUDGET.
+     *
+     * An offer the runtime cannot honour is not an option, it is a trap: the loop refuses a
+     * read from this call by design, so advertising one guarantees the discarded envelope.
+     * Closing it uses the SAME helper as every other turn — `withReadChoices` already emits
+     * the null-only form for an empty list — so no second schema family exists and the
+     * description that says 「these were already read」 still travels.
+     */
+    const openChoices = composeOnly
+      ? []
+      : authorisedOperationsFor(activeProvider || primaryProvider).filter((op) => !turnOperations.has(op))
     // ⛔ ALL THREE STATES, NAMED SEPARATELY.
     //
     // OPEN, because an operation that merely disappears from the list reads as 「not available」
@@ -2088,7 +2119,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         : ((mixedOn && (await resolveIntent()).intent === 'mixed') ? 4 : undefined),
       onEvent: (e) => { try { console.log('[AROMA-REASONING]', JSON.stringify(Object.assign({ requestId, provider: activeProvider }, e))) } catch (_) {} },
       executeRead: performRead,
-      callModel: async ({ step }) => {
+      callModel: async ({ step, composeOnly }) => {
         // ⛔ A4-0A: THE ARGUMENTS TRAVEL WITH THE DECISION. reasoningLoop already forwarded
         // decision.args to executeRead — the seam existed and was closed at BOTH ends, so the
         // channel looked wired and carried nothing. With A4 off the parser never sets
@@ -2096,8 +2127,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // ⛔ ONLY WHEN THERE IS ONE TO REPLAY. On an initial-FINAL turn `pending` is null: the
         // model already spoke, its answer was withheld, and step 1 IS the recovery call.
         if (step === 1 && pending) return { type: 'read', capability: String(pending.capability || ''), args: pending.args || null }
-        const prompt = await buildPromptFor(activeProvider)
-        const fmt = answerPlanFormat()
+        // ⛔ THE FLAG IS RECEIVED NOW. `reasoningLoop` has always passed `composeOnly: true` on
+        //    its one reserved call; this signature destructured `{ step }`, so it arrived
+        //    nowhere and the loop's stated contract — 「a read from it is refused, it cannot
+        //    extend the turn」 — was never expressed to the model in prompt or schema.
+        const finalCall = composeOnly === true
+        const prompt = await buildPromptFor(activeProvider, finalCall)
+        const fmt = answerPlanFormat(finalCall)
         const next = await activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) })
         noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
         await recordProviderUsage(next)                                     // ⛔ accounting, per call
