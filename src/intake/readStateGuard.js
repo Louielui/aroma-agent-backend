@@ -77,6 +77,9 @@ const CAPABILITY_DENIAL = new RegExp([
 const { ALL_SOURCES } = require('../context/liveClients')
 const { t } = require('../i18n/t')
 const { intentFor } = require('../context/readContext') // THE one intent table — the entity a turn is about
+// ⛔ The canonical method→operation mapping, imported rather than restated. The six operations
+// live in exactly one table; a second copy here would be one rename from disagreeing with it.
+const { operationForAromaMethod, AROMA_SOURCE } = require('../context/readOperations')
 const { isReadRequest } = require('./laneRouter') // 「did he ask me to look」 — already the one detector for that
 
 // Human vocabulary only — what the Owner CALLS a thing, never the list of what exists.
@@ -227,6 +230,53 @@ function entityAnchorOf (message) {
   return { noun: String(hit.noun), sources: hit.sources.slice() }
 }
 
+/**
+ * WHICH CAPABILITY A DENIAL IS ABOUT — DERIVED FROM THE OWNER'S QUESTION, AND FROM NOTHING ELSE.
+ *
+ * ⛔ THE INPUT IS `message`. That is the Owner's own words, mapped through the existing intent
+ * table to the operation the server would run. It is computed before any model text is looked
+ * at, and her prose is never consulted to discover what she claimed.
+ *
+ * ⛔ WHY NOT READ HER SENTENCE. It is the pattern this project has closed repeatedly: model
+ * output is not evidence about itself, and matching phrases like 「銷售」 or 「出勤」 needs a
+ * list that never ends — every missing word becomes a false correction against a true answer.
+ *
+ * ⛔ NO OPERATION MEANS NO BASIS. Sales, attendance, labour cost, prep and food cost have no
+ * entry in the vocabulary, so `intentFor` returns nothing and this returns null. The caller
+ * must then stay silent: there is no record that could prove such a claim wrong.
+ *
+ * @returns {string|null} e.g. 'aroma_system.invoices', or null when the topic has no operation
+ */
+function expectedOperationOf (message) {
+  const hit = intentFor(typeof message === 'string' ? message : '')
+  if (!hit || !hit.method) return null
+  return operationForAromaMethod(hit.method)
+}
+
+/**
+ * MAY THIS LIVE ROW DISPROVE A CAPABILITY DENIAL?
+ *
+ * ⛔ SOURCE LIVE ≠ EVERY CAPABILITY ON THAT SOURCE EXISTS. A live `aroma_system.inventory`
+ * read proves inventory is wired. It proves nothing about sales — and saying otherwise is how
+ * eight correct answers in the benchmark were contradicted by their own server.
+ *
+ * Three admissions, in order:
+ *   1. Gmail, Drive, Calendar and GitHub have no operation grain — the source IS the
+ *      capability, so their behaviour is deliberately unchanged.
+ *   2. A question about the SOURCE ITSELF (「你睇唔睇到 Aroma System？」) is answered by any
+ *      live Aroma read. The discriminator is HIS question naming it — not her reply naming
+ *      it, which is exactly what the sales answers did.
+ *   3. Otherwise the record must show THE SAME operation the question maps to.
+ *
+ * Anything else fails toward SILENCE. A missed correction leaves one wrong sentence on
+ * screen; a false correction puts the server's authority behind contradicting a right one.
+ */
+function capabilityProvableBy (row, expectedOperation, ownerNamedSource) {
+  if (!row || row.source !== AROMA_SOURCE) return true
+  if (ownerNamedSource) return true
+  return Boolean(expectedOperation) && row.operation === expectedOperation
+}
+
 function detectFalseReadClaim (reply, perSource, message) {
   const text = typeof reply === 'string' ? reply : ''
   const rows = Array.isArray(perSource) ? perSource : []
@@ -243,6 +293,20 @@ function detectFalseReadClaim (reply, perSource, message) {
 
   // Only clauses that actually carry a failure phrase can attribute one.
   const entity = entityAnchorOf(message)
+  // ⛔ BOTH DERIVED FROM THE OWNER'S QUESTION, BEFORE ANY OF HER TEXT IS READ.
+  const expectedOperation = expectedOperationOf(message)
+  const ownerNamedSource = mentionsSource(typeof message === 'string' ? message : '', AROMA_SOURCE)
+  /**
+   * ⛔ THE OPERATION HE ASKED ABOUT ACTUALLY FAILED — SO HIS ANSWER IS TRUE.
+   *
+   * One source can run several operations in a turn. If invoices came back UNAVAILABLE while
+   * inventory read fine, 「我讀唔到發票」 is a correct sentence, and the live inventory row must
+   * not be allowed to contradict it. This narrows the read-state class too, which the tranche
+   * permits only on a failing regression — and there is one: an unavailable operation was
+   * being corrected by an unrelated live one.
+   */
+  const askedOperationFailed = Boolean(expectedOperation) &&
+    rows.some((r) => r && r.operation === expectedOperation && r.trust !== 'live')
   const named = new Set()
   let sawCapability = false
   for (const clause of clausesOf(text)) {
@@ -256,6 +320,12 @@ function detectFalseReadClaim (reply, perSource, message) {
     if (!fail) continue
     if (fail === capFail) sawCapability = true
     for (const r of live) {
+      // ⛔ THE CAPABILITY GATE. A read-state claim ("I couldn't read it") is still judged at
+      //    source grain — that is a claim about the ATTEMPT, and the attempt is per source. A
+      //    capability claim ("it isn't connected") is a claim about WIRING, and only the same
+      //    operation can speak to it.
+      if (r.source === AROMA_SOURCE && askedOperationFailed) continue
+      if (fail === capFail && !capabilityProvableBy(r, expectedOperation, ownerNamedSource)) continue
       if (mentionsSource(clause, r.source) && !isModifierNotSubject(clause, r.source, fail.index)) {
         named.add(r.source)
         continue

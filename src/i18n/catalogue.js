@@ -1383,9 +1383,14 @@ const CATALOGUE = Object.freeze({
   // grounded in one. 「沒有去看」 and 「沒有權限」 are different claims and only one is provable.
   // A configuration claim needs a configuration answer. Telling him 「it WAS read」 does not
   // address 「I am not connected」 — he would still be left thinking a switch is off.
+  // ⛔ THE SENTENCE USED TO BE BIGGER THAN THE EVIDENCE. It said 「連接是正常的，權限也是開著的」
+  // — a claim about the WHOLE source and about PERMISSIONS — from a record that proves only
+  // that one concrete operation returned a result. Measured in the 30-question benchmark:
+  // eight correct capability statements were contradicted by this sentence. It now asserts
+  // exactly what the read record shows, and nothing beyond it.
   'rsg.correctionCapability': {
-    zh: '\n\n〔系統更正 — 依實際讀取紀錄〕連接是正常的，權限也是開著的。{parts}。以這個紀錄為準。',
-    en: '\n\n[SYSTEM CORRECTION — from the actual read record] The connection is working and access is on. {parts}. This record is authoritative.'
+    zh: '\n\n〔系統更正 — 依實際讀取紀錄〕這一轉成功讀取了，所以這項讀取是接通的。{parts}。以這個紀錄為準。',
+    en: '\n\n[SYSTEM CORRECTION — from the actual read record] This turn read successfully, so this read is connected. {parts}. This record is authoritative.'
   },
   'rsg.nothingRead': {
     zh: '這一轉沒有讀取任何來源',
