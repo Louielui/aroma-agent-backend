@@ -18,6 +18,7 @@ const express = require('express')
 const { resolveFlag } = require('../context/flags')
 const { createLiveReadConnector, enabledSources } = require('../context/liveClients')
 const { buildReadContext, CAPS } = require('../context/readContext')
+const { projectConnections } = require('../context/connectionState') // READ-ONLY projection; decides nothing
 
 function createContextRouter (deps = {}) {
   const router = express.Router()
@@ -32,7 +33,18 @@ function createContextRouter (deps = {}) {
   router.get('/api/v1/context/health', gate, (req, res) => {
     try {
       const { registered, skipped } = buildConnector(process.env)
-      res.json({ enabled: enabledSources(process.env), registered, skipped, caps: CAPS })
+      /**
+       * ⛔ ADDITIVE. `enabled`, `registered`, `skipped` and `caps` are unchanged for every
+       * existing consumer; `connections` is the same truth in one canonical shape, with the
+       * four facts kept apart. It is computed per request, never cached, so an Owner switch
+       * still takes effect on the next call without a restart.
+       *
+       * ⛔ AND `skipped` STAYS AS IT IS ON PURPOSE. Its reasons are raw builder sentences —
+       * including a JavaScript TypeError for development_record — which is exactly why
+       * `connections[].reason` is a closed enum computed from first principles instead.
+       */
+      const connections = projectConnections(process.env)
+      res.json({ enabled: enabledSources(process.env), registered, skipped, caps: CAPS, connections })
     } catch (err) {
       res.status(500).json({ error: 'context_health_failed', detail: err.message })
     }
