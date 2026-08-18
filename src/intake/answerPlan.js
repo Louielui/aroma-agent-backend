@@ -1732,7 +1732,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
    * fails in. Rewriting the model's ranking would be inventing one.
    * ══════════════════════════════════════════════════════════════════════════
    */
-  const { verifyRanking, rankingSectionViolations, VERDICT: RANK_VERDICT } = require('./rankingProof')
+  const { verifyRanking, rankingSectionViolations, VERDICT: RANK_VERDICT, VIOLATION: RANK_VIOLATION, asksForRanking } = require('./rankingProof')
   /**
    * The rows in PROVEN order, taken from the group whose evidence carries the ranking.
    * ⛔ Only when exactly one ranked group exists. With two, 「which ordering does this
@@ -1916,9 +1916,87 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     if (sections[n].heading !== '') { sections[n].heading = ''; continue }
     sections[n].heading = composeRankingHeading(d, sections[n].items.length)
   }
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ THE RANKING WAS UNPROVEN. THE ROWS WERE NOT.
+   *
+   * A rejected section is deleted WHOLE, taking rows that had already passed row resolution,
+   * sourceId validation, fact grounding and value validation. For ONE rejection reason that is
+   * heavier than it needs to be: `ranking_claim_missing` means the model never asserted a
+   * ranking at all. There is no false conclusion to suppress — only a heading that presented as
+   * one, and that heading was already blanked upstream.
+   *
+   * Measured live (requestId c45a65a2): 4 items, 2 kept, 2 deleted this way, and the Owner was
+   * told 「有 2 項系統無法核對，未顯示」 about rows that had been read successfully.
+   * Measured here: `looksLikeRankingHeading('最近採購單')` is TRUE — 「最近」 contains 最 — so a
+   * heading meaning 「recent」 is enough to trigger it.
+   *
+   * ⛔ THE PROOF IS NOT WEAKENED. `rankingProof` still returns REJECTED, the verdict still
+   * travels as `evaluated_rejected / ranking_claim_missing`, the drop is still recorded, no
+   * ranking title is composed, nothing is re-sorted and no order is inferred. Only the
+   * DISPOSITION of already-validated rows changes.
+   *
+   * ⛔ AND IT CANNOT BECOME A SIDE DOOR. When the OWNER'S question actually asks for a ranking,
+   * a plain list in sequence would answer the unproven ranking by implication — so there is no
+   * salvage at all. The question is judged by `asksForRanking`, the SAME authority the ranking
+   * contract already uses; no second vocabulary exists.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  /**
+   * ⛔ INDEX ↔ REASON, AND THE COUPLING IS STATED BECAUSE IT IS IMPLICIT. `rankingProof` pushes
+   * a section index into its return value and emits its verdict in the SAME forEach iteration,
+   * so the k-th rejected verdict belongs to `badRankingSections[k]`. Adding an index to the
+   * verdict object would be cleaner and would change a shape several suites assert by
+   * deepEqual — so the order is relied upon here and pinned by the tests instead.
+   */
+  const rejectedReasonsInOrder = rankingVerdicts.filter((v) => v && v.status === 'evaluated_rejected').map((v) => v.reason)
+  /**
+   * ⛔ TWO FLOORS, BECAUSE ONE WAS NOT ENOUGH — AND THAT WAS MEASURED, NOT SUSPECTED.
+   *
+   * `asksForRanking('邊道菜最賺錢？')` is FALSE. The question plainly asks which single dish
+   * earns most, so keying salvage on that authority alone would have shipped a sequence of rows
+   * in answer to an unproven extremum — the exact side door this carve-out exists to keep shut.
+   *
+   * ⛔ THE SECOND CHECK IS A SALVAGE FLOOR, NOT A RANKING VERDICT. `looksLikeRankingHeading` is
+   * reused here to read the OWNER'S QUESTION, and it decides one thing only: whether these rows
+   * may be kept. It proves no ranking, authorises no ranking, and changes nothing in
+   * `rankingProof`, `verifyRanking` or ordinary validation. Neither expression was widened; no
+   * ranking vocabulary was added.
+   *
+   * ⛔ ITS FALSE POSITIVES COST A SALVAGE, WHICH IS THE SAFE DIRECTION. 「最近」 trips it, so
+   * 「最近有咩採購單？」 keeps the existing whole-section drop. Accepted deliberately: 「recent」
+   * carries selection semantics, and withholding rows is recoverable while answering an
+   * unsupported ordering is not.
+   */
+  const ownerAsksRanking = asksForRanking(message) || looksLikeRankingHeading(message)
+  let salvagedSections = 0
+  let salvagedItems = 0
+  /**
+   * EVERY CONDITION IS A REASON TO REFUSE. Any one of them failing keeps the existing
+   * fail-closed behaviour, because the safe direction here is deletion, not display.
+   */
+  const canNeutrallySalvage = (n, reason) => {
+    if (reason !== RANK_VIOLATION.RANKING_CLAIM_MISSING) return false // a claim that failed on its merits stays dead
+    if (ownerAsksRanking) return false // the sequence would answer the ranking by implication
+    if (normaliseRankingClaim(sectionClaims[n]).present) return false // only a genuinely ABSENT declaration
+    if (sectionItemDrops[n] !== 0) return false // something was already lost before the gate
+    const sec = sections[n]
+    if (!sec || !Array.isArray(sec.items) || sec.items.length === 0) return false
+    if (sec.heading !== '') return false // untitled or nothing — never a reconstructed heading
+    // ⛔ ONE OPERATION, SERVER-RESOLVED. A mixed or unknown readKey means the rows are not a
+    //    single grounded set, and this carve-out has no business guessing which they are.
+    const keys = new Set(sec.items.map((it) => (it && typeof it.readKey === 'string' && it.readKey) ? it.readKey : null))
+    return keys.size === 1 && !keys.has(null)
+  }
   if (badRankingSections.length > 0) {
     for (let n = badRankingSections.length - 1; n >= 0; n--) {
-      const removed = sections.splice(badRankingSections[n], 1)[0]
+      const at = badRankingSections[n]
+      if (canNeutrallySalvage(at, rejectedReasonsInOrder[n])) {
+        salvagedSections++
+        salvagedItems += sections[at].items.length
+        continue // rows stay, untitled; the ranking verdict below still records the rejection
+      }
+      const removed = sections.splice(at, 1)[0]
       const lost = (removed && Array.isArray(removed.items)) ? removed.items.length : 0
       droppedItems += lost
       keptItemCount -= lost
@@ -1950,6 +2028,18 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     plan: { directAnswer, sections, limitations, followUp, unanswerable: plan.unanswerable === true, citesEvidence },
     // Structural verdicts only — no claim text, no row values. See claimBinding.js.
     claimBindings,
+    /**
+     * ⛔ A SEPARATE SIGNAL, BECAUSE THE RANKING VERDICT MUST KEEP TELLING THE TRUTH. The
+     * ranking really WAS rejected, so `rankingVerdicts` still says `evaluated_rejected` and the
+     * drop is still logged. Rewriting either to 「allowed」 would trade one lie for another.
+     * This distinguishes 「rejected, section removed」 from 「rejected, rows kept neutrally」.
+     * Identifiers and counts only — no heading, no title, no row value, no user text.
+     */
+    rankingSalvage: {
+      status: salvagedSections > 0 ? 'neutral_salvaged' : 'none',
+      sections: salvagedSections,
+      items: salvagedItems
+    },
     droppedFacts,
     droppedItems,
     droppedSentences,
