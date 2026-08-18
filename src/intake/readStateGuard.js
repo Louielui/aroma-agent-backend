@@ -171,12 +171,64 @@ function clausesOf (text) {
  * COST, STATED: 「日曆的資料讀唔到」 is arguably a source claim and is now left alone. That is
  * the asymmetry the Owner ruled for — silence when it cannot tell.
  */
-function isModifierNotSubject (clause, source, failIndex) {
+/**
+ * ⛔ PUNCTUATION IS NOT AN OBJECT. Whatever survives this is real content the sentence is
+ * about. Kept to clause punctuation and space on purpose: a longer list would drift into
+ * vocabulary, which is what this rule exists to avoid.
+ */
+const TRAILING_PUNCT = /[。！？!?，,、；;：:…\s]+$/
+
+/**
+ * IS THERE SUBSTANTIVE CONTENT AFTER THE MATCHED FAILURE PHRASE, INSIDE THIS CLAUSE?
+ *
+ * ⛔ THE SPAN IS THE CLAUSE, AND THAT BOUNDARY IS THE WHOLE SAFETY OF THIS RULE. `clausesOf`
+ * has always split on 。！？；\n and after 「，」, so 「餐廳系統讀唔到，所以我無法回答你」 arrives
+ * here as TWO clauses and the failure clause has nothing after it. If the span were the reply,
+ * nearly every real sentence would have something following and the guard would fall silent
+ * almost always — deleting the protection instead of narrowing it.
+ *
+ * ⛔ AND IT STARTS AFTER THE WHOLE MATCH, not at its index. Starting at the index would leave
+ * the failure phrase itself sitting in the suffix, and every claim would look 「substantive」.
+ */
+function hasSubstantiveSuffix (clause, failEnd) {
+  return String(clause).slice(failEnd).replace(TRAILING_PUNCT, '').length > 0
+}
+
+/**
+ * @param {object} fail the ACTUAL regex match — index AND length are both needed
+ */
+function isModifierNotSubject (clause, source, fail) {
+  const failIndex = fail.index
+  const failEnd = failIndex + String(fail[0]).length
   const low = String(clause).toLowerCase()
   for (const alias of SOURCE_ALIASES[source] || []) {
     const at = low.indexOf(String(alias).toLowerCase())
     if (at === -1) continue
     if (at > failIndex) return false // the failure names it: 讀唔到…日程
+    /**
+     * ⛔ THE SENTENCE IS ABOUT WHAT FOLLOWS THE VERB, NOT ABOUT THE SOURCE.
+     *
+     * 「系統內睇唔到已下單貨物的交期與進度」 — three operations read live, and none of them
+     * proves a delivery-ETA field exists. Attribution here is ambiguous, so it fails toward
+     * SILENCE: contradicting a true sentence with the server's authority is worse than
+     * leaving a false one uncorrected, and this exact clause reached the Owner.
+     *
+     * ⛔ NO GRAMMAR IS PARSED AND NO FIELD VOCABULARY EXISTS. The test is only 「is anything
+     * left after the matched phrase once clause punctuation is stripped」. It cannot know what
+     * a shipment or an ETA is, and must not learn.
+     *
+     * ⛔ AROMA ONLY, AND THAT IS NOT A CONVENIENCE. The defect this guards is Aroma-shaped: a
+     * read SUCCEEDS while a field inside the payload does not exist, so a live source proves
+     * nothing about the sentence. Calendar, Gmail, Drive and GitHub do not carry that split in
+     * the same way — there the rule bought nothing and cost real corrections
+     * (「日曆讀唔到你嘅行程」, 「Gmail 讀唔到你封信」), measured and then withdrawn. Every
+     * non-Aroma source therefore behaves exactly as it did before this rule existed.
+     *
+     * ⛔ KNOWN LIMIT: Chinese permits object ellipsis, so the presence or absence of an object
+     * is not a perfect proxy for the grammatical subject. This is the boundary of the rule,
+     * and the reason it fails toward silence rather than toward correcting.
+     */
+    if (source === AROMA_SOURCE && hasSubstantiveSuffix(clause, failEnd)) return true
     const between = clause.slice(at + alias.length, failIndex)
     if (!between.includes('的')) return false // nothing stands between them
   }
@@ -326,7 +378,8 @@ function detectFalseReadClaim (reply, perSource, message) {
       //    operation can speak to it.
       if (r.source === AROMA_SOURCE && askedOperationFailed) continue
       if (fail === capFail && !capabilityProvableBy(r, expectedOperation, ownerNamedSource)) continue
-      if (mentionsSource(clause, r.source) && !isModifierNotSubject(clause, r.source, fail.index)) {
+      // ⛔ THE WHOLE MATCH TRAVELS, not just its index — the suffix test needs its length.
+      if (mentionsSource(clause, r.source) && !isModifierNotSubject(clause, r.source, fail)) {
         named.add(r.source)
         continue
       }
