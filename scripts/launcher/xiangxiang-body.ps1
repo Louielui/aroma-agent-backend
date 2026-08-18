@@ -1,8 +1,19 @@
-﻿param([ValidateSet('Startup', 'Open')][string]$Mode = 'Open')
+﻿param(
+  [ValidateSet('Startup', 'Open')][string]$Mode = 'Open',
+  # ⛔ PAID WORK FAILS TOWARD OFF, SO THE FLAG IS OPT-IN. `-SkipSmoke` would read the same
+  # in a diff and behave the opposite way at 06:55 on a morning nobody is watching: it puts
+  # the cost on whoever remembers to pass it, and a Startup shortcut written in July
+  # remembers nothing. Absent switch => zero provider calls. See the smoke block below.
+  [switch]$RunSmoke
+)
 
 # 心燈 Fixed Entry v1 — resident launcher for the local 心燈 Conversation Demo.
 #   -Mode Open    : ensure the server is up, then open the browser at /demo.
 #   -Mode Startup : ensure the server is up only (no browser) — used by the Startup shortcut.
+#   -RunSmoke     : ALSO run the startup smoke after a successful start. OFF unless asked
+#                   for, because the smoke performs real, PAID model work. The Startup
+#                   shortcut and the hash-pinned shim both pass -Mode only, so the logon
+#                   path cannot opt in even by accident.
 # No secrets on disk: ANTHROPIC_API_KEY and HUB_TOKEN are hydrated at RUNTIME from the
 # USER-scope environment. DECISION_RECALL is intentionally never set (and is stripped from the
 # process before Node is spawned, so the child can never inherit 'on'). Loopback-only, port 8090,
@@ -327,39 +338,63 @@ if ($ok) {
   # false positive and zero true positives. So this reports and gets out of the way — the
   # system is handed back either way, with the failure said out loud.
   #
-  # Costs two model calls per start. That is the price of not discovering a dead chat lane by
-  # typing into it.
+  # ⛔ AND IT NO LONGER ARRIVES WITH A LOGIN (Owner GO 2026-08-18). It used to run on every
+  # successful start — which meant every successful UNATTENDED start too. Forensically:
+  #
+  #   00:37:31  the Owner shuts the machine down from the Start menu (User32 1074)
+  #   00:37:42  the session is logged off, so the running server dies with it
+  #   06:54:30  the next interactive logon
+  #   06:55:08  the Startup shortcut runs this launcher, -Mode Startup
+  #   06:56:08  three real provider turns, PASS — and nobody in the room
+  #
+  # Auto-start was never the defect; every line above is this file working correctly. The
+  # defect was the word 'then': a healthy start IMPLIED paid work. It now requires
+  # -RunSmoke, and nothing on the logon path can pass it.
+  #
+  # ⛔ THIS PERFORMS REAL, PAID MODEL WORK, AND THE COST IS NOT THE CASE COUNT. This comment
+  # used to say 「two model calls per start」. That was wrong twice: the smoke has THREE
+  # visible cases, and each one runs the ordinary intake path, so a case that READS costs
+  # more provider calls than one that does not. Nothing emits TURN_COST for the smoke
+  # process, so the underlying call count is recorded nowhere — and a number nobody derived
+  # is worse than no number. What IS measured: the 2026-08-18 pass took 57s end to end.
   # ⛔ BOUNDED, AND IT WAS NOT ON THE FIRST TRY. The first version called `& node ...` inline.
   # The node process ran and exited, and the launcher never came back — the hand-back sat
   # blocked behind a check whose entire stated purpose was never to block the hand-back.
   # Exactly the shape this was written to avoid, in the file that says so.
   #
-  # So: a separate process, output to a file, and a HARD WAIT with a ceiling. Two model calls
-  # take about 8 seconds; 120 gives room for a slow provider without ever becoming a hang. If
-  # the ceiling is reached the child is killed and the launcher continues — a smoke test that
-  # cannot answer must not be able to hold the system hostage either.
-  Write-Log 'startup smoke: one chat turn per provider'
-  $smokeOut = Join-Path $env:TEMP 'aroma-startup-smoke.out'
-  $smokeErr = Join-Path $env:TEMP 'aroma-startup-smoke.err'
-  $smoke = @()
-  try {
-    $sp = Start-Process node -ArgumentList (Join-Path $Repo 'scripts\launcher\startupSmoke.js') `
-      -NoNewWindow -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
-    if (-not $sp.WaitForExit(120000)) {
-      try { $sp.Kill() } catch {}
-      Write-Log 'smoke: TIMED OUT after 120s — killed; the system is still being handed back'
+  # So: a separate process, output to a file, and a HARD WAIT with a ceiling. 120s leaves room
+  # for a slow provider without ever becoming a hang (the one measured pass above used 57).
+  # If the ceiling is reached the child is killed and the launcher continues — a smoke test
+  # that cannot answer must not be able to hold the system hostage either.
+  if ($RunSmoke) {
+    Write-Log 'startup smoke: one chat turn per provider'
+    $smokeOut = Join-Path $env:TEMP 'aroma-startup-smoke.out'
+    $smokeErr = Join-Path $env:TEMP 'aroma-startup-smoke.err'
+    $smoke = @()
+    try {
+      $sp = Start-Process node -ArgumentList (Join-Path $Repo 'scripts\launcher\startupSmoke.js') `
+        -NoNewWindow -PassThru -RedirectStandardOutput $smokeOut -RedirectStandardError $smokeErr
+      if (-not $sp.WaitForExit(120000)) {
+        try { $sp.Kill() } catch {}
+        Write-Log 'smoke: TIMED OUT after 120s — killed; the system is still being handed back'
+      }
+      if (Test-Path $smokeOut) { $smoke += Get-Content $smokeOut -Encoding UTF8 }
+      if (Test-Path $smokeErr) { $smoke += Get-Content $smokeErr -Encoding UTF8 }
+    } catch {
+      Write-Log ('smoke: could not run (' + $_.Exception.Message + ') — the system is still being handed back')
     }
-    if (Test-Path $smokeOut) { $smoke += Get-Content $smokeOut -Encoding UTF8 }
-    if (Test-Path $smokeErr) { $smoke += Get-Content $smokeErr -Encoding UTF8 }
-  } catch {
-    Write-Log ('smoke: could not run (' + $_.Exception.Message + ') — the system is still being handed back')
-  }
-  foreach ($l in $smoke) { if ($l) { Write-Log ("smoke: " + $l) } }
-  $verdict = $smoke | Where-Object { $_ -match 'STARTUP_SMOKE_VERDICT' } | Select-Object -Last 1
-  if ($verdict -and $verdict -match '"outcome":"FAIL"') {
-    $saying = '香香啟動咗，但有一邊答唔到。系統照樣開咗，詳情睇 C:\Aroma\xiangxiang.log。'
-    if ($verdict -match '"saying":"([^"]*)"') { $saying = $Matches[1] }
-    Notify-Owner '啟動咗，但答唔到' $saying
+    foreach ($l in $smoke) { if ($l) { Write-Log ("smoke: " + $l) } }
+    $verdict = $smoke | Where-Object { $_ -match 'STARTUP_SMOKE_VERDICT' } | Select-Object -Last 1
+    if ($verdict -and $verdict -match '"outcome":"FAIL"') {
+      $saying = '香香啟動咗，但有一邊答唔到。系統照樣開咗，詳情睇 C:\Aroma\xiangxiang.log。'
+      if ($verdict -match '"saying":"([^"]*)"') { $saying = $Matches[1] }
+      Notify-Owner '啟動咗，但答唔到' $saying
+    }
+  } else {
+    # ⛔ SAID OUT LOUD, NEVER INFERRED FROM SILENCE. A start that paid and a start that did
+    # not must not read identically in this log — part of why the 2026-08-18 event needed a
+    # forensic at all is that the log recorded what ran and never why it ran.
+    Write-Log 'startup smoke skipped — not explicitly requested (-RunSmoke)'
   }
 
   if ($Mode -eq 'Open') { Start-Process $Url }
