@@ -57,6 +57,10 @@
 
 const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
 const { intentFor, allIntentsFor } = require('../context/readContext') // THE one intent table — never a second classifier
+// POSITIVE EVIDENCE ONLY — never a verdict. The two vocabularies come with it so the
+// projection can re-check what it emits against the same tables the matcher read.
+const { evidenceFor: declaredCapabilityEvidenceFor, EVIDENCE_STATUS, EVIDENCE_KIND } = require('../context/declaredCapabilityEvidence')
+const { AROMA_OPERATIONS } = require('../context/readOperations') // the closed operation vocabulary
 const { UTILITY_PATTERNS } = require('./utilityAnswer') // THE one utility vocabulary — this file holds none
 
 /** Priority order, and the Owner's. Highest first; CONVERSATION is the fallback. */
@@ -125,7 +129,15 @@ function routeTurn (message, opts) {
   // to every outcome because the turns where nothing was read are exactly the interesting
   // ones — a CONVERSATION turn with n=3 is the case the tier rule has to be chosen against.
   const breadth = intentBreadthOf(text)
-  const none = (route, reason, confidence) => ({ route, reason, confidence, utility: null, domain: null, sources: [], intentBreadth: breadth.n, intentKeys: breadth.keys })
+  /**
+   * ⛔ MEASUREMENT ONLY, LIKE `intentBreadth` ABOVE — nothing routes on it, and the tests
+   * assert that the routing verdict for the historical turns is unchanged. It rides here
+   * because this function already holds the message and both `logTurnRoute` call sites
+   * already pass this object, so the signal needs ONE handoff instead of three. See
+   * declaredCapabilityEvidence.js for why it reports evidence and never availability.
+   */
+  const evidence = declaredCapabilityEvidenceFor(text)
+  const none = (route, reason, confidence) => ({ route, reason, confidence, utility: null, domain: null, sources: [], intentBreadth: breadth.n, intentKeys: breadth.keys, declaredCapabilityEvidence: evidence })
 
   if (!text) return none('CONVERSATION', 'empty', 'high')
 
@@ -158,7 +170,8 @@ function routeTurn (message, opts) {
       sources: Array.isArray(intent.sources) ? intent.sources.slice() : [],
       // Measurement only — `domain` above is still the FIRST match and still what routes.
       intentBreadth: breadth.n,
-      intentKeys: breadth.keys
+      intentKeys: breadth.keys,
+      declaredCapabilityEvidence: evidence
     }
   }
 
@@ -230,6 +243,31 @@ function logTurnRoute (entry, sink) {
     ? 'agree'
     : (extraRead.length > 0 && extraWanted.length > 0 ? 'differ' : (extraRead.length > 0 ? 'router_narrower' : 'router_wider'))
 
+  /**
+   * ⛔ POSITIVE EVIDENCE FROM THE DECLARED CATALOGUE — AND NEVER A VERDICT.
+   *
+   * `no_positive_match` means only 「the deterministic matcher found nothing in the
+   * declarations」. It does NOT mean the capability is absent, and a reader who treats it as
+   * such will repeat Q8: 「邊啲貨低過 PAR？」 was answered with a clarification and zero reads
+   * while `aroma_system.inventory` declared `parLevel` the whole time.
+   *
+   * Projected key by key, like every other field here, and BOTH closed vocabularies are
+   * re-checked against their own tables — an operation or a kind the matcher did not get from
+   * a declaration cannot ride into the log, and an unrecognised status zeroes the whole
+   * object rather than shipping half of it.
+   */
+  const ev = (d.declaredCapabilityEvidence && typeof d.declaredCapabilityEvidence === 'object') ? d.declaredCapabilityEvidence : {}
+  const KNOWN_OPS = new Set(AROMA_OPERATIONS.map((o) => o.operation))
+  const KNOWN_KINDS = new Set(Object.values(EVIDENCE_KIND))
+  const declaredCapabilityEvidence = Object.values(EVIDENCE_STATUS).includes(ev.status)
+    ? {
+        status: ev.status,
+        operations: (Array.isArray(ev.operations) ? ev.operations : []).filter((o) => KNOWN_OPS.has(o)),
+        evidenceKinds: (Array.isArray(ev.evidenceKinds) ? ev.evidenceKinds : []).filter((k) => KNOWN_KINDS.has(k)),
+        matchCount: Number.isFinite(ev.matchCount) ? ev.matchCount : 0
+      }
+    : { status: EVIDENCE_STATUS.NONE, operations: [], evidenceKinds: [], matchCount: 0 }
+
   const line = {
     event: 'TURN_ROUTE',
     timestamp: new Date().toISOString(),
@@ -247,6 +285,8 @@ function logTurnRoute (entry, sink) {
     // number over real turns, not from invented phrases.
     intentBreadth: Number.isFinite(d.intentBreadth) ? d.intentBreadth : 0,
     intentKeys: Array.isArray(d.intentKeys) ? d.intentKeys.map(String) : [],
+    // Positive evidence only — see the projection above. Never a verdict.
+    declaredCapabilityEvidence,
     // what the pipeline really did
     lane: e.lane == null ? null : String(e.lane),
     sourcesRead,

@@ -299,6 +299,36 @@ const PATHS = Object.freeze({
   invoices: '/api/v1/ai/invoices'
 })
 
+/**
+ * ⛔ THE ONE BRIDGE BETWEEN THE TWO KEY SPACES, LIFTED OUT OF THE FACTORY AND DECLARED.
+ *
+ * Everything in this file is keyed by ENDPOINT KEY (`inventory`, `orderPlanning`, …).
+ * `readOperations.AROMA_OPERATIONS` is keyed by METHOD (`listInventory`, …) and is the only
+ * place that knows the operation enums. Nothing connected the two: the pairing existed
+ * solely as literals inside `createAromaSystemReadAdapter` (`listInventory → 'inventory'`),
+ * unreachable without instantiating the adapter, so a consumer that needed to say WHICH
+ * OPERATION a declared field belongs to had to re-type the mapping — a second vocabulary,
+ * which HR-58 forbids and which `readOperations.js` describes as「two lists that must agree,
+ * one rename apart from disagreeing」.
+ *
+ * ⛔ AND THE PAIRING IS NOT DERIVABLE BY RULE, which is why it is written rather than
+ * computed: `supplier→suppliers` and `daily_count→dailyCounts` need pluralisation, and a
+ * pluralisation rule that is right five times and wrong once is worse than a table.
+ *
+ * ⛔ SO IT IS LOCKED IN BOTH DIRECTIONS BY TEST — against the adapter's real method names AND
+ * against `PATHS` — in `declaredCapabilityEvidence.test.js`. Adding an endpoint without
+ * adding it here turns that test red. This declaration is READ-ONLY metadata: nothing routes
+ * on it, nothing reads through it, and it grants no entitlement.
+ */
+const ENDPOINT_OF_METHOD = Object.freeze({
+  listInventory: 'inventory',
+  listSuppliers: 'suppliers',
+  listDailyCounts: 'dailyCounts',
+  listOrderPlanning: 'orderPlanning',
+  listPurchaseOrders: 'purchaseOrders',
+  listInvoices: 'invoices'
+})
+
 /** The three states the Owner asked to see, verbatim. */
 const READ_STATE = Object.freeze({
   FOUND: 'RESULTS_FOUND',
@@ -681,6 +711,9 @@ module.exports = {
   LIMIT_KNOWN,
   createAromaSystemReadAdapter,
   PATHS,
+  // ⛔ Exported READ-ONLY for the declared-capability evidence signal — the only bridge from
+  // this file's endpoint keys to the operation enums. See the declaration above.
+  ENDPOINT_OF_METHOD,
   READ_STATE,
   ALLOWED_QUERY,
   METHOD,

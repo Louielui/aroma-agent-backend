@@ -200,7 +200,16 @@ test('*** the log carries NO message content — allowlisted fields only ***', (
     'routerSources', 'lane', 'sourcesRead', 'rowsRetrieved', 'answerPlanForced', 'agreement', 'requestId',
     // Added 2026-08-08 for the intent-breadth measurement. This fence FIRED on them, which is
     // why they are here deliberately rather than by accident — see the constraint below.
-    'intentBreadth', 'intentKeys']
+    'intentBreadth', 'intentKeys',
+    // ⛔ AND IT FIRED AGAIN, ON PURPOSE. `declaredCapabilityEvidence` reports which DECLARED
+    // operations the catalogue positively matched — a closed status, closed operation enums
+    // from AROMA_OPERATIONS, closed evidence kinds, and a count. No message, no matched
+    // phrase, no field value: the object is projected key by key and BOTH vocabularies are
+    // re-checked against their own tables before emission, so a value the matcher did not
+    // read out of a declaration cannot appear here. It reports evidence and never a verdict —
+    // `no_positive_match` means the matcher found nothing, NOT that the capability is absent,
+    // which is the distinction Q8 exists to enforce. See declaredCapabilityEvidence.js.
+    'declaredCapabilityEvidence']
   assert.deepEqual(Object.keys(out[0]).sort(), allowed.slice().sort())
 })
 
