@@ -299,9 +299,19 @@ test('the log carries counts, enums and drop IDENTITY — never a value', () => 
    * whether the model has learnt to declare, and it cannot be recovered from `rankingGate`, which
    * reports only what the gate decided about the sections that reached it. Widened deliberately,
    * once, with the same rule as every other field here: counts and closed enums, never content.
+   *
+   * ⛔ AND BY ONE MORE — `rankingSalvage`. THIS ASSERTION IS WHY IT IS A DECISION AND NOT A
+   * DRIFT: adding a key to the emitted line turns this test red, so no field can reach the log
+   * without someone approving it here. Approved: a closed status plus two integers, saying
+   * whether C1 kept the grounded rows of a rejected ranking section. `rankingGate` reports the
+   * verdict and `droppedItems` the losses; neither separates 「rejected, section removed」 from
+   * 「rejected, rows kept neutrally」, so the one decision C1 makes reached no log at all —
+   * found by the live acceptance turn d61b779e. Same rule as every field here: counts and
+   * closed enums, never content; rankingSalvageTelemetry.test.js feeds a heading, a row title,
+   * a value, the user message and a credential through it and asserts none appears.
    */
   assert.deepEqual(Object.keys(l).sort(),
-    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingClaims', 'rankingGate', 'reason', 'requestId', 'timestamp'])
+    ['dropped', 'droppedFacts', 'droppedItems', 'droppedLimitations', 'droppedSentences', 'event', 'keptItemCount', 'modelItemCount', 'outcome', 'provider', 'rankingClaims', 'rankingGate', 'rankingSalvage', 'reason', 'requestId', 'timestamp'])
   assert.equal(l.modelItemCount, 3)
   assert.equal(l.keptItemCount, 2)
   assert.equal(l.droppedItems, 1)

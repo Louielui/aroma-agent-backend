@@ -466,6 +466,13 @@ function renderValidatedPlan (input) {
     // every production line reports 0/0/0 — a counter added to end a silent gap, silently gapped.
     // It has happened twice already on this object: `droppedLimitations` and `rankingVerdicts`.
     rankingClaims: v.rankingClaims,
+    // ⛔ AND THE FOURTH TIME. The three comments above name `droppedLimitations`,
+    // `rankingVerdicts` and `rankingClaims` as fields validatePlan computed and this object
+    // failed to carry. `rankingSalvage` was the same omission, found by the live C1
+    // acceptance turn (requestId d61b779e): the salvage decision is server-owned and was
+    // reaching no log at all, so 「C1 did not fire」 and 「C1 fired and nobody recorded it」
+    // were the same line. Passed through verbatim; logAnswerPlan decides what may travel.
+    rankingSalvage: v.rankingSalvage,
     modelItemCount: v.modelItemCount,
     keptItemCount: v.keptItemCount,
     scopeNotesSuppressed: scopePrune.concepts.length ? scopePrune.concepts : null,

@@ -365,6 +365,27 @@ function logAnswerPlan (entry, sink) {
       rankedSourceCount: Number.isFinite(v && v.rankedSourceCount) ? v.rankedSourceCount : null
     }))
   const rankingClaims = (entry.rankingClaims && typeof entry.rankingClaims === 'object') ? entry.rankingClaims : {}
+  /**
+   * ⛔ WHAT C1 DID WITH A REJECTED RANKING SECTION — and no other field on this line implies it.
+   * `rankingGate` says the ranking was rejected; `droppedItems` says how many rows died.
+   * Neither separates 「rejected, section removed」 from 「rejected, rows kept neutrally」, which
+   * is the entire decision C1 makes. Found missing by the live acceptance turn, requestId
+   * d61b779e: had that turn salvaged, the log would have read identically to one that did not.
+   *
+   * Projected key by key, like everything else here, so a heading, a row value or a key added
+   * to the validator's object later cannot ride in on it. An unrecognised status zeroes the
+   * whole thing rather than shipping half of it: a line reading 「none, 2 sections」 would be a
+   * new kind of untruth, and this file exists to stop those.
+   */
+  const salvage = (entry.rankingSalvage && typeof entry.rankingSalvage === 'object') ? entry.rankingSalvage : {}
+  const SALVAGE_STATUS = new Set(['neutral_salvaged', 'none'])
+  const rankingSalvage = SALVAGE_STATUS.has(salvage.status)
+    ? {
+        status: salvage.status,
+        sections: Number.isFinite(salvage.sections) ? salvage.sections : 0,
+        items: Number.isFinite(salvage.items) ? salvage.items : 0
+      }
+    : { status: 'none', sections: 0, items: 0 }
   const line = {
     event: 'ANSWER_PLAN',
     timestamp: new Date().toISOString(),
@@ -388,6 +409,11 @@ function logAnswerPlan (entry, sink) {
       declared: Number.isFinite(rankingClaims.declared) ? rankingClaims.declared : 0,
       missing: Number.isFinite(rankingClaims.missing) ? rankingClaims.missing : 0
     },
+    // Always present, never conditional — including on the `no_plan_returned` line, where
+    // there is no validator result at all. An absent field and a zero field must not look
+    // alike, and the one line emitted when the layer did NOT run is the worst place to
+    // start varying the shape.
+    rankingSalvage,
     // WHAT THE MODEL OFFERED, beside what survived. Without the pair, "it sent no sections"
     // and "it sent items with no facts" look identical from the log — and telling them
     // apart cost a hand investigation across the archive and the live API.
