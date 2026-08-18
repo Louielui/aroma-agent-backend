@@ -489,7 +489,33 @@ function renderValidatedPlan (input) {
   // earned their place, and a narrow failure escalating into a total one is the shape of
   // every defect removed this week.
   const rowsSurvived = v.keptItemCount > 0
-  if (!v.answerSurvived && !rowsSurvived) {
+  /**
+   * ⛔ A SUCCESSFUL READ MAY NOT END IN A HYPHEN — requestId aed4f643, 2026-08-18 22:11Z.
+   *
+   * 「你可以幫我看看costco要訂什麼貨…」 routed BUSINESS_QUERY, read replenishment and inventory
+   * successfully, and the Owner was shown a single 「-」. Every guard was correct and none of
+   * them applied: `contentLost` means 「it offered rows and all of them died」 and this plan
+   * offered NOTHING (`modelItemCount: 0`), `answerSurvived` was true because a hyphen makes no
+   * claim that can fail, and `outcome: validated` was honest because there was nothing to
+   * invalidate. The gap was a state nobody had written a check for.
+   *
+   * ⛔ STRUCTURAL, NEVER A QUALITY JUDGEMENT. One question: does the sentence contain a single
+   * Unicode letter or number? 「4」, 「冇」, 「A」, 「庫存」 do and pass through untouched. A hyphen,
+   * an em dash, an ellipsis, a full stop and an emoji do not. No minimum length, no scoring,
+   * no word list, no model call — a short TRUE answer must never be deleted for being short,
+   * and 「4」 is a complete answer to 「幾多項？」.
+   *
+   * ⛔ AND IT SAYS ONLY WHAT WAS READ. The fallback is the existing `minimalAnswer`, built from
+   * the evidence counts alone: it cannot mention Costco, a cart, a proposal, an executor or any
+   * dropped limitation, because it has never been given them.
+   */
+  const emptyPlan = v.modelItemCount === 0 && v.keptItemCount === 0
+  const liveEvidence = evidenceSets.some((e) => e && e.trust === 'live' && ((e.shownCount > 0) || (e.matchingTotal > 0)))
+  const sentenceHasContent = /[\p{L}\p{N}]/u.test(String(v.plan.directAnswer == null ? '' : v.plan.directAnswer))
+  if (v.answerSurvived && emptyPlan && liveEvidence && !sentenceHasContent) {
+    logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'answer_empty' }, common))
+    out.push(minimalAnswer(evidenceSets))
+  } else if (!v.answerSurvived && !rowsSurvived) {
     // Nothing survived at all — no sentence AND no row. There is genuinely nothing to show,
     // so the fallback still speaks, and it still says so out loud.
     logAnswerPlan(Object.assign({ outcome: 'fallback', reason: 'answer_unsupported' }, common))
