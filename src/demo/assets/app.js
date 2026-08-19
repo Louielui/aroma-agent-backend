@@ -1327,6 +1327,9 @@
        above, so reaching here means the server found a clear work request with one thing
        missing — the case that used to fall through into ordinary chat and look like she had
        not understood him at all. It asks one question and creates nothing. */
+    /* ⛔ BEFORE the generic question. When the server recognised the page he named, asking
+       「你想改哪個檔？」 anyway would be pretending not to know. */
+    if (res.workRequestResolution) return renderTargetResolution(res.workRequestResolution, conv)
     if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
@@ -1567,6 +1570,114 @@
    * them — measured, not assumed. An answer that still names no usable file simply stays
    * incomplete; the page never guesses a path.
    */
+  /* ── P1-C1b2b1: he named a page we know ───────────────────────────────────
+   *
+   * ⛔ PRE-PROPOSAL, AND IT MUST NOT LOOK LIKE AN APPROVAL CARD. Nothing here is sealed,
+   * nothing is pending, nothing is waiting for a signature. Borrowing the card's shape would
+   * tell the Owner a decision is due when none exists — and he has said plainly that he had
+   * been approving from memory rather than from what was on the screen.
+   *
+   * ⛔ THE UNAVAILABLE CASE IS THE HONEST ONE. Knowing that 「Order Planning」 is
+   * client/src/pages/Replenishment.tsx does not mean this build can change it — only one
+   * repository is bound to the executor. The sentence says both, and says neither 「ready」
+   * nor 「approved」, because neither is true.
+   *
+   * ⛔ AND THE CHOICE TRAVELS AS A TICKET. The candidate list lives on the server; the page
+   * sends back the opaque candidateId it was given, never a path or a targetId. A browser
+   * that could name the target would be choosing it. */
+  function renderTargetResolution (r, conv) {
+    var tEl = turn('bot', conv)
+    var box = el('div', 'offer')
+
+    if (r.status === 'exact' && r.target) {
+      /* Facts the server resolved, inserted as DATA into a translated frame. */
+      box.appendChild(el('p', null, t('resolve.knownButUnavailable', {
+        label: r.target.canonicalLabel || (r.target.routes && r.target.routes[0]) || r.target.targetId,
+        file: (r.target.files && r.target.files[0]) || '',
+        project: r.target.projectId
+      })))
+      tEl.body.appendChild(box)
+      scroll()
+      return tEl
+    }
+
+    if (r.status !== 'multiple' || !Array.isArray(r.candidates)) { tEl.body.appendChild(box); scroll(); return tEl }
+
+    box.appendChild(el('p', 'ask', t('resolve.whichOne')))
+    var row = el('div', 'act')
+    var out = el('div', 'meta')
+
+    function post (body, onOk) {
+      return fetch('/api/v1/demo/work-request-resolutions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(body)
+      }).then(function (resp) {
+        return resp.json().catch(function () { return {} }).then(function (j) { return { status: resp.status, body: j } })
+      }).then(onOk).catch(function () { out.textContent = t('offer.makeFailedNet') })
+    }
+
+    function disableAll () { for (var i = 0; i < row.children.length; i++) row.children[i].disabled = true }
+
+    for (var i = 0; i < r.candidates.length; i++) {
+      (function (c) {
+        /* The label is DISPLAY. What travels back is the ticket, and only the ticket. */
+        var name = c.file || c.canonicalLabel || (c.routes && c.routes[0]) || c.targetId
+        var b = el('button', 'primary', name)
+        b.setAttribute('type', 'button')
+        b.addEventListener('click', function () {
+          if (b.disabled) return
+          disableAll()
+          out.textContent = t('offer.making')
+          post({
+            resolutionId: r.resolutionId,
+            conversationId: conv.cid,
+            action: 'select',
+            candidateId: c.candidateId
+          }, function (o) {
+            if (o.status === 201 && o.body.proposalId) {
+              out.textContent = ''
+              /* Complete at last — rejoin the EXISTING chain, unchanged. */
+              requestWorkOrder(o.body.goal, o.body.file, null, o.body.proposalId, o.body.intent, conv)
+              return
+            }
+            if (o.status === 200 && o.body.target) {
+              /* Resolved, and still not something this build can execute. */
+              out.textContent = t('resolve.knownButUnavailable', {
+                label: o.body.target.canonicalLabel || (o.body.target.routes && o.body.target.routes[0]) || o.body.target.targetId,
+                file: (o.body.target.files && o.body.target.files[0]) || '',
+                project: o.body.target.projectId
+              })
+              return
+            }
+            /* Expired, already used, or replaced by a newer request — one honest sentence. */
+            out.textContent = t('resolve.stale')
+          })
+        })
+        row.appendChild(b)
+      })(r.candidates[i])
+    }
+
+    /* NOT named `no`: rejectCancels.test.js anchors the approval card's reject button on that
+       exact identifier, and a second one in this file made it slice the wrong handler. */
+    var cancelBtn = el('button', null, t('resolve.cancel'))
+    cancelBtn.setAttribute('type', 'button')
+    cancelBtn.addEventListener('click', function () {
+      if (cancelBtn.disabled) return
+      disableAll()
+      post({ resolutionId: r.resolutionId, conversationId: conv.cid, action: 'cancel' }, function (o) {
+        out.textContent = (o.status === 200) ? t('resolve.cancelled') : t('resolve.stale')
+      })
+    })
+    row.appendChild(cancelBtn)
+
+    box.appendChild(row); box.appendChild(out)
+    tEl.body.appendChild(box)
+    scroll()
+    return tEl
+  }
+
   function renderWorkRequestClarification (clar, conv) {
     var tEl = turn('bot', conv)
     var box = el('div', 'offer')

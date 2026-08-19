@@ -33,6 +33,11 @@ const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observabili
 const { DEMO_HTML, BUILD_STAMP } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
 const { explainOffer, WORK_REQUEST_STATE } = require('./workRequestOffer')
+const { resolveTargets, projectExecutionAvailable, STATUS: RESOLUTION_STATUS } = require('../projects/targetResolution') // trusted truth; decides nothing
+const { getTarget } = require('../projects/targetCatalogue')
+const { createPendingTargetResolutions, KIND: CANDIDATE_KIND } = require('../projects/pendingTargetResolution')
+const { createResolvedWorkRequest } = require('./workRequestRoute') // the SAME persistence tail the public entrance uses
+const { SESSION_COOKIE: OWNER_SESSION_COOKIE, readCookie } = require('../governance/ownerAuth') // the GLOBAL Owner login, never the approval session
 // ⛔ The SETTINGS entrance — same shape, same guarantee: an offer, never a change.
 const { explainSettingsOffer } = require('./settingsOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
@@ -102,6 +107,112 @@ function historyTextOf (history) {
 
 /** Sentinel for the greeting's backlog budget — distinguishable from any real result. */
 const TIMED_OUT = Symbol('backlog_timed_out')
+
+/**
+ * ⛔ THE OWNER'S OWN LOGIN, NOT THE OUTER GATE.
+ *
+ * /api/v1/demo already sits behind requireOwner — but requireOwner also admits a valid
+ * SERVICE TOKEN, and a service token is not a person choosing between two files. Selection
+ * is an interactive act, so the handler insists on the Owner's own session cookie and
+ * refuses a token-only caller even though the middleware already let it through.
+ *
+ * The approval router's separate session and its one-time nonce are deliberately NOT reused:
+ * those mean 「execute this approved Work Order」, and this is 「which page did you mean」.
+ */
+function ownerSessionIdOf (req) {
+  const sessions = req.app && req.app.locals && req.app.locals.ownerSessions
+  if (!sessions || typeof sessions.valid !== 'function') return null
+  const id = readCookie(req, OWNER_SESSION_COOKIE)
+  return sessions.valid(id) ? id : null
+}
+
+/** Process-lifetime pending resolutions. Memory only: a choice in a conversation is not an
+    authorisation, and must not survive a restart or reach disk. */
+const pendingResolutions = createPendingTargetResolutions()
+
+/** Bounded display facts for one trusted target. Identifiers and labels only. */
+function targetView (t) {
+  return {
+    projectId: t.projectId,
+    targetId: t.targetId,
+    canonicalLabel: t.canonicalLabel,
+    component: t.component,
+    routes: t.routes,
+    files: t.files,
+    availability: projectExecutionAvailable(t.projectId) ? 'available' : 'unavailable'
+  }
+}
+
+/**
+ * Build the chat envelope's resolution field, or null when there is nothing trustworthy to
+ * say and the ordinary clarification should stand.
+ *
+ * ⛔ EVERY NEW TURN RETIRES THE LAST PENDING ONE, whether or not this turn makes a new one.
+ * Otherwise a card still on screen from an earlier request could be pressed later and would
+ * complete against THAT older message — the stale button must fail closed.
+ */
+function buildWorkRequestResolution ({ req, message, offerDecision, conversationId }) {
+  const ownerSessionId = ownerSessionIdOf(req)
+  const cid = typeof conversationId === 'string' ? conversationId : null
+
+  const resolved = resolveTargets(message)
+
+  // ⛔ EXACT TRUSTED TARGET — RESOLVED, DISPLAYED, AND HONEST ABOUT WHAT COMES NEXT.
+  //    Nothing is created. The only project this build can execute against is its own,
+  //    so an Aroma System page is named correctly and marked unavailable.
+  if (resolved.status === RESOLUTION_STATUS.EXACT) {
+    const found = getTarget(resolved.targetIds[0])
+    if (!t) return null
+    return { status: 'exact', kind: 'target', source: resolved.source, target: targetView(found) }
+  }
+
+  // ⛔ SEVERAL TRUSTED TARGETS — the server keeps the list, the page gets tickets.
+  if (resolved.status === RESOLUTION_STATUS.MULTIPLE && ownerSessionId && cid) {
+    const targets = resolved.targetIds.map(getTarget).filter(Boolean)
+    if (targets.length < 2) return null
+    const created = pendingResolutions.create({
+      ownerSessionId,
+      conversationId: cid,
+      originalOwnerMessage: message,
+      originalIntent: (offerDecision.clarification && offerDecision.clarification.intent) || inferWorkRequest({ message, conversation: '' }).intent || '',
+      source: resolved.source,
+      candidates: targets.map((t) => ({ kind: CANDIDATE_KIND.TARGET, targetId: t.targetId }))
+    })
+    return {
+      status: 'multiple',
+      kind: 'target',
+      source: resolved.source,
+      resolutionId: created.resolutionId,
+      candidates: created.candidates.map((c, i) => Object.assign({ candidateId: c.candidateId }, targetView(targets[i])))
+    }
+  }
+
+  // ⛔ SEVERAL EXPLICIT FILES — the C1b1 gap, solved through the SAME abstraction.
+  //    b2b1 left this failing closed because a chosen path could only have come back as a
+  //    path. It comes back as a ticket now, and the file itself never leaves the server.
+  const files = (offerDecision.clarification && Array.isArray(offerDecision.clarification.candidates))
+    ? offerDecision.clarification.candidates
+    : []
+  if (files.length > 1 && ownerSessionId && cid) {
+    const created = pendingResolutions.create({
+      ownerSessionId,
+      conversationId: cid,
+      originalOwnerMessage: message,
+      originalIntent: inferWorkRequest({ message, conversation: '' }).intent || '',
+      source: 'explicit_file_candidates',
+      candidates: files.map((f) => ({ kind: CANDIDATE_KIND.FILE, file: f }))
+    })
+    return {
+      status: 'multiple',
+      kind: 'file',
+      source: 'explicit_file_candidates',
+      resolutionId: created.resolutionId,
+      candidates: created.candidates.map((c, i) => ({ candidateId: c.candidateId, file: files[i] }))
+    }
+  }
+
+  return null
+}
 
 function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
   const router = express.Router()
@@ -180,6 +291,109 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
    *
    * Deliberately cheap: no store read, no Drive read, no work. The page polls it.
    */
+  /**
+   * POST /api/v1/demo/work-request-resolutions — the Owner chooses one of the candidates
+   * the SERVER offered him, by returning the ticket it issued.
+   *
+   * ⛔ THE BODY IS AN ALLOWLIST, AND THE REJECTED NAMES ARE THE POINT. file, candidateFile,
+   * allowedFiles, targetId, projectId, repoRoot — every one of them is a way to say 「aim at
+   * this instead」, and every one is refused outright rather than ignored, so an attempt is
+   * visible instead of silently harmless.
+   *
+   * ⛔ THREE THINGS MUST AGREE: the Owner's login session, the conversation, and a ticket
+   * that belongs to THIS pending set. A browser-minted conversation id is a label, not a
+   * credential, so it can never be the only thing checked.
+   */
+  const RESOLUTION_BODY_ALLOWED = ['resolutionId', 'conversationId', 'action', 'candidateId']
+  const RESOLUTION_BODY_FORBIDDEN = ['file', 'candidateFile', 'allowedFiles', 'targetId', 'selectedTargetId', 'projectId', 'repoRoot', 'workOrder', 'approvalId', 'nonce', 'message', 'intent']
+
+  router.post('/api/v1/demo/work-request-resolutions', demoGuard, async (req, res) => {
+    const emitSel = (outcome, extra) => {
+      try {
+        console.log('[AROMA-TARGET-RESOLUTION]', JSON.stringify(Object.assign({ selectionResult: outcome }, extra || {})))
+      } catch (_) { /* telemetry is never load-bearing */ }
+    }
+    const b = (req.body && typeof req.body === 'object') ? req.body : {}
+    for (const k of RESOLUTION_BODY_FORBIDDEN) {
+      if (Object.prototype.hasOwnProperty.call(b, k)) {
+        emitSel('invalid')
+        return res.status(400).json({ error: 'resolution_refused', reason: 'forbidden_field' })
+      }
+    }
+    for (const k of Object.keys(b)) {
+      if (!RESOLUTION_BODY_ALLOWED.includes(k)) {
+        emitSel('invalid')
+        return res.status(400).json({ error: 'resolution_refused', reason: 'unknown_field' })
+      }
+    }
+
+    // ⛔ THE OWNER HIMSELF. A service token satisfied the outer gate; it does not satisfy this.
+    const ownerSessionId = ownerSessionIdOf(req)
+    if (!ownerSessionId) {
+      emitSel('wrong_session')
+      return res.status(403).json({ error: 'resolution_refused', reason: 'owner_session_required' })
+    }
+
+    const resolutionId = typeof b.resolutionId === 'string' ? b.resolutionId : ''
+    const conversationId = typeof b.conversationId === 'string' ? b.conversationId : ''
+    if (!isValidConversationId(conversationId)) {
+      emitSel('wrong_conversation')
+      return res.status(400).json({ error: 'resolution_refused', reason: 'bad_conversation' })
+    }
+
+    if (b.action === 'cancel') {
+      const out = pendingResolutions.cancel({ resolutionId, ownerSessionId, conversationId })
+      emitSel(out.ok ? 'cancelled' : out.outcome)
+      return res.status(out.ok ? 200 : 409).json({ status: out.ok ? 'cancelled' : 'refused', reason: out.ok ? null : out.outcome })
+    }
+    if (b.action !== 'select') {
+      emitSel('invalid')
+      return res.status(400).json({ error: 'resolution_refused', reason: 'bad_action' })
+    }
+
+    const picked = pendingResolutions.select({
+      resolutionId,
+      ownerSessionId,
+      conversationId,
+      candidateId: typeof b.candidateId === 'string' ? b.candidateId : ''
+    })
+    if (!picked.ok) {
+      emitSel(picked.outcome)
+      return res.status(409).json({ status: 'refused', reason: picked.outcome })
+    }
+
+    // ⛔ A TRUSTED TARGET IS RE-READ FROM THE CURRENT CATALOGUE, never from the snapshot the
+    //    browser was shown. And it stays PRE-PROPOSAL: this build can execute against one
+    //    repository, and it is not that one.
+    if (picked.candidate.kind === CANDIDATE_KIND.TARGET) {
+      const found = getTarget(picked.candidate.targetId)
+      if (!found) { emitSel('invalid'); return res.status(409).json({ status: 'refused', reason: 'invalid' }) }
+      emitSel('unavailable', { resolutionSource: 'canonical_label' })
+      return res.status(200).json({ status: 'resolved', kind: 'target', target: targetView(found), proposalId: null })
+    }
+
+    // ⛔ AN EXPLICIT FILE HE CHOSE. Every guard runs again server-side — the original message
+    //    is re-judged, the path is re-checked against the protected list, and b2b0's
+    //    availability gate applies before anything is persisted.
+    let out
+    try {
+      out = await createResolvedWorkRequest({
+        originalOwnerMessage: picked.originalOwnerMessage,
+        originalIntent: picked.originalIntent,
+        file: picked.candidate.file
+      }, { promoteToProposal: (req.app && req.app.locals && req.app.locals.promoteToProposal) })
+    } catch (_) {
+      emitSel('invalid')
+      return res.status(500).json({ status: 'refused', reason: 'invalid' })
+    }
+    if (!out.ok) {
+      emitSel('invalid', { resolutionSource: 'explicit_file_candidates' })
+      return res.status(422).json({ status: 'refused', reason: out.reason })
+    }
+    emitSel('selected', { resolutionSource: 'explicit_file_candidates' })
+    return res.status(201).json({ status: 'resolved', kind: 'file', proposalId: out.proposalId, goal: out.goal, file: out.file, intent: out.intent })
+  })
+
   router.get('/api/v1/demo/version', demoGuard, (req, res) => {
     res.json({ ok: true, build: BUILD_STAMP })
   })
@@ -561,12 +775,47 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
          * must not gain a field because something unrelated to them learned to ask a
          * question. Same rule as `lane` above, which is also chat-only.
          */
-        const clarification = (interactionMode === 'chat' && offerDecision.state === WORK_REQUEST_STATE.INCOMPLETE)
-          ? offerDecision.clarification
+        const incomplete = (interactionMode === 'chat' && offerDecision.state === WORK_REQUEST_STATE.INCOMPLETE)
+        /**
+         * ⛔ TRUSTED RESOLUTION FIRST (P1-C1b2b1), AND ONLY WHERE IT HAS SOMETHING TO SAY.
+         *
+         * 「你想改哪個檔？」 is the right question when nothing is known. It is the wrong question
+         * when the Owner named 「Order Planning」 — a page this build has a checked-in record of,
+         * with its file and its evidence. So an incomplete request is offered to the resolver
+         * first, and the generic clarification stays exactly as it was for everything else.
+         *
+         * ⛔ RESOLVING IS NOT PERMITTING. A resolved Aroma System target is DISPLAYED and
+         * marked unavailable — no Proposal, no Work Order, nothing persistent. Knowing which
+         * page he means and being able to change it are different facts, and this build only
+         * has the first.
+         *
+         * ⛔ THE CANDIDATES STAY HERE. When there is a choice to make, the server keeps the
+         * list and hands the page opaque tickets; a browser that could send back a path would
+         * be choosing the target, which is the one thing the whole chain prevents.
+         */
+        /**
+         * ⛔ EVERY NEW TURN RETIRES THE CARD STILL ON SCREEN — INCLUDING A CANCELLATION.
+         *
+         * This first ran only when the new turn was itself an incomplete request, so 「算啦，唔使」
+         * left the previous card live: he could still press it afterwards and it would complete
+         * against the OLDER message stored with it. Superseding therefore happens on every chat
+         * turn, before anything else is decided.
+         */
+        if (interactionMode === 'chat') {
+          const sid = ownerSessionIdOf(req)
+          const cidNow = req.body && typeof req.body.conversationId === 'string' ? req.body.conversationId : null
+          if (sid && cidNow) pendingResolutions.supersede(sid, cidNow)
+        }
+        const resolution = incomplete
+          ? buildWorkRequestResolution({ req, message, offerDecision, conversationId: req.body && req.body.conversationId })
           : null
-        const withClarification = clarification
-          ? Object.assign({}, withOffer, { workRequestClarification: clarification })
+        const clarification = (incomplete && !resolution) ? offerDecision.clarification : null
+        const withResolution = resolution
+          ? Object.assign({}, withOffer, { workRequestResolution: resolution })
           : withOffer
+        const withClarification = clarification
+          ? Object.assign({}, withResolution, { workRequestClarification: clarification })
+          : withResolution
 
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
         // One completed turn, written after the reply exists, so a failed turn leaves no

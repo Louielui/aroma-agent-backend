@@ -642,6 +642,34 @@ const CATALOGUE = Object.freeze({
   'offer.howToApply': { zh: '（要重新登記 task：{how}）', en: ' (re-register the task: {how})' },
   'offer.noAnswer': { zh: '改不到 —— 那個 API 沒有回答。', en: 'Could not change it — the API did not answer.' },
   'offer.workOrderAsk': { zh: '要我出一張工作單改 {file}？', en: 'Shall I raise a work order to change {file}?' },
+  /**
+   * ⛔ KNOWING WHICH PAGE IS NOT PERMISSION TO CHANGE IT (P1-C1b2b1).
+   *
+   * When the Owner names a page this build has a checked-in record of, it can say so exactly —
+   * and it still cannot touch it, because only one repository is bound to the executor. Those
+   * are two different facts and the sentence has to carry both, or it is a promise.
+   *
+   * ⛔ IT MUST NOT BORROW `approve.confirmedNotRun`. That line says a work order was CONFIRMED;
+   * here there is no Proposal, no Work Order, no approval and no run. Reusing it would assert
+   * state that does not exist — the exact class of untruth this project keeps removing.
+   *
+   * {label} {file} {project} are DATA, inserted verbatim. Translation changes the frame around
+   * them and never reaches inside: a page's own name is not interface text.
+   */
+  'resolve.knownButUnavailable': {
+    zh: '我知道你指的是 {label}（{file}），但目前我還不能在 {project} 執行修改。',
+    en: 'I know you mean {label} ({file}), but I cannot make changes in {project} yet.'
+  },
+  /** Several trusted possibilities. The names themselves arrive as data on each button. */
+  'resolve.whichOne': { zh: '你指的是哪一個？', en: 'Which one do you mean?' },
+  'resolve.cancel': { zh: '取消', en: 'Cancel' },
+  /**
+   * ⛔ ONE MESSAGE FOR EVERY DEAD TICKET, ON PURPOSE. Expired, already used, or replaced by a
+   * newer request are the same thing to the Owner — try again — and naming which one would
+   * describe the server's internal state back to the browser for no benefit.
+   */
+  'resolve.stale': { zh: '這個選擇已經失效，請重新提出要求。', en: 'That choice is no longer valid — please ask again.' },
+  'resolve.cancelled': { zh: '已取消，甚麼都沒有建立。', en: 'Cancelled — nothing was created.' },
   'offer.makeWorkOrder': { zh: '出工作單', en: 'Raise a work order' },
   'offer.making': { zh: '正在出工作單…', en: 'Raising a work order…' },
   /** ⛔ 「甚麼都沒有建立」 is the reassurance that matters on a failure. Keep it in both. */

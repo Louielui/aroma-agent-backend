@@ -39,8 +39,9 @@
  * A model-created proposal carries 'homepage-intake' and 'owner_local' respectively.
  */
 
-const { offerFor } = require('./workRequestOffer')
+const { offerFor, explainOffer, WORK_REQUEST_STATE } = require('./workRequestOffer')
 const { currentRepoFileAvailable } = require('../agent/workOrderProducer') // the SAME primitive Work Order sealing uses
+const { isForbiddenFile } = require('../agent/workOrder') // the ONE protected-path list; never re-implemented
 const { t } = require('../i18n/t')
 const { persistIntake, recordApprovalEvent } = require('../store/store')
 
@@ -89,21 +90,36 @@ async function createWorkRequest (input = {}, deps = {}) {
     return { ok: false, reason: 'file_not_available' }
   }
 
+  return promoteRequest({ file: offer.file, intent: offer.intent }, deps)
+}
+
+/**
+ * ⛔ THE PERSISTENCE TAIL, WRITTEN ONCE.
+ *
+ * Two entrances now reach a Proposal: the Owner naming a file in one sentence, and the Owner
+ * choosing between candidates the server offered him. They differ ONLY in how the target was
+ * established — everything after that is the same Task, the same promotion seam, the same
+ * audit event, and it must stay that way. A second copy of this would be a second place to
+ * forget the provenance, the failure handling, or the audit line.
+ *
+ * @param {{file:string, intent:string}} target  server-established; never from a request body
+ */
+async function promoteRequest (target, deps = {}) {
   if (typeof deps.promoteToProposal !== 'function') {
     // FAIL VISIBLY. A missing seam used to mean an empty proposals array and a turn that
     // looked merely unproductive.
     return { ok: false, reason: 'promote_seam_not_wired' }
   }
 
-  // 2. The Task the proposal will be promoted from. The goal is the Owner's own sentence,
-  //    not a paraphrase — it is what he will read on the card.
-  const goal = offer.intent
+  // The Task the proposal will be promoted from. The goal is the Owner's own sentence,
+  // not a paraphrase — it is what he will read on the card.
+  const goal = target.intent
   let persisted
   try {
     persisted = persistIntake({
       understanding: goal,
       decision: { statement: goal, rationale: t('wr.rationale') },
-      tasks: [{ title: goal, note: offer.file }],
+      tasks: [{ title: goal, note: target.file }],
       // PROVENANCE, half of it. The other half is the approval event below.
       provenance: { proposed_by: 'louie', source: ENTRY_POINT }
     })
@@ -113,7 +129,7 @@ async function createWorkRequest (input = {}, deps = {}) {
   const taskId = persisted && persisted.tasks && persisted.tasks[0] && persisted.tasks[0].id
   if (!taskId) return { ok: false, reason: 'persist_failed' }
 
-  // 3. The SAME promotion seam the model path uses.
+  // The SAME promotion seam the model path uses.
   let promoted
   try {
     promoted = await deps.promoteToProposal(taskId)
@@ -125,8 +141,8 @@ async function createWorkRequest (input = {}, deps = {}) {
     return { ok: false, reason: 'promote_rejected' }
   }
 
-  // 4. The durable trail, so the entry point is answerable later. Wrapped: an audit failure
-  //    must not destroy a proposal the Owner is about to be shown.
+  // The durable trail, so the entry point is answerable later. Wrapped: an audit failure
+  // must not destroy a proposal the Owner is about to be shown.
   try {
     recordApprovalEvent({
       type: 'proposed',
@@ -137,7 +153,50 @@ async function createWorkRequest (input = {}, deps = {}) {
     })
   } catch (_) {}
 
-  return { ok: true, proposalId: promoted.proposal.id, goal, file: offer.file, intent: offer.intent }
+  return { ok: true, proposalId: promoted.proposal.id, goal, file: target.file, intent: target.intent }
 }
 
-module.exports = { createWorkRequest, ENTRY_POINT }
+/**
+ * ⛔ THE OWNER ALREADY CHOSE — BUT EVERY GUARD RUNS AGAIN ANYWAY.
+ *
+ * This is reached only after the server matched a selection ticket to a candidate IT stored,
+ * for the Owner's own session and conversation. Even so, nothing is taken on trust: the
+ * ORIGINAL message is re-read through the same shape and doubled-negation guards, the chosen
+ * file is re-checked against the protected-path list, and its availability in this repository
+ * is re-checked — because time passed between the question and the answer, and a file can
+ * disappear inside it.
+ *
+ * ⛔ THE GOAL IS HIS SENTENCE, NOT HIS CHOICE. `intent` comes from what he originally asked
+ * for, stored server-side at the moment the question was posed. A selection supplies WHICH
+ * file, never WHAT to do — otherwise the Work Order's goal would end up being a file name.
+ *
+ * ⛔ AND IT IS NOT REACHABLE FROM THE BROWSER. This takes an already-selected file; the public
+ * route still accepts a message and re-derives its own target, so a body field remains
+ * incapable of aiming anything.
+ *
+ * @param {{originalOwnerMessage:string, originalIntent:string, file:string}} input
+ */
+async function createResolvedWorkRequest (input = {}, deps = {}) {
+  const message = typeof input.originalOwnerMessage === 'string' ? input.originalOwnerMessage : ''
+  const file = typeof input.file === 'string' ? input.file : ''
+  const intent = typeof input.originalIntent === 'string' ? input.originalIntent : ''
+  if (file === '' || intent === '') return { ok: false, reason: 'not_a_work_request' }
+
+  // 1. The original request must STILL be a request — negation, reported, hypothetical and
+  //    ordinary questions are re-judged by the same function the public entrance uses.
+  const decision = explainOffer({ message, hasProposal: false })
+  if (decision.state === WORK_REQUEST_STATE.NOT_A_WORK_REQUEST) return { ok: false, reason: 'not_a_work_request' }
+
+  // 2. The chosen file is re-checked against the hard boundary, never assumed safe because it
+  //    came from a candidate list.
+  if (isForbiddenFile(file)) return { ok: false, reason: 'not_a_work_request' }
+
+  // 3. And b2b0's gate applies identically here: nothing persistent for a file this server
+  //    cannot work on. It is re-checked because the file may have gone since the question.
+  const availability = currentRepoFileAvailable(file)
+  if (!availability.ok) return { ok: false, reason: 'file_not_available' }
+
+  return promoteRequest({ file, intent }, deps)
+}
+
+module.exports = { createWorkRequest, createResolvedWorkRequest, ENTRY_POINT }
