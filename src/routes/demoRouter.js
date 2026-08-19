@@ -32,7 +32,7 @@ const { handleIntakeError } = require('../utils/intakeDiagnostics')
 const { logIntakeOutcome } = require('../utils/intakeOutcomeLog') // observability v1: one line per request
 const { DEMO_HTML, BUILD_STAMP } = require('../demo/demoHtml')
 const { inferWorkRequest } = require('../agent/requestInference') // read the request out of the Owner's own words
-const { explainOffer } = require('./workRequestOffer')
+const { explainOffer, WORK_REQUEST_STATE } = require('./workRequestOffer')
 // ⛔ The SETTINGS entrance — same shape, same guarantee: an offer, never a change.
 const { explainSettingsOffer } = require('./settingsOffer') // the DETERMINISTIC entrance: the model is not the only way to a card
 const { MANIFEST_JSON } = require('../demo/appManifest') // installable-app metadata (same-origin, generated from the mark)
@@ -402,6 +402,9 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         telemetry.settingsOffer = settingsOffer !== null
         telemetry.workRequestOffer = offerDecision.offer !== null
         telemetry.offerDeclined = offerDecision.reason
+        // A clear request with one thing missing is its own outcome, countable apart from
+        // 「not a request」 — otherwise the two stay indistinguishable in the log as well.
+        telemetry.workRequestClarification = offerDecision.state === WORK_REQUEST_STATE.INCOMPLETE
 
         emit('success', 200, null)
         // WHO ACTUALLY ANSWERED. The Owner can pick a provider, but a failed attempt
@@ -535,6 +538,35 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
         const offer = offerDecision.offer
         const withOffer0 = offer ? Object.assign({}, withInference, { workRequestOffer: offer }) : withInference
         const withOffer = settingsOffer ? Object.assign({}, withOffer0, { settingsOffer }) : withOffer0
+        /**
+         * ⛔ THE REQUEST HE CLEARLY MADE, WITH ONE THING MISSING (P1-C1b1).
+         *
+         * `inferWorkRequest` had already composed the one sentence to ask, and explainOffer
+         * used to drop it on the floor: 「幫我改個訂貨頁」 is unmistakably a work request, and
+         * it fell back into ordinary chat looking like it had not been understood.
+         *
+         * ⛔ IT IS NOT AN OFFER AND IT IS NOT A PROPOSAL. This field authorises nothing,
+         * persists nothing and mints no id. No Task, no Proposal, no Work Order, no
+         * approvalId, no Run — the Owner is asked ONE question and nothing else happens. The
+         * executable entrance is still POST /api/v1/owner/work-requests, still re-derives
+         * everything from his own words, and still ignores any file a browser supplies.
+         *
+         * ⛔ AND ONLY ON THE STATE THAT EARNED IT. A negated, reported, hypothetical or
+         * ordinary-question turn is NOT_A_WORK_REQUEST and gets no field at all, so those
+         * envelopes stay byte-identical — the same rule the offer above follows.
+         *
+         * ⛔ CHAT ONLY, AND AN EXISTING TEST HAD TO SAY SO. The first version attached this
+         * on whatever lane the turn took, and `laneRouter.test.js` turned red on 「proposal
+         * envelope unchanged」: 「修改 canary file」 routes to the PROPOSAL lane, whose consumers
+         * must not gain a field because something unrelated to them learned to ask a
+         * question. Same rule as `lane` above, which is also chat-only.
+         */
+        const clarification = (interactionMode === 'chat' && offerDecision.state === WORK_REQUEST_STATE.INCOMPLETE)
+          ? offerDecision.clarification
+          : null
+        const withClarification = clarification
+          ? Object.assign({}, withOffer, { workRequestClarification: clarification })
+          : withOffer
 
         // ── CONVERSATION HISTORY v1 — APPEND ─────────────────────────────────
         // One completed turn, written after the reply exists, so a failed turn leaves no
@@ -589,7 +621,7 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
           }
         }
 
-        return res.status(200).json(withOffer)
+        return res.status(200).json(withClarification)
       } catch (err) {
         // Reuse the existing safe-disclosure boundary. Never leak provider body/stack/key/prompt.
         let mapped

@@ -1323,6 +1323,11 @@
        it away, which is a whole failure however green the suite is. Caught at the served
        string, not by a test. */
     if (res.settingsOffer) return renderSettingsOffer(res.settingsOffer, conv)
+    /* ⛔ AFTER BOTH OFFERS, BEFORE ORDINARY CHAT. A complete request has already returned
+       above, so reaching here means the server found a clear work request with one thing
+       missing — the case that used to fall through into ordinary chat and look like she had
+       not understood him at all. It asks one question and creates nothing. */
+    if (res.workRequestClarification) return renderWorkRequestClarification(res.workRequestClarification, conv)
 
     if (res.demoOutcome === 'clarification') return renderProposal(res, conv)
     if (res.talkOnly === true || res.mode === 'chat' || res.mode === 'ask' || res.mode === 'recommend') return addBot(res.reply || '', conv)
@@ -1531,6 +1536,84 @@
           requestWorkOrder(o.body.goal, o.body.file, null, o.body.proposalId, o.body.intent, conv)
           return
         }
+        out.textContent = t('offer.makeFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') })
+      }).catch(function () {
+        out.textContent = t('offer.makeFailedNet')
+      })
+    })
+  }
+
+  /* ── P1-C1b1: he clearly asked for work, and one thing was missing ─────────
+   *
+   * ⛔ PRE-PROPOSAL, AND STRUCTURALLY SO. renderProposal below has almost this interaction
+   * already, and reusing it was the obvious move — but it is built around a Proposal that
+   * already exists and hands its answer to requestWorkOrder(proposalId, …). Reaching it from
+   * here would have meant minting a Proposal for a request that is still incomplete, purely
+   * to borrow a text box. Nothing here has a proposalId because nothing here has been
+   * created: no Task, no Proposal, no Work Order, no approvalId, no Run.
+   *
+   * ⛔ ONLY THE OWNER'S OWN WORDS ARE JOINED. What is sent is his original sentence and his
+   * answer, verbatim, on two lines. No bridge sentence, no paraphrase, no target invented by
+   * the page. The server then re-derives file and intent from that text exactly as it does
+   * for a request he typed in one go — and a file named in the request body is still ignored,
+   * so this button carries no authority the Owner did not author.
+   *
+   * ⛔ THE ORIGINAL COMES FIRST, AND THAT IS NOT COSMETIC. The answer alone is 「docs/x.md」;
+   * the change he actually wanted lives in the first sentence. Sending only the answer would
+   * seal a Work Order whose goal was a file path.
+   *
+   * ⛔ AND THE ANSWER IS NOT TRUSTED EITHER. 「算啦，唔使」 or 「今日 lunch 食咩好？」 go through
+   * the SAME isChangeRequest / negation / inference gate on the joined text, which refuses
+   * them — measured, not assumed. An answer that still names no usable file simply stays
+   * incomplete; the page never guesses a path.
+   */
+  function renderWorkRequestClarification (clar, conv) {
+    var tEl = turn('bot', conv)
+    var box = el('div', 'offer')
+    box.appendChild(el('p', 'ask', clar.question || t('proposal.whichFile')))
+
+    var missing = Array.isArray(clar.missing) ? clar.missing : ['file']
+    var needFile = missing.indexOf('file') >= 0
+    var row = el('div', 'act')
+    var askIn = el('input', 'typed')
+    askIn.setAttribute('type', 'text')
+    askIn.setAttribute('aria-label', needFile ? t('proposal.askFileLabel') : t('proposal.askIntentLabel'))
+    /* THE PLACEHOLDER IS AN INSTRUCTION, NEVER A PLAUSIBLE ANSWER — the same rule the
+       proposal card learned the hard way, when an empty field LOOKED filled and burned a
+       nonce. A sample path here would repeat exactly that. */
+    askIn.setAttribute('placeholder', needFile ? t('proposal.askFilePlaceholder') : t('proposal.askIntentPlaceholder'))
+    var go = el('button', 'primary', t('offer.makeWorkOrder'))
+    go.setAttribute('type', 'button')
+    go.disabled = true
+    askIn.addEventListener('input', function () { go.disabled = askIn.value.trim() === '' })
+    row.appendChild(askIn); row.appendChild(go)
+    var out = el('div', 'meta')
+    box.appendChild(row); box.appendChild(out)
+    tEl.body.appendChild(box)
+    scroll()
+
+    go.addEventListener('click', function () {
+      if (go.disabled) return
+      go.disabled = true
+      askIn.disabled = true
+      out.textContent = t('offer.making')
+      /* His sentence, then his answer. Two lines he wrote, nothing else. */
+      var joined = lastOwnerMessage(conv) + '\n' + askIn.value.trim()
+      fetch('/api/v1/owner/work-requests', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ message: joined })
+      }).then(function (r) {
+        return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
+      }).then(function (o) {
+        if (o.status === 201 && o.body.proposalId) {
+          out.textContent = ''
+          /* Complete at last — rejoin the EXISTING chain, unchanged. */
+          requestWorkOrder(o.body.goal, o.body.file, null, o.body.proposalId, o.body.intent, conv)
+          return
+        }
+        /* Still not enough. It says so and stops — it does not try again with a guess. */
         out.textContent = t('offer.makeFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') })
       }).catch(function () {
         out.textContent = t('offer.makeFailedNet')

@@ -65,6 +65,24 @@ const { inferWorkRequest, CHANGE_VERB } = require('../agent/requestInference')
 const { isChangeRequest } = require('../agent/requestShape')
 
 /**
+ * ⛔ THREE OUTCOMES, CLOSED — because two of them used to look identical from outside.
+ *
+ * 「唔好改 docs/notes.md」 and 「幫我改個訂貨頁」 both returned `offer: null`, and the caller had
+ * no way to tell 「he is not asking for work」 from 「he IS asking, and one thing is missing」.
+ * The second deserves a question; the first must never get one. A `reason` string could have
+ * carried that, but reason is a LOG value — one new enum member added for a logging need and
+ * the branch silently changes meaning. The state is its own field.
+ *
+ * INCOMPLETE IS NOT AN ENTITLEMENT. It authorises nothing, creates nothing and reaches no
+ * store: it is permission to ask one sentence, and that is all.
+ */
+const STATE = Object.freeze({
+  NOT_A_WORK_REQUEST: 'not_a_work_request',
+  INCOMPLETE: 'work_request_incomplete',
+  COMPLETE: 'work_request_complete'
+})
+
+/**
  * THE SECOND NEGATION CHECK. Independent by construction — see the header.
  *
  * Rather than one alternation over the sentence, this asks a different question: does a
@@ -117,16 +135,16 @@ function refusesChange (message) {
  */
 function explainOffer (input = {}) {
   // The model path owns the turn when it worked. Not two offers for one sentence.
-  if (input.hasProposal === true) return { offer: null, reason: 'model_path_owns_turn' }
+  if (input.hasProposal === true) return { offer: null, reason: 'model_path_owns_turn', state: STATE.NOT_A_WORK_REQUEST }
 
   const message = typeof input.message === 'string' ? input.message : ''
 
   // 1. IS IT A REQUEST? The judgement the classifier used to make silently.
   const shape = isChangeRequest(message)
-  if (!shape.ok) return { offer: null, reason: shape.reason }
+  if (!shape.ok) return { offer: null, reason: shape.reason, state: STATE.NOT_A_WORK_REQUEST }
   // 1b. AND AGAIN, INDEPENDENTLY, FOR NEGATION ONLY. See the header for why this one
   //     concept deliberately has two implementations.
-  if (refusesChange(message)) return { offer: null, reason: 'negated_proximity' }
+  if (refusesChange(message)) return { offer: null, reason: 'negated_proximity', state: STATE.NOT_A_WORK_REQUEST }
 
   // 2. WHAT IS THE REQUEST? The existing reader, with the CONVERSATION DELIBERATELY EMPTY.
   //    The existing path may fall back to a path named earlier in the conversation, because
@@ -138,9 +156,30 @@ function explainOffer (input = {}) {
   // 3. NOTHING LEFT TO ASK. If inferWorkRequest still has a question, that question belongs
   //    to the conversational path; an offer is for a request that is already complete.
   //    A protected path lands here too — it leaves a question, by design.
-  if (read.question !== null || !read.file || !read.intent) return { offer: null, reason: 'incomplete' }
+  //
+  //    ⛔ THE QUESTION USED TO DIE HERE, AND THAT WAS THE WHOLE DEFECT. `inferWorkRequest`
+  //    had already composed the one sentence to ask — 「你想改哪個檔？」 — and this line threw
+  //    it away and returned a bare `incomplete`, so a perfectly clear request with a missing
+  //    path fell back into ordinary chat and looked like it had not been understood at all.
+  //    It is now carried out, and it is STILL not an offer: nothing here is executable.
+  if (read.question !== null || !read.file || !read.intent) {
+    return {
+      offer: null,
+      reason: 'incomplete',
+      state: STATE.INCOMPLETE,
+      clarification: {
+        question: read.question,
+        missing: read.missing,
+        candidates: read.candidates,
+        // Present when the Owner named a path that can never be allowlisted. The question
+        // already says so; carrying the flag lets the caller refuse to render an affordance
+        // rather than infer that from prose.
+        forbidden: read.forbidden
+      }
+    }
+  }
 
-  return { offer: { file: read.file, intent: read.intent, source: 'deterministic' }, reason: null }
+  return { offer: { file: read.file, intent: read.intent, source: 'deterministic' }, state: STATE.COMPLETE, reason: null }
 }
 
 /** The thin form the callers already use. */
@@ -148,4 +187,4 @@ function offerFor (input = {}) {
   return explainOffer(input).offer
 }
 
-module.exports = { offerFor, explainOffer, refusesChange }
+module.exports = { offerFor, explainOffer, refusesChange, WORK_REQUEST_STATE: STATE }
