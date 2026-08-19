@@ -145,3 +145,23 @@ test('*** it shares the producer\'s path extractor rather than re-implementing i
   assert.match(src, /mentionedFilesFrom/)
   assert.equal(/const re = \//.test(src), false, 'it defines no path regex of its own')
 })
+
+test('*** ⛔ THE OWNER\'S PATH SPELLING REACHES file AND candidates INTACT ***', () => {
+  /**
+   * ⛔ This module needed NO change for it — it forwards whatever mentionedFilesFrom returns,
+   * and that is exactly why the defect reached this far: the extractor was folding case, so
+   * every consumer downstream inherited a path the Owner never wrote. Pinned here because this
+   * is the layer the rest of the chain reads from.
+   */
+  const r = inferWorkRequest({ message: '幫我改 client/src/pages/Replenishment.tsx，將 Submit 改成 Send Order' })
+  assert.equal(r.file, 'client/src/pages/Replenishment.tsx', '⛔ the path was folded on the way through')
+  assert.deepEqual(r.candidates, ['client/src/pages/Replenishment.tsx'])
+
+  const r2 = inferWorkRequest({ message: '幫我改 docs/Canary/Agent-Canary.md，第二行改成 line 3' })
+  assert.equal(r2.file, 'docs/Canary/Agent-Canary.md')
+
+  // Several genuinely different files still read as several.
+  const many = inferWorkRequest({ message: '幫我改 src/A.js 同 src/B.js，加 log' })
+  assert.deepEqual(many.candidates, ['src/A.js', 'src/B.js'])
+  assert.equal(many.file, null, 'and two candidates is still not a target')
+})

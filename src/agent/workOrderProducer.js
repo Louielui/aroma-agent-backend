@@ -43,20 +43,64 @@ const MAX_EXCERPT_CHARS = 800
 const REPO_ROOT = path.resolve(__dirname, '..', '..')
 
 /**
- * Read the head of a repo-relative file. Refuses anything that is not a readable regular
- * file inside the repo — so a Work Order can never be sealed for a path that does not
- * exist (previously the validator did no fs check at all and such a path sealed fine).
- * @returns {{ok:true, text, truncated}|{ok:false, reason}}
+ * ⛔ THE ONE PLACE THAT DECIDES WHETHER A REPO-RELATIVE PATH IS USABLE.
+ *
+ * Containment, existence, regular-file and readability were written once here, for Work Order
+ * sealing. The pre-Proposal gate needs the SAME four answers, and writing them a second time is
+ * how two validators drift until one accepts what the other refuses — so it is extracted rather
+ * than copied, and both stages call this.
+ *
+ * ⛔ THE ABSOLUTE PATH DOES NOT LEAVE THIS MODULE. `abs` is returned for the reader below and
+ * for nothing else; the availability API exposes only a closed reason, because a refusal shown
+ * to the Owner or written to a log must not carry a machine root.
+ *
+ * @returns {{ok:true, abs}|{ok:false, reason:'outside_repo'|'not_found'|'not_a_file'|'unreadable'}}
  */
-function readCurrentExcerptFromDisk (repoRoot, relPath) {
+function resolveRepoFile (repoRoot, relPath) {
   const root = path.resolve(repoRoot)
   const abs = path.resolve(root, relPath)
+  // Containment first: `..` cannot climb out, and an absolute path cannot point elsewhere.
   if (abs !== root && !abs.startsWith(root + path.sep)) return { ok: false, reason: 'outside_repo' }
   let st
   try { st = fs.statSync(abs) } catch { return { ok: false, reason: 'not_found' } }
   if (!st.isFile()) return { ok: false, reason: 'not_a_file' }
+  try { fs.accessSync(abs, fs.constants.R_OK) } catch { return { ok: false, reason: 'unreadable' } }
+  return { ok: true, abs }
+}
+
+/**
+ * ⛔ IS THIS PATH USABLE IN THE REPOSITORY THIS SERVER CAN ACTUALLY WORK ON?
+ *
+ * The root is this module's own REPO_ROOT — server-owned, resolved from the source tree. It is
+ * never taken from a request body, a browser field, Owner text, a model, or a registry: a
+ * caller can ask ABOUT a path, never ask about a different repository.
+ *
+ * Returns a closed reason and nothing else. No absolute path, no errno, no machine directory.
+ *
+ * @returns {{ok:true}|{ok:false, reason:'outside_repo'|'not_found'|'not_a_file'|'unreadable'}}
+ */
+function currentRepoFileAvailable (relPath) {
+  const r = resolveRepoFile(REPO_ROOT, relPath)
+  return r.ok ? { ok: true } : { ok: false, reason: r.reason }
+}
+
+/**
+ * Read the head of a repo-relative file. Refuses anything that is not a readable regular
+ * file inside the repo — so a Work Order can never be sealed for a path that does not
+ * exist (previously the validator did no fs check at all and such a path sealed fine).
+ *
+ * ⛔ SEAL-TIME VALIDATION STAYS, even though the pre-Proposal gate now asks the same question
+ * earlier. A file can be deleted, replaced by a directory, or made unreadable between the
+ * Proposal and the seal; the earlier check is an integrity gate, not a substitute for the one
+ * that guards the Owner's card and the hash.
+ *
+ * @returns {{ok:true, text, truncated}|{ok:false, reason}}
+ */
+function readCurrentExcerptFromDisk (repoRoot, relPath) {
+  const resolved = resolveRepoFile(repoRoot, relPath)
+  if (!resolved.ok) return { ok: false, reason: resolved.reason }
   let raw
-  try { raw = fs.readFileSync(abs, 'utf8') } catch { return { ok: false, reason: 'unreadable' } }
+  try { raw = fs.readFileSync(resolved.abs, 'utf8') } catch { return { ok: false, reason: 'unreadable' } }
   const all = raw.replace(/\r\n/g, '\n').split('\n')
   let text = all.slice(0, MAX_EXCERPT_LINES).join('\n')
   let truncated = all.length > MAX_EXCERPT_LINES
@@ -95,16 +139,35 @@ const WILDCARD_RE = /[*?[\]{}]/
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
 
 /** Extract the file paths a conversation actually mentioned (deterministic, no model call). */
+/**
+ * ⛔ IDENTITY KEEPS ITS CASE; ONLY THE COMPARISON KEY IS FOLDED.
+ *
+ * This used to return normRel(match), and normRel lowercases — so 「docs/Canary/Agent-Canary.md」
+ * came back as 「docs/canary/agent-canary.md」 and that lowercased string travelled all the way
+ * into offer.file, the Owner's card, and allowedFiles inside the sealed Work Order and its hash.
+ * On Windows it still resolved, so nothing failed and the wrong spelling looked correct; on a
+ * case-sensitive repository it would simply not be the file he named.
+ *
+ * A path the Owner wrote is an IDENTITY. Whether two mentions are the same file is a
+ * COMPARISON. normRel is the right answer to the second question and the wrong answer to the
+ * first, so it is now used only as a dedupe key and never as the stored value.
+ *
+ * First-seen spelling wins: 「docs/Canary/File.js」 then 「docs/canary/file.js」 yields one entry,
+ * spelled the way he first wrote it.
+ */
 function mentionedFilesFrom (texts) {
   const out = []
+  const seen = new Set()
   const src = Array.isArray(texts) ? texts : [texts]
   // a path-looking token: at least one '/' and a file extension, or a bare filename with
   // a known code/text extension. Deliberately conservative — this only ever NARROWS.
   const re = /(?:[A-Za-z0-9_.-]+\/)*[A-Za-z0-9_.-]+\.[A-Za-z0-9]{1,6}/g
   for (const t of src) {
     for (const m of String(t == null ? '' : t).match(re) || []) {
-      const n = normRel(m)
-      if (n && !out.includes(n)) out.push(n)
+      // Separator/prefix normalisation only — the same shaping normRel does, minus the fold.
+      const value = String(m).replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
+      const key = normRel(m)
+      if (key && !seen.has(key)) { seen.add(key); out.push(value) }
     }
   }
   return out
@@ -163,9 +226,13 @@ function proposeWorkOrder (input = {}) {
   if (errors.length) return reject(errors)
 
   // ── L2: provenance — option B, the file must already be in the conversation ──
-  const mentioned = Array.isArray(input.mentionedFiles) && input.mentionedFiles.length
-    ? input.mentionedFiles.map(normRel)
-    : mentionedFilesFrom(input.conversation)
+  // ⛔ BOTH SIDES THROUGH normRel, EXPLICITLY. mentionedFilesFrom used to hand back values that
+  //    were already folded, so this comparison worked by accident of its input. It now returns
+  //    the Owner's own spelling, and the folding has to happen HERE — otherwise a request that
+  //    named 「docs/Canary/x.md」 would fail its own provenance check on a case difference.
+  const mentioned = (Array.isArray(input.mentionedFiles) && input.mentionedFiles.length
+    ? input.mentionedFiles
+    : mentionedFilesFrom(input.conversation)).map(normRel)
   if (!mentioned.includes(normRel(file))) {
     return reject([t('wop.notMentioned', { file })])
   }
@@ -217,6 +284,7 @@ module.exports = {
   mentionedFilesFrom,
   plainGoal,
   readCurrentExcerptFromDisk,
+  currentRepoFileAvailable,
   DEFAULTS,
   MAX_ALLOWED_FILES,
   MAX_EXCERPT_LINES,

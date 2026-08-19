@@ -93,8 +93,78 @@ test('OPTION B: a file NOT mentioned in the conversation is rejected', () => {
 
 test('mentionedFilesFrom extracts only path-shaped tokens (never invents)', () => {
   const m = mentionedFilesFrom(['改 src/context/flags.js 同 README.md', '唔關事嘅字'])
-  assert.ok(m.includes('src/context/flags.js') && m.includes('readme.md'))
+  // ⛔ 'README.md', not 'readme.md'. This assertion USED to expect the lowercased form,
+  //    because mentionedFilesFrom returned normRel(match) and normRel folds case — so the
+  //    test was pinning the defect described below rather than the intended behaviour.
+  assert.ok(m.includes('src/context/flags.js') && m.includes('README.md'))
   assert.equal(mentionedFilesFrom(['完全冇提到檔案']).length, 0)
+})
+
+/* ═══════════ PATH IDENTITY vs PATH COMPARISON ═══════════ */
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ THE DEFECT. mentionedFilesFrom returned normRel(match), and normRel lowercases. So
+ * 「docs/Canary/Agent-Canary.md」 came back as 「docs/canary/agent-canary.md」, and that spelling
+ * travelled into offer.file, the Owner's card, and allowedFiles INSIDE the sealed Work Order and
+ * its hash. On Windows the lowercased path still resolves, so nothing ever failed and the wrong
+ * spelling looked right; on a case-sensitive repository it is simply not the file he named.
+ *
+ * A path the Owner wrote is an IDENTITY. Whether two mentions are the same file is a
+ * COMPARISON. normRel is the correct answer to the second question and the wrong answer to the
+ * first — it is now the dedupe key only, never the stored value.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+test('*** ⛔ THE OWNER\'S OWN SPELLING SURVIVES ***', () => {
+  assert.deepEqual(mentionedFilesFrom('幫我改 docs/Canary/Agent-Canary.md'), ['docs/Canary/Agent-Canary.md'])
+  assert.deepEqual(mentionedFilesFrom('改 client/src/pages/Replenishment.tsx'), ['client/src/pages/Replenishment.tsx'])
+  assert.deepEqual(mentionedFilesFrom('改 SRC/Agent/WorkOrder.JS'), ['SRC/Agent/WorkOrder.JS'])
+})
+
+test('*** ⛔ CASE-ONLY DUPLICATES STILL COLLAPSE — FIRST SPELLING WINS ***', () => {
+  // The comparison key is still folded, so these are one file, named the way he first wrote it.
+  assert.deepEqual(mentionedFilesFrom('改 docs/Canary/File.js 同 docs/canary/file.js'), ['docs/Canary/File.js'])
+  assert.deepEqual(mentionedFilesFrom('改 docs/canary/file.js 同 docs/Canary/File.js'), ['docs/canary/file.js'])
+})
+
+test('*** genuinely different files remain several ***', () => {
+  assert.deepEqual(mentionedFilesFrom('改 src/a.js 同 src/b.js'), ['src/a.js', 'src/b.js'])
+})
+
+test('*** separators are normalised without folding case ***', () => {
+  assert.deepEqual(mentionedFilesFrom('改 ./docs/Canary/Agent-Canary.md'), ['docs/Canary/Agent-Canary.md'])
+})
+
+test('*** ⛔ PROVENANCE STILL MATCHES ACROSS A CASE DIFFERENCE ***', () => {
+  /**
+   * ⛔ The provenance check used to work by accident: its input was already folded. Now that
+   * mentionedFilesFrom preserves case, the folding has to happen at the comparison — otherwise
+   * a request naming 「docs/Canary/x.md」 would fail its OWN provenance check.
+   */
+  const idFn = () => 'appr_case01'
+  const proposal = {
+    goal: 'change the canary line',
+    candidateFile: 'docs/canary/agent-canary.md',
+    intendedChange: 'second line becomes line 3'
+  }
+  // The conversation spells it differently from the proposal — same file, different case.
+  const out = proposeWorkOrder({ proposal, conversation: ['幫我改 docs/Canary/Agent-Canary.md'], newId: idFn })
+  assert.equal(out.ok, true, '⛔ provenance rejected a case-different spelling: ' + JSON.stringify(out.errors || out))
+})
+
+test('*** ⛔ AND allowedFiles CARRIES THE SPELLING THAT WAS ASKED FOR ***', () => {
+  const idFn = () => 'appr_case02'
+  // A real file in this repo, named with its true mixed case in both places.
+  const proposal = {
+    goal: 'change the canary line',
+    candidateFile: 'docs/canary/agent-canary.md',
+    intendedChange: 'x'
+  }
+  const out = proposeWorkOrder({ proposal, conversation: ['改 docs/canary/agent-canary.md'], newId: idFn })
+  assert.equal(out.ok, true, JSON.stringify(out.errors || out))
+  assert.deepEqual(out.workOrder.allowedFiles, ['docs/canary/agent-canary.md'],
+    'the sealed order names exactly the path that was proposed')
 })
 
 /* ═══════════ STEP 3 — WYSIWYA ═══════════ */

@@ -40,6 +40,7 @@
  */
 
 const { offerFor } = require('./workRequestOffer')
+const { currentRepoFileAvailable } = require('../agent/workOrderProducer') // the SAME primitive Work Order sealing uses
 const { t } = require('../i18n/t')
 const { persistIntake, recordApprovalEvent } = require('../store/store')
 
@@ -57,6 +58,36 @@ async function createWorkRequest (input = {}, deps = {}) {
   //    the deliberately-doubled negation test.
   const offer = offerFor({ message, hasProposal: false })
   if (!offer) return { ok: false, reason: 'not_a_work_request' }
+
+  /**
+   * ⛔ NOTHING PERSISTENT FOR A FILE THIS SERVER CANNOT WORK ON — AND THE CHECK IS HERE
+   * BECAUSE OF WHAT COMES NEXT.
+   *
+   * `inferWorkRequest` validates the SHAPE of a path, never its existence. So a perfectly
+   * well-formed path that is not in this repository — a page from the other Aroma repo, a
+   * typo, a file that has since moved — used to produce a real Task, a real Proposal and a
+   * real 「proposed」 audit event, and was refused only much later at Work Order sealing. The
+   * Owner pressed the button, saw a proposal appear, and learned two steps afterwards that the
+   * file was never there; the store kept the record either way.
+   *
+   * ⛔ AFTER the re-derivation and BEFORE persistIntake, deliberately. Earlier than this would
+   * mean putting filesystem I/O into the chat-time offer, which runs on ordinary turns and
+   * should stay pure — and the harmless offer button was never the problem. Later than this
+   * would mean the artifact already exists when the refusal happens, which is the whole defect.
+   *
+   * ⛔ THE ROOT IS SERVER-OWNED. `currentRepoFileAvailable` asks about THIS repository and
+   * takes no root from anywhere; a body field, a model or a registry cannot redirect it. That
+   * also means it is honest about scope: a real Aroma System page is 「not available」 HERE, and
+   * making it available is a separate, later, explicitly-approved piece of work.
+   *
+   * ⛔ IT DOES NOT REPLACE SEAL-TIME VALIDATION. Work Order L3 still reads the file when the
+   * order is sealed, because a file can vanish between the two moments.
+   */
+  const availability = currentRepoFileAvailable(offer.file)
+  if (!availability.ok) {
+    // A closed reason. The refusal never carries the path's absolute form or a machine root.
+    return { ok: false, reason: 'file_not_available' }
+  }
 
   if (typeof deps.promoteToProposal !== 'function') {
     // FAIL VISIBLY. A missing seam used to mean an empty proposals array and a turn that

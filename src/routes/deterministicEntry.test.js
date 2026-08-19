@@ -114,6 +114,111 @@ test('*** and the durable approval trail records the entry point ***', async () 
   assert.equal(evs[evs.length - 1].type, 'approval.proposed')
 })
 
+/* ═══ 3b. A FILE THIS REPOSITORY DOES NOT HAVE CREATES NOTHING ═══════════ */
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ THE DEFECT. `inferWorkRequest` validates the SHAPE of a path, never its existence, so a
+ * perfectly well-formed path that is not in this repository — a page from the other Aroma repo,
+ * a typo, a file that moved — produced a REAL Task, a REAL Proposal and a REAL 「proposed」
+ * audit event, and was refused only later at Work Order sealing. The Owner pressed the button,
+ * watched a proposal appear, and found out two steps afterwards that the file was never there.
+ * The store kept the record either way.
+ *
+ * ⛔ THE GUARANTEE IS ABOUT ARTIFACTS, NOT ABOUT THE BUTTON. The chat-time offer may still
+ * appear — it is inert, and keeping filesystem I/O out of ordinary chat turns matters more than
+ * hiding a harmless button. What must never happen is a persistent record.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+// A real path shape, correct in the OTHER Aroma repository, absent from this one.
+const OTHER_REPO = '幫我改 client/src/pages/Replenishment.tsx，將 Submit 改做 Send Order'
+
+test('*** ⛔ AN UNAVAILABLE FILE IS REFUSED, AND REFUSED BY NAME ***', async () => {
+  const d = deps()
+  const r = await createWorkRequest({ message: OTHER_REPO }, d)
+  assert.equal(r.ok, false)
+  assert.equal(r.reason, 'file_not_available', '⛔ the refusal must say WHICH check declined')
+  // The reason is a closed enum. No absolute path, no machine root, no errno may ride along.
+  const blob = JSON.stringify(r)
+  for (const leak of ['C:', '/Users/', 'ENOENT', 'EACCES', 'aroma-agent-backend']) {
+    assert.equal(blob.includes(leak), false, '⛔ the refusal leaked a filesystem detail: ' + leak)
+  }
+})
+
+test('*** ⛔ AND IT CREATES NO TASK, NO PROPOSAL, NO PROPOSED EVENT ***', async () => {
+  const store = require('../store/store')
+  const beforeDecisions = store.listDecisions().length
+  const beforeTasks = store.listTasks().length
+  const beforeProposed = store.listApprovalEvents().filter((e) => e.type === 'approval.proposed').length
+
+  const d = deps()
+  const r = await createWorkRequest({ message: OTHER_REPO }, d)
+  assert.equal(r.ok, false)
+
+  assert.equal(store.listDecisions().length, beforeDecisions, '⛔ persistIntake wrote a decision')
+  assert.equal(store.listTasks().length, beforeTasks, '⛔ persistIntake wrote a task')
+  assert.equal(d.proposals.length, 0, '⛔ promoteToProposal was called')
+  assert.equal(store.listApprovalEvents().filter((e) => e.type === 'approval.proposed').length, beforeProposed,
+    '⛔ a proposal-lifecycle event was recorded for a request that created no proposal')
+})
+
+test('*** ⛔ THE GATE RUNS BEFORE persistIntake, NOT AFTER ***', async () => {
+  /**
+   * ⛔ ORDER IS THE WHOLE FIX. A check that runs after the write refuses just as loudly and
+   * leaves the artifact behind — which is exactly the behaviour being removed. Proven by
+   * counting the store rather than by reading the code.
+   */
+  const store = require('../store/store')
+  const before = store.listDecisions().length
+  for (const msg of [
+    '幫我改 client/src/pages/Replenishment.tsx，將 Submit 改做 Send Order',
+    '幫我改 docs/does-not-exist-anywhere.md，加一句',
+    '幫我改 src/agent，加一句' // a directory: shaped like a path, not a file
+  ]) {
+    const d = deps()
+    const r = await createWorkRequest({ message: msg }, d)
+    assert.equal(r.ok, false, msg)
+    assert.equal(d.proposals.length, 0, msg)
+  }
+  assert.equal(store.listDecisions().length, before, '⛔ one of the refused requests still wrote a decision')
+})
+
+test('*** a browser-supplied file still cannot redirect the availability check ***', async () => {
+  // The body names a real, available file; the MESSAGE names an unavailable one. The server
+  // re-derives from the message, so the unavailable target is what gets checked and refused.
+  const d = deps()
+  const r = await createWorkRequest(
+    { message: OTHER_REPO, file: 'docs/canary/agent-canary.md', candidateFile: 'docs/canary/agent-canary.md' }, d)
+  assert.equal(r.ok, false, '⛔ a body field steered the check to a different file')
+  assert.equal(r.reason, 'file_not_available')
+  assert.equal(d.proposals.length, 0)
+})
+
+test('*** a PROTECTED path stays protected — it does not become file_not_available ***', async () => {
+  /**
+   * ⛔ TRUTHFUL REFUSALS. src/governance/launcherPin.js both is protected AND would fail an
+   * existence check if it moved; reporting 「not available」 for it would hide the real reason
+   * and invite someone to 「fix」 it by creating the file.
+   */
+  for (const msg of ['幫我改 .env，加一個 key', '幫我改 src/governance/launcherPin.js，放寬個 pin']) {
+    const d = deps()
+    const r = await createWorkRequest({ message: msg }, d)
+    assert.equal(r.ok, false, msg)
+    assert.equal(r.reason, 'not_a_work_request',
+      '⛔ a protected path was reclassified as an availability problem: ' + msg)
+    assert.equal(d.proposals.length, 0)
+  }
+})
+
+test('*** an AVAILABLE file is untouched by the new gate ***', async () => {
+  const d = deps()
+  const r = await createWorkRequest({ message: MSG }, d)
+  assert.equal(r.ok, true, JSON.stringify(r))
+  assert.ok(r.proposalId)
+  assert.equal(d.proposals.length, 1, 'the ordinary path still creates exactly one proposal')
+})
+
 /* ═══ 4. A FAILED PROMOTION LEAVES NO HALF-STATE CLAIM ═══════════════════ */
 
 test('*** if the promotion fails, ok is false and no proposalId is invented ***', async () => {
