@@ -1560,7 +1560,7 @@
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
-      if (o.status === 201) { renderCard(o.body) ; return }
+      if (o.status === 201) { renderCard(o.body, conv) ; return }
       // reasonForOwner already opens with 未能建立工作單 — never prefix it again.
       addError(o.body.reasonForOwner || t('offer.createFailed', { reason: o.body.reason || o.body.error || t('err.unknownReason') }))
     }).catch(function () { addError(t('offer.createFailedNet')) })
@@ -1572,7 +1572,9 @@
     return out
   }
 
-  function renderCard (sealed) {
+  /* conv rides along ONLY so the finished-run message lands in the conversation the
+     request came from. The card itself is unchanged and still uses turn('bot'). */
+  function renderCard (sealed, conv) {
     clearErrors()
     var c = sealed.card || { heading: '', sections: [], actions: [t('approve.approve'), t('approve.reject')], technicalTitle: t('approve.technical') }
     var tEl = turn('bot')
@@ -1700,7 +1702,7 @@
         if (o.status === 201) {
           if (o.body.dispatchStatus === 'agent_execute_accepted') {
             out.textContent = t('approve.startedInCopy')
-            watchProgress(sealed.approvalId, card, sealed)
+            watchProgress(sealed.approvalId, card, sealed, conv)
           } else {
             out.textContent = t('approve.confirmedNotRun')
           }
@@ -1719,7 +1721,62 @@
   var POLL_MS = 1500
   var POLL_GRACE_MS = 20000
 
-  function watchProgress (approvalId, card, sealed) {
+  /* ── P1-C1a: the finished run says so IN THE CONVERSATION ──────────────────
+   *
+   * ⛔ THE SERVER'S OWN WORDS, NOT A SECOND READING. /api/v1/owner/results already returns
+   * an Owner-facing projection — headline and lines — built by agentResultView. Asking a
+   * model to summarise a result the server has already normalised would add a second
+   * interpretation of the same facts, and the two would eventually disagree. So this
+   * presents that projection verbatim and calls nothing.
+   *
+   * ⛔ AND ONLY THAT PROJECTION. `sections`, `result`, `facts`, phase objects and anything
+   * else in the payload stay where they are. If the endpoint deliberately dropped a detail
+   * — raw stdout, a command line, an Error message — the chat must not put it back.
+   *
+   * ⛔ IT IS NOT MODEL HISTORY. `conv.history` is what the next intake call sends as the
+   * conversation so far; this message is never pushed into it. She did not say this — the
+   * runner did, and the server phrased it. Letting an execution report re-enter the prompt
+   * as her own prior turn would make her answer later questions from a sentence she never
+   * authored. Rendering and history are already separate in this file (four explicit
+   * `history.push` sites, none of them in a render helper), so this only has to not add one.
+   */
+  var TERMINAL_RESULT_STATUS = ['done', 'failed', 'timeout', 'refused']
+  /* Browser-local, keyed by approvalId. A poll loop can see the same finished result many
+     times; the Owner may see it once. No server persistence is added for this. */
+  var presentedResults = {}
+
+  /**
+   * Decide whether this poll body earns exactly one chat message, and what it says.
+   *
+   * @param {object} seen        approvalId -> true, mutated on a successful claim
+   * @param {string} approvalId
+   * @param {object} body        the SAME poll response the card already fetched
+   * @returns {{kind:string, text:string}|null}  null = present nothing
+   */
+  function claimTerminalResult (seen, approvalId, body) {
+    if (!body || !approvalId) return null
+    // Terminal only. A run still in flight already has the progress card; a second,
+    // permanent-looking chat message every 1.5s would be noise that outlives the run.
+    var terminal = body.finished === true || TERMINAL_RESULT_STATUS.indexOf(body.status) !== -1
+    if (!terminal) return null
+    if (seen[approvalId] === true) return null
+    seen[approvalId] = true
+
+    var out = []
+    if (typeof body.headline === 'string' && body.headline) out.push(body.headline)
+    if (Array.isArray(body.lines)) {
+      for (var i = 0; i < body.lines.length; i++) {
+        var line = body.lines[i]
+        if (typeof line === 'string' && line) out.push(line)
+      }
+    }
+    if (out.length === 0) return null
+    // A failure stays a failure. The card marks it ✕ and the headline says so; this must
+    // not soften it into a success by wording or by dropping it.
+    return { kind: body.status === 'done' ? 'done' : 'fail', text: out.join('\n\n') }
+  }
+
+  function watchProgress (approvalId, card, sealed, conv) {
     var box = el('div', 'progress')
     var row = el('div', 'phase-row')
     var spin = el('div', 'spin')
@@ -1742,6 +1799,14 @@
       row.insertBefore(mark, label)
       label.textContent = (body && body.headline) || (state === 'done' ? t('run.done') : t('run.failed'))
       if (body && Array.isArray(body.sections)) renderResult(card, body)
+      /* ⛔ ADDITIVE, AND AFTER THE CARD. The card above is untouched — same mark, same
+         headline, same sections. This adds the conversation message and nothing else, from
+         the same body that is already in hand: no second fetch, no second endpoint.
+         `finish` is already the run's one terminal point (guarded by `stopped`), so this
+         inherits that; claimTerminalResult re-checks terminality and the approvalId anyway,
+         because a guard that lives only in its caller is one refactor from being gone. */
+      var presented = claimTerminalResult(presentedResults, approvalId, body)
+      if (presented) addBot(presented.text, conv)
       scroll()
     }
 
