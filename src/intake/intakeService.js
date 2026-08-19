@@ -45,6 +45,59 @@ const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice 
 const { runU1DraftShadow } = require('./u1DraftShadow')
 const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // a reply may not deny a read that happened — nor claim one that never ran
+/**
+ * ⛔ THE MODULE OBJECTS, NOT DESTRUCTURED BINDINGS, AND THAT IS DELIBERATE. A destructured
+ * import is captured at require time, so a test can never make the shadow fail on purpose — and
+ * 「telemetry may never break a turn」 would be a promise with no way to check it. Holding the
+ * module lets `capabilityAwareness.test.js` replace one function and prove the turn still
+ * completes with byte-identical bytes. Production resolves the same function either way.
+ */
+const capabilityAwareness = require('./capabilityAwareness') // SHADOW ONLY (P1-A2) — pure; joins connection truth to the turn and decides nothing
+const connectionState = require('../context/connectionState') // P1-A1 read-only projection; obtained at the caller boundary, never inside the pure module
+const { AWARENESS_PATH } = capabilityAwareness
+
+/**
+ * ⛔ ONE HELPER, TWO CALL SITES — AND THE REPOSITORY ALREADY PAID FOR THIS LESSON ONCE.
+ *
+ * `logNoEvidenceShadow` was first placed beside `enforceNoReadClaim` and emitted NOTHING on a
+ * real turn, because that guard sits only on the commit-interception path. The fix, recorded in
+ * its own comment further down, was 「Both reply paths carry it now」. P1-A2 was placed at the
+ * same anchor and repeated the same defect — found the same way, by running a turn rather than
+ * reading the code. So the emission lives here, once, and BOTH Owner reply paths call it.
+ *
+ * ⛔ IT RETURNS NOTHING AND TOUCHES NOTHING. It is never given the reply, so it cannot read or
+ * rewrite one; it does not route, does not gate, and does not widen what a turn may read.
+ *
+ * ⛔ COST, STATED HONESTLY: `projectConnections` CONSTRUCTS adapter objects and checks credential
+ * PRESENCE on disk. That is construction, not a health probe and not a source read — nothing is
+ * fetched, no model is called, and nothing is written.
+ */
+function emitCapabilityAwarenessShadow ({ path, turnPerSource, authorisedSources, requestId, route }) {
+  try {
+    const awareness = capabilityAwareness.deriveCapabilityAwareness({
+      connections: connectionState.projectConnections(process.env),
+      turnPerSource,
+      // Never widened. Exactly what this turn's route granted, so awareness cannot report more
+      // than the turn was allowed to attempt.
+      authorisedSources
+    })
+    // Re-checked against the closed vocabulary at the emit boundary, the same way logTurnRoute
+    // re-checks its own. An unrecognised value becomes null rather than inventing a path.
+    const known = Object.values(AWARENESS_PATH).includes(path) ? path : null
+    console.log('[AROMA-CAPABILITY-AWARENESS]', JSON.stringify({
+      requestId: requestId || null,
+      path: known,
+      route: route || null,
+      // ⛔ THE HEADLINE MEASUREMENT: could have been asked, was not asked. This is the set
+      // `readStateGuard.js:344` currently treats as 「nothing was read; the claim is true」.
+      availableNotRead: awareness
+        .filter((a) => a.availability === 'available_to_attempt' && a.turnState === 'not_read')
+        .map((a) => a.source),
+      // Identifiers, enums and counts only — never a row, a title, or an error string.
+      sources: awareness
+    }))
+  } catch (_) { /* a measurement may never break a turn */ }
+}
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
@@ -2294,6 +2347,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     guarded.reply = unread.reply
     if (unread.flagged) logNoReadClaim(routeDecision, requestId)
     /**
+     * ⛔ SHADOW ONLY (P1-A2) — PATH A of two. The line directly above is the defect being
+     * measured: `enforceNoReadClaim` is shown only the turn, never the world, so it cannot tell
+     * a false capability claim from an honest 「我沒有去看」 — its own comment says exactly that,
+     * and `readStateGuard.js:344` returns `violated: false` for 「nothing was read」 with the
+     * comment 「the claim is true」. It is not true when the source was on, credentialled,
+     * registered and authorised and simply was not consulted.
+     *
+     * ⛔ BUT THIS ANCHOR ONLY EVER SEES COMMIT INTERCEPTION. `enforceNoReadClaim` has ONE call
+     * site and it is inside `interactionMode === 'chat' && distilled.mode === 'commit'`, so
+     * placing the shadow beside it left ordinary Owner questions unobserved — measured, not
+     * inferred: a real turn emitted nothing. The ordinary chat path carries the same call, and
+     * the two branches are mutually exclusive, so a turn emits exactly one record.
+     */
+    emitCapabilityAwarenessShadow({
+      path: AWARENESS_PATH.COMMIT_INTERCEPT,
+      turnPerSource,
+      authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider),
+      requestId,
+      route: (routeDecision && routeDecision.route) ? routeDecision.route : null
+    })
+    /**
      * ⛔ SHADOW ONLY (HR-74). Placed HERE, beside `enforceNoReadClaim`, because they are the two
      * halves of one question and only one of them is currently asked.
      *
@@ -2447,6 +2521,23 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         path: 'chat'
       }, requestId)
     } catch (_) { /* a measurement may never break a turn */ }
+    /**
+     * ⛔ SHADOW ONLY (P1-A2) — PATH B, and the reason it exists is the paragraph directly above.
+     *
+     * This is the ordinary chat / ask path, where the Owner's real traffic goes and where the
+     * 2026-08-08 「我目前沒有直接連接到 Aroma System 的讀取權限」 turn came down. P1-A2 was first
+     * placed only on the commit-interception path and observed none of it — the identical
+     * mistake `logNoEvidenceShadow` made, caught the identical way, by running a turn.
+     *
+     * Same helper, different label, so a path that goes quiet is visible rather than assumed.
+     */
+    emitCapabilityAwarenessShadow({
+      path: AWARENESS_PATH.CHAT,
+      turnPerSource,
+      authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider),
+      requestId,
+      route: (routeDecision && routeDecision.route) ? routeDecision.route : null
+    })
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,
