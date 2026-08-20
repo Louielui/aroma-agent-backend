@@ -133,10 +133,56 @@ function buildChildEnv (parentEnv = process.env) {
   return out
 }
 
+/**
+ * THE EXECUTION BRIEF — the approved facts the executor is actually told.
+ *
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ WHAT THIS FIXES, MEASURED. The first real canary approved 「add a line after the
+ * first line of docs/HOUSE-RULES.md」 and the executor changed nothing, truthfully, for
+ * 42 seconds and US$0.24 — because `-p` carried ONLY `workOrder.goal`, and `goal` is
+ * the Owner's sentence with the FILENAME DELIBERATELY STRIPPED (requestInference's
+ * intentFrom removes it so the approval card does not repeat the path). So the agent
+ * received 「第一行之後加一行：…」 plus a whole repository via --add-dir, and no statement
+ * of which file the Owner meant. It was never told the target; it did not ignore one.
+ *
+ * ⛔ INFORMATION, NOT AUTHORITY. Every fact here is already inside the SEALED, hashed,
+ * Owner-approved Work Order. Naming the file in the prompt grants nothing: the fences
+ * are still validateWorkOrder, the allowedFiles post-run check, the forbidden-file
+ * list, the isolated remote-less clone, the Read/Edit/Write allowlist, the timeout and
+ * the cost cap. None of them is relaxed because the prompt is now honest.
+ *
+ * ⛔ DETERMINISTIC. Same Work Order → same bytes. No clock, no random, no absolute
+ * machine path, no model-generated enrichment. `cloneDir` deliberately stays OUT of
+ * the semantic brief — it is an execution argument (--add-dir), not something the
+ * Owner approved the agent to be told.
+ *
+ * ⛔ AND currentExcerpt STAYS OUT. The agent has Read access to the clone; injecting a
+ * second, truncated copy of the file would add a source of truth that can disagree
+ * with the file it is about to edit. The excerpt exists for the Owner's card.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+function buildExecutionBrief (workOrder) {
+  const wo = workOrder || {}
+  const lines = [String(wo.goal == null ? '' : wo.goal)]
+
+  const files = Array.isArray(wo.allowedFiles) ? wo.allowedFiles.filter((f) => typeof f === 'string' && f !== '') : []
+  if (files.length) {
+    lines.push('')
+    lines.push(files.length === 1 ? 'Approved target file: ' + files[0] : 'Approved target files: ' + files.join(', '))
+  }
+
+  if (typeof wo.intendedChange === 'string' && wo.intendedChange.trim() !== '') {
+    lines.push('')
+    lines.push('Approved intended change: ' + wo.intendedChange.trim())
+  }
+
+  return lines.join('\n')
+}
+
 /** Build the claude argument ARRAY. NEVER bypassPermissions; NEVER a shell string. */
 function buildArgs (workOrder, cloneDir, permissionMode) {
   return [
-    '-p', workOrder.goal,
+    '-p', buildExecutionBrief(workOrder),
     '--add-dir', cloneDir,
     '--permission-mode', permissionMode,
     '--allowedTools', buildAllowedTools().join(' '),
@@ -263,6 +309,28 @@ function createAgentBridgeWorker (options = {}) {
     const allowedSet = new Set((workOrder.allowedFiles || []).map(normRel))
     const outside = changed.filter((f) => !allowedSet.has(normRel(f)))
     if (outside.length) { risks.push('files_outside_allowlist'); warnings.push(`changed outside allowlist: ${outside.join(', ')}`) }
+    // ⛔ AN APPROVED MUTATION THAT CHANGED NOTHING IS NOT A SUCCESS.
+    //
+    // The CLI exiting 0 with subtype 'success' means the agent finished its turn, not
+    // that the Owner's change exists. The first real canary proved the gap: exit 0,
+    // no risks, zero files changed — and the whole chain above reported SUCCEEDED for
+    // an approval that delivered nothing.
+    //
+    // The trigger is a non-empty `intendedChange`, because that is the Owner stating,
+    // inside the hashed order, that a mutation was approved. A Work Order without one
+    // keeps its previous behaviour exactly (see the compatibility test).
+    //
+    // ⛔ AND IT FAILS CLOSED RATHER THAN GUESSING 「already satisfied」. A natural-language
+    //    intendedChange is not a machine-verifiable postcondition, and `currentExcerpt`
+    //    is a truncated view — so nothing here can prove the requested state was
+    //    already present. Calling a no-op 「already done」 would be inventing the one
+    //    answer that hides the defect. Until a real postcondition verifier is designed
+    //    and approved, zero delivery is refused.
+    const mutationApproved = typeof workOrder.intendedChange === 'string' && workOrder.intendedChange.trim() !== ''
+    if (mutationApproved && changed.length === 0) {
+      risks.push('no_delivery_change')
+      warnings.push('executor completed without producing the approved change')
+    }
     const rem = workspace.remotes(safeClone)
     if (rem.length) { risks.push('remote_present'); warnings.push(`remote unexpectedly present: ${rem.join(', ')}`) }
     const curBranch = workspace.currentBranch(safeClone)

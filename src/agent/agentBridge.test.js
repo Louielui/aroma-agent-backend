@@ -258,3 +258,176 @@ test('full chain (injected): enriched result returns; sandbox/prompt NEVER proje
   fs.rmSync(prep.dir, { recursive: true, force: true })
   fs.rmSync(baseDir, { recursive: true, force: true })
 })
+
+/* ═══ P1-C1c DELIVERY TRUTH ═══════════════════════════════════════════════
+ *
+ * ⛔ THE MEASURED DEFECT. The first real canary approved 「add a line after the first
+ * line of docs/HOUSE-RULES.md」. The executor ran 42s, cost US$0.24, returned exit 0 /
+ * subtype success, changed NOTHING — and the whole chain recorded SUCCEEDED. Forensics
+ * proved two separate faults:
+ *
+ *   ROOT CAUSE  — `-p` carried only `workOrder.goal`, and goal is the Owner's sentence
+ *                 with the FILENAME STRIPPED (intentFrom removes it for the card). The
+ *                 agent was never told which file. It did not ignore an instruction;
+ *                 it never received one.
+ *   AMPLIFIER   — ok = claudeOk && risks.length === 0, and zero changed files added no
+ *                 risk. So "the CLI finished" was allowed to mean "the change exists".
+ *
+ * Both are pinned below, and both are pinned SEPARATELY: fixing the prompt without
+ * fixing the success rule would leave a silent no-op still reading as success.
+ */
+
+const briefOf = (w, wo) => { const a = w.buildArgs(wo, '/tmp/aroma-sandbox-agent-x', 'acceptEdits'); return a[a.indexOf('-p') + 1] }
+const mutatingWO = (over = {}) => Object.assign(validWO(), { intendedChange: 'add helper' }, over)
+
+/* ── FIX A: the executor is told what the Owner approved ─────────────────── */
+
+test('*** the brief still carries the Owner goal ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  assert.ok(briefOf(w, validWO()).includes('add a small helper'))
+})
+
+test('*** ⛔ THE BRIEF NAMES THE APPROVED TARGET FILE ***', () => {
+  // The single fact whose absence produced a 42-second, US$0.24 no-op.
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  assert.ok(briefOf(w, validWO()).includes('src/foo.js'), '⛔ the executor is again not told which file')
+})
+
+test('*** the brief carries intendedChange when the Owner approved one ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  assert.ok(briefOf(w, mutatingWO()).includes('add helper'))
+})
+
+test('*** ⛔ currentExcerpt IS NOT INJECTED INTO THE PROMPT ***', () => {
+  // The agent can Read the clone. A second, truncated copy of the file in the prompt
+  // is a source of truth that can disagree with the file being edited.
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const wo = Object.assign(mutatingWO(), { currentExcerpt: 'LINE_FROM_EXCERPT_SHOULD_NOT_APPEAR' })
+  assert.equal(briefOf(w, wo).includes('LINE_FROM_EXCERPT_SHOULD_NOT_APPEAR'), false)
+})
+
+test('*** the brief is DETERMINISTIC — same Work Order, same bytes ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const wo = mutatingWO()
+  assert.equal(briefOf(w, wo), briefOf(w, wo), 'no clock, no random, no machine path')
+})
+
+test('*** ⛔ THE SANDBOX PATH STAYS OUT OF THE SEMANTIC BRIEF ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const args = w.buildArgs(mutatingWO(), '/tmp/aroma-sandbox-agent-SECRETPATH', 'acceptEdits')
+  const brief = args[args.indexOf('-p') + 1]
+  assert.equal(brief.includes('SECRETPATH'), false, 'the clone is an execution argument, not approved content')
+  assert.equal(args[args.indexOf('--add-dir') + 1], '/tmp/aroma-sandbox-agent-SECRETPATH', 'and it is still passed as --add-dir')
+})
+
+test('*** the execution arguments and tool allowlist are UNCHANGED ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const args = w.buildArgs(mutatingWO(), '/tmp/clone', 'acceptEdits')
+  assert.equal(args[args.indexOf('--permission-mode') + 1], 'acceptEdits')
+  assert.equal(args[args.indexOf('--allowedTools') + 1], 'Read Edit Write')
+  assert.equal(args[args.indexOf('--output-format') + 1], 'json')
+  assert.equal(args.includes('--dangerously-skip-permissions'), false)
+  for (const banned of ['Bash', 'git', 'WebFetch', 'WebSearch', 'Task']) {
+    assert.equal(args[args.indexOf('--allowedTools') + 1].includes(banned), false, '⛔ tool widened: ' + banned)
+  }
+})
+
+/* ── the forensic canary, as a deterministic fixture ─────────────────────── */
+
+test('*** ⛔ THE CANARY FIXTURE NOW REACHES THE EXECUTOR COMPLETE ***', () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const canary = {
+    goal: '第一行之後加一行： <!-- P1-C1c live canary — verification artefact only -->',
+    allowedFiles: ['docs/HOUSE-RULES.md'],
+    allowedTestCommand: null,
+    forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],
+    timeoutSec: 120,
+    costCapUsd: 0.5,
+    approvalId: 'appr_f0df6d8d',
+    intendedChange: '在第一行之後加入一行 HTML 註解：<!-- P1-C1c live canary — verification artefact only -->'
+  }
+  const brief = briefOf(w, canary)
+  assert.ok(brief.includes('docs/HOUSE-RULES.md'), '⛔ the exact fault that produced the no-op is back')
+  assert.ok(brief.includes('<!-- P1-C1c live canary — verification artefact only -->'))
+})
+
+/* ── FIX B: an approved mutation that changed nothing is not a success ───── */
+
+test('*** ⛔ EXPLICIT intendedChange + ZERO DIFF -> ok:false, no_delivery_change ***', async () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const ws = fakeWorkspace({ filesChanged: () => [], diffStat: () => '' })
+  const r = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO(), workspace: ws, cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
+  assert.equal(r.ok, false, '⛔ a no-op was reported as success again')
+  assert.ok(r.output.risks.includes('no_delivery_change'))
+  assert.equal(r.output.filesChanged.length, 0)
+})
+
+test('*** an approved mutation that DID change the allowed file still succeeds ***', async () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const r = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO(), workspace: fakeWorkspace(), cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
+  assert.equal(r.ok, true)
+  assert.equal(r.output.risks.includes('no_delivery_change'), false)
+  assert.deepEqual(r.output.filesChanged, ['src/foo.js'])
+})
+
+test('*** ⛔ CLAUDE SAYING "done" DOES NOT OUTRANK THE FILESYSTEM ***', async () => {
+  // The canary's CLI returned subtype success with prose. Prose is not delivery.
+  const saysDone = async () => ({ status: 0, stdout: JSON.stringify({ subtype: 'success', is_error: false, result: 'Done — I added the line as requested.', total_cost_usd: 0.24 }), stderr: '', timedOut: false })
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: saysDone })
+  const ws = fakeWorkspace({ filesChanged: () => [], diffStat: () => '' })
+  const r = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO(), workspace: ws, cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
+  assert.equal(r.ok, false, '⛔ the runner believed the narration over the diff')
+  assert.ok(r.output.risks.includes('no_delivery_change'))
+})
+
+test('*** BACKWARD COMPATIBLE: no intendedChange + zero diff keeps the old behaviour ***', async () => {
+  // Not every machine Work Order is a mutation request, and this tranche does not
+  // redefine them. Only an Owner-stated intendedChange arms the rule.
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const ws = fakeWorkspace({ filesChanged: () => [], diffStat: () => '' })
+  const wo = validWO()
+  assert.equal('intendedChange' in wo, false, 'the fixture genuinely has none')
+  const r = await w.invoke('AgentBridge', 1, { workOrder: wo, workspace: ws, cloneDir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_1' })
+  assert.equal(r.output.risks.includes('no_delivery_change'), false)
+  assert.equal(r.ok, true, 'pre-fix semantics preserved for a non-mutating order')
+})
+
+test('*** an empty/blank intendedChange does NOT arm the rule ***', async () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const ws = fakeWorkspace({ filesChanged: () => [], diffStat: () => '' })
+  for (const blank of ['', '   ', null, undefined]) {
+    const r = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO({ intendedChange: blank }), workspace: ws, cloneDir: '/tmp/x', branch: 'agent/appr_1' })
+    assert.equal(r.output.risks.includes('no_delivery_change'), false, JSON.stringify(blank))
+  }
+})
+
+test('*** the existing structural protections are UNCHANGED ***', async () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  // outside-allowlist still fails, and does so on its own reason
+  const outside = await w.invoke('AgentBridge', 1, {
+    workOrder: mutatingWO(),
+    workspace: fakeWorkspace({ filesChanged: () => ['src/foo.js', 'src/secret.js'] }),
+    cloneDir: '/tmp/x',
+    branch: 'agent/appr_1'
+  })
+  assert.equal(outside.ok, false)
+  assert.ok(outside.output.risks.includes('files_outside_allowlist'))
+  assert.equal(outside.output.risks.includes('no_delivery_change'), false, 'a real diff is not an empty delivery')
+
+  // remotes / branch protections still bite
+  const remote = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO(), workspace: fakeWorkspace({ remotes: () => ['origin'] }), cloneDir: '/tmp/x', branch: 'agent/appr_1' })
+  assert.equal(remote.ok, false)
+  assert.ok(remote.output.risks.includes('remote_present'))
+
+  const onMain = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO(), workspace: fakeWorkspace({ currentBranch: () => 'main' }), cloneDir: '/tmp/x', branch: 'agent/appr_1' })
+  assert.equal(onMain.ok, false)
+  assert.ok(onMain.output.risks.includes('branch_violation'))
+})
+
+test('*** the new risk enum is short and content-free ***', async () => {
+  const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
+  const ws = fakeWorkspace({ filesChanged: () => [], diffStat: () => '' })
+  const r = await w.invoke('AgentBridge', 1, { workOrder: mutatingWO({ intendedChange: 'rewrite the secret handling in src/foo.js' }), workspace: ws, cloneDir: '/tmp/x', branch: 'agent/appr_1' })
+  assert.deepEqual(r.output.risks, ['no_delivery_change'], 'the risk is an enum, never a copy of Owner text')
+  assert.equal(JSON.stringify(r.output.risks).includes('secret handling'), false)
+})
