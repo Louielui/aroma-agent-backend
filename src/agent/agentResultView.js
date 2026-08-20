@@ -248,10 +248,12 @@ function buildAgentResultView (input = {}) {
     { title: t('result.secTest'), body: testLine },
     { title: t('result.secDiff'), mono: true, body: diff },
     { title: t('result.secCost'), body: cost },
-    { title: t('result.secPatch'), body: patchLine },
     { title: t('result.secYourRepo'), body: t('result.yourRepoBody') }
   ]
-  // Inserted only when there is something to say (see patchLine).
+  // Inserted only when there is something to say (see patchLine). This is the ONLY
+  // insertion: the section also sat unconditionally in the array above, so a result
+  // with a patch printed it twice, and one without printed a bare 'null' where the
+  // comment above patchLine promises the section is omitted instead.
   if (patchLine) sections.splice(sections.length - 1, 0, { title: t('result.secPatch'), body: patchLine })
 
   if (status === 'refused' && r && r.reason) {

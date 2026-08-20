@@ -268,3 +268,125 @@ test('the audit record now carries duration', () => {
   assert.equal(written[0].durationMs, null)
   assert.equal(written[0].workerLatencyMs, null)
 })
+
+/* ── the patch section is rendered ONCE ───────────────────────────────────── */
+
+/**
+ * THE BUG THIS EXISTS TO PREVENT. `secPatch` was built twice: once unconditionally in the
+ * sections array, and once again by the conditional splice below it. A delivered result
+ * therefore showed 「改動去了哪裡」 TWICE, and a result with no patch at all showed it once
+ * with a body of `null` — printed to the Owner as the bare word "null" — even though the
+ * comment above patchLine promises that an absent patch means an absent section.
+ *
+ * Same shape as the rest of this file: the report was wrong while the run was fine.
+ */
+
+const PATCH_TITLE = '改動去了哪裡'
+const HOUSE = 'docs/HOUSE-RULES.md'
+const titles = (v) => v.sections.map((s) => s.title)
+const countTitle = (v, title) => titles(v).filter((x) => x === title).length
+
+// The accepted Canary B shape: one approved file, one file really changed, patch written.
+function deliveredResult (output = {}) {
+  return buildAgentResultView({
+    approvalId: 'appr_1b9d0877',
+    facts: { allowedFiles: [HOUSE], timeoutSec: 120, costCapUsd: 0.5, allowedTestCommand: null, branch: 'agent/a1' },
+    durationMs: 10_400,
+    result: {
+      ok: true,
+      cost: 0.1233515,
+      output: {
+        filesChanged: [HOUSE],
+        diffSummary: 'docs/HOUSE-RULES.md | 1 +',
+        exit: 0,
+        risks: [],
+        warnings: [],
+        patchStatus: 'written',
+        patchFile: 'C:/Aroma/AgentPatches/fixture.patch',
+        applyHint: 'git apply "C:/Aroma/AgentPatches/fixture.patch"',
+        ...output
+      }
+    }
+  })
+}
+
+test('*** a delivered result shows 改動去了哪裡 exactly ONCE, not twice ***', () => {
+  const v = deliveredResult()
+  assert.equal(countTitle(v, PATCH_TITLE), 1, 'the patch section was rendered twice')
+  // and once in the RENDERED lines too — the card the Owner actually reads
+  const heads = v.lines.filter((l) => l === PATCH_TITLE)
+  assert.equal(heads.length, 1, 'the rendered card repeats the section heading')
+})
+
+test('the deduplicated patch section still carries the apply hint', () => {
+  const v = deliveredResult()
+  const sec = v.sections.filter((s) => s.title === PATCH_TITLE)
+  assert.equal(sec.length, 1)
+  assert.equal(sec[0].body, 'git apply "C:/Aroma/AgentPatches/fixture.patch"',
+    'dedup must keep the surviving section INFORMATIVE, not just single')
+  assert.ok(v.lines.join('\n').includes('C:/Aroma/AgentPatches/fixture.patch'), 'the path reaches the card')
+})
+
+test('an honest no-patch MESSAGE is still shown — dedup must not silence it', () => {
+  // These three all produce a truthy patchLine and therefore a real section to read.
+  for (const [status, expect] of [
+    ['no_changes', '沒有改動，所以沒有 patch。'],
+    ['patch_too_large', 'patch 太大，沒有寫入'],
+    ['write_failed', 'write_failed']
+  ]) {
+    const v = deliveredResult({ patchStatus: status, applyHint: null, patchFile: null })
+    assert.equal(countTitle(v, PATCH_TITLE), 1, status + ': expected exactly one patch section')
+    assert.ok(v.sections.find((s) => s.title === PATCH_TITLE).body.includes(expect),
+      status + ': the honest message must survive')
+  }
+})
+
+test('a result with NO patch fields keeps the section absent rather than printing "null"', () => {
+  const v = buildAgentResultView({
+    approvalId: 'a1',
+    facts: { allowedFiles: [HOUSE], timeoutSec: 120, costCapUsd: 0.5 },
+    durationMs: 1000,
+    result: { ok: true, cost: 0.01, output: { filesChanged: [HOUSE], risks: [], warnings: [] } }
+  })
+  assert.equal(countTitle(v, PATCH_TITLE), 0, 'ABSENT STAYS ABSENT — see the comment above patchLine')
+  assert.ok(!v.lines.includes('null'), 'the Owner must never be shown the bare word "null"')
+  assert.equal(v.sections.filter((s) => s.body === null).length, 0, 'no section may carry a null body')
+})
+
+test('dedup changes ONLY the patch section — order and the other sections are untouched', () => {
+  const withPatch = titles(deliveredResult())
+  assert.deepEqual(withPatch, [
+    '結果', '實際改動了甚麼', '有沒有超出批准範圍', '測試',
+    '改動內容（diff）', '用了多少', PATCH_TITLE, '你的真實程式庫'
+  ], 'the intended single-section order is pinned here')
+  // no section title repeats, for either shape
+  for (const v of [deliveredResult(), deliveredResult({ patchStatus: 'no_changes', applyHint: null })]) {
+    assert.equal(new Set(titles(v)).size, titles(v).length, 'a section title is duplicated')
+  }
+  // the no-patch card is the same list minus the patch section — nothing reordered
+  const noPatch = titles(buildAgentResultView({
+    approvalId: 'a1',
+    facts: { allowedFiles: [HOUSE], timeoutSec: 120, costCapUsd: 0.5 },
+    result: { ok: true, cost: 0.01, output: { filesChanged: [HOUSE], risks: [], warnings: [] } }
+  }))
+  assert.deepEqual(noPatch, withPatch.filter((x) => x !== PATCH_TITLE))
+})
+
+test('failed and refused results still lead with their reason, patch section aside', () => {
+  const failed = buildAgentResultView({
+    approvalId: 'a1',
+    facts: { allowedFiles: [HOUSE], timeoutSec: 120, costCapUsd: 0.5 },
+    result: { ok: false, output: { filesChanged: [], risks: [], warnings: ['no_delivery_change'], patchStatus: 'no_changes' } }
+  })
+  assert.equal(failed.status, 'failed')
+  assert.equal(titles(failed)[1], '失敗原因', 'the reason stays directly under the result')
+  assert.equal(countTitle(failed, PATCH_TITLE), 1)
+
+  const refused = buildAgentResultView({
+    approvalId: 'a1',
+    facts: { allowedFiles: [HOUSE], timeoutSec: 120, costCapUsd: 0.5 },
+    result: { ok: false, error: 'refuse: not_a_work_request', output: { risks: [], warnings: [] } }
+  })
+  assert.equal(refused.status, 'refused')
+  assert.equal(countTitle(refused, PATCH_TITLE), 0, 'a refusal produced no patch, so it says nothing about one')
+})
