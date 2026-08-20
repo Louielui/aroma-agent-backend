@@ -336,7 +336,7 @@ function createProposalStore (options = {}) {
    *   server; defaults to resolveOwner(). Never sourced from caller input.
    * @returns {string} the created run id
    */
-  function confirmProposal (proposalId, confirmedBy) {
+  function confirmProposal (proposalId, confirmedBy, context = {}) {
     const proposal = proposals.get(proposalId)
     if (!proposal) throw fail(404, `unknown proposal: ${proposalId}`)
 
@@ -371,6 +371,14 @@ function createProposalStore (options = {}) {
     proposal.confirmedBy = confirmer
     proposal.confirmedAt = new Date().toISOString()
 
+    // P1-C1c. The Owner-approval identity, when this confirm came from the approval
+    // card. It arrives as an explicit SERVER-OWNED context argument — never off the
+    // Proposal, never off a request body — and the confirm seam is the only caller
+    // that has one. Every other caller passes nothing and the Run's approvalId is null.
+    const approvalId = (context && typeof context.approvalId === 'string' && context.approvalId !== '')
+      ? context.approvalId
+      : null
+
     // The single privileged act: create the Run from the Proposal's own,
     // server-fixed fields. The conversationId is passed through to the Run.
     const runId = runStore.startRun({
@@ -378,7 +386,10 @@ function createProposalStore (options = {}) {
       targetProject: proposal.targetProject,
       capabilityId: CAPABILITY_ID,
       version: CAPABILITY_VERSION,
-      conversationId: proposal.conversationId
+      conversationId: proposal.conversationId,
+      // Written at Run CREATION, before any hand-off, so a crash between the two
+      // cannot leave a durable Run that nothing on disk can tie to its approval.
+      approvalId
     })
 
     proposal.runId = runId

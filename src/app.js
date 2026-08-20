@@ -590,7 +590,21 @@ function createApp (options = {}) {
       builtAgentRunner = createAgentRunner({
         repoRoot: path.resolve(__dirname, '..'),
         artifactStore: sharedArtifactStore, // CAP 7: the REAL store, so an audit record is always written
-        onPhase: (id, phase) => { try { ownerApprovalStore.recordPhase(id, phase) } catch (_) {} }
+        // P1-C1c. TWO sinks, and only one of them is lifecycle truth. The memory cache
+        // keeps every phase for the live card; the CANONICAL Run learns exactly one
+        // thing — that the worker was actually invoked.
+        //
+        // ⛔ ONLY 'running'. 'preparing' is a clone that may still be refused, and a
+        //    credential refusal emits 'failed' having never spawned anything; writing
+        //    AGENT_RUNNING for either would put "the agent ran" on the durable record
+        //    of an attempt that never did.
+        onPhase: (id, phase, runId) => {
+          try { ownerApprovalStore.recordPhase(id, phase) } catch (_) {}
+          if (phase !== 'running' || !runId) return
+          // appendAgentStage is append-only and already refuses a duplicate on a
+          // terminal Run; the runner emits 'running' once per attempt.
+          try { runStore.appendAgentStage(runId, 'AGENT_RUNNING', { approvalId: id }) } catch (_) {}
+        }
       })
     } catch (err) {
       // Fail-closed: a runner that cannot be assembled leaves the lane unauthorized.
@@ -735,7 +749,12 @@ function createApp (options = {}) {
     // LAYER 2 sink — inert. Records what the runner reported so the Owner can be SHOWN the
     // outcome; it authorizes nothing. Resolved lazily because the store is built just below.
     recordResult: (id, r) => ownerApprovalStore.recordResult(id, r),
-    recordExecutionStart: (id, f) => ownerApprovalStore.recordExecutionStart(id, f)
+    recordExecutionStart: (id, f) => ownerApprovalStore.recordExecutionStart(id, f),
+    // P1-C1c THE CANONICAL LEDGER. The claim gate must be durable before the runner is
+    // called, and the lane's milestones must land on the Run rather than only in memory.
+    // Narrow functions, not the store: this service can claim and record, nothing more.
+    claimAgent: (runId, facts) => runStore.claimAgent(runId, facts),
+    appendAgentStage: (runId, stage, facts) => runStore.appendAgentStage(runId, stage, facts)
   })
   const ownerApprovalStore = createOwnerApprovalStore(opts.ownerApprovalStoreOptions || {})
   app.locals.ownerApprovalStore = ownerApprovalStore
@@ -1059,7 +1078,15 @@ function createApp (options = {}) {
     sealedHashOf: confirmService.sealedHashOf,
     getProposal: (id) => proposalStore.getProposal(id),
     cancelProposal: (id) => proposalStore.cancelProposal(id, LOCAL_OWNER),
-    auditFn: approvalAudit
+    auditFn: approvalAudit,
+    // P1-C1c. approvalId → the canonical Run and its DERIVED status. The router gets a
+    // bounded answer and never touches Run internals. A duplicate link is reported as
+    // inconsistent rather than resolved first-win, so the surface can fail closed.
+    resolveCanonicalRun: (approvalId) => {
+      const found = runStore.findByApprovalId(approvalId)
+      if (!found.ok) return found
+      return { ok: true, runId: found.run.id, status: deriveStatus(found.run) }
+    }
   }))
 
   // 404 handler

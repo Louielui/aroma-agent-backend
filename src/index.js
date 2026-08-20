@@ -14,6 +14,7 @@ const { evaluateStartupConfig } = require('./persona/processRole') // R4a — me
 const { evaluatePrimaryPersonaStartup } = require('./persona/primaryPersonaStartupGuard') // Runtime Guard — hybrid-primary readiness
 const { getPersonaSource } = require('./persona/personaSource') // memory-free import (Memory lazy-loaded only for non-legacy)
 const { resolveBindHost } = require('./runtime/bindConfig') // Runtime Foundation A1 — loopback-only bind policy
+const { matchAgentAudit } = require('./run/recovery') // P1-C1c — agent evidence matched by runId, never guessed
 
 const PORT = process.env.PORT || 8081
 
@@ -94,8 +95,19 @@ function startupReconcile () {
   const findResult = (executionId) => {
     try { return artifactStore.list('results').find(r => r && r.taskId === executionId) || null } catch (_) { return null }
   }
+  // P1-C1c. The Agent Bridge lane's durable evidence, matched STRICTLY BY runId.
+  //
+  // ⛔ NEVER BY approvalId GUESS. Pre-C1c audit records carry no runId at all, and the
+  //    only way to attach one to a Run would be to pick whichever historical Run looks
+  //    plausible. A record that cannot say which attempt it belongs to is not evidence
+  //    for any attempt, so it is skipped and the Run recovers from what it does know.
+  const findAgentAudit = (runId) => {
+    try {
+      return matchAgentAudit(runId, artifactStore.list('agent-audit'))
+    } catch (_) { return null }
+  }
   try {
-    const { reconciled } = runStore.reconcile({ findExecution, findResult })
+    const { reconciled } = runStore.reconcile({ findExecution, findResult, findAgentAudit })
     console.log(`[AROMA-HUB] startup reconcile: ${reconciled} run(s) marked (no dispatch)`)
   } catch (err) {
     console.error('[AROMA-HUB] startup reconcile error:', err && err.message ? err.message : String(err))

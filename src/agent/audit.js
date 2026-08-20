@@ -35,6 +35,11 @@ function createAuditLog (options = {}) {
       createdAt: clock(),
       kind: 'agent-audit',
       approvalId: entry.approvalId || null,
+      // P1-C1c THE REVERSE LINK. Without it this record could say an execution happened
+      // but not WHICH governed attempt it was, so startup reconciliation had nothing to
+      // match on and an approval that genuinely ran came back marked "never started".
+      // Null for callers with no Run — an honest absence, never a guessed id.
+      runId: entry.runId || null,
       workOrderHash: entry.workOrderHash || null,
       who: entry.who || null,
       ok: result ? result.ok === true : null,

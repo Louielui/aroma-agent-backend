@@ -22,6 +22,28 @@ const { t } = require('../i18n/t')
 
 const UNKNOWN = () => t('result.unknown')
 
+/**
+ * P1-C1c. Canonical Run status → the word this card is allowed to show. Closed on
+ * purpose: an unmapped canonical status leaves the runner-derived status alone rather
+ * than being coerced into the nearest-looking one.
+ *
+ * `interrupted` is mapped to itself and NOT to done/failed/pending — those three would
+ * each be a specific false claim about an attempt whose outcome nobody knows.
+ */
+const CANONICAL_STATUS_PROJECTION = Object.freeze({
+  created: 'pending',
+  pending: 'pending',
+  retry_pending: 'pending',
+  agent_claimed: 'running',
+  agent_selected: 'running',
+  running: 'running',
+  agent_finished: 'running',
+  succeeded: 'done',
+  completed: 'done',
+  failed: 'failed',
+  interrupted: 'interrupted'
+})
+
 // ── THE PROGRESS VOCABULARY (closed allowlist) ───────────────────────────────
 // The Owner should see what is happening, but the agent's own output is NEVER the
 // source: the CLI is invoked with --output-format json, so there is one blob at the end
@@ -131,13 +153,35 @@ function buildAgentResultView (input = {}) {
   else if (r.ok === true) status = 'done'
   else status = 'failed'
 
+  // ── P1-C1c: THE RUN IS THE LIFECYCLE AUTHORITY ──────────────────────────────
+  // Everything above reads the MEMORY result cache, which does not survive a restart
+  // and which is not where the governed lifecycle lives. When the caller could resolve
+  // the canonical Run, its derived status decides — so a finished execution can never
+  // read as 「還沒有結果」 merely because the cache was emptied, and a cached result can
+  // never contradict a terminal the Run already recorded.
+  //
+  // The one thing canonical status does NOT do is flatten detail it agrees with:
+  // 'refused' and 'timeout' are *kinds* of failure, so a canonical `failed` keeps them
+  // rather than replacing a precise word with a vaguer one.
+  const canonicalStatus = typeof input.canonicalStatus === 'string' ? input.canonicalStatus : null
+  const projected = canonicalStatus ? CANONICAL_STATUS_PROJECTION[canonicalStatus] : undefined
+  if (projected) {
+    const agreesAlready = projected === 'failed' && (status === 'refused' || status === 'timeout')
+    if (!agreesAlready) status = projected
+  }
+
   const headline = {
     running: () => t('result.running'),
     pending: () => t('result.pending'),
     refused: () => t('result.refused'),
     timeout: () => t('result.timeout'),
     done: () => t('result.doneHeadline'),
-    failed: () => t('result.failedHeadline')
+    failed: () => t('result.failedHeadline'),
+    // ⛔ An interrupted attempt has NO honest headline among the five above: it did not
+    //    finish, it did not fail, and it certainly did not never-start. Rather than mint
+    //    new interface wording for a state the Owner should rarely see, it borrows the
+    //    existing 「執行器沒有提供這項資料」 — which is exactly what happened.
+    interrupted: () => UNKNOWN()
   }[status]()
 
   const scope = scopeVerdict(canonical.allowedFiles, r && r.filesChanged)

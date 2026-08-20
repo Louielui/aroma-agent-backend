@@ -69,9 +69,13 @@ function createAgentRunner (options = {}) {
   // Injectable so tests never read the real credentials file and never write a real patch.
   const checkCredentials = typeof options.checkCredentials === 'function' ? options.checkCredentials : checkCredentialHealth
   const writePatchFn = typeof options.writePatch === 'function' ? options.writePatch : writePatch
-  const emitPhase = (approvalId, phase) => {
+  // P1-C1c: runId rides along so a listener can write the phase onto the CANONICAL Run
+  // timeline as well as the memory cache. Still inert and still bounded — a phase name
+  // and two identifiers, never a path, an output or a file's contents — and a throwing
+  // or absent sink can no more affect the run than before.
+  const emitPhase = (approvalId, phase, runId) => {
     if (!onPhase) return
-    try { onPhase(approvalId, phase) } catch (_) {}
+    try { onPhase(approvalId, phase, runId || null) } catch (_) {}
   }
 
   /**
@@ -84,6 +88,10 @@ function createAgentRunner (options = {}) {
     const runStartedAt = Date.now()
     const workOrder = input && input.workOrder
     const who = (input && typeof input.who === 'string') ? input.who : null
+    // P1-C1c: the canonical Run this attempt belongs to. Null for callers that have no
+    // Run (direct/machine callers, tests) — the audit then records the absence honestly
+    // rather than inventing a link.
+    const runId = (input && typeof input.runId === 'string' && input.runId) ? input.runId : null
 
     // Cap 8 — fail-closed BEFORE any workspace or process work.
     const v = validateWorkOrder(workOrder)
@@ -101,12 +109,12 @@ function createAgentRunner (options = {}) {
     const approvedHash = input && input.approvedHash
     if (typeof approvedHash !== 'string' || approvedHash.length === 0) {
       const result = fail('missing_approved_hash')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
     if (approvedHash !== workOrderHash) {
       const result = fail('hash_mismatch')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
 
@@ -119,31 +127,31 @@ function createAgentRunner (options = {}) {
       const result = fail('login_expired')
       result.output.warnings = [health.refusal]
       result.output.credential = publicCredentialFacts(health)
-      emitPhase(approvalId, 'failed')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      emitPhase(approvalId, 'failed', runId)
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
 
     let prepared
     try {
-      emitPhase(approvalId, 'preparing')
+      emitPhase(approvalId, 'preparing', runId)
       prepared = workspace.prepare(approvalId) // isolated clone + agent branch + remotes removed
     } catch (e) {
       const result = fail(`workspace_refused: ${(e && e.message) || String(e)}`)
-      emitPhase(approvalId, 'failed')
-      if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      emitPhase(approvalId, 'failed', runId)
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
       return result
     }
 
     let result
     try {
-      emitPhase(approvalId, 'running')
+      emitPhase(approvalId, 'running', runId)
       result = await worker.invoke('AgentBridge', 1, { workOrder, workspace, cloneDir: prepared.dir, branch: prepared.branch })
-      emitPhase(approvalId, 'verifying')
+      emitPhase(approvalId, 'verifying', runId)
     } catch (e) {
       result = fail(`worker_error: ${(e && e.message) || String(e)}`)
     }
-    emitPhase(approvalId, result && result.ok === true ? 'done' : 'failed')
+    emitPhase(approvalId, result && result.ok === true ? 'done' : 'failed', runId)
 
     // ── THE PATCH ─────────────────────────────────────────────────────────
     // Written BEFORE cleanup, because the clone is the only place the change exists.
@@ -170,7 +178,7 @@ function createAgentRunner (options = {}) {
     }
 
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
-    if (auditLog) { try { auditLog.append({ approvalId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+    if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
     try { workspace.cleanup(prepared.dir) } catch (_) {}
     return result
   }

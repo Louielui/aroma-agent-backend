@@ -46,6 +46,12 @@ function isNonEmptyString (value) {
 // It is intentionally a SERVER-side value — a client can never influence it.
 const LOCAL_OWNER = 'louie'
 
+// P1-C1c. The one executor the Agent Bridge lane currently has. It is recorded as a
+// FACT on the claim and on the success terminal so the timeline says which executor
+// actually ran — SUCCEEDED is executor-neutral precisely so a later lane can use it,
+// and a terminal that cannot name its executor would make that ambiguous.
+const AGENT_EXECUTOR = 'claude-code'
+
 // B2-10 durable Run store. The file mirrors store.js's data dir (and its
 // AROMA_DATA_DIR override) so all truth files live together. `data/` is gitignored.
 // ONE resolver for all four stores — see store/dataDir.js (backlog M-3).
@@ -90,7 +96,10 @@ function resolvePersistence (config) {
  */
 function normalizeLoaded (rec) {
   const out = { ...rec }
-  for (const k of ['owner', 'workspace', 'conversationId', 'goal', 'task', 'intent', 'targetProject', 'capabilityId', 'version', 'createdAt']) {
+  // P1-C1c: a pre-C1c Run on disk has no approvalId. It normalizes to null and the
+  // file is NOT rewritten — an absent link is reported as absent, never guessed onto
+  // whichever historical approval happens to look plausible.
+  for (const k of ['owner', 'workspace', 'conversationId', 'goal', 'task', 'intent', 'targetProject', 'capabilityId', 'version', 'approvalId', 'createdAt']) {
     if (!(k in out)) out[k] = null
   }
   return out
@@ -224,6 +233,9 @@ function createRunStore (options = {}) {
       capabilityId: src.capabilityId,
       version: src.version,
       conversationId: src.conversationId,
+      // P1-C1c: server-owned, and only ever supplied by the confirm seam that already
+      // holds the sealed order. There is no request-body path to this field.
+      approvalId: src.approvalId,
       goal: src.goal
     })
 
@@ -269,6 +281,36 @@ function createRunStore (options = {}) {
     return !!(current && Array.isArray(current.timeline) && current.timeline.some(e => e && e.stage === 'WORKER_CLAIMED'))
   }
 
+  /** True if the run's timeline carries an AGENT_CLAIMED event (immutable, P1-C1c). */
+  function hasAgentClaim (current) {
+    return !!(current && Array.isArray(current.timeline) && current.timeline.some(e => e && e.stage === 'AGENT_CLAIMED'))
+  }
+
+  /**
+   * P1-C1c THE ONE-LANE INVARIANT. DISPATCH_CLAIMED, WORKER_CLAIMED and AGENT_CLAIMED
+   * are three ways of saying "this lane owns the right to execute this Run", and a Run
+   * may only ever be owned by one of them.
+   *
+   * The authorization matrix already makes two legitimate lanes impossible — Develop,
+   * Worker and Agent Bridge cannot all be authorized at once. This guard is for the
+   * case that matrix cannot speak to: a Run whose durable timeline has DRIFTED (a
+   * hand-edited file, a restored backup, a future bug) and now carries someone else's
+   * claim. Rather than let a second lane run on top of work that may already be in
+   * flight, every gate refuses.
+   *
+   * Deliberately NO priority between lanes: ranking them would mean deciding, in code,
+   * which executor's in-flight work is safe to talk over. That is a judgement no fold
+   * over a timeline can honestly make, so drift becomes needs_review — a human's call.
+   *
+   * @param {object} current  the Run snapshot
+   * @param {string} ownStage the claim stage belonging to the asking lane
+   */
+  const CLAIM_STAGES = Object.freeze(['DISPATCH_CLAIMED', 'WORKER_CLAIMED', 'AGENT_CLAIMED'])
+  function hasForeignLaneClaim (current, ownStage) {
+    if (!current || !Array.isArray(current.timeline)) return false
+    return current.timeline.some(e => e && CLAIM_STAGES.includes(e.stage) && e.stage !== ownStage)
+  }
+
   /**
    * B2-13 THE DISPATCH CLAIM GATE — a single SYNCHRONOUS, NON-YIELDING block (no
    * await inside), the SOLE idempotency gate. DISPATCH_CLAIMED is the atomic claim.
@@ -301,6 +343,8 @@ function createRunStore (options = {}) {
     if (COMPLETED_STATUSES.has(run.deriveStatus(current))) return { status: 'already_completed' }
     // claim already present (incl. interrupted / running), not terminal-completed.
     if (hasDispatchClaim(current)) return { status: 'already_dispatched' }
+    // P1-C1c one-lane invariant: another lane already owns this Run → never talk over it.
+    if (hasForeignLaneClaim(current, 'DISPATCH_CLAIMED')) return { status: 'needs_review' }
     // fresh — write the immutable claim + flush. Flush fail → fail-closed, no spawn.
     try {
       appendAndFlush(runId, 'DISPATCH_CLAIMED', { runId, attempt: 1, ts: new Date().toISOString() })
@@ -337,10 +381,90 @@ function createRunStore (options = {}) {
     if (ev && ev.kind === 'ok') return { status: 'already_completed' }
     if (COMPLETED_STATUSES.has(run.deriveStatus(current))) return { status: 'already_completed' }
     if (hasWorkerClaim(current)) return { status: 'already_dispatched' }
+    // P1-C1c one-lane invariant (see hasForeignLaneClaim).
+    if (hasForeignLaneClaim(current, 'WORKER_CLAIMED')) return { status: 'needs_review' }
     try {
       appendAndFlush(runId, 'WORKER_CLAIMED', { runId, attempt: 1, ts: new Date().toISOString() })
     } catch (err) {
       console.warn(`[worker-claim] flush failed for ${runId}: ${err && err.message ? err.message : String(err)}`)
+      return { status: 'dispatch_claim_failed' }
+    }
+    return { status: 'dispatched' }
+  }
+
+  /**
+   * P1-C1c THE AGENT BRIDGE CLAIM GATE — the third twin of claimDispatch/claimWorker,
+   * and the primitive the Agent lane simply did not have. Before this, an approved
+   * agent execution was handed off with no durable record that it had been claimed at
+   * all: nothing on disk said "this approval is already being attempted", so nothing
+   * could refuse a second attempt and nothing could tell, after a crash, that anything
+   * had ever started.
+   *
+   * Same shape as its twins and for the same reasons: a single SYNCHRONOUS, NON-YIELDING
+   * block (no await), so check + append + flush cannot interleave; it NEVER spawns; and
+   * it returns 'dispatched' ONLY once AGENT_CLAIMED is durably on disk. A flush failure
+   * is fail-closed — the runner must not be called when the claim could not be recorded,
+   * because an unrecorded attempt is exactly the thing this stage exists to prevent.
+   *
+   * Priority (mirrors B2-13, one addition):
+   *   unknown / corrupt evidence   → 'needs_review'      (never guessed)
+   *   durable terminal result      → 'already_completed'
+   *   AGENT_CLAIMED present        → 'already_dispatched' (claim obtained, not liveness)
+   *   ANOTHER lane's claim present → 'needs_review'      (one-lane invariant, no priority)
+   *   fresh                        → append + flush      → 'dispatched'
+   *
+   * @param {string} runId
+   * @param {{ approvalId: string, workOrderHash: string, executor?: string, attempt?: number }} facts
+   *   Bounded identifiers only — never a prompt, Owner text, file content or token.
+   * @returns {{ status: string }}
+   */
+  function claimAgent (runId, facts = {}) {
+    const current = run.getRun(runId)
+    if (!current) return { status: 'needs_review' } // unknown run — never guess
+
+    // The claim must be able to name its own approval, or it is not evidence.
+    const approvalId = isNonEmptyString(facts.approvalId) ? facts.approvalId.trim() : null
+    const workOrderHash = isNonEmptyString(facts.workOrderHash) ? facts.workOrderHash.trim() : null
+    if (!approvalId || !workOrderHash) return { status: 'needs_review' }
+
+    // ⛔ INTEGRITY PREFLIGHT — CLASSIFICATION ONLY, NOT A SECOND AUTHORIZATION.
+    //
+    // run.js is and remains the enforcer: it refuses a mismatched or absent approval
+    // identity whatever this function does. But it refuses by THROWING, and the throw
+    // landed in the persistence catch below — so a Run claimed under someone else's
+    // approval was reported as 'dispatch_claim_failed', i.e. "the disk write failed".
+    // That is a false statement about what went wrong, and the two cases need
+    // different human responses: one is corrupted evidence, the other is a sick disk.
+    //
+    // So the inconsistency is named HERE, before any append, and the persistence
+    // catch below keeps its own honest meaning.
+    //
+    // ⛔ COMPARED RAW, NOT TRIMMED. The trimmed copies above exist to normalise what
+    //    gets WRITTEN; using them to decide equality would let ' appr_real' match
+    //    'appr_real' and quietly re-introduce the trim-into-equality that RULING 1
+    //    forbids. Exact identity, or nothing.
+    if (!isNonEmptyString(current.approvalId)) return { status: 'needs_review' }
+    if (facts.approvalId !== current.approvalId) return { status: 'needs_review' }
+
+    let ev
+    try { ev = resultEvidence(runId) } catch (_) { ev = { kind: 'corrupt' } }
+    if (ev && ev.kind === 'corrupt') return { status: 'needs_review' }
+    if (ev && ev.kind === 'ok') return { status: 'already_completed' }
+    if (COMPLETED_STATUSES.has(run.deriveStatus(current))) return { status: 'already_completed' }
+    if (hasAgentClaim(current)) return { status: 'already_dispatched' }
+    if (hasForeignLaneClaim(current, 'AGENT_CLAIMED')) return { status: 'needs_review' }
+
+    try {
+      appendAndFlush(runId, 'AGENT_CLAIMED', {
+        runId,
+        approvalId,
+        workOrderHash,
+        executor: isNonEmptyString(facts.executor) ? facts.executor.trim() : AGENT_EXECUTOR,
+        attempt: Number.isFinite(facts.attempt) ? facts.attempt : 1,
+        ts: new Date().toISOString()
+      })
+    } catch (err) {
+      console.warn(`[agent-claim] flush failed for ${runId}: ${err && err.message ? err.message : String(err)}`)
       return { status: 'dispatch_claim_failed' }
     }
     return { status: 'dispatched' }
@@ -439,6 +563,57 @@ function createRunStore (options = {}) {
   function getRun (id) {
     if (!owned.has(id)) return null
     return run.getRun(id)
+  }
+
+  /**
+   * P1-C1c READ-ONLY. Resolve the canonical Run for an Owner approval.
+   *
+   * The Owner's result surface knows an approvalId and needs the Run that approval
+   * created; this is the only lookup that answers it, and it answers from the DURABLE
+   * Run field rather than from any memory cache.
+   *
+   * ⛔ NEVER FIRST-WIN. Two Runs claiming one approvalId is not a tie to be broken —
+   * it means the durable state is inconsistent, and quietly returning whichever came
+   * first would present one arbitrary half of a contradiction as the answer. It is
+   * reported as inconsistent so the caller can fail closed.
+   *
+   * @param {string} approvalId
+   * @returns {{ok:true, run:object} | {ok:false, reason:'not_found'|'invalid'|'inconsistent', count?:number}}
+   */
+  function findByApprovalId (approvalId) {
+    if (!isNonEmptyString(approvalId)) return { ok: false, reason: 'invalid' }
+    const wanted = approvalId.trim()
+    const found = []
+    for (const id of order) {
+      const r = run.getRun(id)
+      if (r && r.approvalId === wanted) found.push(r)
+    }
+    if (found.length === 0) return { ok: false, reason: 'not_found' }
+    if (found.length > 1) return { ok: false, reason: 'inconsistent', count: found.length }
+    return { ok: true, run: found[0] }
+  }
+
+  /**
+   * P1-C1c. The narrow write seam the Agent lane uses for its own milestones. It is
+   * deliberately NOT a general appendStage export: the confirm service may record
+   * what the agent lane observed and nothing else, so a widening of this seam cannot
+   * quietly become a way to write COMPLETED, APPLYING or a Develop stage.
+   *
+   * Returns a plain outcome instead of throwing — a milestone that cannot be recorded
+   * must never take down the turn, and recovery can still derive the truth from the
+   * stages that DID land.
+   */
+  const AGENT_STAGES = Object.freeze(['AGENT_SELECTED', 'AGENT_RUNNING', 'AGENT_FINISHED', 'SUCCEEDED', 'FAILED'])
+  function appendAgentStage (runId, stage, facts = {}) {
+    if (!AGENT_STAGES.includes(stage)) return { ok: false, reason: 'stage_not_allowed' }
+    if (!owned.has(runId)) return { ok: false, reason: 'unknown_run' }
+    try {
+      appendAndFlush(runId, stage, facts)
+      return { ok: true }
+    } catch (err) {
+      console.warn(`[agent-stage] ${stage} not recorded for ${runId}: ${err && err.message ? err.message : String(err)}`)
+      return { ok: false, reason: 'append_failed' }
+    }
   }
 
   /**
@@ -600,6 +775,9 @@ function createRunStore (options = {}) {
     const reader = artifactReader || {}
     const findExecution = typeof reader.findExecution === 'function' ? reader.findExecution : () => null
     const findResult = typeof reader.findResult === 'function' ? reader.findResult : () => null
+    // P1-C1c: the Agent lane's durable evidence, looked up BY runId. Absent reader →
+    // no agent evidence, which is exactly the pre-C1c behaviour.
+    const findAgentAudit = typeof reader.findAgentAudit === 'function' ? reader.findAgentAudit : () => null
     const safe = (fn) => { try { return fn() } catch (_) { return null } }
 
     let reconciled = 0
@@ -611,7 +789,8 @@ function createRunStore (options = {}) {
 
       const execution = safe(() => findExecution(id)) // corrupt/throw → null (fail-closed)
       const result = execution ? safe(() => findResult(execution.id)) : null
-      const { mark } = deriveRecoveredStatus({ run: current, execution, result })
+      const agentAudit = safe(() => findAgentAudit(id)) // P1-C1c, by runId — never by approvalId guess
+      const { mark } = deriveRecoveredStatus({ run: current, execution, result, agentAudit })
       appendAndFlush(id, mark, { ts: new Date().toISOString() }) // a MARK, not an action
       reconciled += 1
     }
@@ -703,7 +882,23 @@ function createRunStore (options = {}) {
     }
   }
 
-  return { startRun, getRun, listRuns, approveRun, rejectRun, reconcile, retry, claimDispatch, dispatchRun, claimWorker }
+  return {
+    startRun,
+    getRun,
+    listRuns,
+    approveRun,
+    rejectRun,
+    reconcile,
+    retry,
+    claimDispatch,
+    dispatchRun,
+    claimWorker,
+    // P1-C1c — the Agent lane's claim, its narrow milestone sink, and the canonical
+    // approvalId → Run lookup the Owner's result surface reads.
+    claimAgent,
+    appendAgentStage,
+    findByApprovalId
+  }
 }
 
-module.exports = { createRunStore, LOCAL_OWNER }
+module.exports = { createRunStore, LOCAL_OWNER, AGENT_EXECUTOR }

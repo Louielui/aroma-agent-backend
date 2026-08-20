@@ -29,6 +29,24 @@ const EXPECTED_HOSTS = Object.freeze(['127.0.0.1:8090'])
 const LOOPBACK = Object.freeze(['127.0.0.1', '::1', '::ffff:127.0.0.1'])
 const TYPED_CONFIRMATION = 'EXECUTE'
 const SESSION_COOKIE = 'aroma_owner_sid'
+/**
+ * P1-C1c. Canonical Run statuses that mean the attempt has settled. Mirrors the Run
+ * model's TERMINAL_STATUSES; kept as a literal here rather than imported so this
+ * router still depends on no Run internals. 'interrupted' counts: the attempt is over
+ * either way, and continuing to poll it forever was never the truthful answer.
+ */
+const CANONICAL_TERMINAL = new Set(['succeeded', 'completed', 'failed', 'denied', 'rolled_back', 'rejected', 'interrupted'])
+/**
+ * P1-C1c. Canonical statuses that mean NO execution has been claimed for this approval
+ * — the Run exists because confirming creates one, but no lane ever took it up.
+ *
+ * ⛔ A Run alone is NOT an answer. Every confirm makes one, including confirms that
+ *    could never execute (AGENT_BRIDGE off). Reporting those as 「pending」 would tell
+ *    the Owner something is on its way when nothing is coming and nothing ever will.
+ *    They keep the existing no_result answer; only a Run something actually happened
+ *    to speaks here.
+ */
+const CANONICAL_INERT = new Set(['created', 'pending', 'retry_pending', 'unknown'])
 // Fields the browser must NEVER be able to influence. Their presence is a protocol error.
 const FORBIDDEN_BODY_FIELDS = Object.freeze(['workOrder', 'allowedFiles', 'allowedFile', 'timeoutSec', 'costCapUsd', 'branch', 'forbiddenActions', 'allowedTestCommand', 'goal', 'approvedHash', 'approvedWorkOrderHash', 'who', 'owner'])
 
@@ -103,6 +121,13 @@ function createOwnerApprovalRouter (deps = {}) {
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
   // The proposal store's own mutator, injected — this router never reaches into the store.
   const cancelProposalFn = typeof deps.cancelProposal === 'function' ? deps.cancelProposal : () => { throw new Error('cancelProposal not injected') }
+  // P1-C1c. Resolve the CANONICAL Run behind an approval:
+  //   { ok:true, status, runId } | { ok:false, reason:'not_found'|'inconsistent'|... }
+  // Injected, so this router still knows nothing about Run internals. Absent → the
+  // pre-C1c memory-only behaviour, unchanged.
+  const resolveCanonicalRun = typeof deps.resolveCanonicalRun === 'function'
+    ? (approvalId) => { try { return deps.resolveCanonicalRun(approvalId) } catch (_) { return { ok: false, reason: 'lookup_failed' } } }
+    : () => ({ ok: false, reason: 'unavailable' })
   const router = express.Router()
 
   const refuse = (res, status, reason, approvalId, entryPoint) => {
@@ -230,11 +255,23 @@ function createOwnerApprovalRouter (deps = {}) {
     const phases = typeof store.getPhases === 'function' ? store.getPhases(approvalId) : []
     const exec = typeof store.getExecution === 'function' ? store.getExecution(approvalId) : { ok: false }
 
+    // ── P1-C1c: THE CANONICAL LEDGER DECIDES WHETHER THERE IS AN ANSWER ────────
+    // Everything below this line reads a MEMORY cache that a restart empties. Before
+    // C1c that cache was also the lifecycle authority, so a genuinely finished
+    // execution reported 「no_result」 after a restart — the durable proof that it had
+    // run existed on disk the whole time and no read surface looked at it.
+    const canonical = resolveCanonicalRun(approvalId)
+    const canonicalStatus = canonical.ok ? canonical.status : null
+    // Only a Run that some lane actually took up can answer on its own (see CANONICAL_INERT).
+    const canonicalSpeaks = canonical.ok && !CANONICAL_INERT.has(canonical.status)
+
     // A hand-off that has started but not finished is REPORTED, not hidden behind a 404.
     // The old bare 404 is exactly why an approved run looked like nothing happened: the
     // page asked once, milliseconds after approving, and was told there was nothing.
     const running = !got.ok && phases.length > 0
-    if (!got.ok && !running) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
+    // 404 only when NEITHER ledger knows anything. A canonical Run is an answer on its
+    // own, with or without the cache.
+    if (!got.ok && !running && !canonicalSpeaks) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
 
     // FACTS COME FROM THE SNAPSHOT taken at hand-off — never from the sealed order, which
     // expires after 10 minutes and used to make a finished, in-scope run read as
@@ -252,7 +289,11 @@ function createOwnerApprovalRouter (deps = {}) {
       facts,
       durationMs: got.ok ? durationMs : undefined,
       result: got.ok ? got.record.result : null,
-      running
+      running,
+      // The Run's derived status, when one was resolvable AND something actually
+      // happened to it. The view treats it as the lifecycle authority and the cached
+      // result as enrichment — never the reverse.
+      canonicalStatus: canonicalSpeaks ? canonicalStatus : null
     })
     return res.status(200).json({
       approvalId,
@@ -266,7 +307,13 @@ function createOwnerApprovalRouter (deps = {}) {
       startedAt,
       elapsedMs: durationMs,
       capSec: facts && Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
-      finished: got.ok
+      // P1-C1c: an attempt is finished when EITHER ledger says it settled. Reading only
+      // the memory cache made a restarted, long-finished run poll forever.
+      finished: got.ok || (canonicalSpeaks && CANONICAL_TERMINAL.has(canonicalStatus)),
+      // Bounded canonical facts, so the surface can be inspected without guessing which
+      // ledger answered. Identifiers and one closed enum — nothing else.
+      canonicalStatus: canonicalSpeaks ? canonicalStatus : null,
+      runId: canonical.ok ? canonical.runId : null
     })
   })
 
