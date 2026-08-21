@@ -40,7 +40,8 @@
  */
 
 const { offerFor, explainOffer, WORK_REQUEST_STATE } = require('./workRequestOffer')
-const { currentRepoFileAvailable } = require('../agent/workOrderProducer') // the SAME primitive Work Order sealing uses
+const { repositoryFileAvailable } = require('../agent/workOrderProducer') // the SAME primitive Work Order sealing uses
+const { identifyProject, IDENTITY_REFUSED } = require('../projects/repositoryIdentity')
 const { isForbiddenFile } = require('../agent/workOrder') // the ONE protected-path list; never re-implemented
 const { t } = require('../i18n/t')
 const { persistIntake, recordApprovalEvent } = require('../store/store')
@@ -84,13 +85,29 @@ async function createWorkRequest (input = {}, deps = {}) {
    * ⛔ IT DOES NOT REPLACE SEAL-TIME VALIDATION. Work Order L3 still reads the file when the
    * order is sealed, because a file can vanish between the two moments.
    */
-  const availability = currentRepoFileAvailable(offer.file)
+  /**
+   * ⛔ RB1 — WHICH REPOSITORY, DECIDED BEFORE THE FILESYSTEM IS ASKED ANYTHING.
+   *
+   * The check below used to be existence alone, and existence is not identity. Measured
+   * 2026-08-20: README.md, package.json, CLAUDE.md, docs/HOUSE-RULES.md and .gitignore all
+   * exist in BOTH registered repositories, so 「改 aroma-system 個 README.md」 answered YES
+   * about the backend's own file and a Proposal was created for the wrong repository.
+   *
+   * Identity is server-derived from the Owner's own words (and, on the resolved path, from
+   * the server-held candidate). It is decided FIRST, so a known non-backend identity is
+   * refused while it is still an identity — never given the chance to become a true
+   * statement about a same-named backend file.
+   */
+  const identified = identifyProject({ message })
+  if (!identified.ok) return { ok: false, reason: identified.reason }
+
+  const availability = repositoryFileAvailable(identified.identity, offer.file)
   if (!availability.ok) {
     // A closed reason. The refusal never carries the path's absolute form or a machine root.
-    return { ok: false, reason: 'file_not_available' }
+    return { ok: false, reason: availability.reason === IDENTITY_REFUSED.NOT_EXECUTABLE ? IDENTITY_REFUSED.NOT_EXECUTABLE : 'file_not_available' }
   }
 
-  return promoteRequest({ file: offer.file, intent: offer.intent }, deps)
+  return promoteRequest({ file: offer.file, intent: offer.intent, identity: identified.identity }, deps)
 }
 
 /**
@@ -130,9 +147,13 @@ async function promoteRequest (target, deps = {}) {
   if (!taskId) return { ok: false, reason: 'persist_failed' }
 
   // The SAME promotion seam the model path uses.
+  //
+  // ⛔ RB1 — THE IDENTITY TRAVELS AS A STRUCTURED ARGUMENT, NOT INSIDE THE TEXT. It is not
+  //    put in the title, the note, the goal or the provenance: a repository identity parsed
+  //    back out of prose is a repository identity that can be spoofed by prose.
   let promoted
   try {
-    promoted = await deps.promoteToProposal(taskId)
+    promoted = await deps.promoteToProposal(taskId, { repositoryIdentity: target.identity })
   } catch (err) {
     return { ok: false, reason: 'promote_error' }
   }
@@ -193,10 +214,24 @@ async function createResolvedWorkRequest (input = {}, deps = {}) {
 
   // 3. And b2b0's gate applies identically here: nothing persistent for a file this server
   //    cannot work on. It is re-checked because the file may have gone since the question.
-  const availability = currentRepoFileAvailable(file)
-  if (!availability.ok) return { ok: false, reason: 'file_not_available' }
+  //
+  // ⛔ RB1 — THE IDENTITY COMES FROM THE SERVER-HELD CANDIDATE, NOT FROM THE SELECTION.
+  //    A resolved target already carries its own projectId; that is the strongest evidence
+  //    there is and it must not be thrown away and re-guessed from the filename. Where the
+  //    candidate is a bare file (the C1b1 path) there is no target, so the Owner's original
+  //    words decide — the same rule as the public entrance.
+  const identified = identifyProject({
+    message,
+    targetProjectId: typeof input.targetProjectId === 'string' && input.targetProjectId !== '' ? input.targetProjectId : null
+  })
+  if (!identified.ok) return { ok: false, reason: identified.reason }
 
-  return promoteRequest({ file, intent }, deps)
+  const availability = repositoryFileAvailable(identified.identity, file)
+  if (!availability.ok) {
+    return { ok: false, reason: availability.reason === IDENTITY_REFUSED.NOT_EXECUTABLE ? IDENTITY_REFUSED.NOT_EXECUTABLE : 'file_not_available' }
+  }
+
+  return promoteRequest({ file, intent, identity: identified.identity }, deps)
 }
 
 module.exports = { createWorkRequest, createResolvedWorkRequest, ENTRY_POINT }

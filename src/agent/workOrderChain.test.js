@@ -29,7 +29,7 @@ afterEach(() => { delete process.env.AGENT_BRIDGE; delete process.env.WORKER_INV
 /* ═══════════ STEP 2 — producer ═══════════ */
 
 test('produces a SEALED work order with system-owned fields and a system hash', () => {
-  const r = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   assert.equal(r.ok, true, JSON.stringify(r.errors))
   const wo = r.workOrder
   assert.deepEqual(wo.allowedFiles, ['src/context/contextResult.js'])
@@ -47,7 +47,7 @@ test('the MODEL cannot set system-owned fields (they are overwritten, not truste
   const hostile = Object.assign({}, goodProposal, {
     forbiddenActions: [], timeoutSec: 99999, costCapUsd: 999, approvalId: 'appr_evil', branch: 'main', hash: 'deadbeef'
   })
-  const r = proposeWorkOrder({ proposal: hostile, conversation: CONV, newId: idFn })
+  const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: hostile, conversation: CONV, newId: idFn })
   assert.equal(r.ok, true)
   assert.equal(r.workOrder.timeoutSec, 120, 'model-supplied timeout ignored')
   assert.equal(r.workOrder.costCapUsd, 0.5, 'model-supplied cost cap ignored')
@@ -59,7 +59,7 @@ test('the MODEL cannot set system-owned fields (they are overwritten, not truste
 
 test('LAYER 1: a forbidden target is rejected and NO work order is produced', () => {
   for (const bad of ['.env', '.git/config', 'src/app.js', 'src/agent/audit.js', 'src/agent/agentAuthorization.js', 'src/store/store.js', '.aroma/x.json']) {
-    const r = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`請改 ${bad}`], newId: idFn })
+    const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`請改 ${bad}`], newId: idFn })
     assert.equal(r.ok, false, `${bad} must be rejected`)
     assert.equal(r.workOrder, null)
     assert.ok(r.reasonForOwner.length > 0)
@@ -68,27 +68,27 @@ test('LAYER 1: a forbidden target is rejected and NO work order is produced', ()
 
 test('path escapes / absolute paths are rejected', () => {
   for (const bad of ['../secret.js', '/etc/passwd.conf', 'C:/x/y.js']) {
-    const r = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`改 ${bad}`], newId: idFn })
+    const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`改 ${bad}`], newId: idFn })
     assert.equal(r.ok, false, bad)
   }
 })
 
 test('two paths, a wildcard, or a directory are rejected', () => {
-  const two = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: ['src/a.js', 'src/b.js'] }), conversation: ['src/a.js src/b.js'], newId: idFn })
+  const two = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: ['src/a.js', 'src/b.js'] }), conversation: ['src/a.js src/b.js'], newId: idFn })
   assert.equal(two.ok, false); assert.ok(two.errors.join(' ').includes('一個檔案'))
   for (const bad of ['src/**/*.js', 'src/*.js', 'src/context/', 'src/context']) {
-    const r = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`改 ${bad}`], newId: idFn })
+    const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: bad }), conversation: [`改 ${bad}`], newId: idFn })
     assert.equal(r.ok, false, bad)
   }
 })
 
 test('OPTION B: a file NOT mentioned in the conversation is rejected', () => {
-  const r = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: 'src/context/flags.js' }), conversation: CONV, newId: idFn })
+  const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: 'src/context/flags.js' }), conversation: CONV, newId: idFn })
   assert.equal(r.ok, false)
   assert.ok(r.errors.join(' ').includes('未在對話中提及過'))
   assert.equal(r.workOrder, null)
   // and with no conversation at all, nothing can be produced
-  assert.equal(proposeWorkOrder({ proposal: goodProposal, conversation: [], newId: idFn }).ok, false)
+  assert.equal(proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: [], newId: idFn }).ok, false)
 })
 
 test('mentionedFilesFrom extracts only path-shaped tokens (never invents)', () => {
@@ -149,7 +149,7 @@ test('*** ⛔ PROVENANCE STILL MATCHES ACROSS A CASE DIFFERENCE ***', () => {
     intendedChange: 'second line becomes line 3'
   }
   // The conversation spells it differently from the proposal — same file, different case.
-  const out = proposeWorkOrder({ proposal, conversation: ['幫我改 docs/Canary/Agent-Canary.md'], newId: idFn })
+  const out = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal, conversation: ['幫我改 docs/Canary/Agent-Canary.md'], newId: idFn })
   assert.equal(out.ok, true, '⛔ provenance rejected a case-different spelling: ' + JSON.stringify(out.errors || out))
 })
 
@@ -161,7 +161,7 @@ test('*** ⛔ AND allowedFiles CARRIES THE SPELLING THAT WAS ASKED FOR ***', () 
     candidateFile: 'docs/canary/agent-canary.md',
     intendedChange: 'x'
   }
-  const out = proposeWorkOrder({ proposal, conversation: ['改 docs/canary/agent-canary.md'], newId: idFn })
+  const out = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal, conversation: ['改 docs/canary/agent-canary.md'], newId: idFn })
   assert.equal(out.ok, true, JSON.stringify(out.errors || out))
   assert.deepEqual(out.workOrder.allowedFiles, ['docs/canary/agent-canary.md'],
     'the sealed order names exactly the path that was proposed')
@@ -170,7 +170,7 @@ test('*** ⛔ AND allowedFiles CARRIES THE SPELLING THAT WAS ASKED FOR ***', () 
 /* ═══════════ STEP 3 — WYSIWYA ═══════════ */
 
 test('WYSIWYA: the displayed object IS the hashed object (same serialization)', () => {
-  const { workOrder } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   const view = buildApprovalView(workOrder)
   // 1. the view's canonical serialization is byte-identical to what the hash digests
   assert.equal(view.canonicalJson, canonicalWorkOrderJson(workOrder))
@@ -194,7 +194,7 @@ test('WYSIWYA: the displayed object IS the hashed object (same serialization)', 
 })
 
 test('the display states the consequence in plain language (diff only, worst case, no amend)', () => {
-  const { workOrder } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   const v = buildApprovalView(workOrder)
   // Owner Decision Card v2 says the same things in the Owner's own language. The English
   // constants ("不會 commit", "remote") moved into the collapsed technical section; the
@@ -222,8 +222,8 @@ function fakeWorkspace (calls) {
 test('approved hash === executed hash -> the run proceeds', async () => {
   const calls = { prep: 0, invoke: 0 }
   const audit = []
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/context/contextResult.js'], risks: [] } } } } })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
+  const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/context/contextResult.js'], risks: [] } } } } })
   const r = await runner.run({ workOrder, approvedHash: hash, who: 'louie' })
   assert.equal(r.ok, true)
   assert.equal(calls.invoke, 1)
@@ -234,8 +234,8 @@ test('approved hash === executed hash -> the run proceeds', async () => {
 test('approved hash !== executed hash -> REFUSED, audited, ZERO workspace prep and ZERO worker call', async () => {
   const calls = { prep: 0, invoke: 0 }
   const audit = []
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, output: {} } } } })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
+  const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), auditLog: { append: (e) => audit.push(e) }, worker: { invoke: async () => { calls.invoke++; return { ok: true, output: {} } } } })
 
   // the classic attack: a SECOND file smuggled in after approval
   const widened = Object.assign({}, workOrder, { allowedFiles: [workOrder.allowedFiles[0], 'src/context/flags.js'] })
@@ -254,15 +254,15 @@ test('approved hash !== executed hash -> REFUSED, audited, ZERO workspace prep a
 
 test('a missing approved hash is refused (execution always requires an explicit approval)', async () => {
   const calls = { prep: 0, invoke: 0 }
-  const { workOrder } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
-  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), worker: { invoke: async () => { calls.invoke++; return {} } } })
+  const { workOrder } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
+  const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: fakeWorkspace(calls), worker: { invoke: async () => { calls.invoke++; return {} } } })
   assert.equal((await runner.run({ workOrder })).error, 'missing_approved_hash')
   assert.equal(calls.prep, 0); assert.equal(calls.invoke, 0)
 })
 
 test('NO AMEND PATH: adding a file requires a NEW order (different approvalId AND hash)', () => {
-  const a = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: () => 'appr_one' })
-  const b = proposeWorkOrder({ proposal: Object.assign({}, goodProposal, { candidateFile: 'src/context/flags.js' }), conversation: ['改 src/context/flags.js'], newId: () => 'appr_two' })
+  const a = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: () => 'appr_one' })
+  const b = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: Object.assign({}, goodProposal, { candidateFile: 'src/context/flags.js' }), conversation: ['改 src/context/flags.js'], newId: () => 'appr_two' })
   assert.equal(a.ok, true); assert.equal(b.ok, true)
   assert.notEqual(a.workOrder.approvalId, b.workOrder.approvalId)
   assert.notEqual(a.hash, b.hash)
@@ -310,7 +310,7 @@ test('an ORDINARY confirm never authorizes agent execution (flag ON, runner pres
 
 test('a PARTIAL execute triple never authorizes (all three fields required)', async () => {
   process.env.AGENT_BRIDGE = 'on'
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   for (const body of [
     { agentExecute: true }, // no order, no hash
     { agentExecute: true, workOrder }, // no hash
@@ -329,7 +329,7 @@ test('a PARTIAL execute triple never authorizes (all three fields required)', as
 
 test('a full EXECUTE triple with the flag ON hands off exactly once, with the approved hash', async () => {
   process.env.AGENT_BRIDGE = 'on'
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   const seen = []
   const { app, proposalId } = appWithProposal({ agentRunner: { run: async (a) => { seen.push(a); return { ok: true, output: {} } } } })
   const res = await postJson(app, `/api/v1/proposals/${proposalId}/confirm`, { agentExecute: true, workOrder, approvedWorkOrderHash: hash }, TOKEN)
@@ -343,7 +343,7 @@ test('a full EXECUTE triple with the flag ON hands off exactly once, with the ap
 
 test('AGENT_BRIDGE OFF: a full EXECUTE triple is NOT authorized and no runner exists', async () => {
   delete process.env.AGENT_BRIDGE
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   const { app, proposalId } = appWithProposal()
   assert.equal(app.agentRunnerConfigured, false)
   assert.equal(app.agentRunner, null)
@@ -354,7 +354,7 @@ test('AGENT_BRIDGE OFF: a full EXECUTE triple is NOT authorized and no runner ex
 
 test('two-of-three flags + a full EXECUTE triple -> conflict, ZERO execution', async () => {
   process.env.AGENT_BRIDGE = 'on'; process.env.WORKER_INVOCATION = 'on'
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   let runnerCalls = 0
   const { app, proposalId } = appWithProposal({ agentRunner: { run: async () => { runnerCalls++; return {} } } })
   const res = await postJson(app, `/api/v1/proposals/${proposalId}/confirm`, { agentExecute: true, workOrder, approvedWorkOrderHash: hash }, TOKEN)
@@ -365,7 +365,7 @@ test('two-of-three flags + a full EXECUTE triple -> conflict, ZERO execution', a
 
 test('confirm remains TOKEN-GATED: no token -> 401 and no hand-off', async () => {
   process.env.AGENT_BRIDGE = 'on'
-  const { workOrder, hash } = proposeWorkOrder({ proposal: goodProposal, conversation: CONV, newId: idFn })
+  const { workOrder, hash } = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: goodProposal, conversation: CONV, newId: idFn })
   let runnerCalls = 0
   const { app, proposalId } = appWithProposal({ agentRunner: { run: async () => { runnerCalls++; return {} } } })
   const res = await postJson(app, `/api/v1/proposals/${proposalId}/confirm`, { agentExecute: true, workOrder, approvedWorkOrderHash: hash }, null)

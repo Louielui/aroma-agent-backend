@@ -911,6 +911,9 @@ const CATALOGUE = Object.freeze({
 
   // ── the face ──
   'card.heading': { zh: '香香想改一個檔案', en: 'Xiangxiang wants to change one file' },
+  // RB1 — the repository, on the card's visible face. A repo-relative path alone is not an
+  // identity: the same filename exists in both registered repositories.
+  'card.scopeRepository': { zh: '程式庫：{repo}', en: 'Repository: {repo}' },
   'card.scopeOneFile': { zh: '只修改 {file} 一個檔案。', en: 'Changes {file} and nothing else.' },
   /** ⛔ THE ISOLATION PROMISE. It is the reason approving this is safe at all. */
   'card.scopeThrowaway': {
@@ -949,6 +952,9 @@ const CATALOGUE = Object.freeze({
    * character count would be wrong for either. So the SPACING IS PART OF EACH LANGUAGE'S
    * TEMPLATE — the Chinese keeps its alignment, the English uses a plain label and colon.
    */
+  // RB1 — the identity pair, in the collapsed technical block alongside the hash it binds.
+  'tech.projectId': { zh: '專案              : {v}', en: 'Project: {v}' },
+  'tech.repoFullName': { zh: '程式庫            : {v}', en: 'Repository: {v}' },
   'tech.branch': { zh: '分支              : {v}', en: 'Branch: {v}' },
   'tech.allowedFiles': { zh: '可改檔案          : {v}', en: 'Files it may change: {v}' },
   'tech.testCommand': { zh: '測試指令          : {v}', en: 'Test command: {v}' },
@@ -1255,6 +1261,19 @@ const CATALOGUE = Object.freeze({
   'wop.notAFile': { zh: '「{file}」不是一個檔案（可能是資料夾）', en: '"{file}" is not a file (it may be a folder)' },
   'wop.unreadable': { zh: '「{file}」無法讀取，所以我無法向你顯示它現時的內容', en: '"{file}" cannot be read, so I cannot show you what is in it now' },
   'wop.outsideRepo': { zh: '「{file}」不在程式庫範圍內', en: '"{file}" is outside the repository' },
+  // RB1 — repository identity refusals. They name the REPOSITORY, never a machine path.
+  'wop.repoIdentityMissing': {
+    zh: '這張提案沒有記錄它屬於哪一個程式庫，所以我不會為它封存工作單',
+    en: 'this proposal does not record which repository it belongs to, so I will not seal a work order for it'
+  },
+  'wop.repoIdentityUnknown': {
+    zh: '提案上的程式庫身分不是一個已登記的專案',
+    en: 'the repository identity on this proposal is not a registered project'
+  },
+  'wop.repoNotExecutable': {
+    zh: '我知道你指的是 {repo}，但我現時只能改動 Louielui/aroma-agent-backend。要改另一個程式庫，是之後另一件要你批准的工作',
+    en: 'I know you mean {repo}, but I can only change Louielui/aroma-agent-backend right now. Changing another repository is separate, later work you would approve on its own'
+  },
   'wop.detailsSuffix': { zh: '{title}（{details}）', en: '{title} ({details})' },
   'wop.reasonForOwner': {
     zh: '未能建立工作單：{errors}。需要你確認一個已經在對話中提過、確實存在、且不屬於受保護範圍的單一檔案。',

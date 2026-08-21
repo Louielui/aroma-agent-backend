@@ -32,6 +32,8 @@ const APP_OPTS = { runPersistence: false, proposalPersistence: false, serviceTok
 
 const ORDER = Object.freeze({
   goal: 'canary',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   allowedFiles: ['docs/canary/agent-canary.md'],
   allowedTestCommand: null,
   forbiddenActions: [...MUST_FORBID],
@@ -133,7 +135,7 @@ test('BOTH outcomes are audited — success and failure — through the real sto
       prepare: () => ({ dir: '/tmp/clone', branch: 'agent/appr_wiring' }),
       cleanup: () => {}
     }
-    const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }), 
+    const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),
       repoRoot: process.cwd(),
       artifactStore: realStore, // ← the REAL one
       workspace: okWorkspace,
@@ -149,7 +151,7 @@ test('BOTH outcomes are audited — success and failure — through the real sto
     const ok = await runner.run({ workOrder: ORDER, approvedHash: hashWorkOrder(ORDER), who: 'louie' })
     assert.equal(ok.ok, true, 'the success path ran')
 
-    const failing = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }), 
+    const failing = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),
       repoRoot: process.cwd(),
       artifactStore: realStore,
       workspace: okWorkspace,

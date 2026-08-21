@@ -15,6 +15,7 @@
  */
 
 const crypto = require('node:crypto')
+const { isValidProjectId, isValidRepoFullName } = require('../projects/repositoryIdentity')
 
 // The forbidden-action constants a Work Order must declare. Execution actions must
 // ALWAYS be forbidden (defense in depth alongside the no-remote workspace).
@@ -101,6 +102,12 @@ function validateWorkOrder (wo) {
 
   if (typeof wo.goal !== 'string' || wo.goal.trim() === '') errors.push('goal must be a non-empty string')
 
+  // RB1: repository identity is STRUCTURAL, not optional. An order that cannot say which
+  // repository it authorizes is not a Work Order — before RB1 there was no such field at
+  // all, and a same-named file in the other repo sealed as if it were this one.
+  if (!isValidProjectId(wo.projectId)) errors.push('projectId must be a registered project id')
+  if (!isValidRepoFullName(wo.repoFullName)) errors.push('repoFullName must be owner/name (never a local path)')
+
   if (!Array.isArray(wo.allowedFiles) || wo.allowedFiles.length === 0) {
     errors.push('allowedFiles must be a non-empty array')
   } else {
@@ -148,6 +155,15 @@ function isFileAllowed (wo, relPath) {
 function canonicalWorkOrder (wo) {
   return {
     goal: (wo && wo.goal) || null,
+    // ── RB1: WHICH REPOSITORY THIS ORDER AUTHORIZES ──────────────────────────
+    // Server-derived from the closed Project Registry — never Owner text, browser JSON
+    // or model output. They are INSIDE the hash because the Owner reads the repository
+    // on his card: before RB1 the card named no repository at all, so 「改 aroma-system
+    // 個 README.md」 was indistinguishable from the backend's own README.md.
+    // ⛔ THE MACHINE-LOCAL ROOT IS NOT HERE AND MUST NEVER BE. A path in the hash is a
+    //    path on the card and in the audit, and it would tie history to one machine.
+    projectId: (wo && wo.projectId) || null,
+    repoFullName: (wo && wo.repoFullName) || null,
     allowedFiles: [...((wo && wo.allowedFiles) || [])].sort(),
     allowedTestCommand: (wo && wo.allowedTestCommand) != null ? wo.allowedTestCommand : null,
     forbiddenActions: [...((wo && wo.forbiddenActions) || [])].sort(),

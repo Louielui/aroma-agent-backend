@@ -24,6 +24,8 @@ const { buildResultView, findExecutionByProposalId, findResultByTaskId } = requi
 
 const validWO = () => ({
   goal: 'add a small helper', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'], timeoutSec: 60, costCapUsd: 1, approvalId: 'appr_1'
 })
 const okClaude = async () => ({ status: 0, stdout: JSON.stringify({ subtype: 'success', is_error: false, result: 'done', total_cost_usd: 0.01 }), stderr: '', timedOut: false })

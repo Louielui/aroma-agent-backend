@@ -32,7 +32,7 @@ const { createRunStore, AGENT_EXECUTOR } = require('./store')
 
 function tmpFile () { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-aclaim-')); return path.join(d, 'aroma-runs.json') }
 const INPUT = (o = {}) => ({ task: 't', targetProject: 'backend', capabilityId: 'Develop', version: 1, ...o })
-const FACTS = (o = {}) => ({ approvalId: 'appr_a1', workOrderHash: 'h1', ...o })
+const FACTS = (o = {}) => ({ approvalId: 'appr_a1', workOrderHash: 'h1', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', ...o })
 const stages = (store, id, stage) => store.getRun(id).timeline.filter(e => e.stage === stage).length
 
 /**
@@ -380,6 +380,9 @@ test('*** run.js still refuses independently — the store check did not replace
   // still be refused, so the preflight is a classifier and not the only guard.
   const runModel = require('./run')
   const r = runModel.createRun({ owner: 'louie', approvalId: 'appr_a1' })
-  assert.throws(() => runModel.appendStage(r.id, 'AGENT_CLAIMED', { approvalId: 'appr_other', workOrderHash: 'h' }),
-    /not this run/, '⛔ run.js stopped enforcing because store.js checks first')
+  // RB1: the identity pair is supplied so the APPROVAL check is the one under test —
+  // otherwise the new required-facts check fires first and this stops testing what it names.
+  assert.throws(() => runModel.appendStage(r.id, 'AGENT_CLAIMED', {
+    approvalId: 'appr_other', workOrderHash: 'h', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend'
+  }), /not this run/, '⛔ run.js stopped enforcing because store.js checks first')
 })

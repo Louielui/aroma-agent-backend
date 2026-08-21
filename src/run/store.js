@@ -454,11 +454,31 @@ function createRunStore (options = {}) {
     if (hasAgentClaim(current)) return { status: 'already_dispatched' }
     if (hasForeignLaneClaim(current, 'AGENT_CLAIMED')) return { status: 'needs_review' }
 
+    /**
+     * RB1: a claim that cannot name its repository is not evidence either — needs_review,
+     * not a persistence failure.
+     *
+     * ⛔ AFTER the already-claimed / already-completed classification, DELIBERATELY. Those
+     *    are facts about the RUN and they are the stronger, more useful answer; checking
+     *    incoming facts first turned 「this Run was already claimed」 into 「your facts were
+     *    incomplete」, which is the same wrong-reason defect the C1c claim-status ruling
+     *    existed to remove. Ordering here is a truth question, not a style question.
+     */
+    if (!isNonEmptyString(facts.projectId) || !isNonEmptyString(facts.repoFullName)) return { status: 'needs_review' }
+
     try {
       appendAndFlush(runId, 'AGENT_CLAIMED', {
         runId,
         approvalId,
         workOrderHash,
+        // ⛔ RB1 — WHICH REPOSITORY THIS EXECUTION BELONGED TO, ON THE DURABLE RECORD.
+        //    Six months from now the only surviving evidence of a run is its timeline;
+        //    without these two the honest answer to 「which repository did run_XXXX
+        //    change?」 is 「we cannot tell」. Identity, never a machine path — a repoRoot
+        //    here would answer 「which machine」, which is a different and less useful
+        //    question, and would date the record to one box.
+        projectId: isNonEmptyString(facts.projectId) ? facts.projectId.trim() : null,
+        repoFullName: isNonEmptyString(facts.repoFullName) ? facts.repoFullName.trim() : null,
         executor: isNonEmptyString(facts.executor) ? facts.executor.trim() : AGENT_EXECUTOR,
         attempt: Number.isFinite(facts.attempt) ? facts.attempt : 1,
         ts: new Date().toISOString()

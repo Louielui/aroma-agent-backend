@@ -44,6 +44,23 @@ function createAgentRunner (options = {}) {
   if (!options.workspace && (typeof repoRoot !== 'string' || repoRoot.trim() === '')) {
     throw new TypeError('createAgentRunner requires repoRoot (or an injected workspace)')
   }
+  /**
+   * ⛔ RB1 — THIS RUNNER'S OWN REPOSITORY IDENTITY, FIXED AT CONSTRUCTION AND IMMUTABLE.
+   *
+   * Defense in depth, not a second authorization: confirmService already refuses a
+   * mismatched order before the claim. This exists because the runner holds a repoRoot
+   * that was chosen once, and every future caller — a new route, a retry path, a test
+   * harness wired wrong — reaches it through `run()`. An order for another repository
+   * arriving here must die here too, rather than being executed against whatever root
+   * this instance happens to hold.
+   *
+   * ⛔ ONE runner, ONE identity. No per-run mutation, no resolver, no map. Multi-repo
+   *    execution is RB2 and is deliberately impossible to express in this shape.
+   */
+  const identity = Object.freeze({
+    projectId: (typeof options.projectId === 'string' && options.projectId) ? options.projectId : null,
+    repoFullName: (typeof options.repoFullName === 'string' && options.repoFullName) ? options.repoFullName : null
+  })
   // Resolve the Claude Code CLI to an ABSOLUTE executable path here, at composition time,
   // and hand it to the worker. The worker used to default to the bare string 'claude',
   // which on Windows cannot start under shell:false at all (ENOENT for the extensionless
@@ -100,6 +117,21 @@ function createAgentRunner (options = {}) {
     const approvalId = (typeof workOrder.approvalId === 'string' && workOrder.approvalId) ? workOrder.approvalId : newId()
     const workOrderHash = hashWorkOrder(workOrder)
 
+    /**
+     * ⛔ RB1 — THE ORDER'S REPOSITORY MUST BE THIS RUNNER'S REPOSITORY.
+     *
+     * Before the credential read, before workspace.prepare, before any spawn. The clone
+     * source is this instance's repoRoot and nothing in `run()` can change it, so an order
+     * naming a different repository could only ever be executed against the WRONG tree —
+     * silently, and with a patch the Owner would apply to the wrong place.
+     */
+    if (workOrder.projectId !== identity.projectId || workOrder.repoFullName !== identity.repoFullName) {
+      const result = fail('repository_identity_mismatch')
+      emitPhase(approvalId, 'failed', runId)
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
+      return result
+    }
+
     // HASH ENFORCEMENT (step 4). The hash is recomputed HERE from the order actually
     // about to execute and compared with the hash the Owner approved. Any difference —
     // an added file, a widened cap, a changed test command, a swapped goal — produces a
@@ -109,12 +141,12 @@ function createAgentRunner (options = {}) {
     const approvedHash = input && input.approvedHash
     if (typeof approvedHash !== 'string' || approvedHash.length === 0) {
       const result = fail('missing_approved_hash')
-      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
       return result
     }
     if (approvedHash !== workOrderHash) {
       const result = fail('hash_mismatch')
-      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
       return result
     }
 
@@ -128,7 +160,7 @@ function createAgentRunner (options = {}) {
       result.output.warnings = [health.refusal]
       result.output.credential = publicCredentialFacts(health)
       emitPhase(approvalId, 'failed', runId)
-      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
       return result
     }
 
@@ -139,7 +171,7 @@ function createAgentRunner (options = {}) {
     } catch (e) {
       const result = fail(`workspace_refused: ${(e && e.message) || String(e)}`)
       emitPhase(approvalId, 'failed', runId)
-      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+      if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
       return result
     }
 
@@ -178,7 +210,7 @@ function createAgentRunner (options = {}) {
     }
 
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
-    if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt }) } catch (_) {} }
+    if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
     try { workspace.cleanup(prepared.dir) } catch (_) {}
     return result
   }

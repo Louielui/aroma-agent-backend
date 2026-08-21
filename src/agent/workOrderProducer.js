@@ -28,6 +28,9 @@ const { t } = require('../i18n/t')
 const fs = require('node:fs')
 const path = require('node:path')
 const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile } = require('./workOrder')
+const {
+  IDENTITY_REFUSED, identityForProject, isExecutableIdentity, isValidIdentity, sameIdentity
+} = require('../projects/repositoryIdentity')
 
 // System-owned defaults. 心燈 cannot raise these; the Owner changes them here.
 const DEFAULTS = Object.freeze({ timeoutSec: 120, costCapUsd: 0.5, approvalTtlSec: 600 })
@@ -82,6 +85,32 @@ function resolveRepoFile (repoRoot, relPath) {
 function currentRepoFileAvailable (relPath) {
   const r = resolveRepoFile(REPO_ROOT, relPath)
   return r.ok ? { ok: true } : { ok: false, reason: r.reason }
+}
+
+/**
+ * ⛔ IDENTITY FIRST, EXISTENCE SECOND — AND THE ORDER IS THE WHOLE POINT.
+ *
+ * `currentRepoFileAvailable` above answers 「does this path exist HERE」. That was the only
+ * question asked before a Proposal, and it is not the question the Owner is asking.
+ * Measured 2026-08-20 in the real tree: README.md, package.json, CLAUDE.md,
+ * docs/HOUSE-RULES.md and .gitignore all exist in BOTH repositories. So 「改 aroma-system
+ * 個 README.md」 answered YES — about the wrong repository — and nothing downstream carried
+ * enough identity to notice.
+ *
+ * So the identity is checked BEFORE the filesystem is touched at all. A non-backend
+ * identity is refused while it is still an identity; it never gets the chance to become a
+ * true statement about a same-named backend file.
+ *
+ * RB1 still reads only the backend root, because the backend is still the only repository
+ * this build can execute against. The machine-local binding for any OTHER repository is
+ * RB2 — deliberately absent here rather than stubbed.
+ *
+ * @param {{projectId:string, repoFullName:string}} identity server-derived; never from a body
+ * @returns {{ok:true}|{ok:false, reason}}
+ */
+function repositoryFileAvailable (identity, relPath) {
+  if (!isExecutableIdentity(identity)) return { ok: false, reason: IDENTITY_REFUSED.NOT_EXECUTABLE }
+  return currentRepoFileAvailable(relPath)
 }
 
 /**
@@ -194,6 +223,29 @@ function proposeWorkOrder (input = {}) {
   const p = (input && input.proposal) || {}
   const errors = []
 
+  /**
+   * ── RB1 L-IDENTITY: WHICH REPOSITORY, BEFORE ANYTHING ELSE ────────────────
+   * The identity arrives from the SERVER-OWNED Proposal, decided when the Proposal was
+   * created. It is re-verified here rather than trusted, because seal time is the moment
+   * the hash is minted and a stale or tampered pair must not reach it:
+   *
+   *   1. it must be a well-formed pair at all
+   *   2. the registry must still agree that this projectId has that repoFullName
+   *   3. RB1 may only seal for the ONE repository this build can execute against
+   *
+   * Rule 3 is why an Aroma System order cannot be sealed yet: identity is known and
+   * displayable, execution is not. That refusal is honest, not a missing feature.
+   */
+  const claimedIdentity = input.repositoryIdentity
+  if (!isValidIdentity(claimedIdentity)) return reject([t('wop.repoIdentityMissing')])
+  const registered = identityForProject(claimedIdentity.projectId)
+  if (!registered || !sameIdentity(registered, claimedIdentity)) {
+    return reject([t('wop.repoIdentityUnknown')])
+  }
+  if (!isExecutableIdentity(claimedIdentity)) {
+    return reject([t('wop.repoNotExecutable', { repo: claimedIdentity.repoFullName })])
+  }
+
   // ── L0: shape ─────────────────────────────────────────────────────────────
   const goal = plainGoal(p.goal)
   if (!goal) errors.push(t('wop.goalEmpty'))
@@ -239,6 +291,9 @@ function proposeWorkOrder (input = {}) {
 
   // ── L3: the file must actually EXIST and be readable, because the card promises the
   //    Owner a true "現時內容". No file ⇒ no card and no Work Order. ──────────────
+  // ⛔ THE EXCERPT COMES FROM THE REPOSITORY THE ORDER NAMES. Reaching this line already
+  //    proves the identity IS the executable backend (L-IDENTITY refuses everything else
+  //    above), so the backend root is the correct — and only — root to read.
   const reader = typeof input.readCurrentExcerpt === 'function'
     ? input.readCurrentExcerpt
     : (rel) => readCurrentExcerptFromDisk(input.repoRoot || REPO_ROOT, rel)
@@ -256,6 +311,9 @@ function proposeWorkOrder (input = {}) {
 
   const workOrder = {
     goal,
+    // RB1: the verified pair, straight from the registry record — not the caller's copy.
+    projectId: registered.projectId,
+    repoFullName: registered.repoFullName,
     allowedFiles: [file],
     allowedTestCommand: (typeof p.allowedTestCommand === 'string' && p.allowedTestCommand.trim() !== '') ? p.allowedTestCommand.trim() : null,
     forbiddenActions: [...MUST_FORBID, 'cred-edit', 'env-edit', 'gate-edit', 'audit-edit'],
@@ -285,6 +343,7 @@ module.exports = {
   plainGoal,
   readCurrentExcerptFromDisk,
   currentRepoFileAvailable,
+  repositoryFileAvailable,
   DEFAULTS,
   MAX_ALLOWED_FILES,
   MAX_EXCERPT_LINES,

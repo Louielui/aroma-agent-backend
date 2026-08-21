@@ -34,6 +34,8 @@ const { MUST_FORBID } = require('./workOrder')
 
 const ORDER = Object.freeze({
   goal: 'canary',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   allowedFiles: ['docs/canary/agent-canary.md'],
   allowedTestCommand: null,
   forbiddenActions: [...MUST_FORBID],
@@ -115,7 +117,7 @@ test('resolveAgentCliCommand finds the real install on THIS machine', () => {
 test('createAgentRunner passes a resolved absolute path down to the worker', async () => {
   const seen = []
   let sawCommand = null
-  const runner = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }), 
+  const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),
     repoRoot: process.cwd(),
     workspace: WORKSPACE,
     // capture what the worker would be constructed with by constructing it ourselves
@@ -128,7 +130,7 @@ test('createAgentRunner passes a resolved absolute path down to the worker', asy
   assert.equal(seen.length, 1, 'the injected worker was used')
 
   // and with NO injected worker, the runner resolves a real absolute command
-  const real = createAgentRunner({ checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  repoRoot: process.cwd(), workspace: WORKSPACE })
+  const real = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  repoRoot: process.cwd(), workspace: WORKSPACE })
   sawCommand = require('./agentBridgeWorker').resolveAgentCliCommand(process.env)
   assert.equal(sawCommand.ok, true)
   assert.ok(path.isAbsolute(sawCommand.command))

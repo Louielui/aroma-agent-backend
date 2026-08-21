@@ -33,10 +33,17 @@ const PROMOTABLE_STATES = new Set(['todo', 'in_progress'])
 
 /**
  * Promote an intake Task into a bound, ready bridge Proposal — PROMOTE ONLY.
- * @param {{ store, proposalStore, taskId: string }} deps
+ *
+ * ⛔ RB1 — `repositoryIdentity` is OPTIONAL HERE AND THAT IS DELIBERATE. Lane-1 develop
+ * promotions have no repository identity to give and must keep working exactly as before;
+ * they simply produce a Proposal whose identity is null. What that null costs is enforced
+ * where it matters — at Work Order sealing, which refuses a Proposal that cannot say which
+ * repository it belongs to. Defaulting it here would put the answer in the wrong module.
+ *
+ * @param {{ store, proposalStore, taskId: string, repositoryIdentity?: object|null }} deps
  * @returns {Promise<{ status: number, body: object }>}
  */
-async function promoteTaskToProposal ({ store, proposalStore, taskId }) {
+async function promoteTaskToProposal ({ store, proposalStore, taskId, repositoryIdentity = null }) {
   const task = store.getTask(taskId)
   if (!task) return { status: 404, body: { error: 'unknown task', taskId } }
 
@@ -77,6 +84,8 @@ async function promoteTaskToProposal ({ store, proposalStore, taskId }) {
   const proposal = proposalStore.createBridgeProposal({
     task: brief,
     sourceTaskId: taskId,
+    // RB1 — a structured field on the Proposal, never parsed back out of the brief text.
+    repositoryIdentity,
     sourceDecisionId: task.decision_id == null ? null : task.decision_id,
     briefSerializationVersion: BRIEF_SERIALIZATION_VERSION,
     sourceTaskProvenance: {

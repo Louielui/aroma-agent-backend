@@ -50,6 +50,12 @@ const CANONICAL_INERT = new Set(['created', 'pending', 'retry_pending', 'unknown
 // Fields the browser must NEVER be able to influence. Their presence is a protocol error.
 const FORBIDDEN_BODY_FIELDS = Object.freeze(['workOrder', 'allowedFiles', 'allowedFile', 'timeoutSec', 'costCapUsd', 'branch', 'forbiddenActions', 'allowedTestCommand', 'goal', 'approvedHash', 'approvedWorkOrderHash', 'who', 'owner'])
 
+/**
+ * RB1 — every spelling of 「aim this order at a repository」. The seal route refuses the
+ * request outright when one appears, rather than dropping it quietly.
+ */
+const REPOSITORY_AUTHORITY_FIELDS = Object.freeze(['projectId', 'repoFullName', 'repoRoot', 'repositoryBindingId', 'repository', 'repositoryIdentity'])
+
 function readCookie (req, name) {
   const raw = req.headers && req.headers.cookie
   if (typeof raw !== 'string') return null
@@ -196,6 +202,30 @@ function createOwnerApprovalRouter (deps = {}) {
     if (!proposal) return refuse(res, 404, 'unknown_proposal', null, 'owner_local')
     if (proposal.status !== 'pending') return refuse(res, 409, 'proposal_not_pending', null, 'owner_local')
 
+    /**
+     * ⛔ RB1 — THE BROWSER MAY DISPLAY THE REPOSITORY. IT MAY NOT NAME IT.
+     *
+     * Refused rather than ignored, deliberately. A silently-dropped `projectId` in the body
+     * looks accepted from the outside, and 「it had no effect」 is a promise that has to be
+     * re-proved after every future edit; a 400 is a promise the route keeps by construction.
+     */
+    for (const forbidden of REPOSITORY_AUTHORITY_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(b, forbidden)) {
+        return refuse(res, 400, 'repository_identity_not_owner_supplied', null, 'owner_local')
+      }
+    }
+
+    /**
+     * ⛔ THE IDENTITY IS THE PROPOSAL'S, DECIDED WHEN THE PROPOSAL WAS CREATED.
+     *
+     * A Proposal that predates RB1 — or a Lane-1 promotion that never had a repository —
+     * carries null, and null cannot seal. No backfill and no backend default here: the
+     * default belongs at the moment the Owner's words are read, where it can be shown to
+     * him, not at the moment the hash is minted.
+     */
+    const repositoryIdentity = proposal.repositoryIdentity || null
+    if (!repositoryIdentity) return refuse(res, 409, 'proposal_has_no_repository_identity', null, 'owner_local')
+
     // 心燈 PROPOSES; the SYSTEM validates and seals. Candidate content only.
     // `intendedChange` is 心燈's stated intent for the card's after-side; it is echoed
     // verbatim, labelled as intent, and grants nothing. The TTL that will actually be
@@ -208,6 +238,8 @@ function createOwnerApprovalRouter (deps = {}) {
         allowedTestCommand: b.allowedTestCommand,
         intendedChange: b.intendedChange
       },
+      // Server-owned, from the Proposal record. The producer re-verifies it anyway.
+      repositoryIdentity,
       conversation: Array.isArray(b.conversation) ? b.conversation : [String(b.conversation || '')],
       defaults: { approvalTtlSec: Math.floor(store.APPROVAL_TTL_MS / 1000) }
     })

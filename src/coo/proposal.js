@@ -277,7 +277,20 @@ function createProposalStore (options = {}) {
       sourceDecisionId: src.sourceDecisionId == null ? null : src.sourceDecisionId,
       linkState: 'linking',
       briefSerializationVersion: isNonEmptyString(src.briefSerializationVersion) ? src.briefSerializationVersion : 'v1',
-      sourceTaskProvenance: src.sourceTaskProvenance == null ? null : src.sourceTaskProvenance
+      sourceTaskProvenance: src.sourceTaskProvenance == null ? null : src.sourceTaskProvenance,
+      /**
+       * ⛔ RB1 — WHICH REPOSITORY THIS PROPOSAL IS ABOUT.
+       *
+       * Structured, server-derived, and stored ONLY when it is a well-formed pair — a
+       * half-filled identity is worse than none, because it looks like an answer. A
+       * Proposal created without one keeps null honestly; sealing refuses it later
+       * rather than guessing a repository here.
+       */
+      repositoryIdentity: (src.repositoryIdentity &&
+        isNonEmptyString(src.repositoryIdentity.projectId) &&
+        isNonEmptyString(src.repositoryIdentity.repoFullName))
+        ? { projectId: src.repositoryIdentity.projectId, repoFullName: src.repositoryIdentity.repoFullName }
+        : null
     }
     proposals.set(proposal.id, proposal)
     order.push(proposal.id)

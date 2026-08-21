@@ -29,6 +29,9 @@ const CANARY = 'docs/canary/agent-canary.md'
 /** Seal a real Work Order against the real repo — the exact path the Owner card uses. */
 function sealReal (over = {}) {
   return proposeWorkOrder(Object.assign({
+    // RB1: server-derived identity, exactly as the real seal route supplies it from the
+    // Proposal. Sealing without it is refused, which is the point of the field.
+    repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' },
     proposal: {
       goal: '把 canary 檔的一行文字由 line 1 改成 line 2',
       candidateFile: CANARY,
@@ -81,6 +84,10 @@ test('mutating ANY displayed canonical value changes both the hash and the card'
 
   const mutations = {
     goal: '偷偷換掉的目標',
+    // RB1: the repository the Owner read. Swapping it must move the hash AND the card —
+    // this table is what stops a canonical field from being added unhashed-and-undisplayed.
+    projectId: 'aroma-system',
+    repoFullName: 'Louielui/aroma-system',
     allowedFiles: ['src/demo/demoHtml.js'],
     allowedTestCommand: 'npm run evil',
     forbiddenActions: ['commit'],
@@ -158,7 +165,7 @@ test('the bounded read truncates by lines AND by chars, and says so', () => {
 })
 
 test('a NON-EXISTENT path REFUSES to seal, with a reason the Owner can read', () => {
-  const r = sealReal({ proposal: { goal: 'g', candidateFile: 'docs/canary/does-not-exist.md' }, conversation: ['請改 docs/canary/does-not-exist.md'] })
+  const r = sealReal({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: { goal: 'g', candidateFile: 'docs/canary/does-not-exist.md' }, conversation: ['請改 docs/canary/does-not-exist.md'] })
   assert.equal(r.ok, false)
   assert.equal(r.workOrder, null, 'no Work Order is produced')
   assert.ok(r.reasonForOwner.includes('不存在'), r.reasonForOwner)
@@ -179,7 +186,7 @@ test('a directory, an unreadable file and a path outside the repo all refuse', (
     assert.equal(esc.reason, 'outside_repo')
 
     // and the producer surfaces the directory case as a refusal, not a card
-    const r = proposeWorkOrder({
+    const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' },
       proposal: { goal: 'g', candidateFile: 'sub/x.md' },
       conversation: ['改 sub/x.md'],
       readCurrentExcerpt: () => ({ ok: false, reason: 'not_a_file' })
@@ -233,7 +240,12 @@ test('the visible face follows the Owner-specified structure, in plain Chinese',
   // UPDATED 2026-08-05, Owner decision. Section 1 printed the bare path; a filename is data,
   // 「只修改 X 一個檔案」 is the promise — and it is what covers the file-scope forbidden
   // actions, so the face can be complete about all nine while naming five.
-  assert.equal(v.card.sections[0].body, '只修改 docs/canary/agent-canary.md 一個檔案。', 'which file, as a promise')
+  // UPDATED RB1. A path alone does not identify anything — README.md exists in BOTH
+  // registered repositories — so the repository is named on the face above the promise.
+  // Still ONE section: the answer to 「what does this touch」 is a repository AND a path.
+  assert.equal(v.card.sections[0].body,
+    '程式庫：Louielui/aroma-agent-backend\n只修改 docs/canary/agent-canary.md 一個檔案。',
+    'which repository and which file, as a promise')
   assert.ok(v.card.sections[1].body.length > 0, 'what change')
   assert.ok(v.card.sections[2].body.includes('你的程式庫不受影響'), 'what is the worst case')
   // Section 3 now also carries the execution negations. Three sections still — the Owner's
@@ -289,7 +301,7 @@ test('a promoted Proposal brief no longer leaks Title:/Details: into the goal', 
   assert.equal(plainGoal('  普通一句話  '), '普通一句話')
   assert.equal(plainGoal(null), '')
 
-  const r = sealReal({ proposal: { goal: 'Title: 改 canary 檔\n\nDetails: 由 line 1 改成 line 2', candidateFile: CANARY, intendedChange: 'line 2' }, conversation: ['請改 ' + CANARY] })
+  const r = sealReal({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: { goal: 'Title: 改 canary 檔\n\nDetails: 由 line 1 改成 line 2', candidateFile: CANARY, intendedChange: 'line 2' }, conversation: ['請改 ' + CANARY] })
   assert.equal(r.ok, true)
   assert.ok(!/Title:|Details:/.test(r.workOrder.goal), 'the sealed goal is a clean sentence')
   // and because the goal is normalized at SEAL time, the clean sentence is what is hashed

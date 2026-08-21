@@ -55,6 +55,7 @@ const { createConfirmService } = require('./agent/confirmService') // THE single
 const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // server-authoritative sealed orders + nonces + sessions
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
+const { EXECUTABLE_IDENTITY } = require('./projects/repositoryIdentity')
 const { buildApprovalView } = require('./agent/workOrderView')
 const { buildAgentResultView, phaseLabel } = require('./agent/agentResultView') // Layer 2 result view (read-only)
 
@@ -589,6 +590,13 @@ function createApp (options = {}) {
     try {
       builtAgentRunner = createAgentRunner({
         repoRoot: path.resolve(__dirname, '..'),
+        // ⛔ RB1 — THE ROOT AND THE IDENTITY ARE DECIDED IN THE SAME BREATH, HERE, ONCE.
+        //    The root says WHERE on this machine; the identity says WHICH repository. They
+        //    are set together so they cannot drift apart, and the runner refuses any order
+        //    naming a different repository. Widening this to a second repository is RB2 and
+        //    needs a machine-local binding that deliberately does not exist yet.
+        projectId: EXECUTABLE_IDENTITY.projectId,
+        repoFullName: EXECUTABLE_IDENTITY.repoFullName,
         artifactStore: sharedArtifactStore, // CAP 7: the REAL store, so an audit record is always written
         // P1-C1c. TWO sinks, and only one of them is lifecycle truth. The memory cache
         // keeps every phase for the live card; the CANONICAL Run learns exactly one
@@ -862,9 +870,16 @@ function createApp (options = {}) {
   //    Proposal only — NO Run, NO Worker, no dispatch; confirm stays the sole gate.
   if (resolveConversationDemo() === 'on') {
     app.locals.conversationDemo = true
-    app.locals.promoteToProposal = async (taskId) => {
+    // RB1 — `opts.repositoryIdentity` is server-derived by the caller (workRequestRoute)
+    // and simply carried through. Callers with no identity (Lane-1 develop) pass none.
+    app.locals.promoteToProposal = async (taskId, opts = {}) => {
       try {
-        const r = await promoteTaskToProposal({ store, proposalStore, taskId })
+        const r = await promoteTaskToProposal({
+          store,
+          proposalStore,
+          taskId,
+          repositoryIdentity: (opts && opts.repositoryIdentity) || null
+        })
         if (r.status === 200 && r.body && r.body.proposalId) {
           const proposal = proposalStore.getProposal(r.body.proposalId)
           if (!proposal) {

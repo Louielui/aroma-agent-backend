@@ -142,7 +142,9 @@ test('*** the Develop and Worker branches are byte-for-byte the same behaviour *
 function agentRunAt (file, stagesToAppend, approvalId = 'appr_a1') {
   const store = createRunStore({ dispatcher: async () => {}, authorizeDispatch: () => false, persistence: file })
   const id = store.startRun(INPUT({ approvalId }))
-  store.claimAgent(id, { approvalId, workOrderHash: 'h1' })
+  // RB1: a claim must name its repository or the store refuses it (needs_review), which
+  // would silently leave these fixtures with no Agent lane at all.
+  store.claimAgent(id, { approvalId, workOrderHash: 'h1', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' })
   for (const s of stagesToAppend) store.appendAgentStage(id, s.stage, s.facts)
   return { store, id }
 }

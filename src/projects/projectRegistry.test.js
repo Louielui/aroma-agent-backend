@@ -86,13 +86,44 @@ test('*** ⛔ NO LOCAL PATH IS RECORDED — IT CANNOT BECOME AN EXECUTION ROOT *
   }
 })
 
-test('*** ⛔ THE REGISTRY CANNOT REACH EXECUTION, AND EXECUTION CANNOT REACH IT ***', () => {
+/**
+ * ⛔ RB1 NARROWED THIS FENCE ON PURPOSE — AND THE NARROWING IS THE WHOLE TRANCHE.
+ *
+ * b2a asserted that NO execution-path file may import `projects/`, because at that point
+ * the registry carried no meaning and any consumption of it would have been the beginning
+ * of an authority it was not supposed to have.
+ *
+ * RB1 gives it exactly one meaning and takes it deliberately: the execution path now reads
+ * repository IDENTITY (a projectId and an owner/name) so that the repository the Owner
+ * approved is inside the hash, on his card, on the Run and in the audit. Before RB1 the
+ * card named no repository at all, and 「改 aroma-system 個 README.md」 sealed against the
+ * backend's own README.md — a wrong-repository execution the Owner could not have caught
+ * by reading carefully.
+ *
+ * What the fence protects has therefore MOVED, not weakened. Identity may cross; a ROOT may
+ * not. The registry still cannot reach the world, still holds no path, and nothing in
+ * `projects/` may hand execution a place on this machine — which is now asserted for the
+ * whole directory rather than for one file, because RB1 added a second module to it.
+ */
+test('*** ⛔ THE REGISTRY CANNOT REACH THE WORLD, AND projects/ CANNOT HAND OUT A ROOT ***', () => {
   const requires = [...SRC.matchAll(/require\(['"]([^'"]+)['"]\)/g)].map((m) => m[1])
   assert.deepEqual(requires, [], '⛔ the registry gained an import: ' + JSON.stringify(requires))
   assert.equal(/process\.env/.test(SRC), false, '⛔ the registry reads an environment flag')
   assert.equal(/require\(|child_process|fs\.|fetch\(/.test(SRC), false, '⛔ the registry can reach the world')
 
-  // And nothing on the execution path imports it — proven by reading those files.
+  // EVERY module in projects/ — the new identity policy included — must be root-free and
+  // unable to touch a filesystem, a process or a network.
+  for (const f of fs.readdirSync(__dirname).filter((n) => n.endsWith('.js') && !n.endsWith('.test.js'))) {
+    const s = codeOf(fs.readFileSync(path.join(__dirname, f), 'utf8'))
+    for (const banned of ['repoRoot', 'localRoot', '__dirname', 'homedir', 'process\\.cwd', 'child_process', 'fetch\\(', 'fs\\.']) {
+      assert.equal(new RegExp(banned).test(s), false, '⛔ projects/' + f + ' can reach a machine: ' + banned)
+    }
+    assert.equal(/[A-Za-z]:[\\/]/.test(s), false, '⛔ projects/' + f + ' contains a Windows path')
+    assert.equal(/function (register|addProject|setProject)\b/.test(s), false,
+      '⛔ projects/' + f + ' gained a runtime registration API')
+  }
+
+  // The execution path may consume IDENTITY. It must never obtain a ROOT from projects/.
   const root = path.join(__dirname, '..')
   for (const f of [
     'app.js', 'agent/agentRunner.js', 'agent/featureBranchWorkspace.js', 'agent/confirmService.js',
@@ -100,8 +131,17 @@ test('*** ⛔ THE REGISTRY CANNOT REACH EXECUTION, AND EXECUTION CANNOT REACH IT
     'agent/agentAuthorization.js', 'run/store.js', 'capability/dispatcher.js'
   ]) {
     const s = codeOf(fs.readFileSync(path.join(root, f), 'utf8'))
-    assert.equal(/projectRegistry|targetCatalogue|projects\//.test(s), false,
-      '⛔ EXECUTION PATH NOW CONSUMES THE REGISTRY: ' + f)
+    assert.equal(/repoRoot\s*[:=]\s*[^,)\n]*projects\//.test(s), false,
+      '⛔ AN EXECUTION ROOT NOW COMES FROM projects/: ' + f)
+    assert.equal(/require\(['"][^'"]*projects\/targetCatalogue['"]\)/.test(s), false,
+      '⛔ the execution path consumes the target CATALOGUE: ' + f)
+  }
+
+  // Two files still have no business knowing a repository exists at all: the isolation
+  // brake and the bounded worker take what they are given and decide nothing.
+  for (const f of ['agent/featureBranchWorkspace.js', 'agent/agentBridgeWorker.js']) {
+    const s = codeOf(fs.readFileSync(path.join(root, f), 'utf8'))
+    assert.equal(/projects\//.test(s), false, '⛔ ' + f + ' started consulting projects/')
   }
 })
 

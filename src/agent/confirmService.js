@@ -18,6 +18,7 @@
  */
 
 const { hashWorkOrder } = require('./workOrder')
+const { isExecutableIdentity } = require('../projects/repositoryIdentity')
 // ONE definition of the executor identity, imported rather than restated. The claim,
 // the milestones and the success terminal all name the same executor; two literals in
 // two files is how those three quietly stop agreeing.
@@ -151,12 +152,37 @@ function createConfirmService (deps = {}) {
     // from the order it is about to run and refuses on mismatch (no amend path); we also
     // record what we handed over so an attempt is never silent.
     if (agentEligible) {
+      /**
+       * ⛔ RB1 — THE REPOSITORY FENCE, BEFORE THE CLAIM.
+       *
+       * The sealed order names a repository. This build can execute against exactly one.
+       * If those disagree, NOTHING happens: no claim, no AGENT_SELECTED, no runner, no
+       * workspace, no executor, no retry, no fallback to Develop.
+       *
+       * It is placed BEFORE claimAgent on purpose. A claim is a durable statement that
+       * this approval is being attempted; an order for a repository we cannot touch is
+       * not being attempted, and recording that it was would be the same class of untruth
+       * the C1c execution-truth work existed to remove.
+       */
+      if (!isExecutableIdentity({ projectId: input.workOrder.projectId, repoFullName: input.workOrder.repoFullName })) {
+        dispatchStatus = 'repository_identity_mismatch'
+        auditFn({ approvalId, outcome: 'refused', reason: dispatchStatus, entryPoint })
+        return { status: 201, body: { proposalStatus: 'confirmed', dispatchStatus, runId }, agentHandedOff: false }
+      }
+
       // ⛔ THE CLAIM COMES FIRST, AND IT IS DURABLE BEFORE ANYTHING RUNS. This is the
       //    ordering the whole tranche turns on: until AGENT_CLAIMED is on disk, nothing
       //    anywhere records that this approval is being attempted — so a second attempt
       //    could not be refused and a crash could not be distinguished from "never
       //    started". claimAgent is synchronous and flushes before it returns.
-      const claim = claimAgent(runId, { approvalId, workOrderHash, executor: AGENT_EXECUTOR })
+      const claim = claimAgent(runId, {
+        approvalId,
+        workOrderHash,
+        executor: AGENT_EXECUTOR,
+        // From the sealed order — the same two values the hash covers and the card showed.
+        projectId: input.workOrder.projectId,
+        repoFullName: input.workOrder.repoFullName
+      })
       if (claim.status !== 'dispatched') {
         // No claim, no execution. Not a fallback to Develop, not a retry, not a second
         // attempt — and NOT reported as accepted, because nothing was accepted.

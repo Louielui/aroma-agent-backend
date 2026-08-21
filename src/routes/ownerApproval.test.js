@@ -79,7 +79,7 @@ function seedProposal (ctx) {
   // A confirmable Proposal, created through the store the app actually uses. A bridge
   // proposal must reach linkState 'ready' before confirm will accept it (B2-7).
   const store = ctx.app.locals.proposalStore
-  const p = store.createBridgeProposal({ task: 'fix the approval card wording', sourceTaskId: 'task_' + crypto.randomBytes(6).toString('hex') })
+  const p = store.createBridgeProposal({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, task: 'fix the approval card wording', sourceTaskId: 'task_' + crypto.randomBytes(6).toString('hex') })
   store.setLinkState(p.id, 'ready')
   return p.id
 }

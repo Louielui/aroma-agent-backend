@@ -38,6 +38,8 @@ function tmpFile () { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-xtr
 const developLlm = async () => ({ intent: 'develop', task: 'do a thing', targetProject: 'backend' })
 const WO = (over = {}) => Object.assign({
   goal: 'tidy one helper',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   allowedFiles: ['src/foo.js'],
   allowedTestCommand: null,
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],
@@ -291,8 +293,7 @@ test('*** canonical truth does not depend on ownerApprovalStore existing at all 
 const runnerHarness = (over = {}) => {
   const phases = []
   const audits = []
-  const runner = createAgentRunner({
-    command: 'C:/fake/claude.exe',
+  const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', command: 'C:/fake/claude.exe',
     workspace: over.workspace || { prepare: () => ({ dir: 'C:/tmp/clone', branch: 'agent/x' }), cleanup: () => {} },
     worker: over.worker || { invoke: async () => ({ ok: true, output: { filesChanged: [], exit: 0 } }) },
     // ⛔ AN ARTIFACT STORE, NOT AN auditLog. Injecting the log itself would skip
@@ -372,17 +373,39 @@ test('*** the audit record shape carries no prompt, no diff, no Owner text ***',
 
 /* ═══ the Work Order is untouched ══════════════════════════════════════════ */
 
-test('*** Work Order canonical remains exactly 12 fields ***', () => {
-  assert.equal(Object.keys(canonicalWorkOrder(WO())).length, 12)
+/**
+ * ⛔ RB1 CHANGED THIS DELIBERATELY — 12 → 14, AND `projectId` MOVED SIDES.
+ *
+ * C1c froze the canonical order at 12 and banned `projectId` from the hash, because at
+ * that point repository identity carried no meaning and an unused field in the hash is
+ * just churn. RB1 gave it meaning: the Owner now reads the repository on his card, so it
+ * must be inside the hash he approves — a value he read that the server can change is
+ * exactly what WYSIWYA exists to prevent.
+ *
+ * What did NOT change is the half of the old fence that was always the important half:
+ * EXECUTION identity and MACHINE paths still have no business in the hash. `runId` names
+ * an attempt, not an authorization; `repoRoot` names one machine's folder and would tie
+ * every historical hash to that box. Both stay out, and are still asserted below.
+ */
+test('*** Work Order canonical is exactly 14 fields — the RB1 identity pair included ***', () => {
+  const keys = Object.keys(canonicalWorkOrder(WO()))
+  assert.equal(keys.length, 14)
+  assert.ok(keys.includes('projectId') && keys.includes('repoFullName'), 'the identity pair is canonical')
 })
 
-test('*** ⛔ NO EXECUTION IDENTITY LEAKED INTO THE HASH ***', () => {
+test('*** ⛔ REPOSITORY IDENTITY IS HASH-BOUND — AND A MACHINE ROOT STILL IS NOT ***', () => {
   const base = WO()
   const hash = hashWorkOrder(base)
-  for (const extra of [{ runId: 'run_x' }, { projectId: 'aroma-system' }, { repoRoot: 'C:/somewhere' }, { repositoryId: 'r1' }]) {
+
+  // The pair the Owner reads MUST move the hash.
+  assert.notEqual(hashWorkOrder(WO({ projectId: 'aroma-system' })), hash, '⛔ projectId is not hash-bound')
+  assert.notEqual(hashWorkOrder(WO({ repoFullName: 'Louielui/aroma-system' })), hash, '⛔ repoFullName is not hash-bound')
+
+  // Execution identity and machine paths must NOT.
+  for (const extra of [{ runId: 'run_x' }, { repoRoot: 'C:/somewhere' }, { repositoryId: 'r1' }, { repositoryBindingId: 'b1' }, { schemaVersion: 2 }]) {
     assert.equal(hashWorkOrder(Object.assign({}, base, extra)), hash,
       '⛔ ' + Object.keys(extra)[0] + ' entered the canonical order')
-    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 12)
+    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 14)
   }
 })
 

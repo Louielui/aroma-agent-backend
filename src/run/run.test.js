@@ -182,13 +182,13 @@ test('deriveStatus folds the timeline for each shape', () => {
 /** A Run whose Agent lane has been opened by a matching claim. */
 function agentClaimedRun (approvalId = 'appr_real') {
   const r = createRun({ owner: 'louie', approvalId })
-  appendStage(r.id, 'AGENT_CLAIMED', { approvalId, workOrderHash: 'h_wo' })
+  appendStage(r.id, 'AGENT_CLAIMED', { approvalId, workOrderHash: 'h_wo', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' })
   return r
 }
 
 test('*** ⛔ AGENT_CLAIMED MUST NAME THIS RUN OWN APPROVAL ***', () => {
   const r = createRun({ owner: 'louie', approvalId: 'appr_real' })
-  assert.throws(() => appendStage(r.id, 'AGENT_CLAIMED', { approvalId: 'appr_other', workOrderHash: 'h' }),
+  assert.throws(() => appendStage(r.id, 'AGENT_CLAIMED', { approvalId: 'appr_other', workOrderHash: 'h', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }),
     /not this run/, '⛔ a claim belonging to a different approval opened the lane')
   assert.equal(getRun(r.id).timeline.some(e => e.stage === 'AGENT_CLAIMED'), false, 'and nothing was written')
 })
@@ -204,7 +204,7 @@ test('*** ⛔ A CLAIM CANNOT OPEN A LANE ON A RUN THAT HAS NO APPROVAL IDENTITY 
   // surface to resolve the attempt back to — the claim would be unreconcilable.
   const r = createRun({ owner: 'louie' })
   assert.equal(getRun(r.id).approvalId, null)
-  assert.throws(() => appendStage(r.id, 'AGENT_CLAIMED', { approvalId: 'appr_x', workOrderHash: 'h' }),
+  assert.throws(() => appendStage(r.id, 'AGENT_CLAIMED', { approvalId: 'appr_x', workOrderHash: 'h', projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }),
     /requires the run to carry an approvalId/)
 })
 

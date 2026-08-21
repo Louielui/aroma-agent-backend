@@ -80,7 +80,7 @@ function req (ctx, { method = 'POST', url, headers = {}, body }) {
 
 function seedProposal (ctx) {
   const s = ctx.app.locals.proposalStore
-  const p = s.createBridgeProposal({ task: 'canary', sourceTaskId: 'task_' + crypto.randomBytes(6).toString('hex') })
+  const p = s.createBridgeProposal({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, task: 'canary', sourceTaskId: 'task_' + crypto.randomBytes(6).toString('hex') })
   s.setLinkState(p.id, 'ready')
   return p.id
 }

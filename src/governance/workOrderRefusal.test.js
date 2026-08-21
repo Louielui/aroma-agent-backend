@@ -18,6 +18,8 @@ const WO = require('../agent/workOrder')
 
 const validWO = (files) => ({
   goal: 'x',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   allowedFiles: files,
   allowedTestCommand: null,
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],

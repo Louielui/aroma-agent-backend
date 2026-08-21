@@ -168,8 +168,25 @@ function buildApprovalView (workOrder) {
 
   const whatChanges = canonical.goal || NOT_PROVIDED()
 
+  /**
+   * ⛔ RB1 — THE REPOSITORY IS ON THE FACE, NOT ONLY IN 技術細節.
+   *
+   * A repo-relative path alone does not identify anything: README.md exists in BOTH
+   * registered repositories, so a card reading 「只修改 README.md 一個檔案」 was equally true
+   * of the wrong one. The Owner could not have caught that mistake by reading carefully,
+   * because the information was not on the card at all.
+   *
+   * The face grows by ONE line, in the section that already answers 「what does this
+   * touch」 — not a new section.
+   */
   const scope = [
-    t('card.scopeOneFile', { file }),
+    // ⛔ THE REPOSITORY AND THE FILE ARE ONE ENTRY, NOT TWO. The visible face reads
+    //    scope[0] and only scope[0]; adding a separate element would have silently pushed
+    //    「只修改 X 一個檔案」 — the promise that covers FILE_SCOPE — off the card entirely
+    //    while every hash and detail test still passed. They belong together anyway: the
+    //    answer to 「what does this touch」 is a repository AND a path, never one of them.
+    t('card.scopeRepository', { repo: canonical.repoFullName || NOT_PROVIDED() }) + '\n' +
+      t('card.scopeOneFile', { file }),
     t('card.scopeThrowaway')
   ]
 
@@ -208,6 +225,10 @@ function buildApprovalView (workOrder) {
   // ── the collapsed 技術細節 — every machine-shaped value, still inside the hash ──
   const technical = {
     approvalId: canonical.approvalId,
+    // RB1 — the identity pair, read from `canonical` like everything else here, so what
+    // the Owner reads is what the hash covers.
+    projectId: canonical.projectId,
+    repoFullName: canonical.repoFullName,
     branch: canonical.branch,
     hash,
     allowedFiles: canonical.allowedFiles,
@@ -221,6 +242,8 @@ function buildApprovalView (workOrder) {
 
   const technicalLines = [
     `approvalId        : ${technical.approvalId == null ? NOT_PROVIDED() : technical.approvalId}`,
+    t('tech.projectId', { v: technical.projectId == null ? NOT_PROVIDED() : technical.projectId }),
+    t('tech.repoFullName', { v: technical.repoFullName == null ? NOT_PROVIDED() : technical.repoFullName }),
     t('tech.branch', { v: technical.branch == null ? NOT_PROVIDED() : technical.branch }),
     `hash              : ${technical.hash}`,
     t('tech.allowedFiles', { v: technical.allowedFiles.join(', ') || NOT_PROVIDED() }),
@@ -312,6 +335,10 @@ function buildApprovalView (workOrder) {
   // existing chain proof still checks the projection field by field.
   const display = {
     goal: canonical.goal,
+    // RB1 — field parity: the identity is canonical, so it is displayed. A canonical field
+    // absent from this projection would be inside the hash and invisible to the chain proof.
+    projectId: canonical.projectId,
+    repoFullName: canonical.repoFullName,
     allowedFile: file,
     allowedTestCommand: test,
     forbiddenActions: canonical.forbiddenActions,

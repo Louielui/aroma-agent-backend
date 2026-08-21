@@ -33,6 +33,8 @@ const { proposeWorkOrder } = require('./workOrderProducer')
 const ORDER = (over = {}) => (Object.assign({
   approvalId: 'a1',
   goal: '把 README 的第一行改成新的標題',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   branch: 'main',
   allowedFiles: ['README.md'],
   allowedTestCommand: null,
@@ -119,7 +121,7 @@ test('*** no ASCII punctuation between two Chinese characters — the card ***',
 })
 
 test('*** no ASCII punctuation between two Chinese characters — the refusals ***', () => {
-  const r = proposeWorkOrder({ proposal: { goal: 'x', candidateFile: 'nope/missing.js' }, conversation: ['nope/missing.js'] })
+  const r = proposeWorkOrder({ repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' }, proposal: { goal: 'x', candidateFile: 'nope/missing.js' }, conversation: ['nope/missing.js'] })
   assert.equal(r.ok, false)
   assert.equal(CJK_ASCII_PUNCT.test(r.reasonForOwner), false, 'got: ' + r.reasonForOwner)
 })

@@ -95,6 +95,11 @@ const REQUIRED_FACTS = {
  * predate this contract.
  */
 const AGENT_LANE_FACTS = {
+  // ⛔ RB1 — A CLAIM MUST NAME ITS REPOSITORY. Enforced on APPEND, which is why historical
+  //    pre-RB1 Runs are unaffected: they were written before this existed, they are only
+  //    ever read, and nothing backfills them. A new claim that cannot say which repository
+  //    it is about would leave the same unanswerable record C1c removed everywhere else.
+  AGENT_CLAIMED: ['approvalId', 'workOrderHash', 'projectId', 'repoFullName'],
   AGENT_FINISHED: ['ok', 'approvalId'],
   SUCCEEDED: ['approvalId'],
   FAILED: ['approvalId']

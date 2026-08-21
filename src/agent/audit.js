@@ -40,6 +40,13 @@ function createAuditLog (options = {}) {
       // match on and an approval that genuinely ran came back marked "never started".
       // Null for callers with no Run — an honest absence, never a guessed id.
       runId: entry.runId || null,
+      // ⛔ RB1 — WHICH REPOSITORY THIS EXECUTION BELONGED TO. An audit record that cannot
+      //    answer that is answering a question nobody asked. Identity only: a repoRoot
+      //    here would record which MACHINE ran it, tie the record to one box, and put a
+      //    filesystem path into the permanent evidence trail.
+      //    Null for callers with no identity — an honest absence, never a default.
+      projectId: entry.projectId || null,
+      repoFullName: entry.repoFullName || null,
       workOrderHash: entry.workOrderHash || null,
       who: entry.who || null,
       ok: result ? result.ok === true : null,

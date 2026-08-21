@@ -32,6 +32,8 @@ const { FORBIDDEN_ACTIONS, MUST_FORBID } = require('./workOrder')
 const ORDER = (over = {}) => Object.assign({
   approvalId: 'a1',
   goal: '把 README 的第一行改成新的標題',
+  projectId: 'aroma-agent-backend',
+  repoFullName: 'Louielui/aroma-agent-backend',
   branch: 'main',
   allowedFiles: ['README.md'],
   allowedTestCommand: null,
