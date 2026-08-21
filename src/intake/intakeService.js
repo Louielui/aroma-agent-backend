@@ -104,6 +104,9 @@ function emitCapabilityAwarenessShadow ({ path, turnPerSource, authorisedSources
 }
 // ⛔ Beside it, and for the same reason: the language rule was prose with no output check.
 const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
+// C1-A: pure observation. Nothing below branches on what it returns — see the fence in
+// executiveJudgmentShadow.test.js, which fails if anything ever does.
+const { classifyExecutiveJudgmentShadow, emitExecutiveJudgmentShadow } = require('./executiveJudgmentShadow')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
 const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, withChatKnowledgeModes, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 // ⛔ THE CLOSED VOCABULARY the model may pick a read from. It EXPANDS authorised sources; it
@@ -578,6 +581,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * `decomposeOnce` never throws, because B failing must not be able to fail the turn.
    */
   let goalPlanPromise // undefined = not attempted; Promise<plan|null> once started
+  /**
+   * ⛔ C1-A: THE PLAN AS IT WAS ALREADY AWAITED, NEVER RE-REQUESTED.
+   *
+   * The shadow observer wants the judged plan, and the obvious way to get it — calling
+   * `decomposeOnce()` at the observation point — is a trap: on a turn where the goal path
+   * never ran, `goalPlanPromise` is `undefined` and that call would START a decomposition,
+   * turning a pure observer into a fourth model call. So the value is CAPTURED where it is
+   * already awaited and simply read later. `null` here means "no plan was in hand", which
+   * the counts report as null rather than as zero.
+   */
+  let goalPlanObserved = null
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
@@ -939,6 +953,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         let goalBlock = null
         if (goalDecomposerEnabled(process.env) && !forced) {
           const plan = await decomposeOnce()
+          goalPlanObserved = plan // C1-A: capture only. Nothing downstream reads this.
           const wanted = sourcesForPlan(plan, all)
           if (wanted !== null) all = wanted
           goalBlock = requirementBlock(plan)
@@ -1641,6 +1656,25 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       routerSources: (routeDecision && routeDecision.sources) || [],
       authorisedSources: authorisedSourcesFor(activeProvider || primaryProvider)
     }).reason === ASK_REASON.ROUTE_ESTABLISHED_INTERNAL
+
+    /**
+     * ⛔ C1-A — OBSERVATION ONLY, AND PLACED BEFORE THE BRANCH CHAIN ON PURPOSE.
+     *
+     * Every verdict is measured, including the branches that are already correct — a rate
+     * needs its denominator, and a signal that only logs its own suspected defect can never
+     * be shown to be wrong. Nothing below reads `judgmentShadow`; it is computed, logged and
+     * dropped. `mode` is read from the model's ALREADY-PARSED envelope and `goalPlanObserved`
+     * from the plan that was ALREADY awaited, so this adds no model call and no read.
+     */
+    const judgmentShadow = classifyExecutiveJudgmentShadow({
+      finalDecision: verdict && verdict.ok ? verdict.decision : null,
+      mode: initialTerminalMode,
+      goalPlan: goalPlanObserved,
+      askOrigin: initialIsAsk ? FORK_ASK.MODEL_INITIAL_ASK : FORK_ASK.NONE,
+      route: routeDecision ? routeDecision.route : null
+    })
+    emitExecutiveJudgmentShadow(requestId, judgmentShadow)
+
     if (!verdict.ok) {
       // ⛔ FAIL CLOSED — IN THE DIRECTION THAT MATCHES WHAT WAS SAID.
       //
