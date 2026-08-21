@@ -3460,7 +3460,7 @@ the offer shows before → after, and the button posts the MESSAGE not the value
 the old path still serves a turn with no plan, and says so in the log
 the open endpoint is mounted and refuses an unknown errand rather than 404ing the ROUTE
 the options are headed
-the original text survives in full; only a note is appended
+*** ⛔ A FLAGGED REPLY IS RETURNED BYTE-IDENTICAL — NOTHING IS APPENDED ***
 the other two-option spellings fire the same rule
 the pacing floor cannot be removed from a settings screen
 the page POLLS the result endpoint instead of asking once

@@ -9,7 +9,22 @@
  *
  * > **成個禮拜都係繁體,唔係因為佢受保護,係因為嗰句指示夠強,加上運氣。**
  *
- * ⛔ IT DETECTS AND RECORDS. IT DOES NOT REWRITE.
+ * ⛔ IT DETECTS AND RECORDS. IT DOES NOT REWRITE, AND IT DOES NOT SPEAK TO HIM.
+ *
+ * ⛔ E1 (2026-08-21): THE DIAGNOSTIC USED TO BE APPENDED TO THE REPLY. It was removed, and
+ * the reason is worth keeping. The C0 forensic on conversation 2f42f099 found the note on
+ * two of four turns, and the damage was not that it looked untidy:
+ *
+ *   · it reached the Owner as if 香香 had written it — an internal instrument speaking in
+ *     her voice, mid-conversation, about her own output;
+ *   · and because the reply is pushed back into the live history as her prior turn, the note
+ *     RE-ENTERED the model's own context as her prose. The system was teaching the persona
+ *     that she writes internal warnings to him.
+ *
+ * The failure was already countable in `[AROMA-LANG]` before any of that, so the visible
+ * sentence bought nothing that the log did not already hold. Detection stayed; the speech
+ * went. If you are about to append text to `reply` here again, that is the thing that was
+ * removed on purpose — the audit trail belongs in the log line below, not on his screen.
  *
  * Simplified→Traditional is not one-to-one: `发` → 發/髮, `干` → 乾/幹/干, `后` → 後/后.
  * A hand-written mapping produces **wrong Chinese that looks deliberate**, which is worse than
@@ -37,8 +52,15 @@
  * Characters that exist in Simplified and whose Traditional form is a DIFFERENT character.
  * Deliberately a small, high-confidence set of common ones — a long list would be a maintained
  * list, and the point of a short one is that every entry is certain.
+ *
+ * ⛔ EVERY ENTRY MUST FAIL THIS TEST: written in Traditional, is it a DIFFERENT character?
+ * If the answer is「same character」, it is not evidence of anything and it will fire on
+ * correct Traditional prose. 出 and 外 were removed on 2026-08-21 for exactly that reason —
+ * both are written identically in both scripts, and 出 fired twice on 「開發出來」 in the
+ * Owner's own conversation. They had drifted in beside 进/内, which ARE distinct (進/內);
+ * neighbouring a real entry is not what qualifies one.
  */
-const SIMPLIFIED_ONLY = '为这来说时会对开关问题实现发现电话语言书写学习经过还没门间与产业动务员单双击图关闭订单价钱银钱铁马鸟鱼东车专业务网络软硬盘线级组织结构规则质量适应该应当机会区别识认识记忆种类样式条数据库编码译码运输进出内外见观点认为习惯节约简单复杂错误'
+const SIMPLIFIED_ONLY = '为这来说时会对开关问题实现发现电话语言书写学习经过还没门间与产业动务员单双击图关闭订单价钱银钱铁马鸟鱼东车专业务网络软硬盘线级组织结构规则质量适应该应当机会区别识认识记忆种类样式条数据库编码译码运输进内见观点认为习惯节约简单复杂错误'
 
 const SET = new Set(Array.from(SIMPLIFIED_ONLY))
 
@@ -48,8 +70,13 @@ const VERDICT = Object.freeze({
   NO_EVIDENCE: 'NO_EVIDENCE'        // nothing to judge: no Han characters at all
 })
 
-/** The note appended when evidence is found. Visible, so the failure is auditable on screen. */
-const NOTE = '\n\n⚠(呢個回覆入面有簡體字 —— 我冇改佢,因為簡轉繁唔係一對一,改錯咗會變成似係故意噉寫嘅錯中文。)'
+/**
+ * ⛔ RETIRED (E1). This sentence used to be appended to the Owner's reply. It is kept as an
+ * exported constant for ONE reason: so the regression test can assert its exact bytes are
+ * absent from every reply, rather than guessing at a paraphrase. Nothing appends it. If you
+ * find yourself reaching for it, read the E1 block at the top of this file first.
+ */
+const RETIRED_NOTE = '\n\n⚠(呢個回覆入面有簡體字 —— 我冇改佢,因為簡轉繁唔係一對一,改錯咗會變成似係故意噉寫嘅錯中文。)'
 
 /**
  * @param {string} reply
@@ -72,12 +99,13 @@ function enforceTraditional (reply) {
     return { verdict: VERDICT.CLEAN, found: [], reply: text, flagged: false }
   }
 
-  // ⛔ FLAGGED, NOT FIXED. The reply he receives is what she wrote, plus a visible note — so
-  // he can see the failure rather than a silent repair he cannot audit.
+  // ⛔ FLAGGED, NOT FIXED, AND NOT ANNOTATED. `reply` is returned byte-identical to what she
+  // wrote — flagging is a fact about the turn, not a change to it. The failure is recorded in
+  // `[AROMA-LANG]` by logTraditionalFlag; that is the whole of the audit trail.
   return {
     verdict: VERDICT.SIMPLIFIED_FOUND,
     found: found.slice(0, 12),
-    reply: text + NOTE,
+    reply: text,
     flagged: true
   }
 }
@@ -98,4 +126,4 @@ function logTraditionalFlag (result, requestId) {
   } catch (_) {}
 }
 
-module.exports = { enforceTraditional, logTraditionalFlag, VERDICT, SIMPLIFIED_ONLY, NOTE }
+module.exports = { enforceTraditional, logTraditionalFlag, VERDICT, SIMPLIFIED_ONLY, RETIRED_NOTE }
