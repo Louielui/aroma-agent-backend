@@ -29,6 +29,8 @@ const { createLiveReadConnector, enabledSources } = require('../context/liveClie
 const { resolveFlag } = require('../context/flags')
 const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../dispatch/dispatcher')
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
+// L1 — phase timing. Measurement only: nothing here decides, skips, routes or shortens.
+const { PHASE, ROLE, OUTCOME, emitPhase, timePhase, timePhaseSync, startTimer } = require('../utils/phaseTiming')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
@@ -293,6 +295,16 @@ async function processIntake (message, adapter, history = [], opts = {}) {
 
 async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
+
+  /**
+   * L1 phase timing. Both are INJECTABLE so tests can drive a deterministic clock and
+   * capture records without scraping stdout — and so a test can prove that the business
+   * result is byte-identical whether or not anything is observing.
+   *
+   * Absent (production, and every existing test) → real monotonic clock, console.log.
+   */
+  const latencyClock = (opts && typeof opts.latencyClock === 'function') ? opts.latencyClock : undefined
+  const latencySink = (opts && typeof opts.latencySink === 'function') ? opts.latencySink : undefined
 
   /**
    * ⛔ THIS TURN DID NOT COME FROM A ROUTE, SO IT IS NOT VERIFICATION.
@@ -695,6 +707,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   function decomposeOnce () {
     if (goalPlanPromise !== undefined) return goalPlanPromise
     goalPlanPromise = (async () => {
+      /**
+       * ⛔ L1 — HOW LONG DID B ACTUALLY TAKE? The refusal was logged from the first day;
+       * the DURATION never was. On the 07:59 greeting that left a 5,958 ms block before
+       * the main model call with no way to say how much of it was this call. The stopwatch
+       * starts here, outside the try, so a throw is still timed: 「slow, then failed」 and
+       * 「failed instantly」 are different facts.
+       *
+       * ⛔ INSIDE the `goalPlanPromise !== undefined` guard above, so a cached second
+       *    decomposeOnce() emits nothing — one attempt, one timing record.
+       */
+      const elapsed = startTimer(latencyClock)
       try {
         const out = await decomposeGoal({
           question: message,
@@ -705,6 +728,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             return { text: r && r.text, usage: r && r.usage }
           }
         })
+        emitPhase({
+          requestId,
+          phase: PHASE.MODEL_CALL,
+          role: ROLE.GOAL_DECOMPOSER,
+          within: PHASE.PROMPT_BUILD,
+          durationMs: elapsed(),
+          attempt: 1,
+          outcome: OUTCOME.OK
+        }, latencySink)
         // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
         // be taken from real runs rather than estimated, and a refusal that costs a call is
         // still a cost.
@@ -716,18 +748,53 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             facts: (out && out.ok && out.plan && Array.isArray(out.plan.facts)) ? out.plan.facts.length : null,
             unavailable: (out && out.ok && out.plan && Array.isArray(out.plan.facts))
               ? out.plan.facts.filter((f) => f && f.status === 'UNAVAILABLE').length : null,
-            usage: (out && out.usage) || null
+            usage: (out && out.usage) || null,
+            // L1: the field the 07:59 forensic needed and could not find.
+            durationMs: Math.max(0, Math.round(elapsed()))
           }))
         } catch (_) { /* telemetry is never load-bearing */ }
         return (out && out.ok && out.plan) ? out.plan : null
       } catch (_) {
+        // ⛔ A FAILED ATTEMPT IS STILL A COST. B swallows every failure by contract
+        //    (the turn proceeds as if B never existed), which is exactly why its
+        //    latency would otherwise vanish with it.
+        emitPhase({
+          requestId,
+          phase: PHASE.MODEL_CALL,
+          role: ROLE.GOAL_DECOMPOSER,
+          within: PHASE.PROMPT_BUILD,
+          durationMs: elapsed(),
+          attempt: 1,
+          outcome: OUTCOME.ERROR
+        }, latencySink)
         return null
       }
     })()
     return goalPlanPromise
   }
 
+  /**
+   * L1 — THE PROMPT-BUILD CONTAINER, MEASURED WITHOUT RESTRUCTURING WHAT IT BUILDS.
+   *
+   * The builder below is byte-for-byte what it was; only its name changed. This wrapper
+   * does the cache check first so a CACHE HIT emits nothing — a prompt that was not built
+   * did not cost anything, and a 0 ms record would be a fact about the cache, not the work.
+   *
+   * ⛔ prompt_build CONTAINS decision_recall, conversation_recall, live_read_context and
+   *    model_call(goal_decomposer). Those records carry `within: 'prompt_build'` so a reader
+   *    summing durations can see the nesting instead of double-counting it.
+   */
   async function buildPromptFor (providerName, composeOnly = false) {
+    const key = providerName + ':' + extraObservationBlocks.length + (composeOnly ? ':compose' : '')
+    if (promptCache.has(key)) return promptCache.get(key)
+    return timePhase(
+      { requestId, phase: PHASE.PROMPT_BUILD },
+      () => buildPromptForUncached(providerName, composeOnly),
+      { clock: latencyClock, sink: latencySink }
+    )
+  }
+
+  async function buildPromptForUncached (providerName, composeOnly = false) {
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
@@ -746,7 +813,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       try {
         if (recallBlockCache === undefined) {
           const deps = (opts && opts.decisionRecallDeps) || { listDecisionsFn: listDecisions, listTasksFn: listTasks }
-          const recall = buildDecisionRecallContext(deps)
+          const recall = timePhaseSync(
+            { requestId, phase: PHASE.DECISION_RECALL, within: PHASE.PROMPT_BUILD },
+            () => buildDecisionRecallContext(deps),
+            { clock: latencyClock, sink: latencySink })
           recallBlockCache = (recall && recall.block) ? recall.block : null
         }
         if (recallBlockCache) effPrompt = recallBlockCache + '\n\n' + baseEffPrompt
@@ -773,7 +843,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       try {
         if (convRecallBlockCache === undefined) {
           const deps = (opts && opts.conversationRecallDeps) || {}
-          const cr = buildConversationRecall(Object.assign({ currentConversationId: opts && opts.conversationId }, deps))
+          const cr = timePhaseSync(
+            { requestId, phase: PHASE.CONVERSATION_RECALL, within: PHASE.PROMPT_BUILD },
+            () => buildConversationRecall(Object.assign({ currentConversationId: opts && opts.conversationId }, deps)),
+            { clock: latencyClock, sink: latencySink })
           convRecallBlockCache = (cr && cr.block) ? cr.block : null
         }
         if (convRecallBlockCache) effPrompt = convRecallBlockCache + '\n\n' + effPrompt
@@ -870,7 +943,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           const key = sources.join(',')
           if (!readBlockCache.has(key)) {
             const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
-            const rc = await buildReadContext({ connector, message, sources, env: process.env })
+            const rc = await timePhase(
+              { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
+              () => buildReadContext({ connector, message, sources, env: process.env }),
+              { clock: latencyClock, sink: latencySink })
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
               if (row && row.source) turnPerSource.set(row.source, row)
@@ -1228,7 +1304,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         // read is what decides whether a plan is wanted.
         const gptPrompt = await buildPromptFor(OPENAI)
         const gptFormat = answerPlanFormat()
-        gptResult = await gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) })
+        gptResult = await timePhase(
+          { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: OPENAI, attempt: 1 },
+          () => gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
+          { clock: latencyClock, sink: latencySink })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
         // (HTTP status + provider error type/code/param) are appended so a failure is
@@ -1267,12 +1346,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // that question before this line is what made the whole layer unreachable.
       const claudePrompt = await buildPromptFor(CLAUDE)
       const claudeFormat = answerPlanFormat()
-      llmResult = await adapter.complete(claudePrompt, {
-        system: effSystem,
-        maxTokens,
-        temperature: 0.3,
-        ...(claudeFormat ? { responseFormat: claudeFormat } : {})
-      })
+      // L1: role-tagged so MODEL_CALL_COUNT is countable from telemetry, not inferred.
+      llmResult = await timePhase(
+        { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
+        () => adapter.complete(claudePrompt, {
+          system: effSystem,
+          maxTokens,
+          temperature: 0.3,
+          ...(claudeFormat ? { responseFormat: claudeFormat } : {})
+        }),
+        { clock: latencyClock, sink: latencySink })
     } catch (err) {
       // Upstream provider/adapter failure → typed, safe error. Provider message is
       // kept only on .cause (server-side classification), never surfaced to client.
@@ -1461,8 +1544,25 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const allowedNow = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
     const w = availableWorlds(allowedNow)
     const startedAt = Date.now()
+    /**
+     * L1 — ROLE CORRELATION ONLY. The gate's own A4_FINAL_OBLIGATION durationMs is
+     * UNCHANGED (it still measures the whole gate, cache hit included). This wrapper adds
+     * one `model_call` record with role `final_verifier` so MODEL_CALL_COUNT can be counted
+     * from one record type instead of joining three differently-shaped log lines.
+     *
+     * ⛔ IT WRAPS THE INJECTED CLOSURE, NOT a4Runtime. The verifier's provider, model,
+     *    effort, schema, cache and fail-closed semantics are untouched; a cached verdict
+     *    never reaches this closure, so a cache hit emits nothing — which is correct.
+     */
+    const verifyFn = (readDeps && readDeps.finalVerifier) || null
+    const timedVerify = verifyFn
+      ? (args) => timePhase(
+          { requestId, phase: PHASE.MODEL_CALL, role: ROLE.FINAL_VERIFIER, attempt: 1 },
+          () => verifyFn(args),
+          { clock: latencyClock, sink: latencySink })
+      : null
     const verdict = await finalObligations.get({
-      verify: (readDeps && readDeps.finalVerifier) || null,
+      verify: timedVerify,
       message,
       history,
       availableWorlds: { internal: w.includes('internal'), public: w.includes('public') }
@@ -2187,7 +2287,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const finalCall = composeOnly === true
         const prompt = await buildPromptFor(activeProvider, finalCall)
         const fmt = answerPlanFormat(finalCall)
-        const next = await activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) })
+        const next = await timePhase(
+          { requestId, phase: PHASE.MODEL_CALL, role: ROLE.REASONING_STEP, provider: activeProvider || null },
+          () => activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }),
+          { clock: latencyClock, sink: latencySink })
         noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
         await recordProviderUsage(next)                                     // ⛔ accounting, per call
         llmResult = next
