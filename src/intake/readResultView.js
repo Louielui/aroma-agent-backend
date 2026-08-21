@@ -625,6 +625,18 @@ function renderValidatedPlan (input) {
 
   const composed = out.join('\n\n')
   const guarded = enforceReadState(composed, Array.isArray(input.perSource) ? input.perSource : [], input.message)
+  /**
+   * ⛔ E2 — THIS BRANCH DELIBERATELY DOES NOT CARRY `input.correction`, and that stays true.
+   *
+   * The draft correction was produced by judging the model's PROSE, and on this branch the
+   * prose is not what gets rendered. A note about text nobody can see is a correction about
+   * nothing — pinned by rowRefAndFallbackWording.test.js:235, which is the Owner-visible
+   * contradiction that test exists to stop. The template branch below carries the note because
+   * THERE the prose is the answer; the two branches are opposites on purpose.
+   *
+   * What E2 changes here is only that the branch now REPORTS what it did, so telemetry can
+   * stop guessing from the draft.
+   */
   if (guarded.corrected && guarded.correction) out.push(guarded.correction.trim())
 
   return {
@@ -634,7 +646,12 @@ function renderValidatedPlan (input) {
     validated: !lostSomething && !contentLost,
     droppedItems: v.droppedItems,
     droppedFacts: v.droppedFacts,
-    droppedSentences: v.droppedSentences
+    droppedSentences: v.droppedSentences,
+    // ⛔ E2: what THIS render actually put on screen. The wrapper turns it into the single
+    // outcome telemetry is read from; nothing else may report a correction.
+    readClaim: guarded.corrected
+      ? { corrected: true, sources: guarded.sources, kind: guarded.kind }
+      : { corrected: false, sources: [], kind: null }
   }
 }
 
@@ -662,16 +679,86 @@ function buildReadResultReply (input = {}) {
     message: input.message,
     evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : []
   })
-  if (!routed.violated) return out
-  // COUNTS ONLY. The withheld sentences are exactly the content that must not be logged.
-  try {
-    console.log('[AROMA-ROUTE-EVIDENCE]', JSON.stringify({
-      withheld: routed.withheld.length,
-      sources: routed.sources,
-      requestId: input.requestId == null ? null : String(input.requestId)
-    }))
-  } catch (_) {}
-  return Object.assign({}, out, { reply: routed.reply, routeEvidenceWithheld: routed.withheld.length })
+  let afterRoute = out
+  if (routed.violated) {
+    // COUNTS ONLY. The withheld sentences are exactly the content that must not be logged.
+    try {
+      console.log('[AROMA-ROUTE-EVIDENCE]', JSON.stringify({
+        withheld: routed.withheld.length,
+        sources: routed.sources,
+        requestId: input.requestId == null ? null : String(input.requestId)
+      }))
+    } catch (_) {}
+    afterRoute = Object.assign({}, out, { reply: routed.reply, routeEvidenceWithheld: routed.withheld.length })
+  }
+  return withFinalReadStateBoundary(afterRoute, input)
+}
+
+/**
+ * ⛔ E2 — THE ONE PLACE THE READ-STATE CORRECTION IS DECIDED, and it decides on the text the
+ * Owner will actually read.
+ *
+ * ── WHY IT MOVED HERE (measured, 2026-08-21, three real turns) ────────────────
+ *
+ * The correction and the `READ_CLAIM_CORRECTED` line used to come from two DIFFERENT
+ * judgments of two DIFFERENT texts, coupled by nothing but luck:
+ *
+ *   · telemetry came from the guard run over the model's DRAFT prose in intakeService;
+ *   · visibility came from the guard run over the COMPOSED text inside the plan renderer.
+ *
+ * All three possible disagreements happened in one conversation:
+ *
+ *   Drive    (c75d0eb9) — correction VISIBLE, telemetry MISSING. The draft did not trip the
+ *                         detector; the composed text did.
+ *   Gmail    (71824e3a) — both fired. The pair agreed by coincidence, not by construction.
+ *   Calendar (1f79bc3d) — telemetry EMITTED, correction INVISIBLE. The draft tripped it, then
+ *                         the plan renderer rebuilt the reply from rows and the appended note
+ *                         went with the prose it was attached to. The Owner was told nothing;
+ *                         the log said he had been told.
+ *
+ * ⛔ THE LAST ONE IS THE SERIOUS ONE. A safety control that reports success while being
+ * silently discarded is worse than one that is simply absent, because the log then argues
+ * against the screen and the screen is what he read.
+ *
+ * ── WHAT THIS FIXES, AND WHAT IT DOES NOT ────────────────────────────────────
+ *
+ * It makes an ALREADY-AUTHORITATIVE correction consistently visible and consistently
+ * counted. It does NOT stop the model from denying a read that happened — the model still
+ * produced that sentence, and `modelItemCount: 0` on all five read turns says it ignored the
+ * rows it was given. That is a different defect and it is not repaired here.
+ *
+ * ── EXACTLY ONCE ─────────────────────────────────────────────────────────────
+ *
+ * Earlier stages may already have appended the note (the draft guard, or the plan renderer).
+ * Re-running the detector over text that still contains the denial would append a second
+ * copy, so presence is checked before appending. `corrected` is reported either way: the
+ * turn WAS corrected and the note IS on screen, which is what the log is claiming.
+ *
+ * @returns the view, plus `readClaim` — the single outcome telemetry must be read from.
+ */
+function withFinalReadStateBoundary (out, input) {
+  const shown = (out && typeof out.reply === 'string') ? out.reply : ''
+
+  // ⛔ A RENDER THAT ALREADY PLACED THE NOTE HAS SETTLED IT. Re-judging here would ask the
+  //    wrong question: the plan renderer legitimately REMOVES the false sentence, so the
+  //    finished text is honest and a second judgment would read that as「never violated」and
+  //    quietly un-count a failure the Owner can see on screen.
+  const applied = (out && out.readClaim && out.readClaim.corrected === true) ? out.readClaim : null
+  if (applied) return Object.assign({}, out, { readClaim: applied })
+
+  // Otherwise: judge the finished text. This catches a denial that survived every renderer —
+  // including the pass-through exits, which do no correcting of their own.
+  const judged = enforceReadState(shown, Array.isArray(input.perSource) ? input.perSource : [], input.message)
+  if (!judged.corrected) {
+    return Object.assign({}, out, { readClaim: { corrected: false, sources: [], kind: null } })
+  }
+  // EXACTLY ONCE: the draft guard may already have appended this exact note upstream.
+  const note = judged.correction ? judged.correction.trim() : ''
+  const alreadyShown = note !== '' && shown.indexOf(note) !== -1
+  return Object.assign({}, out, {
+    reply: alreadyShown ? shown : judged.reply,
+    readClaim: { corrected: true, sources: judged.sources, kind: judged.kind }
+  })
 }
 
 function buildReadResultReplyInner (input = {}) {
@@ -757,9 +844,33 @@ function buildReadResultReplyInner (input = {}) {
   // practice the false sentence it corrects is now REMOVED here rather than merely
   // corrected — but the note stays on screen, because a failure that leaves no trace on
   // screen is the thing the guard was built to stop.
-  if (typeof input.correction === 'string' && input.correction.trim()) out.push(input.correction.trim())
+  const carried = (typeof input.correction === 'string' && input.correction.trim()) ? input.correction.trim() : ''
+  if (carried) out.push(carried)
 
-  return { reply: out.join('\n\n'), applied: true, intent }
+  // ⛔ E2: this branch has always carried the note; now it also REPORTS that it did, so the
+  // count and the screen come from one fact instead of two hopeful ones.
+  return {
+    reply: out.join('\n\n'),
+    applied: true,
+    intent,
+    readClaim: carried
+      ? { corrected: true, sources: upstreamClaimSources(input), kind: upstreamClaimKind(input) }
+      : { corrected: false, sources: [], kind: null }
+  }
+}
+
+/**
+ * The sources/kind the UPSTREAM judgment named, when the caller supplied them alongside the
+ * correction text. Telemetry stays as specific as it was before E2; absent plumbing degrades
+ * to an empty list rather than to a guess.
+ */
+function upstreamClaimSources (input) {
+  const rc = input && input.readClaim
+  return (rc && Array.isArray(rc.sources)) ? rc.sources.slice() : []
+}
+function upstreamClaimKind (input) {
+  const rc = input && input.readClaim
+  return (rc && typeof rc.kind === 'string') ? rc.kind : null
 }
 
 module.exports = {

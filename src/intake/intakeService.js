@@ -2565,12 +2565,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const lang = enforceTraditional(guarded.reply)
     logTraditionalFlag(lang, requestId)
     guarded.reply = lang.reply
-    if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    // ⛔ E2: the correction is NOT counted here. This judgment is of the DRAFT, and the draft is
+    // not what he reads — `buildReadResultReply` may rebuild the reply from rows and drop it.
+    // The count now comes from `view.readClaim`, below, which judges the finished text.
     // THE OWNER-FACING SHAPE, applied last so it wraps the reply the guard approved.
     // With nothing retrieved it is a no-op and the reply passes through untouched.
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,
+      // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
+      // telemetry as it was before the single boundary existed.
+      readClaim: { corrected: guarded.corrected, sources: guarded.sources, kind: guarded.kind },
       message,
       // The model's own plan, when it sent one. answerPlan.js validates it against the
       // evidence; nothing here trusts it, and every fall-through is logged.
@@ -2587,9 +2592,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    // ⛔ E2: ONE outcome decides both the screen and the count. `view.readClaim` was judged
+    // against `view.reply` — the exact bytes he receives — so this can no longer report a
+    // correction he never saw, nor stay silent about one he did.
+    const claim = view.readClaim || { corrected: false, sources: [], kind: null }
+    if (claim.corrected) logReadClaimCorrection(claim, requestId)
     return {
       blocked: false, mode: 'chat', talkOnly: true, interactionMode: 'chat',
-      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: guarded.corrected,
+      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: claim.corrected,
       decision: null, tasks: [], risks: [], next_step: '', requestId
     }
   }
@@ -2672,7 +2682,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         }))
       } catch (_) { /* telemetry is never load-bearing */ }
     }
-    if (guarded.corrected) logReadClaimCorrection(guarded, requestId)
+    // ⛔ E2: counted from `view.readClaim` after the view is built — see the commit path above.
     /**
      * ⛔ THE MAIN CHAT PATH. The first placement of this sat beside `enforceNoReadClaim` on the
      * proposal-fallback path and emitted NOTHING on a real turn — found by running one, not by
@@ -2711,6 +2721,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const view = buildReadResultReply({
       reply: guarded.reply,
       correction: guarded.correction || null,
+      // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
+      // telemetry as it was before the single boundary existed.
+      readClaim: { corrected: guarded.corrected, sources: guarded.sources, kind: guarded.kind },
       message,
       // The model's own plan, when it sent one. answerPlan.js validates it against the
       // evidence; nothing here trusts it, and every fall-through is logged.
@@ -2727,9 +2740,12 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // source of business facts, and recall-is-not-evidence is unchanged by it.
       history
     })
+    // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
+    const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
+    if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
-      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: guarded.corrected,
+      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 
