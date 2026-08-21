@@ -226,6 +226,12 @@ const FILE_CLASS = Object.freeze({
   'intake/scopeNotes.js': CLASS.MATCHING,             //   3 — 「哪個倉」/「邊個倉」 both spellings
   'persona/ownerSettings.js': CLASS.MATCHING,         //   2 — injection patterns
   'intake/traditionalGuard.js': CLASS.MATCHING,       //   2 — the simplified charset IS the guard
+  // ⛔ MATCHING, and the consequence of getting it wrong is unusually sharp. The list is
+  //    compared against his WHOLE message to decide a turn is bare small talk. Translate
+  //    「你好」 and the classifier stops recognising his greeting — it fails closed, so
+  //    nothing breaks loudly; the eligibility simply stops being true and a future fast
+  //    path silently never fires. Widen it carelessly and the opposite happens.
+  'intake/pureChatEligibility.js': CLASS.MATCHING,    //  15 — the closed social vocabulary
   'routes/settingsOffer.js': CLASS.MATCHING,          //   7 — the deterministic entrance fires on
   //                                                          LITERAL tokens he types
   'lab/citationDetector.js': CLASS.MATCHING,          //   1

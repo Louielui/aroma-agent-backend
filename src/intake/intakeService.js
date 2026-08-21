@@ -31,6 +31,8 @@ const { createDispatchesForTasks, executeDispatch, statusLabel } = require('../d
 const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 // L1 — phase timing. Measurement only: nothing here decides, skips, routes or shortens.
 const { PHASE, ROLE, OUTCOME, emitPhase, timePhase, timePhaseSync, startTimer } = require('../utils/phaseTiming')
+// L2-A — pure-chat eligibility. SHADOW: observed and logged, never branched on.
+const { classifyPureChatEligibility } = require('./pureChatEligibility')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
@@ -416,6 +418,37 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       confidence: routeDecision.confidence || null
     }])
   }
+
+  /**
+   * ── L2-A: PURE-CHAT ELIGIBILITY, SHADOW ONLY ────────────────────────────────
+   *
+   * Placed here because this is the first point where the deterministic routing
+   * decision exists and no model has been called yet — which is exactly where a
+   * future fast path would have to decide, so it is where the evidence must be
+   * gathered now.
+   *
+   * ⛔ NOTHING BRANCHES ON THIS. `pureChat` is read by the telemetry line below and
+   *    by nothing else in this file; a structural test fails if that stops being
+   *    true. Goal decomposition still runs, the final verifier still runs, the same
+   *    three model calls still happen. L2-A measures who WOULD have been eligible;
+   *    it does not make anyone faster, and it must not, until the Owner has seen
+   *    real turns classified.
+   *
+   * ⛔ The classifier is pure and fail-closed, so this call cannot throw, cannot
+   *    read, cannot spend a model call, and cannot change the turn.
+   */
+  const pureChat = classifyPureChatEligibility(message, routeDecision)
+  try {
+    console.log('[AROMA-PURE-CHAT]', JSON.stringify({
+      requestId,
+      event: 'PURE_CHAT_ELIGIBILITY',
+      eligible: pureChat.eligible === true,
+      reason: pureChat.reason,
+      route: (routeDecision && routeDecision.route) || null,
+      shadow: true,
+      timestamp: new Date().toISOString()
+    }))
+  } catch (_) { /* telemetry is never load-bearing */ }
 
   // ── STEP 1b: THE UTILITY ROUTE — LIVE, and it answers before anything else ─
   //
