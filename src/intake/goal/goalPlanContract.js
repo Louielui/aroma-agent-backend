@@ -44,6 +44,7 @@ const {
   isSourceLevelOperation
 } = require('./operationCatalogue')
 const { executiveFrameSchema, judgeExecutiveFrame } = require('./executiveFrame')
+const { CAPABILITY_NAMES, capabilityEntry } = require('../../governance/selfCapability')
 
 /** ⛔ Matches the Owner's max-4-reads bound, expressed at plan time. */
 const MAX_FACTS = 4
@@ -97,10 +98,25 @@ function goalPlanSchema () {
      * that the role is now asked what he is trying to ACCOMPLISH before it is asked which
      * facts that would take, and both answers now travel.
      */
-    required: ['question_restated', 'executive_frame', 'facts', 'joins'],
+    required: ['question_restated', 'executive_frame', 'requested_capability', 'facts', 'joins'],
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
       executive_frame: executiveFrameSchema(),
+      /**
+       * ⛔ S1 — WHICH OF HER OWN ABILITIES HE IS ASKING FOR, OR NULL.
+       *
+       * Same call, one more field. It is a CLOSED enum from the capability registry, spelled
+       * `anyOf` because Anthropic 400s an enum beside a nullable union — the lesson this file
+       * already carries for `operation`. Most turns are null and must be: 「生意慢咗，你點睇？」
+       * is a judgement, not a capability question.
+       */
+      requested_capability: {
+        anyOf: [
+          { type: 'string', enum: CAPABILITY_NAMES },
+          { type: 'null' }
+        ],
+        description: 'Owner 係咪喺度要求你用自己某一項能力（例如加 Calendar 事件、睇圖、讀 Gmail）？係就填嗰個名，唔係就填 null。普通問意見、問判斷一律 null。'
+      },
       facts: {
         /**
          * ⛔ NO `maxItems`/`minItems` HERE, AND THE REASON IS A MEASURED 400.
@@ -395,10 +411,20 @@ function judgeMinimality (facts) {
  */
 function executiveUnderstandingOf (raw, judgedFrame) {
   const restated = String((raw && raw.question_restated) || '').trim()
+  /**
+   * ⛔ S1 — MEMBERSHIP, NEVER A GUESS. A name outside the registry resolves to null rather
+   * than to the nearest plausible capability; the same rule the executive frame's enums keep.
+   * The implementation state is read from the registry, never from the model's opinion.
+   */
+  const capEntry = capabilityEntry(raw && raw.requested_capability)
+  const requestedCapability = capEntry ? capEntry.capability : null
+  const requestedCapabilityImplementation = capEntry ? capEntry.implementation : null
   const frame = judgedFrame && judgedFrame.ok ? judgedFrame.frame : null
   if (!frame && !restated) return null
   return Object.freeze({
     questionRestated: restated || null,
+    requestedCapability,
+    requestedCapabilityImplementation,
     executiveFrame: frame,
     executiveFrameRefused: (judgedFrame && judgedFrame.ok) ? null : (judgedFrame ? judgedFrame.reason : null)
   })
@@ -452,6 +478,8 @@ function judgeGoalPlan (raw) {
          * 「the model returned nothing」 and 「the model invented an enum」 are not one line.
          */
         executiveFrame: judgedFrame.ok ? judgedFrame.frame : null,
+        requestedCapability: understanding ? understanding.requestedCapability : null,
+        requestedCapabilityImplementation: understanding ? understanding.requestedCapabilityImplementation : null,
         executiveFrameRefused: judgedFrame.ok ? null : judgedFrame.reason,
       facts: Object.freeze(facts),
       joins: Object.freeze(joins),

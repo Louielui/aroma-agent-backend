@@ -184,6 +184,7 @@ function logWorldAsk (requestId, resolverIntent, decision, asked) {
 const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
 const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
+const { capabilityBlock } = require('../governance/selfCapability')
 // A post-generation check: she may not ask the Owner what his own system is (02e430e, twice).
 const { enforceInternalSystemAnswer } = require('../governance/internalSystemAnswer')
 // ⛔ No path ships silence. Measured 17:18: a completed call stored content:"".
@@ -903,6 +904,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             factPlanReason: (out && out.ok) ? null : ((out && out.reason) || null),
             durationMs: Math.max(0, Math.round(elapsed()))
           }))
+          /**
+           * ⛔ S1 — ENUMS AND A BOOLEAN. No Owner text, no reply, no business value, no
+           * credential. Nothing branches on this line.
+           */
+          const capU = (out && out.ok && out.plan) ? out.plan : (out && out.understanding) || null
+          console.log('[AROMA-S1]', JSON.stringify({
+            event: 'SELF_CAPABILITY',
+            requestId,
+            requestedCapability: capU ? (capU.requestedCapability || null) : null,
+            implementationState: capU ? (capU.requestedCapabilityImplementation || null) : null,
+            capabilityContextPresent: true
+          }))
         } catch (_) { /* a measurement may never break a turn */ }
         // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
         // be taken from real runs rather than estimated, and a refusal that costs a call is
@@ -1182,6 +1195,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * read only FACTS; the frame is not consulted there and cannot widen a source, an
          * operation, a write, an execution or an egress.
          */
+        /**
+         * ⛔ S1 — WHAT SHE CAN ACTUALLY DO, ON EVERY CHAT TURN.
+         *
+         * Deterministic, static, ~20 lines. No model produced it and none can argue with it.
+         * Placed BELOW the executive frame (prepended first, so it ends up lower): the goal
+         * is what he wants, this is what the build can do, and the goal reads first.
+         *
+         * ⛔ PRODUCT FACT, NOT EVIDENCE AND NOT AUTHORITY. No row, no id, no date, no value —
+         * nothing an Answer Plan could cite. 「implemented」 opens no source: READ_ACCESS, the
+         * per-source flags and sourcesForPlan still decide every read, and execution
+         * governance still decides every write.
+         */
+        effPrompt = capabilityBlock() + String.fromCharCode(10, 10) + effPrompt
         const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
         if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
 

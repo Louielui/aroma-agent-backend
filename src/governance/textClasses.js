@@ -91,6 +91,10 @@ const FILE_CLASS = Object.freeze({
   // and its continuity instruction. Translating any of it changes what she takes the current
   // conversation to mean, which is the whole point of the block. MODEL, like its siblings.
   'intake/goal/workingContext.js': CLASS.MODEL,       //  X2 — the live-conversation block
+  // S1: the SELF CAPABILITY block she is SHOWN, plus each capability's Owner-facing label.
+  // Translating 「未實作」 into something softer changes what she believes she can do, which is
+  // the one thing this registry exists to keep true. MODEL.
+  'governance/selfCapability.js': CLASS.MODEL,        //  S1 — the capability block and labels
   // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.

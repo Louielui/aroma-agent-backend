@@ -127,8 +127,18 @@ function judgeExecutiveFrame (raw) {
  */
 function executiveFrameBlock (plan) {
   const frame = plan && plan.executiveFrame
+  /**
+   * ⛔ S1 — WHEN HE IS ASKING FOR AN ABILITY, THE TRUTH ABOUT IT TRAVELS WITH THE GOAL.
+   *
+   * 「幫我加到 calendar」 has a goal AND a capability. Carrying the goal without the capability
+   * is how a model ends up asking for a start time for an event it can never create.
+   * `not_implemented` is authoritative and is stated as such; `implemented` is stated WITHOUT
+   * any claim that it works right now, because nothing here has tried it.
+   */
+  const cap = plan && plan.requestedCapability
+  const capImpl = plan && plan.requestedCapabilityImplementation
   const restated = plan && typeof plan.questionRestated === 'string' ? plan.questionRestated.trim() : ''
-  if (!frame && !restated) return null
+  if (!frame && !restated && !cap) return null
 
   const lines = ['【EXECUTIVE FRAME — 呢個係理解，唔係證據，亦唔係授權】']
   if (restated) lines.push('Owner 想解決嘅係：' + restated)
@@ -139,6 +149,15 @@ function executiveFrameBlock (plan) {
     lines.push('點先算有用：' + frame.successDefinition)
     if (frame.answerPosture === 'provisional') {
       lines.push('（provisional：資料唔齊係一個限制，唔係叫你唔記得咗個問題。畀一個初步判斷、講明唔肯定喺邊、同埋補到啲乜就會準啲。）')
+    }
+  }
+  if (cap) {
+    lines.push('佢要求嘅能力：' + cap)
+    if (capImpl === 'not_implemented') {
+      lines.push('⛔ 呢個能力喺依家呢個版本【未實作】。呢個係確定嘅事實，唔係暫時連唔到。' +
+        '唔好應承做、唔好扮問細節當跟住會做、亦唔好講成係connection問題。照直講做唔到，然後講返你幫得到嘅係邊部分。')
+    } else if (capImpl === 'implemented') {
+      lines.push('呢個能力已實作，但已實作唔等於而家連得到 —— 除非今個回合真係試過，否則唔好講到實得。')
     }
   }
   lines.push('⛔ 讀唔到嘅嘢係限制，唔係換題目嘅理由。手上啱好有嘅資料要服務上面呢個目標；如果佢答唔到，就照直講答唔到，唔好改為答另一條佢啱好答到嘅問題。')

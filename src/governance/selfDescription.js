@@ -42,6 +42,14 @@
 // contract, reached through `operationsForSources`. Importing a name that does not exist gave
 // `undefined.map`, which the tests caught before this ever described anything.
 const { AROMA_OPERATIONS, operationsForSources } = require('../context/readOperations')
+/**
+ * ⛔ S1 — ONE REGISTRY, RE-EXPORTED, NEVER A SECOND TABLE.
+ *
+ * This module already refuses to read capability out of configuration —
+ * 「我唔會用設定嚟當答案」 is its own sentence. S1 gives that rule a structure; putting a
+ * second capability list here is how the structure and the prose start disagreeing.
+ */
+const selfCapability = require('./selfCapability')
 
 /**
  * ⛔ THE NAMES SHE ANSWERS TO, AND WHY THIS IS NOT `availableWorlds`.
@@ -168,4 +176,13 @@ function describe (deps) {
   ].join('')
 }
 
-module.exports = { selfDescription, describe, namesInternalSystem, INTERNAL_NAMES }
+module.exports = {
+  selfDescription,
+  describe,
+  namesInternalSystem,
+  INTERNAL_NAMES,
+  /** ⛔ S1: the canonical capability facts, reachable from the one self-description door. */
+  capabilities: selfCapability.REGISTRY,
+  capabilityBlock: selfCapability.capabilityBlock,
+  implementationOf: selfCapability.implementationOf
+}
