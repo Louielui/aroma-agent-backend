@@ -25,7 +25,7 @@
  * authorisation to reach somewhere the Owner's switches do not already allow.
  */
 
-const { resolveReadOperation } = require('../../context/readOperations')
+const { resolveReadOperation, isSourceLevelOperation } = require('../../context/readOperations')
 
 /** Exact-match, default OFF. Not `resolveFlag`'s READ_ACCESS family — this one has no shadow. */
 const GOAL_FLAG = 'GOAL_DECOMPOSER'
@@ -50,6 +50,18 @@ function goalDecomposerEnabled (env) {
  */
 function sourceOfOperation (operation) {
   const name = typeof operation === 'string' ? operation.trim() : ''
+  /**
+   * ⛔ C4 — A BARE NAME IS ACCEPTED ONLY BY MEMBERSHIP, NEVER BY SHAPE.
+   *
+   * The dot rule above exists because `resolveReadOperation` treats ANY bare word as a
+   * source, so spelling alone would have been authority. That property is not relaxed: the
+   * test moved from 「does it look like a source」 to 「is it IN the derived source table」, and
+   * `dropbox`, `gmail2` and every other invention still fall through to null exactly as before.
+   *
+   * ⛔ AND MEMBERSHIP IS STILL NOT PERMISSION. The caller intersects with the turn's enabled
+   * sources on the very next lines; naming gmail in a plan cannot read gmail.
+   */
+  if (isSourceLevelOperation(name)) return name
   if (!name.includes('.')) return null
   const hit = resolveReadOperation(name)
   return (hit && hit.source) || null

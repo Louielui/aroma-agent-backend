@@ -40,7 +40,8 @@
  */
 
 const {
-  operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER
+  operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER,
+  isSourceLevelOperation
 } = require('./operationCatalogue')
 
 /** ⛔ Matches the Owner's max-4-reads bound, expressed at plan time. */
@@ -64,7 +65,13 @@ const REASON = Object.freeze({
   /** The endpoint returned no rows, so nothing was learned. Not evidence of absence. */
   UNOBSERVED_FIELD: 'the_endpoint_returned_no_rows_so_this_field_is_unobserved',
   /** Populated on a small enough share of rows that an answer would speak for almost nobody. */
-  SPARSE_FIELD: 'field_is_populated_on_too_few_rows_to_answer_from'
+  SPARSE_FIELD: 'field_is_populated_on_too_few_rows_to_answer_from',
+  /**
+   * ⛔ C4. The source is real, connected and readable — and nobody has measured what a row
+   * from it reliably carries. PARTIAL is therefore the honest ceiling: the read may be
+   * planned, and no field-level claim rides on it.
+   */
+  SOURCE_LEVEL_NO_FIELD_PROOF: 'the_whole_source_can_be_read_but_its_row_fields_are_unmeasured'
 })
 
 const JOIN_STATUS = Object.freeze({ UNVERIFIED: 'UNVERIFIED', NO_SHARED_TIME_BASIS: 'NO_SHARED_TIME_BASIS' })
@@ -187,6 +194,31 @@ function judgeFact (fact) {
   // ⛔ RULE 1, first half. No operation named ⇒ nothing in this system carries it. The
   // absence of an enum member decides this, not the model's judgement.
   if (!base.operation) return Object.assign({}, base, { status: STATUS.UNAVAILABLE, reason: REASON.NO_OPERATION })
+
+  /**
+   * ⛔ C4 — CLASS B LEAVES BEFORE THE ARОМА JUDGE, AND THAT ORDER IS THE WHOLE SAFETY.
+     *
+   * A source-level operation has no catalogue entry, no entity and no measured fields, so
+   * every check below would refuse it for the wrong reason — UNKNOWN_OPERATION, then
+   * NO_FIELDS, then UNKNOWN_FIELD. Returning here means the Aroma rules never had to be
+   * loosened to admit an external source: they are simply not the rules that apply.
+     *
+   * ⛔ PARTIAL, NEVER AVAILABLE. `sourcesForPlan` reads necessity and operation, so a
+   * REQUIRED fact still keeps this source eligible for the turn; but nothing downstream is
+   * told a field exists on it, because nothing has measured one.
+     *
+   * ⛔ AND IT IS STILL A CLOSED SET. Membership comes from the derived table, so `dropbox`,
+   * `gmail2` and `aroma_system.fake` fall through to UNKNOWN_OPERATION exactly as before.
+   */
+  if (isSourceLevelOperation(base.operation)) {
+    return Object.assign({}, base, {
+      status: STATUS.PARTIAL,
+      reason: REASON.SOURCE_LEVEL_NO_FIELD_PROOF,
+      // Declared fields are not carried forward: an unmeasured name must not travel as
+      // though the judge had checked it.
+      fields: []
+    })
+  }
 
   const entry = operationEntry(base.operation)
   if (!entry) return Object.assign({}, base, { status: STATUS.UNAVAILABLE, reason: REASON.UNKNOWN_OPERATION })

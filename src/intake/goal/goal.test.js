@@ -45,7 +45,11 @@ test('*** the catalogue is assembled from the frozen tables, and every operation
 
 test('*** ⛔ the prompt catalogue carries SHAPES and not one data row ***', () => {
   const forPrompt = cat.catalogueForPrompt()
-  const allowed = ['operation', 'label', 'entity', 'numbers', 'fields', 'arrays', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit']
+  // ⛔ C4 ADDS `kind`, AND IT IS STRUCTURE, NOT DATA — which is the property this guards.
+  // The catalogue now carries two classes: typed Aroma operations with a measured field
+  // capture, and source-level reads with none. The planner has to be able to tell them
+  // apart, because the second class must not be handed fields it never had.
+  const allowed = ['operation', 'label', 'entity', 'numbers', 'fields', 'arrays', 'hasLocation', 'hasTimestamp', 'note', 'window', 'limit', 'kind']
   for (const row of forPrompt) {
     for (const k of Object.keys(row)) assert.ok(allowed.includes(k), '⛔ unexpected key reaching the model: ' + k)
   }
@@ -121,7 +125,18 @@ test('*** ⛔ there is no cost entity and no costing operation to name in the fi
   const ents = branchesOf(schema.properties.facts.items.properties.entity)
   assert.equal(ops.some((o) => o && /cost/i.test(o)), false)
   assert.equal(ents.some((e) => e && /cost/i.test(e)), false)
-  assert.equal(ops.filter(Boolean).length, AROMA_OPERATIONS.length, 'the enum IS the closed list')
+  /**
+   * ⛔ SAME PROPERTY, TWO AUTHORITATIVE TABLES. The enum still admits nothing that is not
+   * declared somewhere: C4 did not open it, it joined a second closed table to the first.
+   * Comparing the whole list, in order, against both declarations is strictly stronger than
+   * the length check it replaces — a wrong name of the right count used to pass.
+   */
+  const { SOURCE_LEVEL_OPERATIONS } = require('../../context/readOperations')
+  const declared = [
+    ...AROMA_OPERATIONS.map((o) => o.operation),
+    ...SOURCE_LEVEL_OPERATIONS.map((o) => o.operation)
+  ]
+  assert.deepEqual(ops.filter(Boolean), declared, 'the enum IS the closed list')
 })
 
 /* ═══ RULE 2 — A FIELD NAME IS NOT A FIELD ════════════════════════════════ */

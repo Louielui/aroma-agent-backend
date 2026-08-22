@@ -102,6 +102,45 @@ const PUBLIC_OPERATIONS = Object.freeze([
   })
 ])
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ C4 — THE SOURCE-LEVEL OPERATIONS, AS DATA, DERIVED FROM THE ONE SOURCE LIST.
+ *
+ * `operationsForSources` below has always encoded this rule in control flow: a source that
+ * is neither aroma_system nor public_knowledge IS its own operation. That rule was reachable
+ * only by calling the function with a list you already had — so the goal decomposer, which
+ * needs the VOCABULARY rather than a mapping, could not see it and was built against the six
+ * Aroma operations alone. Production request 97425e9d proved the cost: the Owner asked for
+ * Gmail, B had no way to name Gmail, the plan declared the need unavailable, and an Aroma
+ * inventory operation went in its place.
+ *
+ * ⛔ DERIVED FROM `ALL_SOURCES`, NEVER RETYPED. A second hand-written list is how planning and
+ * execution drifted apart in the first place. Add a source there and it appears here; there is
+ * no edit that can make the two disagree.
+ *
+ * ⛔ AND IT IS NOT ADDED TO `ALL_OPERATIONS` / `BY_OPERATION`. Those drive `label()`, which
+ * writes the reasoning model's operation gloss — putting these there would silently reword a
+ * production prompt that C4 has no business touching. This constant is exported for the
+ * planning vocabulary and consumed nowhere else.
+ *
+ * ⛔ `public_knowledge` IS EXCLUDED BY CONSTRUCTION, not by a filter someone must remember.
+ * It owns PUBLIC_OPERATIONS and its egress is governed elsewhere; C4 does not widen it.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const { ALL_SOURCES } = require('./liveClients')
+
+const SOURCE_LEVEL_OPERATIONS = Object.freeze(
+  ALL_SOURCES
+    .filter((s) => s !== AROMA_SOURCE && s !== PUBLIC_SOURCE)
+    .map((s) => Object.freeze({ operation: s, source: s, method: null }))
+)
+
+/** Membership test against the closed set. A bare string is NOT authority — this table is. */
+function isSourceLevelOperation (name) {
+  const n = typeof name === 'string' ? name.trim() : ''
+  return n !== '' && SOURCE_LEVEL_OPERATIONS.some((o) => o.operation === n)
+}
+
 const ALL_OPERATIONS = Object.freeze([...AROMA_OPERATIONS, ...PUBLIC_OPERATIONS])
 const BY_OPERATION = new Map(ALL_OPERATIONS.map((o) => [o.operation, o]))
 const BY_METHOD = new Map(AROMA_OPERATIONS.map((o) => [o.method, o]))
@@ -238,6 +277,8 @@ function describeOperations (operations = [], live = [], unavailable = []) {
 module.exports = {
   AROMA_SOURCE,
   AROMA_OPERATIONS,
+  SOURCE_LEVEL_OPERATIONS,
+  isSourceLevelOperation,
   operationsForSources,
   resolveReadOperation,
   operationForAromaMethod,

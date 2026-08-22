@@ -39,7 +39,7 @@
  * catalogue says CANDIDATE and means it.
  */
 
-const { AROMA_OPERATIONS } = require('../../context/readOperations')
+const { AROMA_OPERATIONS, SOURCE_LEVEL_OPERATIONS, isSourceLevelOperation } = require('../../context/readOperations')
 const {
   METRICS_OF, ENTITY_OF, ROW_SHAPE, QUERY_SCOPE, SERVER_LIMITS, LIMIT_KNOWN
 } = require('../../context/adapters/aromaSystemRead')
@@ -193,14 +193,62 @@ function buildCatalogue () {
   return Object.freeze(AROMA_OPERATIONS.map(entryFor))
 }
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ C4 — TWO CLASSES, AND THE SECOND ONE PROMISES LESS ON PURPOSE.
+ *
+ * CLASS A (above): a typed Aroma operation. Its entity, fields, tiers and coverage were
+ * CAPTURED against the live API on a stated date, so the judge can refuse a field by
+ * arithmetic. Nothing in C4 touches that.
+ *
+ * CLASS B (here): a source-level read. Gmail, Drive, Calendar and GitHub DO go through
+ * `makeContextResult`, so a row has a shape — but the shape is METHOD-DEPENDENT and was never
+ * captured the way the Aroma endpoints were: a Gmail LIST returns `fields:{}` while a hydrated
+ * message returns subject/from/date, and github emits `branch` and `file_content` entity
+ * strings that are not even in the closed ENTITY_TYPES table. So there is no measured field
+ * contract to promise, and this class deliberately promises none.
+ *
+ * ⛔ WHAT IT MAY SAY IS EXACTLY ONE THING: 「this source can be read」. That is enough to stop
+ * the defect — a required Gmail fact now names `gmail`, so `sourcesForPlan` keeps Gmail
+ * eligible and the requirement block stops calling it nonexistent — and it is the most that
+ * can be said without measuring first.
+ *
+ * ⛔ THESE ENTRIES ARE NOT IN `CATALOGUE`. `operationEntry`, `fieldTier`, `coverageOf` and
+ * `capturedFieldsFor` keep answering about typed operations only, so no external source can
+ * reach the Aroma judge and no Aroma rule had to be relaxed to let one in.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const SOURCE_CATALOGUE = Object.freeze(SOURCE_LEVEL_OPERATIONS.map((o) => Object.freeze({
+  operation: o.operation,
+  source: o.source,
+  // ⛔ NULL, AND IT MEANS NULL. A row from this source has no single measured entity type.
+  entityType: null,
+  metricFields: Object.freeze([]),
+  rowShape: null,
+  queryScope: null
+})))
+
+/** Owner-facing name, taken from the one label table already derived from ALL_SOURCES. */
+function sourceLabel (source) {
+  try {
+    const { LABELS } = require('../readStateGuard')
+    return LABELS[source] || source
+  } catch (_) { return source }
+}
+
 const CATALOGUE = buildCatalogue()
 
 const operationEntry = (operation) => CATALOGUE.find((e) => e.operation === operation) || null
 
 /** Every operation name the decomposer may use. This IS the schema enum. */
-const operationNames = () => CATALOGUE.map((e) => e.operation)
+// ⛔ BOTH CLASSES. This IS the schema enum, and it is the only place the two vocabularies
+// are joined. Typed operations keep their existing order, so an Aroma plan's options are
+// byte-identical to before; the source-level names are appended.
+const operationNames = () => [...CATALOGUE.map((e) => e.operation), ...SOURCE_CATALOGUE.map((e) => e.operation)]
 
 /** Every entity type the six operations produce. There is no cost entity, and that matters. */
+// ⛔ TYPED ONLY, DELIBERATELY. A source-level operation has no measured entity, so offering
+// one here would invent a guarantee the capture never made.
 const entityTypes = () => Array.from(new Set(CATALOGUE.map((e) => e.entityType).filter(Boolean)))
 
 /**
@@ -278,7 +326,7 @@ function arrayShapeOf (operation, field) {
  * ⛔ NO ROWS. The decomposer plans against shapes and never sees data.
  */
 function catalogueForPrompt () {
-  return CATALOGUE.map((e) => ({
+  const typed = CATALOGUE.map((e) => ({
     operation: e.operation,
     label: e.label,
     entity: e.entityType,
@@ -320,10 +368,26 @@ function catalogueForPrompt () {
     window: e.queryScope ? e.queryScope.window : null,
     limit: e.serverLimit === null ? 'none' : e.serverLimit
   }))
+  /**
+   * ⛔ RENDERED AS WHAT IT IS: a readable source with NO field guarantee. `fields: []` and
+   * `entity: null` are not omissions to be filled in — they are the honest statement, and the
+   * note says so in the language the planner is answering in.
+   */
+  const sources = SOURCE_CATALOGUE.map((e) => ({
+    operation: e.operation,
+    label: sourceLabel(e.source),
+    kind: 'source',
+    entity: null,
+    fields: [],
+    note: '整個來源可以讀。但呢個來源冇經量度嘅欄位保證，所以 entity 同 fields 要留空，亦唔好聲稱具體欄位。'
+  }))
+  return [...typed, ...sources]
 }
 
 module.exports = {
   CATALOGUE,
+  SOURCE_CATALOGUE,
+  isSourceLevelOperation,
   CANDIDATE_FIELDS,
   CAPTURED_ON,
   ENDPOINT_OF_INTENT,
