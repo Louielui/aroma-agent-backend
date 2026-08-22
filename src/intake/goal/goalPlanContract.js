@@ -380,17 +380,45 @@ function judgeMinimality (facts) {
 }
 
 /**
+ * ⛔ X2 — EXECUTIVE UNDERSTANDING IS JUDGED SEPARATELY FROM THE FACT PLAN.
+ *
+ * MEASURED, production f4ffa922 and 53e4b40d: the Cognitive Core returned a perfectly good
+ * understanding and ZERO facts — the honest answer for a turn that needs no data at all —
+ * and `plan_named_no_facts` threw the WHOLE result away, frame included. Two turns in a row
+ * the Owner talked to a system that had understood him and then discarded the understanding.
+ *
+ * ⛔ AND THE FACT PLAN KEEPS ITS FAIL-CLOSED SEMANTICS EXACTLY. This returns understanding
+ * BESIDE a refusal; it does not convert the refusal into an answer. `decomposeOnce` still
+ * yields `null` for a refused plan, so `sourcesForPlan(null, …)` still narrows NOTHING and
+ * the pre-B fallback still applies. Zero facts must never become 「the model proved no read
+ * is needed」 — that would make an omission into an authority.
+ */
+function executiveUnderstandingOf (raw, judgedFrame) {
+  const restated = String((raw && raw.question_restated) || '').trim()
+  const frame = judgedFrame && judgedFrame.ok ? judgedFrame.frame : null
+  if (!frame && !restated) return null
+  return Object.freeze({
+    questionRestated: restated || null,
+    executiveFrame: frame,
+    executiveFrameRefused: (judgedFrame && judgedFrame.ok) ? null : (judgedFrame ? judgedFrame.reason : null)
+  })
+}
+
+/**
  * Judge a raw decomposer plan.
  * @returns {{ok:boolean, reason?:string, plan?:object}}
  */
 function judgeGoalPlan (raw) {
+  // ⛔ X2: judged FIRST, so a refused fact plan can still return what he was understood to want.
+  const earlyFrame = judgeExecutiveFrame(raw && raw.executive_frame)
+  const understanding = executiveUnderstandingOf(raw, earlyFrame)
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.facts)) {
-    return { ok: false, reason: PLAN_REFUSED.NOT_AN_OBJECT }
+    return { ok: false, reason: PLAN_REFUSED.NOT_AN_OBJECT, understanding }
   }
   // ⛔ REFUSED, NOT TRUNCATED. Silently dropping the fifth fact would report a bounded plan
   // that never was, and 「no silent caps」 is a rule this project already paid for.
-  if (raw.facts.length > MAX_FACTS) return { ok: false, reason: PLAN_REFUSED.TOO_MANY_FACTS }
-  if (raw.facts.length === 0) return { ok: false, reason: PLAN_REFUSED.NO_FACTS }
+  if (raw.facts.length > MAX_FACTS) return { ok: false, reason: PLAN_REFUSED.TOO_MANY_FACTS, understanding }
+  if (raw.facts.length === 0) return { ok: false, reason: PLAN_REFUSED.NO_FACTS, understanding }
 
   const facts = raw.facts.map(judgeFact)
   const joins = (Array.isArray(raw.joins) ? raw.joins : []).map(judgeJoin)
@@ -411,7 +439,7 @@ function judgeGoalPlan (raw) {
   // hazard. The model's own `sufficient` never reaches this line.
   const sufficient = facts.every((f) => f.status === STATUS.AVAILABLE) && joins.length === 0 && hazards.length === 0
   const minimality = judgeMinimality(facts)
-  const judgedFrame = judgeExecutiveFrame(raw && raw.executive_frame)
+  const judgedFrame = earlyFrame
 
   return {
     ok: true,

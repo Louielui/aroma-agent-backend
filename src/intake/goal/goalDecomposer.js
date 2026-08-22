@@ -67,7 +67,20 @@ function contextSection (contextBlocks) {
   ]
 }
 
-function buildPrompt (question, catalogue, contextBlocks) {
+/**
+ * ⛔ X2 — THE CURRENT EXCHANGE, KEPT APART FROM MEMORY ON PURPOSE.
+ *
+ * `contextSection` above carries recall of OTHER conversations. This carries the turns of
+ * THIS one. They are rendered as two different blocks with two different labels because
+ * they answer two different questions — 「what did we decide before」 versus 「what are we in
+ * the middle of right now」 — and production 7b0699ce proved the second one was missing.
+ */
+function workingSection (workingContext) {
+  const block = (workingContext && typeof workingContext.block === 'string') ? workingContext.block : ''
+  return block ? [block, ''] : []
+}
+
+function buildPrompt (question, catalogue, contextBlocks, workingContext) {
   return [
     /**
      * ⛔ THE ORDER OF THESE FIVE STEPS IS THE TRANCHE.
@@ -89,6 +102,7 @@ function buildPrompt (question, catalogue, contextBlocks) {
     'Owner 條問題：',
     question,
     '',
+    ...workingSection(workingContext),
     ...contextSection(contextBlocks),
     '你可以要求嘅讀取操作（呢個就係全部，冇其他）：',
     JSON.stringify(catalogue, null, 1),
@@ -128,7 +142,7 @@ async function decomposeGoal (input = {}) {
   let usage = null
   try {
     const res = await input.callModel({
-      prompt: buildPrompt(question, catalogue, input.contextBlocks),
+      prompt: buildPrompt(question, catalogue, input.contextBlocks, input.workingContext),
       responseFormat: { type: 'json_schema', name: 'goal_plan', schema: goalPlanSchema(), strict: true }
     })
     // The adapter may hand back a parsed object or a JSON string; both are accepted, and
@@ -141,7 +155,14 @@ async function decomposeGoal (input = {}) {
   }
 
   const judged = judgeGoalPlan(raw)
-  if (!judged.ok) return { ok: false, reason: judged.reason }
+  /**
+   * ⛔ X2 — A REFUSED FACT PLAN STILL REPORTS WHAT HE WAS UNDERSTOOD TO WANT.
+   *
+   * `ok:false` still means 「there is no usable fact plan」 and callers still treat it exactly
+   * as they did — `decomposeOnce` returns null, `sourcesForPlan` narrows nothing, the pre-B
+   * fallback stands. What changes is that the understanding no longer dies with it.
+   */
+  if (!judged.ok) return { ok: false, reason: judged.reason, understanding: judged.understanding || null }
 
   return {
     ok: true,

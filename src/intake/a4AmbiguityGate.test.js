@@ -404,7 +404,10 @@ test('*** L / O — an explicit mixed need is ALLOWED, and both reads proceed **
     // ⛔ INVERTED ON PURPOSE. The old gate was told which worlds existed; the resolver is NOT —
     // availability must not decide meaning. It sees his words and nothing else.
     assert.equal(v.calls[0].availableWorlds, undefined, 'availability may not bias meaning')
-    assert.deepEqual(Object.keys(v.calls[0]).sort(), ['ownerMessages', 'schema', 'system'])
+    // ⛔ X2 adds `goalContext` — the Executive Goal, as meaning. The property this line guards
+    // is that ACCESS does not decide MEANING, and that is unchanged: still no proposedWorld,
+    // no availableWorlds, no capability, no evidence.
+    assert.deepEqual(Object.keys(v.calls[0]).sort(), ['goalContext', 'ownerMessages', 'schema', 'system'])
     assert.equal(String(out.reply).includes('你想睇'), false, 'mixed is not ambiguity — it does not re-ask')
   })
 })

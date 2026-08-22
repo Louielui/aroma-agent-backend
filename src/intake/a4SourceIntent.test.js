@@ -192,7 +192,20 @@ test('*** ⛔ the resolver sees Owner words only — and is told nothing about t
     assert.deepEqual(v.calls[0].ownerMessages, ['OWNER_PRIOR', '我哋自己嘅成本點'])
     // ⛔ THE COMPLETE INPUT SURFACE. No proposedWorld — that is what biased the old gate into
     // answering 「may I proceed?」. No availableWorlds — availability must not decide meaning.
-    assert.deepEqual(Object.keys(v.calls[0]).sort(), ['ownerMessages', 'schema', 'system'])
+    /**
+     * ⛔ X2 ADDS `goalContext`, AND THE FENCE'S SUBSTANCE IS UNCHANGED.
+     *
+     * The property this guards is that MEANING is not decided by ACCESS: no proposedWorld, no
+     * availableWorlds, no evidence, no capability. `goalContext` is none of those — it is the
+     * already-produced Executive Goal, derived from his own question, and it exists because
+     * production 7b0699ce showed a resolver with four ways to pick a world and no way to say
+     * the question has none. The forbidden-value scan below is unchanged and now covers it too.
+     */
+    assert.deepEqual(Object.keys(v.calls[0]).sort(), ['goalContext', 'ownerMessages', 'schema', 'system'])
+    for (const forbidden of ['proposedWorld', 'availableWorlds', 'authorisedSources', 'evidence', 'connector', 'trust']) {
+      assert.equal(Object.prototype.hasOwnProperty.call(v.calls[0], forbidden), false,
+        '⛔ ' + forbidden + ' reached the resolver')
+    }
     const handed = JSON.stringify(v.calls[0]) + buildIntentPrompt(v.calls[0].ownerMessages)
     for (const x of INTERNAL_VALUES.concat(['NO_ROLE', 'ODD'])) {
       assert.equal(handed.includes(x), false, `⛔ ${x} reached the resolver`)

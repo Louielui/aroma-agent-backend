@@ -87,6 +87,10 @@ const FILE_CLASS = Object.freeze({
   // X1: schema `description` text she is TOLD, plus the EXECUTIVE FRAME block she is SHOWN.
   // Translating either changes what she understands the Owner to want — MODEL, like its siblings.
   'intake/goal/executiveFrame.js': CLASS.MODEL,       //  X1 — the frame contract and its block
+  // X2: the WORKING CONTEXT block she is SHOWN — its label, its 「context not evidence」 warning
+  // and its continuity instruction. Translating any of it changes what she takes the current
+  // conversation to mean, which is the whole point of the block. MODEL, like its siblings.
+  'intake/goal/workingContext.js': CLASS.MODEL,       //  X2 — the live-conversation block
   // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.

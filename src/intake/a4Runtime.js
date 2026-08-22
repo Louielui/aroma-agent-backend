@@ -197,8 +197,10 @@ function createA4RuntimeDependencies (options = {}) {
     const finalCall = structuredCall(adapterFor, 'finalVerifier', 'final_knowledge_requirement')
     const plannerCall = structuredCall(adapterFor, 'publicQueryPlanner', 'public_query_plan')
 
-    deps.sourceIntentResolver = async ({ ownerMessages, system, schema }) =>
-      sirCall(buildIntentPrompt(ownerMessages), system || INTENT_SYSTEM, schema || INTENT_SCHEMA)
+    // ⛔ X2: `goalContext` is threaded through and nothing else moves. Same role, same pinned
+    // model, same effort, same schema — only the prompt gains the bounded goal.
+    deps.sourceIntentResolver = async ({ ownerMessages, goalContext, system, schema }) =>
+      sirCall(buildIntentPrompt(ownerMessages, goalContext), system || INTENT_SYSTEM, schema || INTENT_SCHEMA)
 
     deps.finalVerifier = async ({ ownerMessages, availableWorlds, system, schema }) =>
       finalCall(renderOwnerMessages(ownerMessages) + renderAvailableWorlds(availableWorlds), system, schema)

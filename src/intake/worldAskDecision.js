@@ -57,7 +57,14 @@ const ASK_REASON = Object.freeze({
   /** Routed internal, but the named source is not authorised — the world is not the problem. */
   CAPABILITY_UNAVAILABLE: 'capability_unavailable',
   /** Nothing established it. This is what the clarification exists for. */
-  GENUINELY_AMBIGUOUS: 'genuinely_ambiguous'
+  GENUINELY_AMBIGUOUS: 'genuinely_ambiguous',
+  /**
+   * ⛔ X2 — THE GOAL HAS NO INTERNAL/PUBLIC DIMENSION, so there is nothing to clarify.
+   * Distinct from RESOLVER_SETTLED on purpose: settled means 「he meant internal」; this means
+   * 「that is not a property of this question」. Neither obliges a world, and the difference
+   * has to be readable in a log.
+   */
+  WORLD_NOT_APPLICABLE: 'world_not_applicable_to_goal'
 })
 
 /**
@@ -72,6 +79,22 @@ function decideWorldAsk (input) {
   const i = (input && typeof input === 'object') ? input : {}
   const routerSources = Array.isArray(i.routerSources) ? i.routerSources : []
   const authorised = Array.isArray(i.authorisedSources) ? i.authorisedSources : []
+
+  /**
+   * ⛔ X2 — ASKED AND ANSWERED BEFORE 「ambiguous」 IS EVEN CONSIDERED.
+   *
+   * Production 7b0699ce: route CONVERSATION, resolver `ambiguous`, so this returned ask:true
+   * and the caller replaced a twelve-second Opus answer with 「internal or public?」 on a turn
+   * about designing Xiangxiang's own interface. The resolver was not wrong — its vocabulary
+   * had no way to say the question HAS no world — and this gate had no way to hear it. Both
+   * halves are repaired: the vocabulary gained `not_applicable`, and this reads it.
+   *
+   * ⛔ IT GRANTS NOTHING. `requiredWorlds: null` is the same 「no obligation」 every other
+   * non-asking branch returns. No source opens, no read is skipped, no verifier is bypassed.
+   */
+  if (i.resolverIntent === 'not_applicable') {
+    return { ask: false, requiredWorlds: null, reason: ASK_REASON.WORLD_NOT_APPLICABLE }
+  }
 
   /**
    * ⛔ ONLY A RECOGNISED VERDICT COUNTS AS SETTLED, and the first version got this wrong.

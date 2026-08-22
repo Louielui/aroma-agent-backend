@@ -192,6 +192,7 @@ const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
 const { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock } = require('./goal/goalGate')
+const { buildWorkingContext } = require('./goal/workingContext')
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -592,6 +593,35 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * the counts report as null rather than as zero.
    */
   let goalPlanObserved = null
+  /**
+   * ⛔ X2 — THE UNDERSTANDING OUTLIVES THE FACT PLAN.
+   *
+   * Production f4ffa922 and 53e4b40d returned a good understanding and ZERO facts — the
+   * honest shape for a turn needing no data — and `plan_named_no_facts` discarded the whole
+   * result, frame included. `goalPlanObserved` still holds ONLY a usable fact plan, so
+   * `sourcesForPlan` is unchanged and zero facts still authorise nothing. This holds what he
+   * was understood to want, whichever way the fact plan went.
+   */
+  let goalUnderstandingObserved = null
+  /**
+   * ⛔ X2 — THE GOAL, AS MEANING, FOR THE SOURCE RESOLVER.
+   *
+   * Semantic fields only: what he wants, what kind of work it is, whether a judgement is
+   * owed, and what a useful answer would do. No source, no connector, no availability, no
+   * row, no permission — the resolver is still answering 「what does he mean」 and is still
+   * never told what it can reach.
+   */
+  function goalContextFor (u) {
+    if (!u) return null
+    const fr = u.executiveFrame
+    const out = []
+    if (u.questionRestated) out.push('目標：' + u.questionRestated)
+    if (fr) out.push('工作類型：' + fr.taskType)
+    if (fr) out.push('需要落判斷：' + (fr.decisionNeeded ? '係' : '唔使'))
+    if (fr) out.push('作答姿態：' + fr.answerPosture)
+    if (fr) out.push('點先算有用：' + fr.successDefinition)
+    return out.length ? out.join(String.fromCharCode(10)) : null
+  }
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
@@ -790,6 +820,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const out = await decomposeGoal({
           question: message,
           /**
+           * ⛔ X2 — THE TURN HE IS ACTUALLY IN THE MIDDLE OF.
+           *
+           * `history` already arrives with this request and already reaches the main brain
+           * through `buildDistillPrompt`. It never reached the one component whose whole job
+           * is understanding him — measured, 7b0699ce — so a correction two turns into a
+           * design conversation was read as a standalone question. Bounded and rendered here;
+           * no store, no archive, no connector, no model call.
+           */
+          workingContext: buildWorkingContext(history),
+          /**
            * ⛔ X1 — ALREADY BUILT, A FEW LINES ABOVE. `recallBlockCache` and
            * `convRecallBlockCache` are assigned by the decision- and conversation-recall
            * blocks earlier in THIS prompt build; handing the strings over costs one array.
@@ -842,6 +882,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             usedConversationRecall: !!convRecallBlockCache,
             durationMs: Math.max(0, Math.round(elapsed()))
           }))
+          /**
+           * ⛔ X2 — SHAPE ONLY. Counts, booleans and enums: never the working-context text,
+           * never an Owner or assistant message, never question_restated or the success
+           * definition. Nothing branches on this line.
+           */
+          const wc = buildWorkingContext(history)
+          console.log('[AROMA-X2]', JSON.stringify({
+            event: 'WORKING_CONTEXT',
+            requestId,
+            workingContextPresent: !!(wc && wc.block),
+            workingContextMessages: wc ? wc.messages : 0,
+            workingContextChars: wc ? wc.chars : 0,
+            // ⛔ READ FROM THE RESULT, NOT FROM THE CAPTURED VARIABLE. On the refusal path the
+            // capture happens at `return`, AFTER this line, so reading the variable reported
+            // 「no frame」 on precisely the turns X2 exists to keep one. Found by smoke.
+            executiveFramePresent: !!((out && out.ok && out.plan && out.plan.executiveFrame) ||
+              (out && out.understanding && out.understanding.executiveFrame)),
+            factPlanOk: !!(out && out.ok),
+            factPlanReason: (out && out.ok) ? null : ((out && out.reason) || null),
+            durationMs: Math.max(0, Math.round(elapsed()))
+          }))
         } catch (_) { /* a measurement may never break a turn */ }
         // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
         // be taken from real runs rather than estimated, and a refusal that costs a call is
@@ -859,6 +920,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             durationMs: Math.max(0, Math.round(elapsed()))
           }))
         } catch (_) { /* telemetry is never load-bearing */ }
+        // ⛔ X2: a refused fact plan still reports what he was understood to want. `ok:false`
+        // keeps its exact meaning — no usable fact plan — and null is still returned below,
+        // so sourcesForPlan narrows nothing and the pre-B fallback stands.
+        if (!(out && out.ok) && out && out.understanding) goalUnderstandingObserved = out.understanding
         return (out && out.ok && out.plan) ? out.plan : null
       } catch (_) {
         // ⛔ A FAILED ATTEMPT IS STILL A COST. B swallows every failure by contract
@@ -1013,6 +1078,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         if (goalDecomposerEnabled(process.env) && !forced) {
           const plan = await decomposeOnce()
           goalPlanObserved = plan // C1-A: capture only. Nothing downstream reads this.
+          // ⛔ X2: from the usable plan when there is one; `decomposeOnce` fills it from a
+          // refused plan otherwise. Either way the goal survives to the main prompt.
+          if (plan) goalUnderstandingObserved = plan
           const wanted = sourcesForPlan(plan, all)
           if (wanted !== null) all = wanted
           goalBlock = requirementBlock(plan)
@@ -1114,7 +1182,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * read only FACTS; the frame is not consulted there and cannot widen a source, an
          * operation, a write, an execution or an egress.
          */
-        const frameBlock = executiveFrameBlock(goalPlanObserved)
+        const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
         if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
 
         /**
@@ -1811,7 +1879,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const resolved = await sourceIntents.get({
         resolve: (readDeps && readDeps.sourceIntentResolver) || null,
         message,
-        history
+        history,
+        // ⛔ X2: meaning, never access — see goalContextFor. The resolver still answers
+        // 「what does he mean」 and is still never told what it can reach.
+        goalContext: goalContextFor(goalUnderstandingObserved)
       })
       logOwnerSourceIntent({ requestId, outcome: resolved.outcome, ownerMessageCount: ownerAuthoredContext(message, history).length, durationMs: Date.now() - startedAt2 })
       // ⛔ SAME DECISION, SAME INPUTS, BOTH GATE SITES. Two places converting `ambiguous` into
@@ -1836,6 +1907,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       } else if (worldAsk0.requiredWorlds) {
         initialObligation = worldAsk0.requiredWorlds
         forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_OBLIGATION, { intent: resolved.intent })
+        } else if (resolved.intent === 'not_applicable') {
+          /**
+           * ⛔ X2 — NO WORLD, THEREFORE NO OBLIGATION AND NO QUESTION.
+           *
+           * Without this branch the fall-through below would set `initialObligation` to
+           * `{internal:false, public:false}` — an obligation to read nothing, which is not the
+           * same statement as having none, and would travel as one. The turn proceeds on what
+           * the model already produced; nothing is read and nothing is opened.
+           */
+          initialObligation = null
+          forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_OBLIGATION, { intent: resolved.intent })
       } else if (resolved.intent === 'ambiguous') {
         // Routed internal but unreachable: no obligation, no question, no read. The reply's
         // honesty about that is the read-state guards' job, not this gate's.
@@ -1986,7 +2068,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const r = await sourceIntents.get({
         resolve: (readDeps && readDeps.sourceIntentResolver) || null,
         message,
-        history
+        history,
+        // ⛔ X2: meaning, never access — see goalContextFor. The resolver still answers
+        // 「what does he mean」 and is still never told what it can reach.
+        goalContext: goalContextFor(goalUnderstandingObserved)
       })
       if (!sourceIntentLogged) {
         sourceIntentLogged = true

@@ -52,7 +52,21 @@ const INTENT = Object.freeze({
   INTERNAL: 'internal',
   PUBLIC: 'public',
   MIXED: 'mixed',
-  AMBIGUOUS: 'ambiguous'
+  AMBIGUOUS: 'ambiguous',
+  /**
+   * ⛔ X2 — 「THIS QUESTION IS NOT ABOUT A WORLD AT ALL」, AND IT OBLIGES NOTHING.
+   *
+   * Production 7b0699ce: the Owner was refining how Xiangxiang's own workspace should be
+   * designed. Internal-versus-public is not a distinction that question HAS, so the resolver
+   * had no true answer available — its vocabulary only offered four ways to pick a world —
+   * and it correctly said `ambiguous`. The clarification then replaced his answer.
+   *
+   * ⛔ IT IS NOT PERMISSION. `WORLDS_FOR_INTENT` maps it to BOTH WORLDS FALSE: it authorises
+   * no internal read, no public read, and it cannot satisfy a required read — `readMatchesIntent`
+   * refuses every capability under it. It means exactly one thing: do not interrupt him with a
+   * world question when the distinction is not load-bearing to the goal.
+   */
+  NOT_APPLICABLE: 'not_applicable'
 })
 
 /**
@@ -70,8 +84,8 @@ const INTENT_SCHEMA = Object.freeze({
   properties: {
     intent: {
       type: 'string',
-      enum: ['internal', 'public', 'mixed', 'ambiguous'],
-      description: 'internal＝問我哋自己；public＝問出面；mixed＝明確要兩邊比較；ambiguous＝兩種都同樣講得通。'
+      enum: ['internal', 'public', 'mixed', 'ambiguous', 'not_applicable'],
+      description: 'internal＝問我哋自己；public＝問出面；mixed＝明確要兩邊比較；ambiguous＝兩種都同樣講得通；not_applicable＝呢條問題根本唔關「睇自己定睇出面」事（例如傾緊點設計、點運作、或者更正緊你頭先理解錯咗嘅嘢）。'
     }
   }
 })
@@ -131,8 +145,26 @@ ambiguous —— 兩種理解同樣講得通，而揀邊一邊會變成答緊另
  * loss happened precisely because assembly lived in each seam; a future seam cannot drop a
  * field the semantics depend on if the module owns the builder.
  */
-function buildIntentPrompt (ownerMessages) {
-  return 'Louie 自己打過嘅說話（舊到新）：\n' + ownerMessages.map((m, i) => (i + 1) + '. ' + m).join('\n')
+/**
+ * ⛔ X2 — THE ACTIVE GOAL TRAVELS, AND IT IS LABELLED AS MEANING, NOT ACCESS.
+ *
+ * This resolver was given his words and nothing else, on purpose. That fence stands for
+ * EVIDENCE and CAPABILITY — no rows, no availability, no permissions, no assistant prose.
+ * But production 7b0699ce showed the cost of also withholding the QUESTION: asked to refine
+ * how Xiangxiang's own interface should be designed, it had four ways to pick a world and no
+ * way to say the question has none, so it said `ambiguous` and the clarification replaced
+ * his answer.
+ *
+ * ⛔ WHAT IS ADDED IS SEMANTIC ONLY — the already-produced Executive Goal, never a source, a
+ * connector, a row or a permission. It still answers 「what does he MEAN」; it is still never
+ * asked 「what can I reach」.
+ */
+function buildIntentPrompt (ownerMessages, goalContext) {
+  const words = 'Louie 自己打過嘅說話（舊到新）：\n' + ownerMessages.map((m, i) => (i + 1) + '. ' + m).join('\n')
+  const g = (typeof goalContext === 'string' && goalContext.trim() !== '') ? goalContext.trim() : ''
+  if (!g) return words
+  return words + '\n\n【GOAL CONTEXT — 呢個係佢想解決乜；唔係證據，亦唔係授權】\n' + g +
+    '\n如果呢個目標根本唔關「睇自己定睇出面」事，就答 not_applicable，唔好迫自己二揀一。'
 }
 
 /** What the resolved intent OBLIGES, once the server has decided knowledge is needed. */
@@ -140,10 +172,15 @@ const WORLDS_FOR_INTENT = Object.freeze({
   [INTENT.INTERNAL]: Object.freeze({ internal: true, public: false }),
   [INTENT.PUBLIC]: Object.freeze({ internal: false, public: true }),
   [INTENT.MIXED]: Object.freeze({ internal: true, public: true }),
-  [INTENT.AMBIGUOUS]: null
+  [INTENT.AMBIGUOUS]: null,
+  // ⛔ X2 — BOTH FALSE. No world is obliged, and no world is opened.
+  [INTENT.NOT_APPLICABLE]: Object.freeze({ internal: false, public: false })
 })
 
 /** ⛔ THE CLARIFICATION. A MEANING question, naming no system, tool or source. */
+/** ⛔ X2 — bounded, like every other model-facing string in this file. */
+const MAX_GOAL_CONTEXT_CHARS = 400
+
 const CLARIFY_QUESTION = '你想我睇我哋自己嘅實際情況，定係外面公開嘅情況？'
 
 const OUTCOME = Object.freeze({
@@ -151,6 +188,7 @@ const OUTCOME = Object.freeze({
   PUBLIC: 'public',
   MIXED: 'mixed',
   AMBIGUOUS: 'ambiguous',
+  NOT_APPLICABLE: 'not_applicable',
   UNAVAILABLE: 'unavailable'
 })
 
@@ -193,6 +231,11 @@ async function runOwnerSourceIntent (input = {}) {
       // availableWorlds, no evidence, no assistant text, no capability, no persona. There is no
       // parameter here to forget to strip.
       ownerMessages: ownerMessages.slice(),
+      // ⛔ X2: bounded semantic goal only. Still no proposedWorld, availableWorlds, evidence,
+      // capability or persona — the strip-nothing property of this call is unchanged.
+      goalContext: (typeof input.goalContext === 'string' && input.goalContext.trim() !== '')
+        ? input.goalContext.trim().slice(0, MAX_GOAL_CONTEXT_CHARS)
+        : null,
       system: INTENT_SYSTEM,
       schema: INTENT_SCHEMA
     })
@@ -217,7 +260,9 @@ function createTurnIntentCache () {
   const byContext = new Map()
   return {
     async get (input = {}) {
-      const key = JSON.stringify(ownerAuthoredContext(input.message, input.history))
+      // ⛔ X2: the goal is part of the input, so it is part of the key. Without it the first
+      // (goal-free) answer would be reused for every later decision in the same turn.
+      const key = JSON.stringify([ownerAuthoredContext(input.message, input.history), input.goalContext || null])
       if (byContext.has(key)) return byContext.get(key)
       const r = await runOwnerSourceIntent(input)
       byContext.set(key, r)
@@ -234,6 +279,9 @@ function worldForCapability (capability) {
 
 /** Does a proposed read satisfy the resolved intent? `mixed` accepts either side. */
 function readMatchesIntent (capability, intent) {
+  // ⛔ X2: 「the world question does not apply」 satisfies NO read. It is the absence of an
+  // obligation, never a licence for one.
+  if (intent === INTENT.NOT_APPLICABLE) return false
   if (intent === INTENT.MIXED) return true
   return worldForCapability(capability) === intent
 }
@@ -257,6 +305,7 @@ module.exports = {
   INTENT_SCHEMA,
   INTENT_SYSTEM,
   WORLDS_FOR_INTENT,
+  MAX_GOAL_CONTEXT_CHARS,
   CLARIFY_QUESTION,
   OUTCOME,
   buildIntentPrompt,
