@@ -105,7 +105,21 @@ function buildSafetyHeader (sources = [], opts = {}) {
 const SCOPE_PREAMBLE = 'SCOPE — how many rows MATCHED THE QUERY ISSUED, and how many are below. Take counts from these lines, NEVER from the number of lines you can count below. A matched count is NOT how many exist: never state a wider total unless a line gives one.'
 
 /** A scope line is bounded like any other, but generously — it carries meaning, not content. */
-const MAX_SCOPE_LINE_CHARS = 320
+/**
+ * ⛔ 320 → 400, AND THE EIGHTY CHARACTERS ARE ACCOUNTED FOR.
+ *
+ * X4.3 replaced a bare 「(complete)」 with a NAMED verdict — 「(retrieval complete)」 — because
+ * the bare word answered the context question while every reader took it for the retrieval
+ * one. Naming it costs ten characters, and  is the last segment on the line, so on a
+ * adapter-described read those ten pushed 現有存量 — what the numbers MEAN — off the end
+ * (answerPlanEvidence.test.js:188).
+ *
+ * ⛔ AND THE OLD BOUND WAS FIVE CHARACTERS FROM FAILING ANYWAY. Measured on the inventory read: A source that describes nothing now emits NO
+ * completeness word at all rather than a misleading one, so its line is SHORTER than before
+ * (215 vs 226 measured) — the block budget that prices out a whole source is better off, not
+ * worse. This raise is bounded to the two adapters that actually know something.
+ */
+const MAX_SCOPE_LINE_CHARS = 400
 
 /**
  * ONE SOURCE'S SCOPE, or null when there is nothing true to say.
@@ -138,7 +152,48 @@ function renderScopeLine (e) {
   const total = Number.isFinite(e.sourceTotal)
     ? `${matched}; ${e.sourceTotal} records in the wider source`
     : `${matched}; TOTAL IN THE WIDER SOURCE IS UNKNOWN — do not state or imply how many exist`
-  const completeness = typeof e.completeness === 'string' && e.completeness ? ` (${e.completeness})` : ''
+  /**
+   * ⛔ X4.3 — ONE WORD WAS ANSWERING THREE QUESTIONS, AND IT ANSWERED THE LEAST USEFUL ONE.
+   *
+   * This printed `e.completeness`, which describeRead sets to CONTEXT completeness:
+   * `contextShownCount >= retrievedCount`. On production ad10ec74 that rendered
+   * 「2 shown (complete)」 beside 「TOTAL IN THE WIDER SOURCE IS UNKNOWN」 — two opposite
+   * statements in one line — and the model reflected both back, an absence claim in the
+   * lead and 「無法確認清單是否涵蓋全部內容」 in the limitations.
+   *
+   * RETRIEVAL — did the connector get every row for the bounded query? The only one that
+   * can support an absence claim, and the one that was never shown.
+   * CONTEXT   — did every retrieved row reach the prompt? What 「complete」 used to mean.
+   *
+   * Both are named. Neither borrows the other's word.
+   */
+  const retrieval = typeof e.retrievalCompleteness === 'string' ? e.retrievalCompleteness : 'unknown'
+  const ctx = typeof e.contextCompleteness === 'string' ? e.contextCompleteness : 'unknown'
+  // ⛔ THE RETRIEVAL VERDICT IS ALWAYS NAMED; THE CONTEXT ONE EARNS ITS SPACE.
+  //
+  // The defect was a BARE 「complete」 that silently answered the context question while the
+  // reader took it for the retrieval one. Naming the question fixes that outright. Repeating
+  // 「context complete」 on every read adds ~27 chars per source to a 6000-char block shared
+  // with the rows — enough to price a whole source out of it (readContext.test.js:487) — and
+  // says nothing the retrieval verdict has not already made unambiguous. So it is stated only
+  // when it DIFFERS: exactly when a reader would otherwise be misled.
+  /**
+   * ⛔ THE MISLEADING WORD IS REMOVED, NOT REPLACED BY A LONGER ONE.
+   *
+   * A read that does not describe itself knows nothing about retrieval, and this line ALREADY
+   * says so twice — 「match count unknown」 and 「TOTAL IN THE WIDER SOURCE IS UNKNOWN」. Base
+   * nonetheless appended 「(complete)」, the CONTEXT verdict, which is the word production
+   * ad10ec74 read as retrieval. A third 「unknown」 would cost 9 characters per source in a
+   * 6000-character block shared with the rows — measurably enough to price a whole source out
+   * of it (readContext.test.js:487) — to restate what the line has already said.
+   *
+   * So: when retrieval is genuinely KNOWN the verdict is named, and when it is not, nothing is
+   * claimed at all. Strictly better than base on both counts — the misleading word is gone and
+   * the line is SHORTER.
+   */
+  const completeness = retrieval === 'unknown'
+    ? (ctx === 'complete' ? '' : ` (context ${ctx})`)
+    : (ctx === 'complete' ? ` (retrieval ${retrieval})` : ` (retrieval ${retrieval}; context ${ctx})`)
   // 'SCOPE ' LEADS THE LINE, and the source tag follows it. A scope line is ABOUT a read;
   // an item line IS one, and they must not be confusable — by the model, or by anything
   // that reads the block. Without the prefix both begin '[calendar]', which is one string
@@ -163,7 +218,7 @@ function renderScopeLine (e) {
   // because silence reads as 「fine」.
   if (e.truncated === true) parts.push('TRUNCATED by a server limit — more rows matched than were returned')
   else if (e.truncated === null && Number.isFinite(e.limit)) {
-    parts.push(`returned exactly the server limit (${e.limit}) — CANNOT TELL whether more matched`)
+    parts.push(`API cap ${e.limit}; whether more matched is UNKNOWN`)
   }
   if (e.dataAsOf === null) parts.push('data currency unknown')
 
