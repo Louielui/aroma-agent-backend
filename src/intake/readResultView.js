@@ -31,6 +31,7 @@
  */
 
 const { LABELS, enforceReadState } = require('./readStateGuard') // Owner-facing source names, derived from ALL_SOURCES
+const { judgeSectionHeading, itemSourceLabel, VERDICT } = require('./sectionAttribution') // X4.2: a heading may not name a source its rows lack
 const { labelForOperation } = require('../context/readOperations') // the OPERATION name, from the one canonical table
 const { intentFor } = require('../context/readContext') // THE one intent table — never a second classifier
 const { enforceRouteEvidence } = require('./routeEvidenceGuard') // STEP 4: an answer with nothing behind it
@@ -262,6 +263,46 @@ function labelFor (operation, readKey, source) {
  * paragraph. Keyed by readKey rather than source: 倉存 and 訂貨建議 are both `aroma_system`,
  * and under the source name they became one indistinguishable block.
  */
+/**
+ * ⛔ X4.2 — ONE VALIDATED SECTION, HEADING CHECKED AGAINST ITS OWN ROWS.
+ *
+ * Production 866e77d9: two Calendar appointments and four Drive documents printed under one
+ * model-authored 「日曆」 heading. Every row was correctly resolved and still carried its
+ * `readKey` right here; nothing had ever compared the label to the rows.
+ *
+ * ⛔ THE MODEL'S WORDS ARE NEVER REWRITTEN. A heading claiming a source its rows do not all
+ * come from is DROPPED, not corrected — inventing a better heading would be a renderer
+ * authoring business prose. A heading claiming no source is not examined at all.
+ *
+ * ⛔ AND IT IS A FUNCTION, NOT AN INLINE LOOP, SO THE FIXTURES CAN CALL THE REAL ONE. The first
+ * version of this change left the loop inline and the tests reproduced its logic beside it —
+ * three renderer mutations then survived a green suite, because nothing was exercising the
+ * renderer at all.
+ */
+function renderPlanSection (sec) {
+  const items = (sec && Array.isArray(sec.items)) ? sec.items : []
+  const judged = judgeSectionHeading({ heading: sec && sec.heading, items })
+  const headingSurvives = judged.verdict === VERDICT.ALLOW
+  // A blanked heading (one the validator would not stand behind) is omitted, not printed as a
+  // bare '###'. A refused source claim is omitted for the same reason.
+  const lines = (sec && sec.heading && headingSurvives) ? [`### ${sec.heading}`] : []
+  /**
+   * ⛔ SOMETHING TRUE REPLACES WHAT WAS REMOVED. Dropping the heading alone would leave six
+   * rows under nothing, and he still could not tell the two appointments from the four
+   * documents. Rows are attributed whenever the section spans more than one READ — which also
+   * keeps 發票 and 倉存 apart inside a perfectly correct 餐廳系統 heading (Blocker-8).
+   */
+  const attributeItems = !headingSurvives || judged.multiRead
+  for (const it of items) {
+    const facts = (Array.isArray(it.facts) ? it.facts : []).map((f) => `${f.field} ${f.value}`).join('｜')
+    // Fail soft: a row whose provenance the server never resolved gets NO label, never a guess.
+    const src = attributeItems ? itemSourceLabel(it.readKey, labelFor) : null
+    const title = src ? `［${src}］${it.title}` : it.title
+    lines.push(facts ? `**${title}**\n${facts}` : `**${title}**`)
+  }
+  return lines.join('\n\n')
+}
+
 function renderSection (operation, items, source) {
   const label = labelFor(operation, null, source)
   const shown = items.slice(0, CAPS.maxItemsPerSection)
@@ -549,16 +590,7 @@ function renderValidatedPlan (input) {
   // decision to render sections had drifted into two different tests of the same thing.
   const fellBack = (!v.answerSurvived && !rowsSurvived) || contentLost
   const sections = fellBack ? [] : v.plan.sections
-  for (const sec of sections) {
-    // A blanked heading (one the validator would not stand behind) is omitted, not
-    // printed as a bare '###'.
-    const lines = sec.heading ? [`### ${sec.heading}`] : []
-    for (const it of sec.items) {
-      const facts = it.facts.map((f) => `${f.field} ${f.value}`).join('｜')
-      lines.push(facts ? `**${it.title}**\n${facts}` : `**${it.title}**`)
-    }
-    out.push(lines.join('\n\n'))
-  }
+  for (const sec of sections) out.push(renderPlanSection(sec))
 
   // WHAT WAS REMOVED IS SAID ON SCREEN, not only in a log the Owner never reads. A silently
   // shorter answer looks exactly like a complete one; a stated omission is a number he can
@@ -886,6 +918,7 @@ module.exports = {
   sanitizeOpinion,
   splitModelReply,
   oneQuestion,
+  renderPlanSection,
   statusSegment,
   fieldOf,
   dayOf,

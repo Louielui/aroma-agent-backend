@@ -97,6 +97,7 @@ const FILE_CLASS = Object.freeze({
   'governance/selfCapability.js': CLASS.MODEL,        //  S1 — the capability block and labels
   'intake/executiveJudgment.js': CLASS.MODEL,        //  X3 — the judgement directive and the rendered position labels
   'intake/investigationState.js': CLASS.MODEL,       //  X4 — the investigation block and its read-state labels
+  'intake/sectionAttribution.js': CLASS.MATCHING,    //  X4.2 — source aliases MATCHED against model headings; translating one deletes the guard
   // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.
