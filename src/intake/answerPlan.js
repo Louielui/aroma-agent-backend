@@ -36,6 +36,7 @@
  */
 
 const { ENTITY_TYPES } = require('../context/contextResult')
+const { judgeNegativeExistence } = require('./negativeExistence') // X4.3: 「這次讀到的沒有」 is not 「根本沒有」
 // ⛔ A4-0A: the gated read-argument shape. Nothing here is used while the A4 gate is off.
 const { READ_ARGS_SCHEMA } = require('./a4Contract')
 const { t } = require('../i18n/t')
@@ -1416,7 +1417,13 @@ const SENTENCE_DROP = Object.freeze({
   /** A name this turn did not retrieve — recall is not evidence. */
   NAME_NOT_IN_EVIDENCE: 'name_not_in_evidence',
   /** Rule 7: a plan that cites nothing may not name rows. */
-  ROW_NAME_NOT_CITED: 'row_name_not_cited'
+  ROW_NAME_NOT_CITED: 'row_name_not_cited',
+  /**
+   * X4.3: an absence claim about a PERIOD, where the read cannot prove the period was
+   * covered and completely retrieved. The retrieved-row sentence survives; only the leap
+   * to 「the world contains none」 is removed.
+   */
+  NEGATIVE_EXISTENCE_UNPROVEN: 'negative_existence_unproven'
 })
 
 /**
@@ -1483,6 +1490,10 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
   // level, and `shape` says WHICH failure it was.
   const dropSentence = (why, shape) => { droppedSentences++; drops.push(shape ? { kind: 'sentence', why, shape } : { kind: 'sentence', why }) }
   const kept = []
+  // ⛔ THE CALENDAR READ, IF THIS TURN HAD ONE. Absence of a calendar read is itself a
+  // refusal: a sentence claiming the calendar is empty next week, on a turn that never
+  // read the calendar, is exactly the claim with the least behind it.
+  const calendarRead = (Array.isArray(evidenceSets) ? evidenceSets : []).find((e) => e && e.source === 'calendar') || null
   for (const raw of splitSentences(plan.directAnswer || '')) {
     // Relabel FIRST, so the check runs on the text the Owner will actually read.
     const s = relabel(raw)
@@ -1494,6 +1505,24 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
     if (!proseIsGrounded(s, index)) { dropSentence(SENTENCE_DROP.NAME_NOT_IN_EVIDENCE); continue }
     // RULE 7: not citing evidence means not naming rows — unless the Owner named it first.
     if (barredTitles.some((t) => s.includes(t))) { dropSentence(SENTENCE_DROP.ROW_NAME_NOT_CITED); continue }
+    /**
+     * ⛔ X4.3 — 「這次讀到的項目沒有一項落在下星期」 IS KEPT. 「下星期沒有任何已排定安排」 IS NOT,
+     * unless the read proves the window covered the period AND retrieval inside it was
+     * complete. Production ad10ec74 shipped the second sentence off the strength of the
+     * first, joined by 「所以」.
+     *
+     * ⛔ IT FAILS CLOSED, AND TODAY THAT MEANS IT ALWAYS REFUSES. Phase 0 found no structural
+     * representation of an Owner period anywhere in the repo — localTime.js has the building
+     * blocks and no parser — and this tranche was told not to invent one. So `requestedPeriod`
+     * is null, the proof cannot complete, and the honest sentence is the one that survives.
+     */
+    const neg = judgeNegativeExistence({
+      sentence: s,
+      read: calendarRead,
+      // No period parser exists. Null until one does; the rule is complete and pinned.
+      requestedPeriod: null
+    })
+    if (neg.blocked) { dropSentence(SENTENCE_DROP.NEGATIVE_EXISTENCE_UNPROVEN); continue }
     kept.push(s)
   }
   let directAnswer = kept.join('').slice(0, LIMITS.maxDirectAnswerChars)

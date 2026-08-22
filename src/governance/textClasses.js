@@ -98,6 +98,7 @@ const FILE_CLASS = Object.freeze({
   'intake/executiveJudgment.js': CLASS.MODEL,        //  X3 — the judgement directive and the rendered position labels
   'intake/investigationState.js': CLASS.MODEL,       //  X4 — the investigation block and its read-state labels
   'intake/sectionAttribution.js': CLASS.MATCHING,    //  X4.2 — source aliases MATCHED against model headings; translating one deletes the guard
+  'intake/negativeExistence.js': CLASS.MATCHING,     //  X4.3 — absence/period markers MATCHED against model prose; translating one deletes the gate
   // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.
