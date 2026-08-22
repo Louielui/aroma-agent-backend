@@ -2259,6 +2259,69 @@ const DISTILL_WITH_READ_DECISION_SCHEMA = Object.freeze({
  */
 const CHAT_KNOWLEDGE_MODES = Object.freeze(['recommend', 'ask', 'chat'])
 
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ C5 — WHAT `facts` IS FOR, SAID OUT LOUD, ON THE LAST CALL ONLY.
+ *
+ * MEASURED, production 0c3c0371: asked to prioritise four emails, the model wrote five
+ * analytical fields per row — 「為何優先」, 「性質」, 「提及供應商」 — into `facts`, and the
+ * validator deleted NINE of them (`not_a_value`, `multiple_numbers`, `residue_not_a_value`).
+ * It was right to: `facts` carries VALUES FROM THE ROW, and a judgement about a row is not a
+ * value the row contains.
+ *
+ * ⛔ AND THE FIELD HAD NO DESCRIPTION AT ALL. Every other field in this schema tells the model
+ * what it is for; this one — the one that failed — said nothing. The model was not disobeying
+ * a rule, it was guessing at an unstated one, and paying output tokens for the guess.
+ *
+ * ⛔ IT WEAKENS NOTHING. Not one validation rule moves: the same facts are accepted and the
+ * same facts are dropped. This only tells the model, before it writes, what the server was
+ * always going to do afterwards — and points the judgement at the two fields that DO carry
+ * it, `directAnswer` and `limitations`.
+ *
+ * ⛔ TERMINAL ONLY. Applied from `answerPlanFormat` when composeOnly is true, so an ordinary
+ * reasoning call is byte-identical to before. A change that leaked into the planning calls
+ * would be a different experiment wearing this one's name.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+function withTerminalComposeGuidance (schema) {
+  const items = schema && schema.properties && schema.properties.answerPlan &&
+    schema.properties.answerPlan.properties && schema.properties.answerPlan.properties.sections &&
+    schema.properties.answerPlan.properties.sections.items
+  const factsSchema = items && items.properties && items.properties.items &&
+    items.properties.items.items && items.properties.items.items.properties &&
+    items.properties.items.items.properties.facts
+  // ⛔ NO SHAPE, NO CHANGE. If the schema is not the one this describes, it is returned
+  // untouched rather than half-annotated.
+  if (!factsSchema) return schema
+
+  const described = Object.assign({}, factsSchema, {
+    description: '每項只放呢一行證據入面本身有嘅值（例如寄件人、日期、主旨）。唔好喺呢度寫判斷、原因或者評語 —— 「點解要優先」屬於 directAnswer，「有咩睇唔到」屬於 limitations。伺服器只會保留對得上證據嘅值，其餘會刪走。',
+    items: Object.assign({}, factsSchema.items, {
+      properties: Object.assign({}, factsSchema.items.properties, {
+        field: Object.assign({}, factsSchema.items.properties.field, { description: '欄位名，例如「寄件人」「日期」。' }),
+        value: Object.assign({}, factsSchema.items.properties.value, { description: '嗰一行證據本身寫住嘅值，原文照搬，唔好改寫或者計算。' })
+      })
+    })
+  })
+
+  const sectionItems = Object.assign({}, items.properties.items, {
+    items: Object.assign({}, items.properties.items.items, {
+      properties: Object.assign({}, items.properties.items.items.properties, { facts: described })
+    })
+  })
+  return Object.assign({}, schema, {
+    properties: Object.assign({}, schema.properties, {
+      answerPlan: Object.assign({}, schema.properties.answerPlan, {
+        properties: Object.assign({}, schema.properties.answerPlan.properties, {
+          sections: Object.assign({}, schema.properties.answerPlan.properties.sections, {
+            items: Object.assign({}, items, { properties: Object.assign({}, items.properties, { items: sectionItems }) })
+          })
+        })
+      })
+    })
+  })
+}
+
 function withChatKnowledgeModes (schema, enabled) {
   if (!enabled) return schema
   const modeNode = schema && schema.properties && schema.properties.mode
@@ -2305,6 +2368,7 @@ module.exports = {
   withReadChoices,
   withReadArgs,
   withChatKnowledgeModes,
+  withTerminalComposeGuidance,
   CHAT_KNOWLEDGE_MODES,
   DISTILL_WITH_READ_DECISION_SCHEMA,
   STATUS_LABELS,

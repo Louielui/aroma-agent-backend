@@ -108,7 +108,7 @@ const { enforceTraditional, logTraditionalFlag } = require('./traditionalGuard')
 // executiveJudgmentShadow.test.js, which fails if anything ever does.
 const { classifyExecutiveJudgmentShadow, emitExecutiveJudgmentShadow } = require('./executiveJudgmentShadow')
 const { buildReadResultReply } = require('./readResultView') // the Owner-facing shape of a read result
-const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, withChatKnowledgeModes, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
+const { DISTILL_WITH_PLAN_SCHEMA, DISTILL_WITH_READ_DECISION_SCHEMA, withRowRefs, withReadChoices, withReadArgs, withChatKnowledgeModes, withTerminalComposeGuidance, validatePlan, minimalAnswer, logAnswerPlan } = require('./answerPlan') // the model decides, the server proves
 // ⛔ THE CLOSED VOCABULARY the model may pick a read from. It EXPANDS authorised sources; it
 // never adds one. See readOperations.js.
 const { operationsForSources, resolveReadOperation, operationForAromaMethod, describeOperations } = require('../context/readOperations')
@@ -1262,7 +1262,24 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
     const shaped = withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss)
-    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
+    /**
+     * ⛔ C5 — THE COMPOSITION CONTRACT, AND WHY IT IS NOT GATED ON composeOnly.
+     *
+     * The obvious gate is `composeOnly` — the reserved last call. It is the WRONG one, and the
+     * C5 fixture is what proved it: on production 0c3c0371 the 50.6-second call was reasoning
+     * step 2 returning `decisionType: 'final'`, and TURN_COST recorded `steps: 2`. The reserved
+     * compose never ran. Gating here on composeOnly would have been a no-op on the exact turn
+     * this tranche exists for.
+     *
+     * ⛔ SO THE GATE IS THE SCHEMA'S OWN MEANING. This branch is only reached when `planApplies`
+     * — evidence exists and an Answer Plan is owed. Every call that gets here is composing an
+     * answer over evidence, whether it is the reserved one or a step that chose to finish.
+     *
+     * ⛔ AND THE READ-PLANNING CALL IS UNTOUCHED. `distill_with_read_decision` returns above,
+     * before this line, so a call whose job is choosing a read never sees any of it.
+     */
+    const finalShaped = withTerminalComposeGuidance(shaped)
+    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: finalShaped }
   }
   let llmResult = null
   // ⛔ THE PROVIDER THAT PRODUCED THE ACCEPTED ENVELOPE. Set at the orchestration branch

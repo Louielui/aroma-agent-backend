@@ -85,12 +85,38 @@ function extractText (data, model) {
   }
 
   const kinds = blocks.map((b) => (b && typeof b.type === 'string') ? b.type : 'unknown')
-  const text = blocks
+  const textBlocks = blocks
     .filter((b) => b && b.type === TEXT_BLOCK && typeof b.text === 'string')
-    .map((b) => b.text)
-    .join('')
+  const text = textBlocks.map((b) => b.text).join('')
 
-  if (text) return text
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ C5 — WHAT THE RESPONSE WAS MADE OF, WITHOUT ANY OF WHAT IT SAID.
+   *
+   * `outputTokens` is the provider's total and it counts thinking blocks as well as text.
+   * On the 50.6-second production compose (0c3c0371) the only figure anyone had was 3,052
+   * output tokens — and nothing in this repo could say whether that was 3,052 tokens of
+   * answer, or 3,052 tokens of reasoning with a short answer at the end. Two very different
+   * problems, indistinguishable from outside, for want of four numbers.
+   *
+   * ⛔ SHAPE ONLY, AND IT DECIDES NOTHING. Character counts, block-type names and a boolean.
+   * No text, no thinking, no fragment of either — the failure path below already proves this
+   * file knows the difference between naming a shape and quoting it. Nothing branches on
+   * these fields; they exist to be read in a log after the fact.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  if (text) {
+    return {
+      text,
+      shape: {
+        textChars: text.length,
+        textBytes: Buffer.byteLength(text, 'utf8'),
+        textBlockCount: textBlocks.length,
+        blockKinds: kinds,
+        thinkingBlockPresent: kinds.some((k) => THINKING_BLOCKS.includes(k))
+      }
+    }
+  }
 
   // ⛔ NO TEXT. Say WHICH of the reasons it was, because they need different responses.
   const onlyThinking = kinds.length > 0 && kinds.every((k) => THINKING_BLOCKS.includes(k))
@@ -286,7 +312,10 @@ class ClaudeAdapter extends LLMAdapter {
     const latencyMs = Date.now() - t0
 
     const data = response.data
-    const text = extractText(data, this._model)
+    // ⛔ C5: the extractor returns { text, shape }. `shape` is structural metadata and is
+    // carried, never consulted — see the note in extractText.
+    const extracted = extractText(data, this._model)
+    const text = extracted.text
     const usage = {
       inputTokens: data.usage?.input_tokens || 0,
       outputTokens: data.usage?.output_tokens || 0,
@@ -302,7 +331,9 @@ class ClaudeAdapter extends LLMAdapter {
       // (e.g. 'end_turn' | 'max_tokens' | 'stop_sequence'). It is the decisive evidence
       // that a reply was truncated rather than malformed. Never a response body; a
       // provider without an equivalent simply yields null.
-      stopReason: (typeof data.stop_reason === 'string' && data.stop_reason) ? data.stop_reason : null
+      stopReason: (typeof data.stop_reason === 'string' && data.stop_reason) ? data.stop_reason : null,
+      /** C5 — structural only. Non-load-bearing: nothing in this repo branches on it. */
+      shape: extracted.shape
     }
   }
 }
