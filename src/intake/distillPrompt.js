@@ -4,6 +4,7 @@
 // the gate plus a pure admission filter, both of which are inert while A4 is off. The parser
 // still constructs a closed envelope from known fields and still grants no permission.
 const { a4ContractEnabled, admitReadArgs, a4SemanticRoutingEnabled, A4_SEMANTIC_GUIDANCE } = require('./a4Contract')
+const { JUDGMENT_KEY, judgeExecutiveJudgment } = require('./executiveJudgment') // X3: the position, judged not copied
 
 /**
  * distillPrompt.js — COO behaviour (not a chatbot).
@@ -334,6 +335,30 @@ function parseDistillResponse (text, diag) {
     }
   }
 
+
+  // ── X3 EXECUTIVE JUDGMENT: THE POSITION, AS A NAMED FIELD. ──────────────────
+  //
+  // ⛔ SAME REASON nextRead HAD TO BE ADDED HERE AND NOT ONLY TO THE SCHEMA: this function
+  // CONSTRUCTS a closed envelope from known keys, so a provider may return a judgement, the
+  // schema may accept it, and it still reaches nobody. That is exactly how the reasoning loop
+  // once appeared wired while doing nothing at all.
+  //
+  // ⛔ AND IT IS JUDGED, NOT COPIED. A status outside the closed list — or a `blocked` that
+  // smuggles a position in — is DROPPED, never normalised to the nearest legal value. The turn
+  // then behaves exactly as it did before X3: prose, and no manufactured stance.
+  //
+  // ⛔ `executiveJudgment`, NOT `judgment` — `base.judgment` above is the LEGACY COMMIT-MODE
+  // SUMMARY STRING and stays a string on every lane. Two different things, two names.
+  if (JUDGMENT_KEY in p) {
+    const judged = judgeExecutiveJudgment(p[JUDGMENT_KEY])
+    if (judged.ok) {
+      base[JUDGMENT_KEY] = judged.judgment
+    } else if (p[JUDGMENT_KEY] !== null && p[JUDGMENT_KEY] !== undefined) {
+      // The reason is a closed server-side enum, never model text — same discipline as modeCoerced.
+      console.warn('[AROMA-X3] executiveJudgment refused — ' + judged.reason)
+      if (diag && typeof diag === 'object') diag.judgmentRefused = judged.reason
+    }
+  }
   if (mode === 'recommend') {
     return { ...base,
       reasons: Array.isArray(p.reasons) ? p.reasons.filter(x => typeof x === 'string') : [],

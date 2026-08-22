@@ -193,6 +193,45 @@ const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
 const { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock } = require('./goal/goalGate')
+const { withJudgment, judgmentDirective, renderJudgment, JUDGMENT_KEY } = require('./executiveJudgment') // X3: position first, question last
+
+/**
+ * ⛔ X3 — THE POSITION GOES ON TOP, AND IT HAS TO HAPPEN *HERE*, AFTER THE VIEW.
+ *
+ * Phase 0 found the trap already documented three lines from this seam: buildReadResultReply
+ * MAY REBUILD THE REPLY FROM ROWS. Anything prepended to `guarded.reply` upstream survives
+ * enforceReadState, the self-description guard and enforceTraditional — and is then thrown
+ * away on exactly the read turns where a judgement matters most. So the judgement is attached
+ * to the bytes the Owner actually receives, `view.reply`, and to nothing else.
+ *
+ * ⛔ IT LEADS; IT NEVER REPLACES. The existing body — evidence sections, limitations and the
+ * Answer Plan's followUp question — is kept verbatim underneath. That ordering IS the tranche:
+ * a question may accompany a judgement, and can no longer stand in for one.
+ *
+ * ⛔ AND THE SERVER STILL AUTHORS NO OPINION. Every word of the stance came from the model;
+ * this function chooses placement, never content.
+ */
+function leadWithJudgment (view, distilled, requestId, path) {
+  const j = distilled && distilled[JUDGMENT_KEY]
+  const block = j ? renderJudgment(j) : null
+  if (!block) return view
+  const body = typeof view.reply === 'string' ? view.reply.trim() : ''
+  view.reply = body ? block + String.fromCharCode(10, 10) + body : block
+  try {
+    // ⛔ SHAPE ONLY. A closed status enum and three counts. No statement text, no uncertainty
+    // text, no change-condition text, no reply — the same rule every other line here keeps.
+    console.log('[AROMA-X3]', JSON.stringify({
+      requestId,
+      path,
+      status: j.status,
+      statementChars: j.statement.length,
+      uncertainties: j.uncertainties.length,
+      changeIf: j.changeIf.length,
+      ledReply: true
+    }))
+  } catch (_) { /* telemetry is never load-bearing */ }
+  return view
+}
 const { buildWorkingContext } = require('./goal/workingContext')
 
 /**
@@ -1210,6 +1249,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         effPrompt = capabilityBlock() + String.fromCharCode(10, 10) + effPrompt
         const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
         if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
+        /**
+         * ⛔ X3 — AND IT FAILS SOFT BY CONSTRUCTION. `judgmentDirective` returns null unless the
+         * Executive Understanding survived AND says a decision is owed, so a refused frame, a
+         * decomposer that never ran, and an ordinary retrieval turn all produce exactly the prompt
+         * that shipped before X3 — not a degraded one. X3 asks for a judgement; it never invents
+         * the belief that one is due.
+         *
+         * ⛔ AND IT ADDS NO MODEL CALL. It is text on the SAME prompt — the one place a new
+         * decision can be asked for without a second round trip.
+         */
+        const judgeBlock = judgmentDirective(goalUnderstandingObserved)
+        if (judgeBlock) effPrompt = judgeBlock + String.fromCharCode(10, 10) + effPrompt
 
         /**
          * ⛔ SELF-DESCRIPTION, AND IT IS NOT A READ.
@@ -1390,7 +1441,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {
         type: 'json_schema',
         name: 'distill_with_read_decision',
-        schema: withReadChoices(withReadArgs(withChatKnowledgeModes(DISTILL_WITH_READ_DECISION_SCHEMA, a4ChatModes), a4On), openChoices, choiceGloss)
+        schema: withJudgment(withReadChoices(withReadArgs(withChatKnowledgeModes(DISTILL_WITH_READ_DECISION_SCHEMA, a4ChatModes), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
       }
     }
     // ⛔ THE REF COMES FROM THE GROUP'S OWN SOURCE, NEVER FROM THE MAP KEY. The key is now the
@@ -1408,7 +1459,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // withReadChoices() makes nextRead null-only rather than emitting an empty enum.
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
-    const shaped = withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss)
+    const shaped = withJudgment(withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
     return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
   }
   let llmResult = null
@@ -2780,6 +2831,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ⛔ E2: ONE outcome decides both the screen and the count. `view.readClaim` was judged
     // against `view.reply` — the exact bytes he receives — so this can no longer report a
     // correction he never saw, nor stay silent about one he did.
+    leadWithJudgment(view, distilled, requestId, 'proposal-fallback')
     const claim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (claim.corrected) logReadClaimCorrection(claim, requestId)
     return {
@@ -2926,6 +2978,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       history
     })
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
+    leadWithJudgment(view, distilled, requestId, 'chat')
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
