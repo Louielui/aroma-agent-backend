@@ -120,7 +120,24 @@ const STANDING_STRUCTURE = /(區域|区域|部門|部门|科室|團隊|团队|�
  */
 const CONCRETE_CORRESPONDENCE = /(呢封|這封|这封|嗰封|那封|封信|呢個 ?e-?mail|這個 ?e-?mail|this (?:e-?mail|message|reply)|that (?:e-?mail|message)|the (?:e-?mail|message) (?:above|below))/i
 
+/**
+ * ⛔ A TEAM CAN BE WHAT YOU DESIGN, OR WHO YOU WRITE TO. The first version of this rule could
+ * not tell the difference, and 「Reply to the marketing team」 stopped drafting — five of six
+ * adversarial recipients regressed, caught before E3 was published.
+ *
+ * The tell is POSITION, not vocabulary: a unit that FOLLOWS an addressing word is the
+ * addressee. 「回覆營運團隊」, 「畀 marketing team」, 「to the finance department」 — in each the
+ * unit is who receives the mail, so correspondence is still the primary act.
+ *
+ * ⛔ ONLY UNITS THAT CAN RECEIVE MAIL ARE LISTED. A workflow, a process, a 職責 or a 機制 is
+ * never an addressee, so those nouns keep their full design-signal strength: 「email 回覆流程
+ * 太亂」 stays a remark about arrangement even though 回覆 sits right in front of 流程.
+ */
+const ADDRESSABLE_UNIT = /(?:回覆|回复|覆|reply to|respond to|to|畀|俾|比|給)\s*(?:the\s+)?[A-Za-z0-9一-鿿.\- ]{0,24}?(?:部門|部门|團隊|团队|小組|小组|desk|team|department|division)/i
+
 function isArrangementRequest (text) {
+  // Addressed to a unit → he is writing TO it, not designing it.
+  if (ADDRESSABLE_UNIT.test(text)) return false
   const act = ORGANISING_ACT.test(text)
   const structure = STANDING_STRUCTURE.test(text)
   if (act && structure) return true

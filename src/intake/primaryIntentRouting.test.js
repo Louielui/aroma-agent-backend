@@ -225,3 +225,53 @@ describe('⛔ E3 — the router stays free, pure and blind', () => {
     assert.equal(lane(REAL_WORKSPACE_REQUEST).lane, 'chat')
   })
 })
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * E3 CLOSEOUT — A UNIT CAN BE WHAT YOU DESIGN, OR WHO YOU WRITE TO
+ *
+ * The first E3 rule let any structural noun protect a message from the email lane. That
+ * broke correspondence ADDRESSED to a unit: five of these six regressed to chat, caught
+ * adversarially before E3 was published. The tell is POSITION — a unit that follows an
+ * addressing word is the addressee, not the subject of a design request.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+describe('⛔ E3 — writing TO a team is not designing one', () => {
+  const ADDRESSED = [
+    'Reply to the marketing team',
+    'Write an email to the kitchen team',
+    'Draft a reply to the finance department',
+    '幫我回覆財務部',
+    '寫封 email 畀 marketing team',
+    '回覆營運團隊話聽日10點開會'
+  ]
+
+  for (const m of ADDRESSED) {
+    test(`*** ⛔ direct correspondence to a unit still drafts: ${m.slice(0, 30)} ***`, () => {
+      const r = lane(m)
+      assert.equal(r.lane, 'email_draft',
+        'THE REGRESSION: the recipient being a team made it look like workspace design — ' + m)
+      assert.equal(r.reason, 'write_act')
+    })
+  }
+
+  test('*** ⛔ THE SAME UNIT, AS THE OBJECT OF DESIGN, STILL TALKS ***', () => {
+    // The discriminator is position, not the noun — so both readings must survive.
+    assert.equal(lane('Design a workflow for the marketing team to handle email').lane, 'chat')
+    assert.equal(lane('Set up an inbox team responsible for replying to email').lane, 'chat')
+    assert.equal(lane('可唔可以建立幾個 AI 部門，其中一個處理 email？').lane, 'chat')
+    // …while writing to that same marketing team drafts.
+    assert.equal(lane('Reply to the marketing team').lane, 'email_draft')
+  })
+
+  test('a process noun is never an addressee, so it keeps its full design signal', () => {
+    // 回覆 sits directly in front of 流程 here, and it is still a remark about arrangement.
+    assert.equal(lane('email 回覆流程太亂').lane, 'chat')
+    assert.equal(lane('幫我設計一個每天檢查同回覆 email 的工作流程').lane, 'chat')
+  })
+
+  test('individual recipients are unaffected by the unit rule', () => {
+    for (const m of ['幫我回覆 Rob', '寫封 email 畀 Rob', '幫我回覆客人']) {
+      assert.equal(lane(m).lane, 'email_draft', m)
+    }
+  })
+})
