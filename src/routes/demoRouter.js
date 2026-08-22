@@ -25,7 +25,7 @@ const express = require('express')
 const { t } = require('../i18n/t')
 const { body, validationResult } = require('express-validator')
 const { v4: uuidv4 } = require('uuid')
-const { getAdapter } = require('../adapters/adapterFactory')
+const { getAdapterForLane } = require('../adapters/adapterFactory')
 const { processIntake } = require('../intake/intakeService')
 const a4Runtime = require('../intake/a4Runtime')
 const { handleIntakeError } = require('../utils/intakeDiagnostics')
@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
   const router = express.Router()
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
@@ -515,7 +515,10 @@ function createDemoRouter ({ getAdapterFn = getAdapter, processIntakeFn = proces
       telemetry.laneReason = (typeof req.body.interactionMode === 'string' && req.body.interactionMode) ? 'explicit' : routed.reason
 
       try {
-        const adapter = getAdapterFn()
+        // ⛔ C3: THE LANE TRAVELS WITH THE REQUEST FOR AN ADAPTER. The argument is this
+        // router's OWN validated `interactionMode` — never a browser string — and an
+        // injected test factory that ignores it behaves exactly as it always did.
+        const adapter = getAdapterFn(interactionMode)
         const opts = optsForMode(interactionMode, {
           requestId: correlationId,
           contextCard,
