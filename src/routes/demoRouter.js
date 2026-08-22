@@ -541,6 +541,18 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
          * all — the opts bag is byte-identical to what it has always been.
          */
         if (interactionMode === 'chat') {
+          /**
+           * ⛔ C3: THE CONTROL ADAPTER, FOR THE ROLES THAT MUST NOT FOLLOW THE CHAT PIN.
+           *
+           * Same factory, called with NO lane — so it is the ordinary CLAUDE_MODEL adapter
+           * whatever the chat lane happens to be pinned to. Constructing it costs nothing
+           * and reaches no network; the goal decomposer simply stops borrowing the brain.
+           *
+           * ⛔ CHAT ONLY, on the same terms as `providerHint` and the A4 dependencies below:
+           * every other lane already receives the control adapter as its turn adapter, so
+           * there is nothing there to separate.
+           */
+          opts.controlAdapter = getAdapterFn()
           const composed = a4Runtime.createA4RuntimeDependencies({
             env: process.env,
             // Test seam only — production sets nothing and gets the pinned role adapters.

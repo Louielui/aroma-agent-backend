@@ -254,13 +254,21 @@ describe('C3 (5) the router hands over its OWN validated lane', () => {
     const seen = []
     const fake = (lane) => { seen.push(lane); return { providerName: 'spy' } }
     const app = makeApp(fake, async () => ({ blocked: false, reply: 'ok', mode: 'chat' }))
-    for (const sent of ['chat', 'email_draft', 'proposal']) {
+    // ⛔ CHAT ASKS TWICE, AND THE SECOND ASK IS THE POINT. One call names the lane and
+    // returns the Owner-facing brain; the second names NO lane and returns the ordinary
+    // CLAUDE_MODEL adapter, which is what the goal decomposer is then handed. Two adapters,
+    // still one decomposition and one main call — constructing an adapter reaches nothing.
+    seen.length = 0
+    await post(app, { message: 'hello', interactionMode: 'chat' })
+    assert.deepEqual(seen, ['chat', undefined],
+      'chat must request the brain by lane AND the control adapter by no lane')
+    // Every other lane is already ON the control adapter, so there is nothing to separate.
+    for (const sent of ['email_draft', 'proposal']) {
       seen.length = 0
       await post(app, { message: 'hello', interactionMode: sent })
-      assert.deepEqual(seen, [sent], 'lane ' + sent + ' must arrive verbatim')
+      assert.deepEqual(seen, [sent], 'lane ' + sent + ' must ask exactly once, by name')
     }
   })
-
   test('*** ⛔ a browser value outside the allowlist never reaches the factory at all ***', async () => {
     const seen = []
     const fake = (lane) => { seen.push(lane); return { providerName: 'spy' } }
@@ -270,11 +278,16 @@ describe('C3 (5) the router hands over its OWN validated lane', () => {
     assert.deepEqual(seen, [], '⛔ an unvalidated lane string reached model selection')
   })
 
-  test('*** an injected factory that ignores the argument behaves exactly as before ***', async () => {
+  test('*** an injected factory that ignores the argument still works, unchanged ***', async () => {
+    // The pre-C3 shape took no arguments. It must keep working — every other suite in this
+    // repo injects exactly that shape — and it simply returns the same object for both asks.
     let n = 0
-    const legacy = () => { n++; return { providerName: 'spy' } }   // the pre-C3 zero-arg shape
+    const legacy = () => { n++; return { providerName: 'spy' } }
     const app = makeApp(legacy, async () => ({ blocked: false, reply: 'ok', mode: 'chat' }))
     await post(app, { message: 'hello', interactionMode: 'chat' })
-    assert.equal(n, 1)
+    assert.equal(n, 2, 'brain + control on the chat lane')
+    n = 0
+    await post(app, { message: 'hello', interactionMode: 'proposal' })
+    assert.equal(n, 1, 'no separation is needed off the chat lane')
   })
 })

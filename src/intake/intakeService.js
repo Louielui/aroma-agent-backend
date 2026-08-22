@@ -751,6 +751,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * and `sourcesForPlan(null, …)` then narrows nothing. The turn proceeds exactly as it did
    * before B existed.
    */
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ C3 — B IS A CONTROL ROLE, SO IT KEEPS THE CONTROL MODEL.
+   *
+   * The decomposer runs on the turn adapter, which on a chat turn is the OWNER-FACING
+   * brain. That coupling is invisible and wrong in one specific way: a canary that raises
+   * the conversational model would also re-benchmark the component that decides WHICH
+   * SOURCES the turn is allowed to narrow to — and B is not a conversational role. It
+   * emits a plan, never prose, and the Owner never reads a word of it.
+   *
+   * ⛔ ONE FIELD, AND IT DEFAULTS TO TODAY. `opts.controlAdapter` is supplied only by the
+   * caller that also supplies a lane-specific brain. Everywhere else it is absent and this
+   * resolves to `adapter` — the exact object B has always been handed, so a turn with no
+   * chat pin is byte-identical to the turn before this existed.
+   *
+   * ⛔ IT IS NOT A SECOND CALL. The same one decomposition happens, on the same prompt and
+   * the same schema; only WHICH already-constructed adapter carries it changes.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  const controlAdapter = (opts && opts.controlAdapter) || adapter
+
   function decomposeOnce () {
     if (goalPlanPromise !== undefined) return goalPlanPromise
     goalPlanPromise = (async () => {
@@ -771,7 +792,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
           callModel: async ({ prompt, responseFormat }) => {
-            const r = await adapter.complete(prompt, { system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
+            const r = await controlAdapter.complete(prompt, { system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
             return { text: r && r.text, usage: r && r.usage }
           }
         })
