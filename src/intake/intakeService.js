@@ -194,6 +194,7 @@ const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 const { decomposeGoal } = require('./goal/goalDecomposer')
 const { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock } = require('./goal/goalGate')
 const { withJudgment, judgmentDirective, renderJudgment, JUDGMENT_KEY } = require('./executiveJudgment') // X3: position first, question last
+const { buildInvestigationState, investigationBlock, selfReadableObservation } = require('./investigationState') // X4: what is still unknown, and who can go and get it
 
 /**
  * ⛔ X3 — THE POSITION GOES ON TOP, AND IT HAS TO HAPPEN *HERE*, AFTER THE VIEW.
@@ -643,6 +644,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * was understood to want, whichever way the fact plan went.
    */
   let goalUnderstandingObserved = null
+  let investigationObserved = null // X4: last computed investigation state, for telemetry only
+  let x4AskRefusals = 0 // X4: at most ONE self-read nudge per turn — never a loop
   /**
    * ⛔ X2 — THE GOAL, AS MEANING, FOR THE SOURCE RESOLVER.
    *
@@ -1135,7 +1138,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           if (plan) goalUnderstandingObserved = plan
           const wanted = sourcesForPlan(plan, all)
           if (wanted !== null) all = wanted
-          goalBlock = requirementBlock(plan)
+          /**
+           * ⛔ X4 — THE SAME FACTS, PLUS WHAT ACTUALLY HAPPENED TO EACH OF THEM.
+           *
+           * `requirementBlock` is STATIC: rebuilt on every reasoning step and identical every
+           * time, because it reads only the plan. Authorisation and read outcomes were both
+           * already computed in this file — `authorisedOperationsFor` and `turnOperations`, the
+           * latter already carrying the right three states — and neither had ever been shown to
+           * the model beside the fact it belonged to. So 「乜嘢仲未查？」 was answerable only by
+           * cross-referencing a fixed list against a growing pile of read-context prose.
+           *
+           * ⛔ THIS IS WHERE IT UPDATES ITSELF, FOR FREE. buildPromptForUncached already reruns
+           * per step (the cache key carries the observation count), so the state is recomputed
+           * after every read with no decomposer re-run and no second model call.
+           *
+           * ⛔ AND PLANNED IS INTERSECTED WITH AUTHORISED, NEVER UNIONED. The plan naming an
+           * operation is a mapping, not a permission; `sourcesForPlan` and the loop allowlist
+           * still decide every read, and this block adds nothing to either.
+           */
+          const invState = buildInvestigationState({
+            plan,
+            authorised: authorisedOperationsFor(providerName),
+            attempted: turnOperations
+          })
+          // Falls back to the pre-X4 block when there is no state to describe, so a turn X4
+          // cannot help is byte-identical to before it existed.
+          goalBlock = investigationBlock(invState) || requirementBlock(plan)
+          investigationObserved = invState
         }
         // PER-SOURCE, PER-PROVIDER. Claude gets everything READ_ACCESS allows; OpenAI
         // gets that minus anything the Owner has withheld from it.
@@ -2546,7 +2575,35 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // ⛔ TERMINAL, NOT FINAL. An ASK reaches the loop as a terminal decision exactly like an
       // ANSWER does, so this one hook closes both exits: with an obligation outstanding the
       // model can neither answer nor ask its way out of the turn.
-      beforeTerminal,
+      /**
+       * ⛔ X4 — COMPOSED, NOT REPLACED. The world-obligation hook above still runs first and
+       * still owns every decision it owned before; X4 is consulted only on the paths it
+       * ALLOWED. A turn with no obligation previously had no hook at all, and now has one
+       * that returns `allow` for everything except a single structural case.
+       *
+       * ⛔ AND THE CASE IS NARROW ON PURPOSE: an ASK (never an answer), at most once a turn,
+       * and only while a REQUIRED fact has an authorised operation nobody has tried. It is a
+       * statement about the investigation, not about the business — the server never says
+       * which read to run, and never what the answer is.
+       */
+      beforeTerminal: async (ctx) => {
+        if (beforeTerminal) {
+          const prior = await beforeTerminal(ctx)
+          if (!prior || prior.type !== 'allow') return prior
+        }
+        const mode = ctx && ctx.decision && ctx.decision.result && ctx.decision.result.mode
+        if (mode !== 'ask') return { type: 'allow' }
+        if (x4AskRefusals > 0) return { type: 'allow' } // one nudge, then her call stands
+        const st = investigationObserved
+        if (!st || st.readableNow.length === 0) return { type: 'allow' }
+        const block = selfReadableObservation(st.readableNow)
+        if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
+        x4AskRefusals += 1
+        try {
+          console.log('[AROMA-X4]', JSON.stringify({ requestId, event: 'ask_refused_self_readable', readableNow: st.readableNow.length }))
+        } catch (_) { /* telemetry is never load-bearing */ }
+        return { type: 'refuse', observation: { capability: null, ok: false, summary: null } }
+      },
       // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery
       // path is read → premature final (refused) → second read → final, which is four
       // decisions. Every other turn keeps the bound of three, and there is no env var: the
@@ -2695,6 +2752,35 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         stopReason: loop.stopReason
       }))
     } catch (_) {}
+      /**
+       * ⛔ X4 — THE INVESTIGATION, AS SHAPE ONLY.
+       *
+       * Counts and one closed stop reason. No fact need text, no goal text, no operation result, no
+       * row value, no reply — the same rule every line beside it keeps. It exists so 「did she read
+       * what she could have read」 is answerable from ordinary logs instead of inferred from prose.
+       */
+      try {
+        const st = investigationObserved
+        if (st) {
+          const attempted = st.facts.filter((f) => f.readState === 'succeeded' || f.readState === 'failed')
+          console.log('[AROMA-X4]', JSON.stringify({
+            requestId,
+            event: 'INVESTIGATION',
+            goalFacts: st.facts.length,
+            plannedReads: st.facts.filter((f) => f.operation).length,
+            authorisedPlannedReads: st.facts.filter((f) => f.operation && f.readState !== 'not_authorised').length,
+            attemptedReads: attempted.length,
+            successfulReads: st.facts.filter((f) => f.readState === 'succeeded').length,
+            failedReads: st.facts.filter((f) => f.readState === 'failed').length,
+            noSystemOperation: st.facts.filter((f) => f.readState === 'no_system_operation').length,
+            remainingRequiredFacts: st.remainingRequired,
+            selfReadableLeft: st.readableNow.length,
+            askRefusals: x4AskRefusals,
+            reasoningSteps: loop.steps,
+            stopReason: loop.stopReason
+          }))
+        }
+      } catch (_) { /* a measurement may never break a turn */ }
     // ⛔ A PRE-READ STOP IS THE ANSWER, and it must REPLACE the envelope that asked to read.
     // `distilled` still holds the first envelope, whose nextRead is set and whose mode is not
     // 'ask' — shipping that would show the Owner 「等我睇睇」 for a turn that read nothing.
