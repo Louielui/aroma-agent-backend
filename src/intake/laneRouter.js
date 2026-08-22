@@ -44,12 +44,90 @@ const LANES = Object.freeze([CHAT, EMAIL, PROPOSAL])
 // unambiguous on its own.
 const CAPABILITY_QUESTION = /(?:(?:你|妳)\s*(?:識唔識|識唔識得|會唔會|可唔可以|能唔能夠|得唔得))|(?:\bcan you\b|\bcould you\b|\bare you able\b|\bdo you know how\b)/i
 
+/**
+ * ⛔ E3 — 「你可以…嗎？」 IS THE SAME QUESTION IN THE OTHER SPELLING, and it was reaching the
+ * email lane. `CAPABILITY_QUESTION` covers the reduplicated Cantonese forms (可唔可以, 識唔識)
+ * and missed the plain 你可以 / 你能, so 「你可以幫我回覆 email 嗎？」 — a question about what
+ * she can do — silently produced a draft instead of an answer. Measured at 6c3c031a, before
+ * E3 touched anything: this is an old hole, surfaced by the E3 fixtures rather than caused
+ * by them.
+ *
+ * ⛔ THE QUESTION MARKER IS REQUIRED. Without it, 「你可以幫我回覆呢封 email」 — a polite
+ * INSTRUCTION, not an enquiry — would stop drafting. 嗎/嘛/？/? is what separates asking
+ * whether she can from telling her to.
+ */
+const CAPABILITY_ENQUIRY = /(?:你|妳)\s*(?:可以|能夠|能|會)[^\n]*(?:嗎|嘛|呢)?\s*[？?]|(?:你|妳)\s*(?:可以|能夠|能|會)[^\n]*(?:嗎|嘛)/
+
 // A request to COMPOSE correspondence. The act is what matters, not the noun: a message
 // merely mentioning email is not a request to write one.
 const WRITE_ACT = /(回覆|回复|覆返|覆下|回信|寫信|寫封|寫個|寫一封|草擬|擬稿|起稿|draft|reply to|write (?:an? )?(?:e-?mail|reply|letter)|respond to)/i
 const MAIL_OBJECT = /(e-?mail|電郵|郵件|信|回信|mail)/i
 // A recipient makes the act unambiguous even without the word "email": 「幫我回覆 Rob」.
 const RECIPIENT = /(?:回覆|回复|覆|回|reply to|respond to|畀|俾|比|給|to)\s*[「"']?([A-Za-z][A-Za-z.\- ]{1,30}|[一-鿿]{2,6})[」"']?/
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ E3 — NAMING A FUNCTION IS NOT INSTRUCTING IT.
+ *
+ * Measured, on a real turn: the Owner asked for several standing work areas — one to report
+ * on and reply to his email, one for advertising, one for Google-review follow-up, one to
+ * supervise Aroma System. The router matched 回覆 and 電郵, committed to `email_draft`, made
+ * ZERO model calls, and handed him an empty draft. His question about how to ORGANISE the
+ * work was never read by anything that could answer it.
+ *
+ * The email rule asked 「are the words for writing a mail present?」 when the question it
+ * needed to ask was 「is writing a mail what he is ASKING FOR?」. In that sentence, replying
+ * to email is one RESPONSIBILITY being assigned to one area — a subordinate clause inside a
+ * design request. The lane read the subordinate clause as the whole instruction.
+ *
+ * ⛔ THE SHAPE OF THE FIX IS ALREADY IN THIS FILE. The proposal lane below refuses to fire on
+ * an interrogative, on the stated ground that 「a QUESTION about changing things is not an
+ * instruction to change them」. Correspondence had no equivalent guard. This is that guard.
+ *
+ * ⛔ AND IT IS NOT A STRING FOR 「區域」. The distinction is structural: an ORGANISING ACT
+ * applied to a STANDING THING (an area, a desk, a department, a role, a workflow) is a
+ * request about arrangement, whatever nouns it happens to contain. A single-email instruction
+ * does not talk about departments, and a department question does not name one email.
+ *
+ * ⛔ THE ASYMMETRY IS DELIBERATE, and it is this codebase's standing one: a request wrongly
+ * sent to CHAT is answered by the conversational brain and he can correct it in a sentence. A
+ * request wrongly sent to `email_draft` produces a silent, empty artefact and answers nothing.
+ * When the two readings are both available, talking is the recoverable failure.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+
+/** Setting something up / laying something out, as opposed to writing one message. */
+const ORGANISING_ACT = /(創造|创造|創建|创建|建立|設立|设立|開設|开设|成立|設計|设计|規劃|规划|組織|组织|安排|分工|整一個|搞一個|開一個|create|creating|design|designing|set ?up|build|organi[sz]e|organi[sz]ing|plan|structure|arrange)/i
+
+/**
+ * A STANDING thing: something that persists and keeps doing its job, rather than one message.
+ * These nouns do not appear in an instruction to answer a single mail, which is exactly why
+ * they can carry the distinction without a special case for any one sentence.
+ */
+const STANDING_STRUCTURE = /(區域|区域|部門|部门|科室|團隊|团队|小組|小组|崗位|岗位|職責|职责|角色|工作流程|工作流|流程|工序|機制|机制|系統架構|系统架构|架構|架构|desk|workspace|work ?area|department|division|team|role|responsibilit(?:y|ies)|workflow|pipeline|routine|process)/i
+
+/**
+ * Is correspondence the PRIMARY instruction here, or a function being described?
+ *
+ * Three shapes disqualify the correspondence lane. Each is a statement about ARRANGEMENT:
+ *   1. organising act + standing structure  — 「建立一個區域負責回覆電郵」
+ *   2. organising act + a question          — 「整體應該點設計？」
+ *   3. a standing structure on its own      — 「email 回覆流程太亂」
+ *
+ * ⛔ (3) YIELDS TO A CONCRETE MESSAGE. 「幫我回覆呢封 email」 names one mail, and one named
+ * mail outranks a passing mention of a process — otherwise a real instruction that happens to
+ * mention 流程 would stop working.
+ */
+const CONCRETE_CORRESPONDENCE = /(呢封|這封|这封|嗰封|那封|封信|呢個 ?e-?mail|這個 ?e-?mail|this (?:e-?mail|message|reply)|that (?:e-?mail|message)|the (?:e-?mail|message) (?:above|below))/i
+
+function isArrangementRequest (text) {
+  const act = ORGANISING_ACT.test(text)
+  const structure = STANDING_STRUCTURE.test(text)
+  if (act && structure) return true
+  if (act && INTERROGATIVE.test(text)) return true
+  if (structure && !CONCRETE_CORRESPONDENCE.test(text)) return true
+  return false
+}
 
 // A request to CHANGE something in the repo.
 // 改 is matched ANYWHERE, not only at a word start. It previously needed a space or the
@@ -101,12 +179,16 @@ function routeLane (message, opts) {
   }
 
   // 1. "Can you …?" is a question about capability, not a request. Chat.
-  if (CAPABILITY_QUESTION.test(text)) return { lane: CHAT, reason: 'capability_question' }
+  if (CAPABILITY_QUESTION.test(text) || CAPABILITY_ENQUIRY.test(text)) return { lane: CHAT, reason: 'capability_question' }
 
   // 2. EMAIL — an explicit act of composing correspondence. The act is required; a
   //    message that merely mentions email is not a request to write one.
+  //    E3: …and composing it must be what he is ASKING FOR. A message whose subject is how
+  //    work should be ARRANGED can name email as one of the jobs without being an instruction
+  //    to write one — see the block above `ORGANISING_ACT`.
   const hasWriteAct = WRITE_ACT.test(text)
   if (hasWriteAct && (MAIL_OBJECT.test(text) || RECIPIENT.test(text))) {
+    if (isArrangementRequest(text)) return { lane: CHAT, reason: 'arrangement_request' }
     return { lane: EMAIL, reason: 'write_act' }
   }
 
