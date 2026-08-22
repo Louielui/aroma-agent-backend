@@ -191,7 +191,7 @@ const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 // B, the goal decomposer. Load-bearing behind GOAL_DECOMPOSER, default OFF. It states what a
 // question NEEDS; the server then reads only what was named. A failure has no opinion.
 const { decomposeGoal } = require('./goal/goalDecomposer')
-const { goalDecomposerEnabled, sourcesForPlan, requirementBlock } = require('./goal/goalGate')
+const { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock } = require('./goal/goalGate')
 
 /**
  * One line whenever a false read-claim is corrected, so the failure is COUNTABLE and not
@@ -789,6 +789,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       try {
         const out = await decomposeGoal({
           question: message,
+          /**
+           * ⛔ X1 — ALREADY BUILT, A FEW LINES ABOVE. `recallBlockCache` and
+           * `convRecallBlockCache` are assigned by the decision- and conversation-recall
+           * blocks earlier in THIS prompt build; handing the strings over costs one array.
+           * No query, no store read, no connector call, no extra model call — X1's whole
+           * cost is that the same call is asked a better question.
+           *
+           * ⛔ CONTEXT, NOT EVIDENCE, and `contextSection` says so to the model in its own
+           * words. Recall answers 「what is he talking about」; it never becomes a row, a
+           * source, a trust level or a citable id.
+           */
+          contextBlocks: [convRecallBlockCache, recallBlockCache].filter(Boolean),
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
           callModel: async ({ prompt, responseFormat }) => {
@@ -805,6 +817,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           attempt: 1,
           outcome: OUTCOME.OK
         }, latencySink)
+        /**
+         * ⛔ X1 — SHAPE AND VERDICT, NEVER WORDS. Enums, booleans and counts only: no Owner
+         * message, no question_restated, no successDefinition, no recall, no row, no value.
+         * Nothing branches on this line; it exists so 「the frame was absent」 and 「the frame
+         * was refused for an invented enum」 stop looking identical from outside.
+         */
+        try {
+          const p = (out && out.ok && out.plan) ? out.plan : null
+          const fr = p ? p.executiveFrame : null
+          const fx = (p && Array.isArray(p.facts)) ? p.facts : []
+          console.log('[AROMA-X1]', JSON.stringify({
+            event: 'EXECUTIVE_FRAME',
+            requestId,
+            framePresent: !!fr,
+            frameRefused: p ? (p.executiveFrameRefused || null) : null,
+            taskType: fr ? fr.taskType : null,
+            decisionNeeded: fr ? fr.decisionNeeded : null,
+            answerPosture: fr ? fr.answerPosture : null,
+            factCount: fx.length,
+            requiredFactCount: fx.filter((x) => x && x.necessity === 'required').length,
+            unavailableFactCount: fx.filter((x) => x && x.status === 'UNAVAILABLE').length,
+            usedDecisionRecall: !!recallBlockCache,
+            usedConversationRecall: !!convRecallBlockCache,
+            durationMs: Math.max(0, Math.round(elapsed()))
+          }))
+        } catch (_) { /* a measurement may never break a turn */ }
         // ⛔ MEASURED AND LOGGED EVERY TIME, including the refusals. The per-query cost was to
         // be taken from real runs rather than estimated, and a refusal that costs a call is
         // still a cost.
@@ -1063,6 +1101,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * there is nothing to read, or it does not travel at all.
          */
         if (goalBlock) effPrompt = goalBlock + '\n\n' + effPrompt
+        /**
+         * ⛔ X1 — THE NORTH STAR SITS ABOVE THE SHOPPING LIST.
+         *
+         * Prepended AFTER the requirement block, so it ends up ABOVE it: the model reads what
+         * the Owner wants before it reads which facts that would take. Reversed, the facts
+         * would frame the goal — which is the failure this tranche exists for.
+         *
+         * ⛔ CONTEXT ONLY. It names no source, no row, no id and no count, so there is nothing
+         * here an Answer Plan could cite even if the model tried — citations are checked
+         * against the evidence index and this never enters it. `sourcesForPlan` ran ABOVE and
+         * read only FACTS; the frame is not consulted there and cannot widen a source, an
+         * operation, a write, an execution or an egress.
+         */
+        const frameBlock = executiveFrameBlock(goalPlanObserved)
+        if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
 
         /**
          * ⛔ SELF-DESCRIPTION, AND IT IS NOT A READ.

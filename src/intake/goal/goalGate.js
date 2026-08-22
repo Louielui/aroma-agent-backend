@@ -129,4 +129,11 @@ function requirementBlock (plan) {
   return lines.join('\n')
 }
 
-module.exports = { goalDecomposerEnabled, sourcesForPlan, requirementBlock, GOAL_FLAG }
+/**
+ * ⛔ X1 — RE-EXPORTED HERE, NOT REIMPLEMENTED. `intakeService` already takes its goal-side
+ * helpers from this one module; a second import path for one function is how two gates that
+ * are meant to agree begin to drift.
+ */
+const { executiveFrameBlock } = require('./executiveFrame')
+
+module.exports = { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock, GOAL_FLAG }

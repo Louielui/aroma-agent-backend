@@ -43,6 +43,7 @@ const {
   operationEntry, operationNames, entityTypes, fieldTier, coverageOf, FIELD_TIER,
   isSourceLevelOperation
 } = require('./operationCatalogue')
+const { executiveFrameSchema, judgeExecutiveFrame } = require('./executiveFrame')
 
 /** ⛔ Matches the Owner's max-4-reads bound, expressed at plan time. */
 const MAX_FACTS = 4
@@ -87,9 +88,19 @@ function goalPlanSchema () {
   return {
     type: 'object',
     additionalProperties: false,
-    required: ['question_restated', 'facts', 'joins'],
+    /**
+     * ⛔ X1 — `executive_frame` IS REQUIRED, AND `question_restated` STOPS BEING AN ORPHAN.
+     *
+     * Phase 0: `question_restated` has been produced on every decomposer call since B shipped
+     * and read by NOTHING — the one sentence naming the Owner's problem, generated and then
+     * discarded. It is the same call, the same round trip and the same model; what changes is
+     * that the role is now asked what he is trying to ACCOMPLISH before it is asked which
+     * facts that would take, and both answers now travel.
+     */
+    required: ['question_restated', 'executive_frame', 'facts', 'joins'],
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
+      executive_frame: executiveFrameSchema(),
       facts: {
         /**
          * ⛔ NO `maxItems`/`minItems` HERE, AND THE REASON IS A MEASURED 400.
@@ -400,11 +411,20 @@ function judgeGoalPlan (raw) {
   // hazard. The model's own `sufficient` never reaches this line.
   const sufficient = facts.every((f) => f.status === STATUS.AVAILABLE) && joins.length === 0 && hazards.length === 0
   const minimality = judgeMinimality(facts)
+  const judgedFrame = judgeExecutiveFrame(raw && raw.executive_frame)
 
   return {
     ok: true,
     plan: Object.freeze({
       questionRestated: String(raw.question_restated || ''),
+        /**
+         * ⛔ FAIL-SOFT, AND THE FACTS DO NOT GO DOWN WITH IT. A frame that cannot be judged
+         * becomes `null` and the fact plan proceeds under the rules it always had — X1 must
+         * not become a new way for a working turn to fail. The reason travels beside it, so
+         * 「the model returned nothing」 and 「the model invented an enum」 are not one line.
+         */
+        executiveFrame: judgedFrame.ok ? judgedFrame.frame : null,
+        executiveFrameRefused: judgedFrame.ok ? null : judgedFrame.reason,
       facts: Object.freeze(facts),
       joins: Object.freeze(joins),
       scopeHazards: Object.freeze(hazards),

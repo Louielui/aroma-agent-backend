@@ -84,6 +84,9 @@ const FILE_CLASS = Object.freeze({
   'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction
   'intake/goal/goalPlanContract.js': CLASS.MODEL,     //   4 — JSON-schema `description` text
+  // X1: schema `description` text she is TOLD, plus the EXECUTIVE FRAME block she is SHOWN.
+  // Translating either changes what she understands the Owner to want — MODEL, like its siblings.
+  'intake/goal/executiveFrame.js': CLASS.MODEL,       //  X1 — the frame contract and its block
   // The requirement block B injects into the prompt. MODEL: the Owner never reads this, the
   // model does — and 「唔好就近搵一個似樣嘅頂替」 is an instruction, so rewording it changes
   // her behaviour rather than changing what he sees.
