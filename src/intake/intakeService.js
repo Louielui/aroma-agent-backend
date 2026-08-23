@@ -194,7 +194,7 @@ const { ensureNonEmptyReply } = require('../governance/nonEmptyReply')
 const { decomposeGoal } = require('./goal/goalDecomposer')
 const { goalDecomposerEnabled, sourcesForPlan, requirementBlock, executiveFrameBlock } = require('./goal/goalGate')
 const { withJudgment, judgmentDirective, renderJudgment, JUDGMENT_KEY } = require('./executiveJudgment') // X3: position first, question last
-const { buildInvestigationState, investigationBlock, selfReadableObservation } = require('./investigationState') // X4: what is still unknown, and who can go and get it
+const { buildInvestigationState, investigationBlock, selfReadableObservation, X4_ASK_ORIGIN } = require('./investigationState') // X4: what is still unknown, and who can go and get it
 
 /**
  * ⛔ X3 — THE POSITION GOES ON TOP, AND IT HAS TO HAPPEN *HERE*, AFTER THE VIEW.
@@ -1782,6 +1782,20 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // reaches it, and it names a WORLD, never a capability. The model still chooses how to read.
   // ══════════════════════════════════════════════════════════════════════════
   let initialObligation = null
+  /**
+   * ⛔ X4.4 — A SECOND, SEPARATE REASON A TURN MAY NOT STOP YET. NOT A4'S.
+   *
+   * `initialObligation` is A4's verdict about WORLDS, and nine decisions below read it —
+   * requiredWorlds, the recovery worker, the step ceiling. Setting it for X4 would silently
+   * reinterpret every one of them, so X4 gets its own boolean and adds itself to exactly one
+   * condition: whether the reasoning loop is entered. The two obligations stay legible as two.
+   *
+   * ⛔ AND IT IS THE MODEL'S OWN ASK, NEVER THE GATE'S. When the verifier or the resolver
+   * REPLACES the question with one of their own, that is a decision about the Owner's meaning
+   * being genuinely open — A4's jurisdiction, and it stands. `gateAuthoredAsk` marks those two
+   * branches so X4 never overrules them.
+   */
+  let gateAuthoredAsk = false
   // ⛔ AN ASK IS ALSO A WAY TO STOP — AND THAT WAS THE LAST ESCAPE HATCH.
   //
   // A4-FINAL1 excluded mode:'ask' because gating it withheld legitimate clarifications and
@@ -1948,6 +1962,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       // The verifier's own validated question is preferred over the model's wording, which the
       // verifier was never shown.
       distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: verdict.question, nextRead: null, answerPlan: null })
+      gateAuthoredAsk = true // X4.4: the verifier's own question — genuine ambiguity, not a self-readable gap
       /**
        * ⛔ THIS IS THE 19:28 EXIT (requestId 068bd217). It sets neither `nextRead` nor
        * `initialObligation`, so the loop guard below is false and the reasoning loop is never
@@ -2007,6 +2022,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         { intent: resolved.intent })
       if (worldAsk0.ask) {
         distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: resolved.question, nextRead: null, answerPlan: null })
+        gateAuthoredAsk = true // X4.4: the resolver's own question — same reason
         forkTrace(FORK_STAGE.WORLD_ASK, FORK_BRANCH.RESOLVER_ASK, {
           intent: resolved.intent, askOrigin: FORK_ASK.WORLD_ASK_AMBIGUOUS, shortCircuit: true
         })
@@ -2046,12 +2062,93 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * the first two enter the reasoning loop; the third ends the turn having read nothing. That
    * third case was invisible in the log — a turn simply stopped appearing.
    */
-  const willEnterLoop = !!(interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation))
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ X4.4 — AN INITIAL ASK IS ALSO A WAY TO STOP WITHOUT LOOKING.
+   *
+   * X4 already refuses 「幫我攞返嚟」 once, for a REQUIRED fact whose operation is authorised and
+   * untried — but only inside the loop, at beforeTerminal. An ASK in the FIRST envelope never
+   * got there: it sets no nextRead, `allow_final` on an ASK sets no obligation, and the guard
+   * below was therefore false. Measured on the C3 fixture: the plan named 兩邊進度（drive）,
+   * `readableNow` was already `['drive']` at this line, and the turn still ended with zero
+   * connector calls and the Owner asked to go and fetch it.
+   *
+   * ⛔ NOTHING NEW DECIDES WHAT IS READABLE. `investigationObserved` is the state the prompt
+   * builder already computed from `buildInvestigationState`, the one definition of 「required,
+   * authorised, never tried」. No second rule, no reading of the ASK text — what she happens to
+   * have said is irrelevant to whether the system owes itself a look.
+   *
+   * ⛔ AND IT ONLY REOPENS THE TURN. It chooses no read, names no operation, and adds no model
+   * call of its own: the loop is entered, the model sees the same 【調查狀態】 block, and the
+   * EXISTING one-nudge beforeTerminal decides the rest. She may read, answer, or ask again.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+  /**
+   * ⛔ THE X4 SELF-READ REFUSAL — ONE IMPLEMENTATION, TWO ENTRANCES.
+   *
+   * Returns true when it actually refused. It owns all three effects together, because they are
+   * one decision: the model is shown WHAT is still readable, the one-nudge budget is spent, and
+   * the event is recorded. Splitting them is how a turn ends up nudged twice, or nudged
+   * invisibly. `readableNow` comes from the state the prompt builder already computed — this
+   * decides nothing about what is readable, and never looks at what she said.
+   */
+  const nudgeSelfReadable = (st, origin) => {
+    if (x4AskRefusals > 0) return false // one nudge, then her call stands
+    if (!st || st.readableNow.length === 0) return false
+    const block = selfReadableObservation(st.readableNow)
+    if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
+    x4AskRefusals += 1
+    try {
+      // ⛔ ONE EVENT, ONE NEW CLOSED FIELD. `origin` says which entrance the refusal came through,
+      // so 「did X4.4 ever fire in production」 is answerable without a second overlapping event.
+      // Counts and enums only — no Owner text, no fact text, no row value, no model prose.
+      console.log('[AROMA-X4]', JSON.stringify({ requestId, event: 'ask_refused_self_readable', readableNow: st.readableNow.length, origin }))
+    } catch (_) { /* telemetry is never load-bearing */ }
+    return true
+  }
+
+  /**
+   * ⛔ AND IT IS RECOMPUTED HERE, BECAUSE THE SNAPSHOT ABOVE IS OLDER THAN THIS DECISION.
+   *
+   * `investigationObserved` is written at intakeService.js:1167, and the AUTOMATIC read block
+   * runs afterwards in the SAME prompt build (:1197), calling `recordOperation` per returned
+   * row (:1220). So between the snapshot and the first envelope returning, `turnOperations` can
+   * have gained the very operation the snapshot called 未查.
+   *
+   * ⛔ MEASURED, A4 SEMANTIC ROUTING OFF: the plan named drive, the automatic read ran drive to
+   * completion, and the stale snapshot still offered drive as readableNow — so the gate refused
+   * an ASK over a fact that had ALREADY been fetched. A successful read is not unread, and a
+   * failed read is not unread either. A4 ON suppresses the automatic path, which is exactly why
+   * the A–L fixtures could not see this.
+   *
+   * ⛔ SAME RULE, SAME INPUTS, LATER CLOCK. buildInvestigationState is the one definition and is
+   * not re-implemented; the plan is the one already observed, and authorisation is the SAME
+   * expression the loop itself uses below, so this can only ever narrow what is offered — it
+   * cannot widen authorisation, and it reads no connector row.
+   */
+  const investigationNow = buildInvestigationState({
+    plan: goalPlanObserved,
+    authorised: (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : [],
+    attempted: turnOperations
+  })
+  // Nothing downstream should be able to reach the older snapshot by accident.
+  investigationObserved = investigationNow
+
+  const x4InitialSelfReadable = !!(
+    initialIsAsk && !gateAuthoredAsk &&
+    distilled && distilled.mode === 'ask' && !distilled.nextRead &&
+    investigationNow && investigationNow.readableNow.length > 0
+  )
+  // ⛔ THE REFUSAL HAPPENS HERE, NOT LATER. The block must be in `extraObservationBlocks` before
+  // the loop builds its first prompt, and the budget must be spent before the loop can spend it
+  // again — so the turn is nudged once in total, whichever entrance it came through.
+  const x4InitialSelfRead = x4InitialSelfReadable && nudgeSelfReadable(investigationNow, X4_ASK_ORIGIN.INITIAL)
+  const willEnterLoop = !!(interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead))
   forkTrace(FORK_STAGE.LOOP_ENTRY,
     willEnterLoop ? FORK_BRANCH.LOOP_ENTERED : FORK_BRANCH.LOOP_SKIPPED,
     { reasoningEntered: willEnterLoop, shortCircuit: !willEnterLoop })
 
-  if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation)) {
+  if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead)) {
     const { runReasoningLoop, STOP } = require('./reasoningLoop')
     // ⛔ BLOCKER 2: THE PROVIDER THAT PRODUCED THE VALID FIRST ENVELOPE CONTINUES THE TURN.
     // Step 2 used to call the Claude adapter even when OpenAI produced step 1 — a silent
@@ -2593,15 +2690,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         }
         const mode = ctx && ctx.decision && ctx.decision.result && ctx.decision.result.mode
         if (mode !== 'ask') return { type: 'allow' }
-        if (x4AskRefusals > 0) return { type: 'allow' } // one nudge, then her call stands
-        const st = investigationObserved
-        if (!st || st.readableNow.length === 0) return { type: 'allow' }
-        const block = selfReadableObservation(st.readableNow)
-        if (block && !extraObservationBlocks.includes(block)) extraObservationBlocks.push(block)
-        x4AskRefusals += 1
-        try {
-          console.log('[AROMA-X4]', JSON.stringify({ requestId, event: 'ask_refused_self_readable', readableNow: st.readableNow.length }))
-        } catch (_) { /* telemetry is never load-bearing */ }
+        // ⛔ THE SAME REFUSAL AS THE INITIAL ENTRANCE, and literally the same function — the one-nudge
+        // budget, the observation block and the event all live in `nudgeSelfReadable`. A second copy
+        // here is how the two entrances drift into disagreeing about what 「self readable」 means.
+        if (!nudgeSelfReadable(investigationObserved, X4_ASK_ORIGIN.REASONING_LOOP)) return { type: 'allow' }
         return { type: 'refuse', observation: { capability: null, ok: false, summary: null } }
       },
       // ⛔ ONE EXTRA DECISION, AND ONLY FOR A TURN THAT STRUCTURALLY NEEDS IT. The recovery

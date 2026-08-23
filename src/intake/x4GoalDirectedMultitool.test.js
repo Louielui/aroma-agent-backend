@@ -357,22 +357,317 @@ describe('Owner-visible behaviour', () => {
     })
   })
 
-  test('*** ⛔ C3 — KNOWN GAP, PINNED: an INITIAL ask never reaches this seam ***', async () => {
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ X4.4 — C3 WAS A PINNED GAP, AND IT IS NOW CLOSED. THESE INVERT IT.
+   *
+   * The old C3 recorded that an ASK in the model's FIRST envelope never reached this seam: it
+   * sets no `nextRead`, `allow_final` on an ASK sets no A4 obligation, and the loop guard was
+   * therefore false. Measured, on this exact fixture: the plan named 兩邊進度（drive）, the
+   * investigation state already held `readableNow: ['drive']` at that line, and the turn still
+   * ended with ZERO connector calls and Louie asked to go and fetch it himself.
+   *
+   * ⛔ WHAT CHANGED IS ONE CONDITION, NOT A NEW RULE. 「required + authorised + never tried」 is
+   * still defined once, in `buildInvestigationState`. The initial entrance calls the SAME
+   * refusal the loop calls, spends the SAME one-nudge budget, and emits the SAME event. Nothing
+   * reads the ASK text — 「send」/「畀我」/「幫我攞」 are irrelevant to whether the system owes
+   * itself a look, and matching on them is what this deliberately does not do.
+   *
+   * ⛔ AND IT REOPENS THE TURN, IT DOES NOT PERFORM A READ. The server names no operation and
+   * chooses no ordering. She may read, answer, or ask again.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+
+  test('*** ⛔ C3-A — AN INITIAL ASK IS REFUSED ONCE, AND SHE GOES AND GETS IT ***', async () => {
     await withEnv({}, async () => {
-      // Phase 0: the model's FIRST envelope is produced BEFORE the reasoning loop, and an ASK
-      // there short-circuits (forkTrace shortCircuit:true) without ever consulting beforeTerminal.
-      // X4 deliberately did NOT reach into that gate — it is the A4 obligation machinery, and the
-      // code there explicitly defends keeping a no-retrieval ask. This pins the CURRENT behaviour
-      // so the gap stays visible and can never be mistaken for coverage.
       const t = await turn({
         message: '邊個項目應該行先？',
         plan: planOf([fact('兩邊進度', 'drive')]),
         reads: { drive: 'ok' },
+        script: [ASK('你可唔可以send兩邊嘅進度畀我？'), READ('drive'), FINAL('睇完 Drive，我建議先做 A。')]
+      })
+      const n = t.x4all.filter((e) => e && e.event === 'ask_refused_self_readable')
+      assert.equal(n.length, 1, '⛔ the initial ask was not refused: ' + n.length)
+      assert.equal(n[0].origin, 'initial', '⛔ wrong entrance recorded: ' + n[0].origin)
+      assert.deepEqual(distinct(t.readsAttempted), ['drive'], 'she read the thing she was authorised to read')
+      assert.ok(String(t.res.reply).includes('我建議先做 A。'), '⛔ the answer did not reach him')
+      assert.equal(/send兩邊嘅進度畀我/.test(String(t.res.reply)), false, '⛔ the fetch-request reached the Owner')
+      // ⛔ AND THE REFUSAL REACHED HER. Spending the budget silently would refuse the ask and
+      // then hand the model the same prompt it just answered — a nudge she never saw.
+      assert.match(t.mainPrompts[1], /【調查狀態 — 你仲有未用過嘅讀取權限】/, '⛔ the self-readable observation never reached the next step')
+      assert.match(t.mainPrompts[1], /你自己有權讀（而且仲未讀）嘅操作：drive/, '⛔ the operation was not named to her')
+    })
+  })
+
+  test('*** ⛔ C3-B — TWO READABLE FACTS: SHE PICKS, THE SERVER DOES NOT ORDER THEM ***', async () => {
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        // ⛔ calendar IS LISTED FIRST ON PURPOSE. A server that quietly picked a read for her
+        // would take readableNow[0] — calendar. She takes drive. The two must not coincide,
+        // or this fixture would pass for a server that chose.
+        plan: planOf([fact('下個月檔期', 'calendar'), fact('兩邊進度', 'drive')]),
+        reads: { drive: 'ok', calendar: 'ok' },
+        script: [ASK('你可唔可以send晒兩樣畀我？'), READ('drive'), FINAL('夠料喇，我建議先做 A。')]
+      })
+      const n = t.x4all.filter((e) => e && e.event === 'ask_refused_self_readable')
+      assert.equal(n.length, 1)
+      assert.equal(n[0].readableNow, 2, 'both were offered as readable')
+      assert.deepEqual(distinct(t.readsAttempted), ['drive'], '⛔ the server chose a read for her')
+      assert.equal(stateOf(t.terminal, 'calendar'), '未查（你有權自己查）', 'the one she skipped stays visibly unread')
+      assert.ok(String(t.res.reply).includes('我建議先做 A。'))
+    })
+  })
+
+  test('*** ⛔ C3-C — AN ENRICHING FACT IS NOT A REASON TO HOLD A TURN OPEN ***', async () => {
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '幫我寫封回覆',
+        plan: planOf([fact('兩邊進度', 'drive', 'enriching')]),
+        reads: { drive: 'ok' },
+        script: [ASK('你想我用正式定輕鬆語氣寫？')]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ a nice-to-have held the turn open')
+      assert.deepEqual(t.readsAttempted, [], '⛔ a read was forced for an enriching fact')
+      assert.equal(t.mainPrompts.length, 1, '⛔ an enriching fact reopened the turn')
+      assert.ok(String(t.res.reply).includes('正式定輕鬆語氣'), 'his preference question stands')
+    })
+  })
+
+  test('*** ⛔ C3-D — AN UNAUTHORISED OPERATION IS NOT SOMETHING SHE CAN GO AND GET ***', async () => {
+    await withEnv({ CONTEXT_CALENDAR: 'off' }, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        sources: ['gmail', 'drive'],
+        plan: planOf([fact('下個月檔期', 'calendar')]),
+        reads: { calendar: 'ok' },
+        script: [ASK('你可唔可以send下個月檔期畀我？')]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ an unauthorised operation counted as readable')
+      assert.deepEqual(t.readsAttempted, [], '⛔ an unauthorised read executed')
+      assert.ok(String(t.res.reply).includes('send下個月檔期畀我'), 'the ask stands — she genuinely cannot reach it this turn')
+    })
+  })
+
+  test('*** ⛔ C3-E — operation:null IS NOT READABLE, AND NO NEIGHBOUR IS SUBSTITUTED ***', async () => {
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        plan: planOf([fact('供應商報價', null)]),
+        reads: { drive: 'ok', calendar: 'ok' },
+        script: [ASK('你可唔可以send供應商報價畀我？')]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ a fact nothing carries counted as readable')
+      assert.deepEqual(t.readsAttempted, [], '⛔ something was read in place of a fact nothing carries')
+      assert.ok(String(t.res.reply).includes('send供應商報價畀我'), 'asking him is the correct move here')
+    })
+  })
+
+  test('*** ⛔ C3-F — A FAILED OPERATION IS NOT UNREAD, AND IS NEVER RETRIED ***', async () => {
+    // ⛔ WHY THIS IS A LOOP CASE AND NOT AN INITIAL ONE, AND IT IS NOT AN EXCUSE. At the FIRST
+    // envelope nothing can have been attempted yet: buildInvestigationState runs at
+    // intakeService.js:1159 and the read block is built at :1197, so within ONE prompt build the
+    // state is always computed BEFORE any read, and turnOperations is per-turn. An initial ASK
+    // therefore cannot follow a failure in the same turn. What IS reachable is pinned here, and
+    // the exclusion itself is pinned directly on the one helper below.
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        plan: planOf([fact('兩邊進度', 'drive')]),
+        reads: { drive: 'fail' },
+        script: [READ('drive'), ASK('Drive 讀唔到，你可唔可以send畀我？'), ASK('再問一次？')]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ a failed read was treated as never tried')
+      assert.equal(distinct(t.readsAttempted).length, 1, '⛔ a retry happened')
+      assert.equal(stateOf(t.terminal, 'drive'), '今次查過但讀唔到')
+    })
+    const failed = buildInvestigationState({
+      plan: { facts: [fact('兩邊進度', 'drive')], questionRestated: 'x' },
+      authorised: ['drive'],
+      attempted: new Map([['drive', 'unavailable']])
+    })
+    assert.deepEqual(failed.readableNow, [], '⛔ a failed operation is still offered as readable')
+  })
+
+  test('*** ⛔ C3-G — A PREFERENCE QUESTION WITH NOTHING OUTSTANDING STANDS, WORD FOR WORD ***', async () => {
+    await withEnv({}, async () => {
+      const q = '你想我用正式定輕鬆語氣寫？'
+      const t = await turn({
+        message: '幫我寫封回覆',
+        plan: planOf([fact('兩邊進度', 'drive')]),
+        reads: { drive: 'ok' },
+        script: [READ('drive'), ASK(q)]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ an Owner-preference question was suppressed')
+      assert.equal(String(t.res.reply).trim(), q, '⛔ his question came back changed')
+    })
+  })
+
+  test('*** ⛔ C3-H — A4 allow_final + A LEGITIMATE ASK + NO X4 DUTY: UNTOUCHED ***', async () => {
+    await withEnv({}, async () => {
+      const q = '你想我用正式定輕鬆語氣寫？'
+      const t = await turn({
+        message: '幫我寫封回覆',
+        verifier: 'allow_final',
+        plan: planOf([fact('語氣偏好', null)]),
+        script: [ASK(q)]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false)
+      assert.deepEqual(t.readsAttempted, [], '⛔ allow_final started reading')
+      assert.equal(String(t.res.reply).trim(), q, '⛔ allow_final no longer preserves a legitimate ask')
+    })
+  })
+
+  test('*** ⛔ C3-I — A GATE-AUTHORED QUESTION IS A4 JURISDICTION AND X4 DOES NOT OVERRULE IT ***', async () => {
+    await withEnv({}, async () => {
+      // The verifier REPLACES her question with its own: his meaning is genuinely open. A
+      // readable fact exists, and X4 still must not convert that judgement into a read.
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        verifier: 'clarify',
+        plan: planOf([fact('兩邊進度', 'drive')]),
+        reads: { drive: 'ok' },
         script: [ASK('你可唔可以send兩邊嘅進度畀我？')]
       })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ X4 overruled a clarify verdict')
+      assert.deepEqual(t.readsAttempted, [], '⛔ a clarify verdict started a read')
+    })
+  })
+
+  test('*** ⛔ C3-J — THE LATER-LOOP NUDGE IS UNCHANGED, AND STILL FIRES AT MOST ONCE ***', async () => {
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        plan: planOf([fact('兩邊進度', 'drive'), fact('下個月檔期', 'calendar')]),
+        reads: { drive: 'ok', calendar: 'ok' },
+        script: [READ('drive'), ASK('問題一？'), ASK('問題二？'), ASK('問題三？')]
+      })
+      const n = t.x4all.filter((e) => e && e.event === 'ask_refused_self_readable')
+      assert.equal(n.length, 1, '⛔ a refusal loop: ' + n.length)
+      assert.equal(n[0].origin, 'reasoning_loop', '⛔ the loop entrance mislabelled itself: ' + n[0].origin)
+    })
+  })
+
+  test('*** ⛔ C3-K — NO GOAL PLAN, NO X4: THE TURN IS WHAT IT WAS BEFORE X4 EXISTED ***', async () => {
+    await withEnv({}, async () => {
+      const q = '你想點做？'
+      const t = await turn({ message: '幫我諗下', plan: null, reads: { drive: 'ok' }, script: [ASK(q)] })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false, '⛔ a plan-less turn entered X4')
+      assert.deepEqual(t.readsAttempted, [], '⛔ a plan-less turn read something')
+      // ⛔ AND IT DID NOT REOPEN. Entering the loop and stopping at the same answer is NOT
+      // byte-identical — it is a second paid model call for a turn X4 has no business in.
+      assert.equal(t.mainPrompts.length, 1, '⛔ a plan-less turn entered the reasoning loop')
+      assert.equal(String(t.res.reply).trim(), q)
+    })
+  })
+
+  test('*** ⛔ C3-L — ONE NUDGE IS NOT A READ-ALL: THE REST ARE NOT RUN FOR HER ***', async () => {
+    await withEnv({}, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        plan: planOf([fact('兩邊進度', 'drive'), fact('下個月檔期', 'calendar'), fact('人手', 'gmail')]),
+        reads: { drive: 'ok', calendar: 'ok', gmail: 'ok' },
+        // She reads ONE, decides she can answer responsibly, and stops. Two remain planned.
+        script: [ASK('你可唔可以send晒啲資料畀我？'), READ('drive'), FINAL('夠料落判斷喇，我建議先做 A。')]
+      })
+      assert.deepEqual(distinct(t.readsAttempted), ['drive'], '⛔ the remaining planned reads were run automatically')
+      assert.equal(t.x4.selfReadableLeft, 2, 'and the two she chose not to read are still counted as readable')
+      assert.ok(String(t.res.reply).includes('我建議先做 A。'), 'her answer stands')
+    })
+  })
+
+  /**
+   * ══════════════════════════════════════════════════════════════════════════
+   * ⛔ THE SNAPSHOT IS OLDER THAN THE DECISION — AND A–L COULD NOT SEE IT.
+   *
+   * `investigationObserved` is written at intakeService.js:1167. The AUTOMATIC read block runs
+   * AFTERWARDS in the same prompt build (:1197) and calls `recordOperation` per returned row
+   * (:1220). So between the snapshot and the first envelope returning, `turnOperations` can gain
+   * the very operation the snapshot called 未查.
+   *
+   * ⛔ EVERY A–L FIXTURE RUNS WITH A4 SEMANTIC ROUTING ON, which sets `sources = []` and
+   * suppresses the automatic path entirely. The window simply never opened. These three turn it
+   * OFF, which is the legacy configuration where it does.
+   *
+   * ⛔ A SUCCESSFUL READ IS NOT UNREAD, AND A FAILED READ IS NOT UNREAD EITHER. Both are excluded
+   * by `buildInvestigationState` already — the defect was never the rule, only its clock.
+   * ══════════════════════════════════════════════════════════════════════════
+   */
+
+  test('*** ⛔ M1 — AN AUTOMATIC READ THAT SUCCEEDED IS NOT SOMETHING SHE STILL OWES HERSELF ***', async () => {
+    await withEnv({ A4_KNOWLEDGE_ROUTING: 'off', TURN_ROUTER: 'off' }, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        sources: ['drive'],
+        plan: planOf([fact('兩邊進度', 'drive')]),
+        reads: { drive: 'ok' },
+        script: [ASK('你可唔可以send兩邊嘅進度畀我？')]
+      })
+      // The automatic path really did run — otherwise this fixture proves nothing.
+      assert.deepEqual(distinct(t.readsAttempted), ['drive'], 'the automatic read did not run; the window was never opened')
       assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false,
-        'an initial ask is out of reach of the X4 seam — see X4_INITIAL_ASK_NOT_COVERED')
-      assert.deepEqual(t.readsAttempted, [], 'and no read happens on that path')
+        '⛔ she was told to go and read something she had already read')
+      assert.ok(String(t.res.reply).includes('send兩邊嘅進度畀我'), 'the ask stands on the existing semantics')
+    })
+  })
+
+  test('*** ⛔ M2 — AN AUTOMATIC READ THAT FAILED IS NOT UNREAD, AND IS NOT RETRIED ***', async () => {
+    await withEnv({ A4_KNOWLEDGE_ROUTING: 'off', TURN_ROUTER: 'off' }, async () => {
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        sources: ['drive'],
+        plan: planOf([fact('兩邊進度', 'drive')]),
+        reads: { drive: 'fail' },
+        script: [ASK('你可唔可以send兩邊嘅進度畀我？')]
+      })
+      assert.deepEqual(distinct(t.readsAttempted), ['drive'], 'the automatic read was attempted')
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false,
+        '⛔ a failed read was re-offered as never tried')
+      assert.equal(t.readsAttempted.length, 1, '⛔ a retry happened')
+      assert.ok(String(t.res.reply).includes('send兩邊嘅進度畀我'), 'asking him is right once the read has failed')
+    })
+  })
+
+  test('*** ⛔ M3 — CONTROL: THE FRESH STATE STILL REFUSES WHAT IS GENUINELY UNATTEMPTED ***', async () => {
+    await withEnv({ A4_KNOWLEDGE_ROUTING: 'off', TURN_ROUTER: 'off' }, async () => {
+      // ⛔ ONE SOURCE, TWO OPERATIONS, AND ONLY ONE OF THEM RAN. The automatic path reads
+      // aroma_system once and records the operation the MESSAGE maps to (:1220) — 訂貨建議 here.
+      // 發票 is on the same source, authorised, and nobody asked it. A refresh that merely
+      // marked the whole source attempted would lose that, and a stale snapshot would offer
+      // both. Exactly one is still owed.
+      const t = await turn({
+        message: '而家有咩要補貨',
+        sources: ['aroma_system'],
+        plan: planOf([fact('訂貨建議', 'aroma_system.replenishment'), fact('發票紀錄', 'aroma_system.invoices')]),
+        reads: { aroma_system: 'ok' },
+        script: [ASK('你可唔可以send發票畀我？')]
+      })
+      assert.deepEqual(distinct(t.readsAttempted), ['aroma_system'], 'the automatic read ran')
+      const n = t.x4all.filter((e) => e && e.event === 'ask_refused_self_readable')
+      assert.equal(n.length, 1, '⛔ the freshness correction disabled X4.4 on the legacy configuration')
+      assert.equal(n[0].origin, 'initial')
+      assert.equal(n[0].readableNow, 1,
+        '⛔ the state is not current: the operation that DID run is still being offered')
+    })
+  })
+
+  test('*** ⛔ M4 — THE REFRESH MAY NARROW WHAT IS OFFERED, NEVER WIDEN IT ***', async () => {
+    await withEnv({}, async () => {
+      // ⛔ CONTEXT_CALENDAR IS STILL 'on' HERE. What withholds calendar is the AUTHORISED SOURCE
+      // LIST for this turn, which `authorisedSourcesFor` takes from readDeps (:728) — not the
+      // env. A refresh that re-derived authorisation from `enabledSources(process.env)` would
+      // hand calendar back, and X4 would order a read this turn was never allowed to make.
+      const t = await turn({
+        message: '邊個項目應該行先？',
+        sources: ['gmail', 'drive'],
+        plan: planOf([fact('下個月檔期', 'calendar')]),
+        reads: { calendar: 'ok', drive: 'ok' },
+        script: [ASK('你可唔可以send下個月檔期畀我？')]
+      })
+      assert.equal(t.x4all.some((e) => e && e.event === 'ask_refused_self_readable'), false,
+        '⛔ the refresh widened authorisation past the turn boundary')
+      assert.deepEqual(t.readsAttempted, [], '⛔ an unauthorised read executed')
+      assert.ok(String(t.res.reply).includes('send下個月檔期畀我'), 'the ask stands')
     })
   })
 

@@ -180,6 +180,15 @@ function investigationBlock (state) {
  * have not tried.」 It never says which read to run, never says what the answer is, and never
  * refuses an ANSWER — a turn that reaches a judgement keeps it, under X3.
  */
+/**
+ * ⛔ WHERE THE SELF-READ REFUSAL CAME FROM. A CLOSED PAIR, AND IT STAYS CLOSED.
+ *
+ * The same rule now has two entrances — the model's FIRST envelope (X4.4) and a terminal ASK
+ * inside the reasoning loop (X4). One event carries both rather than two events that can
+ * disagree about what happened. It is an enum so it can never carry a sentence.
+ */
+const X4_ASK_ORIGIN = Object.freeze({ INITIAL: 'initial', REASONING_LOOP: 'reasoning_loop' })
+
 function selfReadableObservation (operations) {
   const ops = Array.isArray(operations) ? operations.filter((o) => typeof o === 'string' && o) : []
   if (ops.length === 0) return null
@@ -191,4 +200,4 @@ function selfReadableObservation (operations) {
   ].join(String.fromCharCode(10))
 }
 
-module.exports = { READ_STATE, buildInvestigationState, investigationBlock, selfReadableObservation, MAX_FACTS, MAX_NEED_CHARS, MAX_GOAL_CHARS }
+module.exports = { READ_STATE, X4_ASK_ORIGIN, buildInvestigationState, investigationBlock, selfReadableObservation, MAX_FACTS, MAX_NEED_CHARS, MAX_GOAL_CHARS }
