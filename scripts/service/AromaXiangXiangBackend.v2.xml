@@ -1,0 +1,60 @@
+<service>
+  <!--
+    ⛔ TEMPLATE ONLY. NOT INSTALLED. NOT EXECUTED. Installing this is a separate Owner GO.
+
+    Supersedes the a6/464c078 configuration, which is retained on disk for provenance and must
+    never be started again. That one pointed node at an immutable release tree 611 commits
+    behind production, worked out of a ProgramData directory whose .env resolved different
+    credentials, wrote to a SECOND data store, set four environment values against the
+    launcher's twenty-one, and — having no PORT — would have bound 8081 while the interactive
+    process held 8090. Two assistants, two histories, no collision to notice.
+
+    ⛔ THIS ONE OWNS THE SAME TREE PRODUCTION ALREADY ADVANCES. Same repo, same .git identity,
+    same data directory, same .env. Changing the owner of the port is the whole change.
+
+    ⛔ SECRETS ARE NOT HERE AND MUST NEVER BE. ANTHROPIC_API_KEY, HUB_TOKEN and the
+    CLAUDE_CHAT_MODEL canary arrive through the service-only env file named below, which is
+    created at install time with a restrictive ACL and is not in git.
+  -->
+  <id>AromaXiangXiangBackend</id>
+  <name>Aroma Xiang Xiang Backend</name>
+  <description>Resident local-only runtime for 香香 on AromaBrain (service-owned, loopback)</description>
+
+  <!-- The headless seam, not src/index.js directly: it applies the runtime contract and fails
+       closed on a missing credential before the application is ever required. -->
+  <executable>C:\Program Files\nodejs\node.exe</executable>
+  <arguments>C:\Aroma\aroma-agent-backend\scripts\service\xiangxiang-service-entry.js</arguments>
+
+  <!-- ⛔ THE REPO, because src/app.js calls dotenv.config() and dotenv reads <cwd>/.env. The
+       entry also chdir()s here; both are set so neither alone is load-bearing. -->
+  <workingdirectory>C:\Aroma\aroma-agent-backend</workingdirectory>
+
+  <startmode>Automatic</startmode>
+  <delayedAutoStart/>
+
+  <serviceaccount>
+    <domain>NT AUTHORITY</domain>
+    <user>LocalService</user>
+  </serviceaccount>
+
+  <!-- ⛔ ONE NON-SECRET POINTER, AND NOTHING ELSE. Every other runtime value comes from
+       runtimeContract.js so the launcher and the service cannot drift; putting them here too
+       would create a second source of truth that no test compares. -->
+  <env name="AROMA_SERVICE_ENV_FILE" value="C:\ProgramData\AromaXiangXiang\config\service.env"/>
+
+  <logpath>C:\ProgramData\AromaXiangXiang\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>8</keepFiles>
+  </log>
+
+  <!-- Bounded restart, then STOPPED. WinSW repeats the last onfailure forever, so the closing
+       action=none is what stops a broken build from restarting all night. No reboot action. -->
+  <onfailure action="restart" delay="10 sec"/>
+  <onfailure action="restart" delay="30 sec"/>
+  <onfailure action="restart" delay="60 sec"/>
+  <onfailure action="restart" delay="120 sec"/>
+  <onfailure action="restart" delay="300 sec"/>
+  <onfailure action="none"/>
+  <resetfailure>1 hour</resetfailure>
+</service>
