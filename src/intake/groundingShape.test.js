@@ -21,6 +21,7 @@
  */
 
 const test = require('node:test')
+const { contentTextOf } = require('./leakSurface.helper')
 const assert = require('node:assert/strict')
 
 const { validatePlan, logAnswerPlan } = require('./answerPlan')
@@ -153,7 +154,19 @@ test('*** ⛔ NO SENTENCE, TITLE, NUMERAL, LABEL OR USER TEXT REACHES THE LOG **
     drops: r.drops
   }, (l) => lines.push(l))
 
-  const json = JSON.stringify(lines[0])
+  /**
+   * ⛔ THE CONTENT SURFACE, NOT THE WHOLE RECORD.
+   *
+   * This was `JSON.stringify(lines[0])`, which includes the ISO timestamp — and
+   * 「2026-08-23T01:23:16.692Z」 contains the banned token '69' in its milliseconds.
+   * Nothing had leaked; the clock had landed on the wrong three digits, so the test
+   * failed at random and hid a real question behind a false one.
+   *
+   * ⛔ THE ASSERTION BELOW IS UNCHANGED AND UNWEAKENED. reason, outcome, dropped[],
+   * sourceId, why and shape all stay searchable — a real leak into any of them still
+   * fails exactly as before. Only metadata leaves the surface. See leakSurface.helper.js.
+   */
+  const json = contentTextOf(lines[0])
   // ⛔ SHOWN, NOT ASSERTED IN PROSE: every one of these was fed in above.
   for (const banned of [sentence, NAPA, JARS, secret, '缺口', '69', NEUTRAL]) {
     assert.ok(!json.includes(banned), '⛔ content reached the log: ' + json)

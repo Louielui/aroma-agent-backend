@@ -26,6 +26,7 @@
  */
 
 const test = require('node:test')
+const { contentTextOfLogLines } = require('./leakSurface.helper')
 const assert = require('node:assert/strict')
 
 const { processIntake } = require('./intakeService')
@@ -224,7 +225,15 @@ test('*** P4 — nothing leaks into telemetry either ***', async () => {
       await run(OWNER_MSG, a, { connector: c.connector, sources: BOTH, publicQueryPlanner: p.fn })
     } finally { console.log = orig }
 
-    const all = logs.join('\n')
+    /**
+     * ⛔ METADATA STRIPPED BEFORE THE LEAK SEARCH — the same defect groundingShape had.
+     *
+     * INTERNAL_VALUES contains PRICE '8.72', and an ISO timestamp whose seconds end in 8
+     * and milliseconds begin 72 — 20:15:18.723Z — contains it. That is the clock, not a
+     * leak. All four protected values are still checked, against everything except the
+     * timestamp and UUID formats that cannot carry one.
+     */
+    const all = contentTextOfLogLines(logs)
     for (const v of INTERNAL_VALUES) assert.equal(all.includes(v), false, `⛔ ${v} appeared in a log line`)
     // The plan line exists, is content-free, and records that the discard happened.
     const plan = logs.find((l) => l.includes('[AROMA-EGRESS-PLAN]'))
