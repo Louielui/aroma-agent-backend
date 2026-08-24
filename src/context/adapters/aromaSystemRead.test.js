@@ -217,7 +217,15 @@ test('*** the key appears in the Authorization header and NOWHERE else ***', asy
 test('*** the module never logs, and never returns a body or a row wholesale ***', () => {
   const src = fs.readFileSync(path.join(__dirname, 'aromaSystemRead.js'), 'utf8')
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '')
-  assert.equal(/console\./.test(code), false, 'it never logs')
+  // ⛔ NARROWED, NOT REMOVED (TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL Phase 1). The ONE log call
+  // this module may make is the live-egress-blocked marker — identifiers only, never the key,
+  // never Authorization, never a row — exactly as `aromaSystemLiveEgressFence.test.js` proves
+  // byte-for-byte. Every OTHER console call remains banned.
+  const consoleCalls = code.match(/console\.\w+/g) || []
+  assert.deepEqual(consoleCalls, ['console.error'], 'the only console call may be the blocked-marker log')
+  const consoleErrorCallCount = (code.match(/console\.error\s*\(/g) || []).length
+  assert.equal(consoleErrorCallCount, 1, 'exactly one console.error call site — the blocked marker, and nothing else')
+  assert.match(code, /console\.error\(AROMA_LIVE_BLOCKED_MARKER/, 'the one call must be the named marker constant, not an ad-hoc string')
   // A failure reason is a short fixed string; the response body is never in it.
   assert.equal(/reason:\s*(body|text|json|await)/.test(code), false)
 })
@@ -235,7 +243,13 @@ test('*** with no key the adapter is not ready and refuses cleanly ***', async (
 test('*** no new dependency was introduced ***', () => {
   const src = fs.readFileSync(path.join(__dirname, 'aromaSystemRead.js'), 'utf8')
   const requires = [...src.matchAll(/require\('([^']+)'\)/g)].map((m) => m[1])
-  assert.deepEqual(requires, ['../contextResult'], 'built-in fetch only — nothing added to package.json')
+  // ⛔ WIDENED BY EXACTLY ONE, NOT OPENED (TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL Phase 1, Owner
+  // Ruling C). `../../testProcess` is the ONE shared detector every other live-egress fence in
+  // this repo reuses (`adapters/liveEgressFence.js`, `context/googleAuth.js`) — not a new npm
+  // package, and not a second implementation of the same fact. Built-in fetch is still the only
+  // transport; package.json is untouched (see the FILES CHANGED report).
+  assert.deepEqual(requires.slice().sort(), ['../../testProcess', '../contextResult'].sort(),
+    'built-in fetch + the one shared test-process detector — nothing added to package.json')
 })
 
 /* ── 5. FIELD MAPPING — measured against real captured shapes ──────────────── */

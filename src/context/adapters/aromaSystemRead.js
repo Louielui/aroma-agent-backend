@@ -248,6 +248,101 @@ const RANKING_OF = Object.freeze({
 const DEFAULT_BASE_URL = 'https://system.aromabistro741.com'
 const KEY_ENV = 'AROMA_SYSTEM_KEY'
 const DEFAULT_TIMEOUT_MS = 10000
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ A TEST MAY NOT SPEND THE OWNER'S PRODUCTION RESTAURANT SYSTEM BECAUSE A KEY HAPPENED TO
+ * BE IN THE SHELL.
+ *
+ * MEASURED (TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL Phase 0.5, synthetic key, tripwire before
+ * network): `src/intake/a4ProductionWiring.test.js` test D injected `readDepsOverride:
+ * { connector: createLiveReadConnector({ env: process.env }).connector }` — the REAL
+ * connector — and faked only `public_knowledge`'s transport. `aroma_system` was left on the
+ * default transport, and the scripted model's `aroma_system.invoices` read reached
+ * `doFetch(https://system.aromabistro741.com/api/v1/ai/invoices, ...)` with whatever key sat
+ * in `process.env` — while the test stayed GREEN, because this module's own fail-soft
+ * normalises any fetch failure to `error:'network error'`, indistinguishable from a real
+ * outage. A green run is the Owner's evidence that nothing left the building; an unfenced
+ * default transport makes that evidence false while leaving it looking identical.
+ *
+ * ── SAME SHAPE AS liveEgressFence.js AND context/googleAuth.js, DELIBERATELY ─────────────
+ * One shared `isTestProcess` (`../../testProcess`), one literal opt-in, one marker before the
+ * throw, production untouched because it matches none of the three test signals and returns
+ * on the FIRST branch before the opt-in is even read.
+ *
+ * ⛔ AROMA SYSTEM HAS ITS OWN AUTHORITY (Owner ruling). `RUN_PAID_E2E` is permission to spend
+ * on a model provider; `RUN_LIVE_GOOGLE_E2E` is permission to use the Owner's Google identity.
+ * Neither is permission to call the production restaurant system with its one, unscoped key —
+ * see the file header above: this key opens all nine `/api/v1/ai` routes, three of them POST.
+ * So this fence gets its own name rather than borrowing either.
+ *
+ * ⛔ THE FENCE IS ON THE DEFAULT TRANSPORT ONLY. `options.fetchFn` is the existing,
+ * already-relied-upon injection seam (`operationAwareLabels.test.js`,
+ * `supplierCompleteness.test.js`) — an injected transport is a test choosing exactly what
+ * happens next, never an ambient credential deciding it. Fencing it too would break every
+ * deterministic Aroma System test for no safety gained, and CLAUDE.md §3 asks for the
+ * narrowest true fix, not the broadest defensible one.
+ *
+ * ⛔ NOT A CONSTRUCTOR GUARD. `connectionState.projectConnections` constructs this adapter on
+ * every real turn merely to report credential presence — construction is legal, EGRESS is
+ * not. The guard sits on the one function that actually calls `globalThis.fetch`.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const { isTestProcess } = require('../../testProcess')
+
+/** ⛔ THE LITERAL, AND NOTHING TRUTHY — same discipline as the model-provider and Google fences. */
+const AROMA_LIVE_OPT_IN = 'RUN_LIVE_AROMA_SYSTEM_E2E'
+const AROMA_OPT_IN_VALUE = '1'
+
+/** One marker, greppable — a withheld call must be visible, never silent. */
+const AROMA_LIVE_BLOCKED_MARKER = '[AROMA-SYSTEM-LIVE-EGRESS-BLOCKED]'
+
+/**
+ * May this process use the DEFAULT Aroma System live transport?
+ *
+ * @param {object} [env]
+ * @param {string[]} [argv]
+ * @param {string|null} [mainFile]
+ * @returns {boolean}
+ */
+function aromaSystemLiveEgressAllowed (env = process.env, argv = process.argv, mainFile) {
+  const main = mainFile === undefined ? ((require.main && require.main.filename) || null) : mainFile
+  // ⛔ ORDINARY RUNTIME FIRST, AND IT RETURNS BEFORE THE OPT-IN IS EVEN READ.
+  if (!isTestProcess(env, argv, main)) return true
+  // A test process. Credential presence grants NOTHING — fail closed unless someone
+  // deliberately asked for the production restaurant system, with the literal value only.
+  return !!env && env[AROMA_LIVE_OPT_IN] === AROMA_OPT_IN_VALUE
+}
+
+/**
+ * Refuse the default Aroma System transport from a test process — loudly, before the fetch.
+ *
+ * ⛔ IDENTIFIERS ONLY. Never the key, never Authorization, never a query value, never Owner
+ * content, never a returned row. The two fields below are the whole of what may appear.
+ *
+ * @throws {Error} with `aromaSystemLiveEgressBlocked === true`
+ */
+function assertAromaSystemLiveEgressAllowed () {
+  if (aromaSystemLiveEgressAllowed()) return
+  try {
+    console.error(AROMA_LIVE_BLOCKED_MARKER, JSON.stringify({ source: 'aroma_system', optIn: AROMA_LIVE_OPT_IN }))
+  } catch (_) { /* a diagnostic may never be the reason a refusal fails */ }
+  const e = new Error(
+    'aromaSystemRead: a test process attempted the default Aroma System live transport. ' +
+    'Inject fetchFn, or set ' + AROMA_LIVE_OPT_IN + '=' + AROMA_OPT_IN_VALUE + ' to opt in.')
+  e.aromaSystemLiveEgressBlocked = true
+  throw e
+}
+
+/**
+ * The DEFAULT transport, fenced. References `globalThis.fetch` fresh on every call (never
+ * captured once at construction) so the guard runs immediately before THIS attempt, every
+ * attempt — a guard existing later in the function is not enough.
+ */
+function fencedDefaultAromaFetch (url, init) {
+  assertAromaSystemLiveEgressAllowed()
+  return globalThis.fetch(url, init)
+}
 /**
  * ⛔ THE CLIENT CAP IS A PER-ENDPOINT POLICY, NOT A UNIVERSAL NUMBER.
  *
@@ -542,7 +637,13 @@ function createAromaSystemReadAdapter (options = {}) {
     ? options.apiKey
     : (typeof env[KEY_ENV] === 'string' ? env[KEY_ENV].trim() : '')
 
-  const doFetch = typeof options.fetchFn === 'function' ? options.fetchFn : globalThis.fetch
+  // ⛔ THE FENCE APPLIES ONLY TO THE DEFAULT TRANSPORT. An injected `fetchFn` is a test
+  // choosing exactly what happens next — it is used exactly as before, never fenced, never
+  // requiring the live opt-in. `usesDefaultFetch` is the one condition the fence keys on.
+  const usesDefaultFetch = typeof options.fetchFn !== 'function'
+  const doFetch = usesDefaultFetch
+    ? (typeof globalThis.fetch === 'function' ? fencedDefaultAromaFetch : undefined)
+    : options.fetchFn
 
   /**
    * THE SINGLE CALL SITE. Every read in this module goes through here, and here the method
@@ -722,5 +823,11 @@ module.exports = {
   MAX_ITEMS,
   ID_FIELDS,
   TITLE_FIELDS,
-  DATE_FIELDS
+  DATE_FIELDS,
+  // ⛔ THE DEFAULT-TRANSPORT FENCE — exported for its own regression + survey tests.
+  aromaSystemLiveEgressAllowed,
+  assertAromaSystemLiveEgressAllowed,
+  AROMA_LIVE_OPT_IN,
+  AROMA_OPT_IN_VALUE,
+  AROMA_LIVE_BLOCKED_MARKER
 }

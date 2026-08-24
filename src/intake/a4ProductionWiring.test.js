@@ -487,12 +487,44 @@ test('*** D — a clear INTERNAL question never reaches the public provider ***'
   await withEnv({ [A4_FLAG]: 'on', CONTEXT_PUBLIC_KNOWLEDGE: 'on', OPENAI_API_KEY: 'test-key' }, async () => {
     const t = webSearchTransport()
     const model = scriptedModel({ envelopes: [READ(INV), FINAL('我哋自己數口。')] })
+    // ⛔ TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL — REPAIRED. This used to hand the WHOLE real
+    // `createLiveReadConnector({env: process.env})` to the turn and fake only
+    // `public_knowledge`'s transport, leaving `aroma_system` on the DEFAULT transport. With an
+    // ambient key present that reached a real `fetch()` at the production restaurant system —
+    // silently, because a blocked/failed aroma_system read still normalises to
+    // `trust:'unavailable'` and this test's own assertion never looked at it. Repaired at the
+    // same seam G/E already use: `live.connector` now serves `public_knowledge` ONLY, and
+    // `aroma_system` is answered by a deterministic fake — exactly like every other internal
+    // read in this file, and structurally unable to reach the default transport at all.
+    const reads = []
+    const internalRows = [{
+      source: 'aroma_system', sourceId: '7', title: 'Deterministic internal fixture', entityType: 'purchase_order',
+      content: 'unitPrice=8.72', fields: { id: '7' },
+      trust: 'live', retrievedAt: '2026-08-10T00:00:00.000Z', originalDate: null, link: null, error: null
+    }]
+    const live = createLiveReadConnector({
+      env: process.env,
+      publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn })
+    })
+    const connector = {
+      async read (source, method, params) {
+        reads.push(source)
+        if (source === 'public_knowledge') return live.connector.read(source, method, params)
+        return {
+          asOf: '2026-08-10T00:00:00.000Z', source, count: 1, results: internalRows,
+          evidence: { source, endpoint: method, entityType: 'purchase_order', rowShape: {}, metrics: {}, matchingTotal: 1, shownCount: 1, sourceTotal: null, queryScope: {}, completeness: 'complete', usedFallback: false, retrievedAt: '2026-08-10T00:00:00.000Z', trust: 'live', provenance: 'FAKE INTERNAL — test D' }
+        }
+      }
+    }
     const app = chatApp({
       model,
       verifierFactory: roleAdapters({ intent: { intent: 'internal' } }).factory,
-      readDepsOverride: { connector: createLiveReadConnector({ env: process.env, publicSearchProviderFactory: ({ apiKey }) => createOpenAIWebSearchProvider({ apiKey, transport: t.fn }) }).connector }
+      readDepsOverride: { connector }
     })
     await chat(app, '我哋自己嘅成本點')
+    // ⛔ BOTH HALVES OF THE REPAIR, PROVED. Before: only the second assertion existed, and it
+    // passed whether the internal read happened, failed, or silently reached production.
+    assert.ok(reads.includes('aroma_system'), '⛔ the internal aroma_system read must actually occur, through the deterministic fake')
     assert.equal(t.sent.length, 0, '⛔ an internal question spent a public retrieval')
   })
 })
@@ -620,4 +652,39 @@ test('*** every registry source has a builder — including the new one ***', ()
     connector: { register (a) { seen.push(a && a.source) }, hasWriteMethod: () => false }
   })
   assert.ok(ALL_SOURCES.includes('public_knowledge'))
+})
+
+/* ═══ TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL — D's REPAIR CANNOT SILENTLY REGRESS ═══
+ *
+ * ⛔ WHY A STRUCTURAL TEST, NOT JUST D'S OWN ASSERTIONS. The default-transport fence in
+ * `aromaSystemRead.js` independently stops a live call even if D regresses to its pre-repair
+ * shape — which means reverting D, or quietly dropping the assertion that proves the internal
+ * read actually happened, would NOT turn D red: the fence would swallow the blocked attempt
+ * into `trust:'unavailable'` and D's original (preserved) `t.sent.length === 0` assertion would
+ * keep passing, exactly as it did the day this was measured. So the repair needs its OWN
+ * witness, independent of whether the fence exists at all — this one, reading D's source.
+ */
+test('*** TEST_AROMA_SYSTEM_AMBIENT_CREDENTIAL — test D never hands the bare live connector to aroma_system ***', () => {
+  const fs = require('node:fs')
+  const src = fs.readFileSync(__filename, 'utf8')
+  const start = src.indexOf("test('*** D — a clear INTERNAL question never reaches the public provider ***'")
+  assert.ok(start > -1, 'test D must exist under its own name')
+  const nextTestAt = src.indexOf("\ntest(", start + 1)
+  assert.ok(nextTestAt > start, 'the next test must be found to bound D\'s body')
+  const body = src.slice(start, nextTestAt)
+
+  // ⛔ THE OLD DEFECT SHAPE, NAMED DIRECTLY: handing the whole live connector as
+  // readDepsOverride with no aroma_system-specific fake is exactly what reached production.
+  assert.equal(/readDepsOverride:\s*\{\s*connector:\s*createLiveReadConnector/.test(body), false,
+    '⛔ D hands the RAW live connector straight through — this is the exact regression that reached production')
+  assert.equal(/readDepsOverride:\s*\{\s*connector:\s*live\.connector\s*\}/.test(body), false,
+    '⛔ D hands live.connector directly, unwrapped — aroma_system would be on the default transport again')
+
+  // ⛔ THE REPAIR'S TWO REQUIRED PROOFS MUST BOTH STILL BE PRESENT, BY NAME.
+  assert.match(body, /source === 'public_knowledge'/,
+    '⛔ D no longer routes only public_knowledge to the real connector — the aroma_system wrapper is gone')
+  assert.match(body, /reads\.includes\('aroma_system'\)/,
+    '⛔ D no longer asserts the internal read actually occurred — the repair\'s first proof is missing')
+  assert.match(body, /t\.sent\.length,\s*0/,
+    '⛔ D no longer asserts zero public-provider sends — the repair\'s second proof is missing')
 })
