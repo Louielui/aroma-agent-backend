@@ -161,6 +161,25 @@ function matchingTotalOf (bodyCount, truncated) {
  * because 「we could not tell」 is a third state and flattening it is the defect this whole
  * change exists to remove.
  */
+/**
+ * ⛔ SERVER-DECLARED TRUNCATION. A DIFFERENT FACT FROM THE READER’S INFERENCE.
+ *
+ * `truncationOf()` above INFERS from returnedRows vs an audited constant: 45 rows under a cap
+ * of 100 yields `false`, and that is a reader opinion about a server we audited by reading its
+ * source. This reads the server’s own statement instead, and the two must never be confused —
+ * promoting the inference to ranking authority would re-commit exactly the substitution
+ * (post-limit count treated as population) that produced DEFECT-009.
+ *
+ * ⛔ LITERAL BOOLEAN ONLY. An absent field, null, the string "false", 0, or any other shape is
+ * NOT a statement. Old servers send nothing and must keep today’s conservative refusal, which
+ * is what makes a staged rollout safe in either order.
+ */
+function serverTruncatedOf (body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body)) return null
+  if (!Object.prototype.hasOwnProperty.call(body, 'truncated')) return null
+  return typeof body.truncated === 'boolean' ? body.truncated : null
+}
+
 function completeWithinScopeOf (truncated) {
   if (truncated === false) return true
   if (truncated === true) return false
@@ -560,6 +579,10 @@ function describe (endpointKey, retrievedAt, bodyCount, shownCount, isSample, op
   const returnedRows = Number.isFinite(opts.returnedRows) ? opts.returnedRows : shownCount
   const truncated = truncationOf(returnedRows, limit, known)
   const matchingTotal = matchingTotalOf(bodyCount, truncated)
+  // ⛔ null unless the SERVER said so, as a literal boolean. Never derived from anything here.
+  const serverTruncated = opts.serverTruncated === true || opts.serverTruncated === false
+    ? opts.serverTruncated
+    : null
   return {
     source: 'aroma_system',
     entityType: ENTITY_OF[endpointKey] || null,
@@ -615,7 +638,22 @@ function describe (endpointKey, retrievedAt, bodyCount, shownCount, isSample, op
     // produced DEFECT-009. An endpoint that can cut is treated as one that did.
     rankingMetric: rank ? rank.metric : null,
     rankingDirection: rank ? rank.direction : null,
-    rankingCompleteWithinScope: !!rank && limit === null && truncated === false,
+    // ⛔ THE RANKING AUTHORITY, AND WHOSE WORD IT RESTS ON.
+    //
+    // Unbounded endpoints are unchanged: nothing could cut them, so the client-side sort saw
+    // everything and an absolute first place is provable from the audit alone.
+    //
+    // A CAPPED endpoint now requires the SERVER to say the cap did not fire. It deliberately
+    // does NOT accept `truncated === false` from truncationOf(): that is the reader inferring
+    // completeness from a post-limit count, which is the substitution this whole line exists to
+    // refuse. Absent, null or malformed keeps the old refusal — an endpoint that can cut is
+    // still treated as one that did, until its server states otherwise.
+    rankingCompleteWithinScope: !!rank && (limit === null ? truncated === false : serverTruncated === false),
+
+    // Which of the two answered the question above, so a later reader can tell why a ranking
+    // was admitted. Nothing a model produces can reach this.
+    truncationAuthority: serverTruncated === null ? 'reader' : 'server',
+    serverTruncated,
 
     // ⛔ NOT retrievedAt. When we read is not how current the data is, and nothing in the
     // response says the latter.
@@ -718,6 +756,7 @@ function createAromaSystemReadAdapter (options = {}) {
     // reader is already honest — and they stay null rather than being inferred (A1 rule 3).
     const extra = {
       returnedRows: rows.length,
+      serverTruncated: serverTruncatedOf(body),
       sourceTotal: Number.isFinite(body && body.sourceTotal) ? body.sourceTotal : null,
       dataAsOf: (body && typeof body.dataAsOf === 'string' && body.dataAsOf) ? body.dataAsOf : null
     }
@@ -807,6 +846,7 @@ module.exports = {
   SERVER_LIMITS,
   CLIENT_ROW_LIMITS,
   truncationOf,
+  serverTruncatedOf,
   matchingTotalOf,
   completeWithinScopeOf,
   LIMIT_KNOWN,
