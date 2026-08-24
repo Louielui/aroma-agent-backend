@@ -92,12 +92,39 @@ async function withEnv (vars, fn) {
   }
 }
 
-/** One chat turn with a brain and a separate control adapter. */
+/**
+ * One chat turn with a brain and a separate control adapter.
+ *
+ * ⛔ THE DRIVE EVIDENCE IS INJECTED, AND IT USED TO COME FROM LOUIE'S REAL GOOGLE ACCOUNT.
+ *
+ * `BASE_ENV` turns `READ_ACCESS` and `CONTEXT_DRIVE` on, and this helper passed no
+ * `readContextDeps` — so the automatic read-context layer built a LIVE connector
+ * (`intakeService.js:1238`) and performed a real authenticated Drive read on every turn.
+ * Measured: **15 requests to `oauth2.googleapis.com` from this file alone**, with the Owner's
+ * refresh token, on every canonical run.
+ *
+ * It was also load-bearing, which is the part that matters. Test 12/13 asserts the second
+ * model call carries `distill_with_answer_plan`, and that schema is only chosen when the turn
+ * HAS evidence to plan over (`intakeService.js:1519-1543`). With Google unreachable the read
+ * failed, no evidence existed, and the schema became `null` — so a test whose whole subject is
+ * **which adapter answers which role** was silently deciding on whether this machine could
+ * reach Google. On any other machine it simply failed.
+ *
+ * ⛔ THE FIX IS EVIDENCE, NOT A WEAKER ASSERTION. `stubConnector(ROWS)` supplies the same two
+ * Drive rows deterministically, so `planApplies` is reached exactly as before and the role
+ * assertions — including `['goal_plan', 'distill_with_answer_plan']` — are untouched. The
+ * claim this file makes is the claim it made before; it just no longer needs a Google account
+ * to make it.
+ *
+ * ⛔ AND IT IS A DEFAULT, NOT A CEILING. `extraOpts` is merged last, so the one test that
+ * supplies its own `readContextDeps` still overrides this.
+ */
 async function chatTurn ({ brainReplies, controlReplies = [PLAN], separate = true, extraOpts = {} }) {
   const brain = tagged(OPUS, brainReplies)
   const control = tagged(HAIKU, controlReplies)
   const opts = Object.assign({
-    demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: 'req_c3c'
+    demo: true, interactionMode: 'chat', providerHint: 'claude', requestId: 'req_c3c',
+    readContextDeps: { sources: ['drive'], connector: stubConnector(ROWS) }
   }, separate ? { controlAdapter: control } : {}, extraOpts)
   const res = await processIntake('幫我睇下 Drive 有咩文件', brain, [], opts)
   return { res, brain, control }
