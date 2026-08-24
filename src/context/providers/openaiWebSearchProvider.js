@@ -35,6 +35,7 @@
 const {
   SEARCH_STATUS, UNAVAILABLE_REASON, CONTENT_KIND, makeSearchResult
 } = require('./publicSearchProvider')
+const { fencedFetch } = require('../../adapters/liveEgressFence')
 
 const PROVIDER_ID = 'openai_web_search'
 const RESPONSES_URL = 'https://api.openai.com/v1/responses'
@@ -404,7 +405,11 @@ function createOpenAIWebSearchProvider (options = {}) {
     const controller = typeof AbortController === 'function' ? new AbortController() : null
     const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null
     try {
-      const doFetch = transport || fetch
+      // ⛔ THE FENCE IS ON THE DEFAULT ONLY. An injected transport is used untouched; the
+      // global-fetch default is the branch that can reach the vendor because OPENAI_API_KEY
+      // happened to be in scope. The catch below turns a refusal into `unavailable(NETWORK)`,
+      // which is why liveEgressFence prints its own marker — see the note there.
+      const doFetch = transport || fencedFetch(PROVIDER_ID)
       res = await doFetch(RESPONSES_URL, {
         method: 'POST',
         headers: { Authorization: 'Bearer ' + apiKey, 'Content-Type': 'application/json' },

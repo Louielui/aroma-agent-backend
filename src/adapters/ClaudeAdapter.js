@@ -1,8 +1,11 @@
 'use strict'
 
-const axios = require('axios')
 const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
+const { fencedAxiosPost } = require('./liveEgressFence')
+
+/** The vendor label carried by a blocked-egress marker. Never a key, never a body. */
+const PROVIDER_LABEL = 'anthropic'
 
 /**
  * ⛔ THE CEILING ON OUR PATIENCE, NOT ON HER THINKING.
@@ -153,11 +156,23 @@ class ClaudeAdapter extends LLMAdapter {
     this._model = pick(config.model) || pick(process.env.CLAUDE_MODEL) || null
     this._apiBase = 'https://api.anthropic.com/v1'
     this._anthropicVersion = '2023-06-01'
-    // Injectable transport for tests ONLY. Production uses axios.post; the default
-    // wrapper preserves axios semantics (returns { data }, throws with .response).
+    /**
+     * Injectable transport for tests ONLY. Production uses axios.post; the fenced default
+     * preserves axios semantics exactly (returns { data }, throws with .response).
+     *
+     * ⛔ THE FENCE IS ON THE DEFAULT, AND ONLY ON THE DEFAULT. An INJECTED transport is
+     * returned untouched — a scripted test is already deterministic and already free, and
+     * fencing it would break every spy in the suite for no safety gained. The default is the
+     * one branch that can reach `api.anthropic.com` because a key happened to be in the shell,
+     * which is precisely the path that spent ~41 live calls per canonical run.
+     *
+     * ⛔ AND IT IS NOT IN THE CONSTRUCTOR. `connectionState.projectConnections` constructs this
+     * adapter on every real turn to check credential PRESENCE; construction must stay free.
+     * See liveEgressFence.js.
+     */
     this._post = (typeof config.transport === 'function')
       ? config.transport
-      : ((url, data, cfg) => axios.post(url, data, cfg))
+      : fencedAxiosPost(PROVIDER_LABEL)
   }
 
   get providerName () {

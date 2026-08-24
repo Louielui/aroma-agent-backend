@@ -43,30 +43,27 @@
  * empirically ('child-v8'), not taken from documentation. Two more signals cover the cases
  * it misses: the runner's own process (`--test` in argv) and a test file executed directly.
  * The live server matches none of them and still gets production.
+ *
+ * ⛔ THE DETECTOR NOW LIVES IN `src/testProcess.js` AND IS ONLY RE-EXPORTED HERE.
+ *
+ * It was moved, not copied, when a second consumer appeared — `adapters/liveEgressFence.js`,
+ * which asks the identical question in order to stop a test SPENDING rather than WRITING. Two
+ * components able to establish the same fact is a coincidence waiting to diverge, and a drift
+ * between「what the store thinks a test is」and「what the egress fence thinks a test is」would
+ * surface as a paid call nobody could explain.
+ *
+ * ⛔ THE BEHAVIOUR IS UNCHANGED AND `dataDir.test.js` IS UNEDITED. That file still imports
+ * `isTestProcess` from here and still asserts all four cases including the negative one; its
+ * staying green without a single edit IS the proof this move changed nothing.
  */
 
 const os = require('os')
 const fs = require('fs')
 const path = require('path')
+const { isTestProcess } = require('../testProcess')
 
 /** The real store. Named rather than inlined, so a test can assert we are NOT it. */
 const PRODUCTION_DIR = path.resolve(__dirname, '../../data')
-
-/**
- * @param {object} env
- * @param {string[]} argv
- * @param {string|null} mainFile
- * @returns {boolean}
- */
-function isTestProcess (env = process.env, argv = process.argv, mainFile = (require.main && require.main.filename) || null) {
-  // Set by node:test in the child it spawns per file. The authoritative signal.
-  if (typeof env.NODE_TEST_CONTEXT === 'string' && env.NODE_TEST_CONTEXT !== '') return true
-  // The runner process itself, before it spawns children.
-  if (Array.isArray(argv) && argv.includes('--test')) return true
-  // `node something.test.js` — a developer running one file directly.
-  if (typeof mainFile === 'string' && /\.test\.[cm]?js$/i.test(mainFile)) return true
-  return false
-}
 
 // ONE temp directory per process, created lazily. All four modules must agree: if they each
 // got their own, a test that wrote through one and read through another would see an empty

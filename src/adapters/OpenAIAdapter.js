@@ -36,9 +36,12 @@
  *   - Uses the repo's existing axios — no new dependency.
  */
 
-const axios = require('axios')
 const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
+const { fencedAxiosPost } = require('./liveEgressFence')
+
+/** The vendor label carried by a blocked-egress marker. Never a key, never a body. */
+const PROVIDER_LABEL = 'openai'
 
 const OPENAI_RESPONSES_URL = 'https://api.openai.com/v1/responses'
 const DEFAULT_TIMEOUT_MS = 60000
@@ -96,8 +99,15 @@ class OpenAIAdapter extends LLMAdapter {
     this._timeoutMs = options.timeoutMs || DEFAULT_TIMEOUT_MS
     // null/'' → omit the field entirely (provider default applies).
     this._reasoningEffort = (options.reasoningEffort === undefined) ? DEFAULT_REASONING_EFFORT : options.reasoningEffort
-    // Injectable transport for tests ONLY; production uses axios.post.
-    this._post = typeof options.post === 'function' ? options.post : ((url, body, cfg) => axios.post(url, body, cfg))
+    /**
+     * Injectable transport for tests ONLY; production uses axios.post.
+     *
+     * ⛔ THE FENCE IS ON THE DEFAULT ONLY — an injected `post` is returned untouched. Same rule
+     * and same reason as ClaudeAdapter: a test process must not reach `api.openai.com` merely
+     * because OPENAI_API_KEY is in scope, and `.env` puts it in scope for every test child that
+     * loads `app.js`. See liveEgressFence.js.
+     */
+    this._post = typeof options.post === 'function' ? options.post : fencedAxiosPost(PROVIDER_LABEL)
   }
 
   /**
