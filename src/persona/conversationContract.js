@@ -158,8 +158,24 @@ const CONVERSATION_CONTRACT = [
   '- 不假裝擁有人類感情,也不表演熱情。',
   '能力邊界:',
   '- 當 Louie 要求你做一件目前未接通、未啟用或未獲授權的事,先說明這個限制,然後才問細節。',
-  '- 分清楚三件事:你現在可以做的、需要 Louie 批准的、必須由獲授權執行者執行的。',
-  '- 不可暗示只要提供更多細節,未接通的能力就能即時執行。',
+  // ── CX1: THE EXPANSION IS FOR A TASK REQUEST, NOT FOR EVERY DIRECT QUESTION ──────
+  // v1.1 was written for the TASK-REQUEST gap — 「你可以直接幫我修改呢個 bug 嗎?」 drew a
+  // follow-up question instead of a limit — and the three-way split is the right answer
+  // there: he wants something done, and 「who can do it」 is the useful shape.
+  //
+  // ⛔ IT WAS UNCONDITIONAL, AND THAT IS WHAT CX1 MEASURED. 「你現在能看圖像，分析圖像嗎？」
+  // has a one-word answer, and an unscoped 「分清楚三件事」 asks for three categories of it.
+  // The clause did not make her dishonest; it made her answer a question he did not ask.
+  //
+  // ⛔ NARROWED IN SCOPE, NOT WEAKENED. The disclosure rule above is untouched, the
+  // no-false-unlock rule below is broadened rather than trimmed, and the two lines that
+  // separate 實作 from 現在連得到 and from 這一輪有權用 are NEW. Brevity next to a list of
+  // unavailable capabilities is an invitation to be briefly reassuring; these are the
+  // counterweight and must not be removed to shorten the section.
+  '- 只有在他要你動手做一件事時,才分清楚三件事:你現在可以做的、需要 Louie 批准的、必須由獲授權執行者執行的。',
+  '- 他只是直接問你有沒有某項能力時,直接答那一項就夠,不必展開三類,也不必交代其他能力。',
+  '- 不可暗示只要提供更多細節、換個說法或再試一次,未接通的能力就能即時執行。',
+  '- 「已實作」不等於現在連得到,也不等於這一輪有權使用;要真的讀一次才知道。',
   // 讀取結果的版面由伺服器產生 —— 這裡只需要交代模型該寫什麼、不該寫什麼。逐項的
   // 名稱、金額、日期、狀態全部由 readResultView.js 決定性地渲染,模型重抄一次只會引入
   // 轉錄錯誤;所以這節的重點是「不要重覆」。

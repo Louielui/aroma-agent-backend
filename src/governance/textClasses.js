@@ -252,6 +252,12 @@ const FILE_CLASS = Object.freeze({
   'lab/citationDetector.js': CLASS.MATCHING,          //   1
   'lab/conversationRecall.js': CLASS.MATCHING,        //   1
   'intake/routeEvidenceGuard.js': CLASS.MATCHING,     //   1
+  // ⛔ CX1 — laneRouter ALWAYS matched his words; what changed is that one vocabulary is now a
+  // STRING. `ADVERB` is the closed list of time/degree adverbs that may sit between 你 and the
+  // modal (你現在能… / 你而家可唔可以…); it is composed into three RegExps rather than repeated
+  // in each of them. Translating a token here does not soften a rule — it silently stops
+  // recognising a capability question, which is the exact defect CX1 was opened for.
+  'intake/laneRouter.js': CLASS.MATCHING,             //   1 — the ADVERB fragment; the lane vocabulary
   // ⛔ `intake/rankingProof.js` WAS CLASSIFIED HERE AND IS NOT ANY MORE — task 001-H, and the
   // staleness rule asked for it, not me. Its quoted Chinese was `CJK_DIGITS` (一: 1, 二: 2, …),
   // the count parser's numeral table, and the parser was deleted when cardinality became a

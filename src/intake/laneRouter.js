@@ -42,7 +42,58 @@ const LANES = Object.freeze([CHAT, EMAIL, PROPOSAL])
 // Two forms, because the English one has no pronoun to anchor on: 「你識唔識…」 needs the
 // pronoun to distinguish it from a plain instruction, while "can you …" is already
 // unambiguous on its own.
-const CAPABILITY_QUESTION = /(?:(?:你|妳)\s*(?:識唔識|識唔識得|會唔會|可唔可以|能唔能夠|得唔得))|(?:\bcan you\b|\bcould you\b|\bare you able\b|\bdo you know how\b)/i
+/**
+ * ⛔ CX1 — AN ADVERB BETWEEN THE PRONOUN AND THE MODAL IS STILL THE SAME QUESTION.
+ *
+ * Measured on a real turn: 「香香，你現在能看圖像，分析圖像嗎？」 was NOT recognised as a
+ * capability question. Both patterns here anchored the modal directly to 你, so 現在 — the
+ * most natural way to ask 「can you do it RIGHT NOW」 — broke the match and the turn fell
+ * through to the generic `question` reason. It still landed in CHAT, because the fallback
+ * direction is the safe one; what was lost is that nothing downstream could tell it apart
+ * from an ordinary question, so the answer shape a capability question deserves never fired.
+ *
+ * ⛔ A CLOSED LIST OF TIME/DEGREE ADVERBS, NEVER `.{0,4}`. A wildcard here would let a VERB
+ * sit between the pronoun and the modal — 「你幫我改 code 可以嗎」 is a request, not an
+ * enquiry — and the entire value of these patterns is that they do not swallow instructions.
+ * At most two, because 「而家仲」 is idiomatic and three is not.
+ */
+const ADVERB = '(?:\\s*(?:而家|依家|宜家|家陣|家阵|現在|现在|目前|如今|當下|当下|而今|今時今日|今时今日|暫時|暂时|平時|平时|通常|一般|依然|始終|始终|已經|已经|究竟|到底|真係|真系|仲|還|还)){0,2}'
+
+const CAPABILITY_QUESTION = new RegExp(
+  '(?:(?:你|妳)' + ADVERB + '\\s*(?:識唔識得|識唔識|會唔會|可唔可以|能唔能夠|能唔能够|得唔得))' +
+  '|(?:\\bcan you\\b|\\bcould you\\b|\\bare you able\\b|\\bdo you know how\\b)', 'i')
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ CX1 — THE A-唔-A FORM, RESTRICTED TO VERBS THAT ASK ABOUT HER.
+ *
+ * Cantonese asks a yes/no question by repeating the verb around 唔. 「你記唔記得我哋上次
+ * 講咩?」 and 「你而家讀唔讀到 Calendar?」 are capability and reachability questions in
+ * exactly that shape, and the named list above did not cover them.
+ *
+ * ⛔ AND THE VERB LIST IS CLOSED, BECAUSE THE FORM ALONE IS NOT THE QUESTION.
+ *
+ * The first draft of this matched ANY repeated verb — `([一-鿿]{1,2})唔\1` — on the
+ * reasoning that 你 + A-唔-A is by construction a question about her. It is a question, but
+ * it is not necessarily about HER CAPABILITY, and the difference decides a lane:
+ *
+ *     「你改唔改 docs/x.md」   → CHANGE_ACT + FILE_OBJECT, no 「?」 → PROPOSAL
+ *     「你回唔回覆 Rob」       → WRITE_ACT + RECIPIENT          → EMAIL
+ *
+ * Both would have become capability questions, and CX1 would have quietly changed general
+ * action semantics on its way to fixing an answer shape. That the change moved them toward
+ * chat does not license it: the safe-fallback principle is a rule about AMBIGUITY, not a
+ * warrant for widening scope inside a tranche that was not authorised to touch routing.
+ *
+ * ⛔ SO WHAT IS LISTED IS ABILITY, MEMORY AND REACHABILITY — never an act performed on an
+ * object. 識/會/可/能/得 are ability; 記(得) is memory; 讀(到)/知(道) are reachability and
+ * knowledge. 改, 回覆, 寫, send are acts, and their absence from this list is the whole
+ * mechanism. A verb added here must answer 「is this asking what she IS, or what she should
+ * DO?」 — and the negative fixtures in cx1SimpleAnswer.test.js are what hold that line.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const CAPABILITY_VERB = '(?:記得|知道|能夠|能够|可以|識得|識|會|会|可|能|得|記|记|讀|读|知)'
+const SELF_YES_NO_QUESTION = new RegExp('(?:你|妳)' + ADVERB + '\\s*(' + CAPABILITY_VERB + ')唔\\1')
 
 /**
  * ⛔ E3 — 「你可以…嗎？」 IS THE SAME QUESTION IN THE OTHER SPELLING, and it was reaching the
@@ -56,7 +107,9 @@ const CAPABILITY_QUESTION = /(?:(?:你|妳)\s*(?:識唔識|識唔識得|會唔�
  * INSTRUCTION, not an enquiry — would stop drafting. 嗎/嘛/？/? is what separates asking
  * whether she can from telling her to.
  */
-const CAPABILITY_ENQUIRY = /(?:你|妳)\s*(?:可以|能夠|能|會)[^\n]*(?:嗎|嘛|呢)?\s*[？?]|(?:你|妳)\s*(?:可以|能夠|能|會)[^\n]*(?:嗎|嘛)/
+const CAPABILITY_ENQUIRY = new RegExp(
+  '(?:你|妳)' + ADVERB + '\\s*(?:可以|能夠|能够|能|會|会)[^\\n]*(?:嗎|嘛|呢)?\\s*[？?]' +
+  '|(?:你|妳)' + ADVERB + '\\s*(?:可以|能夠|能够|能|會|会)[^\\n]*(?:嗎|嘛)')
 
 // A request to COMPOSE correspondence. The act is what matters, not the noun: a message
 // merely mentioning email is not a request to write one.
@@ -196,7 +249,7 @@ function routeLane (message, opts) {
   }
 
   // 1. "Can you …?" is a question about capability, not a request. Chat.
-  if (CAPABILITY_QUESTION.test(text) || CAPABILITY_ENQUIRY.test(text)) return { lane: CHAT, reason: 'capability_question' }
+  if (isCapabilityQuestion(text)) return { lane: CHAT, reason: 'capability_question' }
 
   // 2. EMAIL — an explicit act of composing correspondence. The act is required; a
   //    message that merely mentions email is not a request to write one.
@@ -240,4 +293,43 @@ function isReadRequest (message) {
   return READ_ACT.test(text) || INTERROGATIVE.test(text)
 }
 
-module.exports = { routeLane, isShortReply, isReadRequest, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }
+/** Does this message ask whether 香香 CAN do something, in any of the three recognised forms? */
+function isCapabilityQuestion (text) {
+  return CAPABILITY_QUESTION.test(text) || CAPABILITY_ENQUIRY.test(text) || SELF_YES_NO_QUESTION.test(text)
+}
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ CX1 — 「你可以幫我睇下下星期有咩安排嗎?」 IS NOT A QUESTION ABOUT HER.
+ *
+ * A capability question and a politely-phrased read request are THE SAME SHAPE in Cantonese.
+ * 「你可以幫我 send email 嗎?」 asks what she IS; 「你可以幫我睇下下星期有咩安排嗎?」 asks
+ * her to go and look. Both match CAPABILITY_ENQUIRY, and both always have — the lane is CHAT
+ * either way, which is why the ambiguity cost nothing until something wanted to treat
+ * capability questions differently.
+ *
+ * ⛔ THE TELL IS A LOOK-UP ACT, AND IT IS THE ONE ALREADY IN THIS FILE. `READ_ACT` is the
+ * single definition of 「he asked me to look」 — `isReadRequest` and `readStateGuard` both
+ * read it. A message that names one is asking for a READ: the read must proceed and the
+ * answer must be what was found, never a description of what she can do.
+ *
+ * ⛔ THE FALLBACK DIRECTION IS THE SAFE ONE, AGAIN. In doubt this returns FALSE and the turn
+ * keeps exactly the shape it had before CX1 existed. A wrong `false` costs a longer answer;
+ * a wrong `true` would put an answer-shape rule on top of a genuine read.
+ *
+ * ⛔ IT DECIDES NOTHING ABOUT ROUTING. `routeLane` and `routeTurn` do not call it, so it can
+ * neither open nor close a source, a lane or an execution path. It reports a SHAPE.
+ *
+ * Pure, zero-context, free — the same contract as routeLane.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+function isCapabilityOnlyQuestion (message) {
+  const text = typeof message === 'string' ? message.trim() : ''
+  if (!text) return false
+  if (!isCapabilityQuestion(text)) return false
+  // He named something to go and look at → a read request wearing a question's clothes.
+  if (READ_ACT.test(text)) return false
+  return true
+}
+
+module.exports = { routeLane, isShortReply, isReadRequest, isCapabilityQuestion, isCapabilityOnlyQuestion, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }

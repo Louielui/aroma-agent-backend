@@ -47,7 +47,7 @@ const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime
 const { buildContextPreamble } = require('../governance/contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
 const { runU1DraftShadow } = require('./u1DraftShadow')
-const { isShortReply, isReadRequest } = require('./laneRouter') // a short confirmation is an answer, not an instruction
+const { isShortReply, isReadRequest, isCapabilityOnlyQuestion } = require('./laneRouter') // a short confirmation is an answer, not an instruction
 const { enforceReadState, enforceNoReadClaim } = require('./readStateGuard') // a reply may not deny a read that happened — nor claim one that never ran
 /**
  * ⛔ THE MODULE OBJECTS, NOT DESTRUCTURED BINDINGS, AND THAT IS DELIBERATE. A destructured
@@ -185,6 +185,43 @@ const { logNoEvidenceShadow } = require('./noEvidenceShadow')
 // She must never have to ask the Owner what Aroma System is: identity, not availability.
 const { namesInternalSystem, describe: describeSelf } = require('../governance/selfDescription')
 const { capabilityBlock } = require('../governance/selfCapability')
+
+/**
+ * ══════════════════════════════════════════════════════════════════════════════
+ * ⛔ CX1 — ANSWER SHAPE, AND NOTHING ELSE.
+ *
+ * > **Owner: 「香香，你現在能看圖像，分析圖像嗎？」** — a question with a one-word answer.
+ * > What came back was an inventory of everything else she can do, a roadmap she was never
+ * > asked for, and a follow-up question.
+ *
+ * The capability FACTS were already right: `capabilityBlock()` sits directly above this and
+ * has said `image.input：未實作` since S1. Nothing was dishonest. What was missing was the
+ * instruction to ANSWER THE QUESTION — so the model, handed a full registry and a contract
+ * that told it to lay out three categories of capability boundary, laid out all of it.
+ *
+ * ⛔ IT IS A PROMPT DIRECTIVE, NOT A FILTER. The model still authors every word of the
+ * reply. Nothing downstream truncates, trims or rewrites the prose — a length cap applied
+ * after generation would cut a sentence in half and call it brevity.
+ *
+ * ⛔ IT ADDS NO FACT, OPENS NO SOURCE, GRANTS NO AUTHORITY. It names no capability, no row,
+ * no id and no date, so there is nothing here an Answer Plan could cite. READ_ACCESS,
+ * `sourcesForPlan` and execution governance decide exactly what they decided before.
+ *
+ * ⛔ AND THE HONESTY CLAUSES ARE RESTATED, NOT DROPPED. A directive that says 「be brief」
+ * next to a registry of unavailable capabilities is an invitation to be briefly reassuring.
+ * The last two lines are the counterweight and must not be removed to shorten this block.
+ * ══════════════════════════════════════════════════════════════════════════════
+ */
+const CAPABILITY_ANSWER_SHAPE = [
+  '【直接回答 — 呢句係能力提問】Louie 呢一句係直接問你有冇某項能力，唔係叫你做嘢。',
+  '· 第一句就直接答佢問嗰項:做得到，定係做唔到。',
+  '· 只講佢問嗰一項。唔好順手列出其他能力，唔好交一份能力清單。',
+  '· 正常兩三句短句就夠，除非佢再追問。',
+  '· 除非佢問，唔好講將來計劃、roadmap 或者時間表。',
+  '· 除非真係有嘢唔清楚，唔好加追問;唔好為咗延續對話而問。',
+  '· 「未實作」係確定嘅答案:唔可以暗示佢畀多啲細節、換個講法或者再試一次就做到。',
+  '· 「已實作」唔等於而家連得到，亦唔等於呢一轉有權用。'
+].join('\n')
 // A post-generation check: she may not ask the Owner what his own system is (02e430e, twice).
 const { enforceInternalSystemAnswer } = require('../governance/internalSystemAnswer')
 // ⛔ No path ships silence. Measured 17:18: a completed call stored content:"".
@@ -1275,7 +1312,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
          * per-source flags and sourcesForPlan still decide every read, and execution
          * governance still decides every write.
          */
-        effPrompt = capabilityBlock() + String.fromCharCode(10, 10) + effPrompt
+        /**
+         * ⛔ CX1 — THE ONE CONSUMER OF THE CAPABILITY-QUESTION SHAPE. There is deliberately no
+         * second call site: the facts and the instruction on how to state them belong in the
+         * same place, or one of them drifts. Directly under `capabilityBlock()` so the model
+         * reads the registry and then, immediately, what to do with it.
+         *
+         * ⛔ `isCapabilityOnlyQuestion` — NOT `capability_question` FROM THE ROUTER. The router's
+         * reason is true of 「你可以幫我睇下下星期有咩安排嗎?」 as well, and that is a genuine
+         * Calendar read. Gating on the router's reason would answer a real question about next
+         * week with a short sermon about what she can do. See laneRouter.js.
+         */
+        const capabilityShape = isCapabilityOnlyQuestion(message)
+          ? CAPABILITY_ANSWER_SHAPE + String.fromCharCode(10, 10)
+          : ''
+        effPrompt = capabilityBlock() + String.fromCharCode(10, 10) + capabilityShape + effPrompt
         const frameBlock = executiveFrameBlock(goalUnderstandingObserved)
         if (frameBlock) effPrompt = frameBlock + String.fromCharCode(10, 10) + effPrompt
         /**
