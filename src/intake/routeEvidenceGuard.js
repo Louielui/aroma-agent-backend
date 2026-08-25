@@ -8,8 +8,11 @@
  * CONVERSATION, reads nothing at all, and is then answered out of the model's own fluency
  * with zero evidence behind it — and because nothing was read, no evidence layer runs.
  *
- * That gap is live. 「今日邊啲貨要補？」 routes to CONVERSATION today: the intent table has
- * 補貨 but not 要補. The question is unmistakably operational; the answer would be invented.
+ * That gap is real. The phrase it was built for — 「今日邊啲貨要補？」 — has since been repaired
+ * IN THE INTENT TABLE (readContext.js learned the topicalised 貨要補), so it now routes to
+ * BUSINESS_QUERY and never reaches this guard. The guard was not weakened and its scope did
+ * not change; one question stopped being unrouted. Others still are — 「上星期嗰批菜點呀？」 is
+ * the recorded one — and this remains the answer-end net for them.
  *
  * ════════════════════════════════════════════════════════════════════════════════
  * WHAT THIS CANNOT CATCH — READ THIS BEFORE CHANGING THE VOCABULARY
