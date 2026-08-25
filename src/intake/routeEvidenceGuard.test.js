@@ -7,8 +7,15 @@
  * business question the router did not recognise falls to CONVERSATION, reads nothing, and
  * is then answered from the model's own fluency with zero evidence behind it.
  *
- * That failure is live today. 「今日邊啲貨要補？」 routes to CONVERSATION — the router's
- * vocabulary has 補貨 but not 要補 — so it reads nothing and answers anyway.
+ * The phrase this guard was BUILT for — 「今日邊啲貨要補？」 — no longer falls to CONVERSATION.
+ * The intent table learned the topicalised form, so it routes to BUSINESS_QUERY and the read
+ * path answers it. That is the router doing its job, and this guard is deliberately
+ * CONVERSATION-only, so the phrase has left its scope ON PURPOSE, not by weakening.
+ *
+ * ⛔ THE VEHICLE MOVED, THE GUARD DID NOT. These fixtures need a message that STILL falls to
+ * CONVERSATION, so they use 「上星期嗰批菜點呀？」 — the other recorded miss (turnRouter.js:44),
+ * an implicit business question with no vocabulary hit. Swapping the vehicle keeps every
+ * assertion about WITHHOLDING intact; it changes only which unrouted question carries it.
  *
  * WITHHOLDING MUST BE VISIBLE. A confident answer with nothing behind it is the failure;
  * quietly deleting it is the same failure with the evidence removed.
@@ -25,7 +32,7 @@ const say = (reply, message, extra) => enforceRouteEvidence(Object.assign({ repl
 /* ═══ 1. THE NUMERIC HALF — sentenceIsSupported against an empty index ════ */
 
 test('*** an operational number with nothing read is withheld, and said so ***', () => {
-  const r = say('今日有 3 樣貨要補。', '今日邊啲貨要補？')
+  const r = say('今日有 3 樣貨要補。', '上星期嗰批菜點呀？')
   assert.equal(r.violated, true)
   assert.deepEqual(r.withheld.length, 1)
   assert.equal(/3 樣貨/.test(r.reply), false, 'the claim itself must not survive')
@@ -43,7 +50,7 @@ test('CJK numerals are caught too — the numeric half is not ASCII-only', () =>
 })
 
 test('the clean sentences survive; only the claim is removed', () => {
-  const r = say('好呀。今日有 3 樣貨要補。要我幫你開單嗎？', '今日邊啲貨要補？')
+  const r = say('好呀。今日有 3 樣貨要補。要我幫你開單嗎？', '上星期嗰批菜點呀？')
   assert.ok(r.reply.startsWith('好呀。'), 'got: ' + r.reply)
   assert.ok(r.reply.includes('開單'), 'the offer survives: ' + r.reply)
 })
@@ -51,7 +58,7 @@ test('the clean sentences survive; only the claim is removed', () => {
 /* ═══ 2. THE ENTITY-PLUS-STATUS HALF — weaker, and known to be ═══════════ */
 
 test('*** a status claim with no number at all is still caught ***', () => {
-  const r = say('存貨全部充足。', '今日邊啲貨要補？')
+  const r = say('存貨全部充足。', '上星期嗰批菜點呀？')
   assert.equal(r.violated, true, 'sentenceIsSupported passes this — a number check cannot see it')
 })
 
@@ -61,7 +68,7 @@ test('*** WRITTEN WHERE IT WILL BE SEEN: what this half cannot catch ***', () =>
   // The entity half matches the INTENT TABLE's own nouns. The guard therefore CANNOT see a
   // business claim phrased without one — which is the SAME blind spot that sent the turn to
   // CONVERSATION in the first place. The guard cannot catch what the router could not route.
-  const blind = say('今日一切正常，唔使做嘢。', '今日邊啲貨要補？')
+  const blind = say('今日一切正常，唔使做嘢。', '上星期嗰批菜點呀？')
   assert.equal(blind.violated, false, 'DOCUMENTED, NOT ACCEPTED AS SAFE — see the module header')
 
   // Widening the noun list narrows this hole in BOTH places at once, because the router and
@@ -75,7 +82,7 @@ test('*** WRITTEN WHERE IT WILL BE SEEN: what this half cannot catch ***', () =>
 /* ═══ 3. WHAT IT MUST NEVER TOUCH ════════════════════════════════════════ */
 
 test('a question or an offer is not a claim', () => {
-  assert.equal(say('要我查一下餐廳系統的存貨嗎？', '今日邊啲貨要補？').violated, false)
+  assert.equal(say('要我查一下餐廳系統的存貨嗎？', '上星期嗰批菜點呀？').violated, false)
   assert.equal(say('你想我睇邊 3 樣？', '睇下先').violated, false)
 })
 
@@ -110,12 +117,12 @@ test('an ordinary conversational reply is untouched, byte for byte', () => {
 test('the note is never added twice, and never to a clean reply', () => {
   const r = say('好呀。', '你好呀')
   assert.equal(ROUTE_EVIDENCE_NOTE_RE.test(r.reply), false)
-  const twice = enforceRouteEvidence(Object.assign({ reply: say('存貨全部充足。', '今日邊啲貨要補？').reply, message: '今日邊啲貨要補？' }, NO_EVIDENCE))
+  const twice = enforceRouteEvidence(Object.assign({ reply: say('存貨全部充足。', '上星期嗰批菜點呀？').reply, message: '上星期嗰批菜點呀？' }, NO_EVIDENCE))
   assert.equal(twice.violated, false, 'the server line must not trip the guard that wrote it')
 })
 
 test('everything withheld leaves the note standing alone, never an empty reply', () => {
-  const r = say('存貨全部充足。', '今日邊啲貨要補？')
+  const r = say('存貨全部充足。', '上星期嗰批菜點呀？')
   assert.ok(r.reply.trim().length > 0)
   assert.ok(ROUTE_EVIDENCE_NOTE_RE.test(r.reply))
 })
@@ -135,4 +142,25 @@ test('the written-Chinese policy holds for the server line', () => {
   const r = say('存貨還有 12 箱。', '仲有幾多貨？')
   const note = r.reply.slice(r.reply.search(ROUTE_EVIDENCE_NOTE_RE))
   assert.equal(/唔|嘅|咗|冇|嗰/.test(note), false, 'Cantonese in a server-generated line: ' + note)
+})
+
+
+/* ═══ 5. THE REPAIRED PHRASE LEFT SCOPE BY BEING ROUTED, NOT BY BEING EXCUSED ═══ */
+
+test('*** the measured phrase is out of scope BECAUSE it now routes to BUSINESS_QUERY ***', () => {
+  // If this ever fails, the guard stopped protecting a CONVERSATION turn — which is NOT
+  // what the intent-table fix did. The distinction is the whole point of the assertion.
+  const { routeTurn } = require('./turnRouter')
+  const r = routeTurn('今日邊啲貨要補？')
+  assert.equal(r.route, 'BUSINESS_QUERY', 'the router must own this phrase now')
+  assert.deepEqual(r.sources, ['aroma_system'])
+  // and the guard therefore declines it — silently and correctly.
+  assert.equal(say('今日有 3 樣貨要補。', '今日邊啲貨要補？').violated, false)
+})
+
+test('*** O-1 IS STILL OPEN — no number, no entity noun, still uncatchable ***', () => {
+  // This tranche fixed ONE phrase in the intent table. It did not widen the guard, and the
+  // general blind spot it shares with the router is untouched. Pinned as a MISS on purpose.
+  const blind = say('今日一切正常，唔使做嘢。', '上星期嗰批菜點呀？')
+  assert.equal(blind.violated, false, 'O-1 must remain an honest, visible miss')
 })

@@ -370,7 +370,25 @@ const INTENTS = Object.freeze([
   { key: 'purchase_order', method: 'listPurchaseOrders', cjk: ['採購單', '訂單', '入貨單', '採購'], latin: ['purchase order', 'purchase orders', 'po', 'pos'], sources: ['aroma_system'], heading: '採購單', unit: '張', noun: '採購單', defaultQuestion: '要我列出未收貨嘅採購單嗎？' },
   { key: 'daily_count', method: 'listDailyCounts', cjk: ['盤點', '點存', '點貨', '數貨'], latin: ['daily count', 'daily counts', 'stocktake', 'stock take', 'count', 'counts'], sources: ['aroma_system'], heading: '盤點紀錄', unit: '次', noun: '盤點', defaultQuestion: '要我睇邊個位置嘅盤點？' },
   { key: 'supplier', method: 'listSuppliers', cjk: ['供應商', '供貨商', '批發商', '貨商'], latin: ['supplier', 'suppliers', 'vendor', 'vendors'], sources: ['aroma_system'], heading: '供應商', unit: '個', noun: '供應商', defaultQuestion: '要我列出邊一間嘅落單資料？' },
-  { key: 'order_planning', method: 'listOrderPlanning', cjk: ['訂貨', '補貨', '落單', '要訂', '叫貨'], latin: ['order planning', 'replenish', 'replenishment', 'reorder', 'restock'], sources: ['aroma_system'], heading: '訂貨建議', unit: '項', noun: '建議', defaultQuestion: '要我按供應商分開列嗎？' },
+  // ⛔ 貨要補 IS A LITERAL, AND THE MECHANISM WAS TRIED FIRST AND REJECTED ON EVIDENCE.
+  //
+  // 「今日邊啲貨要補？」 read nothing on 2026-08-24: the table had 補貨 but he TOPICALISED it —
+  // object first, verb after (貨…要補). That is a real and general phenomenon, and the obvious
+  // fix is the general one: for any two-character verb-object term XY, also match Y<gap>要X.
+  // It was built and measured. It fixes this phrase and stays clean on 補充-style language —
+  // and it ALSO makes 「今日啲貨要點算？」 match daily_count, because 點貨 inverts to 貨…要點 and
+  // 要點 in Cantonese is 「how / what to do」, not 「count」. daily_count sits ABOVE this entry,
+  // so that turn would be hijacked into the wrong read. Narrowing the gap to zero does not
+  // help: 貨要點 is contiguous.
+  //
+  // So the phenomenon is real but the vocabulary cannot carry the general rule yet. This is a
+  // THREE-character token on purpose: length !== 2, so separableMatcher returns null and it
+  // stays an exact substring with no gap of its own. 要補 alone was also measured and rejected —
+  // it fires on 「呢份報告要補充說明」 and 「我要補返個假期申請」, and order_planning outranks
+  // document, so a request about a FILE would have read the restaurant's ordering data.
+  //
+  // Fix the mechanism when the mechanism is safe. This one is not, yet.
+  { key: 'order_planning', method: 'listOrderPlanning', cjk: ['訂貨', '補貨', '落單', '要訂', '叫貨', '貨要補'], latin: ['order planning', 'replenish', 'replenishment', 'reorder', 'restock'], sources: ['aroma_system'], heading: '訂貨建議', unit: '項', noun: '建議', defaultQuestion: '要我按供應商分開列嗎？' },
   { key: 'inventory', method: 'listInventory', cjk: ['倉存', '庫存', '存貨', '存量', '現貨', '貨存'], latin: ['inventory', 'stock', 'on hand', 'onhand'], sources: ['aroma_system'], heading: '倉存', unit: '項', noun: '存貨', defaultQuestion: '要我列出低過安全存量嗰啲嗎？' },
   // ── APPENDED: intents that ask nothing of Aroma System ──────────────────────
   { key: 'schedule', method: null, cjk: ['安排', '日程', '行程', '會議', '約咗', '排程', '日曆'], latin: ['schedule', 'calendar', 'meeting', 'meetings', 'appointment'], sources: ['calendar'], heading: '行程', unit: '件', noun: '安排', defaultQuestion: '要我幫你排邊一件先？' },
