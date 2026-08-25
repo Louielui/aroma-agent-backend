@@ -35,6 +35,29 @@ function run () {
   return { rows, bizRead, nonBiz, actions, correct, missToConversation, crossIntent, wrongSource, falsePos, actionErrors }
 }
 
+/**
+ * The named safety metrics, separated on purpose.
+ *
+ * ⛔ NO_READ and WRONG_SOURCE ARE NOT THE SAME FAILURE AND MUST NEVER BE SUMMED AWAY. A miss
+ * reads nothing and says so. A wrong-source read answers confidently out of the wrong table,
+ * and the Owner has no way to see that it happened. TOTAL_INTENT_FAILURES exists so the two
+ * can be traded against each other deliberately — trading a wrong-source read for a miss is
+ * a WIN even though the total is unchanged.
+ */
+function metrics () {
+  const m = run()
+  return {
+    BUSINESS_READ_TOTAL: m.bizRead.length,
+    BUSINESS_INTENT_CORRECT: m.correct.length,
+    NO_READ_MISSES: m.missToConversation.length,
+    WRONG_SOURCE_READS: m.crossIntent.length,
+    TOTAL_INTENT_FAILURES: m.missToConversation.length + m.crossIntent.length,
+    FALSE_POSITIVES: m.falsePos.length,
+    ACTION_MISROUTES: m.actionErrors.length,
+    ACTION_AUTHORITY_WIDENED: m.actionErrors.some((x) => (x.sources || []).length > 0) ? 'YES' : 'NO'
+  }
+}
+
 function report () {
   const m = run()
   const pct = (n, d) => d === 0 ? 'n/a' : (100 * n / d).toFixed(1) + '%'
@@ -93,5 +116,5 @@ function report () {
   return m
 }
 
-module.exports = { run, report }
+module.exports = { run, report, metrics }
 if (require.main === module) report()

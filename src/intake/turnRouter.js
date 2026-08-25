@@ -55,7 +55,7 @@
  * never runs and every enabled source is read on every chat turn. See resolveFlagValue.
  */
 
-const { routeLane, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
+const { routeLane, isBusinessActionRequest, CHAT } = require('./laneRouter') // THE existing lane vocabulary — not re-implemented
 const { intentFor, allIntentsFor } = require('../context/readContext') // THE one intent table — never a second classifier
 // POSITIVE EVIDENCE ONLY — never a verdict. The two vocabularies come with it so the
 // projection can re-check what it emits against the same tables the matcher read.
@@ -157,6 +157,11 @@ function routeTurn (message, opts) {
   // 2. ACTION — modify, send, approve, create, delete, run. The existing governed lanes.
   const lane = routeLane(text, opts)
   if (lane.lane !== CHAT) return none('ACTION', 'lane_' + lane.reason, 'high')
+
+  // 2b. A REQUEST TO DO BUSINESS WORK IS NOT A BUSINESS QUESTION.
+  //     laneRouter owns the act vocabulary — this file adds none, exactly as it holds no
+     //  utility words. Reads nothing, grants nothing; it only declines to call this a read.
+  if (isBusinessActionRequest(text)) return none('ACTION', 'business_act', 'high')
 
   // 3. BUSINESS_QUERY — a known entity, and ONLY the tools that entity declares.
   if (intent) {

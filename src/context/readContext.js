@@ -421,7 +421,24 @@ const AROMA_INTENTS = Object.freeze(INTENTS.filter((i) => i.method !== null))
  * 「訂位嗰啲貨物資料」, which is a TABLE BOOKING. N=2 is the largest bound with no false
  * positive, and 什麼/咩嘢/幾多/邊啲 are all one or two characters. See intentSeparable.test.js.
  */
-const CJK_GAP = '[^。！？!?，、；;\\s]{0,2}'
+/**
+ * ⛔ THE GAP MAY NOT CONTAIN A RELATIVE MARKER, AND THAT IS AN ASPECT RULE, NOT A WORD FIX.
+ *
+ * Measured: 「叫咗嘅貨到咗未？」 asks whether goods that were ALREADY ORDERED have ARRIVED —
+ * a purchase_order question. The separable matcher read 叫貨 out of 叫咗嘅貨 and sent it to
+ * order_planning, so the turn read the WRONG source. Wrong-source is worse than no-source:
+ * a miss says nothing, a wrong read says something confident about the wrong table.
+ *
+ * 咗 alone is NOT the discriminator, and blocking it would have broken 「最近落咗咩單？」,
+ * where 落…單 is still verb-object with aspect on the verb. 嘅 (and Mandarin 的) is the
+ * discriminator: it nominalises what precedes it, so 叫咗嘅 stops being a verb looking for its
+ * object and becomes a clause that describes the noun which follows. 叫貨 is 「to order goods」;
+ * 叫咗嘅貨 is 「the goods that were ordered」. Different question, different table.
+ *
+ * Kept intact: 訂什麼貨, 叫咩貨, 今日要叫咩貨, 最近落咗咩單 — none puts a relative marker
+ * between the two halves.
+ */
+const CJK_GAP = '[^。！？!?，、；;嘅的\s]{0,2}'
 const SEPARABLE_RE = new Map()
 function separableMatcher (kw) {
   let re = SEPARABLE_RE.get(kw)

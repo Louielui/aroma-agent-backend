@@ -38,31 +38,39 @@ test('BASELINE — recall is the gap: 27/48 intents correct', () => {
   assert.equal(m.correct.length, 27)
 })
 
-test('BASELINE — 20 business questions currently read nothing', () => {
+test('BASELINE — 21 business questions read nothing (was 20; +1 is a WIN, see below)', () => {
   // Every one of these is a question a chef would actually ask, answered today from fluency
   // with no source consulted. This is the measured size of the O-1 blind spot.
-  assert.equal(m.missToConversation.length, 20)
+    // ⛔ THIS NUMBER WENT UP AND THAT IS THE IMPROVEMENT. 「叫咗嘅貨到咗未？」 used to be
+  // counted as a "correct-ish" read — it read order_planning, the WRONG table. The aspect
+  // fix turned that confident wrong answer into an honest miss. A miss says nothing; a
+  // wrong-source read says something wrong and looks identical to a right one.
+  assert.equal(m.missToConversation.length, 21)
 })
 
-test('BASELINE — one cross-intent collision reads the WRONG source', () => {
+test('*** ⛔ ZERO CROSS-INTENT COLLISIONS — the floor this tranche installed ***', () => {
   // 「叫咗嘅貨到咗未？」 asks whether ordered goods ARRIVED (purchase_order); the separable
   // matcher reads 叫貨 out of 叫咗嘅貨 and sends it to order_planning. Aspect, not vocabulary:
   // 叫貨 is "to order", 叫咗嘅貨 is "the goods that were ordered". Wrong-source is the most
   // dangerous failure class here, and the only one already present.
-  assert.equal(m.crossIntent.length, 1)
-  assert.equal(m.crossIntent[0].r.expect.intent, 'purchase_order')
-  assert.equal(m.crossIntent[0].intent, 'order_planning')
+  // Was 1. 「叫咗嘅貨到咗未？」 asks whether ordered goods ARRIVED (purchase_order); the
+  // separable matcher read 叫貨 out of 叫咗嘅貨 and answered from order_planning. Fixed in the
+  // general mechanism: a relative marker (嘅/的) may no longer sit inside the gap, because it
+  // turns the verb into a clause describing the noun. Aspect alone (咗) still separates.
+  assert.equal(m.crossIntent.length, 0, 'a wrong-source read came back')
 })
 
-test('BASELINE — 3 write requests are answered as reads (misroute, NOT widened authority)', () => {
+test('*** ⛔ ZERO WRITE REQUESTS ANSWERED AS READS ***', () => {
   // 落單 / 寄信 / 開發票 fall to laneRouter's chat default, then match a business noun.
   // They are answered with a READ instead of becoming a proposal. Note what this is NOT:
   // BUSINESS_QUERY grants only the intent table's READ sources, so no write capability is
   // conferred. The failure direction is fail-safe; the behaviour is still wrong.
-  assert.equal(m.actionErrors.length, 3)
-  for (const x of m.actionErrors) {
-    assert.deepEqual(x.sources, ['aroma_system'], 'read source only — never a write capability')
-  }
+  // Was 3. 落單 / 寄信 / 開發票 carried a business noun and were answered with a report.
+  // laneRouter now owns a business-act predicate; turnRouter consumes it and declines to
+  // call these reads. Authority is unchanged — it was never widened, only misrouted.
+  assert.equal(m.actionErrors.length, 0)
+  const { metrics } = require('./measureBusinessIntent')
+  assert.equal(metrics().ACTION_AUTHORITY_WIDENED, 'NO')
 })
 
 test('BASELINE — canonical and topicalised forms are already solved', () => {

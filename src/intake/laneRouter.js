@@ -332,4 +332,37 @@ function isCapabilityOnlyQuestion (message) {
   return true
 }
 
-module.exports = { routeLane, isShortReply, isReadRequest, isCapabilityQuestion, isCapabilityOnlyQuestion, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }
+
+/**
+ * ⛔ ASKING FOR WORK IS NOT ASKING A QUESTION — AND THE ACT VOCABULARY LIVES HERE.
+ *
+ * Measured: 「幫我落單訂10箱菜」, 「幫我開張發票畀客」 and 「幫我寄封信畀供應商」 each carried a
+ * business NOUN the intent table knows (訂 / 發票 / 供應商), so the turn router matched the
+ * noun and answered them with a READ. He asked to place an order and got a report.
+ *
+ * Nothing was over-granted — BUSINESS_QUERY hands out the intent table's read sources and no
+ * write capability — so the failure direction was safe. It was still the wrong answer.
+ *
+ * ⛔ TWO CONDITIONS, BOTH REQUIRED, BECAUSE EITHER ALONE IS WRONG. The act verbs are common
+ * words: 買 and 採購 appear in ordinary questions (「有啲咩要買返嚟？」, 「有咩採購單？」), so the
+ * verb alone would turn reads into actions. And 幫我 alone is not a work request either —
+ * 「幫我睇下訂貨建議」 is a READ instruction, which is exactly what isReadRequest already
+ * exists to recognise. So: an explicit request-to-do-something, an act verb, and NOT a read
+ * request and NOT a question.
+ *
+ * This decides only that the message is not a business READ. It grants nothing, dispatches
+ * nothing, and creates no proposal — the governed lanes above still decide what may happen.
+ */
+const REQUEST_MARKER = /(幫我|幫手|幫幫我|同我|請你|请你|麻煩你|麻烦你)/
+const BUSINESS_ACT = /(落單|落单|下單|下单|出單|出单|開張|开张|開一張|开一张|開個|开个|寄|派送|送出|發出|发出|買|买|採購|采购|訂購|订购)/
+
+function isBusinessActionRequest (message) {
+  const text = typeof message === 'string' ? message.trim() : ''
+  if (!text) return false
+  if (!REQUEST_MARKER.test(text)) return false
+  if (!BUSINESS_ACT.test(text)) return false
+  if (INTERROGATIVE.test(text)) return false
+  return !isReadRequest(text)
+}
+
+module.exports = { routeLane, isBusinessActionRequest, isShortReply, isReadRequest, isCapabilityQuestion, isCapabilityOnlyQuestion, LANES, CONTINUABLE, CHAT, EMAIL, PROPOSAL }
