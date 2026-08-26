@@ -167,7 +167,8 @@ const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbi
 const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter')
 const { resolveSemanticFallback, DECISION: SEMANTIC } = require('./semanticFallback') // O1: consensus logic lives THERE, never restated here
 const { SYSTEM: SEMANTIC_SYSTEM } = require('../context/eval/semanticIntentShadow')
-const { liveEgressAllowed } = require('../adapters/liveEgressFence') // O1 egress obeys the SAME fence as every other vendor call // intent-first router: UTILITY acts, the rest observe
+const { liveEgressAllowed } = require('../adapters/liveEgressFence') // O1 egress obeys the SAME fence as every other vendor call
+const { bindOperationForIntent } = require('../context/readOperations') // SERVER translates intent -> operation, fences included // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 // An 'I cannot tell' may not outrank a deterministic classification (B canary, 052761bc).
 const { decideWorldAsk, ASK_REASON } = require('./worldAskDecision')
@@ -513,6 +514,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * what they already owned. The model chose an intent; it chose nothing else.
    */
   let semanticClarify = null
+  let semanticAutomaticOperation = null // SERVER-derived; never model-supplied
   let semanticTel = null
   /**
    * ⛔ AND IT ASKS THE EGRESS FENCE FIRST, LIKE EVERYTHING ELSE THAT LEAVES THIS MACHINE.
@@ -537,12 +539,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     semanticTel = sem.telemetry || null
     if (sem.decision === SEMANTIC.AUTO_READ && Array.isArray(sem.sources) && sem.sources.length > 0) {
       // The SERVER already resolved these sources from the existing INTENTS table.
-      routeDecision = {
-        route: 'BUSINESS_QUERY',
-        reason: 'semantic_' + sem.intent,
-        confidence: 'high',
-        sources: sem.sources
+      /**
+       * ⛔ THE INTENT BECOMES AN OPERATION HERE, ON THE SERVER, OR IT BECOMES NOTHING.
+       *
+       * E2 measured the gap this closes: the route upgraded perfectly and the connector was
+       * never called, because the automatic planner re-derives the method from the MESSAGE via
+       * intentFor(). For a semantic blind-spot message that returns null by definition — the
+       * whole premise is that the words carry no intent — so the consensus was discarded at the
+       * one layer that picks the method.
+       *
+       * Three bindings must all hold before this may influence a read, and any failure is a
+       * refusal rather than a fallback to guessing from the text:
+       *   1. the intent resolves through the frozen AROMA_OPERATIONS table
+       *   2. the resolved operation belongs to a source the SERVER itself chose (sem.sources)
+       *   3. that source is authorised for this turn
+       */
+      const op = bindOperationForIntent(sem.intent, sem.sources)
+      const boundOk = op !== null
+      if (boundOk) {
+        semanticAutomaticOperation = op
+        routeDecision = {
+          route: 'BUSINESS_QUERY',
+          reason: 'semantic_' + sem.intent,
+          confidence: 'high',
+          sources: sem.sources
+        }
       }
+      if (semanticTel) { semanticTel.serverOperation = semanticAutomaticOperation; semanticTel.operationBound = boundOk }
     } else if (sem.decision === SEMANTIC.CLARIFY) {
       // Carried, not returned here — the reply must still pass every finalisation obligation
       // the ordinary ASK path owns. Applied below at the same seam the verifier uses.
@@ -1313,12 +1336,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const a4Semantic = a4SemanticRoutingEnabled(process.env)
         const sources = a4Semantic ? [] : sourcesForProvider(providerName, all, process.env)
         if (sources.length > 0) {
-          const key = sources.join(',')
+          // The operation is part of the identity of the read, not a detail of it: the same
+          // source set answered by a different operation is a different block.
+          const key = sources.join(',') + '|' + (semanticAutomaticOperation || '')
           if (!readBlockCache.has(key)) {
             const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
             const rc = await timePhase(
               { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
-              () => buildReadContext({ connector, message, sources, env: process.env }),
+              // ⛔ THE ONLY NEW INFORMATION IS A SERVER-DERIVED OPERATION. It is null on every
+              // deterministic turn, so the message-derived automatic planner is untouched;
+              // planFor already prefers a directed operation when one is supplied and its
+              // source matches, which is the existing mechanism, not a second read path.
+              () => buildReadContext({ connector, message, sources, env: process.env, operation: semanticAutomaticOperation }),
               { clock: latencyClock, sink: latencySink })
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {

@@ -274,7 +274,49 @@ function describeOperations (operations = [], live = [], unavailable = []) {
   return parts.length ? parts.join('\n') : null
 }
 
-module.exports = {
+/**
+ * ⛔ THE SERVER TRANSLATES AN ADMITTED INTENT INTO AN OPERATION. THE MODEL NEVER DOES.
+ *
+ * O1 semantic consensus yields ONE key from a closed enum and nothing else — no operation, no
+ * method, no source, no path. When that key is admitted, this is where it becomes something
+ * executable, and it becomes so by LOOKING UP the same frozen table the deterministic planner
+ * already uses. A second hand-written mapping would be a second registry, free to drift, and
+ * drift here means reading the wrong table while every log still looks correct.
+ *
+ * Derived, not duplicated: the rows below are AROMA_OPERATIONS itself. An intent key that is
+ * not in that table resolves to null, and null means no read — never a guess from the message.
+ */
+/**
+ * ⛔ THE FULL BINDING, INCLUDING THE FENCE THAT TODAY CANNOT FIRE.
+ *
+ * An admitted intent may only become executable if the operation it resolves to belongs to a
+ * source the SERVER itself already chose for this turn. Right now that can never fail, because
+ * operationForIntentKey and the INTENTS source list are both derived from tables that agree —
+ * which is precisely why the check must live somewhere it can be asserted. Two tables that
+ * agree today are two tables that can drift tomorrow, and the drift would be invisible: the
+ * read would simply go somewhere nobody authorised.
+ *
+ * @param {string} intentKey        an already-ADMITTED key from the closed enum
+ * @param {string[]} allowedSources the sources the server resolved for this turn
+ * @returns {string|null} the operation, or null meaning NO READ
+ */
+function bindOperationForIntent (intentKey, allowedSources) {
+  const op = operationForIntentKey(intentKey)
+  if (!op) return null
+  const resolved = resolveReadOperation(op)
+  if (!resolved || !resolved.source) return null
+  const allowed = Array.isArray(allowedSources) ? allowedSources : []
+  if (!allowed.includes(resolved.source)) return null
+  return op
+}
+
+function operationForIntentKey (intentKey) {
+  if (typeof intentKey !== 'string' || intentKey === '') return null
+  const hit = AROMA_OPERATIONS.find((o) => o.intentKey === intentKey)
+  return hit ? hit.operation : null
+}
+
+module.exports = { operationForIntentKey, bindOperationForIntent,
   AROMA_SOURCE,
   AROMA_OPERATIONS,
   SOURCE_LEVEL_OPERATIONS,
