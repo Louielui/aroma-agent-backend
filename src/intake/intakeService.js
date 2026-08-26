@@ -164,7 +164,11 @@ async function defaultRecoveryWorker (input) {
 // ⛔ A4-AMB1: one narrow binary gate, before any connector. Provider-neutral; the verifier
 // itself is injected.
 const { ambiguityGateEnabled, availableWorlds, worldForCapability, runSourceAmbiguityGate, logAmbiguityGate, SAFE_FALLBACK_QUESTION: AMBIGUITY_FALLBACK_QUESTION } = require('./sourceAmbiguityGate')
-const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter') // intent-first router: UTILITY acts, the rest observe
+const { routeTurn, logTurnRoute, resolveTurnRouter } = require('./turnRouter')
+const { resolveSemanticFallback, DECISION: SEMANTIC } = require('./semanticFallback') // O1: consensus logic lives THERE, never restated here
+const { SYSTEM: SEMANTIC_SYSTEM } = require('../context/eval/semanticIntentShadow')
+const { liveEgressAllowed } = require('../adapters/liveEgressFence') // O1 egress obeys the SAME fence as every other vendor call
+const { bindOperationForIntent } = require('../context/readOperations') // SERVER translates intent -> operation, fences included // intent-first router: UTILITY acts, the rest observe
 const { answerUtility } = require('./utilityAnswer') // the server answers, or it says nothing
 // An 'I cannot tell' may not outrank a deterministic classification (B canary, 052761bc).
 const { decideWorldAsk, ASK_REASON } = require('./worldAskDecision')
@@ -377,6 +381,25 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   }
 }
 
+/**
+ * ⛔ THE CLASSIFIER IS PINNED, NOT INHERITED.
+ *
+ * O1 was qualified on ONE model — claude-haiku-4-5-20251001 — over two passes of the miss
+ * corpus. The chat lane runs a different, larger model, and an OpenAI key exists on this box.
+ * Inheriting either would mean shipping a classifier whose precision nobody measured, which is
+ * the exact substitution the qualification gate refused. Constructed here, in the composition
+ * layer; the consensus logic stays in semanticFallback where it was proven.
+ */
+const SEMANTIC_MODEL = 'claude-haiku-4-5-20251001'
+function defaultSemanticCallModel () {
+  const { ClaudeAdapter } = require('../adapters/ClaudeAdapter')
+  const adapter = new ClaudeAdapter({ model: SEMANTIC_MODEL })
+  return async ({ system, prompt }) => {
+    const r = await adapter.complete(prompt, { system, maxTokens: 64, temperature: 0 })
+    return (r && typeof r.text === 'string') ? r.text : r
+  }
+}
+
 async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const endpoint = '/api/v1/intake'
 
@@ -468,10 +491,90 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   //   shadow — UTILITY answers; reads and the plan gate are UNCHANGED (Step 2)
   //   on     — routing GOVERNS reads and the Answer Plan gate (Step 3)
   const routerMode = resolveTurnRouter(process.env)
-  const routeDecision = routerMode === 'off'
+  let routeDecision = routerMode === 'off'
     ? null
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
+
+  /**
+   * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
+   *
+   * ⛔ THIS EXISTS BECAUSE THE PREVIOUS TRANCHE SHIPPED THE MODULE WITHOUT IT. Every fence,
+   * every mutation, every corpus number was real — and none of it ran, because nothing in the
+   * pipeline called the thing. A module with no call site is not a feature, and a test that
+   * drives the module directly cannot tell you the difference.
+   *
+   * Placed HERE on purpose: after the deterministic router has produced its decision, and
+   * before `routeDecision.sources` narrows what may be read at all. Any later and the turn has
+   * already been told it may read nothing; any earlier and there is no decision to upgrade.
+   *
+   * ⛔ AND IT UPGRADES THE ROUTE RATHER THAN OPENING A SECOND READ PATH. On consensus the
+   * decision becomes the same BUSINESS_QUERY shape turnRouter would have produced, so source
+   * narrowing, the Answer Plan gate, A3, read-state truth and telemetry all continue to own
+   * what they already owned. The model chose an intent; it chose nothing else.
+   */
+  let semanticClarify = null
+  let semanticAutomaticOperation = null // SERVER-derived; never model-supplied
+  let semanticTel = null
+  /**
+   * ⛔ AND IT ASKS THE EGRESS FENCE FIRST, LIKE EVERYTHING ELSE THAT LEAVES THIS MACHINE.
+   *
+   * The recovery-worker fence caught this: the first version of this call site originated two
+   * Anthropic requests purely because a credential existed, which is the exact thing that fence
+   * forbids. A classifier is not exempt from the paid opt-in because its calls are small.
+   *
+   * When egress is not allowed the fallback does not run at all — no request is attempted and
+   * no marker is emitted, because the honest outcome is simply today's CONVERSATION behaviour.
+   * An injected callModel (tests) bypasses nothing: it never reaches a vendor in the first
+   * place, so it is allowed through.
+   */
+  const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
+  if (semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+    const callModel = (opts && typeof opts.semanticCallModel === 'function')
+      ? opts.semanticCallModel
+      : defaultSemanticCallModel()
+    const sem = await resolveSemanticFallback({
+      message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM
+    })
+    semanticTel = sem.telemetry || null
+    if (sem.decision === SEMANTIC.AUTO_READ && Array.isArray(sem.sources) && sem.sources.length > 0) {
+      // The SERVER already resolved these sources from the existing INTENTS table.
+      /**
+       * ⛔ THE INTENT BECOMES AN OPERATION HERE, ON THE SERVER, OR IT BECOMES NOTHING.
+       *
+       * E2 measured the gap this closes: the route upgraded perfectly and the connector was
+       * never called, because the automatic planner re-derives the method from the MESSAGE via
+       * intentFor(). For a semantic blind-spot message that returns null by definition — the
+       * whole premise is that the words carry no intent — so the consensus was discarded at the
+       * one layer that picks the method.
+       *
+       * Three bindings must all hold before this may influence a read, and any failure is a
+       * refusal rather than a fallback to guessing from the text:
+       *   1. the intent resolves through the frozen AROMA_OPERATIONS table
+       *   2. the resolved operation belongs to a source the SERVER itself chose (sem.sources)
+       *   3. that source is authorised for this turn
+       */
+      const op = bindOperationForIntent(sem.intent, sem.sources)
+      const boundOk = op !== null
+      if (boundOk) {
+        semanticAutomaticOperation = op
+        routeDecision = {
+          route: 'BUSINESS_QUERY',
+          reason: 'semantic_' + sem.intent,
+          confidence: 'high',
+          sources: sem.sources
+        }
+      }
+      if (semanticTel) { semanticTel.serverOperation = semanticAutomaticOperation; semanticTel.operationBound = boundOk }
+    } else if (sem.decision === SEMANTIC.CLARIFY) {
+      // Carried, not returned here — the reply must still pass every finalisation obligation
+      // the ordinary ASK path owns. Applied below at the same seam the verifier uses.
+      semanticClarify = sem.clarifyQuestion
+    }
+    try {
+      console.log('[AROMA-O1-SEMANTIC]', JSON.stringify(Object.assign({ requestId }, semanticTel)))
+    } catch (_) {}
+  }
 
   /**
    * ⛔ THE ROUTING DECISION IS A FIRST-CLASS ENTRY, NOT AN ABSENT ONE.
@@ -1233,12 +1336,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const a4Semantic = a4SemanticRoutingEnabled(process.env)
         const sources = a4Semantic ? [] : sourcesForProvider(providerName, all, process.env)
         if (sources.length > 0) {
-          const key = sources.join(',')
+          // The operation is part of the identity of the read, not a detail of it: the same
+          // source set answered by a different operation is a different block.
+          const key = sources.join(',') + '|' + (semanticAutomaticOperation || '')
           if (!readBlockCache.has(key)) {
             const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
             const rc = await timePhase(
               { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
-              () => buildReadContext({ connector, message, sources, env: process.env }),
+              // ⛔ THE ONLY NEW INFORMATION IS A SERVER-DERIVED OPERATION. It is null on every
+              // deterministic turn, so the message-derived automatic planner is untouched;
+              // planFor already prefers a directed operation when one is supplied and its
+              // source matches, which is the existing mechanism, not a second read path.
+              () => buildReadContext({ connector, message, sources, env: process.env, operation: semanticAutomaticOperation }),
               { clock: latencyClock, sink: latencySink })
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
@@ -1875,6 +1984,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // 'commit' belongs to the proposal path and never had a knowledge obligation.
   const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
   const initialIsAsk = initialTerminalMode === 'ask'
+  /**
+   * ⛔ O1 CLARIFY REACHES THE OWNER THROUGH THE ORDINARY ASK PATH, NOT A THIRD ONE.
+   *
+   * Same shape the final verifier uses when it has its own question: mode ask, no nextRead, no
+   * answerPlan. That keeps persistence, language enforcement, read-state truth, turn telemetry
+   * and request identity exactly where they already live. A bespoke early return would have
+   * been shorter and would have quietly skipped all five.
+   */
+  if (semanticClarify && distilled) {
+    distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })
+  }
+
   const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
 

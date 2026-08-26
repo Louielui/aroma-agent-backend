@@ -50,7 +50,11 @@ function admit (raw) {
   // ⛔ AN ATTEMPT TO NAME A SOURCE IS REJECTED OUTRIGHT, not quietly ignored. A classifier that
   // starts emitting `source` is a classifier drifting toward authority, and a silent strip would
   // hide that drift for as long as the field happened to agree with the table.
-  for (const forbidden of ['source', 'sources', 'connector', 'tool', 'method', 'action', 'write']) {
+  for (const forbidden of ['source', 'sources', 'connector', 'tool', 'method', 'action', 'write',
+    // ⛔ ADDED WHEN THE DIRECTED READ LANDED. Until an admitted intent could become an
+    // executable operation, naming one was merely noise; now it is the whole authority.
+    // A fence that lists only yesterday's escape routes is a fence with a gate in it.
+    'operation', 'path', 'url', 'endpoint']) {
     if (Object.prototype.hasOwnProperty.call(obj, forbidden)) {
       out.rejected = 'attempted_' + forbidden; return out
     }
