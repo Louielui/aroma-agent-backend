@@ -206,6 +206,12 @@ const FILE_CLASS = Object.freeze({
   // matcher. MATCHING because translating a row silently changes what the router is measured
   // against — the phrases ARE the guard, not decoration around it.
   'context/eval/businessIntentCorpus.js': CLASS.MATCHING,
+  // O-1 semantic fallback. MATCHING and not INTERFACE, even though it also holds Owner-facing
+  // clarify labels: the file carries AMBIGUOUS_WORDING, whose lookbehind is the entire
+  // distinction between a shortage assertion (唔夠, ambiguous) and a sufficiency question
+  // (夠唔夠, which resolves cleanly). Translating that regex deletes the guard in silence,
+  // and MATCHING is the class that says so.
+  'intake/semanticFallback.js': CLASS.MATCHING,
   'context/readContext.js': CLASS.MODEL,              //  15 — the safety header, and the exact
   //                                                          Chinese phrases it instructs her to
   //                                                          use for read-OK vs unavailable
