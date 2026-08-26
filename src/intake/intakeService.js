@@ -515,6 +515,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   let semanticClarify = null
   let semanticAutomaticOperation = null // SERVER-derived; never model-supplied
+  /**
+   * ⛔ ONE STATE, NOT A SCATTER OF `if (semanticClarify)` CHECKS.
+   *
+   * CLARIFY is TERMINAL TO READS and nothing else: no connector read, no reopened reasoning
+   * loop, no obligation satisfied by reading, no X4 self-read. It is deliberately NOT terminal
+   * to finalisation — the question still leaves through the ordinary ASK path, because an early
+   * return would skip persistence, language enforcement, read-state truth, request identity and
+   * telemetry, and a clarification that quietly skips five obligations is not safer than the
+   * answer it replaced.
+   */
+  let semanticClarifyTerminal = false
   let semanticTel = null
   /**
    * ⛔ AND IT ASKS THE EGRESS FENCE FIRST, LIKE EVERYTHING ELSE THAT LEAVES THIS MACHINE.
@@ -1982,19 +1993,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // no read is performed on a verdict that did not arrive.
   //
   // 'commit' belongs to the proposal path and never had a knowledge obligation.
-  const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
-  const initialIsAsk = initialTerminalMode === 'ask'
   /**
-   * ⛔ O1 CLARIFY REACHES THE OWNER THROUGH THE ORDINARY ASK PATH, NOT A THIRD ONE.
+   * ⛔ O1 CLARIFY REACHES THE OWNER THROUGH THE ORDINARY ASK PATH, AND IT HAPPENS *HERE*.
    *
-   * Same shape the final verifier uses when it has its own question: mode ask, no nextRead, no
-   * answerPlan. That keeps persistence, language enforcement, read-state truth, turn telemetry
-   * and request identity exactly where they already live. A bespoke early return would have
-   * been shorter and would have quietly skipped all five.
+   * It used to sit ten lines lower, AFTER initialTerminalMode and initialIsAsk were captured.
+   * Nine decisions downstream read those two, so every one of them saw the model's original
+   * mode and believed this turn was not an ask — while `distilled.mode` said it was. Production
+   * showed the consequence on 「有咩貨唔夠要入返？」: the clarification was formed and the Owner
+   * still received a full Order Planning answer. Ordering was the bug; moving the rewrite above
+   * the capture is the fix, not a guard bolted onto the symptom.
+   *
+   * Same shape the final verifier uses for its own question — mode ask, no nextRead, no
+   * answerPlan — so persistence, language enforcement, read-state truth, request identity and
+   * turn telemetry all keep owning what they already owned.
    */
   if (semanticClarify && distilled) {
     distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })
+    semanticClarifyTerminal = true
   }
+
+  const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
+  const initialIsAsk = initialTerminalMode === 'ask'
 
   const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
@@ -2315,12 +2334,16 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // the loop builds its first prompt, and the budget must be spent before the loop can spend it
   // again — so the turn is nudged once in total, whichever entrance it came through.
   const x4InitialSelfRead = x4InitialSelfReadable && nudgeSelfReadable(investigationNow, X4_ASK_ORIGIN.INITIAL)
-  const willEnterLoop = !!(interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead))
+  // ⛔ THE SINGLE READ-ENTRANCE GATE. distilled.nextRead is already null under clarify, but
+  // initialObligation and x4InitialSelfRead are computed independently of it — which is how a
+  // clarified turn still read in production. The terminal state closes all three at once.
+  const readEntranceAllowed = !semanticClarifyTerminal
+  const willEnterLoop = !!(readEntranceAllowed && interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead))
   forkTrace(FORK_STAGE.LOOP_ENTRY,
     willEnterLoop ? FORK_BRANCH.LOOP_ENTERED : FORK_BRANCH.LOOP_SKIPPED,
     { reasoningEntered: willEnterLoop, shortCircuit: !willEnterLoop })
 
-  if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead)) {
+  if (willEnterLoop) {
     const { runReasoningLoop, STOP } = require('./reasoningLoop')
     // ⛔ BLOCKER 2: THE PROVIDER THAT PRODUCED THE VALID FIRST ENVELOPE CONTINUES THE TURN.
     // Step 2 used to call the Claude adapter even when OpenAI produced step 1 — a silent
