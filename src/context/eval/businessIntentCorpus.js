@@ -39,7 +39,7 @@ const CORPUS = [
   R('睇下補貨建議', 'A', 'order_planning', AS),
   R('今日邊啲貨要補？', 'C', 'order_planning', AS),
   R('啲貨邊樣要訂？', 'C', 'order_planning', AS),
-  R('有咩貨唔夠要入返？', 'B', 'order_planning', AS),
+  R('有咩貨唔夠要入返？', 'B', 'order_planning', AS, 'AMBIGUOUS BY WORDING, not by result: a shortage statement answers equally as 「what is low」 (inventory) or 「what to reorder」 (order_planning). Expected intent is UNCHANGED; what changes is that no automatic read may be built on it.'),
   R('有啲咩要買返嚟？', 'B', 'order_planning', AS),
   R('今日要入啲乜？', 'B', 'order_planning', AS),
   R('聽日要訂啲乜？', 'E', 'order_planning', AS),
@@ -88,7 +88,7 @@ const CORPUS = [
 
   R('今日有咩要跟進？', 'D', null, null, 'genuinely ambiguous - clarification is the right answer'),
   R('今日廚房有咩要留意？', 'D', null, null, 'ambiguous across inventory/order_planning/daily_count'),
-  R('有咩嘢就快唔夠？', 'D', 'inventory', AS),
+  R('有咩嘢就快唔夠？', 'D', 'inventory', AS, 'SAME AMBIGUITY, AND THE MODEL GOT THIS ONE RIGHT — labelled on the wording alone, so the labelling cannot be accused of chasing a failure.'),
   R('有咩要我而家決定？', 'D', null, null, 'ambiguous'),
 
   R('聽日有咩安排？', 'A', 'schedule', 'calendar'),

@@ -58,7 +58,12 @@ function admit (raw) {
   if (!CANDIDATES.includes(obj.intent)) { out.rejected = 'out_of_enum'; return out }
   if (!CONFIDENCE.includes(obj.confidence)) { out.rejected = 'bad_confidence'; return out }
   out.candidate = obj.intent
-  out.confidence = obj.candidate === NONE ? 'LOW' : obj.confidence
+  // ⛔ obj.intent, NOT obj.candidate. `candidate` is what WE call the field after admission;
+  // the model's reply carries `intent`. Reading the wrong name made this comparison always
+  // false, so an abstention kept whatever confidence the model declared — and B2 measured 9
+  // "HIGH" rows that were really the classifier saying it did not know. An abstention that
+  // reports itself as HIGH is the single most dangerous shape this module can emit.
+  out.confidence = out.candidate === NONE ? 'LOW' : obj.confidence
   return out
 }
 
