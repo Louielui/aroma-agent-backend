@@ -175,6 +175,52 @@ function createAgentRunner (options = {}) {
       return result
     }
 
+    // ── B2-B REVISION GATE — BEFORE ANY WORKER, ANY EDIT, ANY TEST ────────────
+    //
+    // B2-A proved WHAT the Owner approved. It cannot prove what this execution is about
+    // to start from: the clone happens now, from whatever the repository has become. So
+    // the approved revision is compared against the clone's OWN measured base.
+    //
+    // A mismatch is not a race to recover from. It means the Owner approved a different
+    // revision than the one about to be edited — his excerpt described other bytes. There
+    // is deliberately no rebase, no refresh, no retry and no substitution of the observed
+    // sha into the sealed order: only a NEW Work Order, approved against the new revision,
+    // may continue. Anything else would silently move what he agreed to.
+    const expectedSha = workOrder.expectedSha
+    const observedBaseSha = prepared.baseSha
+    const revisionMatch = observedBaseSha === expectedSha
+
+    if (!revisionMatch) {
+      // ⛔ THE EVIDENCE GOES IN `output`, LIKE EVERY OTHER RUN'S.
+      //
+      // fail()'s second argument Object.assigns onto the TOP level, so this used to put
+      // the three revision facts somewhere no reader looks: agentResultView normalizes
+      // from raw.output, so a revision_moved refusal projected no revision evidence at
+      // all — the one result whose entire meaning IS the revision. Matched runs put the
+      // same three fields in output, so the shape also disagreed with itself.
+      //
+      // One authority location. Not duplicated at top level: a second copy is a second
+      // thing to keep true, and the first reader to trust the wrong one is a bug nobody
+      // sees until it matters.
+      const result = fail('revision_moved')
+      result.output.expectedSha = expectedSha
+      result.output.observedBaseSha = observedBaseSha
+      result.output.revisionMatch = revisionMatch
+      emitPhase(approvalId, 'failed', runId)
+      if (auditLog) {
+        try {
+          auditLog.append({
+            approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt,
+            projectId: workOrder.projectId, repoFullName: workOrder.repoFullName,
+            expectedSha, observedBaseSha, revisionMatch
+          })
+        } catch (_) {}
+      }
+      // The clone is removed through the ordinary path — a refused run leaves no workspace.
+      try { workspace.cleanup(prepared.dir) } catch (_) {}
+      return result
+    }
+
     let result
     try {
       emitPhase(approvalId, 'running', runId)
@@ -192,14 +238,33 @@ function createAgentRunner (options = {}) {
     // want the stat. A failure to write is reported, never thrown — the run already
     // happened, and losing the file is a smaller loss than losing the report of it.
     let patch = null
+    // B2-B: the identity of what the worker actually produced.
+    //
+    // NOT endSha. Committing is forbidden and the worker edits the clone's working tree,
+    // so HEAD does not move during a normal run — an end sha would always equal the base
+    // and would carry no mutation identity at all, while looking like it did.
+    //
+    // Digested from the EXACT bytes handed to writePatch, before they are deleted: not the
+    // summary, not a normalized copy. A line-ending change IS a change to the patch, so
+    // normalizing here would let two different patches share one identity. Null when there
+    // is genuinely nothing, so 'no change' cannot be confused with 'not recorded'.
+    const patchText = (result && result.output && typeof result.output.patchText === 'string') ? result.output.patchText : ''
+    const patchSha256 = patchText === '' ? null : crypto.createHash('sha256').update(patchText, 'utf8').digest('hex')
     try {
-      const text = (result && result.output && typeof result.output.patchText === 'string') ? result.output.patchText : ''
-      patch = writePatchFn(approvalId, text, { now: () => new Date().toISOString() })
+      patch = writePatchFn(approvalId, patchText, { now: () => new Date().toISOString() })
     } catch (_) { patch = { ok: false, reason: 'write_failed' } }
 
     if (result && result.output) {
       delete result.output.patchText
       result.output.patchFile = patch && patch.ok ? patch.path : null
+      // B2-B revision identity travels with the execution record. revisionMatch is true
+      // here by construction — a false one returned above — and is still stated, because
+      // 'the revision was verified' and 'the worker succeeded' are separate facts and a
+      // reader must not have to infer one from the other.
+      result.output.expectedSha = expectedSha
+      result.output.observedBaseSha = observedBaseSha
+      result.output.revisionMatch = revisionMatch
+      result.output.patchSha256 = patchSha256
       result.output.patchBytes = patch && patch.ok ? patch.bytes : 0
       result.output.patchStatus = patch && patch.ok ? 'written' : (patch ? patch.reason : 'write_failed')
       result.output.applyHint = patch && patch.ok ? applyHint(patch.path, repoRoot) : null
@@ -210,7 +275,15 @@ function createAgentRunner (options = {}) {
     }
 
     // Cap 7 — append-only audit for EVERY attempt, success or failure.
-    if (auditLog) { try { auditLog.append({ approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt, projectId: workOrder.projectId, repoFullName: workOrder.repoFullName }) } catch (_) {} }
+    if (auditLog) {
+      try {
+        auditLog.append({
+          approvalId, runId, workOrderHash, who, result, durationMs: Date.now() - runStartedAt,
+          projectId: workOrder.projectId, repoFullName: workOrder.repoFullName,
+          expectedSha, observedBaseSha, revisionMatch, patchSha256
+        })
+      } catch (_) {}
+    }
     try { workspace.cleanup(prepared.dir) } catch (_) {}
     return result
   }

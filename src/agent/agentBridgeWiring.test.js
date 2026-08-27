@@ -25,7 +25,7 @@ const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture')
 
 const APP_OPTS = { serviceToken: TOKEN, proposalPersistence: false, runPersistence: false }
 const validWO = (over = {}) => Object.assign({
-  goal: 'tidy one helper', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
+  goal: 'tidy one helper', expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'], timeoutSec: 60, costCapUsd: 1, approvalId: 'appr_canary1'
@@ -184,7 +184,7 @@ test('ISOLATION: the agent runner has EXACTLY ONE call site, in the ONE shared c
 test('CAP 5: a Work Order naming a forbidden file is rejected BEFORE anything runs', async () => {
   let workspaceCalls = 0; let workerCalls = 0
   const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),
-    workspace: { prepare: () => { workspaceCalls++; return { dir: '/tmp/x', branch: 'agent/x' } }, containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => [], diffStat: () => '', remotes: () => [], currentBranch: () => 'agent/x', cleanup: () => {} },
+    workspace: { prepare: () => { workspaceCalls++; return { dir: '/tmp/x', branch: 'agent/x', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' } }, containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => [], diffStat: () => '', remotes: () => [], currentBranch: () => 'agent/x', cleanup: () => {} },
     worker: { invoke: async () => { workerCalls++; return { ok: true, output: {} } } }
   })
   for (const bad of ['.env', '.git/config', 'src/app.js', 'src/agent/audit.js', 'src/agent/agentAuthorization.js', 'src/store/store.js', '.aroma/x', '../escape']) {
@@ -213,7 +213,7 @@ test('CAPS 1-4 + 8 re-asserted post-wiring: no bypassPermissions, timeout/cost, 
 test('CAP 7: an append-only audit record is written for BOTH success and failure', async () => {
   const written = []
   const auditLog = { append: (e) => { written.push(e); return e } }
-  const ws = { prepare: () => ({ dir: '/tmp/aroma-sandbox-agent-y', branch: 'agent/appr_canary1' }), containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/foo.js'], diffStat: () => ' src/foo.js | 1 +', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
+  const ws = { prepare: () => ({ dir: '/tmp/aroma-sandbox-agent-y', branch: 'agent/appr_canary1', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' }), containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/foo.js'], diffStat: () => ' src/foo.js | 1 +', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
   const okRunner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: ws, auditLog, worker: { invoke: async () => ({ ok: true, cost: 0.01, output: { exit: 0, branch: 'agent/appr_canary1', filesChanged: ['src/foo.js'], risks: [] } }) } })
   await okRunner.run({ workOrder: validWO(), approvedHash: hashWorkOrder(validWO()), who: 'louie' })
   const badRunner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),  workspace: ws, auditLog, worker: { invoke: async () => { throw new Error('worker exploded') } } })

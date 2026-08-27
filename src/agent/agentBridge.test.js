@@ -23,7 +23,7 @@ const { createArtifactStore } = require('../store/artifactStore')
 const { buildResultView, findExecutionByProposalId, findResultByTaskId } = require('../api/executionResultView')
 
 const validWO = () => ({
-  goal: 'add a small helper', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
+  goal: 'add a small helper', expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'], timeoutSec: 60, costCapUsd: 1, approvalId: 'appr_1'
@@ -112,6 +112,7 @@ function makeFakeGit ({ leaveRemote = false, changed = [] } = {}) {
     if (args[0] === 'checkout' && args.includes('-b')) { state.branch = args[args.length - 1]; return ok('') }
     if (j === 'remote') return ok(state.remotes.join('\n'))
     if (args[0] === 'remote' && args[1] === 'remove') { if (!leaveRemote) state.remotes = state.remotes.filter((r) => r !== args[2]); return ok('') }
+    if (j === 'rev-parse HEAD') return ok('d05527e49d2092fdf82e74efe4d96f203fcd80e9')
     if (j.startsWith('rev-parse --abbrev-ref')) return ok(state.branch || '')
     if (j.startsWith('diff --name-only')) return ok(state.changed.join('\n'))
     if (j.startsWith('diff --stat')) return ok(state.changed.length ? ` ${state.changed[0]} | 1 +` : '')
@@ -238,7 +239,7 @@ test('full chain (injected): enriched result returns; sandbox/prompt NEVER proje
   const wrapWorker = { invoke: async () => agentResult, health: () => ({ availability: 'up', latencyMs: 0 }) }
   const runner = createWorkerRunner({
     worker: wrapWorker, artifactStore: store,
-    workspace: { prepare: () => ({ dir: prep.dir }) },
+    workspace: { prepare: () => ({ dir: prep.dir, baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' }) },
     clock: () => '2026-01-01T00:00:00.000Z', newId: (p) => `${p}_1`
   })
   await runner.run({ proposalId: 'prop_1', runId: 'run_1', task: 'add helper', approval: { confirmedBy: 'louie', confirmedAt: '2026-01-01T00:00:00.000Z' } })
@@ -340,6 +341,7 @@ test('*** ⛔ THE CANARY FIXTURE NOW REACHES THE EXECUTOR COMPLETE ***', () => {
   const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const canary = {
     goal: '第一行之後加一行： <!-- P1-C1c live canary — verification artefact only -->',
+    expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
     allowedFiles: ['docs/HOUSE-RULES.md'],
     allowedTestCommand: null,
     forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],

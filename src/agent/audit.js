@@ -61,7 +61,23 @@ function createAuditLog (options = {}) {
       // is the worker's own spawn-to-return figure, kept because they answer different
       // questions (clone + verification is in one and not the other).
       durationMs: Number.isFinite(entry.durationMs) ? entry.durationMs : null,
-      workerLatencyMs: result && Number.isFinite(result.latencyMs) ? result.latencyMs : null
+      workerLatencyMs: result && Number.isFinite(result.latencyMs) ? result.latencyMs : null,
+      // ⛔ B2-B — WHICH REVISION THIS EXECUTION WAS ACTUALLY ALLOWED TO TOUCH.
+      //
+      // Passed in explicitly by the runner rather than read back out of the result, so a
+      // later change to the result shape cannot quietly empty the permanent record. A
+      // revision_moved refusal MUST land here carrying both shas: 'we refused' is not an
+      // audit trail, 'we refused because the tree was at X and he approved Y' is.
+      //
+      // Null for attempts that failed BEFORE the clone existed — an honest absence, never
+      // a guessed or back-filled sha.
+      expectedSha: typeof entry.expectedSha === 'string' ? entry.expectedSha : null,
+      observedBaseSha: typeof entry.observedBaseSha === 'string' ? entry.observedBaseSha : null,
+      revisionMatch: typeof entry.revisionMatch === 'boolean' ? entry.revisionMatch : null,
+      // The patch's identity, never the patch. Raw diff text is third-party-sized source
+      // material with no business in a permanent record; the digest answers 'was it this
+      // exact patch' without storing a line of it.
+      patchSha256: typeof entry.patchSha256 === 'string' ? entry.patchSha256 : null
     }
     artifactStore.write('agent-audit', record)
     return record

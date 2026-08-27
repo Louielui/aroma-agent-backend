@@ -54,6 +54,7 @@ const WO = (over = {}) => Object.assign({
   goal: 'tidy one helper',
   projectId: BACKEND.projectId,
   repoFullName: BACKEND.repoFullName,
+  expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
   allowedFiles: ['src/foo.js'],
   allowedTestCommand: null,
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],
@@ -69,10 +70,10 @@ const WO = (over = {}) => Object.assign({
 
 /* ═══ 1. THE CANONICAL ORDER CARRIES THE IDENTITY ═══════════════════════════ */
 
-test('*** the canonical Work Order is 14 fields, identity second and third ***', () => {
+test('*** the canonical Work Order is 15 fields, identity second and third, revision fourth ***', () => {
   const keys = Object.keys(canonicalWorkOrder(WO()))
-  assert.equal(keys.length, 14)
-  assert.deepEqual(keys.slice(0, 3), ['goal', 'projectId', 'repoFullName'], 'serialization order is pinned')
+  assert.equal(keys.length, 15)
+  assert.deepEqual(keys.slice(0, 4), ['goal', 'projectId', 'repoFullName', 'expectedSha'], 'serialization order is pinned')
 })
 
 test('*** ⛔ CHANGING THE REPOSITORY CHANGES THE HASH ***', () => {
@@ -84,7 +85,7 @@ test('*** ⛔ CHANGING THE REPOSITORY CHANGES THE HASH ***', () => {
 test('*** ⛔ NO MACHINE ROOT REACHES THE CANONICAL ORDER ***', () => {
   const keys = Object.keys(canonicalWorkOrder(WO({ repoRoot: 'C:/Aroma/aroma-agent-backend' })))
   assert.equal(keys.includes('repoRoot'), false, '⛔ a machine path entered the hash')
-  assert.equal(keys.length, 14)
+  assert.equal(keys.length, 15)
   assert.equal(hashWorkOrder(WO({ repoRoot: 'C:/x' })), hashWorkOrder(WO()), '⛔ repoRoot moved the hash')
 })
 
@@ -303,7 +304,7 @@ test('*** the runner refuses a foreign order BEFORE workspace.prepare and BEFORE
   const runner = createAgentRunner({
     projectId: BACKEND.projectId,
     repoFullName: BACKEND.repoFullName,
-    workspace: { prepare: () => { prepared++; return { dir: 'x', branch: 'b' } }, verifyNoRemotes: () => {}, cleanup: () => {} },
+    workspace: { prepare: () => { prepared++; return { dir: 'x', branch: 'b', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' } }, verifyNoRemotes: () => {}, cleanup: () => {} },
     worker: { invoke: async () => { invoked++; return { ok: true, output: {} } } },
     checkCredentials: () => ({ canRun: true })
   })

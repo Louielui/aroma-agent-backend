@@ -140,7 +140,20 @@ function buildAgentResultView (input = {}) {
           patchStatus: typeof out.patchStatus === 'string' ? out.patchStatus : null,
           applyHint: typeof out.applyHint === 'string' ? out.applyHint : null,
           // Expiry facts only. publicCredentialFacts already stripped everything else.
-          credential: (out.credential && typeof out.credential === 'object') ? out.credential : null
+          credential: (out.credential && typeof out.credential === 'object') ? out.credential : null,
+          // ── B2-B REVISION EVIDENCE ─────────────────────────────────────────
+          // Read from `out` and ONLY from `out`. There is deliberately no fallback to a
+          // top-level copy: a fallback would have quietly hidden the very defect this
+          // normalization exists to prevent, and would keep two locations alive forever.
+          //
+          // null means genuinely absent — a run that failed before the clone existed has
+          // no observed revision, and inventing one would be worse than saying nothing.
+          // Note `revisionMatch: false` is a FACT, so the boolean check must not collapse
+          // it into the absent case.
+          expectedSha: typeof out.expectedSha === 'string' ? out.expectedSha : null,
+          observedBaseSha: typeof out.observedBaseSha === 'string' ? out.observedBaseSha : null,
+          revisionMatch: typeof out.revisionMatch === 'boolean' ? out.revisionMatch : null,
+          patchSha256: typeof out.patchSha256 === 'string' ? out.patchSha256 : null
         }
       })()
 
@@ -272,7 +285,18 @@ function buildAgentResultView (input = {}) {
     lines.push('')
   }
 
-  return { status, headline, sections, lines, scope, approvalId }
+  // A stable structured projection of WHICH REVISION this execution was allowed to touch.
+  // Kept separate from the Owner-facing sections on purpose: this is evidence for readers
+  // and downstream consumers, and the blocker being fixed here was evidence loss, not a
+  // missing card. All four are null when there is no result at all.
+  const revision = {
+    expectedSha: r ? r.expectedSha : null,
+    observedBaseSha: r ? r.observedBaseSha : null,
+    revisionMatch: r ? r.revisionMatch : null,
+    patchSha256: r ? r.patchSha256 : null
+  }
+
+  return { status, headline, sections, lines, scope, approvalId, revision }
 }
 
 module.exports = { buildAgentResultView, scopeVerdict, UNKNOWN, PHASES, PHASE_NAMES, isPhase, phaseLabel }

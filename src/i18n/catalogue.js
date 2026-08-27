@@ -1296,6 +1296,14 @@ const CATALOGUE = Object.freeze({
     zh: '「{file}」未在對話中提及過。我不會自行搜尋或推測檔案路徑',
     en: '"{file}" was never named in this conversation. I will not search for or guess a file path'
   },
+  // B2-A revision identity. The Owner approves a commit, so every way that can fail needs
+  // words he can act on — 'it moved' and 'that file has uncommitted edits' are different
+  // problems with different answers.
+  'wop.headUnreadable': { zh: '無法讀取程式庫目前的版本（git HEAD），所以我無法確定你正在批准哪一個版本', en: 'the repository revision (git HEAD) cannot be read, so I cannot tell which revision you would be approving' },
+  'wop.headMalformed': { zh: '程式庫回報的版本編號格式不正確，我不會用一個看不懂的版本去封存', en: 'the repository reported a malformed revision id; I will not seal against a revision I cannot read' },
+  'wop.headMoved': { zh: '在準備這張工作單期間，程式庫的版本變動了。請重新提出，好讓你批准的是同一個版本', en: 'the repository revision changed while this work order was being prepared. Please ask again, so that what you approve is one exact revision' },
+  'wop.allowedFileDirty': { zh: '「{file}」有未提交的改動，所以我無法向你顯示一個與版本一致的內容。請先提交或還原它', en: '"{file}" has uncommitted changes, so I cannot show you content that matches the revision. Please commit or restore it first' },
+  'wop.committedExcerptUnavailable': { zh: '「{file}」在該版本中讀取不到，所以我無法向你顯示它的內容', en: '"{file}" cannot be read at that revision, so I cannot show you what is in it' },
   'wop.badApprovalId': { zh: '內部錯誤：approvalId 格式不正確', en: 'internal error: the approvalId is malformed' },
 
   // ══════════════════════════════════════════════════════════════════════════
