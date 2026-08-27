@@ -27,7 +27,8 @@ const crypto = require('node:crypto')
 const { t } = require('../i18n/t')
 const fs = require('node:fs')
 const path = require('node:path')
-const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile } = require('./workOrder')
+const { spawnSync } = require('node:child_process')
+const { validateWorkOrder, hashWorkOrder, normRel, MUST_FORBID, isForbiddenFile, EXPECTED_SHA_RE } = require('./workOrder')
 const {
   IDENTITY_REFUSED, identityForProject, isExecutableIdentity, isValidIdentity, sameIdentity
 } = require('../projects/repositoryIdentity')
@@ -130,6 +131,106 @@ function readCurrentExcerptFromDisk (repoRoot, relPath) {
   if (!resolved.ok) return { ok: false, reason: resolved.reason }
   let raw
   try { raw = fs.readFileSync(resolved.abs, 'utf8') } catch { return { ok: false, reason: 'unreadable' } }
+  const all = raw.replace(/\r\n/g, '\n').split('\n')
+  let text = all.slice(0, MAX_EXCERPT_LINES).join('\n')
+  let truncated = all.length > MAX_EXCERPT_LINES
+  if (text.length > MAX_EXCERPT_CHARS) { text = text.slice(0, MAX_EXCERPT_CHARS); truncated = true }
+  return { ok: true, text, truncated }
+}
+
+// ── B2-A: THE REVISION THE OWNER IS ACTUALLY APPROVING ────────────────────────
+//
+// Before this, the card's 「現時內容」 was read with fs.readFileSync from the mutable
+// WORKING TREE, while the execution workspace later clones the COMMITTED head. Those are
+// not the same bytes whenever the target file has uncommitted edits — and this repository
+// genuinely runs in that state (production carries an approved uncommitted launcher
+// override). So the Owner could approve an excerpt that the agent would never see, and
+// nothing in the record would disagree.
+//
+// The fix is not to compare more things later. It is to make one commit the single source:
+// the excerpt is read FROM expectedSha, so 'what the Owner read' and 'what expectedSha
+// contains' cannot drift apart by construction.
+
+/** git, no shell, no inherited stdio. Injectable so tests never touch a real repository. */
+function defaultGitRunner (args, cwd) {
+  const r = spawnSync('git', args, { cwd, encoding: 'utf8', shell: false, windowsHide: true })
+  return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' }
+}
+
+/**
+ * Separator shaping ONLY — never a case fold.
+ *
+ * ⛔ normRel() LOWERCASES, and this file already carries the scar: a lowercased path
+ * travelled into allowedFiles and the hash once before. Here it would be worse than
+ * cosmetic — `git show <sha>:Src/Foo.js` and `git status -- Src/Foo.js` address objects and
+ * pathspecs case-sensitively, so folding the path asks git about a file that does not
+ * exist and the seal refuses a perfectly clean repository. A path is an IDENTITY; only a
+ * comparison key may be folded.
+ */
+function gitRelPath (p) {
+  return String(p == null ? '' : p).replace(/\\/g, '/').replace(/^\.\//, '').replace(/^\/+/, '')
+}
+
+const REVISION_REFUSALS = Object.freeze({
+  head_unreadable: () => t('wop.headUnreadable'),
+  head_malformed: () => t('wop.headMalformed'),
+  head_moved: () => t('wop.headMoved'),
+  allowed_file_dirty: (f) => t('wop.allowedFileDirty', { file: f }),
+  committed_excerpt_unavailable: (f) => t('wop.committedExcerptUnavailable', { file: f })
+})
+
+/** The repository's HEAD, required to be an exact full commit sha. */
+function headSha (git, repoRoot) {
+  const r = git(['rev-parse', 'HEAD'], repoRoot)
+  if (!r || r.status !== 0) return { ok: false, reason: 'head_unreadable' }
+  const sha = String(r.stdout || '').trim()
+  if (!EXPECTED_SHA_RE.test(sha)) return { ok: false, reason: 'head_malformed' }
+  return { ok: true, sha }
+}
+
+/**
+ * Are any of THESE files uncommitted in any way?
+ *
+ * ⛔ SCOPED TO allowedFiles ON PURPOSE. A repository-wide clean check would refuse every
+ * Work Order in this production, which deliberately carries an approved dirty launcher.
+ * Unrelated drift is none of this gate's business; the question is only whether the file
+ * the Owner is about to approve is faithfully represented by the commit we are naming.
+ *
+ * `git status --porcelain -- <paths>` answers all four cases in one call: unstaged
+ * modification, staged modification, deletion, and untracked.
+ */
+function dirtyAllowedFiles (git, repoRoot, files) {
+  const rels = files.map((f) => gitRelPath(f))
+  const r = git(['status', '--porcelain', '--untracked-files=all', '--'].concat(rels), repoRoot)
+  if (!r || r.status !== 0) return { ok: false, reason: 'head_unreadable' }
+  const dirty = String(r.stdout || '')
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l !== '')
+    .map((l) => l.slice(2).trim().replace(/^"|"$/g, ''))
+  return { ok: true, dirty }
+}
+
+/**
+ * The excerpt, read from the COMMIT OBJECT rather than the working tree.
+ *
+ * The path is an already-validated allowedFile: relative, no '..', not absolute, not
+ * structurally forbidden. The two extra guards below exist because `sha:path` is a single
+ * argument to git — a leading '-' would be read as an option and a ':' would re-split the
+ * revision, so neither is allowed to reach it.
+ */
+function readCommittedExcerpt (git, repoRoot, sha, relPath) {
+  const rel = gitRelPath(relPath)
+  if (rel.startsWith('-') || rel.includes(':')) return { ok: false, reason: 'committed_excerpt_unavailable' }
+  // Distinguish ABSENT from UNREADABLE. Without this every missing file reported
+  // "cannot be read at that revision", which tells the Owner the revision is suspect when
+  // the real answer is simply that he named a file that is not there. cat-file -e asks that
+  // one question and prints nothing.
+  const exists = git(['cat-file', '-e', sha + ':' + rel], repoRoot)
+  if (!exists || exists.status !== 0) return { ok: false, reason: 'not_found' }
+  const r = git(['show', sha + ':' + rel], repoRoot)
+  if (!r || r.status !== 0) return { ok: false, reason: 'committed_excerpt_unavailable' }
+  const raw = String(r.stdout || '')
   const all = raw.replace(/\r\n/g, '\n').split('\n')
   let text = all.slice(0, MAX_EXCERPT_LINES).join('\n')
   let truncated = all.length > MAX_EXCERPT_LINES
@@ -294,14 +395,45 @@ function proposeWorkOrder (input = {}) {
   // ⛔ THE EXCERPT COMES FROM THE REPOSITORY THE ORDER NAMES. Reaching this line already
   //    proves the identity IS the executable backend (L-IDENTITY refuses everything else
   //    above), so the backend root is the correct — and only — root to read.
+  // ── B2-A REVISION CAPTURE ─────────────────────────────────────────────────
+  // One bounded operation: pin HEAD, prove the file is faithfully in it, read the excerpt
+  // FROM it, then prove nothing moved underneath us. Every step fails closed; none of them
+  // repairs anything, because a repository that moved mid-seal is a fact for the Owner to
+  // see, not a race for the producer to paper over.
+  const git = typeof input.gitRunner === 'function' ? input.gitRunner : defaultGitRunner
+  const repoRoot = input.repoRoot || REPO_ROOT
+  const allowed = [file]
+
+  // 1. shaBefore
+  const before = headSha(git, repoRoot)
+  if (!before.ok) return reject([REVISION_REFUSALS[before.reason]()])
+
+  // 2. the allowed file must be exactly what shaBefore says it is
+  const dirty1 = dirtyAllowedFiles(git, repoRoot, allowed)
+  if (!dirty1.ok) return reject([REVISION_REFUSALS[dirty1.reason]()])
+  if (dirty1.dirty.length > 0) return reject([REVISION_REFUSALS.allowed_file_dirty(dirty1.dirty[0])])
+
+  // 3. the excerpt, from the commit object — NOT from the working tree
   const reader = typeof input.readCurrentExcerpt === 'function'
     ? input.readCurrentExcerpt
-    : (rel) => readCurrentExcerptFromDisk(input.repoRoot || REPO_ROOT, rel)
-  const cur = reader(file)
+    : (rel) => readCommittedExcerpt(git, repoRoot, before.sha, rel)
+  const cur = reader(file, before.sha)
   if (!cur || cur.ok !== true) {
-    const why = (cur && EXCERPT_REFUSALS[cur.reason]) || EXCERPT_REFUSALS.not_found
+    const why = (cur && (REVISION_REFUSALS[cur.reason] || EXCERPT_REFUSALS[cur.reason])) || EXCERPT_REFUSALS.not_found
     return reject([why(file)])
   }
+
+  // 4. nothing moved while we were reading
+  const after = headSha(git, repoRoot)
+  if (!after.ok) return reject([REVISION_REFUSALS[after.reason]()])
+  if (after.sha !== before.sha) return reject([REVISION_REFUSALS.head_moved()])
+
+  const dirty2 = dirtyAllowedFiles(git, repoRoot, allowed)
+  if (!dirty2.ok) return reject([REVISION_REFUSALS[dirty2.reason]()])
+  if (dirty2.dirty.length > 0) return reject([REVISION_REFUSALS.allowed_file_dirty(dirty2.dirty[0])])
+
+  // 5. only now is the revision trustworthy enough to seal
+  const expectedSha = before.sha
 
   // ── SEAL: system-owned fields only. The model supplies none of these. ──────
   const defaults = Object.assign({}, DEFAULTS, input.defaults || {})
@@ -314,6 +446,10 @@ function proposeWorkOrder (input = {}) {
     // RB1: the verified pair, straight from the registry record — not the caller's copy.
     projectId: registered.projectId,
     repoFullName: registered.repoFullName,
+    // B2-A: server-derived, and deliberately assigned from the captured value rather than
+    // from anything on `input` or `p`. A caller-supplied expectedSha is not merged, not
+    // preferred, not even read — revision authority is not delegable.
+    expectedSha,
     allowedFiles: [file],
     allowedTestCommand: (typeof p.allowedTestCommand === 'string' && p.allowedTestCommand.trim() !== '') ? p.allowedTestCommand.trim() : null,
     forbiddenActions: [...MUST_FORBID, 'cred-edit', 'env-edit', 'gate-edit', 'audit-edit'],

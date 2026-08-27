@@ -25,7 +25,7 @@ const { TEST_SERVICE_TOKEN: TOKEN } = require('../api/_serviceTokenFixture')
 
 const APP_OPTS = { serviceToken: TOKEN, proposalPersistence: false, runPersistence: false }
 const validWO = (over = {}) => Object.assign({
-  goal: 'tidy one helper', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
+  goal: 'tidy one helper', expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'], timeoutSec: 60, costCapUsd: 1, approvalId: 'appr_canary1'

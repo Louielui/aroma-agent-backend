@@ -34,6 +34,7 @@ const ORDER = Object.freeze({
   goal: 'canary',
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
+  expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
   allowedFiles: ['docs/canary/agent-canary.md'],
   allowedTestCommand: null,
   forbiddenActions: [...MUST_FORBID],

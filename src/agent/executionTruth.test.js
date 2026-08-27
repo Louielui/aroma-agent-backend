@@ -40,6 +40,7 @@ const WO = (over = {}) => Object.assign({
   goal: 'tidy one helper',
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
+  expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
   allowedFiles: ['src/foo.js'],
   allowedTestCommand: null,
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],
@@ -387,9 +388,9 @@ test('*** the audit record shape carries no prompt, no diff, no Owner text ***',
  * an attempt, not an authorization; `repoRoot` names one machine's folder and would tie
  * every historical hash to that box. Both stay out, and are still asserted below.
  */
-test('*** Work Order canonical is exactly 14 fields — the RB1 identity pair included ***', () => {
+test('*** Work Order canonical is exactly 15 fields — the RB1 identity pair included ***', () => {
   const keys = Object.keys(canonicalWorkOrder(WO()))
-  assert.equal(keys.length, 14)
+  assert.equal(keys.length, 15)
   assert.ok(keys.includes('projectId') && keys.includes('repoFullName'), 'the identity pair is canonical')
 })
 
@@ -405,7 +406,7 @@ test('*** ⛔ REPOSITORY IDENTITY IS HASH-BOUND — AND A MACHINE ROOT STILL IS 
   for (const extra of [{ runId: 'run_x' }, { repoRoot: 'C:/somewhere' }, { repositoryId: 'r1' }, { repositoryBindingId: 'b1' }, { schemaVersion: 2 }]) {
     assert.equal(hashWorkOrder(Object.assign({}, base, extra)), hash,
       '⛔ ' + Object.keys(extra)[0] + ' entered the canonical order')
-    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 14)
+    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 15)
   }
 })
 

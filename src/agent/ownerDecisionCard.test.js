@@ -88,6 +88,8 @@ test('mutating ANY displayed canonical value changes both the hash and the card'
     // this table is what stops a canonical field from being added unhashed-and-undisplayed.
     projectId: 'aroma-system',
     repoFullName: 'Louielui/aroma-system',
+    // B2-A: the revision is displayed and hashed like everything else here.
+    expectedSha: 'a'.repeat(40),
     allowedFiles: ['src/demo/demoHtml.js'],
     allowedTestCommand: 'npm run evil',
     forbiddenActions: ['commit'],

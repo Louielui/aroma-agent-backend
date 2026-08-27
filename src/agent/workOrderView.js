@@ -229,6 +229,10 @@ function buildApprovalView (workOrder) {
     // the Owner reads is what the hash covers.
     projectId: canonical.projectId,
     repoFullName: canonical.repoFullName,
+    // B2-A: read from `canonical` like every other field here. The card ABBREVIATES for
+    // reading; it does not compute, shorten-and-store, or re-derive a revision of its own.
+    // The full sha stays in the canonical order and therefore in the hash.
+    expectedSha: canonical.expectedSha,
     branch: canonical.branch,
     hash,
     allowedFiles: canonical.allowedFiles,
@@ -242,6 +246,7 @@ function buildApprovalView (workOrder) {
 
   const technicalLines = [
     `approvalId        : ${technical.approvalId == null ? NOT_PROVIDED() : technical.approvalId}`,
+    `Revision          : ${technical.expectedSha == null ? NOT_PROVIDED() : technical.expectedSha.slice(0, 12)}`,
     t('tech.projectId', { v: technical.projectId == null ? NOT_PROVIDED() : technical.projectId }),
     t('tech.repoFullName', { v: technical.repoFullName == null ? NOT_PROVIDED() : technical.repoFullName }),
     t('tech.branch', { v: technical.branch == null ? NOT_PROVIDED() : technical.branch }),

@@ -96,6 +96,16 @@ function isForbiddenFile (p) {
  * the execution actions are all declared forbidden AND a positive timeout + cost cap
  * + safe approvalId are present.
  */
+/**
+ * A full 40-character lowercase hex commit SHA — nothing shorter, nothing abbreviated.
+ *
+ * The Owner approves a REVISION, so the value that enters the hash must identify exactly
+ * one commit. An abbreviation identifies a commit only until the repository grows enough
+ * to make it ambiguous, and an approval that becomes ambiguous later is not an approval.
+ * The card may abbreviate for reading; the hash may not.
+ */
+const EXPECTED_SHA_RE = /^[0-9a-f]{40}$/
+
 function validateWorkOrder (wo) {
   const errors = []
   if (!wo || typeof wo !== 'object') return { ok: false, errors: ['work order must be an object'] }
@@ -107,6 +117,14 @@ function validateWorkOrder (wo) {
   // all, and a same-named file in the other repo sealed as if it were this one.
   if (!isValidProjectId(wo.projectId)) errors.push('projectId must be a registered project id')
   if (!isValidRepoFullName(wo.repoFullName)) errors.push('repoFullName must be owner/name (never a local path)')
+
+  // B2-A: WHICH REVISION, not merely which repository. projectId + repoFullName answer
+  // 'which repo'; without a commit they still cannot say WHICH CONTENT the Owner approved,
+  // and the excerpt on his card is only meaningful relative to one. Structural, not optional:
+  // an order that cannot name its revision is not a Work Order.
+  if (typeof wo.expectedSha !== 'string' || !EXPECTED_SHA_RE.test(wo.expectedSha)) {
+    errors.push('expectedSha must be a full 40-character lowercase hex commit sha')
+  }
 
   if (!Array.isArray(wo.allowedFiles) || wo.allowedFiles.length === 0) {
     errors.push('allowedFiles must be a non-empty array')
@@ -164,6 +182,14 @@ function canonicalWorkOrder (wo) {
     //    path on the card and in the audit, and it would tie history to one machine.
     projectId: (wo && wo.projectId) || null,
     repoFullName: (wo && wo.repoFullName) || null,
+    // ── B2-A: WHICH REVISION THIS ORDER AUTHORIZES ───────────────────────────
+    // Server-derived from the trusted repoRoot at seal time — never a request body, a
+    // model, a proposal, or a worker. It is INSIDE the hash because the Owner's
+    // 「現時內容」 excerpt is read from THIS commit object: excerpt and revision are one
+    // fact, and hashing the text while leaving the revision outside would let the same
+    // approved hash mean different content on different days.
+    // The FULL sha is hashed. The card abbreviates for reading only.
+    expectedSha: (wo && wo.expectedSha) || null,
     allowedFiles: [...((wo && wo.allowedFiles) || [])].sort(),
     allowedTestCommand: (wo && wo.allowedTestCommand) != null ? wo.allowedTestCommand : null,
     forbiddenActions: [...((wo && wo.forbiddenActions) || [])].sort(),
@@ -197,6 +223,7 @@ module.exports = {
   MUST_FORBID,
   FORBIDDEN_FILE_PATTERNS,
   validateWorkOrder,
+  EXPECTED_SHA_RE,
   isFileAllowed,
   isForbiddenFile,
   hashWorkOrder,

@@ -20,6 +20,7 @@ const validWO = (files) => ({
   goal: 'x',
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
+  expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
   allowedFiles: files,
   allowedTestCommand: null,
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],

@@ -23,7 +23,7 @@ const { createArtifactStore } = require('../store/artifactStore')
 const { buildResultView, findExecutionByProposalId, findResultByTaskId } = require('../api/executionResultView')
 
 const validWO = () => ({
-  goal: 'add a small helper', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
+  goal: 'add a small helper', expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
   projectId: 'aroma-agent-backend',
   repoFullName: 'Louielui/aroma-agent-backend',
   forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'], timeoutSec: 60, costCapUsd: 1, approvalId: 'appr_1'
@@ -340,6 +340,7 @@ test('*** ⛔ THE CANARY FIXTURE NOW REACHES THE EXECUTOR COMPLETE ***', () => {
   const w = createAgentBridgeWorker({ command: FAKE_CLI, runner: okClaude })
   const canary = {
     goal: '第一行之後加一行： <!-- P1-C1c live canary — verification artefact only -->',
+    expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9',
     allowedFiles: ['docs/HOUSE-RULES.md'],
     allowedTestCommand: null,
     forbiddenActions: ['commit', 'push', 'PR', 'merge', 'deploy'],
