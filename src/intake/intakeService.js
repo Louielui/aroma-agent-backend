@@ -515,6 +515,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   let semanticClarify = null
   let semanticAutomaticOperation = null // SERVER-derived; never model-supplied
+  /**
+   * ⛔ ONE STATE, NOT A SCATTER OF `if (semanticClarify)` CHECKS.
+   *
+   * CLARIFY is TERMINAL TO READS and nothing else: no connector read, no reopened reasoning
+   * loop, no obligation satisfied by reading, no X4 self-read. It is deliberately NOT terminal
+   * to finalisation — the question still leaves through the ordinary ASK path, because an early
+   * return would skip persistence, language enforcement, read-state truth, request identity and
+   * telemetry, and a clarification that quietly skips five obligations is not safer than the
+   * answer it replaced.
+   */
+  let semanticClarifyTerminal = false
   let semanticTel = null
   /**
    * ⛔ AND IT ASKS THE EGRESS FENCE FIRST, LIKE EVERYTHING ELSE THAT LEAVES THIS MACHINE.
@@ -1336,9 +1347,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const a4Semantic = a4SemanticRoutingEnabled(process.env)
         const sources = a4Semantic ? [] : sourcesForProvider(providerName, all, process.env)
         if (sources.length > 0) {
-          // The operation is part of the identity of the read, not a detail of it: the same
-          // source set answered by a different operation is a different block.
-          const key = sources.join(',') + '|' + (semanticAutomaticOperation || '')
+          const key = sources.join(',')
           if (!readBlockCache.has(key)) {
             const connector = (deps && deps.connector) || createLiveReadConnector({ env: process.env }).connector
             const rc = await timePhase(
@@ -1347,7 +1356,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               // deterministic turn, so the message-derived automatic planner is untouched;
               // planFor already prefers a directed operation when one is supplied and its
               // source matches, which is the existing mechanism, not a second read path.
-              () => buildReadContext({ connector, message, sources, env: process.env, operation: semanticAutomaticOperation }),
+              // ⛔ NO SEMANTIC OPERATION HERE ANY MORE, AND THAT IS THE POINT.
+              //
+              // Big Step F directed this automatic read with the server-derived operation. It
+              // worked — but only with A4 off, and under A4 on (production) this block does not
+              // run at all. The reasoning loop now carries the operation instead, which works in
+              // BOTH configurations. Leaving it here as well made the same operation read TWICE
+              // with A4 off: wasted, and two evidence sets for one decision.
+              () => buildReadContext({ connector, message, sources, env: process.env }),
               { clock: latencyClock, sink: latencySink })
             readBlockCache.set(key, (rc && rc.block) ? rc.block : null)
             for (const row of (rc && Array.isArray(rc.perSource)) ? rc.perSource : []) {
@@ -1982,19 +1998,27 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // no read is performed on a verdict that did not arrive.
   //
   // 'commit' belongs to the proposal path and never had a knowledge obligation.
-  const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
-  const initialIsAsk = initialTerminalMode === 'ask'
   /**
-   * ⛔ O1 CLARIFY REACHES THE OWNER THROUGH THE ORDINARY ASK PATH, NOT A THIRD ONE.
+   * ⛔ O1 CLARIFY REACHES THE OWNER THROUGH THE ORDINARY ASK PATH, AND IT HAPPENS *HERE*.
    *
-   * Same shape the final verifier uses when it has its own question: mode ask, no nextRead, no
-   * answerPlan. That keeps persistence, language enforcement, read-state truth, turn telemetry
-   * and request identity exactly where they already live. A bespoke early return would have
-   * been shorter and would have quietly skipped all five.
+   * It used to sit ten lines lower, AFTER initialTerminalMode and initialIsAsk were captured.
+   * Nine decisions downstream read those two, so every one of them saw the model's original
+   * mode and believed this turn was not an ask — while `distilled.mode` said it was. Production
+   * showed the consequence on 「有咩貨唔夠要入返？」: the clarification was formed and the Owner
+   * still received a full Order Planning answer. Ordering was the bug; moving the rewrite above
+   * the capture is the fix, not a guard bolted onto the symptom.
+   *
+   * Same shape the final verifier uses for its own question — mode ask, no nextRead, no
+   * answerPlan — so persistence, language enforcement, read-state truth, request identity and
+   * turn telemetry all keep owning what they already owned.
    */
   if (semanticClarify && distilled) {
     distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })
+    semanticClarifyTerminal = true
   }
+
+  const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
+  const initialIsAsk = initialTerminalMode === 'ask'
 
   const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
@@ -2315,12 +2339,29 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // the loop builds its first prompt, and the budget must be spent before the loop can spend it
   // again — so the turn is nudged once in total, whichever entrance it came through.
   const x4InitialSelfRead = x4InitialSelfReadable && nudgeSelfReadable(investigationNow, X4_ASK_ORIGIN.INITIAL)
-  const willEnterLoop = !!(interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead))
+  // ⛔ THE SINGLE READ-ENTRANCE GATE. distilled.nextRead is already null under clarify, but
+  // initialObligation and x4InitialSelfRead are computed independently of it — which is how a
+  // clarified turn still read in production. The terminal state closes all three at once.
+  const readEntranceAllowed = !semanticClarifyTerminal
+  /**
+   * ⛔ A SEMANTIC CONSENSUS IS ITSELF A REASON TO OPEN THE LOOP.
+   *
+   * Measured under production flags before this: consensus true, operation bound to
+   * aroma_system.purchasing, and with a neutral answering model the connector was called ZERO
+   * times — because with A4 on the automatic first read no longer runs and nothing else asked.
+   * With an adversarial model it was called once, for replenishment: the model substituted its
+   * own choice inside the authorised source. Both are the same defect wearing different
+   * clothes — the server decided WHAT to read and then never got to read it.
+   *
+   * readEntranceAllowed still leads, so CLARIFY remains terminal to reads.
+   */
+  const semanticPendingOperation = semanticAutomaticOperation
+  const willEnterLoop = !!(readEntranceAllowed && interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead || semanticPendingOperation))
   forkTrace(FORK_STAGE.LOOP_ENTRY,
     willEnterLoop ? FORK_BRANCH.LOOP_ENTERED : FORK_BRANCH.LOOP_SKIPPED,
     { reasoningEntered: willEnterLoop, shortCircuit: !willEnterLoop })
 
-  if (interactionMode === 'chat' && distilled && (distilled.nextRead || initialObligation || x4InitialSelfRead)) {
+  if (willEnterLoop) {
     const { runReasoningLoop, STOP } = require('./reasoningLoop')
     // ⛔ BLOCKER 2: THE PROVIDER THAT PRODUCED THE VALID FIRST ENVELOPE CONTINUES THE TURN.
     // Step 2 used to call the Claude adapter even when OpenAI produced step 1 — a silent
@@ -2334,10 +2375,40 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // schema offered. Already-performed operations are NOT removed here: the schema narrows
     // what is offered, the allowlist decides what is permitted, and conflating the two would
     // make a repeat request look like a permission failure in the log.
-    const allowed = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
+    const authorisedThisTurn = (activeAdapter && activeProvider) ? authorisedOperationsFor(activeProvider) : []
+    /**
+     * ⛔ A SEMANTIC INTENT NARROWS AUTHORITY. IT NEVER DEGRADES INTO 「READ ANYTHING FROM THAT
+     * SOURCE」.
+     *
+     * Measured before this fence: with the purchasing read UNAVAILABLE, the turn went on to
+     * read replenishment — a different table, same source, and an answer the Owner never asked
+     * for presented as though it had been. The consensus said purchase_order; a failure to read
+     * purchase orders is a failure, not a licence to read something adjacent.
+     *
+     * INTERSECTED, never assigned: the narrowing can only ever shrink what the provider was
+     * already authorised for, so this cannot widen authority even if the binding were wrong.
+     */
+    const semanticNarrowedAllowed = semanticPendingOperation
+      ? authorisedThisTurn.filter((op) => op === semanticPendingOperation)
+      : authorisedThisTurn
+    const allowed = semanticNarrowedAllowed
     // ⛔ NULL ON AN INITIAL-FINAL TURN. The loop is entered with no read to replay, so step 1
     // is a real recovery call rather than a replay — see callModel.
-    let pending = distilled.nextRead || null
+    /**
+     * ⛔ THE SERVER-DERIVED OPERATION GOES FIRST, OR THE CONSENSUS MEANT NOTHING.
+     *
+     * It takes precedence over distilled.nextRead deliberately: the model may still direct
+     * later reads, but it may not pre-empt the read the server already decided on. Ordering is
+     * the property here, not merely the total — a purchasing read that happens AFTER the model
+     * has already pulled replenishment has still let the substitution happen.
+     *
+     * ⛔ AND IT IS NOT A BYPASS. It enters as an ordinary pending capability and is checked by
+     * the same authorised-operation allowlist, resolveReadOperation, read-only connector fence,
+     * buildReadContext and evidence machinery as any model-directed read. If it is not
+     * permitted it is refused — and refused means NO business read, never a different one from
+     * the same source.
+     */
+    let pending = semanticPendingOperation ? { capability: semanticPendingOperation, args: null } : (distilled.nextRead || null)
     // ══════════════════════════════════════════════════════════════════════════
     // ⛔ A4-AMB1 — THE SOURCE-AMBIGUITY GATE, ONCE PER TURN, BEFORE ANY CONNECTOR.
     //
