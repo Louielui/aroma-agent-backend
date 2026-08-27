@@ -63,10 +63,24 @@ const WORKERS = [
   }
 ]
 
-// capability -> employee; unknown/general falls to the Architect (knowledge default).
+// capability -> employee. FAIL CLOSED: an unmatched capability resolves to null.
+//
+// This used to end `|| WORKERS.find(w => w.id === 'architect')`. The Architect is the only
+// worker with connected:true and engine:'llm', so EVERY capability no employee declares
+// became work the Architect would actually EXECUTE — silently, and upward. Every capability
+// of a worker that is not connected yet (OpenClaw's, today) took exactly that path.
+//
+// The second default `(cap || 'ops')` is gone for the same reason: 'ops' IS a declared
+// Architect capability, so an ABSENT capability was quietly promoted into real Architect
+// work at this boundary. Ordinary unclassified work is unaffected — enrichTasks in
+// intakeService.js already defaults it to 'ops' UPSTREAM, where it reaches the Architect by
+// declaration rather than by fallback.
+//
+// Callers must handle null. The dispatcher does, and fails the dispatch closed.
 function workerForCapability (cap) {
-  const c = (cap || 'ops').toLowerCase()
-  return WORKERS.find(w => w.capabilities.includes(c)) || WORKERS.find(w => w.id === 'architect')
+  if (typeof cap !== 'string' || cap.trim() === '') return null
+  const c = cap.trim().toLowerCase()
+  return WORKERS.find(w => w.capabilities.includes(c)) || null
 }
 
 function listWorkers () {
