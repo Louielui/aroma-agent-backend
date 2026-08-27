@@ -172,3 +172,99 @@ test('J3. STRUCTURAL — routing authority is the index, not a scan of the array
   assert.ok(src.includes('const CAPABILITY_INDEX = buildCapabilityIndex(WORKERS)'),
     'the index must be built at module load, so an ambiguous registry cannot start')
 })
+
+// ─── PR #47 review blockers ──────────────────────────────────────────────────
+
+const { buildWorkerIndex, assertRegistryShape, getWorker } = require('../workers/registry')
+
+test('K. BLOCKER 1 — a STRING capabilities value fails closed and creates no o/p/s authority', () => {
+  // A string is iterable. `capabilities: 'ops'` used to enumerate CHARACTERS and produce
+  // three routable capabilities while initialization reported success — authority no worker
+  // ever declared, from one missing pair of brackets.
+  assert.throws(() => buildCapabilityIndex([mk('alpha', 'ops')]), /not an array/)
+  for (const ch of ['o', 'p', 's']) {
+    assert.strictEqual(workerForCapability(ch), null, `'${ch}' must never become a capability`)
+  }
+})
+
+test('K2. BLOCKER 1 — missing / null / non-array capabilities fail closed, never defaulted', () => {
+  for (const bad of [undefined, null, 42, {}, { length: 1 }, true]) {
+    assert.throws(() => buildCapabilityIndex([mk('alpha', bad)]), /not an array/,
+      `capabilities: ${describe(bad)} must be refused, not coerced to []`)
+  }
+  function describe (v) { return v === null ? 'null' : typeof v }
+})
+
+test('K3. an EMPTY capabilities array stays legal', () => {
+  // No current invariant says a worker must declare at least one capability, and inventing
+  // that rule is not this tranche's business.
+  const index = buildCapabilityIndex([mk('alpha', [])])
+  assert.strictEqual(index.size, 0)
+})
+
+test('L. BLOCKER 2 — duplicate worker ids fail closed even with DISJOINT capabilities', () => {
+  const table = [mk('same', ['cap_a']), mk('same', ['cap_b'])]
+  // Capability uniqueness alone would happily accept this: the two sets never overlap.
+  assert.throws(() => buildWorkerIndex(table), (err) => {
+    assert.match(err.message, /worker id/)
+    assert.match(err.message, /same/, 'the error must name the duplicated id')
+    return true
+  })
+})
+
+test('L2. BLOCKER 2 — missing or blank worker id fails closed', () => {
+  for (const bad of [undefined, null, '', '   ', 42, {}]) {
+    assert.throws(() => buildWorkerIndex([mk(bad, ['x'])]), /no usable id/)
+    assert.throws(() => assertRegistryShape([mk(bad, ['x'])]), /no usable id/)
+  }
+})
+
+test('L3. a valid registry of unique ids builds, and the real one does too', () => {
+  assert.strictEqual(buildWorkerIndex([mk('a', ['x']), mk('b', ['y'])]).size, 2)
+  assert.strictEqual(buildWorkerIndex(WORKERS).size, WORKERS.length)
+})
+
+test('M. getWorker remains correct for the real workers', () => {
+  assert.strictEqual(getWorker('architect').id, 'architect')
+  assert.strictEqual(getWorker('engineer').id, 'engineer')
+  assert.strictEqual(getWorker('automation').id, 'automation')
+  assert.strictEqual(getWorker('nope'), null)
+  assert.strictEqual(getWorker(null), null)
+  assert.strictEqual(getWorker(undefined), null)
+  // Exact match, as it has always been. Case-insensitive worker identity is NOT invented here.
+  assert.strictEqual(getWorker('Architect'), null)
+})
+
+test('M2. worker-id lookup does not depend on array order', () => {
+  const forward = buildWorkerIndex(WORKERS)
+  const reversed = buildWorkerIndex([...WORKERS].reverse())
+  assert.strictEqual(reversed.size, forward.size)
+  for (const [id, worker] of forward) {
+    assert.strictEqual(reversed.get(id).id, worker.id, `'${id}' changed identity when reversed`)
+  }
+})
+
+test('M3. STRUCTURAL — execution identity resolution is not a first-match scan', () => {
+  // executeDispatch re-resolves a PERSISTED worker_id through getWorker(). If that were a
+  // WORKERS.find() scan, duplicate ids would make the EXECUTION half of the round trip
+  // order-dependent — the more dangerous half, since work is about to run.
+  const src = fs.readFileSync(path.join(__dirname, 'registry.js'), 'utf8')
+  const fn = src.slice(src.indexOf('function getWorker'))
+  const body = fn.slice(0, fn.indexOf('\n'))
+  assert.ok(body.includes('WORKER_BY_ID.get'), 'getWorker must resolve through the id index')
+  assert.ok(!body.includes('WORKERS.find'), 'first-match scan must not be the identity authority')
+  assert.ok(src.includes('const WORKER_BY_ID = buildWorkerIndex(WORKERS)'),
+    'the id index must be built at module load, so duplicate ids cannot start')
+})
+
+test('N. DISPATCH ROUND TRIP — persisted worker_id re-resolves to the SAME worker', () => {
+  const { createDispatchesForTasks } = require('../dispatch/dispatcher')
+  for (const cap of ['coding', 'browser', 'ops']) {
+    const routed = workerForCapability(cap)
+    const [out] = createDispatchesForTasks([{ id: 'task-rt-' + cap, capability: cap }], 'decision-rt')
+    assert.strictEqual(out.dispatch.worker_id, routed.id, 'dispatch must persist the routed id')
+    // This is exactly what executeDispatch does with the stored value.
+    assert.strictEqual(getWorker(out.dispatch.worker_id).id, routed.id,
+      'execution must re-resolve the persisted id to the same worker that was routed')
+  }
+})
