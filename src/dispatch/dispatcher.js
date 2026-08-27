@@ -31,10 +31,44 @@ const STATUS_LABEL = {
 }
 function statusLabel (s) { return STATUS_LABEL[s] || s }
 
+// An unroutable capability, shaped like a worker so no caller can crash on it.
+// workerForCapability returns null when NO employee declares the capability. Returning that
+// null straight to callers would move the failure rather than close it: intakeService reads
+// `worker.connected` unconditionally, so the fail-closed path would throw inside the intake
+// pipeline. This record answers `connected:false` / `engine:null` to every existing and
+// future reader, which is both true and safe.
+const UNASSIGNED_WORKER = Object.freeze({
+  id: null, role: null, provider: null, engine: null, connected: false, capabilities: Object.freeze([])
+})
+
 /** Create a dispatch per task; connected → queued, not-connected → waiting_connection. */
 function createDispatchesForTasks (tasks, decisionId) {
   return tasks.map(t => {
     const worker = workerForCapability(t.capability)
+
+    // NO EMPLOYEE DECLARES THIS CAPABILITY. It is not waiting for a connection — there is no
+    // worker to connect — so 'waiting_connection' would be a lie that reads as 'coming later'.
+    // 'failed' is the honest existing status: this work was not dispatched and will not be.
+    if (!worker) {
+      const failed = store.createDispatch({
+        task_id: t.id, decision_id: decisionId, capability: t.capability || null,
+        worker_id: null, worker_name: null, worker_role: null, status: 'failed'
+      })
+      // createDispatch has a fixed shape and always writes error:null, so the REASON is
+      // recorded here. A 'failed' with no reason repeats the original defect's real harm:
+      // the record not saying that the capability was unmatched.
+      //
+      // `status` is re-stated deliberately. It is already 'failed' above — created that way so
+      // the dispatch is never executable for an instant — but updateDispatch only emits the
+      // 'dispatch.failed' EVENT when a status is present in the patch, and a refusal that
+      // never reaches the event stream is a refusal nobody can observe.
+      const withReason = store.updateDispatch(failed.id, {
+        status: 'failed',
+        error: 'no_employee_declares_capability: ' + (t.capability || '(absent)')
+      })
+      return { dispatch: withReason || failed, task: t, worker: UNASSIGNED_WORKER }
+    }
+
     const status = worker.connected ? 'queued' : 'waiting_connection'
     const d = store.createDispatch({
       task_id: t.id, decision_id: decisionId, capability: t.capability || 'ops',
