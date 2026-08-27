@@ -133,7 +133,7 @@ test('BOTH outcomes are audited — success and failure — through the real sto
       diffStat: () => ' 1 file changed',
       remotes: () => [],
       currentBranch: () => 'agent/appr_wiring',
-      prepare: () => ({ dir: '/tmp/clone', branch: 'agent/appr_wiring' }),
+      prepare: () => ({ dir: '/tmp/clone', branch: 'agent/appr_wiring', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' }),
       cleanup: () => {}
     }
     const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', checkCredentials: () => ({ canRun: true, state: 'ok', refusal: null, warning: null, refreshExpiresAt: null, daysLeft: null, accessTokenValid: true, subscription: null }), writePatch: () => ({ ok: false, reason: 'no_changes' }),

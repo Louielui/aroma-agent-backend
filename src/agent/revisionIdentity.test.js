@@ -241,15 +241,30 @@ test('16b. an unreadable or malformed HEAD fails closed', () => {
 
 // ─── 18: B2-B has not leaked in ─────────────────────────────────────────────
 
-test('18. no B2-B fields or runner enforcement were added', () => {
+test('18. execution-time fields stay OUT of the sealed Work Order', () => {
+  // This test previously also asserted that agentRunner and featureBranchWorkspace were
+  // untouched. That was a SCOPE fence for B2-A, and B2-B has now deliberately crossed it —
+  // keeping the assertion would only pin the tranche boundary, not a safety property.
+  //
+  // What is still worth pinning is the DIVISION: what the Owner approves is sealed and
+  // hashed; what execution observes is measured at run time and belongs to the result and
+  // the audit. An observed value inside the canonical order would mean the hash covered
+  // something nobody could have read at approval time.
   const c = canonicalWorkOrder(baseOrder())
-  for (const field of ['observedBaseSha', 'endSha', 'patchSha256', 'repoTarget']) {
-    assert.ok(!(field in c), `${field} belongs to B2-B and must not be in B2-A`)
+  for (const field of ['observedBaseSha', 'revisionMatch', 'endSha', 'patchSha256', 'repoTarget']) {
+    assert.ok(!(field in c), `${field} is an execution fact and must never be sealed`)
   }
-  const runner = fs.readFileSync(path.join(__dirname, 'agentRunner.js'), 'utf8')
-  assert.ok(!runner.includes('expectedSha'), 'agentRunner must be untouched in B2-A')
-  const ws = fs.readFileSync(path.join(__dirname, 'featureBranchWorkspace.js'), 'utf8')
-  assert.ok(!ws.includes('baseSha'), 'featureBranchWorkspace must be untouched in B2-A')
+  assert.strictEqual(c.expectedSha, SHA_A, 'the approved revision IS sealed')
+})
+
+test('18b. endSha is never introduced anywhere', () => {
+  // Committing is forbidden and the worker edits the working tree, so a clone HEAD does not
+  // move during a normal run: an endSha would always equal the base and would look like
+  // mutation evidence while carrying none. patchSha256 is the honest identity instead.
+  for (const f of ['agentRunner.js', 'featureBranchWorkspace.js', 'audit.js', 'workOrder.js']) {
+    const src = fs.readFileSync(path.join(__dirname, f), 'utf8')
+    assert.ok(!/endSha/.test(src), `endSha must not appear in ${f}`)
+  }
 })
 
 test('8b. the FIRST dirty check is its own gate, not shaded by the second', () => {

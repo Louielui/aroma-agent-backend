@@ -304,7 +304,7 @@ test('*** the runner refuses a foreign order BEFORE workspace.prepare and BEFORE
   const runner = createAgentRunner({
     projectId: BACKEND.projectId,
     repoFullName: BACKEND.repoFullName,
-    workspace: { prepare: () => { prepared++; return { dir: 'x', branch: 'b' } }, verifyNoRemotes: () => {}, cleanup: () => {} },
+    workspace: { prepare: () => { prepared++; return { dir: 'x', branch: 'b', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' } }, verifyNoRemotes: () => {}, cleanup: () => {} },
     worker: { invoke: async () => { invoked++; return { ok: true, output: {} } } },
     checkCredentials: () => ({ canRun: true })
   })

@@ -53,7 +53,7 @@ const WORKSPACE = {
   diffStat: () => '',
   remotes: () => [],
   currentBranch: () => 'agent/appr_x',
-  prepare: () => ({ dir: '/tmp/clone', branch: 'agent/appr_x' }),
+  prepare: () => ({ dir: '/tmp/clone', branch: 'agent/appr_x', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' }),
   cleanup: () => {}
 }
 

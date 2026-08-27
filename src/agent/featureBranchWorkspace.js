@@ -23,6 +23,8 @@ const { assertSandboxUnderTmpdir } = require('../workers/workspace/tmpdirSandbox
 
 const AGENT_SANDBOX_PREFIX = 'aroma-sandbox-agent-'
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
+/** A full 40-char lowercase commit sha — the same shape the Owner's expectedSha must be. */
+const FULL_SHA = /^[0-9a-f]{40}$/
 
 /** Default git runner: spawnSync, shell:false. Returns {status, stdout, stderr}. */
 function defaultGitRunner (args, cwd) {
@@ -41,7 +43,7 @@ function createFeatureBranchWorkspace (options = {}) {
   const mkdtemp = typeof opts.mkdtemp === 'function' ? opts.mkdtemp : (p) => fs.mkdtempSync(p)
   const repoReal = realOf(repoRoot)
 
-  /** Clone → branch → strip remotes; return { dir, branch }. Fail-closed throughout. */
+  /** Clone → branch → strip remotes → measure base revision. Fail-closed throughout. */
   function prepare (approvalId) {
     if (typeof approvalId !== 'string' || !SAFE_ID.test(approvalId)) throw new Error('prepare requires a safe approvalId ([A-Za-z0-9_-]{1,64})')
     const branch = `agent/${approvalId}`
@@ -68,7 +70,22 @@ function createFeatureBranchWorkspace (options = {}) {
     if (cur !== branch) throw new Error(`refuse: not on agent branch (on '${cur}')`)
     if (cur === 'main') throw new Error('refuse: workspace is on main')
 
-    return { dir: safe, branch }
+    // ── B2-B: WHICH REVISION THIS EXECUTION ACTUALLY STARTS FROM ─────────────
+    //
+    // Measured INSIDE THE CLONE, deliberately. Re-reading the live repository's HEAD
+    // here would answer a different question — where the source is NOW — and the clone
+    // is what the worker is about to edit. If the live repo moved between the Owner's
+    // approval and this moment, the live HEAD would agree with itself and the mismatch
+    // the gate exists to catch would be invisible.
+    //
+    // It is measured, never accepted: no caller, Work Order, worker or model supplies it.
+    // If the clone cannot say what it is, no worker may receive it.
+    const baseOut = git(['rev-parse', 'HEAD'], safe)
+    if (baseOut.status !== 0) throw new Error(`refuse: clone HEAD unreadable (${(baseOut.stderr || '').trim() || baseOut.status})`)
+    const baseSha = String(baseOut.stdout || '').trim()
+    if (!FULL_SHA.test(baseSha)) throw new Error('refuse: clone HEAD is not a full commit sha')
+
+    return { dir: safe, branch, baseSha }
   }
 
   /** THE BRAKE — canonical, strictly-under-tmpdir path or throw. */

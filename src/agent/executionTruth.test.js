@@ -295,7 +295,7 @@ const runnerHarness = (over = {}) => {
   const phases = []
   const audits = []
   const runner = createAgentRunner({ projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend', command: 'C:/fake/claude.exe',
-    workspace: over.workspace || { prepare: () => ({ dir: 'C:/tmp/clone', branch: 'agent/x' }), cleanup: () => {} },
+    workspace: over.workspace || { prepare: () => ({ dir: 'C:/tmp/clone', branch: 'agent/x', baseSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9' }), cleanup: () => {} },
     worker: over.worker || { invoke: async () => ({ ok: true, output: { filesChanged: [], exit: 0 } }) },
     // ⛔ AN ARTIFACT STORE, NOT AN auditLog. Injecting the log itself would skip
     //    audit.js entirely and these tests would be asserting on the arguments the

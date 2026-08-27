@@ -215,8 +215,14 @@ test('the display states the consequence in plain language (diff only, worst cas
 
 /* ═══════════ STEP 4 — hash enforcement, no amend ═══════════ */
 
+// B2-B: the runner refuses to invoke a worker unless the clone base equals the approved
+// expectedSha. These orders are sealed by the REAL producer against THIS repository, so the
+// pretend clone must start from this repository HEAD — a hard-coded sha would drift the day
+// anything is committed and the failure would look like a governance bug.
+const REPO_HEAD = require('node:child_process').execSync('git rev-parse HEAD', { encoding: 'utf8' }).trim()
+
 function fakeWorkspace (calls) {
-  return { prepare: () => { calls.prep++; return { dir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_canary1' } }, containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/context/contextResult.js'], diffStat: () => ' 1 file changed', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
+  return { prepare: () => { calls.prep++; return { dir: '/tmp/aroma-sandbox-agent-x', branch: 'agent/appr_canary1', baseSha: REPO_HEAD } }, containmentCheck: (t) => t, permissionMode: () => 'acceptEdits', filesChanged: () => ['src/context/contextResult.js'], diffStat: () => ' 1 file changed', remotes: () => [], currentBranch: () => 'agent/appr_canary1', cleanup: () => {} }
 }
 
 test('approved hash === executed hash -> the run proceeds', async () => {
