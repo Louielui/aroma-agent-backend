@@ -191,7 +191,21 @@ function createAgentRunner (options = {}) {
     const revisionMatch = observedBaseSha === expectedSha
 
     if (!revisionMatch) {
-      const result = fail('revision_moved', { expectedSha, observedBaseSha, revisionMatch })
+      // ⛔ THE EVIDENCE GOES IN `output`, LIKE EVERY OTHER RUN'S.
+      //
+      // fail()'s second argument Object.assigns onto the TOP level, so this used to put
+      // the three revision facts somewhere no reader looks: agentResultView normalizes
+      // from raw.output, so a revision_moved refusal projected no revision evidence at
+      // all — the one result whose entire meaning IS the revision. Matched runs put the
+      // same three fields in output, so the shape also disagreed with itself.
+      //
+      // One authority location. Not duplicated at top level: a second copy is a second
+      // thing to keep true, and the first reader to trust the wrong one is a bug nobody
+      // sees until it matters.
+      const result = fail('revision_moved')
+      result.output.expectedSha = expectedSha
+      result.output.observedBaseSha = observedBaseSha
+      result.output.revisionMatch = revisionMatch
       emitPhase(approvalId, 'failed', runId)
       if (auditLog) {
         try {
