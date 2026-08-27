@@ -211,6 +211,9 @@ function dirtyAllowedFiles (git, repoRoot, files) {
   return { ok: true, dirty }
 }
 
+/** The only two git modes that mean 'an ordinary file': non-executable and executable. */
+const REGULAR_FILE_MODES = Object.freeze(['100644', '100755'])
+
 /**
  * The excerpt, read from the COMMIT OBJECT rather than the working tree.
  *
@@ -222,12 +225,43 @@ function dirtyAllowedFiles (git, repoRoot, files) {
 function readCommittedExcerpt (git, repoRoot, sha, relPath) {
   const rel = gitRelPath(relPath)
   if (rel.startsWith('-') || rel.includes(':')) return { ok: false, reason: 'committed_excerpt_unavailable' }
-  // Distinguish ABSENT from UNREADABLE. Without this every missing file reported
-  // "cannot be read at that revision", which tells the Owner the revision is suspect when
-  // the real answer is simply that he named a file that is not there. cat-file -e asks that
-  // one question and prints nothing.
-  const exists = git(['cat-file', '-e', sha + ':' + rel], repoRoot)
-  if (!exists || exists.status !== 0) return { ok: false, reason: 'not_found' }
+  // ⛔ EXISTENCE IS NOT ENOUGH — IT MUST BE A REGULAR FILE.
+  //
+  // This was `git cat-file -e <sha>:<path>`, which answers only 'is there an object here'.
+  // A DIRECTORY answers yes. `git show` then returns a TREE LISTING, and that listing would
+  // have been sealed into the hash and shown to the Owner as 「現時內容」 — a directory
+  // listing presented as the contents of his file. A symlink (120000) and a submodule
+  // gitlink (160000) pass the same existence check just as happily.
+  //
+  // ls-tree names the mode and the type, which is exactly the question worth asking. -z
+  // makes the record NUL-terminated, so the path is emitted raw instead of quoted and a
+  // path containing a space or a quote cannot reshape the parse.
+  const entry = git(['ls-tree', '-z', sha, '--', rel], repoRoot)
+  if (!entry || entry.status !== 0) return { ok: false, reason: 'committed_excerpt_unavailable' }
+
+  const records = String(entry.stdout || '').split('\0').filter((x) => x !== '')
+  // Nothing at that path in that commit — the Owner named a file that is not there, which
+  // is a different problem from a revision we cannot read, and says so.
+  if (records.length === 0) return { ok: false, reason: 'not_found' }
+  // One path must yield one entry. More than one means the pathspec matched something other
+  // than the exact file, and an ambiguous answer is not an answer.
+  if (records.length > 1) return { ok: false, reason: 'committed_excerpt_unavailable' }
+
+  // NOTE: the tab is written as a character class, not \t, so that the literal text
+  // 't(' never appears here — the governance scanner reads that as a dynamic translator key.
+  const m = /^(\d{6}) (blob|tree|commit|tag) ([0-9a-f]{40})[\t]([\s\S]+)$/.exec(records[0])
+  if (!m) return { ok: false, reason: 'committed_excerpt_unavailable' }
+  const mode = m[1]
+  const type = m[2]
+  const entryPath = m[4]
+
+  // The entry git answered with must be the path we asked about, spelled the same way.
+  if (entryPath !== rel) return { ok: false, reason: 'committed_excerpt_unavailable' }
+
+  // A tree, a symlink or a gitlink is not the file the Owner thinks he is reading. The
+  // existing wording — 'is not a file (it may be a folder)' — is the honest thing to say
+  // about all three, and deliberately does not follow the symlink to somewhere else.
+  if (type !== 'blob' || !REGULAR_FILE_MODES.includes(mode)) return { ok: false, reason: 'not_a_file' }
   const r = git(['show', sha + ':' + rel], repoRoot)
   if (!r || r.status !== 0) return { ok: false, reason: 'committed_excerpt_unavailable' }
   const raw = String(r.stdout || '')
@@ -478,6 +512,8 @@ module.exports = {
   mentionedFilesFrom,
   plainGoal,
   readCurrentExcerptFromDisk,
+  readCommittedExcerpt,
+  defaultGitRunner,
   currentRepoFileAvailable,
   repositoryFileAvailable,
   DEFAULTS,

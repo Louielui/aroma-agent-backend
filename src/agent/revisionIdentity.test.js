@@ -62,8 +62,12 @@ function fakeGit (opts = {}) {
       const d = dirtyQueue.length > 1 ? dirtyQueue.shift() : dirtyQueue[0]
       return { status: 0, stdout: d, stderr: '' }
     }
-    if (args[0] === 'cat-file') {
-      return opts.showFails ? { status: 1, stdout: '', stderr: 'missing' } : { status: 0, stdout: '', stderr: '' }
+    if (args[0] === 'ls-tree') {
+      // args: ['ls-tree','-z',sha,'--',rel] — answer with a genuine regular-file record
+      if (opts.lsTree != null) return { status: 0, stdout: opts.lsTree, stderr: '' }
+      if (opts.missing) return { status: 0, stdout: '', stderr: '' }
+      const rel = args[4]
+      return { status: 0, stdout: '100644 blob ' + 'e'.repeat(40) + String.fromCharCode(9) + rel + String.fromCharCode(0), stderr: '' }
     }
     if (args[0] === 'show') {
       if (opts.showFails) return { status: 1, stdout: '', stderr: 'fatal: path does not exist' }
@@ -256,4 +260,120 @@ test('8b. the FIRST dirty check is its own gate, not shaded by the second', () =
   const out = propose({}, { dirty: [' M docs/a.md\n', ''] })
   assert.strictEqual(out.ok, false, 'a file already dirty at capture time must refuse')
   assert.ok(JSON.stringify(out.errors).includes('docs/a.md'))
+})
+
+// ─── PR #48 blocker: EXISTENCE IS NOT ENOUGH ────────────────────────────────
+//
+// `git cat-file -e <sha>:<path>` answers only "is there an object here". A DIRECTORY
+// answers yes, and `git show` then returns a TREE LISTING — which would have been sealed
+// into the hash and shown to the Owner as his file's 「現時內容」. A symlink and a submodule
+// gitlink pass that same check just as happily.
+//
+// These tests drive the REAL committed-object reader against REAL git objects. The four
+// entry types are built with `update-index --cacheinfo`, which writes genuine tree entries
+// without needing OS symlink support or a real submodule.
+
+const { spawnSync } = require('node:child_process')
+const { readCommittedExcerpt, defaultGitRunner } = require('../agent/workOrderProducer')
+
+const GITLINK_SHA = '1'.repeat(40)
+
+function fixtureRepo () {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-b2a-git-'))
+  const g = (args, input) => {
+    const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8', input, shell: false })
+    if (r.status !== 0) throw new Error(args.join(' ') + ' -> ' + (r.stderr || r.status))
+    return String(r.stdout || '')
+  }
+  g(['init', '-q'])
+  g(['config', 'user.email', 'fixture@test'])
+  g(['config', 'user.name', 'fixture'])
+
+  const blob = g(['hash-object', '-w', '--stdin'], 'FILE CONTENT\n').trim()
+  // A symlink's blob content is its TARGET path. If the reader ever followed it, this is
+  // what it would chase.
+  const linkBlob = g(['hash-object', '-w', '--stdin'], '../../etc/passwd').trim()
+
+  g(['update-index', '--add', '--cacheinfo', '100644,' + blob + ',regular.txt'])
+  g(['update-index', '--add', '--cacheinfo', '100755,' + blob + ',executable.sh'])
+  g(['update-index', '--add', '--cacheinfo', '120000,' + linkBlob + ',link.txt'])
+  g(['update-index', '--add', '--cacheinfo', '160000,' + GITLINK_SHA + ',submodule'])
+  g(['update-index', '--add', '--cacheinfo', '100644,' + blob + ',nested/inner.txt'])
+
+  const tree = g(['write-tree']).trim()
+  const commit = g(['commit-tree', tree, '-m', 'fixture']).trim()
+  return { dir, commit }
+}
+
+const REPO = fixtureRepo()
+const readReal = (rel) => readCommittedExcerpt(defaultGitRunner, REPO.dir, REPO.commit, rel)
+
+test('B1. a regular 100644 blob is accepted', () => {
+  const r = readReal('regular.txt')
+  assert.strictEqual(r.ok, true, JSON.stringify(r))
+  assert.strictEqual(r.text.trim(), 'FILE CONTENT')
+})
+
+test('B2. a regular 100755 (executable) blob is accepted', () => {
+  const r = readReal('executable.sh')
+  assert.strictEqual(r.ok, true, JSON.stringify(r))
+  assert.strictEqual(r.text.trim(), 'FILE CONTENT')
+})
+
+test('B3. a TREE (040000) fails closed — a directory listing is not file content', () => {
+  const r = readReal('nested')
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, 'not_a_file')
+})
+
+test('B4. a SYMLINK (120000) fails closed and is NOT followed', () => {
+  const r = readReal('link.txt')
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, 'not_a_file')
+  assert.ok(!('text' in r), 'the link target must never be read as content')
+})
+
+test('B5. a GITLINK / submodule (160000 commit) fails closed', () => {
+  const r = readReal('submodule')
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, 'not_a_file')
+})
+
+test('B6. malformed, empty or multiple tree-entry output fails closed', () => {
+  const say = (stdout, status = 0) => (args) =>
+    args[0] === 'ls-tree' ? { status, stdout, stderr: '' } : { status: 0, stdout: 'X\n', stderr: '' }
+
+  // ambiguous: two entries for one asked-about path
+  const two = '100644 blob ' + 'a'.repeat(40) + '\tregular.txt\u0000100644 blob ' + 'b'.repeat(40) + '\tother.txt\u0000'
+  assert.strictEqual(readCommittedExcerpt(say(two), '/r', 'c'.repeat(40), 'regular.txt').reason, 'committed_excerpt_unavailable')
+  // unparseable
+  assert.strictEqual(readCommittedExcerpt(say('garbage\u0000'), '/r', 'c'.repeat(40), 'regular.txt').reason, 'committed_excerpt_unavailable')
+  // an entry for a DIFFERENT path than the one asked about
+  const wrong = '100644 blob ' + 'a'.repeat(40) + '\tsomething-else.txt\u0000'
+  assert.strictEqual(readCommittedExcerpt(say(wrong), '/r', 'c'.repeat(40), 'regular.txt').reason, 'committed_excerpt_unavailable')
+  // an unexpected mode that is still a blob
+  const oddMode = '100664 blob ' + 'a'.repeat(40) + '\tregular.txt\u0000'
+  assert.strictEqual(readCommittedExcerpt(say(oddMode), '/r', 'c'.repeat(40), 'regular.txt').reason, 'not_a_file')
+  // git itself failing
+  assert.strictEqual(readCommittedExcerpt(say('', 1), '/r', 'c'.repeat(40), 'regular.txt').reason, 'committed_excerpt_unavailable')
+})
+
+test('B7. a missing committed path keeps the clear not-found semantics', () => {
+  const r = readReal('does-not-exist.txt')
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.reason, 'not_found', 'absent must stay distinguishable from unreadable')
+})
+
+test('B8. the excerpt still comes from expectedSha with the exact case-preserved path', () => {
+  const git = fakeGit({ head: SHA_A })
+  proposeWorkOrder({
+    repositoryIdentity: { projectId: 'aroma-agent-backend', repoFullName: 'Louielui/aroma-agent-backend' },
+    proposal: { goal: 'update docs/Canary/Mixed.md', candidateFile: 'docs/Canary/Mixed.md', intendedChange: 'x' },
+    mentionedFiles: ['docs/Canary/Mixed.md'],
+    repoRoot: '/fake/repo', gitRunner: git, newId: () => 'appr_case1'
+  })
+  const ls = git.calls.find((c) => c.startsWith('ls-tree'))
+  const show = git.calls.find((c) => c.startsWith('show'))
+  assert.ok(ls.includes(SHA_A) && ls.includes('docs/Canary/Mixed.md'), `case must be preserved: ${ls}`)
+  assert.ok(show.includes(SHA_A + ':docs/Canary/Mixed.md'), `excerpt must read at expectedSha: ${show}`)
 })
