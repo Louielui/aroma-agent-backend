@@ -102,81 +102,109 @@ function repositoryChanges (workspace, cloneDir) {
 }
 
 /**
- * The clone's STRUCTURAL isolation, strictly validated.
- *
- * ⛔ A CLEAN WORKTREE PROVES NOTHING ABOUT THIS. Remotes and the checked-out branch live in
- * .git, so mutating them leaves repoChanges() empty. `git remote add attacker …` restores a
- * push target — the thing prepare() stripped precisely so commit/push/PR/merge would have
- * nowhere to go — while the worktree stays spotless. `git checkout main` is worse in a
- * quieter way: 'clean' is measured against whatever HEAD has become, so switching branch
- * makes the verdict true about the wrong thing.
+ * The sandbox's structural facts, strictly validated.
  *
  * @returns {{ok:true, state:object}|{ok:false, reason:string}}
  */
-function isolationOf (workspace, cloneDir) {
-  if (!workspace || typeof workspace.isolationState !== 'function') {
-    return { ok: false, reason: 'workspace does not report git isolation state' }
+function sandboxOf (workspace, cloneDir, expectedSha) {
+  if (!workspace || typeof workspace.sandboxState !== 'function') {
+    return { ok: false, reason: 'workspace does not report sandbox state' }
   }
   let state
   try {
-    state = workspace.isolationState(cloneDir)
+    state = workspace.sandboxState(cloneDir, expectedSha)
   } catch (e) {
-    return { ok: false, reason: (e && e.message) || 'isolation state unreadable' }
+    return { ok: false, reason: (e && e.message) || 'sandbox state unreadable' }
   }
   if (!state || typeof state !== 'object' || Array.isArray(state)) {
-    return { ok: false, reason: 'isolation state is malformed' }
+    return { ok: false, reason: 'sandbox state is malformed' }
   }
-  if (!Array.isArray(state.remotes)) return { ok: false, reason: 'isolation state has no remote list' }
-  for (const r of state.remotes) {
-    if (typeof r !== 'string' || r === '') return { ok: false, reason: 'isolation state has a malformed remote record' }
+  if (typeof state.headSha !== 'string' || !/^[0-9a-f]{40}$/.test(state.headSha)) {
+    return { ok: false, reason: 'sandbox state has no usable HEAD' }
   }
   if (typeof state.currentBranch !== 'string' || state.currentBranch === '') {
-    return { ok: false, reason: 'isolation state has no branch' }
+    return { ok: false, reason: 'sandbox state has no branch' }
   }
+  if (!Array.isArray(state.remotes)) return { ok: false, reason: 'sandbox state has no remote list' }
+  for (const r of state.remotes) {
+    if (typeof r !== 'string' || r === '') return { ok: false, reason: 'sandbox state has a malformed remote record' }
+  }
+  if (!Array.isArray(state.indexFlagged)) return { ok: false, reason: 'sandbox state has no index flag list' }
+  if (!Array.isArray(state.indexDrift)) return { ok: false, reason: 'sandbox state has no index content list' }
   return { ok: true, state }
 }
 
 /**
- * ONE checkpoint, BOTH planes: the filesystem and the repository's own structure.
+ * ONE gate, run before the transport and after EVERY actual invocation.
  *
- * ⛔ IT RUNS BEFORE THE TRANSPORT AND AFTER EVERY ACTUAL INVOCATION — success, failure or
- * throw. Verifying only after a SUCCESSFUL call meant an executor that wrote a file, or
- * added a remote, and then threw was reported as an ordinary provider failure with the
- * mutation unrecorded. What a provider says about itself is a claim; the clone is a fact,
- * and the fact is established first.
+ * ⛔ THE ORDER IS DELIBERATE. Structural identity is established BEFORE any diff is
+ * collected, because a diff reads the repository's own configuration — and if that
+ * configuration has been redirected or armed, running the diff first means asking the
+ * compromised sandbox to describe itself. Cheap identity questions first; evidence last.
+ *
+ * ⛔ AND EACH FAILURE KEEPS ITS OWN NAME. 'the clone moved to another commit' and 'the
+ * worktree was edited' are different events with different responses, so they do not
+ * collapse into one generic refusal.
+ *
+ * B2 proved the clone STARTED from the approved revision. This proves it STAYED there:
+ * reproduced in a scratch clone, `git reset --hard` and a plain commit both leave the
+ * branch correct, remotes at zero and the worktree perfectly clean.
  *
  * @returns {{ok:true, changed:string[]}|{ok:false, refusal:object}}
  */
-function verifyWorkspace (workspace, cloneDir, branch, stage) {
+function verifyWorkspace (workspace, cloneDir, branch, expectedSha, stage) {
+  const refuse = (msg, risk) => ({ ok: false, refusal: fail({ branch }, `refuse: ${msg}`, [risk]) })
+
+  // A — filesystem containment
   try {
     workspace.containmentCheck(cloneDir)
   } catch (e) {
     return { ok: false, refusal: fail({ branch }, `refuse: ${(e && e.message) || `containment check failed at ${stage}`}`, ['containment']) }
   }
 
-  const iso = isolationOf(workspace, cloneDir)
-  if (!iso.ok) {
-    return { ok: false, refusal: fail({ branch }, `refuse: ${iso.reason}`, ['workspace_isolation_violation']) }
+  const sb = sandboxOf(workspace, cloneDir, expectedSha)
+  if (!sb.ok) return refuse(sb.reason, 'workspace_isolation_violation')
+  const st = sb.state
+
+  // B/C — the repository's own identity: metadata that belongs to THIS clone, and a
+  // worktree that IS this clone. Measured: a `.git` gitfile redirected git-dir to another
+  // repository while --show-toplevel still reported this clone, so neither check alone is
+  // sufficient; core.worktree redirected the top-level while the directory still existed.
+  if (st.dotGitIsRealDir !== true) return refuse('the clone .git is not its own directory', 'workspace_isolation_violation')
+  if (st.topLevelOk !== true) return refuse('the effective worktree is not this clone', 'workspace_isolation_violation')
+  if (st.gitDirOk !== true) return refuse('the effective git-dir is not this clone', 'workspace_isolation_violation')
+  if (st.commonDirOk !== true) return refuse('the effective common-dir is not this clone', 'workspace_isolation_violation')
+
+  // D — the approved revision, still. Not merely 'a valid commit'.
+  if (typeof expectedSha !== 'string' || !/^[0-9a-f]{40}$/.test(expectedSha)) {
+    return refuse('no approved revision was supplied', 'workspace_revision_violation')
   }
-  if (iso.state.remotes.length !== 0) {
-    return { ok: false, refusal: fail({ branch }, `refuse: the isolated clone has a remote (${iso.state.remotes.join(', ')})`, ['workspace_isolation_violation']) }
-  }
-  // The branch agentRunner prepared is the only acceptable one. Comparing against 'not main'
-  // alone would accept any OTHER agent branch, which is a different approval's workspace.
-  if (typeof branch !== 'string' || branch === '') {
-    return { ok: false, refusal: fail({ branch }, 'refuse: no expected agent branch was supplied', ['workspace_isolation_violation']) }
-  }
-  if (iso.state.currentBranch !== branch) {
-    return { ok: false, refusal: fail({ branch }, `refuse: the clone is on '${iso.state.currentBranch}', not the approved '${branch}'`, ['workspace_isolation_violation']) }
-  }
-  if (iso.state.currentBranch === 'main') {
-    return { ok: false, refusal: fail({ branch }, 'refuse: the clone is on main', ['workspace_isolation_violation']) }
+  if (st.headSha !== expectedSha) {
+    // Deliberately NOT adopted as the new expected value: the Owner approved one revision,
+    // and a clone that moved is a fact for him, not a number for us to update.
+    return refuse(`the clone is at ${st.headSha}, not the approved ${expectedSha}`, 'workspace_revision_violation')
   }
 
-  const changes = repositoryChanges(workspace, cloneDir)
-  if (!changes.ok) {
-    return { ok: false, refusal: fail({ branch }, `refuse: ${changes.reason}`, ['workspace_change_detection_failed']) }
+  // E/F — no push target, and the exact approved branch
+  if (st.remotes.length !== 0) return refuse(`the isolated clone has a remote (${st.remotes.join(', ')})`, 'workspace_isolation_violation')
+  if (typeof branch !== 'string' || branch === '') return refuse('no expected agent branch was supplied', 'workspace_isolation_violation')
+  if (st.currentBranch !== branch) return refuse(`the clone is on '${st.currentBranch}', not the approved '${branch}'`, 'workspace_isolation_violation')
+  if (st.currentBranch === 'main') return refuse('the clone is on main', 'workspace_isolation_violation')
+
+  // G — index flags that make the worktree lie. Both were reproduced hiding a real edit.
+  if (st.indexFlagged.length > 0) {
+    const names = st.indexFlagged.map((f) => `${f.file} (${f.tag})`).join(', ')
+    return refuse(`the index is marked to ignore worktree changes: ${names}`, 'workspace_index_violation')
   }
+
+  // H — staged content differing from the approved revision, even with a clean worktree
+  if (st.indexDrift.length > 0) {
+    return refuse(`the index carries content that is not the approved revision: ${st.indexDrift.join(', ')}`, 'workspace_index_violation')
+  }
+
+  // I — only now, the ordinary worktree evidence
+  const changes = repositoryChanges(workspace, cloneDir)
+  if (!changes.ok) return refuse(changes.reason, 'workspace_change_detection_failed')
   return { ok: true, changed: changes.changed }
 }
 
@@ -266,7 +294,7 @@ function createOpenClawWorker (options = {}) {
     // approved branch. prepare() established all of that a moment ago, and re-proving it here
     // is the difference between trusting a claim and holding a fact — nothing is handed to an
     // executor until the workspace it will act on has been measured, not assumed.
-    const preflight = verifyWorkspace(workspace, cloneDir, branch, 'preflight')
+    const preflight = verifyWorkspace(workspace, cloneDir, branch, workOrder.expectedSha, 'preflight')
     if (!preflight.ok) return preflight.refusal
     if (preflight.changed.length > 0) {
       return readOnlyViolation(workspace, cloneDir, branch, preflight.changed, null,
@@ -294,7 +322,7 @@ function createOpenClawWorker (options = {}) {
     // ⛔ FILESYSTEM TRUTH FIRST, BEFORE THE PROVIDER'S OWN VERDICT IS EVEN READ.
     // A transport that wrote a file and then threw used to be reported as an ordinary
     // transport failure, and the write went unrecorded and unrefused.
-    const afterTransport = verifyWorkspace(workspace, cloneDir, branch, 'the transport')
+    const afterTransport = verifyWorkspace(workspace, cloneDir, branch, workOrder.expectedSha, 'the transport')
     if (!afterTransport.ok) return afterTransport.refusal
     if (afterTransport.changed.length > 0) {
       return readOnlyViolation(workspace, cloneDir, branch, afterTransport.changed, run,
@@ -332,7 +360,7 @@ function createOpenClawWorker (options = {}) {
       // it has exactly the executor's reach. Passing, failing and throwing are all just
       // claims about a process; a written file is a fact about the repository, and a green
       // test must never become the cover story for a mutation.
-      const afterTest = verifyWorkspace(workspace, cloneDir, branch, 'the test')
+      const afterTest = verifyWorkspace(workspace, cloneDir, branch, workOrder.expectedSha, 'the test')
       if (!afterTest.ok) return afterTest.refusal
       if (afterTest.changed.length > 0) {
         return readOnlyViolation(workspace, cloneDir, branch, afterTest.changed, run,

@@ -22,6 +22,13 @@ const { createWorkerRunner } = require('../workers/runWorkerInBackground')
 const { createArtifactStore } = require('../store/artifactStore')
 const { buildResultView, findExecutionByProposalId, findResultByTaskId } = require('../api/executionResultView')
 
+/** Skip leading `-c key=value` global overrides, exactly as git itself does. */
+function gitArgs (args) {
+  let i = 0
+  while (args[i] === '-c') i += 2
+  return args.slice(i)
+}
+
 const validWO = () => ({
   goal: 'add a small helper', expectedSha: 'd05527e49d2092fdf82e74efe4d96f203fcd80e9', allowedFiles: ['src/foo.js'], allowedTestCommand: null,
   projectId: 'aroma-agent-backend',
@@ -107,11 +114,14 @@ function makeFakeGit ({ leaveRemote = false, changed = [] } = {}) {
   const state = { branch: null, remotes: ['origin'], changed }
   const ok = (stdout) => ({ status: 0, stdout, stderr: '' })
   const git = (args) => {
-    const j = args.join(' ')
-    if (args[0] === 'clone') return ok('')
-    if (args[0] === 'checkout' && args.includes('-b')) { state.branch = args[args.length - 1]; return ok('') }
+    const j = gitArgs(args).join(' ')
+    if (gitArgs(args)[0] === 'clone') { state.dir = gitArgs(args)[gitArgs(args).length - 1]; return ok('') }
+    if (gitArgs(args)[0] === 'checkout' && args.includes('-b')) { state.branch = gitArgs(args)[gitArgs(args).length - 1]; return ok('') }
     if (j === 'remote') return ok(state.remotes.join('\n'))
-    if (args[0] === 'remote' && args[1] === 'remove') { if (!leaveRemote) state.remotes = state.remotes.filter((r) => r !== args[2]); return ok('') }
+    if (gitArgs(args)[0] === 'remote' && gitArgs(args)[1] === 'remove') { if (!leaveRemote) state.remotes = state.remotes.filter((r) => r !== gitArgs(args)[2]); return ok('') }
+    if (j === 'rev-parse --show-toplevel') return ok(state.dir || '')
+    if (j === 'rev-parse --absolute-git-dir') return ok((state.dir || '') + '/.git')
+    if (j === 'rev-parse --path-format=absolute --git-common-dir') return ok((state.dir || '') + '/.git')
     if (j === 'rev-parse HEAD') return ok('d05527e49d2092fdf82e74efe4d96f203fcd80e9')
     if (j.startsWith('rev-parse --abbrev-ref')) return ok(state.branch || '')
     if (j.startsWith('diff --name-only')) return ok(state.changed.join('\n'))

@@ -21,6 +21,19 @@ const { createOpenClawWorker, buildExecutionBrief } = require('../agent/openClaw
 
 const SHA = '51d462e15437f1ca45f8fac39c450b119c0876c6'
 
+/** A structurally pristine sandbox, as prepare() leaves it. */
+const CLEAN_SANDBOX = {
+  headSha: SHA,
+  currentBranch: 'agent/appr_c1',
+  remotes: [],
+  indexFlagged: [],
+  indexDrift: [],
+  dotGitIsRealDir: true,
+  topLevelOk: true,
+  gitDirOk: true,
+  commonDirOk: true
+}
+
 const workOrder = (over = {}) => Object.assign({
   goal: 'audit the helper',
   projectId: 'aroma-agent-backend',
@@ -40,7 +53,7 @@ function fakeWorkspace (over = {}) {
   return {
     containmentCheck: over.containmentCheck || ((t) => t),
     repoChanges: over.repoChanges || (() => []),
-    isolationState: over.isolationState || (() => ({ remotes: [], currentBranch: 'agent/appr_c1' })),
+    sandboxState: over.sandboxState || (() => Object.assign({}, CLEAN_SANDBOX)),
     diffStat: over.diffStat || (() => ''),
     diffPatch: over.diffPatch || (() => ''),
     cleanup: () => {}
@@ -368,7 +381,7 @@ test('O9. a change-detector failure fails CLOSED — never treated as clean', as
   assert.deepStrictEqual(r.output.risks, ['workspace_change_detection_failed'])
 
   // A workspace missing the change detector, but able to report isolation, fails on detection.
-  const noDetector = { containmentCheck: (t) => t, isolationState: () => ({ remotes: [], currentBranch: 'agent/appr_c1' }), cleanup: () => {} }
+  const noDetector = { containmentCheck: (t) => t, sandboxState: () => Object.assign({}, CLEAN_SANDBOX), cleanup: () => {} }
   const r2 = await call(w, { workspace: noDetector })
   assert.strictEqual(r2.ok, false)
   assert.deepStrictEqual(r2.output.risks, ['workspace_change_detection_failed'])
@@ -544,15 +557,15 @@ test('R1. an untracked violation keeps the PATH and does not read the file conte
 /* ══════ PR #49: isolation violations outrank the provider's own verdict ══════ */
 
 /** Isolation that is clean for the first N calls, then compromised. */
-const isoAfter = (n, state) => {
+const isoAfter = (n, patch) => {
   let i = 0
-  return () => { i++; return i <= n ? { remotes: [], currentBranch: 'agent/appr_c1' } : state }
+  return () => { i++; return i <= n ? Object.assign({}, CLEAN_SANDBOX) : Object.assign({}, CLEAN_SANDBOX, patch) }
 }
 
 test('T-REMOTE. a transport that ADDS A REMOTE fails, though the worktree is clean', async () => {
   // prepare() stripped every remote so commit/push/PR/merge would have nowhere to go.
   // Restoring one is invisible to repoChanges — which is exactly why it is checked separately.
-  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
   const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0, result: 'all good!' }) })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -561,7 +574,7 @@ test('T-REMOTE. a transport that ADDS A REMOTE fails, though the worktree is cle
 })
 
 test('T-BRANCH. a transport that switches to MAIN fails', async () => {
-  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: [], currentBranch: 'main' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(1, { remotes: [], currentBranch: 'main' }) })
   const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -571,7 +584,7 @@ test('T-BRANCH. a transport that switches to MAIN fails', async () => {
 test('T-WRONG-BRANCH. ANOTHER agent branch is refused too, not just main', async () => {
   // 'not main' alone would accept a different approval's workspace. Only the branch this
   // Work Order was prepared on is acceptable.
-  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: [], currentBranch: 'agent/appr_somebody_else' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(1, { remotes: [], currentBranch: 'agent/appr_somebody_else' }) })
   const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -580,7 +593,7 @@ test('T-WRONG-BRANCH. ANOTHER agent branch is refused too, not just main', async
 })
 
 test('T-THROW-REMOTE. a transport that adds a remote and THEN THROWS is an isolation failure', async () => {
-  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
   const w = createOpenClawWorker({ transport: async () => { throw new Error('spawn refused') } })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -590,7 +603,7 @@ test('T-THROW-REMOTE. a transport that adds a remote and THEN THROWS is an isola
 
 test('T-PREFLIGHT. a workspace ALREADY compromised is never handed to the transport', async () => {
   let transportCalls = 0
-  const ws = fakeWorkspace({ isolationState: () => ({ remotes: ['pre-existing'], currentBranch: 'agent/appr_c1' }) })
+  const ws = fakeWorkspace({ sandboxState: () => ({ remotes: ['pre-existing'], currentBranch: 'agent/appr_c1' }) })
   const w = createOpenClawWorker({ transport: async () => { transportCalls++; return { ok: true } } })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -608,7 +621,7 @@ test('T-PREFLIGHT-DIRTY. a workspace already DIRTY before the transport is refus
 })
 
 test('X-REMOTE. an approved test that adds a remote fails, even passing', async () => {
-  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: ['evil'], currentBranch: 'agent/appr_c1' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(2, { remotes: ['evil'], currentBranch: 'agent/appr_c1' }) })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => ({ ok: true, code: 0 })
@@ -619,7 +632,7 @@ test('X-REMOTE. an approved test that adds a remote fails, even passing', async 
 })
 
 test('X-BRANCH. an approved test that switches branch fails', async () => {
-  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => ({ ok: true, code: 0 })
@@ -630,7 +643,7 @@ test('X-BRANCH. an approved test that switches branch fails', async () => {
 })
 
 test('X-THROW-BRANCH. a test that switches branch and THEN THROWS is an isolation failure', async () => {
-  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
+  const ws = fakeWorkspace({ sandboxState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => { throw new Error('harness exploded') }
@@ -645,14 +658,14 @@ test('D4. a MALFORMED isolation report fails closed', async () => {
   for (const bad of [null, undefined, 'agent/x', 123, {}, { remotes: 'none', currentBranch: 'agent/appr_c1' },
     { remotes: [], currentBranch: '' }, { remotes: [null], currentBranch: 'agent/appr_c1' }, { currentBranch: 'agent/appr_c1' }]) {
     const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
-    const r = await call(w, { workspace: fakeWorkspace({ isolationState: () => bad }) })
+    const r = await call(w, { workspace: fakeWorkspace({ sandboxState: () => bad }) })
     assert.strictEqual(r.ok, false, 'a malformed isolation report must not succeed')
     assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
   }
 })
 
 test('D5. an isolationState that THROWS fails closed', async () => {
-  const ws = fakeWorkspace({ isolationState: () => { throw new Error('fatal: broken') } })
+  const ws = fakeWorkspace({ sandboxState: () => { throw new Error('fatal: broken') } })
   const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
   const r = await call(w, { workspace: ws })
   assert.strictEqual(r.ok, false)
@@ -667,7 +680,7 @@ test('T-MAIN-EXPECTED. even if "main" were supplied as the expected branch, it i
   // does, and prepare() would refuse to create such a workspace; this holds the line if
   // either of those ever changes, since the cost of being wrong here is an agent operating
   // directly on the trunk.
-  const ws = fakeWorkspace({ isolationState: () => ({ remotes: [], currentBranch: 'main' }) })
+  const ws = fakeWorkspace({ sandboxState: () => Object.assign({}, CLEAN_SANDBOX, { currentBranch: 'main' }) })
   const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
   const r = await w.invoke('AgentBridge', 1, {
     workOrder: workOrder({ branch: 'main' }),
@@ -678,4 +691,131 @@ test('T-MAIN-EXPECTED. even if "main" were supplied as the expected branch, it i
   assert.strictEqual(r.ok, false, 'main is never an acceptable workspace branch, however it was reached')
   assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
   assert.match(r.error, /on main/)
+})
+
+/* ══════ PR #49: the sandbox must STAY the sandbox, at every checkpoint ══════ */
+
+const MOVED_SHA = 'd05527e49d2092fdf82e74efe4d96f203fcd80e9'
+
+/** A compromise that appears only after N clean checks. */
+const sbAfter = (n, patch) => {
+  let i = 0
+  return () => { i++; return i <= n ? Object.assign({}, CLEAN_SANDBOX) : Object.assign({}, CLEAN_SANDBOX, patch) }
+}
+
+/** Every way the sandbox can stop being the approved sandbox, and the risk each carries. */
+const COMPROMISES = [
+  ['HEAD moved (reset --hard or commit)', { headSha: MOVED_SHA }, 'workspace_revision_violation'],
+  ['core.worktree redirect', { topLevelOk: false }, 'workspace_isolation_violation'],
+  ['git-dir redirect', { gitDirOk: false }, 'workspace_isolation_violation'],
+  ['common-dir redirect', { commonDirOk: false }, 'workspace_isolation_violation'],
+  ['.git replaced by a file or symlink', { dotGitIsRealDir: false }, 'workspace_isolation_violation'],
+  ['assume-unchanged', { indexFlagged: [{ tag: 'h', file: 'tracked.txt' }] }, 'workspace_index_violation'],
+  ['skip-worktree', { indexFlagged: [{ tag: 'S', file: 'tracked.txt' }] }, 'workspace_index_violation'],
+  ['index-only content drift', { indexDrift: ['tracked.txt'] }, 'workspace_index_violation'],
+  ['a remote reappeared', { remotes: ['attacker'] }, 'workspace_isolation_violation'],
+  ['a different branch', { currentBranch: 'agent/appr_other' }, 'workspace_isolation_violation']
+]
+
+test('W1. a PRE-EXISTING compromise is never handed to the transport', async () => {
+  for (const [name, patch, risk] of COMPROMISES) {
+    let transportCalls = 0
+    const ws = fakeWorkspace({ sandboxState: () => Object.assign({}, CLEAN_SANDBOX, patch) })
+    const w = createOpenClawWorker({ transport: async () => { transportCalls++; return { ok: true, exit: 0 } } })
+    const r = await call(w, { workspace: ws })
+    assert.strictEqual(r.ok, false, `${name} must refuse`)
+    assert.deepStrictEqual(r.output.risks, [risk], `${name} -> ${risk}`)
+    assert.strictEqual(transportCalls, 0, `${name}: nothing may be handed a compromised sandbox`)
+  }
+})
+
+test('W2. a compromise caused by the TRANSPORT is caught, whatever it claims', async () => {
+  for (const [name, patch, risk] of COMPROMISES) {
+    const ws = fakeWorkspace({ sandboxState: sbAfter(1, patch) })
+    // The transport insists everything went perfectly.
+    const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0, result: 'all good!' }) })
+    const r = await call(w, { workspace: ws })
+    assert.strictEqual(r.ok, false, `${name} must refuse`)
+    assert.deepStrictEqual(r.output.risks, [risk], `${name} -> ${risk}`)
+  }
+})
+
+test('W3. a compromise followed by a transport THROW is still the structural failure', async () => {
+  // The sandbox breach outranks the ordinary provider failure: reporting only
+  // transport_failed would leave the mutation unrecorded and unrefused.
+  for (const [name, patch, risk] of COMPROMISES) {
+    const ws = fakeWorkspace({ sandboxState: sbAfter(1, patch) })
+    const w = createOpenClawWorker({ transport: async () => { throw new Error('spawn refused') } })
+    const r = await call(w, { workspace: ws })
+    assert.deepStrictEqual(r.output.risks, [risk], `${name} after a throw -> ${risk}`)
+  }
+})
+
+test('W4. a compromise caused by the TEST is caught on pass, fail and throw', async () => {
+  const runners = [
+    ['passes', async () => ({ ok: true, code: 0 })],
+    ['fails', async () => ({ ok: false, code: 1 })],
+    ['throws', async () => { throw new Error('harness exploded') }]
+  ]
+  for (const [outcome, runner] of runners) {
+    for (const [name, patch, risk] of COMPROMISES) {
+      const ws = fakeWorkspace({ sandboxState: sbAfter(2, patch) })
+      const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }), testRunner: runner })
+      const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+      assert.strictEqual(r.ok, false, `${name} while the test ${outcome}`)
+      assert.deepStrictEqual(r.output.risks, [risk], `${name} while the test ${outcome} -> ${risk}`)
+    }
+  }
+})
+
+test('W5. HEAD equality is against the APPROVED sha, not merely "a valid commit"', async () => {
+  // Adopting the observed sha would silently move what the Owner agreed to.
+  const wo = workOrder()
+  const ws = fakeWorkspace({ sandboxState: () => Object.assign({}, CLEAN_SANDBOX, { headSha: MOVED_SHA }) })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws, workOrder: wo })
+  assert.deepStrictEqual(r.output.risks, ['workspace_revision_violation'])
+  assert.match(r.error, new RegExp(SHA), 'the refusal names the approved revision')
+  assert.strictEqual(wo.expectedSha, SHA, 'the sealed order is not updated to the new HEAD')
+})
+
+test('W6. a malformed sandbox report fails closed', async () => {
+  const bad = [
+    null, undefined, 'agent/x', 123, {},
+    Object.assign({}, CLEAN_SANDBOX, { headSha: 'not-a-sha' }),
+    Object.assign({}, CLEAN_SANDBOX, { headSha: undefined }),
+    Object.assign({}, CLEAN_SANDBOX, { currentBranch: '' }),
+    Object.assign({}, CLEAN_SANDBOX, { remotes: 'none' }),
+    Object.assign({}, CLEAN_SANDBOX, { remotes: [null] }),
+    Object.assign({}, CLEAN_SANDBOX, { indexFlagged: 'none' }),
+    Object.assign({}, CLEAN_SANDBOX, { indexDrift: null })
+  ]
+  for (const state of bad) {
+    const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+    const r = await call(w, { workspace: fakeWorkspace({ sandboxState: () => state }) })
+    assert.strictEqual(r.ok, false, 'a malformed sandbox report must not succeed')
+    assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  }
+})
+
+test('W7. a workspace with no sandbox API at all fails closed', async () => {
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: { containmentCheck: (t) => t, cleanup: () => {} } })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+})
+
+test('W8. structural identity is established BEFORE any diff is collected', async () => {
+  // A diff reads the repository's own configuration. Running it first would mean asking a
+  // possibly-redirected sandbox to describe itself.
+  const order = []
+  const ws = {
+    containmentCheck: (t) => { order.push('containment'); return t },
+    sandboxState: () => { order.push('sandbox'); return Object.assign({}, CLEAN_SANDBOX, { topLevelOk: false }) },
+    repoChanges: () => { order.push('repoChanges'); return [] },
+    diffStat: () => '', diffPatch: () => '', cleanup: () => {}
+  }
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  await call(w, { workspace: ws })
+  assert.deepStrictEqual(order, ['containment', 'sandbox'], 'no diff is run once identity has failed')
 })

@@ -31,6 +31,9 @@ const { createOpenClawWorker } = require('../agent/openClawWorker')
 const { createAgentRunner } = require('../agent/agentRunner')
 const { hashWorkOrder } = require('../agent/workOrder')
 
+/** A pristine sandbox for the governance harness. */
+const CLEAN_GOV = () => ({ headSha: APPROVED, currentBranch: 'agent/appr_c1', remotes: [], indexFlagged: [], indexDrift: [], dotGitIsRealDir: true, topLevelOk: true, gitDirOk: true, commonDirOk: true })
+
 const OPENCLAW_CAPS = [
   'openclaw_repo_audit', 'openclaw_code_review', 'openclaw_test_run',
   'openclaw_log_inspection', 'openclaw_web_research', 'openclaw_document_analysis'
@@ -133,7 +136,7 @@ function governed (over = {}) {
       containmentCheck: (t) => t,
       filesChanged: over.filesChanged || (() => []),
       repoChanges: over.repoChanges || (() => []),
-      isolationState: over.isolationState || (() => ({ remotes: [], currentBranch: 'agent/appr_c1' })),
+      sandboxState: over.sandboxState || (() => ({ headSha: APPROVED, currentBranch: 'agent/appr_c1', remotes: [], indexFlagged: [], indexDrift: [], dotGitIsRealDir: true, topLevelOk: true, gitDirOk: true, commonDirOk: true })),
       diffStat: () => '', diffPatch: () => '',
       cleanup: () => { spy.cleanup++ }
     },
@@ -252,7 +255,7 @@ test('I9. a transport that ADDS A REMOTE stays a failure through the real runner
   let i = 0
   const g = governedWith({
     baseSha: APPROVED,
-    isolationState: () => { i++; return i <= 1 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: ['attacker'], currentBranch: 'agent/appr_c1' } }
+    sandboxState: () => { i++; return i <= 1 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { remotes: ['attacker'] }) }
   })
   const r = await runGoverned(g)
   assert.strictEqual(r.ok, false)
@@ -266,7 +269,7 @@ test('I10. a BRANCH SWITCH stays a failure through the real runner', async () =>
   let i = 0
   const g = governedWith({
     baseSha: APPROVED,
-    isolationState: () => { i++; return i <= 1 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: [], currentBranch: 'main' } }
+    sandboxState: () => { i++; return i <= 1 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { currentBranch: 'main' }) }
   })
   const r = await runGoverned(g)
   assert.strictEqual(r.ok, false)
@@ -278,7 +281,7 @@ test('I11. a test that switches branch and THEN THROWS stays an isolation failur
   let i = 0
   const g = governedWith({
     baseSha: APPROVED,
-    isolationState: () => { i++; return i <= 2 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: [], currentBranch: 'main' } },
+    sandboxState: () => { i++; return i <= 2 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { currentBranch: 'main' }) },
     testRunner: async () => { throw new Error('harness exploded') }
   })
   const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
@@ -287,4 +290,58 @@ test('I11. a test that switches branch and THEN THROWS stays an isolation failur
     'a thrown test does not downgrade a sandbox breach')
   assert.strictEqual(r.output.revisionMatch, true)
   assert.strictEqual(g.audits.length, 1, 'the attempt is still audited')
+})
+
+/* ══════ post-entry revision identity, through the REAL agentRunner ══════ */
+
+test('I12. B2 lets it start, then the transport MOVES HEAD -> final failure', async () => {
+  // The distinction this proves: revisionMatch=true means the clone STARTED from the
+  // approved sha. Staying there is a separate fact, and it is the one B2 could not check.
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    sandboxState: () => { i++; return i <= 1 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { headSha: MOVED }) }
+  })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_revision_violation'])
+  // B2's entry evidence is untouched and still says what it always said.
+  assert.strictEqual(r.output.revisionMatch, true, 'it DID start from the approved revision')
+  assert.strictEqual(r.output.expectedSha, APPROVED)
+  assert.strictEqual(r.output.observedBaseSha, APPROVED)
+  assert.strictEqual(g.audits[0].revisionMatch, true)
+})
+
+test('I13. a same-branch COMMIT by the transport is caught the same way', async () => {
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    sandboxState: () => { i++; return i <= 1 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { headSha: MOVED, currentBranch: 'agent/appr_c1' }) }
+  })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_revision_violation'],
+    'the branch is still right and the worktree still clean — only HEAD gives it away')
+})
+
+test('I14. a test that changes the INDEX and then throws -> structural failure, not test_failed', async () => {
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    sandboxState: () => { i++; return i <= 2 ? CLEAN_GOV() : Object.assign(CLEAN_GOV(), { indexFlagged: [{ tag: 'S', file: 'tracked.txt' }] }) },
+    testRunner: async () => { throw new Error('harness exploded') }
+  })
+  const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_index_violation'])
+  assert.strictEqual(r.output.revisionMatch, true, 'B2 entry evidence survives')
+  assert.strictEqual(g.audits.length, 1, 'the attempt is still audited')
+})
+
+test('I15. a revision mismatch at B2 ENTRY still stops OpenClaw before anything runs', async () => {
+  const g = governed({ baseSha: MOVED })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.error, 'revision_moved')
+  assert.strictEqual(g.spy.transport, 0, 'the B2 gate is unchanged and still fires first')
+  assert.strictEqual(r.output.revisionMatch, false)
 })

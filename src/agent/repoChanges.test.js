@@ -28,6 +28,13 @@ const { spawnSync } = require('node:child_process')
 
 const { createFeatureBranchWorkspace } = require('../agent/featureBranchWorkspace')
 
+/** Skip leading `-c key=value` global overrides, exactly as git itself does. */
+function gitArgs (args) {
+  let i = 0
+  while (args[i] === '-c') i += 2
+  return args.slice(i)
+}
+
 /** A real git repository with one committed file. */
 function scratchRepo () {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-repo-'))
@@ -110,7 +117,7 @@ test('U5. ⛔ a detector FAILURE throws — it never answers "clean"', () => {
   const failing = (which) => createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
     gitRunner: (args) => {
-      const j = args.join(' ')
+      const j = gitArgs(args).join(' ')
       if (which === 'diff' && j.startsWith('diff')) return { status: 128, stdout: '', stderr: 'fatal: not a git repository' }
       if (which === 'ls' && j.startsWith('ls-files')) return { status: 128, stdout: '', stderr: 'fatal: broken index' }
       return { status: 0, stdout: '', stderr: '' }
@@ -196,7 +203,7 @@ function parserWith (trackedOut, untrackedOut) {
   return createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
     gitRunner: (args) => {
-      const j = args.join(' ')
+      const j = gitArgs(args).join(' ')
       if (j.startsWith('diff')) return { status: 0, stdout: trackedOut, stderr: '' }
       if (j.startsWith('ls-files')) return { status: 0, stdout: untrackedOut, stderr: '' }
       return { status: 0, stdout: '', stderr: '' }
@@ -273,7 +280,7 @@ test('I4/I5. a git failure THROWS — it never answers "no remotes" or an empty 
   const failing = (which) => createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
     gitRunner: (args) => {
-      const j = args.join(' ')
+      const j = gitArgs(args).join(' ')
       if (which === 'remote' && j === 'remote') return { status: 128, stdout: '', stderr: 'fatal: broken' }
       if (which === 'branch' && j.startsWith('rev-parse')) return { status: 128, stdout: '', stderr: 'fatal: broken' }
       if (j.startsWith('rev-parse')) return { status: 0, stdout: 'agent/appr_x\n', stderr: '' }
@@ -285,7 +292,7 @@ test('I4/I5. a git failure THROWS — it never answers "no remotes" or an empty 
 
   const emptyBranch = createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
-    gitRunner: (args) => args.join(' ').startsWith('rev-parse')
+    gitRunner: (args) => gitArgs(args).join(' ').startsWith('rev-parse')
       ? { status: 0, stdout: '\n', stderr: '' }
       : { status: 0, stdout: '', stderr: '' }
   })
@@ -299,7 +306,7 @@ test('I6. the change detector disables external diff drivers', () => {
   const seen = []
   const spy = createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
-    gitRunner: (args) => { seen.push(args.join(' ')); return { status: 0, stdout: '', stderr: '' } }
+    gitRunner: (args) => { seen.push(gitArgs(args).join(' ')); return { status: 0, stdout: '', stderr: '' } }
   })
   spy.repoChanges('C:/tmp/x')
   const diff = seen.find((c) => c.startsWith('diff'))
