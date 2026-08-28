@@ -39,7 +39,7 @@ const workOrder = (over = {}) => Object.assign({
 function fakeWorkspace (over = {}) {
   return {
     containmentCheck: over.containmentCheck || ((t) => t),
-    filesChanged: over.filesChanged || (() => []),
+    repoChanges: over.repoChanges || (() => []),
     diffStat: over.diffStat || (() => ''),
     diffPatch: over.diffPatch || (() => ''),
     cleanup: () => {}
@@ -153,7 +153,7 @@ test('E10. a POST-transport containment failure fails the result', async () => {
 
 test('E11/E12. ANY changed repository file is a violation and can never be ok', async () => {
   const ws = fakeWorkspace({
-    filesChanged: () => ['src/foo.js'],
+    repoChanges: () => ['src/foo.js'],
     diffStat: () => ' src/foo.js | 2 +-',
     diffPatch: () => 'diff --git a/src/foo.js b/src/foo.js\n+sneaky\n'
   })
@@ -272,4 +272,118 @@ test('E20. nothing a transport returns can replace Work Order authority', async 
 test('E21. health reports honestly that this executor cannot run', () => {
   assert.strictEqual(createOpenClawWorker({}).health().available, false)
   assert.strictEqual(createOpenClawWorker({ transport: async () => ({ ok: true }) }).health().available, false)
+})
+
+/* ══════ PR #49 review: untracked blind spot + post-test verification ══════ */
+
+test('O1/O2. an UNTRACKED file created during transport is a violation, and the test never runs', async () => {
+  // The old detector could not see this at all: `git diff --name-only HEAD` never lists an
+  // untracked file, so creating brand-new source read as a perfectly clean run.
+  let testCalls = 0
+  const ws = fakeWorkspace({
+    repoChanges: () => ['brand-new-untracked.txt'],
+    diffStat: () => '',
+    diffPatch: () => ''
+  })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0, result: 'nothing to see here' }),
+    testRunner: async () => { testCalls++; return { ok: true } }
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['brand-new-untracked.txt'])
+  assert.strictEqual(testCalls, 0, 'a violated run has nothing left to verify')
+})
+
+test('O3/O5. an approved test that MODIFIES a tracked file is a violation, even when it passes', async () => {
+  // Clean at the first checkpoint, dirty at the second. Only the post-test check can see it,
+  // and a green test must not become the cover story for a repository mutation.
+  let n = 0
+  const ws = fakeWorkspace({
+    repoChanges: () => { n++; return n === 1 ? [] : ['src/foo.js'] },
+    diffStat: () => ' src/foo.js | 1 +',
+    diffPatch: () => 'diff --git a/src/foo.js b/src/foo.js\n+written by the test\n'
+  })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false, 'a passing test cannot outrank the filesystem')
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['src/foo.js'])
+  assert.match(r.output.warnings.join(' '), /test command modified the repository/)
+  assert.match(r.output.patchText, /written by the test/, 'the attempted change is kept as evidence')
+  assert.strictEqual(n, 2, 'the repository is verified before AND after the test')
+})
+
+test('O4. an approved test that CREATES an untracked file is a violation', async () => {
+  let n = 0
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['test-output.log'] } })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['test-output.log'])
+})
+
+test('O6. containment is re-checked AFTER the test too', async () => {
+  let checks = 0
+  const ws = fakeWorkspace({
+    containmentCheck: () => { checks++; if (checks > 2) throw new Error('escaped during the test') },
+    repoChanges: () => []
+  })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['containment'])
+  assert.strictEqual(checks, 3, 'before transport, after transport, and after the test')
+})
+
+test('O7. a clean transport with a clean passing test still succeeds', async () => {
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0, result: 'audit complete' }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, true, JSON.stringify(r))
+  assert.deepStrictEqual(r.output.filesChanged, [])
+  assert.strictEqual(r.output.patchText, '')
+  assert.strictEqual(r.output.testResults.ok, true)
+})
+
+test('O9. a change-detector failure fails CLOSED — never treated as clean', async () => {
+  const thrower = fakeWorkspace({ repoChanges: () => { throw new Error('fatal: broken index') } })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: thrower })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_change_detection_failed'])
+
+  // And a workspace that cannot answer at all must not be quietly accepted either.
+  const noApi = { containmentCheck: (t) => t, cleanup: () => {} }
+  const r2 = await call(w, { workspace: noApi })
+  assert.strictEqual(r2.ok, false)
+  assert.deepStrictEqual(r2.output.risks, ['workspace_change_detection_failed'])
+})
+
+test('O10. the incomplete tracked-only detector is NOT consulted as a fallback', async () => {
+  // A fallback would reintroduce the blind spot on exactly the workspaces that lack the
+  // complete detector — the worst possible place for it to hide.
+  let filesChangedCalls = 0
+  const ws = {
+    containmentCheck: (t) => t,
+    filesChanged: () => { filesChangedCalls++; return [] },
+    cleanup: () => {}
+  }
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false, 'no complete detector means no clean verdict')
+  assert.strictEqual(filesChangedCalls, 0, 'the incomplete detector must not be reached at all')
 })

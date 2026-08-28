@@ -129,6 +129,7 @@ function governed (over = {}) {
       prepare: () => ({ dir: 'C:/tmp/clone', branch: 'agent/appr_c1', baseSha: over.baseSha || APPROVED }),
       containmentCheck: (t) => t,
       filesChanged: over.filesChanged || (() => []),
+      repoChanges: over.repoChanges || (() => []),
       diffStat: () => '', diffPatch: () => '',
       cleanup: () => { spy.cleanup++ }
     },
@@ -177,7 +178,7 @@ test('I2. ⛔ A REVISION MISMATCH STOPS OPENCLAW DEAD — zero transport calls',
 })
 
 test('I3. a read-only violation by OpenClaw surfaces through the runner as a failure', async () => {
-  const g = governed({ baseSha: APPROVED, filesChanged: () => ['src/foo.js'] })
+  const g = governed({ baseSha: APPROVED, repoChanges: () => ['src/foo.js'] })
   const r = await runGoverned(g)
   assert.strictEqual(r.ok, false, 'the enclosing runner must not launder a violation into success')
   assert.strictEqual(r.error, 'openclaw_read_only_violation')
@@ -189,4 +190,27 @@ test('I4. the sealed Work Order is unchanged by a governed OpenClaw run', async 
   const before = JSON.stringify(wo)
   await runGoverned(governed({ baseSha: APPROVED }), wo)
   assert.strictEqual(JSON.stringify(wo), before)
+})
+
+test('I5. an UNTRACKED mutation by OpenClaw stays a failure through the real runner', async () => {
+  // The blind-spot case, driven end to end: the enclosing runner must not launder it.
+  const g = governed({ baseSha: APPROVED, repoChanges: () => ['brand-new-untracked.txt'] })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['brand-new-untracked.txt'])
+  // B2's evidence survives the executor-level refusal.
+  assert.strictEqual(r.output.revisionMatch, true)
+  assert.strictEqual(r.output.expectedSha, APPROVED)
+  assert.strictEqual(g.audits[0].revisionMatch, true)
+})
+
+test('I6. a TEST-CAUSED mutation stays a failure through the real runner', async () => {
+  let n = 0
+  const g = governed({ baseSha: APPROVED, repoChanges: () => { n++; return n === 1 ? [] : ['src/foo.js'] } })
+  const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
+  assert.strictEqual(r.ok, false, 'a green test may not turn a mutation into success')
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.strictEqual(r.output.revisionMatch, true, 'the revision was verified; read-only is what broke')
+  assert.strictEqual(g.audits.length, 1, 'the attempt is still audited')
 })

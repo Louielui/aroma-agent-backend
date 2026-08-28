@@ -94,6 +94,50 @@ function createFeatureBranchWorkspace (options = {}) {
   function addDirs (dir) { return [dir] }
   /** Permission mode — NEVER bypassPermissions (Cap 1). */
   function permissionMode () { return 'acceptEdits' }
+  /**
+   * EVERY repository path whose state differs from HEAD — INCLUDING UNTRACKED FILES.
+   *
+   * ⛔ WHY filesChanged() IS NOT ENOUGH FOR A READ-ONLY VERDICT.
+   * filesChanged asks `git diff --name-only HEAD`, which by definition never lists an
+   * untracked file. Measured: in a clean clone, creating brand-new-untracked.txt leaves
+   * that command answering [] while `ls-files --others` names the file. So an executor
+   * asked to be read-only could CREATE a new source file and be reported perfectly clean.
+   * Two questions, two commands, and only both together mean 'nothing was written here'.
+   *
+   * ⛔ AND IT FAILS CLOSED. filesChanged returns [] when git itself fails, which reads as
+   * 'nothing changed' when the truth is 'nobody knows'. Those are different facts and only
+   * one of them is safe to act on, so this THROWS instead. A caller that cannot tell
+   * whether the repository was written to must not be able to conclude that it wasn't.
+   *
+   * -z on both commands: the records are NUL-separated, so paths are emitted raw instead
+   * of quoted and a filename containing a space, a quote or a newline cannot reshape the
+   * parse into a different set of files.
+   *
+   * A rename in a working tree is a deletion plus an untracked file, so it is covered by
+   * the pair without needing rename detection.
+   *
+   * @param {string} dir the clone
+   * @returns {string[]} sorted, de-duplicated, posix-relative paths
+   * @throws if either git command fails — the honest answer to an unanswerable question
+   */
+  function repoChanges (dir) {
+    const split = (out) => String(out || '')
+      .split(String.fromCharCode(0))
+      .map((x) => x.trim().replace(/\\/g, '/'))
+      .filter((x) => x !== '')
+
+    const tracked = git(['diff', '--name-only', '-z', 'HEAD'], dir)
+    if (tracked.status !== 0) {
+      throw new Error(`refuse: repository change detection failed (${(tracked.stderr || '').trim() || tracked.status})`)
+    }
+    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'], dir)
+    if (untracked.status !== 0) {
+      throw new Error(`refuse: untracked change detection failed (${(untracked.stderr || '').trim() || untracked.status})`)
+    }
+
+    return [...new Set(split(tracked.stdout).concat(split(untracked.stdout)))].sort()
+  }
+
   /** Files changed vs HEAD in the clone (relative, posix). */
   function filesChanged (dir) {
     const r = git(['diff', '--name-only', 'HEAD'], dir)
@@ -133,7 +177,7 @@ function createFeatureBranchWorkspace (options = {}) {
   /** NO-OP: the B2-12 startup sweep reaps aged aroma-sandbox-* dirs. */
   function cleanup (_dir) { /* logged residual, reaped at startup */ }
 
-  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, diffStat, diffPatch, remotes, currentBranch, cleanup }
+  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, repoChanges, diffStat, diffPatch, remotes, currentBranch, cleanup }
 }
 
 module.exports = { createFeatureBranchWorkspace, defaultGitRunner, AGENT_SANDBOX_PREFIX }

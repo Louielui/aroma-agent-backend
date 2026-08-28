@@ -63,6 +63,34 @@ function fail (out, error, risks) {
 }
 
 /**
+ * ONE read-only verdict, taken at every checkpoint.
+ *
+ * ⛔ IT USES repoChanges, NOT filesChanged, AND HAS NO FALLBACK TO IT.
+ * filesChanged asks `git diff --name-only HEAD`, which by definition never lists an
+ * UNTRACKED file — so an executor that CREATED a new source file was reported perfectly
+ * clean. A fallback to the incomplete detector would reintroduce exactly that blind spot
+ * on whichever workspace happened not to implement the complete one, which is the worst
+ * possible place for it to hide.
+ *
+ * A detector that cannot answer is not an answer of 'clean'. Both the missing-API case and
+ * the throwing case fail closed, because 'nobody knows whether the repository was written
+ * to' must never be actionable as 'it wasn't'.
+ *
+ * @returns {{ok:true, changed:string[]}|{ok:false, reason:string}}
+ */
+function repositoryChanges (workspace, cloneDir) {
+  if (!workspace || typeof workspace.repoChanges !== 'function') {
+    return { ok: false, reason: 'workspace does not provide complete repository change detection' }
+  }
+  try {
+    const changed = workspace.repoChanges(cloneDir)
+    return { ok: true, changed: Array.isArray(changed) ? changed : [] }
+  } catch (e) {
+    return { ok: false, reason: (e && e.message) || 'repository change detection failed' }
+  }
+}
+
+/**
  * The execution brief — INFORMATION, never authority.
  *
  * Built from sealed facts only, in a fixed order, with no clock, no random id and no
@@ -97,6 +125,32 @@ function briefBytes (brief) { return JSON.stringify(brief) }
  *   transport(brief, ctx) -> { ok, exit?, stdout?, stderr?, result?, timedOut?, error? }
  *   Both are INJECTED. There is no default for either at C1.
  */
+/**
+ * The read-only refusal, identical wherever it is detected.
+ *
+ * The change is NOT reverted and NOT retried: the clone is disposable and the attempted
+ * edit is the most useful thing the run produced. It is carried back in the fields
+ * agentRunner already understands, so the evidence survives without a second channel.
+ */
+function readOnlyViolation (workspace, cloneDir, branch, changed, run, warning) {
+  const diffSummary = typeof workspace.diffStat === 'function' ? workspace.diffStat(cloneDir) : null
+  const patchText = typeof workspace.diffPatch === 'function' ? workspace.diffPatch(cloneDir) : ''
+  return createResult({
+    ok: false,
+    output: Object.assign(emptyOutput(branch), {
+      filesChanged: changed,
+      diffSummary: diffSummary || null,
+      patchText: typeof patchText === 'string' ? patchText : '',
+      exit: run && run.exit !== undefined ? run.exit : null,
+      risks: ['openclaw_read_only_violation'],
+      warnings: [warning]
+    }),
+    error: 'openclaw_read_only_violation',
+    cost: 0,
+    latencyMs: 0
+  })
+}
+
 function createOpenClawWorker (options = {}) {
   const transport = typeof options.transport === 'function' ? options.transport : null
   const testRunner = typeof options.testRunner === 'function' ? options.testRunner : null
@@ -156,8 +210,11 @@ function createOpenClawWorker (options = {}) {
       return fail({ branch }, `refuse: ${(e && e.message) || 'containment check failed after execution'}`, ['containment'])
     }
 
-    const changed = typeof workspace.filesChanged === 'function' ? workspace.filesChanged(cloneDir) : []
-    const filesChanged = Array.isArray(changed) ? changed : []
+    const afterTransport = repositoryChanges(workspace, cloneDir)
+    if (!afterTransport.ok) {
+      return fail({ branch }, `refuse: ${afterTransport.reason}`, ['workspace_change_detection_failed'])
+    }
+    const filesChanged = afterTransport.changed
 
     // ── V1 IS READ-ONLY, STRUCTURALLY ────────────────────────────────────────
     // Any repository change is a violation, whatever the executor reported about itself.
@@ -166,22 +223,8 @@ function createOpenClawWorker (options = {}) {
     // fields agentRunner already understands, so the evidence survives without a second
     // reporting channel — and ok:false means no amount of "it went fine" can outrank it.
     if (filesChanged.length > 0) {
-      const diffSummary = typeof workspace.diffStat === 'function' ? workspace.diffStat(cloneDir) : null
-      const patchText = typeof workspace.diffPatch === 'function' ? workspace.diffPatch(cloneDir) : ''
-      return createResult({
-        ok: false,
-        output: Object.assign(emptyOutput(branch), {
-          filesChanged,
-          diffSummary: diffSummary || null,
-          patchText: typeof patchText === 'string' ? patchText : '',
-          exit: run.exit === undefined ? null : run.exit,
-          risks: ['openclaw_read_only_violation'],
-          warnings: ['OpenClaw V1 is read-only; the isolated clone was modified']
-        }),
-        error: 'openclaw_read_only_violation',
-        cost: 0,
-        latencyMs: 0
-      })
+      return readOnlyViolation(workspace, cloneDir, branch, filesChanged, run,
+        'OpenClaw V1 is read-only; the isolated clone was modified')
     }
 
     // The approved test command, at most once, and only on an otherwise clean run. The
@@ -198,6 +241,27 @@ function createOpenClawWorker (options = {}) {
       } catch (e) {
         return fail({ branch, filesChanged }, `openclaw test runner failed: ${(e && e.message) || String(e)}`, ['test_failed'])
       }
+      // ⛔ THE TEST IS VERIFIED TOO, AND A PASS DOES NOT EXCUSE IT.
+      //
+      // The approved command runs inside the clone, so it can modify, delete or CREATE
+      // repository files just as the executor can. Checking only before the test would let a
+      // read-only run become a repository mutation and still return ok:true, with a green
+      // test as the cover story. Filesystem truth outranks a self-report here exactly as it
+      // does for the transport — so this runs even when the test passed.
+      try {
+        workspace.containmentCheck(cloneDir)
+      } catch (e) {
+        return fail({ branch }, `refuse: ${(e && e.message) || 'containment check failed after test'}`, ['containment'])
+      }
+      const afterTest = repositoryChanges(workspace, cloneDir)
+      if (!afterTest.ok) {
+        return fail({ branch }, `refuse: ${afterTest.reason}`, ['workspace_change_detection_failed'])
+      }
+      if (afterTest.changed.length > 0) {
+        return readOnlyViolation(workspace, cloneDir, branch, afterTest.changed, run,
+          'the approved test command modified the repository')
+      }
+
       if (!testResults || testResults.ok !== true) {
         return createResult({
           ok: false,
