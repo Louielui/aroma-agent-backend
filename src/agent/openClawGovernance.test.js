@@ -113,12 +113,15 @@ const workOrder = (over = {}) => Object.assign({
 }, over)
 
 /** The REAL agentRunner, driving the REAL OpenClaw executor over a fake transport. */
+/** Same harness, but with the executor test runner injectable for the throw cases. */
+function governedWith (over = {}) { return governed(over) }
+
 function governed (over = {}) {
   const spy = { transport: 0, cleanup: 0 }
   const audits = []
   const worker = createOpenClawWorker({
     transport: async () => { spy.transport++; return { ok: true, exit: 0, result: 'audit complete' } },
-    testRunner: async () => ({ ok: true, code: 0 })
+    testRunner: over.testRunner || (async () => ({ ok: true, code: 0 }))
   })
   const runner = createAgentRunner({
     repoRoot: process.cwd(),
@@ -213,4 +216,33 @@ test('I6. a TEST-CAUSED mutation stays a failure through the real runner', async
   assert.strictEqual(r.error, 'openclaw_read_only_violation')
   assert.strictEqual(r.output.revisionMatch, true, 'the revision was verified; read-only is what broke')
   assert.strictEqual(g.audits.length, 1, 'the attempt is still audited')
+})
+
+test('I7. an IGNORED untracked write (.env) stays a failure through the real runner', async () => {
+  // The exact blind spot the final review found: --exclude-standard hid .env, so a
+  // credentials file could have been written and reported clean. Driven end to end here.
+  const g = governed({ baseSha: APPROVED, repoChanges: () => ['.env'] })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['.env'])
+  assert.strictEqual(r.output.revisionMatch, true)
+  assert.strictEqual(r.output.expectedSha, APPROVED)
+  assert.strictEqual(g.audits[0].revisionMatch, true)
+})
+
+test('I8. a test that mutates and then THROWS stays a read-only failure through the runner', async () => {
+  let n = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    repoChanges: () => { n++; return n === 1 ? [] : ['data/db.json'] },
+    testRunner: async () => { throw new Error('harness exploded') }
+  })
+  const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation',
+    'a thrown test does not turn a repository write into an ordinary test failure')
+  assert.deepStrictEqual(r.output.filesChanged, ['data/db.json'])
+  assert.strictEqual(r.output.revisionMatch, true, 'B2 evidence survives the executor refusal')
+  assert.strictEqual(g.audits.length, 1)
 })

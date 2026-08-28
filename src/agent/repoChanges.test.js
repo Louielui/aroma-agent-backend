@@ -128,3 +128,109 @@ test('U6. NUL-separated parsing survives a path containing a space', () => {
   assert.deepStrictEqual(ws().repoChanges(dir), ['a file with spaces.txt'])
   fs.rmSync(dir, { recursive: true, force: true })
 })
+
+/* ══════ PR #49 final review: IGNORED files are still repository writes ══════ */
+
+/** A scratch repo that ignores the security-relevant shapes this repository ignores. */
+function ignoringRepo () {
+  const dir = scratchRepo()
+  const g = (args) => {
+    const r = spawnSync('git', args, { cwd: dir, encoding: 'utf8', shell: false })
+    if (r.status !== 0) throw new Error(args.join(' ') + ' -> ' + (r.stderr || r.status))
+  }
+  fs.writeFileSync(path.join(dir, '.gitignore'), '*.log\n.env\ndata/\n*.creds\npassword.txt\n')
+  g(['add', '.gitignore'])
+  g(['commit', '-qm', 'ignore rules'])
+  return dir
+}
+
+test('G2. ⛔ a .gitignore-IGNORED untracked file is detected', () => {
+  // The blocker, kept permanently visible: the flagged command is asked alongside the fixed
+  // detector, and its blindness is asserted rather than described.
+  const dir = ignoringRepo()
+  fs.writeFileSync(path.join(dir, '.env'), 'SECRET=1\n')
+  fs.writeFileSync(path.join(dir, 'app.log'), 'noise\n')
+  fs.writeFileSync(path.join(dir, 'password.txt'), 'hunter2\n')
+
+  const hidden = spawnSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: dir, encoding: 'utf8', shell: false })
+  assert.strictEqual(String(hidden.stdout).trim(), '',
+    '--exclude-standard HIDES all three — this is exactly the blind spot being closed')
+
+  assert.deepStrictEqual(ws().repoChanges(dir), ['.env', 'app.log', 'password.txt'])
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('G3. a .git/info/exclude-ignored file is detected', () => {
+  const dir = scratchRepo()
+  fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true })
+  fs.writeFileSync(path.join(dir, '.git', 'info', 'exclude'), 'local-secret.txt\n')
+  fs.writeFileSync(path.join(dir, 'local-secret.txt'), 'x\n')
+
+  const hidden = spawnSync('git', ['ls-files', '--others', '--exclude-standard'], { cwd: dir, encoding: 'utf8', shell: false })
+  assert.strictEqual(String(hidden.stdout).trim(), '', 'info/exclude hides it from the flagged command too')
+
+  assert.deepStrictEqual(ws().repoChanges(dir), ['local-secret.txt'])
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('G4. content inside an IGNORED DIRECTORY is detected', () => {
+  const dir = ignoringRepo()
+  fs.mkdirSync(path.join(dir, 'data'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'data', 'db.json'), '{"rows":1}\n')
+  assert.deepStrictEqual(ws().repoChanges(dir), ['data/db.json'])
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('G10. a clean IGNORING repository still reports nothing', () => {
+  const dir = ignoringRepo()
+  assert.deepStrictEqual(ws().repoChanges(dir), [])
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+/* ══════ exact pathname identity — the parser must not edit git's answer ══════ */
+
+const NUL = String.fromCharCode(0)
+
+/** Drive the real parser with exact synthetic git output, since Windows cannot host these names. */
+function parserWith (trackedOut, untrackedOut) {
+  return createFeatureBranchWorkspace({
+    repoRoot: process.cwd(),
+    gitRunner: (args) => {
+      const j = args.join(' ')
+      if (j.startsWith('diff')) return { status: 0, stdout: trackedOut, stderr: '' }
+      if (j.startsWith('ls-files')) return { status: 0, stdout: untrackedOut, stderr: '' }
+      return { status: 0, stdout: '', stderr: '' }
+    }
+  }).repoChanges('C:/tmp/x')
+}
+
+test('P1. leading, trailing and whitespace-only pathnames survive EXACTLY', () => {
+  // A git pathname is an identity. ' leading.txt' and 'leading.txt' are different files, so
+  // trimming silently renames one into the other — or, for '   ', erases it entirely and
+  // reports the repository clean.
+  const names = [' leading.txt', 'trailing.txt ', '   ', 'a file with spaces.txt']
+  const out = parserWith('', names.join(NUL) + NUL)
+  for (const n of names) assert.ok(out.includes(n), `${JSON.stringify(n)} must survive verbatim`)
+  assert.strictEqual(out.length, names.length, 'no record dropped or merged')
+})
+
+test('P2. a NEWLINE inside a pathname does not become a record separator', () => {
+  const weird = 'line\nbreak.txt'
+  const out = parserWith('', weird + NUL + 'other.txt' + NUL)
+  assert.deepStrictEqual(out.sort(), [weird, 'other.txt'].sort())
+  assert.strictEqual(out.length, 2, 'a newline is data, not a delimiter — -z is why')
+})
+
+test('P3. a BACKSLASH in a pathname is not rewritten to a forward slash', () => {
+  // The old parser rewrote separators for presentation. That edits the identity of a path
+  // that legitimately contains a backslash on a POSIX checkout.
+  const out = parserWith('', 'weird\name.txt' + NUL)
+  assert.deepStrictEqual(out, ['weird\name.txt'])
+})
+
+test('P4. only the FINAL delimiter-generated empty record is removed', () => {
+  assert.deepStrictEqual(parserWith('a.txt' + NUL, ''), ['a.txt'])
+  assert.deepStrictEqual(parserWith('', ''), [])
+  // Two records where the second is whitespace — the whitespace one is kept.
+  assert.deepStrictEqual(parserWith('a.txt' + NUL + ' ' + NUL, '').sort(), [' ', 'a.txt'])
+})

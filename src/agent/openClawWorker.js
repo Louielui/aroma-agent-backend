@@ -63,18 +63,20 @@ function fail (out, error, risks) {
 }
 
 /**
- * ONE read-only verdict, taken at every checkpoint.
+ * ONE read-only verdict, taken at every checkpoint, and STRICTLY validated.
  *
  * ⛔ IT USES repoChanges, NOT filesChanged, AND HAS NO FALLBACK TO IT.
- * filesChanged asks `git diff --name-only HEAD`, which by definition never lists an
- * UNTRACKED file — so an executor that CREATED a new source file was reported perfectly
- * clean. A fallback to the incomplete detector would reintroduce exactly that blind spot
- * on whichever workspace happened not to implement the complete one, which is the worst
- * possible place for it to hide.
+ * filesChanged asks `git diff --name-only HEAD`, which never lists an untracked file. A
+ * fallback would reintroduce that blind spot on precisely the workspaces lacking the
+ * complete detector — the worst possible place for it to hide.
  *
- * A detector that cannot answer is not an answer of 'clean'. Both the missing-API case and
- * the throwing case fail closed, because 'nobody knows whether the repository was written
- * to' must never be actionable as 'it wasn't'.
+ * ⛔ A MALFORMED ANSWER IS NOT AN ANSWER. `Array.isArray(x) ? x : []` was fail-OPEN: null,
+ * a string, a number or an object all became 'no files changed', which is the single most
+ * dangerous default this module could have. Every shape that is not an array of non-empty
+ * strings fails closed instead, and nothing is coerced or quietly filtered — a detector
+ * that answered partly in nonsense cannot be trusted about the part that looked fine.
+ *
+ * Note ' ' IS a legal git pathname and must survive validation; only '' is rejected.
  *
  * @returns {{ok:true, changed:string[]}|{ok:false, reason:string}}
  */
@@ -82,12 +84,45 @@ function repositoryChanges (workspace, cloneDir) {
   if (!workspace || typeof workspace.repoChanges !== 'function') {
     return { ok: false, reason: 'workspace does not provide complete repository change detection' }
   }
+  let changed
   try {
-    const changed = workspace.repoChanges(cloneDir)
-    return { ok: true, changed: Array.isArray(changed) ? changed : [] }
+    changed = workspace.repoChanges(cloneDir)
   } catch (e) {
     return { ok: false, reason: (e && e.message) || 'repository change detection failed' }
   }
+  if (!Array.isArray(changed)) {
+    return { ok: false, reason: 'repository change detection returned a non-array result' }
+  }
+  for (const entry of changed) {
+    if (typeof entry !== 'string' || entry === '') {
+      return { ok: false, reason: 'repository change detection returned a malformed path record' }
+    }
+  }
+  return { ok: true, changed }
+}
+
+/**
+ * Containment AND the repository, together, because they are asked at the same moments.
+ *
+ * ⛔ THIS RUNS AFTER EVERY ACTUAL INVOCATION — success, failure, or throw. Verifying only
+ * after a SUCCESSFUL transport meant a transport that wrote a file and then threw was
+ * reported as a plain transport failure, with the write unrecorded and unrefused. What the
+ * provider says about itself is a claim; what is on disk is a fact, and the fact is
+ * established first.
+ *
+ * @returns {{ok:true, changed:string[]}|{ok:false, refusal:object}}
+ */
+function verifyWorkspace (workspace, cloneDir, branch, stage) {
+  try {
+    workspace.containmentCheck(cloneDir)
+  } catch (e) {
+    return { ok: false, refusal: fail({ branch }, `refuse: ${(e && e.message) || `containment check failed after ${stage}`}`, ['containment']) }
+  }
+  const changes = repositoryChanges(workspace, cloneDir)
+  if (!changes.ok) {
+    return { ok: false, refusal: fail({ branch }, `refuse: ${changes.reason}`, ['workspace_change_detection_failed']) }
+  }
+  return { ok: true, changed: changes.changed }
 }
 
 /**
@@ -189,12 +224,29 @@ function createOpenClawWorker (options = {}) {
 
     const brief = buildExecutionBrief(workOrder)
 
-    let run
+    // The transport is invoked at most once. From the moment it is CALLED — not from the
+    // moment it returns well — the clone must be treated as possibly written to.
+    let run = null
+    let transportError = null
     try {
       run = await transport(brief, { cloneDir, branch })
     } catch (e) {
-      // Normalized, never retried. A transport that failed once is a fact to report.
-      return fail({ branch }, `openclaw transport failed: ${(e && e.message) || String(e)}`, ['transport_failed'])
+      transportError = (e && e.message) || String(e)
+    }
+
+    // ⛔ FILESYSTEM TRUTH FIRST, BEFORE THE PROVIDER'S OWN VERDICT IS EVEN READ.
+    // A transport that wrote a file and then threw used to be reported as an ordinary
+    // transport failure, and the write went unrecorded and unrefused.
+    const afterTransport = verifyWorkspace(workspace, cloneDir, branch, 'the transport')
+    if (!afterTransport.ok) return afterTransport.refusal
+    if (afterTransport.changed.length > 0) {
+      return readOnlyViolation(workspace, cloneDir, branch, afterTransport.changed, run,
+        'OpenClaw V1 is read-only; the isolated clone was modified')
+    }
+
+    // Only once the repository is proven clean does the transport's own outcome decide.
+    if (transportError !== null) {
+      return fail({ branch }, `openclaw transport failed: ${transportError}`, ['transport_failed'])
     }
     if (!run || run.ok !== true) {
       const why = (run && (run.error || run.stderr)) || 'openclaw transport did not succeed'
@@ -202,71 +254,42 @@ function createOpenClawWorker (options = {}) {
       return fail({ branch, exit: run && run.exit !== undefined ? run.exit : null }, String(why), risks)
     }
 
-    // ⛔ CONTAINMENT AGAIN, AFTER. The check before proves where we sent it; only the check
-    // after can speak to where it actually operated.
-    try {
-      workspace.containmentCheck(cloneDir)
-    } catch (e) {
-      return fail({ branch }, `refuse: ${(e && e.message) || 'containment check failed after execution'}`, ['containment'])
-    }
-
-    const afterTransport = repositoryChanges(workspace, cloneDir)
-    if (!afterTransport.ok) {
-      return fail({ branch }, `refuse: ${afterTransport.reason}`, ['workspace_change_detection_failed'])
-    }
-    const filesChanged = afterTransport.changed
-
-    // ── V1 IS READ-ONLY, STRUCTURALLY ────────────────────────────────────────
-    // Any repository change is a violation, whatever the executor reported about itself.
-    // The change is NOT reverted and NOT retried: the clone is disposable, and the
-    // attempted edit is the most useful thing this run produced. It is carried back in the
-    // fields agentRunner already understands, so the evidence survives without a second
-    // reporting channel — and ok:false means no amount of "it went fine" can outrank it.
-    if (filesChanged.length > 0) {
-      return readOnlyViolation(workspace, cloneDir, branch, filesChanged, run,
-        'OpenClaw V1 is read-only; the isolated clone was modified')
-    }
-
-    // The approved test command, at most once, and only on an otherwise clean run. The
-    // executor never receives shell authority for this: the runner is injected, and it is
-    // handed the APPROVED command from the sealed order — never a command of its own.
+    // The approved test command, at most once, on an otherwise clean run. The executor
+    // never receives shell authority for it: the runner is injected and is handed the
+    // APPROVED command from the sealed order, never a command of its own.
     let testResults = null
     const cmd = workOrder.allowedTestCommand
     if (typeof cmd === 'string' && cmd.trim() !== '') {
       if (!testRunner) {
-        return fail({ branch, filesChanged }, 'refuse: openclaw test runner not configured', ['no_test_runner'])
+        return fail({ branch }, 'refuse: openclaw test runner not configured', ['no_test_runner'])
       }
+
+      let testError = null
       try {
         testResults = await testRunner({ command: cmd, cwd: cloneDir, timeoutSec: workOrder.timeoutSec })
       } catch (e) {
-        return fail({ branch, filesChanged }, `openclaw test runner failed: ${(e && e.message) || String(e)}`, ['test_failed'])
+        testError = (e && e.message) || String(e)
       }
-      // ⛔ THE TEST IS VERIFIED TOO, AND A PASS DOES NOT EXCUSE IT.
-      //
-      // The approved command runs inside the clone, so it can modify, delete or CREATE
-      // repository files just as the executor can. Checking only before the test would let a
-      // read-only run become a repository mutation and still return ok:true, with a green
-      // test as the cover story. Filesystem truth outranks a self-report here exactly as it
-      // does for the transport — so this runs even when the test passed.
-      try {
-        workspace.containmentCheck(cloneDir)
-      } catch (e) {
-        return fail({ branch }, `refuse: ${(e && e.message) || 'containment check failed after test'}`, ['containment'])
-      }
-      const afterTest = repositoryChanges(workspace, cloneDir)
-      if (!afterTest.ok) {
-        return fail({ branch }, `refuse: ${afterTest.reason}`, ['workspace_change_detection_failed'])
-      }
+
+      // ⛔ AND AGAIN, WHATEVER THE TEST SAID. The approved command runs inside the clone, so
+      // it has exactly the executor's reach. Passing, failing and throwing are all just
+      // claims about a process; a written file is a fact about the repository, and a green
+      // test must never become the cover story for a mutation.
+      const afterTest = verifyWorkspace(workspace, cloneDir, branch, 'the test')
+      if (!afterTest.ok) return afterTest.refusal
       if (afterTest.changed.length > 0) {
         return readOnlyViolation(workspace, cloneDir, branch, afterTest.changed, run,
           'the approved test command modified the repository')
       }
 
+      if (testError !== null) {
+        return fail({ branch }, `openclaw test runner failed: ${testError}`, ['test_failed'])
+      }
       if (!testResults || testResults.ok !== true) {
         return createResult({
           ok: false,
           output: Object.assign(emptyOutput(branch), {
-            filesChanged, testResults: testResults || null,
+            testResults: testResults || null,
             exit: run.exit === undefined ? null : run.exit,
             risks: ['test_failed'],
             warnings: ['the approved test command did not pass']

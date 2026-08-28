@@ -387,3 +387,148 @@ test('O10. the incomplete tracked-only detector is NOT consulted as a fallback',
   assert.strictEqual(r.ok, false, 'no complete detector means no clean verdict')
   assert.strictEqual(filesChangedCalls, 0, 'the incomplete detector must not be reached at all')
 })
+
+/* ══════ PR #49 final review: malformed answers, and truth after failure ══════ */
+
+test('D1. a MALFORMED detector return fails closed — never treated as clean', async () => {
+  // `Array.isArray(x) ? x : []` was fail-OPEN: every one of these became "no files changed",
+  // which is the single most dangerous default this module could have had.
+  for (const bad of [null, undefined, 'file.txt', 123, {}, true, () => {}]) {
+    const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+    const r = await call(w, { workspace: fakeWorkspace({ repoChanges: () => bad }) })
+    assert.strictEqual(r.ok, false, 'a non-array answer must not succeed')
+    assert.deepStrictEqual(r.output.risks, ['workspace_change_detection_failed'])
+  }
+})
+
+test('D2. a malformed ARRAY ENTRY fails closed and is not filtered away', async () => {
+  // A detector that answered partly in nonsense cannot be trusted about the part that
+  // looked fine, so nothing is coerced and nothing is silently dropped.
+  for (const bad of [[null], [{}], [''], [123], ['ok.txt', null], [undefined]]) {
+    const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+    const r = await call(w, { workspace: fakeWorkspace({ repoChanges: () => bad }) })
+    assert.strictEqual(r.ok, false, 'a malformed entry must not succeed')
+    assert.deepStrictEqual(r.output.risks, ['workspace_change_detection_failed'])
+  }
+})
+
+test('D3. a whitespace-only pathname is LEGAL and is treated as a real violation', async () => {
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: fakeWorkspace({ repoChanges: () => ['   '] }) })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation', 'not a malformed record, a real file')
+  assert.deepStrictEqual(r.output.filesChanged, ['   '])
+})
+
+test('T1. transport MUTATES then returns failure -> read-only violation', async () => {
+  const ws = fakeWorkspace({ repoChanges: () => ['.env'] })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: false, error: 'gateway died' }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation', 'the write outranks the provider verdict')
+  assert.deepStrictEqual(r.output.filesChanged, ['.env'])
+})
+
+test('T2. transport MUTATES then THROWS -> read-only violation, and the write is recorded', async () => {
+  const ws = fakeWorkspace({ repoChanges: () => ['data/db.json'] })
+  const w = createOpenClawWorker({ transport: async () => { throw new Error('spawn refused') } })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['data/db.json'])
+})
+
+test('T3/T4. transport fails or throws with a CLEAN repository -> transport_failed', async () => {
+  const failing = createOpenClawWorker({ transport: async () => ({ ok: false, error: 'gateway down' }) })
+  const a = await call(failing)
+  assert.strictEqual(a.ok, false)
+  assert.deepStrictEqual(a.output.risks, ['transport_failed'])
+
+  const throwing = createOpenClawWorker({ transport: async () => { throw new Error('spawn refused') } })
+  const b = await call(throwing)
+  assert.strictEqual(b.ok, false)
+  assert.deepStrictEqual(b.output.risks, ['transport_failed'])
+})
+
+test('T5. the repository is verified after EVERY actual transport invocation', async () => {
+  const transports = [
+    async () => ({ ok: true, exit: 0 }),
+    async () => ({ ok: false, error: 'x' }),
+    async () => { throw new Error('boom') },
+    async () => 'not even an object'
+  ]
+  for (const t of transports) {
+    let checks = 0
+    const ws = fakeWorkspace({ repoChanges: () => { checks++; return [] } })
+    await call(createOpenClawWorker({ transport: t }), { workspace: ws })
+    assert.strictEqual(checks, 1, 'verification runs whatever the transport did')
+  }
+})
+
+test('X2. test returns FAILURE after mutating -> read-only violation, not test_failed', async () => {
+  let n = 0
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['app.log'] } })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: false, code: 1 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['app.log'])
+})
+
+test('X3. test THROWS after mutating -> read-only violation', async () => {
+  let n = 0
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['secrets.creds'] } })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => { throw new Error('test harness exploded') }
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.deepStrictEqual(r.output.filesChanged, ['secrets.creds'])
+})
+
+test('X4/X5. test fails or throws with a CLEAN repository -> test_failed', async () => {
+  const failing = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: false, code: 1 })
+  })
+  const a = await call(failing, { workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(a.ok, false)
+  assert.deepStrictEqual(a.output.risks, ['test_failed'])
+
+  const throwing = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => { throw new Error('exploded') }
+  })
+  const b = await call(throwing, { workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(b.ok, false)
+  assert.deepStrictEqual(b.output.risks, ['test_failed'])
+})
+
+test('X7. the repository is verified after EVERY actual test invocation', async () => {
+  const runners = [
+    async () => ({ ok: true, code: 0 }),
+    async () => ({ ok: false, code: 1 }),
+    async () => { throw new Error('boom') }
+  ]
+  for (const t of runners) {
+    let checks = 0
+    const ws = fakeWorkspace({ repoChanges: () => { checks++; return [] } })
+    await call(createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }), testRunner: t }),
+      { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+    assert.strictEqual(checks, 2, 'after the transport AND after the test, whatever the test did')
+  }
+})
+
+test('R1. an untracked violation keeps the PATH and does not read the file contents', async () => {
+  // Accepted C1 residual: ordinary git diff carries no untracked content, and reading a
+  // newly created .env to enrich forensics would create a fresh secret-exposure problem.
+  // The pathname alone is sufficient to refuse.
+  const ws = fakeWorkspace({ repoChanges: () => ['.env'], diffPatch: () => '' })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws })
+  assert.deepStrictEqual(r.output.filesChanged, ['.env'], 'the path is the evidence')
+  assert.strictEqual(r.output.patchText, '', 'no untracked content is read')
+})

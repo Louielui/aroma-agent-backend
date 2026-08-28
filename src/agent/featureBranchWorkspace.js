@@ -95,42 +95,50 @@ function createFeatureBranchWorkspace (options = {}) {
   /** Permission mode — NEVER bypassPermissions (Cap 1). */
   function permissionMode () { return 'acceptEdits' }
   /**
-   * EVERY repository path whose state differs from HEAD — INCLUDING UNTRACKED FILES.
+   * EVERY repository path whose worktree state differs from the clean clone.
    *
-   * ⛔ WHY filesChanged() IS NOT ENOUGH FOR A READ-ONLY VERDICT.
-   * filesChanged asks `git diff --name-only HEAD`, which by definition never lists an
-   * untracked file. Measured: in a clean clone, creating brand-new-untracked.txt leaves
-   * that command answering [] while `ls-files --others` names the file. So an executor
-   * asked to be read-only could CREATE a new source file and be reported perfectly clean.
-   * Two questions, two commands, and only both together mean 'nothing was written here'.
+   * ⛔ NO --exclude-standard. THAT FLAG HID THE FILES THAT MATTER MOST.
+   * `ls-files --others --exclude-standard` omits ignored paths, and this repository
+   * ignores exactly the security-relevant ones: .env, *.log, data/, *.creds, /*.txt,
+   * password.txt, browser-profile/. Measured in a scratch repo with those rules, the
+   * flagged command reported only plain-new.txt while .env, app.log and data/db.json were
+   * invisible. A read-only executor could therefore WRITE A CREDENTIALS FILE and be
+   * reported clean. The invariant is that any repository write fails, so the question
+   * asked here is 'what exists that HEAD does not have', with no opinion about whether
+   * git would normally care about it.
    *
-   * ⛔ AND IT FAILS CLOSED. filesChanged returns [] when git itself fails, which reads as
-   * 'nothing changed' when the truth is 'nobody knows'. Those are different facts and only
-   * one of them is safe to act on, so this THROWS instead. A caller that cannot tell
-   * whether the repository was written to must not be able to conclude that it wasn't.
+   * ⛔ PATHNAMES ARE NOT TOUCHED. No trim, no separator rewriting. A git pathname is an
+   * IDENTITY: ' leading.txt', 'trailing.txt ' and even '   ' are legal distinct names, and
+   * trimming them silently renames or erases a file that was really written. -z exists
+   * precisely so the records need no interpretation — the only thing removed is the empty
+   * record the final delimiter produces.
    *
-   * -z on both commands: the records are NUL-separated, so paths are emitted raw instead
-   * of quoted and a filename containing a space, a quote or a newline cannot reshape the
-   * parse into a different set of files.
+   * ⛔ AND IT FAILS CLOSED. filesChanged returns [] when git fails, which reads as 'nothing
+   * changed' when the truth is 'nobody knows'. Those are different facts and only one is
+   * safe to act on, so this THROWS. A caller unable to tell whether the repository was
+   * written to must not be able to conclude that it wasn't.
    *
-   * A rename in a working tree is a deletion plus an untracked file, so it is covered by
-   * the pair without needing rename detection.
+   * A working-tree rename is a deletion plus an untracked file, so the pair covers it.
    *
    * @param {string} dir the clone
-   * @returns {string[]} sorted, de-duplicated, posix-relative paths
-   * @throws if either git command fails — the honest answer to an unanswerable question
+   * @returns {string[]} de-duplicated, sorted, EXACT git pathnames
+   * @throws if either git command fails
    */
   function repoChanges (dir) {
-    const split = (out) => String(out || '')
-      .split(String.fromCharCode(0))
-      .map((x) => x.trim().replace(/\\/g, '/'))
-      .filter((x) => x !== '')
+    // NUL-delimited records. Only the trailing delimiter's empty record is dropped; every
+    // other record is preserved byte-for-byte, including one that is only whitespace.
+    const split = (out) => {
+      const parts = String(out === undefined || out === null ? '' : out).split(String.fromCharCode(0))
+      if (parts.length > 0 && parts[parts.length - 1] === '') parts.pop()
+      return parts
+    }
 
     const tracked = git(['diff', '--name-only', '-z', 'HEAD'], dir)
     if (tracked.status !== 0) {
       throw new Error(`refuse: repository change detection failed (${(tracked.stderr || '').trim() || tracked.status})`)
     }
-    const untracked = git(['ls-files', '--others', '--exclude-standard', '-z'], dir)
+    // Deliberately WITHOUT --exclude-standard: ignored paths are still repository writes.
+    const untracked = git(['ls-files', '--others', '-z'], dir)
     if (untracked.status !== 0) {
       throw new Error(`refuse: untracked change detection failed (${(untracked.stderr || '').trim() || untracked.status})`)
     }
