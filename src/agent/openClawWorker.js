@@ -102,13 +102,48 @@ function repositoryChanges (workspace, cloneDir) {
 }
 
 /**
- * Containment AND the repository, together, because they are asked at the same moments.
+ * The clone's STRUCTURAL isolation, strictly validated.
  *
- * ⛔ THIS RUNS AFTER EVERY ACTUAL INVOCATION — success, failure, or throw. Verifying only
- * after a SUCCESSFUL transport meant a transport that wrote a file and then threw was
- * reported as a plain transport failure, with the write unrecorded and unrefused. What the
- * provider says about itself is a claim; what is on disk is a fact, and the fact is
- * established first.
+ * ⛔ A CLEAN WORKTREE PROVES NOTHING ABOUT THIS. Remotes and the checked-out branch live in
+ * .git, so mutating them leaves repoChanges() empty. `git remote add attacker …` restores a
+ * push target — the thing prepare() stripped precisely so commit/push/PR/merge would have
+ * nowhere to go — while the worktree stays spotless. `git checkout main` is worse in a
+ * quieter way: 'clean' is measured against whatever HEAD has become, so switching branch
+ * makes the verdict true about the wrong thing.
+ *
+ * @returns {{ok:true, state:object}|{ok:false, reason:string}}
+ */
+function isolationOf (workspace, cloneDir) {
+  if (!workspace || typeof workspace.isolationState !== 'function') {
+    return { ok: false, reason: 'workspace does not report git isolation state' }
+  }
+  let state
+  try {
+    state = workspace.isolationState(cloneDir)
+  } catch (e) {
+    return { ok: false, reason: (e && e.message) || 'isolation state unreadable' }
+  }
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    return { ok: false, reason: 'isolation state is malformed' }
+  }
+  if (!Array.isArray(state.remotes)) return { ok: false, reason: 'isolation state has no remote list' }
+  for (const r of state.remotes) {
+    if (typeof r !== 'string' || r === '') return { ok: false, reason: 'isolation state has a malformed remote record' }
+  }
+  if (typeof state.currentBranch !== 'string' || state.currentBranch === '') {
+    return { ok: false, reason: 'isolation state has no branch' }
+  }
+  return { ok: true, state }
+}
+
+/**
+ * ONE checkpoint, BOTH planes: the filesystem and the repository's own structure.
+ *
+ * ⛔ IT RUNS BEFORE THE TRANSPORT AND AFTER EVERY ACTUAL INVOCATION — success, failure or
+ * throw. Verifying only after a SUCCESSFUL call meant an executor that wrote a file, or
+ * added a remote, and then threw was reported as an ordinary provider failure with the
+ * mutation unrecorded. What a provider says about itself is a claim; the clone is a fact,
+ * and the fact is established first.
  *
  * @returns {{ok:true, changed:string[]}|{ok:false, refusal:object}}
  */
@@ -116,8 +151,28 @@ function verifyWorkspace (workspace, cloneDir, branch, stage) {
   try {
     workspace.containmentCheck(cloneDir)
   } catch (e) {
-    return { ok: false, refusal: fail({ branch }, `refuse: ${(e && e.message) || `containment check failed after ${stage}`}`, ['containment']) }
+    return { ok: false, refusal: fail({ branch }, `refuse: ${(e && e.message) || `containment check failed at ${stage}`}`, ['containment']) }
   }
+
+  const iso = isolationOf(workspace, cloneDir)
+  if (!iso.ok) {
+    return { ok: false, refusal: fail({ branch }, `refuse: ${iso.reason}`, ['workspace_isolation_violation']) }
+  }
+  if (iso.state.remotes.length !== 0) {
+    return { ok: false, refusal: fail({ branch }, `refuse: the isolated clone has a remote (${iso.state.remotes.join(', ')})`, ['workspace_isolation_violation']) }
+  }
+  // The branch agentRunner prepared is the only acceptable one. Comparing against 'not main'
+  // alone would accept any OTHER agent branch, which is a different approval's workspace.
+  if (typeof branch !== 'string' || branch === '') {
+    return { ok: false, refusal: fail({ branch }, 'refuse: no expected agent branch was supplied', ['workspace_isolation_violation']) }
+  }
+  if (iso.state.currentBranch !== branch) {
+    return { ok: false, refusal: fail({ branch }, `refuse: the clone is on '${iso.state.currentBranch}', not the approved '${branch}'`, ['workspace_isolation_violation']) }
+  }
+  if (iso.state.currentBranch === 'main') {
+    return { ok: false, refusal: fail({ branch }, 'refuse: the clone is on main', ['workspace_isolation_violation']) }
+  }
+
   const changes = repositoryChanges(workspace, cloneDir)
   if (!changes.ok) {
     return { ok: false, refusal: fail({ branch }, `refuse: ${changes.reason}`, ['workspace_change_detection_failed']) }
@@ -207,13 +262,15 @@ function createOpenClawWorker (options = {}) {
       return fail({ branch }, 'refuse: invalid work order', ['invalid_work_order'])
     }
 
-    // ⛔ CONTAINMENT BEFORE TRANSPORT. Nothing may be handed a directory that has not been
-    // proven to be the isolated clone — and proving it AFTER starting the executor would be
-    // proving it after the damage.
-    try {
-      workspace.containmentCheck(cloneDir)
-    } catch (e) {
-      return fail({ branch }, `refuse: ${(e && e.message) || 'containment check failed'}`, ['containment'])
+    // ⛔ FULLY VERIFIED BEFORE TRANSPORT. Not only contained: clean, remote-free, and on the
+    // approved branch. prepare() established all of that a moment ago, and re-proving it here
+    // is the difference between trusting a claim and holding a fact — nothing is handed to an
+    // executor until the workspace it will act on has been measured, not assumed.
+    const preflight = verifyWorkspace(workspace, cloneDir, branch, 'preflight')
+    if (!preflight.ok) return preflight.refusal
+    if (preflight.changed.length > 0) {
+      return readOnlyViolation(workspace, cloneDir, branch, preflight.changed, null,
+        'the workspace was already modified before OpenClaw was invoked')
     }
 
     // C1: no transport is configured and none can be discovered. This is the honest end of

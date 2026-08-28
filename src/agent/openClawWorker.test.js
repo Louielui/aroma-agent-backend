@@ -40,6 +40,7 @@ function fakeWorkspace (over = {}) {
   return {
     containmentCheck: over.containmentCheck || ((t) => t),
     repoChanges: over.repoChanges || (() => []),
+    isolationState: over.isolationState || (() => ({ remotes: [], currentBranch: 'agent/appr_c1' })),
     diffStat: over.diffStat || (() => ''),
     diffPatch: over.diffPatch || (() => ''),
     cleanup: () => {}
@@ -301,7 +302,7 @@ test('O3/O5. an approved test that MODIFIES a tracked file is a violation, even 
   // and a green test must not become the cover story for a repository mutation.
   let n = 0
   const ws = fakeWorkspace({
-    repoChanges: () => { n++; return n === 1 ? [] : ['src/foo.js'] },
+    repoChanges: () => { n++; return n <= 2 ? [] : ['src/foo.js'] },
     diffStat: () => ' src/foo.js | 1 +',
     diffPatch: () => 'diff --git a/src/foo.js b/src/foo.js\n+written by the test\n'
   })
@@ -315,12 +316,12 @@ test('O3/O5. an approved test that MODIFIES a tracked file is a violation, even 
   assert.deepStrictEqual(r.output.filesChanged, ['src/foo.js'])
   assert.match(r.output.warnings.join(' '), /test command modified the repository/)
   assert.match(r.output.patchText, /written by the test/, 'the attempted change is kept as evidence')
-  assert.strictEqual(n, 2, 'the repository is verified before AND after the test')
+  assert.strictEqual(n, 3, 'preflight, after the transport, and after the test')
 })
 
 test('O4. an approved test that CREATES an untracked file is a violation', async () => {
   let n = 0
-  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['test-output.log'] } })
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n <= 2 ? [] : ['test-output.log'] } })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => ({ ok: true, code: 0 })
@@ -366,11 +367,18 @@ test('O9. a change-detector failure fails CLOSED — never treated as clean', as
   assert.strictEqual(r.ok, false)
   assert.deepStrictEqual(r.output.risks, ['workspace_change_detection_failed'])
 
-  // And a workspace that cannot answer at all must not be quietly accepted either.
-  const noApi = { containmentCheck: (t) => t, cleanup: () => {} }
-  const r2 = await call(w, { workspace: noApi })
+  // A workspace missing the change detector, but able to report isolation, fails on detection.
+  const noDetector = { containmentCheck: (t) => t, isolationState: () => ({ remotes: [], currentBranch: 'agent/appr_c1' }), cleanup: () => {} }
+  const r2 = await call(w, { workspace: noDetector })
   assert.strictEqual(r2.ok, false)
   assert.deepStrictEqual(r2.output.risks, ['workspace_change_detection_failed'])
+
+  // A workspace that cannot answer EITHER question fails on isolation, which is checked first:
+  // there is no point asking whether the worktree is clean inside a sandbox we cannot vouch for.
+  const noApi = { containmentCheck: (t) => t, cleanup: () => {} }
+  const r3 = await call(w, { workspace: noApi })
+  assert.strictEqual(r3.ok, false)
+  assert.deepStrictEqual(r3.output.risks, ['workspace_isolation_violation'])
 })
 
 test('O10. the incomplete tracked-only detector is NOT consulted as a fallback', async () => {
@@ -461,13 +469,13 @@ test('T5. the repository is verified after EVERY actual transport invocation', a
     let checks = 0
     const ws = fakeWorkspace({ repoChanges: () => { checks++; return [] } })
     await call(createOpenClawWorker({ transport: t }), { workspace: ws })
-    assert.strictEqual(checks, 1, 'verification runs whatever the transport did')
+    assert.strictEqual(checks, 2, 'preflight AND after the transport, whatever the transport did')
   }
 })
 
 test('X2. test returns FAILURE after mutating -> read-only violation, not test_failed', async () => {
   let n = 0
-  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['app.log'] } })
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n <= 2 ? [] : ['app.log'] } })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => ({ ok: false, code: 1 })
@@ -479,7 +487,7 @@ test('X2. test returns FAILURE after mutating -> read-only violation, not test_f
 
 test('X3. test THROWS after mutating -> read-only violation', async () => {
   let n = 0
-  const ws = fakeWorkspace({ repoChanges: () => { n++; return n === 1 ? [] : ['secrets.creds'] } })
+  const ws = fakeWorkspace({ repoChanges: () => { n++; return n <= 2 ? [] : ['secrets.creds'] } })
   const w = createOpenClawWorker({
     transport: async () => ({ ok: true, exit: 0 }),
     testRunner: async () => { throw new Error('test harness exploded') }
@@ -518,7 +526,7 @@ test('X7. the repository is verified after EVERY actual test invocation', async 
     const ws = fakeWorkspace({ repoChanges: () => { checks++; return [] } })
     await call(createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }), testRunner: t }),
       { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
-    assert.strictEqual(checks, 2, 'after the transport AND after the test, whatever the test did')
+    assert.strictEqual(checks, 3, 'preflight, after the transport, and after the test')
   }
 })
 
@@ -531,4 +539,143 @@ test('R1. an untracked violation keeps the PATH and does not read the file conte
   const r = await call(w, { workspace: ws })
   assert.deepStrictEqual(r.output.filesChanged, ['.env'], 'the path is the evidence')
   assert.strictEqual(r.output.patchText, '', 'no untracked content is read')
+})
+
+/* ══════ PR #49: isolation violations outrank the provider's own verdict ══════ */
+
+/** Isolation that is clean for the first N calls, then compromised. */
+const isoAfter = (n, state) => {
+  let i = 0
+  return () => { i++; return i <= n ? { remotes: [], currentBranch: 'agent/appr_c1' } : state }
+}
+
+test('T-REMOTE. a transport that ADDS A REMOTE fails, though the worktree is clean', async () => {
+  // prepare() stripped every remote so commit/push/PR/merge would have nowhere to go.
+  // Restoring one is invisible to repoChanges — which is exactly why it is checked separately.
+  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0, result: 'all good!' }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  assert.match(r.error, /remote/)
+})
+
+test('T-BRANCH. a transport that switches to MAIN fails', async () => {
+  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: [], currentBranch: 'main' }) })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+})
+
+test('T-WRONG-BRANCH. ANOTHER agent branch is refused too, not just main', async () => {
+  // 'not main' alone would accept a different approval's workspace. Only the branch this
+  // Work Order was prepared on is acceptable.
+  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: [], currentBranch: 'agent/appr_somebody_else' }) })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  assert.match(r.error, /agent\/appr_c1/)
+})
+
+test('T-THROW-REMOTE. a transport that adds a remote and THEN THROWS is an isolation failure', async () => {
+  const ws = fakeWorkspace({ isolationState: isoAfter(1, { remotes: ['attacker'], currentBranch: 'agent/appr_c1' }) })
+  const w = createOpenClawWorker({ transport: async () => { throw new Error('spawn refused') } })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'],
+    'the sandbox breach outranks the ordinary transport failure')
+})
+
+test('T-PREFLIGHT. a workspace ALREADY compromised is never handed to the transport', async () => {
+  let transportCalls = 0
+  const ws = fakeWorkspace({ isolationState: () => ({ remotes: ['pre-existing'], currentBranch: 'agent/appr_c1' }) })
+  const w = createOpenClawWorker({ transport: async () => { transportCalls++; return { ok: true } } })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(transportCalls, 0, 'nothing is handed a workspace that failed preflight')
+})
+
+test('T-PREFLIGHT-DIRTY. a workspace already DIRTY before the transport is refused', async () => {
+  let transportCalls = 0
+  const ws = fakeWorkspace({ repoChanges: () => ['already-there.txt'] })
+  const w = createOpenClawWorker({ transport: async () => { transportCalls++; return { ok: true } } })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.error, 'openclaw_read_only_violation')
+  assert.strictEqual(transportCalls, 0)
+})
+
+test('X-REMOTE. an approved test that adds a remote fails, even passing', async () => {
+  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: ['evil'], currentBranch: 'agent/appr_c1' }) })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+})
+
+test('X-BRANCH. an approved test that switches branch fails', async () => {
+  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => ({ ok: true, code: 0 })
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+})
+
+test('X-THROW-BRANCH. a test that switches branch and THEN THROWS is an isolation failure', async () => {
+  const ws = fakeWorkspace({ isolationState: isoAfter(2, { remotes: [], currentBranch: 'main' }) })
+  const w = createOpenClawWorker({
+    transport: async () => ({ ok: true, exit: 0 }),
+    testRunner: async () => { throw new Error('harness exploded') }
+  })
+  const r = await call(w, { workspace: ws, workOrder: workOrder({ allowedTestCommand: 'npm test' }) })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'],
+    'a thrown test does not downgrade a sandbox breach to test_failed')
+})
+
+test('D4. a MALFORMED isolation report fails closed', async () => {
+  for (const bad of [null, undefined, 'agent/x', 123, {}, { remotes: 'none', currentBranch: 'agent/appr_c1' },
+    { remotes: [], currentBranch: '' }, { remotes: [null], currentBranch: 'agent/appr_c1' }, { currentBranch: 'agent/appr_c1' }]) {
+    const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+    const r = await call(w, { workspace: fakeWorkspace({ isolationState: () => bad }) })
+    assert.strictEqual(r.ok, false, 'a malformed isolation report must not succeed')
+    assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  }
+})
+
+test('D5. an isolationState that THROWS fails closed', async () => {
+  const ws = fakeWorkspace({ isolationState: () => { throw new Error('fatal: broken') } })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await call(w, { workspace: ws })
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+})
+
+test('T-MAIN-EXPECTED. even if "main" were supplied as the expected branch, it is refused', async () => {
+  // M22 survived without this test, and the reason is worth stating: the exact-branch check
+  // already rejects 'main' whenever the approved branch is agent/<id>, so the explicit main
+  // check looked redundant. It is not. It is the backstop for the one case the exact match
+  // cannot catch — a caller that supplies 'main' AS the expected branch. agentRunner never
+  // does, and prepare() would refuse to create such a workspace; this holds the line if
+  // either of those ever changes, since the cost of being wrong here is an agent operating
+  // directly on the trunk.
+  const ws = fakeWorkspace({ isolationState: () => ({ remotes: [], currentBranch: 'main' }) })
+  const w = createOpenClawWorker({ transport: async () => ({ ok: true, exit: 0 }) })
+  const r = await w.invoke('AgentBridge', 1, {
+    workOrder: workOrder({ branch: 'main' }),
+    workspace: ws,
+    cloneDir: 'C:/tmp/clone',
+    branch: 'main'
+  })
+  assert.strictEqual(r.ok, false, 'main is never an acceptable workspace branch, however it was reached')
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  assert.match(r.error, /on main/)
 })

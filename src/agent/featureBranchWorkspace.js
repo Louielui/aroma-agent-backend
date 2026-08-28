@@ -133,7 +133,11 @@ function createFeatureBranchWorkspace (options = {}) {
       return parts
     }
 
-    const tracked = git(['diff', '--name-only', '-z', 'HEAD'], dir)
+    // --no-ext-diff / --no-textconv: a diff driver is configured IN .git/config, which is
+    // inside the very sandbox being policed. Without these, an executor could register an
+    // external command and have the read-only CHECK run it — turning the guard into the
+    // thing it guards against.
+    const tracked = git(['diff', '--no-ext-diff', '--no-textconv', '--name-only', '-z', 'HEAD'], dir)
     if (tracked.status !== 0) {
       throw new Error(`refuse: repository change detection failed (${(tracked.stderr || '').trim() || tracked.status})`)
     }
@@ -177,6 +181,44 @@ function createFeatureBranchWorkspace (options = {}) {
     const r = git(['remote'], dir)
     return String(r.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean)
   }
+  /**
+   * The clone's STRUCTURAL isolation: how many remotes it has, and which branch it is on.
+   *
+   * ⛔ WHY A CLEAN WORKTREE IS NOT ENOUGH. Both of these live in .git, not in the working
+   * tree, so mutating them leaves repoChanges() perfectly empty. Measured in a scratch
+   * clone: `git remote add attacker …` leaves the worktree clean with a push target now
+   * present, and `git checkout main` leaves it clean because 'clean' is measured against
+   * whatever HEAD has become. prepare() established both properties; only re-measuring can
+   * say they survived.
+   *
+   * ⛔ AND IT FAILS CLOSED, WHICH remotes() DOES NOT. remotes() ignores exit status, so a
+   * failed `git remote` yields '' and reads as 'no remotes' — the most reassuring possible
+   * answer to a question that was never answered. currentBranch() has the same shape. Both
+   * are left alone because they are shared with the AgentBridge worker; this is a separate,
+   * stricter API for callers that need the answer to be trustworthy.
+   *
+   * @param {string} dir the clone
+   * @returns {{remotes: string[], currentBranch: string}}
+   * @throws if either git command fails or the branch is unusable
+   */
+  function isolationState (dir) {
+    const r = git(['remote'], dir)
+    if (r.status !== 0) {
+      throw new Error(`refuse: remote state unreadable (${(r.stderr || '').trim() || r.status})`)
+    }
+    const b = git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)
+    if (b.status !== 0) {
+      throw new Error(`refuse: branch state unreadable (${(b.stderr || '').trim() || b.status})`)
+    }
+    const currentBranch = String(b.stdout || '').trim()
+    if (currentBranch === '') throw new Error('refuse: branch state is empty')
+
+    return {
+      remotes: String(r.stdout || '').split(/\r?\n/).map((x) => x.trim()).filter((x) => x !== ''),
+      currentBranch
+    }
+  }
+
   /** Current branch (post-run verification — must be the agent branch, never main). */
   function currentBranch (dir) {
     const r = git(['rev-parse', '--abbrev-ref', 'HEAD'], dir)
@@ -185,7 +227,7 @@ function createFeatureBranchWorkspace (options = {}) {
   /** NO-OP: the B2-12 startup sweep reaps aged aroma-sandbox-* dirs. */
   function cleanup (_dir) { /* logged residual, reaped at startup */ }
 
-  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, repoChanges, diffStat, diffPatch, remotes, currentBranch, cleanup }
+  return { prepare, containmentCheck, addDirs, permissionMode, filesChanged, repoChanges, isolationState, diffStat, diffPatch, remotes, currentBranch, cleanup }
 }
 
 module.exports = { createFeatureBranchWorkspace, defaultGitRunner, AGENT_SANDBOX_PREFIX }

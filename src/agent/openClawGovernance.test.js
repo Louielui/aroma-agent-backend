@@ -133,6 +133,7 @@ function governed (over = {}) {
       containmentCheck: (t) => t,
       filesChanged: over.filesChanged || (() => []),
       repoChanges: over.repoChanges || (() => []),
+      isolationState: over.isolationState || (() => ({ remotes: [], currentBranch: 'agent/appr_c1' })),
       diffStat: () => '', diffPatch: () => '',
       cleanup: () => { spy.cleanup++ }
     },
@@ -210,7 +211,7 @@ test('I5. an UNTRACKED mutation by OpenClaw stays a failure through the real run
 
 test('I6. a TEST-CAUSED mutation stays a failure through the real runner', async () => {
   let n = 0
-  const g = governed({ baseSha: APPROVED, repoChanges: () => { n++; return n === 1 ? [] : ['src/foo.js'] } })
+  const g = governed({ baseSha: APPROVED, repoChanges: () => { n++; return n <= 2 ? [] : ['src/foo.js'] } })
   const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
   assert.strictEqual(r.ok, false, 'a green test may not turn a mutation into success')
   assert.strictEqual(r.error, 'openclaw_read_only_violation')
@@ -235,7 +236,7 @@ test('I8. a test that mutates and then THROWS stays a read-only failure through 
   let n = 0
   const g = governedWith({
     baseSha: APPROVED,
-    repoChanges: () => { n++; return n === 1 ? [] : ['data/db.json'] },
+    repoChanges: () => { n++; return n <= 2 ? [] : ['data/db.json'] },
     testRunner: async () => { throw new Error('harness exploded') }
   })
   const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
@@ -245,4 +246,45 @@ test('I8. a test that mutates and then THROWS stays a read-only failure through 
   assert.deepStrictEqual(r.output.filesChanged, ['data/db.json'])
   assert.strictEqual(r.output.revisionMatch, true, 'B2 evidence survives the executor refusal')
   assert.strictEqual(g.audits.length, 1)
+})
+
+test('I9. a transport that ADDS A REMOTE stays a failure through the real runner', async () => {
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    isolationState: () => { i++; return i <= 1 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: ['attacker'], currentBranch: 'agent/appr_c1' } }
+  })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  assert.strictEqual(r.output.revisionMatch, true, 'B2 evidence survives an isolation refusal')
+  assert.strictEqual(r.output.expectedSha, APPROVED)
+  assert.strictEqual(g.audits[0].revisionMatch, true)
+})
+
+test('I10. a BRANCH SWITCH stays a failure through the real runner', async () => {
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    isolationState: () => { i++; return i <= 1 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: [], currentBranch: 'main' } }
+  })
+  const r = await runGoverned(g)
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'])
+  assert.strictEqual(r.output.observedBaseSha, APPROVED)
+})
+
+test('I11. a test that switches branch and THEN THROWS stays an isolation failure', async () => {
+  let i = 0
+  const g = governedWith({
+    baseSha: APPROVED,
+    isolationState: () => { i++; return i <= 2 ? { remotes: [], currentBranch: 'agent/appr_c1' } : { remotes: [], currentBranch: 'main' } },
+    testRunner: async () => { throw new Error('harness exploded') }
+  })
+  const r = await runGoverned(g, workOrder({ allowedTestCommand: 'npm test' }))
+  assert.strictEqual(r.ok, false)
+  assert.deepStrictEqual(r.output.risks, ['workspace_isolation_violation'],
+    'a thrown test does not downgrade a sandbox breach')
+  assert.strictEqual(r.output.revisionMatch, true)
+  assert.strictEqual(g.audits.length, 1, 'the attempt is still audited')
 })

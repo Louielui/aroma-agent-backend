@@ -234,3 +234,75 @@ test('P4. only the FINAL delimiter-generated empty record is removed', () => {
   // Two records where the second is whitespace — the whitespace one is kept.
   assert.deepStrictEqual(parserWith('a.txt' + NUL + ' ' + NUL, '').sort(), [' ', 'a.txt'])
 })
+
+/* ══════ PR #49: STRUCTURAL isolation lives in .git, not the worktree ══════ */
+
+test('I1. a fresh clone on the expected branch with zero remotes passes', () => {
+  const dir = scratchRepo()
+  const state = ws().isolationState(dir)
+  assert.deepStrictEqual(state.remotes, [])
+  assert.ok(typeof state.currentBranch === 'string' && state.currentBranch !== '')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('I2. ⛔ a added remote is reported — while the WORKTREE stays clean', () => {
+  // This is the whole point: prepare() stripped every remote so push/PR/merge would have
+  // nowhere to go. Restoring one is invisible to any worktree-based check.
+  const dir = scratchRepo()
+  spawnSync('git', ['remote', 'add', 'attacker', 'https://example.invalid/x.git'], { cwd: dir, shell: false })
+
+  assert.deepStrictEqual(ws().repoChanges(dir), [], 'the worktree is spotless — that is the trap')
+  assert.deepStrictEqual(ws().isolationState(dir).remotes, ['attacker'])
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('I3. ⛔ a branch switch is reported — while the WORKTREE stays clean', () => {
+  // "Clean" is measured against whatever HEAD has become, so switching branch makes the
+  // read-only verdict true about the wrong thing.
+  const dir = scratchRepo()
+  spawnSync('git', ['checkout', '-q', '-b', 'main'], { cwd: dir, shell: false })
+
+  assert.deepStrictEqual(ws().repoChanges(dir), [], 'still spotless')
+  assert.strictEqual(ws().isolationState(dir).currentBranch, 'main')
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('I4/I5. a git failure THROWS — it never answers "no remotes" or an empty branch', () => {
+  // The existing remotes() ignores exit status, so a failed `git remote` yields '' and reads
+  // as "no remotes" — the most reassuring possible answer to a question never answered.
+  const failing = (which) => createFeatureBranchWorkspace({
+    repoRoot: process.cwd(),
+    gitRunner: (args) => {
+      const j = args.join(' ')
+      if (which === 'remote' && j === 'remote') return { status: 128, stdout: '', stderr: 'fatal: broken' }
+      if (which === 'branch' && j.startsWith('rev-parse')) return { status: 128, stdout: '', stderr: 'fatal: broken' }
+      if (j.startsWith('rev-parse')) return { status: 0, stdout: 'agent/appr_x\n', stderr: '' }
+      return { status: 0, stdout: '', stderr: '' }
+    }
+  })
+  assert.throws(() => failing('remote').isolationState('C:/tmp/x'), /remote state unreadable/)
+  assert.throws(() => failing('branch').isolationState('C:/tmp/x'), /branch state unreadable/)
+
+  const emptyBranch = createFeatureBranchWorkspace({
+    repoRoot: process.cwd(),
+    gitRunner: (args) => args.join(' ').startsWith('rev-parse')
+      ? { status: 0, stdout: '\n', stderr: '' }
+      : { status: 0, stdout: '', stderr: '' }
+  })
+  assert.throws(() => emptyBranch.isolationState('C:/tmp/x'), /branch state is empty/)
+})
+
+test('I6. the change detector disables external diff drivers', () => {
+  // A diff driver is configured IN .git/config, inside the very sandbox being policed.
+  // Without these flags an executor could register an external command and have the
+  // read-only CHECK run it — turning the guard into the thing it guards against.
+  const seen = []
+  const spy = createFeatureBranchWorkspace({
+    repoRoot: process.cwd(),
+    gitRunner: (args) => { seen.push(args.join(' ')); return { status: 0, stdout: '', stderr: '' } }
+  })
+  spy.repoChanges('C:/tmp/x')
+  const diff = seen.find((c) => c.startsWith('diff'))
+  assert.ok(diff.includes('--no-ext-diff'), `external diff must be disabled: ${diff}`)
+  assert.ok(diff.includes('--no-textconv'), `textconv must be disabled: ${diff}`)
+})
