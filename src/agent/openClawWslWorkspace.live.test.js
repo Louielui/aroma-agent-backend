@@ -27,7 +27,7 @@ const { createOpenClawWslWorkspace } = require('../agent/openClawWslWorkspace')
 
 const DISTRO = 'OpenClawGateway'
 const ROOT = '/tmp/aroma-c2b1-live/sandboxes'
-const MIRROR = '/tmp/aroma-c2b1-live/mirror.git'
+const LOCAL_SOURCE = '/tmp/aroma-c2b1-live/mirror.git'
 const APPROVAL = 'appr_live'
 
 const wsl = (argv) => spawnSync('wsl.exe', ['-d', DISTRO, '--'].concat(argv),
@@ -59,10 +59,10 @@ function buildFixture () {
     'git commit -qm init',
     'git branch -M main'
   ].join(' && '))
-  sh(`git clone --bare -q /tmp/aroma-c2b1-live/src ${MIRROR}`)
+  sh(`git clone --bare -q /tmp/aroma-c2b1-live/src ${LOCAL_SOURCE}`)
 }
 
-const provider = () => createOpenClawWslWorkspace({ sandboxRoot: ROOT, mirrorPath: MIRROR })
+const provider = () => createOpenClawWslWorkspace({ sandboxRoot: ROOT, sourceUrl: LOCAL_SOURCE })
 
 test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', opts, () => {
   buildFixture()
@@ -145,7 +145,7 @@ test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', 
     reset()
 
     // ── containment refuses everything that is not this sandbox ──
-    for (const bad of [ROOT, '/', '/home/openclaw', MIRROR, '/home/openclaw/dev/aroma-agent-backend']) {
+    for (const bad of [ROOT, '/', '/home/openclaw', LOCAL_SOURCE, '/home/openclaw/dev/aroma-agent-backend']) {
       assert.throws(() => ws.containmentCheck(bad), /refuse:/, `${bad} must be refused`)
     }
     sh(`ln -sfn /etc ${ROOT}/escape`)
@@ -153,14 +153,49 @@ test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', 
     sh(`rm -f ${ROOT}/escape`)
 
     // ── cleanup removes the sandbox and nothing else ──
-    assert.strictEqual(ws.cleanup(MIRROR).ok, false, 'the mirror is never removable')
+    assert.strictEqual(ws.cleanup(LOCAL_SOURCE).ok, false, 'the source is never removable')
     assert.strictEqual(ws.cleanup(ROOT).ok, false, 'the root is never removable')
     assert.deepStrictEqual(ws.cleanup(D), { ok: true })
     assert.notStrictEqual(sh(`[ -e ${D} ] && echo present || echo absent`).stdout.trim(), 'present', 'the sandbox is gone')
-    assert.strictEqual(sh(`[ -d ${MIRROR} ] && echo yes`).stdout.trim(), 'yes', 'the mirror survived')
+    assert.strictEqual(sh(`[ -d ${LOCAL_SOURCE} ] && echo yes`).stdout.trim(), 'yes', 'the source survived')
   } finally {
     sh('rm -rf /tmp/aroma-c2b1-live')
   }
+})
+
+test('LIVE. the executor identity CANNOT write to the source authority', opts, () => {
+  // The review was right that "the executor is never told the path" is not a permission
+  // boundary. The persistent local mirror is gone, so the only source authority left is the
+  // remote — and this proves the Unix identity OpenClaw will run as cannot write to it.
+  //
+  // ⛔ THE VERDICT IS THE REFUSAL TEXT, NOT THE EXIT CODE. Measured on this machine:
+  // `git push --dry-run` returns exit 0 even when it fatally fails to authenticate. An
+  // assertion on status would therefore pass whatever happened, which is the same shape of
+  // vacuous check this review round already found elsewhere.
+  //
+  // --dry-run is deliberate: if the distro DID hold push rights, a real push would create a
+  // branch on the repository. The dry run authenticates without being able to mutate.
+  const probe = sh([
+    'rm -rf /tmp/aroma-write-probe',
+    'GIT_TERMINAL_PROMPT=0 git clone -q --depth 1 https://github.com/Louielui/aroma-agent-backend.git /tmp/aroma-write-probe >/dev/null 2>&1',
+    'cd /tmp/aroma-write-probe',
+    'GIT_TERMINAL_PROMPT=0 git push --dry-run origin HEAD:refs/heads/openclaw-write-probe'
+  ].join(' ; '))
+  const out = String(probe.stdout || '') + String(probe.stderr || '')
+  sh('rm -rf /tmp/aroma-write-probe')
+
+  assert.match(out, /denied|authentication|could not read Username|terminal prompts disabled|403/i,
+    `the push must be refused for want of credentials: ${out.slice(0, 300)}`)
+  assert.ok(!/Everything up-to-date|new branch|->\s*openclaw-write-probe/i.test(out),
+    `the push must not have been accepted: ${out.slice(0, 300)}`)
+})
+
+test('LIVE. no persistent OpenClaw source authority exists on disk', opts, () => {
+  // The whole class of "can the agent find and modify the mirror" is removed by there
+  // being no mirror. This records that as an observed fact, so a future reintroduction
+  // has to argue with a failing test.
+  assert.notStrictEqual(sh('[ -e /home/openclaw/.aroma/mirrors ] && echo present || echo absent').stdout.trim(),
+    'present', 'no persistent mirror directory may exist')
 })
 
 test('LIVE. the Windows filesystem is not reachable from the distro', opts, () => {

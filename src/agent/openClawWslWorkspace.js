@@ -35,8 +35,48 @@ const childProcess = require('node:child_process')
 /** Fixed trusted configuration. None of it is reachable from a Work Order, model or executor. */
 const DISTRO = 'OpenClawGateway'
 const SANDBOX_ROOT = '/home/openclaw/.aroma/sandboxes'
-const MIRROR_PATH = '/home/openclaw/.aroma/mirrors/aroma-agent-backend.git'
-const EXPECTED_REMOTE = 'https://github.com/Louielui/aroma-agent-backend.git'
+
+/**
+ * ⛔ THERE IS NO PERSISTENT LOCAL MIRROR, DELIBERATELY.
+ *
+ * The first design kept a bare mirror inside the distro and protected it by not telling
+ * the executor where it was. That is not a permission boundary. The path is fixed, the
+ * mirror and OpenClaw share one Unix identity, and an agent able to look at the filesystem
+ * can simply find it — after which the source of every future clone is inside the blast
+ * radius. Secrecy is not a control.
+ *
+ * So the local source authority is removed rather than defended. Each sandbox is cloned
+ * directly from the fixed approved URL, which also makes freshness structural: a clone IS
+ * current source, so nothing has to remember to refresh anything.
+ *
+ * Measured: the repository is public and `git ls-remote` succeeds from a completely
+ * stripped environment (env -i, HOME=/nonexistent). No credential of any kind is required,
+ * which is why none is provided.
+ */
+const SOURCE_URL = 'https://github.com/Louielui/aroma-agent-backend.git'
+
+/**
+ * The launcher, by absolute path so no PATH is needed in the child environment.
+ */
+const WSL_EXE = 'C:\\Windows\\System32\\wsl.exe'
+
+/**
+ * ⛔ THE CHILD ENVIRONMENT IS EMPTY, AND THAT IS THE POINT.
+ *
+ * spawnSync inherits process.env when `env` is omitted, so the first version handed the
+ * Aroma backend's ENTIRE environment to wsl.exe — every provider key, database credential
+ * and session secret the server happens to hold. The original report claimed no secrets
+ * crossed the boundary on the strength of argv containing none, which was the wrong
+ * evidence for the claim: a secret in the environment never appears in argv.
+ *
+ * WSLENV matters most of all. It is the documented mechanism for translating named
+ * Windows variables into the Linux side, so inheriting it would let the very variables we
+ * are excluding be carried across anyway.
+ *
+ * Measured: wsl.exe runs correctly with a completely empty environment, so nothing is
+ * allowlisted. An empty allowlist needs no maintenance and cannot drift.
+ */
+const CHILD_ENV = Object.freeze({})
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
@@ -57,7 +97,9 @@ const SAFE_GIT = Object.freeze(['-c', 'core.fsmonitor=false'])
 
 /** Default launcher: wsl.exe with a fixed argv, shell:false, bounded output and time. */
 function defaultWslRunner (argv, opts = {}) {
-  const r = childProcess.spawnSync('wsl.exe', argv, {
+  const r = childProcess.spawnSync(WSL_EXE, argv, {
+    // Explicit, and empty. Omitting `env` would inherit the backend's whole environment.
+    env: CHILD_ENV,
     encoding: 'utf8',
     shell: false,
     windowsHide: true,
@@ -80,8 +122,8 @@ function defaultWslRunner (argv, opts = {}) {
 function createOpenClawWslWorkspace (options = {}) {
   const distro = typeof options.distro === 'string' && options.distro ? options.distro : DISTRO
   const sandboxRoot = typeof options.sandboxRoot === 'string' && options.sandboxRoot ? options.sandboxRoot : SANDBOX_ROOT
-  const mirrorPath = typeof options.mirrorPath === 'string' && options.mirrorPath ? options.mirrorPath : MIRROR_PATH
-  const expectedRemote = typeof options.expectedRemote === 'string' && options.expectedRemote ? options.expectedRemote : EXPECTED_REMOTE
+  const sourceUrl = typeof options.sourceUrl === 'string' && options.sourceUrl ? options.sourceUrl : SOURCE_URL
+
   const run = typeof options.wslRunner === 'function' ? options.wslRunner : defaultWslRunner
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS
   const maxOutput = Number.isFinite(options.maxOutput) ? options.maxOutput : DEFAULT_MAX_OUTPUT
@@ -134,21 +176,13 @@ function createOpenClawWslWorkspace (options = {}) {
     if (real === root) throw new Error('refuse: the sandbox root itself is not a sandbox')
     if (!real.startsWith(root + '/')) throw new Error(`refuse: sandbox is outside ${root}`)
 
-    // The mirror is trusted source, never an execution target. Even if it were moved
-    // beneath the sandbox root, handing it to an executor would put the source of every
-    // future clone inside the blast radius.
-    const mirrorReal = wsl(['readlink', '-f', mirrorPath])
-    const mirror = mirrorReal.status === 0 ? String(mirrorReal.stdout || '').trim().replace(/\/+$/, '') : null
-    if (mirror && (real === mirror || real.startsWith(mirror + '/'))) {
-      throw new Error('refuse: the source mirror is not an execution sandbox')
-    }
     return dir
   }
 
   /**
-   * A disposable clone of the trusted mirror, on its own agent branch, with no remotes.
+   * A disposable clone of the approved source, on its own agent branch, with no remotes.
    *
-   * The executor is never told the mirror path. It receives only the disposable clone, and
+   * The executor receives only the disposable clone, and
    * the clone's remotes are stripped so commit/push/PR/merge have nowhere to go — the same
    * shape featureBranchWorkspace established, enforced here in POSIX terms.
    */
@@ -172,7 +206,13 @@ function createOpenClawWslWorkspace (options = {}) {
       if (rm.status !== 0) throw new Error('refuse: stale sandbox not removable')
     }
 
-    const clone = wsl(['git'].concat(SAFE_GIT, ['clone', '--no-hardlinks', '--quiet', mirrorPath, dir]))
+    // ⛔ FRESHNESS IS STRUCTURAL, NOT A PREREQUISITE SOMEONE MUST REMEMBER.
+    // The first version exposed refreshMirror() as a separate method, so current source
+    // depended on a future composition layer calling it first — and AgentRunner only ever
+    // calls prepare(). Cloning the approved URL here makes the clone current by
+    // construction. A network or source failure refuses the sandbox; there is no retry,
+    // because a source we could not reach is not a source we may guess at.
+    const clone = wsl(['git'].concat(SAFE_GIT, ['clone', '--quiet', sourceUrl, dir]))
     if (clone.status !== 0) throw new Error(`refuse: clone failed (${(clone.stderr || '').trim().slice(0, 200) || clone.status})`)
 
     containmentCheck(dir)
@@ -293,7 +333,7 @@ function createOpenClawWslWorkspace (options = {}) {
 
   /**
    * Remove ONLY a proven sandbox. containmentCheck runs first and throws on anything that is
-   * not strictly beneath the sandbox root — the root itself, the mirror, the dev repo, a
+   * not strictly beneath the sandbox root — the root itself, the dev repo, a
    * symlinked escape, or a path shaped to look contained. `rm -rf` earns its danger only
    * after the target has been proven, never on the strength of the string it was handed.
    */
@@ -309,23 +349,6 @@ function createOpenClawWslWorkspace (options = {}) {
     return { ok: true }
   }
 
-  /**
-   * Refresh the trusted mirror. Read-only network, fetch only, and the remote identity is
-   * proven mechanically first — an arbitrary existing remote is not trusted just because it
-   * is already configured. No credential ever travels from the Windows process; if the fetch
-   * needs auth it uses the distro's own local Git state.
-   */
-  function refreshMirror () {
-    const url = ask(['remote', 'get-url', 'origin'], mirrorPath, 'mirror remote').trim()
-    if (url !== expectedRemote) {
-      return { ok: false, reason: `refuse: mirror origin is not the approved repository (${url || 'unset'})` }
-    }
-    const r = git(['fetch', '--prune', 'origin', '+refs/heads/*:refs/heads/*'], mirrorPath)
-    if (r.timedOut) return { ok: false, reason: 'refuse: mirror fetch timed out' }
-    if (r.status !== 0) return { ok: false, reason: (r.stderr || '').trim().slice(0, 200) || 'fetch failed' }
-    return { ok: true }
-  }
-
   return {
     prepare,
     containmentCheck,
@@ -334,11 +357,10 @@ function createOpenClawWslWorkspace (options = {}) {
     diffStat,
     diffPatch,
     cleanup,
-    refreshMirror,
     // Observable so composition can be asserted rather than assumed.
     distro,
     sandboxRoot
   }
 }
 
-module.exports = { createOpenClawWslWorkspace, defaultWslRunner, DISTRO, SANDBOX_ROOT, MIRROR_PATH, EXPECTED_REMOTE }
+module.exports = { createOpenClawWslWorkspace, defaultWslRunner, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, CHILD_ENV }
