@@ -100,10 +100,13 @@ const run = async (h, wo) => { const o = wo || workOrder(); return h.runner.run(
 test('A. prepare() returns baseSha measured from the CLONE head', () => {
   const seen = []
   const git = (args, cwd) => {
-    seen.push({ j: args.join(' '), cwd })
-    if (args[0] === 'remote') return { status: 0, stdout: '', stderr: '' }
-    if (args.join(' ') === 'rev-parse HEAD') return { status: 0, stdout: APPROVED + '\n', stderr: '' }
-    if (args.join(' ').startsWith('rev-parse --abbrev-ref')) return { status: 0, stdout: 'agent/appr_1\n', stderr: '' }
+    seen.push({ j: gitArgs(args).join(' '), cwd })
+    if (gitArgs(args)[0] === 'remote') return { status: 0, stdout: '', stderr: '' }
+    if (gitArgs(args).join(' ').startsWith('rev-parse --show-toplevel')) return { status: 0, stdout: (cwd || '') + String.fromCharCode(10), stderr: '' }
+    if (gitArgs(args).join(' ').startsWith('rev-parse --absolute-git-dir')) return { status: 0, stdout: (cwd || '') + '/.git' + String.fromCharCode(10), stderr: '' }
+    if (gitArgs(args).join(' ').includes('--git-common-dir')) return { status: 0, stdout: (cwd || '') + '/.git' + String.fromCharCode(10), stderr: '' }
+    if (gitArgs(args).join(' ') === 'rev-parse HEAD') return { status: 0, stdout: APPROVED + '\n', stderr: '' }
+    if (gitArgs(args).join(' ').startsWith('rev-parse --abbrev-ref')) return { status: 0, stdout: 'agent/appr_1\n', stderr: '' }
     return { status: 0, stdout: '', stderr: '' }
   }
   const ws = createFeatureBranchWorkspace({ repoRoot: process.cwd(), gitRunner: git })
@@ -122,9 +125,12 @@ test('B. an unreadable or malformed clone HEAD fails prepare() closed', () => {
   const mk = (headOut) => createFeatureBranchWorkspace({
     repoRoot: process.cwd(),
     gitRunner: (args) => {
-      if (args[0] === 'remote') return { status: 0, stdout: '', stderr: '' }
-      if (args.join(' ') === 'rev-parse HEAD') return headOut
-      if (args.join(' ').startsWith('rev-parse --abbrev-ref')) return { status: 0, stdout: 'agent/appr_1\n', stderr: '' }
+      if (gitArgs(args)[0] === 'remote') return { status: 0, stdout: '', stderr: '' }
+    if (gitArgs(args).join(' ').startsWith('rev-parse --show-toplevel')) return { status: 0, stdout: (cwd || '') + String.fromCharCode(10), stderr: '' }
+    if (gitArgs(args).join(' ').startsWith('rev-parse --absolute-git-dir')) return { status: 0, stdout: (cwd || '') + '/.git' + String.fromCharCode(10), stderr: '' }
+    if (gitArgs(args).join(' ').includes('--git-common-dir')) return { status: 0, stdout: (cwd || '') + '/.git' + String.fromCharCode(10), stderr: '' }
+      if (gitArgs(args).join(' ') === 'rev-parse HEAD') return headOut
+      if (gitArgs(args).join(' ').startsWith('rev-parse --abbrev-ref')) return { status: 0, stdout: 'agent/appr_1\n', stderr: '' }
       return { status: 0, stdout: '', stderr: '' }
     }
   })
@@ -323,6 +329,13 @@ test('R. no endSha is introduced', async () => {
 const { buildAgentResultView } = require('../agent/agentResultView')
 const { createAgentBridgeWorker } = require('../agent/agentBridgeWorker')
 const { createOwnerApprovalStore } = require('../agent/ownerApprovalStore')
+
+/** Skip leading `-c key=value` global overrides, exactly as git itself does. */
+function gitArgs (args) {
+  let i = 0
+  while (args[i] === '-c') i += 2
+  return args.slice(i)
+}
 
 const viewOf = (result) => buildAgentResultView({
   result,

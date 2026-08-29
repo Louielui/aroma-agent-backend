@@ -60,6 +60,41 @@ const WORKERS = [
     id: 'operator', role: 'Computer Operator', provider: 'Windows Agent', engine: 'external', connected: false,
     get responsibilities () { return ['Git', 'VS Code', t('resp.terminal'), t('resp.deploy'), t('resp.localCommands'), t('resp.fileOps')] },
     capabilities: ['git', 'terminal', 'deploy', 'file_ops', 'local_commands', 'execution', 'desktop', 'ssh']
+  },
+  {
+    // ── OpenClaw (Step C1) — IDENTITY ONLY, DELIBERATELY NOT CONNECTED ────────
+    //
+    // connected:false is the whole point at C1. Step A made an unroutable capability fail
+    // closed, and the dispatcher only ever executes a worker that is connected AND llm-driven,
+    // so this row can be routed TO without anything being able to run: work addressed here
+    // waits honestly instead of being silently promoted to whoever could act.
+    //
+    // The capability names are prefixed, and that is a decision rather than a habit. B1 made
+    // capability ownership globally unique with no tie-break, and OpenClaw's natural names
+    // are all taken: 'review' and 'research' and 'analysis' by the Architect, 'code_review'
+    // and 'quality' by QA, 'research_web' and 'web' by Automation, 'test' by the Engineer,
+    // 'execution' and 'terminal' by the Operator. Reusing one would be a duplicate the
+    // registry now refuses to start with; TRANSFERRING one would silently change where
+    // existing work routes. Narrow new names collide with nothing and move nothing.
+    id: 'openclaw', role: 'Controlled Research / Verification Executor', provider: 'OpenClaw',
+    engine: 'external', connected: false,
+    // V1 scope only. Every entry here is a READ: nothing that writes, ships, or touches
+    // production appears, because the worker is not permitted to do those things and a
+    // responsibility list that overstates is a promise nobody checked.
+    get responsibilities () {
+      return [
+        'Repository audit (read-only)',
+        'Code review',
+        'Tests inside an isolated clone',
+        'Log inspection',
+        'Web research',
+        'Document analysis'
+      ]
+    },
+    capabilities: [
+      'openclaw_repo_audit', 'openclaw_code_review', 'openclaw_test_run',
+      'openclaw_log_inspection', 'openclaw_web_research', 'openclaw_document_analysis'
+    ]
   }
 ]
 
