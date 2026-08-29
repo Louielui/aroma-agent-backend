@@ -17,7 +17,7 @@ process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-c2b2b1
 const test = require('node:test')
 const assert = require('node:assert')
 
-const { createOpenClawQuarantine, fileStore, STATES } = require('../agent/openClawQuarantine')
+const { createOpenClawQuarantine, fileStore, STATES, UNACCOUNTED } = require('../agent/openClawQuarantine')
 
 /** An isolated in-memory ledger. No unit test touches a real store. */
 function memStore (seed = {}) {
@@ -441,4 +441,95 @@ test('PE6. a preparation failure is recorded honestly and releases nothing it sh
   // but the failed approvalId itself is never reused
   assert.strictEqual(q.canStart('appr_pf').ok, false)
   assert.match(q.canStart('appr_pf').reason, /approvals are never reused/)
+})
+
+/* ══════════════ S1..S6 — SUCCEEDED holds the lock until the executor is OBSERVED ══════════════ */
+
+/**
+ * This design separates RESULT ACCEPTED (SUCCEEDED) from EXECUTOR OBSERVED TERMINAL, because
+ * C2-B2-A proved a returned result does not prove the executor stopped. The workspace already
+ * honoured that — cleanup is refused while SUCCEEDED — but UNACCOUNTED omitted SUCCEEDED, so
+ * canStart() would authorise a SECOND OpenClaw execution in the window between markSucceeded()
+ * and observeTerminal(). Two halves of one invariant disagreeing, with the permissive half
+ * winning at exactly the wrong moment.
+ */
+
+test('S1. ⛔ a different approval is blocked while the first is merely SUCCEEDED', () => {
+  const { q } = mk()
+  q.begin('appr_1'); q.markRunning('appr_1'); q.markSucceeded('appr_1')
+
+  const gate = q.canStart('appr_2')
+  assert.strictEqual(gate.ok, false, 'a returned result is not proof the executor stopped')
+  assert.match(gate.reason, /locked out while approval 'appr_1' is SUCCEEDED/)
+  assert.deepStrictEqual(gate.blockedBy, [{ approvalId: 'appr_1', state: STATES.SUCCEEDED }])
+  assert.throws(() => q.begin('appr_2'), /locked out/)
+})
+
+test('S2. ⛔ the SUCCEEDED lock survives a restart', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-q-succ-'))
+  const file = path.join(dir, 'openclaw-quarantine.json')
+
+  const first = createOpenClawQuarantine({ store: fileStore({ file }) })
+  first.begin('appr_s'); first.markRunning('appr_s'); first.markSucceeded('appr_s')
+
+  // a completely fresh instance, as after a backend restart
+  const second = createOpenClawQuarantine({ store: fileStore({ file }) })
+  assert.strictEqual(second.state('appr_s'), STATES.SUCCEEDED)
+  assert.strictEqual(second.canStart('appr_other').ok, false, 'the lock is still held after restart')
+  assert.deepStrictEqual(second.unaccounted().map((r) => r.approvalId), ['appr_s'])
+
+  fs.rmSync(dir, { recursive: true, force: true })
+})
+
+test('S3. SUCCEEDED holds BOTH the cleanup gate and the execution lock', () => {
+  // The two must agree. Previously cleanup refused while the lock was open.
+  const { q } = mk()
+  q.begin('appr_b'); q.markRunning('appr_b'); q.markSucceeded('appr_b')
+
+  assert.strictEqual(q.mayCleanup('appr_b').ok, false, 'cleanup refused')
+  assert.strictEqual(q.canStart('appr_next').ok, false, 'and the lock is held too')
+})
+
+test('S4. observing the terminal status releases the lock', () => {
+  const { q } = mk()
+  q.begin('appr_c'); q.markRunning('appr_c'); q.markSucceeded('appr_c')
+  assert.strictEqual(q.canStart('appr_next').ok, false)
+
+  q.observeTerminal('appr_c', 'succeeded')
+  assert.strictEqual(q.canStart('appr_next').ok, true, 'observation is what releases it')
+})
+
+test('S5. TERMINAL_OBSERVED releases the lock WITHOUT requiring cleanup first', () => {
+  // Cleanup is about disk; the lock is about a process. Tying the lock to cleanup would let
+  // a failed removal keep OpenClaw shut down for reasons that have nothing to do with safety.
+  const { q } = mk()
+  q.begin('appr_d'); q.markRunning('appr_d'); q.markClientTimeout('appr_d')
+  q.quarantine('appr_d'); q.observeTerminal('appr_d', 'lost')
+
+  assert.strictEqual(q.state('appr_d'), STATES.TERMINAL_OBSERVED, 'not yet CLEANED')
+  assert.strictEqual(q.canStart('appr_next').ok, true, 'and the lock is already released')
+  assert.deepStrictEqual(q.unaccounted(), [])
+})
+
+test('S6. the no-executor states never hold the lock, because no executor existed', () => {
+  for (const drive of ['abortPreExecution', 'failPreparation']) {
+    const { q } = mk()
+    q.begin('appr_n')
+    q[drive]('appr_n', { reason: 'synthetic' })
+    assert.strictEqual(q.canStart('appr_other').ok, true, `${drive} must not hold the lock`)
+    assert.deepStrictEqual(q.unaccounted(), [])
+    // and the record is still truthful about what happened
+    assert.strictEqual('taskStatus' in q.record('appr_n'), false)
+  }
+})
+
+test('S7. every state either holds the lock or does not, deliberately', () => {
+  // A table, so a future state cannot be added without someone deciding which side it is on.
+  assert.deepStrictEqual(UNACCOUNTED.slice().sort(), [
+    STATES.CLIENT_TIMEOUT, STATES.QUARANTINED, STATES.RUNNING, STATES.SUCCEEDED
+  ].sort())
+  for (const free of [STATES.PREPARED, STATES.TERMINAL_OBSERVED, STATES.PRE_EXECUTION_ABORTED,
+    STATES.PREPARATION_FAILED, STATES.CLEANED]) {
+    assert.ok(!UNACCOUNTED.includes(free), `${free} must not hold the execution lock`)
+  }
 })

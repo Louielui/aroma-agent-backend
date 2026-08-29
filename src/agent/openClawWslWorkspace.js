@@ -436,6 +436,23 @@ function createOpenClawWslWorkspace (options = {}) {
   /**
    * device:inode for one path, measured inside the distro with a fixed argv.
    * Failure throws: an identity we cannot read is not an identity that matched.
+   *
+   * ⛔ WHAT THIS PRIMITIVE DOES *NOT* CATCH — MEASURED, NOT ASSUMED.
+   * On the distro's real ext4 root:
+   *
+   *   move aside + create new   2096:118042 -> 2096:118060   DETECTED
+   *   delete + recreate         inode MAY be reused    NOT RELIABLY DETECTED
+   *
+   * ext4 MAY hand a freed inode straight back — observed both reused and not, depending on
+   * allocator state — so a same-path replacement that first DELETES the original is not
+   * reliably visible to this check. What it DOES defeat is the substitution that keeps the
+   * original alive for the attacker to use — the C2-B1 attack, where the genuine sandbox is
+   * moved aside and a convincing clone is dropped at the path.
+   *
+   * Do not treat device:inode as a general same-path replacement detector during activation
+   * design. The control that actually bounds the blast radius is CONTAINMENT: every path
+   * this provider removes is derived from the fixed sandbox root, exactly one level down.
+   * Asserted both ways in openClawEnvelope.live.test.js (PI3).
    */
   function objectIdentity (target) {
     const r = wsl(['stat', '-c', '%d:%i', '--', target])

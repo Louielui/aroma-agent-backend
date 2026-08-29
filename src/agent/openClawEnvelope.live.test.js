@@ -213,7 +213,7 @@ test('B3b. LIVE. the WALL-CLOCK bound is NOT claimed, because it is not establis
 
 /* ══════════════ PI3 — the replacement hazard, and its REAL limit ══════════════ */
 
-test('PI3. LIVE. object identity defeats move-aside substitution — and inode REUSE is its limit', opts, () => {
+test('PI3. LIVE. object identity defeats move-aside substitution — delete+recreate is NOT reliably detected', opts, () => {
   // The unit tests drive a scripted device:inode. This measures the premise on real ext4,
   // and the measurement is not what the design would have preferred:
   //
@@ -246,12 +246,19 @@ test('PI3. LIVE. object identity defeats move-aside substitution — and inode R
     assert.strictEqual(id(BASE + '_aside'), original, 'the original kept its identity when moved')
 
     // ── the honest limit: freeing the inode lets the kernel hand it straight back ──
+    //
+    // ⛔ THIS OUTCOME IS NONDETERMINISTIC, AND THAT IS PRECISELY THE PROBLEM.
+    // Measured in isolation: 2096:118042 -> 2096:118042 (reused). Measured again under the
+    // full suite, with other allocations in between: a DIFFERENT inode. So reuse is
+    // POSSIBLE, not guaranteed — which means delete-then-recreate is NOT RELIABLY
+    // detectable. Asserting either outcome here would be asserting allocator luck, so the
+    // observation is recorded and the SAFETY property is asserted instead.
     sh(`rm -rf ${BASE} ${BASE}_aside && mkdir -p ${BASE}`)
     const before = id(BASE)
     sh(`rm -rf ${BASE} && mkdir -p ${BASE}`)
     const after = id(BASE)
-    assert.strictEqual(after, before,
-      'MEASURED: delete-then-recreate reuses the inode, so identity alone cannot see it')
+    assert.match(after, /^\d+:\d+$/)
+    // no assertion on equality: both results have been observed on this filesystem
 
     // ── and the control that actually bounds this: containment ──
     const q = createOpenClawQuarantine({ store: memLedgerStore() })

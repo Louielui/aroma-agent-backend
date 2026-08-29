@@ -76,8 +76,23 @@ const STATES = Object.freeze({
 /**
  * States in which an OpenClaw process may still be alive and unaccounted for.
  * These are what hold the global execution lock.
+ *
+ * ⛔ SUCCEEDED BELONGS HERE, AND ITS ABSENCE WAS A CONTRADICTION.
+ *
+ * This design deliberately separates RESULT ACCEPTED (`SUCCEEDED`) from EXECUTOR OBSERVED
+ * TERMINAL (`TERMINAL_OBSERVED`), because C2-B2-A proved a returned result does not prove
+ * the executor stopped. The workspace honours that: cleanup is refused while SUCCEEDED.
+ *
+ * But the lock did not. With SUCCEEDED omitted here, the window between markSucceeded() and
+ * observeTerminal() let canStart() authorise a SECOND OpenClaw execution while the first
+ * executor was still unproven — so the two halves of the same invariant disagreed, and the
+ * more permissive half would have won at exactly the wrong moment.
+ *
+ * The lock now releases only on TERMINAL_OBSERVED, or on a genuine no-executor state.
+ * SUCCEEDED and TERMINAL_OBSERVED remain distinct: collapsing them would discard the very
+ * distinction that makes this correct.
  */
-const UNACCOUNTED = Object.freeze([RUNNING, CLIENT_TIMEOUT, QUARANTINED])
+const UNACCOUNTED = Object.freeze([RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED])
 
 /** The terminal task statuses OpenClaw itself reports. Anything else is not an observation. */
 const TERMINAL_TASK_STATUSES = Object.freeze(['succeeded', 'failed', 'timed_out', 'cancelled', 'lost'])
