@@ -87,13 +87,28 @@ const WORKERS = [
         'Code review',
         'Tests inside an isolated clone',
         'Log inspection',
-        'Web research',
         'Document analysis'
       ]
     },
+    // ⛔ openclaw_web_research IS WITHDRAWN, NOT MERELY UNCONFIGURED.
+    //
+    // The initial lane is LOCAL READ ONLY. A non-cancellable executor holding repository
+    // read access AND outbound web tools is an exfiltration channel we could not interrupt:
+    // C2-B2-A proved `tasks cancel` reports success without stopping a turn, and that
+    // killing the client does not stop it either.
+    //
+    // Withdrawing the capability is the NARROWEST fail-closed mechanism available, and it
+    // reuses machinery already proven in Step A rather than adding a new check. An unmatched
+    // capability resolves to null and the dispatcher refuses with
+    // `no_employee_declares_capability`, BEFORE any workspace is prepared and before any
+    // executor or model is reached. The alternative — keeping the capability and denying the
+    // web tools underneath it — would accept the request and then quietly do the work
+    // without the tools it named, which is precisely the silent degradation to avoid.
+    //
+    // It returns at the activation gate that reviews web research on its own merits.
     capabilities: [
       'openclaw_repo_audit', 'openclaw_code_review', 'openclaw_test_run',
-      'openclaw_log_inspection', 'openclaw_web_research', 'openclaw_document_analysis'
+      'openclaw_log_inspection', 'openclaw_document_analysis'
     ]
   }
 ]

@@ -36,6 +36,9 @@ const childProcess = require('node:child_process')
 const DISTRO = 'OpenClawGateway'
 const SANDBOX_ROOT = '/home/openclaw/.aroma/sandboxes'
 
+/** The clone lives in this fixed child of the envelope. See envelopeContainmentCheck. */
+const REPO_CHILD = 'repo'
+
 /**
  * ⛔ THERE IS NO PERSISTENT LOCAL MIRROR, DELIBERATELY.
  *
@@ -176,7 +179,12 @@ function createOpenClawWslWorkspace (options = {}) {
    * itself is refused, and canonically, so a symlink cannot point out of the sandbox while
    * the literal string still looks contained.
    */
-  function containmentCheck (dir) {
+  /**
+   * Canonicalise a path inside the distro and require it strictly beneath the sandbox root.
+   * Returns the REAL path, so callers compare canonical forms rather than the literal string
+   * a symlink could disguise.
+   */
+  function realUnderRoot (dir) {
     if (typeof dir !== 'string' || !SAFE_POSIX.test(dir)) throw new Error('refuse: unsafe sandbox path')
 
     const rootReal = wsl(['readlink', '-f', sandboxRoot])
@@ -190,6 +198,41 @@ function createOpenClawWslWorkspace (options = {}) {
     if (real === root) throw new Error('refuse: the sandbox root itself is not a sandbox')
     if (!real.startsWith(root + '/')) throw new Error(`refuse: sandbox is outside ${root}`)
 
+    return { root, real }
+  }
+
+  /**
+   * ⛔ THE ENVELOPE IS EXACTLY ONE LEVEL DOWN, AND THE REPO IS EXACTLY ITS `repo` CHILD.
+   *
+   * OpenClaw writes its own bootstrap layer (AGENTS.md, SOUL.md, TOOLS.md, BOOTSTRAP.md, a
+   * workspace-state file, and its own `git init`) at the root of whatever workspace it is
+   * given. Handing it the clone directly would therefore plant untracked files inside the
+   * repository being audited, and every run would fail as a read-only violation caused by
+   * OpenClaw rather than by the model. So the workspace is the ENVELOPE and the clone is a
+   * child of it.
+   *
+   * "Somewhere underneath the root" is not good enough for either. A depth check that only
+   * says "beneath" would accept `<root>/a/b/c/repo`, letting a caller nominate an arbitrary
+   * descendant as a sandbox. Both shapes are pinned exactly.
+   */
+  function envelopeContainmentCheck (envDir) {
+    const { root, real } = realUnderRoot(envDir)
+    const rest = real.slice(root.length + 1)
+    if (rest === '' || rest.includes('/')) {
+      throw new Error(`refuse: envelope must be exactly one level under ${root} (got '${rest}')`)
+    }
+    if (!SAFE_ID.test(rest)) throw new Error('refuse: envelope name is not a safe approvalId')
+    return envDir
+  }
+
+  function containmentCheck (dir) {
+    const { root, real } = realUnderRoot(dir)
+    const rest = real.slice(root.length + 1)
+    const parts = rest.split('/')
+    if (parts.length !== 2 || parts[1] !== REPO_CHILD) {
+      throw new Error(`refuse: repo must be exactly <envelope>/${REPO_CHILD} (got '${rest}')`)
+    }
+    if (!SAFE_ID.test(parts[0])) throw new Error('refuse: envelope name is not a safe approvalId')
     return dir
   }
 
@@ -205,20 +248,27 @@ function createOpenClawWslWorkspace (options = {}) {
       throw new Error('prepare requires a safe approvalId ([A-Za-z0-9_-]{1,64})')
     }
     const branch = `agent/${approvalId}`
-    const dir = `${sandboxRoot}/${approvalId}`
-    if (!SAFE_POSIX.test(dir)) throw new Error('refuse: unsafe sandbox path')
+    // Both paths are DERIVED from the fixed root and the approvalId. Neither is a parameter,
+    // so no caller can nominate where the envelope or the repo lives.
+    const envelope = `${sandboxRoot}/${approvalId}`
+    const dir = `${envelope}/${REPO_CHILD}`
+    if (!SAFE_POSIX.test(envelope) || !SAFE_POSIX.test(dir)) throw new Error('refuse: unsafe sandbox path')
 
     const mk = wsl(['mkdir', '-p', sandboxRoot])
     if (mk.status !== 0) throw new Error('refuse: sandbox root not creatable')
 
-    // A leftover directory from a previous attempt is removed only after it has been proven
-    // to be a sandbox — never on the strength of its name.
-    const exists = wsl(['test', '-e', dir])
+    // A leftover ENVELOPE from a previous attempt is removed whole, and only after it has
+    // been proven to be an envelope — never on the strength of its name.
+    const exists = wsl(['test', '-e', envelope])
     if (exists.status === 0) {
-      containmentCheck(dir)
-      const rm = wsl(['rm', '-rf', '--', dir])
-      if (rm.status !== 0) throw new Error('refuse: stale sandbox not removable')
+      envelopeContainmentCheck(envelope)
+      const rm = wsl(['rm', '-rf', '--', envelope])
+      if (rm.status !== 0) throw new Error('refuse: stale envelope not removable')
     }
+
+    const mkEnv = wsl(['mkdir', '-p', envelope])
+    if (mkEnv.status !== 0) throw new Error('refuse: envelope not creatable')
+    envelopeContainmentCheck(envelope)
 
     // ⛔ FRESHNESS IS STRUCTURAL, NOT A PREREQUISITE SOMEONE MUST REMEMBER.
     // The first version exposed refreshMirror() as a separate method, so current source
@@ -257,11 +307,17 @@ function createOpenClawWslWorkspace (options = {}) {
     // worktree, its own local .git. Every path-based check would pass while the verifier
     // inspected an object prepare() never created. device:inode is what distinguishes the
     // directory we built from a convincing replacement standing in its place.
+    //
+    // The ENVELOPE is pinned too, because it is what cleanup ultimately removes. Recovering
+    // it by string-slicing the repo path at cleanup time would trust the caller's path
+    // exactly where trusting it is most expensive.
+    const envelopeObject = objectIdentity(envelope)
     const dirObject = objectIdentity(dir)
     const gitObject = objectIdentity(dir + '/.git')
 
     PREPARED.set(dir, Object.freeze({
-      root: canon(dir), topLevel, gitDir, commonDir, baseSha, branch, dirObject, gitObject
+      root: canon(dir), envelope: canon(envelope), topLevel, gitDir, commonDir,
+      baseSha, branch, envelopeObject, dirObject, gitObject
     }))
 
     return { dir, branch, baseSha }
@@ -316,6 +372,12 @@ function createOpenClawWslWorkspace (options = {}) {
     // Asking git about a replacement would produce a perfectly clean, perfectly false
     // report. The baseline is never refreshed from the current state — refreshing it would
     // simply adopt whatever is there now, which is the attack.
+    // The envelope is checked first: swapping it relocates everything underneath, so a repo
+    // that still looks right could be sitting inside a directory we never built.
+    const envNow = objectIdentity(baseline.envelope)
+    if (envNow !== baseline.envelopeObject) {
+      throw new Error(`refuse: the envelope is not the prepared object (${baseline.envelopeObject} -> ${envNow})`)
+    }
     const dirNow = objectIdentity(dir)
     if (dirNow !== baseline.dirObject) {
       throw new Error(`refuse: the sandbox directory is not the prepared object (${baseline.dirObject} -> ${dirNow})`)
@@ -389,21 +451,60 @@ function createOpenClawWslWorkspace (options = {}) {
    * symlinked escape, or a path shaped to look contained. `rm -rf` earns its danger only
    * after the target has been proven, never on the strength of the string it was handed.
    */
-  function cleanup (dir) {
+  /**
+   * Remove the WHOLE envelope — but only for a sandbox we prepared, and only once the caller
+   * states the executor is terminal.
+   *
+   * ⛔ TERMINALITY IS A PARAMETER, NOT AN ASSUMPTION.
+   * C2-B2-A proved `openclaw tasks cancel` reports success while the turn keeps running, and
+   * that killing the client does not stop it either. So "the client returned" says nothing
+   * about whether anything is still writing here. Deleting an envelope out from under a live
+   * executor is how a confusing failure becomes an unexplainable one. The caller must assert
+   * terminality explicitly; there is no default.
+   *
+   * ⛔ THE ENVELOPE COMES FROM THE PREPARED RECORD, NOT FROM THE ARGUMENT.
+   * Deriving it by trimming '/repo' off the caller's string would reintroduce exactly the
+   * path-trust this provider exists to remove.
+   */
+  function cleanup (dir, opts = {}) {
+    if (opts.terminal !== true) {
+      return { ok: false, reason: 'refuse: cleanup requires an explicit terminal executor state' }
+    }
+    const baseline = PREPARED.get(dir)
+    if (!baseline) return { ok: false, reason: 'refuse: no prepared sandbox baseline for this workspace' }
+
+    const envelope = baseline.envelope
     try {
       containmentCheck(dir)
+      envelopeContainmentCheck(envelope)
     } catch (e) {
       return { ok: false, reason: (e && e.message) || 'containment refused' }
     }
-    const rm = wsl(['rm', '-rf', '--', dir])
+
+    // Best-effort identity re-check. A REPLACED envelope must never be deleted: whatever is
+    // standing there now is not the directory we created, and removing it would destroy
+    // something we cannot account for. An envelope that has already vanished is not an
+    // error — cleanup is idempotent — so only a genuine mismatch refuses.
+    try {
+      const envNow = objectIdentity(envelope)
+      if (envNow !== baseline.envelopeObject) {
+        return { ok: false, reason: `refuse: the envelope is not the prepared object (${baseline.envelopeObject} -> ${envNow})` }
+      }
+    } catch (e) {
+      const gone = wsl(['test', '-e', envelope])
+      if (gone.status === 0) return { ok: false, reason: (e && e.message) || 'envelope identity unreadable' }
+    }
+
+    const rm = wsl(['rm', '-rf', '--', envelope])
     PREPARED.delete(dir)
     if (rm.status !== 0) return { ok: false, reason: (rm.stderr || '').trim().slice(0, 200) || 'remove failed' }
-    return { ok: true }
+    return { ok: true, removed: envelope }
   }
 
   return {
     prepare,
     containmentCheck,
+    envelopeContainmentCheck,
     repoChanges,
     sandboxState,
     diffStat,
@@ -415,4 +516,4 @@ function createOpenClawWslWorkspace (options = {}) {
   }
 }
 
-module.exports = { createOpenClawWslWorkspace, defaultWslRunner, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, CHILD_ENV }
+module.exports = { createOpenClawWslWorkspace, defaultWslRunner, DISTRO, SANDBOX_ROOT, REPO_CHILD, SOURCE_URL, WSL_EXE, CHILD_ENV }

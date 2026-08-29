@@ -36,7 +36,8 @@ const {
 } = require('../agent/openClawWslWorkspace')
 
 const APPROVAL = 'appr_live'
-const DIR = SANDBOX_ROOT + '/' + APPROVAL
+const ENV_DIR = SANDBOX_ROOT + '/' + APPROVAL
+const DIR = ENV_DIR + '/repo'
 /** Where the replacement attack parks the genuine sandbox while the impostor takes its place. */
 const ASIDE = SANDBOX_ROOT + '/appr_live_aside'
 
@@ -72,7 +73,7 @@ const objectId = (target) => sh(`stat -c %d:%i -- ${target} 2>/dev/null || echo 
 
 /** Remove every disposable directory this file creates, whatever happened. */
 function scrub () {
-  sh(`rm -rf ${DIR} ${ASIDE} /tmp/aroma-write-probe`)
+  sh(`rm -rf ${ENV_DIR} ${ASIDE} /tmp/aroma-write-probe`)
 }
 
 /* ══════════════ T2 — the fixture launcher leaks nothing either ══════════════ */
@@ -206,8 +207,8 @@ test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', 
     sh(`rm -f ${SANDBOX_ROOT}/escape`)
 
     // ── cleanup removes the sandbox and nothing else ──
-    assert.strictEqual(ws.cleanup(SANDBOX_ROOT).ok, false, 'the root is never removable')
-    assert.deepStrictEqual(ws.cleanup(D), { ok: true })
+    assert.strictEqual(ws.cleanup(SANDBOX_ROOT, { terminal: true }).ok, false, 'the root is never removable')
+    assert.deepStrictEqual(ws.cleanup(D, { terminal: true }), { ok: true, removed: ENV_DIR })
     assert.notStrictEqual(sh(`[ -e ${D} ] && echo present || echo absent`).stdout.trim(), 'present', 'the sandbox is gone')
     assert.strictEqual(sh(`[ -d ${SANDBOX_ROOT} ] && echo yes`).stdout.trim(), 'yes', 'the root survived')
   } finally {

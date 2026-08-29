@@ -31,7 +31,8 @@ const { createOpenClawWslWorkspace, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, C
 const SHA = '4511f7deeb279b189642b3b812b56250ce518d98'
 const OTHER_SHA = 'e034ccc5cc89409375f538ce2a6b7a30f2d14700'
 const ROOT = SANDBOX_ROOT
-const DIR = ROOT + '/appr_x'
+const ENV_DIR = ROOT + '/appr_x'
+const DIR = ENV_DIR + '/repo'
 
 /** Strip the fixed `-d <distro> --` prefix so a fake can read the command it was given. */
 const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
@@ -322,21 +323,46 @@ test('W11. a git failure or a timeout fails closed — it never reports "clean"'
 
 /* ══════════════ W12 — cleanup cannot escape ══════════════ */
 
-test('W12. ⛔ cleanup removes only a proven sandbox', () => {
+test('W12. ⛔ cleanup removes only a proven sandbox, and only the whole ENVELOPE', () => {
   const ws = mk({})
   ws.prepare('appr_x')
-  for (const bad of [ROOT, '/', '/home/openclaw', '/home/openclaw/dev/aroma-agent-backend']) {
-    const r = ws.cleanup(bad)
+  for (const bad of [ROOT, '/', '/home/openclaw', '/home/openclaw/dev/aroma-agent-backend', ENV_DIR]) {
+    const r = ws.cleanup(bad, { terminal: true })
     assert.strictEqual(r.ok, false, `${bad} must not be removable`)
   }
+
   const runner = fakeWsl({})
   const w2 = createOpenClawWslWorkspace({ wslRunner: runner })
   w2.prepare('appr_x')
-  assert.deepStrictEqual(w2.cleanup(DIR), { ok: true })
-  const rm = runner.calls.find((c) => c.startsWith('rm -rf'))
-  assert.ok(rm.includes('-- ' + DIR), `rm must be bounded to the sandbox: ${rm}`)
+  const ok = w2.cleanup(DIR, { terminal: true })
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok))
+  assert.strictEqual(ok.removed, ENV_DIR, 'the ENVELOPE is removed, not just the repo')
+
+  const rm = runner.calls.filter((c) => c.startsWith('rm -rf')).pop()
+  assert.ok(rm.includes('-- ' + ENV_DIR), `rm must be bounded to the envelope: ${rm}`)
+  assert.ok(!rm.includes(DIR), `rm must NOT target the repo child alone: ${rm}`)
+
   // and the baseline is forgotten, so a later verification cannot pass on a dead sandbox
   assert.throws(() => w2.sandboxState(DIR, SHA), /no prepared sandbox baseline/)
+})
+
+test('W12b. ⛔ cleanup REFUSES unless the caller states the executor is terminal', () => {
+  // C2-B2-A measured that `tasks cancel` reports success while the turn keeps running, and
+  // that killing the client does not stop it either. So a returning client proves nothing
+  // about whether something is still writing in here. There is deliberately no default.
+  const runner = fakeWsl({})
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  ws.prepare('appr_x')
+
+  for (const opts of [undefined, {}, { terminal: false }, { terminal: 'yes' }, { terminal: 1 }]) {
+    const r = ws.cleanup(DIR, opts)
+    assert.strictEqual(r.ok, false, `terminal=${JSON.stringify(opts)} must refuse`)
+    assert.match(r.reason, /explicit terminal executor state/)
+  }
+  assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')), 'nothing may be removed while non-terminal')
+
+  // the sandbox is still usable afterwards — a refused cleanup is not a broken sandbox
+  assert.ok(ws.sandboxState(DIR, SHA))
 })
 
 /* ══════════════ mirror identity and hardening ══════════════ */
