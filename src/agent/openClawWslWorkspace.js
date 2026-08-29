@@ -119,10 +119,24 @@ function defaultWslRunner (argv, opts = {}) {
  * @param {object} options fixed trusted configuration; `wslRunner` is injected by tests so
  *   no unit test needs a real distro, and the real-distro proof injects nothing.
  */
+/**
+ * ⛔ THE TRUSTED IDENTITY IS NOT A PARAMETER.
+ *
+ * The first version accepted `distro`, `sandboxRoot` and `sourceUrl` as options while
+ * claiming they were fixed configuration unreachable from callers — and the test that
+ * 'proved' it only asserted the exported constants, which says nothing about what the
+ * constructor accepts. Any composition site could have pointed the whole provider at
+ * another distro or another repository.
+ *
+ * Only execution MECHANICS are injectable now: how a command is run, how long it may take,
+ * how much it may print. What is run, where, and from which source are closed.
+ *
+ * @param {{ wslRunner?: function, timeoutMs?: number, maxOutput?: number }} options
+ */
 function createOpenClawWslWorkspace (options = {}) {
-  const distro = typeof options.distro === 'string' && options.distro ? options.distro : DISTRO
-  const sandboxRoot = typeof options.sandboxRoot === 'string' && options.sandboxRoot ? options.sandboxRoot : SANDBOX_ROOT
-  const sourceUrl = typeof options.sourceUrl === 'string' && options.sourceUrl ? options.sourceUrl : SOURCE_URL
+  const distro = DISTRO
+  const sandboxRoot = SANDBOX_ROOT
+  const sourceUrl = SOURCE_URL
 
   const run = typeof options.wslRunner === 'function' ? options.wslRunner : defaultWslRunner
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS
@@ -236,9 +250,34 @@ function createOpenClawWslWorkspace (options = {}) {
     const topLevel = canon(ask(['rev-parse', '--show-toplevel'], dir, 'top-level'))
     const gitDir = canon(ask(['rev-parse', '--absolute-git-dir'], dir, 'git-dir'))
     const commonDir = canon(ask(['rev-parse', '--path-format=absolute', '--git-common-dir'], dir, 'common-dir'))
-    PREPARED.set(dir, Object.freeze({ root: canon(dir), topLevel, gitDir, commonDir, baseSha, branch }))
+
+    // ⛔ WHICH OBJECT, NOT MERELY WHICH PATH.
+    // A path is a name, and a same-user executor can rename this sandbox away and drop a
+    // pristine clone at the original path: same HEAD, same agent branch, no remotes, clean
+    // worktree, its own local .git. Every path-based check would pass while the verifier
+    // inspected an object prepare() never created. device:inode is what distinguishes the
+    // directory we built from a convincing replacement standing in its place.
+    const dirObject = objectIdentity(dir)
+    const gitObject = objectIdentity(dir + '/.git')
+
+    PREPARED.set(dir, Object.freeze({
+      root: canon(dir), topLevel, gitDir, commonDir, baseSha, branch, dirObject, gitObject
+    }))
 
     return { dir, branch, baseSha }
+  }
+
+  /**
+   * device:inode for one path, measured inside the distro with a fixed argv.
+   * Failure throws: an identity we cannot read is not an identity that matched.
+   */
+  function objectIdentity (target) {
+    const r = wsl(['stat', '-c', '%d:%i', '--', target])
+    if (!r || r.timedOut) throw new Error('refuse: filesystem identity timed out')
+    if (r.status !== 0) throw new Error(`refuse: filesystem identity unreadable for ${target}`)
+    const id = String(r.stdout || '').trim()
+    if (!/^\d+:\d+$/.test(id)) throw new Error(`refuse: malformed filesystem identity for ${target}`)
+    return id
   }
 
   /** POSIX paths are case-sensitive and already canonical from git; only trailing slashes vary. */
@@ -272,6 +311,19 @@ function createOpenClawWslWorkspace (options = {}) {
   function sandboxState (dir, expectedSha) {
     const baseline = PREPARED.get(dir)
     if (!baseline) throw new Error('refuse: no prepared sandbox baseline for this workspace')
+
+    // ⛔ FIRST, AND BEFORE ANY GIT EVIDENCE IS TRUSTED: is this still the same object?
+    // Asking git about a replacement would produce a perfectly clean, perfectly false
+    // report. The baseline is never refreshed from the current state — refreshing it would
+    // simply adopt whatever is there now, which is the attack.
+    const dirNow = objectIdentity(dir)
+    if (dirNow !== baseline.dirObject) {
+      throw new Error(`refuse: the sandbox directory is not the prepared object (${baseline.dirObject} -> ${dirNow})`)
+    }
+    const gitNow = objectIdentity(dir + '/.git')
+    if (gitNow !== baseline.gitObject) {
+      throw new Error(`refuse: the sandbox .git is not the prepared object (${baseline.gitObject} -> ${gitNow})`)
+    }
 
     // .git must still be this clone's own real directory: a gitfile or a symlink is the
     // supported way to point Git at another repository entirely.

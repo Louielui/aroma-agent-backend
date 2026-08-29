@@ -30,7 +30,7 @@ const { createOpenClawWslWorkspace, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, C
 
 const SHA = '4511f7deeb279b189642b3b812b56250ce518d98'
 const OTHER_SHA = 'e034ccc5cc89409375f538ce2a6b7a30f2d14700'
-const ROOT = '/home/openclaw/.aroma/sandboxes'
+const ROOT = SANDBOX_ROOT
 const DIR = ROOT + '/appr_x'
 
 /** Strip the fixed `-d <distro> --` prefix so a fake can read the command it was given. */
@@ -45,13 +45,23 @@ function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i
 function fakeWsl (over = {}) {
   const calls = []
   const ok = (stdout) => ({ status: 0, stdout: stdout === undefined ? '' : stdout, stderr: '', timedOut: false })
+  const launches = [];
   const runner = (argv) => {
+    launches.push(argv)
     const a = inner(argv)
     calls.push(a.join(' '))
     if (over.fail && over.fail(a)) return { status: 128, stdout: '', stderr: 'fatal: scripted failure', timedOut: false }
     if (over.timeout && over.timeout(a)) return { status: null, stdout: '', stderr: 'timeout', timedOut: true }
 
     if (a[0] === 'mkdir' || a[0] === 'rm' || a[0] === 'ln') return ok()
+    if (a[0] === 'stat') {
+      // device:inode. `objects` lets a test change the answer after prepare, which is the
+      // replacement attack in miniature.
+      const target = a[a.length - 1]
+      const table = over.objects || {}
+      const v = table[target] !== undefined ? table[target] : '2049:1000'
+      return v === null ? { status: 1, stdout: '', stderr: 'stat: cannot statx', timedOut: false } : ok(v + '\n')
+    }
     if (a[0] === 'test') {
       const target = a[a.length - 1]
       if (a[1] === '-L') return { status: over.dotGitIsSymlink ? 0 : 1, stdout: '', stderr: '', timedOut: false }
@@ -92,12 +102,11 @@ function fakeWsl (over = {}) {
     return ok()
   }
   runner.calls = calls
+  runner.launches = launches
   return runner
 }
 
-const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({
-  sandboxRoot: ROOT, sourceUrl: SOURCE_URL, wslRunner: fakeWsl(over)
-}, cfg))
+const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({ wslRunner: fakeWsl(over) }, cfg))
 
 /* ══════════════ W1/W2/W3 — containment lives in POSIX, inside the distro ══════════════ */
 
@@ -153,7 +162,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
   assert.ok(SOURCE_URL.startsWith('https://'), 'a fixed https origin, never a local path')
   // and prepare clones from exactly it
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ sandboxRoot: ROOT, wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
   ws.prepare('appr_x')
   const clone = runner.calls.find((c) => c.includes('clone'))
   assert.ok(clone.includes(SOURCE_URL), `prepare must clone the approved URL: ${clone}`)
@@ -161,7 +170,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
 
 test('W4/W5. prepare returns a POSIX sandbox on the exact agent branch with zero remotes', () => {
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ sandboxRoot: ROOT, sourceUrl: SOURCE_URL, wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
   const p = ws.prepare('appr_x')
 
   assert.strictEqual(p.dir, DIR, 'the executor receives a POSIX path inside the distro')
@@ -211,7 +220,7 @@ test('W6. ⛔ IGNORED untracked files are detected — no --exclude-standard', (
   assert.deepStrictEqual(ws.repoChanges(DIR), ['.env', 'app.log'])
   // and the flag that would hide them is never passed
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ sandboxRoot: ROOT, sourceUrl: SOURCE_URL, wslRunner: runner })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner })
   w2.prepare('appr_x'); w2.repoChanges(DIR)
   const ls = runner.calls.find((c) => c.includes('ls-files --others'))
   assert.ok(!ls.includes('--exclude-standard'), `ignored files must stay visible: ${ls}`)
@@ -284,7 +293,6 @@ test('W10b. structural identity is compared against the PREPARED baseline', () =
   // build one where the answer changes after prepare.
   let n = 0
   const shifting = createOpenClawWslWorkspace({
-    sandboxRoot: ROOT, sourceUrl: SOURCE_URL,
     wslRunner: (() => { const good = fakeWsl({}); const bad = fakeWsl({ topLevel: '/tmp/elsewhere', gitDir: '/tmp/other/.git' })
       return (argv, o) => { const a = inner(argv); if (a[0] === 'git' && a.join(' ').includes('--show-toplevel')) { n++; return n > 1 ? bad(argv, o) : good(argv, o) } return (n > 0 ? bad : good)(argv, o) } })()
   })
@@ -322,7 +330,7 @@ test('W12. ⛔ cleanup removes only a proven sandbox', () => {
     assert.strictEqual(r.ok, false, `${bad} must not be removable`)
   }
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ sandboxRoot: ROOT, sourceUrl: SOURCE_URL, wslRunner: runner })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner })
   w2.prepare('appr_x')
   assert.deepStrictEqual(w2.cleanup(DIR), { ok: true })
   const rm = runner.calls.find((c) => c.startsWith('rm -rf'))
@@ -391,7 +399,7 @@ test('H1. every git call disables fsmonitor and every diff disables ext-diff/tex
   // .git/config lives inside the sandbox being policed. Without these the verifier itself
   // becomes an execution surface for the thing it is verifying.
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ sandboxRoot: ROOT, sourceUrl: SOURCE_URL, wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
   ws.prepare('appr_x'); ws.repoChanges(DIR); ws.sandboxState(DIR, SHA); ws.diffStat(DIR); ws.diffPatch(DIR)
 
   const gitCalls = runner.calls.filter((c) => c.startsWith('git '))
@@ -408,7 +416,6 @@ test('H1. every git call disables fsmonitor and every diff disables ext-diff/tex
 test('H2. the launcher is always wsl.exe with a fixed argv and no shell', () => {
   const seen = []
   const ws = createOpenClawWslWorkspace({
-    sandboxRoot: ROOT, sourceUrl: SOURCE_URL,
     wslRunner: (argv) => { seen.push(argv); return { status: 0, stdout: SHA + '\n', stderr: '', timedOut: false } }
   })
   try { ws.prepare('appr_x') } catch (_) {}
@@ -427,11 +434,92 @@ test('H2. the launcher is always wsl.exe with a fixed argv and no shell', () => 
   }
 })
 
-test('H3. the fixed identity is not reachable from any caller input', () => {
-  assert.strictEqual(DISTRO, 'OpenClawGateway')
-  assert.strictEqual(SANDBOX_ROOT, '/home/openclaw/.aroma/sandboxes')
-  assert.strictEqual(SOURCE_URL, 'https://github.com/Louielui/aroma-agent-backend.git')
-  // the dev clone discovered in C2-A is explicitly NOT the execution sandbox
-  assert.ok(!SANDBOX_ROOT.includes('/dev/'), 'the dev repo is not the sandbox root')
+test('H3. ⛔ PRODUCTION identity cannot be overridden by a caller', () => {
+  // The previous version of this test asserted the exported CONSTANTS, which says nothing
+  // about what the constructor accepts — and the constructor accepted all three. Any
+  // composition site could have pointed the provider at another distro or repository.
+  const runner = fakeWsl({})
+  const ws = createOpenClawWslWorkspace({
+    distro: 'OtherDistro',
+    sandboxRoot: '/tmp/other',
+    sourceUrl: 'https://example.invalid/evil.git',
+    wslRunner: runner
+  })
+  const p = ws.prepare('appr_x')
 
+  assert.strictEqual(ws.distro, DISTRO, 'the distro is not a parameter')
+  assert.strictEqual(ws.sandboxRoot, SANDBOX_ROOT, 'the sandbox root is not a parameter')
+  assert.ok(p.dir.startsWith(SANDBOX_ROOT + '/'), `the sandbox stays under the fixed root: ${p.dir}`)
+  assert.ok(!p.dir.startsWith('/tmp/other'), 'the supplied root was ignored')
+
+  const joined = runner.calls.join(' | ')
+  assert.ok(joined.includes(SOURCE_URL), 'it clones the approved URL')
+  assert.ok(!joined.includes('example.invalid'), 'the supplied source URL never reaches git')
+
+  // and the distro named in every launch is the fixed one
+  const launches = runner.launches || []
+  for (const argv of launches) assert.strictEqual(argv[1], DISTRO, 'every launch targets the fixed distro')
+})
+
+/* ══════════════ round 2 — object identity, not path identity ══════════════ */
+
+const OBJ_DIR = '2049:1000'
+const OBJ_GIT = '2049:1001'
+const freshObjects = () => ({ [DIR]: OBJ_DIR, [DIR + '/.git']: OBJ_GIT })
+
+test('O1. ⛔ a REPLACED sandbox directory is refused, however clean it looks', () => {
+  // A path is a name. A same-user executor can rename this sandbox away and drop a pristine
+  // clone at the original path: same HEAD, same agent branch, no remotes, clean worktree, its
+  // own local .git. Every path-based check passes while the verifier inspects an object
+  // prepare() never created. device:inode is what tells them apart.
+  const objects = freshObjects()
+  const ws = mk({ objects })
+  ws.prepare('appr_x')
+  assert.ok(ws.sandboxState(DIR, SHA), 'the prepared object verifies normally')
+
+  objects[DIR] = '2049:7777'
+  assert.throws(() => ws.sandboxState(DIR, SHA), /sandbox directory is not the prepared object/)
+})
+
+test('O2. ⛔ a REPLACED .git directory is refused too', () => {
+  const objects = freshObjects()
+  const ws = mk({ objects })
+  ws.prepare('appr_x')
+  objects[DIR + '/.git'] = '2049:8888'
+  assert.throws(() => ws.sandboxState(DIR, SHA), /\.git is not the prepared object/)
+})
+
+test('O3. object identity is checked BEFORE any git evidence is trusted', () => {
+  // Asking git about a replacement would produce a perfectly clean, perfectly false report,
+  // so the cheap identity question comes first.
+  const objects = freshObjects()
+  const runner = fakeWsl({ objects })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  ws.prepare('appr_x')
+  const before = runner.calls.length
+  objects[DIR] = '2049:7777'
+  assert.throws(() => ws.sandboxState(DIR, SHA), /sandbox directory is not the prepared object/)
+  const after = runner.calls.slice(before)
+  assert.ok(!after.some((c) => c.includes('rev-parse HEAD')),
+    'no git evidence may be gathered from a replaced object: ' + after.join(' | '))
+})
+
+test('O4. an unreadable or malformed identity fails closed', () => {
+  // "I could not tell whether this is the same object" is not "it is the same object".
+  const gone = mk({ objects: { [DIR]: null } })
+  assert.throws(() => gone.prepare('appr_x'), /identity unreadable/)
+
+  const junk = mk({ objects: { [DIR]: 'not-an-inode' } })
+  assert.throws(() => junk.prepare('appr_x'), /malformed filesystem identity/)
+})
+
+test('O5. the baseline is never refreshed from the current state', () => {
+  // Re-recording identity after execution would simply adopt whatever is there now, which is
+  // precisely the attack rather than a defence against it.
+  const objects = freshObjects()
+  const ws = mk({ objects })
+  ws.prepare('appr_x')
+  objects[DIR] = '2049:7777'
+  assert.throws(() => ws.sandboxState(DIR, SHA), /sandbox directory is not the prepared object/)
+  assert.throws(() => ws.sandboxState(DIR, SHA), /sandbox directory is not the prepared object/, 'the mismatch is not learned away')
 })
