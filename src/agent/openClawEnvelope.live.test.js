@@ -60,13 +60,24 @@ const BOOTSTRAP_FILES = [
   'USER.md', 'HEARTBEAT.md', 'BOOTSTRAP.md', 'openclaw-workspace-state.json'
 ]
 
+
+/** Terminality is proven, not asserted: mint a REAL grant the way production will. */
+const { createOpenClawQuarantine, isTerminalGrant } = require('../agent/openClawQuarantine')
+function grantFor (approvalId) {
+  let data = {}
+  const store = { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+  const q = createOpenClawQuarantine({ store })
+  q.begin(approvalId); q.markRunning(approvalId); q.observeTerminal(approvalId, 'lost')
+  return q.terminalGrant(approvalId)
+}
+
 const scrub = () => sh(`rm -rf ${ENV_DIR}`)
 
 /* ══════════════ E7/E8 ══════════════ */
 
 test('E7/E8. LIVE. the bootstrap layer sits beside the repo and never inside it', opts, () => {
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyTerminalGrant: isTerminalGrant })
   const p = ws.prepare(APPROVAL)
 
   try {
@@ -125,7 +136,7 @@ test('E7/E8. LIVE. the bootstrap layer sits beside the repo and never inside it'
     assert.strictEqual(ws.cleanup(REPO_DIR, {}).ok, false, 'no terminal assertion, no removal')
     assert.strictEqual(sh(`[ -d ${ENV_DIR} ] && echo yes`).stdout.trim(), 'yes', 'still there after refusal')
 
-    const done = ws.cleanup(REPO_DIR, { terminal: true })
+    const done = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
     assert.strictEqual(done.ok, true, JSON.stringify(done))
     assert.strictEqual(done.removed, ENV_DIR)
     assert.strictEqual(sh(`[ -e ${ENV_DIR} ] && echo present || echo absent`).stdout.trim(), 'absent',

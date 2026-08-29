@@ -64,6 +64,61 @@ const UNACCOUNTED = Object.freeze([RUNNING, CLIENT_TIMEOUT, QUARANTINED])
 /** The terminal task statuses OpenClaw itself reports. Anything else is not an observation. */
 const TERMINAL_TASK_STATUSES = Object.freeze(['succeeded', 'failed', 'timed_out', 'cancelled', 'lost'])
 
+/** Terminal statuses that represent a run which did NOT succeed. */
+const TERMINAL_FAILURE_STATUSES = Object.freeze(['failed', 'timed_out', 'cancelled', 'lost'])
+
+const KNOWN_STATES = Object.freeze(Object.values(STATES))
+
+/**
+ * ⛔ TERMINALITY IS ISSUED, NOT ASSERTED.
+ *
+ * Review found that a `{ terminal: true }` boolean lets whoever calls cleanup declare the
+ * executor finished — which is precisely the claim nobody is in a position to make, since
+ * C2-B2-A proved the client cannot tell. A grant is a branded object this module hands out
+ * ONLY when it has observed a terminal task status. It cannot be forged by passing a literal,
+ * because membership is tracked in a WeakSet no caller can write to.
+ */
+const ISSUED_GRANTS = new WeakSet()
+
+/** True only for a grant this module issued. A literal object can never satisfy it. */
+function isTerminalGrant (g) { return !!g && typeof g === 'object' && ISSUED_GRANTS.has(g) }
+
+const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
+
+/**
+ * ⛔ SYNTACTICALLY VALID IS NOT SEMANTICALLY VALID.
+ *
+ * The first version parsed the ledger and fell back to `{}` whenever the result was not a
+ * plain object. That is fail-OPEN in the worst possible place: `[]`, `null`, `"abc"` and
+ * `123` are all valid JSON, all became "no quarantine", and "no quarantine" is the answer
+ * that authorises another OpenClaw run. Truncation or a partial write could produce exactly
+ * those shapes.
+ *
+ * Every record is therefore validated, and anything we cannot account for throws. A ledger
+ * we do not understand is not an empty ledger.
+ */
+function assertLedger (parsed) {
+  if (!isPlainObject(parsed)) {
+    throw new Error(`refuse: quarantine ledger is not an object (got ${Array.isArray(parsed) ? 'array' : typeof parsed})`)
+  }
+  for (const key of Object.keys(parsed)) {
+    if (!SAFE_ID.test(key)) throw new Error(`refuse: quarantine ledger has an unsafe approvalId key '${key}'`)
+    const rec = parsed[key]
+    if (!isPlainObject(rec)) {
+      throw new Error(`refuse: quarantine record '${key}' is not an object (got ${rec === null ? 'null' : typeof rec})`)
+    }
+    if (rec.approvalId !== key) {
+      throw new Error(`refuse: quarantine record '${key}' declares approvalId '${rec.approvalId}'`)
+    }
+    if (!KNOWN_STATES.includes(rec.state)) {
+      // An unknown state must never be quietly skipped by unaccounted(): a record we cannot
+      // classify might be the one holding a live executor.
+      throw new Error(`refuse: quarantine record '${key}' has unknown state '${rec.state}'`)
+    }
+  }
+  return parsed
+}
+
 /**
  * A file-backed store using the existing data-dir convention, which already redirects test
  * processes away from the Owner's production store.
@@ -77,17 +132,23 @@ function fileStore (opts = {}) {
   const file = opts.file || path.join(resolveDataDir(), 'openclaw-quarantine.json')
   return {
     read () {
+      let raw
       try {
-        const raw = fs.readFileSync(file, 'utf8')
-        const parsed = JSON.parse(raw)
-        return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {}
+        raw = fs.readFileSync(file, 'utf8')
       } catch (e) {
-        // A missing file is an empty ledger. A CORRUPT file is not: reporting "nothing is
-        // quarantined" because the JSON failed to parse would fail open on the one question
-        // this module exists to answer.
+        // ⛔ ENOENT IS THE ONLY CONDITION THAT MEANS "EMPTY LEDGER".
+        // Any other read failure is an unknown, and an unknown must not be reported as
+        // "nothing is quarantined" — that is the one answer that unlocks execution.
         if (e && e.code === 'ENOENT') return {}
         throw new Error(`refuse: quarantine ledger unreadable (${(e && e.message) || 'unknown'})`)
       }
+      let parsed
+      try {
+        parsed = JSON.parse(raw)
+      } catch (e) {
+        throw new Error(`refuse: quarantine ledger unreadable (${(e && e.message) || 'unknown'})`)
+      }
+      return assertLedger(parsed)
     },
     write (all) {
       fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -171,10 +232,17 @@ function createOpenClawQuarantine (options = {}) {
     return put(approvalId, { state: PREPARED, startedAt: now() })
   }
 
-  /** Legal transitions. Anything absent here is refused by construction. */
+  /**
+   * Legal transitions. Anything absent here is refused by construction.
+   *
+   * RUNNING -> TERMINAL_OBSERVED exists because a task can genuinely end `failed`,
+   * `timed_out`, `cancelled` or `lost` while we are still watching it. Without that edge a
+   * normally-failing run stayed RUNNING and held the global lock FOREVER — found in review.
+   * The edge is narrowed in observeTerminal so it cannot double as a success path.
+   */
   const ALLOWED = Object.freeze({
-    [PREPARED]: [RUNNING],
-    [RUNNING]: [SUCCEEDED, CLIENT_TIMEOUT],
+    [PREPARED]: [RUNNING, TERMINAL_OBSERVED],
+    [RUNNING]: [SUCCEEDED, CLIENT_TIMEOUT, TERMINAL_OBSERVED],
     [SUCCEEDED]: [TERMINAL_OBSERVED],
     [CLIENT_TIMEOUT]: [QUARANTINED],
     [QUARANTINED]: [TERMINAL_OBSERVED],
@@ -227,7 +295,37 @@ function createOpenClawQuarantine (options = {}) {
     if (!TERMINAL_TASK_STATUSES.includes(taskStatus)) {
       throw new Error(`refuse: '${taskStatus}' is not a terminal OpenClaw task status`)
     }
+    const cur = state(approvalId)
+
+    // ⛔ OBSERVING 'succeeded' IS NOT ACCEPTING A SUCCESS.
+    // A task ending successfully is a fact about OpenClaw's scheduler. Accepting its output
+    // is a separate decision that belongs to markSucceeded, after the result has actually
+    // been received and verified. Letting observation stand in for acceptance would let a
+    // run we never validated be recorded as a good one.
+    if (taskStatus === 'succeeded' && (cur === RUNNING || cur === PREPARED)) {
+      throw new Error(`refuse: '${approvalId}' is ${cur}; an observed 'succeeded' must pass through markSucceeded() before it can be accepted`)
+    }
+
+    // ⛔ AND A RECORDED SUCCESS CANNOT BE CONTRADICTED BY THE OBSERVATION.
+    if (cur === SUCCEEDED && taskStatus !== 'succeeded') {
+      throw new Error(`refuse: '${approvalId}' is SUCCEEDED but the observed task status is '${taskStatus}'`)
+    }
+
     return transition(approvalId, TERMINAL_OBSERVED, Object.assign({ taskStatus }, meta))
+  }
+
+  /**
+   * Issue an unforgeable proof that this approval's executor is terminal.
+   * The workspace will not remove an envelope without one.
+   */
+  function terminalGrant (approvalId) {
+    const cur = state(approvalId)
+    if (cur !== TERMINAL_OBSERVED) {
+      throw new Error(`refuse: '${approvalId}' is ${cur === null ? 'unknown' : cur}; a terminal grant requires an observed terminal task status`)
+    }
+    const grant = Object.freeze({ approvalId, state: TERMINAL_OBSERVED })
+    ISSUED_GRANTS.add(grant)
+    return grant
   }
 
   /**
@@ -254,6 +352,7 @@ function createOpenClawQuarantine (options = {}) {
     markClientTimeout,
     quarantine,
     observeTerminal,
+    terminalGrant,
     markCleaned,
     mayCleanup,
     canStart,
@@ -267,7 +366,11 @@ function createOpenClawQuarantine (options = {}) {
 module.exports = {
   createOpenClawQuarantine,
   fileStore,
+  assertLedger,
+  isTerminalGrant,
   STATES,
+  KNOWN_STATES,
   UNACCOUNTED,
-  TERMINAL_TASK_STATUSES
+  TERMINAL_TASK_STATUSES,
+  TERMINAL_FAILURE_STATUSES
 }

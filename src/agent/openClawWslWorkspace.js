@@ -142,6 +142,9 @@ function createOpenClawWslWorkspace (options = {}) {
   const sourceUrl = SOURCE_URL
 
   const run = typeof options.wslRunner === 'function' ? options.wslRunner : defaultWslRunner
+  // Injected at construction by the governed adapter. Default refuses everything, so an
+  // unwired workspace can never remove an envelope.
+  const verifyTerminalGrant = typeof options.verifyTerminalGrant === 'function' ? options.verifyTerminalGrant : () => false
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS
   const maxOutput = Number.isFinite(options.maxOutput) ? options.maxOutput : DEFAULT_MAX_OUTPUT
 
@@ -316,7 +319,7 @@ function createOpenClawWslWorkspace (options = {}) {
     const gitObject = objectIdentity(dir + '/.git')
 
     PREPARED.set(dir, Object.freeze({
-      root: canon(dir), envelope: canon(envelope), topLevel, gitDir, commonDir,
+      approvalId, root: canon(dir), envelope: canon(envelope), topLevel, gitDir, commonDir,
       baseSha, branch, envelopeObject, dirObject, gitObject
     }))
 
@@ -455,23 +458,34 @@ function createOpenClawWslWorkspace (options = {}) {
    * Remove the WHOLE envelope — but only for a sandbox we prepared, and only once the caller
    * states the executor is terminal.
    *
-   * ⛔ TERMINALITY IS A PARAMETER, NOT AN ASSUMPTION.
+   * ⛔ TERMINALITY IS PROVEN, NOT ASSERTED.
    * C2-B2-A proved `openclaw tasks cancel` reports success while the turn keeps running, and
    * that killing the client does not stop it either. So "the client returned" says nothing
-   * about whether anything is still writing here. Deleting an envelope out from under a live
-   * executor is how a confusing failure becomes an unexplainable one. The caller must assert
-   * terminality explicitly; there is no default.
+   * about whether anything is still writing here.
+   *
+   * The first version took `{ terminal: true }`. Review was right that this is the wrong
+   * shape: it lets whoever calls cleanup DECLARE the executor finished, which is exactly the
+   * claim no caller is in a position to make. A boolean is not evidence.
+   *
+   * So cleanup now requires a GRANT — a branded object issued by the quarantine ledger only
+   * after it has observed a terminal task status, verified through a checker injected at
+   * CONSTRUCTION time (trusted composition, not per-call input). Absent a verifier this
+   * fails closed, so an unwired workspace can never delete anything.
    *
    * ⛔ THE ENVELOPE COMES FROM THE PREPARED RECORD, NOT FROM THE ARGUMENT.
    * Deriving it by trimming '/repo' off the caller's string would reintroduce exactly the
    * path-trust this provider exists to remove.
    */
   function cleanup (dir, opts = {}) {
-    if (opts.terminal !== true) {
-      return { ok: false, reason: 'refuse: cleanup requires an explicit terminal executor state' }
-    }
     const baseline = PREPARED.get(dir)
     if (!baseline) return { ok: false, reason: 'refuse: no prepared sandbox baseline for this workspace' }
+
+    if (!verifyTerminalGrant(opts.grant)) {
+      return { ok: false, reason: 'refuse: cleanup requires a terminal grant issued by the quarantine ledger' }
+    }
+    if (!opts.grant || opts.grant.approvalId !== baseline.approvalId) {
+      return { ok: false, reason: `refuse: the terminal grant is for '${opts.grant && opts.grant.approvalId}', not '${baseline.approvalId}'` }
+    }
 
     const envelope = baseline.envelope
     try {

@@ -41,6 +41,24 @@ const APPROVAL = 'appr_x'
 const ENV_DIR = SANDBOX_ROOT + '/' + APPROVAL
 const REPO_DIR = ENV_DIR + '/' + REPO_CHILD
 
+
+/**
+ * Terminality is proven, not asserted: cleanup requires a grant the quarantine ledger
+ * issues only after observing a terminal task status. Tests mint real grants the same way
+ * production does, so no test can quietly bypass the gate a caller cannot bypass.
+ */
+const { createOpenClawQuarantine, isTerminalGrant } = require('../agent/openClawQuarantine')
+function memLedger () {
+  let data = {}
+  return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+}
+function grantFor (approvalId) {
+  const q = createOpenClawQuarantine({ store: memLedger() })
+  q.begin(approvalId); q.markRunning(approvalId); q.markClientTimeout(approvalId)
+  q.quarantine(approvalId); q.observeTerminal(approvalId, 'lost')
+  return q.terminalGrant(approvalId)
+}
+
 const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }
 
@@ -102,7 +120,7 @@ function fakeWsl (over = {}) {
   return runner
 }
 
-const mk = (over = {}) => createOpenClawWslWorkspace({ wslRunner: fakeWsl(over) })
+const mk = (over = {}) => createOpenClawWslWorkspace({ wslRunner: fakeWsl(over), verifyTerminalGrant: isTerminalGrant })
 
 /* ══════════════ E1 — the shape itself ══════════════ */
 
@@ -163,7 +181,7 @@ test('E4. ⛔ a REPLACED .git is detected', () => {
 test('E4b. the envelope is checked BEFORE the repo, and no git evidence is gathered after a mismatch', () => {
   const objects = { [ENV_DIR]: '2049:100', [REPO_DIR]: '2049:200', [REPO_DIR + '/.git']: '2049:300' }
   const runner = fakeWsl({ objects })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
   ws.prepare(APPROVAL)
   const before = runner.calls.length
   objects[ENV_DIR] = '2049:999'
@@ -177,10 +195,10 @@ test('E4b. the envelope is checked BEFORE the repo, and no git evidence is gathe
 
 test('E5. cleanup removes the ENVELOPE, never the repo path it was handed', () => {
   const runner = fakeWsl()
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
   ws.prepare(APPROVAL)
 
-  const r = ws.cleanup(REPO_DIR, { terminal: true })
+  const r = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
   assert.deepStrictEqual(r, { ok: true, removed: ENV_DIR })
 
   const removals = runner.calls.filter((c) => c.startsWith('rm -rf'))
@@ -192,14 +210,14 @@ test('E5b. the envelope comes from the PREPARED record, not from trimming the ar
   // Deriving it by chopping '/repo' off the caller's string would re-trust the caller's path
   // at the one moment it is most expensive to be wrong: immediately before rm -rf.
   const ws = mk()
-  const unprepared = ws.cleanup(SANDBOX_ROOT + '/never_prepared/repo', { terminal: true })
+  const unprepared = ws.cleanup(SANDBOX_ROOT + '/never_prepared/repo', { grant: grantFor(APPROVAL) })
   assert.strictEqual(unprepared.ok, false)
   assert.match(unprepared.reason, /no prepared sandbox baseline/)
 })
 
 test('E6. ⛔ cleanup cannot escape the sandbox root, whatever it is handed', () => {
   const runner = fakeWsl()
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
   ws.prepare(APPROVAL)
 
   const escapes = [
@@ -210,7 +228,7 @@ test('E6. ⛔ cleanup cannot escape the sandbox root, whatever it is handed', ()
     SANDBOX_ROOT + '/appr_x/repo/nested'
   ]
   for (const bad of escapes) {
-    const r = ws.cleanup(bad, { terminal: true })
+    const r = ws.cleanup(bad, { grant: grantFor(APPROVAL) })
     assert.strictEqual(r.ok, false, `${bad} must be refused`)
   }
   assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')), 'no removal may be attempted for any of them')
@@ -221,14 +239,14 @@ test('E6b. ⛔ a REPLACED envelope is never deleted', () => {
   // destroy something we cannot account for.
   const objects = { [ENV_DIR]: '2049:100', [REPO_DIR]: '2049:200', [REPO_DIR + '/.git']: '2049:300' }
   const runner = fakeWsl({ objects, present: [ENV_DIR] })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
   ws.prepare(APPROVAL)
 
   // prepare() legitimately removes a pre-existing stale envelope, so only removals issued
   // AFTER this point are evidence about cleanup.
   const before = runner.calls.length
   objects[ENV_DIR] = '2049:999'
-  const r = ws.cleanup(REPO_DIR, { terminal: true })
+  const r = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
   assert.strictEqual(r.ok, false)
   assert.match(r.reason, /envelope is not the prepared object/)
   assert.ok(!runner.calls.slice(before).some((c) => c.startsWith('rm -rf')),

@@ -59,6 +59,17 @@ const wsl = (argv) => spawnSync(WSL_EXE, ['-d', DISTRO, '--'].concat(argv), {
 const sh = (script) => wsl(['sh', '-c', script])
 
 /** Is the distro actually here? Never assume — a skipped test must be an observed fact. */
+
+/** Terminality is proven, not asserted: mint a REAL grant the way production will. */
+const { createOpenClawQuarantine, isTerminalGrant } = require('../agent/openClawQuarantine')
+function grantFor (approvalId) {
+  let data = {}
+  const store = { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+  const q = createOpenClawQuarantine({ store })
+  q.begin(approvalId); q.markRunning(approvalId); q.observeTerminal(approvalId, 'lost')
+  return q.terminalGrant(approvalId)
+}
+
 function distroAvailable () {
   if (process.platform !== 'win32') return false
   const r = wsl(['true'])
@@ -119,7 +130,7 @@ test('LIVE-ENV. ⛔ this test file itself passes no Windows environment into the
 
 test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', opts, () => {
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyTerminalGrant: isTerminalGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
   // the disposable clone needs an identity before a commit can move HEAD; a fresh clone has
@@ -207,8 +218,8 @@ test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', 
     sh(`rm -f ${SANDBOX_ROOT}/escape`)
 
     // ── cleanup removes the sandbox and nothing else ──
-    assert.strictEqual(ws.cleanup(SANDBOX_ROOT, { terminal: true }).ok, false, 'the root is never removable')
-    assert.deepStrictEqual(ws.cleanup(D, { terminal: true }), { ok: true, removed: ENV_DIR })
+    assert.strictEqual(ws.cleanup(SANDBOX_ROOT, { grant: grantFor(APPROVAL) }).ok, false, 'the root is never removable')
+    assert.deepStrictEqual(ws.cleanup(D, { grant: grantFor(APPROVAL) }), { ok: true, removed: ENV_DIR })
     assert.notStrictEqual(sh(`[ -e ${D} ] && echo present || echo absent`).stdout.trim(), 'present', 'the sandbox is gone')
     assert.strictEqual(sh(`[ -d ${SANDBOX_ROOT} ] && echo yes`).stdout.trim(), 'yes', 'the root survived')
   } finally {
@@ -225,7 +236,7 @@ test('LIVE. ⛔ a sandbox REPLACED by a pristine clone at the same path is refus
   // clean worktree and its own real .git — so HEAD, branch, remote, index and structural
   // checks all pass. Only the filesystem object is different.
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyTerminalGrant: isTerminalGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 
@@ -262,7 +273,7 @@ test('LIVE. ⛔ replacing only <clone>/.git is refused', opts, () => {
   // repository underneath it. The directory the verifier canonicalises is unchanged, so the
   // containment and structural checks are undisturbed.
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyTerminalGrant: isTerminalGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 
