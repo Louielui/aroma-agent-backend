@@ -58,11 +58,38 @@ function createOpenClawGovernedWorkspace (deps = {}) {
   /** repo dir -> approvalId, so cleanup never has to parse a path to find out who owns it. */
   const OWNER = new Map()
 
+  /**
+   * ⛔ A FAILED prepare() MUST NOT ORPHAN AN ENVELOPE OR A LEDGER ROW.
+   *
+   * prepare() can fail after the envelope exists — a refused clone, a failed branch
+   * checkout, a surviving remote. It THROWS rather than returning, so there is no dir for
+   * anyone to clean up with, and AgentRunner never calls cleanup because prepare never
+   * returned. Review found the result: a partial envelope left on disk and a ledger row
+   * stuck at PREPARED, which held nothing open but made the approvalId permanently unusable
+   * while telling no one why.
+   *
+   * The failure is now recorded honestly as PREPARATION_FAILED and the envelope is rolled
+   * back through the workspace's own fixed-path primitive, derived from the sandbox root and
+   * the approvalId. The thrown error is re-raised for AgentRunner, which already turns it
+   * into `workspace_refused`.
+   */
   function prepare (approvalId) {
     // The ledger gate runs FIRST: if OpenClaw is locked out, no sandbox should be created
     // at all. begin() throws when another approval is unaccounted for.
     quarantine.begin(approvalId)
-    const prepared = workspace.prepare(approvalId)
+
+    let prepared
+    try {
+      prepared = workspace.prepare(approvalId)
+    } catch (e) {
+      // Nothing executed, so nothing can be holding the envelope.
+      quarantine.failPreparation(approvalId, { reason: String((e && e.message) || e).slice(0, 300) })
+      const rollback = workspace.abortPrepare(approvalId, { grant: quarantine.preExecutionGrant(approvalId) })
+      onCleanupResult(Object.assign({ approvalId, why: 'preparation-failed' }, rollback))
+      if (rollback && rollback.ok) quarantine.markCleaned(approvalId, { note: 'preparation-failed rollback' })
+      throw e
+    }
+
     OWNER.set(prepared.dir, approvalId)
     return prepared
   }
@@ -81,15 +108,22 @@ function createOpenClawGovernedWorkspace (deps = {}) {
 
     const state = quarantine.state(approvalId)
 
-    // Nothing ever ran: the revision gate refused before the executor was reached. There is
-    // no process that could be holding this envelope.
+    // ⛔ NOTHING EVER RAN, SO THERE IS NO TASK STATUS TO REPORT.
+    // The first version reached cleanup here by calling observeTerminal(id, 'cancelled'),
+    // which wrote a record claiming OpenClaw's scheduler had cancelled a task that was
+    // never created. Convenient, and false. The audit trail is the point of this ledger, so
+    // a run refused before the executor gets its own state and carries no taskStatus.
     if (state === quarantine.STATES.PREPARED) {
-      quarantine.observeTerminal(approvalId, 'cancelled', { note: 'no executor was ever started' })
-      return finish(dir, approvalId, 'pre-execution')
+      quarantine.abortPreExecution(approvalId, { reason: 'no executor was ever started' })
+      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId))
+    }
+
+    if (state === quarantine.STATES.PRE_EXECUTION_ABORTED || state === quarantine.STATES.PREPARATION_FAILED) {
+      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId))
     }
 
     if (state === quarantine.STATES.TERMINAL_OBSERVED) {
-      return finish(dir, approvalId, 'terminal observed')
+      return finish(dir, approvalId, 'terminal observed', quarantine.terminalGrant(approvalId))
     }
 
     // RUNNING, CLIENT_TIMEOUT or QUARANTINED: something may still be alive in there.
@@ -102,8 +136,7 @@ function createOpenClawGovernedWorkspace (deps = {}) {
     })
   }
 
-  function finish (dir, approvalId, why) {
-    const grant = quarantine.terminalGrant(approvalId)
+  function finish (dir, approvalId, why, grant) {
     const result = workspace.cleanup(dir, { grant })
     if (result && result.ok) {
       quarantine.markCleaned(approvalId, { note: why })

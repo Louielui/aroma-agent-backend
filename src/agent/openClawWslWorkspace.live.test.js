@@ -61,13 +61,18 @@ const sh = (script) => wsl(['sh', '-c', script])
 /** Is the distro actually here? Never assume — a skipped test must be an observed fact. */
 
 /** Terminality is proven, not asserted: mint a REAL grant the way production will. */
-const { createOpenClawQuarantine, isTerminalGrant } = require('../agent/openClawQuarantine')
-function grantFor (approvalId) {
+const { createOpenClawQuarantine } = require('../agent/openClawQuarantine')
+function memLedgerStore () {
   let data = {}
-  const store = { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
-  const q = createOpenClawQuarantine({ store })
-  q.begin(approvalId); q.markRunning(approvalId); q.observeTerminal(approvalId, 'lost')
-  return q.terminalGrant(approvalId)
+  return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+}
+/** One ledger governs the workspaces in this file; grants are bound to it. */
+const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
+const isTerminalGrant = (g) => LEDGER.verifyTerminalGrant(g)
+function grantFor (approvalId) {
+  if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
+  return LEDGER.preExecutionGrant(approvalId)
 }
 
 function distroAvailable () {

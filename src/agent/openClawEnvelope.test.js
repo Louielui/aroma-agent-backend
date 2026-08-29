@@ -47,17 +47,20 @@ const REPO_DIR = ENV_DIR + '/' + REPO_CHILD
  * issues only after observing a terminal task status. Tests mint real grants the same way
  * production does, so no test can quietly bypass the gate a caller cannot bypass.
  */
-const { createOpenClawQuarantine, isTerminalGrant } = require('../agent/openClawQuarantine')
-function memLedger () {
+const { createOpenClawQuarantine } = require('../agent/openClawQuarantine')
+function memLedgerStore () {
   let data = {}
   return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
 }
+/** One ledger governs the workspaces in this file; grants are bound to it. */
+const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
+const isTerminalGrant = (g) => LEDGER.verifyTerminalGrant(g)
 function grantFor (approvalId) {
-  const q = createOpenClawQuarantine({ store: memLedger() })
-  q.begin(approvalId); q.markRunning(approvalId); q.markClientTimeout(approvalId)
-  q.quarantine(approvalId); q.observeTerminal(approvalId, 'lost')
-  return q.terminalGrant(approvalId)
+  if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
+  return LEDGER.preExecutionGrant(approvalId)
 }
+
 
 const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }

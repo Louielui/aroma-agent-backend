@@ -17,7 +17,7 @@ process.env.AROMA_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'aroma-c2b2b1
 const test = require('node:test')
 const assert = require('node:assert')
 
-const { createOpenClawQuarantine, fileStore, isTerminalGrant, STATES } = require('../agent/openClawQuarantine')
+const { createOpenClawQuarantine, fileStore, STATES } = require('../agent/openClawQuarantine')
 
 /** An isolated in-memory ledger. No unit test touches a real store. */
 function memStore (seed = {}) {
@@ -335,7 +335,7 @@ test('G1. a terminal grant cannot be forged, and is only issued when terminal', 
 
   q.observeTerminal('appr_g', 'failed')
   const grant = q.terminalGrant('appr_g')
-  assert.strictEqual(isTerminalGrant(grant), true)
+  assert.strictEqual(q.verifyTerminalGrant(grant), true)
   assert.strictEqual(grant.approvalId, 'appr_g')
 
   for (const forged of [
@@ -345,6 +345,100 @@ test('G1. a terminal grant cannot be forged, and is only issued when terminal', 
     Object.freeze({ approvalId: 'appr_g', state: STATES.TERMINAL_OBSERVED }),
     JSON.parse(JSON.stringify(grant))
   ]) {
-    assert.strictEqual(isTerminalGrant(forged), false, 'a literal must never verify')
+    assert.strictEqual(q.verifyTerminalGrant(forged), false, 'a literal must never verify')
   }
+})
+
+/* ══════════════ G1..G3 — grants are bound to ONE ledger instance ══════════════ */
+
+test('G2. ⛔ a grant from a DIFFERENT ledger is refused, same approvalId and all', () => {
+  // The first version kept one module-global WeakSet, which proved only "some quarantine
+  // instance in this process issued this". Two ledgers in one process — a fixture beside
+  // production, or two composed lanes — would have honoured each other's grants.
+  const a = createOpenClawQuarantine({ store: memStore() })
+  const b = createOpenClawQuarantine({ store: memStore() })
+
+  for (const q of [a, b]) {
+    q.begin('appr_same'); q.markRunning('appr_same'); q.observeTerminal('appr_same', 'failed')
+  }
+  const ga = a.terminalGrant('appr_same')
+  const gb = b.terminalGrant('appr_same')
+
+  assert.strictEqual(a.verifyTerminalGrant(ga), true, 'its own grant verifies')
+  assert.strictEqual(b.verifyTerminalGrant(gb), true)
+  assert.strictEqual(b.verifyTerminalGrant(ga), false, 'a cross-ledger grant must NOT verify')
+  assert.strictEqual(a.verifyTerminalGrant(gb), false)
+  assert.strictEqual(ga.approvalId, gb.approvalId, 'and they name the same approval, so only the brand distinguishes them')
+})
+
+test('G3. ⛔ there is no process-global verifier to export', () => {
+  const mod = require('../agent/openClawQuarantine')
+  assert.strictEqual(typeof mod.isTerminalGrant, 'undefined',
+    'a module-level verifier would re-open the cross-ledger hole')
+  const src = fs.readFileSync(path.join(__dirname, 'openClawQuarantine.js'), 'utf8')
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')
+  assert.ok(!/^const ISSUED_GRANTS/m.test(code), 'no module-global grant set may exist')
+})
+
+test('G4. the two grant kinds are mechanically distinguishable', () => {
+  const q = createOpenClawQuarantine({ store: memStore() })
+  q.begin('appr_pre'); q.abortPreExecution('appr_pre')
+  const pre = q.preExecutionGrant('appr_pre')
+
+  q.begin('appr_run'); q.markRunning('appr_run'); q.observeTerminal('appr_run', 'lost')
+  const term = q.terminalGrant('appr_run')
+
+  assert.strictEqual(pre.kind, 'pre-execution')
+  assert.strictEqual(term.kind, 'terminal-observed')
+  assert.notStrictEqual(pre.kind, term.kind)
+})
+
+/* ══════════════ PE1..PE5 — truthful evidence when nothing ever ran ══════════════ */
+
+test('PE3/PE4. a pre-execution abort records no taskStatus, because there was no task', () => {
+  // The first version called observeTerminal(id, 'cancelled') to reach cleanup, writing a
+  // record claiming OpenClaw's scheduler cancelled a task that was never created.
+  const q = createOpenClawQuarantine({ store: memStore() })
+  q.begin('appr_rev')
+  q.abortPreExecution('appr_rev', { reason: 'revision_moved' })
+
+  const rec = q.record('appr_rev')
+  assert.strictEqual(rec.state, STATES.PRE_EXECUTION_ABORTED)
+  assert.strictEqual(rec.reason, 'revision_moved', 'the real reason is recorded')
+  assert.strictEqual('taskStatus' in rec, false, 'NO taskStatus may exist for a task that never did')
+})
+
+test('PE5. ⛔ RUNNING can never use the pre-execution abort path', () => {
+  // Once an executor has started, only a genuinely observed status will do — otherwise the
+  // convenient path becomes a way to discard an unaccounted-for process.
+  const q = createOpenClawQuarantine({ store: memStore() })
+  q.begin('appr_r'); q.markRunning('appr_r')
+  assert.throws(() => q.abortPreExecution('appr_r'), /illegal quarantine transition RUNNING -> PRE_EXECUTION_ABORTED/)
+  assert.throws(() => q.failPreparation('appr_r'), /illegal quarantine transition RUNNING -> PREPARATION_FAILED/)
+  assert.throws(() => q.preExecutionGrant('appr_r'), /requires that no executor ever started/)
+
+  for (const from of ['markClientTimeout', 'quarantine']) {
+    const q2 = createOpenClawQuarantine({ store: memStore() })
+    q2.begin('a'); q2.markRunning('a'); q2.markClientTimeout('a')
+    if (from === 'quarantine') q2.quarantine('a')
+    assert.throws(() => q2.abortPreExecution('a'), /illegal quarantine transition/)
+    assert.throws(() => q2.preExecutionGrant('a'), /requires that no executor ever started/)
+  }
+})
+
+test('PE6. a preparation failure is recorded honestly and releases nothing it should not', () => {
+  const q = createOpenClawQuarantine({ store: memStore() })
+  q.begin('appr_pf')
+  q.failPreparation('appr_pf', { reason: 'refuse: clone failed (network unreachable)' })
+
+  const rec = q.record('appr_pf')
+  assert.strictEqual(rec.state, STATES.PREPARATION_FAILED)
+  assert.match(rec.reason, /clone failed/)
+  assert.strictEqual('taskStatus' in rec, false)
+
+  // nothing ran, so it holds no lock — a different approval may proceed
+  assert.strictEqual(q.canStart('appr_other').ok, true, 'a failed preparation must not block the world')
+  // but the failed approvalId itself is never reused
+  assert.strictEqual(q.canStart('appr_pf').ok, false)
+  assert.match(q.canStart('appr_pf').reason, /approvals are never reused/)
 })

@@ -327,6 +327,50 @@ function createOpenClawWslWorkspace (options = {}) {
   }
 
   /**
+   * ⛔ ROLL BACK A FAILED prepare(), BY APPROVAL ID — NEVER BY A THROWN PATH.
+   *
+   * If prepare() fails partway (clone refused, branch checkout failed, a remote survived) it
+   * may already have created the envelope, and it throws rather than returning — so there is
+   * no `dir` for anyone to clean up with, and AgentRunner never calls cleanup because prepare
+   * never returned. Review found the envelope simply orphaned there.
+   *
+   * The rollback target is DERIVED from the fixed sandbox root and the approvalId, exactly as
+   * prepare derives it. It is never parsed out of an error message: a thrown string is
+   * attacker-influenced input, and this function ends in `rm -rf`.
+   *
+   * Nothing has executed at this point, so a pre-execution grant is what authorises it — the
+   * removal path is still gated, just by a different and mechanically distinguishable proof.
+   */
+  function abortPrepare (approvalId, opts = {}) {
+    if (typeof approvalId !== 'string' || !SAFE_ID.test(approvalId)) {
+      return { ok: false, reason: 'refuse: abortPrepare requires a safe approvalId' }
+    }
+    if (!verifyTerminalGrant(opts.grant)) {
+      return { ok: false, reason: 'refuse: abortPrepare requires a grant issued by the quarantine ledger' }
+    }
+    if (!opts.grant || opts.grant.approvalId !== approvalId) {
+      return { ok: false, reason: `refuse: the grant is for '${opts.grant && opts.grant.approvalId}', not '${approvalId}'` }
+    }
+
+    const envelope = `${sandboxRoot}/${approvalId}`
+    try {
+      envelopeContainmentCheck(envelope)
+    } catch (e) {
+      return { ok: false, reason: (e && e.message) || 'containment refused' }
+    }
+
+    const dir = `${envelope}/${REPO_CHILD}`
+    PREPARED.delete(dir)
+
+    const exists = wsl(['test', '-e', envelope])
+    if (exists.status !== 0) return { ok: true, removed: null, note: 'nothing to roll back' }
+
+    const rm = wsl(['rm', '-rf', '--', envelope])
+    if (rm.status !== 0) return { ok: false, reason: (rm.stderr || '').trim().slice(0, 200) || 'remove failed' }
+    return { ok: true, removed: envelope }
+  }
+
+  /**
    * device:inode for one path, measured inside the distro with a fixed argv.
    * Failure throws: an identity we cannot read is not an identity that matched.
    */
@@ -519,6 +563,7 @@ function createOpenClawWslWorkspace (options = {}) {
     prepare,
     containmentCheck,
     envelopeContainmentCheck,
+    abortPrepare,
     repoChanges,
     sandboxState,
     diffStat,

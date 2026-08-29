@@ -51,8 +51,26 @@ const QUARANTINED = 'QUARANTINED'
 const TERMINAL_OBSERVED = 'TERMINAL_OBSERVED'
 const CLEANED = 'CLEANED'
 
+/**
+ * ⛔ TWO STATES FOR "NOTHING EVER RAN", BECAUSE NO TASK EXISTED TO HAVE A STATUS.
+ *
+ * The first version reached cleanup by calling observeTerminal(id, 'cancelled') when the
+ * revision gate refused before the executor. That wrote contradictory evidence: a record
+ * claiming an OpenClaw task status of `cancelled` for a task that was never created. The
+ * audit trail would have said the scheduler cancelled something that never existed.
+ *
+ * PRE_EXECUTION_ABORTED — the run was refused before any executor started (revision gate).
+ * PREPARATION_FAILED    — the sandbox itself could not be built.
+ *
+ * Neither carries a taskStatus, because there was no task. Neither is reachable from
+ * RUNNING: once an executor has started, only a real observed status will do.
+ */
+const PRE_EXECUTION_ABORTED = 'PRE_EXECUTION_ABORTED'
+const PREPARATION_FAILED = 'PREPARATION_FAILED'
+
 const STATES = Object.freeze({
-  PREPARED, RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED, CLEANED
+  PREPARED, RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED,
+  PRE_EXECUTION_ABORTED, PREPARATION_FAILED, CLEANED
 })
 
 /**
@@ -70,18 +88,27 @@ const TERMINAL_FAILURE_STATUSES = Object.freeze(['failed', 'timed_out', 'cancell
 const KNOWN_STATES = Object.freeze(Object.values(STATES))
 
 /**
- * ⛔ TERMINALITY IS ISSUED, NOT ASSERTED.
+ * ⛔ TERMINALITY IS ISSUED, NOT ASSERTED — AND BY ONE SPECIFIC LEDGER.
  *
  * Review found that a `{ terminal: true }` boolean lets whoever calls cleanup declare the
- * executor finished — which is precisely the claim nobody is in a position to make, since
- * C2-B2-A proved the client cannot tell. A grant is a branded object this module hands out
- * ONLY when it has observed a terminal task status. It cannot be forged by passing a literal,
- * because membership is tracked in a WeakSet no caller can write to.
+ * executor finished — precisely the claim nobody is in a position to make, since C2-B2-A
+ * proved the client cannot tell. A grant is a branded object issued ONLY after a terminal
+ * fact has been recorded, so a literal can never satisfy it.
+ *
+ * ⛔ AND THE BRAND IS PER-INSTANCE, NOT PER-PROCESS.
+ * The first version kept one module-global WeakSet and exported a module-level verifier.
+ * That proved only "SOME quarantine instance in this process issued this grant" — not "the
+ * ledger actually governing THIS workspace issued it". Two ledgers in one process (a test
+ * fixture beside production, or two composed lanes) would have honoured each other's grants.
+ * Each instance now owns a private brand, and the workspace is wired to that exact
+ * instance's verifier closure. There is deliberately no process-global verifier to export.
+ *
+ * Grants carry a `kind` so the two removal paths stay mechanically distinguishable:
+ *   'terminal-observed'  a real OpenClaw task reached a terminal status
+ *   'pre-execution'      no executor ever started, so there was never a task at all
  */
-const ISSUED_GRANTS = new WeakSet()
-
-/** True only for a grant this module issued. A literal object can never satisfy it. */
-function isTerminalGrant (g) { return !!g && typeof g === 'object' && ISSUED_GRANTS.has(g) }
+const GRANT_TERMINAL = 'terminal-observed'
+const GRANT_PRE_EXECUTION = 'pre-execution'
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
@@ -166,6 +193,12 @@ function createOpenClawQuarantine (options = {}) {
   const store = options.store || fileStore(options)
   const now = typeof options.now === 'function' ? options.now : () => new Date().toISOString()
 
+  /**
+   * THIS ledger's private grant brand. Never shared between instances and never exported,
+   * so a grant proves which ledger issued it — not merely that some ledger did.
+   */
+  const issuedGrants = new WeakSet()
+
   function assertId (approvalId) {
     if (typeof approvalId !== 'string' || !SAFE_ID.test(approvalId)) {
       throw new Error('quarantine requires a safe approvalId ([A-Za-z0-9_-]{1,64})')
@@ -241,12 +274,16 @@ function createOpenClawQuarantine (options = {}) {
    * The edge is narrowed in observeTerminal so it cannot double as a success path.
    */
   const ALLOWED = Object.freeze({
-    [PREPARED]: [RUNNING, TERMINAL_OBSERVED],
+    // PREPARED can end without ever running: the revision gate may refuse, or the sandbox
+    // may fail to build. Neither path is available once RUNNING.
+    [PREPARED]: [RUNNING, PRE_EXECUTION_ABORTED, PREPARATION_FAILED],
     [RUNNING]: [SUCCEEDED, CLIENT_TIMEOUT, TERMINAL_OBSERVED],
     [SUCCEEDED]: [TERMINAL_OBSERVED],
     [CLIENT_TIMEOUT]: [QUARANTINED],
     [QUARANTINED]: [TERMINAL_OBSERVED],
     [TERMINAL_OBSERVED]: [CLEANED],
+    [PRE_EXECUTION_ABORTED]: [CLEANED],
+    [PREPARATION_FAILED]: [CLEANED],
     [CLEANED]: []
   })
 
@@ -318,14 +355,49 @@ function createOpenClawQuarantine (options = {}) {
    * Issue an unforgeable proof that this approval's executor is terminal.
    * The workspace will not remove an envelope without one.
    */
+  function issue (approvalId, kind, forState) {
+    const grant = Object.freeze({ approvalId, kind, state: forState })
+    issuedGrants.add(grant)
+    return grant
+  }
+
   function terminalGrant (approvalId) {
     const cur = state(approvalId)
     if (cur !== TERMINAL_OBSERVED) {
       throw new Error(`refuse: '${approvalId}' is ${cur === null ? 'unknown' : cur}; a terminal grant requires an observed terminal task status`)
     }
-    const grant = Object.freeze({ approvalId, state: TERMINAL_OBSERVED })
-    ISSUED_GRANTS.add(grant)
-    return grant
+    return issue(approvalId, GRANT_TERMINAL, TERMINAL_OBSERVED)
+  }
+
+  /**
+   * A grant for a run that never reached an executor. Distinct in `kind` from a terminal
+   * grant so the two removal paths can never be confused for one another, and unavailable
+   * from RUNNING or anything downstream of it.
+   */
+  function preExecutionGrant (approvalId) {
+    const cur = state(approvalId)
+    if (cur !== PRE_EXECUTION_ABORTED && cur !== PREPARATION_FAILED) {
+      throw new Error(`refuse: '${approvalId}' is ${cur === null ? 'unknown' : cur}; a pre-execution grant requires that no executor ever started`)
+    }
+    return issue(approvalId, GRANT_PRE_EXECUTION, cur)
+  }
+
+  /**
+   * ⛔ THIS INSTANCE'S verifier. Wired into the workspace at construction time.
+   * A grant from a different ledger fails here even if it names the same approvalId.
+   */
+  function verifyTerminalGrant (g) {
+    return !!g && typeof g === 'object' && issuedGrants.has(g)
+  }
+
+  /** No executor ever started: the revision gate refused before the worker was reached. */
+  function abortPreExecution (approvalId, meta = {}) {
+    return transition(approvalId, PRE_EXECUTION_ABORTED, meta)
+  }
+
+  /** The sandbox itself could not be built. */
+  function failPreparation (approvalId, meta = {}) {
+    return transition(approvalId, PREPARATION_FAILED, meta)
   }
 
   /**
@@ -340,7 +412,7 @@ function createOpenClawQuarantine (options = {}) {
   /** May the envelope be removed? Only once terminality has actually been observed. */
   function mayCleanup (approvalId) {
     const cur = state(approvalId)
-    if (cur === TERMINAL_OBSERVED) return { ok: true }
+    if (cur === TERMINAL_OBSERVED || cur === PRE_EXECUTION_ABORTED || cur === PREPARATION_FAILED) return { ok: true }
     return { ok: false, reason: `refuse: '${approvalId}' is ${cur === null ? 'unknown' : cur}; cleanup requires an observed terminal task status` }
   }
 
@@ -353,6 +425,10 @@ function createOpenClawQuarantine (options = {}) {
     quarantine,
     observeTerminal,
     terminalGrant,
+    preExecutionGrant,
+    verifyTerminalGrant,
+    abortPreExecution,
+    failPreparation,
     markCleaned,
     mayCleanup,
     canStart,
@@ -367,10 +443,11 @@ module.exports = {
   createOpenClawQuarantine,
   fileStore,
   assertLedger,
-  isTerminalGrant,
   STATES,
   KNOWN_STATES,
   UNACCOUNTED,
   TERMINAL_TASK_STATUSES,
-  TERMINAL_FAILURE_STATUSES
+  TERMINAL_FAILURE_STATUSES,
+  GRANT_TERMINAL,
+  GRANT_PRE_EXECUTION
 }

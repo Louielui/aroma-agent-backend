@@ -178,6 +178,12 @@ test('C1. revision mismatch: no worker runs, and the envelope IS removed', async
   const last = g.cleanupResults[g.cleanupResults.length - 1]
   assert.strictEqual(last.ok, true)
   assert.strictEqual(last.why, 'pre-execution')
+
+  // PE3/PE4 — the historical record says what really happened, and invents no task status
+  const rec = g.quarantine.record(APPROVAL)
+  assert.strictEqual(rec.reason, 'no executor was ever started')
+  assert.strictEqual('taskStatus' in rec, false, 'no task existed, so no taskStatus may be recorded')
+  assert.ok(g.cleanupResults.every((x) => x.why !== 'terminal observed'), 'the terminal-observed path is not used here')
 })
 
 /* ══════════════ normal terminal run ══════════════ */
@@ -297,4 +303,133 @@ test('C6. the ledger gate runs BEFORE a sandbox is created', () => {
   q.begin('appr_live'); q.markRunning('appr_live')
   assert.throws(() => gw.prepare(APPROVAL), /locked out/)
   assert.deepStrictEqual(wsl.seen.prepare, [], 'no sandbox may be prepared while locked out')
+})
+
+/* ══════════════ PF1..PF7 — a FAILED prepare must not orphan anything ══════════════ */
+
+/**
+ * prepare() can fail after the envelope exists — a refused clone, a failed branch checkout,
+ * a surviving remote. It THROWS rather than returning, so there is no dir to clean up with
+ * and AgentRunner never calls cleanup because prepare never returned. Review found the
+ * result: a partial envelope on disk and a ledger row stuck at PREPARED, which held nothing
+ * open but made the approvalId permanently unusable while telling nobody why.
+ */
+function failingPrepareWorkspace (over = {}) {
+  const aborted = []
+  const removed = []
+  return {
+    aborted,
+    removed,
+    prepare: () => { throw new Error(over.message || 'refuse: clone failed (network unreachable)') },
+    abortPrepare: (approvalId, opts = {}) => {
+      // the real primitive refuses without a grant from the governing ledger
+      if (!opts.grant || typeof opts.grant !== 'object') {
+        return { ok: false, reason: 'refuse: abortPrepare requires a grant issued by the quarantine ledger' }
+      }
+      aborted.push({ approvalId, kind: opts.grant.kind })
+      return { ok: true, removed: '/home/openclaw/.aroma/sandboxes/' + approvalId }
+    },
+    cleanup: (dir, opts = {}) => {
+      if (!opts.grant) return { ok: false, reason: 'no grant' }
+      removed.push(dir)
+      return { ok: true, removed: dir }
+    },
+    containmentCheck: (d) => d,
+    envelopeContainmentCheck: (d) => d,
+    sandboxState: () => CLEAN_SANDBOX,
+    repoChanges: () => [],
+    diffStat: () => '',
+    diffPatch: () => ''
+  }
+}
+
+function governedFailing (over = {}) {
+  const quarantine = createOpenClawQuarantine({ store: memLedger() })
+  const wsl = failingPrepareWorkspace(over)
+  const cleanupResults = []
+  const workspace = createOpenClawGovernedWorkspace({
+    workspace: wsl, quarantine, onCleanupResult: (r) => cleanupResults.push(r)
+  })
+  const spy = { transport: 0 }
+  const worker = {
+    id: 'openclaw',
+    capabilities: ['openclaw_repo_audit'],
+    invoke: async () => { spy.transport++; return { ok: true, exit: 0, result: 'x', output: {} } }
+  }
+  const runner = createAgentRunner({
+    repoRoot: process.cwd(),
+    projectId: IDENTITY.projectId,
+    repoFullName: IDENTITY.repoFullName,
+    worker,
+    workspace,
+    auditLog: { append: () => {} },
+    writePatch: () => ({ ok: true, path: 'C:/tmp/p.patch', bytes: 1 }),
+    checkCredentials: () => ({ canRun: true, state: 'ok', warning: null, refusal: null, refreshExpiresAt: null, daysLeft: 9, accessTokenValid: true, subscription: 'x' })
+  })
+  return { runner, workspace, quarantine, wsl, spy, cleanupResults }
+}
+
+test('PF1/PF2/PF3/PF4. a failing prepare: run refused, envelope rolled back, ledger honest, no worker', async () => {
+  const g = governedFailing()
+  const r = await run(g)
+
+  // PF1 — AgentRunner surfaces the refusal rather than proceeding
+  assert.strictEqual(r.ok, false)
+  assert.match(r.error, /^workspace_refused/, JSON.stringify(r))
+
+  // PF4 — nothing executed
+  assert.strictEqual(g.spy.transport, 0)
+
+  // PF2 — the partial envelope was rolled back, by approvalId and with a grant
+  assert.deepStrictEqual(g.wsl.aborted, [{ approvalId: APPROVAL, kind: 'pre-execution' }])
+
+  // PF3 — the ledger says what actually happened, and carries no invented task status
+  const rec = g.quarantine.record(APPROVAL)
+  assert.strictEqual(rec.state, STATES.CLEANED)
+  assert.match(rec.reason, /clone failed/)
+  assert.strictEqual('taskStatus' in rec, false, 'no task ever existed, so no task status')
+
+  // and the rollback outcome is reported, never silent
+  assert.ok(g.cleanupResults.some((x) => x.why === 'preparation-failed' && x.ok === true))
+})
+
+test('PF5. another approval can start after a preparation failure', async () => {
+  const g = governedFailing()
+  await run(g)
+  // nothing ran, so nothing is unaccounted for — the world is not blocked
+  assert.deepStrictEqual(g.quarantine.unaccounted(), [])
+  assert.strictEqual(g.quarantine.canStart('appr_other').ok, true)
+})
+
+test('PF6. ⛔ the failed approvalId itself can never be reused', async () => {
+  const g = governedFailing()
+  await run(g)
+  const gate = g.quarantine.canStart(APPROVAL)
+  assert.strictEqual(gate.ok, false)
+  assert.match(gate.reason, /approvals are never reused/)
+  assert.throws(() => g.workspace.prepare(APPROVAL), /approvals are never reused/)
+})
+
+test('PF7. ⛔ rollback is derived from the approvalId, never from the thrown error', async () => {
+  // A thrown message is attacker-influenced input, and the rollback ends in `rm -rf`.
+  const g = governedFailing({ message: 'refuse: clone failed for /etc and /home/openclaw' })
+  await run(g)
+  assert.deepStrictEqual(g.wsl.aborted.map((a) => a.approvalId), [APPROVAL],
+    'the rollback target is the approvalId, never a path parsed out of the message')
+
+  // and the real primitive refuses anything that is not a safe approvalId
+  const { createOpenClawWslWorkspace } = require('../agent/openClawWslWorkspace')
+  const q = createOpenClawQuarantine({ store: memLedger() })
+  const raw = createOpenClawWslWorkspace({
+    wslRunner: () => ({ status: 0, stdout: '', stderr: '', timedOut: false }),
+    verifyTerminalGrant: (x) => q.verifyTerminalGrant(x)
+  })
+  q.begin('appr_safe'); q.abortPreExecution('appr_safe')
+  const grant = q.preExecutionGrant('appr_safe')
+  for (const bad of ['../escape', '/etc', 'a/b', '', 'x'.repeat(65)]) {
+    const res = raw.abortPrepare(bad, { grant })
+    assert.strictEqual(res.ok, false, `${JSON.stringify(bad)} must be refused`)
+  }
+  // and a grant naming a different approval is refused
+  assert.strictEqual(raw.abortPrepare('appr_other', { grant }).ok, false)
 })
