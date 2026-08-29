@@ -49,7 +49,7 @@ function memLedgerStore () {
 }
 /** One ledger governs the workspaces in this file; grants are bound to it. */
 const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
-const isTerminalGrant = (g) => LEDGER.verifyTerminalGrant(g)
+const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
 function grantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
   if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
@@ -129,7 +129,7 @@ function fakeWsl (over = {}) {
   return runner
 }
 
-const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({ wslRunner: fakeWsl(over), verifyTerminalGrant: isTerminalGrant }, cfg))
+const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({ wslRunner: fakeWsl(over), verifyGrant }, cfg))
 
 /* ══════════════ W1/W2/W3 — containment lives in POSIX, inside the distro ══════════════ */
 
@@ -185,7 +185,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
   assert.ok(SOURCE_URL.startsWith('https://'), 'a fixed https origin, never a local path')
   // and prepare clones from exactly it
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x')
   const clone = runner.calls.find((c) => c.includes('clone'))
   assert.ok(clone.includes(SOURCE_URL), `prepare must clone the approved URL: ${clone}`)
@@ -193,7 +193,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
 
 test('W4/W5. prepare returns a POSIX sandbox on the exact agent branch with zero remotes', () => {
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   const p = ws.prepare('appr_x')
 
   assert.strictEqual(p.dir, DIR, 'the executor receives a POSIX path inside the distro')
@@ -243,7 +243,7 @@ test('W6. ⛔ IGNORED untracked files are detected — no --exclude-standard', (
   assert.deepStrictEqual(ws.repoChanges(DIR), ['.env', 'app.log'])
   // and the flag that would hide them is never passed
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   w2.prepare('appr_x'); w2.repoChanges(DIR)
   const ls = runner.calls.find((c) => c.includes('ls-files --others'))
   assert.ok(!ls.includes('--exclude-standard'), `ignored files must stay visible: ${ls}`)
@@ -349,14 +349,14 @@ test('W12. ⛔ cleanup removes only a proven sandbox, and only the whole ENVELOP
   const ws = mk({})
   ws.prepare('appr_x')
   for (const bad of [ROOT, '/', '/home/openclaw', '/home/openclaw/dev/aroma-agent-backend', ENV_DIR]) {
-    const r = ws.cleanup(bad, { grant: grantFor(APPROVAL) })
+    const r = ws.discardPreparedSandbox(bad, { grant: grantFor(APPROVAL) })
     assert.strictEqual(r.ok, false, `${bad} must not be removable`)
   }
 
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   w2.prepare('appr_x')
-  const ok = w2.cleanup(DIR, { grant: grantFor(APPROVAL) })
+  const ok = w2.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) })
   assert.strictEqual(ok.ok, true, JSON.stringify(ok))
   assert.strictEqual(ok.removed, ENV_DIR, 'the ENVELOPE is removed, not just the repo')
 
@@ -375,7 +375,7 @@ test('W12b. ⛔ terminality cannot be ASSERTED by a caller — only a real grant
   // cancel` reports success while the turn keeps running and that killing the client does
   // not stop it, so a returning client proves nothing about what is still writing in here.
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare(APPROVAL)
 
   const forged = [
@@ -388,22 +388,22 @@ test('W12b. ⛔ terminality cannot be ASSERTED by a caller — only a real grant
     { grant: Object.freeze({ approvalId: APPROVAL, state: 'TERMINAL_OBSERVED' }) }
   ]
   for (const opts of forged) {
-    const r = ws.cleanup(DIR, opts)
+    const r = ws.discardPreparedSandbox(DIR, opts)
     assert.strictEqual(r.ok, false, `${JSON.stringify(opts)} must refuse`)
-    assert.match(r.reason, /terminal grant issued by the quarantine ledger/)
+    assert.match(r.reason, /requires a 'pre-execution' grant from the governing quarantine ledger/)
   }
   assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')), 'nothing may be removed without a grant')
 
   // a grant issued for a DIFFERENT approval is refused too
-  const wrong = ws.cleanup(DIR, { grant: grantFor('some_other_approval') })
+  const wrong = ws.discardPreparedSandbox(DIR, { grant: grantFor('some_other_approval') })
   assert.strictEqual(wrong.ok, false)
-  assert.match(wrong.reason, /grant is for 'some_other_approval'/)
+  assert.match(wrong.reason, /requires a 'pre-execution' grant/)
 
   // the sandbox is still usable afterwards — a refused cleanup is not a broken sandbox
   assert.ok(ws.sandboxState(DIR, SHA))
 
   // and a genuine grant for THIS approval works
-  assert.strictEqual(ws.cleanup(DIR, { grant: grantFor(APPROVAL) }).ok, true)
+  assert.strictEqual(ws.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) }).ok, true)
 })
 
 test('W12c. ⛔ an unwired workspace can never delete anything', () => {
@@ -413,9 +413,9 @@ test('W12c. ⛔ an unwired workspace can never delete anything', () => {
   const runner = fakeWsl({})
   const ws = createOpenClawWslWorkspace({ wslRunner: runner })
   ws.prepare(APPROVAL)
-  const r = ws.cleanup(DIR, { grant: grantFor(APPROVAL) })
+  const r = ws.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) })
   assert.strictEqual(r.ok, false)
-  assert.match(r.reason, /terminal grant issued by the quarantine ledger/)
+  assert.match(r.reason, /requires a 'pre-execution' grant from the governing quarantine ledger/)
   assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')))
 })
 
@@ -479,7 +479,7 @@ test('H1. every git call disables fsmonitor and every diff disables ext-diff/tex
   // .git/config lives inside the sandbox being policed. Without these the verifier itself
   // becomes an execution surface for the thing it is verifying.
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x'); ws.repoChanges(DIR); ws.sandboxState(DIR, SHA); ws.diffStat(DIR); ws.diffPatch(DIR)
 
   const gitCalls = runner.calls.filter((c) => c.startsWith('git '))
@@ -574,7 +574,7 @@ test('O3. object identity is checked BEFORE any git evidence is trusted', () => 
   // so the cheap identity question comes first.
   const objects = freshObjects()
   const runner = fakeWsl({ objects })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x')
   const before = runner.calls.length
   objects[DIR] = '2049:7777'

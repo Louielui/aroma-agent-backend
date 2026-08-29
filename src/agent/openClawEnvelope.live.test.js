@@ -69,7 +69,7 @@ function memLedgerStore () {
 }
 /** One ledger governs the workspaces in this file; grants are bound to it. */
 const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
-const isTerminalGrant = (g) => LEDGER.verifyTerminalGrant(g)
+const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
 function grantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
   if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
@@ -82,7 +82,7 @@ const scrub = () => sh(`rm -rf ${ENV_DIR}`)
 
 test('E7/E8. LIVE. the bootstrap layer sits beside the repo and never inside it', opts, () => {
   scrub()
-  const ws = createOpenClawWslWorkspace({ verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
 
   try {
@@ -138,10 +138,10 @@ test('E7/E8. LIVE. the bootstrap layer sits beside the repo and never inside it'
     }
 
     // ── cleanup takes the WHOLE envelope, and only when terminal ──
-    assert.strictEqual(ws.cleanup(REPO_DIR, {}).ok, false, 'no terminal assertion, no removal')
+    assert.strictEqual(ws.discardPreparedSandbox(REPO_DIR, {}).ok, false, 'no terminal assertion, no removal')
     assert.strictEqual(sh(`[ -d ${ENV_DIR} ] && echo yes`).stdout.trim(), 'yes', 'still there after refusal')
 
-    const done = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
+    const done = ws.discardPreparedSandbox(REPO_DIR, { grant: grantFor(APPROVAL) })
     assert.strictEqual(done.ok, true, JSON.stringify(done))
     assert.strictEqual(done.removed, ENV_DIR)
     assert.strictEqual(sh(`[ -e ${ENV_DIR} ] && echo present || echo absent`).stdout.trim(), 'absent',
@@ -208,4 +208,68 @@ test('B3b. LIVE. the WALL-CLOCK bound is NOT claimed, because it is not establis
   const src = fs.readFileSync(path.join(__dirname, 'openClawPolicy.js'), 'utf8')
   assert.ok(!/wall[- ]?clock (bound|guarantee) (is )?(proven|established)/i.test(src),
     'no wall-clock guarantee may be asserted in the policy module')
+})
+
+
+/* ══════════════ PI3 — the replacement hazard, and its REAL limit ══════════════ */
+
+test('PI3. LIVE. object identity defeats move-aside substitution — and inode REUSE is its limit', opts, () => {
+  // The unit tests drive a scripted device:inode. This measures the premise on real ext4,
+  // and the measurement is not what the design would have preferred:
+  //
+  //   move aside + create new  -> DIFFERENT inode   (detected)
+  //   delete + recreate        -> SAME inode        (NOT detected — ext4 recycles it)
+  //
+  // So device:inode defeats the substitution that keeps the original alive for the attacker
+  // to use — the C2-B1 attack — but it does NOT detect delete-then-recreate. That limit is
+  // asserted here rather than left for someone to discover later, because a test that only
+  // demonstrated the happy case would imply a guarantee this mechanism does not give.
+  //
+  // What bounds the residual risk is containment, not identity: whatever a rollback removes
+  // is at <SANDBOX_ROOT>/<approvalId> exactly one level down, a path only this provider
+  // creates. No clone and no model call is involved here.
+  const BASE = SANDBOX_ROOT + '/appr_pi3live'
+  const id = (t) => sh(`stat -c %d:%i -- ${t} 2>/dev/null || echo none`).stdout.trim()
+
+  sh(`rm -rf ${BASE} ${BASE}_aside`)
+  try {
+    sh(`mkdir -p ${BASE}`)
+    const original = id(BASE)
+    assert.match(original, /^\d+:\d+$/)
+
+    // ── the detectable attack: the original survives, so it keeps its inode ──
+    sh(`mv ${BASE} ${BASE}_aside && mkdir -p ${BASE}`)
+    const substituted = id(BASE)
+    assert.match(substituted, /^\d+:\d+$/)
+    assert.notStrictEqual(substituted, original,
+      'move-aside substitution MUST be detectable — this is the C2-B1 attack')
+    assert.strictEqual(id(BASE + '_aside'), original, 'the original kept its identity when moved')
+
+    // ── the honest limit: freeing the inode lets the kernel hand it straight back ──
+    sh(`rm -rf ${BASE} ${BASE}_aside && mkdir -p ${BASE}`)
+    const before = id(BASE)
+    sh(`rm -rf ${BASE} && mkdir -p ${BASE}`)
+    const after = id(BASE)
+    assert.strictEqual(after, before,
+      'MEASURED: delete-then-recreate reuses the inode, so identity alone cannot see it')
+
+    // ── and the control that actually bounds this: containment ──
+    const q = createOpenClawQuarantine({ store: memLedgerStore() })
+    const ws = createOpenClawWslWorkspace({ verifyGrant: (g, e) => q.verifyGrant(g, e) })
+    q.begin('appr_pi3live'); q.failPreparation('appr_pi3live', { reason: 'synthetic' })
+    const grant = q.preExecutionGrant('appr_pi3live')
+
+    // no pinned baseline for an existing path -> refuse, whatever its inode says
+    const r = ws.abortPrepare('appr_pi3live', { grant })
+    assert.strictEqual(r.ok, false, JSON.stringify(r))
+    assert.match(r.reason, /never pinned its identity/)
+    assert.strictEqual(sh(`[ -d ${BASE} ] && echo yes`).stdout.trim(), 'yes', 'the directory is preserved')
+
+    // and nothing outside the fixed root is reachable at all
+    for (const outside of ['/etc', '/home/openclaw', '..', '../..']) {
+      assert.strictEqual(ws.abortPrepare(outside, { grant }).ok, false, `${outside} must be refused`)
+    }
+  } finally {
+    sh(`rm -rf ${BASE} ${BASE}_aside`)
+  }
 })

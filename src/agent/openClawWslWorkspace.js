@@ -39,6 +39,10 @@ const SANDBOX_ROOT = '/home/openclaw/.aroma/sandboxes'
 /** The clone lives in this fixed child of the envelope. See envelopeContainmentCheck. */
 const REPO_CHILD = 'repo'
 
+/** Grant kinds, mirrored from the quarantine ledger. Each operation fixes its own. */
+const GRANT_TERMINAL = 'terminal-observed'
+const GRANT_PRE_EXECUTION = 'pre-execution'
+
 /**
  * ⛔ THERE IS NO PERSISTENT LOCAL MIRROR, DELIBERATELY.
  *
@@ -144,7 +148,9 @@ function createOpenClawWslWorkspace (options = {}) {
   const run = typeof options.wslRunner === 'function' ? options.wslRunner : defaultWslRunner
   // Injected at construction by the governed adapter. Default refuses everything, so an
   // unwired workspace can never remove an envelope.
-  const verifyTerminalGrant = typeof options.verifyTerminalGrant === 'function' ? options.verifyTerminalGrant : () => false
+  // Injected at construction by the governed adapter: the GOVERNING ledger's own verifier.
+  // Default refuses everything, so an unwired workspace can never remove an envelope.
+  const verifyGrant = typeof options.verifyGrant === 'function' ? options.verifyGrant : () => false
   const timeoutMs = Number.isFinite(options.timeoutMs) ? options.timeoutMs : DEFAULT_TIMEOUT_MS
   const maxOutput = Number.isFinite(options.maxOutput) ? options.maxOutput : DEFAULT_MAX_OUTPUT
 
@@ -152,6 +158,13 @@ function createOpenClawWslWorkspace (options = {}) {
 
   /** The sandbox identity recorded by prepare(), keyed by the POSIX clone path. */
   const PREPARED = new Map()
+
+  /**
+   * The envelope identity pinned the instant the envelope exists, keyed by approvalId.
+   * This is what makes a rollback after a FAILED prepare() safe: without it, rollback would
+   * have only the path to go on.
+   */
+  const PREPARING = new Map()
 
   /** Run a fixed-argv command inside the distro. No shell, ever. */
   function wsl (argv) {
@@ -273,6 +286,18 @@ function createOpenClawWslWorkspace (options = {}) {
     if (mkEnv.status !== 0) throw new Error('refuse: envelope not creatable')
     envelopeContainmentCheck(envelope)
 
+    // ⛔ PIN THE ENVELOPE OBJECT BEFORE ANYTHING FALLIBLE RUNS.
+    //
+    // prepare() can throw during the clone, the checkout, or the remote strip — long after
+    // the envelope exists but before the PREPARED baseline is written. Rollback would then
+    // have had nothing but the PATH to go on, which is exactly the same-path replacement
+    // hazard C2-B1 exists to close: between the failure and the rollback, this directory can
+    // be swapped for another, and `rm -rf` would take the replacement.
+    //
+    // The identity is therefore recorded HERE — immediately after mkdir and containment,
+    // and before the first operation that can fail.
+    PREPARING.set(approvalId, Object.freeze({ envelope: canon(envelope), envelopeObject: objectIdentity(envelope) }))
+
     // ⛔ FRESHNESS IS STRUCTURAL, NOT A PREREQUISITE SOMEONE MUST REMEMBER.
     // The first version exposed refreshMirror() as a separate method, so current source
     // depended on a future composition layer calling it first — and AgentRunner only ever
@@ -314,7 +339,15 @@ function createOpenClawWslWorkspace (options = {}) {
     // The ENVELOPE is pinned too, because it is what cleanup ultimately removes. Recovering
     // it by string-slicing the repo path at cleanup time would trust the caller's path
     // exactly where trusting it is most expensive.
+    // The envelope must still be the object pinned at the top of prepare(). Re-measuring it
+    // fresh here would adopt whatever is standing there now, which is the attack rather than
+    // a check against it.
+    const preparing = PREPARING.get(approvalId)
+    if (!preparing) throw new Error('refuse: no preparing baseline for this envelope')
     const envelopeObject = objectIdentity(envelope)
+    if (envelopeObject !== preparing.envelopeObject) {
+      throw new Error(`refuse: the envelope changed during preparation (${preparing.envelopeObject} -> ${envelopeObject})`)
+    }
     const dirObject = objectIdentity(dir)
     const gitObject = objectIdentity(dir + '/.git')
 
@@ -322,6 +355,9 @@ function createOpenClawWslWorkspace (options = {}) {
       approvalId, root: canon(dir), envelope: canon(envelope), topLevel, gitDir, commonDir,
       baseSha, branch, envelopeObject, dirObject, gitObject
     }))
+
+    // The identity is now owned by PREPARED; the preparing record has done its job.
+    PREPARING.delete(approvalId)
 
     return { dir, branch, baseSha }
   }
@@ -345,11 +381,11 @@ function createOpenClawWslWorkspace (options = {}) {
     if (typeof approvalId !== 'string' || !SAFE_ID.test(approvalId)) {
       return { ok: false, reason: 'refuse: abortPrepare requires a safe approvalId' }
     }
-    if (!verifyTerminalGrant(opts.grant)) {
-      return { ok: false, reason: 'refuse: abortPrepare requires a grant issued by the quarantine ledger' }
-    }
-    if (!opts.grant || opts.grant.approvalId !== approvalId) {
-      return { ok: false, reason: `refuse: the grant is for '${opts.grant && opts.grant.approvalId}', not '${approvalId}'` }
+    // ⛔ THE KIND IS FIXED BY THE OPERATION, NOT CHOSEN BY THE CALLER.
+    // Rollback is only ever legitimate when nothing executed, so only a pre-execution grant
+    // authorises it. A genuine terminal-observed grant is refused here.
+    if (!verifyGrant(opts.grant, { approvalId, kind: GRANT_PRE_EXECUTION })) {
+      return { ok: false, reason: `refuse: abortPrepare requires a '${GRANT_PRE_EXECUTION}' grant from the governing quarantine ledger for '${approvalId}'` }
     }
 
     const envelope = `${sandboxRoot}/${approvalId}`
@@ -359,14 +395,41 @@ function createOpenClawWslWorkspace (options = {}) {
       return { ok: false, reason: (e && e.message) || 'containment refused' }
     }
 
-    const dir = `${envelope}/${REPO_CHILD}`
-    PREPARED.delete(dir)
-
+    const preparing = PREPARING.get(approvalId)
     const exists = wsl(['test', '-e', envelope])
-    if (exists.status !== 0) return { ok: true, removed: null, note: 'nothing to roll back' }
+
+    // Nothing there: rollback is idempotent, and the baseline can be dropped safely.
+    if (exists.status !== 0) {
+      PREPARING.delete(approvalId)
+      PREPARED.delete(`${envelope}/${REPO_CHILD}`)
+      return { ok: true, removed: null, note: 'nothing to roll back' }
+    }
+
+    // ⛔ AN EXISTING PATH WITH NO BASELINE IS NOT OURS TO DELETE.
+    // prepare() can fail BEFORE the identity was pinned — the stale-envelope removal itself
+    // can fail, for instance. Path identity alone is not evidence that this directory is the
+    // one we created, and this function ends in `rm -rf`.
+    if (!preparing) {
+      return { ok: false, reason: `refuse: '${envelope}' exists but this workspace never pinned its identity; refusing to delete a directory it cannot account for` }
+    }
+
+    let now
+    try {
+      now = objectIdentity(envelope)
+    } catch (e) {
+      return { ok: false, reason: (e && e.message) || 'envelope identity unreadable' }
+    }
+    if (now !== preparing.envelopeObject) {
+      // Never adopt the replacement as the new baseline: keep refusing, and keep the object
+      // so somebody can look at what is actually sitting there.
+      return { ok: false, reason: `refuse: the envelope is not the object this prepare created (${preparing.envelopeObject} -> ${now}); the replacement is preserved` }
+    }
 
     const rm = wsl(['rm', '-rf', '--', envelope])
     if (rm.status !== 0) return { ok: false, reason: (rm.stderr || '').trim().slice(0, 200) || 'remove failed' }
+
+    PREPARING.delete(approvalId)
+    PREPARED.delete(`${envelope}/${REPO_CHILD}`)
     return { ok: true, removed: envelope }
   }
 
@@ -520,15 +583,13 @@ function createOpenClawWslWorkspace (options = {}) {
    * Deriving it by trimming '/repo' off the caller's string would reintroduce exactly the
    * path-trust this provider exists to remove.
    */
-  function cleanup (dir, opts = {}) {
+  function removeEnvelope (dir, opts, expectedKind, label) {
     const baseline = PREPARED.get(dir)
     if (!baseline) return { ok: false, reason: 'refuse: no prepared sandbox baseline for this workspace' }
 
-    if (!verifyTerminalGrant(opts.grant)) {
-      return { ok: false, reason: 'refuse: cleanup requires a terminal grant issued by the quarantine ledger' }
-    }
-    if (!opts.grant || opts.grant.approvalId !== baseline.approvalId) {
-      return { ok: false, reason: `refuse: the terminal grant is for '${opts.grant && opts.grant.approvalId}', not '${baseline.approvalId}'` }
+    // ⛔ THE EXPECTED KIND IS SUPPLIED BY THE OPERATION, NEVER BY THE CALLER.
+    if (!verifyGrant(opts.grant, { approvalId: baseline.approvalId, kind: expectedKind })) {
+      return { ok: false, reason: `refuse: ${label} requires a '${expectedKind}' grant from the governing quarantine ledger for '${baseline.approvalId}'` }
     }
 
     const envelope = baseline.envelope
@@ -559,16 +620,32 @@ function createOpenClawWslWorkspace (options = {}) {
     return { ok: true, removed: envelope }
   }
 
+  /**
+   * Cleanup AFTER an executor ran. Only a terminal-observed grant authorises it, so a
+   * pre-execution grant can never stand in for evidence that a real task finished.
+   */
+  function cleanupAfterExecution (dir, opts = {}) {
+    return removeEnvelope(dir, opts, GRANT_TERMINAL, 'cleanup after execution')
+  }
+
+  /**
+   * Discard a sandbox no executor ever touched. Only a pre-execution grant authorises it.
+   */
+  function discardPreparedSandbox (dir, opts = {}) {
+    return removeEnvelope(dir, opts, GRANT_PRE_EXECUTION, 'discarding a prepared sandbox')
+  }
+
   return {
     prepare,
     containmentCheck,
     envelopeContainmentCheck,
     abortPrepare,
+    cleanupAfterExecution,
+    discardPreparedSandbox,
     repoChanges,
     sandboxState,
     diffStat,
     diffPatch,
-    cleanup,
     // Observable so composition can be asserted rather than assumed.
     distro,
     sandboxRoot

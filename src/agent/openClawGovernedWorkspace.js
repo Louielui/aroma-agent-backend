@@ -115,15 +115,19 @@ function createOpenClawGovernedWorkspace (deps = {}) {
     // a run refused before the executor gets its own state and carries no taskStatus.
     if (state === quarantine.STATES.PREPARED) {
       quarantine.abortPreExecution(approvalId, { reason: 'no executor was ever started' })
-      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId))
+      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId), workspace.discardPreparedSandbox)
     }
 
     if (state === quarantine.STATES.PRE_EXECUTION_ABORTED || state === quarantine.STATES.PREPARATION_FAILED) {
-      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId))
+      return finish(dir, approvalId, 'pre-execution', quarantine.preExecutionGrant(approvalId), workspace.discardPreparedSandbox)
     }
 
+    // ⛔ THE OPERATION IS CHOSEN BY LEDGER STATE, AND EACH OPERATION FIXES ITS OWN GRANT KIND.
+    // A pre-execution grant cannot reach cleanupAfterExecution, and a terminal-observed grant
+    // cannot reach discardPreparedSandbox: authority is bound to the operation, not merely
+    // carried as a label on the grant.
     if (state === quarantine.STATES.TERMINAL_OBSERVED) {
-      return finish(dir, approvalId, 'terminal observed', quarantine.terminalGrant(approvalId))
+      return finish(dir, approvalId, 'terminal observed', quarantine.terminalGrant(approvalId), workspace.cleanupAfterExecution)
     }
 
     // RUNNING, CLIENT_TIMEOUT or QUARANTINED: something may still be alive in there.
@@ -136,8 +140,8 @@ function createOpenClawGovernedWorkspace (deps = {}) {
     })
   }
 
-  function finish (dir, approvalId, why, grant) {
-    const result = workspace.cleanup(dir, { grant })
+  function finish (dir, approvalId, why, grant, op) {
+    const result = op.call(workspace, dir, { grant })
     if (result && result.ok) {
       quarantine.markCleaned(approvalId, { note: why })
       OWNER.delete(dir)

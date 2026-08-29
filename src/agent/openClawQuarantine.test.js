@@ -335,7 +335,7 @@ test('G1. a terminal grant cannot be forged, and is only issued when terminal', 
 
   q.observeTerminal('appr_g', 'failed')
   const grant = q.terminalGrant('appr_g')
-  assert.strictEqual(q.verifyTerminalGrant(grant), true)
+  assert.strictEqual(q.verifyGrant(grant, { approvalId: 'appr_g', kind: 'terminal-observed' }), true)
   assert.strictEqual(grant.approvalId, 'appr_g')
 
   for (const forged of [
@@ -345,7 +345,7 @@ test('G1. a terminal grant cannot be forged, and is only issued when terminal', 
     Object.freeze({ approvalId: 'appr_g', state: STATES.TERMINAL_OBSERVED }),
     JSON.parse(JSON.stringify(grant))
   ]) {
-    assert.strictEqual(q.verifyTerminalGrant(forged), false, 'a literal must never verify')
+    assert.strictEqual(q.verifyGrant(forged, { approvalId: 'appr_g', kind: 'terminal-observed' }), false, 'a literal must never verify')
   }
 })
 
@@ -364,16 +364,16 @@ test('G2. ⛔ a grant from a DIFFERENT ledger is refused, same approvalId and al
   const ga = a.terminalGrant('appr_same')
   const gb = b.terminalGrant('appr_same')
 
-  assert.strictEqual(a.verifyTerminalGrant(ga), true, 'its own grant verifies')
-  assert.strictEqual(b.verifyTerminalGrant(gb), true)
-  assert.strictEqual(b.verifyTerminalGrant(ga), false, 'a cross-ledger grant must NOT verify')
-  assert.strictEqual(a.verifyTerminalGrant(gb), false)
+  assert.strictEqual(a.verifyGrant(ga, { approvalId: 'appr_same', kind: 'terminal-observed' }), true, 'its own grant verifies')
+  assert.strictEqual(b.verifyGrant(gb, { approvalId: 'appr_same', kind: 'terminal-observed' }), true)
+  assert.strictEqual(b.verifyGrant(ga, { approvalId: 'appr_same', kind: 'terminal-observed' }), false, 'a cross-ledger grant must NOT verify')
+  assert.strictEqual(a.verifyGrant(gb, { approvalId: 'appr_same', kind: 'terminal-observed' }), false)
   assert.strictEqual(ga.approvalId, gb.approvalId, 'and they name the same approval, so only the brand distinguishes them')
 })
 
 test('G3. ⛔ there is no process-global verifier to export', () => {
   const mod = require('../agent/openClawQuarantine')
-  assert.strictEqual(typeof mod.isTerminalGrant, 'undefined',
+  assert.strictEqual(typeof mod.verifyGrant, 'undefined',
     'a module-level verifier would re-open the cross-ledger hole')
   const src = fs.readFileSync(path.join(__dirname, 'openClawQuarantine.js'), 'utf8')
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/(^|[^:])\/\/.*$/gm, '$1')

@@ -54,7 +54,7 @@ function memLedgerStore () {
 }
 /** One ledger governs the workspaces in this file; grants are bound to it. */
 const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
-const isTerminalGrant = (g) => LEDGER.verifyTerminalGrant(g)
+const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
 function grantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
   if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
@@ -71,12 +71,18 @@ function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i
  */
 function fakeWsl (over = {}) {
   const calls = []
+  // the fake must model existence, or  answers 'absent' for a directory mkdir
+  // just created and the rollback path is never exercised at all
+  const live = new Set(over.present || [])
   let branch = 'agent/' + APPROVAL
   const ok = (stdout) => ({ status: 0, stdout: stdout === undefined ? '' : stdout, stderr: '', timedOut: false })
   const runner = (argv) => {
     const a = inner(argv)
     calls.push(a.join(' '))
-    if (a[0] === 'mkdir' || a[0] === 'rm' || a[0] === 'ln') return ok()
+    if (over.fail && over.fail(a)) return { status: 128, stdout: '', stderr: 'fatal: scripted failure', timedOut: false }
+    if (a[0] === 'mkdir') { live.add(a[a.length - 1]); return ok() }
+    if (a[0] === 'rm') { const t = a[a.length - 1]; for (const k of Array.from(live)) if (k === t || k.startsWith(t + '/')) live.delete(k); return ok() }
+    if (a[0] === 'ln') return ok()
     if (a[0] === 'stat') {
       const target = a[a.length - 1]
       const table = over.objects || {}
@@ -87,10 +93,7 @@ function fakeWsl (over = {}) {
       const target = a[a.length - 1]
       if (a[1] === '-L') return { status: 1, stdout: '', stderr: '', timedOut: false }
       if (a[1] === '-d' && target.endsWith('/.git')) return { status: 0, stdout: '', stderr: '', timedOut: false }
-      if (a[1] === '-e') {
-        const present = (over.present || []).includes(target)
-        return { status: present ? 0 : 1, stdout: '', stderr: '', timedOut: false }
-      }
+      if (a[1] === '-e') return { status: live.has(target) ? 0 : 1, stdout: '', stderr: '', timedOut: false }
       return { status: 1, stdout: '', stderr: '', timedOut: false }
     }
     if (a[0] === 'readlink') {
@@ -123,7 +126,7 @@ function fakeWsl (over = {}) {
   return runner
 }
 
-const mk = (over = {}) => createOpenClawWslWorkspace({ wslRunner: fakeWsl(over), verifyTerminalGrant: isTerminalGrant })
+const mk = (over = {}) => createOpenClawWslWorkspace({ wslRunner: fakeWsl(over), verifyGrant })
 
 /* ══════════════ E1 — the shape itself ══════════════ */
 
@@ -184,7 +187,7 @@ test('E4. ⛔ a REPLACED .git is detected', () => {
 test('E4b. the envelope is checked BEFORE the repo, and no git evidence is gathered after a mismatch', () => {
   const objects = { [ENV_DIR]: '2049:100', [REPO_DIR]: '2049:200', [REPO_DIR + '/.git']: '2049:300' }
   const runner = fakeWsl({ objects })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare(APPROVAL)
   const before = runner.calls.length
   objects[ENV_DIR] = '2049:999'
@@ -198,10 +201,10 @@ test('E4b. the envelope is checked BEFORE the repo, and no git evidence is gathe
 
 test('E5. cleanup removes the ENVELOPE, never the repo path it was handed', () => {
   const runner = fakeWsl()
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare(APPROVAL)
 
-  const r = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
+  const r = ws.discardPreparedSandbox(REPO_DIR, { grant: grantFor(APPROVAL) })
   assert.deepStrictEqual(r, { ok: true, removed: ENV_DIR })
 
   const removals = runner.calls.filter((c) => c.startsWith('rm -rf'))
@@ -213,14 +216,14 @@ test('E5b. the envelope comes from the PREPARED record, not from trimming the ar
   // Deriving it by chopping '/repo' off the caller's string would re-trust the caller's path
   // at the one moment it is most expensive to be wrong: immediately before rm -rf.
   const ws = mk()
-  const unprepared = ws.cleanup(SANDBOX_ROOT + '/never_prepared/repo', { grant: grantFor(APPROVAL) })
+  const unprepared = ws.discardPreparedSandbox(SANDBOX_ROOT + '/never_prepared/repo', { grant: grantFor(APPROVAL) })
   assert.strictEqual(unprepared.ok, false)
   assert.match(unprepared.reason, /no prepared sandbox baseline/)
 })
 
 test('E6. ⛔ cleanup cannot escape the sandbox root, whatever it is handed', () => {
   const runner = fakeWsl()
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare(APPROVAL)
 
   const escapes = [
@@ -231,7 +234,7 @@ test('E6. ⛔ cleanup cannot escape the sandbox root, whatever it is handed', ()
     SANDBOX_ROOT + '/appr_x/repo/nested'
   ]
   for (const bad of escapes) {
-    const r = ws.cleanup(bad, { grant: grantFor(APPROVAL) })
+    const r = ws.discardPreparedSandbox(bad, { grant: grantFor(APPROVAL) })
     assert.strictEqual(r.ok, false, `${bad} must be refused`)
   }
   assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')), 'no removal may be attempted for any of them')
@@ -242,14 +245,14 @@ test('E6b. ⛔ a REPLACED envelope is never deleted', () => {
   // destroy something we cannot account for.
   const objects = { [ENV_DIR]: '2049:100', [REPO_DIR]: '2049:200', [REPO_DIR + '/.git']: '2049:300' }
   const runner = fakeWsl({ objects, present: [ENV_DIR] })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyTerminalGrant: isTerminalGrant })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare(APPROVAL)
 
   // prepare() legitimately removes a pre-existing stale envelope, so only removals issued
   // AFTER this point are evidence about cleanup.
   const before = runner.calls.length
   objects[ENV_DIR] = '2049:999'
-  const r = ws.cleanup(REPO_DIR, { grant: grantFor(APPROVAL) })
+  const r = ws.discardPreparedSandbox(REPO_DIR, { grant: grantFor(APPROVAL) })
   assert.strictEqual(r.ok, false)
   assert.match(r.reason, /envelope is not the prepared object/)
   assert.ok(!runner.calls.slice(before).some((c) => c.startsWith('rm -rf')),
@@ -278,4 +281,154 @@ test('E6d. ⛔ a symlink cannot make an outside path look contained', () => {
   // The literal string is contained; the canonical path is not. Only the canonical one counts.
   const ws = mk({ realpath: { [REPO_DIR]: '/etc' } })
   assert.throws(() => ws.containmentCheck(REPO_DIR), /refuse:/)
+})
+
+/* ══════════════ GK1..GK6 — grant KIND is authority, not a label ══════════════ */
+
+/**
+ * Round 2 gave grants a `kind`, but the verifier checked only WeakSet membership. The two
+ * grants were therefore different as DATA and identical as AUTHORITY: a genuine
+ * terminal-observed grant could authorise abortPrepare(), the one operation that must only
+ * ever run when nothing has executed. Each operation now fixes its own expected kind, and
+ * the caller never gets to choose it.
+ */
+function terminalGrantFor (approvalId) {
+  if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.RUNNING) LEDGER.observeTerminal(approvalId, 'lost')
+  return LEDGER.terminalGrant(approvalId)
+}
+
+test('GK1/GK2. abortPrepare accepts ONLY a pre-execution grant', () => {
+  // Rollback is only meaningful after a FAILED prepare — a successful one hands its identity
+  // to PREPARED and clears the rollback baseline deliberately.
+  const ws = failAt('clone', { [SANDBOX_ROOT + '/gk_a']: '2049:400' })
+  assert.throws(() => ws.prepare('gk_a'), /refuse:/)
+  assert.strictEqual(ws.abortPrepare('gk_a', { grant: grantFor('gk_a') }).ok, true)
+
+  // GK2 — a GENUINE terminal-observed grant must not authorise a rollback, even for the
+  // right approval on the right ledger with a real pinned baseline waiting.
+  const ws2 = failAt('clone', { [SANDBOX_ROOT + '/gk_t']: '2049:401' })
+  assert.throws(() => ws2.prepare('gk_t'), /refuse:/)
+  const wrongKind = ws2.abortPrepare('gk_t', { grant: terminalGrantFor('gk_t') })
+  assert.strictEqual(wrongKind.ok, false)
+  assert.match(wrongKind.reason, /requires a 'pre-execution' grant/)
+})
+
+test('GK3/GK6. the two removal operations cannot be substituted for one another', () => {
+  const wsA = mk()
+  wsA.prepare('gk_x')
+  const preX = grantFor('gk_x')
+  const termX = terminalGrantFor('gk_y')
+
+  const a = wsA.cleanupAfterExecution(SANDBOX_ROOT + '/gk_x/repo', { grant: preX })
+  assert.strictEqual(a.ok, false)
+  assert.match(a.reason, /requires a 'terminal-observed' grant/)
+
+  const wsB = mk()
+  wsB.prepare('gk_y')
+  const b = wsB.discardPreparedSandbox(SANDBOX_ROOT + '/gk_y/repo', { grant: termX })
+  assert.strictEqual(b.ok, false)
+  assert.match(b.reason, /requires a 'pre-execution' grant/)
+
+  assert.strictEqual(wsB.cleanupAfterExecution(SANDBOX_ROOT + '/gk_y/repo', { grant: termX }).ok, true)
+})
+
+test('GK4/GK5. wrong ledger, wrong approval and forged grants are all refused', () => {
+  const ws = mk()
+  ws.prepare('gk_z')
+
+  const other = createOpenClawQuarantine({ store: memLedgerStore() })
+  other.begin('gk_z'); other.abortPreExecution('gk_z')
+  const foreign = other.preExecutionGrant('gk_z')
+  assert.strictEqual(ws.abortPrepare('gk_z', { grant: foreign }).ok, false)
+
+  assert.strictEqual(ws.abortPrepare('gk_z', { grant: grantFor('gk_other') }).ok, false)
+
+  const real = grantFor('gk_z')
+  for (const forged of [
+    undefined, null, {}, { approvalId: 'gk_z' },
+    { approvalId: 'gk_z', kind: 'pre-execution' },
+    Object.freeze({ approvalId: 'gk_z', kind: 'pre-execution' }),
+    JSON.parse(JSON.stringify(real))
+  ]) {
+    assert.strictEqual(ws.abortPrepare('gk_z', { grant: forged }).ok, false, JSON.stringify(forged))
+  }
+})
+
+/* ══════════════ PI1..PI8 — rollback deletes only the object prepare() created ══════════════ */
+
+/**
+ * prepare() pins the envelope's device:inode immediately after mkdir, BEFORE the clone. That
+ * is what makes rollback after a failure safe: without it, rollback has only the PATH to go
+ * on, which is exactly the same-path replacement hazard C2-B1 closed for the repo and its
+ * .git. Between a failed prepare and the rollback, this directory can be swapped.
+ */
+function failAt (which, objects) {
+  return mk({ objects, fail: (a) => a[0] === 'git' && a.join(' ').includes(which) })
+}
+
+test('PI1/PI2. a failure after envelope creation rolls back the ORIGINAL envelope', () => {
+  for (const stage of ['clone', 'checkout']) {
+    const objects = { [SANDBOX_ROOT + '/pi_' + stage]: '2049:500' }
+    const ws = failAt(stage, objects)
+    assert.throws(() => ws.prepare('pi_' + stage), /refuse:/)
+
+    const r = ws.abortPrepare('pi_' + stage, { grant: grantFor('pi_' + stage) })
+    assert.strictEqual(r.ok, true, `${stage}: ${JSON.stringify(r)}`)
+    assert.strictEqual(r.removed, SANDBOX_ROOT + '/pi_' + stage)
+  }
+})
+
+test('PI3. a REPLACED envelope is never deleted by rollback', () => {
+  const env = SANDBOX_ROOT + '/pi_swap'
+  const objects = { [env]: '2049:600' }
+  const ws = failAt('clone', objects)
+  assert.throws(() => ws.prepare('pi_swap'), /refuse:/)
+
+  objects[env] = '2049:999'
+  const r = ws.abortPrepare('pi_swap', { grant: grantFor('pi_swap') })
+  assert.strictEqual(r.ok, false)
+  assert.match(r.reason, /not the object this prepare created/)
+  assert.match(r.reason, /the replacement is preserved/)
+
+  assert.strictEqual(ws.abortPrepare('pi_swap', { grant: grantFor('pi_swap') }).ok, false)
+})
+
+test('PI4. an existing envelope with NO pinned identity is never deleted', () => {
+  const ws = mk({ present: [SANDBOX_ROOT + '/pi_none'] })
+  const r = ws.abortPrepare('pi_none', { grant: grantFor('pi_none') })
+  assert.strictEqual(r.ok, false)
+  assert.match(r.reason, /never pinned its identity/)
+})
+
+test('PI5. rollback is idempotent when the envelope is already absent', () => {
+  const ws = mk()
+  const r = ws.abortPrepare('pi_gone', { grant: grantFor('pi_gone') })
+  assert.strictEqual(r.ok, true)
+  assert.strictEqual(r.removed, null)
+  assert.match(r.note, /nothing to roll back/)
+})
+
+test('PI6/PI7. a successful prepare carries the SAME envelope object into PREPARED', () => {
+  const env = SANDBOX_ROOT + '/pi_ok'
+  const objects = { [env]: '2049:700', [env + '/repo']: '2049:701', [env + '/repo/.git']: '2049:702' }
+  const ws = mk({ objects })
+  const p = ws.prepare('pi_ok')
+
+  assert.ok(ws.sandboxState(p.dir, SHA))
+
+  const after = ws.abortPrepare('pi_ok', { grant: grantFor('pi_ok') })
+  assert.strictEqual(after.ok, false)
+  assert.match(after.reason, /never pinned its identity/)
+})
+
+test('PI8. a successful rollback clears the preparing baseline', () => {
+  const objects = { [SANDBOX_ROOT + '/pi_clr']: '2049:900' }
+  const ws = failAt('clone', objects)
+  assert.throws(() => ws.prepare('pi_clr'), /refuse:/)
+  assert.strictEqual(ws.abortPrepare('pi_clr', { grant: grantFor('pi_clr') }).ok, true)
+  const second = ws.abortPrepare('pi_clr', { grant: grantFor('pi_clr') })
+  assert.strictEqual(second.ok, true)
+  assert.strictEqual(second.removed, null)
 })

@@ -383,11 +383,24 @@ function createOpenClawQuarantine (options = {}) {
   }
 
   /**
-   * ⛔ THIS INSTANCE'S verifier. Wired into the workspace at construction time.
-   * A grant from a different ledger fails here even if it names the same approvalId.
+   * ⛔ THIS INSTANCE'S verifier — AND THE KIND IS AUTHORITY, NOT A LABEL.
+   *
+   * The first version checked only WeakSet membership and left `kind` sitting in the grant
+   * as decoration. The two grants were therefore mechanically different as DATA but
+   * identical as AUTHORITY: a genuine `terminal-observed` grant could authorise
+   * abortPrepare(), which is the one operation that must only ever run when nothing has
+   * executed. Membership alone answers "did this ledger issue something", not "did this
+   * ledger authorise THIS".
+   *
+   * All three facts are now checked together, and the expected kind is supplied by the
+   * OPERATION, never by whoever is calling it.
    */
-  function verifyTerminalGrant (g) {
-    return !!g && typeof g === 'object' && issuedGrants.has(g)
+  function verifyGrant (g, expect = {}) {
+    if (!g || typeof g !== 'object') return false
+    if (!issuedGrants.has(g)) return false
+    if (g.approvalId !== expect.approvalId) return false
+    const kinds = Array.isArray(expect.kind) ? expect.kind : [expect.kind]
+    return kinds.includes(g.kind)
   }
 
   /** No executor ever started: the revision gate refused before the worker was reached. */
@@ -426,7 +439,7 @@ function createOpenClawQuarantine (options = {}) {
     observeTerminal,
     terminalGrant,
     preExecutionGrant,
-    verifyTerminalGrant,
+    verifyGrant,
     abortPreExecution,
     failPreparation,
     markCleaned,

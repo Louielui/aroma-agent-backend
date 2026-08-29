@@ -76,7 +76,21 @@ const CLEAN_SANDBOX = {
  */
 function fakeWslWorkspace (over = {}) {
   const removed = []
-  const seen = { prepare: [], cleanupOpts: [] }
+  const seen = { prepare: [], cleanupOpts: [], ops: [] }
+
+  function remove (dir, opts, expectedKind, label) {
+    seen.cleanupOpts.push(opts)
+    seen.ops.push({ label, expectedKind, kind: opts.grant && opts.grant.kind })
+    if (!opts.grant || typeof opts.grant !== 'object') {
+      return { ok: false, reason: `refuse: ${label} requires a '${expectedKind}' grant from the governing quarantine ledger` }
+    }
+    if (opts.grant.kind !== expectedKind) {
+      return { ok: false, reason: `refuse: ${label} requires a '${expectedKind}' grant, got '${opts.grant.kind}'` }
+    }
+    removed.push(ENV_DIR)
+    return { ok: true, removed: ENV_DIR }
+  }
+
   return {
     removed,
     seen,
@@ -84,16 +98,10 @@ function fakeWslWorkspace (over = {}) {
       seen.prepare.push(approvalId)
       return { dir: REPO_DIR, branch: 'agent/' + approvalId, baseSha: over.baseSha || APPROVED }
     },
-    cleanup: (dir, opts = {}) => {
-      seen.cleanupOpts.push(opts)
-      // the real provider refuses without a genuine grant; mirror that here so a missing
-      // grant cannot pass unnoticed
-      if (!opts.grant || typeof opts.grant !== 'object') {
-        return { ok: false, reason: 'refuse: cleanup requires a terminal grant issued by the quarantine ledger' }
-      }
-      removed.push(ENV_DIR)
-      return { ok: true, removed: ENV_DIR }
-    },
+    // Each operation fixes its own expected grant kind, exactly as the real provider does,
+    // so the adapter cannot quietly pass the wrong authority to the wrong operation.
+    discardPreparedSandbox: (dir, opts = {}) => remove(dir, opts, 'pre-execution', 'discarding a prepared sandbox'),
+    cleanupAfterExecution: (dir, opts = {}) => remove(dir, opts, 'terminal-observed', 'cleanup after execution'),
     containmentCheck: (d) => d,
     envelopeContainmentCheck: (d) => d,
     sandboxState: () => Object.assign({}, CLEAN_SANDBOX, over.sandbox || {}),
@@ -329,7 +337,7 @@ function failingPrepareWorkspace (over = {}) {
       aborted.push({ approvalId, kind: opts.grant.kind })
       return { ok: true, removed: '/home/openclaw/.aroma/sandboxes/' + approvalId }
     },
-    cleanup: (dir, opts = {}) => {
+    discardPreparedSandbox: (dir, opts = {}) => {
       if (!opts.grant) return { ok: false, reason: 'no grant' }
       removed.push(dir)
       return { ok: true, removed: dir }
