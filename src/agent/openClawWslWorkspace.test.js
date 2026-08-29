@@ -31,9 +31,32 @@ const { createOpenClawWslWorkspace, DISTRO, SANDBOX_ROOT, SOURCE_URL, WSL_EXE, C
 const SHA = '4511f7deeb279b189642b3b812b56250ce518d98'
 const OTHER_SHA = 'e034ccc5cc89409375f538ce2a6b7a30f2d14700'
 const ROOT = SANDBOX_ROOT
-const DIR = ROOT + '/appr_x'
+const APPROVAL = 'appr_x'
+const ENV_DIR = ROOT + '/' + APPROVAL
+const DIR = ENV_DIR + '/repo'
 
 /** Strip the fixed `-d <distro> --` prefix so a fake can read the command it was given. */
+
+/**
+ * Terminality is proven, not asserted: cleanup requires a grant the quarantine ledger
+ * issues only after observing a terminal task status. Tests mint real grants the same way
+ * production does, so no test can quietly bypass the gate a caller cannot bypass.
+ */
+const { createOpenClawQuarantine } = require('../agent/openClawQuarantine')
+function memLedgerStore () {
+  let data = {}
+  return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+}
+/** One ledger governs the workspaces in this file; grants are bound to it. */
+const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
+const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
+function grantFor (approvalId) {
+  if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
+  return LEDGER.preExecutionGrant(approvalId)
+}
+
+
 const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
 /** Strip git's leading `-c key=value` globals, exactly as git does. */
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }
@@ -106,7 +129,7 @@ function fakeWsl (over = {}) {
   return runner
 }
 
-const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({ wslRunner: fakeWsl(over) }, cfg))
+const mk = (over = {}, cfg = {}) => createOpenClawWslWorkspace(Object.assign({ wslRunner: fakeWsl(over), verifyGrant }, cfg))
 
 /* ══════════════ W1/W2/W3 — containment lives in POSIX, inside the distro ══════════════ */
 
@@ -162,7 +185,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
   assert.ok(SOURCE_URL.startsWith('https://'), 'a fixed https origin, never a local path')
   // and prepare clones from exactly it
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x')
   const clone = runner.calls.find((c) => c.includes('clone'))
   assert.ok(clone.includes(SOURCE_URL), `prepare must clone the approved URL: ${clone}`)
@@ -170,7 +193,7 @@ test('W3b. the approved source URL is fixed configuration, not caller input', ()
 
 test('W4/W5. prepare returns a POSIX sandbox on the exact agent branch with zero remotes', () => {
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   const p = ws.prepare('appr_x')
 
   assert.strictEqual(p.dir, DIR, 'the executor receives a POSIX path inside the distro')
@@ -220,7 +243,7 @@ test('W6. ⛔ IGNORED untracked files are detected — no --exclude-standard', (
   assert.deepStrictEqual(ws.repoChanges(DIR), ['.env', 'app.log'])
   // and the flag that would hide them is never passed
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ wslRunner: runner })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   w2.prepare('appr_x'); w2.repoChanges(DIR)
   const ls = runner.calls.find((c) => c.includes('ls-files --others'))
   assert.ok(!ls.includes('--exclude-standard'), `ignored files must stay visible: ${ls}`)
@@ -322,21 +345,78 @@ test('W11. a git failure or a timeout fails closed — it never reports "clean"'
 
 /* ══════════════ W12 — cleanup cannot escape ══════════════ */
 
-test('W12. ⛔ cleanup removes only a proven sandbox', () => {
+test('W12. ⛔ cleanup removes only a proven sandbox, and only the whole ENVELOPE', () => {
   const ws = mk({})
   ws.prepare('appr_x')
-  for (const bad of [ROOT, '/', '/home/openclaw', '/home/openclaw/dev/aroma-agent-backend']) {
-    const r = ws.cleanup(bad)
+  for (const bad of [ROOT, '/', '/home/openclaw', '/home/openclaw/dev/aroma-agent-backend', ENV_DIR]) {
+    const r = ws.discardPreparedSandbox(bad, { grant: grantFor(APPROVAL) })
     assert.strictEqual(r.ok, false, `${bad} must not be removable`)
   }
+
   const runner = fakeWsl({})
-  const w2 = createOpenClawWslWorkspace({ wslRunner: runner })
+  const w2 = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   w2.prepare('appr_x')
-  assert.deepStrictEqual(w2.cleanup(DIR), { ok: true })
-  const rm = runner.calls.find((c) => c.startsWith('rm -rf'))
-  assert.ok(rm.includes('-- ' + DIR), `rm must be bounded to the sandbox: ${rm}`)
+  const ok = w2.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) })
+  assert.strictEqual(ok.ok, true, JSON.stringify(ok))
+  assert.strictEqual(ok.removed, ENV_DIR, 'the ENVELOPE is removed, not just the repo')
+
+  const rm = runner.calls.filter((c) => c.startsWith('rm -rf')).pop()
+  assert.ok(rm.includes('-- ' + ENV_DIR), `rm must be bounded to the envelope: ${rm}`)
+  assert.ok(!rm.includes(DIR), `rm must NOT target the repo child alone: ${rm}`)
+
   // and the baseline is forgotten, so a later verification cannot pass on a dead sandbox
   assert.throws(() => w2.sandboxState(DIR, SHA), /no prepared sandbox baseline/)
+})
+
+test('W12b. ⛔ terminality cannot be ASSERTED by a caller — only a real grant works', () => {
+  // The first version took `{ terminal: true }`. Review was right that a boolean is the
+  // wrong shape: it lets whoever calls cleanup DECLARE the executor finished, which is
+  // exactly the claim no caller is in a position to make. C2-B2-A measured that `tasks
+  // cancel` reports success while the turn keeps running and that killing the client does
+  // not stop it, so a returning client proves nothing about what is still writing in here.
+  const runner = fakeWsl({})
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
+  ws.prepare(APPROVAL)
+
+  const forged = [
+    undefined,
+    {},
+    { terminal: true },                                        // the old contract
+    { grant: true },
+    { grant: { approvalId: APPROVAL } },                       // right shape, never issued
+    { grant: { approvalId: APPROVAL, state: 'TERMINAL_OBSERVED' } },
+    { grant: Object.freeze({ approvalId: APPROVAL, state: 'TERMINAL_OBSERVED' }) }
+  ]
+  for (const opts of forged) {
+    const r = ws.discardPreparedSandbox(DIR, opts)
+    assert.strictEqual(r.ok, false, `${JSON.stringify(opts)} must refuse`)
+    assert.match(r.reason, /requires a 'pre-execution' grant from the governing quarantine ledger/)
+  }
+  assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')), 'nothing may be removed without a grant')
+
+  // a grant issued for a DIFFERENT approval is refused too
+  const wrong = ws.discardPreparedSandbox(DIR, { grant: grantFor('some_other_approval') })
+  assert.strictEqual(wrong.ok, false)
+  assert.match(wrong.reason, /requires a 'pre-execution' grant/)
+
+  // the sandbox is still usable afterwards — a refused cleanup is not a broken sandbox
+  assert.ok(ws.sandboxState(DIR, SHA))
+
+  // and a genuine grant for THIS approval works
+  assert.strictEqual(ws.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) }).ok, true)
+})
+
+test('W12c. ⛔ an unwired workspace can never delete anything', () => {
+  // No verifier injected at construction means no grant can ever be accepted. Fail closed
+  // is the default, so a composition that forgets to wire the ledger is inert rather than
+  // dangerous.
+  const runner = fakeWsl({})
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  ws.prepare(APPROVAL)
+  const r = ws.discardPreparedSandbox(DIR, { grant: grantFor(APPROVAL) })
+  assert.strictEqual(r.ok, false)
+  assert.match(r.reason, /requires a 'pre-execution' grant from the governing quarantine ledger/)
+  assert.ok(!runner.calls.some((c) => c.startsWith('rm -rf')))
 })
 
 /* ══════════════ mirror identity and hardening ══════════════ */
@@ -399,7 +479,7 @@ test('H1. every git call disables fsmonitor and every diff disables ext-diff/tex
   // .git/config lives inside the sandbox being policed. Without these the verifier itself
   // becomes an execution surface for the thing it is verifying.
   const runner = fakeWsl({})
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x'); ws.repoChanges(DIR); ws.sandboxState(DIR, SHA); ws.diffStat(DIR); ws.diffPatch(DIR)
 
   const gitCalls = runner.calls.filter((c) => c.startsWith('git '))
@@ -494,7 +574,7 @@ test('O3. object identity is checked BEFORE any git evidence is trusted', () => 
   // so the cheap identity question comes first.
   const objects = freshObjects()
   const runner = fakeWsl({ objects })
-  const ws = createOpenClawWslWorkspace({ wslRunner: runner })
+  const ws = createOpenClawWslWorkspace({ wslRunner: runner, verifyGrant })
   ws.prepare('appr_x')
   const before = runner.calls.length
   objects[DIR] = '2049:7777'

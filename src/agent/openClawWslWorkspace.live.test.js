@@ -36,7 +36,8 @@ const {
 } = require('../agent/openClawWslWorkspace')
 
 const APPROVAL = 'appr_live'
-const DIR = SANDBOX_ROOT + '/' + APPROVAL
+const ENV_DIR = SANDBOX_ROOT + '/' + APPROVAL
+const DIR = ENV_DIR + '/repo'
 /** Where the replacement attack parks the genuine sandbox while the impostor takes its place. */
 const ASIDE = SANDBOX_ROOT + '/appr_live_aside'
 
@@ -58,6 +59,22 @@ const wsl = (argv) => spawnSync(WSL_EXE, ['-d', DISTRO, '--'].concat(argv), {
 const sh = (script) => wsl(['sh', '-c', script])
 
 /** Is the distro actually here? Never assume — a skipped test must be an observed fact. */
+
+/** Terminality is proven, not asserted: mint a REAL grant the way production will. */
+const { createOpenClawQuarantine } = require('../agent/openClawQuarantine')
+function memLedgerStore () {
+  let data = {}
+  return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
+}
+/** One ledger governs the workspaces in this file; grants are bound to it. */
+const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
+const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
+function grantFor (approvalId) {
+  if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.abortPreExecution(approvalId)
+  return LEDGER.preExecutionGrant(approvalId)
+}
+
 function distroAvailable () {
   if (process.platform !== 'win32') return false
   const r = wsl(['true'])
@@ -72,7 +89,7 @@ const objectId = (target) => sh(`stat -c %d:%i -- ${target} 2>/dev/null || echo 
 
 /** Remove every disposable directory this file creates, whatever happened. */
 function scrub () {
-  sh(`rm -rf ${DIR} ${ASIDE} /tmp/aroma-write-probe`)
+  sh(`rm -rf ${ENV_DIR} ${ASIDE} /tmp/aroma-write-probe`)
 }
 
 /* ══════════════ T2 — the fixture launcher leaks nothing either ══════════════ */
@@ -118,7 +135,7 @@ test('LIVE-ENV. ⛔ this test file itself passes no Windows environment into the
 
 test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', opts, () => {
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
   // the disposable clone needs an identity before a commit can move HEAD; a fresh clone has
@@ -206,8 +223,8 @@ test('LIVE. the real provider prepares, detects and cleans a real WSL sandbox', 
     sh(`rm -f ${SANDBOX_ROOT}/escape`)
 
     // ── cleanup removes the sandbox and nothing else ──
-    assert.strictEqual(ws.cleanup(SANDBOX_ROOT).ok, false, 'the root is never removable')
-    assert.deepStrictEqual(ws.cleanup(D), { ok: true })
+    assert.strictEqual(ws.discardPreparedSandbox(SANDBOX_ROOT, { grant: grantFor(APPROVAL) }).ok, false, 'the root is never removable')
+    assert.deepStrictEqual(ws.discardPreparedSandbox(D, { grant: grantFor(APPROVAL) }), { ok: true, removed: ENV_DIR })
     assert.notStrictEqual(sh(`[ -e ${D} ] && echo present || echo absent`).stdout.trim(), 'present', 'the sandbox is gone')
     assert.strictEqual(sh(`[ -d ${SANDBOX_ROOT} ] && echo yes`).stdout.trim(), 'yes', 'the root survived')
   } finally {
@@ -224,7 +241,7 @@ test('LIVE. ⛔ a sandbox REPLACED by a pristine clone at the same path is refus
   // clean worktree and its own real .git — so HEAD, branch, remote, index and structural
   // checks all pass. Only the filesystem object is different.
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 
@@ -261,7 +278,7 @@ test('LIVE. ⛔ replacing only <clone>/.git is refused', opts, () => {
   // repository underneath it. The directory the verifier canonicalises is unchanged, so the
   // containment and structural checks are undisturbed.
   scrub()
-  const ws = createOpenClawWslWorkspace()
+  const ws = createOpenClawWslWorkspace({ verifyGrant })
   const p = ws.prepare(APPROVAL)
   const D = p.dir
 

@@ -36,8 +36,15 @@ const CLEAN_GOV = () => ({ headSha: APPROVED, currentBranch: 'agent/appr_c1', re
 
 const OPENCLAW_CAPS = [
   'openclaw_repo_audit', 'openclaw_code_review', 'openclaw_test_run',
-  'openclaw_log_inspection', 'openclaw_web_research', 'openclaw_document_analysis'
+  'openclaw_log_inspection', 'openclaw_document_analysis'
 ]
+
+/**
+ * Withdrawn for the local-read-only lane. Kept named here so its ABSENCE is asserted rather
+ * than merely happening: a capability that quietly reappears would re-open the read+network
+ * combination that C2-B2-A ruled out, and nothing else in the suite would notice.
+ */
+const WITHDRAWN_CAPS = ['openclaw_web_research']
 
 /* ═══════════════════════ REGISTRY IDENTITY ═══════════════════════ */
 
@@ -57,10 +64,13 @@ test('R4b. the Architect remains the ONLY connected worker', () => {
   assert.deepStrictEqual(connected, ['architect'])
 })
 
-test('R5/R6. all six capabilities are present and globally unique after normalization', () => {
+test('R5/R6. the lane capabilities are present and globally unique after normalization', () => {
   const w = getWorker('openclaw')
   for (const c of OPENCLAW_CAPS) assert.ok(w.capabilities.includes(c), `${c} must be declared`)
   assert.strictEqual(w.capabilities.length, OPENCLAW_CAPS.length)
+  for (const c of WITHDRAWN_CAPS) {
+    assert.ok(!w.capabilities.includes(c), `${c} must NOT be declared in the local-read-only lane`)
+  }
 
   // Uniqueness is proven the way the registry itself proves it: the index loses nothing.
   const declarations = WORKERS.reduce((n, x) => n + x.capabilities.length, 0)
@@ -84,6 +94,22 @@ test('R8/R9/R10. lookup resolves OpenClaw, and unknown capabilities still fail c
   for (const unknown of ['openclaw', 'openclaw_deploy', 'quantum', '', null, undefined]) {
     assert.strictEqual(workerForCapability(unknown), null, `${JSON.stringify(unknown)} must not route`)
   }
+})
+
+test('R8b. ⛔ a web-research request REFUSES AT ROUTING, before any executor exists', () => {
+  // §9's narrowest fail-closed mechanism, asserted rather than argued. Withdrawing the
+  // capability means Step A's routing resolves it to null, so the refusal happens before a
+  // workspace is prepared and before any executor or model is reached. The alternative —
+  // keeping the capability and denying the web tools underneath it — would ACCEPT the
+  // request and then silently do the work without the tools it named.
+  for (const c of WITHDRAWN_CAPS) {
+    assert.strictEqual(workerForCapability(c), null, `${c} must not route to any worker`)
+    assert.strictEqual(workerForCapability('  ' + c.toUpperCase() + '  '), null,
+      'and normalization must not smuggle it back in')
+  }
+  // it is genuinely gone from the registry, not merely unrouted
+  const declared = WORKERS.flatMap((w) => w.capabilities)
+  for (const c of WITHDRAWN_CAPS) assert.ok(!declared.includes(c), `${c} must not be declared by ANY worker`)
 })
 
 test('R11. routing to OpenClaw yields a worker that CANNOT execute', () => {
