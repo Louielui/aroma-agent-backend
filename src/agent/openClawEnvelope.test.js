@@ -53,7 +53,14 @@ function memLedgerStore () {
   return { read: () => JSON.parse(JSON.stringify(data)), write: (d) => { data = JSON.parse(JSON.stringify(d)) } }
 }
 /** One ledger governs the workspaces in this file; grants are bound to it. */
-const LEDGER = createOpenClawQuarantine({ store: memLedgerStore() })
+const fakeProof = (id) => ({ approvalId: id, sessionRetired: true })
+const LEDGER = createOpenClawQuarantine({
+  store: memLedgerStore(),
+  // TERMINAL_OBSERVED now HOLDS the global lock, so a test that mints a terminal grant must
+  // also retire the record or every later case is locked out. The proof is injected and fake
+  // on purpose: production has none, and that is the open activation blocker.
+  verifyRetirementProof: (proof, expect) => !!proof && proof.sessionRetired === true && proof.approvalId === expect.approvalId
+})
 const verifyGrant = (g, expect) => LEDGER.verifyGrant(g, expect)
 function grantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
@@ -292,11 +299,15 @@ test('E6d. ⛔ a symlink cannot make an outside path look contained', () => {
  * ever run when nothing has executed. Each operation now fixes its own expected kind, and
  * the caller never gets to choose it.
  */
-function terminalGrantFor (approvalId) {
+function retiredGrantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
-  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId)
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId, { agentId: 'aroma-' + approvalId, sessionKey: 'agent:aroma-' + approvalId + ':' + approvalId, phase: 'agent_add_attempting' })
   if (LEDGER.state(approvalId) === LEDGER.STATES.RUNNING) LEDGER.observeTerminal(approvalId, 'lost')
-  return LEDGER.terminalGrant(approvalId)
+  // Retire FIRST: removing an EXECUTED envelope now requires an executor-retired grant, and
+  // that grant is only issuable once the session is provably unable to resume. Retiring also
+  // frees the shared ledger, which TERMINAL_OBSERVED would otherwise keep locked.
+  if (LEDGER.state(approvalId) === LEDGER.STATES.TERMINAL_OBSERVED) LEDGER.retire(approvalId, fakeProof(approvalId))
+  return LEDGER.retiredGrant(approvalId)
 }
 
 test('GK1/GK2. abortPrepare accepts ONLY a pre-execution grant', () => {
@@ -310,7 +321,7 @@ test('GK1/GK2. abortPrepare accepts ONLY a pre-execution grant', () => {
   // right approval on the right ledger with a real pinned baseline waiting.
   const ws2 = failAt('clone', { [SANDBOX_ROOT + '/gk_t']: '2049:401' })
   assert.throws(() => ws2.prepare('gk_t'), /refuse:/)
-  const wrongKind = ws2.abortPrepare('gk_t', { grant: terminalGrantFor('gk_t') })
+  const wrongKind = ws2.abortPrepare('gk_t', { grant: retiredGrantFor('gk_t') })
   assert.strictEqual(wrongKind.ok, false)
   assert.match(wrongKind.reason, /requires a 'pre-execution' grant/)
 })
@@ -319,11 +330,11 @@ test('GK3/GK6. the two removal operations cannot be substituted for one another'
   const wsA = mk()
   wsA.prepare('gk_x')
   const preX = grantFor('gk_x')
-  const termX = terminalGrantFor('gk_y')
+  const termX = retiredGrantFor('gk_y')
 
   const a = wsA.cleanupAfterExecution(SANDBOX_ROOT + '/gk_x/repo', { grant: preX })
   assert.strictEqual(a.ok, false)
-  assert.match(a.reason, /requires a 'terminal-observed' grant/)
+  assert.match(a.reason, /requires a 'executor-retired' grant/)
 
   const wsB = mk()
   wsB.prepare('gk_y')

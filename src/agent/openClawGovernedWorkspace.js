@@ -126,8 +126,28 @@ function createOpenClawGovernedWorkspace (deps = {}) {
     // A pre-execution grant cannot reach cleanupAfterExecution, and a terminal-observed grant
     // cannot reach discardPreparedSandbox: authority is bound to the operation, not merely
     // carried as a label on the grant.
+    // ⛔ A TERMINAL TASK DOES NOT AUTHORISE REMOVING AN EXECUTED ENVELOPE.
+    //
+    // The global lock stops Aroma dispatching a NEW run. It does nothing to stop the OpenClaw
+    // Gateway auto-resuming THIS session — and a resumed successor would still need this
+    // workspace. So removing it here would delete a directory out from under a live executor,
+    // which is the one outcome this whole design exists to prevent.
+    //
+    // Everything is preserved for a later, genuine retirement: the OWNER mapping, the
+    // workspace identity baseline, the envelope, the repo, and the ledger record.
     if (state === quarantine.STATES.TERMINAL_OBSERVED) {
-      return finish(dir, approvalId, 'terminal observed', quarantine.terminalGrant(approvalId), workspace.cleanupAfterExecution)
+      return report({
+        ok: false,
+        approvalId,
+        dir,
+        state,
+        retryable: true,
+        reason: `refuse: '${approvalId}' is TERMINAL_OBSERVED; the executor/session has not been retired, so the executed envelope must survive`
+      })
+    }
+
+    if (state === quarantine.STATES.EXECUTOR_RETIRED) {
+      return finish(dir, approvalId, 'executor retired', quarantine.retiredGrant(approvalId), workspace.cleanupAfterExecution)
     }
 
     // RUNNING, CLIENT_TIMEOUT or QUARANTINED: something may still be alive in there.
@@ -140,12 +160,83 @@ function createOpenClawGovernedWorkspace (deps = {}) {
     })
   }
 
+  /**
+   * Remove the envelope and, only if the disk actually gave it up, record CLEANED.
+   *
+   * ⛔ A FAILED REMOVAL NEVER REGRESSES THE STATE.
+   * The record stays where it is (EXECUTOR_RETIRED, or the pre-execution state), the identity
+   * baseline is retained by the workspace, and the failure is retryable ONLY when the provider
+   * explicitly returns retryable:true; every other refusal is reported non-retryable. The
+   * process question is already settled by then — the session is retired, so the global lock
+   * is already released — and a disk problem must not reopen a process question it has
+   * nothing to do with.
+   *
+   * ⛔ THE LEDGER IS WRITTEN BEFORE OWNERSHIP IS RELEASED.
+   * This used to drop OWNER first and then call markCleaned. If markCleaned threw, the
+   * ownership mapping was already gone, so nothing could find the approval again and the
+   * record was stranded mid-transition with no way to retry. Ownership is what makes a retry
+   * possible, so it is the last thing released.
+   *
+   * ⛔ AND A LEDGER FAILURE AFTER A SUCCESSFUL REMOVAL HAS NO AUTOMATIC REPAIR HERE.
+   * The workspace drops its identity baseline on a successful rm, so the removal cannot be
+   * replayed: every later cleanup returns 'no prepared sandbox baseline'. There is nothing
+   * for a retry to do, which is why this outcome is reported retryable:false. Closing the
+   * record out requires a person. No automatic reconciliation primitive is offered in this
+   * tranche, because the only ways to build one — a second cleanup authority, or bypassing
+   * the identity verifier — are both worse than a manual step.
+   *
+   * ⛔ AND THIS IS NOT ATOMIC ACROSS DISK AND LEDGER — SAID PLAINLY.
+   * A crash between a successful removal and a successful markCleaned leaves a record that is
+   * not CLEANED while the envelope is already gone. That is a real, remaining window. It is
+   * the safe direction to fail in — the record still names a run that must be accounted for,
+   * rather than claiming a completion that did not happen — but it is not a transaction and
+   * is not described as one.
+   */
   function finish (dir, approvalId, why, grant, op) {
     const result = op.call(workspace, dir, { grant })
-    if (result && result.ok) {
-      quarantine.markCleaned(approvalId, { note: why })
-      OWNER.delete(dir)
+    if (!result || !result.ok) {
+      // ⛔ RETRYABILITY IS ESTABLISHED BY THE PROVIDER, NEVER ASSUMED FROM ok:false.
+      //
+      // This used to default retryable:true and let the provider override it. Object.assign
+      // only overrides fields that are PRESENT, and most refusals do not carry the field at
+      // all — a missing identity baseline, an envelope that is not the prepared object, a
+      // containment refusal, an invalid grant. Every one of those was silently promoted to
+      // "try again", and trying again cannot help with any of them.
+      //
+      // It also made the API contradict itself on the one case that matters: after a removal
+      // succeeded and the ledger write failed, the first result correctly said
+      // retryable:false, and the very next cleanup — refused by the real provider with "no
+      // prepared sandbox baseline" — came back retryable:true. The caller would have been
+      // told to keep retrying an operation that can never succeed again.
+      //
+      // Only an explicit retryable:true counts. openClawWslWorkspace.removeEnvelope() sets it
+      // on a genuine rm failure, which is the one condition that really does clear on its own.
+      // ok:false is stated rather than inherited: a provider that returns nothing at all
+      // must still produce a refusal that says so, not a report with no verdict in it.
+      return report(Object.assign({ ok: false, approvalId, dir, why, stateRegressed: false }, result, {
+        retryable: !!(result && result.retryable === true)
+      }))
     }
+
+    // Disk removal has ALREADY succeeded here. If the ledger write fails this is not an
+    // ordinary retryable disk failure, and must not be reported as one.
+    try {
+      quarantine.markCleaned(approvalId, { note: why })
+    } catch (e) {
+      return report({
+        ok: false,
+        approvalId,
+        dir,
+        why,
+        diskRemoved: true,
+        ledgerRecorded: false,
+        ownerRetained: true,
+        retryable: false,
+        reason: `refuse: the envelope was removed but the ledger could not record CLEANED (${(e && e.message) || e}); ownership is retained so this remains accountable`
+      })
+    }
+
+    OWNER.delete(dir)
     return report(Object.assign({ approvalId, dir, why }, result))
   }
 
