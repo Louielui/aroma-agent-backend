@@ -40,7 +40,7 @@ const SANDBOX_ROOT = '/home/openclaw/.aroma/sandboxes'
 const REPO_CHILD = 'repo'
 
 /** Grant kinds, mirrored from the quarantine ledger. Each operation fixes its own. */
-const GRANT_TERMINAL = 'terminal-observed'
+const GRANT_EXECUTOR_RETIRED = 'executor-retired'
 const GRANT_PRE_EXECUTION = 'pre-execution'
 
 /**
@@ -631,18 +631,40 @@ function createOpenClawWslWorkspace (options = {}) {
       if (gone.status === 0) return { ok: false, reason: (e && e.message) || 'envelope identity unreadable' }
     }
 
+    // ⛔ THE BASELINE OUTLIVES A FAILED REMOVAL.
+    //
+    // This used to read `PREPARED.delete(dir)` before the rm status was checked, so a failed
+    // removal destroyed the identity baseline anyway. Every later attempt then hit "no
+    // prepared sandbox baseline" — the envelope could never be identity-checked again, so
+    // cleanup became permanently impossible and reconciliation had nothing to retry with. A
+    // transient failure (a busy file, a full disk) turned into a permanent one, and the
+    // sandbox was orphaned with no way back.
+    //
+    // The baseline is now dropped ONLY on success. A failure keeps it, stays accountable,
+    // and says so.
     const rm = wsl(['rm', '-rf', '--', envelope])
+    if (rm.status !== 0) {
+      return {
+        ok: false,
+        retryable: true,
+        reason: (rm.stderr || '').trim().slice(0, 200) || 'remove failed'
+      }
+    }
     PREPARED.delete(dir)
-    if (rm.status !== 0) return { ok: false, reason: (rm.stderr || '').trim().slice(0, 200) || 'remove failed' }
     return { ok: true, removed: envelope }
   }
 
   /**
-   * Cleanup AFTER an executor ran. Only a terminal-observed grant authorises it, so a
-   * pre-execution grant can never stand in for evidence that a real task finished.
+   * Cleanup AFTER an executor ran.
+   *
+   * ⛔ ONLY AN 'executor-retired' GRANT AUTHORISES THIS, NOT A TERMINAL TASK.
+   * An earlier revision accepted a terminal-observed grant here. That was too weak: the
+   * session can still be auto-resumed, so a live successor may still need this workspace, and
+   * removing it would delete a directory out from under a running executor. A terminal task
+   * status and a retired session are different facts, and only the second one is safe here.
    */
   function cleanupAfterExecution (dir, opts = {}) {
-    return removeEnvelope(dir, opts, GRANT_TERMINAL, 'cleanup after execution')
+    return removeEnvelope(dir, opts, GRANT_EXECUTOR_RETIRED, 'cleanup after execution')
   }
 
   /**
