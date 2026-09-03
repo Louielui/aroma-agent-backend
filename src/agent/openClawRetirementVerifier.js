@@ -90,6 +90,31 @@ function isRetirementAuthority (result) {
  * null always becomes UNKNOWN at the call site. No variant outranks another.
  */
 /** Canonical decimal string identity, matching the instance manager's representation. */
+/**
+ * ⛔ EVIDENCE IS APPENDED AS AN OWN DATA PROPERTY, NEVER ASSIGNED.
+ *
+ * `relevant.push(pid)` is an ordinary assignment to an index the array does not yet own, so
+ * [[Set]] walks the prototype chain and an inherited numeric SETTER swallows it: length grows,
+ * no element is stored, and a later `for (const pid of relevant)` reads the INHERITED value —
+ * undefined — instead of the process. Reproduced end to end against this file: with
+ * `Array.prototype[0]` installed, a live same-UID process CARRYING THE INSTANCE MARKER was
+ * never inspected and the verdict went from LIVE to RETIRED / ok:true. The same hazard applied
+ * to the marker list and the holder list, so all three are appended through here.
+ *
+ * defineProperty creates an own data property and cannot be intercepted. The result is then
+ * verified rather than assumed: a false return means the evidence could not be recorded, and
+ * every call site turns that into UNKNOWN — never an exception, and never a clean verdict.
+ */
+function appendOwn (array, value) {
+  const i = array.length
+  Object.defineProperty(array, i, { value, writable: true, enumerable: true, configurable: true })
+  const d = Object.getOwnPropertyDescriptor(array, i)
+  return !!d &&
+    typeof d.get !== 'function' && typeof d.set !== 'function' &&
+    d.value === value &&
+    array.length === i + 1
+}
+
 const CANONICAL_UINT = /^(0|[1-9][0-9]*)$/
 const isCanonicalUint = (v) => typeof v === 'string' && CANONICAL_UINT.test(v)
 
@@ -259,7 +284,12 @@ function createOpenClawRetirementVerifier (deps = {}) {
       // entries unreadable, all root/system owned, and treating that as doubt would make every
       // verdict UNKNOWN forever.
       if (st.uid !== executorUid) continue
-      relevant.push(pid)
+      if (!appendOwn(relevant, pid)) {
+        return unknown(
+          `refuse: same-uid pid ${pid} could not be recorded as own evidence`,
+          Object.assign(evidence, { unrecordablePid: pid, evidenceList: 'relevant' })
+        )
+      }
     }
     evidence.relevantProcessCount = relevant.length
 
@@ -314,9 +344,19 @@ function createOpenClawRetirementVerifier (deps = {}) {
       }
       if (vanished) continue
       // ⛔ the marker scan: what survives the measured cgroup-migration residual
-      if (env.marker === rec.instanceMarker) marked.push(pid)
+      if (env.marker === rec.instanceMarker && !appendOwn(marked, pid)) {
+        return unknown(
+          `refuse: marked pid ${pid} could not be recorded as own evidence`,
+          Object.assign(evidence, { unrecordablePid: pid, evidenceList: 'marked' })
+        )
+      }
       // ⛔ the holder scan: a descendant that erased its marker is still sitting in our paths
-      if (within(cwd.cwd) || fds.fds.some(within)) holders.push(pid)
+      if ((within(cwd.cwd) || fds.fds.some(within)) && !appendOwn(holders, pid)) {
+        return unknown(
+          `refuse: holder pid ${pid} could not be recorded as own evidence`,
+          Object.assign(evidence, { unrecordablePid: pid, evidenceList: 'holders' })
+        )
+      }
     }
 
     if (marked.length > 0) {

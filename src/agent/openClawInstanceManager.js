@@ -150,6 +150,199 @@ function assertBaselineUnchanged (prev, next) {
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
 /**
+ * ⛔ THE STORE READ BOUNDARY: GENUINE DATA OBJECTS, OWN DATA AUTHORITY ONLY.
+ *
+ * assertStore used to read rec.approvalId, rec.unitName, rec.stateRoot and the rest directly,
+ * while isPlainObject accepted ANY non-array object. Two consequences were reproduced:
+ *
+ *   - a record on a custom prototype passed validation on INHERITED fields while owning none;
+ *   - Object.prototype pollution filled a MISSING field, so a record with no own
+ *     observedControlGroup validated with a forged one.
+ *
+ * Either turns the store — the thing that names what must be retired — into something an
+ * unrelated write can shape. And a getter would be worse still: a field could validate as one
+ * value and be used as another, so an accessor is refused outright rather than sampled.
+ */
+function isDataObject (v) {
+  if (v === null || typeof v !== 'object' || Array.isArray(v)) return false
+  const proto = Object.getPrototypeOf(v)
+  return proto === Object.prototype || proto === null
+}
+
+/**
+ * Read one authoritative field as an OWN DATA property. Returns { value } or null; the caller
+ * decides what a missing field means, so the error messages stay specific.
+ */
+function ownData (o, key) {
+  const d = Object.getOwnPropertyDescriptor(o, key)
+  if (!d || typeof d.get === 'function' || typeof d.set === 'function') return null
+  return { value: d.value }
+}
+
+/** Every authoritative field of a record, read exactly once, or a refusal. */
+function authorityOf (key, rec, fields) {
+  const out = Object.create(null)
+  for (const f of fields) {
+    const got = ownData(rec, f)
+    if (got === null) {
+      throw new Error(`refuse: instance record '${key}' has no own data property '${f}' (inherited or accessor fields are never store authority)`)
+    }
+    out[f] = got.value
+  }
+  return out
+}
+
+/**
+ * The WHOLE record as own data, once. authorityOf proves the required fields are present;
+ * this proves nothing else in the record arrives by inheritance or by property access either.
+ */
+function stableRecord (key, raw) {
+  if (Object.getOwnPropertySymbols(raw).length > 0) {
+    throw new Error(`refuse: instance record '${key}' carries symbol properties`)
+  }
+  const out = Object.create(null)
+  for (const f of Object.getOwnPropertyNames(raw)) {
+    const got = ownData(raw, f)
+    if (got === null) {
+      throw new Error(`refuse: instance record '${key}' field '${f}' is not an own data property`)
+    }
+    out[f] = got.value
+  }
+  return out
+}
+
+/**
+ * ⛔ A SHALLOW SNAPSHOT IS NOT A SNAPSHOT.
+ *
+ * stableRecord copies the record's own top-level data properties, but dev/ino objects and the
+ * pid array were still the STORE'S objects. With a store that retains references — and the
+ * injected store contract never promised cloning — all four of these were reproduced:
+ *
+ *   prepare(...).envelopeObject.dev = '999'   -> a later record() read '999'
+ *   observePids(...).observedPids.length = 0  -> a later record() had LOST pid 93018
+ *   record().repoObject.ino = '777'           -> the next record() read '777'
+ *   all()[id].envelopeObject.dev = '555'      -> the next record() read '555'
+ *
+ * Every one of those is a caller silently rewriting the identity the verifier will later
+ * compare against, or erasing the survivor list it will later scan, without passing through
+ * this module at all. Reference separation is the fix; freezing would only hide it.
+ */
+function detachIdentity (v) {
+  // the caller has already proven this is a data object with own canonical dev/ino
+  const out = Object.create(null)
+  out.dev = ownData(v, 'dev').value
+  out.ino = ownData(v, 'ino').value
+  return out
+}
+
+/**
+ * ⛔ THE PID LIST IS EVIDENCE, SO IT IS VALIDATED WHOLE AND COPIED WHOLE.
+ *
+ * Array.isArray was the only check, so an array of accessors, a holed array, or one holding
+ * '93018' / 0 / -1 / 1.5 all passed. Elements are read through their DESCRIPTORS — an accessor
+ * is refused without ever being invoked — and a hole is a missing measurement, not a zero.
+ *
+ * ⛔ AND NOTHING IS FILTERED. Dropping a bad entry would record a PARTIAL observation as
+ * though it were complete, and the entry we dropped is exactly where a survivor hides.
+ */
+/**
+ * ⛔ ELEMENTS ARE DEFINED, NEVER ASSIGNED.
+ *
+ * `out.push(pid)` is an ordinary assignment, so an inherited numeric SETTER on Array.prototype
+ * swallowed it: the pid array came back with length 1 and NO own index 0. Worse, detachPids
+ * validates its INPUT, so nothing threw here — put() wrote that malformed record to the store
+ * and only the second validation, afterwards, noticed. defineProperty creates an own data
+ * property and no inherited setter can intercept it.
+ */
+function defineElement (out, i, value) {
+  Object.defineProperty(out, i, { value, writable: true, enumerable: true, configurable: true })
+}
+
+function detachPids (key, v) {
+  if (!Array.isArray(v)) {
+    throw new Error(`refuse: instance record '${key}' has no observedPids array`)
+  }
+  const length = v.length
+  const out = []
+  for (let i = 0; i < length; i++) {
+    const d = Object.getOwnPropertyDescriptor(v, i)
+    if (!d) {
+      throw new Error(`refuse: instance record '${key}' observedPids has a hole at index ${i}`)
+    }
+    if (typeof d.get === 'function' || typeof d.set === 'function') {
+      throw new Error(`refuse: instance record '${key}' observedPids[${i}] is an accessor, not a measurement`)
+    }
+    if (!Number.isInteger(d.value) || d.value <= 0) {
+      throw new Error(`refuse: instance record '${key}' observedPids[${i}] is not a positive integer pid (${JSON.stringify(d.value)})`)
+    }
+    defineElement(out, i, d.value)
+  }
+  // ⛔ AND THE RESULT IS CHECKED, NOT ASSUMED: if the copy is not what we just built, refuse.
+  if (out.length !== length) {
+    throw new Error(`refuse: instance record '${key}' observedPids could not be copied intact`)
+  }
+  for (let i = 0; i < length; i++) {
+    if (!Object.prototype.hasOwnProperty.call(out, i)) {
+      throw new Error(`refuse: instance record '${key}' observedPids[${i}] did not survive the copy`)
+    }
+  }
+  return out
+}
+
+/**
+ * ⛔ A MEASUREMENT IS READ ONCE, BEFORE IT IS VALIDATED.
+ *
+ * prepare() validated `spec.envelopeObject` and then buildInstanceRecord read `spec.envelopeObject`
+ * AGAIN. With a getter on the spec, the first read returned the real identity and the second
+ * returned a different, equally valid-looking one — so the record persisted a forged dev/ino
+ * that the verifier would later compare against. The same held for repoObject and gatewayPort.
+ *
+ * Everything the caller measures is captured here, once, through own DATA descriptors, and
+ * only the capture is used from that point on.
+ */
+/**
+ * Read one field exactly once. An ACCESSOR is refused outright — a value that can change
+ * between the read that validates it and the read that uses it is not a measurement.
+ *
+ * A MISSING field is not judged here: it is captured as undefined and refused by the existing
+ * checks, so "you gave me no ino" keeps saying that rather than becoming a property-descriptor
+ * complaint. Capture answers "what was there, once"; the checks below answer "is it valid".
+ */
+function captureOwn (obj, key, where) {
+  const d = Object.getOwnPropertyDescriptor(obj, key)
+  if (d && (typeof d.get === 'function' || typeof d.set === 'function')) {
+    throw new Error(`refuse: ${where} must be an own data property (an accessor is not a measurement)`)
+  }
+  return d ? d.value : undefined
+}
+
+function captureMeasurements (spec) {
+  const capture = Object.create(null)
+  capture.gatewayPort = captureOwn(spec, 'gatewayPort', 'prepare gatewayPort')
+
+  for (const field of ['envelopeObject', 'repoObject']) {
+    const obj = captureOwn(spec, field, 'prepare ' + field)
+    // anything that is not a genuine data object is passed straight through to isObjectIdentity,
+    // which already refuses it — and which is the only place that message should come from
+    if (!isDataObject(obj)) {
+      capture[field] = obj
+      continue
+    }
+    const identity = Object.create(null)
+    identity.dev = captureOwn(obj, 'dev', 'prepare ' + field + '.dev')
+    identity.ino = captureOwn(obj, 'ino', 'prepare ' + field + '.ino')
+    capture[field] = identity
+  }
+  return capture
+}
+
+const RECORD_AUTHORITY = Object.freeze([
+  'approvalId', 'instanceId', 'unitName', 'instanceMarker', 'state',
+  'stateRoot', 'configPath', 'envelopeRoot', 'repoRoot',
+  'envelopeObject', 'repoObject', 'gatewayPort', 'observedPids', 'observedControlGroup'
+])
+
+/**
  * ⛔ DEVICE AND INODE ARE CANONICAL DECIMAL STRINGS, NEVER NUMBERS.
  *
  * Review finding F2: they were JavaScript Numbers. Linux st_ino is 64-bit, and above
@@ -162,7 +355,12 @@ const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArr
  */
 const CANONICAL_UINT = /^(0|[1-9][0-9]*)$/
 const isCanonicalUint = (v) => typeof v === 'string' && CANONICAL_UINT.test(v)
-const isObjectIdentity = (v) => isPlainObject(v) && isCanonicalUint(v.dev) && isCanonicalUint(v.ino)
+const isObjectIdentity = (v) => {
+  if (!isDataObject(v)) return false
+  const dev = ownData(v, 'dev')
+  const ino = ownData(v, 'ino')
+  return dev !== null && ino !== null && isCanonicalUint(dev.value) && isCanonicalUint(ino.value)
+}
 
 /**
  * Build the record for a new instance — PURE, AND DELIBERATELY REACHABLE.
@@ -188,6 +386,7 @@ function buildInstanceRecord (approvalId, spec, meta, stamp) {
     configPath: paths.configPath,
     envelopeRoot: paths.envelopeRoot,
     repoRoot: paths.repoRoot,
+    // ⛔ `spec` here is the CAPTURE, never the caller's object: no field is read twice.
     gatewayPort: spec.gatewayPort,
     envelopeObject: { dev: spec.envelopeObject.dev, ino: spec.envelopeObject.ino },
     repoObject: { dev: spec.repoObject.dev, ino: spec.repoObject.ino },
@@ -207,14 +406,38 @@ function buildInstanceRecord (approvalId, spec, meta, stamp) {
  * silently becoming "no instances" is the one answer that would let a second launch proceed
  * for an approval that already has a live executor.
  */
+/**
+ * ⛔ WHAT COMES BACK IS THE VALIDATED SNAPSHOT, NOT THE OBJECT WE WERE HANDED.
+ *
+ * assertStore used to return `parsed` itself, still rooted at Object.prototype, and record()
+ * reads it as `all()[approvalId]`. Two things were reproduced from that one fact:
+ *
+ *   - with Object.prototype[approvalId] set, record() returned a WHOLLY FORGED record that
+ *     assertStore had never seen — getOwnPropertyNames does not walk the prototype, so the
+ *     validation loop skipped the only entry the caller would go on to read;
+ *   - with an inherited SETTER for that key, put()'s `s[approvalId] = next` was swallowed:
+ *     assertStore then validated a store with no such record and prepare() reported success
+ *     while writing {}. The record that blocks a second launch had silently vanished.
+ *
+ * A null-prototype container of null-prototype records inherits nothing and traps nothing, so
+ * a later read can only see what this function actually validated.
+ */
 function assertStore (parsed) {
-  if (!isPlainObject(parsed)) {
-    throw new Error(`refuse: instance store is not an object (got ${Array.isArray(parsed) ? 'array' : typeof parsed})`)
+  if (!isDataObject(parsed)) {
+    throw new Error(`refuse: instance store is not a data object (got ${Array.isArray(parsed) ? 'array' : typeof parsed})`)
   }
-  for (const key of Object.keys(parsed)) {
+  const snapshot = Object.create(null)
+  for (const key of Object.getOwnPropertyNames(parsed)) {
     if (!SAFE_ID.test(key)) throw new Error(`refuse: instance store has an unsafe approvalId key '${key}'`)
-    const rec = parsed[key]
-    if (!isPlainObject(rec)) throw new Error(`refuse: instance record '${key}' is not an object`)
+    const slot = ownData(parsed, key)
+    if (slot === null) throw new Error(`refuse: instance store entry '${key}' is not an own data property`)
+    const raw = slot.value
+    if (!isDataObject(raw)) throw new Error(`refuse: instance record '${key}' is not a data object`)
+    // ⛔ EVERY AUTHORITATIVE FIELD IS READ ONCE, AS AN OWN DATA PROPERTY, BEFORE ANY CHECK.
+    // Nothing below can be supplied by a prototype or recomputed by a getter.
+    const rec = stableRecord(key, raw)
+    authorityOf(key, rec, RECORD_AUTHORITY)
+    snapshot[key] = rec
     if (rec.approvalId !== key) {
       throw new Error(`refuse: instance record '${key}' declares approvalId '${rec.approvalId}'`)
     }
@@ -245,7 +468,6 @@ function assertStore (parsed) {
       throw new Error(`refuse: instance record '${key}' has no canonical repoObject{dev,ino} strings`)
     }
     if (!Number.isInteger(rec.gatewayPort)) throw new Error(`refuse: instance record '${key}' has no gatewayPort`)
-    if (!Array.isArray(rec.observedPids)) throw new Error(`refuse: instance record '${key}' has no observedPids array`)
     if (rec.observedControlGroup !== null && typeof rec.observedControlGroup !== 'string') {
       throw new Error(`refuse: instance record '${key}' has a non-string observedControlGroup`)
     }
@@ -253,8 +475,13 @@ function assertStore (parsed) {
     if (rec.observedControlGroup && rec.state === STATES.PREPARED) {
       throw new Error(`refuse: instance record '${key}' is PREPARED but already names a control group`)
     }
+    // ⛔ THE NESTED AUTHORITY IN THE SNAPSHOT IS OURS, NOT THE STORE'S.
+    // Done last, so the specific refusals above still fire first and say what is wrong.
+    rec.envelopeObject = detachIdentity(rec.envelopeObject)
+    rec.repoObject = detachIdentity(rec.repoObject)
+    rec.observedPids = detachPids(key, rec.observedPids)
   }
-  return parsed
+  return snapshot
 }
 
 /**
@@ -307,12 +534,28 @@ function createOpenClawInstanceManager (deps = {}) {
    * wearing two hats, and a mutant that let a spec override the derived paths survived the
    * entire suite because the screen happened to block it first.
    */
+  /**
+   * ⛔ WRITE THE CANONICAL SNAPSHOT, AND RETURN A DIFFERENT ONE.
+   *
+   * This used to validate `s` and then write and return the PRE-canonical objects, discarding
+   * everything assertStore had detached. So prepare() and observePids() handed the caller the
+   * very objects the store kept, and mutating a return value rewrote persistent state.
+   *
+   * assertStore is run a second time on the canonical snapshot purely to mint an independent
+   * object graph for the caller: same rules, no shared references, and it double-checks that
+   * what we just wrote is something we would still accept on the way back in.
+   */
   function put (approvalId, next) {
     const s = all()
     s[approvalId] = next
-    assertStore(s)
-    store.write(s)
-    return next
+    // ⛔ NOTHING IS PERSISTED UNTIL EVERY VALIDATION HAS PASSED.
+    // These ran either side of the write, so a canonical snapshot that was itself malformed —
+    // an Array.prototype setter swallowing the pid copy produced exactly that — reached the
+    // store first and was only rejected afterwards. The store had already kept it.
+    const canonical = assertStore(s)
+    const returned = assertStore(canonical)
+    store.write(canonical)
+    return returned[approvalId]
   }
 
   function record (approvalId) {
@@ -343,17 +586,20 @@ function createOpenClawInstanceManager (deps = {}) {
     if (all()[approvalId]) {
       throw new Error(`refuse: approval '${approvalId}' already has an instance record; identity is never reused`)
     }
-    if (!Number.isInteger(spec.gatewayPort)) throw new Error('refuse: prepare requires an integer gatewayPort')
+    // ⛔ CAPTURE FIRST, VALIDATE THE CAPTURE, BUILD FROM THE CAPTURE.
+    // Nothing below ever touches `spec` again.
+    const measured = captureMeasurements(spec)
+    if (!Number.isInteger(measured.gatewayPort)) throw new Error('refuse: prepare requires an integer gatewayPort')
     // ⛔ THE OBJECT IDENTITY IS RECORDED BEFORE EXECUTION, NOT AFTER.
     // A baseline taken afterwards would be a baseline of whatever is standing there now.
-    if (!isObjectIdentity(spec.envelopeObject)) {
+    if (!isObjectIdentity(measured.envelopeObject)) {
       throw new Error('refuse: prepare requires envelopeObject {dev, ino} as canonical decimal strings')
     }
-    if (!isObjectIdentity(spec.repoObject)) {
+    if (!isObjectIdentity(measured.repoObject)) {
       throw new Error('refuse: prepare requires repoObject {dev, ino} as canonical decimal strings')
     }
 
-    return put(approvalId, buildInstanceRecord(approvalId, spec, meta, now()))
+    return put(approvalId, buildInstanceRecord(approvalId, measured, meta, now()))
   }
 
   /** The boundary: after this returns, an executor may exist. Monotonic. */
@@ -395,6 +641,36 @@ function createOpenClawInstanceManager (deps = {}) {
    * children appear and vanish between samples — so this set corroborates, and the control
    * group remains the boundary.
    */
+  /**
+   * One descriptor-based read of the caller's measurement, validated as it is captured.
+   * A scalar is a single pid; an array must be complete own data, positive integers only.
+   */
+  function captureIncomingPids (pids) {
+    const refuse = (v) => new Error('refuse: observePids requires positive integer pids; got ' +
+      JSON.stringify(v) + ' — the whole observation is refused')
+    if (!Array.isArray(pids)) {
+      if (!Number.isInteger(pids) || pids <= 0) throw refuse(pids)
+      const one = []
+      defineElement(one, 0, pids)
+      return one
+    }
+    const length = pids.length
+    const out = []
+    for (let i = 0; i < length; i++) {
+      const d = Object.getOwnPropertyDescriptor(pids, i)
+      if (!d) {
+        throw new Error(`refuse: observePids received a hole at index ${i}; the whole observation is refused`)
+      }
+      if (typeof d.get === 'function' || typeof d.set === 'function') {
+        throw new Error(`refuse: observePids[${i}] is an accessor, not a measurement; the whole observation is refused`)
+      }
+      if (!Number.isInteger(d.value) || d.value <= 0) throw refuse(d.value)
+      defineElement(out, i, d.value)
+    }
+    if (out.length !== length) throw new Error('refuse: observePids measurement could not be copied intact')
+    return out
+  }
+
   function observePids (approvalId, pids, meta = {}) {
     assertId(approvalId); assertNoReservedKeys(meta)
     const rec = record(approvalId)
@@ -406,13 +682,11 @@ function createOpenClawInstanceManager (deps = {}) {
     // Silently dropping bad entries would record a PARTIAL observation as though it were a
     // complete one — and this set is exactly what the verifier later checks for survivors.
     // Half a sample that looks whole is worse than a refusal, so nothing is written at all.
-    const incoming = Array.isArray(pids) ? pids : [pids]
-    for (const pid of incoming) {
-      if (!Number.isInteger(pid) || pid <= 0) {
-        throw new Error('refuse: observePids requires positive integer pids; got ' +
-          JSON.stringify(pid) + ' — the whole observation is refused')
-      }
-    }
+    // ⛔ THE MEASUREMENT IS SNAPSHOTTED BEFORE IT IS VALIDATED.
+    // With an accessor element the caller's array returned 93018 to the validator and 4242 to
+    // everything afterwards, so the record persisted observedPids [4242] / mainPid 4242 — a
+    // survivor list built from a value that was never checked.
+    const incoming = captureIncomingPids(pids)
     const merged = Array.from(new Set(rec.observedPids.concat(incoming))).sort((a, b) => a - b)
     const mainPid = rec.mainPid === null && incoming.length ? incoming[0] : rec.mainPid
     return mutate(approvalId, rec, meta, { observedPids: merged, mainPid })

@@ -291,7 +291,7 @@ test('IM17. the lifecycle is monotonic through to STOP_REQUESTED', () => {
 test('IM14. ⛔ a store we cannot account for is NOT an empty store', () => {
   for (const [name, seed] of [['array', []], ['null', null], ['string', 'abc'], ['number', 123]]) {
     const m = createOpenClawInstanceManager({ store: { read: () => seed, write: () => {} } })
-    assert.throws(() => m.all(), /instance store is not an object/, name)
+    assert.throws(() => m.all(), /instance store is not a data object/, name)
   }
 })
 
@@ -474,8 +474,10 @@ test('IM24. the measurements still arrive through the spec, exactly once', () =>
   m.prepare(APPROVAL, SPEC)
   const rec = m.record(APPROVAL)
   assert.strictEqual(rec.gatewayPort, 18901)
-  assert.deepStrictEqual(rec.envelopeObject, { dev: '2096', ino: '126262' })
-  assert.deepStrictEqual(rec.repoObject, { dev: '2096', ino: '126263' })
+  // null-prototype, like the record snapshot itself: detached authority inherits nothing
+  assert.deepStrictEqual({ ...rec.envelopeObject }, { dev: '2096', ino: '126262' })
+  assert.deepStrictEqual({ ...rec.repoObject }, { dev: '2096', ino: '126263' })
+  assert.strictEqual(Object.getPrototypeOf(rec.envelopeObject), null)
   assert.strictEqual(typeof rec.createdAt, 'string')
 
   // ...and createdAt is authored here, so it may not be supplied even at prepare time
@@ -507,4 +509,694 @@ test('IM25. ⛔ the baseline comparison is WIRED INTO the mutation path, not mer
     assert.ok(section.includes('mutate(approvalId'), fn + ' writes through mutate()')
     assert.ok(!section.includes('put(approvalId'), fn + ' does not bypass mutate() with a direct put()')
   }
+})
+
+/* ══════════════ X3-D3 — store authority must be OWN DATA ══════════════ */
+
+/**
+ * ⛔ A RAW STORE, DELIBERATELY.
+ * memStore JSON-clones its seed, which STRIPS custom prototypes and accessors — so a
+ * prototype/accessor regression written against it would pass without exercising anything.
+ * These tests hand back the exact constructed object.
+ */
+const rawStore = (value) => ({ read: () => value, write: () => {} })
+
+const goodRecord = () => {
+  const D = derivedPathsFor(APPROVAL)
+  return {
+    approvalId: APPROVAL, instanceId: APPROVAL, unitName: unitNameFor(APPROVAL),
+    instanceMarker: APPROVAL, state: STATES.OBSERVED,
+    stateRoot: D.stateRoot, configPath: D.configPath, envelopeRoot: D.envelopeRoot, repoRoot: D.repoRoot,
+    envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' },
+    gatewayPort: 18901, observedPids: [], observedControlGroup: '/cg', restartPolicy: 'no'
+  }
+}
+
+test('IM26. ⛔ a record on a CUSTOM prototype is refused, however complete the prototype is', () => {
+  // Reproduced against the committed code: every authority field resolved by INHERITANCE while
+  // the record owned none of them, and the store accepted it.
+  // Refused at the prototype check, before any field is looked at: a record whose prototype is
+  // neither Object.prototype nor null is not a record at all.
+  const onProto = Object.create(goodRecord())
+  const m = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: onProto }) })
+  assert.throws(() => m.record(APPROVAL), /not a data object/)
+  assert.deepStrictEqual(Object.getOwnPropertyNames(onProto), [], 'it owned nothing - every field was inherited')
+
+  class Rec { constructor () { Object.assign(this, goodRecord()) } }
+  const asClass = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: new Rec() }) })
+  assert.throws(() => asClass.record(APPROVAL), /not a data object/)
+
+  const asArray = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: [] }) })
+  assert.throws(() => asArray.record(APPROVAL), /not a data object/)
+
+  // the store itself must be a data object too
+  const storeOnProto = createOpenClawInstanceManager({ store: rawStore(Object.create({ [APPROVAL]: goodRecord() })) })
+  assert.throws(() => storeOnProto.all(), /instance store is not a data object/)
+
+  // and a POLLUTED Object.prototype cannot conjure an entry into an empty store
+  try {
+    Object.prototype[APPROVAL] = goodRecord()
+    const empty = createOpenClawInstanceManager({ store: rawStore({}) })
+    assert.deepStrictEqual(empty.all(), Object.create(null), 'an inherited entry is not an entry')
+  } finally {
+    delete Object.prototype[APPROVAL]
+  }
+  assert.strictEqual(Object.prototype[APPROVAL], undefined, 'prototype restored')
+})
+
+test('IM27. ⛔ Object.prototype pollution can never fill a MISSING store field', () => {
+  // Reproduced: with observedControlGroup deleted from the record and supplied by the
+  // prototype, the store validated and the verifier would have been aimed at a forged cgroup.
+  const FIELDS = ['approvalId', 'instanceId', 'unitName', 'instanceMarker', 'state',
+    'stateRoot', 'configPath', 'envelopeRoot', 'repoRoot', 'observedControlGroup',
+    'envelopeObject', 'repoObject', 'gatewayPort', 'observedPids']
+
+  for (const field of FIELDS) {
+    const rec = goodRecord()
+    const forged = rec[field]
+    delete rec[field]
+    try {
+      Object.prototype[field] = forged
+      const m = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: rec }) })
+      assert.throws(() => m.record(APPROVAL), /own data property/, field)
+    } finally {
+      delete Object.prototype[field]
+    }
+    assert.strictEqual(Object.prototype[field], undefined, field + ': prototype restored')
+  }
+})
+
+test('IM28. ⛔ an ACCESSOR store field is never authority, and is never invoked', () => {
+  let touched = 0
+  const rec = goodRecord()
+  delete rec.observedControlGroup
+  Object.defineProperty(rec, 'observedControlGroup', {
+    get () { touched++; return '/forged' },
+    enumerable: true,
+    configurable: true
+  })
+  const m = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: rec }) })
+  assert.throws(() => m.record(APPROVAL), /own data property/)
+  assert.strictEqual(touched, 0, 'the getter was never called')
+})
+
+test('IM29. ⛔ accessor or inherited dev/ino cannot supply object identity', () => {
+  const withAccessorIno = goodRecord()
+  withAccessorIno.envelopeObject = {}
+  Object.defineProperty(withAccessorIno.envelopeObject, 'dev', { get () { return '2096' }, enumerable: true, configurable: true })
+  withAccessorIno.envelopeObject.ino = '126262'
+  const m = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: withAccessorIno }) })
+  assert.throws(() => m.record(APPROVAL), /canonical envelopeObject/)
+
+  const inherited = goodRecord()
+  inherited.repoObject = Object.create({ dev: '2096', ino: '126263' })
+  const m2 = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: inherited }) })
+  assert.throws(() => m2.record(APPROVAL), /canonical repoObject/)
+})
+
+test('IM30. an ordinary JSON-style record is still accepted', () => {
+  const m = createOpenClawInstanceManager({ store: rawStore({ [APPROVAL]: goodRecord() }) })
+  const rec = m.record(APPROVAL)
+  assert.strictEqual(rec.approvalId, APPROVAL)
+  assert.strictEqual(rec.observedControlGroup, '/cg')
+  assert.strictEqual(rec.envelopeObject.ino, '126262')
+})
+
+test('IM31. ⛔ the store a caller reads back is the VALIDATED SNAPSHOT, not the object we were handed', () => {
+  // Reproduced against the X3-D3 working tree: assertStore returned `parsed` itself, still
+  // rooted at Object.prototype, and record() reads it as all()[approvalId].
+  const A = APPROVAL
+  const D = derivedPathsFor(A)
+  const forged = {
+    approvalId: A, instanceId: A, unitName: unitNameFor(A), instanceMarker: A,
+    state: STATES.OBSERVED,
+    stateRoot: D.stateRoot, configPath: D.configPath, envelopeRoot: D.envelopeRoot, repoRoot: D.repoRoot,
+    envelopeObject: { dev: '1', ino: '1' }, repoObject: { dev: '1', ino: '2' },
+    gatewayPort: 1, observedPids: [], observedControlGroup: '/forged/cgroup'
+  }
+
+  // (a) READ: a polluted prototype must not become a record. Before the fix this returned the
+  // forged record whole, and the verifier would have been aimed at /forged/cgroup.
+  const reader = createOpenClawInstanceManager({ store: { read: () => ({}), write: () => {} } })
+  try {
+    Object.prototype[A] = forged
+    assert.strictEqual(reader.record(A), null, 'an inherited key is not a record')
+    assert.deepStrictEqual(Object.getOwnPropertyNames(reader.all()), [], 'and the store is empty')
+  } finally {
+    delete Object.prototype[A]
+  }
+  assert.strictEqual(Object.prototype[A], undefined, 'prototype restored')
+
+  // (b) WRITE: an inherited SETTER must not swallow the record. Before the fix prepare()
+  // reported success while writing {} — losing the record that refuses a second launch.
+  let written = null
+  const writer = createOpenClawInstanceManager({ store: { read: () => ({}), write: (v) => { written = v } } })
+  try {
+    Object.defineProperty(Object.prototype, A, { set (v) {}, configurable: true })
+    writer.prepare(A, {
+      gatewayPort: 1,
+      envelopeObject: { dev: '1', ino: '1' },
+      repoObject: { dev: '1', ino: '2' }
+    })
+  } finally {
+    delete Object.prototype[A]
+  }
+  assert.deepStrictEqual(Object.getOwnPropertyNames(written), [A], 'the record was actually written')
+  assert.strictEqual(written[A].state, STATES.PREPARED)
+
+  // (c) the container and its records inherit nothing at all
+  const store = memStore({ [A]: forged })
+  const m = createOpenClawInstanceManager({ store })
+  assert.strictEqual(Object.getPrototypeOf(m.all()), null, 'container')
+  assert.strictEqual(Object.getPrototypeOf(m.record(A)), null, 'record')
+  assert.strictEqual(m.record(A).observedControlGroup, '/forged/cgroup', 'a validated record still reads normally')
+})
+
+test('IM32. ⛔ a record field that is inherited or an accessor is refused, authority or not', () => {
+  const D = derivedPathsFor(APPROVAL)
+  const base = {
+    approvalId: APPROVAL, instanceId: APPROVAL, unitName: unitNameFor(APPROVAL), instanceMarker: APPROVAL,
+    state: STATES.OBSERVED,
+    stateRoot: D.stateRoot, configPath: D.configPath, envelopeRoot: D.envelopeRoot, repoRoot: D.repoRoot,
+    envelopeObject: { dev: '1', ino: '1' }, repoObject: { dev: '1', ino: '2' },
+    gatewayPort: 1, observedPids: [], observedControlGroup: null
+  }
+  // 'restartPolicy' is not in RECORD_AUTHORITY, so only the whole-record snapshot catches this.
+  const withAccessor = Object.assign({}, base)
+  let touched = 0
+  Object.defineProperty(withAccessor, 'restartPolicy', {
+    get () { touched++; return 'always' },
+    enumerable: true,
+    configurable: true
+  })
+  const m = createOpenClawInstanceManager({ store: { read: () => ({ [APPROVAL]: withAccessor }), write: () => {} } })
+  assert.throws(() => m.record(APPROVAL), /own data property/)
+  assert.strictEqual(touched, 0, 'the getter was never called')
+
+  const withSymbol = Object.assign({}, base)
+  withSymbol[Symbol('x')] = 1
+  const m2 = createOpenClawInstanceManager({ store: { read: () => ({ [APPROVAL]: withSymbol }), write: () => {} } })
+  assert.throws(() => m2.record(APPROVAL), /symbol properties/)
+})
+
+test('IM33. ⛔ a NON-ENUMERABLE store entry is still a record, not a hiding place', () => {
+  // Object.keys() would not see this. A record that hides is a record that cannot refuse the
+  // second launch, so the store must enumerate OWN property names, enumerable or not.
+  const D = derivedPathsFor(APPROVAL)
+  const rec = {
+    approvalId: APPROVAL, instanceId: APPROVAL, unitName: unitNameFor(APPROVAL), instanceMarker: APPROVAL,
+    state: STATES.OBSERVED,
+    stateRoot: D.stateRoot, configPath: D.configPath, envelopeRoot: D.envelopeRoot, repoRoot: D.repoRoot,
+    envelopeObject: { dev: '1', ino: '1' }, repoObject: { dev: '1', ino: '2' },
+    gatewayPort: 1, observedPids: [], observedControlGroup: '/cg'
+  }
+  const hidden = {}
+  Object.defineProperty(hidden, APPROVAL, { value: rec, enumerable: false, configurable: true, writable: true })
+  assert.deepStrictEqual(Object.keys(hidden), [], 'the entry really is invisible to Object.keys')
+
+  const m = createOpenClawInstanceManager({ store: { read: () => hidden, write: () => {} } })
+  assert.strictEqual(m.record(APPROVAL).observedControlGroup, '/cg', 'but the boundary still sees it')
+  assert.deepStrictEqual(Object.keys(m.all()), [APPROVAL], 'and the snapshot normalises it to enumerable')
+
+  // and it therefore still refuses a second prepare for that approval
+  assert.throws(
+    () => m.prepare(APPROVAL, { gatewayPort: 1, envelopeObject: { dev: '1', ino: '1' }, repoObject: { dev: '1', ino: '2' } }),
+    /already/i
+  )
+})
+
+/* ══════════════ X3-D3.1 — the validated snapshot must be DETACHED ══════════════ */
+
+/**
+ * ⛔ A STORE THAT RETAINS REFERENCES, DELIBERATELY.
+ * memStore JSON-clones, which would hide every aliasing defect in this section. The injected
+ * store contract never promised cloning, so these tests hand back the exact object written.
+ */
+const retainingStore = () => {
+  let backing = Object.create(null)
+  return { read: () => backing, write: (v) => { backing = v } }
+}
+const detachManager = () => createOpenClawInstanceManager({ store: retainingStore() })
+const detachSpec = () => ({
+  gatewayPort: 18901,
+  envelopeObject: { dev: '2096', ino: '126262' },
+  repoObject: { dev: '2096', ino: '126263' }
+})
+
+test('IM34. ⛔ A — mutating prepare()\'s returned identities does not alter the record', () => {
+  // Reproduced: the returned envelopeObject WAS the stored one, so this rewrote the identity
+  // the retirement verifier later compares dev/ino against.
+  const m = detachManager()
+  const returned = m.prepare(APPROVAL, detachSpec())
+  returned.envelopeObject.dev = '999'
+  returned.repoObject.ino = '999'
+  returned.observedPids.push(4242)
+
+  const later = m.record(APPROVAL)
+  assert.strictEqual(later.envelopeObject.dev, '2096')
+  assert.strictEqual(later.repoObject.ino, '126263')
+  assert.deepStrictEqual(later.observedPids, [])
+})
+
+test('IM35. ⛔ B — mutating observePids()\'s returned array does not lose a pid', () => {
+  // Reproduced: `returned.observedPids.length = 0` erased 93018 from the stored record —
+  // the survivor list the verifier scans, emptied from outside the manager.
+  const m = detachManager()
+  m.prepare(APPROVAL, detachSpec())
+  m.launchAttempted(APPROVAL)
+  const returned = m.observePids(APPROVAL, [93018])
+  returned.observedPids.length = 0
+
+  assert.deepStrictEqual(m.record(APPROVAL).observedPids, [93018])
+})
+
+test('IM36. ⛔ C — mutating record()\'s nested authority does not alter the next record()', () => {
+  const m = detachManager()
+  m.prepare(APPROVAL, detachSpec())
+  m.launchAttempted(APPROVAL)
+  m.observePids(APPROVAL, [93018])
+
+  const r = m.record(APPROVAL)
+  r.envelopeObject.dev = '777'
+  r.repoObject.ino = '777'
+  r.observedPids.push(4242)
+
+  const fresh = m.record(APPROVAL)
+  assert.strictEqual(fresh.envelopeObject.dev, '2096')
+  assert.strictEqual(fresh.repoObject.ino, '126263')
+  assert.deepStrictEqual(fresh.observedPids, [93018])
+
+  // two reads are independent of each other, too
+  assert.notStrictEqual(r.envelopeObject, fresh.envelopeObject, 'identities are not shared between reads')
+  assert.notStrictEqual(r.observedPids, fresh.observedPids, 'pid arrays are not shared between reads')
+})
+
+test('IM37. ⛔ D — mutating all()[approvalId] nested authority does not alter manager state', () => {
+  const m = detachManager()
+  m.prepare(APPROVAL, detachSpec())
+  m.launchAttempted(APPROVAL)
+  m.observePids(APPROVAL, [93018])
+
+  const viaAll = m.all()[APPROVAL]
+  viaAll.envelopeObject.dev = '555'
+  viaAll.repoObject.dev = '555'
+  viaAll.observedPids.length = 0
+  viaAll.observedControlGroup = '/forged/cgroup'
+
+  const after = m.record(APPROVAL)
+  assert.strictEqual(after.envelopeObject.dev, '2096')
+  assert.strictEqual(after.repoObject.dev, '2096')
+  assert.deepStrictEqual(after.observedPids, [93018])
+  assert.strictEqual(after.observedControlGroup, null)
+})
+
+test('IM38. ⛔ E — a malformed observedPids array refuses the whole store read', () => {
+  const D = derivedPathsFor(APPROVAL)
+  const base = () => ({
+    approvalId: APPROVAL, instanceId: APPROVAL, unitName: unitNameFor(APPROVAL),
+    instanceMarker: APPROVAL, state: STATES.OBSERVED,
+    stateRoot: D.stateRoot, configPath: D.configPath, envelopeRoot: D.envelopeRoot, repoRoot: D.repoRoot,
+    envelopeObject: { dev: '1', ino: '1' }, repoObject: { dev: '1', ino: '2' },
+    gatewayPort: 1, observedPids: [], observedControlGroup: '/cg'
+  })
+
+  let touched = 0
+  const accessorArr = []
+  Object.defineProperty(accessorArr, 0, {
+    get () { touched++; return 93018 },
+    enumerable: true,
+    configurable: true
+  })
+  accessorArr.length = 1
+
+  const holed = [1]
+  holed.length = 3
+
+  const inheritedElement = []
+  inheritedElement.length = 1
+
+  const CASES = [
+    ['accessor element', accessorArr, /accessor, not a measurement/],
+    ['hole', holed, /has a hole at index/],
+    ['inherited element (Array.prototype)', inheritedElement, /has a hole at index/],
+    ['string', ['93018'], /not a positive integer pid/],
+    ['zero', [0], /not a positive integer pid/],
+    ['negative', [-1], /not a positive integer pid/],
+    ['float', [1.5], /not a positive integer pid/],
+    ['null', [null], /not a positive integer pid/],
+    ['not an array', {}, /has no observedPids array/]
+  ]
+
+  for (const [name, pids, expected] of CASES) {
+    const rec = base()
+    rec.observedPids = pids
+    const m = createOpenClawInstanceManager({ store: { read: () => ({ [APPROVAL]: rec }), write: () => {} } })
+    assert.throws(() => m.record(APPROVAL), expected, name)
+    assert.throws(() => m.all(), /refuse:/, name)
+  }
+  assert.strictEqual(touched, 0, 'the accessor was refused without ever being invoked')
+
+  // ⛔ and an inherited element is never quietly promoted into authority
+  try {
+    Array.prototype[0] = 93018
+    const rec = base()
+    const arr = []
+    arr.length = 1
+    rec.observedPids = arr
+    const m = createOpenClawInstanceManager({ store: { read: () => ({ [APPROVAL]: rec }), write: () => {} } })
+    assert.throws(() => m.record(APPROVAL), /has a hole at index/)
+  } finally {
+    delete Array.prototype[0]
+  }
+  assert.strictEqual(Array.prototype[0], undefined, 'Array.prototype restored')
+})
+
+test('IM39. F — an ordinary valid record still round-trips through a retaining store', () => {
+  const m = detachManager()
+  const prepared = m.prepare(APPROVAL, detachSpec())
+  assert.strictEqual(prepared.state, STATES.PREPARED)
+  assert.strictEqual(prepared.envelopeObject.dev, '2096')
+
+  m.launchAttempted(APPROVAL)
+  m.observeControlGroup(APPROVAL, '/user.slice/aroma-openclaw.scope')
+  const observed = m.observePids(APPROVAL, [93018, 93017])
+  assert.deepStrictEqual(observed.observedPids, [93017, 93018], 'sorted and deduplicated')
+
+  const stopped = m.requestStop(APPROVAL)
+  assert.strictEqual(stopped.state, STATES.STOP_REQUESTED)
+
+  const final = m.record(APPROVAL)
+  assert.strictEqual(final.observedControlGroup, '/user.slice/aroma-openclaw.scope')
+  assert.deepStrictEqual(final.observedPids, [93017, 93018])
+  assert.strictEqual(final.envelopeObject.ino, '126262')
+  assert.strictEqual(final.repoObject.ino, '126263')
+})
+
+test('IM40. ⛔ what put() writes to the store is not what it hands the caller', () => {
+  // The returned record must not alias the object given to store.write(), or a caller
+  // mutating its own return value rewrites persistent state a second way.
+  let written = null
+  const m = createOpenClawInstanceManager({
+    store: { read: () => (written === null ? Object.create(null) : written), write: (v) => { written = v } }
+  })
+  const returned = m.prepare(APPROVAL, detachSpec())
+
+  assert.notStrictEqual(returned, written[APPROVAL], 'the record itself is a separate object')
+  assert.notStrictEqual(returned.envelopeObject, written[APPROVAL].envelopeObject, 'envelopeObject')
+  assert.notStrictEqual(returned.repoObject, written[APPROVAL].repoObject, 'repoObject')
+  assert.notStrictEqual(returned.observedPids, written[APPROVAL].observedPids, 'observedPids')
+
+  // and the written record is the CANONICAL one: detached from the caller spec as well
+  returned.envelopeObject.dev = '999'
+  assert.strictEqual(written[APPROVAL].envelopeObject.dev, '2096')
+})
+
+test('IM41. \u26d4 the manager OWNS its copy of the spec: neither the store nor the return value aliases it', () => {
+  // The spec carries measurements taken on disk, but the objects carrying them belong to the
+  // CALLER. If either the store or the returned record keeps those objects, the caller can
+  // rewrite the identity the verifier compares dev/ino against, long after prepare() returned
+  // — without touching the manager at all.
+  let written = null
+  const m = createOpenClawInstanceManager({
+    store: {
+      read: () => (written === null ? Object.create(null) : written),
+      write: (v) => { written = v }
+    }
+  })
+
+  const env = { dev: '2096', ino: '126262' }
+  const repo = { dev: '2096', ino: '126263' }
+  const returned = m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: env, repoObject: repo })
+
+  assert.notStrictEqual(returned.envelopeObject, env, 'the returned record must not alias the spec')
+  assert.notStrictEqual(returned.repoObject, repo, 'the returned record must not alias the spec')
+  assert.notStrictEqual(written[APPROVAL].envelopeObject, env, 'the STORE must not alias the spec')
+  assert.notStrictEqual(written[APPROVAL].repoObject, repo, 'the STORE must not alias the spec')
+
+  // and the decisive behavioural proof: the caller mutating its OWN spec object afterwards
+  // changes nothing the manager will ever hand back.
+  env.dev = '999'
+  repo.ino = '999'
+  assert.strictEqual(m.record(APPROVAL).envelopeObject.dev, '2096')
+  assert.strictEqual(m.record(APPROVAL).repoObject.ino, '126263')
+
+  // the same must hold for every later write, not just prepare()
+  m.launchAttempted(APPROVAL)
+  const observed = m.observePids(APPROVAL, [93018])
+  assert.notStrictEqual(observed.observedPids, written[APPROVAL].observedPids, 'observePids return vs store')
+  assert.notStrictEqual(observed.envelopeObject, written[APPROVAL].envelopeObject, 'identity: return vs store')
+  observed.observedPids.push(4242)
+  observed.envelopeObject.dev = '888'
+  assert.deepStrictEqual(m.record(APPROVAL).observedPids, [93018])
+  assert.strictEqual(m.record(APPROVAL).envelopeObject.dev, '2096')
+})
+
+test('IM42. \u26d4 what is PERSISTED is the canonical snapshot, on every write', () => {
+  // put() validated the candidate and then wrote it, discarding the canonical form. What
+  // landed in the store was Object.prototype-rooted — so a later reader of that store
+  // inherits, which is the whole defect class D3 exists to close. The store must receive the
+  // same detached, null-prototype form assertStore produces.
+  const writes = []
+  let backing = Object.create(null)
+  const m = createOpenClawInstanceManager({
+    store: { read: () => backing, write: (v) => { backing = v; writes.push(v) } }
+  })
+
+  m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } })
+  m.launchAttempted(APPROVAL)
+  m.observeControlGroup(APPROVAL, '/user.slice/x.scope')
+  m.observePids(APPROVAL, [93018])
+  m.requestStop(APPROVAL)
+
+  assert.strictEqual(writes.length, 5, 'one write per lifecycle step')
+  for (let i = 0; i < writes.length; i++) {
+    const w = writes[i]
+    assert.strictEqual(Object.getPrototypeOf(w), null, 'write[' + i + '] container inherits nothing')
+    assert.strictEqual(Object.getPrototypeOf(w[APPROVAL]), null, 'write[' + i + '] record inherits nothing')
+    assert.strictEqual(Object.getPrototypeOf(w[APPROVAL].envelopeObject), null, 'write[' + i + '] envelopeObject')
+    assert.strictEqual(Object.getPrototypeOf(w[APPROVAL].repoObject), null, 'write[' + i + '] repoObject')
+  }
+})
+
+test('IM43. \u26d4 what is RETURNED is canonical too, and shares nothing with the store', () => {
+  // The mirror of IM42. A caller handed an Object.prototype-rooted record is a caller whose
+  // record can be shaped by pollution it never performed.
+  let backing = Object.create(null)
+  let written = null
+  const m = createOpenClawInstanceManager({
+    store: { read: () => backing, write: (v) => { backing = v; written = v } }
+  })
+
+  const spec = { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } }
+  const returns = []
+  returns.push(m.prepare(APPROVAL, spec))
+  returns.push(m.launchAttempted(APPROVAL))
+  returns.push(m.observeControlGroup(APPROVAL, '/user.slice/x.scope'))
+  returns.push(m.observePids(APPROVAL, [93018]))
+  returns.push(m.requestStop(APPROVAL))
+  returns.push(m.record(APPROVAL))
+
+  for (let i = 0; i < returns.length; i++) {
+    const r = returns[i]
+    assert.strictEqual(Object.getPrototypeOf(r), null, 'return[' + i + '] record inherits nothing')
+    assert.strictEqual(Object.getPrototypeOf(r.envelopeObject), null, 'return[' + i + '] envelopeObject')
+    assert.strictEqual(Object.getPrototypeOf(r.repoObject), null, 'return[' + i + '] repoObject')
+  }
+
+  // and the last return shares no object at all with what the store is holding
+  const last = returns[returns.length - 2]
+  assert.notStrictEqual(last, written[APPROVAL], 'record')
+  assert.notStrictEqual(last.envelopeObject, written[APPROVAL].envelopeObject, 'envelopeObject')
+  assert.notStrictEqual(last.repoObject, written[APPROVAL].repoObject, 'repoObject')
+  assert.notStrictEqual(last.observedPids, written[APPROVAL].observedPids, 'observedPids')
+})
+
+/* ══════════════ X3-D3.2 — measurements are read ONCE, and arrays are DEFINED ══════════════ */
+
+/** An own ACCESSOR whose value changes after the first read, plus an invocation count. */
+const shiftyProp = (obj, key, values) => {
+  let i = 0
+  const seen = { count: 0 }
+  Object.defineProperty(obj, key, {
+    get () { seen.count++; const v = values[Math.min(i, values.length - 1)]; i++; return v },
+    enumerable: true,
+    configurable: true
+  })
+  return seen
+}
+const countingStore = () => {
+  let backing = Object.create(null)
+  const writes = []
+  return {
+    store: { read: () => backing, write: (v) => { backing = v; writes.push(v) } },
+    writes,
+    get backing () { return backing }
+  }
+}
+
+test('IM44. \u26d4 A — a getter on a prepare measurement is refused, and never invoked', () => {
+  // Reproduced against D3.1: prepare() validated the FIRST read and buildInstanceRecord took
+  // the SECOND, so a getter returning a real identity then a forged one persisted dev 9999 —
+  // the identity the retirement verifier later compares against.
+  const real = { dev: '2096', ino: '126262' }
+  const forged = { dev: '9999', ino: '9999' }
+
+  {
+    const h = countingStore()
+    const m = createOpenClawInstanceManager({ store: h.store })
+    const spec = { gatewayPort: 18901, repoObject: { dev: '2096', ino: '126263' } }
+    const seen = shiftyProp(spec, 'envelopeObject', [real, forged, forged])
+    assert.throws(() => m.prepare(APPROVAL, spec), /envelopeObject must be an own data property/)
+    assert.strictEqual(seen.count, 0, 'the getter was never invoked')
+    assert.strictEqual(h.writes.length, 0, 'and nothing was persisted')
+  }
+  {
+    const h = countingStore()
+    const m = createOpenClawInstanceManager({ store: h.store })
+    const spec = { gatewayPort: 18901, envelopeObject: real }
+    const seen = shiftyProp(spec, 'repoObject', [{ dev: '2096', ino: '126263' }, forged, forged])
+    assert.throws(() => m.prepare(APPROVAL, spec), /repoObject must be an own data property/)
+    assert.strictEqual(seen.count, 0)
+    assert.strictEqual(h.writes.length, 0)
+  }
+  {
+    const h = countingStore()
+    const m = createOpenClawInstanceManager({ store: h.store })
+    const spec = { envelopeObject: real, repoObject: { dev: '2096', ino: '126263' } }
+    const seen = shiftyProp(spec, 'gatewayPort', [18901, 31337, 31337])
+    assert.throws(() => m.prepare(APPROVAL, spec), /gatewayPort must be an own data property/)
+    assert.strictEqual(seen.count, 0)
+    assert.strictEqual(h.writes.length, 0)
+  }
+})
+
+test('IM45. \u26d4 A — an INHERITED or accessor dev/ino on a measurement is refused too', () => {
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+
+  const inherited = Object.create({ dev: '2096', ino: '126262' })
+  assert.throws(
+    () => m.prepare(APPROVAL, { gatewayPort: 1, envelopeObject: inherited, repoObject: { dev: '1', ino: '2' } }),
+    /canonical decimal strings/
+  )
+
+  let touched = 0
+  const accessorIno = { dev: '2096' }
+  Object.defineProperty(accessorIno, 'ino', { get () { touched++; return '126262' }, enumerable: true, configurable: true })
+  assert.throws(
+    () => m.prepare(APPROVAL, { gatewayPort: 1, envelopeObject: accessorIno, repoObject: { dev: '1', ino: '2' } }),
+    /envelopeObject.ino must be an own data property/
+  )
+  assert.strictEqual(touched, 0, 'the dev/ino getter was never invoked')
+  assert.strictEqual(h.writes.length, 0)
+})
+
+test('IM46. A — an ordinary literal spec is unchanged', () => {
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+  const rec = m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } })
+  assert.strictEqual(rec.gatewayPort, 18901)
+  assert.strictEqual(rec.envelopeObject.dev, '2096')
+  assert.strictEqual(rec.envelopeObject.ino, '126262')
+  assert.strictEqual(rec.repoObject.ino, '126263')
+  assert.strictEqual(rec.state, STATES.PREPARED)
+  assert.strictEqual(h.writes.length, 1, 'exactly one write')
+})
+
+test('IM47. \u26d4 B — an accessor pid element is refused before it can be re-read', () => {
+  // Reproduced: the element returned 93018 to the validator and 4242 to everything after it,
+  // so the record persisted observedPids [4242] / mainPid 4242 — a survivor list built from a
+  // value that was never checked.
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+  m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } })
+  m.launchAttempted(APPROVAL)
+  const writesBefore = h.writes.length
+
+  const arr = []
+  const seen = shiftyProp(arr, 0, [93018, 4242, 4242])
+  arr.length = 1
+
+  assert.throws(() => m.observePids(APPROVAL, arr), /accessor, not a measurement/)
+  assert.strictEqual(seen.count, 0, 'the getter was never invoked')
+  assert.strictEqual(h.writes.length, writesBefore, 'and nothing was persisted')
+  assert.deepStrictEqual(m.record(APPROVAL).observedPids, [])
+  assert.strictEqual(m.record(APPROVAL).mainPid, null)
+})
+
+test('IM48. \u26d4 B — a hole or a bad scalar refuses the whole observation, writing nothing', () => {
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+  m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } })
+  m.launchAttempted(APPROVAL)
+  const writesBefore = h.writes.length
+
+  const holed = [93018]
+  holed.length = 3
+  assert.throws(() => m.observePids(APPROVAL, holed), /hole at index 1/)
+
+  for (const bad of [0, -1, 1.5, '93018', null, undefined]) {
+    assert.throws(() => m.observePids(APPROVAL, [bad]), /positive integer pids/, String(bad))
+    assert.throws(() => m.observePids(APPROVAL, bad), /positive integer pids/, String(bad) + " (scalar)")
+  }
+
+  assert.strictEqual(h.writes.length, writesBefore, 'no refusal ever wrote anything')
+  assert.deepStrictEqual(m.record(APPROVAL).observedPids, [])
+
+  // a valid scalar still works
+  const ok = m.observePids(APPROVAL, 93018)
+  assert.deepStrictEqual(ok.observedPids, [93018])
+  assert.strictEqual(ok.mainPid, 93018)
+})
+
+test('IM49. \u26d4 C — an Array.prototype numeric setter cannot intercept the pid copy', () => {
+  // Reproduced: out.push(pid) is an ordinary assignment, so the inherited setter swallowed it
+  // and detachPids produced a length-1 array with NO own index 0. detachPids validates its
+  // INPUT, so nothing threw there — put() PERSISTED observedPids [null] and only the second
+  // validation, afterwards, rejected it. The store had already kept the malformed record.
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+  m.prepare(APPROVAL, { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } })
+  m.launchAttempted(APPROVAL)
+
+  let touched = 0
+  try {
+    Object.defineProperty(Array.prototype, 0, {
+      set (v) { touched++ },
+      get () { return undefined },
+      configurable: true
+    })
+    m.observePids(APPROVAL, [93018])
+  } finally {
+    delete Array.prototype[0]
+  }
+  assert.strictEqual(Object.getOwnPropertyDescriptor(Array.prototype, 0), undefined, 'Array.prototype restored')
+  assert.strictEqual(touched, 0, 'the inherited setter was never invoked')
+
+  const stored = h.backing[APPROVAL].observedPids
+  assert.ok(Object.prototype.hasOwnProperty.call(stored, 0), 'the stored pid is an OWN element')
+  assert.strictEqual(stored[0], 93018)
+  assert.deepStrictEqual(m.record(APPROVAL).observedPids, [93018])
+  assert.strictEqual(m.record(APPROVAL).mainPid, 93018)
+})
+
+test('IM50. \u26d4 C — NOTHING is persisted until every validation has passed', () => {
+  // put() used to write between its two canonical validations, so a canonical snapshot that
+  // was itself malformed reached the store and was only rejected afterwards.
+  const h = countingStore()
+  const m = createOpenClawInstanceManager({ store: h.store })
+  const spec = { gatewayPort: 18901, envelopeObject: { dev: '2096', ino: '126262' }, repoObject: { dev: '2096', ino: '126263' } }
+  m.prepare(APPROVAL, spec)
+  m.launchAttempted(APPROVAL)
+  const writesBefore = h.writes.length
+  const snapshotBefore = JSON.stringify(m.record(APPROVAL))
+
+  // every refusal path, one after another
+  assert.throws(() => m.observePids(APPROVAL, [-1]), /refuse:/)
+  assert.throws(() => m.observePids(APPROVAL, [1.5]), /refuse:/)
+  assert.throws(() => m.prepare(APPROVAL, spec), /already has an instance record/)
+  assert.throws(() => m.observeControlGroup(APPROVAL, 42), /refuse:/)
+
+  assert.strictEqual(h.writes.length, writesBefore, 'not one refusal reached the store')
+  assert.strictEqual(JSON.stringify(m.record(APPROVAL)), snapshotBefore, 'and the record is untouched')
 })

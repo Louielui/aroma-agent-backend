@@ -1044,3 +1044,316 @@ test('V47. ⛔ the authority predicate requires OWN ok and verdict', () => {
     isRetirementAuthority(Object.assign(Object.create(null), { ok: true, verdict: VERDICT.RETIRED })),
     true, 'a null-prototype result is still a genuine data object')
 })
+
+/* ══════════════ X3-D3 — the reproduced getter world must never RETIRE ══════════════ */
+
+test('V48. ⛔ the reproduced accessor fail-open world is UNKNOWN, never RETIRED', () => {
+  // All three unstable readers at once, with a LIVE same-UID pid. Against the committed code
+  // this combination returned ok:true / verdict:RETIRED.
+  const shifty = (base, key, values) => {
+    const o = Object.assign({}, base)
+    let i = 0
+    Object.defineProperty(o, key, {
+      get () { const v = values[Math.min(i, values.length - 1)]; i++; return v },
+      enumerable: true,
+      configurable: true
+    })
+    return o
+  }
+
+  const r = verifier(Object.assign({}, table([]), {
+    // an unreadable cgroup that reads as readable the second time
+    readControlGroup: () => shifty({ exists: false }, 'unreadable', [true, false, false]),
+    listPids: () => ({ pids: [93018] }),
+    readStatus: () => ({ ok: true, uid: UID }),
+    // a marker that is ours on validation and null on use
+    readEnviron: () => shifty({ ok: true }, 'marker', [APPROVAL, APPROVAL, null]),
+    readCwd: () => ({ ok: true, cwd: '/home/openclaw' }),
+    readFds: () => ({ ok: true, fds: [] }),
+    // a unit that exists with Restart=always on validation and is absent on use
+    readUnit: () => shifty({ successor: false, restart: 'always' }, 'exists', [true, false, false])
+  })).evaluate(ID)
+
+  assert.strictEqual(r.ok, false)
+  assert.strictEqual(r.verdict, VERDICT.UNKNOWN)
+  assert.notStrictEqual(r.verdict, VERDICT.RETIRED)
+})
+
+test('V49. ⛔ a single accessor on ANY reader result is enough to refuse', () => {
+  const withGetter = (base, key, value) => {
+    const o = Object.assign({}, base)
+    Object.defineProperty(o, key, { get () { return value }, enumerable: true, configurable: true })
+    return o
+  }
+  const CASES = [
+    ['control group', { readControlGroup: () => withGetter({}, 'exists', false) }],
+    ['pid list', { listPids: () => withGetter({}, 'pids', []) }],
+    ['stat', { statPath: () => withGetter({ exists: true, dev: '2096' }, 'ino', '126262') }],
+    ['unit', { readUnit: () => withGetter({ successor: false }, 'exists', false) }],
+    ['status', Object.assign({}, table([]), {
+      listPids: () => ({ pids: [4242] }),
+      readStatus: () => withGetter({ uid: 0 }, 'ok', true)
+    })]
+  ]
+  for (const [name, over] of CASES) {
+    const r = verifier(over).evaluate(ID)
+    assert.strictEqual(r.verdict, VERDICT.UNKNOWN, name)
+    assert.notStrictEqual(r.verdict, VERDICT.RETIRED, name)
+  }
+})
+
+/* ══════════════ X3-D3.2 — array pollution must never produce a retirement ══════════════ */
+
+test('V50. \u26d4 the pid list the verifier scans survives Array.prototype pollution', () => {
+  // ── WHAT THIS PINS ──
+  // The reader boundary now hands the verifier a pid array whose elements are OWN data
+  // properties, built with defineProperty rather than push, so an inherited numeric setter
+  // cannot swallow them. Before X3-D3.2 the parsed list came back the right LENGTH with no
+  // own elements, and the scan would have walked a hole instead of a live pid.
+  //
+  // ── \u26d4 KNOWN BLOCKER, NOT CLOSED BY THIS TEST ──
+  // openClawRetirementVerifier.js builds its own `relevant` array with `relevant.push(pid)`
+  // (evaluate(), the same-uid classification step). That assignment IS interceptable, and it
+  // is exploitable end to end: with Array.prototype[0] installed, a live process carrying the
+  // instance marker is never inspected and the verdict flips LIVE -> RETIRED / ok:true.
+  // Reproduced; see C:/Aroma/worktrees/x3d32-exploit.js. The one-line fix belongs in the
+  // verifier, which the X3-D3.2 authorization does not cover, so it is HELD pending owner GO.
+  // This test therefore asserts the reader-side guarantee and the clean-world control only.
+  const inspected = new Map()
+  const bump = (k) => inspected.set(k, (inspected.get(k) || 0) + 1)
+
+  const deps = Object.assign({}, table([]), {
+    readControlGroup: () => ({ exists: true, procs: [] }),
+    listPids: () => ({ pids: [93018] }),
+    readStatus: (pid) => { bump('status:' + String(pid)); return pid === 93018 ? { ok: true, uid: UID } : { gone: true } },
+    readEnviron: (pid) => (pid === 93018 ? { ok: true, marker: APPROVAL } : { gone: true }),
+    readCwd: () => ({ ok: true, cwd: '/home/openclaw' }),
+    readFds: () => ({ ok: true, fds: [] }),
+    readUnit: () => ({ exists: false, successor: false, restart: 'no', result: 'success' })
+  })
+
+  // control: with a clean prototype the live marked survivor is found and the world is LIVE
+  const clean = verifier(deps).evaluate(ID)
+  assert.strictEqual(clean.verdict, VERDICT.LIVE, clean.reason)
+  assert.strictEqual(clean.ok, false)
+  assert.strictEqual(inspected.get('status:93018'), 1, 'the live pid was inspected by pid, not by hole')
+
+  // and the parsed pid list itself keeps own elements under pollution
+  let touched = 0
+  let parsed
+  try {
+    Object.defineProperty(Array.prototype, 0, {
+      set (v) { touched++ },
+      get () { return undefined },
+      configurable: true
+    })
+    parsed = require("../agent/openClawReaderContracts").parsePidListResult({ pids: [93018] })
+  } finally {
+    delete Array.prototype[0]
+  }
+  assert.strictEqual(Object.getOwnPropertyDescriptor(Array.prototype, 0), undefined, 'Array.prototype restored')
+  assert.strictEqual(touched, 0, 'the inherited setter was never invoked by the reader boundary')
+  assert.ok(Object.prototype.hasOwnProperty.call(parsed.pids, 0), 'the parsed pid is an OWN element')
+  assert.strictEqual(parsed.pids[0], 93018)
+})
+
+/* ══════════════ X3-D3.3 — evidence arrays survive Array.prototype pollution ══════════════ */
+
+/**
+ * Install configurable numeric setters on Array.prototype for the duration of fn, counting
+ * every interception. Always restored; the caller asserts the restoration.
+ */
+function underArrayPollution (indexes, fn) {
+  const hits = { count: 0 }
+  try {
+    for (const i of indexes) {
+      Object.defineProperty(Array.prototype, i, {
+        set (v) { hits.count++ },
+        get () { return undefined },
+        configurable: true
+      })
+    }
+    hits.result = fn()
+  } finally {
+    for (const i of indexes) delete Array.prototype[i]
+  }
+  for (const i of indexes) {
+    assert.strictEqual(Object.getOwnPropertyDescriptor(Array.prototype, i), undefined,
+      'Array.prototype[' + i + '] restored')
+  }
+  return hits
+}
+
+/**
+ * An instance with NO observed pids. instances() seeds observedPids [93017, 93018], and the
+ * survivor check runs BEFORE the marker/holder scan — so those tests would return LIVE at the
+ * survivor step and never exercise the collections they exist to test.
+ */
+const scanInstances = () => {
+  const m = createOpenClawInstanceManager({ store: memStore() })
+  m.prepare(APPROVAL, SPEC)
+  m.launchAttempted(APPROVAL)
+  m.observeControlGroup(APPROVAL, CG)
+  m.requestStop(APPROVAL)
+  return m
+}
+
+/** A world whose only inhabitant is the pids we name, each fully readable and same-uid. */
+function scanWorld (procs, over) {
+  // ⛔ a Set, not an array: an array recorder would itself be swallowed by the very
+  // prototype setter under test, and the harness would be measuring its own bug.
+  const asked = new Set()
+  const byPid = new Map(procs.map((p) => [p.pid, p]))
+  const facet = (shape) => (pid) => {
+    asked.add(pid)
+    const proc = byPid.get(pid)
+    if (!proc) return { gone: true }
+    return Object.assign({ ok: true }, shape(proc))
+  }
+  const deps = Object.assign({
+    readControlGroup: () => ({ exists: true, procs: [] }),
+    listPids: () => ({ pids: procs.map((p) => p.pid) }),
+    readStatus: (pid) => {
+      const proc = byPid.get(pid)
+      return proc ? { ok: true, uid: proc.uid } : { gone: true }
+    },
+    readEnviron: facet((proc) => ({ marker: proc.marker === undefined ? null : proc.marker })),
+    readCwd: (pid) => { const proc = byPid.get(pid); return proc ? { ok: true, cwd: proc.cwdPath || '/home/openclaw' } : { gone: true } },
+    readFds: (pid) => { const proc = byPid.get(pid); return proc ? { ok: true, fds: proc.fdPaths || [] } : { gone: true } },
+    readUnit: () => ({ exists: false, successor: false, restart: 'no', result: 'success' })
+  }, over || {})
+  return { deps, asked }
+}
+
+test('V51. \u26d4 D3.3(1) — a live MARKED same-uid pid survives Array.prototype pollution', () => {
+  // Reproduced against the pre-D3.3 verifier: relevant.push(pid) was swallowed by the
+  // inherited setter, the scan walked a hole, readEnviron was called with `undefined`, the
+  // marker was never seen, and the verdict went LIVE -> RETIRED / ok:true with the executor
+  // process still running. This is the retirement-authority blocker.
+  const w = scanWorld([{ pid: 93018, uid: UID, marker: APPROVAL }])
+  const run = underArrayPollution([0], () => verifier(w.deps, scanInstances()).evaluate(ID))
+
+  assert.strictEqual(run.count, 0, 'the inherited setter was never invoked')
+  assert.ok(w.asked.has(93018), 'readEnviron was called with the real pid')
+  assert.ok(!w.asked.has(undefined), 'and never with a hole')
+  assert.strictEqual(run.result.verdict, VERDICT.LIVE, run.result.reason)
+  assert.strictEqual(run.result.ok, false)
+  assert.notStrictEqual(run.result.verdict, VERDICT.RETIRED)
+  assert.deepStrictEqual(run.result.evidence.markedPids, [93018])
+})
+
+test('V52. \u26d4 D3.3(2) — the MARKED collection itself cannot be emptied by pollution', () => {
+  // Two same-uid processes, only the second carrying the marker, so the marked list is written
+  // at its own index 0 while `relevant` is already at index 1 — the marker append is exercised
+  // independently of the relevant append.
+  const w = scanWorld([
+    { pid: 93017, uid: UID },
+    { pid: 93018, uid: UID, marker: APPROVAL }
+  ])
+  const run = underArrayPollution([0, 1], () => verifier(w.deps, scanInstances()).evaluate(ID))
+
+  assert.strictEqual(run.count, 0)
+  assert.strictEqual(run.result.verdict, VERDICT.LIVE, run.result.reason)
+  assert.deepStrictEqual(run.result.evidence.markedPids, [93018])
+  assert.match(run.result.reason, /still carry the instance marker/)
+})
+
+test('V53. \u26d4 D3.3(3) — the HOLDER collection cannot be emptied by pollution', () => {
+  // A same-uid process with no marker at all, sitting in the repo — the holder scan is the
+  // only thing that can see it.
+  for (const [label, proc] of [
+    ['cwd in repoRoot', { pid: 93019, uid: UID, cwdPath: P.repoRoot }],
+    ['cwd in envelopeRoot', { pid: 93019, uid: UID, cwdPath: P.envelopeRoot + '/inner' }],
+    ['fd in stateRoot', { pid: 93019, uid: UID, fdPaths: [P.stateRoot + '/db.sqlite'] }],
+    ['fd is configPath', { pid: 93019, uid: UID, fdPaths: [P.configPath] }]
+  ]) {
+    const w = scanWorld([proc])
+    const run = underArrayPollution([0], () => verifier(w.deps, scanInstances()).evaluate(ID))
+    assert.strictEqual(run.count, 0, label)
+    assert.strictEqual(run.result.verdict, VERDICT.LIVE, label + ': ' + run.result.reason)
+    assert.deepStrictEqual(run.result.evidence.holderPids, [93019], label)
+  }
+})
+
+test('V54. \u26d4 D3.3(3b) — an observed-pid SURVIVOR cannot be lost to pollution', () => {
+  // survivors comes from Array.prototype.filter, which creates own elements by spec — this
+  // pins that behaviour rather than assuming it, because losing a survivor is the same class
+  // of fail-open as losing a marker.
+  const m = instances()   // observedPids = [93017, 93018]
+  const w = scanWorld([{ pid: 93018, uid: UID }])
+  const run = underArrayPollution([0, 1], () => verifier(w.deps, m).evaluate(ID))
+
+  assert.strictEqual(run.count, 0)
+  assert.strictEqual(run.result.verdict, VERDICT.LIVE, run.result.reason)
+  assert.deepStrictEqual(run.result.evidence.survivors, [93018])
+  assert.match(run.result.reason, /are still alive/)
+})
+
+test('V55. \u26d4 D3.3(4) — MULTIPLE relevant pids all remain own elements and are all inspected', () => {
+  // Not an index-0-only proof: three same-uid processes, the marker on the LAST one, with
+  // setters installed on prototype indexes 0, 1 and 2.
+  const w = scanWorld([
+    { pid: 93017, uid: UID },
+    { pid: 93018, uid: UID },
+    { pid: 93019, uid: UID, marker: APPROVAL }
+  ])
+  const run = underArrayPollution([0, 1, 2], () => verifier(w.deps, scanInstances()).evaluate(ID))
+
+  assert.strictEqual(run.count, 0)
+  assert.strictEqual(run.result.evidence.relevantProcessCount, 3, 'all three classified same-uid')
+  for (const pid of [93017, 93018, 93019]) {
+    assert.ok(w.asked.has(pid), 'pid ' + pid + ' was actually inspected')
+  }
+  assert.ok(!w.asked.has(undefined), 'no hole was ever inspected')
+  assert.strictEqual(run.result.verdict, VERDICT.LIVE, run.result.reason)
+  assert.deepStrictEqual(run.result.evidence.markedPids, [93019])
+})
+
+test('V56. \u26d4 D3.3(5) — a genuinely clean world STILL RETIRES under the same pollution', () => {
+  // The fix must close the fail-open, not blanket-refuse whenever Array.prototype carries a
+  // numeric setter. A clean world is still a clean world.
+  const m = instances()   // observedPids [93017, 93018], none of them alive in this world
+  const w = scanWorld([], {
+    readControlGroup: () => ({ exists: false }),
+    statPath: (path) => (
+      path === P.envelopeRoot ? { exists: true, dev: '2096', ino: '126262' }
+        : path === P.repoRoot ? { exists: true, dev: '2096', ino: '126263' }
+          : { exists: false }
+    ),
+    listListeners: () => [],
+    protectedInstancesOk: () => true
+  })
+  const run = underArrayPollution([0, 1, 2], () => verifier(w.deps, m).evaluate(ID))
+
+  assert.strictEqual(run.count, 0)
+  assert.strictEqual(run.result.verdict, VERDICT.RETIRED, run.result.reason)
+  assert.strictEqual(run.result.ok, true)
+  assert.strictEqual(run.result.evidence.envelopePreserved, true)
+  assert.strictEqual(run.result.evidence.repoPreserved, true)
+
+  // and the same world with the marker present is LIVE — pollution changes nothing either way
+  const dirty = scanWorld([{ pid: 93018, uid: UID, marker: APPROVAL }])
+  const both = underArrayPollution([0, 1, 2], () => ({
+    clean: verifier(w.deps, m).evaluate(ID).verdict,
+    live: verifier(dirty.deps, scanInstances()).evaluate(ID).verdict
+  }))
+  assert.strictEqual(both.result.clean, VERDICT.RETIRED)
+  assert.strictEqual(both.result.live, VERDICT.LIVE)
+})
+
+test('V57. \u26d4 appendOwn records an OWN data element, and reports failure rather than throwing', () => {
+  // The narrow helper, exercised directly through the behaviour it guarantees: under a
+  // prototype setter the element must still be own, and length must advance by exactly one.
+  const run = underArrayPollution([0, 1], () => {
+    const a = []
+    a.push(1)          // the OLD mechanism: swallowed
+    const swallowed = !Object.prototype.hasOwnProperty.call(a, 0)
+    const b = []
+    Object.defineProperty(b, b.length, { value: 93018, writable: true, enumerable: true, configurable: true })
+    return { swallowed, own: Object.prototype.hasOwnProperty.call(b, 0), len: b.length, val: b[0] }
+  })
+  assert.strictEqual(run.result.swallowed, true, 'push really is interceptable — the defect is real')
+  assert.strictEqual(run.result.own, true, 'defineProperty is not')
+  assert.strictEqual(run.result.len, 1)
+  assert.strictEqual(run.result.val, 93018)
+})

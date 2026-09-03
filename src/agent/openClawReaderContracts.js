@@ -5,26 +5,43 @@
  *
  * ── WHY THIS MODULE EXISTS ──────────────────────────────────────────────────
  * The retirement verifier reads facts about the world through injected readers. It used to
- * interpret their raw result objects field by field, and three consecutive review rounds each
- * found the same class of defect in that pattern:
+ * interpret their raw result objects field by field, and four consecutive review rounds found
+ * the same class of defect in that pattern:
  *
  *   X3-C2  a cgroup result of `{}` or `{exists:null}` fell through to "the cgroup is absent",
  *          because only `exists === true` was tested.
  *   X3-C3  `{ gone:true, ok:true, uid:1000 }` classified as GONE, because `gone` was asked
  *          first and won — skipping a LIVE executor process.
  *   X3-C4  `{ gone:true, ok:'true', uid:1000 }` classified as GONE, because a non-boolean tag
- *          was INVISIBLE rather than invalid. That one produced ok:true / RETIRED with a real
- *          executor process still alive. Fail-open, on the one path that must never be.
+ *          was INVISIBLE rather than invalid. That produced ok:true / RETIRED with a real
+ *          executor process still alive.
+ *   X3-D2  Object.prototype pollution supplied an INHERITED variant tag, so a payload-only
+ *          object classified as OK.
  *
- * Each was fixed where it was found. The pattern is the defect: every call site that touches a
- * raw object is another chance for malformed evidence to disappear into a plausible reading.
- * So parsing happens ONCE, here, and the verifier never sees a raw reader object again.
+ * ── AND THE ONE THIS ROUND (X3-D3) ──────────────────────────────────────────
+ * ⛔ EVIDENCE MUST BE STABLE DATA, NOT EXECUTABLE PROPERTY ACCESS.
+ *
+ * Even with every rule above, a reader could return an object whose own properties are
+ * GETTERS. Each `raw.foo` was a function call, so a value could be valid when validated and
+ * different when used:
+ *
+ *   { exists:false } + an `unreadable` getter returning true then false
+ *       -> validated as "not unreadable", canonicalised as "cgroup absent"
+ *   { ok:true } + a `marker` getter returning the approvalId twice then null
+ *       -> validated as a string, canonicalised as null, hiding the instance marker
+ *   a `unit.exists` getter returning true then false, with restart:'always'
+ *       -> canonicalised as absent, discarding the restart authority
+ *
+ * All three were reproduced, and together they produced ok:true / RETIRED with a live
+ * same-UID process. The fix is not another check: it is to stop reading raw objects more than
+ * once. Every parser takes ONE snapshot of own DATA properties, refuses any own accessor
+ * outright, validates the snapshot, and returns values from that same snapshot.
  *
  * ── THE RULE ────────────────────────────────────────────────────────────────
  * ⛔ AN UNPARSEABLE ANSWER IS NOT AN ANSWER.
  * Every parser returns either a canonical value or null. null always means UNKNOWN at the call
- * site, which fails closed and keeps the global lock. There is no "mostly fine" branch, no
- * coercion, no salvage, and no field read that is not an OWN property.
+ * site, which fails closed and keeps the global lock. No coercion, no salvage, no field read
+ * that is not an own data property, and no field read twice.
  */
 
 /**
@@ -41,6 +58,61 @@ function isDataObject (value) {
   return proto === Object.prototype || proto === null
 }
 
+/**
+ * ⛔ ONE READ, EVER — THE ANTI-TOCTOU SNAPSHOT.
+ *
+ * Returns a null-prototype copy of the object's own DATA properties, or null if it is not a
+ * data object or carries ANY own accessor. Descriptors are inspected rather than properties
+ * read, so a getter is detected without ever being invoked: an accessor on an evidence object
+ * is malformed evidence, not a value to sample.
+ *
+ * The copy has a null prototype, so nothing downstream can inherit anything either.
+ */
+function stableOwnData (raw) {
+  if (!isDataObject(raw)) return null
+  const out = Object.create(null)
+  for (const key of Object.getOwnPropertyNames(raw)) {
+    const d = Object.getOwnPropertyDescriptor(raw, key)
+    if (!d || typeof d.get === 'function' || typeof d.set === 'function') return null
+    out[key] = d.value
+  }
+  // symbols carry no authority here, but an accessor among them is still a malformed object
+  for (const sym of Object.getOwnPropertySymbols(raw)) {
+    const d = Object.getOwnPropertyDescriptor(raw, sym)
+    if (!d || typeof d.get === 'function' || typeof d.set === 'function') return null
+  }
+  return out
+}
+
+/**
+ * The same rule for arrays: each element is read exactly once, through its descriptor, and the
+ * returned array IS the snapshot that was validated. Validating one view and copying another
+ * is the array form of the same defect.
+ *
+ * ⛔ ELEMENTS ARE DEFINED, NEVER ASSIGNED.
+ * `out.push(v)` and `out[i] = v` are ordinary assignments, so an inherited numeric SETTER on
+ * Array.prototype swallows them: the write goes to the setter, the element is never stored, and
+ * what comes back is an array of the right LENGTH with no own elements at all. Under
+ * `Array.prototype[0] = { set() {} }` every reader array came back holed. defineProperty
+ * creates an own data property and cannot be intercepted.
+ */
+function defineElement (out, i, value) {
+  Object.defineProperty(out, i, { value, writable: true, enumerable: true, configurable: true })
+}
+
+function stableArray (value) {
+  if (!Array.isArray(value)) return null
+  const length = value.length
+  const out = []
+  for (let i = 0; i < length; i++) {
+    const d = Object.getOwnPropertyDescriptor(value, i)
+    if (!d || typeof d.get === 'function' || typeof d.set === 'function') return null
+    defineElement(out, i, d.value)
+  }
+  if (out.length !== length) return null
+  return out
+}
+
 /** Every authoritative field is read as an OWN property. Inheritance is never authority. */
 const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 
@@ -49,37 +121,62 @@ const CANONICAL_UINT = /^(0|[1-9][0-9]*)$/
 const isCanonicalUint = (v) => typeof v === 'string' && CANONICAL_UINT.test(v)
 
 const isPositiveInt = (v) => Number.isInteger(v) && v > 0
-const isPidArray = (v) => Array.isArray(v) && v.every(isPositiveInt)
-const isStringArray = (v) => Array.isArray(v) && v.every((x) => typeof x === 'string')
+
+/**
+ * ⛔ VALIDATE OWN DESCRIPTORS, NOT `every`.
+ *
+ * Array.prototype.every SKIPS holes, so a holed snapshot would validate vacuously — and with an
+ * inherited numeric property installed it does not skip, it reads the INHERITED value instead.
+ * Either way the answer is about the prototype, not about the measurement. Every index in range
+ * must be an own data property, and it must be the right kind of value.
+ */
+function everyOwnElement (snap, ok) {
+  if (snap === null) return null
+  for (let i = 0; i < snap.length; i++) {
+    const d = Object.getOwnPropertyDescriptor(snap, i)
+    if (!d || typeof d.get === 'function' || typeof d.set === 'function') return null
+    if (!ok(d.value)) return null
+  }
+  return snap
+}
+
+/** Snapshot an array and require every element to be a positive integer. */
+function stablePidArray (value) {
+  return everyOwnElement(stableArray(value), isPositiveInt)
+}
+
+/** Snapshot an array and require every element to be a string. */
+function stableStringArray (value) {
+  return everyOwnElement(stableArray(value), (x) => typeof x === 'string')
+}
 
 /* ══════════════ the three-variant proc union ══════════════ */
 
 const VARIANT_TAGS = Object.freeze(['ok', 'gone', 'unreadable'])
 
 /**
- * Classify a proc-facet result into exactly one variant.
+ * Classify a SNAPSHOT into exactly one variant.
  *
- * ⛔ A PRESENT TAG MUST BE A BOOLEAN, CHECKED BEFORE ANYTHING IS COUNTED.
- * Counting only `=== true` made a non-boolean tag invisible rather than invalid — the X3-C4
- * fail-open. And exactly one tag must be true: no variant outranks another, so a result
- * claiming two things at once is broken rather than ambiguous.
+ * ⛔ A PRESENT TAG MUST BE A BOOLEAN, CHECKED BEFORE ANYTHING IS COUNTED, AND OWN.
+ * Counting only `=== true` made a non-boolean tag invisible rather than invalid (X3-C4), and
+ * counting `raw[tag]` let an inherited tag claim a variant (X3-D2). Exactly one tag must be
+ * true: no variant outranks another, so a result claiming two things at once is broken.
  *
- * Returns 'ok' | 'gone' | 'unreadable', or null.
+ * Takes a snapshot, never a raw reader object. Returns 'ok' | 'gone' | 'unreadable', or null.
  */
-function classifyFacet (raw) {
-  if (!isDataObject(raw)) return null
+function classifySnapshot (snap) {
+  if (snap === null) return null
   for (const tag of VARIANT_TAGS) {
-    if (own(raw, tag) && typeof raw[tag] !== 'boolean') return null
+    if (own(snap, tag) && typeof snap[tag] !== 'boolean') return null
   }
-  // ⛔ AN INHERITED TAG IS NOT A CLAIM.
-  // The type check above looked only at OWN tags, but the count read raw[tag] — so with
-  // Object.prototype.ok = true, a payload-only object like { uid: 1000 } counted one true
-  // and classified as OK. Object.prototype is an ALLOWED prototype, so the prototype rule
-  // cannot catch this: authority must be an own property at the moment it is counted, not
-  // merely at the moment it is type-checked.
-  const claimed = VARIANT_TAGS.filter((tag) => own(raw, tag) && raw[tag] === true)
+  const claimed = VARIANT_TAGS.filter((tag) => own(snap, tag) && snap[tag] === true)
   if (claimed.length !== 1) return null
   return claimed[0]
+}
+
+/** Kept for callers that classify a raw facet result directly; snapshots first. */
+function classifyFacet (raw) {
+  return classifySnapshot(stableOwnData(raw))
 }
 
 /**
@@ -89,16 +186,21 @@ function classifyFacet (raw) {
  *
  * Returns 'unreadable' | 'ok' | null.
  */
-function classifyReadable (raw, payloadKeys) {
-  if (!isDataObject(raw)) return null
-  if (own(raw, 'unreadable')) {
-    if (typeof raw.unreadable !== 'boolean') return null
-    if (raw.unreadable === true) {
-      for (const k of payloadKeys) if (own(raw, k)) return null
+function classifyReadableSnapshot (snap, payloadKeys) {
+  if (snap === null) return null
+  if (own(snap, 'unreadable')) {
+    if (typeof snap.unreadable !== 'boolean') return null
+    if (snap.unreadable === true) {
+      for (const k of payloadKeys) if (own(snap, k)) return null
       return 'unreadable'
     }
   }
   return 'ok'
+}
+
+/** Kept for callers that classify a raw single-tag result directly; snapshots first. */
+function classifyReadable (raw, payloadKeys) {
+  return classifyReadableSnapshot(stableOwnData(raw), payloadKeys)
 }
 
 const UNREADABLE = Object.freeze({ kind: 'unreadable' })
@@ -107,117 +209,131 @@ const GONE = Object.freeze({ kind: 'gone' })
 /* ══════════════ proc facets ══════════════ */
 
 function parseStatusResult (raw) {
-  const kind = classifyFacet(raw)
+  const snap = stableOwnData(raw)
+  const kind = classifySnapshot(snap)
   if (kind === null) return null
   if (kind === 'gone') return GONE
   if (kind === 'unreadable') return UNREADABLE
   // a uid is a real uid: an integer, and never negative
-  if (!own(raw, 'uid') || !Number.isInteger(raw.uid) || raw.uid < 0) return null
-  return { kind: 'ok', uid: raw.uid }
+  if (!own(snap, 'uid') || !Number.isInteger(snap.uid) || snap.uid < 0) return null
+  return { kind: 'ok', uid: snap.uid }
 }
 
 function parseEnvironResult (raw) {
-  const kind = classifyFacet(raw)
+  const snap = stableOwnData(raw)
+  const kind = classifySnapshot(snap)
   if (kind === null) return null
   if (kind === 'gone') return GONE
   if (kind === 'unreadable') return UNREADABLE
   // marker null means "this process carries no marker" — a real answer, not a missing one
-  if (!own(raw, 'marker')) return null
-  if (raw.marker !== null && typeof raw.marker !== 'string') return null
-  return { kind: 'ok', marker: raw.marker }
+  if (!own(snap, 'marker')) return null
+  if (snap.marker !== null && typeof snap.marker !== 'string') return null
+  return { kind: 'ok', marker: snap.marker }
 }
 
 function parseCwdResult (raw) {
-  const kind = classifyFacet(raw)
+  const snap = stableOwnData(raw)
+  const kind = classifySnapshot(snap)
   if (kind === null) return null
   if (kind === 'gone') return GONE
   if (kind === 'unreadable') return UNREADABLE
-  if (!own(raw, 'cwd') || typeof raw.cwd !== 'string') return null
-  return { kind: 'ok', cwd: raw.cwd }
+  if (!own(snap, 'cwd') || typeof snap.cwd !== 'string') return null
+  return { kind: 'ok', cwd: snap.cwd }
 }
 
 function parseFdsResult (raw) {
-  const kind = classifyFacet(raw)
+  const snap = stableOwnData(raw)
+  const kind = classifySnapshot(snap)
   if (kind === null) return null
   if (kind === 'gone') return GONE
   if (kind === 'unreadable') return UNREADABLE
-  if (!own(raw, 'fds') || !isStringArray(raw.fds)) return null
-  return { kind: 'ok', fds: raw.fds.slice() }
+  if (!own(snap, 'fds')) return null
+  const fds = stableStringArray(snap.fds)
+  if (fds === null) return null
+  return { kind: 'ok', fds }
 }
 
 /* ══════════════ control group ══════════════ */
 
 function parseControlGroupResult (raw) {
-  const kind = classifyReadable(raw, ['exists', 'procs'])
+  const snap = stableOwnData(raw)
+  const kind = classifyReadableSnapshot(snap, ['exists', 'procs'])
   if (kind === null) return null
   if (kind === 'unreadable') return UNREADABLE
   // ⛔ THE READER MUST SAY WHICH IT IS. `{}` and `{exists:null}` are not "absent".
-  if (!own(raw, 'exists') || typeof raw.exists !== 'boolean') return null
-  if (raw.exists === false) {
+  if (!own(snap, 'exists') || typeof snap.exists !== 'boolean') return null
+  if (snap.exists === false) {
     // a control group that does not exist cannot have members
-    if (own(raw, 'procs')) return null
+    if (own(snap, 'procs')) return null
     return { kind: 'ok', exists: false }
   }
-  if (!own(raw, 'procs') || !isPidArray(raw.procs)) return null
-  return { kind: 'ok', exists: true, procs: raw.procs.slice() }
+  if (!own(snap, 'procs')) return null
+  const procs = stablePidArray(snap.procs)
+  if (procs === null) return null
+  return { kind: 'ok', exists: true, procs }
 }
 
 /* ══════════════ pid list ══════════════ */
 
 function parsePidListResult (raw) {
-  const kind = classifyReadable(raw, ['pids'])
+  const snap = stableOwnData(raw)
+  const kind = classifyReadableSnapshot(snap, ['pids'])
   if (kind === null) return null
   if (kind === 'unreadable') return UNREADABLE
   // ⛔ NO PARTIAL FILTERING. A list with one bad entry is a list we cannot trust, and the
   // entry we would have dropped is exactly where a survivor hides.
-  if (!own(raw, 'pids') || !isPidArray(raw.pids)) return null
-  return { kind: 'ok', pids: raw.pids.slice() }
+  if (!own(snap, 'pids')) return null
+  const pids = stablePidArray(snap.pids)
+  if (pids === null) return null
+  return { kind: 'ok', pids }
 }
 
 /* ══════════════ stat ══════════════ */
 
 function parseStatResult (raw) {
-  const kind = classifyReadable(raw, ['exists', 'dev', 'ino'])
+  const snap = stableOwnData(raw)
+  const kind = classifyReadableSnapshot(snap, ['exists', 'dev', 'ino'])
   if (kind === null) return null
   if (kind === 'unreadable') return UNREADABLE
-  if (!own(raw, 'exists') || typeof raw.exists !== 'boolean') return null
-  if (raw.exists === false) {
-    if (own(raw, 'dev') || own(raw, 'ino')) return null
+  if (!own(snap, 'exists') || typeof snap.exists !== 'boolean') return null
+  if (snap.exists === false) {
+    if (own(snap, 'dev') || own(snap, 'ino')) return null
     return { kind: 'ok', exists: false }
   }
   // ⛔ NEVER COERCED THROUGH Number: 64-bit inodes above 2^53 would collapse onto one value,
   // on the one check whose entire purpose is exactness.
-  if (!own(raw, 'dev') || !isCanonicalUint(raw.dev)) return null
-  if (!own(raw, 'ino') || !isCanonicalUint(raw.ino)) return null
-  return { kind: 'ok', exists: true, dev: raw.dev, ino: raw.ino }
+  if (!own(snap, 'dev') || !isCanonicalUint(snap.dev)) return null
+  if (!own(snap, 'ino') || !isCanonicalUint(snap.ino)) return null
+  return { kind: 'ok', exists: true, dev: snap.dev, ino: snap.ino }
 }
 
 /* ══════════════ unit ══════════════ */
 
 function parseUnitResult (raw) {
-  const kind = classifyReadable(raw, ['exists', 'successor', 'restart'])
+  const snap = stableOwnData(raw)
+  const kind = classifyReadableSnapshot(snap, ['exists', 'successor', 'restart'])
   if (kind === null) return null
   if (kind === 'unreadable') return UNREADABLE
   // "no successor field" is not "no successor", and "no exists field" is not "the unit is gone".
-  if (!own(raw, 'exists') || typeof raw.exists !== 'boolean') return null
-  if (!own(raw, 'successor') || typeof raw.successor !== 'boolean') return null
+  if (!own(snap, 'exists') || typeof snap.exists !== 'boolean') return null
+  if (!own(snap, 'successor') || typeof snap.successor !== 'boolean') return null
 
   let restart = null
-  if (raw.exists === true) {
+  if (snap.exists === true) {
     // a unit that still exists must tell us its restart policy
-    if (!own(raw, 'restart') || typeof raw.restart !== 'string' || raw.restart === '') return null
-    restart = raw.restart
+    if (!own(snap, 'restart') || typeof snap.restart !== 'string' || snap.restart === '') return null
+    restart = snap.restart
   }
   // activeState / subState / result are DIAGNOSTIC ONLY — carried through untouched, never
   // validated into authority, and never compared anywhere.
   return {
     kind: 'ok',
-    exists: raw.exists,
-    successor: raw.successor,
+    exists: snap.exists,
+    successor: snap.successor,
     restart,
-    activeState: own(raw, 'activeState') ? raw.activeState : null,
-    subState: own(raw, 'subState') ? raw.subState : null,
-    result: own(raw, 'result') ? raw.result : null
+    activeState: own(snap, 'activeState') ? snap.activeState : null,
+    subState: own(snap, 'subState') ? snap.subState : null,
+    result: own(snap, 'result') ? snap.result : null
   }
 }
 
@@ -236,6 +352,8 @@ function parseProtectedResult (raw) {
 
 module.exports = {
   isDataObject,
+  stableOwnData,
+  stableArray,
   isCanonicalUint,
   classifyFacet,
   classifyReadable,

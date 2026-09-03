@@ -387,3 +387,208 @@ test('RC14. ⛔ an INHERITED payload can never be authority either', () => {
     delete Object.prototype.exists
   }
 })
+
+/* ══════════════ X3-D3 — evidence must be STABLE DATA, not property access ══════════════ */
+
+/** An object with one own ACCESSOR whose value changes on each read. */
+function unstable (base, key, values) {
+  const o = Object.assign({}, base)
+  let i = 0
+  Object.defineProperty(o, key, {
+    get () { const v = values[Math.min(i, values.length - 1)]; i++; return v },
+    enumerable: true,
+    configurable: true
+  })
+  return o
+}
+
+test('RC15. ⛔ stableOwnData refuses ANY own accessor, without invoking it', () => {
+  let touched = 0
+  const trap = {}
+  Object.defineProperty(trap, 'ok', {
+    get () { touched++; return true },
+    enumerable: true,
+    configurable: true
+  })
+  assert.strictEqual(C.stableOwnData(trap), null, 'an accessor makes the object malformed')
+  assert.strictEqual(touched, 0, 'and the getter was NEVER called — descriptors were inspected')
+
+  // a setter-only property is equally malformed
+  const setterOnly = {}
+  Object.defineProperty(setterOnly, 'ok', { set (v) {}, enumerable: true, configurable: true })
+  assert.strictEqual(C.stableOwnData(setterOnly), null, 'setter')
+
+  // ordinary data objects snapshot cleanly, with a null prototype
+  const snap = C.stableOwnData({ ok: true, uid: 1000 })
+  assert.deepStrictEqual({ ok: snap.ok, uid: snap.uid }, { ok: true, uid: 1000 })
+  assert.strictEqual(Object.getPrototypeOf(snap), null, 'the snapshot inherits nothing')
+})
+
+test('RC16. ⛔ A — an unstable cgroup unreadable-getter is refused', () => {
+  // Reproduced against the committed code: it validated "not unreadable" on the first read and
+  // canonicalised { kind:'ok', exists:false } — the cgroup reported ABSENT while the reader was
+  // telling us it could not read it.
+  const raw = unstable({ exists: false }, 'unreadable', [true, false, false])
+  assert.strictEqual(C.parseControlGroupResult(raw), null)
+})
+
+test('RC17. ⛔ B — an unstable environ marker-getter is refused', () => {
+  // Reproduced: validated as the instance marker string, canonicalised as null — hiding a
+  // surviving process that was carrying our marker.
+  const raw = unstable({ ok: true }, 'marker', ['appr_x3b', 'appr_x3b', null])
+  assert.strictEqual(C.parseEnvironResult(raw), null)
+})
+
+test('RC18. ⛔ C — an unstable cwd getter never validates one value and returns another', () => {
+  const raw = unstable({ ok: true }, 'cwd', ['/home/openclaw/.aroma/sandboxes/appr_x3b/repo', '/tmp/elsewhere'])
+  assert.strictEqual(C.parseCwdResult(raw), null, 'refused outright')
+})
+
+test('RC19. ⛔ D — an unstable unit exists-getter is refused', () => {
+  // Reproduced: canonicalised the unit as ABSENT and discarded restart:'always'.
+  const raw = unstable({ successor: false, restart: 'always' }, 'exists', [true, false, false])
+  assert.strictEqual(C.parseUnitResult(raw), null)
+})
+
+test('RC20. ⛔ E — unstable stat dev/ino getters are refused', () => {
+  const devUnstable = unstable({ exists: true, ino: '126262' }, 'dev', ['2096', '9999'])
+  assert.strictEqual(C.parseStatResult(devUnstable), null, 'dev')
+  const inoUnstable = unstable({ exists: true, dev: '2096' }, 'ino', ['126262', '9999'])
+  assert.strictEqual(C.parseStatResult(inoUnstable), null, 'ino')
+  const existsUnstable = unstable({ dev: '2096', ino: '126262' }, 'exists', [true, false])
+  assert.strictEqual(C.parseStatResult(existsUnstable), null, 'exists')
+})
+
+test('RC21. ⛔ F — an ARRAY with an accessor element is refused, never validate-then-recopy', () => {
+  // The array form of the same defect: validate one view, copy another.
+  const makeShifty = (good, bad) => {
+    const a = []
+    let i = 0
+    Object.defineProperty(a, 0, {
+      get () { const v = i === 0 ? good : bad; i++; return v },
+      enumerable: true,
+      configurable: true
+    })
+    a.length = 1
+    return a
+  }
+
+  assert.strictEqual(C.stableArray(makeShifty(1, 'x')), null, 'stableArray refuses accessor elements')
+  assert.strictEqual(C.parsePidListResult({ pids: makeShifty(1, -1) }), null, 'pids')
+  assert.strictEqual(C.parseControlGroupResult({ exists: true, procs: makeShifty(1, -1) }), null, 'procs')
+  assert.strictEqual(C.parseFdsResult({ ok: true, fds: makeShifty('/a', 42) }), null, 'fds')
+
+  // and an ordinary array is snapshotted: later mutation cannot reach the parsed value
+  const live = [7]
+  const parsed = C.parsePidListResult({ pids: live })
+  live.push(999)
+  assert.deepStrictEqual(parsed.pids, [7], 'the parsed array is the validated snapshot')
+})
+
+test('RC22. G — ordinary literal reader results still parse identically', () => {
+  assert.deepStrictEqual(C.parseStatusResult({ ok: true, uid: 1000 }), { kind: 'ok', uid: 1000 })
+  assert.deepStrictEqual(C.parseEnvironResult({ ok: true, marker: null }), { kind: 'ok', marker: null })
+  assert.deepStrictEqual(C.parseCwdResult({ ok: true, cwd: '/x' }), { kind: 'ok', cwd: '/x' })
+  assert.deepStrictEqual(C.parseFdsResult({ ok: true, fds: ['/a'] }), { kind: 'ok', fds: ['/a'] })
+  assert.deepStrictEqual(C.parseControlGroupResult({ exists: false }), { kind: 'ok', exists: false })
+  assert.deepStrictEqual(C.parseControlGroupResult({ exists: true, procs: [7] }), { kind: 'ok', exists: true, procs: [7] })
+  assert.deepStrictEqual(C.parsePidListResult({ pids: [1, 2] }), { kind: 'ok', pids: [1, 2] })
+  assert.deepStrictEqual(C.parseStatResult({ exists: true, dev: '2096', ino: '126262' }),
+    { kind: 'ok', exists: true, dev: '2096', ino: '126262' })
+  const unit = C.parseUnitResult({ exists: false, successor: false, result: 'timeout' })
+  assert.strictEqual(unit.kind, 'ok'); assert.strictEqual(unit.exists, false); assert.strictEqual(unit.result, 'timeout')
+  assert.deepStrictEqual(C.parseStatusResult({ gone: true }), { kind: 'gone' })
+  assert.deepStrictEqual(C.parseStatusResult({ unreadable: true }), { kind: 'unreadable' })
+})
+
+test('RC23. ⛔ a SYMBOL accessor is screened too, not just string keys', () => {
+  // A symbol-keyed getter is never copied into the snapshot, so it cannot change a parsed
+  // value today — but nothing about the parsers guarantees that stays true, and an object
+  // that runs code when looked at is not evidence. It is refused with the rest.
+  const withSym = (base, desc) => {
+    const o = Object.assign({}, base)
+    Object.defineProperty(o, Symbol('probe'), desc)
+    return o
+  }
+  const payload = { ok: true, uid: 1, marker: null, cwd: '/x', fds: [], exists: false, successor: false, pids: [] }
+
+  let touched = 0
+  const getter = withSym(payload, { get () { touched++; return 1 }, configurable: true })
+  assert.strictEqual(C.parseStatusResult(getter), null, 'getter')
+  assert.strictEqual(C.parseEnvironResult(getter), null, 'getter')
+  assert.strictEqual(touched, 0, 'and it was never invoked')
+
+  const setter = withSym(payload, { set (v) {}, configurable: true })
+  assert.strictEqual(C.parseStatusResult(setter), null, 'setter')
+
+  assert.strictEqual(C.parseStatusResult(withSym({ gone: true }, { get () { return 1 }, configurable: true })), null, 'even a bare gone tag')
+
+  // a symbol DATA property is inert, and is left alone
+  const data = withSym(payload, { value: 1, configurable: true })
+  assert.deepStrictEqual(C.parseStatusResult(data), { kind: 'ok', uid: 1 })
+})
+
+test('RC24. \u26d4 an Array.prototype numeric setter cannot intercept a snapshot', () => {
+  // stableArray built its output with out.push(v) — an ordinary assignment, which an
+  // inherited numeric setter swallows. Every reader array then came back with the right
+  // LENGTH and no own elements, so a real pid list evaporated into holes. Elements are now
+  // DEFINED as own data properties, which no inherited setter can intercept.
+  let touched = 0
+  let pids, procs, fds, snap
+  try {
+    Object.defineProperty(Array.prototype, 0, {
+      set (v) { touched++ },
+      get () { return undefined },
+      configurable: true
+    })
+    pids = C.parsePidListResult({ pids: [93018] })
+    procs = C.parseControlGroupResult({ exists: true, procs: [93018] })
+    fds = C.parseFdsResult({ ok: true, fds: ['/x'] })
+    snap = C.stableArray([93018, 4242])
+  } finally {
+    delete Array.prototype[0]
+  }
+  assert.strictEqual(Object.getOwnPropertyDescriptor(Array.prototype, 0), undefined, 'Array.prototype restored')
+  assert.strictEqual(touched, 0, 'the inherited setter was never invoked')
+
+  assert.ok(pids, 'the pid list still parses')
+  assert.ok(Object.prototype.hasOwnProperty.call(pids.pids, 0), 'pids[0] is an OWN element')
+  assert.strictEqual(pids.pids[0], 93018)
+
+  assert.ok(Object.prototype.hasOwnProperty.call(procs.procs, 0), 'procs[0] is an OWN element')
+  assert.strictEqual(procs.procs[0], 93018)
+
+  assert.ok(Object.prototype.hasOwnProperty.call(fds.fds, 0), 'fds[0] is an OWN element')
+  assert.strictEqual(fds.fds[0], '/x')
+
+  assert.deepStrictEqual(snap, [93018, 4242])
+  assert.ok(Object.prototype.hasOwnProperty.call(snap, 0) && Object.prototype.hasOwnProperty.call(snap, 1), 'no holes')
+})
+
+test('RC25. \u26d4 element validation walks OWN descriptors, never Array.prototype.every', () => {
+  // `every` SKIPS holes, so a holed snapshot would validate vacuously; with an inherited
+  // numeric property installed it stops skipping and reads the INHERITED value instead.
+  // Either answer is about the prototype rather than the measurement.
+  const holed = [93018]
+  holed.length = 2
+  assert.strictEqual(C.parsePidListResult({ pids: holed }), null, 'a hole is a missing measurement')
+  assert.strictEqual(C.stableArray(holed), null, 'stableArray refuses it outright')
+
+  // and an inherited element can never fill that hole
+  let touched = 0
+  try {
+    Object.defineProperty(Array.prototype, 1, {
+      get () { touched++; return 4242 },
+      configurable: true
+    })
+    assert.strictEqual(C.parsePidListResult({ pids: holed }), null)
+    assert.strictEqual(C.parseControlGroupResult({ exists: true, procs: holed }), null)
+  } finally {
+    delete Array.prototype[1]
+  }
+  assert.strictEqual(Object.getOwnPropertyDescriptor(Array.prototype, 1), undefined, 'Array.prototype restored')
+  assert.strictEqual(touched, 0, 'the inherited getter was never invoked')
+
+  // a fully-populated array is still accepted
+  assert.deepStrictEqual(C.parsePidListResult({ pids: [1, 2, 3] }), { kind: 'ok', pids: [1, 2, 3] })
+})
