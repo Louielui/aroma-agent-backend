@@ -111,7 +111,7 @@ test('I1. ⛔ the launcher imports no process-creating capability and has no def
   }
   const requires = code.match(/require\([^)]*\)/g) || []
   assert.deepStrictEqual(requires.sort(), ["require('./openClawInstanceManager')", "require('./openClawQuarantine')", "require('./openClawReaderContracts')"].sort())
-  assert.ok(!code.includes("'agent_add_attempting'"), 'the legacy phase is never used')
+  assert.ok(!code.includes("'agent_add_attempting'"), 'the retired legacy phase name is never used')
   assert.strictEqual(L.PHASE_EXECUTOR_LAUNCH_ATTEMPTING, 'executor_launch_attempting')
 })
 
@@ -635,21 +635,116 @@ test('SS6. ⛔ an accessor dependency is read exactly once at construction and n
 
 /* ══════════════ the CURRENT real quarantine refuses the launcher — before anything launches ══════════════ */
 
-test('Q1. ⛔ COMPAT: the current real quarantine rejects executor_launch_attempting BEFORE launchAttempted and BEFORE launchUnit', () => {
+test('Q1. ⛔ B4a: the phase is now CANONICAL, so the ledger no longer refuses this module — the interlock is gone, deliberately', () => {
   const o = orderLog()
   let ledger = {}
   const store = { read: () => JSON.parse(JSON.stringify(ledger)), write: (d) => { ledger = JSON.parse(JSON.stringify(d)) } }
   const real = Q.createOpenClawQuarantine({ store })
   real.begin(APPROVAL)
-  assert.strictEqual(real.state(APPROVAL), Q.STATES.PREPARED)
   const i = instances(o)
   const l = L.createOpenClawExecutorLauncher(Object.assign({ instances: i, quarantine: real }, seams(o)))
-  assert.throws(() => l.run(APPROVAL), /markRunning must open at phase 'agent_add_attempting'/)
-  // the refusal came from the CURRENT ledger, unchanged — and nothing launched
-  assert.strictEqual(real.state(APPROVAL), Q.STATES.PREPARED, 'the current ledger did not open RUNNING')
-  assert.strictEqual(i.record(APPROVAL).state, STATES.PREPARED, 'launchAttempted never landed')
-  never(o.log, 'instances.launchAttempted'); never(o.log, 'launchUnit')
-  assert.deepStrictEqual(Q.PHASES[0], 'agent_add_attempting', 'the current vocabulary is untouched by B3')
+  // ⛔ THIS NOW SUCCEEDS. Before B4a the real ledger threw at markRunning; that third interlock
+  // no longer exists, and pretending otherwise in a test would be the dangerous kind of green.
+  const r = l.run(APPROVAL)
+  assert.strictEqual(r.outcome, L.OUTCOME.OBSERVED)
+  assert.strictEqual(real.state(APPROVAL), Q.STATES.RUNNING, 'the real ledger opened RUNNING at the canonical phase')
+  assert.strictEqual(real.record(APPROVAL).phase, Q.PHASES[0])
+  // the vocabularies are pinned to each other, in both directions
+  assert.strictEqual(L.PHASE_EXECUTOR_LAUNCH_ATTEMPTING, Q.PHASES[0])
+  assert.ok(!Q.PHASES.includes('agent_add_attempting'), 'the legacy name is no longer writable vocabulary')
+  assert.ok(Q.READABLE_PHASES.includes('agent_add_attempting'), 'but it is still readable history')
+})
+
+/* ══════════════ A3 GATES: what still makes this module inert, now that Q1 does not ══════════════ */
+
+test('A3-1. ⛔ there is NO OpenClaw composition/construction site anywhere outside src/agent, and src/app.js has none at all', () => {
+  const srcRoot = path.join(__dirname, '..')
+  const files = []
+  const walk = (dir) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue
+      const full = path.join(dir, e.name)
+      if (e.isDirectory()) walk(full)
+      else if (e.name.endsWith('.js') && !e.name.endsWith('.test.js')) files.push(full)
+    }
+  }
+  walk(srcRoot)
+  assert.ok(files.length > 5, 'the scan actually found production files: ' + files.length)
+  const rel = (f) => path.relative(srcRoot, f).split(path.sep).join('/')
+
+  const agentDir = path.join(srcRoot, 'agent')
+  const importers = []
+  const constructedBy = []
+  const mentions = []
+  for (const f of files) {
+    const raw = fs.readFileSync(f, 'utf8')
+    const code = raw.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+    const inAgent = f.startsWith(agentDir + path.sep)
+    if (!inAgent) {
+      // (a) nothing outside src/agent may IMPORT an OpenClaw module — that is what a
+      //     composition point would have to do first
+      if (/require\([^)]*openClaw/i.test(code)) importers.push(path.relative(srcRoot, f))
+      if (/openClaw/i.test(code)) mentions.push(rel(f))
+    }
+    // (b) nowhere may a factory be CALLED; only defined and exported
+    for (const m of code.matchAll(/(.{0,10})\b(createOpenClaw\w*|createExactWslExecRunner)\s*\(/g)) {
+      if (!/function\s*$/.test(m[1])) constructedBy.push(rel(f) + ' -> ' + m[2])
+    }
+  }
+  assert.deepStrictEqual(importers, [], 'no production file outside src/agent may import an OpenClaw module')
+
+  // ⛔ THE ONE PERMITTED MENTION, PINNED SO IT CANNOT QUIETLY BECOME A ROUTE.
+  // workers/registry.js carries an OpenClaw worker IDENTITY row. It imports nothing from
+  // src/agent and constructs nothing; the dispatcher only executes a worker that is connected,
+  // so the row can be addressed without anything being able to run. If that ever flips to
+  // connected:true, this module becomes reachable and this test must fail first.
+  assert.deepStrictEqual(mentions, ['workers/registry.js'],
+    'the only OpenClaw mention outside src/agent is the inert registry identity row: ' + JSON.stringify(mentions))
+  const registry = fs.readFileSync(path.join(srcRoot, 'workers', 'registry.js'), 'utf8')
+  assert.match(registry, /id: 'openclaw'[\s\S]{0,200}?connected: false/,
+    'the OpenClaw worker row must remain connected:false')
+  // exactWslExecRunner constructs its own module-level singleton; that is a pure argv builder
+  // with no spawn of its own, and it is the ONLY permitted construction in the tree.
+  assert.deepStrictEqual(constructedBy, ['agent/exactWslExecRunner.js -> createExactWslExecRunner'],
+    'no OpenClaw factory may be constructed in production code: ' + JSON.stringify(constructedBy))
+
+  const appJs = fs.readFileSync(path.join(srcRoot, 'app.js'), 'utf8')
+  assert.ok(!/openClaw/i.test(appJs), 'src/app.js must contain zero OpenClaw references')
+  assert.ok(!/openclaw/i.test(appJs), 'src/app.js must not mount OpenClaw under any spelling')
+})
+
+test('A3-2. ⛔ every execution seam still has NO default: a launcher built with ledgers alone can neither launch, stop nor retire', () => {
+  const o = orderLog()
+  const i = instances(o)
+  const q = futureQuarantine(o)
+  const bare = L.createOpenClawExecutorLauncher({ instances: i, quarantine: q })
+  const r = bare.run(APPROVAL)
+  assert.strictEqual(r.outcome, L.OUTCOME.REFUSED)
+  for (const s of L.LAUNCH_SEAMS) assert.match(r.reason, new RegExp(s), 'every missing seam is named: ' + r.reason)
+  assert.deepStrictEqual(steps(o.log), [], 'nothing durable, nothing external')
+  assert.strictEqual(i.peek(), null); assert.strictEqual(q.st.state, 'PREPARED')
+
+  // and recovery of an unknown instance refuses too — there is no stop path either
+  assert.strictEqual(bare.recover(APPROVAL).outcome, L.OUTCOME.REFUSED)
+  never(o.log, 'stopUnit'); never(o.log, 'quarantine.retire')
+
+  // the module exposes no retirement entry point at all
+  assert.deepStrictEqual(Object.keys(bare).sort(), ['OUTCOME', 'PHASE', 'buildLaunchSpec', 'recover', 'run'].sort())
+})
+
+test('A3-3. ⛔ the launcher still cannot retire: it holds no path to quarantine.retire, wired or not', () => {
+  const src = fs.readFileSync(path.join(__dirname, 'openClawExecutorLauncher.js'), 'utf8')
+  const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+  assert.ok(!/\.retire\s*\(/.test(code), 'no retire() call in the launcher')
+  assert.ok(!/observeExecutorGone/.test(code), 'the launcher does not reach the new ledger transition either')
+  // even handed a real ledger and a verifier that says RETIRED, recovery never retires
+  const o = orderLog()
+  const { l, q } = launcher(o, { deps: { retirementVerifier: loggingVerifier(o) } })
+  l.run(APPROVAL)
+  const r = l.recover(APPROVAL)
+  assert.strictEqual(r.outcome, L.OUTCOME.STOP_ISSUED_RETIREMENT_NOT_WIRED)
+  never(o.log, 'quarantine.retire')
+  assert.strictEqual(q.st.state, 'RUNNING', 'the lock is still held by the launcher path')
 })
 
 /* ══════════════ prototype pollution cannot shape the order or the results ══════════════ */

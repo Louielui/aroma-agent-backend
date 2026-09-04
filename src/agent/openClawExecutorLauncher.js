@@ -17,10 +17,14 @@
  * injected seam with no production fallback; run() refuses before touching either ledger if
  * a required seam is missing. It is composed nowhere.
  *
- * It also speaks the FUTURE quarantine vocabulary — phase `executor_launch_attempting` —
- * which the CURRENT quarantine refuses at markRunning. That refusal happens BEFORE
- * launchAttempted and BEFORE any launch, so this module cannot activate by accident until
- * B4 changes the ledger and the transport together.
+ * ⛔ B4a REMOVED ONE OF THE THREE INTERLOCKS. BE HONEST ABOUT WHAT IS LEFT.
+ * Until B4a, `executor_launch_attempting` was not in the ledger's vocabulary, so markRunning
+ * refused this module outright — a third, independent reason it could not activate. B4a made
+ * that phase canonical, so that refusal is gone. Two interlocks remain, and both are load
+ * bearing: this module is CONSTRUCTED NOWHERE (there is no composition root anywhere outside
+ * src/agent, and src/app.js does not import OpenClaw at all), and EVERY execution seam is
+ * injected with NO default, so even a constructed launcher refuses before touching either
+ * ledger. Both are asserted mechanically by test, not left to be remembered.
  *
  * ── THE DURABLE ORDER (the whole point) ─────────────────────────────────────
  *   quarantine.markRunning   (RUNNING — the lock becomes execution-bearing)
@@ -57,7 +61,7 @@ const { derivedPathsFor, unitNameFor, instanceIdFor, instanceMarkerFor, STATES, 
 const { expectedAgentIdFor, expectedSessionKeyFor } = require('./openClawQuarantine')
 const C = require('./openClawReaderContracts')
 
-/** The isolated-executor phase. Deliberately NOT the legacy 'agent_add_attempting'. */
+/** The isolated-executor phase — since B4a, the ledger's canonical opening phase. */
 const PHASE_EXECUTOR_LAUNCH_ATTEMPTING = 'executor_launch_attempting'
 const PROTECTED_PORT = 18789
 

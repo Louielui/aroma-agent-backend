@@ -139,7 +139,7 @@ test('P2. ⛔ markRunning is durable BEFORE the first injected spawn, and not be
     assert.ok(seen.length > 0, 'the CLI was reached')
     const first = seen[0]
     assert.strictEqual(first.stateAtSpawn, STATES.RUNNING, 'RUNNING before the first spawn, not after')
-    assert.strictEqual(first.recAtSpawn.phase, 'agent_add_attempting')
+    assert.strictEqual(first.recAtSpawn.phase, 'executor_launch_attempting')
     assert.strictEqual(first.recAtSpawn.sessionKey, sessionKeyFor(APPROVAL), 'the lookup key is durable pre-spawn')
     assert.strictEqual(first.recAtSpawn.agentId, agentIdFor(APPROVAL))
   })
@@ -192,7 +192,7 @@ test('P2d. ⛔ agent_observed requires POSITIVE evidence, never a zero exit code
 
   // fail closed: the record stays execution-bearing at the phase it actually reached
   assert.strictEqual(q.state(APPROVAL), STATES.RUNNING)
-  assert.strictEqual(q.record(APPROVAL).phase, 'agent_add_attempting', 'the phase did NOT advance')
+  assert.strictEqual(q.record(APPROVAL).phase, 'executor_launch_attempting', 'the phase did NOT advance')
   assert.strictEqual(q.canStart('appr_other').ok, false, 'and the lock is held')
   assert.deepStrictEqual(calls, ['agents'], 'the turn was never attempted')
 })
@@ -214,7 +214,7 @@ test('P2e. ⛔ confirmation must name the EXPECTED agent and workspace', async (
     q.begin(APPROVAL)
     const r = await t.transport('brief', { cloneDir: REPO_DIR })
     assert.strictEqual(r.ok, false, name)
-    assert.strictEqual(q.record(APPROVAL).phase, 'agent_add_attempting', name + ': phase must not advance')
+    assert.strictEqual(q.record(APPROVAL).phase, 'executor_launch_attempting', name + ': phase must not advance')
   }
 })
 
@@ -231,7 +231,7 @@ test('P2c. an unowned clone directory is refused before anything is recorded', a
 test('P3. phases are monotonic and vocabulary-checked', () => {
   const q = ledger()
   q.begin(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'executor_launch_attempting' })
 
   q.advancePhase(APPROVAL, 'agent_observed')
   q.advancePhase(APPROVAL, 'turn_attempting')
@@ -239,9 +239,9 @@ test('P3. phases are monotonic and vocabulary-checked', () => {
 
   // backwards is refused: it would rewrite history toward "less was attempted", which is
   // exactly the direction that makes an unaccounted run look safe
-  assert.throws(() => q.advancePhase(APPROVAL, 'agent_add_attempting'), /cannot move backwards/)
+  assert.throws(() => q.advancePhase(APPROVAL, 'executor_launch_attempting'), /cannot move backwards/)
   assert.throws(() => q.advancePhase(APPROVAL, 'nonsense'), /unknown execution phase/)
-  assert.deepStrictEqual(PHASES.slice(), ['agent_add_attempting', 'agent_observed', 'turn_attempting', 'task_observed'])
+  assert.deepStrictEqual(PHASES.slice(), ['executor_launch_attempting', 'agent_observed', 'turn_attempting', 'task_observed'])
 })
 
 test('P3b. ⛔ a missing or unknown phase on an execution-bearing state FAILS CLOSED', () => {
@@ -264,8 +264,8 @@ test('P3c. markRunning refuses to open at anything but the first phase, and need
   q.begin(APPROVAL)
   assert.throws(() => q.markRunning(APPROVAL, { sessionKey: 'k', phase: 'turn_attempting' }), /must open at phase/)
   assert.throws(() => q.markRunning(APPROVAL, { sessionKey: 'k' }), /must open at phase/)
-  assert.throws(() => q.markRunning(APPROVAL, { phase: 'agent_add_attempting' }), /requires the derived agentId/)
-  assert.throws(() => q.markRunning(APPROVAL, { phase: 'agent_add_attempting', agentId: agentIdFor(APPROVAL) }),
+  assert.throws(() => q.markRunning(APPROVAL, { phase: 'executor_launch_attempting' }), /requires the derived agentId/)
+  assert.throws(() => q.markRunning(APPROVAL, { phase: 'executor_launch_attempting', agentId: agentIdFor(APPROVAL) }),
     /requires the derived sessionKey/)
 })
 
@@ -274,7 +274,7 @@ test('P3c. markRunning refuses to open at anything but the first phase, and need
 test('P4. TERMINAL_OBSERVED still holds the lock; only EXECUTOR_RETIRED releases it', () => {
   const q = ledger({ verifyRetirementProof: verifyFake })
   q.begin(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL)
   q.observeTerminal(APPROVAL, 'succeeded')
 
@@ -292,12 +292,12 @@ test('P4b. ⛔ PRODUCTION FAILS CLOSED: no retirement proof exists, so the lock 
   // rather than hidden.
   const q = ledger() // no verifyRetirementProof — the production default
   q.begin(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL)
   q.observeTerminal(APPROVAL, 'succeeded')
 
   for (const forged of [null, undefined, true, {}, { approvalId: APPROVAL }, fakeProof(APPROVAL)]) {
-    assert.throws(() => q.retire(APPROVAL, forged), /without a verified session-retirement proof/)
+    assert.throws(() => q.retire(APPROVAL, forged), /without a freshly verified session-retirement proof/)
   }
   assert.strictEqual(q.canStart('appr_other').ok, false, 'the lock stays held, which is correct')
 })
@@ -478,7 +478,7 @@ const reconciler = (q, over = {}) => createOpenClawReconciler(Object.assign({ qu
 
 function running (q, id) {
   q.begin(id)
-  q.markRunning(id, { agentId: agentIdFor(id), sessionKey: sessionKeyFor(id), phase: 'agent_add_attempting' })
+  q.markRunning(id, { agentId: agentIdFor(id), sessionKey: sessionKeyFor(id), phase: 'executor_launch_attempting' })
 }
 
 test('P6. an unaccounted record refuses every new execution at the boot gate', () => {
@@ -488,7 +488,7 @@ test('P6. an unaccounted record refuses every new execution at the boot gate', (
   const gate = r.gate('appr_new')
   assert.strictEqual(gate.ok, false)
   assert.match(gate.reason, /unaccounted OpenClaw record/)
-  assert.deepStrictEqual(gate.blockedBy, [{ approvalId: APPROVAL, state: STATES.RUNNING, phase: 'agent_add_attempting' }])
+  assert.deepStrictEqual(gate.blockedBy, [{ approvalId: APPROVAL, state: STATES.RUNNING, phase: 'executor_launch_attempting' }])
 })
 
 test('P6b. ⛔ TASK NOT FOUND never releases anything', () => {
@@ -572,7 +572,7 @@ test('R1. ⛔ the executed-cleanup operation is bound to EXACTLY one grant kind'
   const p = ws.prepare(APPROVAL)
 
   q.begin(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL); q.observeTerminal(APPROVAL, 'succeeded')
   q.retire(APPROVAL, fakeProof(APPROVAL))
 
@@ -592,7 +592,7 @@ test('R2. ⛔ a retired grant is NOT issuable at TERMINAL_OBSERVED', () => {
   // Terminal observation is precisely the state someone would be tempted to accept here.
   const q = ledger({ verifyRetirementProof: verifyFake })
   q.begin(APPROVAL)
-  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'agent_add_attempting' })
+  q.markRunning(APPROVAL, { agentId: agentIdFor(APPROVAL), sessionKey: sessionKeyFor(APPROVAL), phase: 'executor_launch_attempting' })
   q.markSucceeded(APPROVAL)
 
   assert.throws(() => q.retiredGrant(APPROVAL), /requires the executor to be RETIRED/, 'SUCCEEDED')
@@ -617,7 +617,7 @@ test('R3. CLEANED is reachable by two histories, and provenance survives both', 
   // B: it ran and was retired — the execution provenance must NOT be erased by cleanup.
   const b = ledger({ verifyRetirementProof: verifyFake })
   b.begin('appr_ran')
-  b.markRunning('appr_ran', { agentId: agentIdFor('appr_ran'), sessionKey: sessionKeyFor('appr_ran'), phase: 'agent_add_attempting' })
+  b.markRunning('appr_ran', { agentId: agentIdFor('appr_ran'), sessionKey: sessionKeyFor('appr_ran'), phase: 'executor_launch_attempting' })
   b.advancePhase('appr_ran', 'task_observed')
   b.markSucceeded('appr_ran'); b.observeTerminal('appr_ran', 'succeeded')
   b.retire('appr_ran', fakeProof('appr_ran')); b.markCleaned('appr_ran')
