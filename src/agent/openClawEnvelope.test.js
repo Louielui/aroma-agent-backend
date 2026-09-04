@@ -303,7 +303,7 @@ test('E6d. ⛔ a symlink cannot make an outside path look contained', () => {
  */
 function retiredGrantFor (approvalId) {
   if (LEDGER.state(approvalId) === null) LEDGER.begin(approvalId)
-  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId, { agentId: 'aroma-' + approvalId, sessionKey: 'agent:aroma-' + approvalId + ':' + approvalId, phase: 'agent_add_attempting' })
+  if (LEDGER.state(approvalId) === LEDGER.STATES.PREPARED) LEDGER.markRunning(approvalId, { agentId: 'aroma-' + approvalId, sessionKey: 'agent:aroma-' + approvalId + ':' + approvalId, phase: 'executor_launch_attempting' })
   if (LEDGER.state(approvalId) === LEDGER.STATES.RUNNING) LEDGER.observeTerminal(approvalId, 'lost')
   // Retire FIRST: removing an EXECUTED envelope now requires an executor-retired grant, and
   // that grant is only issuable once the session is provably unable to resume. Retiring also

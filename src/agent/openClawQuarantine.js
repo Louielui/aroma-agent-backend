@@ -67,6 +67,21 @@ const TERMINAL_OBSERVED = 'TERMINAL_OBSERVED'
  * A failed disk removal therefore never keeps OpenClaw shut down, which is what S5 was
  * actually protecting.
  */
+/**
+ * ⛔ THE OS SAYS IT IS GONE. THAT IS AN OBSERVATION, NOT A RELEASE.
+ *
+ * The isolated executor is a systemd unit, not an OpenClaw task, so it may vanish without any
+ * task ever reaching a terminal status — and TERMINAL_OBSERVED is unreachable without one.
+ * Synthesising a status to get there would write a task result for a task that never existed,
+ * which is the exact falsification this ledger refuses everywhere else.
+ *
+ * So the OS fact gets its own state, and it is deliberately WEAK: it is in UNACCOUNTED, so the
+ * global lock is still held while it stands. It is a durable record that at one moment the
+ * operating system reported this executor gone — nothing more. Releasing the lock needs a
+ * SECOND, INDEPENDENT verification at the moment of release, because the world may have
+ * changed since the observation was taken.
+ */
+const EXECUTOR_GONE_OBSERVED = 'EXECUTOR_GONE_OBSERVED'
 const EXECUTOR_RETIRED = 'EXECUTOR_RETIRED'
 const CLEANED = 'CLEANED'
 
@@ -82,11 +97,45 @@ const CLEANED = 'CLEANED'
  * Ordered. A phase may advance, never retreat.
  */
 const PHASES = Object.freeze([
-  'agent_add_attempting',
+  'executor_launch_attempting',
   'agent_observed',
   'turn_attempting',
   'task_observed'
 ])
+
+/**
+ * ⛔ READ-ONLY HISTORY, NOT A SECOND VOCABULARY.
+ *
+ * `agent_add_attempting` was the opening phase before the isolated-executor cutover. Ledgers
+ * written then are still on disk, and `assertPhaseFor` refuses any execution-bearing record
+ * whose phase is not in the vocabulary — so dropping the old name outright would make an
+ * existing ledger unreadable, which fails closed in the loudest possible way: nothing could
+ * start, and nothing already recorded could be accounted for or retired.
+ *
+ * The old name is therefore READABLE and NEVER WRITABLE. markRunning accepts only PHASES[0];
+ * advancePhase accepts only PHASES as a target. There is no path that can produce a legacy
+ * phase, so this list can only shrink as old records are cleaned — it can never grow.
+ *
+ * ⛔ AND THE BYTES ON DISK ARE NEVER REWRITTEN.
+ * Migrating a persisted phase would restate history: the record would claim it opened at a
+ * phase that did not exist when it opened. The audit trail is kept honest by reading the old
+ * name, not by editing it away.
+ */
+const LEGACY_PHASES = Object.freeze(['agent_add_attempting'])
+
+/** Every phase that may be READ from a record. Strict superset of PHASES. */
+const READABLE_PHASES = Object.freeze(PHASES.concat(LEGACY_PHASES))
+
+/**
+ * Position on the phase timeline, for monotonicity only. A legacy opening phase occupies the
+ * canonical opening slot, so a historical record can still advance forward — but the target
+ * of that advance is validated against PHASES, never against this.
+ */
+function phaseIndex (phase) {
+  const i = PHASES.indexOf(phase)
+  if (i >= 0) return i
+  return LEGACY_PHASES.includes(phase) ? 0 : -1
+}
 
 /**
  * ⛔ TWO STATES FOR "NOTHING EVER RAN", BECAUSE NO TASK EXISTED TO HAVE A STATUS.
@@ -107,7 +156,7 @@ const PREPARATION_FAILED = 'PREPARATION_FAILED'
 
 const STATES = Object.freeze({
   PREPARED, RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED,
-  PRE_EXECUTION_ABORTED, PREPARATION_FAILED, EXECUTOR_RETIRED, CLEANED
+  PRE_EXECUTION_ABORTED, PREPARATION_FAILED, EXECUTOR_GONE_OBSERVED, EXECUTOR_RETIRED, CLEANED
 })
 
 /**
@@ -131,7 +180,15 @@ const STATES = Object.freeze({
  * EXECUTOR_RETIRED all remain distinct: collapsing any of them discards the distinction that
  * makes this correct.
  */
-const UNACCOUNTED = Object.freeze([RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED])
+/*
+ * ⛔ EXECUTOR_GONE_OBSERVED IS UNACCOUNTED, AND THAT IS THE WHOLE POINT OF SPLITTING IT OUT.
+ * If recording the OS observation released the lock, the observation would BE the retirement
+ * and the second verification would be decorative. The lock is held until retire() proves,
+ * again and freshly, that the executor is gone.
+ */
+const UNACCOUNTED = Object.freeze([
+  RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED, EXECUTOR_GONE_OBSERVED
+])
 
 /** The terminal task statuses OpenClaw itself reports. Anything else is not an observation. */
 const TERMINAL_TASK_STATUSES = Object.freeze(['succeeded', 'failed', 'timed_out', 'cancelled', 'lost'])
@@ -191,6 +248,90 @@ const GRANT_PRE_EXECUTION = 'pre-execution'
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 
 /**
+ * ⛔ OWNERSHIP, NOT VALUE. THE FIRST VERSION OF THIS GOT IT WRONG.
+ *
+ * The retirement histories were distinguished with `rec.goneObservedAt !== undefined && !== null`,
+ * which reads an OWN field holding `null` as "the field is not there". A record could then own
+ * `goneObservedAt: null` AND a terminal `taskStatus` and be accepted as an ordinary task-observed
+ * retirement — the two histories were no longer exclusive, and a corrupted or forged row carrying
+ * a nulled stamp was exactly the shape that slipped through. Presence is a question about the
+ * OBJECT, so it is asked of the object.
+ */
+const own = (rec, key) => Object.prototype.hasOwnProperty.call(rec, key)
+
+/** A usable observed-gone stamp: OWN, a string, and not empty. Anything else is not a stamp. */
+const hasReadableGoneStamp = (rec) =>
+  own(rec, 'goneObservedAt') && typeof rec.goneObservedAt === 'string' && rec.goneObservedAt !== ''
+
+/**
+ * ⛔ THE ONE PLACE THAT DECIDES WHETHER A RETIREMENT IS ACCOUNTED FOR.
+ *
+ * Exactly one complete history, never both, never neither:
+ *   task history — an own terminal taskStatus, and NO own goneObservedAt at all
+ *   OS history   — a readable own goneObservedAt, and NO own taskStatus at all
+ *
+ * Used identically for EXECUTOR_RETIRED and for CLEANED-from-EXECUTOR_RETIRED, so there is no
+ * second, laxer copy of the rule for a corrupt record to be read by.
+ */
+function assertExactlyOneRetirementHistory (key, rec, where) {
+  const goneOwned = own(rec, 'goneObservedAt')
+  const taskOwned = own(rec, 'taskStatus')
+
+  if (goneOwned && taskOwned) {
+    throw new Error(`refuse: ${where} record '${key}' claims BOTH an OS observation and a task status; the two retirement histories are exclusive`)
+  }
+  if (goneOwned) {
+    if (!hasReadableGoneStamp(rec)) {
+      throw new Error(`refuse: ${where} record '${key}' was retired on an OS observation but its observed-gone stamp is unreadable (got ${JSON.stringify(rec.goneObservedAt)})`)
+    }
+    return
+  }
+  if (taskOwned) {
+    if (!TERMINAL_TASK_STATUSES.includes(rec.taskStatus)) {
+      throw new Error(`refuse: ${where} record '${key}' came from EXECUTOR_RETIRED but its task never reached a terminal status (got ${JSON.stringify(rec.taskStatus)})`)
+    }
+    return
+  }
+  throw new Error(`refuse: ${where} record '${key}' is retired but carries NEITHER a terminal task status NOR an observed-gone stamp; nothing accounts for the executor`)
+}
+
+/**
+ * ⛔ EVIDENCE IS CHECKED ON EVERY READ, BEFORE THE LOCK CAN EVER BE RELEASED.
+ *
+ * EXECUTOR_RETIRED is the state that drops out of UNACCOUNTED, so canStart() consults it to
+ * authorise a new execution. Validating the evidence only at cleanup time meant a truncated or
+ * forged row — EXECUTOR_GONE_OBSERVED with no stamp, or EXECUTOR_RETIRED with no history at all —
+ * loaded cleanly and released the lock on nothing but a state string on disk. That reduced "two
+ * independent verifications" to one disk claim plus one verifier call.
+ *
+ * And the stamp is confined to the retirement path: no other state may carry it, so a corrupt
+ * field cannot ride along a normal transition and become a retirement history later.
+ */
+function assertRetirementEvidence (key, rec) {
+  if (rec.state === EXECUTOR_GONE_OBSERVED) {
+    if (!hasReadableGoneStamp(rec)) {
+      throw new Error(`refuse: quarantine record '${key}' is EXECUTOR_GONE_OBSERVED but its observed-gone stamp is missing or unreadable (got ${JSON.stringify(rec.goneObservedAt)})`)
+    }
+    if (own(rec, 'taskStatus')) {
+      throw new Error(`refuse: quarantine record '${key}' is EXECUTOR_GONE_OBSERVED but also claims a task status; no task existed to have one`)
+    }
+    return
+  }
+  if (rec.state === EXECUTOR_RETIRED) return assertExactlyOneRetirementHistory(key, rec, 'EXECUTOR_RETIRED')
+  if (rec.state === CLEANED) {
+    // provenance itself is checked by assertCleanedProvenance, which applies the SAME rule
+    if (rec.cleanedFrom !== EXECUTOR_RETIRED && own(rec, 'goneObservedAt')) {
+      throw new Error(`refuse: CLEANED record '${key}' came from ${rec.cleanedFrom} but carries an observed-gone stamp`)
+    }
+    return
+  }
+  // ⛔ every other state: the stamp belongs only to the retirement path
+  if (own(rec, 'goneObservedAt')) {
+    throw new Error(`refuse: quarantine record '${key}' is ${rec.state} but carries an observed-gone stamp, which only a retirement may hold`)
+  }
+}
+
+/**
  * ⛔ SYNTACTICALLY VALID IS NOT SEMANTICALLY VALID.
  *
  * The first version parsed the ledger and fell back to `{}` whenever the result was not a
@@ -221,13 +362,17 @@ function assertLedger (parsed) {
       throw new Error(`refuse: quarantine record '${key}' has unknown state '${rec.state}'`)
     }
     assertPhaseFor(key, rec)
+    // ⛔ evidence is validated on EVERY read, so an unaccountable retirement can never be
+    // loaded — and therefore can never reach canStart() and release the lock.
+    assertRetirementEvidence(key, rec)
   }
   return parsed
 }
 
 /** States that mean an external spawn was attempted, so a phase MUST be present. */
 const EXECUTION_BEARING = Object.freeze([
-  RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED, EXECUTOR_RETIRED
+  RUNNING, SUCCEEDED, CLIENT_TIMEOUT, QUARANTINED, TERMINAL_OBSERVED,
+  EXECUTOR_GONE_OBSERVED, EXECUTOR_RETIRED
 ])
 
 /**
@@ -257,7 +402,8 @@ function assertPhaseFor (key, rec) {
   if (!hasPhase) {
     throw new Error(`refuse: quarantine record '${key}' is ${rec.state} but carries no execution phase`)
   }
-  if (!PHASES.includes(rec.phase)) {
+  // READ side: a historical opening phase is still a phase we can place on the timeline.
+  if (!READABLE_PHASES.includes(rec.phase)) {
     throw new Error(`refuse: quarantine record '${key}' has unknown execution phase '${rec.phase}'`)
   }
 }
@@ -299,10 +445,10 @@ function assertCleanedProvenance (key, rec) {
   }
   if (from === EXECUTOR_RETIRED) {
     // ⛔ AN EXECUTED HISTORY IS ACCOUNTED FOR IN FULL, OR NOT ACCEPTED.
-    // A truncated one — a phase but no identity, or identity but no terminal status — is a
-    // record that cannot answer "what happened to that executor", which is the only reason
-    // this row is kept after its envelope is gone.
-    if (!PHASES.includes(rec.phase)) {
+    // A truncated one — a phase but no identity, or identity but no account of how the
+    // executor ended — is a record that cannot answer "what happened to that executor", which
+    // is the only reason this row is kept after its envelope is gone.
+    if (!READABLE_PHASES.includes(rec.phase)) {
       throw new Error(`refuse: CLEANED record '${key}' came from EXECUTOR_RETIRED but has no valid execution phase`)
     }
     if (rec.agentId !== expectedAgentIdFor(key)) {
@@ -311,18 +457,31 @@ function assertCleanedProvenance (key, rec) {
     if (rec.sessionKey !== expectedSessionKeyFor(key)) {
       throw new Error(`refuse: CLEANED record '${key}' came from EXECUTOR_RETIRED but its sessionKey is not the derived one (got '${rec.sessionKey}')`)
     }
-    if (!TERMINAL_TASK_STATUSES.includes(rec.taskStatus)) {
-      throw new Error(`refuse: CLEANED record '${key}' came from EXECUTOR_RETIRED but its task never reached a terminal status (got '${rec.taskStatus}')`)
-    }
+    /**
+     * ⛔ TWO LEGITIMATE WAYS TO HAVE BEEN RETIRED — CHECKED BY THE SHARED RULE, NOT A COPY.
+     *
+     * Requiring a terminal task status of EVERY retired record was correct while the only
+     * route ran through TERMINAL_OBSERVED. The isolated executor is a systemd unit that may
+     * vanish without any task ever existing — that is precisely why EXECUTOR_GONE_OBSERVED
+     * exists — so demanding a status there would force the caller to invent one, which is the
+     * falsification this whole file refuses.
+     *
+     * This calls the same assertExactlyOneRetirementHistory() that EXECUTOR_RETIRED itself is
+     * validated with. A second, laxer copy here is precisely how a record that was refused at
+     * one gate gets accepted at the next.
+     */
+    assertExactlyOneRetirementHistory(key, rec, 'CLEANED')
     return
   }
   // ⛔ NO EXECUTOR EVER RAN, SO NO EXECUTION EVIDENCE OF ANY KIND MAY APPEAR.
   // Identity counts as execution evidence: a sessionKey on a run that never started names a
   // session nobody created, and it is exactly what a corrupted or forged row would carry to
   // look like an ordinary completed run.
-  for (const field of ['phase', 'taskStatus', 'sessionKey', 'agentId', 'runId']) {
-    if (rec[field] !== undefined && rec[field] !== null) {
-      throw new Error(`refuse: CLEANED record '${key}' came from ${from} but claims execution evidence ${field}='${rec[field]}'`)
+  // ⛔ OWNERSHIP HERE TOO: a nulled field is a field the record CARRIES, and a run that never
+  // executed has no business carrying any of them under any value.
+  for (const field of ['phase', 'taskStatus', 'sessionKey', 'agentId', 'runId', 'goneObservedAt']) {
+    if (own(rec, field)) {
+      throw new Error(`refuse: CLEANED record '${key}' came from ${from} but claims execution evidence ${field}=${JSON.stringify(rec[field])}`)
     }
   }
 }
@@ -420,7 +579,10 @@ function createOpenClawQuarantine (options = {}) {
   const RESERVED = Object.freeze([
     'state', 'phase', 'taskStatus', 'approvalId', 'updatedAt', 'cleanedFrom',
     // identity, for the same reason as the rest: it is evidence, not a note
-    'agentId', 'sessionKey'
+    'agentId', 'sessionKey',
+    // when the OS was observed to have lost this executor — a stamp this module makes after
+    // verifying, never a time a caller gets to assert
+    'goneObservedAt'
   ])
 
   function assertNoReservedKeys (meta, where) {
@@ -506,13 +668,18 @@ function createOpenClawQuarantine (options = {}) {
     // PREPARED can end without ever running: the revision gate may refuse, or the sandbox
     // may fail to build. Neither path is available once RUNNING.
     [PREPARED]: [RUNNING, PRE_EXECUTION_ABORTED, PREPARATION_FAILED],
-    [RUNNING]: [SUCCEEDED, CLIENT_TIMEOUT, TERMINAL_OBSERVED],
+    [RUNNING]: [SUCCEEDED, CLIENT_TIMEOUT, TERMINAL_OBSERVED, EXECUTOR_GONE_OBSERVED],
     [SUCCEEDED]: [TERMINAL_OBSERVED],
     [CLIENT_TIMEOUT]: [QUARANTINED],
     [QUARANTINED]: [TERMINAL_OBSERVED],
     // ⛔ TERMINAL_OBSERVED NO LONGER LEADS STRAIGHT TO CLEANED.
     // The session can still be auto-resumed, so retirement is a separate, proven step.
     [TERMINAL_OBSERVED]: [EXECUTOR_RETIRED],
+    // ⛔ THERE IS DELIBERATELY NO RUNNING -> EXECUTOR_RETIRED EDGE.
+    // An executor the OS reports gone passes through EXECUTOR_GONE_OBSERVED first, so the
+    // release of the global lock is always a SECOND, separately verified act rather than a
+    // single step taken on a single reading of the world.
+    [EXECUTOR_GONE_OBSERVED]: [EXECUTOR_RETIRED],
     [EXECUTOR_RETIRED]: [CLEANED],
     [PRE_EXECUTION_ABORTED]: [CLEANED],
     [PREPARATION_FAILED]: [CLEANED],
@@ -588,7 +755,9 @@ function createOpenClawQuarantine (options = {}) {
     if (!EXECUTION_BEARING.includes(rec.state)) {
       throw new Error(`refuse: '${approvalId}' is ${rec.state}; only an execution-bearing record has a phase`)
     }
-    const cur = PHASES.indexOf(rec.phase)
+    // The TARGET was validated against PHASES above; the CURRENT phase may be a historical
+    // name, which occupies the canonical opening slot so an old record can still move forward.
+    const cur = phaseIndex(rec.phase)
     if (cur < 0) throw new Error(`refuse: '${approvalId}' has unreadable current phase '${rec.phase}'`)
     if (idx < cur) {
       throw new Error(`refuse: execution phase cannot move backwards (${rec.phase} -> ${phase})`)
@@ -718,9 +887,40 @@ function createOpenClawQuarantine (options = {}) {
    * and until then this transition is unreachable in production BY CONSTRUCTION rather than
    * by anyone remembering not to call it.
    */
+  /**
+   * Record that the operating system reports this executor gone. THE LOCK IS NOT RELEASED.
+   *
+   * ⛔ VERIFIED, NOT MERELY CLAIMED. The same injected verifier gates this transition, so an
+   * unwired ledger cannot record the observation either — the default refuses everything, and
+   * a record asserting "the OS said it was gone" with nothing behind it would be exactly the
+   * unsupported claim the audit trail exists to exclude.
+   *
+   * ⛔ AND IT IS NOT RETIREMENT. EXECUTOR_GONE_OBSERVED is in UNACCOUNTED: canStart() still
+   * refuses while it stands. What was proven here is what was true at THIS moment; releasing
+   * the lock requires proving it again, later, in retire().
+   */
+  function observeExecutorGone (approvalId, proof, meta = {}) {
+    if (verifyRetirementProof(proof, { approvalId }) !== true) {
+      throw new Error(`refuse: '${approvalId}' cannot record an observed-gone executor without a verified OS retirement proof`)
+    }
+    return transitionWith(approvalId, EXECUTOR_GONE_OBSERVED, meta, { goneObservedAt: now() })
+  }
+
+  /**
+   * ⛔ THE VERIFICATION IS TAKEN AGAIN, HERE, AND IT MUST BE LITERALLY true.
+   *
+   * The proof passed in is not evidence — the verifier is invoked afresh at the moment the
+   * lock would release, and no earlier verdict may be cached, memoised or carried over from
+   * observeExecutorGone(). An executor observed gone a moment ago can have been resurrected
+   * since; the only reading that may release the lock is the one taken now.
+   *
+   * The comparison is strict. `if (!x)` accepted every truthy value — including `{ ok: false }`,
+   * which is what a verifier that answers with an object rather than a boolean returns on
+   * REFUSAL. That is the single most dangerous coercion this file could contain.
+   */
   function retire (approvalId, proof, meta = {}) {
-    if (!verifyRetirementProof(proof, { approvalId })) {
-      throw new Error(`refuse: '${approvalId}' cannot be retired without a verified session-retirement proof; no neutralise-without-prune primitive is proven to exist`)
+    if (verifyRetirementProof(proof, { approvalId }) !== true) {
+      throw new Error(`refuse: '${approvalId}' cannot be retired without a freshly verified session-retirement proof`)
     }
     return transition(approvalId, EXECUTOR_RETIRED, meta)
   }
@@ -764,6 +964,11 @@ function createOpenClawQuarantine (options = {}) {
     if (cur === TERMINAL_OBSERVED) {
       return { ok: false, reason: `refuse: '${approvalId}' is TERMINAL_OBSERVED; the executor/session has not been retired` }
     }
+    // ⛔ AN OBSERVATION IS NOT A RETIREMENT HERE EITHER. The workspace stays until the second
+    // verification succeeds, for the same reason the lock does.
+    if (cur === EXECUTOR_GONE_OBSERVED) {
+      return { ok: false, reason: `refuse: '${approvalId}' is EXECUTOR_GONE_OBSERVED; the executor was seen gone but has not been retired` }
+    }
     return { ok: false, reason: `refuse: '${approvalId}' is ${cur === null ? 'unknown' : cur}; cleanup requires an observed terminal task status` }
   }
 
@@ -780,6 +985,7 @@ function createOpenClawQuarantine (options = {}) {
     verifyGrant,
     abortPreExecution,
     failPreparation,
+    observeExecutorGone,
     retire,
     advancePhase,
     markCleaned,
@@ -802,6 +1008,9 @@ module.exports = {
   STATES,
   KNOWN_STATES,
   PHASES,
+  LEGACY_PHASES,
+  READABLE_PHASES,
+  phaseIndex,
   EXECUTION_BEARING,
   UNACCOUNTED,
   TERMINAL_TASK_STATUSES,
