@@ -30,10 +30,17 @@
  * verifier from becoming an execution surface.
  */
 
-const childProcess = require('node:child_process')
+/**
+ * ⛔ THE ONLY WAY INTO THE DISTRO IS THE EXACT RUNNER.
+ * This module no longer imports child_process at all. The launcher path, the distro, the
+ * empty child environment and `--exec` semantics live in exactWslExecRunner.js and are shared
+ * with every other OpenClaw component, so there is exactly one boundary to review.
+ */
+const { exactWslExec, WSL_EXE, CHILD_ENV, DISTRO: RUNNER_DISTRO } = require('./exactWslExecRunner')
 
 /** Fixed trusted configuration. None of it is reachable from a Work Order, model or executor. */
 const DISTRO = 'OpenClawGateway'
+if (DISTRO !== RUNNER_DISTRO) throw new Error('openClawWslWorkspace and exactWslExecRunner disagree on the trusted distro')
 const SANDBOX_ROOT = '/home/openclaw/.aroma/sandboxes'
 
 /** The clone lives in this fixed child of the envelope. See envelopeContainmentCheck. */
@@ -62,28 +69,12 @@ const GRANT_PRE_EXECUTION = 'pre-execution'
  */
 const SOURCE_URL = 'https://github.com/Louielui/aroma-agent-backend.git'
 
-/**
- * The launcher, by absolute path so no PATH is needed in the child environment.
+/*
+ * WSL_EXE and CHILD_ENV are re-exported from exactWslExecRunner.js for existing callers and
+ * tests; their definitions, and the reasoning about the empty child environment and WSLENV,
+ * live there now. Re-exporting rather than redefining means a drift between the two files is
+ * impossible rather than merely tested for.
  */
-const WSL_EXE = 'C:\\Windows\\System32\\wsl.exe'
-
-/**
- * ⛔ THE CHILD ENVIRONMENT IS EMPTY, AND THAT IS THE POINT.
- *
- * spawnSync inherits process.env when `env` is omitted, so the first version handed the
- * Aroma backend's ENTIRE environment to wsl.exe — every provider key, database credential
- * and session secret the server happens to hold. The original report claimed no secrets
- * crossed the boundary on the strength of argv containing none, which was the wrong
- * evidence for the claim: a secret in the environment never appears in argv.
- *
- * WSLENV matters most of all. It is the documented mechanism for translating named
- * Windows variables into the Linux side, so inheriting it would let the very variables we
- * are excluding be carried across anyway.
- *
- * Measured: wsl.exe runs correctly with a completely empty environment, so nothing is
- * allowlisted. An empty allowlist needs no maintenance and cannot drift.
- */
-const CHILD_ENV = Object.freeze({})
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
 const FULL_SHA_RE = /^[0-9a-f]{40}$/
@@ -102,25 +93,18 @@ const DEFAULT_MAX_OUTPUT = 2 * 1024 * 1024
  */
 const SAFE_GIT = Object.freeze(['-c', 'core.fsmonitor=false'])
 
-/** Default launcher: wsl.exe with a fixed argv, shell:false, bounded output and time. */
-function defaultWslRunner (argv, opts = {}) {
-  const r = childProcess.spawnSync(WSL_EXE, argv, {
-    // Explicit, and empty. Omitting `env` would inherit the backend's whole environment.
-    env: CHILD_ENV,
-    encoding: 'utf8',
-    shell: false,
-    windowsHide: true,
-    timeout: opts.timeoutMs || DEFAULT_TIMEOUT_MS,
-    maxBuffer: opts.maxOutput || DEFAULT_MAX_OUTPUT
-  })
-  const timedOut = r.error && (r.error.code === 'ETIMEDOUT' || /timed? ?out/i.test(String(r.error.message || '')))
-  return {
-    status: r.status === null || r.status === undefined ? (r.error ? 1 : null) : r.status,
-    stdout: r.stdout || '',
-    stderr: r.stderr || (r.error ? String(r.error.message || '') : ''),
-    timedOut: !!timedOut
-  }
-}
+/**
+ * Default launcher: the shared exact runner. It takes a LINUX argv and builds
+ * `wsl.exe -d OpenClawGateway --exec <argv>` itself — no caller, and no injected mechanic,
+ * ever sees or shapes the Windows-side prefix.
+ *
+ * ⛔ THE RUNNER CONTRACT IS THE LINUX ARGV.
+ * The previous contract handed the runner `['-d', distro, '--', ...argv]` and let it spawn
+ * that. Two things were wrong with it: `--` is a shell boundary (measured in X4-A.1 — bash
+ * parsed our argv), and an injected runner received the distro flags as data it could act on.
+ * Now the injectable mechanic receives only what is to run inside the distro.
+ */
+const defaultWslRunner = exactWslExec
 
 /**
  * @param {object} options fixed trusted configuration; `wslRunner` is injected by tests so
@@ -166,9 +150,13 @@ function createOpenClawWslWorkspace (options = {}) {
    */
   const PREPARING = new Map()
 
-  /** Run a fixed-argv command inside the distro. No shell, ever. */
+  /**
+   * Run a fixed-argv command inside the distro. No shell, ever.
+   * The runner receives the LINUX argv only; the distro selection and `--exec` are the
+   * runner's, not this module's, and not an injected mechanic's.
+   */
   function wsl (argv) {
-    return run(['-d', distro, '--'].concat(argv), { timeoutMs, maxOutput })
+    return run(argv, { timeoutMs, maxOutput })
   }
 
   /** Run git inside the distro against an explicit repository, always hardened. */

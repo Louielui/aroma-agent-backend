@@ -53,7 +53,8 @@ function wslFake (over = {}) {
   const ok = (out) => ({ status: 0, stdout: out === undefined ? '' : out, stderr: '', timedOut: false })
   const live = new Set()
   return (argv) => {
-    const a = argv.slice(argv.indexOf('--') + 1)
+    // X4-B1: the mechanic receives the LINUX argv directly — no prefix to strip
+    const a = argv
     calls.push(a.join(' '))
     if (a[0] === 'mkdir') { live.add(a[a.length - 1]); return ok() }
     if (a[0] === 'rm') {
