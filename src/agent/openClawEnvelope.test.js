@@ -69,7 +69,9 @@ function grantFor (approvalId) {
 }
 
 
-const inner = (argv) => argv.slice(argv.indexOf('--') + 1)
+// X4-B1: the injected mechanic receives the LINUX argv directly; there is no Windows-side
+// prefix to strip, and a `--` inside rm/stat argv is an ordinary argument, not a seam.
+const inner = (argv) => argv
 function gitArgs (a) { let i = 0; while (a[i] === '-c') i += 2; return a.slice(i) }
 
 /**
