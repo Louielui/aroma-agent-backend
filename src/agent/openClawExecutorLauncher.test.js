@@ -703,10 +703,31 @@ test('A3-1. ⛔ there is NO OpenClaw composition/construction site anywhere outs
   const registry = fs.readFileSync(path.join(srcRoot, 'workers', 'registry.js'), 'utf8')
   assert.match(registry, /id: 'openclaw'[\s\S]{0,200}?connected: false/,
     'the OpenClaw worker row must remain connected:false')
-  // exactWslExecRunner constructs its own module-level singleton; that is a pure argv builder
-  // with no spawn of its own, and it is the ONLY permitted construction in the tree.
-  assert.deepStrictEqual(constructedBy, ['agent/exactWslExecRunner.js -> createExactWslExecRunner'],
-    'no OpenClaw factory may be constructed in production code: ' + JSON.stringify(constructedBy))
+  /**
+   * ⛔ EXACTLY TWO PERMITTED CONSTRUCTION SITES, AND NEITHER IS REACHABLE.
+   *
+   * exactWslExecRunner builds its own module-level singleton: a pure argv builder that spawns
+   * nothing until called. openClawComposition is the B4b offline composition root — it is the
+   * one file allowed to construct the OpenClaw factories, and it is inert for a different
+   * reason: NOTHING REQUIRES IT. That is asserted immediately below, and it is the property
+   * that keeps the whole subsystem unreachable now that the composition root exists.
+   */
+  const compositionSites = constructedBy.filter((s) => s.startsWith('agent/openClawComposition.js -> '))
+  const otherSites = constructedBy.filter((s) => !s.startsWith('agent/openClawComposition.js -> '))
+  assert.deepStrictEqual(otherSites, ['agent/exactWslExecRunner.js -> createExactWslExecRunner'],
+    'outside the composition root, no OpenClaw factory may be constructed: ' + JSON.stringify(otherSites))
+  assert.ok(compositionSites.length > 0, 'the composition root is expected to construct the factories')
+
+  // ⛔ AND NOBODY REQUIRES THE COMPOSITION ROOT. If this ever fails, the subsystem became
+  // reachable and every offline guarantee in B4b is void.
+  const compositionImporters = []
+  for (const f of files) {
+    if (path.basename(f) === 'openClawComposition.js') continue
+    const code = fs.readFileSync(f, 'utf8').replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+    if (/require\([^)]*openClawComposition/.test(code)) compositionImporters.push(rel(f))
+  }
+  assert.deepStrictEqual(compositionImporters, [],
+    'no production file may require the composition root: ' + JSON.stringify(compositionImporters))
 
   const appJs = fs.readFileSync(path.join(srcRoot, 'app.js'), 'utf8')
   assert.ok(!/openClaw/i.test(appJs), 'src/app.js must contain zero OpenClaw references')
