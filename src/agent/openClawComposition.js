@@ -565,15 +565,18 @@ function createOpenClawComposition (deps = {}) {
   /** requestStop (if needed) -> stop with a positive acknowledgement -> [observe] -> retire. */
   function stopThenRetire (approvalId, p, viaObservation) {
     /**
-     * ⛔ THE LAUNCHER'S OWN ERROR FORMATTING IS NOT TOTAL, AND THIS FILE MAY NOT CHANGE IT.
+     * ⛔ DEFENCE IN DEPTH: recover() IS NOT ASSUMED TO BE TOTAL.
      *
-     * openClawExecutorLauncher catches a thrown stopUnit and describes it with
-     * `(e && e.message) || 'unknown'`. Reading `.message` off a revoked Proxy or a throwing
-     * getter throws AGAIN, from inside the catch — so a hostile stop answer escapes recover()
-     * entirely. Left alone it would surface as a coordinator/section failure, which would be a
-     * false description of what happened: the stop intent is durable, the stop is unacknowledged
-     * and the lock is held. Containing it here keeps the report truthful without touching a
-     * production file outside this gate's scope.
+     * The launcher now contains its own seam and verifier throws — a hostile stopUnit or
+     * verifier value is described by a total formatter there and comes back as a structured
+     * STOP_UNKNOWN or a refused diagnostic, not as an exception. That known escape is closed.
+     *
+     * This catch stays anyway, because the closed hole was one path and not the class. recover()
+     * still reaches the instance ledger (requestStop can throw on a corrupt or unreadable
+     * store), still calls injected dependencies, and may grow new failure modes later. If any of
+     * those escaped, the operation would be reported as a coordinator/section failure — a false
+     * description of what actually happened, since the stop intent may already be durable, the
+     * stop is unacknowledged and the lock is held. The boundary states that truthfully instead.
      */
     let r
     try {

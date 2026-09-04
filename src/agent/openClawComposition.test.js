@@ -1432,3 +1432,78 @@ test('E6. ⛔ a hostile stopUnit throw during a RUNNING recovery: no observation
     assert.strictEqual(iState(), I.STOP_REQUESTED, 'the stop intent is durable')
   }
 })
+
+/* ══════════════ the composition boundary still contains a GENUINE launcher escape ══════════════ */
+
+test('E7. ⛔ launcher.recover() throwing from a NON-formatting path is contained by the composition boundary', () => {
+  /**
+   * ⛔ THIS IS NO LONGER THE SEAM-FORMATTING HOLE — THAT ONE IS CLOSED IN THE LAUNCHER.
+   *
+   * A hostile stopUnit throw is now described by the launcher's own total formatter and comes
+   * back as a structured STOP_UNKNOWN (see E5/E6). So the boundary is proven here against a
+   * different, still-real escape: recover() calls instances.requestStop() OUTSIDE any try, and
+   * the instance ledger stamps its writes with now(). A now() that fails during that write
+   * throws straight out of recover().
+   */
+  for (const [label, make] of [
+    ['a revoked Proxy', revokedProxy],
+    ['a throwing-message object', hostileError],
+    ['null', () => null]
+  ]) {
+    clean()
+    const armed = { on: false }
+    const thrown = make()
+    const st = { alive: true }
+    const log = []
+    const c = createOpenClawComposition(Object.assign({
+      run: makeWorld(st),
+      ledgerCoordinator: coordinator(),
+      protectedInstancesOk: () => true,
+      executorUid: 1000,
+      // the SAME captured function throughout; only the world it reports changes
+      now: () => {
+        if (armed.on) throw thrown
+        return new Date().toISOString()
+      }
+    }, seams(log)))
+
+    seedQ({ state: Q.STATES.PREPARED })
+    assert.strictEqual(c.launchApproved(APPROVAL).outcome, OUTCOME.LAUNCHED, label)
+    st.alive = false
+    log.length = 0
+    armed.on = true // ⛔ from here the instance ledger cannot stamp a write
+
+    let r
+    try {
+      r = c.recoverInstance(APPROVAL)
+    } catch (e) {
+      assert.fail(label + ': the launcher escape was not contained by the composition boundary')
+    }
+    assert.strictEqual(r.outcome, OUTCOME.STOP_NOT_ACKNOWLEDGED, label + ': ' + JSON.stringify(r))
+    assert.strictEqual(r.ok, false, label)
+    // ⛔ never 'none': recover() had already begun when it threw
+    assert.notStrictEqual(r.effects, 'none', label)
+    assert.strictEqual(r.effects, 'possibly-partial', label)
+    assert.strictEqual(r.lockHeld, true, label)
+    assert.strictEqual(typeof r.reason, 'string', label)
+    assert.ok(r.reason.length <= 400, label)
+    // ⛔ nothing was observed and nothing was retired
+    assert.strictEqual(qState(), Q.STATES.RUNNING, label + ': the quarantine did not advance')
+    assert.ok(!Object.prototype.hasOwnProperty.call(qRec(), 'goneObservedAt'), label)
+    assert.deepStrictEqual(log, [], label + ': the stop was never even issued')
+    assert.strictEqual(c.gate('appr_fresh').ok, false, label + ': execution stays locked out')
+  }
+})
+
+test('E8. the launcher now contains its own seam and verifier throws — the boundary is defence in depth', () => {
+  // the composition comment must describe the CURRENT truth, not the closed hole
+  const src = fs.readFileSync(path.join(__dirname, 'openClawComposition.js'), 'utf8')
+  assert.match(src, /DEFENCE IN DEPTH/, 'the boundary is documented as defence in depth')
+  assert.ok(!/THE LAUNCHER'S OWN ERROR FORMATTING IS NOT TOTAL/.test(src),
+    'the stale claim that the launcher formatting is unsafe must be gone')
+  // and the launcher really does contain them now
+  const launcherSrc = fs.readFileSync(path.join(__dirname, 'openClawExecutorLauncher.js'), 'utf8')
+  const code = launcherSrc.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+  assert.ok(!/e\s*&&\s*e\.message/.test(code), 'the launcher has no unguarded .message read left')
+  assert.strictEqual((code.match(/describeThrown\(e\)/g) || []).length, 3)
+})

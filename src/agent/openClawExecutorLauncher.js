@@ -90,6 +90,40 @@ function assertId (approvalId) {
 const hasOwn = (o, k) => Object.prototype.hasOwnProperty.call(o, k)
 
 /**
+ * ⛔ DESCRIBING A FAILURE MUST NEVER BE A SECOND FAILURE.
+ *
+ * Every catch below runs at the exact moment a unit may be alive and the ledgers are already
+ * execution-bearing. The old shape was `(e && e.message) || 'unknown'`, which READS a property
+ * off whatever was thrown — and a throwing getter, a Proxy get trap or a revoked Proxy makes
+ * that read throw AGAIN, from inside the catch. The structured outcome is then replaced by an
+ * exception escaping run()/recover(), so the caller learns nothing about what was already
+ * written. JavaScript permits throwing any value at all, so this helper is total: every branch
+ * is guarded, nothing is assumed about the value, and the worst case is a bounded 'unknown'.
+ *
+ * It returns a STRING, never the thrown value itself: no object, Proxy or live reference from
+ * a seam may travel out in a result.
+ */
+const MAX_REASON = 300
+function describeThrown (e) {
+  try {
+    if (e === null) return 'null'
+    if (e === undefined) return 'undefined'
+    const t = typeof e
+    if (t === 'string') return e.slice(0, MAX_REASON)
+    if (t === 'number' || t === 'boolean' || t === 'bigint') return String(e).slice(0, MAX_REASON)
+    if (t === 'symbol') { try { return String(e).slice(0, MAX_REASON) } catch (_) { return 'unknown' } }
+    if (t === 'function') return 'function'
+    let m
+    try { m = e.message } catch (_) { m = undefined }
+    if (typeof m === 'string' && m !== '') return m.slice(0, MAX_REASON)
+    try {
+      const s = String(e)
+      return typeof s === 'string' && s !== '' ? s.slice(0, MAX_REASON) : 'unknown'
+    } catch (_) { return 'unknown' }
+  } catch (_) { return 'unknown' }
+}
+
+/**
  * The ONLY answer that counts as a positive acknowledgement from launchUnit / stopUnit:
  * an object carrying OWN `ok === true` and OWN `unitName === <the derived unit>`.
  * Everything else — null, undefined, booleans, {}, ok:false, ok:'true', a wrong unit — is not.
@@ -223,7 +257,7 @@ function createOpenClawExecutorLauncher (deps = {}) {
       launched = launchUnit(spec)
     } catch (e) {
       // ⛔ NEVER RESET. A unit may exist. The ledgers stay execution-bearing / launch-attempted.
-      return result({ ok: false, outcome: OUTCOME.LAUNCH_AMBIGUOUS, approvalId, unitName: spec.unitName, reason: 'launchUnit threw: ' + ((e && e.message) || 'unknown') })
+      return result({ ok: false, outcome: OUTCOME.LAUNCH_AMBIGUOUS, approvalId, unitName: spec.unitName, reason: 'launchUnit threw: ' + describeThrown(e) })
     }
     if (!positiveAck(launched, spec.unitName)) {
       return result({ ok: false, outcome: OUTCOME.LAUNCH_AMBIGUOUS, approvalId, unitName: spec.unitName, reason: 'launchUnit answered ambiguously' })
@@ -271,7 +305,7 @@ function createOpenClawExecutorLauncher (deps = {}) {
     try {
       answer = stopUnit(unitName)
     } catch (e) {
-      return result({ ok: false, outcome: OUTCOME.STOP_UNKNOWN, approvalId, unitName, reason: 'stopUnit failed: ' + ((e && e.message) || 'unknown') })
+      return result({ ok: false, outcome: OUTCOME.STOP_UNKNOWN, approvalId, unitName, reason: 'stopUnit failed: ' + describeThrown(e) })
     }
     // ⛔ only the exact positive acknowledgement counts. Anything else is UNKNOWN: the record
     // stays STOP_REQUESTED, the verifier is NOT consulted, and nothing below claims a stop.
@@ -291,7 +325,7 @@ function createOpenClawExecutorLauncher (deps = {}) {
         const v = verifier.evaluate({ approvalId, instanceId: after.instanceId })
         diagnostic = result({ verdict: v && v.verdict, ok: v && v.ok === true, reason: v && v.reason })
       } catch (e) {
-        diagnostic = result({ verdict: null, ok: false, reason: 'verifier threw: ' + ((e && e.message) || 'unknown') })
+        diagnostic = result({ verdict: null, ok: false, reason: 'verifier threw: ' + describeThrown(e) })
       }
     }
     return result({ ok: false, outcome: OUTCOME.STOP_ISSUED_RETIREMENT_NOT_WIRED, approvalId, unitName, verifierDiagnostic: diagnostic, reason: 'stop issued; retirement authority is wired in B4' })
