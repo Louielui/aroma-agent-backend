@@ -784,3 +784,193 @@ test('PP1. results are frozen null-prototype data; an Array.prototype setter can
     delete Array.prototype[0]; delete Object.prototype.ok
   }
 })
+
+/* ══════════════ HOSTILE THROWN VALUES: describing a failure is never a second failure ══════════════ */
+
+/**
+ * ⛔ THE TEST ITSELF MUST NOT READ THE HOSTILE VALUE EITHER.
+ * A failure message built with `e.message` would throw while reporting, turning a real assertion
+ * failure into an unrelated crash. Every message below uses only the label.
+ */
+function hostileValues () {
+  const revocable = Proxy.revocable({ message: 'never readable' }, {})
+  revocable.revoke()
+  return [
+    ['null', null],
+    ['undefined', undefined],
+    ['a string', 'plain string throw'],
+    ['a number', 42],
+    ['a boolean', true],
+    ['a bigint', BigInt(7)],
+    ['a symbol', Symbol('boom')],
+    ['an ordinary Error', new Error('ordinary failure')],
+    ['a function', function boom () {}],
+    ['a null-prototype object', Object.assign(Object.create(null), { message: 'np' })],
+    ['an own message getter that throws', { get message () { throw new Error('hostile message getter') } }],
+    ['a throwing toString/toPrimitive', {
+      get message () { throw new Error('m') },
+      toString () { throw new Error('ts') },
+      get [Symbol.toPrimitive] () { throw new Error('tp') }
+    }],
+    ['a Proxy whose get trap throws', new Proxy({}, { get () { throw new Error('trap') } })],
+    ['a revoked Proxy', revocable.proxy]
+  ]
+}
+const boundedReason = (r, label) => {
+  assert.strictEqual(typeof r, 'string', label + ': reason must be a string')
+  assert.ok(r.length <= 400, label + ': reason must be bounded (got ' + r.length + ')')
+}
+
+test('H1. ⛔ a hostile launchUnit throw is LAUNCH_AMBIGUOUS: no escape, no reset, nothing downstream', () => {
+  for (const [label, thrown] of hostileValues()) {
+    const o = orderLog()
+    const { l, i, q } = launcher(o, { seams: { launchUnit: () => { o.note('launchUnit'); throw thrown } } })
+    let r
+    try {
+      r = l.run(APPROVAL)
+    } catch (e) {
+      assert.fail(label + ': the hostile throw escaped run()')
+    }
+    assert.strictEqual(r.outcome, L.OUTCOME.LAUNCH_AMBIGUOUS, label)
+    assert.strictEqual(r.ok, false, label)
+    boundedReason(r.reason, label)
+    assert.match(r.reason, /^launchUnit threw: /, label + ': the prefix is preserved')
+    // ⛔ neither ledger was reset
+    assert.strictEqual(i.record(APPROVAL).state, STATES.LAUNCH_ATTEMPTED, label)
+    assert.strictEqual(q.st.state, 'RUNNING', label)
+    // ⛔ nothing downstream ran
+    never(o.log, 'observeControlGroup'); never(o.log, 'readControlGroup')
+    never(o.log, 'instances.observeControlGroup'); never(o.log, 'instances.observePids')
+    never(o.log, 'quarantine.retire')
+    // ⛔ no live REFERENCE to the thrown value travelled out. Only references are checked:
+    // a primitive like null may legitimately equal a field's own value (verdict: null).
+    if (thrown !== null && (typeof thrown === 'object' || typeof thrown === 'function')) {
+      for (const k of Object.keys(r)) assert.notStrictEqual(r[k], thrown, label + ': the thrown value must not be returned')
+    }
+  }
+})
+
+test('H2. ⛔ a hostile stopUnit throw is STOP_UNKNOWN: stop intent durable, no verifier, no retire', () => {
+  for (const [label, thrown] of hostileValues()) {
+    const o = orderLog()
+    const verifier = { evaluate: () => { o.note('verifier.evaluate'); return { ok: true, verdict: VERDICT.RETIRED, reason: 'clean', evidence: {} } } }
+    const { l, i, q } = launcher(o, {
+      deps: { retirementVerifier: verifier },
+      seams: { stopUnit: () => { o.note('stopUnit'); throw thrown } }
+    })
+    l.run(APPROVAL)
+    let r
+    try {
+      r = l.recover(APPROVAL)
+    } catch (e) {
+      assert.fail(label + ': the hostile throw escaped recover()')
+    }
+    assert.strictEqual(r.outcome, L.OUTCOME.STOP_UNKNOWN, label)
+    assert.strictEqual(r.ok, false, label)
+    boundedReason(r.reason, label)
+    assert.match(r.reason, /^stopUnit failed: /, label + ': the prefix is preserved')
+    // ⛔ the stop intent is durable, and the quarantine did not advance or release
+    assert.strictEqual(i.record(APPROVAL).state, STATES.STOP_REQUESTED, label)
+    assert.strictEqual(q.st.state, 'RUNNING', label)
+    assert.ok(idx(o.log, 'instances.requestStop') < idx(o.log, 'stopUnit'), label)
+    // ⛔ the verifier was never consulted and nothing was retired
+    never(o.log, 'verifier.evaluate'); never(o.log, 'quarantine.retire')
+    assert.strictEqual(r.verifierDiagnostic, undefined, label)
+    if (thrown !== null && (typeof thrown === 'object' || typeof thrown === 'function')) {
+      for (const k of Object.keys(r)) assert.notStrictEqual(r[k], thrown, label)
+    }
+  }
+})
+
+test('H3. ⛔ a hostile verifier throw after an ACKNOWLEDGED stop stays a diagnostic — never authority', () => {
+  for (const [label, thrown] of hostileValues()) {
+    const o = orderLog()
+    const verifier = { evaluate: () => { o.note('verifier.evaluate'); throw thrown } }
+    const { l, i, q } = launcher(o, { deps: { retirementVerifier: verifier } })
+    l.run(APPROVAL)
+    let r
+    try {
+      r = l.recover(APPROVAL)
+    } catch (e) {
+      assert.fail(label + ': the hostile throw escaped recover()')
+    }
+    // the stop WAS positively acknowledged, so the outer outcome is unchanged
+    assert.strictEqual(r.outcome, L.OUTCOME.STOP_ISSUED_RETIREMENT_NOT_WIRED, label)
+    assert.strictEqual(r.ok, false, label)
+    assert.ok(idx(o.log, 'verifier.evaluate') >= 0, label + ': the verifier really was consulted')
+    // ⛔ the diagnostic is a refusal, and never retirement authority
+    assert.strictEqual(r.verifierDiagnostic.verdict, null, label)
+    assert.strictEqual(r.verifierDiagnostic.ok, false, label)
+    boundedReason(r.verifierDiagnostic.reason, label)
+    assert.match(r.verifierDiagnostic.reason, /^verifier threw: /, label + ': the prefix is preserved')
+    never(o.log, 'quarantine.retire')
+    assert.strictEqual(q.st.state, 'RUNNING', label + ': the lock is not released')
+    assert.strictEqual(i.record(APPROVAL).state, STATES.STOP_REQUESTED, label)
+    if (thrown !== null && (typeof thrown === 'object' || typeof thrown === 'function')) {
+      for (const k of Object.keys(r.verifierDiagnostic)) assert.notStrictEqual(r.verifierDiagnostic[k], thrown, label)
+    }
+  }
+})
+
+test('H4. the three hostile shapes the old code actually crashed on are genuinely exercised', () => {
+  const labels = hostileValues().map(([l]) => l)
+  for (const required of ['null', 'a revoked Proxy', 'an own message getter that throws', 'a Proxy whose get trap throws']) {
+    assert.ok(labels.includes(required), 'the table must cover ' + required)
+  }
+  // and the launcher source no longer contains an unguarded property read in a catch
+  const src = fs.readFileSync(path.join(__dirname, 'openClawExecutorLauncher.js'), 'utf8')
+  const code = src.replace(/\/\*[\s\S]*?\*\/|\/\/.*$/gm, '')
+  assert.ok(!/e\s*&&\s*e\.message/.test(code), 'no `(e && e.message)` read may remain in the launcher')
+  assert.strictEqual((code.match(/describeThrown\(e\)/g) || []).length, 3, 'all three catches use the total formatter')
+})
+
+test('H5. ⛔ the formatter degrades PRECISELY: exact reason text, and a hard 300-character bound', () => {
+  const longMessage = 'x'.repeat(5000)
+  const cases = [
+    ['null', null, 'null'],
+    ['undefined', undefined, 'undefined'],
+    ['a string', 'plain string throw', 'plain string throw'],
+    ['a number', 42, '42'],
+    ['a boolean', false, 'false'],
+    ['an ordinary Error', new Error('ordinary failure'), 'ordinary failure'],
+    // ⛔ the message read is GUARDED, so this degrades to String(e) rather than bailing out
+    ['an own message getter that throws', { get message () { throw new Error('hostile') } }, '[object Object]'],
+    // ⛔ an EMPTY message is not a usable description, so it also falls through to String(e)
+    ['an empty message', { message: '' }, '[object Object]'],
+    // ⛔ nothing can be read at all: the bounded fallback, never an escape
+    ['a throwing toString and message', {
+      get message () { throw new Error('m') },
+      toString () { throw new Error('ts') },
+      get [Symbol.toPrimitive] () { throw new Error('tp') }
+    }, 'unknown']
+  ]
+  for (const [label, thrown, expected] of cases) {
+    const o = orderLog()
+    const { l } = launcher(o, { seams: { launchUnit: () => { throw thrown } } })
+    const r = l.run(APPROVAL)
+    assert.strictEqual(r.outcome, L.OUTCOME.LAUNCH_AMBIGUOUS, label)
+    assert.strictEqual(r.reason, 'launchUnit threw: ' + expected, label + ': exact reason text')
+  }
+
+  // ⛔ THE BOUND IS REAL: a 5,000-character message is truncated to exactly 300
+  const o = orderLog()
+  const { l } = launcher(o, { seams: { launchUnit: () => { throw new Error(longMessage) } } })
+  const r = l.run(APPROVAL)
+  const prefix = 'launchUnit threw: '
+  assert.ok(r.reason.startsWith(prefix))
+  assert.strictEqual(r.reason.length - prefix.length, 300, 'the described value is capped at 300 characters')
+  assert.strictEqual(r.reason.length, prefix.length + 300)
+
+  // and the same bound applies on the stop and verifier paths
+  const o2 = orderLog()
+  const { l: l2 } = launcher(o2, { seams: { stopUnit: () => { throw new Error(longMessage) } } })
+  l2.run(APPROVAL)
+  const r2 = l2.recover(APPROVAL)
+  assert.strictEqual(r2.reason.length - 'stopUnit failed: '.length, 300)
+
+  const o3 = orderLog()
+  const { l: l3 } = launcher(o3, { deps: { retirementVerifier: { evaluate: () => { throw new Error(longMessage) } } } })
+  l3.run(APPROVAL)
+  const r3 = l3.recover(APPROVAL)
+  assert.strictEqual(r3.verifierDiagnostic.reason.length - 'verifier threw: '.length, 300)
+})
