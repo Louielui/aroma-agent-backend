@@ -53,7 +53,7 @@ function nonEmpty (a) { return Array.isArray(a) && a.length > 0 }
  * @param {boolean} input.executed      whether anything was actually run
  * @param {object[]} input.samples      numbers that came from a capped or sampled source
  * @param {number} input.rounds
- * @param {number} input.costUsd
+ * @param {number|null} input.costUsd  null (or omitted) means UNKNOWN — never rendered as 0.00
  * @param {string} input.transcript     NEVER inlined — see below
  * @param {string} input.enquiryId      how to open the turns if the report surprises him
  * @throws {ReportRefused}
@@ -62,7 +62,7 @@ function buildReport (input = {}) {
   const {
     outcome, question = '', answer = '', measurements = [], notEstablished = [],
     aboutTheEnquiry = [], incidental = [], failureLocus = '',
-    appliedChanges = [], executed = false, samples = [], rounds = 0, costUsd = 0, enquiryId = null
+    appliedChanges = [], executed = false, samples = [], rounds = 0, costUsd = null, enquiryId = null
   } = input
 
   if (!Object.prototype.hasOwnProperty.call(OUTCOME, outcome)) {
@@ -192,7 +192,10 @@ function buildReport (input = {}) {
 
   lines.push(t('inv.footer', {
     rounds,
-    cost: Number(costUsd).toFixed(2),
+    // ⛔ Number(null).toFixed(2) IS '0.00'. An enquiry whose cost nobody reported would have
+    // printed as free — the same "unknown became a confident number" defect the runner just
+    // had, one layer further out, and this is the layer the Owner actually reads.
+    cost: (typeof costUsd === 'number' && Number.isFinite(costUsd)) ? costUsd.toFixed(2) : 'UNKNOWN',
     enquiry: enquiryId ? t('inv.enquiryId', { id: enquiryId }) : ''
   }))
 
