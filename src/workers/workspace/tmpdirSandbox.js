@@ -71,6 +71,83 @@ function assertSandboxUnderTmpdir (target) {
   return targetReal
 }
 
+/* ══════════════ THE MINT REGISTER ══════════════ */
+
+/**
+ * ⛔ WHO ACTUALLY MADE THIS DIRECTORY — the one question a location check cannot answer.
+ *
+ * `assertSandboxUnderTmpdir` proves WHERE a path is. It cannot prove WHERE IT CAME FROM, so a
+ * directory anyone created with the right name in the right place passed every check we had.
+ * The prefix was doing the work of provenance, and a prefix is a naming convention.
+ *
+ * This register is the record a location check does not keep: a module-private WeakMap from the
+ * provider OBJECT to the canonical roots that provider's own `prepare()` actually completed,
+ * each with the directory identity (dev+ino) it had at that moment.
+ *
+ * ⛔ IT IS PRIVATE, AND THAT IS THE POINT. Nothing outside this module can add to it, so a
+ * hand-made directory, a foreign provider, or an object with a `mintedByThisProvider()` that
+ * returns true are all equally unregistered. Verification asks THIS MODULE, never the provider.
+ *
+ * ⚠ WHAT THIS IS NOT: it is in-process provenance for a trusted creation path. It is NOT OS
+ * isolation, and it proves nothing against a hostile process running as the same user — such a
+ * process can create, move or replace directories whatever this map says. Keeping that boundary
+ * explicit is why it is written here rather than implied by the name.
+ */
+const MINTED = new WeakMap()
+
+/** win32 paths compare case-insensitively; everywhere else they do not. */
+const foldCase = (p) => (process.platform === 'win32' ? p.toLowerCase() : p)
+
+/** Same path, or inside it — by path SEGMENTS, never by string prefix. */
+function withinRoot (root, target) {
+  const rel = path.relative(foldCase(root), foldCase(target))
+  if (rel === '') return true
+  return !rel.startsWith('..' + path.sep) && rel !== '..' && !path.isAbsolute(rel)
+}
+
+/**
+ * Prove that `target` belongs to a workspace THIS module minted for THIS provider.
+ *
+ * Returns the canonical record; throws otherwise. Every refusal names which fact failed, because
+ * "not minted" and "minted but replaced since" are different problems with different fixes.
+ *
+ * @param {object} provider the object returned by createTmpdirSandbox()
+ * @param {string} target   the directory a caller wants to use (the root, or inside it)
+ */
+function assertMintedWorkspace (provider, target) {
+  const registry = (provider !== null && typeof provider === 'object') ? MINTED.get(provider) : undefined
+  if (!registry) {
+    throw new Error('workspace provenance: this provider was not created by tmpdirSandbox, so nothing it offers is a minted workspace')
+  }
+  if (typeof target !== 'string' || target.trim() === '') {
+    throw new Error('workspace provenance: target must be a non-empty path')
+  }
+  // canonicalise resolves symlinks and junctions, so an alias pointing at ANOTHER sandbox is
+  // compared as the directory it really is rather than as the name it was given.
+  const canonicalTarget = canonicalise(target)
+  for (const [root, minted] of registry) {
+    if (!withinRoot(root, canonicalTarget)) continue
+    let rootStat
+    try { rootStat = fs.statSync(root) } catch (_) {
+      throw new Error('workspace provenance: the minted workspace no longer exists — ' + root)
+    }
+    // ⛔ THE OBJECT, NOT THE NAME. A root deleted and recreated at the same path is a different
+    // directory wearing the same label, and it was not the one this provider minted.
+    if (String(rootStat.dev) !== minted.dev || String(rootStat.ino) !== minted.ino) {
+      throw new Error(`workspace provenance: '${root}' is no longer the directory that was minted (identity changed)`)
+    }
+    let targetStat
+    try { targetStat = fs.statSync(canonicalTarget) } catch (_) {
+      throw new Error('workspace provenance: the target does not exist — ' + canonicalTarget)
+    }
+    if (!targetStat.isDirectory()) {
+      throw new Error('workspace provenance: the target is not a directory — ' + canonicalTarget)
+    }
+    return { root, path: canonicalTarget, dev: String(targetStat.dev), ino: String(targetStat.ino) }
+  }
+  throw new Error('workspace provenance: ' + canonicalTarget + ' was not minted by this provider')
+}
+
 /** Default: make the sandbox a git repo so a real worker can commit inside it. */
 function defaultPrepareSandbox (dir) {
   childProcess.spawnSync('git', ['init', '-q'], { cwd: dir })
@@ -87,11 +164,29 @@ function createTmpdirSandbox (options = {}) {
   const sandboxRoot = typeof opts.sandboxRoot === 'string' && opts.sandboxRoot ? opts.sandboxRoot : os.tmpdir()
   const prepareSandbox = typeof opts.prepareSandbox === 'function' ? opts.prepareSandbox : defaultPrepareSandbox
 
-  return {
-    /** Mint a fresh throwaway sandbox and init it. @returns {{ dir: string }} */
+  const provider = {
+    /**
+     * Mint a fresh throwaway sandbox and init it. @returns {{ dir: string }}
+     *
+     * ⛔ REGISTERED LAST, AND ONLY ON FULL SUCCESS. If `prepareSandbox` throws, the directory
+     * may exist but the workspace was never finished — and a half-built sandbox that counts as
+     * minted is exactly the thing a provenance check exists to catch. The register is written
+     * after the init returned and after the brake has canonicalised the path.
+     */
     prepare () {
       const dir = fs.mkdtempSync(path.join(sandboxRoot, 'aroma-sandbox-'))
       prepareSandbox(dir)
+      // ⛔ REGISTRATION MUST NOT CHANGE WHAT prepare() DOES. A caller may mint under its own
+      // `sandboxRoot`, and before this register existed that worked; making the brake throw here
+      // would break those callers for a reason unrelated to what they asked for. So a workspace
+      // the brake rejects is simply NOT REGISTERED — and an unregistered workspace is refused
+      // later, loudly, by whoever demands provenance. Nothing is silently accepted.
+      try {
+        const safe = assertSandboxUnderTmpdir(dir)
+        const st = fs.statSync(safe)
+        MINTED.get(provider).set(safe, { dev: String(st.dev), ino: String(st.ino) })
+      } catch (_) { /* unregistered on purpose; see above */ }
+      // The RAW path is still what callers receive, unchanged from B2-1.
       return { dir }
     },
     /** THE BRAKE — canonical, sandbox-safe path or throw. */
@@ -111,6 +206,10 @@ function createTmpdirSandbox (options = {}) {
       // intentionally empty (logged residual: tmpdir sandboxes are not reaped yet)
     }
   }
+  // The register is keyed by THIS provider object, so two providers never see each other's
+  // workspaces and a provider from anywhere else has no entry at all.
+  MINTED.set(provider, new Map())
+  return provider
 }
 
 // ── B2-12 startup-only conservative sandbox cleanup ──────────────────────────
@@ -199,6 +298,7 @@ function sweepAgedSandboxes (options = {}) {
 
 module.exports = {
   createTmpdirSandbox,
+  assertMintedWorkspace,
   assertSandboxUnderTmpdir,
   canonicalise,
   defaultPrepareSandbox,
