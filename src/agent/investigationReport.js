@@ -34,8 +34,111 @@ class ReportRefused extends Error {
  * Claims of having CHANGED something. Deliberately covers both languages and the passive
  * forms — a rule that only catches 「fixed」 is a rule someone routes around by writing
  * 「已經改好」.
+ *
+ * ⛔ 「resolved」 IS TWO DIFFERENT WORDS, AND TREATING THEM AS ONE COST A REAL RESULT.
+ * (Correction, 2026-09-05.) A live read-only enquiry returned a correct, schema-valid answer and
+ * lost all of it because it contained the sentence 「the relative path was resolved against the
+ * working directory」 — path resolution, not a claim of having repaired anything. Paths resolve,
+ * hostnames resolve, imports resolve; any question about a codebase is likely to say so.
+ *
+ * The guard is still right to be strict, so it is NOT relaxed — it is made to read the words
+ * around EACH occurrence of 「resolved」.
+ *
+ * ⛔ PER OCCURRENCE, NOT PER SENTENCE. (Correction, second pass.) A sentence-wide exemption
+ * meant one technical noun anywhere in the sentence excused every 「resolved」 in it, and these
+ * three sailed through:
+ *     「The bug was fully resolved in the path handler.」
+ *     「I resolved a bug in the module.」
+ *     「The path was resolved, and the outage is now resolved.」
+ * Each pairs a real repair claim with a technical noun, which is exactly what a dishonest — or
+ * merely careless — answer looks like. The decision is now made separately for every occurrence,
+ * inside a bounded window, so one honest clause cannot launder the clause beside it.
+ *
+ * Rules, in this order:
+ *   1. a change verb (fixed / applied / patched / repaired, or the CJK forms) anywhere in the
+ *      clause — always a claim, whatever else the clause says.
+ *   2. for each 「resolved」: an issue noun (bug, outage, incident…) in its LOCAL window → a claim.
+ *      Issue wins over technology: 「the bug … resolved … path handler」 is a claim.
+ *   3. otherwise, something that genuinely resolves (path, symlink, module, hostname…) in the
+ *      same local window → the computing sense, NOT a claim.
+ *   4. neither → fail closed. 「It was resolved」 says nothing about what, and an unclear fix
+ *      claim is still a fix claim.
+ *
+ * `appliedChanges` remains the only evidence that anything changed. Nothing here reads the
+ * model's own word for it, and no answer is ever rewritten to get past the check.
+ *
+ * ⛔ AND IT IS NOT NATURAL-LANGUAGE UNDERSTANDING. It is a handful of regexes over a naive
+ * clause split, and it does not claim to read meaning. Known and accepted gaps, written down
+ * rather than implied:
+ *   · 「問題已解決」 is NOT caught. 解決 also matches 解決方案 (「the solution」), so adding it
+ *     would re-create the very false positive this correction removes. A Chinese
+ *     issue-resolution form needs its own rule and its own gate; this pass does not widen into
+ *     general language governance.
+ *   · irony, quotation and hypotheticals are not understood at all.
+ *   · a claim can always be written in words no list contains.
+ * The guard narrows what can be claimed silently; it is not a proof of honesty.
  */
-const FIX_CLAIM = /\b(fixed|applied|patched|resolved|repaired)\b|修好|修復|已修|改好|已改|套用/i
+const ALWAYS_FIX = /\b(fixed|applied|patched|repaired)\b|修好|修復|已修|改好|已改|套用/i
+const RESOLVED_GLOBAL = /\bresolved\b/gi
+/** Things that get REPAIRED. Their presence beside 「resolved」 makes it a repair claim. */
+const ISSUE_NOUN = /\b(issue|issues|problem|problems|bug|bugs|error|errors|failure|failures|defect|defects|ticket|tickets|incident|incidents|fault|faults|regression|regressions|outage|outages|crash|crashes|downtime|breakage|malfunction)\b/i
+/** Things that get RESOLVED in the computing sense. */
+const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier)\b/i
+/** Naive on purpose: sentence terminators in both scripts, nothing cleverer. */
+const SENTENCE_SPLIT = /(?<=[.!?;])\s+|(?<=[。！？；])/
+/** A clause boundary — 「, and」 / 「, so」 and the CJK commas. Keeps one clause from covering another. */
+const CLAUSE_SPLIT = /,\s+(?:and|but|so|yet|or|then|while|whereas)\b|[；;，、]/i
+
+/**
+ * How much text around one 「resolved」 counts as its context. Bounded on purpose: an unbounded
+ * window is what let 「the issue is still open」 at the far end of a sentence condemn an honest
+ * 「the path was resolved」 at the near end, and vice versa.
+ */
+const WINDOW_BEFORE = 60
+const WINDOW_AFTER = 40
+
+/**
+ * Verdicts per clause, and per 「resolved」 inside it, so a refusal can say WHICH words claimed
+ * what rather than only that something somewhere matched.
+ * @returns {{claim: boolean, parts: {text: string, claim: boolean, reason: string}[], offending: string[]}}
+ */
+function classifyFixClaim (answer) {
+  const text = String(answer == null ? '' : answer)
+  const sentences = text.split(SENTENCE_SPLIT)
+  const clauses = []
+  for (const s of sentences) {
+    for (const c of s.split(CLAUSE_SPLIT)) {
+      const trimmed = String(c == null ? '' : c).trim()
+      if (trimmed) clauses.push(trimmed)
+    }
+  }
+  const parts = (clauses.length ? clauses : [text]).map((clause) => {
+    if (ALWAYS_FIX.test(clause)) {
+      return { text: clause, claim: true, reason: 'a change verb (fixed/applied/patched/repaired or a CJK equivalent)' }
+    }
+    RESOLVED_GLOBAL.lastIndex = 0
+    let m
+    let sawResolved = false
+    let firstTechnical = null
+    while ((m = RESOLVED_GLOBAL.exec(clause)) !== null) {
+      sawResolved = true
+      const window = clause.slice(Math.max(0, m.index - WINDOW_BEFORE), m.index + m[0].length + WINDOW_AFTER)
+      // ⛔ ISSUE BEATS TECHNOLOGY. 「The bug was fully resolved in the path handler」 names both;
+      // the one that decides is the thing being repaired, not the thing beside it.
+      if (ISSUE_NOUN.test(window)) {
+        return { text: clause, claim: true, reason: '「resolved」 with an issue noun in its local context — a repair claim' }
+      }
+      if (RESOLUTION_SUBJECT.test(window)) { firstTechnical = firstTechnical || clause; continue }
+      // ⛔ FAIL CLOSED. Nothing resolvable named, nothing repairable named: undecidable, and an
+      // undecidable fix claim is treated as a fix claim.
+      return { text: clause, claim: true, reason: '「resolved」 with nothing resolvable named in its local context — undecidable, refused' }
+    }
+    if (!sawResolved) return { text: clause, claim: false, reason: 'no change verb' }
+    return { text: clause, claim: false, reason: '「resolved」 in the path/name-resolution sense' }
+  })
+  const offending = parts.filter((p) => p.claim).map((p) => p.text)
+  return { claim: offending.length > 0, parts, offending }
+}
 const VERIFY_CLAIM = /\bverified\b|\bpassing\b|已驗證|驗證通過|測試通過/i
 /** A causal assertion. These are the sentences that need a measurement beside them. */
 const CAUSE_CLAIM = /\b(because|caused by|the cause is|root cause)\b|成因|原因係|係因為|由.*引起/i
@@ -73,10 +176,14 @@ function buildReport (input = {}) {
   // Owner: 「should be structurally impossible, not discouraged」. The proof that this happens
   // to a careful author is that a complete, confident patch was written on 2026-08-05 for a
   // cause that was disproven hours later — and never applied.
-  if (FIX_CLAIM.test(answer) && !nonEmpty(appliedChanges)) {
+  const fixClaim = classifyFixClaim(answer)
+  if (fixClaim.claim && !nonEmpty(appliedChanges)) {
     throw new ReportRefused(
       'the answer claims something was fixed or applied, but appliedChanges is empty. ' +
-      'Nothing was applied — say what was found instead.'
+      'Nothing was applied — say what was found instead. ' +
+      // Naming the sentence is the difference between a rule someone can satisfy and a rule
+      // someone works around by deleting words until it stops complaining.
+      'The sentence that claims it: ' + JSON.stringify(fixClaim.offending[0])
     )
   }
 
@@ -218,4 +325,4 @@ function buildReport (input = {}) {
   }
 }
 
-module.exports = { OUTCOME, buildReport, ReportRefused }
+module.exports = { OUTCOME, buildReport, ReportRefused, classifyFixClaim }
