@@ -20,7 +20,7 @@ const { test, describe } = require('node:test')
 const { CATALOGUE } = require('../i18n/catalogue')
 const assert = require('node:assert')
 const {
-  OUTCOME, buildReport, ReportRefused
+  OUTCOME, buildReport, ReportRefused, classifyFixClaim
 } = require('./investigationReport')
 
 const base = {
@@ -310,5 +310,146 @@ describe('the cost line tells the truth about what it knows', () => {
 
   test('the returned object keeps null as null', () => {
     assert.strictEqual(buildReport({ ...base, outcome: OUTCOME.CONCLUDED, costUsd: null }).costUsd, null)
+  })
+})
+
+describe('「resolved」 is two different words, and the guard must know which one it read', () => {
+  // ⛔ THE REGRESSION THIS CLOSES IS NOT HYPOTHETICAL. A live read-only enquiry on 2026-09-05
+  // returned a correct, schema-valid answer and lost all of it because it said the relative path
+  // had been "resolved against the working directory". The dispatch was spent; the formatter
+  // threw the result away.
+  const path = { ...base, outcome: OUTCOME.CONCLUDED, measurements: [], appliedChanges: [] }
+
+  for (const ok of [
+    'The relative path was resolved against the working directory.',
+    'The resolved path points outside the workspace.',
+    '相對路徑解析後指向工作目錄之外。',
+    'The import could not be resolved, so the module reference is dangling.',
+    'The symlink target resolved to a directory outside the sandbox.'
+  ]) {
+    test('ACCEPTED — technical resolution: ' + JSON.stringify(ok), () => {
+      const r = buildReport({ ...path, answer: ok })
+      assert.ok(r.text.includes(ok), 'the answer must survive intact')
+    })
+  }
+
+  for (const claim of [
+    'The issue was resolved.',
+    'I fixed the timeout bug.',
+    '問題已修復。',
+    'The bug has been resolved.',
+    'I resolved the problem in the adapter.',
+    'It was resolved.'
+  ]) {
+    test('REFUSED — a fix claim with nothing applied: ' + JSON.stringify(claim), () => {
+      assert.throws(
+        () => buildReport({ ...path, answer: claim }),
+        ReportRefused,
+        'a fix claim with nothing applied must not be constructible'
+      )
+    })
+  }
+
+  // ⛔ THE MIXED CASES ARE THE WHOLE REASON THIS IS PER-SENTENCE. Exempting an answer because
+  // the word 「path」 appears somewhere in it would let a real fix claim ride along beside a
+  // legitimate description — which is how a guard becomes decoration.
+  for (const mixed of [
+    'The path was resolved. I fixed the timeout bug.',
+    'The resolved path is outside. The issue was resolved.',
+    '相對路徑解析後指向工作目錄之外。問題已修復。'
+  ]) {
+    test('REFUSED — legitimate description does not launder a claim beside it: ' + JSON.stringify(mixed), () => {
+      assert.throws(() => buildReport({ ...path, answer: mixed }), ReportRefused)
+    })
+  }
+
+  test('the refusal names the offending SENTENCE, not just that something matched', () => {
+    try {
+      buildReport({ ...path, answer: 'The path was resolved. I fixed the timeout bug.' })
+      assert.fail('should have refused')
+    } catch (e) {
+      assert.ok(e instanceof ReportRefused)
+      assert.ok(e.message.includes('I fixed the timeout bug.'), 'the message must quote the claim: ' + e.message)
+      assert.ok(!e.message.includes('The path was resolved'), 'and must not blame the innocent sentence')
+    }
+  })
+
+  test('the classifier reports a verdict and a reason per clause', () => {
+    const c = classifyFixClaim('The resolved path is outside. The issue was resolved.')
+    assert.strictEqual(c.parts.length, 2)
+    assert.strictEqual(c.parts[0].claim, false)
+    assert.match(c.parts[0].reason, /resolution sense/)
+    assert.strictEqual(c.parts[1].claim, true)
+    assert.strictEqual(c.claim, true)
+    assert.deepStrictEqual(c.offending, ['The issue was resolved.'])
+  })
+
+  test('an unclear 「resolved」 fails CLOSED — nothing resolvable named means it counts as a claim', () => {
+    const c = classifyFixClaim('It was resolved.')
+    assert.strictEqual(c.claim, true)
+    assert.match(c.parts[0].reason, /undecidable/)
+  })
+
+  // ⛔ THE CORRECTION THAT MADE THIS SUITE NECESSARY A SECOND TIME.
+  // A sentence-wide exemption meant one technical noun anywhere excused every 「resolved」 in the
+  // sentence, and these three walked straight through it. Each pairs a real repair claim with a
+  // technical noun — which is precisely what a careless or dishonest answer looks like.
+  for (const laundered of [
+    'The bug was fully resolved in the path handler.',
+    'I resolved a bug in the module.',
+    'The path was resolved, and the outage is now resolved.'
+  ]) {
+    test('REFUSED — a technical noun does not launder a repair claim: ' + JSON.stringify(laundered), () => {
+      assert.throws(() => buildReport({ ...path, answer: laundered }), ReportRefused)
+    })
+  }
+
+  test('the decision is per OCCURRENCE — an honest clause beside a claim is not blamed, and does not shield it', () => {
+    const c = classifyFixClaim('The path was resolved, and the outage is now resolved.')
+    assert.strictEqual(c.claim, true)
+    assert.strictEqual(c.parts.length, 2)
+    assert.strictEqual(c.parts[0].claim, false, 'the path clause is innocent')
+    assert.strictEqual(c.parts[1].claim, true, 'the outage clause is not')
+    assert.deepStrictEqual(c.offending, ['the outage is now resolved.'])
+  })
+
+  test('an issue noun FAR from the 「resolved」 does not condemn it — the window is bounded', () => {
+    // 「the issue is still open」 is not a claim that anything was fixed, and it sits in its own
+    // clause. An unbounded scan would have refused this.
+    const r = buildReport({ ...path, answer: 'The path was resolved, and the issue is still open.' })
+    assert.ok(r.text.includes('the issue is still open'))
+  })
+
+  // ⛔ CORRECTION TO THE PREVIOUS PACK. It listed 「The bug? Resolved.」 as an uncaught gap.
+  // It is not: the second clause names nothing resolvable, so the fail-closed rule refuses it.
+  test('「The bug? Resolved.」 IS refused — by the fail-closed rule, not by understanding the question', () => {
+    assert.throws(() => buildReport({ ...path, answer: 'The bug? Resolved.' }), ReportRefused)
+  })
+
+  test('a change verb still fires even in a sentence full of path talk', () => {
+    assert.throws(
+      () => buildReport({ ...path, answer: 'I fixed the path resolution in the workspace directory.' }),
+      ReportRefused,
+      '「fixed」 is never contextual'
+    )
+  })
+
+  test('the SAME claim is still allowed once something was actually applied', () => {
+    const r = buildReport({ ...path, answer: 'The issue was resolved.', appliedChanges: [{ file: 'src/x.js', commit: 'abc1234' }] })
+    assert.ok(r.text.includes('The issue was resolved.'))
+  })
+
+  // ⛔ A RECORDED GAP, ASSERTED SO IT STAYS VISIBLE. 解決 is not in the rule because it also
+  // matches 解決方案 (「the solution」) — adding it would re-create the very false positive this
+  // correction removes. This test exists so the hole is documented in the suite rather than
+  // discovered later by someone assuming full coverage.
+  test('RECORDED GAP — 「問題已解決」 is NOT caught, and that is deliberate', () => {
+    const r = buildReport({ ...path, answer: '問題已解決。' })
+    assert.ok(r.text.includes('問題已解決'), 'documented limit: a Chinese 解決 claim passes today')
+  })
+
+  test('VERIFY_CLAIM and CAUSE_CLAIM are untouched by this change', () => {
+    assert.throws(() => buildReport({ ...path, answer: 'verified against production', executed: false }), ReportRefused)
+    assert.throws(() => buildReport({ ...path, answer: 'slow because the index is missing', measurements: [] }), ReportRefused)
   })
 })
