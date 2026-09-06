@@ -378,7 +378,8 @@ describe('「resolved」 is two different words, and the guard must know which o
     const c = classifyFixClaim('The resolved path is outside. The issue was resolved.')
     assert.strictEqual(c.parts.length, 2)
     assert.strictEqual(c.parts[0].claim, false)
-    assert.match(c.parts[0].reason, /resolution sense/)
+    // the reason wording generalised when 「applied」 joined 「resolved」 as a contextual verb
+    assert.match(c.parts[0].reason, /ordinary technical sense/)
     assert.strictEqual(c.parts[1].claim, true)
     assert.strictEqual(c.claim, true)
     assert.deepStrictEqual(c.offending, ['The issue was resolved.'])
@@ -451,5 +452,107 @@ describe('「resolved」 is two different words, and the guard must know which o
   test('VERIFY_CLAIM and CAUSE_CLAIM are untouched by this change', () => {
     assert.throws(() => buildReport({ ...path, answer: 'verified against production', executed: false }), ReportRefused)
     assert.throws(() => buildReport({ ...path, answer: 'slow because the index is missing', measurements: [] }), ReportRefused)
+  })
+})
+
+describe('「applied」 is two different words as well', () => {
+  // ⛔ THE RUN THAT FORCED THIS. Dispatch 10 of 10 returned a schema-valid repository audit with 12
+  // of 15 citations confirmed, and lost the whole report on one sentence:
+  //     「Every place it is read and applied to an outbound request」
+  // A timeout value APPLIED TO A REQUEST is not a code change APPLIED TO A REPOSITORY. The previous
+  // pass made 「resolved」 contextual and deliberately left 「applied」 absolute; this is the
+  // counter-example to that reasoning.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('THE SENTENCE THAT COST DISPATCH 10 is accepted', () => {
+    const answer = 'Every place it is read and applied to an outbound request: there are three adapters.'
+    const r = buildReport({ ...base, answer })
+    assert.ok(r.text.includes('applied to an outbound request'), 'the answer must survive intact')
+  })
+
+  for (const ok of [
+    'The timeout is applied to the socket by req.setTimeout.',
+    'The header is applied to the response.',
+    'The default is applied to every request unless overridden.',
+    'The style is applied to the element.',
+    'The same limit is applied to each adapter.',
+    'The value is applied to the config, and the path was resolved.'
+  ]) {
+    test('ACCEPTED — ordinary technical use: ' + JSON.stringify(ok), () => {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok))
+    })
+  }
+
+  for (const claim of [
+    'I applied the patch to lib/adapters/http.js.',
+    'The fix was applied.',
+    'I applied the change to the config.',
+    'The migration was applied.',
+    'The commit was applied to the repository.',
+    'I applied a hotfix to the adapter.',
+    'Applied.'
+  ]) {
+    test('REFUSED — a change claim with nothing applied: ' + JSON.stringify(claim), () => {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused,
+        'an unbacked change claim must still be impossible to construct')
+    })
+  }
+
+  test('the change noun beats the technical one — 「applied the change to the config」 is a claim', () => {
+    const c = classifyFixClaim('I applied the change to the config.')
+    assert.strictEqual(c.claim, true)
+    assert.match(c.parts.find((p) => p.claim).reason, /change noun/)
+  })
+
+  test('「Applied.」 alone fails CLOSED, exactly like 「It was resolved.」', () => {
+    for (const bare of ['Applied.', 'It was resolved.']) {
+      const c = classifyFixClaim(bare)
+      assert.strictEqual(c.claim, true, bare)
+      assert.match(c.parts.find((p) => p.claim).reason, /undecidable/)
+    }
+  })
+
+  test('the same claim is still allowed once something really was applied', () => {
+    const r = buildReport({ ...base, answer: 'The fix was applied.', appliedChanges: [{ file: 'src/x.js', commit: 'abc1234' }] })
+    assert.ok(r.text.includes('The fix was applied.'))
+  })
+
+  test('fixed / patched / repaired stay ABSOLUTE — only 「applied」 became contextual', () => {
+    for (const word of [
+      'I fixed the request handler.',
+      'The socket was patched.',
+      'The adapter was repaired.'
+    ]) {
+      assert.throws(() => buildReport({ ...base, answer: word }), ReportRefused,
+        word + ' must still be refused even though it names a technical thing')
+    }
+  })
+
+  test('a technical clause cannot launder a change claim beside it', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The timeout is applied to the socket. I applied the patch.' }),
+      ReportRefused
+    )
+  })
+
+  // ⛔ FOUND BY THE REPLAY, NOT BY THE BRIEF — see the comment on RESOLUTION_SUBJECT.
+  test('「the config resolved by resolveConfig.js」 is technical, not a claim', () => {
+    const answer = 'Both read the value from the config resolved by lib/helpers/resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('…but 「I resolved the config issue」 is still a claim — the claim noun is tested first', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config issue.' }), ReportRefused)
+  })
+
+  // ⛔ RECORDED ASYMMETRY. The CJK 套用 stays absolute. It carries the same ambiguity as 「applied」
+  // (「套用預設值」 = apply the default value), but widening the Chinese branch was not in this
+  // correction's scope and would need its own rule and gate. Pinned here so the gap stays visible.
+  test('RECORDED ASYMMETRY — CJK 套用 remains unconditional', () => {
+    assert.throws(() => buildReport({ ...base, answer: '套用到每個 request。' }), ReportRefused,
+      'documented limit: the Chinese form is still absolute')
   })
 })
