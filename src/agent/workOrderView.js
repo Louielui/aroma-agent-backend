@@ -164,7 +164,15 @@ function buildApprovalView (workOrder) {
   // ── the visible face — plain Chinese, one decision ────────────────────────
   // The Owner needs to know WHAT SHE WANTS TO DO, not what category of exercise it is.
   // 「安全測試」 described the machinery; this describes the request.
-  const heading = t('card.heading')
+  // ⛔ WHICH KIND OF WORK THIS CARD IS ASKING FOR. taskKind is inside the canonical form and
+  //    therefore inside the hash, so the wording the Owner reads cannot disagree with the
+  //    grant he is approving. A read-only enquiry shown as 「想改一個檔案」 would be a card
+  //    describing a modification that is not going to happen.
+  const isEnquiry = canonical.taskKind === 'read_only_enquiry'
+  // ⛔ TWO LITERAL CALL SITES, NOT ONE DYNAMIC KEY. A t() argument must be a string literal
+  //    (governance: a dynamic key cannot be found by the catalogue audit), so the branch is
+  //    on the CALL, never on the key.
+  const heading = isEnquiry ? t('card.headingEnquiry') : t('card.heading')
 
   const whatChanges = canonical.goal || NOT_PROVIDED()
 
@@ -186,7 +194,7 @@ function buildApprovalView (workOrder) {
     //    while every hash and detail test still passed. They belong together anyway: the
     //    answer to 「what does this touch」 is a repository AND a path, never one of them.
     t('card.scopeRepository', { repo: canonical.repoFullName || NOT_PROVIDED() }) + '\n' +
-      t('card.scopeOneFile', { file }),
+      (isEnquiry ? t('card.scopeOneFileEnquiry', { file }) : t('card.scopeOneFile', { file })),
     t('card.scopeThrowaway')
   ]
 
@@ -201,7 +209,7 @@ function buildApprovalView (workOrder) {
   // is backwards: the intent is hers to state, not his to supply.
   const hasIntent = typeof after === 'string' && after.trim() !== ''
 
-  const worstCase = t('card.worstCase')
+  const worstCase = isEnquiry ? t('card.worstCaseEnquiry') : t('card.worstCase')
 
   const willNotHappen = willNotHappenFrom(canonical.forbiddenActions)
   /**

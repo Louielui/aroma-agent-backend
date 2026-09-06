@@ -25,6 +25,24 @@ const FORBIDDEN_ACTIONS = Object.freeze([
 const MUST_FORBID = Object.freeze(['commit', 'push', 'PR', 'merge', 'deploy'])
 
 /**
+ * ⛔ WHAT KIND OF WORK THIS ORDER AUTHORIZES — INSIDE THE HASH, NOT A ROUTING DETAIL.
+ *
+ * A read-only enquiry and a code change are different grants, and which one the Owner agreed
+ * to must be part of what he approved. Keeping it outside the canonical form would mean the
+ * SAME approved card could be handed to a different lane afterwards — approval for one thing
+ * spent on another. It is therefore hashed, displayed and validated here, not decided by
+ * whichever endpoint happens to be called.
+ *
+ * Absent is code_change: every order that predates this field keeps its exact meaning.
+ */
+const TASK_KINDS = Object.freeze(['code_change', 'read_only_enquiry'])
+const DEFAULT_TASK_KIND = 'code_change'
+function taskKindOf (wo) {
+  const k = wo && wo.taskKind
+  return typeof k === 'string' && k ? k : DEFAULT_TASK_KIND
+}
+
+/**
  * ⛔ BY LOCATION FIRST, BY NAME ONLY AS AN EXCEPTION SET.
  *
  * ── WHAT THIS LIST USED TO BE, AND WHY IT FAILED ─────────────────────────────
@@ -153,6 +171,19 @@ function validateWorkOrder (wo) {
   if (!Number.isFinite(wo.costCapUsd) || wo.costCapUsd <= 0) errors.push('costCapUsd must be a positive number')
   if (typeof wo.approvalId !== 'string' || !/^[A-Za-z0-9_-]{1,64}$/.test(wo.approvalId)) errors.push('approvalId must be a safe id token ([A-Za-z0-9_-]{1,64})')
 
+  // The KIND of grant. An unknown value is refused rather than defaulted: a typo must never
+  // quietly become a code-change authorization.
+  if (wo.taskKind !== undefined && !TASK_KINDS.includes(wo.taskKind)) {
+    errors.push('taskKind must be one of: ' + TASK_KINDS.join(', '))
+  }
+  if (taskKindOf(wo) === 'read_only_enquiry') {
+    // A read-only enquiry runs nothing and writes nowhere, so the two fields that exist only
+    // for a code change must be absent. An order carrying them is not the order the Owner
+    // thinks he is approving.
+    if (wo.allowedTestCommand != null) errors.push('a read_only_enquiry must not carry allowedTestCommand')
+    if (wo.branch != null) errors.push('a read_only_enquiry must not carry branch')
+  }
+
   return { ok: errors.length === 0, errors }
 }
 
@@ -197,6 +228,8 @@ function canonicalWorkOrder (wo) {
     costCapUsd: (wo && wo.costCapUsd) != null ? wo.costCapUsd : null,
     branch: (wo && wo.branch) != null ? wo.branch : null,
     approvalId: (wo && wo.approvalId) || null,
+    // The KIND of grant, defaulted explicitly so an older order hashes as what it always was.
+    taskKind: taskKindOf(wo),
     // ── Owner Decision Card v2 ────────────────────────────────────────────────
     // These three exist so the Owner-facing before/after card is INSIDE the hash.
     // The card is a projection of this object and nothing else, so a value the Owner
@@ -219,6 +252,9 @@ function hashWorkOrder (wo) {
 
 module.exports = {
   GOVERNANCE_PATH,
+  TASK_KINDS,
+  DEFAULT_TASK_KIND,
+  taskKindOf,
   FORBIDDEN_ACTIONS,
   MUST_FORBID,
   FORBIDDEN_FILE_PATTERNS,

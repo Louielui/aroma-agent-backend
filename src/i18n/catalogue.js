@@ -911,6 +911,19 @@ const CATALOGUE = Object.freeze({
 
   // ── the face ──
   'card.heading': { zh: '香香想改一個檔案', en: 'Xiangxiang wants to change one file' },
+  /**
+   * ⛔ A READ-ONLY CARD MUST NOT SAY 「改」. The same card renderer serves both kinds of order,
+   * and a read-only enquiry shown under 「香香想改一個檔案」 asks the Owner to approve a file
+   * modification that is not going to happen — the wrong thing, described accurately enough
+   * to be believed. taskKind is inside the hash precisely so the card can say which it is.
+   */
+  'card.headingEnquiry': { zh: '香香想讀一個檔案來回答問題', en: 'Xiangxiang wants to read one file to answer a question' },
+  'card.scopeOneFileEnquiry': { zh: '只讀取 {file} 一個檔案，不會改動任何檔案。', en: 'Reads {file} and nothing else. No file is changed.' },
+  'card.worstCaseEnquiry': {
+    zh: '答錯了？它只會讀副本並引用出處，不會改動你的程式庫。',
+    en: 'Wrong answer? It only reads a copy and cites its sources; your repository is not touched.'
+  },
+  'card.enquiryQuestionTitle': { zh: '要回答的問題', en: 'The question to answer' },
   // RB1 — the repository, on the card's visible face. A repo-relative path alone is not an
   // identity: the same filename exists in both registered repositories.
   'card.scopeRepository': { zh: '程式庫：{repo}', en: 'Repository: {repo}' },

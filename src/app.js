@@ -53,6 +53,7 @@ const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = req
 const { createAgentRunner } = require('./agent/agentRunner') // Agent Bridge wiring v1 (built ONLY when AGENT_BRIDGE==='on')
 const { createConfirmService } = require('./agent/confirmService') // THE single confirm domain service (both entry points)
 const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // server-authoritative sealed orders + nonces + sessions
+const { createReadOnlyEnquiryService, resolveReadOnlyEnquiry } = require('./agent/readOnlyEnquiryService') // approved order -> ONE read-only enquiry (READONLY_ENQUIRY, default off)
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
 const { EXECUTABLE_IDENTITY } = require('./projects/repositoryIdentity')
@@ -142,13 +143,17 @@ function resolveConversationDemo () {
 // conflict → ZERO execution. AGENT_BRIDGE defaults OFF and needs an agent runner
 // configured to authorize, so with the flag off (or no runner wired) the result is
 // byte-for-byte the same as before for the worker/develop lanes.
-function resolveExecutionAuthorization (dispatcherConfigured, agentRunnerConfigured = false) {
+function resolveExecutionAuthorization (dispatcherConfigured, agentRunnerConfigured = false, readOnlyEnquiryConfigured = false) {
   return authorizeExecutionMatrix({
     worker: resolveWorkerInvocation(),
     develop: resolveDevelopDispatch(),
     agent: resolveAgentBridge(),
+    // The fifth lane, in the SAME mutual exclusion as the rest — two on is still a conflict
+    // and still zero execution. Off unless the flag is exactly on AND a service was built.
+    readOnlyEnquiry: resolveReadOnlyEnquiry(),
     dispatcherConfigured,
-    agentRunnerConfigured
+    agentRunnerConfigured,
+    readOnlyEnquiryConfigured
   })
 }
 
@@ -623,7 +628,31 @@ function createApp (options = {}) {
   const agentRunner = injectedAgentRunner || builtAgentRunner
   const agentRunnerConfigured = agentRunner !== null
 
-  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured, agentRunnerConfigured)
+  // ⛔ CONSTRUCTED ONLY WHEN THE FLAG IS ON. Off is not 「built and idle」: with the flag off
+  // this stays null, the lane is never eligible, and no source copy, workspace or worker is
+  // ever made. The source provider is deliberately absent by default — nothing in this
+  // repository resolves a machine-local repoRoot, so materialising the approved revision is a
+  // separate, explicit wiring step, and until it exists the service refuses rather than
+  // running against whatever happens to be on disk.
+  // ⛔ ONE STORE, SHARED. The lane writes and the read-back route reads; two instances would
+  // point at the same default directory today and diverge the moment either is configured,
+  // which is the kind of drift that only shows up as 「it ran but I cannot find it」.
+  const enquiryStore = opts.enquiryStore || createEnquiryStore(opts.enquiryStoreDir ? { dir: opts.enquiryStoreDir } : {})
+
+  const readOnlyEnquiryService = resolveReadOnlyEnquiry() === 'on'
+    ? createReadOnlyEnquiryService({
+      enquiryStore,
+      sourceProvider: opts.enquirySourceProvider || null,
+      // Injected like agentRunner: a composition-root collaborator, not a runtime bypass.
+      // Absent → the real Claude Code worker factory.
+      workerFactory: opts.enquiryWorkerFactory || undefined,
+      // resolved lazily: the approval store is built further down
+      recordPhase: (id, phase) => { try { return ownerApprovalStore.recordPhase(id, phase) } catch (_) {} }
+    })
+    : null
+  const readOnlyEnquiryConfigured = readOnlyEnquiryService !== null
+
+  const authorize = () => resolveExecutionAuthorization(dispatcherConfigured, agentRunnerConfigured, readOnlyEnquiryConfigured)
 
   // B2-15 auth injection seam. The service-token middleware is built PER APP. In
   // production nothing is injected → the resolver defaults to readExpectedToken()
@@ -746,6 +775,11 @@ function createApp (options = {}) {
   }
   app.locals.approvalAuditLog = approvalAuditLog
 
+  // Observability only — the composed lane, so a test (and a reader) can see whether one
+  // exists at all. It is the same object the confirm service holds; nothing calls it here.
+  app.locals.readOnlyEnquiryService = readOnlyEnquiryService
+  app.locals.enquiryStore = enquiryStore
+
   const scheduleWorker = createScheduleWorker({ runStore, proposalStore, workerDeps, authorizeExecution: authorize })
   const confirmService = createConfirmService({
     proposalStore,
@@ -758,6 +792,9 @@ function createApp (options = {}) {
     // outcome; it authorizes nothing. Resolved lazily because the store is built just below.
     recordResult: (id, r) => ownerApprovalStore.recordResult(id, r),
     recordExecutionStart: (id, f) => ownerApprovalStore.recordExecutionStart(id, f),
+    // The read-only enquiry lane, built only when its flag is on (see below). Absent → the
+    // lane is never eligible and every existing lane behaves exactly as before.
+    readOnlyEnquiryService,
     // P1-C1c THE CANONICAL LEDGER. The claim gate must be durable before the runner is
     // called, and the lane's milestones must land on the Run rather than only in memory.
     // Narrow functions, not the store: this service can claim and record, nothing more.
@@ -976,7 +1013,7 @@ function createApp (options = {}) {
   // The turns of an investigation: stored always, surfaced never. Opening one is a
   // deliberate second step — putting them in front of him by default would recreate exactly
   // the relay the dispatch path removes.
-  app.use(createEnquiryRouter({ enquiryStore: createEnquiryStore() }))
+  app.use(createEnquiryRouter({ enquiryStore }))
 
   // ── 首頁 ────────────────────────────────────────────────────────────────────
   // What she ran, what waits on him, and the Drive line — the surface the design has

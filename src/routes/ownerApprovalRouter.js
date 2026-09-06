@@ -236,6 +236,10 @@ function createOwnerApprovalRouter (deps = {}) {
         goal: b.goal,
         candidateFile: b.candidateFile,
         allowedTestCommand: b.allowedTestCommand,
+        // WHICH KIND of work this card asks the Owner to approve. The producer validates it,
+        // the canonical form hashes it, and the card therefore shows it. It is intent from the
+        // chat lane, exactly like goal and candidateFile — never an authority by itself.
+        taskKind: b.taskKind,
         intendedChange: b.intendedChange
       },
       // Server-owned, from the Proposal record. The producer re-verifies it anyway.
@@ -327,8 +331,33 @@ function createOwnerApprovalRouter (deps = {}) {
       // result as enrichment — never the reverse.
       canonicalStatus: canonicalSpeaks ? canonicalStatus : null
     })
+    // ── THE READ-ONLY ENQUIRY FACTS, WHEN THAT IS WHAT RAN ────────────────
+    // buildAgentResultView speaks about files changed, diffs and test commands; an enquiry
+    // has none of those, and rendering one through that vocabulary would describe the wrong
+    // thing. So the enquiry's own facts are surfaced ALONGSIDE it, bounded and additive.
+    //
+    // ⛔ THE saved FLAG IS HERE BECAUSE A RESULT THAT WAS NOT STORED MUST NOT LOOK DELIVERED.
+    //    Without it the card would show a finished run and offer no way to tell that the
+    //    answer cannot be opened — the exact 「it ran and found nothing」 shape this project
+    //    keeps removing. enquiryId is null unless it really resolves.
+    const rawResult = got.ok ? got.record.result : null
+    const enquiry = rawResult && rawResult.kind === 'read_only_enquiry'
+      ? {
+          outcome: rawResult.outcome || null,
+          saved: rawResult.saved === true,
+          saveError: rawResult.saveError || null,
+          enquiryId: rawResult.saved === true ? (rawResult.enquiryId || null) : null,
+          stoppedAt: rawResult.stoppedAt || null,
+          reason: rawResult.reason || null,
+          verification: rawResult.verification || null,
+          costUsd: Object.prototype.hasOwnProperty.call(rawResult, 'costUsd') ? rawResult.costUsd : null
+        }
+      : null
+
     return res.status(200).json({
       approvalId,
+      // null for every code-change run; present only when an enquiry actually ran.
+      enquiry,
       status: view.status,
       headline: view.headline,
       sections: view.sections,
