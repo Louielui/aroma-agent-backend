@@ -1,80 +1,98 @@
 'use strict'
 
 /**
- * readOnlyEnquiryService.js — the missing middle: an APPROVED order becomes ONE read-only
- * enquiry, and its result becomes something the Owner can read back.
+ * readOnlyEnquiryService.js — an APPROVED read-only order becomes ONE enquiry, and its result
+ * becomes something the Owner can read back.
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * EVERYTHING HERE ALREADY EXISTED EXCEPT THE JOIN.
+ * THIS IS A LANE BEHIND THE EXISTING APPROVAL, NOT A SECOND DOOR.
  *
- *   entry / approval card   routes/workRequestRoute.js + routes/ownerApprovalRouter.js
- *   sealed order + nonce    agent/ownerApprovalStore.js
- *   the order and its hash  agent/workOrder.js
- *   the dispatcher          agent/claudeCodeWorker.js + agent/enquiryRunner.js
- *   the workspace           workers/workspace/tmpdirSandbox.js
- *   the result store        agent/enquiryStore.js
- *   the read-back API       routes/enquiryRoutes.js   (already mounted)
+ * The first version of this file took a sealed order plus a nonce and ran. That skipped the
+ * typed confirmation, the proposal state transition, the authorization matrix and the durable
+ * claim — every condition the code-change lane has to satisfy — and it did so through an
+ * endpoint of its own. A second endpoint that can switch the SAME approved card into a
+ * different kind of execution is not a lane; it is a bypass.
  *
- * Nothing above is re-implemented. This file is the wire between them, and it is the only
- * new authority in the chain — which is why it is fail-closed at every step.
+ * So the entry point is gone. `confirmService.confirmProposalAction` calls this, after the
+ * Owner has typed EXECUTE, after the nonce and hash checks, after the proposal is confirmed and
+ * after the Run is durably claimed — and only when the SEALED order's own `taskKind` says
+ * read_only_enquiry. Which lane runs is part of what the Owner approved, because `taskKind` is
+ * inside the canonical hash his card was built from.
  * ══════════════════════════════════════════════════════════════════════════════
  *
- * ⛔ OFF BY DEFAULT, AND OFF MEANS NOTHING IS CONSTRUCTED.
- * The flag is checked before the workspace, the worker or the source copy exist. 「Disabled」
- * must not mean 「built it, then declined to run it」 — a constructed worker is a spawn waiting
- * for a caller, and this is the file that would be blamed for it.
- *
- * ⛔ THE ORDER IS THE ONLY INPUT. The caller supplies identifiers — approvalId, nonce, the hash
- * it displayed, the session — and nothing else. The question, the source revision, the readable
- * scope and the limits are read from the SEALED order every time. A caller cannot substitute a
- * different question, point the run at another revision, widen the scope or raise a cap, because
- * none of those values ever comes from the caller.
- *
- * ⛔ AND A BOOLEAN IS NOT AN APPROVAL. There is no `approved: true` parameter, and there never
- * may be: the approval is a sealed order plus an unconsumed nonce whose hash matches what the
- * Owner actually read.
+ * ⛔ OFF BY DEFAULT, AND OFF MEANS NOTHING IS CONSTRUCTED. The flag is a peer in
+ * `authorizeExecution` — two lanes on is a configuration_conflict and zero execution — and
+ * app.js only builds this service when the flag is on. `run()` re-checks anyway: source,
+ * workspace and worker are created after that check, never before it.
  */
 
-const { validateWorkOrder, hashWorkOrder } = require('./workOrder')
 const { runEnquiry: defaultRunEnquiry } = require('./enquiryRunner')
 const { createClaudeCodeWorker: defaultWorkerFactory } = require('./claudeCodeWorker')
 const { createTmpdirSandbox } = require('../workers/workspace/tmpdirSandbox')
 
 /** Strict 'on' only. Unset, empty or anything else is off — an invalid flag never opens a gate. */
 function resolveReadOnlyEnquiry (env = process.env) {
-  const raw = env && env.READONLY_ENQUIRY
-  if (raw === 'on') return 'on'
-  return 'off'
+  return (env && env.READONLY_ENQUIRY) === 'on' ? 'on' : 'off'
 }
 
 /**
- * Why a submission did not run. Every one of these means ZERO dispatch and zero worker
- * construction; they are distinguished so the Owner is told which gate stopped it rather than a
- * single unhelpful 「refused」.
+ * ⛔ THE TURN CAP IS THE SERVICE'S, NOT THE ORDER'S.
+ *
+ * The first version read `order.maxTurns`. That field is in no canonical form, no validator and
+ * no approval card — so it was an unapproved, unvalidated number deciding how long a model runs,
+ * arriving on the same object as the approved values and indistinguishable from them. A cap the
+ * Owner never saw is not a cap he set.
+ *
+ * It is fixed here instead, and the record says where it came from. Making it Owner-settable is
+ * a real option, but it means adding the field to `canonicalWorkOrder`, `validateWorkOrder` and
+ * the approval view together — never to this file alone.
  */
-const REFUSAL = Object.freeze({
-  DISABLED: 'disabled',
-  SESSION_INVALID: 'session_invalid',
-  APPROVAL_UNKNOWN: 'unknown_approval_id',
-  APPROVAL_EXPIRED: 'expired',
-  HASH_MISMATCH: 'hash_mismatch',
-  NONCE: 'nonce_refused',
-  ORDER_INVALID: 'work_order_invalid',
-  ALREADY_DISPATCHED: 'already_dispatched',
-  SOURCE_UNAVAILABLE: 'source_provider_unavailable',
-  SOURCE_FAILED: 'source_preparation_failed'
+const SERVICE_MAX_TURNS = 25
+const SERVICE_MAX_ROUNDS = 1
+
+const PHASE = Object.freeze({
+  AUTHORIZING: 'authorizing',
+  PREPARING_SOURCE: 'preparing_source',
+  BUILDING_WORKER: 'building_worker',
+  RUNNING: 'running',
+  SAVING: 'saving'
 })
 
+const REFUSAL = Object.freeze({
+  DISABLED: 'disabled',
+  NOT_AUTHORIZED: 'not_authorized',
+  WRONG_TASK_KIND: 'wrong_task_kind',
+  STORE_UNAVAILABLE: 'result_store_unavailable',
+  SOURCE_UNAVAILABLE: 'source_provider_unavailable',
+  SOURCE_FAILED: 'source_preparation_failed',
+  WORKSPACE_FAILED: 'workspace_preparation_failed',
+  WORKER_FAILED: 'worker_construction_failed'
+})
+
+const UNREADABLE = 'unavailable (the error value could not be read safely)'
+
 /**
- * ⛔ THE SOURCE COPY IS INJECTED, AND ITS ABSENCE IS A REFUSAL — NOT A FALLBACK.
- * Nothing in this repository resolves a machine-local repoRoot on purpose (`projectRegistry`
- * and `repositoryIdentity` both say so in their headers), so this file must not invent one. A
- * caller that cannot supply a verified copy of the approved revision gets a refusal, because
- * the alternative — running against whatever happens to be on disk — is precisely the failure
- * the expectedSha exists to prevent.
+ * ⛔ DESCRIBING A FAILURE MUST NOT ITSELF FAIL. Whatever is thrown here is not guaranteed to be
+ * an Error: it can be null, undefined, a bare string, an object whose `message` getter throws, or
+ * a revoked Proxy where every operation throws. This runs on the path that exists to keep a
+ * completed round, so nothing touches the value without a guard.
  */
+function safeErrorText (value, cap = 300) {
+  try {
+    if (value === null) return 'null'
+    if (value === undefined) return 'undefined'
+    if (typeof value === 'string') return value.slice(0, cap)
+    if (typeof value === 'number' || typeof value === 'boolean') return String(value)
+    try {
+      const m = value.message
+      if (typeof m === 'string') return m.slice(0, cap)
+    } catch (_) { /* a throwing getter is not a reason to lose the record */ }
+    const s = String(value)
+    return typeof s === 'string' ? s.slice(0, cap) : UNREADABLE
+  } catch (_) { return UNREADABLE }
+}
+
 function createReadOnlyEnquiryService (deps = {}) {
-  const approvalStore = deps.approvalStore
   const enquiryStore = deps.enquiryStore
   const sourceProvider = typeof deps.sourceProvider === 'function' ? deps.sourceProvider : null
   const workspaceFactory = typeof deps.workspaceFactory === 'function'
@@ -84,66 +102,56 @@ function createReadOnlyEnquiryService (deps = {}) {
   const runEnquiryFn = typeof deps.runEnquiry === 'function' ? deps.runEnquiry : defaultRunEnquiry
   const env = deps.env || process.env
   const now = typeof deps.now === 'function' ? deps.now : () => new Date().toISOString()
-  // Counted so a test can prove that a refused submission built nothing at all.
+  // Optional sinks. Absent → the lane still runs and simply has no card to update.
+  const recordPhase = typeof deps.recordPhase === 'function' ? deps.recordPhase : () => {}
   let workersConstructed = 0
 
   function enabled () { return resolveReadOnlyEnquiry(env) === 'on' }
 
-  const refuse = (reason, detail) => ({ ok: false, dispatched: false, reason, detail: detail || null })
+  /** Everything a caller needs to know, in a shape that never claims more than it did. */
+  const refuse = (reason, phase, detail) => ({
+    ok: false,
+    dispatched: false,
+    stoppedAt: phase,
+    reason,
+    detail: detail === undefined ? null : detail,
+    enquiryId: null,
+    saved: false
+  })
 
-  async function submit (input = {}) {
-    const { sessionId, approvalId, nonce, displayedHash } = input
+  /**
+   * Run ONE read-only enquiry for an already-approved, already-claimed order.
+   *
+   * @param {{ workOrder: object, approvalId: string, authorized: boolean }} input
+   *   `workOrder` is the SEALED order — the caller has already verified the hash the Owner read.
+   *   `authorized` is confirmService's decision from the flag matrix; this service will not run
+   *   without it and does not compute its own.
+   */
+  async function run (input = {}) {
+    const order = input.workOrder
+    const approvalId = input.approvalId
 
-    // 1 ── the flag, FIRST. Nothing below this line runs while it is off.
-    if (!enabled()) return refuse(REFUSAL.DISABLED)
-
-    // 2 ── the Owner's session, by the existing store's own rule.
-    if (!approvalStore || !approvalStore.validSession(sessionId)) return refuse(REFUSAL.SESSION_INVALID)
-
-    // 3 ── the sealed order. Unknown and expired are different answers and stay different.
-    const sealed = approvalStore.loadSealed(approvalId)
-    if (!sealed.ok) {
-      return refuse(sealed.reason === 'expired' ? REFUSAL.APPROVAL_EXPIRED : REFUSAL.APPROVAL_UNKNOWN)
+    // ── phase: authorizing ────────────────────────────────────────────────
+    if (!enabled()) return refuse(REFUSAL.DISABLED, PHASE.AUTHORIZING)
+    // ⛔ NOT SELF-GRANTED. The matrix decision is made once, by confirmService, and passed in.
+    if (input.authorized !== true) return refuse(REFUSAL.NOT_AUTHORIZED, PHASE.AUTHORIZING)
+    // The lane is chosen by the APPROVED order, not by which function was called.
+    if (!order || order.taskKind !== 'read_only_enquiry') return refuse(REFUSAL.WRONG_TASK_KIND, PHASE.AUTHORIZING)
+    // ⛔ NO STORE, NO RUN. Refused BEFORE anything executes, because a completed enquiry whose
+    // result cannot be kept is a model call spent on nothing the Owner can ever read.
+    if (!enquiryStore || typeof enquiryStore.save !== 'function') {
+      return refuse(REFUSAL.STORE_UNAVAILABLE, PHASE.AUTHORIZING)
     }
-    const order = sealed.record.workOrder
+    if (!sourceProvider) return refuse(REFUSAL.SOURCE_UNAVAILABLE, PHASE.AUTHORIZING)
 
-    // 4 ── WYSIWYA: the hash of the sealed order must equal what the Owner was shown. This is
-    // checked BEFORE the nonce so a mismatch is reported as a mismatch rather than as a
-    // consumed nonce.
-    const trueHash = hashWorkOrder(order)
-    if (typeof displayedHash !== 'string' || displayedHash !== trueHash) {
-      return refuse(REFUSAL.HASH_MISMATCH, { expected: trueHash })
+    // ── phase: preparing the workspace and the approved source ────────────
+    let workspace, dir
+    try {
+      workspace = workspaceFactory()
+      dir = workspace.prepare().dir
+    } catch (e) {
+      return refuse(REFUSAL.WORKSPACE_FAILED, PHASE.PREPARING_SOURCE, safeErrorText(e))
     }
-
-    // 5 ── the nonce: single-use, bound to this approval, hash and session. The store consumes
-    // it on EVERY outcome, so a double-click's second request finds it already used — that is
-    // the first of the two reasons a repeated submission cannot dispatch twice.
-    const spent = approvalStore.consumeNonce({ nonce, approvalId, displayedHash, sessionId })
-    if (!spent.ok) return refuse(REFUSAL.NONCE, { reason: spent.reason })
-
-    // 6 ── the order must still be structurally valid. It was validated when sealed; validating
-    // again costs nothing and means this file never trusts an earlier check it cannot see.
-    const structural = validateWorkOrder(order)
-    if (!structural.ok) return refuse(REFUSAL.ORDER_INVALID, { errors: structural.errors })
-
-    // 7 ── the second idempotency lock, and the durable one. recordExecutionStart is write-once
-    // per approval, so even a caller that somehow presented two valid nonces cannot start a
-    // second run. It also snapshots the scope and caps AT HAND-OFF, which is what stops a
-    // finished run being judged later against an expired order.
-    const started = approvalStore.recordExecutionStart(approvalId, {
-      allowedFiles: order.allowedFiles,
-      timeoutSec: order.timeoutSec,
-      costCapUsd: order.costCapUsd,
-      allowedTestCommand: null,      // a read-only enquiry runs no command
-      branch: order.branch || null
-    })
-    if (!started.ok) return refuse(REFUSAL.ALREADY_DISPATCHED, { reason: started.reason })
-
-    // 8 ── the disposable copy of the APPROVED revision. Not the live checkout: the worker
-    // refuses a cwd containing this repository, and a real minted provider is required.
-    if (!sourceProvider) return refuse(REFUSAL.SOURCE_UNAVAILABLE)
-    const workspace = workspaceFactory()
-    const { dir } = workspace.prepare()
     let source
     try {
       source = await sourceProvider({
@@ -154,27 +162,33 @@ function createReadOnlyEnquiryService (deps = {}) {
         allowedFiles: order.allowedFiles
       })
     } catch (e) {
-      return refuse(REFUSAL.SOURCE_FAILED, { message: String((e && e.message) || 'source provider threw') })
+      return refuse(REFUSAL.SOURCE_FAILED, PHASE.PREPARING_SOURCE, safeErrorText(e))
     }
     if (!source || source.ok !== true) {
-      return refuse(REFUSAL.SOURCE_FAILED, { reason: (source && source.reason) || 'source provider refused' })
+      return refuse(REFUSAL.SOURCE_FAILED, PHASE.PREPARING_SOURCE, safeErrorText((source && source.reason) || 'source provider refused'))
     }
 
-    // 9 ── ONE dispatch, read-only, bounded by the approved caps. The worker's own fixed policy
-    // supplies the tools; nothing here can widen them.
-    const worker = workerFactory({
-      workspace,
-      cwd: dir,
-      maxTurns: order.maxTurns || 25,
-      timeoutMs: Math.round(order.timeoutSec * 1000),
-      allowResume: false
-    })
-    workersConstructed++
+    // ── phase: building the worker ────────────────────────────────────────
+    let worker
+    try {
+      worker = workerFactory({
+        workspace,
+        cwd: dir,
+        maxTurns: SERVICE_MAX_TURNS,
+        timeoutMs: Math.round(Number(order.timeoutSec) * 1000),
+        allowResume: false
+      })
+      workersConstructed++
+    } catch (e) {
+      return refuse(REFUSAL.WORKER_FAILED, PHASE.BUILDING_WORKER, safeErrorText(e))
+    }
 
+    // ── phase: running ────────────────────────────────────────────────────
+    try { recordPhase(approvalId, 'running') } catch (_) {}
     const question = order.goal
+    const startedAt = now()
     let out = null
     let thrown = null
-    const startedAt = now()
     try {
       out = await runEnquiryFn({
         question,
@@ -182,9 +196,12 @@ function createReadOnlyEnquiryService (deps = {}) {
         next: async (last) => (last
           ? { done: true, answer: last.answer, measurements: [], notEstablished: last.notEstablished }
           : { done: false, goal: question }),
+        // ⛔ A PRE-ROUND CHECK, NOT A BILLING LIMIT. The runner refuses to START a round it
+        // expects to exceed this; it cannot stop a round already running, and nothing here
+        // enforces a charge. Reporting it as a hard cap would be a promise this code cannot keep.
         budgetUsd: order.costCapUsd,
-        maxRounds: 1,
-        maxTurns: order.maxTurns || 25,
+        maxRounds: SERVICE_MAX_ROUNDS,
+        maxTurns: SERVICE_MAX_TURNS,
         allowResume: false
       })
     } catch (e) { thrown = e }
@@ -192,58 +209,59 @@ function createReadOnlyEnquiryService (deps = {}) {
 
     const record = buildEnquiryRecord({ out, thrown, order, approvalId, question, startedAt, finishedAt, source })
 
-    // 10 ── save BEFORE reporting. A result that was never recorded cannot be checked later,
-    // and the store is the surface `GET /api/v1/demo/enquiries/:id` already reads.
-    let saved = null
-    try { saved = enquiryStore ? enquiryStore.save(record) : null } catch (e) {
-      record.storeError = String((e && e.message) || 'save failed')
+    // ── phase: saving ─────────────────────────────────────────────────────
+    // ⛔ A SAVE THAT DID NOT HAPPEN IS NOT A DELIVERY. The model outcome and the persistence
+    // outcome are two facts and are reported as two fields; a caller that reads `ok` alone is
+    // never told the result is retrievable when it is not.
+    let saved = false
+    let saveError = null
+    try {
+      const written = enquiryStore.save(record)
+      saved = !!written
+      if (!written) saveError = 'store returned nothing'
+    } catch (e) {
+      saveError = safeErrorText(e)
     }
 
-    // 11 ── and tell the approval card that something happened, honestly. filesChanged is an
-    // empty array because a read-only enquiry changes nothing — that is a fact, not a
-    // formality — and the enquiryId is carried so the card can point at the real result.
-    try {
-      approvalStore.recordResult(approvalId, {
-        ok: record.outcome === 'CONCLUDED',
-        kind: 'read_only_enquiry',
-        enquiryId: record.enquiryId,
-        outcome: record.outcome,
-        filesChanged: [],
-        costUsd: record.costUsd,
-        verification: record.verification
-      })
-    } catch (_) { /* the enquiry is already saved; a card update failure must not lose it */ }
-
     return {
-      ok: record.outcome === 'CONCLUDED',
+      // `ok` means: it ran, it concluded, AND the result is retrievable. All three.
+      ok: record.outcome === 'CONCLUDED' && saved,
       dispatched: true,
-      enquiryId: record.enquiryId,
+      stoppedAt: null,
+      // the enquiry's own outcome, kept separate from whether it could be stored
       outcome: record.outcome,
+      saved,
+      saveError,
+      enquiryId: saved ? record.enquiryId : null,
+      // ⛔ null when it was not saved: handing back an id that resolves to nothing is a promise
+      // the read-back interface cannot keep.
       verification: record.verification,
       costUsd: record.costUsd,
-      saved: !!saved,
+      costKnown: record.costKnown,
+      reportFailure: record.reportFailure,
+      turnCapSource: 'service_fixed',
+      maxTurns: SERVICE_MAX_TURNS,
       sandbox: dir
     }
   }
 
   /**
    * ⛔ WHAT IS SAVED, AND WHAT IS NEVER IMPLIED.
-   * `verification` counts what the citation checker could confirm. It carries NO field meaning
+   * `verification` counts what the citation checker could confirm. There is no field meaning
    * 「fully checked」, and `allConfirmed` is false whenever anything is unconfirmed OR nothing was
-   * cited at all — zero citations is not 「all confirmed」. A finished process and a verified
-   * answer are different facts and are stored as different fields.
+   * cited — zero citations is not 「all confirmed」. A finished process and a verified answer are
+   * different facts and are stored as different fields.
    */
   function buildEnquiryRecord ({ out, thrown, order, approvalId, question, startedAt, finishedAt, source }) {
     const turn = (out && out.turns && out.turns[0]) || {}
     const citations = Array.isArray(turn.citations) ? turn.citations : []
     const confirmed = citations.filter((c) => c && c.status === 'CONFIRMED').length
-    const outcome = out ? out.outcome : 'FAILED'
 
     return {
-      enquiryId: (out && out.enquiryId) || ('enq_' + String(approvalId).replace(/[^A-Za-z0-9]/g, '').slice(0, 20) || 'enq_unknown'),
+      enquiryId: (out && out.enquiryId) || ('enq_' + String(approvalId || '').replace(/[^A-Za-z0-9]/g, '').slice(0, 20)),
       approvalId,
+      taskKind: order.taskKind,
       question,
-      // WHICH CONTENT was read — the approved revision and scope, recorded at the time.
       source: {
         projectId: order.projectId,
         repoFullName: order.repoFullName,
@@ -251,40 +269,58 @@ function createReadOnlyEnquiryService (deps = {}) {
         allowedFiles: [...(order.allowedFiles || [])],
         preparedFiles: (source && Number.isFinite(source.fileCount)) ? source.fileCount : null
       },
-      limits: { timeoutSec: order.timeoutSec, costCapUsd: order.costCapUsd, maxRounds: 1, maxTurns: order.maxTurns || 25 },
-      outcome,
+      limits: {
+        // ⛔ Where each bound CAME FROM, recorded rather than implied.
+        timeoutSec: order.timeoutSec,
+        timeoutSource: 'approved_order',
+        costCapUsd: order.costCapUsd,
+        costCapSource: 'approved_order',
+        costCapKind: 'pre_round_check_only',
+        maxRounds: SERVICE_MAX_ROUNDS,
+        maxTurns: SERVICE_MAX_TURNS,
+        turnCapSource: 'service_fixed'
+      },
+      outcome: out ? out.outcome : 'FAILED',
       startedAt,
       finishedAt,
-      // The formal result and everything needed to check it.
       payload: turn.payload || null,
       citations,
       verification: {
         cited: citations.length,
         confirmed,
         unverified: citations.length - confirmed,
-        // ⛔ never true for an empty list, and never true while anything is unconfirmed
         allConfirmed: citations.length > 0 && confirmed === citations.length
       },
       evidence: Array.isArray(turn.evidence) ? turn.evidence : [],
       notEstablished: Array.isArray(turn.notEstablished) ? turn.notEstablished : [],
       termination: turn.termination || null,
       diagnostics: turn.diagnostics || null,
-      // ⛔ null means UNKNOWN and is stored as null. A genuine zero is stored as 0. They are
-      // different answers and nothing downstream may collapse them.
+      // null means UNKNOWN and stays null; a genuine zero stays 0. Different answers.
       costUsd: turn.costUsd === undefined ? null : turn.costUsd,
       costKnown: typeof turn.costUsd === 'number' && Number.isFinite(turn.costUsd),
       numTurns: turn.numTurns === undefined ? null : turn.numTurns,
       failure: turn.failure || null,
-      // Why the REPORT could not be produced, when that is what went wrong. Kept apart from
-      // `failure`, which is the worker's own.
       reportFailure: (out && out.reportFailure) || null,
       report: (out && out.report) || null,
-      thrown: thrown ? String((thrown && thrown.message) || 'dispatch threw') : null,
+      thrown: thrown ? safeErrorText(thrown) : null,
       turns: (out && out.turns) || []
     }
   }
 
-  return { enabled, submit, resolveFlag: () => resolveReadOnlyEnquiry(env), workersConstructed: () => workersConstructed }
+  return {
+    enabled,
+    run,
+    resolveFlag: () => resolveReadOnlyEnquiry(env),
+    workersConstructed: () => workersConstructed,
+    SERVICE_MAX_TURNS
+  }
 }
 
-module.exports = { createReadOnlyEnquiryService, resolveReadOnlyEnquiry, REFUSAL }
+module.exports = {
+  createReadOnlyEnquiryService,
+  resolveReadOnlyEnquiry,
+  REFUSAL,
+  PHASE,
+  SERVICE_MAX_TURNS,
+  safeErrorText
+}

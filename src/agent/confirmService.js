@@ -17,7 +17,7 @@
  * site in the repo.
  */
 
-const { hashWorkOrder } = require('./workOrder')
+const { hashWorkOrder, taskKindOf } = require('./workOrder')
 const { isExecutableIdentity } = require('../projects/repositoryIdentity')
 // ONE definition of the executor identity, imported rather than restated. The claim,
 // the milestones and the success terminal all name the same executor; two literals in
@@ -49,6 +49,9 @@ function createConfirmService (deps = {}) {
   const proposalStore = deps.proposalStore
   const authorize = typeof deps.authorize === 'function' ? deps.authorize : () => ({ status: 'not_authorized', workerAuthorized: false, developAuthorized: false, agentBridgeAuthorized: false })
   const agentRunner = deps.agentRunner || null
+  // The read-only enquiry lane. Absent (every caller with the flag off, and most tests) →
+  // the lane is not eligible and nothing about the existing lanes changes.
+  const readOnlyEnquiryService = deps.readOnlyEnquiryService || null
   const scheduleWorker = typeof deps.scheduleWorker === 'function' ? deps.scheduleWorker : () => {}
   const owner = deps.owner || 'louie'
   const auditFn = typeof deps.auditFn === 'function' ? deps.auditFn : () => {}
@@ -80,6 +83,14 @@ function createConfirmService (deps = {}) {
         }
       }
     : () => ({ ok: false, reason: 'unavailable' })
+
+  /** Why a read-only enquiry ended without a stored, concluded result. Bounded, enum-ish. */
+  function enquiryFailureReason (r) {
+    if (!r) return 'enquiry_no_result'
+    if (r.dispatched === false) return String(r.reason || 'enquiry_refused').slice(0, 100)
+    if (r.saved === false) return 'enquiry_result_not_saved'
+    return String(r.outcome || 'enquiry_failed').slice(0, 100)
+  }
 
   /** A bounded, log-safe reason string for a FAILED terminal. Never Owner text. */
   function failureReason (result) {
@@ -126,7 +137,14 @@ function createConfirmService (deps = {}) {
     // of them, so approving a normal Proposal is structurally incapable of starting the
     // agent — regardless of entry point.
     const agentExecuteRequested = (input.agentExecute === true) && !!input.workOrder && typeof input.approvedHash === 'string' && input.approvedHash.length > 0
-    const agentEligible = agentExecuteRequested && auth.agentBridgeAuthorized && agentRunner !== null
+    // ⛔ WHICH LANE IS DECIDED BY THE APPROVED ORDER, NOT BY THE CALLER.
+    //    taskKind is inside the canonical hash, so the card the Owner read already said which
+    //    kind of work this approval authorizes. A code-change order can never reach the
+    //    enquiry lane, and an enquiry order can never reach the agent runner.
+    const taskKind = input.workOrder ? taskKindOf(input.workOrder) : null
+    const enquiryRequested = agentExecuteRequested && taskKind === 'read_only_enquiry'
+    const enquiryEligible = enquiryRequested && auth.readOnlyEnquiryAuthorized && readOnlyEnquiryService !== null
+    const agentEligible = agentExecuteRequested && taskKind === 'code_change' && auth.agentBridgeAuthorized && agentRunner !== null
 
     // P1-C1c. Read the approval identity BEFORE the Run exists, because the Run is
     // about to be created and must carry it from birth. Both values are server-owned:
@@ -139,6 +157,8 @@ function createConfirmService (deps = {}) {
 
     let dispatchStatus
     if (auth.status === 'configuration_conflict') dispatchStatus = 'configuration_conflict'
+    else if (enquiryEligible) dispatchStatus = 'read_only_enquiry_accepted'
+    else if (enquiryRequested) dispatchStatus = 'read_only_enquiry_not_authorized'
     else if (agentEligible) dispatchStatus = 'agent_execute_accepted'
     else if (agentExecuteRequested) dispatchStatus = 'agent_execute_not_authorized'
     else if (auth.developAuthorized) dispatchStatus = 'develop_dispatched'
@@ -147,6 +167,72 @@ function createConfirmService (deps = {}) {
 
     // Sandbox worker (B2-1) — unchanged, fire-and-forget by the caller's convention.
     if (auth.workerAuthorized) scheduleWorker(proposalId, runId)
+
+    // ── READ-ONLY ENQUIRY HAND-OFF ──────────────────────────────────────────
+    // The SAME preconditions as the agent lane, in the same order and for the same reasons:
+    // the repository must be one this build can touch, and the Run must be durably claimed
+    // BEFORE anything starts. An enquiry that cannot be claimed is an unrecorded attempt, and
+    // this lane gets no exemption from that just because it only reads.
+    if (enquiryEligible) {
+      if (!isExecutableIdentity({ projectId: input.workOrder.projectId, repoFullName: input.workOrder.repoFullName })) {
+        dispatchStatus = 'repository_identity_mismatch'
+        auditFn({ approvalId, outcome: 'refused', reason: dispatchStatus, entryPoint })
+        return { status: 201, body: { proposalStatus: 'confirmed', dispatchStatus, runId }, agentHandedOff: false }
+      }
+      const claim = claimAgent(runId, {
+        approvalId,
+        workOrderHash,
+        executor: AGENT_EXECUTOR,
+        projectId: input.workOrder.projectId,
+        repoFullName: input.workOrder.repoFullName
+      })
+      if (claim.status !== 'dispatched') {
+        dispatchStatus = CLAIM_DISPATCH_STATUS[claim.status] || 'agent_execute_needs_review'
+        auditFn({ approvalId, outcome: 'refused', reason: dispatchStatus, entryPoint })
+        return { status: 201, body: { proposalStatus: 'confirmed', dispatchStatus, runId }, agentHandedOff: false }
+      }
+      appendAgentStage(runId, 'AGENT_SELECTED', { agentId: AGENT_EXECUTOR, approvalId })
+      auditFn({ approvalId, outcome: 'handed_off', reason: null, entryPoint })
+      // Snapshotted at hand-off, like the agent lane. A read-only enquiry has no test command
+      // and no branch — recorded as null rather than omitted, so the card says so.
+      recordExecutionStart(approvalId, {
+        allowedFiles: input.workOrder.allowedFiles,
+        timeoutSec: input.workOrder.timeoutSec,
+        costCapUsd: input.workOrder.costCapUsd,
+        allowedTestCommand: null,
+        branch: null
+      })
+      Promise.resolve()
+        .then(() => readOnlyEnquiryService.run({ workOrder: input.workOrder, approvalId, authorized: true }))
+        .then((r) => {
+          // ⛔ EVERY OUTCOME IS TERMINAL, INCLUDING A REFUSAL AFTER THE CLAIM. Once execution
+          // start is recorded, a run that stops for any reason must settle the ledger — a card
+          // left in flight for ever is the failure this lane must not reintroduce.
+          const ok = !!(r && r.ok === true)
+          recordCanonicalOutcome(runId, approvalId, ok ? { ok: true } : { ok: false, error: enquiryFailureReason(r) })
+          recordResult(approvalId, {
+            ok,
+            kind: 'read_only_enquiry',
+            // Two separate facts, never merged: what the enquiry concluded, and whether the
+            // result was actually stored. A card that says 「done」 for an unsaved result is
+            // offering a read-back that does not exist.
+            outcome: (r && r.outcome) || null,
+            saved: !!(r && r.saved),
+            saveError: (r && r.saveError) || null,
+            enquiryId: (r && r.enquiryId) || null,
+            stoppedAt: (r && r.stoppedAt) || null,
+            reason: (r && r.reason) || null,
+            verification: (r && r.verification) || null,
+            costUsd: r && Object.prototype.hasOwnProperty.call(r, 'costUsd') ? r.costUsd : null,
+            filesChanged: []
+          })
+        })
+        .catch((e) => {
+          console.warn('[read-only-enquiry] run failed: ' + ((e && e.message) || String(e)))
+          recordCanonicalOutcome(runId, approvalId, { ok: false, error: 'enquiry_error' })
+          recordResult(approvalId, { ok: false, kind: 'read_only_enquiry', reason: 'enquiry_error', saved: false, filesChanged: [] })
+        })
+    }
 
     // AGENT HAND-OFF — the only call site. The runner independently recomputes the hash
     // from the order it is about to run and refuses on mismatch (no amend path); we also
@@ -222,7 +308,7 @@ function createConfirmService (deps = {}) {
     return {
       status: 201,
       body: { proposalStatus: 'confirmed', dispatchStatus, runId },
-      agentHandedOff: agentEligible
+      agentHandedOff: agentEligible || enquiryEligible
     }
   }
 
