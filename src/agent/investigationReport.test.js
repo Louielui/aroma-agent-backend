@@ -508,10 +508,12 @@ describe('「applied」 is two different words as well', () => {
   })
 
   test('「Applied.」 alone fails CLOSED, exactly like 「It was resolved.」', () => {
-    for (const bare of ['Applied.', 'It was resolved.']) {
+    // Both are refused; the reasons differ because 「applied」 now tests for a descriptive frame
+    // as well as a noun, so it can say WHICH check failed.
+    for (const [bare, why] of [['Applied.', /without a descriptive frame/], ['It was resolved.', /undecidable/]]) {
       const c = classifyFixClaim(bare)
       assert.strictEqual(c.claim, true, bare)
-      assert.match(c.parts.find((p) => p.claim).reason, /undecidable/)
+      assert.match(c.parts.find((p) => p.claim).reason, why)
     }
   })
 
@@ -554,5 +556,109 @@ describe('「applied」 is two different words as well', () => {
   test('RECORDED ASYMMETRY — CJK 套用 remains unconditional', () => {
     assert.throws(() => buildReport({ ...base, answer: '套用到每個 request。' }), ReportRefused,
       'documented limit: the Chinese form is still absolute')
+  })
+})
+
+describe('a technical noun is not a defence — behaviour vs an act carried out', () => {
+  // ⛔ THE HOLE THE FIRST PASS LEFT. Making 「applied」 contextual by NOUN alone meant
+  // 「I applied the new timeout setting to production」 walked through: it names `timeout` and
+  // `setting`, which were on the innocent list. The noun says WHAT was applied. It says nothing
+  // about WHO applied it or WHEN, and those are the words that turn a description into a claim.
+  //
+  // ⛔ AND THE DESTINATION IS IRRELEVANT. Blocking 「production」 would be theatre — the same claim
+  // is just as unbacked about a local service or a file on this machine. What is detected is the
+  // act, not where it landed.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  // Every one of these goes through the REAL buildReport, not the classifier alone.
+  for (const claim of [
+    'I applied the new timeout setting to production.',
+    'The new configuration has been applied to production.',
+    'I applied the new configuration to the local service.',
+    'The timeout is applied to the socket. I applied the new configuration to production.',
+    'We applied the new request limit to staging.',
+    'The updated timeout has been applied.',
+    'I applied it to the adapter.',
+    'The new default was applied to every request.'
+  ]) {
+    test('REFUSED via buildReport — an act, not a behaviour: ' + JSON.stringify(claim), () => {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused,
+        'a technical noun must not clear a claim that something was carried out')
+    })
+  }
+
+  test('the destination is not what decides it — local and production fail alike', () => {
+    for (const where of ['production', 'the local service', 'staging', 'my machine']) {
+      assert.throws(
+        () => buildReport({ ...base, answer: 'I applied the new configuration to ' + where + '.' }),
+        ReportRefused,
+        where + ' must be refused too'
+      )
+    }
+  })
+
+  for (const ok of [
+    'Every place it is read and applied to an outbound request',
+    'The timeout is applied to the socket by req.setTimeout.',
+    'The header is applied to the response.',
+    'The default is applied to every request unless overridden.',
+    'The style is applied to the element.',
+    'The same limit is applied to each adapter.',
+    'mergeConfig applies the default when the request omits one.'
+  ]) {
+    test('ACCEPTED via buildReport — describing how the code behaves: ' + JSON.stringify(ok), () => {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok))
+    })
+  }
+
+  test('the reason distinguishes the two, so a refusal can be argued with', () => {
+    const act = classifyFixClaim('I applied the new timeout setting to production.')
+    assert.strictEqual(act.claim, true)
+    assert.match(act.parts.find((p) => p.claim).reason, /act someone carried out|new or updated/)
+
+    const behaviour = classifyFixClaim('The timeout is applied to the socket.')
+    assert.strictEqual(behaviour.claim, false)
+    assert.match(behaviour.parts[0].reason, /ordinary technical sense/)
+  })
+
+  test('a bare 「applied to X」 with no descriptive frame is refused, not guessed at', () => {
+    const c = classifyFixClaim('Applied to the socket')
+    assert.strictEqual(c.claim, true)
+    assert.match(c.parts.find((p) => p.claim).reason, /without a descriptive frame/)
+  })
+
+  // ⛔ THE COST OF BEING CONSERVATIVE, WRITTEN DOWN. 「new」 makes a clause refusable even when the
+  // author meant 「the newly-added default that the code now applies」. That is a real false
+  // positive and it is accepted on purpose: uncertainty resolves to refusal, and the author can
+  // rewrite. The opposite default lets an unbacked claim through.
+  test('RECORDED COST — an honest sentence about a NEW default is refused too', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The new default is applied to every request.' }),
+      ReportRefused,
+      'documented: 「new」 is treated as introducing a change, even when it describes behaviour'
+    )
+    // and the author can say the same thing without the trigger word
+    assert.ok(buildReport({ ...base, answer: 'The default is applied to every request.' }).text.includes('every request'))
+  })
+
+  test('an evidenced change is unaffected — the same sentences pass with appliedChanges', () => {
+    for (const claim of [
+      'I applied the new timeout setting to production.',
+      'The new configuration has been applied to production.'
+    ]) {
+      const r = buildReport({ ...base, answer: claim, appliedChanges: [{ file: 'src/x.js', commit: 'abc1234' }] })
+      assert.ok(r.text.includes(claim))
+      assert.match(r.text, /已套用|Applied:/)
+    }
+  })
+
+  test('the earlier corrections still hold', () => {
+    assert.ok(buildReport({ ...base, answer: 'Both read the value from the config resolved by lib/helpers/resolveConfig.js.' }).text.includes('config resolved'))
+    for (const still of ['I applied the patch to lib/adapters/http.js.', 'The fix was applied.', 'I resolved the config issue.', 'The bug was fully resolved in the path handler.']) {
+      assert.throws(() => buildReport({ ...base, answer: still }), ReportRefused, still)
+    }
   })
 })

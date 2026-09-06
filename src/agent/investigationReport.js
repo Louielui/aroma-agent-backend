@@ -101,13 +101,20 @@ const ISSUE_NOUN = /\b(issue|issues|problem|problems|bug|bugs|error|errors|failu
 /**
  * Things that get RESOLVED in the computing sense.
  *
- * ⛔ `config` WAS ADDED BY THE REPLAY, NOT BY THE BRIEF. Replaying dispatch 10's envelope found a
- * second false positive of the same family, on a clause this correction was not asked about:
- *   「both read the value from the config resolved by `lib/helpers/resolveConfig.js`」
- * A config resolves the way a path resolves; the word was simply missing from this list, so the
- * clause fell through to the fail-closed branch. Adding it weakens no refusal — a claim noun is
- * still tested first, so 「I resolved the config issue」 remains a claim. Flagged here because it
- * goes beyond the literal instruction and should be reviewed as its own decision.
+ * ⛔ `config` WAS ADDED BY THE REPLAY, NOT BY THE BRIEF, AND IT DOES WIDEN WHAT PASSES.
+ * Replaying dispatch 10's envelope found a second false positive on a clause nobody had asked
+ * about — 「both read the value from the config resolved by `lib/helpers/resolveConfig.js`」 — which
+ * fell through to the fail-closed branch because `config` was missing here.
+ *
+ * What adding it actually lets through, stated rather than glossed: **any clause where 「resolved」
+ * sits within the window of the word `config`/`configs`/`configuration` and no issue noun appears.**
+ * That is wider than the sentence it was added for. Concretely, 「I resolved the config」 was
+ * refused before this change (fail-closed, nothing recognisable named) and is accepted after it —
+ * and that sentence could equally mean 「I repaired the configuration」. What is NOT weakened:
+ * an issue noun is still tested first, so 「I resolved the config issue」 remains a claim; and
+ * `appliedChanges` is still the only evidence a change occurred.
+ *
+ * It goes beyond the literal instruction and should be reviewed as its own decision.
  */
 const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier|config|configs|configuration)\b/i
 /** Things that get APPLIED to a codebase. Their presence beside 「applied」 makes it a change claim. */
@@ -118,6 +125,32 @@ const CHANGE_NOUN = /\b(patch|patches|fix|fixes|change|changes|changeset|diff|di
  * are what a patch gets applied to, and treating them as innocent would reopen the hole.
  */
 const APPLICATION_TARGET = /\b(request|requests|response|responses|socket|sockets|connection|connections|config|configuration|option|options|setting|settings|parameter|parameters|argument|arguments|value|values|header|headers|timeout|timeouts|deadline|signal|adapter|adapters|stream|streams|element|elements|style|styles|transform|transforms|filter|filters|rule|rules|policy|policies|limit|limits|interceptor|interceptors|default|defaults)\b/i
+
+/**
+ * ⛔ A TECHNICAL NOUN IS NOT A DEFENCE. (Correction, 2026-09-06, second pass on 「applied」.)
+ * The first version accepted 「applied」 whenever an application target sat nearby — and
+ * 「I applied the new timeout setting to production」 names `timeout` and `setting`, so it sailed
+ * through. The noun says WHAT was applied; it says nothing about WHO applied it or WHEN. The two
+ * meanings that must be told apart are:
+ *
+ *   describing how the code behaves    「the timeout is applied to the socket」        ← ordinary
+ *   claiming an action was carried out 「I applied the new timeout setting to prod」   ← a claim
+ *
+ * ⛔ AND THE PLACE IS IRRELEVANT. Blocking the word 「production」 would be theatre: the same claim
+ * is just as false about a local service, a staging box, or a file on this machine. What is
+ * detected is the ACTION, not its destination.
+ */
+/** An action someone carried out: a first-person agent, or a completed passive. */
+const AGENTIVE_APPLY = /\b(i|we|you)\b[^.!?;]{0,40}\bapplied\b|\b(has|have|had|was|were)\s+(?:been\s+)?applied\b|\bapplied\s+(?:it|them|this|that|these|those)\b/i
+/**
+ * 「the NEW configuration」 is something being introduced, not something the code already does.
+ * ⛔ This is deliberately conservative and WILL refuse an honest sentence such as 「the new default
+ * is applied to every request」 when describing a recent version. Uncertainty resolves to refusal,
+ * and the author can rewrite; the opposite default lets an unbacked claim through.
+ */
+const INTRODUCED = /\b(new|newly|updated|revised|modified|added)\b/i
+/** Describing behaviour: a generic frame, not a completed act. 「is read and applied to …」 */
+const DESCRIPTIVE_APPLY = /\b(is|are|being|gets|get)\b[^.!?;]{0,30}\bapplied\b|\bapplies\b/i
 /** Naive on purpose: sentence terminators in both scripts, nothing cleverer. */
 const SENTENCE_SPLIT = /(?<=[.!?;])\s+|(?<=[。！？；])/
 /** A clause boundary — 「, and」 / 「, so」 and the CJK commas. Keeps one clause from covering another. */
@@ -172,6 +205,19 @@ function classifyFixClaim (answer) {
             ? '「applied」 with a change noun in its local context — a change claim'
             : '「resolved」 with an issue noun in its local context — a repair claim'
         }
+      }
+      if (verb === 'applied') {
+        // ⛔ WHO AND WHEN, BEFORE WHAT. An agent or a completed passive means an act was carried
+        // out; naming a technical target afterwards does not undo that.
+        if (AGENTIVE_APPLY.test(window)) {
+          return { text: clause, claim: true, reason: '「applied」 as an act someone carried out (agent or completed passive) — a change claim' }
+        }
+        if (INTRODUCED.test(window)) {
+          return { text: clause, claim: true, reason: '「applied」 to something described as new or updated — read as introducing a change' }
+        }
+        // Only a descriptive frame AND a technical target together count as ordinary behaviour.
+        if (DESCRIPTIVE_APPLY.test(clause) && technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; continue }
+        return { text: clause, claim: true, reason: '「applied」 without a descriptive frame — cannot tell behaviour from action, refused' }
       }
       if (technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; continue }
       // ⛔ FAIL CLOSED. Neither vocabulary matched: undecidable, and an undecidable fix claim is
