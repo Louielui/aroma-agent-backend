@@ -759,3 +759,67 @@ describe('「config」 earns its exception by frame, not by being named', () => 
     }
   })
 })
+
+describe('the config frame belongs to ONE occurrence too', () => {
+  // ⛔ THE LAST BORROWED FRAME. The config exception was tested against the WINDOW, so one
+  // legitimate 「config resolved by merge」 lent its frame to a second, unrelated 「resolved」 in the
+  // same clause — in either order. The two halves are now matched against the text immediately
+  // touching the occurrence being judged, bounded by the previous contextual verb.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('REFUSED — a bare 「I resolved it.」 names nothing at all', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved it.' }), ReportRefused)
+  })
+
+  test('⛔ REFUSED — a legitimate config frame does not cover a later bare 「resolved」', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The config resolved by merge and I resolved it.' }),
+      ReportRefused,
+      'the second occurrence has no frame of its own and must not borrow the first one\'s'
+    )
+  })
+
+  test('⛔ REFUSED — nor an earlier one, when the frame comes afterwards', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'I resolved it and used the config resolved by merge.' }),
+      ReportRefused,
+      'a frame later in the clause must not reach backwards either'
+    )
+  })
+
+  test('ACCEPTED — a passive naming what did the resolving', () => {
+    const answer = 'Both read the value from the config resolved by resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('ACCEPTED — the same shape with no filename anywhere', () => {
+    const answer = 'The configuration resolved by the merge step.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the merge step'))
+  })
+
+  test('ACCEPTED — two legitimate config frames side by side, each with its own', () => {
+    const answer = 'The config resolved by merge and the configuration resolved by the loader.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the loader'))
+  })
+
+  test('the bare noun still cannot clear it', () => {
+    for (const claim of ['I resolved the config.', 'I resolved the config issue.', 'The config was resolved.']) {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused, claim)
+    }
+  })
+
+  // ⛔ WHAT `by`/`from` IS. A syntactic shape this rule accepts — not evidence about the world.
+  // This test states the limit rather than letting the comment imply a guarantee.
+  test('RECORDED LIMIT — the frame is a shape, and a PERSON after 「by」 passes just as easily', () => {
+    // ⛔ Nothing about this rule establishes that no change was made. 「by」 names something; it does
+    // not check that the something is a resolver rather than a human being. This sentence has the
+    // accepted shape and is accepted — not because it was understood, but because the rule is
+    // narrow and this happens to fit it.
+    const answer = 'The configuration resolved by the operator.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the operator'),
+      'documented: the rule recognises a shape, not a fact about the world')
+  })
+})

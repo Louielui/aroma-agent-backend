@@ -109,17 +109,25 @@ const ISSUE_NOUN = /\b(issue|issues|problem|problems|bug|bugs|error|errors|failu
  */
 const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier)\b/i
 /**
- * The one config case that IS recognisable as description rather than repair: a passive naming
- * what did the resolving — 「the config resolved BY <something>」, 「the resolved config FROM
- * <something>」. The 「by/from」 is the whole point; it names a resolver, which a repair claim does
- * not do.
+ * The one config shape this rule accepts: 「config… resolved BY/FROM …」 or 「resolved config…
+ * BY/FROM …」.
  *
- * ⛔ WHAT THIS LETS THROUGH, PRECISELY: a clause where `config`/`configs`/`configuration` sits
- * immediately beside 「resolved」 in that passive frame. Not 「I resolved the config」 (no resolver
- * named — refused), not 「I resolved the config issue」 (an issue noun, refused first). No sentence
- * and no filename is hard-coded; the frame is what is recognised.
+ * ⛔ WHAT `by`/`from` IS, AND WHAT IT IS NOT. It is the SYNTACTIC SHAPE this rule recognises —
+ * nothing more. It does not prove that no change was made, and it is not a fact about how repair
+ * claims are worded: 「I resolved the config from the console」 has the same shape and would pass.
+ * The narrowness is doing the work, not any insight into the sentence's meaning.
+ *
+ * ⛔ AND IT IS MATCHED AT THE OCCURRENCE, NOT IN THE WINDOW. Testing the window let one legitimate
+ * 「config resolved by merge」 lend its frame to a second, unrelated 「resolved」 in the same clause:
+ *     「The config resolved by merge and I resolved it.」        ← was accepted, is now refused
+ *     「I resolved it and used the config resolved by merge.」   ← the same trick, other way round
+ * So the two halves are checked against the text immediately adjacent to THIS 「resolved」: the
+ * segment since the previous contextual verb must END with 「config… 」, and the text right after
+ * must BEGIN with 「by/from」 — or, for the other order, with 「config… by/from」.
  */
-const CONFIG_RESOLUTION = /\bconfig\w*\s+resolved\s+(?:by|from)\b|\bresolved\s+config\w*\s+(?:by|from)\b/i
+const CONFIG_BEFORE = /\bconfig\w*\s+$/i
+const CONFIG_AFTER_BY = /^\s*(?:by|from)\b/i
+const CONFIG_AFTER_NOUN = /^\s+config\w*\s+(?:by|from)\b/i
 /** Things that get APPLIED to a codebase. Their presence beside 「applied」 makes it a change claim. */
 const CHANGE_NOUN = /\b(patch|patches|fix|fixes|change|changes|changeset|diff|diffs|commit|commits|edit|edits|migration|migrations|correction|corrections|workaround|hotfix|revision|refactor)\b/i
 /**
@@ -240,9 +248,14 @@ function classifyFixClaim (answer) {
         }
         return { text: clause, claim: true, reason: '「applied」 without a descriptive frame — cannot tell behaviour from action, refused' }
       }
-      // ⛔ `config` IS NOT ON THE GENERAL LIST — see CONFIG_RESOLUTION. A bare noun cannot clear
-      // 「resolved」, because 「I resolved the config」 is exactly as likely to mean 「I repaired it」.
-      if (CONFIG_RESOLUTION.test(window)) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
+      // ⛔ `config` IS NOT ON THE GENERAL LIST. A bare noun cannot clear 「resolved」, because
+      // 「I resolved the config」 is exactly as likely to mean 「I repaired it」. The narrow frame
+      // below is checked against the text touching THIS occurrence — never the window, which is
+      // wide enough to contain somebody else's frame.
+      const before = clause.slice(prevEnd, m.index)
+      const after = clause.slice(m.index + m[0].length)
+      const configFrame = (CONFIG_BEFORE.test(before) && CONFIG_AFTER_BY.test(after)) || CONFIG_AFTER_NOUN.test(after)
+      if (configFrame) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
       if (technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
       // ⛔ FAIL CLOSED. Neither vocabulary matched: undecidable, and an undecidable fix claim is
       // treated as a fix claim. 「It was resolved」 and 「Applied.」 both land here.
