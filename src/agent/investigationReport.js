@@ -114,7 +114,12 @@ const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|f
  *
  * ⛔ WHAT `by`/`from` IS, AND WHAT IT IS NOT. It is the SYNTACTIC SHAPE this rule recognises —
  * nothing more. It does not prove that no change was made, and it is not a fact about how repair
- * claims are worded: 「I resolved the config from the console」 has the same shape and would pass.
+ * claims are worded. Measured: 「The configuration resolved by the operator.」 PASSES — `by` names
+ * something, and nothing here checks that the something is a resolver rather than a person. (An
+ * earlier version of this comment offered 「I resolved the config from the console」 as the example;
+ * that sentence is in fact REFUSED, because the text touching 「resolved」 is 「I 」 and 「 the config
+ * from…」, neither of which is the accepted shape. The rule is narrower than that comment implied,
+ * and the example was corrected rather than the rule loosened to match it.)
  * The narrowness is doing the work, not any insight into the sentence's meaning.
  *
  * ⛔ AND IT IS MATCHED AT THE OCCURRENCE, NOT IN THE WINDOW. Testing the window let one legitimate
