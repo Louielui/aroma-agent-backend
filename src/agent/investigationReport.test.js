@@ -662,3 +662,100 @@ describe('a technical noun is not a defence — behaviour vs an act carried out'
     }
   })
 })
+
+describe('a descriptive frame belongs to ONE occurrence, not to the whole clause', () => {
+  // ⛔ THE HOLE THE PREVIOUS PASS LEFT. The frame test ran over the entire clause, so one honest
+  // 「is applied」 anywhere in it cleared every later 「applied」 in the same clause — including one
+  // with its own human agent. The frame now has to sit immediately before the occurrence being
+  // judged, searched only from the end of the previous occurrence.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('REFUSED — an agent with no frame of its own', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'The operator applied the configuration to staging.' }), ReportRefused)
+  })
+
+  test('⛔ REFUSED — an honest 「is applied」 earlier in the clause does not cover a later act', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The timeout is applied to requests and the operator applied the configuration to staging.' }),
+      ReportRefused,
+      'the second 「applied」 has its own agent and no frame; it must not borrow the first one\'s'
+    )
+  })
+
+  test('…and the same shape without a comma, which no clause split would catch', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The header is applied to the response and the engineer applied the migration to the database.' }),
+      ReportRefused
+    )
+  })
+
+  test('ACCEPTED — two ordinary descriptions side by side, each with its own frame', () => {
+    const answer = 'The timeout is applied to the socket and the header is applied to the response.'
+    assert.ok(buildReport({ ...base, answer }).text.includes(answer))
+  })
+
+  test('ACCEPTED — three of them, so the binding is not an accident of two', () => {
+    const answer = 'The timeout is applied to the socket, the header is applied to the response and the limit is applied to each adapter.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('each adapter'))
+  })
+
+  test('ACCEPTED — the sentence that started all of this still passes', () => {
+    const answer = 'Every place it is read and applied to an outbound request'
+    assert.ok(buildReport({ ...base, answer }).text.includes(answer))
+  })
+
+  test('the destination is still not what decides it', () => {
+    for (const where of ['staging', 'production', 'the local service', 'my laptop']) {
+      assert.throws(
+        () => buildReport({ ...base, answer: 'The operator applied the configuration to ' + where + '.' }),
+        ReportRefused, where
+      )
+    }
+  })
+})
+
+describe('「config」 earns its exception by frame, not by being named', () => {
+  // ⛔ AN EARLIER PASS PUT `config` ON THE GENERAL RESOLUTION LIST. That is a blanket permission —
+  // any clause with the noun near the verb passes — and it let 「I resolved the config」 through,
+  // which reads just as easily as 「I repaired the configuration」. The noun is back off the list;
+  // only the passive frame that NAMES A RESOLVER is recognised.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('ACCEPTED — a passive naming what did the resolving', () => {
+    const answer = 'Both read the value from the config resolved by resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('ACCEPTED — the same frame with a different resolver and no filename at all', () => {
+    const answer = 'Each adapter uses the configuration resolved by the merge step.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the merge step'))
+  })
+
+  test('⛔ REFUSED — the bare noun no longer clears it', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config.' }), ReportRefused,
+      'naming a config is not describing a resolution')
+  })
+
+  test('REFUSED — and an issue noun still decides first', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config issue.' }), ReportRefused)
+  })
+
+  test('the rest of the resolution vocabulary is untouched', () => {
+    for (const ok of [
+      'The relative path was resolved against the working directory.',
+      'The import could not be resolved, so the module reference is dangling.',
+      'The symlink target resolved to a directory outside the sandbox.'
+    ]) {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok), ok)
+    }
+    for (const claim of ['The issue was resolved.', 'The bug was fully resolved in the path handler.', 'It was resolved.']) {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused, claim)
+    }
+  })
+})

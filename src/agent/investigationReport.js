@@ -101,22 +101,25 @@ const ISSUE_NOUN = /\b(issue|issues|problem|problems|bug|bugs|error|errors|failu
 /**
  * Things that get RESOLVED in the computing sense.
  *
- * ⛔ `config` WAS ADDED BY THE REPLAY, NOT BY THE BRIEF, AND IT DOES WIDEN WHAT PASSES.
- * Replaying dispatch 10's envelope found a second false positive on a clause nobody had asked
- * about — 「both read the value from the config resolved by `lib/helpers/resolveConfig.js`」 — which
- * fell through to the fail-closed branch because `config` was missing here.
- *
- * What adding it actually lets through, stated rather than glossed: **any clause where 「resolved」
- * sits within the window of the word `config`/`configs`/`configuration` and no issue noun appears.**
- * That is wider than the sentence it was added for. Concretely, 「I resolved the config」 was
- * refused before this change (fail-closed, nothing recognisable named) and is accepted after it —
- * and that sentence could equally mean 「I repaired the configuration」. What is NOT weakened:
- * an issue noun is still tested first, so 「I resolved the config issue」 remains a claim; and
- * `appliedChanges` is still the only evidence a change occurred.
- *
- * It goes beyond the literal instruction and should be reviewed as its own decision.
+ * ⛔ `config` IS NOT IN THIS LIST, AND THAT IS DELIBERATE. It was added here in an earlier pass and
+ * taken back out: a bare noun cannot clear 「resolved」, because 「I resolved the config」 reads just
+ * as easily as 「I repaired the configuration」. Membership of this list is a blanket permission —
+ * any clause where the noun sits near the verb passes — and `config` is too ambiguous to earn one.
+ * The narrow case that genuinely needed it is handled by CONFIG_RESOLUTION below.
  */
-const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier|config|configs|configuration)\b/i
+const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier)\b/i
+/**
+ * The one config case that IS recognisable as description rather than repair: a passive naming
+ * what did the resolving — 「the config resolved BY <something>」, 「the resolved config FROM
+ * <something>」. The 「by/from」 is the whole point; it names a resolver, which a repair claim does
+ * not do.
+ *
+ * ⛔ WHAT THIS LETS THROUGH, PRECISELY: a clause where `config`/`configs`/`configuration` sits
+ * immediately beside 「resolved」 in that passive frame. Not 「I resolved the config」 (no resolver
+ * named — refused), not 「I resolved the config issue」 (an issue noun, refused first). No sentence
+ * and no filename is hard-coded; the frame is what is recognised.
+ */
+const CONFIG_RESOLUTION = /\bconfig\w*\s+resolved\s+(?:by|from)\b|\bresolved\s+config\w*\s+(?:by|from)\b/i
 /** Things that get APPLIED to a codebase. Their presence beside 「applied」 makes it a change claim. */
 const CHANGE_NOUN = /\b(patch|patches|fix|fixes|change|changes|changeset|diff|diffs|commit|commits|edit|edits|migration|migrations|correction|corrections|workaround|hotfix|revision|refactor)\b/i
 /**
@@ -149,8 +152,17 @@ const AGENTIVE_APPLY = /\b(i|we|you)\b[^.!?;]{0,40}\bapplied\b|\b(has|have|had|w
  * and the author can rewrite; the opposite default lets an unbacked claim through.
  */
 const INTRODUCED = /\b(new|newly|updated|revised|modified|added)\b/i
-/** Describing behaviour: a generic frame, not a completed act. 「is read and applied to …」 */
-const DESCRIPTIVE_APPLY = /\b(is|are|being|gets|get)\b[^.!?;]{0,30}\bapplied\b|\bapplies\b/i
+/**
+ * Describing behaviour: a copula or auxiliary governing THIS 「applied」. 「is read and applied to …」
+ *
+ * ⛔ ANCHORED AT THE END, AND SEARCHED ONLY SINCE THE PREVIOUS OCCURRENCE. A clause-wide test was
+ * the defect: 「The timeout is applied to requests and the operator applied the configuration to
+ * staging」 contains 「is applied」, and one descriptive frame anywhere in the clause was letting
+ * every later 「applied」 in the same clause through — including one with its own human agent.
+ * The frame has to belong to the occurrence being judged, so the segment searched starts at the
+ * END of the previous occurrence and must finish immediately before this one.
+ */
+const DESCRIPTIVE_BEFORE = /\b(is|are|being|gets|get)\b[^.!?;]{0,30}$/i
 /** Naive on purpose: sentence terminators in both scripts, nothing cleverer. */
 const SENTENCE_SPLIT = /(?<=[.!?;])\s+|(?<=[。！？；])/
 /** A clause boundary — 「, and」 / 「, so」 and the CJK commas. Keeps one clause from covering another. */
@@ -187,6 +199,8 @@ function classifyFixClaim (answer) {
     let m
     let sawResolved = false
     let firstTechnical = null
+    // Where the previous contextual verb ended: the boundary of what THIS one may claim as context.
+    let prevEnd = 0
     while ((m = CONTEXTUAL_VERB.exec(clause)) !== null) {
       sawResolved = true
       const verb = m[0].toLowerCase()
@@ -215,11 +229,21 @@ function classifyFixClaim (answer) {
         if (INTRODUCED.test(window)) {
           return { text: clause, claim: true, reason: '「applied」 to something described as new or updated — read as introducing a change' }
         }
-        // Only a descriptive frame AND a technical target together count as ordinary behaviour.
-        if (DESCRIPTIVE_APPLY.test(clause) && technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; continue }
+        // Only a descriptive frame governing THIS occurrence, AND a technical target, count as
+        // ordinary behaviour. `sinceLast` starts at the end of the previous 「applied」, so a frame
+        // belonging to an earlier occurrence cannot be borrowed by a later one.
+        const sinceLast = clause.slice(prevEnd, m.index)
+        if (DESCRIPTIVE_BEFORE.test(sinceLast) && technicalNoun.test(window)) {
+          firstTechnical = firstTechnical || clause
+          prevEnd = m.index + m[0].length
+          continue
+        }
         return { text: clause, claim: true, reason: '「applied」 without a descriptive frame — cannot tell behaviour from action, refused' }
       }
-      if (technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; continue }
+      // ⛔ `config` IS NOT ON THE GENERAL LIST — see CONFIG_RESOLUTION. A bare noun cannot clear
+      // 「resolved」, because 「I resolved the config」 is exactly as likely to mean 「I repaired it」.
+      if (CONFIG_RESOLUTION.test(window)) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
+      if (technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
       // ⛔ FAIL CLOSED. Neither vocabulary matched: undecidable, and an undecidable fix claim is
       // treated as a fix claim. 「It was resolved」 and 「Applied.」 both land here.
       return { text: clause, claim: true, reason: '「' + verb + '」 with nothing recognisable named in its local context — undecidable, refused' }
