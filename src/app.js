@@ -53,6 +53,7 @@ const { resolveAgentBridge, authorizeExecution: authorizeExecutionMatrix } = req
 const { createAgentRunner } = require('./agent/agentRunner') // Agent Bridge wiring v1 (built ONLY when AGENT_BRIDGE==='on')
 const { createConfirmService } = require('./agent/confirmService') // THE single confirm domain service (both entry points)
 const { createOwnerApprovalStore } = require('./agent/ownerApprovalStore') // server-authoritative sealed orders + nonces + sessions
+const { createReadOnlyEnquiryService, resolveReadOnlyEnquiry } = require('./agent/readOnlyEnquiryService') // approved order -> ONE read-only enquiry (READONLY_ENQUIRY, default off)
 const { createOwnerApprovalRouter } = require('./routes/ownerApprovalRouter') // local Owner approval card (loopback + CSRF + typed EXECUTE)
 const { proposeWorkOrder } = require('./agent/workOrderProducer')
 const { EXECUTABLE_IDENTITY } = require('./projects/repositoryIdentity')
@@ -1084,7 +1085,22 @@ function createApp (options = {}) {
   // a single-use bound nonce + a SERVER-verified typed confirmation. It deliberately
   // does NOT sit behind requireServiceToken, because HUB_TOKEN must never reach the
   // browser. Execution content is loaded from the sealed store, never from the body.
+  // ⛔ CONSTRUCTED ONLY WHEN THE FLAG IS ON. Off is not "built and idle": with the flag off
+  // this stays null, the route refuses, and no worker, workspace or source copy is ever made.
+  // The source provider is deliberately absent by default — nothing in this repository
+  // resolves a machine-local repoRoot, so supplying a verified copy of the approved revision
+  // is a separate, explicit wiring step. Until it exists the service refuses rather than
+  // running against whatever happens to be on disk.
+  const readOnlyEnquiryService = resolveReadOnlyEnquiry(process.env) === 'on'
+    ? createReadOnlyEnquiryService({
+      approvalStore: ownerApprovalStore,
+      enquiryStore: createEnquiryStore(),
+      sourceProvider: opts.enquirySourceProvider || null
+    })
+    : null
+
   app.use(createOwnerApprovalRouter({
+    readOnlyEnquiryService,
     store: ownerApprovalStore,
     confirmService,
     proposeWorkOrder,

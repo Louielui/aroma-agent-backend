@@ -134,6 +134,9 @@ function createOwnerApprovalRouter (deps = {}) {
   const resolveCanonicalRun = typeof deps.resolveCanonicalRun === 'function'
     ? (approvalId) => { try { return deps.resolveCanonicalRun(approvalId) } catch (_) { return { ok: false, reason: 'lookup_failed' } } }
     : () => ({ ok: false, reason: 'unavailable' })
+  // The read-only enquiry lane's service. ABSENT BY DEFAULT: app.js only constructs it when
+  // READONLY_ENQUIRY is 'on', so with the flag off this is null and the route below refuses.
+  const readOnlyEnquiryService = deps.readOnlyEnquiryService || null
   const router = express.Router()
 
   const refuse = (res, status, reason, approvalId, entryPoint) => {
@@ -492,6 +495,75 @@ function createOwnerApprovalRouter (deps = {}) {
     // names exactly what the Owner was looking at.
     auditFn({ approvalId, outcome: out.agentHandedOff ? 'approved' : 'approved_not_dispatched', reason: out.body.dispatchStatus, entryPoint: 'owner_local', proposalId: loaded.record.proposalId, workOrderHash: recomputed })
     return res.status(out.status).json(out.body)
+  })
+
+  // ── THE READ-ONLY ENQUIRY LANE ────────────────────────────────────────────
+  //
+  // Same door, same guards, same sealed order. What differs is what happens on the other
+  // side: no branch, no patch, no test command — one bounded read-only enquiry whose result
+  // is saved and read back through the enquiry surface that already exists.
+  //
+  // ⛔ ABSENT SERVICE ⇒ REFUSE. When the wiring is off, `readOnlyEnquiryService` is not
+  // constructed at all in app.js, so this route answers 404 and nothing downstream is ever
+  // reached. It is deliberately NOT a silent no-op: a route that accepts and does nothing
+  // reads, from the outside, exactly like a route that worked.
+  //
+  // ⛔ THE BODY CARRIES IDENTIFIERS ONLY. approvalId, nonce and the hash the browser
+  // displayed. The question, the revision, the readable scope and the caps are read from the
+  // sealed order by the service — there is no field here that could carry them.
+  router.all('/api/v1/owner/enquiries', (req, res) => {
+    const bad = transportRefusal(req)
+    if (bad) return refuse(res, 403, bad, null, 'owner_local')
+    if (!readOnlyEnquiryService) return refuse(res, 404, 'read_only_enquiry_unavailable', null, 'owner_local')
+    const sid = ensureSession(req, res)
+    const b = req.body || {}
+
+    // The same repository-authority refusal the seal route makes: the browser may display a
+    // repository, it may never name one.
+    for (const forbidden of REPOSITORY_AUTHORITY_FIELDS) {
+      if (Object.prototype.hasOwnProperty.call(b, forbidden)) {
+        return refuse(res, 400, 'repository_identity_not_owner_supplied', null, 'owner_local')
+      }
+    }
+
+    const approvalId = typeof b.approvalId === 'string' ? b.approvalId : null
+    if (!approvalId) return refuse(res, 400, 'approval_id_missing', null, 'owner_local')
+
+    Promise.resolve(readOnlyEnquiryService.submit({
+      sessionId: sid,
+      approvalId,
+      nonce: b.nonce,
+      displayedHash: b.workOrderHash
+    })).then((out) => {
+      if (!out || out.ok !== true) {
+        // A refusal is audited with the gate that stopped it, and the enquiry id is included
+        // when one exists — a run that failed still produced evidence worth opening.
+        auditFn({
+          approvalId,
+          outcome: out && out.dispatched ? 'dispatched_failed' : 'refused',
+          reason: (out && out.reason) || 'unknown',
+          entryPoint: 'owner_local'
+        })
+        return res.status(out && out.dispatched ? 200 : 409).json({
+          ok: false,
+          dispatched: !!(out && out.dispatched),
+          reason: (out && out.reason) || 'unknown',
+          enquiryId: (out && out.enquiryId) || null,
+          outcome: (out && out.outcome) || null
+        })
+      }
+      auditFn({ approvalId, outcome: 'enquiry_completed', reason: out.outcome, entryPoint: 'owner_local' })
+      // ⛔ `verification` travels with the answer, and there is no field here that says
+      // 「checked」. A finished process and a verified answer are reported separately.
+      return res.status(200).json({
+        ok: true,
+        dispatched: true,
+        enquiryId: out.enquiryId,
+        outcome: out.outcome,
+        verification: out.verification,
+        costUsd: out.costUsd
+      })
+    }).catch(() => refuse(res, 500, 'enquiry_failed', approvalId, 'owner_local'))
   })
 
   return router
