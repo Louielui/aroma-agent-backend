@@ -54,15 +54,27 @@ class ReportRefused extends Error {
  * merely careless — answer looks like. The decision is now made separately for every occurrence,
  * inside a bounded window, so one honest clause cannot launder the clause beside it.
  *
+ * ⛔ 「applied」 IS THE SAME WORD TWICE TOO, AND LEAVING IT UNCONDITIONAL COST ANOTHER RESULT.
+ * (Correction, 2026-09-06.) The second pass made 「resolved」 contextual and deliberately kept
+ * 「applied」 absolute, reasoning that a change verb is never contextual. A live repository audit
+ * then returned a schema-valid answer with 12 of 15 citations confirmed — and lost it on the
+ * sentence 「Every place it is read and applied to an outbound request」. A timeout value APPLIED
+ * TO A REQUEST is not a code change APPLIED TO A REPOSITORY. Timeouts are applied to sockets,
+ * headers to responses, styles to elements; any question about how a library works is likely to
+ * say so. So 「applied」 now reads its context the same way, with its own two vocabularies.
+ *
  * Rules, in this order:
- *   1. a change verb (fixed / applied / patched / repaired, or the CJK forms) anywhere in the
- *      clause — always a claim, whatever else the clause says.
- *   2. for each 「resolved」: an issue noun (bug, outage, incident…) in its LOCAL window → a claim.
- *      Issue wins over technology: 「the bug … resolved … path handler」 is a claim.
- *   3. otherwise, something that genuinely resolves (path, symlink, module, hostname…) in the
- *      same local window → the computing sense, NOT a claim.
- *   4. neither → fail closed. 「It was resolved」 says nothing about what, and an unclear fix
- *      claim is still a fix claim.
+ *   1. a change verb (fixed / patched / repaired, or the CJK forms) anywhere in the clause —
+ *      always a claim, whatever else the clause says.
+ *   2. for each contextual verb — 「resolved」, 「applied」 — a CLAIM noun in its LOCAL window is a
+ *      claim, and beats the technical reading:
+ *        resolved → an issue noun   (bug, outage, incident…)   「the bug … resolved … path handler」
+ *        applied  → a change noun   (patch, fix, diff, commit…) 「the patch was applied to lib/」
+ *   3. otherwise, a TECHNICAL subject in the same window → the computing sense, NOT a claim:
+ *        resolved → path, symlink, module, hostname…
+ *        applied  → request, socket, config, option, header, timeout…
+ *   4. neither → fail closed. 「It was resolved」 and 「Applied.」 say nothing about what, and an
+ *      unclear fix claim is still a fix claim.
  *
  * `appliedChanges` remains the only evidence that anything changed. Nothing here reads the
  * model's own word for it, and no answer is ever rewritten to get past the check.
@@ -78,12 +90,92 @@ class ReportRefused extends Error {
  *   · a claim can always be written in words no list contains.
  * The guard narrows what can be claimed silently; it is not a proof of honesty.
  */
-const ALWAYS_FIX = /\b(fixed|applied|patched|repaired)\b|修好|修復|已修|改好|已改|套用/i
-const RESOLVED_GLOBAL = /\bresolved\b/gi
+// ⛔ 「applied」 IS NO LONGER HERE. It moved to the contextual set below. 「fixed」, 「patched」 and
+// 「repaired」 stay absolute: none of them has a routine technical sense in this codebase's
+// vocabulary. The CJK forms also stay absolute — see the recorded asymmetry in the gaps above.
+const ALWAYS_FIX = /\b(fixed|patched|repaired)\b|修好|修復|已修|改好|已改|套用/i
+/** The verbs that mean two different things. Each carries its own pair of vocabularies. */
+const CONTEXTUAL_VERB = /\b(resolved|applied)\b/gi
 /** Things that get REPAIRED. Their presence beside 「resolved」 makes it a repair claim. */
 const ISSUE_NOUN = /\b(issue|issues|problem|problems|bug|bugs|error|errors|failure|failures|defect|defects|ticket|tickets|incident|incidents|fault|faults|regression|regressions|outage|outages|crash|crashes|downtime|breakage|malfunction)\b/i
-/** Things that get RESOLVED in the computing sense. */
+/**
+ * Things that get RESOLVED in the computing sense.
+ *
+ * ⛔ `config` IS NOT IN THIS LIST, AND THAT IS DELIBERATE. It was added here in an earlier pass and
+ * taken back out: a bare noun cannot clear 「resolved」, because 「I resolved the config」 reads just
+ * as easily as 「I repaired the configuration」. Membership of this list is a blanket permission —
+ * any clause where the noun sits near the verb passes — and `config` is too ambiguous to earn one.
+ * The narrow case that genuinely needed it is handled by CONFIG_RESOLUTION below.
+ */
 const RESOLUTION_SUBJECT = /\b(path|paths|pathname|filename|file|directory|dir|folder|symlink|junction|link|target|hostname|host|dns|domain|url|uri|module|import|imports|require|reference|references|alias|variable|template|placeholder|relative|absolute|workspace|working directory|cwd|sandbox|promise|dependency|dependencies|version|specifier)\b/i
+/**
+ * The one config shape this rule accepts: 「config… resolved BY/FROM …」 or 「resolved config…
+ * BY/FROM …」.
+ *
+ * ⛔ WHAT `by`/`from` IS, AND WHAT IT IS NOT. It is the SYNTACTIC SHAPE this rule recognises —
+ * nothing more. It does not prove that no change was made, and it is not a fact about how repair
+ * claims are worded. Measured: 「The configuration resolved by the operator.」 PASSES — `by` names
+ * something, and nothing here checks that the something is a resolver rather than a person. (An
+ * earlier version of this comment offered 「I resolved the config from the console」 as the example;
+ * that sentence is in fact REFUSED, because the text touching 「resolved」 is 「I 」 and 「 the config
+ * from…」, neither of which is the accepted shape. The rule is narrower than that comment implied,
+ * and the example was corrected rather than the rule loosened to match it.)
+ * The narrowness is doing the work, not any insight into the sentence's meaning.
+ *
+ * ⛔ AND IT IS MATCHED AT THE OCCURRENCE, NOT IN THE WINDOW. Testing the window let one legitimate
+ * 「config resolved by merge」 lend its frame to a second, unrelated 「resolved」 in the same clause:
+ *     「The config resolved by merge and I resolved it.」        ← was accepted, is now refused
+ *     「I resolved it and used the config resolved by merge.」   ← the same trick, other way round
+ * So the two halves are checked against the text immediately adjacent to THIS 「resolved」: the
+ * segment since the previous contextual verb must END with 「config… 」, and the text right after
+ * must BEGIN with 「by/from」 — or, for the other order, with 「config… by/from」.
+ */
+const CONFIG_BEFORE = /\bconfig\w*\s+$/i
+const CONFIG_AFTER_BY = /^\s*(?:by|from)\b/i
+const CONFIG_AFTER_NOUN = /^\s+config\w*\s+(?:by|from)\b/i
+/** Things that get APPLIED to a codebase. Their presence beside 「applied」 makes it a change claim. */
+const CHANGE_NOUN = /\b(patch|patches|fix|fixes|change|changes|changeset|diff|diffs|commit|commits|edit|edits|migration|migrations|correction|corrections|workaround|hotfix|revision|refactor)\b/i
+/**
+ * Things that get APPLIED in the ordinary technical sense — a value to a request, a header to a
+ * response, a style to an element. ⛔ Deliberately does NOT include 「file」 or 「repository」: those
+ * are what a patch gets applied to, and treating them as innocent would reopen the hole.
+ */
+const APPLICATION_TARGET = /\b(request|requests|response|responses|socket|sockets|connection|connections|config|configuration|option|options|setting|settings|parameter|parameters|argument|arguments|value|values|header|headers|timeout|timeouts|deadline|signal|adapter|adapters|stream|streams|element|elements|style|styles|transform|transforms|filter|filters|rule|rules|policy|policies|limit|limits|interceptor|interceptors|default|defaults)\b/i
+
+/**
+ * ⛔ A TECHNICAL NOUN IS NOT A DEFENCE. (Correction, 2026-09-06, second pass on 「applied」.)
+ * The first version accepted 「applied」 whenever an application target sat nearby — and
+ * 「I applied the new timeout setting to production」 names `timeout` and `setting`, so it sailed
+ * through. The noun says WHAT was applied; it says nothing about WHO applied it or WHEN. The two
+ * meanings that must be told apart are:
+ *
+ *   describing how the code behaves    「the timeout is applied to the socket」        ← ordinary
+ *   claiming an action was carried out 「I applied the new timeout setting to prod」   ← a claim
+ *
+ * ⛔ AND THE PLACE IS IRRELEVANT. Blocking the word 「production」 would be theatre: the same claim
+ * is just as false about a local service, a staging box, or a file on this machine. What is
+ * detected is the ACTION, not its destination.
+ */
+/** An action someone carried out: a first-person agent, or a completed passive. */
+const AGENTIVE_APPLY = /\b(i|we|you)\b[^.!?;]{0,40}\bapplied\b|\b(has|have|had|was|were)\s+(?:been\s+)?applied\b|\bapplied\s+(?:it|them|this|that|these|those)\b/i
+/**
+ * 「the NEW configuration」 is something being introduced, not something the code already does.
+ * ⛔ This is deliberately conservative and WILL refuse an honest sentence such as 「the new default
+ * is applied to every request」 when describing a recent version. Uncertainty resolves to refusal,
+ * and the author can rewrite; the opposite default lets an unbacked claim through.
+ */
+const INTRODUCED = /\b(new|newly|updated|revised|modified|added)\b/i
+/**
+ * Describing behaviour: a copula or auxiliary governing THIS 「applied」. 「is read and applied to …」
+ *
+ * ⛔ ANCHORED AT THE END, AND SEARCHED ONLY SINCE THE PREVIOUS OCCURRENCE. A clause-wide test was
+ * the defect: 「The timeout is applied to requests and the operator applied the configuration to
+ * staging」 contains 「is applied」, and one descriptive frame anywhere in the clause was letting
+ * every later 「applied」 in the same clause through — including one with its own human agent.
+ * The frame has to belong to the occurrence being judged, so the segment searched starts at the
+ * END of the previous occurrence and must finish immediately before this one.
+ */
+const DESCRIPTIVE_BEFORE = /\b(is|are|being|gets|get)\b[^.!?;]{0,30}$/i
 /** Naive on purpose: sentence terminators in both scripts, nothing cleverer. */
 const SENTENCE_SPLIT = /(?<=[.!?;])\s+|(?<=[。！？；])/
 /** A clause boundary — 「, and」 / 「, so」 and the CJK commas. Keeps one clause from covering another. */
@@ -114,27 +206,68 @@ function classifyFixClaim (answer) {
   }
   const parts = (clauses.length ? clauses : [text]).map((clause) => {
     if (ALWAYS_FIX.test(clause)) {
-      return { text: clause, claim: true, reason: 'a change verb (fixed/applied/patched/repaired or a CJK equivalent)' }
+      return { text: clause, claim: true, reason: 'a change verb (fixed/patched/repaired or a CJK equivalent)' }
     }
-    RESOLVED_GLOBAL.lastIndex = 0
+    CONTEXTUAL_VERB.lastIndex = 0
     let m
     let sawResolved = false
     let firstTechnical = null
-    while ((m = RESOLVED_GLOBAL.exec(clause)) !== null) {
+    // Where the previous contextual verb ended: the boundary of what THIS one may claim as context.
+    let prevEnd = 0
+    while ((m = CONTEXTUAL_VERB.exec(clause)) !== null) {
       sawResolved = true
+      const verb = m[0].toLowerCase()
+      // Each contextual verb brings its own pair: what makes it a claim, what makes it ordinary.
+      const claimNoun = verb === 'applied' ? CHANGE_NOUN : ISSUE_NOUN
+      const technicalNoun = verb === 'applied' ? APPLICATION_TARGET : RESOLUTION_SUBJECT
       const window = clause.slice(Math.max(0, m.index - WINDOW_BEFORE), m.index + m[0].length + WINDOW_AFTER)
-      // ⛔ ISSUE BEATS TECHNOLOGY. 「The bug was fully resolved in the path handler」 names both;
-      // the one that decides is the thing being repaired, not the thing beside it.
-      if (ISSUE_NOUN.test(window)) {
-        return { text: clause, claim: true, reason: '「resolved」 with an issue noun in its local context — a repair claim' }
+      // ⛔ THE CLAIM NOUN BEATS THE TECHNICAL ONE. 「The bug was fully resolved in the path handler」
+      // and 「the patch was applied to the config」 each name both; the one that decides is the thing
+      // being repaired or changed, not the thing beside it.
+      if (claimNoun.test(window)) {
+        return {
+          text: clause,
+          claim: true,
+          reason: verb === 'applied'
+            ? '「applied」 with a change noun in its local context — a change claim'
+            : '「resolved」 with an issue noun in its local context — a repair claim'
+        }
       }
-      if (RESOLUTION_SUBJECT.test(window)) { firstTechnical = firstTechnical || clause; continue }
-      // ⛔ FAIL CLOSED. Nothing resolvable named, nothing repairable named: undecidable, and an
-      // undecidable fix claim is treated as a fix claim.
-      return { text: clause, claim: true, reason: '「resolved」 with nothing resolvable named in its local context — undecidable, refused' }
+      if (verb === 'applied') {
+        // ⛔ WHO AND WHEN, BEFORE WHAT. An agent or a completed passive means an act was carried
+        // out; naming a technical target afterwards does not undo that.
+        if (AGENTIVE_APPLY.test(window)) {
+          return { text: clause, claim: true, reason: '「applied」 as an act someone carried out (agent or completed passive) — a change claim' }
+        }
+        if (INTRODUCED.test(window)) {
+          return { text: clause, claim: true, reason: '「applied」 to something described as new or updated — read as introducing a change' }
+        }
+        // Only a descriptive frame governing THIS occurrence, AND a technical target, count as
+        // ordinary behaviour. `sinceLast` starts at the end of the previous 「applied」, so a frame
+        // belonging to an earlier occurrence cannot be borrowed by a later one.
+        const sinceLast = clause.slice(prevEnd, m.index)
+        if (DESCRIPTIVE_BEFORE.test(sinceLast) && technicalNoun.test(window)) {
+          firstTechnical = firstTechnical || clause
+          prevEnd = m.index + m[0].length
+          continue
+        }
+        return { text: clause, claim: true, reason: '「applied」 without a descriptive frame — cannot tell behaviour from action, refused' }
+      }
+      // ⛔ `config` IS NOT ON THE GENERAL LIST. A bare noun cannot clear 「resolved」, because
+      // 「I resolved the config」 is exactly as likely to mean 「I repaired it」. The narrow frame
+      // below is checked against the text touching THIS occurrence — never the window, which is
+      // wide enough to contain somebody else's frame.
+      const before = clause.slice(prevEnd, m.index)
+      const after = clause.slice(m.index + m[0].length)
+      const configFrame = (CONFIG_BEFORE.test(before) && CONFIG_AFTER_BY.test(after)) || CONFIG_AFTER_NOUN.test(after)
+      if (configFrame) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
+      if (technicalNoun.test(window)) { firstTechnical = firstTechnical || clause; prevEnd = m.index + m[0].length; continue }
+      // ⛔ FAIL CLOSED. Neither vocabulary matched: undecidable, and an undecidable fix claim is
+      // treated as a fix claim. 「It was resolved」 and 「Applied.」 both land here.
+      return { text: clause, claim: true, reason: '「' + verb + '」 with nothing recognisable named in its local context — undecidable, refused' }
     }
     if (!sawResolved) return { text: clause, claim: false, reason: 'no change verb' }
-    return { text: clause, claim: false, reason: '「resolved」 in the path/name-resolution sense' }
+    return { text: clause, claim: false, reason: 'a contextual verb in its ordinary technical sense' }
   })
   const offending = parts.filter((p) => p.claim).map((p) => p.text)
   return { claim: offending.length > 0, parts, offending }

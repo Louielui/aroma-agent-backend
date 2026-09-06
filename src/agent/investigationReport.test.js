@@ -378,7 +378,8 @@ describe('「resolved」 is two different words, and the guard must know which o
     const c = classifyFixClaim('The resolved path is outside. The issue was resolved.')
     assert.strictEqual(c.parts.length, 2)
     assert.strictEqual(c.parts[0].claim, false)
-    assert.match(c.parts[0].reason, /resolution sense/)
+    // the reason wording generalised when 「applied」 joined 「resolved」 as a contextual verb
+    assert.match(c.parts[0].reason, /ordinary technical sense/)
     assert.strictEqual(c.parts[1].claim, true)
     assert.strictEqual(c.claim, true)
     assert.deepStrictEqual(c.offending, ['The issue was resolved.'])
@@ -451,5 +452,374 @@ describe('「resolved」 is two different words, and the guard must know which o
   test('VERIFY_CLAIM and CAUSE_CLAIM are untouched by this change', () => {
     assert.throws(() => buildReport({ ...path, answer: 'verified against production', executed: false }), ReportRefused)
     assert.throws(() => buildReport({ ...path, answer: 'slow because the index is missing', measurements: [] }), ReportRefused)
+  })
+})
+
+describe('「applied」 is two different words as well', () => {
+  // ⛔ THE RUN THAT FORCED THIS. Dispatch 10 of 10 returned a schema-valid repository audit with 12
+  // of 15 citations confirmed, and lost the whole report on one sentence:
+  //     「Every place it is read and applied to an outbound request」
+  // A timeout value APPLIED TO A REQUEST is not a code change APPLIED TO A REPOSITORY. The previous
+  // pass made 「resolved」 contextual and deliberately left 「applied」 absolute; this is the
+  // counter-example to that reasoning.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('THE SENTENCE THAT COST DISPATCH 10 is accepted', () => {
+    const answer = 'Every place it is read and applied to an outbound request: there are three adapters.'
+    const r = buildReport({ ...base, answer })
+    assert.ok(r.text.includes('applied to an outbound request'), 'the answer must survive intact')
+  })
+
+  for (const ok of [
+    'The timeout is applied to the socket by req.setTimeout.',
+    'The header is applied to the response.',
+    'The default is applied to every request unless overridden.',
+    'The style is applied to the element.',
+    'The same limit is applied to each adapter.',
+    'The value is applied to the config, and the path was resolved.'
+  ]) {
+    test('ACCEPTED — ordinary technical use: ' + JSON.stringify(ok), () => {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok))
+    })
+  }
+
+  for (const claim of [
+    'I applied the patch to lib/adapters/http.js.',
+    'The fix was applied.',
+    'I applied the change to the config.',
+    'The migration was applied.',
+    'The commit was applied to the repository.',
+    'I applied a hotfix to the adapter.',
+    'Applied.'
+  ]) {
+    test('REFUSED — a change claim with nothing applied: ' + JSON.stringify(claim), () => {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused,
+        'an unbacked change claim must still be impossible to construct')
+    })
+  }
+
+  test('the change noun beats the technical one — 「applied the change to the config」 is a claim', () => {
+    const c = classifyFixClaim('I applied the change to the config.')
+    assert.strictEqual(c.claim, true)
+    assert.match(c.parts.find((p) => p.claim).reason, /change noun/)
+  })
+
+  test('「Applied.」 alone fails CLOSED, exactly like 「It was resolved.」', () => {
+    // Both are refused; the reasons differ because 「applied」 now tests for a descriptive frame
+    // as well as a noun, so it can say WHICH check failed.
+    for (const [bare, why] of [['Applied.', /without a descriptive frame/], ['It was resolved.', /undecidable/]]) {
+      const c = classifyFixClaim(bare)
+      assert.strictEqual(c.claim, true, bare)
+      assert.match(c.parts.find((p) => p.claim).reason, why)
+    }
+  })
+
+  test('the same claim is still allowed once something really was applied', () => {
+    const r = buildReport({ ...base, answer: 'The fix was applied.', appliedChanges: [{ file: 'src/x.js', commit: 'abc1234' }] })
+    assert.ok(r.text.includes('The fix was applied.'))
+  })
+
+  test('fixed / patched / repaired stay ABSOLUTE — only 「applied」 became contextual', () => {
+    for (const word of [
+      'I fixed the request handler.',
+      'The socket was patched.',
+      'The adapter was repaired.'
+    ]) {
+      assert.throws(() => buildReport({ ...base, answer: word }), ReportRefused,
+        word + ' must still be refused even though it names a technical thing')
+    }
+  })
+
+  test('a technical clause cannot launder a change claim beside it', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The timeout is applied to the socket. I applied the patch.' }),
+      ReportRefused
+    )
+  })
+
+  // ⛔ FOUND BY THE REPLAY, NOT BY THE BRIEF — see the comment on RESOLUTION_SUBJECT.
+  test('「the config resolved by resolveConfig.js」 is technical, not a claim', () => {
+    const answer = 'Both read the value from the config resolved by lib/helpers/resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('…but 「I resolved the config issue」 is still a claim — the claim noun is tested first', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config issue.' }), ReportRefused)
+  })
+
+  // ⛔ RECORDED ASYMMETRY. The CJK 套用 stays absolute. It carries the same ambiguity as 「applied」
+  // (「套用預設值」 = apply the default value), but widening the Chinese branch was not in this
+  // correction's scope and would need its own rule and gate. Pinned here so the gap stays visible.
+  test('RECORDED ASYMMETRY — CJK 套用 remains unconditional', () => {
+    assert.throws(() => buildReport({ ...base, answer: '套用到每個 request。' }), ReportRefused,
+      'documented limit: the Chinese form is still absolute')
+  })
+})
+
+describe('a technical noun is not a defence — behaviour vs an act carried out', () => {
+  // ⛔ THE HOLE THE FIRST PASS LEFT. Making 「applied」 contextual by NOUN alone meant
+  // 「I applied the new timeout setting to production」 walked through: it names `timeout` and
+  // `setting`, which were on the innocent list. The noun says WHAT was applied. It says nothing
+  // about WHO applied it or WHEN, and those are the words that turn a description into a claim.
+  //
+  // ⛔ AND THE DESTINATION IS IRRELEVANT. Blocking 「production」 would be theatre — the same claim
+  // is just as unbacked about a local service or a file on this machine. What is detected is the
+  // act, not where it landed.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  // Every one of these goes through the REAL buildReport, not the classifier alone.
+  for (const claim of [
+    'I applied the new timeout setting to production.',
+    'The new configuration has been applied to production.',
+    'I applied the new configuration to the local service.',
+    'The timeout is applied to the socket. I applied the new configuration to production.',
+    'We applied the new request limit to staging.',
+    'The updated timeout has been applied.',
+    'I applied it to the adapter.',
+    'The new default was applied to every request.'
+  ]) {
+    test('REFUSED via buildReport — an act, not a behaviour: ' + JSON.stringify(claim), () => {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused,
+        'a technical noun must not clear a claim that something was carried out')
+    })
+  }
+
+  test('the destination is not what decides it — local and production fail alike', () => {
+    for (const where of ['production', 'the local service', 'staging', 'my machine']) {
+      assert.throws(
+        () => buildReport({ ...base, answer: 'I applied the new configuration to ' + where + '.' }),
+        ReportRefused,
+        where + ' must be refused too'
+      )
+    }
+  })
+
+  for (const ok of [
+    'Every place it is read and applied to an outbound request',
+    'The timeout is applied to the socket by req.setTimeout.',
+    'The header is applied to the response.',
+    'The default is applied to every request unless overridden.',
+    'The style is applied to the element.',
+    'The same limit is applied to each adapter.',
+    'mergeConfig applies the default when the request omits one.'
+  ]) {
+    test('ACCEPTED via buildReport — describing how the code behaves: ' + JSON.stringify(ok), () => {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok))
+    })
+  }
+
+  test('the reason distinguishes the two, so a refusal can be argued with', () => {
+    const act = classifyFixClaim('I applied the new timeout setting to production.')
+    assert.strictEqual(act.claim, true)
+    assert.match(act.parts.find((p) => p.claim).reason, /act someone carried out|new or updated/)
+
+    const behaviour = classifyFixClaim('The timeout is applied to the socket.')
+    assert.strictEqual(behaviour.claim, false)
+    assert.match(behaviour.parts[0].reason, /ordinary technical sense/)
+  })
+
+  test('a bare 「applied to X」 with no descriptive frame is refused, not guessed at', () => {
+    const c = classifyFixClaim('Applied to the socket')
+    assert.strictEqual(c.claim, true)
+    assert.match(c.parts.find((p) => p.claim).reason, /without a descriptive frame/)
+  })
+
+  // ⛔ THE COST OF BEING CONSERVATIVE, WRITTEN DOWN. 「new」 makes a clause refusable even when the
+  // author meant 「the newly-added default that the code now applies」. That is a real false
+  // positive and it is accepted on purpose: uncertainty resolves to refusal, and the author can
+  // rewrite. The opposite default lets an unbacked claim through.
+  test('RECORDED COST — an honest sentence about a NEW default is refused too', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The new default is applied to every request.' }),
+      ReportRefused,
+      'documented: 「new」 is treated as introducing a change, even when it describes behaviour'
+    )
+    // and the author can say the same thing without the trigger word
+    assert.ok(buildReport({ ...base, answer: 'The default is applied to every request.' }).text.includes('every request'))
+  })
+
+  test('an evidenced change is unaffected — the same sentences pass with appliedChanges', () => {
+    for (const claim of [
+      'I applied the new timeout setting to production.',
+      'The new configuration has been applied to production.'
+    ]) {
+      const r = buildReport({ ...base, answer: claim, appliedChanges: [{ file: 'src/x.js', commit: 'abc1234' }] })
+      assert.ok(r.text.includes(claim))
+      assert.match(r.text, /已套用|Applied:/)
+    }
+  })
+
+  test('the earlier corrections still hold', () => {
+    assert.ok(buildReport({ ...base, answer: 'Both read the value from the config resolved by lib/helpers/resolveConfig.js.' }).text.includes('config resolved'))
+    for (const still of ['I applied the patch to lib/adapters/http.js.', 'The fix was applied.', 'I resolved the config issue.', 'The bug was fully resolved in the path handler.']) {
+      assert.throws(() => buildReport({ ...base, answer: still }), ReportRefused, still)
+    }
+  })
+})
+
+describe('a descriptive frame belongs to ONE occurrence, not to the whole clause', () => {
+  // ⛔ THE HOLE THE PREVIOUS PASS LEFT. The frame test ran over the entire clause, so one honest
+  // 「is applied」 anywhere in it cleared every later 「applied」 in the same clause — including one
+  // with its own human agent. The frame now has to sit immediately before the occurrence being
+  // judged, searched only from the end of the previous occurrence.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('REFUSED — an agent with no frame of its own', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'The operator applied the configuration to staging.' }), ReportRefused)
+  })
+
+  test('⛔ REFUSED — an honest 「is applied」 earlier in the clause does not cover a later act', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The timeout is applied to requests and the operator applied the configuration to staging.' }),
+      ReportRefused,
+      'the second 「applied」 has its own agent and no frame; it must not borrow the first one\'s'
+    )
+  })
+
+  test('…and the same shape without a comma, which no clause split would catch', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The header is applied to the response and the engineer applied the migration to the database.' }),
+      ReportRefused
+    )
+  })
+
+  test('ACCEPTED — two ordinary descriptions side by side, each with its own frame', () => {
+    const answer = 'The timeout is applied to the socket and the header is applied to the response.'
+    assert.ok(buildReport({ ...base, answer }).text.includes(answer))
+  })
+
+  test('ACCEPTED — three of them, so the binding is not an accident of two', () => {
+    const answer = 'The timeout is applied to the socket, the header is applied to the response and the limit is applied to each adapter.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('each adapter'))
+  })
+
+  test('ACCEPTED — the sentence that started all of this still passes', () => {
+    const answer = 'Every place it is read and applied to an outbound request'
+    assert.ok(buildReport({ ...base, answer }).text.includes(answer))
+  })
+
+  test('the destination is still not what decides it', () => {
+    for (const where of ['staging', 'production', 'the local service', 'my laptop']) {
+      assert.throws(
+        () => buildReport({ ...base, answer: 'The operator applied the configuration to ' + where + '.' }),
+        ReportRefused, where
+      )
+    }
+  })
+})
+
+describe('「config」 earns its exception by frame, not by being named', () => {
+  // ⛔ AN EARLIER PASS PUT `config` ON THE GENERAL RESOLUTION LIST. That is a blanket permission —
+  // any clause with the noun near the verb passes — and it let 「I resolved the config」 through,
+  // which reads just as easily as 「I repaired the configuration」. The noun is back off the list;
+  // only the passive frame that NAMES A RESOLVER is recognised.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('ACCEPTED — a passive naming what did the resolving', () => {
+    const answer = 'Both read the value from the config resolved by resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('ACCEPTED — the same frame with a different resolver and no filename at all', () => {
+    const answer = 'Each adapter uses the configuration resolved by the merge step.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the merge step'))
+  })
+
+  test('⛔ REFUSED — the bare noun no longer clears it', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config.' }), ReportRefused,
+      'naming a config is not describing a resolution')
+  })
+
+  test('REFUSED — and an issue noun still decides first', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved the config issue.' }), ReportRefused)
+  })
+
+  test('the rest of the resolution vocabulary is untouched', () => {
+    for (const ok of [
+      'The relative path was resolved against the working directory.',
+      'The import could not be resolved, so the module reference is dangling.',
+      'The symlink target resolved to a directory outside the sandbox.'
+    ]) {
+      assert.ok(buildReport({ ...base, answer: ok }).text.includes(ok), ok)
+    }
+    for (const claim of ['The issue was resolved.', 'The bug was fully resolved in the path handler.', 'It was resolved.']) {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused, claim)
+    }
+  })
+})
+
+describe('the config frame belongs to ONE occurrence too', () => {
+  // ⛔ THE LAST BORROWED FRAME. The config exception was tested against the WINDOW, so one
+  // legitimate 「config resolved by merge」 lent its frame to a second, unrelated 「resolved」 in the
+  // same clause — in either order. The two halves are now matched against the text immediately
+  // touching the occurrence being judged, bounded by the previous contextual verb.
+  const base = {
+    question: 'q', measurements: [], notEstablished: [], rounds: 1, costUsd: 0.4,
+    appliedChanges: [], outcome: OUTCOME.CONCLUDED
+  }
+
+  test('REFUSED — a bare 「I resolved it.」 names nothing at all', () => {
+    assert.throws(() => buildReport({ ...base, answer: 'I resolved it.' }), ReportRefused)
+  })
+
+  test('⛔ REFUSED — a legitimate config frame does not cover a later bare 「resolved」', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'The config resolved by merge and I resolved it.' }),
+      ReportRefused,
+      'the second occurrence has no frame of its own and must not borrow the first one\'s'
+    )
+  })
+
+  test('⛔ REFUSED — nor an earlier one, when the frame comes afterwards', () => {
+    assert.throws(
+      () => buildReport({ ...base, answer: 'I resolved it and used the config resolved by merge.' }),
+      ReportRefused,
+      'a frame later in the clause must not reach backwards either'
+    )
+  })
+
+  test('ACCEPTED — a passive naming what did the resolving', () => {
+    const answer = 'Both read the value from the config resolved by resolveConfig.js.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('config resolved by'))
+  })
+
+  test('ACCEPTED — the same shape with no filename anywhere', () => {
+    const answer = 'The configuration resolved by the merge step.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the merge step'))
+  })
+
+  test('ACCEPTED — two legitimate config frames side by side, each with its own', () => {
+    const answer = 'The config resolved by merge and the configuration resolved by the loader.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the loader'))
+  })
+
+  test('the bare noun still cannot clear it', () => {
+    for (const claim of ['I resolved the config.', 'I resolved the config issue.', 'The config was resolved.']) {
+      assert.throws(() => buildReport({ ...base, answer: claim }), ReportRefused, claim)
+    }
+  })
+
+  // ⛔ WHAT `by`/`from` IS. A syntactic shape this rule accepts — not evidence about the world.
+  // This test states the limit rather than letting the comment imply a guarantee.
+  test('RECORDED LIMIT — the frame is a shape, and a PERSON after 「by」 passes just as easily', () => {
+    // ⛔ Nothing about this rule establishes that no change was made. 「by」 names something; it does
+    // not check that the something is a resolver rather than a human being. This sentence has the
+    // accepted shape and is accepted — not because it was understood, but because the rule is
+    // narrow and this happens to fit it.
+    const answer = 'The configuration resolved by the operator.'
+    assert.ok(buildReport({ ...base, answer }).text.includes('resolved by the operator'),
+      'documented: the rule recognises a shape, not a fact about the world')
   })
 })
