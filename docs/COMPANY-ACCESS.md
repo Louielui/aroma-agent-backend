@@ -21,7 +21,8 @@ cookies do not establish a member identity. The listener remains loopback-only.
 Registered sources are Aroma Base (0AJApVuax7MarUk9PVA) and its Admin folder
 (1iYHY8Muo3K3HSPON5Uu0C8cNgOITei8C), discovered read-only on 2026-09-29.
 The administrative mailbox is adm@aromabistro741.com. Separate consent and inbox
-metadata preview are implemented; real consent remains pending.
+metadata preview passed live acceptance on 2026-09-29: the Owner completed Google
+consent and the UI read ten inbox message summaries from the verified mailbox.
 Louie may read both Drive sources; Ivy may read Admin Drive. Both are granted the
 administrative mailbox once its independent source authorization is completed.
 No other members are inferred from Drive sharing. Folder shortcuts are excluded.
@@ -62,7 +63,8 @@ Connecting those consumers requires retaining every source reference and recheck
 each source on every retrieval, including direct IDs, search, citations and summaries.
 
 Automated acceptance uses injected Google clients and temporary stores. Owner login
-and Aroma Base listings have screenshot evidence. Ivy login, mailbox consent,
+and Aroma Base listings have screenshot evidence. Administrative mailbox consent
+and a ten-message inbox preview passed live acceptance on 2026-09-29. Ivy login,
 Google-side revocation and remote-device operation remain pending.
 The registry is a single-process atomic JSON store in resolveDataDir(), not the
 restaurant database. Multi-process hosting needs transactional storage and session
