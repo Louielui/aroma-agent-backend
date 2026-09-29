@@ -97,3 +97,20 @@ test('slow indexing cannot block persistence of the next conversation receipt', 
     assert.equal((await store.all()).filter(r => r.text === 'Second receipt.').length, 1)
   } finally { release(); await first }
 })
+
+test('runtime reconciles legacy invalid short text once without contacting Hindsight', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-short-test-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const store = createTestStore(); let calls = 0
+  const runtime = createRuntime({ store, dir, engine: { forScope: () => { calls++; throw Error('must_not_contact_engine') } } })
+  runtime.event('conversation', 'short-message', '好', 'owner_statement')
+  await runtime.drain()
+  const [row] = await store.all()
+  await store.commit([{ expected: row.version, row: { ...row, version: row.version + 1, index: { state: 'unconfirmed', reason: 'memory_invalid_text', attempts: 1, checkedAt: '2026-09-29T00:00:00.000Z', nextRetryAt: null, facts: null } } }], { op: 'legacy_fixture' })
+  const resumed = createRuntime({ store, dir, engine: { forScope: () => { calls++; throw Error('must_not_contact_engine') } } })
+  await resumed.drain()
+  const repaired = await store.get(row.id)
+  assert.equal(repaired.index.state, 'source_only'); assert.equal(repaired.text, '好'); assert.equal(calls, 0)
+  await resumed.drain()
+  assert.equal((await store.get(row.id)).version, repaired.version)
+})

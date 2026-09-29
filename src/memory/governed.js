@@ -2,6 +2,7 @@
 const { randomUUID, createHash, randomBytes, timingSafeEqual } = require('node:crypto')
 const { exclusionReason } = require('./capturePolicy')
 const { ID } = require('./hindsight')
+const { sourceOnlyReason } = require('./indexPolicy')
 const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
 const TYPES = Object.freeze(['working', 'episodic', 'semantic', 'decision', 'procedural', 'preference'])
 const SCOPES = Object.freeze(['global:aroma', 'company:st-marys', 'company:the-forks', 'company:central-kitchen',
@@ -115,7 +116,20 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const records = (await list(actor, options)).filter(current)
     const terms = query.toLowerCase().match(/[a-z0-9_-]{2,}|[\u3400-\u9fff]{1,}/g) || []
     const words = [...new Set(terms.flatMap(term => /^[\u3400-\u9fff]{3,}$/.test(term) ? [term, ...Array.from({ length: term.length - 1 }, (_, i) => term.slice(i, i + 2))] : [term]))]
-    const score = r => words.reduce((n, w) => n + ((r.subject + ' ' + r.text).toLowerCase().includes(w) ? 1 : 0), 0)
+    // Rare terms and concise originals outrank verbose copies of generic question
+    // words. Direct owner statements receive preference over assistant echoes.
+    const corpus = new Map(records.map(r => [r.id, (r.subject + ' ' + r.text).toLowerCase()]))
+    const averageLength = [...corpus.values()].reduce((n, s) => n + s.length, 0) / (records.length || 1) || 1
+    const weights = new Map(words.map(w => {
+      const frequency = [...corpus.values()].filter(s => s.includes(w)).length
+      return [w, Math.log1p((records.length - frequency + 0.5) / (frequency + 0.5))]
+    }))
+    const score = r => {
+      const value = corpus.get(r.id)
+      const normalization = 2.2 / (1 + 1.2 * (0.25 + 0.75 * value.length / averageLength))
+      return words.reduce((n, w) => n + (value.includes(w) ? weights.get(w) * normalization : 0), 0) *
+        (r.source.attribution === 'owner_statement' ? 2 : 1)
+    }
     const ranked = new Map(records.filter(r => score(r) > 0).map(r => [r.id, { row: r, rank: score(r), via: 'source' }]))
     const selectedScopes = [...new Set(records.map(r => r.scope))]
     // Engine sees only authorized scopes. Results are checked against canonical state again.
@@ -139,7 +153,11 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (!row || !current(row) || !engine) throw Error('not_indexable')
     const expected = row.version; let result
     const attempts = row.index.attempts + 1
-    try {
+    const sourceReason = sourceOnlyReason(row.text)
+    if (sourceReason) {
+      result = { state: 'source_only', facts: null, attempts: row.index.attempts,
+        reason: sourceReason, checkedAt: clock(), nextRetryAt: null }
+    } else try {
       const client = engine.forScope(row.scope)
       // A previous timeout may have completed upstream. Reconcile before any write.
       let d = client.get ? await client.get(row.id) : null
@@ -220,6 +238,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       scopes: SCOPES, counts: Object.fromEntries(STATUSES.map(s => [s, rows.filter(r => r.status === s).length])),
       index: { pending: active.filter(r => r.index.state === 'pending').length, unconfirmed: active.filter(r => r.index.state === 'unconfirmed').length, saved: active.filter(r => r.index.state === 'saved').length,
         raw_only: active.filter(r => r.index.state === 'raw_only').length,
+        source_only: active.filter(r => r.index.state === 'source_only').length,
         retrying: active.filter(r => r.index.state === 'unconfirmed' && r.index.nextRetryAt).length },
       staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && matchesEvidence(a, e)))).map(r => r.id),
       agents: (await store.grants()).map(({ tokenHash, ...g }) => g) }

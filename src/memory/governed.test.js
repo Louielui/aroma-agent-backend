@@ -9,6 +9,17 @@ function fixture() {
   const engine = { forScope: scope => ({ retain: async (id, text) => { calls.push(scope); return { id, text, facts: 1 } }, recall: async () => [], forget: async () => ({ state: 'deleted' }) }) }
   return { store, calls, g: createGateway({ store, engine }) }
 }
+
+test('original owner records survive verbose repeated replies in bounded recall', async () => {
+  const { g } = fixture()
+  const observed = (id, text, attribution) => g.observe(OWNER, { type: 'episodic', subject: id, text, scope: 'private:owner', source: { ...source, kind: 'conversation', id, attribution }, policy: 'owner_history' })
+  const first = await observed('original', 'HarborZ9 used Amber391.', 'owner_statement')
+  const correction = await observed('correction', 'HarborZ9 now uses Indigo628; Amber391 is obsolete.', 'owner_statement')
+  for (let i = 0; i < 20; i++) await observed('reply-' + i, ('Original code later correction earliest date source recorded history. ').repeat(40), 'assistant_claim')
+  const hits = await g.recall(OWNER, 'HarborZ9 original code later correction earliest date source recorded history')
+  assert.ok(hits.some(r => r.id === first.id)); assert.ok(hits.some(r => r.id === correction.id))
+  assert.ok(hits.length <= 12)
+})
 test('approval, supersession and canonical decisions survive a new gateway instance', async () => {
   const { g, store } = fixture()
   const a = await g.propose(OWNER, { type: 'decision', subject: 'cost conversion', text: 'Use verified weight.', scope: 'domain:accounting', source })
@@ -136,4 +147,19 @@ test('transient index failures retain diagnostic state and bounded durable retry
   await g.index(OWNER, row.id)
   const exhausted = await g.index(OWNER, row.id)
   assert.equal(exhausted.index.attempts, 3); assert.equal(exhausted.index.nextRetryAt, null)
+})
+
+test('non-indexable lengths stay in canonical source storage without engine calls or retries', async () => {
+  for (const value of ['好', 'x'.repeat(32001)]) {
+    const store = createTestStore(); let calls = 0
+    const g = createGateway({ store, engine: { forScope: () => { calls++; throw Error('must_not_contact_engine') } } })
+    const r = await g.observe(OWNER, { type: 'episodic', subject: 'Length acceptance', text: value, scope: 'private:owner', source: { ...source, kind: 'conversation' }, policy: 'owner_history' })
+    const indexed = await g.index(OWNER, r.id)
+    assert.equal(indexed.index.state, 'source_only'); assert.equal(indexed.index.facts, null)
+    assert.equal(indexed.index.reason, value.length === 1 ? 'text_too_short' : 'text_too_long')
+    assert.equal(indexed.index.attempts, 0); assert.equal(indexed.index.nextRetryAt, null); assert.equal(calls, 0)
+    assert.equal((await g.get(OWNER, r.id)).text, value)
+    assert.equal((await g.status(OWNER)).index.source_only, 1)
+    assert.equal((await g.recall(OWNER, 'Length acceptance'))[0].documentId, r.id)
+  }
 })

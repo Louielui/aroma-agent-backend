@@ -6,6 +6,7 @@ const { createStructuredStore } = require('./structuredStore')
 const { createHindsight } = require('./hindsight')
 const { resolveDataDir } = require('../store/dataDir')
 const { exclusionReason } = require('./capturePolicy')
+const { sourceOnlyReason } = require('./indexPolicy')
 let singleton
 function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox') } = {}) {
   const gateway = createGateway({ store, engine })
@@ -61,8 +62,9 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
       // Bounded retry dates live with each record and survive backend restarts.
       const rows = await gateway.list(OWNER)
       for (const r of rows.filter(r => r.status === 'temporary' && r.expiresAt && r.expiresAt <= new Date().toISOString())) await gateway.transition(OWNER, r.id, r.version, 'archive')
-      const eligible = rows.filter(r => r.status === 'active' && r.text.length <= 32000)
-      const pending = eligible.find(r => r.index.state === 'unconfirmed' && r.index.attempts < 3 &&
+      const eligible = rows.filter(r => r.status === 'active')
+      const pending = eligible.find(r => r.index.state === 'unconfirmed' && r.index.reason === 'memory_invalid_text' && sourceOnlyReason(r.text)) ||
+        eligible.find(r => r.index.state === 'unconfirmed' && r.index.attempts < 3 &&
         (!r.index.checkedAt || (r.index.nextRetryAt && r.index.nextRetryAt <= new Date().toISOString()))) ||
         eligible.find(r => r.index.state === 'pending')
       if (pending && !indexActive && Date.now() >= nextIndexAt) {

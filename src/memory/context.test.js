@@ -2,6 +2,20 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { recallContext } = require('./context')
+test('follow-up recall includes bounded recent owner questions but never assistant claims or excluded history', async () => {
+  let actual
+  await recallContext({ enabled: true, query: 'What was its original code?', history: [
+    { role: 'user', text: 'An unrelated older topic.' },
+    { role: 'user', text: 'What was the later correction for MistBridge Z9?' },
+    { role: 'assistant', text: 'Invented assistant code SECRET_ANSWER.' },
+    { role: 'user', text: 'password=do-not-search-this' }
+  ], memory: { recall: async query => { actual = query; return [] } } })
+  assert.match(actual, /What was its original code/)
+  assert.match(actual, /MistBridge Z9/)
+  assert.doesNotMatch(actual, /SECRET_ANSWER|do-not-search-this|unrelated older/)
+  await recallContext({ enabled: true, query: 'Q'.repeat(1900), history: [{ role: 'user', text: 'H'.repeat(5000) }], memory: { recall: async query => { actual = query; return [] } } })
+  assert.ok(actual.length <= 2000)
+})
 test('bounded advisory context preserves source, reports outages and does no read when disabled', async () => {
   let calls = 0
   const memory = { recall: async () => { calls++; return [{ id: 'fact', documentId: 'doc', text: 'Owner prefers green folders.', date: null }] } }
