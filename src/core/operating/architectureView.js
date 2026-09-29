@@ -12,7 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-09-29' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'),
+    workbench: t('workerFlow.title'), connections: t('connections.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -58,7 +58,7 @@ function buildArchitectureHtml () {
     ['02', 'Google Drive', 'foundation', t('master.drive')],
     ['03', 'Aroma System API', 'foundation', t('master.aroma')],
     ['04', 'Google Calendar', 'foundation', t('master.calendar')],
-    ['05', 'Gmail', 'pending_verification', t('master.gmail')],
+    ['05', 'Gmail', 'foundation', t('master.gmail')],
     ['06', 'OpenAI / API', 'partial', t('master.openai')],
     ['07', 'Codex', 'partial', t('master.codex')],
     ['08', 'Claude / API', 'partial', t('master.claude')],

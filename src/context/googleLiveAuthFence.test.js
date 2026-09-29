@@ -157,6 +157,20 @@ test('*** B — EARN THE ZERO: the spy can record non-zero, so the zero above is
 
 const googleapisInCache = () => Object.keys(require.cache).some((k) => /[\\/]node_modules[\\/]googleapis[\\/]/.test(k))
 
+test('connection consent and credential persistence remain behind the Google test fence', async () => {
+  await withEnv({ [GOOGLE_LIVE_OPT_IN]: null }, async () => {
+    for (const call of [
+      () => googleAuth.createConsentClient(),
+      () => googleAuth.persistRefreshToken('fixture-only'),
+      () => googleAuth.serviceWithOAuth('gmail', 'v1', {})
+    ]) {
+      const { error, seen } = withReadFileSpy(call)
+      assert.equal(error && error.googleLiveAuthBlocked, true)
+      assert.equal(seen.client + seen.token, 0)
+    }
+  })
+})
+
 test('*** C — a blocked call never loads the googleapis SDK ***', async () => {
   await withEnv({ [GOOGLE_LIVE_OPT_IN]: null }, async () => {
     const before = googleapisInCache()

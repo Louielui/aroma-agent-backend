@@ -85,6 +85,7 @@ const FILE_CLASS = Object.freeze({
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels
   'intake/websiteFlow.js': CLASS.INTERFACE,
   'memory/view.js': CLASS.INTERFACE,
+  'connections/view.js': CLASS.INTERFACE,
   // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
   'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction

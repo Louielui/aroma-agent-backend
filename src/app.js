@@ -951,6 +951,12 @@ function createApp (options = {}) {
   // The operating layer uses the existing owner gate; the HTTP body grants no role.
   app.use('/manager', requireOwner)
   app.use('/architecture', requireOwner)
+  const connectionManager = opts.connectionsManager || require('./connections/manager').createRuntimeManager()
+  const connectionRouters = require('./connections/routes').createRouters({ manager: connectionManager, flow: opts.connectionFlow })
+  app.use(connectionRouters.callback)
+  app.use('/connections', requireOwner)
+  app.use('/api/v1/connections', requireOwner)
+  app.use(connectionRouters.router)
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
   app.use(require('./memory/routes').createMemoryRouter({ client: opts.memoryClient }))

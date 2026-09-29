@@ -1,0 +1,18 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { createStore } = require('./store')
+test('connection metadata persists across instances; audit excludes identity and content; corrupt storage fails visibly', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xiangxiang-connections-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const a = createStore({ dir }); assert.deepEqual(a.load(), {})
+  a.save({ gmail: { count: 1 } }); assert.deepEqual(createStore({ dir }).load(), { gmail: { count: 1 } })
+  a.event({ source: 'gmail', action: 'probe_finished', count: 1, at: '2026-09-29T00:00:00Z', account: 'private', content: 'private', token: 'private' })
+  const event = fs.readFileSync(path.join(dir, 'events', fs.readdirSync(path.join(dir, 'events'))[0]), 'utf8')
+  assert.ok(!event.includes('private')); assert.equal(JSON.parse(event).count, 1)
+  fs.writeFileSync(path.join(dir, 'status.json'), '{')
+  assert.throws(() => a.load(), /connection_store_unavailable/)
+})

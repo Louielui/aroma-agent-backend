@@ -2183,6 +2183,7 @@
     if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.value = ''; renderConvList() }
   })
   document.getElementById('open-workers').addEventListener('click', function () { window.location.href = '/workers' })
+  document.getElementById('open-connections').addEventListener('click', function () { window.location.href = '/connections' })
   document.getElementById('collapse').addEventListener('click', function () {
     sidebar.className = 'collapsed'
     document.getElementById('expand').className = 'icon-btn'
@@ -2409,6 +2410,7 @@
     ['workspace-label', 'text', function () { return t('shell.workspace') }],
     ['workspace-nav', 'aria', function () { return t('shell.workspace') }],
     ['workers-label', 'text', function () { return t('shell.workers') }],
+    ['connections-label', 'text', function () { return t('connections.title') }],
     ['history-label', 'text', function () { return t('shell.historyLabel') }],
     ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
     ['chat-level-fast', 'text', function () { return t('chat.fast') }],

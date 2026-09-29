@@ -15,6 +15,7 @@
 
 const fs = require('node:fs')
 const path = require('node:path')
+const { randomUUID } = require('node:crypto')
 const { isTestProcess } = require('../testProcess')
 
 const SECRETS_DIR = 'C:\\Aroma\\secrets'
@@ -115,6 +116,39 @@ function loadGoogleapis () { return require('googleapis').google } // lazy — o
 
 function credsPresent () { return fs.existsSync(CLIENT_FILE) && fs.existsSync(TOKEN_FILE) }
 
+// Metadata only; like credsPresent, this never reads credential content.
+function credentialConfiguration () {
+  const stamp = p => { try { const s = fs.statSync(p); return s.size + ':' + s.mtimeMs } catch (_) { return null } }
+  const client = stamp(CLIENT_FILE); const token = stamp(TOKEN_FILE)
+  return { client: !!client, token: !!token, revision: String(client) + '/' + String(token), canAuthorize: !!client }
+}
+
+const CONSENT_REDIRECT = 'http://127.0.0.1:8090/oauth/google/callback'
+function createConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(CONSENT_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, CONSENT_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return client
+}
+
+function persistRefreshToken (token) {
+  assertGoogleLiveAuthAllowed()
+  if (typeof token !== 'string' || !token) throw Error('incomplete_grant')
+  const tmp = TOKEN_FILE + '.' + randomUUID() + '.tmp'
+  fs.writeFileSync(tmp, JSON.stringify({ refresh_token: token, updatedAt: new Date().toISOString() }), { flag: 'wx', mode: 0o600 })
+  try { fs.renameSync(tmp, TOKEN_FILE) } catch (e) { fs.unlinkSync(tmp); throw e }
+}
+
+function serviceWithOAuth (name, version, oauth) {
+  assertGoogleLiveAuthAllowed()
+  if (!['gmail', 'drive', 'calendar'].includes(name)) throw Error('invalid_google_service')
+  const google = loadGoogleapis()
+  return google[name]({ version, auth: oauth })
+}
+
 function createOAuthClient () {
   // ⛔ FIRST EXECUTABLE ACTION. Nothing may precede it — not an existence check, not the SDK
   // load, and above all not a read. See the block above; a survey test pins this ordering.
@@ -143,6 +177,11 @@ module.exports = {
   TOKEN_FILE,
   READONLY_SCOPES,
   credsPresent,
+  credentialConfiguration,
+  CONSENT_REDIRECT,
+  createConsentClient,
+  persistRefreshToken,
+  serviceWithOAuth,
   createOAuthClient,
   service,
   loadGoogleapis,

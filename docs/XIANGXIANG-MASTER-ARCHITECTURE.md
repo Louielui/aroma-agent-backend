@@ -32,7 +32,7 @@ LLM completion text is not execution evidence.
 | 02 | Google Drive | Existing read connector; recent-file listing verified, broader retrieval still scoped |
 | 03 | Aroma System API | Bounded GET adapter; replenishment/invoice briefing reads verified |
 | 04 | Calendar | Existing read connector; next-24-hour briefing query verified |
-| 05 | Gmail | Existing read adapter; actual reads and coverage not verified by this inventory review |
+| 05 | Gmail | Foundation connected: account, read-only grant and one message-list sample verified through Connections; sending and label changes not connected |
 | 06 | OpenAI / API | API adapter exists; verified subscription chat retained; paid use is workflow-specific |
 | 07 | Codex | Subscription chat verified; unified technical execution dispatch still needs acceptance |
 | 08 | Claude / API | Existing adapters/workers; architecture/review assignment and handoff need acceptance |
@@ -93,6 +93,33 @@ scope; banking data, SIN, passwords and secrets are not worker task content.
 This inventory implements no new connection, scheduling or execution policy.
 
 ## Ownership and boundaries
+
+### Connections center (2026-09-29)
+
+Owner-only `/connections` manages Gmail, Drive and Calendar through the existing
+shared read connector. It exposes one metadata contract: source/read switch,
+identity, granted scopes, last test, last success, sample count and bounded error.
+Opening the page reads local metadata only. Credential presence is not connection
+proof; an actual probe must pass, and evidence expires after 15 minutes or a
+credential change. Disabling a source preserves other owner settings and blocks
+subsequent reads; an in-flight read may finish. It does not revoke the shared
+Google grant. The page links to Google's own access management for revocation.
+
+Measured Google acceptance: Gmail one message-list sample, Drive one file metadata
+sample, Calendar zero events in the next 24 hours. Identities and all three
+read-only scopes were verified. Zero is a bounded sample result, not an account
+total. No model, mail sending, file mutation or calendar mutation is used.
+Status is under `connections/status.json`; audit events exclude identity and
+Google content. This probe state does not replace the older configuration-only
+context projection or add Gmail to the operations briefing.
+
+Google reauthorization uses an owner-initiated flow, PKCE, one-use state and a
+separate browser-binding cookie. Only a complete read-only grant atomically
+replaces the refresh token. The three adapters share that credential. Real Google
+re-consent is not yet accepted; existing credentials passed reads and were
+preserved. A failed/cancelled flow keeps the previous token. The installed desktop
+OAuth client uses the fixed loopback callback on port 8090. Connecting additional
+services still requires a service-specific adapter and measured acceptance.
 
 Xiangxiang is the manager layer. A model is a replaceable computation provider;
 an agent is a role and capability contract; a tool is a bounded operation. These
