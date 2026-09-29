@@ -2,6 +2,10 @@
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { isTestProcess } = require('../testProcess')
+function readUtf8(stream, append) {
+  // A multibyte character may cross child-process pipe chunks.
+  stream.setEncoding('utf8'); stream.on('data', append)
+}
 function createStructuredStore({ invoke, local = false, env = process.env } = {}) {
   const runLocal = request => new Promise((resolve, reject) => {
     if (isTestProcess()) return reject(Error('memory_database_test_fence'))
@@ -12,7 +16,7 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
     const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let raw = ''; let failed = false
     const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, backup ? 60000 : 15000)
-    child.stdout.on('data', chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
+    readUtf8(child.stdout, chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
     child.stderr.resume()
     child.on('error', () => { clearTimeout(timeout); reject(Error('memory_database_unavailable')) })
     child.on('close', code => {
@@ -71,4 +75,4 @@ function createTestStore() {
     health: async () => ({ state: 'connected', database: 'test', vector: true })
   }
 }
-module.exports = { createStructuredStore, createTestStore }
+module.exports = { createStructuredStore, createTestStore, readUtf8 }

@@ -42,3 +42,8 @@ candidate-only extraction, four categories, quote rejection, source withdrawal,
 correction and supersession, uniqueness conflicts, durable retries, restart
 behavior, pause controls and owner/agent route separation. Live engine acceptance
 on 2026-09-29 produced a source-quoted preference in about 64 seconds.
+
+Live acceptance also exposed UTF-8 pipe chunk boundaries corrupting Chinese in
+bridge responses. Direct PostgreSQL inspection found no stored replacement
+characters. The bridge now uses a streaming UTF-8 decoder; a regression test
+splits Chinese text into one-byte chunks and checks exact decoded values.
