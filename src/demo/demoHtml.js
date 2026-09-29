@@ -61,7 +61,7 @@ function inlineSvg (name) {
  * source list lives inside app.js and only exists in `out` once the script has been
  * inlined. The loop below walks this array in order, so the new key belongs at the end.
  */
-const PLACEHOLDERS = ['/*INLINE_I18N*/', '/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/']
+const PLACEHOLDERS = ['/*INLINE_I18N*/', '/*INLINE_CSS*/', '/*INLINE_JS*/', '/*INLINE_DOT*/', '/*FAVICON_URI*/', '/*READ_SOURCE_LABELS*/', '/*BUILD_STAMP*/', '/*SUBSCRIPTION_CHAT*/']
 
 /**
  * ── THE BUILD STAMP: how a stale tab tells on itself ─────────────────────────
@@ -99,6 +99,7 @@ function computeBuildStamp (overrides = {}) {
    * catch, re-entering through the door this round opened.
    */
   h.update('i18n')
+  h.update(String(process.env.CHAT_BACKEND === 'codex-subscription'))
   h.update(require('../i18n/browserResolver').browserI18nSource())
   return h.digest('hex').slice(0, 12)
 }
@@ -138,7 +139,8 @@ function buildDemoHtml () {
     // tab and the taskbar show the same thing. appManifest owns that geometry.
     '/*FAVICON_URI*/': iconDataUri(),
     '/*READ_SOURCE_LABELS*/': readSourceLabelsJson(),
-    '/*BUILD_STAMP*/': BUILD_STAMP
+    '/*BUILD_STAMP*/': BUILD_STAMP,
+    '/*SUBSCRIPTION_CHAT*/': JSON.stringify(process.env.CHAT_BACKEND === 'codex-subscription')
   }
   let out = readAsset('index.html')
   for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])

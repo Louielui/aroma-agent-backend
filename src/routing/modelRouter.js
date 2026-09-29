@@ -60,6 +60,7 @@ function normalizeProviderHint (hint) {
  */
 function selectPrimaryProvider (env = process.env, opts = {}) {
   const isChat = !!(opts && opts.interactionMode === 'chat')
+  if (isChat && env.CHAT_BACKEND === 'codex-subscription') return OPENAI
   // The hint applies to the chat lane and nowhere else.
   if (isChat) {
     const hinted = normalizeProviderHint(opts && opts.providerHint)

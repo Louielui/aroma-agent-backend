@@ -75,11 +75,14 @@
   var READ_SOURCES = /*READ_SOURCE_LABELS*/
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
-  var PROVIDERS = [
+  var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
+  var PROVIDERS = SUBSCRIPTION_CHAT ? [
+    { id: 'openai', name: t('provider.subscription'), note: t('provider.subscriptionNote'), warn: true }
+  ] : [
     { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
-  var provider = 'claude'
+  var provider = SUBSCRIPTION_CHAT ? 'openai' : 'claude'
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
   // NAME only; the server re-validates it and refuses to continue into the proposal lane.
