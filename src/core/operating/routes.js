@@ -1,8 +1,10 @@
 'use strict'
 const express = require('express')
 const { buildManagerHtml } = require('./view')
+const { buildArchitectureHtml } = require('./architectureView')
 function createManagerRouter ({ manager }) {
   const router = express.Router()
+  router.get('/architecture', (req, res) => res.set('Cache-Control', 'no-store').type('html').send(buildArchitectureHtml()))
   router.get('/manager', (req, res) => res.type('html').send(buildManagerHtml()))
   router.get('/api/v1/manager/registry', (req, res) => res.set('Cache-Control', 'no-store').json(manager.registry()))
   router.get('/api/v1/manager/activity', (req, res) => {

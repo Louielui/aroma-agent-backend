@@ -327,7 +327,7 @@ test('DEMO_HTML: the approval card is a viewer + four fields of intent, and hold
     assert.ok(!m[1].includes(f), 'approve payload must not carry ' + f)
   }
   // The page never holds or sends a token, and never talks to anything but same-origin.
-  assert.ok(!/HUB_TOKEN|Authorization|Bearer/i.test(DEMO_HTML), 'no token anywhere in the page')
+  assert.ok(!require('../../scripts/verify/browserAuthority').hasBrowserAuthority(DEMO_HTML), 'no token or authorization code in the page')
   assert.ok(DEMO_HTML.includes("credentials: 'same-origin'"), 'session cookie only, same-origin')
   // One click only, and a burnt nonce is never retried from the page.
   assert.ok(DEMO_HTML.includes('go.disabled = true'), 'single click')
