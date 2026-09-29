@@ -412,7 +412,7 @@ test('the server never self-HTTPs and HUB_TOKEN never reaches the browser', asyn
     assert.ok(!/HUB_TOKEN/.test(src), name + ' must not read HUB_TOKEN')
     assert.ok(!/require\('axios'\)|fetch\(|http\.request\(|https\.request\(/.test(src), name + ' must not make an HTTP call')
   }
-  assert.ok(!/HUB_TOKEN|Bearer|Authorization/i.test(DEMO_HTML), 'the page carries no token')
+  assert.ok(!require('../../scripts/verify/browserAuthority').hasBrowserAuthority(DEMO_HTML), 'the page carries no token or authorization code')
 
   // and no response from either owner endpoint may contain a token-shaped value
   await withApp(async (ctx) => {

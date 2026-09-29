@@ -73,6 +73,18 @@ the new permission check.
 
 ## Product surface
 
+The sidebar also opens `/architecture`, an owner-gated, server-rendered inventory
+of eight layers: models, Core, tools, workflow, memory, business truth, knowledge
+and approval. Each card distinguishes existing components, implemented scope and
+the next integration step. It reuses the registry's unconnected-integration list.
+Its review date is a release inventory date, not a health-check timestamp.
+Opening the page makes no source, model or memory calls and grants no capability.
+
+The next integration is Hindsight through the existing memory interface, beginning
+with an isolated test bank and acceptance of retention, recall in a new conversation,
+correction and forgetting. Deployment, model/cost settings and retention scope must
+be established before real ingestion. This inventory does not activate Hindsight.
+
 The existing Xiangxiang sidebar links to **Operations briefing**. Refresh is an
 explicit user action; opening the page reads only activity and registry metadata.
 Cards show source, layer, check time, returned/shown counts, bounded rows and

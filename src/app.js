@@ -950,6 +950,7 @@ function createApp (options = {}) {
   app.use('/api/v1/demo', requireOwner)
   // The operating layer uses the existing owner gate; the HTTP body grants no role.
   app.use('/manager', requireOwner)
+  app.use('/architecture', requireOwner)
   app.use('/api/v1/manager', requireOwner)
   const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager }))

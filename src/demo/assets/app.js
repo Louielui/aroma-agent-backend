@@ -2170,6 +2170,8 @@
   var homeBtn = document.getElementById('open-home')
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
   var managerBtn = document.getElementById('open-manager')
+  var architectureBtn = document.getElementById('open-architecture')
+  if (architectureBtn) architectureBtn.addEventListener('click', function () { window.location.href = '/architecture' })
   if (managerBtn) {
     managerBtn.addEventListener('click', function () { window.location.href = '/manager' })
   }
@@ -2354,6 +2356,7 @@
     ['chat-level-standard', 'text', function () { return t('chat.standard') }],
     ['chat-level-deep', 'text', function () { return t('chat.deep') }],
     ['open-manager', 'text', function () { return t('manager.title') }],
+    ['open-architecture', 'text', function () { return t('architecture.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],
     ['composer-note', 'text', function () { return t('shell.composerNote') }],

@@ -4,6 +4,7 @@ const path = require('node:path')
 const { t } = require('../../i18n/t')
 function buildManagerHtml () {
   const labels = {
+    inventory: t('architecture.title'),
     title: t('manager.title'), intro: t('manager.intro'), run: t('manager.run'), back: t('manager.back'),
     idle: t('manager.idle'), running: t('manager.running'), completed: t('manager.completed'), partial: t('manager.partial'), unavailable: t('manager.unavailable'),
     audit: t('manager.audit'), architecture: t('manager.architecture'), emptyAudit: t('manager.emptyAudit'), failedAudit: t('manager.failedAudit'),

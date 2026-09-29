@@ -76,6 +76,7 @@
   })
   request('/api/v1/manager/registry').then(data => {
     const root = el('architecture')
+    const inventory = node('a', L.inventory); inventory.href = '/architecture'; root.append(inventory)
     for (const agent of data.agents) root.append(node('p', agent.id + ' → ' + agent.tools.map(id => L.tools[id] || id).join(' / ') + ' · ' + agent.engine))
     root.append(node('p', L.planned + ': ' + data.integrations.map(i => i.id + ' (' + i.state + ')').join(', ')))
   }).catch(() => { el('architecture').textContent = L.unavailable })
