@@ -127,6 +127,7 @@ const { createTurnPlanCache, ownerAuthoredContext, logEgressPlan } = require('./
 // components able to establish the same fact is a coincidence waiting to diverge.
 const { missingWorld } = require('./mixedKnowledgeRequirement')
 const { createTurnFinalCache, renderRequiredWorldObservation, logFinalRequirement } = require('./finalKnowledgeRequirement')
+const { missingRecallReply } = require('../memory/recallReply')
 const { createTurnIntentCache, readMatchesIntent, buildIntentPrompt, logOwnerSourceIntent } = require('./ownerSourceIntentResolver')
 const { runRecoveryWorker, buildWorkerPrompt, logRecoveryWorker } = require('./recoveryDecisionWorker')
 
@@ -852,6 +853,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
   let hindsightCache
   let hindsightUsed = false
+  let historicalMemoryAnswer = false
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
   /**
@@ -2208,6 +2210,13 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       forkTrace(FORK_STAGE.INITIAL_FINAL_GATE, FORK_BRANCH.VERDICT_UNUSABLE, {
         askOrigin: initialIsAsk ? FORK_ASK.MODEL_INITIAL_ASK : FORK_ASK.NONE, shortCircuit: true
       })
+    } else if (verdict.decision === 'require_memory') {
+      historicalMemoryAnswer = true
+      // The verifier sees only owner-authored intent, never recalled content. A memory-only
+      // question cannot create a live-business obligation; a business/mixed question still can.
+      // Unavailable and measured-empty recall replace an unsupported answer distinctly.
+      const missingReply = missingRecallReply(hindsightCache)
+      if (missingReply) distilled = Object.assign({}, distilled, { reply: missingReply, answerPlan: null, nextRead: null })
     } else if (verdict.decision === 'clarify' && !clarifyRestrained) {
       // The ASK is legitimate — either the model already asked, or its FINAL was premature and
       // the meaning genuinely is open. Either way this is an ordinary conversation result, as
@@ -3435,6 +3444,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     })
     const view = buildReadResultReply({
       reply: guarded.reply,
+      historicalMemoryAnswer,
       correction: guarded.correction || null,
       // E2: the sources/kind the DRAFT judgment named, so a carried note stays as specific in
       // telemetry as it was before the single boundary existed.

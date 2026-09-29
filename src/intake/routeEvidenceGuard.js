@@ -113,6 +113,10 @@ function enforceRouteEvidence (input) {
   const none = { reply, violated: false, withheld: [], sources: [] }
   if (!reply.trim()) return none
 
+  // Only the owner-intent verifier can mark a memory-only answer. Historical codes/dates
+  // are not live operational claims; no memory rows are promoted to business EvidenceSets.
+  if (input.historicalMemoryAnswer === true) return none
+
   // SCOPE, exactly as ruled. A turn that read something is answerPlan's to judge; judging it
   // twice, from a layer that cannot see the rows, would be the false-correction fault again.
   const evidenceSets = Array.isArray(input.evidenceSets) ? input.evidenceSets : []

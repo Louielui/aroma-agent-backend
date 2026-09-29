@@ -172,3 +172,15 @@ conversation, then a new conversation with empty supplied history after backend 
 The runtime response, source IDs, dates and boot identity are retained in the workspace
 outputs/memory-cross-chat-proof.json. This acceptance does not claim perfect recall or
 complete indexing of all historical records.
+
+The first live recall exposed an integration failure: the final-knowledge verifier classified
+past dialogue as requiring a live internal-business read. Three recovery calls could not meet
+that unrelated obligation, so the answer was cleared. A new require_memory outcome is reserved
+for owner questions solely about past dialogue. The verifier still receives only owner-authored
+messages and world availability, never recalled records. Current or mixed business questions
+retain their live-read obligations. Memory outages and measured-empty recall produce distinct
+visible replies; a memory hit cannot satisfy a business obligation. The final numeric business
+guard also receives this server-owned historical-answer classification, without promoting
+memory records into business EvidenceSets. Regression tests exercise the actual intake path
+with A4 enabled, including the business-negative case. Live acceptance remains recorded in
+the workspace proof rather than inferred from those fixture tests.

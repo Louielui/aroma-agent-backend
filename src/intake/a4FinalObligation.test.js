@@ -129,6 +129,7 @@ const AW = { internal: true, public: true }
 /* ═══ A–H — THE VERIFIER'S CLASSIFICATION ═══════════════════════════════ */
 
 const CLASSES = [
+  ['M past dialogue   ', 'require_memory', null],
   ['A supplied facts   ', DECISION.ALLOW, null],
   ['B stable knowledge ', DECISION.ALLOW, null],
   ['C clear internal   ', DECISION.INTERNAL, { internal: true, public: false }],
@@ -542,7 +543,7 @@ test('*** ⛔ the schema is strict, closed, and carries no reasoning field ***',
   assert.deepEqual(FINAL_SCHEMA.required.slice().sort(), ['decision', 'question'])
   assert.deepEqual(Object.keys(FINAL_SCHEMA.properties).sort(), ['decision', 'question'])
   assert.deepEqual(FINAL_SCHEMA.properties.decision.enum.slice().sort(),
-    ['allow_final', 'clarify', 'require_internal', 'require_mixed', 'require_public'])
+    ['allow_final', 'clarify', 'require_internal', 'require_memory', 'require_mixed', 'require_public'])
   for (const banned of ['reason', 'rationale', 'confidence', 'analysis', 'thinking', 'tool',
     'capability', 'provider', 'query', 'source', 'readKey']) {
     assert.equal(Object.prototype.hasOwnProperty.call(FINAL_SCHEMA.properties, banned), false, `⛔ ${banned}`)

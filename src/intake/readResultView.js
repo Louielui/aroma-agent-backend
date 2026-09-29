@@ -709,7 +709,8 @@ function buildReadResultReply (input = {}) {
   const routed = enforceRouteEvidence({
     reply: out && typeof out.reply === 'string' ? out.reply : '',
     message: input.message,
-    evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : []
+    evidenceSets: Array.isArray(input.evidenceSets) ? input.evidenceSets : [],
+    historicalMemoryAnswer: input.historicalMemoryAnswer === true
   })
   let afterRoute = out
   if (routed.violated) {

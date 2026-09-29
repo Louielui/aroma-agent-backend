@@ -44,7 +44,7 @@
 const { ownerAuthoredContext } = require('./publicQueryEgressPlanner')
 
 /**
- * ⛔ FIVE OUTCOMES, AND `question` IS ONLY EVER POPULATED BY ONE.
+ * ⛔ SIX OUTCOMES, AND `question` IS ONLY EVER POPULATED BY ONE.
  *
  * There is no `reason`, `rationale`, `confidence`, `analysis`, `thinking`, `tool`,
  * `capability`, `provider`, `query`, `source` or `readKey` field, and there will not be one —
@@ -62,12 +62,12 @@ const FINAL_SCHEMA = Object.freeze({
   properties: {
     decision: {
       type: 'string',
-      enum: ['allow_final', 'clarify', 'require_internal', 'require_public', 'require_mixed'],
-      description: 'allow_final＝唔使查嘢都答得；require_internal＝要我哋自己嘅實際資料；require_public＝要出面公開資料；require_mixed＝兩邊都要；clarify＝意思真係唔清楚。'
+      enum: ['allow_final', 'clarify', 'require_memory', 'require_internal', 'require_public', 'require_mixed'],
+      description: 'allow_final: supplied facts or general knowledge; require_memory: past dialogue only; require_internal: official internal business facts; require_public: outside public facts; require_mixed: both business worlds; clarify: genuinely ambiguous meaning.'
     },
     question: {
       type: ['string', 'null'],
-      description: '淨係 clarify 先填：一句簡短嘅澄清問題。其餘四個一定要填 null。'
+      description: 'Only clarify carries a short meaning question. Every other decision must return null.'
     }
   }
 })
@@ -75,6 +75,7 @@ const FINAL_SCHEMA = Object.freeze({
 const DECISION = Object.freeze({
   ALLOW: 'allow_final',
   CLARIFY: 'clarify',
+  MEMORY: 'require_memory',
   INTERNAL: 'require_internal',
   PUBLIC: 'require_public',
   MIXED: 'require_mixed'
@@ -84,6 +85,8 @@ const DECISION = Object.freeze({
 const WORLDS_FOR = Object.freeze({
   [DECISION.ALLOW]: null,
   [DECISION.CLARIFY]: null,
+  // Past dialogue is checked against the separately retrieved memory context, never live business evidence.
+  [DECISION.MEMORY]: null,
   [DECISION.INTERNAL]: Object.freeze({ internal: true, public: false }),
   [DECISION.PUBLIC]: Object.freeze({ internal: false, public: true }),
   [DECISION.MIXED]: Object.freeze({ internal: true, public: true })
@@ -116,6 +119,8 @@ require_public —— 要出面公開世界嘅情況（市場、行情、外面�
 
 require_mixed —— 佢明確要兩邊一齊，例如要攞我哋自己嘅嘢同出面嘅嘢比較
 
+require_memory — the entire question asks only what the owner said, requested, preferred, or recorded in a past conversation. This requires historical dialogue recall, not a new live business read. Do not use this outcome for current operational facts, official business records, or a question combining past dialogue with a current fact check; those still require the relevant internal/public world. Classify from the owner's words alone, without assuming recall succeeded. The application separately checks whether that memory was retrieved. Return question: null.
+
 clarify —— 只喺以下情況：
 - 「我哋自己」同「出面」兩種意思都同樣講得通
 - 而揀邊一邊會變成答緊另一條問題
@@ -139,6 +144,7 @@ const OUTCOME = Object.freeze({
   UNAVAILABLE: 'unavailable', // no verifier, throw, or unusable output ⇒ FINAL not released
   ALLOW: DECISION.ALLOW,
   CLARIFY: DECISION.CLARIFY,
+  MEMORY: DECISION.MEMORY,
   INTERNAL: DECISION.INTERNAL,
   PUBLIC: DECISION.PUBLIC,
   MIXED: DECISION.MIXED

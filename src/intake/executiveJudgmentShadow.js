@@ -46,7 +46,7 @@
 
 /** finalKnowledgeRequirement.js DECISION */
 const FINAL_DECISION = Object.freeze([
-  'allow_final', 'clarify', 'require_internal', 'require_public', 'require_mixed'
+  'allow_final', 'clarify', 'require_memory', 'require_internal', 'require_public', 'require_mixed'
 ])
 
 /** distillPrompt.js MODES */
