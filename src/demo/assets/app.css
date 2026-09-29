@@ -877,3 +877,6 @@ button[disabled] { opacity: .45; cursor: default; }
 .place-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* The current destination, marked on the button rather than on a row. */
 .place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }
+#chat-level { font: inherit; font-size: var(--ui-size); max-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
+#chat-level:disabled { opacity: .55; cursor: wait; }
+.wait-note { color: var(--muted); font-size: var(--small-size); margin-top: 6px; }

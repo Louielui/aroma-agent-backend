@@ -4,10 +4,11 @@
  * pureChatEligibility.js — L2-A. IS THIS TURN PROVEN TO BE A BARE SOCIAL TURN?
  *
  * ══════════════════════════════════════════════════════════════════════════════
- * ⛔ IT IS AN OBSERVER. It is not a router, not a source selector, not an intent
+ * A narrow social classifier. It is not a router, not a source selector, not an intent
  * authority, not a work-request authority, not an approval authority, not an
- * execution authority. In L2-A nothing downstream reads its answer at all: it exists
- * so that a future tranche can be argued from real turns rather than from a guess.
+ * execution authority. The original L2-A telemetry remains observational. The
+ * subscription-only fast path now uses this result with additional empty-history
+ * and no-context requirements in chatSpeed.js, as authorized on 2026-09-29.
  *
  * ⛔ WHY IT EXISTS. Measured on requestId 8d82bdd2-d92a-4061-aadd-638d35938582
  * (2026-08-21 12:27): 「你好」 cost 7,613 ms server-side. The reply itself was 1,693 ms.
@@ -69,6 +70,7 @@ const MAX_SOCIAL_CHARS = 24
  */
 const GREETINGS = Object.freeze([
   '你好', '您好', '哈囉', '早晨', '早安', '午安',
+  '你好香香', '香香你好',
   'hello', 'hi', 'hey', 'good morning', 'good afternoon', 'good evening'
 ])
 const THANKS = Object.freeze([

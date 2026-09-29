@@ -38,7 +38,11 @@ function localRequest (route, input, env) {
 
 class CodexSubscriptionAdapter extends LLMAdapter {
   get providerName () { return 'openai' }
-  constructor ({ env = process.env, request = localRequest } = {}) { super(); this.env = env; this.request = request; this._model = MODEL }
+  constructor ({ env = process.env, request = localRequest, effort = 'low' } = {}) {
+    super()
+    if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
+    this.env = env; this.request = request; this._model = MODEL; this.effort = effort
+  }
   async preflight () {
     const result = await this.request('/status', {}, this.env)
     if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription') throw new SubscriptionError()
@@ -46,7 +50,7 @@ class CodexSubscriptionAdapter extends LLMAdapter {
   }
   async complete (prompt, opts = {}) {
     const schema = opts.responseFormat ? assertResponseFormat(opts.responseFormat).schema : undefined
-    const result = await this.request('/complete', { prompt, system: opts.system || '', ...(schema ? { schema } : {}) }, this.env)
+    const result = await this.request('/complete', { prompt, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}) }, this.env)
     if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription' || typeof result.text !== 'string' || !result.text || result.stopReason !== 'end_turn') throw new SubscriptionError('subscription_invalid_output')
     return result
   }

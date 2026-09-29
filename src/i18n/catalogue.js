@@ -487,6 +487,11 @@ const CATALOGUE = Object.freeze({
 
   // ── who is answering, and what they can see ──
   'provider.claude': { zh: '香香（Claude）', en: 'Xiangxiang (Claude)' },
+  'chat.levelLabel': { zh: '思考等級', en: 'Thinking level' },
+  'chat.fast': { zh: '快速', en: 'Fast' },
+  'chat.standard': { zh: '標準', en: 'Standard' },
+  'chat.deep': { zh: '深入', en: 'Deep' },
+  'chat.waiting': { zh: '正在回覆 · 已等候 {seconds} 秒', en: 'Working on your reply · {seconds}s elapsed' },
   'manager.title': { zh: '今日營運簡報', en: 'Operations briefing' },
   'manager.intro': { zh: '把現有營運資料、待辦與待批准事項放在一起。各來源保留自己的時間與查詢範圍，這裡不會替你執行或批准任何工作。', en: 'Review operational records, tasks and pending approvals together. Each source keeps its own time and query scope. This view does not execute or approve work.' },
   'manager.run': { zh: '更新簡報', en: 'Refresh briefing' },

@@ -465,7 +465,8 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         .optional()
         .isString().withMessage('interactionMode must be a string')
         .bail()
-        .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal')
+        .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal'),
+      body('chatLevel').optional().isString().bail().isIn(['fast', 'standard', 'deep'])
     ],
     async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
@@ -526,6 +527,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
+        if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'fast'
 
         /**
          * ⛔ A4'S RUNTIME DEPENDENCIES — ATTACHED HERE BECAUSE THIS IS WHERE CHAT LIVES.

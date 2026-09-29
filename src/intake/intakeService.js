@@ -33,6 +33,7 @@ const { logLLMCall, logRedLineBlock } = require('../utils/metricsLogger')
 const { PHASE, ROLE, OUTCOME, emitPhase, timePhase, timePhaseSync, startTimer } = require('../utils/phaseTiming')
 // L2-A — pure-chat eligibility. SHADOW: observed and logged, never branched on.
 const { classifyPureChatEligibility } = require('./pureChatEligibility')
+const { profileFor, canUseSocialFastPath } = require('./chatSpeed')
 const { persistIntake, recordLLMUsage } = require('../utils/hubClient')
 const { classifyDemoOutcome } = require('./demoOutcome')          // B2-2 slice 1 (pure)
 const { buildGroundedReply } = require('./groundedReply')         // B2-2 reply grounding — action prose from the REAL outcome
@@ -480,7 +481,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
   // Check subscription availability before auxiliary model calls or source reads.
   const subscriptionMode = subscriptionChatEnabled(process.env, opts && opts.interactionMode)
-  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter()) : null
+  const chatProfile = profileFor(opts && opts.chatLevel)
+  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort })) : null
   if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
   // -- U1 DRAFT PROPOSAL SHADOW (flag-gated; after red-line, before STEP 2) --
@@ -502,6 +504,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     ? null
     : routeTurn(message, { previousLane: (opts && opts.previousLane) || null })
   const routeGoverns = routerMode === 'on' && routeDecision !== null
+  const socialFastPath = subscriptionMode && routeGoverns && canUseSocialFastPath(message, routeDecision, history, opts)
 
   /**
    * ── O1: THE ONE LIVE SEMANTIC CALL SITE ─────────────────────────────────────
@@ -547,7 +550,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * place, so it is allowed through.
    */
   const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
-  if (semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+  if (!socialFastPath && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
     const callModel = (opts && typeof opts.semanticCallModel === 'function')
       ? opts.semanticCallModel
       : defaultSemanticCallModel()
@@ -625,17 +628,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   /**
    * ── L2-A: PURE-CHAT ELIGIBILITY, SHADOW ONLY ────────────────────────────────
    *
-   * Placed here because this is the first point where the deterministic routing
-   * decision exists and no model has been called yet — which is exactly where a
-   * future fast path would have to decide, so it is where the evidence must be
-   * gathered now.
+   * The original classifier telemetry stays observable on every turn. The new
+   * subscription fast path is decided separately with stricter history/context
+   * requirements; this telemetry result itself still cannot change a turn.
    *
    * ⛔ NOTHING BRANCHES ON THIS. `pureChat` is read by the telemetry line below and
    *    by nothing else in this file; a structural test fails if that stops being
-   *    true. Goal decomposition still runs, the final verifier still runs, the same
-   *    three model calls still happen. L2-A measures who WOULD have been eligible;
-   *    it does not make anyone faster, and it must not, until the Owner has seen
-   *    real turns classified.
+   *    true. Other providers retain the original complete pipeline. A subscription
+   *    social fast path is authorized by chatSpeed.js, never by this telemetry.
    *
    * ⛔ The classifier is pure and fail-closed, so this call cannot throw, cannot
    *    read, cannot spend a model call, and cannot change the turn.
@@ -1179,6 +1179,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   async function buildPromptForUncached (providerName, composeOnly = false) {
+    // A proven standalone social turn needs persona + its current message only.
+    // It still goes through parsing, language, honesty and ordinary finalisation.
+    if (socialFastPath) return baseEffPrompt
     // ⛔ THE CACHE KEY CARRIES THE OBSERVATION COUNT. Without it, step 2 would be handed
     // step 1's prompt and the loop would ask the same question forever — the read would
     // happen and the model would never see it.
@@ -1805,6 +1808,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
+          if (socialFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
+            (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
           activeProvider = OPENAI // its envelope PARSED — this is the accepted provider
           activeAdapter = gpt
@@ -2031,7 +2036,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
   const initialIsAsk = initialTerminalMode === 'ask'
 
-  const initialFinalGate = interactionMode === 'chat' && distilled && !distilled.nextRead &&
+  const initialFinalGate = !socialFastPath && interactionMode === 'chat' && distilled && !distilled.nextRead &&
     a4SemanticRoutingEnabled(process.env) && initialTerminalMode !== 'commit'
 
   /**
