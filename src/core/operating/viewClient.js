@@ -23,6 +23,39 @@
   el('architecture-title').textContent = L.architecture
   el('history-title').textContent = L.history
   let currentId = null; let currentState = null; let pollTimer = null; let actionBusy = false; let pendingRequest = null; let revision = 0
+  let followupRunId = null
+  function followup (run) {
+    const root = el('followup'); root.hidden = !run.finishedAt
+    if (!run.finishedAt || followupRunId === run.id) return
+    followupRunId = run.id; root.replaceChildren(node('h2', L.followup), node('p', L.followupHelp, 'meta'))
+    const form = node('form'); const kind = node('select'); const correction = node('select'); const subject = node('input'); const content = node('textarea'); const taskState = node('select')
+    for (const [key, label] of [['open', L.taskOpen], ['completed', L.taskCompleted]]) { const option = node('option', label); option.value = key; taskState.append(option) }
+    for (const key of ['decision', 'preference', 'todo']) { const option = node('option', L[key]); option.value = key; kind.append(option) }
+    const fresh = node('option', L.newMemory); fresh.value = ''; correction.append(fresh)
+    const memories = run.sections.find(s => s.tool === 'memory.decisions')?.rows || []
+    for (const row of memories.filter(r => ['decision', 'preference', 'todo'].includes(r.memoryType))) { const option = node('option', L.correction + ' · ' + row.title); option.value = row.id; correction.append(option) }
+    subject.required = content.required = true; subject.maxLength = 240; content.maxLength = 4000; content.rows = 4
+    for (const [control, label] of [[correction, L.correction], [kind, L.memory], [taskState, L.todo], [subject, L.subject], [content, L.content]]) {
+      const wrapper = node('label', label); wrapper.style.display = 'block'; control.style.cssText = 'display:block;width:100%;font:inherit;margin:6px 0 14px;padding:8px'; wrapper.append(control); form.append(wrapper)
+    }
+    const updateKind = () => { taskState.parentElement.style.display = kind.value === 'todo' ? 'block' : 'none' }
+    kind.onchange = updateKind; updateKind()
+    correction.onchange = () => { const old = memories.find(r => r.id === correction.value); kind.disabled = subject.readOnly = !!old; if (old) { kind.value = old.memoryType; subject.value = old.title }; updateKind() }
+    const submit = node('button', L.propose); submit.type = 'submit'; const notice = node('p'); notice.setAttribute('role', 'status'); form.append(submit, notice); root.append(form)
+    let pending = null
+    form.onsubmit = async event => {
+      event.preventDefault(); if (submit.disabled) return; submit.disabled = true
+      const values = { kind: kind.value, subject: subject.value, text: content.value, ...(kind.value === 'todo' ? { taskState: taskState.value } : {}), ...(correction.value ? { supersedes: correction.value } : {}) }
+      if (!pending || JSON.stringify(pending.values) !== JSON.stringify(values)) pending = { requestId: crypto.randomUUID(), values }
+      try {
+        const data = await request('/api/v1/manager/runs/' + encodeURIComponent(run.id) + '/memory', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ requestId: pending.requestId, ...pending.values }) })
+        notice.replaceChildren(node('span', data.record.status === 'ignored' ? L.followupExcluded : L.followupSaved))
+        const review = node('a', L.review); review.href = '/memory?record=' + encodeURIComponent(data.record.id); notice.append(node('span', ' · '), review)
+        pending = null; content.value = ''
+      } catch (_) { notice.textContent = L.followupError }
+      finally { submit.disabled = false }
+    }
+  }
   function render (run) {
     currentState = run.state
     el('status').textContent = (L[run.state] || L.unavailable) + ' · ' + time(run.finishedAt || run.startedAt)
@@ -42,7 +75,7 @@
       const card = node('article', null, 'card')
       card.append(node('div', L[section.layer], 'badge'), node('h2', L.tools[section.tool] || section.tool))
       card.append(node('p', L.source + ': ' + section.source + ' · ' + L.checked + ': ' + time(section.checkedAt), 'meta'))
-      if (section.state !== 'ok') card.append(node('p', L.unavailable, 'warning'))
+      if (section.state !== 'ok') card.append(node('p', (L[section.availability] || L.unavailable) + (L[section.reason] && section.reason !== section.availability ? ' · ' + L[section.reason] : ''), 'warning'))
       else {
         card.append(node('p', L.received + ': ' + section.count + ' · ' + L.sample + ': ' + section.shownCount))
         if (!section.complete || section.truncated) card.append(node('p', L.limited, 'warning'))
@@ -57,6 +90,11 @@
           item.append(heading)
           if (row.text) item.append(node('div', row.text, 'row-text'))
           if (row.date) item.append(node('small', time(row.date)))
+          if (section.layer === 'memory') {
+            if (L[row.memoryType]) item.append(node('p', L[row.memoryType], 'badge'))
+            if (row.approvedAt) item.append(node('p', L.approvedAt + ' · ' + time(row.approvedAt), 'meta'))
+            const reference = node('a', L.memoryId + ' · ' + row.id); reference.href = '/memory?record=' + encodeURIComponent(row.id); item.append(reference)
+          }
           list.append(item)
         }
         card.append(list)
@@ -68,6 +106,7 @@
       }
       el('sections').append(card)
     }
+    followup(run)
   }
   async function activity () {
     try {

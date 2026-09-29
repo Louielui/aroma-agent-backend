@@ -283,11 +283,8 @@ test('DEMO_HTML: safety labels + unknown fallback + Enter/Shift+Enter', () => {
   assert.match(CATALOGUE['draft.meta'].en, /not sent/i)
   assert.match(CATALOGUE['proposal.meta'].zh, /未執行/)
   assert.match(CATALOGUE['proposal.meta'].en, /nothing has run/i)
-  // The old placeholder "確認執行（尚未開放）" is GONE — it is replaced by the real Owner
-  // approval card, which still cannot execute from the chat card itself: the chat lane can
-  // only ASK the server to seal a Work Order, and executing needs the sealed card's typed
-  // confirmation + single-use nonce. Asserted below.
-  assert.ok(!DEMO_HTML.includes('確認執行（尚未開放）'), 'the disabled placeholder is retired')
+  // The chat card requests a sealed Work Order. Check the rendering key, not wording
+  // embedded in the page's catalogue. Execution still requires the sealed card below.
   assert.ok(DEMO_HTML.includes("t('proposal.makeWorkOrder')"), 'the chat card only requests a Work Order')
   // RE-POINTED, NOT DELETED. This promise used to live in the opening assistant bubble,
   // which the empty-screen redesign retired. Owner decision: it moves to the composer

@@ -6,7 +6,8 @@ function safeLink (value) {
 }
 function rowView (row) {
   return { id: clip(row.sourceId || row.id, 160), title: clip(row.title), text: clip(row.content, 1000),
-    date: clip(row.originalDate, 100), link: safeLink(row.link), approvalBy: clip(row.approvalBy, 100) }
+    date: clip(row.originalDate, 100), link: safeLink(row.link), approvalBy: clip(row.approvalBy, 100),
+    approvedAt: clip(row.approvedAt, 100), memoryType: clip(row.memoryType, 40), taskState: clip(row.taskState, 40) }
 }
 
 // The local engine is an adapter, so another memory engine can implement recall()
@@ -23,7 +24,7 @@ function createMemoryGateway ({ listDecisions, engine } = {}) {
   } }
 }
 
-function createGateway ({ connector, memory, tasks, proposals, clock = () => new Date().toISOString() } = {}) {
+function createGateway ({ connector, connection, memory, tasks, proposals, clock = () => new Date().toISOString() } = {}) {
   async function read (actor, toolId, requestedLayer) {
     const permission = authorize(actor, toolId, requestedLayer)
     if (!permission.allowed) throw Error(permission.reason)
@@ -43,6 +44,12 @@ function createGateway ({ connector, memory, tasks, proposals, clock = () => new
         if (!Array.isArray(all)) throw Error('invalid_proposals')
         response = { results: all.filter(r => r.status === 'pending').map(r => ({ id: r.id, title: r.task, content: r.status, originalDate: r.createdAt, link: '/demo' })), evidence: { completeWithinScope: true } }
       } else {
+        const status = connection ? await connection(tool.source) : null
+        if (status && status.registered === false) {
+          const reasons = ['master_disabled', 'source_disabled', 'credential_missing', 'governance_disabled', 'not_implemented', 'registration_failed']
+          return { ...base, state: 'unavailable', availability: 'not_connected', reason: reasons.includes(status.reason) ? status.reason : 'registration_failed',
+            count: null, rows: null, shownCount: null, complete: null, truncated: null, dataAsOf: null, scope: null, sourceTotal: null }
+        }
         const params = toolId === 'calendar.agenda'
           ? { timeMin: checkedAt, timeMax: new Date(Date.parse(checkedAt) + 86400000).toISOString(), maxResults: 25 }
           : toolId === 'drive.documents' ? { pageSize: 10, orderBy: 'modifiedTime desc' } : {}
@@ -52,14 +59,14 @@ function createGateway ({ connector, memory, tasks, proposals, clock = () => new
       const evidence = response.evidence || {}
       const count = response.results.length
       const rows = response.results.slice(0, 10).map(rowView)
-      return { ...base, state: 'ok', count, rows, shownCount: rows.length,
+      return { ...base, state: 'ok', availability: 'connected', reason: null, count, rows, shownCount: rows.length,
         complete: evidence.completeWithinScope === true && !response.truncatedCount && evidence.truncated !== true,
         truncated: (response.truncatedCount || 0) > 0 || evidence.truncated === true || count > rows.length,
         dataAsOf: clip(evidence.dataAsOf, 100), scope: evidence.queryScope && clip(evidence.queryScope.window, 200),
         scopeDeclaredBy: evidence.queryScope && clip(evidence.queryScope.declaredBy, 40),
         sourceTotal: Number.isFinite(evidence.sourceTotal) ? evidence.sourceTotal : null }
     } catch (_) {
-      return { ...base, state: 'unavailable', count: null, rows: null, shownCount: null, complete: null,
+      return { ...base, state: 'unavailable', availability: 'read_failed', reason: 'read_failed', count: null, rows: null, shownCount: null, complete: null,
         truncated: null, dataAsOf: null, scope: null, sourceTotal: null }
     }
   }

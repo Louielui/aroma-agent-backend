@@ -41,6 +41,7 @@ test('the real app mounts the page and all operating endpoints behind owner auth
   const url = 'http://127.0.0.1:' + server.address().port
   for (const route of ['/manager', '/api/v1/manager/registry', '/api/v1/manager/activity', '/api/v1/manager/runs', '/api/v1/manager/runs/unknown']) assert.equal((await fetch(url + route)).status, 401)
   assert.equal((await fetch(url + '/api/v1/manager/runs', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401)
+  assert.equal((await fetch(url + '/api/v1/manager/runs/unknown/memory', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401)
   assert.equal((await fetch(url + '/api/v1/manager/briefing', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401)
   assert.equal(calls, 0)
   const registry = await fetch(url + '/api/v1/manager/registry', { headers: { authorization: 'Bearer fixture-service' } })

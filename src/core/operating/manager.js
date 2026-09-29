@@ -128,15 +128,20 @@ function createManager ({ gateway, activity, runStore = createMemoryRunStore(), 
 function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture } = {}) {
   const store = require('../../store/store')
   const activity = createActivityStore()
+  let manager
   const memory = env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT
-    ? { recall: async () => (await require('../../memory/runtime').runtime().gateway.list({ id: 'owner', role: 'owner' }, { type: 'decision', status: 'active' }))
-      .map(r => ({ id: r.id, title: r.subject, content: r.text, originalDate: r.decidedAt, approvalBy: r.decidedBy })) }
+    ? require('./briefingMemory').createBriefingMemory({ gateway: require('../../memory/runtime').runtime().gateway, getRun: id => manager.get(id) })
     : createMemoryGateway({ listDecisions: store.listDecisions })
   const gateway = createGateway({
+    connection: source => require('../../context/connectionState').projectConnections(env).find(r => r.key === source),
     connector: { read: async (...args) => require('../../context/liveClients').createLiveReadConnector({ env }).connector.read(...args) },
     memory, tasks: store.listTasks,
     proposals: () => { if (!proposalStore) throw Error('proposals_not_connected'); return proposalStore.listProposals() }
   })
-  return createManager({ gateway, activity, runStore: createRunStore(), onFinish: run => memoryCapture && memoryCapture.safe(() => memoryCapture.run(run)) })
+  manager = createManager({ gateway, activity, runStore: createRunStore(), onFinish: run => memoryCapture && memoryCapture.safe(() => memoryCapture.run(run)) })
+  return Object.assign(manager, { proposeMemory: (actor, id, input) => {
+    if (!memory.propose) throw Error('memory_not_connected')
+    return memory.propose(actor, id, input)
+  } })
 }
 module.exports = { TOOLS, authorize, createGateway, createMemoryGateway, createManager, createRuntimeManager, createActivityStore }

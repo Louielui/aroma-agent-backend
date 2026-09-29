@@ -4,6 +4,15 @@ const path = require('node:path')
 const { t } = require('../../i18n/t')
 function buildManagerHtml () {
   const labels = {
+    not_connected: t('manager.notConnected'), read_failed: t('manager.readFailed'),
+    master_disabled: t('manager.disabled'), source_disabled: t('manager.disabled'), credential_missing: t('manager.credentialsMissing'),
+    governance_disabled: t('manager.governanceDisabled'), not_implemented: t('manager.notImplemented'), registration_failed: t('manager.registrationFailed'),
+    followup: t('manager.followup'), followupHelp: t('manager.followupHelp'), followupSaved: t('manager.followupSaved'),
+    followupError: t('manager.followupError'), followupExcluded: t('manager.followupExcluded'), newMemory: t('manager.newMemory'),
+    correction: t('manager.correction'), approvedAt: t('manager.approvedAt'), memoryId: t('manager.memoryId'),
+    decision: t('mem6.decision'), preference: t('mem6.preference'), todo: t('mem6.todo'),
+    taskOpen: t('mem6.open'), taskCompleted: t('mem6.completed'),
+    subject: t('mem6.subject'), content: t('memory.content'), propose: t('mem6.propose'), review: t('mem6.review'),
     inventory: t('architecture.title'),
     queued: t('workflow.queued'), failed: t('workflow.failed'), cancelled: t('workflow.cancelled'), timed_out: t('workflow.timedOut'),
     interrupted: t('workflow.interrupted'), pending: t('workflow.pending'), not_run: t('workflow.notRun'), ok: t('workflow.readOk'),
@@ -22,7 +31,7 @@ function buildManagerHtml () {
     tools: {
       'aroma.replenishment': t('manager.replenishment'), 'aroma.invoices': t('manager.invoices'),
       'calendar.agenda': t('manager.calendar'), 'drive.documents': t('manager.documents'),
-      'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.decisions')
+      'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.approvedContext')
     }
   }
   return fs.readFileSync(path.join(__dirname, 'view.html'), 'utf8')

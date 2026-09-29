@@ -9,7 +9,7 @@ const TOOLS = Object.freeze([
   { id: 'drive.documents', agent: 'knowledge', source: 'drive', method: 'listFiles', layer: 'knowledge', domain: 'documents' },
   { id: 'local.tasks', agent: 'coordinator', source: 'xiangxiang', method: null, layer: 'truth', domain: 'workflow' },
   { id: 'local.approvals', agent: 'coordinator', source: 'xiangxiang', method: null, layer: 'truth', domain: 'workflow' },
-  { id: 'memory.decisions', agent: 'memory', source: 'local_decisions', method: null, layer: 'memory', domain: 'experience' }
+  { id: 'memory.decisions', agent: 'memory', source: 'memory_gateway', method: null, layer: 'memory', domain: 'experience' }
 ].map(t => Object.freeze({ ...t, action: 'read', approval: 'not_required' })))
 
 function authorize (actor, toolId, requestedLayer) {

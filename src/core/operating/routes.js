@@ -6,6 +6,17 @@ function createManagerRouter ({ manager }) {
   const router = express.Router()
   const sameOrigin = require('./chatRequest').sameOrigin
   const owner = { id: 'owner', role: 'owner' }
+  router.post('/api/v1/manager/runs/:id/memory', async (req, res) => {
+    if (!sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+    if (!req.is('application/json') || !req.body || Array.isArray(req.body)) return res.status(400).json({ error: 'invalid_request' })
+    try {
+      const record = await manager.proposeMemory(owner, req.params.id, req.body)
+      res.set('Cache-Control', 'no-store').json({ record })
+    } catch (e) {
+      const known = ['invalid_request', 'run_not_found', 'run_not_finished', 'request_conflict', 'invalid_supersession', 'invalid_memory_id']
+      res.status(known.includes(e.message) ? 409 : 503).json({ error: known.includes(e.message) ? e.message : 'memory_unavailable' })
+    }
+  })
   router.get('/api/v1/manager/runs', (req, res) => {
     try { res.set('Cache-Control', 'no-store').json({ runs: manager.list() }) }
     catch (_) { res.status(503).json({ error: 'status_unavailable' }) }
