@@ -77,6 +77,7 @@ const CLASS = Object.freeze({
 const FILE_CLASS = Object.freeze({
   // ── INTERFACE ──────────────────────────────────────────────────────────────
   'demo/assets/app.js': CLASS.INTERFACE,              // 139 — the screen itself
+  'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels

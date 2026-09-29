@@ -948,6 +948,11 @@ function createApp (options = {}) {
   // gating it would break installing the app for no gain.
   app.use('/demo', requireOwner)
   app.use('/api/v1/demo', requireOwner)
+  // The operating layer uses the existing owner gate; the HTTP body grants no role.
+  app.use('/manager', requireOwner)
+  app.use('/api/v1/manager', requireOwner)
+  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore })
+  app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
