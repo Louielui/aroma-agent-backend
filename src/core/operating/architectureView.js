@@ -20,7 +20,13 @@ function buildArchitectureHtml () {
     priority: t('architecture.priority'), priorityText: t('architecture.priorityText'),
     owner: t('architecture.owner'), core: t('architecture.core'), tools: t('architecture.tools'),
     result: t('architecture.result'), memory: t('architecture.memory'),
-    flow: t('architecture.flow'), roles: t('architecture.roles'), rolesText: t('architecture.rolesText')
+    flow: t('architecture.flow'), roles: t('architecture.roles'), rolesText: t('architecture.rolesText'),
+    checklist: t('master.checklist'), capabilities: t('master.capabilities'), roadmap: t('master.roadmap'),
+    layers: t('master.layers'), modules: t('master.modules'), scope: t('master.scope'), status: t('master.status'),
+    worker: t('master.worker'), fallback: t('master.fallback'), routingNote: t('master.routingNote'),
+    ownership: t('master.ownership'), memoryStack: t('master.memoryStack'), moduleNote: t('master.moduleNote'),
+    timeline: t('master.timeline'), exclusions: t('master.exclusions'), exclusionsText: t('master.exclusionsText'),
+    deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
   }
   const rows = [
     { id: 'brain', state: 'foundation', title: t('architecture.brainTitle'), purpose: t('architecture.brainPurpose'), component: t('architecture.brainComponent'), current: t('architecture.brainCurrent'), next: t('architecture.brainNext'), evidence: 'src/adapters/; src/subscription/' },
@@ -37,11 +43,42 @@ function buildArchitectureHtml () {
     <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>
     <dt>${escape(labels.current)}</dt><dd>${escape(row.current)}</dd><dt>${escape(labels.next)}</dt><dd>${escape(row.next)}</dd></dl>
     <details><summary>${escape(labels.details)}</summary><code>${escape(row.evidence)}</code></details></article>`).join('\n')
-  const integrationNames = { hindsight: 'Hindsight', memory_postgresql: t('architecture.memoryDatabase'), qbo: 'QBO', '7shifts': '7shifts', business_write: t('architecture.businessWrite') }
-  const integrations = registryView().integrations.map(item => `<li><strong>${escape(integrationNames[item.id] || item.id)}</strong> — ${escape(labels[item.state] || labels.unknown)}</li>`).join('')
+  const integrationNames = { hindsight: 'Hindsight', memory_postgresql: t('architecture.memoryDatabase'), memory_pgvector: 'pgvector', qbo: 'QBO', '7shifts': '7shifts', business_write: t('architecture.businessWrite') }
+  const registered = registryView().integrations
+  const stateOf = id => registered.find(item => item.id === id)?.state || 'unknown'
+  const integrations = registered.map(item => `<li><strong>${escape(integrationNames[item.id] || item.id)}</strong> — ${escape(labels[item.state] || labels.unknown)}</li>`).join('')
+  // The numbered inventory is a design/evidence snapshot, never a routable plan.
+  const connections = [
+    ['01', 'GitHub', 'foundation', t('master.github')],
+    ['02', 'Google Drive', 'foundation', t('master.drive')],
+    ['03', 'Aroma System API', 'foundation', t('master.aroma')],
+    ['04', 'Google Calendar', 'foundation', t('master.calendar')],
+    ['05', 'Gmail', 'foundation', t('master.gmail')],
+    ['06', 'OpenAI / API', 'partial', t('master.openai')],
+    ['07', 'Codex', 'partial', t('master.codex')],
+    ['08', 'Claude / API', 'partial', t('master.claude')],
+    ['09', 'Aroma Memory Gateway', 'partial', t('master.memoryGateway')],
+    ['10', 'Hindsight', stateOf('hindsight'), t('master.hindsight')],
+    ['11', 'PostgreSQL', stateOf('memory_postgresql'), t('master.postgres')],
+    ['12', 'pgvector', stateOf('memory_pgvector'), t('master.pgvector')]
+  ]
+  const checklist = connections.map(([id, name, state, scope]) => `<tr data-connection="${id}" data-state="${escape(state)}"><th scope="row">${id} · ${escape(name)}</th><td><span class="badge ${escape(state)}">${escape(labels[state] || labels.unknown)}</span></td><td>${escape(scope)}</td></tr>`).join('')
+  const optional = t('master.optional')
+  const capabilities = [
+    ['coding', 'Coding', 'Codex', 'Claude'], ['browser', 'Browser', 'Codex', 'Manus · ' + optional],
+    ['computer', 'Computer Use', 'Codex', 'Manus · ' + optional], ['qa', 'System QA', 'Codex / Claude', 'Grok · ' + optional],
+    ['architecture', 'Architecture', 'Claude', 'OpenAI'], ['reasoning', 'General Reasoning', 'OpenAI / Claude', t('master.otherModels')],
+    ['research', 'Web Research', 'OpenAI', 'Grok · ' + optional], ['x-search', 'X Search · ' + optional, 'Grok · ' + optional, '—']
+  ].map(([id, name, worker, fallback]) => `<tr data-capability="${id}"><th scope="row">${escape(name)}</th><td>${escape(worker)}</td><td>${escape(fallback)}</td></tr>`).join('')
+  const phases = [t('master.phase0'), t('master.phase1'), t('master.phase2'), t('master.phase3'), t('master.phase4'), t('master.phase5'), t('master.phase6'), t('master.phase7'), t('master.phase8')]
+    .map((text, id) => `<li data-phase="${id}"><strong>Phase ${id}</strong> · ${escape(text)}</li>`).join('')
+  const modules = [t('master.capture'), t('master.context'), t('master.planner'), t('master.router'), t('master.dispatcher'), t('master.toolGateway'), t('master.memoryModule'), t('master.policy'), t('master.permission'), t('master.approval'), t('master.runTimeline'), t('master.audit'), t('master.briefing')]
+    .map(text => `<li>${escape(text)}</li>`).join('')
   const replacements = { ...labels, lang: currentLocale() === 'en' ? 'en' : 'zh-Hant' }
   return fs.readFileSync(path.join(__dirname, 'architecture.html'), 'utf8')
     .replace(/\{\{(\w+)\}\}/g, (_, key) => escape(replacements[key]))
     .replace('<!--CARDS-->', () => cards).replace('<!--INTEGRATIONS-->', () => integrations)
+    .replace('<!--CHECKLIST-->', () => checklist).replace('<!--CAPABILITIES-->', () => capabilities)
+    .replace('<!--PHASES-->', () => phases).replace('<!--MODULES-->', () => modules)
 }
 module.exports = { buildArchitectureHtml }

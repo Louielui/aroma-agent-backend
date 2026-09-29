@@ -3,6 +3,95 @@
 Owner direction adopted on 2026-09-29. First acceptance workflow: operations
 briefing from existing read-only data and work queues.
 
+## Revised master baseline
+
+The Owner supplied a consolidated Master Architecture on 2026-09-29. This section
+supersedes the earlier memory-first implementation order. Preserve implemented
+work, verify its actual integration, and complete foundations before enabling writes.
+References to July design briefs in the supplied baseline are historical context;
+this review establishes implementation claims from this checkout, not from those
+unretrieved briefs.
+
+Aroma owns Core, Data, Memory, Workflow, Permissions and Audit. OpenAI, Codex,
+Claude and Hindsight are replaceable capability providers. Connections belong to
+Xiangxiang and pass through shared gateways, rather than being independently
+reconnected for each agent. A model provider is not Xiangxiang's identity.
+
+Core responsibilities: Conversation/Capture, Context Engine, Planner, Capability
+Router, Dispatcher, Tool Gateway, Memory Gateway, Policy Engine, Permission Engine,
+Approval Gateway, Run Timeline, Audit Log, and Briefing/Notification. Existing
+modules are reused; this inventory does not claim their end-to-end integration is
+complete. The component actually executing a step must record its timeline state;
+LLM completion text is not execution evidence.
+
+### Core twelve
+
+| ID | Component | Implementation / acceptance boundary |
+| --- | --- | --- |
+| 01 | GitHub | Existing read adapter; actual PR/branch/test coverage still needs acceptance |
+| 02 | Google Drive | Existing read connector; recent-file listing verified, broader retrieval still scoped |
+| 03 | Aroma System API | Bounded GET adapter; replenishment/invoice briefing reads verified |
+| 04 | Calendar | Existing read connector; next-24-hour briefing query verified |
+| 05 | Gmail | Existing read adapter; actual reads and coverage not verified by this inventory review |
+| 06 | OpenAI / API | API adapter exists; verified subscription chat retained; paid use is workflow-specific |
+| 07 | Codex | Subscription chat verified; unified technical execution dispatch still needs acceptance |
+| 08 | Claude / API | Existing adapters/workers; architecture/review assignment and handoff need acceptance |
+| 09 | Aroma Memory Gateway | Existing local-decision recall interface; extend rather than rebuild |
+| 10 | Hindsight | PoC not started |
+| 11 | PostgreSQL | Memory backend not connected; separate from existing business PostgreSQL |
+| 12 | pgvector | Memory vector support not connected; confirm with the PoC deployment |
+
+Read connector evidence: `src/context/liveClients.js`, `readConnector.js` and
+`adapters/{github,drive,aromaSystem,calendar,gmail}Read.js`. Capability and worker
+evidence: `src/capability/{registry,dispatcher,agents,adapter,policy}.js`,
+`src/adapters/`, `src/agent/` and `src/subscription/`. Memory evidence:
+`src/core/operating/gateway.js`. An adapter's existence is not a live health check.
+
+### Target worker assignments, not active automatic routing
+
+| Capability | Preferred | Alternative |
+| --- | --- | --- |
+| Coding | Codex | Claude |
+| Browser | Codex | Manus, deferred |
+| Computer Use | Codex | Manus, deferred |
+| System QA | Codex / Claude | Grok, deferred |
+| Architecture | Claude | OpenAI |
+| General Reasoning | OpenAI / Claude | Evaluate when needed |
+| Web Research | OpenAI | Grok, deferred |
+| X Search | Grok, deferred | None |
+
+Codex is the target technical execution worker. Claude is the target architecture
+and review worker. These preferences do not activate a fallback, expand tool
+permissions, or change subscription chat to paid API calls. Browser/computer
+execution requires its own adapter, environment and acceptance evidence.
+
+### Ordered roadmap
+
+0. Aroma System foundation: preserve the business source of truth.
+1. Core: Capture / Task / Decision / Approval and existing-module handoffs.
+2. Eyes: GitHub, Drive, Aroma System, Calendar, Gmail in that order. Validate
+   structural read-only interfaces, not merely configuration switches.
+3. Workers: OpenAI/Codex and Claude; verify dispatch, costs and result evidence.
+4. Memory: Memory Gateway -> Hindsight -> separate PostgreSQL/pgvector. PostgreSQL
+   and pgvector are storage components, not parallel AI workers. Validate an
+   isolated bank before real ingestion; test retain, cross-conversation recall,
+   correction and forgetting. Reflection follows later.
+5. Hands: Draft -> Recommend -> Approval -> Execute, one bounded operation at a time.
+6. Business integrations: only with a concrete use case.
+7. Agent automation: accept workflows by priority.
+8. Progressive autonomy: define permissions separately from model capability.
+
+Agent priorities: P0 Executive/Owner Assistant and Development; P1 Email,
+Calendar and QA; P2 Purchasing and Accounting; P3 Review and HR.
+
+Manus and Grok are deferred. Later business integrations include QBO, 7shifts,
+Google Business Profile, POS, Cloudflare, Make, WhatsApp Business and SMS.
+Purchasing portals (Costco, Wholesale Club, Amazon and other suppliers) follow
+later. Supplier email reuses Gmail. Bank accounts, credit-card portals, CRA,
+personal financial accounts and direct payment interfaces are excluded from this
+scope; banking data, SIN, passwords and secrets are not worker task content.
+This inventory implements no new connection, scheduling or execution policy.
+
 ## Ownership and boundaries
 
 Xiangxiang is the manager layer. A model is a replaceable computation provider;
@@ -80,10 +169,12 @@ the next integration step. It reuses the registry's unconnected-integration list
 Its review date is a release inventory date, not a health-check timestamp.
 Opening the page makes no source, model or memory calls and grants no capability.
 
-The next integration is Hindsight through the existing memory interface, beginning
-with an isolated test bank and acceptance of retention, recall in a new conversation,
-correction and forgetting. Deployment, model/cost settings and retention scope must
-be established before real ingestion. This inventory does not activate Hindsight.
+The consolidated inventory leads with the core twelve, target worker assignments,
+Core responsibilities and Phase 0-8 roadmap. The eight-layer overview remains
+expandable. The next work is acceptance of existing read sources and workers,
+followed by Hindsight through the existing memory interface. Deployment,
+model/cost settings and retention scope must be established before real ingestion.
+This inventory does not activate Hindsight or any other new provider.
 
 The existing Xiangxiang sidebar links to **Operations briefing**. Refresh is an
 explicit user action; opening the page reads only activity and registry metadata.
