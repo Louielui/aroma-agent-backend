@@ -27,7 +27,7 @@ The supplied July Drive quotation is a design input, not independently verified 
 - [x] Durability: pending outbox, bounded indexing, backup/restore verification.
 - [x] Owner UI: six layers, candidates/approval/rejection, source/audit, scope, revisions,
       reflection/models, active work and connection/acceptance status.
-- [ ] Delivery: meaningful red-first tests, full suite, local merge, restart, live bootCommit,
+- [x] Delivery: meaningful red-first tests, full suite, local merge, restart, live bootCommit,
       visible architecture inventory and measured limitations.
 
 ## Policy
@@ -104,6 +104,37 @@ Archive excludes recall and keeps the historical audit; it is not a privacy-eras
   failure. Later adapter/label adjustments have focused regression coverage.
 - Live browser, new-commit restart and real reflection acceptance are recorded in the
   delivery report; implementation checks above do not replace that evidence.
+
+## Live acceptance, 2026-09-29
+
+- Restricted LocalService cannot read the owner's Python/database configuration. The
+  backend now uses the existing authenticated loopback subscription bridge's closed
+  memory-store endpoint. Only that owner process invokes the canonical SQL transport.
+  Windows service privileges were not widened. Unicode transport uses Python UTF-8.
+- Running owner API returned 200 for canonical catalogue, recall, working closure and
+  backup. The working acceptance record was archived with two audit events.
+- A historical briefing document was indexed and semantically recalled with its exact
+  canonical document ID. Hindsight reflection returned a 571-character sourced summary,
+  persisted as a semantic candidate. It was not approved as a company decision.
+- Second live backup restored four real tables to xiangxiang_restore_a66e789c82c4;
+  all 390 records and 393 audit events matched. Snapshot SHA-256:
+  a66e789c82c4b5377e19678c9cca50833e064368c4955022a0ae6f5bb73d7476.
+- At that measurement: 382 active episodic histories, six decision candidates, one
+  semantic candidate and one archived working record. Of active histories, 380 await
+  indexing, one index is unconfirmed and one is verified. Capture is not complete
+  semantic coverage; source search already covers the retained active text.
+- Browser verified the six-layer page and architecture inventory. Final screenshots,
+  bootCommit and runtime acceptance JSON are in the workspace outputs directory.
+- Latest full suite: 6,053 tests, 6,035 passed, 16 skipped, two failures: the existing
+  missing x44 service fixture and a concurrent wisdom-file writer failure. The latter
+  passed its focused rerun. Final memory/bridge tests passed; final evidence and UI
+  regression suite passed 39 tests. Red-first tests reproduced and then fixed evidence
+  invalidation by index metadata and sensitive content surviving in metadata.
+
+Mental-model evidence now uses stable content/authority fingerprints, so reindexing
+does not invalidate it. Archive, supersession or changed content still invalidates it.
+Older model records retain strict version checks until refreshed. Excluded records keep
+only neutral labels and a hashed source identifier, not the excluded subject or source ID.
 
 ## Limits retained explicitly
 

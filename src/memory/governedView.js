@@ -15,10 +15,11 @@ function buildHtml() {
     procedural: t('mem6.procedural'), preference: t('mem6.preference'), candidate: t('mem6.candidate'), active: t('mem6.active'),
     temporary: t('mem6.temporary'), superseded: t('mem6.superseded'), archived: t('mem6.archived'), ignored: t('mem6.ignored'), rejected: t('mem6.rejected'),
     goal: t('mem6.goal'), project: t('mem6.project'), worker: t('mem6.worker'), run: t('mem6.run'), createWork: t('mem6.createWork'),
-    finish: t('mem6.finish'), noResults: t('memory.autoNoResults'), totals: t('mem6.totals'), sourceDate: t('mem6.sourceDate'),
+    finish: t('mem6.finish'), noResults: t('mem6.noResults'), totals: t('mem6.totals'), sourceDate: t('mem6.sourceDate'),
     noConfidence: t('mem6.noConfidence'), indexes: t('mem6.indexes'), usage: t('mem6.usage'), exception: t('mem6.exception'),
     outcome: t('mem6.outcome'), recordUsage: t('mem6.recordUsage'), stale: t('mem6.stale'), backup: t('mem6.backup'),
-    revoke: t('mem6.revoke'), more: t('mem6.more')
+    revoke: t('mem6.revoke'), more: t('mem6.more'), connected: t('mem6.connected'), unavailable: t('mem6.unavailable'),
+    pending: t('mem6.pending'), unconfirmed: t('mem6.unconfirmed'), saved: t('mem6.saved'), loaded: t('mem6.loaded')
   }
   return fs.readFileSync(path.join(__dirname, 'governedView.html'), 'utf8').replace('/*LABELS*/', JSON.stringify(labels).replace(/</g, '\\u003c'))
 }

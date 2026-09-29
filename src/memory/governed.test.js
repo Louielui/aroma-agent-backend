@@ -95,3 +95,25 @@ test('working memory expiry cannot become a permanent fact; only gateway modules
     assert.doesNotMatch(fs.readFileSync(file, 'utf8'), /require\(['"][^'"]*memory\/hindsight['"]\)/, file)
   }
 })
+
+test('index metadata does not invalidate reflection evidence, but archiving does', async () => {
+  const store = createTestStore()
+  const engine = { forScope: () => ({ reflect: async () => ({ text: 'A proposed source-grounded lesson.' }), retain: async () => ({ facts: 1 }) }) }
+  const g = createGateway({ store, engine })
+  const proposed = await g.propose(OWNER, { type: 'episodic', subject: 'QA', text: 'A measured QA result.', scope: 'domain:development', source })
+  const evidence = await g.transition(OWNER, proposed.id, proposed.version, 'approve')
+  const model = await g.reflect(OWNER, { query: 'What happened?', subject: 'QA lesson', scope: evidence.scope, evidenceIds: [evidence.id] })
+  const indexed = await g.index(OWNER, evidence.id)
+  await g.transition(OWNER, model.id, model.version, 'approve')
+  assert.deepEqual((await g.status(OWNER)).staleModels, [])
+  await g.transition(OWNER, evidence.id, indexed.version, 'archive')
+  assert.deepEqual((await g.status(OWNER)).staleModels, [model.id])
+})
+
+test('excluded content cannot survive in the subject or source identifier', async () => {
+  const { g, store } = fixture()
+  const secret = 'password: this-is-a-private-password'
+  const row = await g.propose(OWNER, { type: 'episodic', subject: secret, text: 'A routine observation.', scope: 'private:owner', source: { ...source, id: secret } })
+  assert.equal(row.status, 'ignored')
+  assert.ok(!JSON.stringify(await store.all()).includes(secret))
+})

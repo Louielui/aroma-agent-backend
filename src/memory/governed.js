@@ -9,6 +9,11 @@ const SCOPES = Object.freeze(['global:aroma', 'company:st-marys', 'company:the-f
   'agent:email', 'agent:qa', 'agent:coding', 'agent:purchasing', 'agent:accounting', 'agent:review', 'private:owner'])
 const STATUSES = Object.freeze(['temporary', 'candidate', 'active', 'superseded', 'archived', 'rejected', 'ignored'])
 const hash = s => createHash('sha256').update(s).digest('hex')
+// Index bookkeeping changes the row version, not the evidence or its authority.
+const evidenceHash = r => hash(JSON.stringify([r.id, r.type, r.scope, r.subject, r.text, r.expiresAt,
+  r.source.kind, r.source.id, r.source.at, r.source.attribution, r.source.url, r.source.version,
+  r.approval?.kind, r.approval?.id, r.approval?.actor, r.approval?.at]))
+const matchesEvidence = (r, e) => e.contentHash ? evidenceHash(r) === e.contentHash : r.version === e.version
 const stableId = value => { const h = hash(value); return 'xx-' + h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-8' + h.slice(17, 20) + '-' + h.slice(20, 32) }
 const owner = actor => { if (actor?.id !== 'owner' || actor?.role !== 'owner') throw Error('permission_denied') }
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
@@ -58,14 +63,14 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (input.policy && (input.policy !== 'owner_history' || input.scope !== 'private:owner' || input.type !== 'episodic' ||
         !['conversation', 'briefing', 'worker', 'historical_import'].includes(input.source.kind))) throw Error('invalid_capture_policy')
     if (input.policy) owner(actor)
-    const excluded = exclusionReason(input.text) || exclusionReason(JSON.stringify(input.source) + JSON.stringify(input.details || {}), false)
+    const excluded = exclusionReason(input.text) || exclusionReason(input.subject + JSON.stringify(input.source) + JSON.stringify(input.details || {}), false)
     const id = input.id || (observation ? stableId(JSON.stringify([input.scope, input.type, input.source, input.text])) : 'xx-' + randomUUID())
     const previous = await store.get(id)
     if (previous) { await authorize(actor, previous.scope); if (previous.scope !== input.scope || previous.type !== input.type || (previous.text && previous.text !== input.text.trim())) throw Error('revision_conflict'); return previous }
     const now = clock()
-    const row = { id, type: input.type, subject: input.subject.trim(), text: excluded ? '' : input.text.trim(), scope: input.scope,
+    const row = { id, type: input.type, subject: excluded ? 'Excluded memory' : input.subject.trim(), text: excluded ? '' : input.text.trim(), scope: input.scope,
       status: excluded ? 'ignored' : input.type === 'working' ? 'temporary' : input.policy === 'owner_history' ? 'active' : 'candidate',
-      source: excluded ? { kind: input.source.kind, id: input.source.id, at: input.source.at, attribution: input.source.attribution } : input.source,
+      source: excluded ? { kind: 'excluded', id: hash(input.source.id), at: input.source.at, attribution: input.source.attribution } : input.source,
       confidence: input.confidence ?? null, owner: actor.id, createdAt: now, updatedAt: now, version: 1,
       supersedes: input.supersedes || null, supersededBy: null, approval: input.policy ? { kind: 'policy', id: input.policy, actor: actor.id, at: now } : null,
       decidedBy: null, decidedAt: null, expiresAt: input.expiresAt || null, details: excluded ? {} : input.details || {},
@@ -84,7 +89,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (action === 'approve') {
       if (r.details.evidenceVersions) for (const e of r.details.evidenceVersions) {
         const evidence = await get(actor, e.id)
-        if (!evidence || !current(evidence) || evidence.version !== e.version) throw Error('stale_evidence')
+        if (!evidence || !current(evidence) || !matchesEvidence(evidence, e)) throw Error('stale_evidence')
       }
       if (r.supersedes) {
         const old = await get(actor, r.supersedes)
@@ -191,7 +196,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (!result || !text(result.text, 30000)) throw Error('reflection_unavailable')
     return create(actor, { type: 'semantic', subject, text: result.text, scope,
       source: { kind: 'reflection', id: randomUUID(), at: clock(), attribution: 'derived', evidence: evidence.map(r => r.id) },
-      details: { query, mentalModel: true, evidenceVersions: evidence.map(r => ({ id: r.id, version: r.version })), engine: 'hindsight', modelId: modelId || null },
+      details: { query, mentalModel: true, evidenceVersions: evidence.map(r => ({ id: r.id, version: r.version, contentHash: evidenceHash(r) })), engine: 'hindsight', modelId: modelId || null },
       ...(modelId ? { supersedes: modelId } : {}) }, false)
   }
   async function status(actor) {
@@ -200,7 +205,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     return { database: await store.health(), layers: TYPES.map(type => ({ type, total: rows.filter(r => r.type === type).length, active: active.filter(r => r.type === type).length })),
       scopes: SCOPES, counts: Object.fromEntries(STATUSES.map(s => [s, rows.filter(r => r.status === s).length])),
       index: { pending: active.filter(r => r.index.state === 'pending').length, unconfirmed: active.filter(r => r.index.state === 'unconfirmed').length, saved: active.filter(r => r.index.state === 'saved').length },
-      staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && a.version === e.version))).map(r => r.id),
+      staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && matchesEvidence(a, e)))).map(r => r.id),
       agents: (await store.grants()).map(({ tokenHash, ...g }) => g) }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
