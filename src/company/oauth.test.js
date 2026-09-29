@@ -5,6 +5,12 @@ const { createFlow } = require('./oauth')
 test('member consent uses the shared live-Google fence before reading application credentials', () => {
   assert.throws(() => require('../context/googleAuth').createMemberConsentClient(), e => e.googleLiveAuthBlocked === true)
 })
+test('mailbox credential operations cannot use live secrets during tests', () => {
+  const auth = require('../context/googleAuth')
+  for (const call of [() => auth.createAdminMailConsentClient(), () => auth.saveAdminMailGrant({}), () => auth.loadAdminMailGrant(), () => auth.clearAdminMailGrant()]) {
+    assert.throws(call, e => e.googleLiveAuthBlocked === true)
+  }
+})
 test('member OAuth verifies audience, nonce, PKCE and one-use browser state; tokens remain private', async () => {
   let auth; let verified; let exchanged; let credentials; let binds = 0; let now = 1000
   const client = {

@@ -12,6 +12,19 @@ function setup () {
   registry.bind({ sub: 'ivy-sub', email: 'ivy.chow@aromabistro741.com', email_verified: true, hd: 'aromabistro741.com' })
   return { registry, file: path.join(dir, 'registry.json') }
 }
+test('construction stays write-free and migration retries transient Windows rename failures', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mail-migrate-'))
+  const file = path.join(dir, 'new-data', 'registry.json'); let attempts = 0
+  const registry = createRegistry({ file, rename: (from, to) => {
+    attempts++
+    if (attempts < 3) { const e = Error('temporary lock'); e.code = 'EPERM'; throw e }
+    fs.renameSync(from, to)
+  } })
+  assert.equal(fs.existsSync(path.dirname(file)), false)
+  assert.equal(registry.source('admin-mail').mailbox, 'adm@aromabistro741.com')
+  assert.equal(attempts, 3)
+  assert.equal(JSON.parse(fs.readFileSync(file, 'utf8')).adminMailboxRegistered, true)
+})
 test('identity binds verified Workspace subject, rejects substitutes and persists revocation', () => {
   const { registry, file } = setup()
   assert.throws(() => registry.bind({ sub: 'thief', email: 'ivy.chow@aromabistro741.com', email_verified: true, hd: 'aromabistro741.com' }))
@@ -60,11 +73,19 @@ test('revocation during a read and mixed-source derived references cannot leak',
   registry.setGrant('ivy', 'admin-drive', false)
   assert.equal(await gateway.referencesAllowed({ sub: 'ivy-sub' }, [{ sourceId: 'admin-drive', fileId: admin }]), false)
 })
-test('unconnected mailbox cannot become readable through a grant', () => {
+test('mailbox grant does not connect the source or grant Drive access', () => {
   const { registry } = setup()
-  assert.throws(() => registry.setGrant('ivy', 'admin-mail', true))
+  registry.setGrant('ivy', 'admin-mail', true)
   assert.equal(registry.allowed('ivy-sub', 'admin-mail'), false)
   assert.equal(registry.snapshot().sources.find(s => s.id === 'admin-mail').state, 'not_connected')
+})
+test('mailbox migration preserves verified identities and later revocations on reload', () => {
+  const { registry, file } = setup()
+  registry.setGrant('ivy', 'admin-mail', false)
+  const reloaded = createRegistry({ file })
+  assert.equal(reloaded.identity('ivy-sub').id, 'ivy')
+  assert.equal(reloaded.mailAllowed('ivy-sub'), false)
+  assert.equal(reloaded.source('admin-mail').mailbox, 'adm@aromabistro741.com')
 })
 test('listings expose allowed metadata, report truncation and reject Google-side revocation', async () => {
   const { registry } = setup()

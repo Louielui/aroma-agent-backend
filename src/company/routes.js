@@ -6,6 +6,10 @@ const { sameOrigin } = require('../core/operating/chatRequest')
 const { buildHtml } = require('./view')
 const SESSION = 'xiangxiang_member_session'
 const FLOW = 'xiangxiang_member_flow'
+const MAIL_FLOW = 'xiangxiang_admin_mail_flow'
+function mailCookie (res, value, seconds) {
+  res.append('Set-Cookie', MAIL_FLOW + '=' + encodeURIComponent(value) + '; Path=/company/mail/callback; Max-Age=' + seconds + '; HttpOnly; SameSite=Lax; Secure')
+}
 function cookie (req, name) {
   try {
     const part = String(req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith(name + '='))
@@ -16,15 +20,19 @@ function setCookie (res, name, value, seconds, callback = false) {
   res.append('Set-Cookie', name + '=' + encodeURIComponent(value) + '; Path=' + (callback ? '/company/oauth/callback' : '/') +
     '; Max-Age=' + seconds + '; HttpOnly; SameSite=' + (callback ? 'Lax' : 'Strict') + '; Secure')
 }
-function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = false, registry = createRegistry(), flow = createFlow({ registry }), readers = googleReaders(), probe } = {}) {
+function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = false, registry = createRegistry(), flow = createFlow({ registry }), readers = googleReaders(), probe,
+  mailbox = require('./mailbox').createMailbox({ registry }) } = {}) {
   const router = express.Router(); const gateway = createGateway({ registry, ...readers })
   const safe = fn => (req, res, next) => Promise.resolve().then(() => fn(req, res)).catch(next)
   const noStore = (req, res, next) => { res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); next() }
-  router.use(['/company-access', '/api/v1/company-access', '/member', '/api/v1/member', '/company/oauth/callback'], noStore)
+  router.use(['/company-access', '/api/v1/company-access', '/member', '/api/v1/member', '/company/oauth/callback', '/company/mail/callback'], noStore)
   const same = (req, res, next) => sameOrigin(req) ? next() : res.status(403).json({ error: 'same_origin_required' })
   router.use(['/company-access', '/api/v1/company-access'], requireOwner)
   router.get('/company-access', (req, res) => res.type('html').send(buildHtml({ owner: true })))
-  router.get('/api/v1/company-access', (req, res) => res.json({ ...registry.snapshot(), enabled, memberAcceptance: 'pending', memory: 'not_connected' }))
+  router.get('/api/v1/company-access', (req, res) => res.json({ ...registry.snapshot(), mailbox: mailbox.status(), enabled, memberAcceptance: 'pending', memory: 'not_connected' }))
+  router.get('/api/v1/company-access/mail', safe(async (req, res) => {
+    try { res.json(await mailbox.preview({ owner: true })) } catch (_) { res.status(403).json({ error: 'mail_unavailable' }) }
+  }))
   router.post('/api/v1/company-access', same, safe(async (req, res) => {
     const body = req.body || {}
     try {
@@ -47,9 +55,24 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
         } catch (_) { connected = false }
         registry.recordProbe(source.id, connected === true)
         return res.status(connected ? 200 : 502).json({ connected: connected === true })
-      } else return res.status(400).json({ error: 'invalid_request' })
+      } else if (body.op === 'mail_authorize' && Object.keys(body).join(',') === 'op') {
+        if (req.headers.host !== '127.0.0.1:8090') return res.status(400).json({ error: 'canonical_host_required' })
+        const start = mailbox.begin(); mailCookie(res, start.cookie, 600)
+        return res.json({ url: start.url })
+      } else if (body.op === 'mail_disconnect' && Object.keys(body).join(',') === 'op') mailbox.disconnect()
+      else return res.status(400).json({ error: 'invalid_request' })
       return res.json({ ok: true })
     } catch (_) { return res.status(400).json({ error: 'access_change_rejected' }) }
+  }))
+  router.get('/company/mail/callback', safe(async (req, res) => {
+    let ok = false
+    try {
+      if (req.headers.host !== '127.0.0.1:8090') throw Error('invalid_host')
+      await mailbox.finish({ state: req.query.state, code: req.query.code, error: req.query.error, cookie: cookie(req, MAIL_FLOW) })
+      ok = true
+    } catch (_) { /* Credentials and provider errors never enter the response. */ }
+    mailCookie(res, '', 0)
+    res.redirect(303, '/company-access?mail=' + (ok ? 'success' : 'failed'))
   }))
   router.use(['/member', '/api/v1/member', '/company/oauth/callback'], (req, res, next) => enabled ? next() : res.status(503).json({ error: 'member_access_disabled' }))
   router.get('/member', (req, res) => res.type('html').send(buildHtml({ owner: false })))
@@ -81,8 +104,17 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
   router.get('/api/v1/member', (req, res) => {
     const sub = req.companySession.sub
     res.json({ identity: registry.identity(sub), sources: registry.snapshot().sources.filter(s => registry.allowed(sub, s.id)).map(({ ownerProbe, ...s }) => s),
-      memory: 'not_connected', gmail: 'not_connected' })
+      memory: 'not_connected', gmail: registry.mailAllowed(sub) ? mailbox.status() : null })
   })
+  router.get('/api/v1/member/mail', safe(async (req, res) => {
+    const sub = req.companySession.sub
+    if (!registry.mailAllowed(sub)) return res.status(403).json({ error: 'mail_access_denied' })
+    try {
+      const result = await mailbox.preview({ sub })
+      if (!flow.get(cookie(req, SESSION))) throw Error('session_expired')
+      res.json(result)
+    } catch (_) { res.status(403).json({ error: 'mail_unavailable' }) }
+  }))
   router.get('/api/v1/member/files', safe(async (req, res) => {
     if (Object.keys(req.query).some(k => !['sourceId', 'folderId', 'fileId'].includes(k)) || (req.query.folderId && req.query.fileId)) return res.status(400).json({ error: 'invalid_request' })
     const source = registry.source(req.query.sourceId)

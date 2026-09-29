@@ -7,7 +7,7 @@ const SEED = require('./seed.json')
 const clone = value => JSON.parse(JSON.stringify(value))
 const fail = () => { throw Error('access_denied') }
 function initial () { return clone(SEED) }
-function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.json'), clock = () => new Date().toISOString() } = {}) {
+function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.json'), clock = () => new Date().toISOString(), rename = fs.renameSync } = {}) {
   let state = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : initial()
   if (state.version !== 1 || !Array.isArray(state.users) || !Array.isArray(state.sources) || !Array.isArray(state.audit)) throw Error('access_store_invalid')
   function update (actor, action, target, fn) {
@@ -17,7 +17,14 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
     fs.mkdirSync(path.dirname(file), { recursive: true })
     const temp = file + '.' + randomUUID() + '.tmp'
     fs.writeFileSync(temp, JSON.stringify(next, null, 2), { flag: 'wx', mode: 0o600 })
-    try { fs.renameSync(temp, file) } catch (e) { fs.unlinkSync(temp); throw e }
+    try {
+      for (let attempt = 0; ; attempt++) {
+        try { rename(temp, file); break } catch (e) {
+          if (attempt >= 19 || !['EPERM', 'EACCES', 'EBUSY'].includes(e.code)) throw e
+          Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 25)
+        }
+      }
+    } catch (e) { try { fs.unlinkSync(temp) } catch (_) {} ; throw e }
     state = next
   }
   function identity (sub) { return state.users.find(u => typeof sub === 'string' && sub && u.sub === sub && !u.suspended) }
@@ -27,6 +34,7 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
     const email = claims.email.toLowerCase()
     const user = state.users.find(u => u.email === email)
     if (!user || user.suspended || (user.sub && user.sub !== claims.sub) || state.users.some(u => u.id !== user.id && u.sub === claims.sub)) fail()
+    ensureMailboxRegistered()
     update(user.id, 'verified_login', user.id, s => {
       const u = s.users.find(u => u.id === user.id); u.sub = claims.sub; u.lastLoginAt = clock()
     })
@@ -37,8 +45,10 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
     return !!(user && source && source.kind === 'drive' && source.state === 'registered' && user.grants.includes(sourceId))
   }
   function setGrant (userId, sourceId, enabled) {
+    ensureMailboxRegistered()
     const user = state.users.find(u => u.id === userId); const source = state.sources.find(s => s.id === sourceId)
-    if (!user || user.role === 'owner' || !source || source.department !== user.role || source.kind !== 'drive' || typeof enabled !== 'boolean') fail()
+    if (!user || user.role === 'owner' || !source || source.department !== user.role ||
+        !(source.kind === 'drive' || (source.id === 'admin-mail' && source.mailbox)) || typeof enabled !== 'boolean') fail()
     update('owner', enabled ? 'grant' : 'revoke', userId + '/' + sourceId, s => {
       const u = s.users.find(u => u.id === userId)
       u.grants = u.grants.filter(id => id !== sourceId); if (enabled) u.grants.push(sourceId)
@@ -54,10 +64,31 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
       s.sources.find(s => s.id === sourceId).ownerProbe = { state: connected ? 'connected' : 'failed', at: clock() }
     })
   }
-  return { bind, allowed, setGrant, suspend, recordProbe, revision: () => state.revision,
+  // One-time migration records the Owner's mailbox instruction without resetting
+  // existing subjects, Drive revocations, suspension or subsequent mail revocations.
+  function ensureMailboxRegistered () {
+    if (state.adminMailboxRegistered) return
+    update('owner', 'register_mailbox', 'admin-mail', s => {
+      s.sources.find(s => s.id === 'admin-mail').mailbox = SEED.sources.find(s => s.id === 'admin-mail').mailbox
+      for (const u of s.users.filter(u => ['owner', 'ivy'].includes(u.id))) {
+        if (!u.grants.includes('admin-mail')) u.grants.push('admin-mail')
+      }
+      s.adminMailboxRegistered = true
+    })
+  }
+  function recordMailState (status, actor = 'owner') {
+    if (!['connected', 'failed', 'not_connected'].includes(status)) fail()
+    ensureMailboxRegistered()
+    update(actor, 'mail_' + status, 'admin-mail', s => {
+      const mail = s.sources.find(s => s.id === 'admin-mail')
+      mail.state = status; mail.checkedAt = clock()
+    })
+  }
+  return { bind, allowed, setGrant, suspend, recordProbe, recordMailState, revision: () => state.revision,
+    mailAllowed: sub => { ensureMailboxRegistered(); const u = identity(sub); return !!(u && u.grants.includes('admin-mail') && state.sources.find(s => s.id === 'admin-mail')?.mailbox) },
     identity: sub => { const u = identity(sub); return u ? { id: u.id, name: u.name, role: u.role } : null },
-    source: id => clone(state.sources.find(s => s.id === id) || null),
-    snapshot: () => ({ ...clone(state), users: state.users.map(({ sub, ...u }) => ({ ...clone(u), verified: !!sub })) })
+    source: id => { ensureMailboxRegistered(); return clone(state.sources.find(s => s.id === id) || null) },
+    snapshot: () => { ensureMailboxRegistered(); return { ...clone(state), users: state.users.map(({ sub, ...u }) => ({ ...clone(u), verified: !!sub })) } }
   }
 }
 function createGateway ({ registry, getFile, listFiles }) {

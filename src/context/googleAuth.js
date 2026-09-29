@@ -125,6 +125,43 @@ function credentialConfiguration () {
 
 const CONSENT_REDIRECT = 'http://127.0.0.1:8090/oauth/google/callback'
 const MEMBER_REDIRECT = 'http://127.0.0.1:8090/company/oauth/callback'
+const ADMIN_MAIL_REDIRECT = 'http://127.0.0.1:8090/company/mail/callback'
+const ADMIN_MAIL_DIR = 'C:\\ProgramData\\AromaXiangXiang\\admin-mail-secrets'
+const ADMIN_MAIL_FILE = path.join(ADMIN_MAIL_DIR, 'google-admin-mail-token.json')
+function createAdminMailConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  // Check the dedicated service-writable store before asking the Owner to consent.
+  const probe = path.join(ADMIN_MAIL_DIR, randomUUID() + '.probe')
+  fs.writeFileSync(probe, '', { flag: 'wx', mode: 0o600 })
+  fs.unlinkSync(probe)
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(ADMIN_MAIL_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, ADMIN_MAIL_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return { client, audience: c.client_id }
+}
+function adminMailPresent () { return fs.existsSync(ADMIN_MAIL_FILE) }
+function saveAdminMailGrant (grant) {
+  assertGoogleLiveAuthAllowed()
+  if (!grant || !['email', 'sub', 'refresh_token'].every(k => typeof grant[k] === 'string' && grant[k])) throw Error('incomplete_grant')
+  const temp = ADMIN_MAIL_FILE + '.' + randomUUID() + '.tmp'
+  // Inherit the dedicated private directory ACL; never use the operational store.
+  fs.writeFileSync(temp, JSON.stringify({ email: grant.email, sub: grant.sub, refresh_token: grant.refresh_token }), { flag: 'wx', mode: 0o600 })
+  try { fs.renameSync(temp, ADMIN_MAIL_FILE) } catch (e) { fs.unlinkSync(temp); throw e }
+}
+function loadAdminMailGrant () {
+  assertGoogleLiveAuthAllowed()
+  const grant = JSON.parse(fs.readFileSync(ADMIN_MAIL_FILE, 'utf8'))
+  if (!grant.email || !grant.sub || !grant.refresh_token) throw Error('incomplete_grant')
+  const { client } = createAdminMailConsentClient()
+  client.setCredentials({ refresh_token: grant.refresh_token })
+  return { client, email: grant.email, sub: grant.sub }
+}
+function clearAdminMailGrant () {
+  assertGoogleLiveAuthAllowed()
+  if (fs.existsSync(ADMIN_MAIL_FILE)) fs.unlinkSync(ADMIN_MAIL_FILE)
+}
 function createMemberConsentClient () {
   assertGoogleLiveAuthAllowed()
   // Share application configuration only, never the Owner refresh token.
@@ -191,6 +228,12 @@ module.exports = {
   credentialConfiguration,
   CONSENT_REDIRECT,
   MEMBER_REDIRECT,
+  ADMIN_MAIL_REDIRECT,
+  createAdminMailConsentClient,
+  adminMailPresent,
+  saveAdminMailGrant,
+  loadAdminMailGrant,
+  clearAdminMailGrant,
   createMemberConsentClient,
   createConsentClient,
   persistRefreshToken,

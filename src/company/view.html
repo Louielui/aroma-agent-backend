@@ -25,13 +25,23 @@ async function ownerView() {
    if(u.role==='owner') node('p',L.ownerScope,c)
    else { const granted=u.grants.includes('admin-drive'); node('p',granted?L.allowed:L.denied,c)
      button(granted?L.revoke:L.grant,c,()=>change({op:'grant',userId:u.id,sourceId:'admin-drive',enabled:!granted}))
+     const mailGranted=u.grants.includes('admin-mail')
+     button(mailGranted?L.mailRevoke:L.mailGrant,c,()=>change({op:'grant',userId:u.id,sourceId:'admin-mail',enabled:!mailGranted}))
      button(u.suspended?L.resume:L.suspend,c,()=>change({op:'suspend',userId:u.id,suspended:!u.suspended}))
    }
  }
  $('sources').replaceChildren(); node('h2',L.sources,$('sources')); const sources=node('div',null,$('sources'),'grid')
  for(const s of data.sources) { const c=node('article',null,sources,'card'); c.dataset.source=s.id; node('h3',s.kind==='gmail'?L.mail:s.name,c)
-   node('span',s.kind==='gmail'?L.notConnected:L.registered,c,'badge')
-   if(s.kind==='gmail') node('p',L.mailNote,c,'muted')
+   node('span',s.kind==='gmail'?(data.mailbox.state==='connected'?L.mailConnected:data.mailbox.state==='failed'?L.failed:L.notConnected):L.registered,c,'badge')
+   if(s.kind==='gmail') {
+     node('p',s.mailbox,c); node('p',L.mailNote,c,'muted')
+     if(data.mailbox.state==='not_connected') node('p',L.mailMissing,c,'muted')
+     button(L.mailAuthorize,c,async()=>{ const r=await api('/api/v1/company-access',{op:'mail_authorize'}); window.location.assign(r.url) })
+     if(data.mailbox.state!=='not_connected') {
+       button(L.mailPreview,c,()=>previewMail(true))
+       button(L.mailDisconnect,c,async()=>{ await change({op:'mail_disconnect'}); $('files').replaceChildren() })
+     }
+   }
    else { link(L.sourceLink,'https://drive.google.com/drive/folders/'+s.rootId,node('p',null,c))
      if(s.ownerProbe) node('p',(s.ownerProbe.state==='connected'?L.connected:L.failed)+' · '+new Date(s.ownerProbe.at).toLocaleString(),c,'muted')
      button(L.probe,c,async()=>{ try { await api('/api/v1/company-access',{op:'probe',sourceId:s.id}) } finally { await ownerView() } })
@@ -39,6 +49,17 @@ async function ownerView() {
  }
  $('audit').querySelector('summary').textContent=L.audit
  $('audit').querySelector('pre').textContent=data.audit.slice(-30).reverse().map(a=>a.at+' · '+a.actor+' · '+a.action+' · '+a.target).join('\n')
+ const mailResult=new URLSearchParams(location.search).get('mail')
+ if(mailResult) { $('status').textContent=mailResult==='success'&&data.mailbox.state==='connected'?L.mailSuccess:L.mailFailed; history.replaceState(null,'','/company-access') }
+}
+async function previewMail(owner) {
+ $('files').replaceChildren()
+ const data=await api(owner?'/api/v1/company-access/mail':'/api/v1/member/mail')
+ node('h2',data.mailbox,$('files')); node('p',L.mailScope,$('files'),'muted')
+ if(!data.messages.length) node('p',L.mailEmpty,$('files'))
+ for(const message of data.messages) { const c=node('article',null,$('files'),'card'); node('h3',message.subject||'—',c)
+   node('p',message.from||'—',c,'muted'); node('p',message.date||'—',c,'muted'); node('p',message.snippet||'',c)
+ }
 }
 async function files(source, folderId) {
  $('files').replaceChildren()
@@ -59,6 +80,11 @@ async function memberView() {
  node('h2',L.sources,$('sources'))
  if(!data.sources.length) node('p',L.noSources,$('sources'))
  for(const s of data.sources) button(s.name,$('sources'),()=>files(s,s.rootId))
+ if(data.gmail) {
+   node('h2',L.mail,$('sources')); node('p',data.gmail.mailbox,$('sources'))
+   if(data.gmail.state!=='not_connected') button(L.mailPreview,$('sources'),()=>previewMail(false))
+   else node('p',L.notConnected,$('sources'))
+ }
 }
 (C.owner?ownerView():memberView()).catch(()=>{ $('status').textContent=L.error })
 </script></body></html>

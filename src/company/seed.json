@@ -9,7 +9,7 @@
   "sources": [
     { "id": "company-drive", "name": "Aroma Base", "kind": "drive", "department": "company", "driveId": "0AJApVuax7MarUk9PVA", "rootId": "0AJApVuax7MarUk9PVA", "state": "registered", "evidenceDate": "2026-09-29" },
     { "id": "admin-drive", "name": "9. Admin", "kind": "drive", "department": "admin", "driveId": "0AJApVuax7MarUk9PVA", "rootId": "1iYHY8Muo3K3HSPON5Uu0C8cNgOITei8C", "state": "registered", "evidenceDate": "2026-09-29" },
-    { "id": "admin-mail", "name": "Admin mailbox", "kind": "gmail", "department": "admin", "mailbox": null, "state": "not_connected" }
+    { "id": "admin-mail", "name": "Admin mailbox", "kind": "gmail", "department": "admin", "mailbox": "adm@aromabistro741.com", "state": "not_connected" }
   ],
   "audit": []
 }

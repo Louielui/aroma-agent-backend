@@ -4,6 +4,17 @@ const path = require('node:path')
 const { t, currentLocale } = require('../i18n/t')
 function buildHtml ({ owner }) {
   const labels = { title: t('company.title'),
+    mailAuthorize: t('company.mailAuthorize'),
+    mailDisconnect: t('company.mailDisconnect'),
+    mailPreview: t('company.mailPreview'),
+    mailConnected: t('company.mailConnected'),
+    mailGrant: t('company.mailGrant'),
+    mailRevoke: t('company.mailRevoke'),
+    mailScope: t('company.mailScope'),
+    mailEmpty: t('company.mailEmpty'),
+    mailMissing: t('company.mailMissing'),
+    mailSuccess: t('company.mailSuccess'),
+    mailFailed: t('company.mailFailed'),
     memberTitle: t('company.memberTitle'),
     intro: t('company.intro'),
     limit: t('company.limit'),
