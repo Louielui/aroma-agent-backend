@@ -485,6 +485,32 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort })) : null
   if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
+  // Public navigation is a bounded read workflow, before business-world classification.
+  // It cannot inherit memory, attached records, file access or general execution powers.
+  if (subscriptionMode && process.env.XIANGXIANG_WEBSITE_FLOW === 'on' &&
+      !opts.contextCard && !opts.sectionPreamble && !opts.attachSection &&
+      require('./websiteIntent').candidate(message)) {
+    const { SCHEMA, SYSTEM } = require('./websiteIntent')
+    const { localRequest } = require('../adapters/CodexSubscriptionAdapter')
+    const store = require('../store/websiteRunStore')
+    const id = store.ID.test(opts.websiteRequestId || '') ? opts.websiteRequestId : requestId
+    const deps = opts.websiteDeps || {}
+    let plannerModel = null
+    const website = await require('./websiteFlow').runWebsiteFlow({ message, history,
+      readEnabled: require('../context/flags').readAccessEnabled(process.env, 'public_knowledge'),
+      classify: deps.classify || (async prompt => {
+        const result = await subscriptionAdapter.complete(prompt, { system: SYSTEM, responseFormat: { type: 'json_schema', name: 'website_intent', strict: true, schema: SCHEMA } })
+        plannerModel = result.model; return JSON.parse(result.text)
+      }),
+      search: deps.search || (target => localRequest('/website', { target }, process.env)),
+      record: deps.record || (run => store.save(id, run))
+    })
+    if (website) {
+      if (opts.telemetry) Object.assign(opts.telemetry, { provider: 'openai', model: website.website.model || plannerModel, readContextUsed: website.website.state === 'completed', replyCitesContext: website.website.state === 'completed' })
+      return { ...website, requestId, website: { ...website.website, id } }
+    }
+  }
+
   // -- U1 DRAFT PROPOSAL SHADOW (flag-gated; after red-line, before STEP 2) --
   if (opts && opts.u1DraftShadow === true) {
     const src = (opts && opts.personaSource) || getPersonaSource()

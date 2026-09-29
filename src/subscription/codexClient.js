@@ -278,4 +278,4 @@ async function complete (options, input) {
   })
 }
 
-module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue }
+module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue, withClient }

@@ -110,13 +110,22 @@
    * so there is no injection surface even for hostile model output. Anything it does
    * not recognise stays literal text — the safe failure. */
   function inline (parent, text) {
-    var re = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g
+    var re = /(`[^`]+`|\[[^\]\n]+\]\(https:\/\/[^\s)]+\)|\*\*[^*]+\*\*|\*[^*]+\*|_[^_]+_)/g
     var last = 0
     var m
     while ((m = re.exec(text)) !== null) {
       if (m.index > last) parent.appendChild(document.createTextNode(text.slice(last, m.index)))
       var tok = m[0]
-      if (tok.charAt(0) === '`') parent.appendChild(el('code', null, tok.slice(1, -1)))
+      if (tok.charAt(0) === '[') {
+        var linkParts = tok.match(/^\[([^\]]+)\]\((https:\/\/[^\s)]+)\)$/)
+        var parsedLink = null
+        try { parsedLink = new URL(linkParts[2]) } catch (e) {}
+        if (parsedLink && parsedLink.protocol === 'https:' && !parsedLink.username && !parsedLink.password) {
+          var link = el('a', null, linkParts[1])
+          link.href = parsedLink.href; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.referrerPolicy = 'no-referrer'
+          parent.appendChild(link)
+        } else parent.appendChild(document.createTextNode(tok))
+      } else if (tok.charAt(0) === '`') parent.appendChild(el('code', null, tok.slice(1, -1)))
       else if (tok.slice(0, 2) === '**') parent.appendChild(el('strong', null, tok.slice(2, -2)))
       else parent.appendChild(el('em', null, tok.slice(1, -1)))
       last = m.index + tok.length
@@ -1095,6 +1104,16 @@
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
     tEl.body.appendChild(dots)
     var waited = el('div', 'wait-note')
+    var stage = el('div', 'wait-note')
+    stage.setAttribute('role', 'status')
+    tEl.body.appendChild(stage)
+    tEl.setWebsiteStage = function (state) {
+      if (state === 'classifying') stage.textContent = t('website.classifying')
+      else if (state === 'searching') stage.textContent = t('website.searching')
+      else if (state === 'completed') stage.textContent = t('website.completed')
+      else if (state === 'failed' || state === 'needs_input') stage.textContent = t('website.stopped')
+      else stage.textContent = ''
+    }
     var started = Date.now()
     function updateWait () { waited.textContent = t('chat.waiting', { seconds: Math.floor((Date.now() - started) / 1000) }) }
     updateWait()
@@ -1226,6 +1245,17 @@
     conv.working = true
     renderConvList()
     var typing = addTyping(conv)
+    var websiteRequestId = window.crypto && window.crypto.randomUUID ? window.crypto.randomUUID() : null
+    var statusBusy = false
+    var websitePoll = websiteRequestId && setInterval(function () {
+      if (statusBusy) return
+      statusBusy = true
+      fetch('/api/v1/demo/website-status/' + websiteRequestId, { credentials: 'same-origin' })
+        .then(function (r) { return r.ok ? r.json() : null })
+        .then(function (v) { if (v && v.run) typing.setWebsiteStage(v.run.state) })
+        .catch(function () {}).then(function () { statusBusy = false })
+    }, 2000)
+    var stopWebsitePoll = function () { if (websitePoll) clearInterval(websitePoll) }
     // ONE-SHOT: a shortcut applies to THIS message and is cleared immediately. A forced
     // lane that quietly persisted would be the old upfront mode choice returning by
     // stealth — worse than the buttons, because nothing on screen would say so.
@@ -1246,10 +1276,12 @@
           ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
         carry ? { attachSection: carry } : {},
+        websiteRequestId ? { websiteRequestId: websiteRequestId } : {},
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value } : {}))
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
+      stopWebsitePoll()
       typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       // Remember what this turn became, so a short reply next time continues it rather
@@ -1270,6 +1302,7 @@
       if (o.status === 200) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
+      stopWebsitePoll()
       typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       addError(t('err.connection'), conv)

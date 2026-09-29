@@ -25,7 +25,7 @@ function main () {
   const enabled = () => env.XIANGXIANG_WORKER_FLOW === 'on' && authorizeExecution({ worker: 'on',
     develop: env.DEVELOP_DISPATCH, agent: env.AGENT_BRIDGE, computer: env.COMPUTER_OPERATOR }).workerAuthorized
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled })
-  const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable, cwd }, workerFlow, workerProviders })
+  const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable, cwd }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on' })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }
