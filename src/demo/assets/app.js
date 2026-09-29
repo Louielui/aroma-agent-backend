@@ -76,6 +76,8 @@
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
   var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
+  var chatLevel = document.getElementById('chat-level')
+  if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
   var PROVIDERS = SUBSCRIPTION_CHAT ? [
     { id: 'openai', name: t('provider.subscription'), note: t('provider.subscriptionNote'), warn: true }
   ] : [
@@ -1092,6 +1094,13 @@
     var dots = el('div', 'typing')
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
     tEl.body.appendChild(dots)
+    var waited = el('div', 'wait-note')
+    var started = Date.now()
+    function updateWait () { waited.textContent = t('chat.waiting', { seconds: Math.floor((Date.now() - started) / 1000) }) }
+    updateWait()
+    tEl.body.appendChild(waited)
+    var timer = setInterval(updateWait, 1000)
+    tEl.stopWaiting = function () { clearInterval(timer) }
     return tEl
   }
   // Stale red errors used to sit above fresh content, so the Owner could not tell which
@@ -1170,6 +1179,7 @@
     // invites a click that would do nothing.
     send.disabled = p || msg.value.trim() === ''
     if (picker) picker.disabled = p
+    if (chatLevel) chatLevel.disabled = p
   }
 
   function submit () {
@@ -1235,10 +1245,12 @@
         forced
           ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
-        carry ? { attachSection: carry } : {}))
+        carry ? { attachSection: carry } : {},
+        SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value } : {}))
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
+      typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       // Remember what this turn became, so a short reply next time continues it rather
       // than arriving as a fresh, contentless input. Chat responses carry the lane
@@ -1258,6 +1270,7 @@
       if (o.status === 200) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
+      typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
       addError(t('err.connection'), conv)
     }).then(function () {
@@ -2336,6 +2349,10 @@
     ['brand-name', 'text', function () { return t('shell.title') }],
     ['home-label', 'text', function () { return t('nav.home') }],
     ['new-chat', 'text', function () { return t('shell.newChat') }],
+    ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
+    ['chat-level-fast', 'text', function () { return t('chat.fast') }],
+    ['chat-level-standard', 'text', function () { return t('chat.standard') }],
+    ['chat-level-deep', 'text', function () { return t('chat.deep') }],
     ['open-manager', 'text', function () { return t('manager.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],

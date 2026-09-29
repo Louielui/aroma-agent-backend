@@ -2,7 +2,7 @@
 
 const http = require('node:http')
 const crypto = require('node:crypto')
-const { complete, checkSubscription, SubscriptionError } = require('./codexClient')
+const { complete, checkSubscription, SubscriptionError, createSession } = require('./codexClient')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
 
@@ -14,7 +14,8 @@ function authenticated (header, token) {
 }
 function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
-  if (Object.keys(input).some(k => !['prompt', 'system', 'schema'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (input.effort !== undefined && !['low', 'medium', 'high'].includes(input.effort)) throw new SubscriptionError('subscription_invalid_output')
   if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 500000) throw new SubscriptionError('subscription_invalid_output')
   if (input.system !== undefined && (typeof input.system !== 'string' || input.system.length > 200000)) throw new SubscriptionError('subscription_invalid_output')
   if (input.schema !== undefined && (!input.schema || typeof input.schema !== 'object' || Array.isArray(input.schema))) throw new SubscriptionError('subscription_invalid_output')
@@ -24,6 +25,7 @@ function validateInput (input) {
 function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false
+  const session = createSession(clientOptions)
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => {
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
@@ -35,7 +37,7 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
     busy = true
     const controller = new AbortController()
     res.on('close', () => { if (!res.writableFinished) controller.abort() })
-    const options = { ...clientOptions, signal: controller.signal }
+    const options = { ...clientOptions, session, signal: controller.signal }
     try {
       const chunks = []
       let length = 0
@@ -56,6 +58,7 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
     } finally { busy = false }
   })
   server.requestTimeout = 150000
+  server.on('close', () => session.close())
   server.headersTimeout = 10000
   return server
 }

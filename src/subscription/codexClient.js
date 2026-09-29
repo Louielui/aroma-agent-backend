@@ -82,7 +82,7 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env }) {
     child.kill()
     clearTimeout(timer)
   }
-  const timer = setTimeout(() => fail(new SubscriptionError()), timeoutMs)
+  const timer = timeoutMs > 0 ? setTimeout(() => fail(new SubscriptionError()), timeoutMs) : null
   child.on('error', () => fail(new SubscriptionError()))
   child.on('exit', () => fail(new SubscriptionError()))
   child.stdin.on('error', () => fail(new SubscriptionError()))
@@ -110,6 +110,7 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env }) {
     }
   })
   return {
+    get closed () { return closed },
     events,
     request (method, params = {}) {
       if (closed) return Promise.reject(new SubscriptionError())
@@ -145,6 +146,7 @@ async function preflight (rpc) {
 }
 
 async function withClient (options, operation) {
+  if (options.session) return options.session.run(operation, options.signal)
   const rpc = (options.connect || connect)(options)
   const abort = () => rpc.close()
   if (options.signal) {
@@ -163,7 +165,59 @@ async function withClient (options, operation) {
 
 async function checkSubscription (options) { return withClient(options, preflight) }
 
+// Reuse only the transport. Each completion still creates an isolated ephemeral
+// thread and rechecks account/quota. Failures are never automatically replayed.
+function createSession (options = {}) {
+  let rpc = null; let busy = false; let idle = null; let uses = 0
+  function close () {
+    clearTimeout(idle)
+    const old = rpc; rpc = null; uses = 0
+    if (old) old.close()
+  }
+  async function run (operation, signal) {
+    if (busy || (signal && signal.aborted)) throw new SubscriptionError()
+    busy = true; clearTimeout(idle)
+    let timer; let fail; let abort; let active
+    try {
+      const fresh = !rpc || rpc.closed
+      if (fresh) {
+        rpc = (options.connect || connect)({ ...options, timeoutMs: 0 })
+        rpc.events.on('failure', () => {}) // An idle exit must not become unhandled.
+      }
+      active = rpc
+      const stopped = new Promise((resolve, reject) => {
+        fail = reject
+        abort = () => reject(new SubscriptionError())
+        active.events.once('failure', fail)
+        if (signal) signal.addEventListener('abort', abort, { once: true })
+        timer = setTimeout(abort, options.timeoutMs || 120000)
+      })
+      const work = async () => {
+        if (fresh) {
+          await active.request('initialize', { clientInfo: { name: 'xiangxiang_subscription_chat', version: '1.1.0' }, capabilities: { experimentalApi: true } })
+          active.notify('initialized')
+        }
+        if (signal && signal.aborted) throw new SubscriptionError()
+        return operation(active)
+      }
+      const result = await Promise.race([work(), stopped])
+      // Bound the number of ephemeral threads retained by a warm child process.
+      if (++uses >= 16) close()
+      else { idle = setTimeout(close, options.idleMs || 90000); idle.unref() }
+      return result
+    } catch (error) { close(); throw error } finally {
+      clearTimeout(timer)
+      if (active && fail) active.events.removeListener('failure', fail)
+      if (signal && abort) signal.removeEventListener('abort', abort)
+      busy = false
+    }
+  }
+  return { run, close }
+}
+
 async function complete (options, input) {
+  const effort = input.effort === undefined ? 'low' : input.effort
+  if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
   return withClient(options, async rpc => {
     await preflight(rpc)
     const params = threadParams(options.cwd, input.system)
@@ -177,9 +231,11 @@ async function complete (options, input) {
     const start = Date.now()
     let text = ''
     let usage = null
+    let onFailure; let onNotification
     const finished = new Promise((resolve, reject) => {
-      rpc.events.once('failure', reject)
-      rpc.events.on('notification', message => {
+      onFailure = reject
+      rpc.events.once('failure', onFailure)
+      onNotification = message => {
         const p = message.params || {}
         if (p.threadId && p.threadId !== thread.thread.id) return
         if (message.method === 'thread/tokenUsage/updated') usage = p.tokenUsage && p.tokenUsage.last
@@ -192,17 +248,23 @@ async function complete (options, input) {
           else if (!text || text.length > 100000) reject(new SubscriptionError('subscription_invalid_output'))
           else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', usage: usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens } : null })
         }
-      })
+      }
+      rpc.events.on('notification', onNotification)
     })
     // Attach immediately, so an early notification cannot create an unhandled rejection.
     finished.catch(() => {})
-    await rpc.request('turn/start', {
-      threadId: thread.thread.id, model: MODEL, effort: 'low', serviceTierForTurn: 'default',
-      environments: [], input: [{ type: 'text', text: input.prompt }],
-      ...(input.schema ? { outputSchema: input.schema } : {})
-    })
-    return finished
+    try {
+      await rpc.request('turn/start', {
+        threadId: thread.thread.id, model: MODEL, effort, serviceTierForTurn: 'default',
+        environments: [], input: [{ type: 'text', text: input.prompt }],
+        ...(input.schema ? { outputSchema: input.schema } : {})
+      })
+      return await finished
+    } finally {
+      rpc.events.removeListener('failure', onFailure)
+      rpc.events.removeListener('notification', onNotification)
+    }
   })
 }
 
-module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete }
+module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession }
