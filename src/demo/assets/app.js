@@ -817,11 +817,19 @@
     renderWaitingBar(!isListed(c) && c.history.length === 0)
     scroll()
   }
+  function matchesConversation (c, query) {
+    return String(c.title || '').toLocaleLowerCase().includes(String(query || '').trim().toLocaleLowerCase())
+  }
   function renderConvList () {
     clear(convsEl)
     var lastGroup = null
+    var search = document.getElementById('conversation-search')
+    var query = search ? search.value : ''
+    var visible = 0
     for (var i = 0; i < convs.length; i++) {
       if (!isListed(convs[i])) continue
+      if (!matchesConversation(convs[i], query)) continue
+      visible++
       (function (c) {
         // 今日 / 尋日 / 更早 — a quiet label, only when the group changes.
         var g = groupLabel(convWhen(c))
@@ -831,6 +839,7 @@
         }
 
         var row = el('div', 'conv-row')
+        if (c === active) row.classList.add('selected')
 
         // ALWAYS RENDERED, only the `on` class is conditional. A dot that appears and
         // disappears would shift every title sideways as replies come and go.
@@ -841,6 +850,7 @@
         var b = el('button', 'conv' + (c === active ? ' active' : ''), c.title)
         b.setAttribute('type', 'button')
         b.setAttribute('title', c.title)
+        if (c === active) b.setAttribute('aria-current', 'page')
         b.addEventListener('click', function () { selectConversation(c) })
         row.appendChild(b)
 
@@ -869,6 +879,9 @@
         convsEl.appendChild(row)
       })(convs[i])
     }
+    var count = document.getElementById('history-count')
+    if (count) count.textContent = String(visible)
+    if (!visible && query.trim()) convsEl.appendChild(el('p', 'side-empty', t('shell.noSearchResults')))
   }
   function titleFrom (text) {
     var tEl = String(text).replace(/\s+/g, ' ').trim()
@@ -2164,7 +2177,12 @@
   msg.addEventListener('keydown', function (e) {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit() }
   })
-  document.getElementById('new-chat').addEventListener('click', function () { newConversation(true) })
+  document.getElementById('new-chat').addEventListener('click', function () { document.getElementById('conversation-search').value = ''; newConversation(true) })
+  document.getElementById('conversation-search').addEventListener('input', renderConvList)
+  document.getElementById('conversation-search').addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); e.target.value = ''; renderConvList() }
+  })
+  document.getElementById('open-workers').addEventListener('click', function () { window.location.href = '/workers' })
   document.getElementById('collapse').addEventListener('click', function () {
     sidebar.className = 'collapsed'
     document.getElementById('expand').className = 'icon-btn'
@@ -2385,14 +2403,20 @@
   var SHELL_TEXT = [
     ['brand-name', 'text', function () { return t('shell.title') }],
     ['home-label', 'text', function () { return t('nav.home') }],
-    ['new-chat', 'text', function () { return t('shell.newChat') }],
+    ['new-chat-label', 'text', function () { return t('shell.newConversation') }],
+    ['conversation-search', 'placeholder', function () { return t('shell.searchTitles') }],
+    ['conversation-search', 'aria', function () { return t('shell.searchTitles') }],
+    ['workspace-label', 'text', function () { return t('shell.workspace') }],
+    ['workspace-nav', 'aria', function () { return t('shell.workspace') }],
+    ['workers-label', 'text', function () { return t('shell.workers') }],
+    ['history-label', 'text', function () { return t('shell.historyLabel') }],
     ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
     ['chat-level-fast', 'text', function () { return t('chat.fast') }],
     ['chat-level-standard', 'text', function () { return t('chat.standard') }],
     ['chat-level-deep', 'text', function () { return t('chat.deep') }],
-    ['open-manager', 'text', function () { return t('manager.title') }],
-    ['open-architecture', 'text', function () { return t('architecture.title') }],
-    ['open-memory', 'text', function () { return t('memory.title') }],
+    ['manager-label', 'text', function () { return t('manager.title') }],
+    ['architecture-label', 'text', function () { return t('architecture.title') }],
+    ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],
     ['composer-note', 'text', function () { return t('shell.composerNote') }],

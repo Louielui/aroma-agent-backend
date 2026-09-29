@@ -77,7 +77,7 @@
 
   /* ── geometry ─────────────────────────────────────────────────────────── */
   --radius: 14px;
-  --side-w: 264px;
+  --side-w: 280px;
   /* The user bubble stays narrower than the column — a bubble spanning the full width
      stops reading as a bubble. The assistant has no bubble and uses all of it. */
   --user-bubble-max: 86%;
@@ -879,4 +879,47 @@ button[disabled] { opacity: .45; cursor: default; }
 .place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }
 #chat-level { font: inherit; font-size: var(--ui-size); max-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
 #chat-level:disabled { opacity: .55; cursor: wait; }
+
+/* Sidebar refresh: compact tools, searchable history and a stable footer. */
+#sidebar { gap: 3px; min-height: 0; padding: 12px 10px 10px; }
+.side-top { min-height: 42px; padding: 0 8px 8px; gap: 9px; }
+.side-top .brand { flex: 1; }
+.side-brand-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--dot); }
+.nav-icon { width: 18px; height: 18px; flex: 0 0 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.side-top .icon-btn { display: flex; padding: 7px; }
+#sidebar .places { padding: 0; margin: 0 0 2px; border: 0; }
+#sidebar .place-btn, #sidebar .new-chat, #sidebar .side-item {
+  display: flex; align-items: center; gap: 11px; min-height: 38px; padding: 8px 11px;
+  width: 100%; border: 1px solid transparent; border-radius: 8px; background: transparent;
+  color: var(--ink); font-size: var(--ui-size); line-height: var(--ui-line); text-align: left;
+}
+#sidebar .new-chat { background: var(--card); border-color: var(--line); margin-bottom: 5px; font-weight: var(--weight-medium); }
+#sidebar .place-btn:hover, #sidebar .side-item:hover, #sidebar .new-chat:hover { background: var(--divider); color: var(--ink); }
+#sidebar .place-btn.side-item-on { background: var(--divider); border-color: var(--line); }
+.side-search { display: flex; align-items: center; gap: 9px; margin: 2px 1px 9px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--soft); }
+.side-search:focus-within { outline: 2px solid var(--focus); outline-offset: 1px; }
+.side-search input { width: 100%; min-width: 0; padding: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; font-size: var(--ui-size); }
+.side-search input::placeholder { color: var(--soft); }
+.side-workspace { margin-bottom: 8px; }
+.side-workspace summary { cursor: pointer; padding: 7px 11px; color: var(--soft); font-size: var(--small-size); }
+.side-workspace summary::marker { font-size: var(--small-size); }
+.side-history-heading { display: flex; align-items: center; justify-content: space-between; padding: 10px 11px 4px; border-top: 1px solid var(--line); font-size: var(--small-size); color: var(--soft); }
+#history-count { font-variant-numeric: tabular-nums; }
+#sidebar .convs { min-height: 0; margin: 0; padding-right: 2px; scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+#sidebar .conv-group { padding-top: 10px; padding-bottom: 5px; color: var(--soft); }
+#sidebar .conv-row { display: grid; grid-template-columns: 8px minmax(0,1fr) 24px; gap: 0; padding: 3px 4px; }
+#sidebar .conv-row.selected { background: var(--card); }
+#sidebar .conv-row:focus-within { background: var(--divider); }
+#sidebar .conv-working { grid-column: 1; grid-row: 1; align-self: center; }
+#sidebar .conv { grid-column: 2; grid-row: 1; padding: 4px 6px 1px; color: var(--muted); }
+#sidebar .conv.active { background: transparent; color: var(--ink); }
+#sidebar .conv-meta { grid-column: 2; grid-row: 2; padding: 0 6px 4px; gap: 8px; color: var(--soft); }
+#sidebar .conv-meta span + span::before { content: '·'; margin-right: 8px; }
+#sidebar .conv-del { grid-column: 3; grid-row: 1 / span 2; padding: 6px; align-self: center; }
+.side-empty { color: var(--soft); font-size: var(--ui-size); padding: 10px; }
+.side-bottom { border-top: 1px solid var(--line); padding-top: 6px; }
+#sidebar .side-foot { padding: 9px 12px 2px; }
+#sidebar button:focus-visible, #sidebar summary:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+@media (hover: none) { #sidebar .conv-del { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { #sidebar { transition: none; } }
 .wait-note { color: var(--muted); font-size: var(--small-size); margin-top: 6px; }

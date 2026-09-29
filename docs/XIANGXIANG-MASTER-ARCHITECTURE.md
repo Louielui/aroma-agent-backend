@@ -162,6 +162,14 @@ the new permission check.
 
 ## Product surface
 
+The conversation sidebar now separates primary actions, a collapsible workspace,
+conversation history and a fixed architecture/settings footer. Workspace entries
+open the existing briefing, explicit memory page and development workbench. Title
+search filters the conversations already loaded in the browser; it neither searches
+transcript contents nor adds new provider access. Existing date/count metadata,
+working indicators, deletion confirmation and server persistence remain in place.
+Full-text search, pinning and project grouping are not implemented by this refresh.
+
 The sidebar also opens `/architecture`, an owner-gated, server-rendered inventory
 of eight layers: models, Core, tools, workflow, memory, business truth, knowledge
 and approval. Each card distinguishes existing components, implemented scope and
