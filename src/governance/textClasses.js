@@ -79,6 +79,7 @@ const FILE_CLASS = Object.freeze({
   'demo/assets/app.js': CLASS.INTERFACE,              // 139 — the screen itself
   'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels
   'core/operating/architectureView.js': CLASS.INTERFACE, // Owner-facing architecture inventory
+  'core/workerFlow/view.js': CLASS.INTERFACE, // Owner-facing worker acceptance labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
   'agent/agentResultView.js': CLASS.INTERFACE,        //  33
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels

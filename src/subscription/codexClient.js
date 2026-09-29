@@ -61,10 +61,10 @@ function wireError (error) {
   return new SubscriptionError()
 }
 
-function connect ({ executable, cwd, timeoutMs = 120000, env = process.env }) {
+function connect ({ executable, cwd, timeoutMs = 120000, env = process.env, config = LOCKED_CONFIG, onToolCall }) {
   assertLiveEgressAllowed('openai-codex')
   const args = ['app-server', '--stdio']
-  for (const [key, value] of Object.entries(LOCKED_CONFIG)) args.push('-c', key + '=' + JSON.stringify(value))
+  for (const [key, value] of Object.entries(config)) args.push('-c', key + '=' + configValue(value))
   const child = spawn(executable, args, { cwd, env: cleanEnvironment(env), windowsHide: true, shell: false, stdio: ['pipe', 'pipe', 'pipe'] })
   const events = new EventEmitter()
   const pending = new Map()
@@ -98,6 +98,12 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env }) {
       let message
       try { message = JSON.parse(line) } catch (_) { fail(new SubscriptionError()); return }
       if (message.id !== undefined && message.method) {
+        if (message.method === 'item/tool/call' && typeof onToolCall === 'function') {
+          Promise.resolve().then(() => onToolCall(message.params)).then(result => {
+            if (!closed) child.stdin.write(JSON.stringify({ id: message.id, result }) + '\n')
+          }, () => fail(new SubscriptionError()))
+          continue
+        }
         // No approval, tool call, credential refresh, or user-input request is delegated.
         child.stdin.write(JSON.stringify({ id: message.id, error: { code: -32601, message: 'Text-only client does not provide this method' } }) + '\n')
         fail(new SubscriptionError())
@@ -123,6 +129,11 @@ function connect ({ executable, cwd, timeoutMs = 120000, env = process.env }) {
     notify (method, params = {}) { if (!closed) child.stdin.write(JSON.stringify({ method, params }) + '\n') },
     close () { fail(new SubscriptionError()) }
   }
+}
+
+function configValue (value) {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return '{' + Object.entries(value).map(([k, v]) => JSON.stringify(k) + '=' + configValue(v)).join(',') + '}'
+  return JSON.stringify(value)
 }
 
 async function preflight (rpc) {
@@ -267,4 +278,4 @@ async function complete (options, input) {
   })
 }
 
-module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession }
+module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue }
