@@ -25,6 +25,7 @@ function registryView () {
   return { version: 1, workflow: 'daily_briefing', agents: roles, tools: TOOLS,
     integrations: [
       { id: 'hindsight', state: 'not_connected' }, { id: 'memory_postgresql', state: 'not_connected' },
+      { id: 'memory_pgvector', state: 'not_connected' },
       { id: 'qbo', state: 'not_connected' }, { id: '7shifts', state: 'not_connected' },
       { id: 'business_write', state: 'not_enabled' }
     ] }
