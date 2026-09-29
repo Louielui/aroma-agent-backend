@@ -24,6 +24,7 @@ test('search is bounded and returns mailbox-specific links, not the personal inb
   assert.equal(f.calls[0].q, 'invoice'); assert.equal(f.calls[0].maxResults, 10)
   assert.equal(result.truncated, true); assert.equal(result.messages[0].link.includes('authuser=adm%40example.test'), true)
   assert.equal(JSON.stringify(result).includes('private'), false)
+  await assert.rejects(f.mailbox.search({ owner: true }, { q: 'x'.repeat(401) }), /invalid_mail_query/)
 })
 test('full text prefers plain alternative and excludes attached files', async () => {
   const f = fixture(); const r = await f.mailbox.read({ owner: true }, 'abc123')

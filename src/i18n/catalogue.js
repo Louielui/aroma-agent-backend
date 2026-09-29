@@ -2159,6 +2159,7 @@ const CATALOGUE = Object.freeze({
   'company.mailBriefing': { zh: '行政部今日電郵摘要', en: 'Administrative mail today' },
   'company.mailSearch': { zh: '搜尋行政部電郵', en: 'Search administrative mail' },
   'company.mailSearchHelp': { zh: '輸入關鍵字或 Gmail 搜尋條件', en: 'Enter keywords or a Gmail search query' },
+  'company.mailSearchScope': { zh: '顯示行政部信箱符合搜尋條件的首批最多十封郵件，不限於收件匣；可按需讀取正文，附件未讀取。', en: 'Shows the first batch of up to ten matching administrative messages, not limited to the inbox. Bodies can be read on demand; attachments are excluded.' },
   'company.mailFull': { zh: '讀取全文', en: 'Read full text' },
   'company.mailOriginal': { zh: '開啟原郵件', en: 'Open original email' },
   'company.mailReadScope': { zh: '行政部郵件正文；附件未讀取，郵件未標示已讀。', en: 'Administrative email body; attachments are excluded and read status is unchanged.' },

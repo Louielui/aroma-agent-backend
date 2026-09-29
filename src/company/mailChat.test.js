@@ -5,6 +5,7 @@ const { parseMailRequest, createMailChat, todayQuery } = require('./mailChat')
 test('mail routing uses explicit Owner words and separates search, summary and full text', () => {
   assert.equal(parseMailRequest('香香，行政部今天有什麼要我跟進？').mode, 'summary')
   assert.equal(parseMailRequest('搜尋行政部電郵：invoice').q, 'invoice')
+  assert.equal(parseMailRequest('搜尋行政部電郵：' + 'x'.repeat(401)).q.length, 401)
   assert.equal(parseMailRequest('行政部電郵全文 abc123').id, 'abc123')
   assert.equal(parseMailRequest('不要讀行政部電郵'), null)
   assert.equal(parseMailRequest('例如「行政部今天有什麼要我跟進？」'), null)

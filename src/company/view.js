@@ -6,6 +6,7 @@ function buildHtml ({ owner }) {
   const labels = { title: t('company.title'),
     mailAuthorize: t('company.mailAuthorize'),
     mailSearch: t('company.mailSearch'), mailSearchHelp: t('company.mailSearchHelp'),
+    mailSearchScope: t('company.mailSearchScope'),
     mailFull: t('company.mailFull'), mailOriginal: t('company.mailOriginal'),
     mailReadScope: t('company.mailReadScope'), mailBodyUnavailable: t('company.mailBodyUnavailable'),
     mailBodyLimited: t('company.mailBodyLimited'), mailResultsLimited: t('company.mailResultsLimited'),
