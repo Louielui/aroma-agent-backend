@@ -131,6 +131,8 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
         (r.source.attribution === 'owner_statement' ? 2 : 1)
     }
     const ranked = new Map(records.filter(r => score(r) > 0).map(r => [r.id, { row: r, rank: score(r), via: 'source' }]))
+    const references = new Set((Array.isArray(options.references) ? options.references : []).filter(id => ID.test(id)).slice(0, 4))
+    for (const row of records.filter(r => references.has(r.id))) ranked.set(row.id, { row, rank: score(row), via: 'reference' })
     const selectedScopes = [...new Set(records.map(r => r.scope))]
     // Engine sees only authorized scopes. Results are checked against canonical state again.
     let semanticFailures = 0
@@ -142,7 +144,16 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     }))
     const refreshed = new Map((await list(actor, options)).filter(current).map(r => [r.id, r]))
     const safe = [...ranked.values()].filter(hit => refreshed.has(hit.row.id)).map(hit => ({ ...hit, row: refreshed.get(hit.row.id) }))
-    const result = safe.sort((a, b) => Number(b.row.type === 'decision') - Number(a.row.type === 'decision') || b.rank - a.rank)
+    const seen = new Set()
+    const result = safe.sort((a, b) => Number(b.row.type === 'decision') - Number(a.row.type === 'decision') ||
+      Number(references.has(b.row.id)) - Number(references.has(a.row.id)) || b.rank - a.rank)
+      .filter(({ row }) => {
+        // Collapse exact episodic duplicates only in retrieval, retaining their
+        // canonical records and preserving a specifically cited representative.
+        const key = row.type === 'episodic' ? JSON.stringify([row.scope, row.source.attribution, row.text]) : row.id
+        if (seen.has(key)) return false
+        seen.add(key); return true
+      })
       .slice(0, 12).map(({ row, via }) => ({ id: row.id, documentId: row.id, text: row.text.slice(0, 4000), date: row.source.at,
         source: 'memory_gateway', type: row.type, scope: row.scope, status: row.status, provenance: row.source, approval: row.approval, via }))
     result.retrieval = { source: 'ok', semantic: !engine ? 'not_connected' : semanticFailures ? 'partial' : 'ok' }

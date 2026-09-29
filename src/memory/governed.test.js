@@ -10,6 +10,22 @@ function fixture() {
   return { store, calls, g: createGateway({ store, engine }) }
 }
 
+test('citation lookup restores canonical originals without admitting private, archived or invented references', async () => {
+  const { g } = fixture()
+  const make = async (name, scope) => {
+    const r = await g.propose(OWNER, { type: 'episodic', subject: name, text: name + ' original source.', scope, source: { ...source, id: name } })
+    return g.transition(OWNER, r.id, r.version, 'approve')
+  }
+  const visible = await make('corrected', 'domain:purchasing')
+  const archived = await make('archived', 'domain:purchasing')
+  await g.transition(OWNER, archived.id, archived.version, 'archive')
+  const privateRow = await make('private', 'private:owner')
+  await g.grant(OWNER, { id: 'purchasing', scopes: ['domain:purchasing'], writeScopes: [] })
+  const rows = await g.recall({ id: 'purchasing', role: 'agent' }, 'unrelated follow-up wording',
+    { references: [visible.id, archived.id, privateRow.id, 'xx-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'] })
+  assert.deepEqual(rows.map(r => r.id), [visible.id]); assert.equal(rows[0].text, visible.text)
+})
+
 test('original owner records survive verbose repeated replies in bounded recall', async () => {
   const { g } = fixture()
   const observed = (id, text, attribution) => g.observe(OWNER, { type: 'episodic', subject: id, text, scope: 'private:owner', source: { ...source, kind: 'conversation', id, attribution }, policy: 'owner_history' })
@@ -19,6 +35,17 @@ test('original owner records survive verbose repeated replies in bounded recall'
   const hits = await g.recall(OWNER, 'HarborZ9 original code later correction earliest date source recorded history')
   assert.ok(hits.some(r => r.id === first.id)); assert.ok(hits.some(r => r.id === correction.id))
   assert.ok(hits.length <= 12)
+})
+
+test('repeated identical questions do not crowd distinct original history out of recall', async () => {
+  const { g } = fixture()
+  const observed = (id, value) => g.observe(OWNER, { type: 'episodic', subject: id, text: value, scope: 'private:owner',
+    source: { ...source, kind: 'conversation', id }, policy: 'owner_history' })
+  const original = await observed('original-event', 'HarborZ9 used Amber391.')
+  for (let i = 0; i < 20; i++) await observed('repeat-' + i, 'HarborZ9 original code later correction earliest date source recorded history?')
+  const hits = await g.recall(OWNER, 'HarborZ9 original code later correction earliest date source recorded history')
+  assert.ok(hits.some(r => r.id === original.id)); assert.equal(hits.length, 2)
+  assert.equal((await g.list(OWNER)).length, 21, 'source history is never deleted by retrieval deduplication')
 })
 test('approval, supersession and canonical decisions survive a new gateway instance', async () => {
   const { g, store } = fixture()

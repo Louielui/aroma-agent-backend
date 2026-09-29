@@ -2,6 +2,13 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { recallContext } = require('./context')
+test('recent citation IDs are lookup hints, never assistant prose or permissions', async () => {
+  const id = 'xx-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'
+  let options; let actual
+  await recallContext({ enabled: true, query: 'What happened before that?', history: [{ role: 'assistant', text: 'Unverified claim. Source: ' + id }],
+    memory: { recall: async (q, o) => { actual = q; options = o; return [] } } })
+  assert.deepEqual(options.references, [id]); assert.equal(actual, 'What happened before that?')
+})
 test('follow-up recall includes bounded recent owner questions but never assistant claims or excluded history', async () => {
   let actual
   await recallContext({ enabled: true, query: 'What was its original code?', history: [

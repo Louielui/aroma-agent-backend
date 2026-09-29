@@ -29,11 +29,19 @@ Scope: the local Xiangxiang backend only. No restaurant production changes.
   direct owner statements. Active decisions still take precedence. Scope and
   current-state checks, twelve-result limit, and four-thousand-character excerpt
   limit remain in place.
+- Follow-ups also resolve at most four recent citation IDs against canonical
+  current records. IDs are lookup hints, not assistant-authored evidence. Private,
+  archived and invented references cannot bypass the normal scope/state checks.
+- Retrieval collapses exact episodic duplicates with the same scope and
+  attribution before applying its result cap. Repeated identical questions cannot
+  occupy every result slot; all original source records remain stored.
 - `scripts/service/repairMemoryArchiveAcl.ps1` prepares a narrow repair for the
   existing LocalService identity, only the archive directory and its two files.
   It saves original SDDL before any changes and does not grant recursive access.
-  The first Windows administrator prompt was cancelled. The ACL repair is not
-  applied by this code change and still requires the owner's Windows action.
+  The first Windows administrator prompt was cancelled. On the owner's retry,
+  the repair completed at 2026-09-29T19:55:13Z. Four real service exchanges were
+  read back and the pre-existing archive prefix hash was unchanged. Existing
+  assistant-body omission rules remain in effect.
 
 ## Acceptance scope
 
@@ -48,8 +56,8 @@ fixtures, response IDs, timestamps, boot identity and timings are recorded in th
 workspace delivery evidence. Assertions compare citations with canonical source
 records, not merely the presence of a date-shaped string.
 
-Remaining work: historical indexing backlog, the administrator-dependent legacy
-archive repair, automatic consolidation into reviewable knowledge, volume and
+Remaining work: historical indexing backlog, automatic consolidation into
+reviewable knowledge, more complex long conversations, volume and
 external-agent acceptance. Passing these bounded cases is not a claim of perfect
 or exhaustive memory.
 
