@@ -4,6 +4,16 @@ const assert = require('node:assert/strict')
 const { createHindsight } = require('./hindsight')
 const env = { XIANGXIANG_MEMORY: 'on', HINDSIGHT_URL: 'http://127.0.0.1:8888', HINDSIGHT_BANK: 'xiangxiang-owner', HINDSIGHT_TOKEN: 'fixture-token' }
 const id = 'xx-12345678-1234-4123-8123-123456789abc'
+test('consolidation requires structured output and scopes retrieval to supplied evidence',async()=>{
+  let payload={structured_output:{candidates:[]}}
+  const client=createHindsight({env,transport:async(url,init)=>{
+    const b=JSON.parse(init.body);assert.ok(url.endsWith('/reflect'));assert.deepEqual(b.tags,[id]);assert.equal(b.tags_match,'any_strict')
+    assert.equal(b.exclude_mental_models,true);assert.equal(b.response_schema.properties.candidates.maxItems,4)
+    assert.match(b.query,/exact verbatim quote/);return Response.json(payload)
+  }})
+  assert.deepEqual(await client.consolidate({id,text:'Use green folders.',source:{at:null}},[]),{candidates:[]})
+  payload={text:'Everything is saved.'};await assert.rejects(client.consolidate({id,text:'Use green folders.'},[]),/consolidation_unavailable/)
+})
 test('memory adapter isolates the bank, proves retain, correction and deletion through document reads', async () => {
   const calls = []; let document = null
   const client = createHindsight({ env, transport: async (url, init) => {

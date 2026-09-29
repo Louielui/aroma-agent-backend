@@ -63,6 +63,11 @@ async def main(req):
                     event = {**req["event"], "recordId": row["id"], "version": row["version"], "snapshot": row}
                     digest = hashlib.sha256(((previous or "") + encode(event)).encode()).hexdigest()
                     await db.execute("INSERT INTO memory.audit(record_id,body,previous_hash,hash) VALUES($1,$2::jsonb,$3,$4)", row["id"], encode(event), previous, digest)
+                # Under the transaction-wide lock, preferences have one current
+                # value per subject just like decisions. A correction replaces it.
+                duplicate = await db.fetchval("SELECT EXISTS (SELECT 1 FROM memory.records WHERE body->>'status'='active' AND body->>'type' IN ('decision','preference') GROUP BY body->>'type', body->>'scope', body->>'subject' HAVING COUNT(*) > 1)")
+                if duplicate:
+                    raise ValueError("decision_conflict")
             return [c["row"] for c in req["changes"]]
         raise ValueError("invalid_operation")
     finally:
@@ -77,5 +82,5 @@ if __name__ == "__main__":
     except (asyncpg.UniqueViolationError, asyncpg.CheckViolationError):
         print(encode({"error": "decision_conflict"}))
     except Exception as err:
-        code = str(err) if isinstance(err, ValueError) and str(err) in ("revision_conflict", "invalid_operation") else "memory_database_unavailable"
+        code = str(err) if isinstance(err, ValueError) and str(err) in ("revision_conflict", "invalid_operation", "decision_conflict") else "memory_database_unavailable"
         print(encode({"error": code}))

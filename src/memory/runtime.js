@@ -15,6 +15,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     try { return JSON.parse(fs.readFileSync(path.join(dir, '../memory-capture/settings.json'), 'utf8')).enabled !== false }
     catch (e) { if (e.code === 'ENOENT') return true; throw Error('memory_setting_unavailable') }
   }
+  const consolidation = require('./consolidationWorker').createWorker({ gateway, dir: path.join(dir, '../memory-consolidation'), allowed: enabled })
   function enqueue(input) {
     if (!enabled()) return { state: 'paused' }
     const excluded = exclusionReason(input.text) || exclusionReason(JSON.stringify(input.source), false)
@@ -116,10 +117,10 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     }
   }
   async function backup() { return store.backup() }
-  return { gateway, ownerClient, event, observeRead, enqueue, drain,
+  return { gateway, ownerClient, event, observeRead, enqueue, drain, consolidation,
     backup,
     status: () => ({ active: active || indexActive, indexing: indexActive, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),
-    start() { if (!timer) { timer = setInterval(() => { void drain() }, 5000); timer.unref() } },
+    start() { if (!timer) { timer = setInterval(() => { void drain(); void consolidation.tick() }, 5000); timer.unref() } },
     stop() { clearInterval(timer); timer = null }
   }
 }

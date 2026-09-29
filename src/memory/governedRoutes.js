@@ -2,7 +2,7 @@
 const express = require('express')
 const { OWNER } = require('./governed')
 const { sameOrigin } = require('../core/operating/chatRequest')
-const shapes = { backup: ['op'], propose: ['op', 'record'], observe: ['op', 'record'], transition: ['op', 'id', 'version', 'action'],
+const shapes = { consolidate: ['op','id'], consolidationSettings: ['op','enabled'], backup: ['op'], propose: ['op', 'record'], observe: ['op', 'record'], transition: ['op', 'id', 'version', 'action'],
   index: ['op', 'id'], reflect: ['op', 'request'], working: ['op', 'request'], finish: ['op', 'id', 'version', 'outcome'],
   grant: ['op', 'request'], recall: ['op', 'query', 'scope'], decision: ['op', 'subject', 'scope'],
   procedure: ['op', 'id', 'runId', 'outcome', 'exception'] }
@@ -14,7 +14,7 @@ function createGovernedRouter({ gateway, runtime }) {
       const filter = { scope: req.query.scope, type: req.query.type, status: req.query.status }
       const rows = await gateway.list(OWNER, filter)
       const offset = Math.max(0, Math.min(100000, Number.parseInt(req.query.offset, 10) || 0))
-      res.set('Cache-Control', 'no-store').json({ status: await gateway.status(OWNER), runtime: runtime?.status() || null, total: rows.length, offset, items: rows.reverse().slice(offset, offset + 200) })
+      res.set('Cache-Control', 'no-store').json({ status: await gateway.status(OWNER), consolidation: runtime?.consolidation?.status() || null, runtime: runtime?.status() || null, total: rows.length, offset, items: rows.reverse().slice(offset, offset + 200) })
     } catch (e) { fail(res, e) }
   })
   router.get('/api/v1/memory/catalog/:id', async (req, res) => {
@@ -23,6 +23,8 @@ function createGovernedRouter({ gateway, runtime }) {
   async function execute(actor, b) {
     if (!b || Array.isArray(b) || !Object.hasOwn(shapes, b.op) || Object.keys(b).some(k => !shapes[b.op].includes(k))) throw Error('invalid_request')
     switch (b.op) {
+      case 'consolidate': return gateway.consolidate(actor, b.id)
+      case 'consolidationSettings': return runtime.consolidation.configure(b.enabled)
       case 'backup': return runtime.backup()
       case 'propose': return gateway.propose(actor, b.record)
       case 'observe': return gateway.observe(actor, b.record)

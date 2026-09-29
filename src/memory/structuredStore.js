@@ -60,8 +60,8 @@ function createTestStore() {
       for (const c of changes) if ((rows.get(c.row.id)?.version || 0) !== c.expected) throw Error('revision_conflict')
       const next = new Map(rows)
       for (const c of changes) next.set(c.row.id, structuredClone(c.row))
-      const active = [...next.values()].filter(r => r.status === 'active' && r.type === 'decision')
-      if (new Set(active.map(r => r.scope + ':' + r.subject)).size !== active.length) throw Error('decision_conflict')
+      const active = [...next.values()].filter(r => r.status === 'active' && ['decision','preference'].includes(r.type))
+      if (new Set(active.map(r => JSON.stringify([r.type,r.scope,r.subject]))).size !== active.length) throw Error('decision_conflict')
       for (const c of changes) { rows.set(c.row.id, structuredClone(c.row)); events.push({ ...event, recordId: c.row.id, version: c.row.version, sequence: events.length + 1 }) }
       return changes.map(c => structuredClone(c.row))
     },

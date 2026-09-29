@@ -59,7 +59,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (JSON.stringify(input.details || {}).length > 30000 || JSON.stringify(s).length > 30000) throw Error('invalid_memory_request')
     if (input.type === 'procedural' && (!s.url || !s.version)) throw Error('sop_link_and_version_required')
   }
-  async function create(actor, input, observation) {
+  async function create(actor, input, observation, prepareOnly = false) {
     validate(input); await authorize(actor, input.scope, true)
     if (input.policy && (input.policy !== 'owner_history' || input.scope !== 'private:owner' || input.type !== 'episodic' ||
         !['conversation', 'briefing', 'worker', 'historical_import'].includes(input.source.kind))) throw Error('invalid_capture_policy')
@@ -76,7 +76,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       supersedes: input.supersedes || null, supersededBy: null, approval: input.policy ? { kind: 'policy', id: input.policy, actor: actor.id, at: now } : null,
       decidedBy: null, decidedAt: null, expiresAt: input.expiresAt || null, details: excluded ? {} : input.details || {},
       index: { state: 'pending', attempts: 0, facts: null }, reason: excluded || null }
-    await store.commit([{ expected: 0, row }], { op: 'observe', actor: actor.id, at: now, reason: row.reason })
+    if (!prepareOnly) await store.commit([{ expected: 0, row }], { op: 'observe', actor: actor.id, at: now, reason: row.reason })
     return row
   }
   async function transition(actor, id, expected, action) {
@@ -145,7 +145,8 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const refreshed = new Map((await list(actor, options)).filter(current).map(r => [r.id, r]))
     const safe = [...ranked.values()].filter(hit => refreshed.has(hit.row.id)).map(hit => ({ ...hit, row: refreshed.get(hit.row.id) }))
     const seen = new Set()
-    const result = safe.sort((a, b) => Number(b.row.type === 'decision') - Number(a.row.type === 'decision') ||
+    const canonical = row => row.approval?.kind === 'owner' && row.type !== 'episodic'
+    const result = safe.sort((a, b) => Number(b.row.type === 'decision') - Number(a.row.type === 'decision') || Number(canonical(b.row)) - Number(canonical(a.row)) ||
       Number(references.has(b.row.id)) - Number(references.has(a.row.id)) || b.rank - a.rank)
       .filter(({ row }) => {
         // Collapse exact episodic duplicates only in retrieval, retaining their
@@ -252,10 +253,68 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
         source_only: active.filter(r => r.index.state === 'source_only').length,
         retrying: active.filter(r => r.index.state === 'unconfirmed' && r.index.nextRetryAt).length },
       staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && matchesEvidence(a, e)))).map(r => r.id),
+      consolidation: { pending: rows.filter(r => require('./consolidationPolicy').eligible(r) && !r.details.consolidation).length,
+        running: rows.filter(r => r.details.consolidation?.state === 'running').length,
+        done: rows.filter(r => r.details.consolidation?.state === 'done').length,
+        empty: rows.filter(r => r.details.consolidation?.state === 'empty').length,
+        failed: rows.filter(r => r.details.consolidation?.state === 'failed').length,
+        review: rows.filter(r => r.status === 'candidate' && r.source.kind === 'consolidation').length },
       agents: (await store.grants()).map(({ tokenHash, ...g }) => g) }
+  }
+  const consolidating = new Map()
+  async function consolidate(actor, id) {
+    owner(actor)
+    if (consolidating.has(id)) return consolidating.get(id)
+    const job = runConsolidation(actor, id).finally(() => consolidating.delete(id))
+    consolidating.set(id, job); return job
+  }
+  async function runConsolidation(actor, id) {
+    const source = await get(actor, id)
+    if (!require('./consolidationPolicy').eligible(source)) throw Error('not_consolidatable')
+    if (['done', 'empty'].includes(source.details.consolidation?.state)) return source.details.consolidation
+    const attempts = (source.details.consolidation?.attempts || 0) + 1
+    const state = { state: 'running', attempts, checkedAt: clock(), nextRetryAt: null, error: null, candidateIds: [] }
+    await store.commit([{ expected: source.version, row: { ...source, version: source.version + 1, details: { ...source.details, consolidation: state } } }], { op: 'consolidation_started', actor: actor.id, at: clock() })
+    try {
+      const existing = (await list(actor, { scope: source.scope })).filter(r => current(r) && r.approval?.kind === 'owner' && ['preference','decision','semantic'].includes(r.type)).slice(-40)
+      const result = await engine.forScope(source.scope).consolidate({ id: source.id, text: source.text, source: source.source },
+        existing.map(r => ({ id: r.id, kind: r.details.category || r.type, subject: r.subject, text: r.text.slice(0,2000) })))
+      const plans = require('./consolidationPolicy').validate(result, source, existing)
+      const drafts = []
+      for (const plan of plans) {
+        const target = plan.supersedes ? existing.find(r => r.id === plan.supersedes) : null
+        const fingerprint = hash(JSON.stringify([source.id, evidenceHash(source), plan]))
+        const row = await create(actor, { id: stableId('consolidation:' + fingerprint), type: plan.type, scope: source.scope,
+          subject: target?.subject || plan.subject, text: plan.text,
+          source: { kind: 'consolidation', id: source.id, at: source.source.at, attribution: 'derived', evidence: [source.id] },
+          details: { category: plan.kind, reason: plan.reason, quote: plan.quote, taskState: plan.taskState, sourceId: source.id,
+            engine: 'hindsight', evidenceVersions: [source, ...(target ? [target] : [])].map(r => ({ id: r.id, contentHash: evidenceHash(r) })),
+            ...(target ? { replaces: { id: target.id, text: target.text, sourceAt: target.source.at } } : {}) },
+          ...(target ? { supersedes: target.id } : {}) }, false, true)
+        if (row.status !== 'candidate') throw Error('invalid_consolidation')
+        if (!drafts.some(r => r.id === row.id)) drafts.push(row)
+      }
+      // Source/index metadata may advance while the engine runs. Commit all new
+      // candidates and completion together against a freshly verified source.
+      for (let retry = 0; retry < 3; retry++) {
+        const latest = await get(actor, id)
+        if (!current(latest) || evidenceHash(latest) !== evidenceHash(source)) throw Error('stale_evidence')
+        const resultState = { ...state, state: drafts.length ? 'done' : 'empty', checkedAt: clock(), candidateIds: drafts.map(r => r.id) }
+        const changes = [{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: resultState } } }]
+        for (const row of drafts) if (!await store.get(row.id)) changes.push({ expected: 0, row })
+        try { await store.commit(changes, { op: 'consolidated', actor: actor.id, at: clock() }); return resultState }
+        catch (e) { if (e.message !== 'revision_conflict' || retry === 2) throw e }
+      }
+    } catch (e) {
+      const error = ['invalid_consolidation', 'stale_evidence'].includes(e.message) ? e.message : 'consolidation_unavailable'
+      const failed = { ...state, state: 'failed', error, checkedAt: clock(), nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + attempts * 300000).toISOString() : null }
+      const latest = await get(actor, id)
+      await store.commit([{ expected: latest.version, row: { ...latest, version: latest.version + 1, details: { ...latest.details, consolidation: failed } } }], { op: 'consolidation_failed', actor: actor.id, at: clock(), reason: error })
+      return failed
+    }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
     observe: (actor, input) => create(actor, input, true), transition, getDecision, recall, index, working, finishWork,
-    grant, authenticate, reflect, status, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
+    grant, authenticate, reflect, consolidate, status, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }
