@@ -128,7 +128,10 @@ function createManager ({ gateway, activity, runStore = createMemoryRunStore(), 
 function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture } = {}) {
   const store = require('../../store/store')
   const activity = createActivityStore()
-  const memory = createMemoryGateway({ listDecisions: store.listDecisions })
+  const memory = env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT
+    ? { recall: async () => (await require('../../memory/runtime').runtime().gateway.list({ id: 'owner', role: 'owner' }, { type: 'decision', status: 'active' }))
+      .map(r => ({ id: r.id, title: r.subject, content: r.text, originalDate: r.decidedAt, approvalBy: r.decidedBy })) }
+    : createMemoryGateway({ listDecisions: store.listDecisions })
   const gateway = createGateway({
     connector: { read: async (...args) => require('../../context/liveClients').createLiveReadConnector({ env }).connector.read(...args) },
     memory, tasks: store.listTasks,

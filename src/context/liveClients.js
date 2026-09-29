@@ -126,6 +126,15 @@ function createLiveReadConnector (options = {}) {
     }
   }
 
+  if (options.observeSource || (env.XIANGXIANG_MEMORY === 'on' && !require('../testProcess').isTestProcess())) {
+    const observe = options.observeSource || ((source, result) => require('../memory/runtime').runtime().observeRead(source, result))
+    const read = connector.read.bind(connector)
+    connector.read = async (...args) => {
+      const result = await read(...args)
+      try { const memoryCapture = observe(args[0], result); return { ...result, memoryCapture } }
+      catch (_) { return { ...result, memoryCapture: { state: 'unavailable' } } }
+    }
+  }
   return { connector, registered, skipped }
 }
 

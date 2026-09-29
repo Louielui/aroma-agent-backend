@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null } = {}) {
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
@@ -495,6 +495,27 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
 
       const { message, history, contextCard, providerHint } = req.body
+      // Persist receipt before any model call. A failed generation is still an observed event.
+      if (memoryJournal) {
+        try {
+          const receipt = memoryJournal.event('conversation', correlationId + ':received', message, 'owner_statement', new Date().toISOString(), { conversationId: isValidConversationId(req.body.conversationId) ? req.body.conversationId : null })
+          res.setHeader('X-Memory-Receipt', receipt.state)
+          let working = null
+          if (receipt.state === 'queued') {
+            try { working = await memoryJournal.gateway.working({ id: 'owner', role: 'owner' }, { subject: message.slice(0, 240), goal: message, project: 'Xiangxiang', worker: 'xiangxiang', runId: correlationId, context: [receipt.id], ttlSeconds: 3600, scope: 'private:owner' }) } catch (_) { res.setHeader('X-Memory-Receipt', 'partial') }
+          }
+          const sendJson = res.json.bind(res)
+          res.json = body => {
+            try {
+              if (receipt.state === 'queued') memoryJournal.event('conversation', correlationId + ':result',
+                typeof body?.reply === 'string' ? body.reply : JSON.stringify({ httpStatus: res.statusCode, completed: res.statusCode < 400 }),
+                typeof body?.reply === 'string' ? 'assistant_claim' : 'measured_result')
+              if (working) void memoryJournal.gateway.finishWork({ id: 'owner', role: 'owner' }, working.id, working.version, res.statusCode < 400 ? 'completed' : 'failed').catch(() => {})
+            } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+            return sendJson(body)
+          }
+        } catch (_) { res.setHeader('X-Memory-Receipt', 'unavailable') }
+      }
 
       const briefingRequest = require('../core/operating/chatRequest')
       if (operatingManager && !contextCard && !req.body.attachSection &&

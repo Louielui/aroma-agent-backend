@@ -14,7 +14,7 @@ const WORK_ORDER = Object.freeze({ recipe: 'duration-v1', version: 1, capability
   testCommand: ['node', '--permission', '--allow-fs-read=<fixture>', '--test', '--test-isolation=none', '--test-reporter=tap', 'duration.test.js'], scope: 'disposable_fixture',
   providers: ['codex', 'claude'], approval: 'owner_explicit', billing: 'subscriptions_no_api_fallback' })
 
-function createWorkflow ({ dir, providers, enabled }) {
+function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
   let busy = false; let pending = Promise.resolve()
   fs.mkdirSync(dir, { recursive: true })
   const save = run => {
@@ -30,6 +30,7 @@ function createWorkflow ({ dir, providers, enabled }) {
   function record (run, stage, facts = {}) {
     run.events.push({ sequence: run.events.length + 1, at: new Date().toISOString(), stage, ...facts })
     save(run)
+    try { onEvent({ id: run.id, stage, at: run.events[run.events.length - 1].at, state: run.state, recipe: run.workOrder.recipe, facts }) } catch (_) { /* The memory outbox reports persistence failures separately. */ }
   }
   async function execute (run, reviewOnly = false) {
     try {

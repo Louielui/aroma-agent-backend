@@ -1274,7 +1274,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
 
     if (isChat && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' && resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)) {
       if (hindsightCache === undefined) {
-        const memory = opts.memoryClient || require('../core/operating/gateway').createMemoryGateway({ engine: require('../memory/hindsight').createHindsight() })
+        const memory = opts.memoryClient || require('../memory/runtime').runtime().ownerClient
         hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, query: message })
         logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count, usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
       }

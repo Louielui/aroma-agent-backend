@@ -959,11 +959,14 @@ function createApp (options = {}) {
   app.use(connectionRouters.router)
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
-  const memoryClient = opts.memoryClient || require('./memory/hindsight').createHindsight()
+  const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
+  if (governedMemory && !process.env.NODE_TEST_CONTEXT) governedMemory.start()
+  const memoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
   const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
     available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
   if (!process.env.NODE_TEST_CONTEXT) memoryCapture.start()
-  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture }))
+  if (governedMemory) app.use(require('./memory/governedRoutes').createGovernedRouter({ gateway: governedMemory.gateway, runtime: governedMemory }))
+  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture, governed: Boolean(governedMemory) }))
   app.use('/workers', requireOwner)
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
@@ -1072,6 +1075,7 @@ function createApp (options = {}) {
 
   app.use(createDemoRouter({
     operatingManager,
+    memoryJournal: governedMemory,
     conversationStore: require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture),
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser

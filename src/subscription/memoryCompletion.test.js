@@ -2,6 +2,15 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { memoryCompletion } = require('./memoryCompletion')
+test('reflection translates only bounded Hindsight read tools and never executes them in Codex', async () => {
+  const tools = [{ type: 'function', function: { name: 'done', parameters: { type: 'object', properties: { answer: { type: 'string' } } } } }]
+  const r = await memoryCompletion({}, { messages: [{ role: 'user', content: 'Synthesize sources.' }], tools, tool_choice: { type: 'function', function: { name: 'done' } } }, async (_, input) => {
+    assert.ok(input.schema); return { text: JSON.stringify({ name: 'done', arguments: '{"answer":"Evidence-based summary."}' }), model: 'fixture' }
+  })
+  assert.equal(r.choices[0].message.tool_calls[0].function.name, 'done')
+  assert.equal(r.choices[0].finish_reason, 'tool_calls')
+  await assert.rejects(memoryCompletion({}, { messages: [{ role: 'user', content: 'x' }], tools: [{ type: 'function', function: { name: 'execute_shell' } }] }))
+})
 test('background extraction has a separate session and cannot reject foreground chat as busy', async t => {
   const { createBridge } = require('./bridge'); const token = 'b'.repeat(64)
   let release; let entered; const started = new Promise(r => { entered = r }); const gate = new Promise(r => { release = r })

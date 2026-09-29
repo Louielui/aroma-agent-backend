@@ -85,6 +85,7 @@ const FILE_CLASS = Object.freeze({
   'intake/answerPlan.js': CLASS.INTERFACE,            //  32 — unit + status labels
   'intake/websiteFlow.js': CLASS.INTERFACE,
   'memory/view.js': CLASS.INTERFACE,
+  'memory/governedView.js': CLASS.INTERFACE,
   'memory/capturePolicy.js': CLASS.MATCHING,
   'connections/view.js': CLASS.INTERFACE,
   // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
