@@ -1,0 +1,64 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xiangxiang</title>
+<style>
+:root{color-scheme:light;--ink:#27392e;--muted:#657369;--line:#dce4dc;--green:#285f48}*{box-sizing:border-box}body{margin:0;background:#f5f5ef;color:var(--ink);font:16px/1.65 system-ui,sans-serif}main{max-width:1000px;margin:auto;padding:28px 24px 64px}nav{display:flex;gap:20px;flex-wrap:wrap}a{color:var(--green)}h1{font-size:30px;margin:24px 0 10px}h2{font-size:20px}h3{margin:0 0 8px;font-size:18px}.muted{color:var(--muted)}.note{border-left:3px solid #b38a45;padding:10px 16px;background:#fffaf0}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}.card{padding:20px;border:1px solid var(--line);border-radius:14px;background:#fffefa;overflow-wrap:anywhere}.badge{display:inline-block;border-radius:12px;background:#edf0e8;padding:3px 9px;font-size:13px}button{border:1px solid #bdcbbf;border-radius:9px;padding:9px 13px;margin:8px 8px 0 0;background:white;color:var(--green);font:inherit;cursor:pointer}button:disabled{opacity:.5;cursor:wait}button:focus-visible,a:focus-visible,summary:focus-visible{outline:3px solid #b38a45;outline-offset:3px}#status{min-height:28px;color:#8a461b}ul{padding-left:20px}li{margin:12px 0}details{margin-top:24px}pre{font-size:12px;white-space:pre-wrap;overflow-wrap:anywhere}section{margin-top:28px}@media(max-width:500px){main{padding:18px 16px 40px}h1{font-size:26px}.grid{grid-template-columns:1fr}}
+</style></head><body><main>
+<nav id="nav"></nav><h1 id="title"></h1><p id="intro" class="muted"></p><p id="limit" class="note"></p><p id="local" class="muted"></p>
+<div id="status" role="status" aria-live="polite"></div><div id="actions"></div><section id="people"></section><section id="sources"></section><section id="files"></section><details id="audit"><summary></summary><pre></pre></details>
+</main><script>
+'use strict'
+const C = /*CONFIG*/; const L = C.labels
+document.documentElement.lang = C.lang; document.title = C.owner ? L.title : L.memberTitle
+const $ = id => document.getElementById(id)
+function node(tag, text, parent, cls) { const n = document.createElement(tag); if(text != null) n.textContent = text; if(cls) n.className = cls; if(parent) parent.appendChild(n); return n }
+function link(text, url, parent) { const n = node('a', text, parent); n.href = url; return n }
+function button(text, parent, action) { const n = node('button', text, parent); n.type = 'button'; n.addEventListener('click', async () => { n.disabled = true; $('status').textContent = L.loading; try { await action(); $('status').textContent = '' } catch (_) { $('status').textContent = L.error } finally { n.disabled = false } }); return n }
+async function api(url, body) { const r = await fetch(url, { cache: 'no-store', ...(body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}) }); if(!r.ok) throw Error('request_failed'); return r.json() }
+$('title').textContent = C.owner ? L.title : L.memberTitle; $('intro').textContent=L.intro; $('limit').textContent=L.limit; $('local').textContent=L.local
+if(C.owner) { link(L.back, '/demo', $('nav')); link(L.architecture, '/architecture', $('nav')); link(L.portal, '/member', $('nav')) }
+async function change(body) { await api('/api/v1/company-access', body); await ownerView() }
+async function ownerView() {
+ const data = await api('/api/v1/company-access')
+ $('actions').replaceChildren(); node('span', data.enabled ? L.enabled : L.disabled, $('actions'), 'badge')
+ $('people').replaceChildren(); node('h2', L.people, $('people')); const people = node('div',null,$('people'),'grid')
+ for(const u of data.users) { const c=node('article',null,people,'card'); node('h3',u.name,c); node('p',u.email,c,'muted'); node('span',u.suspended ? L.suspended : u.verified ? L.verified : L.pending,c,'badge')
+   if(u.role==='owner') node('p',L.ownerScope,c)
+   else { const granted=u.grants.includes('admin-drive'); node('p',granted?L.allowed:L.denied,c)
+     button(granted?L.revoke:L.grant,c,()=>change({op:'grant',userId:u.id,sourceId:'admin-drive',enabled:!granted}))
+     button(u.suspended?L.resume:L.suspend,c,()=>change({op:'suspend',userId:u.id,suspended:!u.suspended}))
+   }
+ }
+ $('sources').replaceChildren(); node('h2',L.sources,$('sources')); const sources=node('div',null,$('sources'),'grid')
+ for(const s of data.sources) { const c=node('article',null,sources,'card'); c.dataset.source=s.id; node('h3',s.kind==='gmail'?L.mail:s.name,c)
+   node('span',s.kind==='gmail'?L.notConnected:L.registered,c,'badge')
+   if(s.kind==='gmail') node('p',L.mailNote,c,'muted')
+   else { link(L.sourceLink,'https://drive.google.com/drive/folders/'+s.rootId,node('p',null,c))
+     if(s.ownerProbe) node('p',(s.ownerProbe.state==='connected'?L.connected:L.failed)+' · '+new Date(s.ownerProbe.at).toLocaleString(),c,'muted')
+     button(L.probe,c,async()=>{ try { await api('/api/v1/company-access',{op:'probe',sourceId:s.id}) } finally { await ownerView() } })
+   }
+ }
+ $('audit').querySelector('summary').textContent=L.audit
+ $('audit').querySelector('pre').textContent=data.audit.slice(-30).reverse().map(a=>a.at+' · '+a.actor+' · '+a.action+' · '+a.target).join('\n')
+}
+async function files(source, folderId) {
+ $('files').replaceChildren()
+ const data=await api('/api/v1/member/files?sourceId='+encodeURIComponent(source.id)+'&folderId='+encodeURIComponent(folderId))
+ node('h2',source.name,$('files')); button(L.root,$('files'),()=>files(source,source.rootId))
+ const ul=node('ul',null,$('files'))
+ for(const f of data.files) { const li=node('li',null,ul); link(f.name||f.id,f.url,li); if(f.mimeType==='application/vnd.google-apps.folder') button(L.open,li,()=>files(source,f.id)) }
+ if(!data.files.length) node('p',L.empty,$('files'))
+ node('p',L.truncated,$('files'),'muted')
+}
+async function memberView() {
+ $('audit').hidden=true; $('actions').replaceChildren()
+ button(L.login,$('actions'),async()=>{ const data=await api('/member/login',{}); window.location.assign(data.url) })
+ node('p',L.loginNote,$('actions'),'muted')
+ let data
+ try { data=await api('/api/v1/member') } catch (_) { if(new URLSearchParams(location.search).get('authorization')==='failed') $('status').textContent=L.accessFailed; return }
+ node('h2',data.identity.name,$('people')); button(L.logout,$('actions'),async()=>{ await api('/member/logout',{}); window.location.assign('/member') })
+ node('h2',L.sources,$('sources'))
+ if(!data.sources.length) node('p',L.noSources,$('sources'))
+ for(const s of data.sources) button(s.name,$('sources'),()=>files(s,s.rootId))
+}
+(C.owner?ownerView():memberView()).catch(()=>{ $('status').textContent=L.error })
+</script></body></html>

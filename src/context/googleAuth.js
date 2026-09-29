@@ -124,6 +124,17 @@ function credentialConfiguration () {
 }
 
 const CONSENT_REDIRECT = 'http://127.0.0.1:8090/oauth/google/callback'
+const MEMBER_REDIRECT = 'http://127.0.0.1:8090/company/oauth/callback'
+function createMemberConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  // Share application configuration only, never the Owner refresh token.
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c || !c.client_id || !c.client_secret || (!raw.installed && !c.redirect_uris?.includes(MEMBER_REDIRECT))) throw Error('oauth_configuration')
+  const google = loadGoogleapis()
+  const client = new google.auth.OAuth2(c.client_id, c.client_secret, MEMBER_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 10000, retry: false })
+  return { client, audience: c.client_id }
+}
 function createConsentClient () {
   assertGoogleLiveAuthAllowed()
   const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
@@ -179,6 +190,8 @@ module.exports = {
   credsPresent,
   credentialConfiguration,
   CONSENT_REDIRECT,
+  MEMBER_REDIRECT,
+  createMemberConsentClient,
   createConsentClient,
   persistRefreshToken,
   serviceWithOAuth,

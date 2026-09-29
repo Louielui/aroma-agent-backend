@@ -12,7 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-09-29' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'), connections: t('connections.title'),
+    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -39,7 +39,7 @@ function buildArchitectureHtml () {
     { id: 'memory', state: 'partial', title: t('architecture.memoryTitle'), purpose: t('architecture.memoryPurpose'), component: t('architecture.memoryComponent', { component: 'Memory Gateway' }), current: t('architecture.memoryCurrent'), next: t('architecture.memoryNext'), evidence: 'src/memory/governed.js; runtime.js; structuredStore.js; scripts/memory/structured.py; docs/MEMORY-SIX-LAYERS.md' },
     { id: 'truth', state: 'foundation', title: t('architecture.truthTitle'), purpose: t('architecture.truthPurpose'), component: t('architecture.truthComponent'), current: t('architecture.truthCurrent'), next: t('architecture.truthNext'), evidence: 'src/context/adapters/aromaSystemRead.js' },
     { id: 'knowledge', state: 'foundation', title: t('architecture.knowledgeTitle'), purpose: t('architecture.knowledgePurpose'), component: t('architecture.knowledgeComponent'), current: t('architecture.knowledgeCurrent'), next: t('architecture.knowledgeNext'), evidence: 'src/context/; src/core/operating/registry.js' },
-    { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/agent/; src/core/operating/registry.js' }
+    { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
   const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">
     <div class="card-heading"><h2>${escape(row.title)}</h2><span class="badge ${escape(row.state)}">${escape(labels[row.state])}</span></div>

@@ -824,6 +824,24 @@ function createApp (options = {}) {
     }
   })
 
+  // Explicit rollout switch: the member surface is only available together with
+  // the catch-all Owner boundary, including legacy read routes and future routes.
+  const companyAccessEnabled = opts.companyAccessEnabled === undefined
+    ? process.env.XIANGXIANG_COMPANY_ACCESS === '1' : opts.companyAccessEnabled === true
+  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, requireOwner, enabled: companyAccessEnabled,
+    endOwnerSession: (req, res) => {
+      const auth = require('./governance/ownerAuth')
+      try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }
+      res.append('Set-Cookie', auth.clearedCookie())
+    }
+  }))
+  if (companyAccessEnabled) {
+    app.use((req, res, next) => {
+      if (req.method === 'GET' && ['/health', '/oauth/google/callback'].includes(req.path)) return next()
+      return requireOwner(req, res, next)
+    })
+  }
+
   // ── Routes ────────────────────────────────────────────────────────────────────
 
   // Health check — unprefixed and open, exactly as it is today. The apply script

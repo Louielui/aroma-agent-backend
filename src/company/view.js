@@ -1,0 +1,51 @@
+'use strict'
+const fs = require('node:fs')
+const path = require('node:path')
+const { t, currentLocale } = require('../i18n/t')
+function buildHtml ({ owner }) {
+  const labels = { title: t('company.title'),
+    memberTitle: t('company.memberTitle'),
+    intro: t('company.intro'),
+    limit: t('company.limit'),
+    local: t('company.local'),
+    sources: t('company.sources'),
+    people: t('company.people'),
+    back: t('company.back'),
+    login: t('company.login'),
+    logout: t('company.logout'),
+    portal: t('company.portal'),
+    architecture: t('company.architecture'),
+    registered: t('company.registered'),
+    notConnected: t('company.notConnected'),
+    connected: t('company.connected'),
+    pending: t('company.pending'),
+    verified: t('company.verified'),
+    suspended: t('company.suspended'),
+    grant: t('company.grant'),
+    revoke: t('company.revoke'),
+    suspend: t('company.suspend'),
+    resume: t('company.resume'),
+    allowed: t('company.allowed'),
+    denied: t('company.denied'),
+    probe: t('company.probe'),
+    failed: t('company.failed'),
+    mail: t('company.mail'),
+    mailNote: t('company.mailNote'),
+    error: t('company.error'),
+    loading: t('company.loading'),
+    audit: t('company.audit'),
+    empty: t('company.empty'),
+    truncated: t('company.truncated'),
+    open: t('company.open'),
+    sourceLink: t('company.sourceLink', { service: 'Google Drive' }),
+    root: t('company.root'),
+    noSources: t('company.noSources'),
+    loginNote: t('company.loginNote'),
+    enabled: t('company.enabled'),
+    disabled: t('company.disabled'),
+    ownerScope: t('company.ownerScope'),
+    accessFailed: t('company.accessFailed') }
+  return fs.readFileSync(path.join(__dirname, 'view.html'), 'utf8')
+    .replace('/*CONFIG*/', JSON.stringify({ owner, labels, lang: currentLocale() === 'en' ? 'en' : 'zh-Hant' }).replace(/</g, '\\u003c'))
+}
+module.exports = { buildHtml }
