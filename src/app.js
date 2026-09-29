@@ -959,12 +959,16 @@ function createApp (options = {}) {
   app.use(connectionRouters.router)
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
-  app.use(require('./memory/routes').createMemoryRouter({ client: opts.memoryClient }))
+  const memoryClient = opts.memoryClient || require('./memory/hindsight').createHindsight()
+  const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
+    available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
+  if (!process.env.NODE_TEST_CONTEXT) memoryCapture.start()
+  app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture }))
   app.use('/workers', requireOwner)
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
   app.use('/api/v1/manager', requireOwner)
-  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore })
+  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
@@ -1068,7 +1072,7 @@ function createApp (options = {}) {
 
   app.use(createDemoRouter({
     operatingManager,
-    conversationStore: realConversationStore,
+    conversationStore: require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture),
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser
     // sends a section id and never the lines — see demoRouter's attachSection block.

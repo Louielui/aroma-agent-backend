@@ -7,7 +7,7 @@ const { createActivityStore } = require('./activityStore')
 const { createRunStore, createMemoryRunStore, ID } = require('./runStore')
 const ACTIVE = new Set(['queued', 'running'])
 const RETRYABLE = new Set(['partial', 'unavailable', 'failed', 'timed_out', 'cancelled', 'interrupted'])
-function createManager ({ gateway, activity, runStore = createMemoryRunStore(), clock = () => new Date().toISOString(), stepTimeoutMs = 12000, runTimeoutMs = 60000 }) {
+function createManager ({ gateway, activity, runStore = createMemoryRunStore(), clock = () => new Date().toISOString(), stepTimeoutMs = 12000, runTimeoutMs = 60000, onFinish = () => {} }) {
   let loaded = false; let activeId = null; let lastFinishedAt = 0
   const runs = new Map(); const controls = new Map()
   const owner = actor => { if (!actor || actor.role !== 'owner' || actor.id !== 'owner') throw Error('permission_denied') }
@@ -81,6 +81,7 @@ function createManager ({ gateway, activity, runStore = createMemoryRunStore(), 
       try { finish(run, state, state === 'failed' ? 'persistence_unavailable' : state) }
       catch (_) { run.state = 'failed'; run.reason = 'persistence_unavailable'; run.finishedAt = clock(); run.activeTool = null; runs.set(run.id, run) }
     } finally {
+      try { onFinish(copy(run)) } catch (_) { /* Capture reports its own persistence state. */ }
       if (activeId === run.id) activeId = null
       lastFinishedAt = Date.now(); control.resolve(copy(run)); controls.delete(run.id)
     }
@@ -124,7 +125,7 @@ function createManager ({ gateway, activity, runStore = createMemoryRunStore(), 
 }
 
 // Wiring is lazy so viewing the page never fetches business data or starts a model.
-function createRuntimeManager ({ proposalStore, env = process.env } = {}) {
+function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture } = {}) {
   const store = require('../../store/store')
   const activity = createActivityStore()
   const memory = createMemoryGateway({ listDecisions: store.listDecisions })
@@ -133,6 +134,6 @@ function createRuntimeManager ({ proposalStore, env = process.env } = {}) {
     memory, tasks: store.listTasks,
     proposals: () => { if (!proposalStore) throw Error('proposals_not_connected'); return proposalStore.listProposals() }
   })
-  return createManager({ gateway, activity, runStore: createRunStore() })
+  return createManager({ gateway, activity, runStore: createRunStore(), onFinish: run => memoryCapture && memoryCapture.safe(() => memoryCapture.run(run)) })
 }
 module.exports = { TOOLS, authorize, createGateway, createMemoryGateway, createManager, createRuntimeManager, createActivityStore }

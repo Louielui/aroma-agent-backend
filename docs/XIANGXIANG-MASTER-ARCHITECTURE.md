@@ -281,3 +281,34 @@ Rollback by reverting the operating-layer commit and restarting the backend.
 Keep `manager-activity` for audit history. Source systems need no rollback because
 the briefing performs no source mutation. The backend has no new dependency;
 Hindsight has its own external Python runtime and PostgreSQL data directory.
+# Automatic memory capture — 2026-09-29
+
+New archived chat turns and terminal daily-briefing results enter a durable local
+memory-capture queue. This release does not import historical chats, arbitrary
+computer activity, development-worker jobs or tool payloads. Existing raw chat
+and job stores remain the original records; capture copies preserve attribution
+and timestamp, and can be searched from the memory page (20 results per search).
+
+The single background worker uses Hindsight's existing subscription extraction
+path and stable document ids. Successful writes require exact document read-back
+and a positive extracted-fact count. Unconfirmed and interrupted writes require
+manual retry; retry checks the document before retaining it again. Pausing stops
+new captures and pending extraction, but an in-flight request can finish. New
+turns while paused are skipped rather than silently queued for later import.
+
+Opt-out phrases and recognizable credential patterns skip a whole turn. This is
+a bounded heuristic, not a guarantee that every possible secret format is detected.
+Entries above 30,000 characters are visibly skipped; original transcripts remain.
+Corrections/forgetting suppress replay of the source id. Existing chat transcripts
+are separate from Hindsight deletion. Concurrent manual mutation during automatic
+extraction is refused to avoid overwrite/delete races. Queue records expose only
+safe reason enums, never upstream error text. Full-disk/corrupt-store failures are
+shown as unavailable; no retention-cleanup or power-loss guarantee is claimed.
+
+Both explicit and automatic tags are eligible for advisory recall. Prompts require
+speaker attribution, later corrections and source ids; assistant text is not proof
+of completed work. Memory grants no permissions and does not replace current
+business reads. The UI shows queued, processing, read-back-confirmed, unconfirmed,
+skipped and manually managed states. Automated tests cover persistence, dedup,
+opt-out, credentials, pause, restart/retry, provenance, source search and owner gates.
+Live subscription extraction and subsequent recall are measured separately.

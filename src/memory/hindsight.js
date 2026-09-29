@@ -3,7 +3,7 @@ const { fencedFetch } = require('../adapters/liveEgressFence')
 const { checkRedLine } = require('../intake/redlinePolicy')
 const ID = /^xx-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 function validText (s) {
-  return typeof s === 'string' && s.trim().length > 1 && s.length <= 2000 && !checkRedLine(s).blocked && !/(?:password|secret|api[_ -]?key|access[_ -]?token)\s*[:=]/i.test(s)
+  return typeof s === 'string' && s.trim().length > 1 && s.length <= 32000 && !checkRedLine(s).blocked && require('./capturePolicy').exclusionReason(s, false) !== 'sensitive_content'
 }
 function createHindsight ({ env = process.env, transport = fencedFetch('hindsight') } = {}) {
   function config () {
@@ -31,6 +31,17 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
     if (d.id !== id || d.bank_id !== c.bank || typeof d.original_text !== 'string' || !Number.isInteger(d.memory_unit_count)) throw Error('memory_invalid_result')
     return { id, text: d.original_text, facts: d.memory_unit_count, createdAt: d.created_at || null, updatedAt: d.updated_at || null }
   }
+  async function retainDocument(id, text, automatic = false, source = null) {
+    docId(id); if (!validText(text)) throw Error('memory_invalid_text')
+    const c = config()
+    const r = await call('/memories', 'POST', { async: false, items: [{ document_id: id, content: text,
+      context: automatic ? 'Automatically captured Xiangxiang source. Preserve attribution: OWNER SAID is a user statement; ASSISTANT SAID is not proof of completion. MEASURED WORK RESULT is historical evidence with stated scope. Never infer execution or approval. Later dated owner corrections supersede earlier preferences. Source: ' + JSON.stringify(source) : 'Explicit owner-authored memory; advisory, not approval or current business evidence.',
+      timestamp: source && source.at || 'unset', tags: [automatic ? 'xiangxiang-auto' : 'owner-explicit'] }] }, 120000)
+    if (r.success !== true || r.async !== false || r.bank_id !== c.bank || r.items_count !== 1) throw Error('memory_unconfirmed')
+    const doc = await get(id)
+    if (!doc || doc.text !== text || doc.facts < 1) throw Error('memory_unconfirmed')
+    return doc
+  }
   return {
     engine: 'hindsight', get,
     async list () {
@@ -40,16 +51,8 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
       if (rows.some(r => !r)) throw Error('memory_changed_retry')
       return { items: rows, total: d.total, limit: 50 }
     },
-    async retain (id, text) {
-      docId(id); if (!validText(text)) throw Error('memory_invalid_text')
-      const c = config()
-      const r = await call('/memories', 'POST', { async: false, items: [{ document_id: id, content: text,
-        context: 'Explicit owner-authored memory; advisory, not approval or current business evidence.', timestamp: 'unset', tags: ['owner-explicit'] }] }, 120000)
-      if (r.success !== true || r.async !== false || r.bank_id !== c.bank || r.items_count !== 1) throw Error('memory_unconfirmed')
-      const doc = await get(id)
-      if (!doc || doc.text !== text || doc.facts < 1) throw Error('memory_unconfirmed')
-      return doc
-    },
+    retain: (id, text) => retainDocument(id, text),
+    retainAutomatic: (id, text, source) => retainDocument(id, text, true, source),
     async forget (id) {
       const r = await call('/documents/' + docId(id), 'DELETE', undefined, 30000)
       if (r.success !== true || await get(id) !== null) throw Error('memory_unconfirmed')
@@ -57,7 +60,7 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
     },
     async recall (query) {
       if (!validText(query)) throw Error('memory_invalid_text')
-      const r = await call('/memories/recall', 'POST', { query, budget: 'low', max_tokens: 800, types: ['world', 'experience'], tags: ['owner-explicit'], tags_match: 'all_strict' }, 6000)
+      const r = await call('/memories/recall', 'POST', { query, budget: 'low', max_tokens: 800, types: ['world', 'experience'], tags: ['owner-explicit', 'xiangxiang-auto'], tags_match: 'any_strict' }, 6000)
       if (!Array.isArray(r.results)) throw Error('memory_invalid_result')
       return r.results.slice(0, 5).map(row => {
         if (typeof row.id !== 'string' || typeof row.text !== 'string' || !ID.test(row.document_id || '')) throw Error('memory_invalid_result')

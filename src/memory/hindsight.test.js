@@ -37,9 +37,24 @@ test('recall requires document provenance, bounds text and never treats missing 
   const client = createHindsight({ env, transport: async (url, init) => {
     assert.ok(url.endsWith('/memories/recall')); const body = JSON.parse(init.body)
     assert.equal(body.max_tokens, 800); assert.deepEqual(body.types, ['world', 'experience'])
+    assert.deepEqual(body.tags, ['owner-explicit', 'xiangxiang-auto']); assert.equal(body.tags_match, 'any_strict')
     return Response.json(payload)
   } })
   const r = await client.recall('folder preference'); assert.equal(r[0].documentId, id); assert.equal(r[0].date, null)
   payload = {}; await assert.rejects(client.recall('folder preference'))
   payload = { results: [{ text: 'unattributed' }] }; await assert.rejects(client.recall('folder preference'))
+})
+test('automatic retain labels attribution and timestamp, and requires exact document read-back', async () => {
+  const text = 'OWNER SAID: Prefer green. ASSISTANT SAID: I suggest a folder.'
+  const source = { kind: 'conversation', id: 'fixture', at: '2026-09-29T12:00:00Z' }
+  const client = createHindsight({ env, transport: async (url, init) => {
+    if (init.method === 'POST') {
+      const item = JSON.parse(init.body).items[0]
+      assert.deepEqual(item.tags, ['xiangxiang-auto']); assert.equal(item.timestamp, source.at)
+      assert.match(item.context, /not proof of completion/); assert.equal(item.content, text)
+      return Response.json({ success: true, async: false, bank_id: 'xiangxiang-owner', items_count: 1 })
+    }
+    return Response.json({ id, bank_id: 'xiangxiang-owner', original_text: text, memory_unit_count: 2 })
+  } })
+  assert.equal((await client.retainAutomatic(id, text, source)).facts, 2)
 })

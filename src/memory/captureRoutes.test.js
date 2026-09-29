@@ -1,0 +1,36 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const { createApp } = require('../app')
+const { createCapture } = require('./capture')
+test('capture management and source search are owner gated, fixed shape, and edits suppress replay', async t => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'capture-route-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const client = { retain: async (id, text) => ({ id, text }), forget: async id => ({ id, state: 'deleted' }), list: async () => ({ items: [], total: 0 }) }
+  const capture = createCapture({ dir, client })
+  const entry = capture.turn({ id: 'fixture', userText: 'I prefer teal.', replyText: 'Noted as a preference.' }, 2)
+  const app = createApp({ ownerPassword: 'test-owner', serviceToken: 'test-service', memoryClient: client, memoryCapture: capture, operatingManager: { start: () => ({ id: require('node:crypto').randomUUID() }) }, runPersistence: false, proposalPersistence: false, workerDeps: { artifactStore: null, runner: null } })
+  app.locals.conversationDemo = true
+  const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r))
+  t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r) }))
+  const base = 'http://127.0.0.1:' + server.address().port
+  const get = async url => fetch(base + url, { headers: { authorization: 'Bearer test-service' } })
+  for (const url of ['/api/v1/memory/capture', '/api/v1/memory/capture/' + entry.id]) assert.equal((await fetch(base + url)).status, 401)
+  assert.equal((await (await get('/api/v1/memory/capture?q=teal')).json()).results[0].id, entry.id)
+  assert.match((await (await get('/api/v1/memory/capture/' + entry.id)).json()).entry.text, /OWNER SAID/)
+  const post = (url, body, origin = 'http://127.0.0.1:8090') => new Promise((resolve, reject) => {
+    const r = require('node:http').request(base + url, { method: 'POST', headers: { host: '127.0.0.1:8090', origin, authorization: 'Bearer test-service', 'content-type': 'application/json' } }, res => { res.resume(); res.on('end', () => resolve(res.statusCode)) }); r.on('error', reject); r.end(JSON.stringify(body))
+  })
+  assert.equal(await post('/api/v1/memory/capture', { op: 'enabled', value: false }, 'https://evil.test'), 403)
+  assert.equal(await post('/api/v1/memory/capture', { op: 'enabled', value: false, source: 'fake' }), 400)
+  const conversationId = require('node:crypto').randomUUID()
+  assert.equal(await post('/api/v1/demo/intake', { message: '今日營運簡報', conversationId, workflowRequestId: require('node:crypto').randomUUID() }), 200)
+  const capturedTurn = capture.status().entries.find(r => r.source.id === conversationId)
+  assert.equal(capturedTurn.state, 'pending'); assert.equal(capturedTurn.source.turn, 2)
+  assert.equal(await post('/api/v1/memory/capture', { op: 'enabled', value: false }), 200)
+  assert.equal(capture.status().enabled, false)
+  assert.equal(await post('/api/v1/memory', { op: 'save', id: entry.id, text: 'Actually prefer blue.' }), 200)
+  assert.equal(capture.get(entry.id).state, 'edited')
+  assert.equal(capture.get(entry.id).text, '')
+})
