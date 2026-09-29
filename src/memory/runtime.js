@@ -104,17 +104,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
       return { id, state: 'deleted' }
     }
   }
-  async function backup() {
-    if (require('../testProcess').isTestProcess()) throw Error('memory_database_test_fence')
-    const destination = path.join('C:/Aroma/hindsight-runtime/backups', 'memory-' + require('node:crypto').randomUUID() + '.json')
-    return new Promise((resolve, reject) => {
-      require('node:child_process').execFile('C:/Aroma/hindsight-runtime/Scripts/python.exe', ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/backupStructured.py'), 'backup-and-verify', destination],
-        { windowsHide: true, timeout: 60000, maxBuffer: 100000 }, (error, output) => {
-          if (error) return reject(Error('memory_backup_unconfirmed'))
-          try { resolve(JSON.parse(output)) } catch (_) { reject(Error('memory_backup_unconfirmed')) }
-        })
-    })
-  }
+  async function backup() { return store.backup() }
   return { gateway, ownerClient, event, observeRead, enqueue, drain,
     backup,
     status: () => ({ active, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),

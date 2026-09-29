@@ -40,7 +40,7 @@ async function main() {
   const conversations = require('../../src/store/conversationStore').createConversationStore({ dataDir: dir })
   const truthPath = path.join(dir, 'aroma-truth.json')
   const decisions = fs.existsSync(truthPath) ? JSON.parse(fs.readFileSync(truthPath, 'utf8')).decisions : []
-  console.log(JSON.stringify(await importHistory({ dir, gateway: createGateway({ store: createStructuredStore(), engine: null }), conversations, decisions })))
+  console.log(JSON.stringify(await importHistory({ dir, gateway: createGateway({ store: createStructuredStore({ local: true }), engine: null }), conversations, decisions })))
 }
 if (require.main === module) main().catch(() => { console.error('Historical import unconfirmed; sources were not changed.'); process.exitCode = 1 })
 module.exports = { importHistory }

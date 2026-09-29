@@ -2,6 +2,21 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { memoryCompletion } = require('./memoryCompletion')
+test('canonical storage proxy is authenticated and independent of generation busy state', async t => {
+  const { createBridge } = require('./bridge'); const token = 'd'.repeat(64)
+  let release; let started; const gate = new Promise(r => { release = r }); const entered = new Promise(r => { started = r })
+  const server = createBridge({ token, memoryEnabled: true, completeFn: async () => { started(); await gate; return { text: 'ok', model: 'fixture' } },
+    memoryStore: { request: async input => { assert.equal(input.op, 'health'); return { state: 'connected', database: 'fixture' } } } })
+  server.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r))
+  t.after(() => { release(); server.closeAllConnections(); server.close() })
+  const base = 'http://127.0.0.1:' + server.address().port
+  const headers = { authorization: 'Bearer ' + token, 'content-type': 'application/json' }
+  const chat = fetch(base + '/complete', { method: 'POST', headers, body: JSON.stringify({ prompt: 'hello' }) }); await entered
+  const r = await fetch(base + '/memory-store', { method: 'POST', headers, body: '{"op":"health"}' })
+  assert.equal(r.status, 200); assert.equal((await r.json()).result.database, 'fixture')
+  assert.equal((await fetch(base + '/memory-store', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' })).status, 401)
+  release(); assert.equal((await chat).status, 200)
+})
 test('reflection translates only bounded Hindsight read tools and never executes them in Codex', async () => {
   const tools = [{ type: 'function', function: { name: 'done', parameters: { type: 'object', properties: { answer: { type: 'string' } } } } }]
   const r = await memoryCompletion({}, { messages: [{ role: 'user', content: 'Synthesize sources.' }], tools, tool_choice: { type: 'function', function: { name: 'done' } } }, async (_, input) => {

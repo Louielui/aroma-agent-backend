@@ -2,23 +2,39 @@
 const path = require('node:path')
 const { spawn } = require('node:child_process')
 const { isTestProcess } = require('../testProcess')
-function createStructuredStore({ invoke } = {}) {
-  const run = invoke || (request => new Promise((resolve, reject) => {
+function createStructuredStore({ invoke, local = false, env = process.env } = {}) {
+  const runLocal = request => new Promise((resolve, reject) => {
     if (isTestProcess()) return reject(Error('memory_database_test_fence'))
-    const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', ['-X', 'utf8', path.join(__dirname, '../../scripts/memory/structured.py')], { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
+    const backup = request.op === 'backup'
+    const args = backup
+      ? ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/backupStructured.py'), 'backup-and-verify', path.join('C:/Aroma/hindsight-runtime/backups', 'memory-' + require('node:crypto').randomUUID() + '.json')]
+      : ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/structured.py')]
+    const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let raw = ''; let failed = false
-    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, 15000)
+    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, backup ? 60000 : 15000)
     child.stdout.on('data', chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
     child.stderr.resume()
     child.on('error', () => { clearTimeout(timeout); reject(Error('memory_database_unavailable')) })
     child.on('close', code => {
       clearTimeout(timeout)
       if (failed || code) return reject(Error('memory_database_unavailable'))
-      try { const value = JSON.parse(raw); if (value.error) reject(Error(value.error)); else resolve(value.result) } catch (_) { reject(Error('memory_database_unavailable')) }
+      try { const value = JSON.parse(raw); if (value.error) reject(Error(value.error)); else resolve(Object.hasOwn(value, 'result') ? value.result : value) } catch (_) { reject(Error('memory_database_unavailable')) }
     })
     child.stdin.end(JSON.stringify(request))
-  }))
+  })
+  const remote = async request => {
+    if (!/^[a-f0-9]{64}$/.test(env.CODEX_CHAT_BRIDGE_TOKEN || '')) throw Error('memory_database_unavailable')
+    const res = await require('../adapters/liveEgressFence').fencedFetch('memory_gateway')('http://127.0.0.1:8091/memory-store', {
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(request.op === 'backup' ? 65000 : 20000),
+      headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(request) })
+    if (!res.ok) throw Error('memory_database_unavailable')
+    const value = await res.json()
+    if (value.error) throw Error(['revision_conflict', 'decision_conflict'].includes(value.error) ? value.error : 'memory_database_unavailable')
+    return value.result
+  }
+  const run = invoke || (local ? runLocal : remote)
   return {
+    request: run, backup: () => run({ op: 'backup' }),
     get: id => run({ op: 'get', id }),
     all: async () => {
       const rows = []
