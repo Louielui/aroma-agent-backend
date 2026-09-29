@@ -304,8 +304,14 @@ test('an empty conversation is not also listed in the sidebar', () => {
 
 test('the picker offers exactly the two providers the server allows', () => {
   assert.ok(DEMO_HTML.includes("id: 'claude'") && DEMO_HTML.includes("id: 'openai'"), 'both options')
-  const ids = [...DEMO_HTML.matchAll(/\{ id: '([a-z]+)', name:/g)].map((m) => m[1]).sort()
+  const declaration = DEMO_HTML.match(/var PROVIDERS = [\s\S]*?\n  var provider =/)[0].replace(/\n  var provider =$/, '')
+  const sandbox = { SUBSCRIPTION_CHAT: false, SOURCE_TEXT: '', t: () => '' }
+  require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id).sort()', sandbox)
+  const ids = Array.from(sandbox.result)
   assert.deepEqual(ids, ['claude', 'openai'], 'and no third option the server would reject')
+  sandbox.SUBSCRIPTION_CHAT = true
+  require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id)', sandbox)
+  assert.deepEqual(Array.from(sandbox.result), ['openai'], 'subscription mode offers only its supported route')
   assert.ok(DEMO_HTML.includes('providerHint: provider'), 'the pick is sent as a hint field')
 })
 

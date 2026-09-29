@@ -17,6 +17,7 @@
  */
 
 const crypto = require('crypto')
+const { SubscriptionError } = require('../subscription/codexClient')
 const { t } = require('../i18n/t')
 const { DistillParseError } = require('../intake/distillPrompt')   // owner module (Slice A) — import, NOT re-export
 const { IntakeUpstreamError } = require('../intake/intakeErrors')  // Slice B error
@@ -24,13 +25,18 @@ const { IntakeUpstreamError } = require('../intake/intakeErrors')  // Slice B er
 // Client-facing, fixed and safe. Never contain: parser reason, provider name/text,
 // raw, prompt, Context Card, stack, path, or err.message.
 const SAFE_MESSAGES = Object.freeze({
+  subscription_login_required: () => t('diag.subscriptionLogin'),
+  subscription_limit_reached: () => t('diag.subscriptionLimit'),
+  subscription_unavailable: () => t('diag.subscriptionUnavailable'),
+  subscription_model_unavailable: () => t('diag.subscriptionModel'),
+  subscription_invalid_output: () => t('diag.subscriptionOutput'),
   // ⛔ Thunks, not key strings — a table lookup handed to t() is a DYNAMIC key (HR-48).
   invalid_llm_output: () => t('diag.invalidOutput'),
   llm_unavailable: () => t('diag.unavailable'),
   internal_error: () => t('diag.internal')
 })
-const STATUS = Object.freeze({ invalid_llm_output: 500, llm_unavailable: 503, internal_error: 500 })
-const RETRYABLE = Object.freeze({ invalid_llm_output: true, llm_unavailable: true, internal_error: false })
+const STATUS = Object.freeze({ subscription_login_required: 503, subscription_limit_reached: 429, subscription_unavailable: 503, subscription_model_unavailable: 503, subscription_invalid_output: 502, invalid_llm_output: 500, llm_unavailable: 503, internal_error: 500 })
+const RETRYABLE = Object.freeze({ subscription_login_required: false, subscription_limit_reached: false, subscription_unavailable: true, subscription_model_unavailable: false, subscription_invalid_output: true, invalid_llm_output: true, llm_unavailable: true, internal_error: false })
 
 // Best-effort secret shapes — used ONLY to (a) set redactionHit metadata and
 // (b) redact the optional non-prod debug stack. The raw text itself is never logged.
@@ -54,6 +60,7 @@ function redact (s) {
 
 // Classify by REAL type. Unknown errors fall through to internal_error.
 function classify (err) {
+  if (err instanceof SubscriptionError) return { code: err.code, stage: 'subscription_chat', reason: null, raw: null }
   if (err instanceof DistillParseError) {
     return { code: 'invalid_llm_output', stage: 'distill_parse', reason: err.reason || null, raw: err.diagnostic && err.diagnostic.rawSample }
   }

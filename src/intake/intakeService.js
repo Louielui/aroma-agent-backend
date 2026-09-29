@@ -43,6 +43,8 @@ const { load: loadOwnerSettings, buildSettingsBlock } = require('../persona/owne
 const { selectPrimaryProvider, OPENAI, CLAUDE } = require('../routing/modelRouter')
 const { sourcesForProvider, decisionRecallSharedWith, withheldFrom } = require('../context/providerSharing') // per-source, per-provider sharing policy
 const { createOpenAIAdapterIfConfigured } = require('../adapters/OpenAIAdapter')
+const { CodexSubscriptionAdapter, subscriptionChatEnabled } = require('../adapters/CodexSubscriptionAdapter')
+const { SubscriptionError } = require('../subscription/codexClient')
 const { getPersonaSource } = require('../persona/personaSource')   // R2 runtime persona source selector (legacy default; memory lazy-loaded)
 const { buildContextPreamble } = require('../governance/contextCard')         // B2-2 slice 2 hook
 const { IntakeUpstreamError } = require('./intakeErrors')         // B2-2 slice B — typed upstream error
@@ -475,6 +477,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
   }
 
+
+  // Check subscription availability before auxiliary model calls or source reads.
+  const subscriptionMode = subscriptionChatEnabled(process.env, opts && opts.interactionMode)
+  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter()) : null
+  if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
   // -- U1 DRAFT PROPOSAL SHADOW (flag-gated; after red-line, before STEP 2) --
   if (opts && opts.u1DraftShadow === true) {
@@ -1758,6 +1765,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const recordedResults = new Set()
   async function recordProviderUsage (result) {
     if (!result || !result.usage || recordedResults.has(result)) return
+    // Subscription usage is not an API billing event. Provider telemetry still records tokens.
+    if (result.billing === 'chatgpt-subscription') return
     recordedResults.add(result)
     try {
       logLLMCall({ model: result.model, latencyMs: result.latencyMs, inputTokens: result.usage.inputTokens, outputTokens: result.usage.outputTokens, totalTokens: result.usage.totalTokens, endpoint, blocked: false })
@@ -1766,7 +1775,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   }
 
   if (primaryProvider === OPENAI) {
-    const gpt = (opts && opts.openaiAdapter) || createOpenAIAdapterIfConfigured(process.env)
+    const gpt = subscriptionAdapter || (opts && opts.openaiAdapter) || createOpenAIAdapterIfConfigured(process.env)
     if (!gpt) {
       routerFallbackReason = 'openai_unavailable' // not configured → no call attempted
     } else {
@@ -1782,6 +1791,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           { clock: latencyClock, sink: latencySink })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
+        if (subscriptionMode) throw (err instanceof SubscriptionError ? err : new SubscriptionError())
         // (HTTP status + provider error type/code/param) are appended so a failure is
         // explainable from the log. Never the body, prompt, output or any credential.
         const d = (err && err.providerDiagnostics) || {}
@@ -1799,6 +1809,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           activeProvider = OPENAI // its envelope PARSED — this is the accepted provider
           activeAdapter = gpt
         } catch (err) {
+          if (subscriptionMode) throw new SubscriptionError('subscription_invalid_output')
           routerFallbackReason = `openai_parse_${(err && err.reason) || 'error'}`
         }
       }

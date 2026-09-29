@@ -488,6 +488,13 @@ const CATALOGUE = Object.freeze({
   // ── who is answering, and what they can see ──
   'provider.claude': { zh: '香香（Claude）', en: 'Xiangxiang (Claude)' },
   'provider.gpt': { zh: '香香（GPT）', en: 'Xiangxiang (GPT)' },
+  'provider.subscription': { zh: '香香（GPT-6 Astra・訂閱）', en: 'Xiangxiang (GPT-6 Astra subscription)' },
+  'provider.subscriptionNote': { zh: '對話使用 ChatGPT 訂閱額度，資料會傳送至 OpenAI；額度用完便停止，不自動轉付費 API。其他工作角色仍按原有設定收費。', en: 'Chat uses your ChatGPT subscription and sends context to OpenAI. It stops at the limit without paid API fallback. Other work roles retain their existing billing.' },
+  'diag.subscriptionLogin': { zh: '請先在這台電腦登入 Codex 的 ChatGPT 帳戶。對話尚未轉用付費 API。', en: 'Sign into Codex with ChatGPT on this computer. Chat has not switched to a paid API.' },
+  'diag.subscriptionLimit': { zh: '訂閱額度已用完，請等額度恢復後再試。對話已停止，不會自動轉用付費 API。', en: 'Subscription limit reached. Try again after it resets. Chat has stopped without paid API fallback.' },
+  'diag.subscriptionUnavailable': { zh: '暫時無法連接本機訂閱橋接程式，請確認它正在執行。對話不會轉用付費 API。', en: 'The local subscription bridge is unavailable. Check that it is running. Chat will not fall back to a paid API.' },
+  'diag.subscriptionModel': { zh: '目前訂閱無法使用 GPT-6 Astra，對話已停止。', en: 'GPT-6 Astra is unavailable for this subscription. Chat has stopped.' },
+  'diag.subscriptionOutput': { zh: '訂閱模型的回覆格式不完整，請重試。沒有轉用付費 API。', en: 'The subscription model returned an invalid answer. Please retry. No paid API fallback was used.' },
   'provider.canSee': { zh: '看到 {sources}', en: 'Can see {sources}' },
   /**
    * ⛔ THE ASYMMETRY IS THE POINT, and the English must not soften it. The same data, but a
