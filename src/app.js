@@ -951,6 +951,9 @@ function createApp (options = {}) {
   // The operating layer uses the existing owner gate; the HTTP body grants no role.
   app.use('/manager', requireOwner)
   app.use('/architecture', requireOwner)
+  app.use('/memory', requireOwner)
+  app.use('/api/v1/memory', requireOwner)
+  app.use(require('./memory/routes').createMemoryRouter({ client: opts.memoryClient }))
   app.use('/workers', requireOwner)
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))

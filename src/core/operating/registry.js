@@ -24,9 +24,9 @@ function registryView () {
   const roles = [...new Set(TOOLS.map(t => t.agent))].map(id => ({ id, engine: 'deterministic', model: null, tools: TOOLS.filter(t => t.agent === id).map(t => t.id) }))
   return { version: 1, workflow: 'daily_briefing', agents: roles, tools: TOOLS,
     integrations: [
-      { id: 'hindsight', state: 'not_connected', number: '10', phase: 4 },
-      { id: 'memory_postgresql', state: 'not_connected', number: '11', phase: 4 },
-      { id: 'memory_pgvector', state: 'not_connected', number: '12', phase: 4 },
+      { id: 'hindsight', state: 'partial', number: '10', phase: 4 },
+      { id: 'memory_postgresql', state: 'foundation', number: '11', phase: 4 },
+      { id: 'memory_pgvector', state: 'foundation', number: '12', phase: 4 },
       { id: 'business_write', state: 'not_enabled', phase: 5 },
       { id: 'qbo', state: 'not_connected', number: '13', phase: 6 },
       { id: '7shifts', state: 'not_connected', number: '14', phase: 6 },

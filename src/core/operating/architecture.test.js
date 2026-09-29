@@ -2,7 +2,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 
-test('architecture page is owner-gated, distinguishes planned memory, and does not run tools', async t => {
+test('architecture page is owner-gated, distinguishes pilot memory, and does not run tools', async t => {
   const { createApp } = require('../../app')
   let reads = 0
   const app = createApp({ ownerPassword: 'fixture-owner', serviceToken: 'fixture-service', runPersistence: false, proposalPersistence: false,
@@ -26,14 +26,14 @@ test('architecture page is owner-gated, distinguishes planned memory, and does n
   assert.match(html, /記憶不能取代營運事實，也不代表執行批准/)
   assert.match(html, /href="\/manager"/)
   assert.equal((html.match(/data-connection=/g) || []).length, 12)
-  assert.match(html, /data-connection="10" data-state="not_connected"/)
+  assert.match(html, /data-connection="10" data-state="partial"/)
   assert.match(html, /data-connection="09" data-state="partial"/)
-  assert.match(html, /data-connection="12" data-state="not_connected"/)
+  assert.match(html, /data-connection="12" data-state="foundation"/)
   assert.equal((html.match(/data-phase=/g) || []).length, 9)
   assert.equal((html.match(/data-capability=/g) || []).length, 8)
   assert.match(html, /不會自動切換到付費 API/)
   assert.match(html, /連接歸香香統一管理/)
-  assert.match(html, /先驗收唯讀來源與 Worker/)
+  assert.match(html, /驗收記憶/)
   assert.match(html, /Manus.*Grok/)
   assert.doesNotMatch(html, /<script|<form|<button/)
   assert.equal(reads, 0)
@@ -47,7 +47,7 @@ test('architecture remains readable in English and uses the shared integration r
     const html = buildArchitectureHtml()
     assert.match(html, /<html lang="en"/)
     assert.match(html, /Architecture inventory/)
-    assert.match(html, /Hindsight.*Not connected/)
+    assert.match(html, /Hindsight.*Partially/)
     assert.match(html, /7shifts.*Not connected/)
     assert.match(html, /QBO.*Not connected/)
     assert.doesNotMatch(html, /\[missing|undefined|\/\*LABELS\*\//)

@@ -850,6 +850,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return out.length ? out.join(String.fromCharCode(10)) : null
   }
   let recallBlockCache // undefined = not attempted yet; null = nothing to inject
+  let hindsightCache
+  let hindsightUsed = false
   let convRecallBlockCache // same three-state contract, for Conversation Recall
 
   /**
@@ -1218,7 +1220,6 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (promptCache.has(cacheKey)) return promptCache.get(cacheKey)
     let effPrompt = baseEffPrompt
     const isChat = !!(opts && opts.interactionMode === 'chat')
-
     // DECISION RECALL v1 — chat-lane only, opt-in, FAIL-SOFT. Any read error or
     // NO_RECORDS injects nothing (chat proceeds exactly as today; never break/repair/write).
     // Withholdable from OpenAI on its own via CONTEXT_DECISIONS_OPENAI=off.
@@ -1269,6 +1270,15 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         convRecallBlockCache = null
         logReadSource({ source: 'conversation-archive', trust: 'unavailable', count: 0, usedFallback: false, error: (err && err.message) || String(err), durationMs: null })
       }
+    }
+
+    if (isChat && providerName === 'openai' && process.env.XIANGXIANG_MEMORY === 'on' && resolveFlag(process.env, 'READ_ACCESS') === 'on' && decisionRecallSharedWith(providerName, process.env)) {
+      if (hindsightCache === undefined) {
+        const memory = opts.memoryClient || require('../core/operating/gateway').createMemoryGateway({ engine: require('../memory/hindsight').createHindsight() })
+        hindsightCache = await require('../memory/context').recallContext({ enabled: true, memory, query: message })
+        logReadSource({ source: 'hindsight', trust: hindsightCache.state === 'ok' ? 'advisory' : 'unavailable', count: hindsightCache.count, usedFallback: false, error: hindsightCache.state === 'ok' ? null : 'memory_unavailable', durationMs: null })
+      }
+      if (hindsightCache) { effPrompt = hindsightCache.block + '\n\n' + effPrompt; hindsightUsed = hindsightCache.count > 0 }
     }
 
     // READ CONTEXT v1 — chat-lane only, flag-gated, FAIL-SOFT. Injected ONLY when
@@ -1789,6 +1799,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // FIX 3: stopReason is recorded on the SUCCESS path too, so a valid envelope that
     // nonetheless hit max_tokens is visible BEFORE it becomes a failure.
     tel.stopReason = (result && typeof result.stopReason === 'string' && result.stopReason) ? result.stopReason : null
+    if (name === 'openai' && hindsightUsed) {
+      tel.readContextUsed = true
+      tel.replyCitesContext = true
+      tel.readContextSources = [...(tel.readContextSources || []), 'hindsight']
+    }
   }
 
   const recordedResults = new Set()

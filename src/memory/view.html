@@ -1,0 +1,22 @@
+<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Xiangxiang Memory</title>
+<style>body{font:16px system-ui,sans-serif;background:#faf9f7;color:#252525;margin:0}main{max-width:900px;margin:32px auto;padding:24px}a{color:#815b30}h1{font-size:28px}p{line-height:1.7}textarea{display:block;box-sizing:border-box;width:100%;min-height:110px;padding:14px;font:inherit;border:1px solid #ccc;border-radius:12px;margin:10px 0}button{padding:10px 16px;border:1px solid #ccc;border-radius:8px;background:white;cursor:pointer;margin-right:8px}button:disabled{opacity:.5;cursor:wait}article{margin:18px 0;padding:20px;background:white;border:1px solid #e6e1d9;border-radius:14px}article p{white-space:pre-wrap}small{display:block;color:#777;margin:10px 0}#status{padding:12px;border-radius:8px;background:#eee9df}label{font-weight:600}</style>
+<main><a href="/demo" id="back"></a><h1 id="title"></h1><p id="intro"></p><p id="status" role="status"></p><form id="form"><label for="memory-text" id="content"></label><textarea id="memory-text" maxlength="2000" required></textarea><button id="save" type="submit"></button><button id="cancel" type="button" hidden></button></form><p id="notice" role="status"></p><section id="list"></section></main>
+<script>
+'use strict'; const L=/*LABELS*/; const el=id=>document.getElementById(id); let editing=null; let pending=false
+for(const id of ['back','title','intro','content','save','cancel']) el(id).textContent=L[id]
+document.title=L.title
+function busy(value){pending=value;document.querySelectorAll('button,textarea').forEach(x=>x.disabled=value)}
+function reset(){editing=null;el('memory-text').value='';el('cancel').hidden=true}
+async function load(){
+ el('status').textContent=L.loading
+ try{const r=await fetch('/api/v1/memory',{cache:'no-store'});if(!r.ok)throw Error();const data=await r.json();el('status').textContent=L.connected;el('list').replaceChildren()
+ if(!data.items.length)el('list').textContent=L.empty
+ if(data.total>data.items.length){const p=document.createElement('p');p.textContent=L.limit;el('list').append(p)}
+ for(const row of data.items){const card=document.createElement('article');const p=document.createElement('p');p.textContent=row.text;const meta=document.createElement('small');meta.textContent=row.id+' · '+(row.updatedAt||row.createdAt||'—');card.append(p,meta)
+ const edit=document.createElement('button');edit.textContent=L.edit;edit.onclick=()=>{editing=row.id;el('memory-text').value=row.text;el('cancel').hidden=false;el('memory-text').focus()}
+ const forget=document.createElement('button');forget.textContent=L.forget;forget.onclick=()=>{if(window.confirm(L.confirm))mutate({op:'forget',id:row.id},L.forgotten)};card.append(edit,forget);el('list').append(card)}
+ }catch(_){el('status').textContent=L.unavailable;el('list').replaceChildren()}
+}
+async function mutate(body,done){if(pending)return;busy(true);el('notice').textContent=L.loading;try{const r=await fetch('/api/v1/memory',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});if(!r.ok)throw Error();reset();await load();el('notice').textContent=done}catch(_){el('notice').textContent=L.unconfirmed}finally{busy(false)}}
+el('form').onsubmit=e=>{e.preventDefault();mutate({op:'save',text:el('memory-text').value,...(editing?{id:editing}:{})},L.saved)};el('cancel').onclick=reset;load()
+</script></html>

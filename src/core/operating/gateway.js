@@ -11,7 +11,8 @@ function rowView (row) {
 
 // The local engine is an adapter, so another memory engine can implement recall()
 // without changing workflows. Recall is explicitly advisory and cannot answer truth reads.
-function createMemoryGateway ({ listDecisions }) {
+function createMemoryGateway ({ listDecisions, engine } = {}) {
+  if (engine) return { engine: engine.engine, recall: query => engine.recall(query), retain: (id, text) => engine.retain(id, text), forget: id => engine.forget(id), list: () => engine.list() }
   return { engine: 'local_decisions', async recall () {
     if (typeof listDecisions !== 'function') throw Error('memory_not_connected')
     const records = await listDecisions()

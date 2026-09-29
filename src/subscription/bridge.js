@@ -22,7 +22,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription, workerFlow = null, workerProviders = null, websiteEnabled = false, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false
   const session = createSession(clientOptions)
@@ -31,7 +31,7 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/workers', '/website'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/workers', '/website', '/v1/chat/completions'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     if (busy) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
     if (req.headers['content-type'] !== 'application/json') { reply(415, { code: 'subscription_unavailable' }); req.resume(); return }
     busy = true
@@ -48,7 +48,10 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (req.url === '/website') {
+      if (req.url === '/v1/chat/completions') {
+        if (!memoryEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
+        reply(200, await require('./memoryCompletion').memoryCompletion(options, input, completeFn))
+      } else if (req.url === '/website') {
         if (!websiteEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
         reply(200, await findWebsiteFn(options, input))
       } else if (req.url === '/workers') {

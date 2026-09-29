@@ -36,10 +36,10 @@ LLM completion text is not execution evidence.
 | 06 | OpenAI / API | API adapter exists; verified subscription chat retained; paid use is workflow-specific |
 | 07 | Codex | Subscription chat verified; unified technical execution dispatch still needs acceptance |
 | 08 | Claude / API | Existing adapters/workers; architecture/review assignment and handoff need acceptance |
-| 09 | Aroma Memory Gateway | Existing local-decision recall interface; extend rather than rebuild |
-| 10 | Hindsight | PoC not started |
-| 11 | PostgreSQL | Memory backend not connected; separate from existing business PostgreSQL |
-| 12 | pgvector | Memory vector support not connected; confirm with the PoC deployment |
+| 09 | Aroma Memory Gateway | Local decisions plus Hindsight adapter; bounded advisory recall after chat routing |
+| 10 | Hindsight | Partially connected: explicit save, correction, recall and forget verified locally; automatic capture/reflection pending |
+| 11 | PostgreSQL | Memory foundation connected: independent local pg0 instance; backup/restore acceptance pending |
+| 12 | pgvector | Memory foundation connected: extension 0.8.5 and multilingual recall verified; larger datasets pending |
 
 Read connector evidence: `src/context/liveClients.js`, `readConnector.js` and
 `adapters/{github,drive,aromaSystem,calendar,gmail}Read.js`. Capability and worker
@@ -109,7 +109,7 @@ Xiangxiang workflow state, never for inventory, prices or approved invoices.
 | Calendar truth | Calendar records within the requested window | Next 24 hours, explicitly labelled |
 | Workflow truth | Existing Xiangxiang task/proposal stores | Todo tasks and pending proposals |
 | Knowledge | Documents with source references | Recently modified Drive documents |
-| Memory | Historical context only, not current facts or permission | Existing recorded decisions through a replaceable recall adapter |
+| Memory | Historical context only, not current facts or permission | Recorded decisions and explicitly saved owner preferences through the Memory Gateway |
 
 Retrieval time is not data-as-of time. Counts mean records returned by the
 bounded query, not total records in the source or events occurring today.
@@ -171,10 +171,11 @@ Opening the page makes no source, model or memory calls and grants no capability
 
 The consolidated inventory leads with the core twelve, target worker assignments,
 Core responsibilities and Phase 0-8 roadmap. The eight-layer overview remains
-expandable. The next work is acceptance of existing read sources and workers,
-followed by Hindsight through the existing memory interface. Deployment,
-model/cost settings and retention scope must be established before real ingestion.
-This inventory does not activate Hindsight or any other new provider.
+expandable. Hindsight is now an opt-in local pilot through the existing memory
+interface. The owner manages explicit memories at `/memory`; GPT chat retrieves
+bounded advisory context after routing. Extraction uses the existing subscription
+bridge, while multilingual embeddings and reranking run locally. See
+`HINDSIGHT-MEMORY.md` for deployment, retention scope and measured acceptance.
 
 The existing Xiangxiang sidebar links to **Operations briefing**. Refresh is an
 explicit user action; opening the page reads only activity and registry metadata.
@@ -182,14 +183,16 @@ Cards show source, layer, check time, returned/shown counts, bounded rows and
 coverage notes. A missing source never renders as an empty task queue.
 
 The activity view and expanded architecture details expose what ran and which
-integrations are not connected. The current version uses no model calls.
+integrations are not connected. The deterministic briefing uses no model calls;
+explicit memory extraction and ordinary GPT conversation use subscription quota.
 
 ## Remaining architecture stages
 
 This is the first Core workflow, not completion of the entire master diagram.
 
-- Hindsight PoC: isolated development namespace, adapter contract tests, explicit
-  endpoint/auth configuration and reviewed retention before real ingestion.
+- Hindsight follow-up: backup/restore acceptance, larger datasets and separately
+  scoped automatic capture/reflection. Explicit local retention, correction,
+  retrieval and deletion have passed isolated acceptance.
 - Additional memory storage engines: implement the gateway contract and a reviewed
   migration; do not replace business PostgreSQL with memory.
 - Domain workers: add Email/QA/Coding/Purchasing/Accounting/Review workflows one at
@@ -211,4 +214,5 @@ reported separately. Live validation must name the boot commit and observed page
 
 Rollback by reverting the operating-layer commit and restarting the backend.
 Keep `manager-activity` for audit history. Source systems need no rollback because
-the new workflow performs no source mutation. No new package is installed.
+the briefing performs no source mutation. The backend has no new dependency;
+Hindsight has its own external Python runtime and PostgreSQL data directory.

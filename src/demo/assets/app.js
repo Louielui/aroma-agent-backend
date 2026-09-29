@@ -2204,6 +2204,8 @@
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
   var managerBtn = document.getElementById('open-manager')
   var architectureBtn = document.getElementById('open-architecture')
+  var memoryBtn = document.getElementById('open-memory')
+  if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
   if (architectureBtn) architectureBtn.addEventListener('click', function () { window.location.href = '/architecture' })
   if (managerBtn) {
     managerBtn.addEventListener('click', function () { window.location.href = '/manager' })
@@ -2390,6 +2392,7 @@
     ['chat-level-deep', 'text', function () { return t('chat.deep') }],
     ['open-manager', 'text', function () { return t('manager.title') }],
     ['open-architecture', 'text', function () { return t('architecture.title') }],
+    ['open-memory', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],
     ['composer-note', 'text', function () { return t('shell.composerNote') }],
