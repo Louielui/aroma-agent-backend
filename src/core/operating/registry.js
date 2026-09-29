@@ -24,10 +24,24 @@ function registryView () {
   const roles = [...new Set(TOOLS.map(t => t.agent))].map(id => ({ id, engine: 'deterministic', model: null, tools: TOOLS.filter(t => t.agent === id).map(t => t.id) }))
   return { version: 1, workflow: 'daily_briefing', agents: roles, tools: TOOLS,
     integrations: [
-      { id: 'hindsight', state: 'not_connected' }, { id: 'memory_postgresql', state: 'not_connected' },
-      { id: 'memory_pgvector', state: 'not_connected' },
-      { id: 'qbo', state: 'not_connected' }, { id: '7shifts', state: 'not_connected' },
-      { id: 'business_write', state: 'not_enabled' }
+      { id: 'hindsight', state: 'not_connected', number: '10', phase: 4 },
+      { id: 'memory_postgresql', state: 'not_connected', number: '11', phase: 4 },
+      { id: 'memory_pgvector', state: 'not_connected', number: '12', phase: 4 },
+      { id: 'business_write', state: 'not_enabled', phase: 5 },
+      { id: 'qbo', state: 'not_connected', number: '13', phase: 6 },
+      { id: '7shifts', state: 'not_connected', number: '14', phase: 6 },
+      { id: 'google_business', state: 'not_connected', number: '15', phase: 6 },
+      { id: 'pos', state: 'not_connected', number: '16', phase: 6 },
+      { id: 'cloudflare', state: 'not_connected', number: '17', phase: 6 },
+      { id: 'make', state: 'not_connected', number: '18', phase: 6 },
+      { id: 'whatsapp', state: 'not_connected', number: '19', phase: 6 },
+      { id: 'sms', state: 'not_connected', number: '20', phase: 6 },
+      { id: 'costco', state: 'not_connected', number: '21', deferred: true },
+      { id: 'wholesale_club', state: 'not_connected', number: '22', deferred: true },
+      { id: 'amazon', state: 'not_connected', number: '23', deferred: true },
+      { id: 'supplier_portals', state: 'not_connected', number: '24', deferred: true },
+      { id: 'manus', state: 'not_connected', deferred: true },
+      { id: 'grok', state: 'not_connected', deferred: true }
     ] }
 }
 module.exports = { TOOLS, authorize, registryView }

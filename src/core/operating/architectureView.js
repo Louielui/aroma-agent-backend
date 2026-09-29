@@ -14,6 +14,8 @@ function buildArchitectureHtml () {
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
+    pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
+    stage: t('architecture.stage'), later: t('architecture.later'), integrationScope: t('architecture.integrationScope'),
     not_connected: t('architecture.notConnected'), not_enabled: t('architecture.notEnabled'),
     unknown: t('manager.unknown'), integrations: t('architecture.integrations'),
     boundary: t('architecture.boundary'), boundaryText: t('architecture.boundaryText'),
@@ -43,17 +45,19 @@ function buildArchitectureHtml () {
     <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>
     <dt>${escape(labels.current)}</dt><dd>${escape(row.current)}</dd><dt>${escape(labels.next)}</dt><dd>${escape(row.next)}</dd></dl>
     <details><summary>${escape(labels.details)}</summary><code>${escape(row.evidence)}</code></details></article>`).join('\n')
-  const integrationNames = { hindsight: 'Hindsight', memory_postgresql: t('architecture.memoryDatabase'), memory_pgvector: 'pgvector', qbo: 'QBO', '7shifts': '7shifts', business_write: t('architecture.businessWrite') }
+  const integrationNames = { hindsight: 'Hindsight', memory_postgresql: t('architecture.memoryDatabase'), memory_pgvector: 'pgvector', qbo: 'QBO', '7shifts': '7shifts', business_write: t('architecture.businessWrite'),
+    google_business: 'Google Business Profile', pos: 'POS', cloudflare: 'Cloudflare', make: 'Make', whatsapp: 'WhatsApp Business', sms: 'SMS',
+    costco: 'Costco', wholesale_club: 'Wholesale Club', amazon: 'Amazon', supplier_portals: 'Supplier Portals', manus: 'Manus', grok: 'Grok' }
   const registered = registryView().integrations
   const stateOf = id => registered.find(item => item.id === id)?.state || 'unknown'
-  const integrations = registered.map(item => `<li><strong>${escape(integrationNames[item.id] || item.id)}</strong> — ${escape(labels[item.state] || labels.unknown)}</li>`).join('')
+  const integrations = registered.map(item => `<tr data-integration="${escape(item.id)}"><th scope="row">${item.number ? escape(item.number) + ' · ' : ''}${escape(integrationNames[item.id] || item.id)}</th><td><span class="badge ${escape(item.state)}">${escape(labels[item.state] || labels.unknown)}</span></td><td>${item.phase != null ? 'Phase ' + escape(item.phase) : escape(labels.later)}</td></tr>`).join('')
   // The numbered inventory is a design/evidence snapshot, never a routable plan.
   const connections = [
-    ['01', 'GitHub', 'foundation', t('master.github')],
+    ['01', 'GitHub', 'pending_verification', t('master.github')],
     ['02', 'Google Drive', 'foundation', t('master.drive')],
     ['03', 'Aroma System API', 'foundation', t('master.aroma')],
     ['04', 'Google Calendar', 'foundation', t('master.calendar')],
-    ['05', 'Gmail', 'foundation', t('master.gmail')],
+    ['05', 'Gmail', 'pending_verification', t('master.gmail')],
     ['06', 'OpenAI / API', 'partial', t('master.openai')],
     ['07', 'Codex', 'partial', t('master.codex')],
     ['08', 'Claude / API', 'partial', t('master.claude')],

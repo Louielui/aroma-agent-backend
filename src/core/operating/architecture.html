@@ -7,9 +7,11 @@
 <nav><a href="/demo">{{back}}</a><a href="/manager">{{briefing}}</a></nav>
 <header><h1>{{title}}</h1><p class="intro">{{intro}}</p><p class="snapshot">{{snapshot}}</p></header>
 <p class="ownership">{{ownership}}</p>
-<nav class="jump"><a href="#checklist">{{checklist}}</a><a href="#capabilities">{{capabilities}}</a><a href="#modules">{{modules}}</a><a href="#roadmap">{{roadmap}}</a></nav>
+<nav class="jump"><a href="#unconnected">{{integrations}}</a><a href="#checklist">{{checklist}}</a><a href="#capabilities">{{capabilities}}</a><a href="#modules">{{modules}}</a><a href="#roadmap">{{roadmap}}</a></nav>
 <ol class="flow" aria-label="{{flow}}"><li>{{owner}}</li><li>{{core}}</li><li>{{tools}}</li><li>{{result}}</li><li>{{memory}}</li></ol>
 <section class="priority"><h2>{{priority}}</h2><p>{{priorityText}}</p></section>
+<p class="snapshot">{{statusGuide}}</p>
+<section id="unconnected" class="card lower"><h2>{{integrations}}</h2><p>{{integrationScope}}</p><div class="table-wrap"><table><thead><tr><th scope="col">{{component}}</th><th scope="col">{{status}}</th><th scope="col">{{stage}}</th></tr></thead><tbody><!--INTEGRATIONS--></tbody></table></div></section>
 <section id="checklist" class="card lower"><h2>{{checklist}}</h2><div class="table-wrap"><table><thead><tr><th scope="col">{{component}}</th><th scope="col">{{status}}</th><th scope="col">{{scope}}</th></tr></thead><tbody><!--CHECKLIST--></tbody></table></div><p class="snapshot">{{memoryStack}}</p></section>
 <section id="capabilities" class="card lower"><h2>{{capabilities}}</h2><p>{{routingNote}}</p><div class="table-wrap"><table><thead><tr><th scope="col">Capability</th><th scope="col">{{worker}}</th><th scope="col">{{fallback}}</th></tr></thead><tbody><!--CAPABILITIES--></tbody></table></div></section>
 <section id="modules" class="card lower"><h2>{{modules}}</h2><p>{{moduleNote}}</p><ul class="module-list"><!--MODULES--></ul><p class="snapshot">{{timeline}}</p></section>
@@ -17,7 +19,6 @@
 <details class="layer-details"><summary>{{layers}}</summary><section class="grid"><!--CARDS--></section></details>
 <section class="card lower"><h2>{{roles}}</h2><p>{{rolesText}}</p></section>
 <section class="card lower"><h2>{{agentOrder}}</h2><p>P0 · Executive / Owner Assistant · Development</p><p>P1 · Email · Calendar · QA</p><p>P2 · Purchasing · Accounting</p><p>P3 · Review · HR</p></section>
-<section class="card lower"><h2>{{integrations}}</h2><ul><!--INTEGRATIONS--></ul></section>
 <section class="card lower"><h2>{{deferred}}</h2><p>{{deferredText}}</p></section>
 <section class="card lower"><h2>{{exclusions}}</h2><p>{{exclusionsText}}</p></section>
 <section class="card lower boundary"><h2>{{boundary}}</h2><p>{{boundaryText}}</p></section>
