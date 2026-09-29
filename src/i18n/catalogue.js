@@ -633,7 +633,7 @@ const CATALOGUE = Object.freeze({
   'architecture.memoryPurpose': { zh: '讓新對話能參考過往經驗。', en: 'Bring relevant past experience into new conversations.' },
   'architecture.memoryComponent': { zh: 'Memory Gateway → 本機 Hindsight → 獨立 PostgreSQL／pgvector', en: 'Memory Gateway → local Hindsight → separate PostgreSQL / pgvector' },
   'architecture.memoryCurrent': { zh: '部分接通：本機 Hindsight 可保存、檢索、修正與忘記記憶；新對話及營運簡報可在背景自動保存，顯示來源與寫入狀態。GPT 聊天可引用有來源的記憶。現有本地歷史決策仍沿用。', en: 'Partially connected: local Hindsight retains, recalls, corrects and forgets memories; new conversations and briefings support background capture with source and write status. GPT chat can use sourced memory. Existing local decision recall remains.' },
-  'architecture.memoryNext': { zh: '下一步：擴大真實對話驗收、備份復原；新對話與營運簡報已接背景自動保存；其他工作、舊紀錄匯入及 reflection 尚未啟用。', en: 'Next: broader conversation acceptance and backup recovery. Background capture is connected for new conversations and briefings; other jobs, historical imports and reflection remain pending.' },
+  'architecture.memoryNext': { zh: '自動佇列、來源搜尋及暫停已實機驗收；本次訂閱橋接回報額度限制，自動寫入 Hindsight 後跨對話讀回仍待驗收。備份復原、其他工作、舊紀錄匯入及 reflection 尚待完成。', en: 'Live capture queue, source search and pause were verified. The subscription bridge reported a quota limit during acceptance; automatic Hindsight persistence followed by cross-chat recall remains unverified. Backup recovery, other jobs, historical imports and reflection remain pending.' },
   'architecture.truthTitle': { zh: '營運事實 · Aroma System', en: 'Business truth · Aroma System' },
   'architecture.truthPurpose': { zh: '提供目前可查證的營運紀錄。', en: 'Provide verifiable business records.' },
   'architecture.truthComponent': { zh: 'Aroma System API／既有 PostgreSQL', en: 'Aroma System API / existing PostgreSQL' },

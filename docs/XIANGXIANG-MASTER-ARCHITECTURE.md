@@ -312,3 +312,12 @@ business reads. The UI shows queued, processing, read-back-confirmed, unconfirme
 skipped and manually managed states. Automated tests cover persistence, dedup,
 opt-out, credentials, pause, restart/retry, provenance, source search and owner gates.
 Live subscription extraction and subsequent recall are measured separately.
+
+Automatic-memory acceptance update: the live owner bank and queue UI are reachable;
+new conversation and briefing records entered the durable queue. Source search and
+pause/resume were measured. The subscription bridge returned HTTP 429 with
+subscription_limit_reached. Both attempted captures remained unconfirmed, with zero
+verified memories; live automatic retention and subsequent cross-chat recall are
+pending quota availability. No paid API fallback was enabled. Background extraction
+uses a separate bridge session and busy gate from foreground chat; its concurrency
+regression demonstrated 503 before the change and passes with isolated sessions.

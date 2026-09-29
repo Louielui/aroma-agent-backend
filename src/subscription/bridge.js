@@ -24,20 +24,22 @@ function validateInput (input) {
 
 function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
-  let busy = false
+  let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
+  const memorySession = createSession(clientOptions)
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => {
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
     if (req.method !== 'POST' || !['/complete', '/status', '/workers', '/website', '/v1/chat/completions'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (busy) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
+    const isMemory = req.url === '/v1/chat/completions'
+    if (isMemory ? memoryBusy : busy) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
     if (req.headers['content-type'] !== 'application/json') { reply(415, { code: 'subscription_unavailable' }); req.resume(); return }
-    busy = true
+    if (isMemory) memoryBusy = true; else busy = true
     const controller = new AbortController()
     res.on('close', () => { if (!res.writableFinished) controller.abort() })
-    const options = { ...clientOptions, session, signal: controller.signal }
+    const options = { ...clientOptions, session: isMemory ? memorySession : session, signal: controller.signal }
     try {
       const chunks = []
       let length = 0
@@ -72,10 +74,10 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
     } catch (error) {
       const safe = error instanceof SubscriptionError ? error : new SubscriptionError()
       reply(safe.code === 'subscription_limit_reached' ? 429 : 503, { code: safe.code })
-    } finally { busy = false }
+    } finally { if (isMemory) memoryBusy = false; else busy = false }
   })
   server.requestTimeout = 150000
-  server.on('close', () => session.close())
+  server.on('close', () => { session.close(); memorySession.close() })
   server.headersTimeout = 10000
   return server
 }
