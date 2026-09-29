@@ -2156,6 +2156,10 @@
   // ── 首頁 as a destination ──
   var homeBtn = document.getElementById('open-home')
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
+  var managerBtn = document.getElementById('open-manager')
+  if (managerBtn) {
+    managerBtn.addEventListener('click', function () { window.location.href = '/manager' })
+  }
 
   var setOverlay = document.getElementById('settings-overlay')
   var setOpenBtn = document.getElementById('open-settings')
@@ -2332,6 +2336,7 @@
     ['brand-name', 'text', function () { return t('shell.title') }],
     ['home-label', 'text', function () { return t('nav.home') }],
     ['new-chat', 'text', function () { return t('shell.newChat') }],
+    ['open-manager', 'text', function () { return t('manager.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
     ['conn-text', 'text', function () { return t('shell.local') }],
     ['composer-note', 'text', function () { return t('shell.composerNote') }],
