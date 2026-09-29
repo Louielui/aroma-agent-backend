@@ -828,7 +828,9 @@ function createApp (options = {}) {
   // the catch-all Owner boundary, including legacy read routes and future routes.
   const companyAccessEnabled = opts.companyAccessEnabled === undefined
     ? process.env.XIANGXIANG_COMPANY_ACCESS === '1' : opts.companyAccessEnabled === true
-  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, requireOwner, enabled: companyAccessEnabled,
+  const companyRegistry = opts.companyOptions?.registry || require('./company/access').createRegistry()
+  const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
+  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, requireOwner, enabled: companyAccessEnabled,
     endOwnerSession: (req, res) => {
       const auth = require('./governance/ownerAuth')
       try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }
@@ -989,7 +991,7 @@ function createApp (options = {}) {
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
   app.use('/api/v1/manager', requireOwner)
-  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture })
+  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
@@ -1092,6 +1094,7 @@ function createApp (options = {}) {
   })
 
   app.use(createDemoRouter({
+    mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox }) : null,
     operatingManager,
     memoryJournal: governedMemory,
     conversationStore: require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture),

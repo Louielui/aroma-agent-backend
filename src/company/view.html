@@ -39,6 +39,8 @@ async function ownerView() {
      button(L.mailAuthorize,c,async()=>{ const r=await api('/api/v1/company-access',{op:'mail_authorize'}); window.location.assign(r.url) })
      if(data.mailbox.state!=='not_connected') {
        button(L.mailPreview,c,()=>previewMail(true))
+       const label=node('label',L.mailSearchHelp,c); const input=node('input',null,label); input.type='search'; input.maxLength=400; input.style.cssText='display:block;width:100%;font:inherit;padding:8px';
+       button(L.mailSearch,c,()=>previewMail(true,input.value))
        button(L.mailDisconnect,c,async()=>{ await change({op:'mail_disconnect'}); $('files').replaceChildren() })
      }
    }
@@ -52,13 +54,20 @@ async function ownerView() {
  const mailResult=new URLSearchParams(location.search).get('mail')
  if(mailResult) { $('status').textContent=mailResult==='success'&&data.mailbox.state==='connected'?L.mailSuccess:L.mailFailed; history.replaceState(null,'','/company-access') }
 }
-async function previewMail(owner) {
+async function previewMail(owner,query) {
  $('files').replaceChildren()
- const data=await api(owner?'/api/v1/company-access/mail':'/api/v1/member/mail')
+ const data=await api(owner?(typeof query==='string'?'/api/v1/company-access/mail/search?q='+encodeURIComponent(query):'/api/v1/company-access/mail'):'/api/v1/member/mail')
  node('h2',data.mailbox,$('files')); node('p',L.mailScope,$('files'),'muted')
  if(!data.messages.length) node('p',L.mailEmpty,$('files'))
+ if(data.truncated) node('p',L.mailResultsLimited,$('files'),'note')
  for(const message of data.messages) { const c=node('article',null,$('files'),'card'); node('h3',message.subject||'—',c)
    node('p',message.from||'—',c,'muted'); node('p',message.date||'—',c,'muted'); node('p',message.snippet||'',c)
+   if(message.link) link(L.mailOriginal,message.link,node('p',null,c))
+   if(owner) { const detail=node('div',null,c); button(L.mailFull,c,async()=>{
+     detail.replaceChildren(); const full=await api('/api/v1/company-access/mail/'+encodeURIComponent(message.id));
+     node('p',L.mailReadScope,detail,'muted'); node('pre',full.bodyState==='unavailable'?L.mailBodyUnavailable:full.body,detail);
+     if(full.bodyTruncated||full.bodyState==='partial') node('p',L.mailBodyLimited,detail,'note')
+   }) }
  }
 }
 async function files(source, folderId) {

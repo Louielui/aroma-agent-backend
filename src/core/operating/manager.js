@@ -125,7 +125,7 @@ function createManager ({ gateway, activity, runStore = createMemoryRunStore(), 
 }
 
 // Wiring is lazy so viewing the page never fetches business data or starts a model.
-function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture } = {}) {
+function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture, mailbox } = {}) {
   const store = require('../../store/store')
   const activity = createActivityStore()
   let manager
@@ -133,6 +133,7 @@ function createRuntimeManager ({ proposalStore, env = process.env, memoryCapture
     ? require('./briefingMemory').createBriefingMemory({ gateway: require('../../memory/runtime').runtime().gateway, getRun: id => manager.get(id) })
     : createMemoryGateway({ listDecisions: store.listDecisions })
   const gateway = createGateway({
+    mailbox,
     connection: source => require('../../context/connectionState').projectConnections(env).find(r => r.key === source),
     connector: { read: async (...args) => require('../../context/liveClients').createLiveReadConnector({ env }).connector.read(...args) },
     memory, tasks: store.listTasks,

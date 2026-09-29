@@ -24,7 +24,7 @@ function createMemoryGateway ({ listDecisions, engine } = {}) {
   } }
 }
 
-function createGateway ({ connector, connection, memory, tasks, proposals, clock = () => new Date().toISOString() } = {}) {
+function createGateway ({ connector, connection, memory, tasks, proposals, mailbox, clock = () => new Date().toISOString() } = {}) {
   async function read (actor, toolId, requestedLayer) {
     const permission = authorize(actor, toolId, requestedLayer)
     if (!permission.allowed) throw Error(permission.reason)
@@ -33,7 +33,14 @@ function createGateway ({ connector, connection, memory, tasks, proposals, clock
     const base = { tool: tool.id, agent: tool.agent, source: tool.source, layer: tool.layer, domain: tool.domain, checkedAt, model: null, approval: tool.approval }
     try {
       let response
-      if (toolId === 'memory.decisions') {
+      if (toolId === 'gmail.admin') {
+        if (!mailbox) throw Error('mail_not_connected')
+        const q = require('../../company/mailChat').todayQuery(new Date(checkedAt))
+        const mail = await mailbox.search({ owner: true }, { q })
+        response = { results: mail.messages.map(m => ({ sourceId: m.id, title: m.subject, content: m.snippet, originalDate: m.date, link: m.link })),
+          evidence: { completeWithinScope: !mail.truncated, truncated: mail.truncated, dataAsOf: mail.readAt,
+            queryScope: { window: q, declaredBy: 'adapter' } } }
+      } else if (toolId === 'memory.decisions') {
         response = { results: await memory.recall(), evidence: { completeWithinScope: false } }
       } else if (toolId === 'local.tasks') {
         const all = await tasks()

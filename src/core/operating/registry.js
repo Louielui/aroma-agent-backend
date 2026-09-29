@@ -7,6 +7,7 @@ const TOOLS = Object.freeze([
   { id: 'aroma.invoices', agent: 'accounting', source: 'aroma_system', method: 'listInvoices', layer: 'truth', domain: 'business' },
   { id: 'calendar.agenda', agent: 'calendar', source: 'calendar', method: 'listEvents', layer: 'truth', domain: 'calendar' },
   { id: 'drive.documents', agent: 'knowledge', source: 'drive', method: 'listFiles', layer: 'knowledge', domain: 'documents' },
+  { id: 'gmail.admin', agent: 'email', source: 'admin_mail', method: 'search', layer: 'knowledge', domain: 'administration' },
   { id: 'local.tasks', agent: 'coordinator', source: 'xiangxiang', method: null, layer: 'truth', domain: 'workflow' },
   { id: 'local.approvals', agent: 'coordinator', source: 'xiangxiang', method: null, layer: 'truth', domain: 'workflow' },
   { id: 'memory.decisions', agent: 'memory', source: 'memory_gateway', method: null, layer: 'memory', domain: 'experience' }

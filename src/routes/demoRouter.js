@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null } = {}) {
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
@@ -495,6 +495,26 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
 
       const { message, history, contextCard, providerHint } = req.body
+      const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+        ? require('../company/mailIntent').parseMailRequest(message) : null
+      // Mail content is transient. Only a neutral receipt enters conversation history;
+      // it never enters the automatic memory journal or a later model's history.
+      if (mailChat && mailRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        res.setHeader('Cache-Control', 'no-store')
+        try {
+          const result = await mailChat.answer(mailRequest, message, req.body.chatLevel || 'fast')
+          let historySaved = false
+          if (isValidConversationId(req.body.conversationId)) {
+            try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }); historySaved = true } catch (_) {}
+          }
+          emit('mail_read', 200, null)
+          return res.json({ lane: 'chat', ...result, historySaved })
+        } catch (_) {
+          emit('mail_unavailable', 503, 'mail_unavailable')
+          return res.status(503).json({ error: { message: t('company.mailReadFailed'), retryable: true } })
+        }
+      }
       // Persist receipt before any model call. A failed generation is still an observed event.
       if (memoryJournal) {
         try {

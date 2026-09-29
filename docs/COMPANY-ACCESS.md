@@ -91,9 +91,41 @@ The source credential authorizes the shared mailbox. Human access additionally
 requires an authenticated Owner or a verified member session with the admin-mail
 grant. Suspending a member or revoking that grant blocks subsequent reads.
 Every preview verifies the current Gmail profile, then reads at most ten INBOX
-messages as metadata and snippets. No full bodies, attachments, sends, deletes or
-read-state changes are exposed. Responses use no-store and render content as text.
-This preview is not wired into chat, background ingestion or Hindsight.
+messages as metadata and snippets. Members remain limited to this preview.
+The Owner can additionally search and read inline message bodies on demand.
+Attachments, sends, deletes and read-state changes are not exposed. Responses use
+no-store and render content as text. Background ingestion and Hindsight integration
+for email content remain unconnected.
+
+## Owner mail workflow
+
+Owner-only endpoints are GET /api/v1/company-access/mail/search?q=... and
+GET /api/v1/company-access/mail/:id. Queries are capped at 400 characters and ten
+results. Every read verifies the dedicated Gmail profile, and permission or
+disconnect changes during a read discard its result. A shared registry/mailbox
+instance serves consent, source reads, chat and briefing; personal Gmail is never
+used as a fallback.
+
+Inline plain text is preferred within MIME alternatives. HTML is reduced to inert
+text, attached parts are excluded, unsupported decoding is reported, and the body
+limit is 48,000 characters. Gmail links select the administrative account. The UI
+provides search, original-message links and per-message full-text buttons.
+
+Explicit administrative-mail chat requests bypass ordinary intake and memory
+capture. Search returns up to ten metadata results; summary requests read up to
+four bodies, supply at most 6,000 characters each to the existing subscription
+adapter, and validate returned message IDs and verbatim supporting quotes.
+Suggested follow-ups are not approved tasks or executed actions. Model failures
+show original excerpts with a visible warning. Permission is checked again after
+generation. Full-text commands name the message ID explicitly. Only a neutral
+receipt, not the mail response, is stored in conversation history.
+
+Daily briefing adds an administrative-mail knowledge section using the Owner's
+configured local midnight through the run's read time. It shows at most ten
+matching summaries with source links, limits and actual read time. Briefing
+snapshots remain local Owner-only records; automatic memory capture keeps only
+workflow status and counts, not mail excerpts. No new model is called for the
+fixed briefing. Ivy full-text/chat acceptance is deferred.
 
 Source status is a last-verification result, not continuous health monitoring.
 Provider errors mark the source failed. Disconnect invalidates pending callbacks,

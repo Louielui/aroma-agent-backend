@@ -90,6 +90,8 @@ const FILE_CLASS = Object.freeze({
   'memory/capturePolicy.js': CLASS.MATCHING,
   'connections/view.js': CLASS.INTERFACE,
   'company/view.js': CLASS.INTERFACE,
+  'company/mailChat.js': CLASS.INTERFACE,
+  'company/mailIntent.js': CLASS.MATCHING,
   // B, the goal decomposer. MODEL text: these strings are read by a model, not by the Owner.
   'intake/goal/operationCatalogue.js': CLASS.MODEL,   //   1 — the 「(空)」 marker in the catalogue
   'intake/goal/goalDecomposer.js': CLASS.MODEL,       //  10 — the decomposer's whole instruction

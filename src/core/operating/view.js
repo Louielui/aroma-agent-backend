@@ -29,6 +29,7 @@ function buildManagerHtml () {
     scope: t('manager.scope'), dataAsOf: t('manager.dataAsOf'), received: t('manager.received'), reason: t('manager.reason'),
     noModel: t('manager.noModel'), planned: t('manager.planned'), approval: t('manager.approval'), memoryNote: t('manager.memoryNote'),
     tools: {
+      'gmail.admin': t('company.mailBriefing'),
       'aroma.replenishment': t('manager.replenishment'), 'aroma.invoices': t('manager.invoices'),
       'calendar.agenda': t('manager.calendar'), 'drive.documents': t('manager.documents'),
       'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.approvedContext')

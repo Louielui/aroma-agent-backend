@@ -33,6 +33,14 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
   router.get('/api/v1/company-access/mail', safe(async (req, res) => {
     try { res.json(await mailbox.preview({ owner: true })) } catch (_) { res.status(403).json({ error: 'mail_unavailable' }) }
   }))
+  router.get('/api/v1/company-access/mail/search', safe(async (req, res) => {
+    if (Object.keys(req.query).some(k => k !== 'q') || typeof req.query.q !== 'string') return res.status(400).json({ error: 'invalid_query' })
+    try { res.json(await mailbox.search({ owner: true }, { q: req.query.q })) } catch (_) { res.status(403).json({ error: 'mail_unavailable' }) }
+  }))
+  router.get('/api/v1/company-access/mail/:id', safe(async (req, res) => {
+    if (Object.keys(req.query).length) return res.status(400).json({ error: 'invalid_query' })
+    try { res.json(await mailbox.read({ owner: true }, req.params.id)) } catch (_) { res.status(403).json({ error: 'mail_unavailable' }) }
+  }))
   router.post('/api/v1/company-access', same, safe(async (req, res) => {
     const body = req.body || {}
     try {
