@@ -216,6 +216,12 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
 
 function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
   const router = express.Router()
+  router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
+    const store = require('../store/websiteRunStore')
+    if (!store.ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_run_id' })
+    try { res.set('Cache-Control', 'no-store').json({ run: store.get(req.params.id) }) }
+    catch (_) { res.status(503).json({ error: 'status_unavailable' }) }
+  })
 
   // ── CONVERSATION HISTORY v1 — read, load, delete ─────────────────────────
   // Behind the SAME demo guard and the same owner session as the page that calls them.
@@ -528,6 +534,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         })
         opts.telemetry = telemetry
         if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'fast'
+        if (interactionMode === 'chat' && require('../store/websiteRunStore').ID.test(req.body.websiteRequestId || '')) opts.websiteRequestId = req.body.websiteRequestId
 
         /**
          * ⛔ A4'S RUNTIME DEPENDENCIES — ATTACHED HERE BECAUSE THIS IS WHERE CHAT LIVES.
