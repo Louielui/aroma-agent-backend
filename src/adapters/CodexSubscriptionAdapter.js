@@ -21,7 +21,7 @@ function localRequest (route, input, env) {
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(bytes) } }, res => {
       let data = ''
       res.setEncoding('utf8')
-      res.on('data', chunk => { data += chunk; if (data.length > 200000) req.destroy(new SubscriptionError()) })
+      res.on('data', chunk => { data += chunk; if (data.length > (route === '/workers' ? 2000000 : 200000)) req.destroy(new SubscriptionError()) })
       res.on('error', () => reject(new SubscriptionError()))
       res.on('end', () => {
         let result

@@ -12,6 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-09-29' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
+    workbench: t('workerFlow.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),

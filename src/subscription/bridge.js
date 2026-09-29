@@ -22,7 +22,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription }) {
+function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription, workerFlow = null, workerProviders = null }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false
   const session = createSession(clientOptions)
@@ -31,7 +31,7 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/workers'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     if (busy) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
     if (req.headers['content-type'] !== 'application/json') { reply(415, { code: 'subscription_unavailable' }); req.resume(); return }
     busy = true
@@ -48,7 +48,18 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (req.url === '/status') {
+      if (req.url === '/workers') {
+        if (!workerFlow || !workerProviders) { reply(503, { code: 'subscription_unavailable' }); return }
+        const allowed = { list: ['op'], status: ['op'], get: ['op', 'id'], start: ['op', 'recipe', 'approved'], review: ['op', 'id', 'approved'] }
+        if (!input || !Object.hasOwn(allowed, input.op) || Object.keys(input).some(k => !allowed[input.op].includes(k))) { reply(400, { code: 'invalid_work_order' }); return }
+        if (input.op === 'list') reply(200, { enabled: workerFlow.enabled(), workOrder: workerFlow.workOrder, runs: workerFlow.list() })
+        if (input.op === 'get') reply(200, { run: workerFlow.get(input.id) })
+        if (input.op === 'status') reply(200, { providers: await workerProviders.status(), enabled: workerFlow.enabled() })
+        if (input.op === 'start' || input.op === 'review') {
+          try { reply(200, { run: input.op === 'start' ? workerFlow.start({ recipe: input.recipe, approved: input.approved }) : workerFlow.reviewAgain({ id: input.id, approved: input.approved }) }) }
+          catch (e) { reply(200, { error: ['not_enabled', 'invalid_work_order', 'approval_required', 'worker_busy'].includes(e.message) ? e.message : 'audit_unavailable' }) }
+        }
+      } else if (req.url === '/status') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }
         reply(200, await checkFn(options))
       } else reply(200, await completeFn(options, validateInput(input)))
