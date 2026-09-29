@@ -117,3 +117,23 @@ test('excluded content cannot survive in the subject or source identifier', asyn
   assert.equal(row.status, 'ignored')
   assert.ok(!JSON.stringify(await store.all()).includes(secret))
 })
+
+test('retry reconciles stored originals without reinserting zero-fact documents', async () => {
+  const store = createTestStore(); let writes = 0
+  const g = createGateway({ store, engine: { forScope: () => ({ get: async id => ({ id, text: 'Hello again.', facts: 0 }), retainAutomatic: async () => { writes++; throw Error('must_not_write') } }) } })
+  const row = await g.observe(OWNER, { type: 'episodic', subject: 'Greeting', text: 'Hello again.', scope: 'private:owner', source: { ...source, kind: 'conversation' }, policy: 'owner_history' })
+  const result = await g.index(OWNER, row.id)
+  assert.equal(result.index.state, 'raw_only'); assert.equal(result.index.facts, 0); assert.equal(writes, 0)
+  assert.equal((await g.status(OWNER)).index.raw_only, 1)
+})
+
+test('transient index failures retain diagnostic state and bounded durable retry dates', async () => {
+  const store = createTestStore()
+  const g = createGateway({ store, clock: () => '2026-09-29T00:00:00.000Z', engine: { forScope: () => ({ retain: async () => { throw Error('memory_unavailable') } }) } })
+  const row = await g.observe(OWNER, { type: 'episodic', subject: 'Retry', text: 'A durable source.', scope: 'private:owner', source: { ...source, kind: 'conversation' }, policy: 'owner_history' })
+  const failed = await g.index(OWNER, row.id)
+  assert.equal(failed.index.reason, 'memory_unavailable'); assert.ok(failed.index.nextRetryAt > '2026-09-29T00:00:00.000Z')
+  await g.index(OWNER, row.id)
+  const exhausted = await g.index(OWNER, row.id)
+  assert.equal(exhausted.index.attempts, 3); assert.equal(exhausted.index.nextRetryAt, null)
+})

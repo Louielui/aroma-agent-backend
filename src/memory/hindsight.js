@@ -20,16 +20,16 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
       const res = await transport(c.url + path, { method, redirect: 'error', signal: AbortSignal.timeout(timeout),
         headers: { authorization: 'Bearer ' + env.HINDSIGHT_TOKEN, 'content-type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
       if (res.status === 404 && absent) return null
-      if (!res.ok) throw Error('memory_unavailable')
+      if (!res.ok) throw Error(res.status === 429 ? 'memory_rate_limited' : [401, 403].includes(res.status) ? 'memory_unauthorized' : [400, 422].includes(res.status) ? 'memory_invalid_request' : 'memory_unavailable')
       const raw = await res.text(); if (raw.length > 1000000) throw Error('memory_invalid_result')
       return JSON.parse(raw)
-    } catch (_) { throw Error('memory_unavailable') }
+    } catch (e) { throw Error(['memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_result'].includes(e.message) ? e.message : ['TimeoutError', 'AbortError'].includes(e.name) ? 'memory_timeout' : 'memory_unavailable') }
   }
   function docId (id) { if (!ID.test(id || '')) throw Error('memory_invalid_id'); return id }
   async function get (id) {
     const c = config(); const d = await call('/documents/' + docId(id), 'GET', undefined, 5000, true)
     if (!d) return null
-    if (d.id !== id || d.bank_id !== c.bank || typeof d.original_text !== 'string' || !Number.isInteger(d.memory_unit_count)) throw Error('memory_invalid_result')
+    if (d.id !== id || d.bank_id !== c.bank || typeof d.original_text !== 'string' || !Number.isInteger(d.memory_unit_count) || d.memory_unit_count < 0) throw Error('memory_invalid_result')
     return { id, text: d.original_text, facts: d.memory_unit_count, createdAt: d.created_at || null, updatedAt: d.updated_at || null }
   }
   async function retainDocument(id, text, automatic = false, source = null) {
@@ -41,7 +41,7 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
       timestamp: source && source.at || 'unset', tags: [automatic ? 'xiangxiang-auto' : 'owner-explicit', ...(scope ? [id] : [])] }] }, 120000)
     if (r.success !== true || r.async !== false || r.bank_id !== c.bank || r.items_count !== 1) throw Error('memory_unconfirmed')
     const doc = await get(id)
-    if (!doc || doc.text !== text || doc.facts < 1) throw Error('memory_unconfirmed')
+    if (!doc || doc.text !== text) throw Error('memory_unconfirmed')
     return doc
   }
   return {

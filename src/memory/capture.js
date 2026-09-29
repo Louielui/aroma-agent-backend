@@ -58,16 +58,16 @@ function createCapture({ dir = path.join(resolveDataDir(), 'memory-capture'), cl
       try {
         // A stable document id plus read-back prevents duplicate ingestion on explicit retry.
         let doc = await client.get(row.id)
-        if (!doc || doc.text !== row.text || !(doc.facts > 0)) doc = await client.retainAutomatic(row.id, row.text, row.source)
-        if (!doc || doc.text !== row.text || !(doc.facts > 0)) throw Error('unconfirmed')
-        row.state = 'saved'; row.facts = doc.facts; row.reason = null; save(row)
+        if (!doc || doc.text !== row.text || !(doc.facts > 0 || doc.indexState === 'raw_only')) doc = await client.retainAutomatic(row.id, row.text, row.source)
+        if (!doc || doc.text !== row.text || !(doc.facts > 0 || (doc.facts === 0 && doc.indexState === 'raw_only'))) throw Error('unconfirmed')
+        row.state = doc.facts > 0 ? 'saved' : 'raw_only'; row.facts = doc.facts; row.reason = doc.facts > 0 ? null : 'no_extracted_facts'; save(row)
       } catch (_) { row.state = 'unconfirmed'; row.reason = 'write_unconfirmed'; save(row) }
     } catch (_) { lastError = 'capture_store_unavailable' }
     finally { active = null }
   }
   function status() {
     load(); const rows = [...entries.values()]
-    return { enabled, available: available(), active, error: lastError, counts: Object.fromEntries(['pending', 'processing', 'saved', 'unconfirmed', 'skipped', 'edited', 'forgotten'].map(s => [s, rows.filter(r => r.state === s).length])),
+    return { enabled, available: available(), active, error: lastError, counts: Object.fromEntries(['pending', 'processing', 'saved', 'raw_only', 'unconfirmed', 'skipped', 'edited', 'forgotten'].map(s => [s, rows.filter(r => r.state === s).length])),
       entries: rows.sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 50).map(({ text, ...r }) => r) }
   }
   function search(query) { load(); const q = String(query).trim().toLowerCase(); if (q.length < 2 || q.length > 100) throw Error('invalid_search'); return [...entries.values()].filter(r => r.text.toLowerCase().includes(q)).slice(-20).reverse().map(r => ({ id: r.id, source: r.source, state: r.state, preview: r.text.slice(0, 400) })) }

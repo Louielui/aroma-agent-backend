@@ -65,3 +65,35 @@ test('durable receipt outbox survives restart, preserves attribution and is idem
   assert.equal(external.status, 'candidate'); assert.equal(external.source.attribution, 'external_claim')
   assert.equal((await first.ownerClient.recall('prices')).length, 0)
 })
+
+test('restart respects durable retry dates, then reconciles originals without rewriting', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-retry-test-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const store = createTestStore(); let reads = 0; let writes = 0
+  const first = createRuntime({ store, dir, engine: { forScope: () => ({ retain: async () => { throw Error('memory_unavailable') } }) } })
+  first.event('conversation', 'retry-source', 'Hello again.', 'owner_statement')
+  await first.drain()
+  const [row] = await store.all()
+  assert.ok(row.index.nextRetryAt)
+  const resumed = createRuntime({ store, dir, engine: { forScope: () => ({ get: async id => { reads++; return { id, text: row.text, facts: 0 } }, retain: async () => { writes++; throw Error('unexpected_write') } }) } })
+  await resumed.drain(); assert.equal(reads, 0)
+  await store.commit([{ expected: row.version, row: { ...row, version: row.version + 1, index: { ...row.index, nextRetryAt: '2026-01-01T00:00:00.000Z' } } }], { op: 'test_due' })
+  await resumed.drain(); assert.equal(reads, 1); assert.equal(writes, 0)
+  assert.equal((await store.get(row.id)).index.state, 'raw_only')
+})
+
+test('slow indexing cannot block persistence of the next conversation receipt', async t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'memory-ingress-test-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const store = createTestStore(); let release; let started
+  const began = new Promise(resolve => { started = resolve })
+  const blocked = new Promise(resolve => { release = resolve })
+  const runtime = createRuntime({ store, dir, engine: { forScope: () => ({ retain: async () => { started(); await blocked; return { facts: 1 } } }) } })
+  runtime.event('conversation', 'first', 'First receipt.', 'owner_statement')
+  const first = runtime.drain(); await began
+  try {
+    runtime.event('conversation', 'second', 'Second receipt.', 'owner_statement')
+    await runtime.drain()
+    assert.equal((await store.all()).filter(r => r.text === 'Second receipt.').length, 1)
+  } finally { release(); await first }
+})

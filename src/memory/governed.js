@@ -138,8 +138,22 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     owner(actor); const row = await get(actor, id)
     if (!row || !current(row) || !engine) throw Error('not_indexable')
     const expected = row.version; let result
-    try { const client = engine.forScope(row.scope); const d = await (client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text)); result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts: row.index.attempts + 1 } }
-    catch (_) { result = { state: 'unconfirmed', facts: null, attempts: row.index.attempts + 1 } }
+    const attempts = row.index.attempts + 1
+    try {
+      const client = engine.forScope(row.scope)
+      // A previous timeout may have completed upstream. Reconcile before any write.
+      let d = client.get ? await client.get(row.id) : null
+      if (!d || d.text !== row.text) d = await (client.retainAutomatic ? client.retainAutomatic(row.id, row.text, row.source) : client.retain(row.id, row.text))
+      if (!Number.isInteger(d?.facts) || d.facts < 0) throw Error('memory_unconfirmed')
+      result = { state: d.facts > 0 ? 'saved' : 'raw_only', facts: d.facts, attempts,
+        reason: d.facts > 0 ? null : 'no_extracted_facts', checkedAt: clock(), nextRetryAt: null }
+    } catch (e) {
+      const reason = ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(e.message) ? e.message : 'memory_unavailable'
+      const retryable = ['memory_timeout', 'memory_rate_limited', 'memory_unavailable', 'memory_unconfirmed'].includes(reason)
+      const delay = reason === 'memory_rate_limited' ? 15 * 60000 : reason === 'memory_timeout' ? 5 * 60000 : 30000 * 2 ** Math.min(attempts - 1, 4)
+      result = { state: 'unconfirmed', facts: null, attempts, reason, checkedAt: clock(),
+        nextRetryAt: retryable && attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }
+    }
     // Never replace a newer approval, archive or supersession when an index call finishes late.
     const latest = await get(actor, id)
     if (latest.version !== expected) return latest
@@ -204,7 +218,9 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const active = rows.filter(current)
     return { database: await store.health(), layers: TYPES.map(type => ({ type, total: rows.filter(r => r.type === type).length, active: active.filter(r => r.type === type).length })),
       scopes: SCOPES, counts: Object.fromEntries(STATUSES.map(s => [s, rows.filter(r => r.status === s).length])),
-      index: { pending: active.filter(r => r.index.state === 'pending').length, unconfirmed: active.filter(r => r.index.state === 'unconfirmed').length, saved: active.filter(r => r.index.state === 'saved').length },
+      index: { pending: active.filter(r => r.index.state === 'pending').length, unconfirmed: active.filter(r => r.index.state === 'unconfirmed').length, saved: active.filter(r => r.index.state === 'saved').length,
+        raw_only: active.filter(r => r.index.state === 'raw_only').length,
+        retrying: active.filter(r => r.index.state === 'unconfirmed' && r.index.nextRetryAt).length },
       staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && matchesEvidence(a, e)))).map(r => r.id),
       agents: (await store.grants()).map(({ tokenHash, ...g }) => g) }
   }

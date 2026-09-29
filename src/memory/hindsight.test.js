@@ -58,3 +58,10 @@ test('automatic retain labels attribution and timestamp, and requires exact docu
   } })
   assert.equal((await client.retainAutomatic(id, text, source)).facts, 2)
 })
+
+test('zero extracted facts still confirm the exact stored original', async () => {
+  const client = createHindsight({ env, transport: async (url, init) => init.method === 'POST'
+    ? Response.json({ success: true, async: false, bank_id: 'xiangxiang-owner', items_count: 1 })
+    : Response.json({ id, bank_id: 'xiangxiang-owner', original_text: 'Hello again.', memory_unit_count: 0 }) })
+  assert.equal((await client.retainAutomatic(id, 'Hello again.', { at: null })).facts, 0)
+})

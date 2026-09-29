@@ -9,7 +9,7 @@ const { exclusionReason } = require('./capturePolicy')
 let singleton
 function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox') } = {}) {
   const gateway = createGateway({ store, engine })
-  let timer; let active = false; let lastError = null; let nextIndexAt = 0
+  let timer; let active = false; let indexActive = false; let lastError = null; let nextIndexAt = 0
   function enabled() {
     try { return JSON.parse(fs.readFileSync(path.join(dir, '../memory-capture/settings.json'), 'utf8')).enabled !== false }
     catch (e) { if (e.code === 'ENOENT') return true; throw Error('memory_setting_unavailable') }
@@ -51,23 +51,32 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
   async function drain() {
     if (active || !enabled()) return
     active = true
+    let indexJob
     try {
       fs.mkdirSync(dir, { recursive: true })
       for (const f of fs.readdirSync(dir).filter(n => /^xx-[a-f0-9-]+\.json$/.test(n)).slice(0, 10)) {
         const file = path.join(dir, f); const input = JSON.parse(fs.readFileSync(file, 'utf8'))
         await gateway.observe(OWNER, input); fs.unlinkSync(file)
       }
-      // Index at most one approved record per tick; failed/zero-fact records need explicit retry.
+      // Bounded retry dates live with each record and survive backend restarts.
       const rows = await gateway.list(OWNER)
       for (const r of rows.filter(r => r.status === 'temporary' && r.expiresAt && r.expiresAt <= new Date().toISOString())) await gateway.transition(OWNER, r.id, r.version, 'archive')
-      const pending = rows.slice().reverse().find(r => r.status === 'active' && r.index.state === 'pending' && r.text.length <= 32000)
-      if (pending && Date.now() >= nextIndexAt) {
-        const result = await gateway.index(OWNER, pending.id)
-        nextIndexAt = Date.now() + (result.index.state === 'unconfirmed' ? 15 * 60000 : 10000)
+      const eligible = rows.filter(r => r.status === 'active' && r.text.length <= 32000)
+      const pending = eligible.find(r => r.index.state === 'unconfirmed' && r.index.attempts < 3 &&
+        (!r.index.checkedAt || (r.index.nextRetryAt && r.index.nextRetryAt <= new Date().toISOString()))) ||
+        eligible.find(r => r.index.state === 'pending')
+      if (pending && !indexActive && Date.now() >= nextIndexAt) {
+        indexActive = true
+        indexJob = gateway.index(OWNER, pending.id).then(result => {
+          nextIndexAt = Date.now() + (result.index.state === 'unconfirmed' ? 30000 : 10000)
+        }).catch(() => { lastError = 'memory_background_unavailable'; nextIndexAt = Date.now() + 30000 })
+          .finally(() => { indexActive = false })
       }
       lastError = null
     } catch (_) { lastError = 'memory_background_unavailable' }
     finally { active = false }
+    // Release receipt persistence before waiting for a potentially slow model call.
+    if (indexJob) await indexJob
   }
   const ownerClient = {
     engine: 'memory_gateway',
@@ -75,7 +84,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
     get: async id => {
       const r = await gateway.get(OWNER, id)
       if (!r) return null
-      return { id, text: r.text, facts: r.index.facts || 0, createdAt: r.createdAt, updatedAt: r.updatedAt }
+      return { id, text: r.text, facts: r.index.facts, indexState: r.index.state, createdAt: r.createdAt, updatedAt: r.updatedAt }
     },
     list: async () => {
       const rows = await gateway.list(OWNER, { status: 'active' })
@@ -95,7 +104,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
         source: { kind: source.kind, id: source.id + ':' + (source.turn || ''), at: source.at, attribution: source.kind === 'briefing' ? 'measured_result' : 'historical_import' } })
       if (row.status !== 'active') throw Error('memory_not_active')
       row = await gateway.index(OWNER, row.id)
-      return { id: row.id, text: row.text, facts: row.index.facts || 0 }
+      return { id: row.id, text: row.text, facts: row.index.facts, indexState: row.index.state }
     },
     forget: async id => {
       const r = await gateway.get(OWNER, id)
@@ -107,7 +116,7 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
   async function backup() { return store.backup() }
   return { gateway, ownerClient, event, observeRead, enqueue, drain,
     backup,
-    status: () => ({ active, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),
+    status: () => ({ active: active || indexActive, indexing: indexActive, enabled: enabled(), error: lastError, nextIndexAt: nextIndexAt ? new Date(nextIndexAt).toISOString() : null, pending: fs.existsSync(dir) ? fs.readdirSync(dir).filter(n => n.endsWith('.json')).length : 0 }),
     start() { if (!timer) { timer = setInterval(() => { void drain() }, 5000); timer.unref() } },
     stop() { clearInterval(timer); timer = null }
   }

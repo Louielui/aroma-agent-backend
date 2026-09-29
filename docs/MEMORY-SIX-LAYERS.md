@@ -144,3 +144,31 @@ text and permit source search. Unknown source dates stay null. Retrieval is boun
 neither all-history recording nor a connected index guarantees perfect recall in every answer.
 Only declared sources and workflows are observed; activities in unrelated apps are not.
 Large-volume performance and each external agent's live integration require separate evidence.
+
+## Reliability follow-up — 2026-09-29
+
+Three formerly unconfirmed records were read back from their scoped Hindsight bank:
+all had exact original text and zero extracted facts. They were not lost writes.
+The adapter now accepts that measured zero; the gateway and capture queue show raw_only
+separately from indexed and unconfirmed. Original text remains searchable.
+
+Index retries first read the stable document ID. An exact existing original is reconciled
+without another extraction call. Transient failures retain a sanitized reason, check time
+and nextRetryAt in PostgreSQL; automatic attempts stop at three. Authentication/invalid
+request failures require manual intervention. Raw-only originals do not trigger the old
+15-minute failure delay. Old undiagnosed unconfirmed records receive bounded reconciliation.
+
+Receipt persistence has a separate lock from indexing. A slow model call no longer prevents
+the next timer tick from persisting newly received chat. Tests block an index call and prove
+that a second conversation receipt is stored before extraction finishes. Retry timing survives
+a new runtime instance; zero-fact reconciliation proves zero additional writes.
+
+The memory center displays raw-only and pending-retry counts, index-state filtering,
+retry timestamps and diagnostics in the source detail. Existing active records, approvals,
+source text, scope isolation and business-truth boundaries are unchanged.
+
+Cross-conversation acceptance uses an explicitly labelled non-business test record in one
+conversation, then a new conversation with empty supplied history after backend restart.
+The runtime response, source IDs, dates and boot identity are retained in the workspace
+outputs/memory-cross-chat-proof.json. This acceptance does not claim perfect recall or
+complete indexing of all historical records.

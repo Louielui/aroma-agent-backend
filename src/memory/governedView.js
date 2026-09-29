@@ -19,7 +19,8 @@ function buildHtml() {
     noConfidence: t('mem6.noConfidence'), indexes: t('mem6.indexes'), usage: t('mem6.usage'), exception: t('mem6.exception'),
     outcome: t('mem6.outcome'), recordUsage: t('mem6.recordUsage'), stale: t('mem6.stale'), backup: t('mem6.backup'),
     revoke: t('mem6.revoke'), more: t('mem6.more'), connected: t('mem6.connected'), unavailable: t('mem6.unavailable'),
-    pending: t('mem6.pending'), unconfirmed: t('mem6.unconfirmed'), saved: t('mem6.saved'), loaded: t('mem6.loaded')
+    pending: t('mem6.pending'), unconfirmed: t('mem6.unconfirmed'), saved: t('mem6.saved'), loaded: t('mem6.loaded'),
+    raw_only: t('mem6.rawOnly'), retrying: t('mem6.retrying'), nextRetry: t('mem6.nextRetry')
   }
   return fs.readFileSync(path.join(__dirname, 'governedView.html'), 'utf8').replace('/*LABELS*/', JSON.stringify(labels).replace(/</g, '\\u003c'))
 }

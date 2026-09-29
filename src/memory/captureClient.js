@@ -1,8 +1,8 @@
 /* global L, load */
 'use strict'; (() => {
   const byId = id => document.getElementById(id)
-  const stateNames = { pending: L.autoPending, processing: L.autoProcessing, saved: L.autoSaved, unconfirmed: L.autoUnconfirmed, skipped: L.autoSkipped, edited: L.autoEdited, forgotten: L.autoForgotten }
-  const reasons = { paused: L.autoPaused, disabled: L.autoDisabled, owner_opt_out: L.autoOptOut, sensitive_content: L.autoSensitive, too_long: L.autoTooLong, write_unconfirmed: L.autoUnconfirmed, restart_interrupted: L.autoInterrupted }
+  const stateNames = { pending: L.autoPending, processing: L.autoProcessing, saved: L.autoSaved, raw_only: L.autoRawOnly, unconfirmed: L.autoUnconfirmed, skipped: L.autoSkipped, edited: L.autoEdited, forgotten: L.autoForgotten }
+  const reasons = { paused: L.autoPaused, disabled: L.autoDisabled, owner_opt_out: L.autoOptOut, sensitive_content: L.autoSensitive, too_long: L.autoTooLong, write_unconfirmed: L.autoUnconfirmed, restart_interrupted: L.autoInterrupted, no_extracted_facts: L.autoRawOnly }
   let enabled = false; let actionBusy = false; let lastSaved = null
   const node = (tag, text) => { const n = document.createElement(tag); n.textContent = text; return n }
   for (const [id, label] of [['auto-title', L.autoTitle], ['auto-intro', L.autoIntro], ['auto-search-label', L.autoSearchLabel], ['auto-search-button', L.autoSearch], ['auto-history', L.autoHistory]]) byId(id).textContent = label
@@ -31,7 +31,7 @@
   async function refresh() {
     try {
       const d = await request('/api/v1/memory/capture'); enabled = d.enabled
-      byId('auto-status').textContent = (d.error ? L.autoError : !d.available ? L.autoDisabled : enabled ? L.autoOn : L.autoPaused) + ' · ' + L.autoPending + ': ' + d.counts.pending + ' · ' + L.autoProcessing + ': ' + d.counts.processing + ' · ' + L.autoSaved + ': ' + d.counts.saved + ' · ' + L.autoUnconfirmed + ': ' + d.counts.unconfirmed
+      byId('auto-status').textContent = (d.error ? L.autoError : !d.available ? L.autoDisabled : enabled ? L.autoOn : L.autoPaused) + ' · ' + L.autoPending + ': ' + d.counts.pending + ' · ' + L.autoProcessing + ': ' + d.counts.processing + ' · ' + L.autoSaved + ': ' + d.counts.saved + ' · ' + L.autoRawOnly + ': ' + d.counts.raw_only + ' · ' + L.autoUnconfirmed + ': ' + d.counts.unconfirmed
       byId('auto-toggle').textContent = enabled ? L.autoPause : L.autoResume; byId('auto-toggle').disabled = actionBusy || !d.available
       byId('auto-entries').replaceChildren(...d.entries.map(card))
       if (lastSaved !== null && lastSaved !== d.counts.saved) void load()

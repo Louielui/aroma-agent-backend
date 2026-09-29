@@ -13,6 +13,15 @@ function setup(t, client = {}) {
   return { capture: createCapture({ dir, client: memory }), dir, memory, calls }
 }
 const turn = { id: 'conversation-fixture', userText: 'I prefer green folders for reports.', replyText: 'I suggest filing the report tomorrow.' }
+
+test('capture displays a verified zero-fact original without retrying extraction', async t => {
+  let text; let writes = 0
+  const { capture } = setup(t, { get: async id => ({ id, text, facts: 0, indexState: 'raw_only' }), retainAutomatic: async () => { writes++; throw Error('unexpected_write') } })
+  const row = capture.turn(turn, 2); text = row.text
+  await capture.work()
+  assert.equal(capture.get(row.id).state, 'raw_only')
+  assert.equal(capture.status().counts.raw_only, 1); assert.equal(writes, 0)
+})
 test('capture persists before background extraction, preserves roles and deduplicates source turns', async t => {
   const { capture, dir, memory, calls } = setup(t)
   const a = capture.turn(turn, 2)
