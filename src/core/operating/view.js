@@ -5,6 +5,11 @@ const { t } = require('../../i18n/t')
 function buildManagerHtml () {
   const labels = {
     inventory: t('architecture.title'),
+    queued: t('workflow.queued'), failed: t('workflow.failed'), cancelled: t('workflow.cancelled'), timed_out: t('workflow.timedOut'),
+    interrupted: t('workflow.interrupted'), pending: t('workflow.pending'), not_run: t('workflow.notRun'), ok: t('workflow.readOk'),
+    cancel: t('workflow.cancel'), retry: t('workflow.retry'), openRetry: t('workflow.openRetry'),
+    cancelNote: t('workflow.cancelNote'), statusFailed: t('workflow.statusFailed'), reload: t('workflow.reload'),
+    history: t('workflow.history'), none: t('workflow.none'),
     title: t('manager.title'), intro: t('manager.intro'), run: t('manager.run'), back: t('manager.back'),
     idle: t('manager.idle'), running: t('manager.running'), completed: t('manager.completed'), partial: t('manager.partial'), unavailable: t('manager.unavailable'),
     audit: t('manager.audit'), architecture: t('manager.architecture'), emptyAudit: t('manager.emptyAudit'), failedAudit: t('manager.failedAudit'),

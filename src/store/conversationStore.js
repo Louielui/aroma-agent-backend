@@ -154,7 +154,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, operatingRunId = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const ts = now || new Date().toISOString()
 
@@ -176,7 +176,9 @@ function createConversationStore (options = {}) {
     if (!conversation.title) conversation.title = titleFrom(userText)
 
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts })
-    conversation.messages.push({ role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts })
+    const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (typeof operatingRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(operatingRunId)) assistantMessage.operatingRunId = operatingRunId
+    conversation.messages.push(assistantMessage)
     conversation.updatedAt = ts
 
     // ATOMIC REPLACE — temp file, fsync, rename.

@@ -989,6 +989,7 @@
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
+            if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
@@ -1195,6 +1196,88 @@
   })
   renderPlusMenu()
 
+  function renderOperatingRun (turnEl, initialId) {
+    var runId = initialId
+    if (!/^[a-f0-9-]{36}$/i.test(runId)) return
+    var card = el('section', 'briefing-run')
+    turnEl.body.appendChild(card)
+    var status = el('p', 'sec-t', t('workflow.loading')); status.setAttribute('role', 'status'); card.appendChild(status)
+    var details = el('div', 'sec-b'); card.appendChild(details)
+    var actions = el('div', 'briefing-actions'); card.appendChild(actions)
+    var timer = null; var actionPending = false; var polling = false; var generation = 0
+    var states = { queued: t('workflow.queued'), running: t('workflow.running'), completed: t('workflow.completed'),
+      partial: t('workflow.partial'), unavailable: t('workflow.unavailable'), failed: t('workflow.failed'),
+      cancelled: t('workflow.cancelled'), timed_out: t('workflow.timedOut'), interrupted: t('workflow.interrupted'),
+      pending: t('workflow.pending'), not_run: t('workflow.notRun'), ok: t('workflow.readOk') }
+    var names = { 'aroma.replenishment': t('manager.replenishment'), 'aroma.invoices': t('manager.invoices'),
+      'calendar.agenda': t('manager.calendar'), 'drive.documents': t('manager.documents'),
+      'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.decisions') }
+    function button (text, action) {
+      var b = el('button', 'briefing-action', text); b.type = 'button'; b.addEventListener('click', action); actions.appendChild(b)
+    }
+    function requestRun (url, options) {
+      var controller = new AbortController()
+      var timeout = setTimeout(function () { controller.abort() }, 12000)
+      return fetch(url, Object.assign({ credentials: 'same-origin', signal: controller.signal }, options || {}))
+        .then(function (r) { if (!r.ok || r.redirected) throw Error(); return r.json() })
+        .finally(function () { clearTimeout(timeout) })
+    }
+    function failed () {
+      status.textContent = t('workflow.statusFailed'); clear(actions)
+      button(t('workflow.reload'), poll)
+    }
+    function action (op) {
+      if (actionPending) return
+      actionPending = true; generation++; clearTimeout(timer); clear(actions); status.textContent = t('workflow.loading')
+      requestRun('/api/v1/manager/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ op: op, id: runId }) })
+        .then(function (data) { runId = data.run.id; draw(data.run) })
+        .catch(failed).finally(function () { actionPending = false })
+    }
+    function draw (run) {
+      clear(details); clear(actions)
+      status.textContent = (states[run.state] || t('workflow.failed')) + ' · ' + (run.finishedAt || run.startedAt)
+      if (run.retryOf) details.appendChild(el('p', 'meta', t('workflow.retryOf', { id: run.retryOf })))
+      var list = el('ul', 'briefing-steps')
+      ;(run.steps || []).forEach(function (step) {
+        list.appendChild(el('li', null, (names[step.tool] || step.tool) + ' · ' + (states[step.state] || t('workflow.failed'))))
+      })
+      details.appendChild(list)
+      ;(run.sections || []).forEach(function (section) {
+        if (section.state !== 'ok') return
+        var box = el('div', 'briefing-section')
+        box.appendChild(el('strong', null, (names[section.tool] || section.tool) + ' · ' + t('manager.received') + ': ' + section.count))
+        box.appendChild(el('div', 'meta', t('manager.source') + ': ' + section.source + ' · ' + (section.checkedAt || '—')))
+        if (!section.complete || section.truncated) box.appendChild(el('div', 'meta', t('manager.limited')))
+        if (section.layer === 'memory') box.appendChild(el('div', 'meta', t('manager.memoryNote')))
+        ;(section.rows || []).slice(0, 3).forEach(function (row) {
+          var line = el('p', 'meta', row.title || row.id || t('manager.untitled'))
+          if (row.text) line.appendChild(el('span', null, ' · ' + row.text.slice(0, 240)))
+          box.appendChild(line)
+        })
+        details.appendChild(box)
+      })
+      var link = el('a', 'briefing-link', t('workflow.open')); link.href = '/manager?run=' + encodeURIComponent(runId); actions.appendChild(link)
+      if (run.state === 'queued' || run.state === 'running') {
+        button(t('workflow.cancel'), function () { action('cancel') })
+        details.appendChild(el('p', 'meta', t('workflow.cancelNote')))
+        timer = setTimeout(poll, 1000)
+      } else if (run.retryId || ['partial', 'unavailable', 'failed', 'cancelled', 'timed_out', 'interrupted'].indexOf(run.state) !== -1) {
+        button(run.retryId ? t('workflow.openRetry') : t('workflow.retry'), function () { action('retry') })
+      }
+    }
+    function poll () {
+      clearTimeout(timer)
+      if (actionPending || polling) { timer = setTimeout(poll, 1000); return }
+      polling = true; var version = generation
+      requestRun('/api/v1/manager/runs/' + encodeURIComponent(runId)).then(function (data) {
+        if (version !== generation) return
+        if (!data.run) throw Error()
+        draw(data.run)
+      }).catch(function () { if (version === generation) failed() }).finally(function () { polling = false })
+    }
+    poll()
+  }
+
   /** What the server says the turn actually became — shown after the fact, never before. */
   // ⛔ Thunks, not key strings — a dynamic key is the one structural line (HR-48).
   var LANE_NAMES = {
@@ -1289,7 +1372,7 @@
           ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
         carry ? { attachSection: carry } : {},
-        websiteRequestId ? { websiteRequestId: websiteRequestId } : {},
+        websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value } : {}))
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
@@ -1312,7 +1395,7 @@
       // repaint what the Owner is already looking at.
       // updatedAt is set here too, so a live conversation sorts and groups beside the
       // stored ones instead of falling into 更早 with no time at all.
-      if (o.status === 200) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
+      if (o.status === 200 && o.body.historySaved !== false) { conv.stored = true; conv.loaded = true; conv.updatedAt = new Date().toISOString() }
       renderConvList() // the conversation has content now, so it enters the list
     }).catch(function () {
       stopWebsitePoll()
@@ -1356,6 +1439,12 @@
     if (status === 400) return addError(t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
+    }
+    if (res.operatingRunId) {
+      var briefingTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(briefingTurn.body, t('workflow.historyFailed'))
+      renderOperatingRun(briefingTurn, res.operatingRunId)
+      return briefingTurn
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)

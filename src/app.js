@@ -1067,6 +1067,7 @@ function createApp (options = {}) {
   })
 
   app.use(createDemoRouter({
+    operatingManager,
     conversationStore: realConversationStore,
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser

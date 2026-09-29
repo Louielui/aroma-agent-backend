@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null } = {}) {
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
@@ -495,6 +495,29 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
 
       const { message, history, contextCard, providerHint } = req.body
+
+      const briefingRequest = require('../core/operating/chatRequest')
+      if (operatingManager && !contextCard && !req.body.attachSection &&
+          (!req.body.interactionMode || req.body.interactionMode === 'chat') && briefingRequest.isBriefingRequest(message)) {
+        if (!briefingRequest.sameOrigin(req)) { emit('validation_rejected', 403, 'same_origin_required'); return res.status(403).json({ error: 'same_origin_required' }) }
+        try {
+          const conversationId = req.body.conversationId
+          if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) throw Error('invalid_request_id')
+          const run = operatingManager.start({ id: 'owner', role: 'owner' }, { requestId: req.body.workflowRequestId, conversationId })
+          const reply = t('workflow.accepted')
+          let historySaved = true
+          if (!run.reused) {
+            try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply, operatingRunId: run.id }) }
+            catch (_) { historySaved = false }
+          }
+          emit('workflow_started', 200, historySaved ? null : 'conversation_write_failed')
+          return res.json({ lane: 'chat', reply, operatingRunId: run.id, historySaved, servedBy: null })
+        } catch (e) {
+          const busy = e.message === 'briefing_busy'
+          emit('workflow_rejected', busy ? 429 : 503, busy ? 'briefing_busy' : 'workflow_unavailable')
+          return res.status(busy ? 429 : 503).json({ error: { message: busy ? t('workflow.busy') : t('workflow.error'), retryable: false } })
+        }
+      }
 
       // ── ROUTE FIRST, FETCH SECOND (Owner's order, do not invert) ────────────
       // The lane is decided here, from the user's words alone, BEFORE any context is

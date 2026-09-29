@@ -7,19 +7,36 @@
     try { const u = new URL(value); return ['https:', 'http:'].includes(u.protocol) && !u.username && !u.password ? u.href : null } catch (_) { return null }
   }
   async function request (url, options) {
-    const response = await fetch(url, { credentials: 'same-origin', ...options })
-    if (response.redirected || response.status === 401) throw Error('login_required')
-    const data = await response.json()
-    if (!response.ok) throw Error(data.error || 'unavailable')
-    return data
+    const controller = new AbortController(); const timer = setTimeout(() => controller.abort(), 12000)
+    try {
+      const response = await fetch(url, { credentials: 'same-origin', ...options, signal: controller.signal })
+      if (response.redirected || response.status === 401) throw Error('login_required')
+      const data = await response.json()
+      if (!response.ok) throw Error(data.error || 'unavailable')
+      return data
+    } finally { clearTimeout(timer) }
   }
   for (const id of ['title', 'intro', 'run', 'back']) el(id).textContent = L[id]
   el('mode').textContent = L.noModel
   el('status').textContent = L.idle
   el('audit-title').textContent = L.audit
   el('architecture-title').textContent = L.architecture
+  el('history-title').textContent = L.history
+  let currentId = null; let currentState = null; let pollTimer = null; let actionBusy = false; let pendingRequest = null; let revision = 0
   function render (run) {
-    el('status').textContent = (L[run.state] || L.unavailable) + ' · ' + time(run.finishedAt)
+    currentState = run.state
+    el('status').textContent = (L[run.state] || L.unavailable) + ' · ' + time(run.finishedAt || run.startedAt)
+    el('steps').replaceChildren()
+    for (const step of run.steps || []) el('steps').append(node('li', (L.tools[step.tool] || step.tool) + ' · ' + (L[step.state] || L.unavailable)))
+    el('controls').replaceChildren()
+    const active = ['queued', 'running'].includes(run.state)
+    if (active || run.retryId || ['partial', 'unavailable', 'failed', 'cancelled', 'timed_out', 'interrupted'].includes(run.state)) {
+      const button = node('button', active ? L.cancel : run.retryId ? L.openRetry : L.retry); button.type = 'button'; button.disabled = actionBusy
+      button.onclick = () => act(active ? 'cancel' : 'retry')
+      el('controls').append(button)
+    }
+    if (active) el('controls').append(node('p', L.cancelNote, 'meta'))
+    el('run').disabled = active || actionBusy
     el('sections').replaceChildren()
     for (const section of run.sections) {
       const card = node('article', null, 'card')
@@ -68,12 +85,51 @@
       el('events').append(table)
     } catch (_) { el('audit-status').textContent = L.failedAudit }
   }
-  el('run').addEventListener('click', async () => {
-    el('run').disabled = true; el('status').textContent = L.running
-    try { render(await request('/api/v1/manager/briefing', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })) }
-    catch (e) { el('status').textContent = e.message === 'briefing_busy' ? L.busy : e.message === 'audit_unavailable' ? L.auditBlocked : L.unavailable }
-    finally { el('run').disabled = false; await activity() }
-  })
+  async function history () {
+    try {
+      const data = await request('/api/v1/manager/runs'); el('history').replaceChildren()
+      if (!data.runs.length) el('history').append(node('p', L.none))
+      for (const run of data.runs) {
+        const line = node('p'); const link = node('a', time(run.startedAt) + ' · ' + (L[run.state] || L.unavailable))
+        link.href = '/manager?run=' + encodeURIComponent(run.id); line.append(link); el('history').append(line)
+      }
+      return data.runs
+    } catch (_) { el('history').textContent = L.statusFailed; return [] }
+  }
+  async function poll () {
+    const version = revision; const id = currentId
+    clearTimeout(pollTimer)
+    if (!id || actionBusy) return
+    try {
+      const data = await request('/api/v1/manager/runs/' + encodeURIComponent(id))
+      if (version !== revision) return
+      if (!data.run) throw Error()
+      render(data.run)
+      if (['queued', 'running'].includes(data.run.state)) pollTimer = setTimeout(poll, 1000)
+      else { await history(); await activity() }
+    } catch (_) {
+      if (version !== revision) return
+      el('status').textContent = L.statusFailed; el('controls').replaceChildren()
+      const button = node('button', L.reload); button.onclick = poll; el('controls').append(button)
+    }
+  }
+  async function act (op) {
+    if (actionBusy) return
+    actionBusy = true; revision++; clearTimeout(pollTimer); el('run').disabled = true
+    el('controls').querySelectorAll('button').forEach(b => { b.disabled = true })
+    if (op === 'start' && !pendingRequest) pendingRequest = crypto.randomUUID()
+    try {
+      const body = op === 'start' ? { op, requestId: pendingRequest } : { op, id: currentId }
+      const data = await request('/api/v1/manager/runs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+      currentId = data.run.id; pendingRequest = null
+      window.history.replaceState(null, '', '/manager?run=' + encodeURIComponent(currentId))
+      actionBusy = false; render(data.run); await poll()
+    } catch (e) {
+      el('status').textContent = e.message === 'briefing_busy' ? L.busy : L.statusFailed
+      el('controls').replaceChildren(); const button = node('button', L.reload); button.onclick = () => currentId ? poll() : act('start'); el('controls').append(button)
+    } finally { actionBusy = false; el('run').disabled = ['queued', 'running'].includes(currentState); await history() }
+  }
+  el('run').addEventListener('click', () => act('start'))
   request('/api/v1/manager/registry').then(data => {
     const root = el('architecture')
     const inventory = node('a', L.inventory); inventory.href = '/architecture'; root.append(inventory)
@@ -81,4 +137,8 @@
     root.append(node('p', L.planned + ': ' + data.integrations.map(i => i.id + ' (' + i.state + ')').join(', ')))
   }).catch(() => { el('architecture').textContent = L.unavailable })
   activity()
+  history().then(runs => {
+    currentId = new URLSearchParams(window.location.search).get('run') || (runs[0] && runs[0].id) || null
+    poll()
+  })
 })()

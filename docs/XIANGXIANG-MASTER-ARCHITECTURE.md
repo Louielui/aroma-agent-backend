@@ -94,6 +94,36 @@ This inventory implements no new connection, scheduling or execution policy.
 
 ## Ownership and boundaries
 
+### Core briefing workflow (2026-09-29)
+
+An explicit chat command such as "今日營運簡報" or "daily operations briefing"
+starts the existing seven-tool read-only plan without acquiring a model adapter.
+Negations, quoted examples, historical periods and compound requests do not match
+this fixed command and stay with normal conversation routing. This is a bounded
+workflow, not a general planner or a new agent framework.
+
+Chat and the operations page share one manager. The server creates the job id;
+browser request keys provide idempotency, not authority. A job stores ordered
+steps, measured counts, source excerpts, provenance and terminal state under
+`manager-runs/` in the existing local data directory. The conversation saves a
+job reference so refresh can reopen current progress/results. Audit remains
+metadata-only in `manager-activity/`. Jobs persist source excerpts locally;
+retention and power-loss recovery are not yet accepted.
+
+Each read is limited to 12 seconds and the whole run to 60 seconds. Cancellation
+stops subsequent steps and ignores late results; the existing underlying adapters
+may complete an already-issued read. Interrupted jobs become explicitly
+`interrupted` after service restart; they are never automatically replayed.
+Manual retry creates a new linked job, and repeated retry of the same parent
+returns that child. Repeated start keys reuse their original job. Unavailable
+sources retain null counts; unexecuted steps never become measured zero.
+
+Automated acceptance covers progress, actual nonzero results, duplicate starts,
+cancel/late-result rejection, timeouts, restart recovery from disk, linked retries,
+owner/same-origin gates and chat dispatch with zero model calls. Live release
+acceptance is recorded in the delivery handoff. Other workflows, generic
+Codex/Claude dispatch, task scheduling and autonomous retries remain separate work.
+
 ### Connections center (2026-09-29)
 
 Owner-only `/connections` manages Gmail, Drive and Calendar through the existing
