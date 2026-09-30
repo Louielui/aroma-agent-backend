@@ -22,6 +22,8 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /data-component="mail-memory" data-state="partial"/)
   assert.match(html, /最近 30 天/)
   assert.match(html, /電郵 Hindsight 語意索引/)
+  assert.match(html, /不覆寫 Owner 已確認事項/)
+  assert.match(html, /今日營運簡報接入/)
   assert.match(html, /data-component="memory" data-state="partial"/)
   assert.match(html, /Hindsight/)
   assert.match(html, /尚未接通/)

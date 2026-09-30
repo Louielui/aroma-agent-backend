@@ -30,6 +30,7 @@ function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapt
       if (request.mode === 'memory') {
         if (!memory) throw Error('mail_memory_unavailable')
         const result = await memory.list(actor, request.q)
+        const labels = require('./mailLabels').mailLabels()
         const lines = [t('company.mailMemoryScope')]
         for (const row of result.items) {
           lines.push('[' + safe(row.subject) + '](' + (row.evidenceUrl || row.source.url) + ')', safe(row.text),
@@ -37,6 +38,13 @@ function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapt
               taskState: row.details.taskState === 'open' ? t('company.mailMemoryOpenState') : row.details.taskState === 'done' ? t('company.mailMemoryDone') : row.details.taskState === 'cancelled' ? t('company.mailMemoryCancelled') : '—' }))
           if (row.evidenceExcerpt) lines.push(t('company.mailQuote', { text: safe(row.evidenceExcerpt) }))
           if (row.details.needsReview) lines.push(t('company.mailMemoryNeedsReview'))
+          const analysis = row.details.analysis
+          lines.push(labels.mailCategories[analysis?.state === 'ready' ? analysis.category : 'unknown'])
+          if (analysis?.state === 'ready') {
+            lines.push(safe(analysis.summary))
+            if (analysis.task) lines.push(t('company.mailSuggestedFollowUp', { text: safe(analysis.task.text) }))
+            if (row.details.needsReview && labels.mailChanges[analysis.change.kind]) lines.push(labels.mailChanges[analysis.change.kind], safe(analysis.change.quote))
+          }
         }
         if (!result.items.length) lines.push(t('company.mailMemoryEmpty'))
         if (result.truncated) lines.push(t('company.mailMemoryLimited'))

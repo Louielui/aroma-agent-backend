@@ -832,6 +832,7 @@ function createApp (options = {}) {
   const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
   const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
   const companyMailMemory = opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
+    analyzer: require('./company/mailAnalysis').createMailAnalyzer(),
     store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, allowed: () => governedMemory.status().enabled
   }) : null)
   if (companyMailMemory && !process.env.NODE_TEST_CONTEXT) companyMailMemory.start()
@@ -995,7 +996,7 @@ function createApp (options = {}) {
   app.use('/api/v1/worker-flow', requireOwner)
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
   app.use('/api/v1/manager', requireOwner)
-  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null })
+  const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null, mailMemory: companyMailMemory })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less

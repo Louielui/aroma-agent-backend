@@ -7,8 +7,8 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 const isMail = row => row?.source?.kind?.startsWith('admin_mail_') === true
 // Source-bound records share the canonical PostgreSQL store, but never enter a
 // shared Hindsight bank or the general conversation/consolidation pipeline.
-function createMailMemory ({ store, mailbox, clock = () => new Date().toISOString(), allowed = () => true }) {
-  let tail = Promise.resolve(); let timer; let busy = false; let error = null
+function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new Date().toISOString(), allowed = () => true }) {
+  let tail = Promise.resolve(); let timer; let busy = false; let error = null; let analyzing = false
   const serial = fn => { const next = tail.then(fn); tail = next.catch(() => {}); return next }
   const account = () => mailbox.status().mailbox
   const key = (kind, id) => stableId('admin-mail:' + account() + ':' + kind + ':' + id)
@@ -71,6 +71,7 @@ function createMailMemory ({ store, mailbox, clock = () => new Date().toISOStrin
       if (suggestionChanged) thread.details.suggestion = next
     }
     if (evidenceChanged || suggestionChanged || !previous) {
+      if (evidenceChanged && thread.details.analysis) thread.details.analysis.state = 'stale'
       thread.details.needsReview = true
       thread.updatedAt = clock(); thread.version = (previous?.version || 0) + 1
       changes.push({ expected: previous?.version || 0, row: thread })
@@ -81,14 +82,23 @@ function createMailMemory ({ store, mailbox, clock = () => new Date().toISOStrin
     return { state: changes.length ? 'saved' : 'unchanged', id: thread.id }
   }
   const capture = (actor, message, suggestion) => serial(() => captureNow(actor, message, suggestion))
-  async function list (actor, query = '') {
+  const category = row => row.details.analysis?.state === 'ready' ? row.details.analysis.category : 'unknown'
+  const attention = row => (row.status === 'active' && row.details.taskState === 'open') ||
+    (row.details.needsReview && (row.approval || !['notification', 'promotion'].includes(category(row))))
+  async function threads (actor) {
+    const verify = await checked(actor)
+    const rows = (await store.all()).filter(r => r.source?.kind === 'admin_mail_thread' && r.details.mailbox === account())
+    verify(); return rows
+  }
+  async function list (actor, query = '', filter = 'all') {
     if (typeof query !== 'string' || query.length > 400) throw Error('invalid_query')
+    if (!['all', 'attention', 'decision', 'follow_up', 'notification', 'promotion', 'unknown'].includes(filter)) throw Error('invalid_query')
     const verify = await checked(actor)
     const all = (await store.all()).filter(r => isMail(r) && r.details.mailbox === account())
     const rows = all.filter(r => r.source.kind === 'admin_mail_thread')
     const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
     const messages = new Map(all.filter(r => r.source.kind === 'admin_mail_message').map(r => [r.source.id, r]))
-    const selected = rows.filter(r => terms.every(q => JSON.stringify([r.subject, r.text, r.details.suggestion, r.details.assignee,
+    const selected = rows.filter(r => (filter === 'all' || (filter === 'attention' ? attention(r) : category(r) === filter)) && terms.every(q => JSON.stringify([r.subject, r.text, r.details.suggestion, r.details.analysis, r.details.assignee,
       ...r.details.messageIds.map(id => messages.get(id)?.text || '')]).toLowerCase().includes(q)))
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     verify()
@@ -109,6 +119,66 @@ function createMailMemory ({ store, mailbox, clock = () => new Date().toISOStrin
     }
     const audit = await store.audit(id); after()
     return { record: row, messages, audit, checkedAt: clock() }
+  }
+  async function analyze (actor, id) {
+    guard(actor)
+    if (!analyzer) throw Error('mail_analysis_not_connected')
+    if (!allowed()) throw Error('mail_memory_paused')
+    if (analyzing) throw Error('mail_analysis_busy')
+    analyzing = true
+    let record; let verify
+    try {
+      const detailView = await detail(actor, id); record = detailView.record; verify = guard(actor)
+      if (record.details.analysis?.state === 'ready') return { state: 'unchanged', id }
+      const ordered = detailView.messages.sort((a, b) => (Number(a.details.internalDate) || Date.parse(a.details.date) || 0) - (Number(b.details.internalDate) || Date.parse(b.details.date) || 0))
+      const evidence = ordered.slice(-3).map(m => ({ id: m.source.id, subject: m.subject, from: m.details.from, date: m.details.date,
+        body: m.text.slice(0, 6000), partial: m.details.bodyTruncated || m.details.bodyState !== 'available' || m.text.length > 6000 }))
+      const input = { evidence, partialThread: ordered.length > evidence.length,
+        decision: record.approval ? { text: record.text, status: record.status, taskState: record.details.taskState, decidedAt: record.decidedAt } : null }
+      const result = await analyzer.analyze(input)
+      // Validate even injected adapters: the source-bound service owns persistence.
+      const clean = require('./mailAnalysis').validate(result, evidence)
+      if (mailbox.check) await mailbox.check(actor)
+      return await serial(async () => {
+        verify(); if (!allowed()) throw Error('mail_memory_paused')
+        const current = await store.get(id)
+        if (current.version !== record.version) throw Error('revision_conflict')
+        current.details.analysis = { ...clean, state: 'ready', at: clock(), model: result.model || null,
+          partial: input.partialThread || evidence.some(m => m.partial),
+          evidence: ordered.slice(-3).map(m => ({ id: m.source.id, hash: m.details.hash })) }
+        current.updatedAt = clock(); current.version++
+        await commit([{ expected: record.version, row: current }], 'mail_analysis_suggested'); verify()
+        return { state: 'ready', id }
+      })
+    } catch (e) {
+      if (record && verify) await serial(async () => {
+        verify(); if (!allowed()) return
+        const current = await store.get(id)
+        if (current.version !== record.version) return
+        current.details.analysis = { state: 'failed', at: clock(), reason: 'analysis_unavailable', retryAt: new Date(Date.parse(clock()) + 1800000).toISOString() }
+        current.updatedAt = clock(); current.version++
+        await commit([{ expected: record.version, row: current }], 'mail_analysis_failed')
+      }).catch(() => {})
+      throw e
+    } finally { analyzing = false }
+  }
+  async function analyzeBatch (actor) {
+    guard(actor)
+    if (!analyzer) throw Error('mail_analysis_not_connected')
+    if (!allowed()) throw Error('mail_memory_paused')
+    const rows = await threads(actor)
+    const pending = rows.filter(r => r.details.analysis?.state !== 'ready' &&
+      (!r.details.analysis?.retryAt || Date.parse(r.details.analysis.retryAt) <= Date.parse(clock()) || r.details.analysis.state === 'stale'))
+      .sort((a, b) => a.updatedAt.localeCompare(b.updatedAt)).slice(0, 2)
+    let completed = 0; let failed = 0
+    for (const row of pending) { guard(actor)(); try { await analyze(actor, row.id); completed++ } catch (_) { guard(actor)(); failed++ } }
+    return { completed, failed }
+  }
+  async function briefing (actor) {
+    const rows = await threads(actor)
+    const selected = rows.filter(attention).sort((a, b) => Number(!!b.approval && b.details.needsReview) - Number(!!a.approval && a.details.needsReview) || b.updatedAt.localeCompare(a.updatedAt))
+    return { items: selected.slice(0, 10), total: selected.length, truncated: selected.length > 10,
+      pending: rows.filter(r => r.details.analysis?.state !== 'ready').length, checkedAt: clock() }
   }
   const update = (actor, id, version, input) => serial(async () => {
     const { record: row } = await detail(actor, id); const verify = guard(actor)
@@ -154,17 +224,21 @@ function createMailMemory ({ store, mailbox, clock = () => new Date().toISOStrin
         captured, excluded, checkedAt: clock(), initialWindow: '30_days' }
       guard(OWNER)(); await commit([{ expected: old?.version || 0, row }], 'mail_sync_checkpoint')
       error = null
+      if (analyzer) await analyzeBatch(OWNER)
       return { state: 'ok', captured, excluded, hasMore: !!page.nextPageToken, initialWindow: '30_days' }
     } catch (e) { error = 'mail_memory_sync_unavailable'; throw e }
     finally { busy = false }
   }
   async function status () {
     const row = await store.get(key('sync', 'checkpoint'))
+    const rows = (await store.all()).filter(r => r.source?.kind === 'admin_mail_thread' && r.details.mailbox === account())
     return { state: 'source_bound', busy, error, enabled: allowed(), initialWindow: '30_days', intervalSeconds: 300,
+      analysis: { connected: !!analyzer, busy: analyzing, pending: rows.filter(r => r.details.analysis?.state !== 'ready').length,
+        failed: rows.filter(r => r.details.analysis?.state === 'failed').length, ready: rows.filter(r => r.details.analysis?.state === 'ready').length },
       checkedAt: row?.details.checkedAt || null, completedAt: row?.details.completedAt || null,
       hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null, hindsight: 'not_indexed' }
   }
-  return { capture, list, detail, update, sync, status,
+  return { capture, list, detail, update, sync, status, analyze, analyzeBatch, briefing,
     start () { if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() } },
     stop () { clearInterval(timer); timer = null } }
 }

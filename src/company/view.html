@@ -82,33 +82,54 @@ async function files(source, folderId) {
  if(!data.files.length) node('p',L.empty,$('files'))
  node('p',L.truncated,$('files'),'muted')
 }
-async function memoryView(query='') {
+let memoryFilter='attention'
+async function memoryView(query='',filter=memoryFilter) {
+ memoryFilter=filter
  history.replaceState(null,'','/company-access#mail-memory')
- $('files').replaceChildren(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query))
+ $('files').replaceChildren(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query)+'&filter='+encodeURIComponent(filter))
  const area=$('files'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
  node('p',L.mailMemorySyncAt+' '+(data.sync.checkedAt?new Date(data.sync.checkedAt).toLocaleString():'—'),area,'muted')
  if(data.sync.error||!data.sync.enabled) node('p',L.mailMemoryFailed,area,'note')
  if(data.sync.hasMore) node('p',L.mailMemorySyncMore,area,'note')
  if(data.sync.excluded>0) node('p',L.mailMemoryExcluded+' '+data.sync.excluded,area,'note')
+ node('p',L.mailAnalysisNote,area,'muted')
+ if(data.sync.analysis) node('p',L.mailAnalysisReady+' '+data.sync.analysis.ready+' · '+L.mailAnalysisPending+' '+data.sync.analysis.pending,area)
+ button(L.mailAnalyzeBatch,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyzeBatch'}); await memoryView(query) })
  button(L.mailMemorySync,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'sync'}); await memoryView(query) })
  const label=node('label',L.mailMemorySearch,area); label.style.display='block'; const search=node('input',null,label); search.value=query; search.maxLength=400; search.style.cssText='display:block;width:100%;font:inherit;padding:8px'
  button(L.mailSearch,area,()=>memoryView(search.value))
+ const filterLabel=node('label',L.mailFilter,area); const select=node('select',null,filterLabel); select.style.cssText='display:block;font:inherit;padding:8px'
+ for(const [value,label] of Object.entries(L.mailCategories)) { const o=node('option',label,select); o.value=value }; select.value=filter
+ select.onchange=()=>{ memoryView(query,select.value).catch(()=>{ $('status').textContent=L.error }) }
  if(!data.items.length) node('p',L.mailMemoryEmpty,area)
  if(data.truncated) node('p',L.mailMemoryLimited,area,'note')
  for(const r of data.items) {
    const c=node('article',null,area,'card'); node('h3',r.subject,c)
    node('span',r.status==='active'?L.mailMemoryApproved:r.status==='rejected'?L.mailMemoryRejected:L.mailMemoryCandidate,c,'badge')
+   const a=r.details.analysis; const ready=a?.state==='ready'
+   node('p',L.mailCategories[ready?a.category:'unknown'],c,'badge')
+   if(a?.state==='failed') node('p',L.mailAnalysisFailed,c,'note')
+   if(a?.state==='stale') node('p',L.mailAnalysisStale,c,'note')
    if(r.details.needsReview) node('p',L.mailMemoryNeedsReview,c,'note')
    node('p',r.text,c); if(r.source.url) link(L.mailOriginal,r.source.url,c)
+   if(ready) {
+     node('p',a.summary,c)
+     if(a.partial) node('p',L.mailAnalysisPartial,c,'note')
+     if(r.details.needsReview&&a.change.kind!=='none') { node('p',L.mailChanges[a.change.kind],c,'note'); node('blockquote',a.change.quote,c) }
+     if(a.task) { node('h4',L.mailSuggestion,c); node('p',a.task.text,c); node('p',L.mailAssignee+': '+(a.task.assignee||'—')+' · '+L.mailDeadline+': '+(a.task.deadline||'—'),c) }
+     const citation=node('details',null,c); node('summary',L.mailCitation,citation); node('blockquote',a.task?.quote||a.quote,citation)
+     link(L.mailOriginal,'https://mail.google.com/mail/?authuser='+encodeURIComponent(r.details.mailbox)+'#all/'+encodeURIComponent(a.task?.messageId||a.messageId),citation)
+   } else button(L.mailAnalyze,c,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyze',id:r.id}); await memoryView(query) })
    button(L.mailMemoryDetail,c,async()=>{ const data=await api('/api/v1/company-access/mail-memory?id='+encodeURIComponent(r.id)); renderMemoryDetail(data,c,query) })
  }
 }
 function renderMemoryDetail(data,card,query) {
  card.querySelector('[data-memory-detail]')?.remove(); const area=node('div',null,card); area.dataset.memoryDetail='true'; const r=data.record
  function field(label,value,type='text') { const l=node('label',label,area); l.style.display='block'; const input=node(type==='textarea'?'textarea':'input',null,l); if(type!=='textarea') input.type=type; input.value=value||''; input.style.cssText='display:block;width:100%;padding:8px;font:inherit'; return input }
- const text=field(L.mailMemoryText,r.status==='candidate'?(r.details.suggestion?.text||r.text):r.text,'textarea'); text.maxLength=2000
- const assignee=field(L.mailMemoryAssignee,r.details.assignee); assignee.maxLength=120
- const deadline=field(L.mailMemoryDeadline,r.details.deadline,'date')
+ const draft=r.status==='candidate'&&r.details.analysis?.state==='ready'?r.details.analysis.task:null
+ const text=field(L.mailMemoryText,draft?.text||r.text,'textarea'); text.maxLength=2000
+ const assignee=field(L.mailMemoryAssignee,draft?.assignee||r.details.assignee); assignee.maxLength=120
+ const deadline=field(L.mailMemoryDeadline,draft?.deadline||r.details.deadline,'date')
  const l=node('label',L.mailMemoryState,area); const state=node('select',null,l); state.style.cssText='display:block;font:inherit;padding:8px'
  for(const [value,label] of [['open',L.mailMemoryOpenState],['done',L.mailMemoryDone],['cancelled',L.mailMemoryCancelled]]) { const o=node('option',label,state); o.value=value }
  state.value=r.details.taskState||'open'

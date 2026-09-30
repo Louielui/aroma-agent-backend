@@ -32,8 +32,12 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
   router.get('/api/v1/company-access', (req, res) => res.json({ ...registry.snapshot(), mailbox: mailbox.status(), enabled, memberAcceptance: 'pending', memory: mailMemory ? 'source_bound' : 'not_connected' }))
   router.get('/api/v1/company-access/mail-memory', safe(async (req, res) => {
     if (!mailMemory) return res.status(503).json({ error: 'memory_not_connected' })
-    if (Object.keys(req.query).some(k => !['q', 'id'].includes(k)) || (req.query.q && req.query.id)) return res.status(400).json({ error: 'invalid_query' })
-    try { res.json(req.query.id ? await mailMemory.detail({ owner: true }, req.query.id) : { ...await mailMemory.list({ owner: true }, req.query.q || ''), sync: await mailMemory.status() }) }
+    if (Object.keys(req.query).some(k => !['q', 'id', 'filter'].includes(k)) || ((req.query.q || req.query.filter) && req.query.id)) return res.status(400).json({ error: 'invalid_query' })
+    try {
+      const verify = mailbox.lease({ owner: true }); verify()
+      const result = req.query.id ? await mailMemory.detail({ owner: true }, req.query.id) : { ...await mailMemory.list({ owner: true }, req.query.q || '', req.query.filter || 'all'), sync: await mailMemory.status() }
+      verify(); res.json(result)
+    }
     catch (_) { res.status(403).json({ error: 'mail_memory_unavailable' }) }
   }))
   router.post('/api/v1/company-access/mail-memory', same, safe(async (req, res) => {
@@ -41,6 +45,8 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
     const b = req.body || {}
     try {
       if (b.op === 'sync' && Object.keys(b).join(',') === 'op') return res.json(await mailMemory.sync())
+      if (b.op === 'analyze' && Object.keys(b).sort().join(',') === 'id,op') return res.json(await mailMemory.analyze({ owner: true }, b.id))
+      if (b.op === 'analyzeBatch' && Object.keys(b).join(',') === 'op') return res.json(await mailMemory.analyzeBatch({ owner: true }))
       if (b.op === 'update' && Object.keys(b).sort().join(',') === 'id,input,op,version') return res.json(await mailMemory.update({ owner: true }, b.id, b.version, b.input))
       return res.status(400).json({ error: 'invalid_request' })
     } catch (e) { res.status(e.message === 'revision_conflict' ? 409 : 503).json({ error: 'mail_memory_operation_unconfirmed' }) }

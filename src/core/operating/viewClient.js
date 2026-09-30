@@ -77,6 +77,10 @@
       card.append(node('p', L.source + ': ' + section.source + ' · ' + L.checked + ': ' + time(section.checkedAt), 'meta'))
       if (section.state !== 'ok') card.append(node('p', (L[section.availability] || L.unavailable) + (L[section.reason] && section.reason !== section.availability ? ' · ' + L[section.reason] : ''), 'warning'))
       else {
+        if(section.tool==='gmail.followups') {
+          card.append(node('p',L.mailAnalysisPending+' '+section.pendingAnalysis,'meta'))
+          const review=node('a',L.mailBriefingReview); review.href='/company-access#mail-memory'; card.append(review)
+        }
         card.append(node('p', L.received + ': ' + section.count + ' · ' + L.sample + ': ' + section.shownCount))
         if (!section.complete || section.truncated) card.append(node('p', L.limited, 'warning'))
         if (!section.count) card.append(node('p', L.empty, 'meta'))
@@ -89,6 +93,15 @@
           if (href) { heading.href = href; heading.target = '_blank'; heading.rel = 'noopener noreferrer' }
           item.append(heading)
           if (row.text) item.append(node('div', row.text, 'row-text'))
+          if(row.mailCategory) {
+            item.append(node('p',L.mailCategories[row.mailCategory],'badge'))
+            item.append(node('p',row.mailStatus==='active'?L.mailMemoryApproved:row.mailStatus==='rejected'?L.mailMemoryRejected:L.mailMemoryCandidate,'meta'))
+            if(row.mailReview) item.append(node('p',L.mailMemoryNeedsReview,'warning'))
+            if(row.mailReview&&L.mailChanges[row.mailChange]) item.append(node('p',L.mailChanges[row.mailChange],'warning'))
+            item.append(node('p',L.mailAssignee+': '+(row.assignee||'—')+' · '+L.mailDeadline+': '+(row.deadline||'—'),'meta'))
+            if(row.suggestion) item.append(node('p',L.mailSuggestion+': '+row.suggestion))
+            if(row.quote) { const cited=node('details'); cited.append(node('summary',L.mailCitation),node('blockquote',row.quote)); if(link(row.quoteLink)) { const source=node('a',L.mailCitation); source.href=link(row.quoteLink); source.target='_blank'; source.rel='noopener noreferrer'; cited.append(source) }; item.append(cited) }
+          }
           if (row.date) item.append(node('small', time(row.date)))
           if (section.layer === 'memory') {
             if (L[row.memoryType]) item.append(node('p', L[row.memoryType], 'badge'))

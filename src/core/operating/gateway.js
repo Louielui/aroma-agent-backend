@@ -7,7 +7,9 @@ function safeLink (value) {
 function rowView (row) {
   return { id: clip(row.sourceId || row.id, 160), title: clip(row.title), text: clip(row.content, 1000),
     date: clip(row.originalDate, 100), link: safeLink(row.link), approvalBy: clip(row.approvalBy, 100),
-    approvedAt: clip(row.approvedAt, 100), memoryType: clip(row.memoryType, 40), taskState: clip(row.taskState, 40) }
+    approvedAt: clip(row.approvedAt, 100), memoryType: clip(row.memoryType, 40), taskState: clip(row.taskState, 40),
+    ...(row.mailCategory ? { mailCategory: clip(row.mailCategory, 30), mailChange: clip(row.mailChange, 30), mailReview: row.mailReview === true,
+      mailStatus: clip(row.mailStatus, 30), assignee: clip(row.assignee, 120), deadline: clip(row.deadline, 10), suggestion: clip(row.suggestion, 1200), quote: clip(row.quote, 1200), quoteLink: safeLink(row.quoteLink) } : {}) }
 }
 
 // The local engine is an adapter, so another memory engine can implement recall()
@@ -24,7 +26,7 @@ function createMemoryGateway ({ listDecisions, engine } = {}) {
   } }
 }
 
-function createGateway ({ connector, connection, memory, tasks, proposals, mailbox, clock = () => new Date().toISOString() } = {}) {
+function createGateway ({ connector, connection, memory, tasks, proposals, mailbox, mailMemory, clock = () => new Date().toISOString() } = {}) {
   async function read (actor, toolId, requestedLayer) {
     const permission = authorize(actor, toolId, requestedLayer)
     if (!permission.allowed) throw Error(permission.reason)
@@ -40,6 +42,19 @@ function createGateway ({ connector, connection, memory, tasks, proposals, mailb
         response = { results: mail.messages.map(m => ({ sourceId: m.id, title: m.subject, content: m.snippet, originalDate: m.date, link: m.link })),
           evidence: { completeWithinScope: !mail.truncated, truncated: mail.truncated, dataAsOf: mail.readAt,
             queryScope: { window: q, declaredBy: 'adapter' } } }
+      } else if (toolId === 'gmail.followups') {
+        if (!mailMemory) throw Error('mail_memory_not_connected')
+        const result = await mailMemory.briefing({ owner: true })
+        response = { results: result.items.map(r => {
+          const a = r.details.analysis?.state === 'ready' ? r.details.analysis : null
+          return { id: r.id, title: r.subject, content: r.status === 'active' ? r.text : a?.summary || r.text, link: r.source.url,
+            originalDate: r.updatedAt, approvedAt: r.decidedAt, taskState: r.details.taskState,
+            mailCategory: a?.category || 'unknown', mailChange: a?.change.kind || null, mailReview: r.details.needsReview,
+            mailStatus: r.status, assignee: r.details.assignee, deadline: r.details.deadline, suggestion: a?.task?.text, quote: a?.task?.quote || a?.quote,
+            quoteLink: a ? 'https://mail.google.com/mail/?authuser=' + encodeURIComponent(r.details.mailbox) + '#all/' + encodeURIComponent(a.task?.messageId || a.messageId) : null }
+        }), pendingAnalysis: result.pending,
+        evidence: { completeWithinScope: false, truncated: result.truncated, sourceTotal: result.total, dataAsOf: result.checkedAt,
+          queryScope: { window: 'recorded_mail_attention', declaredBy: 'adapter' } } }
       } else if (toolId === 'memory.decisions') {
         response = { results: await memory.recall(), evidence: { completeWithinScope: false } }
       } else if (toolId === 'local.tasks') {
@@ -71,7 +86,8 @@ function createGateway ({ connector, connection, memory, tasks, proposals, mailb
         truncated: (response.truncatedCount || 0) > 0 || evidence.truncated === true || count > rows.length,
         dataAsOf: clip(evidence.dataAsOf, 100), scope: evidence.queryScope && clip(evidence.queryScope.window, 200),
         scopeDeclaredBy: evidence.queryScope && clip(evidence.queryScope.declaredBy, 40),
-        sourceTotal: Number.isFinite(evidence.sourceTotal) ? evidence.sourceTotal : null }
+        sourceTotal: Number.isFinite(evidence.sourceTotal) ? evidence.sourceTotal : null,
+        ...(toolId === 'gmail.followups' ? { pendingAnalysis: response.pendingAnalysis } : {}) }
     } catch (_) {
       return { ...base, state: 'unavailable', availability: 'read_failed', reason: 'read_failed', count: null, rows: null, shownCount: null, complete: null,
         truncated: null, dataAsOf: null, scope: null, sourceTotal: null }

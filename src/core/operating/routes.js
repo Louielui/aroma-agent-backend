@@ -10,7 +10,7 @@ function createManagerRouter ({ manager, mailbox = null }) {
     if (!run?.sections?.some(s => s.source === 'admin_mail' && s.state === 'ok')) return run
     try { if (!mailbox) throw Error('mail_not_connected'); await mailbox.check({ owner: true }); mailbox.lease({ owner: true })(); return run }
     catch (_) {
-      return { ...run, sections: run.sections.map(s => s.source === 'admin_mail' ? { ...s, state: 'unavailable', availability: 'read_failed', reason: 'source_access_unconfirmed', rows: null, count: null, shownCount: null, complete: null } : s) }
+      return { ...run, sections: run.sections.map(s => s.source === 'admin_mail' ? { ...s, state: 'unavailable', availability: 'read_failed', reason: 'source_access_unconfirmed', rows: null, count: null, shownCount: null, complete: null, sourceTotal: null, pendingAnalysis: null } : s) }
     }
   }
   router.post('/api/v1/manager/runs/:id/memory', async (req, res) => {

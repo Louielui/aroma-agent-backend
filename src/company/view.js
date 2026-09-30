@@ -3,7 +3,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { t, currentLocale } = require('../i18n/t')
 function buildHtml ({ owner }) {
-  const labels = { title: t('company.title'),
+  const labels = { ...require('./mailLabels').mailLabels(), title: t('company.title'),
     mailMemory: t('company.mailMemory'), mailMemoryScope: t('company.mailMemoryScope'), mailMemoryEmpty: t('company.mailMemoryEmpty'),
     mailMemorySaved: t('company.mailMemorySaved'), mailMemoryFailed: t('company.mailMemoryFailed'),
     mailMemoryNeedsReview: t('company.mailMemoryNeedsReview'), mailMemoryLimited: t('company.mailMemoryLimited'),

@@ -11,7 +11,7 @@ test('Owner HTTP mail read captures memory; approval is same-origin and exact-ve
   const mailbox = { status: () => ({ mailbox: 'adm@example.test', state: connected ? 'connected' : 'not_connected' }),
     lease: () => () => { if (!connected) throw Error('denied') },
     read: async () => { mailbox.lease()(); return { id: 'abc', threadId: 'aaa', mailbox: 'adm@example.test', body: 'Invoice due', bodyState: 'available', subject: 'Invoice' } } }
-  const memory = createMailMemory({ store: createTestStore(), mailbox })
+  const memory = createMailMemory({ store: createTestStore(), mailbox, analyzer: { analyze: async () => ({ category: 'decision', summary: 'Invoice', messageId: 'abc', quote: 'Invoice due', task: null, change: { kind: 'none', messageId: 'abc', quote: 'Invoice due' } }) } })
   const app = express(); app.use(express.json()); app.use(createRouter({ registry: {}, mailbox, mailMemory: memory, readers: {},
     requireOwner: (req, res, next) => req.headers.authorization === 'Bearer owner-test' ? next() : res.sendStatus(401) }))
   const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r))
@@ -26,7 +26,13 @@ test('Owner HTTP mail read captures memory; approval is same-origin and exact-ve
   assert.equal((await call(root, null, false)).status, 401)
   assert.equal((await call('/api/v1/company-access/mail/abc')).data.memory.state, 'saved')
   const list = await call(root); assert.equal(list.cache, 'no-store'); assert.equal(list.data.items.length, 1)
-  const row = list.data.items[0]
+  let row = list.data.items[0]
+  assert.equal((await call(root, {op:'analyze',id:row.id}, false)).status, 401)
+  assert.equal((await call(root, {op:'analyze',id:row.id}, true, 'https://evil.test')).status, 403)
+  assert.equal((await call(root, {op:'analyze',id:row.id})).data.state, 'ready')
+  row = (await call(root+'?filter=decision')).data.items[0]
+  assert.equal(row.details.analysis.category, 'decision')
+  assert.equal((await call(root+'?filter=promotion')).data.total, 0)
   const body = { op: 'update', id: row.id, version: row.version, input: { action: 'approve', text: 'Review invoice', assignee: null, deadline: null, taskState: 'open' } }
   assert.equal((await call(root, body, true, 'https://evil.test')).status, 403)
   assert.equal((await call(root, body)).data.status, 'active')
@@ -37,10 +43,11 @@ test('Owner HTTP mail read captures memory; approval is same-origin and exact-ve
 test('historical briefing mail is withheld after source access fails', async t => {
   const { createManagerRouter } = require('../core/operating/routes')
   let access = true
-  const app = express(); app.use(createManagerRouter({ manager: { get: () => ({ id: 'fixture', sections: [{ source: 'admin_mail', state: 'ok', rows: [{ text: 'Secret invoice' }], count: 1 }] }) },
+  const app = express(); app.use(createManagerRouter({ manager: { get: () => ({ id: 'fixture', sections: ['gmail.admin', 'gmail.followups'].map(tool => ({ tool, source: 'admin_mail', state: 'ok', rows: [{ text: 'Secret invoice' }], count: 1, pendingAnalysis: 7, sourceTotal: 9 })) }) },
     mailbox: { check: async () => { if (!access) throw Error('revoked') }, lease: () => () => {} } }))
   const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r)); t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r) }))
   const url = 'http://127.0.0.1:' + server.address().port + '/api/v1/manager/runs/fixture'
   assert.ok((await (await fetch(url)).text()).includes('Secret invoice'))
   access = false; const result = await (await fetch(url)).json(); assert.equal(result.run.sections[0].rows, null); assert.equal(result.run.sections[0].count, null)
+  assert.equal(result.run.sections[1].rows, null); assert.equal(result.run.sections[1].pendingAnalysis, null); assert.equal(result.run.sections[1].sourceTotal, null)
 })

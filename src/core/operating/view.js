@@ -4,6 +4,7 @@ const path = require('node:path')
 const { t } = require('../../i18n/t')
 function buildManagerHtml () {
   const labels = {
+    ...require('../../company/mailLabels').mailLabels(),
     not_connected: t('manager.notConnected'), read_failed: t('manager.readFailed'),
     master_disabled: t('manager.disabled'), source_disabled: t('manager.disabled'), credential_missing: t('manager.credentialsMissing'),
     governance_disabled: t('manager.governanceDisabled'), not_implemented: t('manager.notImplemented'), registration_failed: t('manager.registrationFailed'),
@@ -30,6 +31,7 @@ function buildManagerHtml () {
     noModel: t('manager.noModel'), planned: t('manager.planned'), approval: t('manager.approval'), memoryNote: t('manager.memoryNote'),
     tools: {
       'gmail.admin': t('company.mailBriefing'),
+      'gmail.followups': t('mailTriage.briefing'),
       'aroma.replenishment': t('manager.replenishment'), 'aroma.invoices': t('manager.invoices'),
       'calendar.agenda': t('manager.calendar'), 'drive.documents': t('manager.documents'),
       'local.tasks': t('manager.tasks'), 'local.approvals': t('manager.approvals'), 'memory.decisions': t('manager.approvedContext')

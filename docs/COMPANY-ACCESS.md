@@ -170,6 +170,44 @@ page; generic semantic recall and automatic task execution remain unconnected.
 Unit and HTTP tests cover deduplication, reply review, missing facts, exact-version
 approval, source loss, general-memory isolation, member denial and briefing redaction.
 
+## Mail triage and daily follow-up briefing
+
+`mailAnalysis.js` uses the existing GPT subscription adapter, with no paid-API
+fallback or tools. Each synchronization batch analyzes at most two pending threads;
+the source page also offers batch analysis and individual failure retries. Analysis
+uses the latest three recorded messages, at most 6,000 characters each. Partial
+coverage is explicit. It generates one suggested category (Owner decision,
+follow-up, notification, promotion or unknown), a summary, at most one task draft,
+and a possible reply/correction/cancellation marker. Quotes must be exact matches
+in supplied bodies. Assignees must occur in the task quote; deadlines require an
+explicit, valid ISO date in that quote. Other dates stay null, without inference.
+These checks prove citation provenance, not semantic correctness: the Owner must
+review the source before confirming a decision.
+
+The source page defaults to attention items: open Owner tasks, new evidence on
+previously approved items, actionable suggestions and unclassified candidates.
+Notification and promotion suggestions remain available under category/all filters.
+Classification never approves, rejects, completes or cancels an Owner item.
+New source evidence invalidates old analysis. A changed record version, source
+revocation or memory pause during inference prevents the pending result from being
+saved. Failed analysis remains visible and has a durable 30-minute automatic retry
+delay; explicit per-thread retry is immediate. Model timeout is 65 seconds, with
+no overlapping calls even while an underlying timed-out request is still finishing.
+Completed unchanged analyses are not repeated, including after restart.
+
+`gmail.followups` adds a read-only section to the fixed daily briefing. It reads
+recorded mail attention items without starting a model, prioritizes changes to
+Owner-confirmed items, shows up to ten and reports unclassified-thread counts.
+It preserves the distinction between an Owner decision and a model suggestion,
+missing assignees/deadlines, original citations, and review flags. Stored briefing
+sections require current mailbox access before display. This is not a complete
+mailbox scan, a separate reminder scheduler, or an automatic task dispatcher.
+
+Tests additionally cover classification outcomes, unsupported citations/people/dates,
+timeout recovery, deduplication, optimistic races with replies and Owner edits,
+memory pause, source revocation, batches beyond the first page, category filtering,
+same-origin analysis requests and historical follow-up briefing redaction.
+
 Source status is a last-verification result, not continuous health monitoring.
 Provider errors mark the source failed. Disconnect invalidates pending callbacks,
 marks the source disconnected and deletes only its local credential. Google-side
