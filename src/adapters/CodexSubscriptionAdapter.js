@@ -12,12 +12,12 @@ function subscriptionChatEnabled (env = process.env, lane) {
 }
 
 // Fixed loopback destination, no redirects or proxies, and no provider API credential.
-function localRequest (route, input, env) {
+function localRequest (route, input, env, signal) {
   assertLiveEgressAllowed('openai-codex')
   if (!validToken(env.CODEX_CHAT_BRIDGE_TOKEN)) return Promise.reject(new SubscriptionError())
   return new Promise((resolve, reject) => {
     const bytes = JSON.stringify(input)
-    const req = http.request({ hostname: '127.0.0.1', port: DEFAULT_PORT, path: route, method: 'POST',
+    const req = http.request({ hostname: '127.0.0.1', port: DEFAULT_PORT, path: route, method: 'POST', signal,
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json', 'content-length': Buffer.byteLength(bytes) } }, res => {
       let data = ''
       res.setEncoding('utf8')
@@ -50,7 +50,7 @@ class CodexSubscriptionAdapter extends LLMAdapter {
   }
   async complete (prompt, opts = {}) {
     const schema = opts.responseFormat ? assertResponseFormat(opts.responseFormat).schema : undefined
-    const result = await this.request('/complete', { prompt, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}) }, this.env)
+    const result = await this.request('/complete', { prompt, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}) }, this.env, opts.signal)
     if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription' || typeof result.text !== 'string' || !result.text || result.stopReason !== 'end_turn') throw new SubscriptionError('subscription_invalid_output')
     return result
   }

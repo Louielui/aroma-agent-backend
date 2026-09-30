@@ -151,7 +151,7 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
         return { state: 'ready', id }
       })
     } catch (e) {
-      if (record && verify) await serial(async () => {
+      if (record && verify && e.message !== 'mail_analysis_yielded') await serial(async () => {
         verify(); if (!allowed()) return
         const current = await store.get(id)
         if (current.version !== record.version) return
@@ -173,6 +173,15 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
     let completed = 0; let failed = 0
     for (const row of pending) { guard(actor)(); try { await analyze(actor, row.id); completed++ } catch (_) { guard(actor)(); failed++ } }
     return { completed, failed }
+  }
+  async function analyzeNext (actor, { oldest = false } = {}) {
+    guard(actor)
+    const rows = (await threads(actor)).filter(r => r.details.analysis?.state !== 'ready' &&
+      (!r.details.analysis?.retryAt || Date.parse(r.details.analysis.retryAt) <= Date.parse(clock()) || r.details.analysis.state === 'stale'))
+    // Approved replies first; reserve every fifth scheduler attempt for the oldest remaining thread.
+    const score = r => Number(!!r.approval && r.details.needsReview)
+    rows.sort((a, b) => score(b) - score(a) || (oldest ? a.createdAt.localeCompare(b.createdAt) : (b.details.latestTimestamp || 0) - (a.details.latestTimestamp || 0)))
+    return rows.length ? analyze(actor, rows[0].id) : { state: 'idle' }
   }
   async function briefing (actor) {
     const rows = await threads(actor)
@@ -224,7 +233,6 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
         captured, excluded, checkedAt: clock(), initialWindow: '30_days' }
       guard(OWNER)(); await commit([{ expected: old?.version || 0, row }], 'mail_sync_checkpoint')
       error = null
-      if (analyzer) await analyzeBatch(OWNER)
       return { state: 'ok', captured, excluded, hasMore: !!page.nextPageToken, initialWindow: '30_days' }
     } catch (e) { error = 'mail_memory_sync_unavailable'; throw e }
     finally { busy = false }
@@ -238,7 +246,8 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
       checkedAt: row?.details.checkedAt || null, completedAt: row?.details.completedAt || null,
       hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null, hindsight: 'not_indexed' }
   }
-  return { capture, list, detail, update, sync, status, analyze, analyzeBatch, briefing,
+  return { capture, list, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
+    enabled: allowed, cancelAnalysis: () => analyzer?.cancel?.(),
     start () { if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() } },
     stop () { clearInterval(timer); timer = null } }
 }

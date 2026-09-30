@@ -10,7 +10,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 // briefing. Read the same planned-integration states used by the tool registry.
 function buildArchitectureHtml () {
   const labels = {
-    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-09-29' }),
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-09-30' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
     workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),

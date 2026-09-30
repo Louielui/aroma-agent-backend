@@ -71,7 +71,8 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
       const profile = (await gmail.users.getProfile({ userId: 'me' })).data
       if (profile.emailAddress?.toLowerCase() !== expected()) throw Error('wrong_mailbox')
       output = await work(gmail)
-    } catch (_) {
+    } catch (e) {
+      if (e.message === 'mail_message_gone') throw e
       if (startEpoch === epoch && revision === accessRevision()) registry.recordMailState('failed', actor.owner === true ? 'owner' : registry.identity(actor.sub).id)
       throw Error('mail_read_failed')
     }
@@ -103,7 +104,9 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   function read (actor, id) {
     if (!validId(id)) return Promise.reject(Error('invalid_message'))
     return guarded(actor, async gmail => {
-      const message = (await gmail.users.messages.get({ userId: 'me', id, format: 'full', fields: 'id,threadId,internalDate,snippet,payload' })).data
+      let message
+      try { message = (await gmail.users.messages.get({ userId: 'me', id, format: 'full', fields: 'id,threadId,internalDate,snippet,payload' })).data }
+      catch (e) { if (e.code === 404 || e.response?.status === 404) throw Error('mail_message_gone'); throw e }
       return { ...metadata(message, id), ...require('./mailBody').decodeBody(message.payload), mailbox: expected(), readAt: new Date(clock()).toISOString() }
     })
   }
@@ -115,7 +118,26 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
       return { messages: (page.messages || []).slice(0, 10).map(r => ({ id: r.id })), nextPageToken: page.nextPageToken || null }
     })
   }
-  return { status, begin, finish, disconnect, preview: actor => search(actor, { inbox: true }), search, read, lease,
+  function owner (actor) { if (actor?.owner !== true) throw Error('mail_access_denied') }
+  const cursor = actor => { owner(actor); return guarded(actor, async gmail => (await gmail.users.getProfile({ userId: 'me' })).data.historyId) }
+  function watch (actor, topicName) {
+    owner(actor)
+    if (!/^projects\/[a-z][a-z0-9-]{4,62}\/topics\/[a-zA-Z][a-zA-Z0-9._~-]{2,254}$/.test(topicName)) throw Error('invalid_topic')
+    return guarded(actor, async gmail => (await gmail.users.watch({ userId: 'me', requestBody: { topicName } })).data)
+  }
+  function history (actor, { historyId, pageToken }) {
+    owner(actor)
+    if (!/^\d{1,30}$/.test(historyId) || (pageToken && (typeof pageToken !== 'string' || pageToken.length > 4096))) throw Error('invalid_history')
+    return guarded(actor, async gmail => {
+      let page
+      try { page = (await gmail.users.history.list({ userId: 'me', startHistoryId: historyId, historyTypes: ['messageAdded'], maxResults: 100, ...(pageToken ? { pageToken } : {}) })).data }
+      catch (e) { if (e.code === 404 || e.response?.status === 404) return { expired: true }; throw e }
+      const ids = [...new Set((page.history || []).flatMap(h => (h.messagesAdded || []).map(m => m.message?.id)))]
+      if (ids.some(id => !validId(id))) throw Error('invalid_message')
+      return { ids, historyId: page.historyId, nextPageToken: page.nextPageToken || null }
+    })
+  }
+  return { status, begin, finish, disconnect, cursor, watch, history, preview: actor => search(actor, { inbox: true }), search, read, lease,
     scan, check: actor => guarded(actor, async () => ({ mailbox: expected() })) }
 }
 module.exports = { createMailbox }

@@ -21,15 +21,40 @@ function setCookie (res, name, value, seconds, callback = false) {
     '; Max-Age=' + seconds + '; HttpOnly; SameSite=' + (callback ? 'Lax' : 'Strict') + '; Secure')
 }
 function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = false, registry = createRegistry(), flow = createFlow({ registry }), readers = googleReaders(), probe,
-  mailbox = require('./mailbox').createMailbox({ registry }), mailMemory = null } = {}) {
+  mailbox = require('./mailbox').createMailbox({ registry }), mailMemory = null, mailPubsub = null, mailScheduler = null, mailEvents = null } = {}) {
   const router = express.Router(); const gateway = createGateway({ registry, ...readers })
   const safe = fn => (req, res, next) => Promise.resolve().then(() => fn(req, res)).catch(next)
   const noStore = (req, res, next) => { res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); next() }
-  router.use(['/company-access', '/api/v1/company-access', '/member', '/api/v1/member', '/company/oauth/callback', '/company/mail/callback'], noStore)
+  router.use(['/company-access', '/api/v1/company-access', '/member', '/api/v1/member', '/company/oauth/callback', '/company/mail/callback', '/company/mail-notifications/callback'], noStore)
   const same = (req, res, next) => sameOrigin(req) ? next() : res.status(403).json({ error: 'same_origin_required' })
   router.use(['/company-access', '/api/v1/company-access'], requireOwner)
   router.get('/company-access', (req, res) => res.type('html').send(buildHtml({ owner: true })))
   router.get('/api/v1/company-access', (req, res) => res.json({ ...registry.snapshot(), mailbox: mailbox.status(), enabled, memberAcceptance: 'pending', memory: mailMemory ? 'source_bound' : 'not_connected' }))
+  const eventCookie = (res, value, seconds) => res.append('Set-Cookie', 'xiangxiang_mail_events_flow=' + encodeURIComponent(value) + '; Path=/company/mail-notifications/callback; Max-Age=' + seconds + '; HttpOnly; SameSite=Lax; Secure')
+  router.get('/api/v1/company-access/mail-automation', safe(async (req, res) => {
+    res.json({ cloud: mailPubsub?.status() || { state: 'not_connected', configured: false }, events: await mailEvents?.status() || null, scheduler: await mailScheduler?.status() || null })
+  }))
+  router.post('/api/v1/company-access/mail-automation', same, safe(async (req, res) => {
+    const b = req.body || {}
+    try {
+      if (b.op === 'authorize' && Object.keys(b).join(',') === 'op' && mailPubsub) {
+        if (req.headers.host !== '127.0.0.1:8090') return res.status(400).json({ error: 'canonical_host_required' })
+        const result = mailPubsub.begin(); eventCookie(res, result.cookie, 600); return res.json({ url: result.url })
+      }
+      if (b.op === 'disconnect' && Object.keys(b).join(',') === 'op' && mailPubsub) { mailPubsub.disconnect(); return res.json({ ok: true }) }
+      if (b.op === 'events' && Object.keys(b).sort().join(',') === 'op,paused' && mailEvents) return res.json(await mailEvents.control({ owner: true }, b.paused))
+      if (b.op === 'scheduler' && Object.keys(b).sort().join(',') === 'mode,op,paused' && mailScheduler) return res.json(await mailScheduler.control({ owner: true }, { mode: b.mode, paused: b.paused }))
+      return res.status(400).json({ error: 'invalid_request' })
+    } catch (_) { return res.status(503).json({ error: 'mail_automation_unavailable' }) }
+  }))
+  router.get('/company/mail-notifications/callback', safe(async (req, res) => {
+    let ok = false
+    try {
+      if (req.headers.host !== '127.0.0.1:8090' || !mailPubsub) throw Error('invalid_host')
+      await mailPubsub.finish({ state: req.query.state, code: req.query.code, error: req.query.error, cookie: cookie(req, 'xiangxiang_mail_events_flow') }); ok = true
+    } catch (_) { /* Provider details and tokens are never returned. */ }
+    eventCookie(res, '', 0); res.redirect(303, '/company-access?notifications=' + (ok ? 'success' : 'failed') + '#mail-memory')
+  }))
   router.get('/api/v1/company-access/mail-memory', safe(async (req, res) => {
     if (!mailMemory) return res.status(503).json({ error: 'memory_not_connected' })
     if (Object.keys(req.query).some(k => !['q', 'id', 'filter'].includes(k)) || ((req.query.q || req.query.filter) && req.query.id)) return res.status(400).json({ error: 'invalid_query' })

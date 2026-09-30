@@ -162,6 +162,31 @@ function clearAdminMailGrant () {
   assertGoogleLiveAuthAllowed()
   if (fs.existsSync(ADMIN_MAIL_FILE)) fs.unlinkSync(ADMIN_MAIL_FILE)
 }
+const PUBSUB_REDIRECT = 'http://127.0.0.1:8090/company/mail-notifications/callback'
+const PUBSUB_FILE = path.join(ADMIN_MAIL_DIR, 'google-pubsub-token.json')
+function createPubsubConsentClient () {
+  assertGoogleLiveAuthAllowed()
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')); const c = raw.installed || raw.web
+  if (!c?.client_id || !c.client_secret || !/^[a-z][a-z0-9-]{4,62}$/.test(c.project_id) || (!raw.installed && !c.redirect_uris?.includes(PUBSUB_REDIRECT))) throw Error('oauth_configuration')
+  const probe = path.join(path.dirname(PUBSUB_FILE), randomUUID() + '.probe')
+  fs.writeFileSync(probe, '', { flag: 'wx', mode: 0o600 }); fs.unlinkSync(probe)
+  const client = new (loadGoogleapis().auth.OAuth2)(c.client_id, c.client_secret, PUBSUB_REDIRECT)
+  Object.assign(client.transporter.defaults, { timeout: 30000, retry: false })
+  return { client, audience: c.client_id, project: c.project_id }
+}
+const pubsubGrantStore = {
+  present: () => fs.existsSync(PUBSUB_FILE),
+  load () { assertGoogleLiveAuthAllowed(); return JSON.parse(fs.readFileSync(PUBSUB_FILE, 'utf8')) },
+  save (grant) {
+    assertGoogleLiveAuthAllowed()
+    const temp = PUBSUB_FILE + '.' + randomUUID() + '.tmp'
+    fs.writeFileSync(temp, JSON.stringify(grant), { flag: 'wx', mode: 0o600 })
+    try { fs.renameSync(temp, PUBSUB_FILE) } catch (e) { fs.unlinkSync(temp); throw e }
+  },
+  clear () { assertGoogleLiveAuthAllowed(); if (fs.existsSync(PUBSUB_FILE)) fs.unlinkSync(PUBSUB_FILE) }
+}
+function pubsubWithOAuth (client) { assertGoogleLiveAuthAllowed(); return loadGoogleapis().pubsub({ version: 'v1', auth: client }) }
+
 function createMemberConsentClient () {
   assertGoogleLiveAuthAllowed()
   // Share application configuration only, never the Owner refresh token.
@@ -230,6 +255,9 @@ module.exports = {
   MEMBER_REDIRECT,
   ADMIN_MAIL_REDIRECT,
   createAdminMailConsentClient,
+  createPubsubConsentClient,
+  pubsubGrantStore,
+  pubsubWithOAuth,
   adminMailPresent,
   saveAdminMailGrant,
   loadAdminMailGrant,

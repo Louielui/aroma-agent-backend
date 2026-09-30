@@ -38,3 +38,13 @@ test('subscription unavailable is an error with no API fallback', async () => {
   try { await assert.rejects(createMailAnalyzer().analyze({ evidence }), /subscription_unavailable/) }
   finally { if (previous === undefined) delete process.env.CHAT_BACKEND; else process.env.CHAT_BACKEND = previous }
 })
+
+test('foreground cancellation aborts the request and never returns an analysis result', async () => {
+  let began
+  const ready = new Promise(r => { began = r })
+  const analyzer = createMailAnalyzer({ adapterFactory: () => ({ complete: (_, options) => new Promise((resolve, reject) => {
+    options.signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }); began()
+  }) }) })
+  const task = analyzer.analyze({ evidence }); const rejected = assert.rejects(task, /mail_analysis_yielded/)
+  await ready; await analyzer.cancel(); await rejected
+})

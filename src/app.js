@@ -836,7 +836,23 @@ function createApp (options = {}) {
     store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, allowed: () => governedMemory.status().enabled
   }) : null)
   if (companyMailMemory && !process.env.NODE_TEST_CONTEXT) companyMailMemory.start()
-  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, mailMemory: companyMailMemory, requireOwner, enabled: companyAccessEnabled,
+  const mailPubsub = opts.companyOptions?.mailPubsub || (companyAccessEnabled ? require('./company/mailPubsub').createMailPubsub({ registry: companyRegistry }) : null)
+  let mailForeground = 0; let mailForegroundUntil = 0
+  const mailServices = companyMailMemory && !process.env.NODE_TEST_CONTEXT ? {
+    store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, memory: companyMailMemory
+  } : null
+  const mailScheduler = opts.companyOptions?.mailScheduler || (mailServices ? require('./company/mailScheduler').createMailScheduler({ ...mailServices,
+    foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil }) : null)
+  const mailEvents = opts.companyOptions?.mailEvents || (mailServices && mailPubsub ? require('./company/mailEvents').createMailEvents({ ...mailServices, pubsub: mailPubsub }) : null)
+  mailScheduler?.start?.(); mailEvents?.start?.()
+  app.use('/api/v1/demo/intake', requireOwner, (req, res, next) => {
+    if (req.method !== 'POST') return next()
+    mailForeground++; mailForegroundUntil = Date.now() + 60000
+    res.once('close', () => { mailForeground--; mailForegroundUntil = Date.now() + 60000 })
+    Promise.resolve(companyMailMemory?.cancelAnalysis?.()).then(() => next(), () => next())
+  })
+  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, mailMemory: companyMailMemory,
+    mailPubsub, mailScheduler, mailEvents, requireOwner, enabled: companyAccessEnabled,
     endOwnerSession: (req, res) => {
       const auth = require('./governance/ownerAuth')
       try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }

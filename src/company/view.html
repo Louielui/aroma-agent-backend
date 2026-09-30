@@ -88,13 +88,13 @@ async function memoryView(query='',filter=memoryFilter) {
  history.replaceState(null,'','/company-access#mail-memory')
  $('files').replaceChildren(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query)+'&filter='+encodeURIComponent(filter))
  const area=$('files'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
+ await automationView(node('section',null,area,'card'))
  node('p',L.mailMemorySyncAt+' '+(data.sync.checkedAt?new Date(data.sync.checkedAt).toLocaleString():'—'),area,'muted')
  if(data.sync.error||!data.sync.enabled) node('p',L.mailMemoryFailed,area,'note')
  if(data.sync.hasMore) node('p',L.mailMemorySyncMore,area,'note')
  if(data.sync.excluded>0) node('p',L.mailMemoryExcluded+' '+data.sync.excluded,area,'note')
  node('p',L.mailAnalysisNote,area,'muted')
- if(data.sync.analysis) node('p',L.mailAnalysisReady+' '+data.sync.analysis.ready+' · '+L.mailAnalysisPending+' '+data.sync.analysis.pending,area)
- button(L.mailAnalyzeBatch,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyzeBatch'}); await memoryView(query) })
+ if(data.sync.analysis) node('p',L.mailAnalysisReady+' '+data.sync.analysis.ready+' · '+L.mailAnalysisPending+' '+data.sync.analysis.pending+' · '+L.mailAnalysisFailed+' '+data.sync.analysis.failed,area)
  button(L.mailMemorySync,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'sync'}); await memoryView(query) })
  const label=node('label',L.mailMemorySearch,area); label.style.display='block'; const search=node('input',null,label); search.value=query; search.maxLength=400; search.style.cssText='display:block;width:100%;font:inherit;padding:8px'
  button(L.mailSearch,area,()=>memoryView(search.value))
@@ -122,6 +122,31 @@ async function memoryView(query='',filter=memoryFilter) {
    } else button(L.mailAnalyze,c,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyze',id:r.id}); await memoryView(query) })
    button(L.mailMemoryDetail,c,async()=>{ const data=await api('/api/v1/company-access/mail-memory?id='+encodeURIComponent(r.id)); renderMemoryDetail(data,c,query) })
  }
+}
+async function automationView(area) {
+ const a=L.automation; const data=await api('/api/v1/company-access/mail-automation'); area.replaceChildren()
+ node('h3',a.title,area); node('p',a.note,area,'muted')
+ const e=data.events; const eventState=!data.cloud.configured?'not_connected':e?.paused?'paused':e?.state==='watching'?'watching':e?.state==='failed'?'failed':e?.state==='recovering'?'recovering':'setup_required'
+ node('p',a.events+' · '+a.states[eventState],area,'badge')
+ if(e?.lastNotificationAt) node('p',a.last+' '+new Date(e.lastNotificationAt).toLocaleString(),area)
+ if(e?.excluded>0) node('p',L.mailMemoryExcluded+' '+e.excluded,area,'note')
+ if(!data.cloud.configured) button(a.authorize,area,async()=>{const r=await api('/api/v1/company-access/mail-automation',{op:'authorize'}); window.location.assign(r.url)})
+ else {
+   button(e?.paused?a.resume:a.pause,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:!e?.paused}); await automationView(area)})
+   button(a.retry,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:false}); await automationView(area)})
+   button(a.disconnect,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'disconnect'}); await automationView(area)})
+ }
+ const s=data.scheduler
+ if(s) {
+   node('h3',a.scheduler,area); node('p',s.paused?a.states.paused:s.foreground?a.foreground:s.reason==='subscription_limit_reached'?a.quota:['analysis_unavailable','subscription_login_required'].includes(s.reason)?a.unavailable:a.states.active,area,'badge')
+   const label=node('label',a.scheduler,area); label.style.display='block'; const mode=node('select',null,label); mode.style.cssText='display:block;font:inherit;padding:8px;max-width:100%'
+   for(const v of ['catchup','balanced']) {const o=node('option',a[v],mode); o.value=v}; mode.value=s.mode
+   const save=async(paused)=>{await api('/api/v1/company-access/mail-automation',{op:'scheduler',mode:mode.value,paused}); await automationView(area)}
+   mode.onchange=()=>save(s.paused).catch(()=>{$('status').textContent=L.error})
+   button(s.paused?a.resume:a.pause,area,()=>save(!s.paused)); button(a.retry,area,()=>save(false))
+   if(s.nextAt) node('p',a.next+' '+new Date(s.nextAt).toLocaleString(),area,'muted')
+ }
+ button(a.refresh,area,()=>automationView(area))
 }
 function renderMemoryDetail(data,card,query) {
  card.querySelector('[data-memory-detail]')?.remove(); const area=node('div',null,card); area.dataset.memoryDetail='true'; const r=data.record

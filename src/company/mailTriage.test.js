@@ -74,3 +74,14 @@ test('restart preserves failure backoff and unchanged analyses, while manual ret
   assert.equal((await restarted.analyze(owner, id)).state, 'ready'); assert.equal(calls, 1)
   await restarted.analyzeBatch(owner); assert.equal(calls, 1)
 })
+
+test('independent scheduler selects approved replies before newest mail and offers oldest backfill slots', async () => {
+  const f = fixture(); const old = await f.add('abc'); const approved = await f.add('abd')
+  let row = (await f.memory.detail(owner, approved.id)).record
+  await f.memory.update(owner, row.id, row.version, { action: 'approve', text: 'Owner decision', assignee: null, deadline: null, taskState: 'open' })
+  await f.add('abe', 'abd'); const newest = await f.add('abf')
+  assert.equal((await f.memory.analyzeNext(owner)).id, approved.id)
+  assert.equal((await f.memory.analyzeNext(owner)).id, newest.id)
+  assert.equal((await f.memory.analyzeNext(owner, { oldest: true })).id, old.id)
+  assert.equal((await f.memory.analyzeNext(owner)).state, 'idle')
+})
