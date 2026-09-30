@@ -62,3 +62,20 @@ test('large decimal history IDs are not rounded and disconnected Pub/Sub never p
   g.mailbox.history = async () => ({ids:['abc'],historyId:'9007199254740993'})
   await g.events().tick(); assert.equal((await g.events().status()).historyId,'9007199254740993'); assert.equal(g.acks(),1)
 })
+
+test('safe integer notification cursors are accepted without rounding unsafe numbers', async () => {
+  const f = fixture()
+  f.pubsub.pull = async () => [{ackId:'numeric',message:{data:Buffer.from(JSON.stringify({emailAddress:'adm@example.test',historyId:101})).toString('base64')}}]
+  await f.events().tick(); assert.ok((await f.events().status()).lastNotificationAt)
+  assert.equal((await f.events().status()).discarded,0)
+  const g = fixture()
+  g.pubsub.pull = async () => [{ackId:'unsafe',message:{data:Buffer.from('{"emailAddress":"adm@example.test","historyId":9007199254740993}').toString('base64')}}]
+  await g.events().tick(); assert.equal((await g.events().status()).discardReasons.invalid_history,1)
+})
+
+test('explicit retry renews Watch for a real provider test notification without resetting the history cursor', async () => {
+  const f = fixture(); const events = f.events(); await events.tick()
+  assert.equal(f.watched(),1)
+  await events.control({owner:true},false); await events.tick()
+  assert.equal(f.watched(),2); assert.equal((await events.status()).historyId,'101')
+})

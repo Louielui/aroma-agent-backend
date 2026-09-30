@@ -6,6 +6,8 @@ function mailLabels () {
     retry: t('mailAutomation.retry'), events: t('mailAutomation.events'), scheduler: t('mailAutomation.scheduler'),
     catchup: t('mailAutomation.catchup'), balanced: t('mailAutomation.balanced'), next: t('mailAutomation.next'),
     last: t('mailAutomation.last'), quota: t('mailAutomation.quota'), foreground: t('mailAutomation.foreground'), unavailable: t('mailAutomation.unavailable'),
+    awaiting: t('mailAutomation.awaiting'), rejected: t('mailAutomation.rejected'),
+    reasons: { invalid_payload: t('mailAutomation.invalidPayload'), wrong_mailbox: t('mailAutomation.wrongMailbox'), invalid_history: t('mailAutomation.invalidHistory') },
     states: { not_connected: t('mailAutomation.notConnected'), setup_required: t('mailAutomation.setupRequired'),
       watching: t('mailAutomation.watching'), recovering: t('mailAutomation.recovering'), failed: t('mailAutomation.failed'),
       paused: t('mailAutomation.paused'), active: t('mailAutomation.active') } },

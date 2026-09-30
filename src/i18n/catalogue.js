@@ -2185,6 +2185,11 @@ const CATALOGUE = Object.freeze({
   'mailAutomation.balanced': { zh: '平衡（每小時最多 30 次）', en: 'Balanced (up to 30 attempts/hour)' },
   'mailAutomation.next': { zh: '下次可分析時間：', en: 'Next eligible analysis:' },
   'mailAutomation.last': { zh: '上次收到通知：', en: 'Last notification received:' },
+  'mailAutomation.awaiting': { zh: 'Watch 已建立，尚未驗證收到有效通知。按「現在重試」可重新要求 Google 發送驗證通知；新郵件保存仍需另行驗收。', en: 'Watch is established, but receipt of a valid notification is unverified. Retry renews Watch and requests a provider notification; new-message persistence needs separate acceptance.' },
+  'mailAutomation.rejected': { zh: '累計拒收通知：', en: 'Discarded notifications:' },
+  'mailAutomation.invalidPayload': { zh: '通知格式無法辨識：', en: 'Invalid payload:' },
+  'mailAutomation.wrongMailbox': { zh: '通知不屬於已連接信箱：', en: 'Wrong mailbox:' },
+  'mailAutomation.invalidHistory': { zh: '歷史游標無效或超出安全數字範圍：', en: 'Invalid or unsafe numeric history cursor:' },
   'mailAutomation.quota': { zh: '訂閱額度暫時受限，已退避一小時', en: 'Subscription limit reached; backing off for one hour' },
   'mailAutomation.unavailable': { zh: '分析暫時未完成，稍後自動重試；可檢查 GPT 訂閱登入狀態', en: 'Analysis unavailable; automatic retry scheduled. Check GPT subscription sign-in if this persists.' },
   'mailAutomation.foreground': { zh: '先讓對話使用模型', en: 'Yielding the model to conversation' },
@@ -2254,7 +2259,7 @@ const CATALOGUE = Object.freeze({
   'architecture.mailMemoryTitle': {"zh":"行政部電郵記憶","en":"Administrative mail memory"},
   'architecture.mailMemoryPurpose': {"zh":"讓已讀電郵、後續回信與 Owner 決定可以追溯。","en":"Trace observed emails, later replies and Owner decisions."},
   'architecture.mailMemoryCurrent': {"zh":"已接通：來源權限、PostgreSQL 原信快照、去重、版本確認、GPT 訂閱分類與引文、今日簡報。已實作獨立背景排程：Owner 已確認事項的回信優先、暫停／繼續、平衡／加快補齊、額度退避及對話讓路。五分鐘分批收信仍保留，首次最近 30 天；不覆寫 Owner 已確認事項，今日營運簡報接入待處理記錄。Gmail Watch／Pub/Sub 接收器已實作，包含續期、保存後確認、分頁接續及過期游標復原；雲端是否接通及實際通知時間，以電郵記憶頁為準。","en":"Connected: source permissions, PostgreSQL snapshots, deduplication, versioned confirmation, GPT subscription classifications and citations, and daily briefing. Independent scheduling supports priority replies to Owner decisions, pause/resume, balanced/catch-up modes, quota backoff and foreground yielding. Five-minute batch ingestion initially covers 30 days; Owner decisions are preserved and the daily briefing includes pending items. Gmail Watch/Pub/Sub receiver implements renewal, acknowledgment after persistence, pagination and expired-cursor recovery; the mail-memory page reports cloud connection state and measured notification time."},
-  'architecture.mailMemoryNext': {"zh":"部分接通：僅 Owner 可用。Google 新信通知待獨立 Pub/Sub 授權、雲端設定及真實新信驗收；程式已實作不等於雲端已接通。全歷史匯入、大量資料驗收、電郵 Hindsight 語意索引、附件、Ivy 記憶存取及自動派工尚未接通。記住要求不代表已批准或已執行。","en":"Partially connected: Owner-only. Google notifications require separate Pub/Sub authorization, cloud setup and real new-mail acceptance; implemented code does not prove cloud connectivity. Full-history import, volume acceptance, mail Hindsight semantic indexing, attachments, Ivy memory access and automatic dispatch remain unconnected. Remembering a request is not approval or execution."},
+  'architecture.mailMemoryNext': {"zh":"部分接通：僅 Owner 可用。Google Pub/Sub 已授權，雲端主題、Pull 訂閱及 Gmail Watch 已建立；接收器已加入通知拒收原因及重試驗證。有效通知接收和新郵件保存仍待驗收，以電郵記憶頁的實際狀態為準。全歷史匯入、大量資料驗收、電郵 Hindsight 語意索引、附件、Ivy 記憶存取及自動派工尚未接通。記住要求不代表已批准或已執行。","en":"Partially connected: Owner-only. Google Pub/Sub is authorized; the topic, pull subscription and Gmail Watch are established. The receiver now records discard reasons and renews Watch on retry. Valid-notification receipt and new-mail persistence remain subject to live acceptance; see measured mail-memory status. Full-history import, volume acceptance, mail Hindsight semantic indexing, attachments, Ivy memory access and automatic dispatch remain unconnected. Remembering a request is not approval or execution."},
   'company.mailMemoryExcluded': { zh: '上批因內容排除、無法解碼或數量限制而未保存的郵件數：', en: 'Messages not saved in the last batch due to exclusions, decoding or capacity limits:' },
   'punct.colon': { zh: '：', en: ': ' }
 })

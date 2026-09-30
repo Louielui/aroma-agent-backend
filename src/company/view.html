@@ -129,6 +129,8 @@ async function automationView(area) {
  const e=data.events; const eventState=!data.cloud.configured?'not_connected':e?.paused?'paused':e?.state==='watching'?'watching':e?.state==='failed'?'failed':e?.state==='recovering'?'recovering':'setup_required'
  node('p',a.events+' · '+a.states[eventState],area,'badge')
  if(e?.lastNotificationAt) node('p',a.last+' '+new Date(e.lastNotificationAt).toLocaleString(),area)
+ else if(eventState==='watching') node('p',a.awaiting,area,'note')
+ if(e?.discarded>0) { node('p',a.rejected+' '+e.discarded,area,'muted'); for(const [reason,count] of Object.entries(e.discardReasons||{})) node('p',(a.reasons[reason]||'—')+' '+count,area,'muted') }
  if(e?.excluded>0) node('p',L.mailMemoryExcluded+' '+e.excluded,area,'note')
  if(!data.cloud.configured) button(a.authorize,area,async()=>{const r=await api('/api/v1/company-access/mail-automation',{op:'authorize'}); window.location.assign(r.url)})
  else {

@@ -32,6 +32,12 @@ deterministic message/thread IDs. Malformed and foreign-mailbox notifications ar
 discarded and counted. Excluded, undecodable, deleted or capacity-limited mail is
 counted as excluded; it is not represented as a complete retained snapshot.
 
+Discard counters distinguish malformed payloads, wrong mailboxes and invalid
+history cursors without retaining notification bodies. Safe integer JSON cursors
+are normalized to decimal strings; unsafe numbers are rejected. Explicit receiver
+retry renews Watch to request Google's initial notification without resetting the
+saved history cursor. A Watch alone is not proof of valid notification receipt.
+
 Five-minute history reconciliation covers lost notifications. Expired cursors
 trigger a checkpointed full-mail scan, then replay from its pre-scan baseline.
 If that baseline expires again, recovery restarts. This recovery mechanism does
@@ -62,8 +68,11 @@ access, pause during pull, failed persistence, expired cursors, pagination, larg
 IDs, OAuth identity/nonce rejection, IAM preservation, source-bound thread
 priority and model cancellation. Live acceptance must separately verify the
 boot commit, UI status, a real authorized Watch, notification timestamp and
-captured new message. Until then cloud connectivity is unverified, as recorded
-in the architecture checklist. No automatic email sending or task execution is
+captured new message. On 2026-09-30, the API, topic, pull subscription and Watch
+were confirmed live. Valid-notification receipt and new-message persistence
+remain unverified; the first discarded notification predates reason counters
+and its rejection cause is unknown. The architecture checklist reflects that
+partial connection. No automatic email sending or task execution is
 introduced. Ivy mail memory, attachments and Hindsight mail indexing remain
 unconnected.
 

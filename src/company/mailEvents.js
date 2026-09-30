@@ -39,16 +39,26 @@ function createMailEvents ({ store, mailbox, pubsub, memory, clock = () => new D
       }
       const messages = await pubsub.pull(); verify()
       if ((await state.read()).paused || !memory.enabled()) return
-      const acknowledgements = []; let target = s.historyId; let valid = 0; let discarded = 0
+      const acknowledgements = []; let target = s.historyId; let valid = 0; let discarded = 0; const reasons = {}
       for (const item of messages) {
         let data
         try { data = JSON.parse(Buffer.from(item.message?.data || '', 'base64').toString('utf8')) } catch (_) {}
         acknowledgements.push(item.ackId)
-        if (!data || data.emailAddress?.toLowerCase() !== mailbox.status().mailbox || !validHistory(data.historyId)) { discarded++; continue }
+        // Some senders encode the cursor as a JSON number. Never accept a rounded integer.
+        if (data && Number.isSafeInteger(data.historyId) && data.historyId >= 0) data.historyId = String(data.historyId)
+        const reason = !data || typeof data !== 'object' ? 'invalid_payload' :
+          typeof data.emailAddress !== 'string' || data.emailAddress.toLowerCase() !== mailbox.status().mailbox ? 'wrong_mailbox' :
+            !validHistory(data.historyId) ? 'invalid_history' : null
+        if (reason) { discarded++; reasons[reason] = (reasons[reason] || 0) + 1; continue }
         valid++
         if (BigInt(data.historyId) > BigInt(target)) target = data.historyId
       }
-      if (discarded || valid) s = await state.update(v => ({ ...v, discarded: (v.discarded || 0) + discarded, ...(valid ? { lastNotificationAt: clock() } : {}) }))
+      if (discarded || valid) s = await state.update(v => {
+        const discardReasons = { ...v.discardReasons }
+        for (const [reason, count] of Object.entries(reasons)) discardReasons[reason] = (discardReasons[reason] || 0) + count
+        return { ...v, discarded: (v.discarded || 0) + discarded, discardReasons,
+          accepted: (v.accepted || 0) + valid, ...(valid ? { lastNotificationAt: clock() } : {}) }
+      })
       // Periodic history reconciliation catches missing notifications; it is independent of old-mail backfill.
       const reconcile = !s.lastSyncAt || Date.parse(clock()) - Date.parse(s.lastSyncAt) >= 300000
       if (s.recovery) {
@@ -83,7 +93,7 @@ function createMailEvents ({ store, mailbox, pubsub, memory, clock = () => new D
   async function control (actor, paused) {
     if (actor?.owner !== true) throw Error('mail_access_denied')
     mailbox.lease(actor)(); if (typeof paused !== 'boolean') throw Error('invalid_request')
-    await state.update(v => ({ ...v, paused, retryAt: null })); return status()
+    await state.update(v => ({ ...v, paused, retryAt: null, ...(!paused ? { renewedAt: null } : {}) })); return status()
   }
   const loop = async () => { await tick(); if (running) { timer = setTimeout(loop, pubsub.status().configured ? 2000 : 30000); timer.unref() } }
   return { tick, status, control, start () { if (!running) { running = true; void loop() } }, stop () { running = false; clearTimeout(timer) } }
