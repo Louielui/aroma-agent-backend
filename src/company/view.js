@@ -4,6 +4,16 @@ const path = require('node:path')
 const { t, currentLocale } = require('../i18n/t')
 function buildHtml ({ owner }) {
   const labels = { title: t('company.title'),
+    mailMemory: t('company.mailMemory'), mailMemoryScope: t('company.mailMemoryScope'), mailMemoryEmpty: t('company.mailMemoryEmpty'),
+    mailMemorySaved: t('company.mailMemorySaved'), mailMemoryFailed: t('company.mailMemoryFailed'),
+    mailMemoryNeedsReview: t('company.mailMemoryNeedsReview'), mailMemoryLimited: t('company.mailMemoryLimited'),
+    mailMemorySync: t('company.mailMemorySync'), mailMemorySyncMore: t('company.mailMemorySyncMore'), mailMemoryExcluded: t('company.mailMemoryExcluded'),
+    mailMemorySearch: t('company.mailMemorySearch'), mailMemoryDetail: t('company.mailMemoryDetail'),
+    mailMemoryText: t('company.mailMemoryText'), mailMemoryAssignee: t('company.mailMemoryAssignee'), mailMemoryDeadline: t('company.mailMemoryDeadline'),
+    mailMemoryState: t('company.mailMemoryState'), mailMemoryApprove: t('company.mailMemoryApprove'), mailMemoryReject: t('company.mailMemoryReject'),
+    mailMemoryCandidate: t('company.mailMemoryCandidate'), mailMemoryApproved: t('company.mailMemoryApproved'), mailMemoryRejected: t('company.mailMemoryRejected'),
+    mailMemoryOpenState: t('company.mailMemoryOpenState'), mailMemoryDone: t('company.mailMemoryDone'), mailMemoryCancelled: t('company.mailMemoryCancelled'),
+    mailMemoryEvidence: t('company.mailMemoryEvidence'), mailMemoryHistory: t('company.mailMemoryHistory'), mailMemorySyncAt: t('company.mailMemorySyncAt'),
     mailAuthorize: t('company.mailAuthorize'),
     mailSearch: t('company.mailSearch'), mailSearchHelp: t('company.mailSearchHelp'),
     mailSearchScope: t('company.mailSearchScope'),

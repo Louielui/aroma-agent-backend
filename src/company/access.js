@@ -85,6 +85,10 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
     })
   }
   return { bind, allowed, setGrant, suspend, recordProbe, recordMailState, revision: () => state.revision,
+    // Read receipts are audit changes, not authorization changes. Concurrent
+    // successful reads must not invalidate each other's source leases.
+    mailRevision: () => JSON.stringify([state.users.map(u => [u.id, u.sub, u.suspended, u.grants]),
+      state.sources.filter(s => s.id === 'admin-mail').map(s => [s.mailbox, s.state === 'not_connected'])]),
     mailAllowed: sub => { ensureMailboxRegistered(); const u = identity(sub); return !!(u && u.grants.includes('admin-mail') && state.sources.find(s => s.id === 'admin-mail')?.mailbox) },
     identity: sub => { const u = identity(sub); return u ? { id: u.id, name: u.name, role: u.role } : null },
     source: id => { ensureMailboxRegistered(); return clone(state.sources.find(s => s.id === id) || null) },

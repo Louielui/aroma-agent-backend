@@ -94,8 +94,8 @@ Every preview verifies the current Gmail profile, then reads at most ten INBOX
 messages as metadata and snippets. Members remain limited to this preview.
 The Owner can additionally search and read inline message bodies on demand.
 Attachments, sends, deletes and read-state changes are not exposed. Responses use
-no-store and render content as text. Background ingestion and Hindsight integration
-for email content remain unconnected.
+no-store and render content as text. Source-bound PostgreSQL ingestion is available;
+Hindsight semantic indexing for email content remains unconnected.
 
 ## Owner mail workflow
 
@@ -111,8 +111,9 @@ text, attached parts are excluded, unsupported decoding is reported, and the bod
 limit is 48,000 characters. Gmail links select the administrative account. The UI
 provides search, original-message links and per-message full-text buttons.
 
-Explicit administrative-mail chat requests bypass ordinary intake and memory
-capture. Search returns up to ten metadata results; summary requests read up to
+Explicit administrative-mail chat requests bypass ordinary intake and general memory
+capture. Body reads and summaries capture source-bound mail memory separately.
+Search returns up to ten metadata results; summary requests read up to
 four bodies, supply at most 6,000 characters each to the existing subscription
 adapter, and validate returned message IDs and verbatim supporting quotes.
 Suggested follow-ups are not approved tasks or executed actions. Model failures
@@ -126,6 +127,48 @@ matching summaries with source links, limits and actual read time. Briefing
 snapshots remain local Owner-only records; automatic memory capture keeps only
 workflow status and counts, not mail excerpts. No new model is called for the
 fixed briefing. Ivy full-text/chat acceptance is deferred.
+
+## Source-bound administrative mail memory
+
+`src/company/mailMemory.js` uses the existing canonical PostgreSQL transport and
+transactional version checks. It stores a message snapshot per account/message ID
+and a review item per account/thread ID. Changed snapshots and Owner decisions are
+retained in the store's audit chain. New replies flag the same item for review;
+they never overwrite an Owner's prior text, assignee, deadline or task state.
+Missing assignees and deadlines remain null. Every thread begins as a candidate,
+not a claim that a task exists. Validated model suggestions retain their exact
+source quote; Owner confirmation is required before an item becomes active.
+Approval records memory only and does not dispatch, send or modify Google data.
+
+Owner body reads and summary results capture observed content, reporting failures
+separately from read success. Automatic ingestion runs every five minutes while
+the backend and global memory capture are enabled. Each batch reads at most ten
+messages. Initial scope is a fixed 30-day window; durable page tokens resume after
+restart, and later scans overlap the prior watermark by one day. A failed batch
+does not advance its checkpoint. Content exclusions and unavailable bodies are
+counted; attachments remain excluded. Each thread has a 100-message bound. This
+is bounded synchronization, not an assertion of complete mailbox history. A
+large mailbox may take many batches to catch up; manual sync advances one batch.
+
+`/api/v1/company-access/mail-memory` supports Owner-only keyword search, detail,
+exact-version confirmation/correction/rejection and synchronization. The company
+access page exposes the review workflow. Explicit mail-memory chat commands use
+this same source gate without a model. General memory get/list/recall/audit and
+index/consolidation paths reject or exclude these source-bound rows, including
+attempts to reuse their IDs. They are not sent to shared Hindsight banks. Member
+memory access remains disabled until independent member acceptance is completed.
+
+Search verifies the live Gmail identity and local permission lease. Detail and
+approval also verify access to the latest recorded message. Disconnect or provider
+authorization loss prevents memory retrieval. Stored snapshots remain historical;
+Google-side deletion is not automatic local erasure. Existing briefing mail sections
+are revalidated before their stored excerpts are returned. Browser mail replies
+are replaced by neutral receipts before ordinary model history is used. Mail
+memory is available via explicit administrative-memory commands and its source
+page; generic semantic recall and automatic task execution remain unconnected.
+
+Unit and HTTP tests cover deduplication, reply review, missing facts, exact-version
+approval, source loss, general-memory isolation, member denial and briefing redaction.
 
 Source status is a last-verification result, not continuous health monitoring.
 Provider errors mark the source failed. Disconnect invalidates pending callbacks,

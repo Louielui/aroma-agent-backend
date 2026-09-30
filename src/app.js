@@ -830,7 +830,12 @@ function createApp (options = {}) {
     ? process.env.XIANGXIANG_COMPANY_ACCESS === '1' : opts.companyAccessEnabled === true
   const companyRegistry = opts.companyOptions?.registry || require('./company/access').createRegistry()
   const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
-  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, requireOwner, enabled: companyAccessEnabled,
+  const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
+  const companyMailMemory = opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
+    store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, allowed: () => governedMemory.status().enabled
+  }) : null)
+  if (companyMailMemory && !process.env.NODE_TEST_CONTEXT) companyMailMemory.start()
+  app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, mailMemory: companyMailMemory, requireOwner, enabled: companyAccessEnabled,
     endOwnerSession: (req, res) => {
       const auth = require('./governance/ownerAuth')
       try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }
@@ -979,7 +984,6 @@ function createApp (options = {}) {
   app.use(connectionRouters.router)
   app.use('/memory', requireOwner)
   app.use('/api/v1/memory', requireOwner)
-  const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
   if (governedMemory && !process.env.NODE_TEST_CONTEXT) governedMemory.start()
   const memoryClient = opts.memoryClient || governedMemory?.ownerClient || require('./memory/hindsight').createHindsight()
   const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
@@ -992,7 +996,7 @@ function createApp (options = {}) {
   app.use(require('./core/workerFlow/routes').createWorkerRouter(opts.workerFlowOptions))
   app.use('/api/v1/manager', requireOwner)
   const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null })
-  app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager }))
+  app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -1094,7 +1098,7 @@ function createApp (options = {}) {
   })
 
   app.use(createDemoRouter({
-    mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox }) : null,
+    mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,
     conversationStore: require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture),

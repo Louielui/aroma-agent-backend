@@ -2,6 +2,8 @@
 function parseMailRequest (message) {
   if (typeof message !== 'string' || /不要|唔好|別讀|例如|如果|假設|寄出|發送|发送|轉寄|删除|刪除|幫我寄|帮我寄|do not|example|send|delete|forward/i.test(message)) return null
   const value = message.trim().replace(/^香香[，,\s]*/, '').replace(/^(?:請|请|幫我|帮我)\s*/, '')
+  const memory = /^(?:查看|搜尋|搜索)?行政部(?:電郵|郵件)?(?:記憶|待辦)(?:\s*[:：]\s*(.*))?[。？?]?$/u.exec(value)
+  if (memory) return { mode: 'memory', q: memory[1] || '' }
   const full = /^(?:讀取|查看|打開|打开)?行政部(?:電郵|郵件|信件|邮件)全文\s*[:：]?\s*([a-f0-9]{1,100})[。！!?？]?$/i.exec(value)
   if (full) return { mode: 'read', id: full[1] }
   const search = /^(?:搜尋|搜索|查找)行政部(?:電郵|郵件|信件|邮件)\s*[:：]\s*(.+)$/u.exec(value)

@@ -494,7 +494,12 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
       }
 
-      const { message, history, contextCard, providerHint } = req.body
+      const { message, contextCard, providerHint } = req.body
+      // Browser history can still contain the immediately displayed mail answer.
+      // Replace it before ordinary intake; the source-bound lane rechecks access.
+      const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
+        entry?.role === 'assistant' && all[i - 1]?.role === 'user' && require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content)
+          ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
       const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message) : null
       // Mail content is transient. Only a neutral receipt enters conversation history;

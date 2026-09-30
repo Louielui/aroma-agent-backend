@@ -16,17 +16,39 @@ function runtimeAdapter (level) {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('subscription_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: { fast: 'low', standard: 'medium', deep: 'high' }[level] || 'low' })
 }
-function createMailChat ({ mailbox, adapterFactory = runtimeAdapter, now = () => new Date() }) {
+function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapter, now = () => new Date() }) {
   let busy = false
+  async function remember (row, suggestion) {
+    if (!memory) return 'not_connected'
+    try { return (await memory.capture(actor, row, suggestion)).state } catch (_) { return 'unavailable' }
+  }
+  const memoryNote = state => ['saved', 'unchanged'].includes(state) ? t('company.mailMemorySaved') : t('company.mailMemoryUnconfirmed', { state })
   async function answer (request, question, level = 'fast') {
     if (busy) throw Error('mail_busy')
     busy = true
     try {
+      if (request.mode === 'memory') {
+        if (!memory) throw Error('mail_memory_unavailable')
+        const result = await memory.list(actor, request.q)
+        const lines = [t('company.mailMemoryScope')]
+        for (const row of result.items) {
+          lines.push('[' + safe(row.subject) + '](' + (row.evidenceUrl || row.source.url) + ')', safe(row.text),
+            t('company.mailMemoryTask', { status: row.status === 'active' ? t('company.mailMemoryApproved') : row.status === 'rejected' ? t('company.mailMemoryRejected') : t('company.mailMemoryCandidate'), assignee: safe(row.details.assignee || '—'), deadline: row.details.deadline || '—',
+              taskState: row.details.taskState === 'open' ? t('company.mailMemoryOpenState') : row.details.taskState === 'done' ? t('company.mailMemoryDone') : row.details.taskState === 'cancelled' ? t('company.mailMemoryCancelled') : '—' }))
+          if (row.evidenceExcerpt) lines.push(t('company.mailQuote', { text: safe(row.evidenceExcerpt) }))
+          if (row.details.needsReview) lines.push(t('company.mailMemoryNeedsReview'))
+        }
+        if (!result.items.length) lines.push(t('company.mailMemoryEmpty'))
+        if (result.truncated) lines.push(t('company.mailMemoryLimited'))
+        lines.push(t('company.mailMemoryOpen', { location: t('company.title') }))
+        return { reply: lines.join('\n\n'), messageCount: result.items.length, summaryState: 'not_requested' }
+      }
       if (request.mode === 'read') {
         const row = await mailbox.read(actor, request.id)
+        const memoryState = await remember(row)
         mailbox.lease(actor)()
         return { reply: [t('company.mailReadScope'), source(row), row.bodyState === 'unavailable' ? t('company.mailBodyUnavailable') : safe(row.body),
-          row.bodyTruncated || row.bodyState === 'partial' ? t('company.mailBodyLimited') : '', t('company.mailHistoryNote')].filter(Boolean).join('\n\n'), messageCount: 1, summaryState: 'not_requested' }
+          row.bodyTruncated || row.bodyState === 'partial' ? t('company.mailBodyLimited') : '', memoryNote(memoryState), t('company.mailHistoryNote')].filter(Boolean).join('\n\n'), messageCount: 1, summaryState: 'not_requested', memoryState }
       }
       const q = request.mode === 'search' ? request.q : request.today ? todayQuery(now()) : 'newer_than:7d'
       const result = await mailbox.search(actor, { q })
@@ -56,6 +78,9 @@ function createMailChat ({ mailbox, adapterFactory = runtimeAdapter, now = () =>
         } catch (_) { /* A model failure cannot become an empty mailbox or hide the source excerpts. */ }
       }
       verify()
+      const memoryStates = []
+      if (request.mode === 'summary') for (const row of messages) memoryStates.push(await remember(row, summaries.find(s => s.id === row.id)))
+      verify()
       const lines = [t('company.mailChatScope', { mailbox: result.mailbox, count: messages.length, query: q })]
       if (!messages.length) lines.push(t('company.mailEmptySearch'))
       if (result.truncated || messages.length < result.messages.length) lines.push(t('company.mailResultsLimited'))
@@ -73,6 +98,7 @@ function createMailChat ({ mailbox, adapterFactory = runtimeAdapter, now = () =>
         lines.push(t('company.mailReadCommand', { id: row.id }))
       }
       lines.push(t('company.mailHistoryNote'))
+      if (memoryStates.length) lines.push(memoryStates.map(memoryNote).filter((v, i, a) => a.indexOf(v) === i).join('\n'))
       return { reply: lines.join('\n\n'), messageCount: messages.length, summaryState, servedBy }
     } finally { busy = false }
   }

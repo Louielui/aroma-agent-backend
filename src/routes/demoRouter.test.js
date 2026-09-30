@@ -53,6 +53,16 @@ function spyAdapterFactory () {
   return fn
 }
 
+test('mail replies supplied by browser history cannot enter ordinary intake', async () => {
+  const p = spyProcess({ intent: 'chit_chat', mode: 'chat', reply: 'Fixture reply' })
+  const history = [{ role: 'user', text: '行政部電郵記憶' }, { role: 'assistant', text: 'PRIVATE MAIL', content: 'PRIVATE MAIL' },
+    { role: 'user', text: 'Hello' }, { role: 'assistant', text: 'Ordinary reply' }]
+  await req(makeApp({ processIntakeFn: p, getAdapterFn: spyAdapterFactory() }), 'POST', '/api/v1/demo/intake', { message: 'Hello again', interactionMode: 'chat', history })
+  assert.equal(p.calls.length, 1)
+  assert.ok(!JSON.stringify(p.calls[0][2]).includes('PRIVATE MAIL'))
+  assert.equal(p.calls[0][2][3].text, 'Ordinary reply')
+})
+
 function makeApp ({ demoOn = true, processIntakeFn, getAdapterFn } = {}) {
   const app = express()
   app.use(express.json())

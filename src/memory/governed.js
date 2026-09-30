@@ -17,6 +17,7 @@ const evidenceHash = r => hash(JSON.stringify([r.id, r.type, r.scope, r.subject,
 const matchesEvidence = (r, e) => e.contentHash ? evidenceHash(r) === e.contentHash : r.version === e.version
 const stableId = value => { const h = hash(value); return 'xx-' + h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-8' + h.slice(17, 20) + '-' + h.slice(20, 32) }
 const owner = actor => { if (actor?.id !== 'owner' || actor?.role !== 'owner') throw Error('permission_denied') }
+const sourceBound = row => row?.source?.kind?.startsWith('admin_mail_') === true
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
 function createGateway({ store, engine, clock = () => new Date().toISOString() }) {
   const indexing = new Map()
@@ -33,6 +34,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function get(actor, id) {
     if (!ID.test(id || '')) throw Error('invalid_memory_id')
     const row = await store.get(id)
+    if (sourceBound(row)) throw Error('permission_denied')
     if (row) await authorize(actor, row.scope)
     return row
   }
@@ -40,7 +42,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function list(actor, filter = {}) {
     const allowed = await scopes(actor)
     if (filter.scope) await authorize(actor, filter.scope)
-    return (await store.all()).filter(r => allowed.includes(r.scope) && (!filter.scope || r.scope === filter.scope) &&
+    return (await store.all()).filter(r => !sourceBound(r) && allowed.includes(r.scope) && (!filter.scope || r.scope === filter.scope) &&
       (!filter.type || r.type === filter.type) && (!filter.status || r.status === filter.status))
   }
   function validate(input) {
@@ -60,6 +62,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     if (input.type === 'procedural' && (!s.url || !s.version)) throw Error('sop_link_and_version_required')
   }
   async function create(actor, input, observation, prepareOnly = false) {
+    if (sourceBound(input)) throw Error('permission_denied')
     validate(input); await authorize(actor, input.scope, true)
     if (input.policy && (input.policy !== 'owner_history' || input.scope !== 'private:owner' || input.type !== 'episodic' ||
         !['conversation', 'briefing', 'worker', 'historical_import'].includes(input.source.kind))) throw Error('invalid_capture_policy')
@@ -67,6 +70,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const excluded = exclusionReason(input.text) || exclusionReason(input.subject + JSON.stringify(input.source) + JSON.stringify(input.details || {}), false)
     const id = input.id || (observation ? stableId(JSON.stringify([input.scope, input.type, input.source, input.text])) : 'xx-' + randomUUID())
     const previous = await store.get(id)
+    if (sourceBound(previous)) throw Error('permission_denied')
     if (previous) { await authorize(actor, previous.scope); if (previous.scope !== input.scope || previous.type !== input.type || (previous.text && previous.text !== input.text.trim())) throw Error('revision_conflict'); return previous }
     const now = clock()
     const row = { id, type: input.type, subject: excluded ? 'Excluded memory' : input.subject.trim(), text: excluded ? '' : input.text.trim(), scope: input.scope,
@@ -244,7 +248,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       ...(modelId ? { supersedes: modelId } : {}) }, false)
   }
   async function status(actor) {
-    owner(actor); const rows = await store.all()
+    owner(actor); const rows = (await store.all()).filter(r => !sourceBound(r))
     const active = rows.filter(current)
     return { database: await store.health(), layers: TYPES.map(type => ({ type, total: rows.filter(r => r.type === type).length, active: active.filter(r => r.type === type).length })),
       scopes: SCOPES, counts: Object.fromEntries(STATUSES.map(s => [s, rows.filter(r => r.status === s).length])),

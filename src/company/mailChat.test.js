@@ -7,6 +7,7 @@ test('mail routing uses explicit Owner words and separates search, summary and f
   assert.equal(parseMailRequest('搜尋行政部電郵：invoice').q, 'invoice')
   assert.equal(parseMailRequest('搜尋行政部電郵：' + 'x'.repeat(401)).q.length, 401)
   assert.equal(parseMailRequest('行政部電郵全文 abc123').id, 'abc123')
+  assert.deepEqual(parseMailRequest('行政部電郵記憶：invoice'), { mode: 'memory', q: 'invoice' })
   assert.equal(parseMailRequest('不要讀行政部電郵'), null)
   assert.equal(parseMailRequest('例如「行政部今天有什麼要我跟進？」'), null)
   assert.equal(parseMailRequest('幫我寄行政部電郵'), null)
@@ -29,4 +30,13 @@ test('empty search never starts a model; read failure stays an error', async () 
   let calls = 0
   const chat = createMailChat({ mailbox: { search: async () => ({ messages: [], mailbox: 'adm@example.test' }), lease: () => () => {} }, adapterFactory: () => { calls++; throw Error('unexpected') } })
   assert.equal((await chat.answer({ mode: 'search', q: 'none' }, 'question')).messageCount, 0); assert.equal(calls, 0)
+})
+test('mail memory is recalled only through its source gate without model generation', async () => {
+  let access = true; let models = 0
+  const chat = createMailChat({ mailbox: {}, memory: { list: async () => {
+    if (!access) throw Error('mail_access_denied')
+    return { items: [{ subject: 'Invoice', text: 'Owner decided to review', source: { url: 'https://mail.google.com/mail/#all/abc' }, status: 'active', details: { needsReview: true } }] }
+  } }, adapterFactory: () => { models++; throw Error('unexpected') } })
+  assert.match((await chat.answer({ mode: 'memory', q: 'invoice' })).reply, /Owner decided to review/)
+  assert.equal(models, 0); access = false; await assert.rejects(chat.answer({ mode: 'memory', q: '' }), /denied/)
 })

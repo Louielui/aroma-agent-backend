@@ -7,6 +7,7 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   save = auth.saveAdminMailGrant, load = auth.loadAdminMailGrant, clear = auth.clearAdminMailGrant,
   present = auth.adminMailPresent, clock = () => Date.now() }) {
   const pending = new Map(); let epoch = 0
+  const accessRevision = () => registry.mailRevision ? registry.mailRevision() : registry.revision()
   const expected = () => registry.source('admin-mail').mailbox
   function status () {
     const source = registry.source('admin-mail')
@@ -54,14 +55,14 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   }
   function allowed (actor) { return actor?.owner === true || registry.mailAllowed(actor?.sub) }
   function lease (actor) {
-    const revision = registry.revision(); const startEpoch = epoch
+    const revision = accessRevision(); const startEpoch = epoch
     return () => {
-      if (!allowed(actor) || !present() || registry.source('admin-mail').state === 'not_connected' || revision !== registry.revision() || startEpoch !== epoch) throw Error('mail_access_denied')
+      if (!allowed(actor) || !present() || registry.source('admin-mail').state === 'not_connected' || revision !== accessRevision() || startEpoch !== epoch) throw Error('mail_access_denied')
     }
   }
   async function guarded (actor, work) {
     if (!allowed(actor) || !present() || registry.source('admin-mail').state === 'not_connected') throw Error('mail_access_denied')
-    const revision = registry.revision(); const startEpoch = epoch
+    const revision = accessRevision(); const startEpoch = epoch
     let output
     try {
       const grant = load()
@@ -71,10 +72,10 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
       if (profile.emailAddress?.toLowerCase() !== expected()) throw Error('wrong_mailbox')
       output = await work(gmail)
     } catch (_) {
-      if (startEpoch === epoch && revision === registry.revision()) registry.recordMailState('failed', actor.owner === true ? 'owner' : registry.identity(actor.sub).id)
+      if (startEpoch === epoch && revision === accessRevision()) registry.recordMailState('failed', actor.owner === true ? 'owner' : registry.identity(actor.sub).id)
       throw Error('mail_read_failed')
     }
-    if (!allowed(actor) || revision !== registry.revision() || startEpoch !== epoch) throw Error('mail_access_denied')
+    if (!allowed(actor) || revision !== accessRevision() || startEpoch !== epoch) throw Error('mail_access_denied')
     registry.recordMailState('connected', actor.owner === true ? 'owner' : registry.identity(actor.sub).id)
     return output
   }
@@ -82,7 +83,7 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   function metadata (message, id) {
     if (message.id !== id) throw Error('invalid_message')
     const header = name => (message.payload?.headers || []).find(h => h.name?.toLowerCase() === name)?.value || null
-    return { id, subject: header('subject'), from: header('from'), date: header('date'), snippet: message.snippet || null,
+    return { id, threadId: validId(message.threadId) ? message.threadId : null, internalDate: message.internalDate || null, subject: header('subject'), from: header('from'), date: header('date'), snippet: message.snippet || null,
       link: 'https://mail.google.com/mail/?authuser=' + encodeURIComponent(expected()) + '#all/' + id }
   }
   async function search (actor, { q = '', inbox = false } = {}) {
@@ -102,10 +103,19 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   function read (actor, id) {
     if (!validId(id)) return Promise.reject(Error('invalid_message'))
     return guarded(actor, async gmail => {
-      const message = (await gmail.users.messages.get({ userId: 'me', id, format: 'full', fields: 'id,snippet,payload' })).data
+      const message = (await gmail.users.messages.get({ userId: 'me', id, format: 'full', fields: 'id,threadId,internalDate,snippet,payload' })).data
       return { ...metadata(message, id), ...require('./mailBody').decodeBody(message.payload), mailbox: expected(), readAt: new Date(clock()).toISOString() }
     })
   }
-  return { status, begin, finish, disconnect, preview: actor => search(actor, { inbox: true }), search, read, lease }
+  function scan (actor, { q, pageToken } = {}) {
+    if (typeof q !== 'string' || q.length > 400 || (pageToken && (typeof pageToken !== 'string' || pageToken.length > 4096))) throw Error('invalid_mail_query')
+    return guarded(actor, async gmail => {
+      const page = (await gmail.users.messages.list({ userId: 'me', q, maxResults: 10, ...(pageToken ? { pageToken } : {}) })).data
+      if (!Array.isArray(page.messages || []) || (page.messages || []).some(r => !validId(r.id))) throw Error('invalid_message')
+      return { messages: (page.messages || []).slice(0, 10).map(r => ({ id: r.id })), nextPageToken: page.nextPageToken || null }
+    })
+  }
+  return { status, begin, finish, disconnect, preview: actor => search(actor, { inbox: true }), search, read, lease,
+    scan, check: actor => guarded(actor, async () => ({ mailbox: expected() })) }
 }
 module.exports = { createMailbox }

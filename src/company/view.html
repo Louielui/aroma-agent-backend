@@ -39,6 +39,7 @@ async function ownerView() {
      button(L.mailAuthorize,c,async()=>{ const r=await api('/api/v1/company-access',{op:'mail_authorize'}); window.location.assign(r.url) })
      if(data.mailbox.state!=='not_connected') {
        button(L.mailPreview,c,()=>previewMail(true))
+       if(data.memory==='source_bound') button(L.mailMemory,c,()=>memoryView())
        const label=node('label',L.mailSearchHelp,c); label.style.cssText='display:block;margin-top:16px'; const input=node('input',null,label); input.type='search'; input.maxLength=400; input.style.cssText='display:block;width:100%;font:inherit;padding:8px';
        button(L.mailSearch,c,()=>previewMail(true,input.value))
        button(L.mailDisconnect,c,async()=>{ await change({op:'mail_disconnect'}); $('files').replaceChildren() })
@@ -53,6 +54,7 @@ async function ownerView() {
  $('audit').querySelector('pre').textContent=data.audit.slice(-30).reverse().map(a=>a.at+' · '+a.actor+' · '+a.action+' · '+a.target).join('\n')
  const mailResult=new URLSearchParams(location.search).get('mail')
  if(mailResult) { $('status').textContent=mailResult==='success'&&data.mailbox.state==='connected'?L.mailSuccess:L.mailFailed; history.replaceState(null,'','/company-access') }
+ if(location.hash==='#mail-memory'&&data.memory==='source_bound') await memoryView()
 }
 async function previewMail(owner,query) {
  $('files').replaceChildren()
@@ -66,6 +68,7 @@ async function previewMail(owner,query) {
    if(owner) { const detail=node('div',null,c); button(L.mailFull,c,async()=>{
      detail.replaceChildren(); const full=await api('/api/v1/company-access/mail/'+encodeURIComponent(message.id));
      node('p',L.mailReadScope,detail,'muted'); node('pre',full.bodyState==='unavailable'?L.mailBodyUnavailable:full.body,detail);
+     node('p', ['saved','unchanged'].includes(full.memory?.state)?L.mailMemorySaved:L.mailMemoryFailed,detail,'note')
      if(full.bodyTruncated||full.bodyState==='partial') node('p',L.mailBodyLimited,detail,'note')
    }) }
  }
@@ -78,6 +81,43 @@ async function files(source, folderId) {
  for(const f of data.files) { const li=node('li',null,ul); link(f.name||f.id,f.url,li); if(f.mimeType==='application/vnd.google-apps.folder') button(L.open,li,()=>files(source,f.id)) }
  if(!data.files.length) node('p',L.empty,$('files'))
  node('p',L.truncated,$('files'),'muted')
+}
+async function memoryView(query='') {
+ history.replaceState(null,'','/company-access#mail-memory')
+ $('files').replaceChildren(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query))
+ const area=$('files'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
+ node('p',L.mailMemorySyncAt+' '+(data.sync.checkedAt?new Date(data.sync.checkedAt).toLocaleString():'—'),area,'muted')
+ if(data.sync.error||!data.sync.enabled) node('p',L.mailMemoryFailed,area,'note')
+ if(data.sync.hasMore) node('p',L.mailMemorySyncMore,area,'note')
+ if(data.sync.excluded>0) node('p',L.mailMemoryExcluded+' '+data.sync.excluded,area,'note')
+ button(L.mailMemorySync,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'sync'}); await memoryView(query) })
+ const label=node('label',L.mailMemorySearch,area); label.style.display='block'; const search=node('input',null,label); search.value=query; search.maxLength=400; search.style.cssText='display:block;width:100%;font:inherit;padding:8px'
+ button(L.mailSearch,area,()=>memoryView(search.value))
+ if(!data.items.length) node('p',L.mailMemoryEmpty,area)
+ if(data.truncated) node('p',L.mailMemoryLimited,area,'note')
+ for(const r of data.items) {
+   const c=node('article',null,area,'card'); node('h3',r.subject,c)
+   node('span',r.status==='active'?L.mailMemoryApproved:r.status==='rejected'?L.mailMemoryRejected:L.mailMemoryCandidate,c,'badge')
+   if(r.details.needsReview) node('p',L.mailMemoryNeedsReview,c,'note')
+   node('p',r.text,c); if(r.source.url) link(L.mailOriginal,r.source.url,c)
+   button(L.mailMemoryDetail,c,async()=>{ const data=await api('/api/v1/company-access/mail-memory?id='+encodeURIComponent(r.id)); renderMemoryDetail(data,c,query) })
+ }
+}
+function renderMemoryDetail(data,card,query) {
+ card.querySelector('[data-memory-detail]')?.remove(); const area=node('div',null,card); area.dataset.memoryDetail='true'; const r=data.record
+ function field(label,value,type='text') { const l=node('label',label,area); l.style.display='block'; const input=node(type==='textarea'?'textarea':'input',null,l); if(type!=='textarea') input.type=type; input.value=value||''; input.style.cssText='display:block;width:100%;padding:8px;font:inherit'; return input }
+ const text=field(L.mailMemoryText,r.status==='candidate'?(r.details.suggestion?.text||r.text):r.text,'textarea'); text.maxLength=2000
+ const assignee=field(L.mailMemoryAssignee,r.details.assignee); assignee.maxLength=120
+ const deadline=field(L.mailMemoryDeadline,r.details.deadline,'date')
+ const l=node('label',L.mailMemoryState,area); const state=node('select',null,l); state.style.cssText='display:block;font:inherit;padding:8px'
+ for(const [value,label] of [['open',L.mailMemoryOpenState],['done',L.mailMemoryDone],['cancelled',L.mailMemoryCancelled]]) { const o=node('option',label,state); o.value=value }
+ state.value=r.details.taskState||'open'
+ button(L.mailMemoryApprove,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'update',id:r.id,version:r.version,input:{action:'approve',text:text.value,assignee:assignee.value||null,deadline:deadline.value||null,taskState:state.value}}); await memoryView(query) })
+ button(L.mailMemoryReject,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'update',id:r.id,version:r.version,input:{action:'reject'}}); await memoryView(query) })
+ const evidence=node('details',null,area); node('summary',L.mailMemoryEvidence,evidence)
+ for(const m of data.messages) { const d=node('details',null,evidence); node('summary',m.subject+' · '+(m.details.date||'—'),d); node('p',m.details.from||'—',d); node('pre',m.text,d); if(m.source.url) link(L.mailOriginal,m.source.url,d); if(m.details.bodyTruncated||m.details.bodyState!=='available') node('p',L.mailBodyLimited,d,'note') }
+ const audit=node('details',null,area); node('summary',L.mailMemoryHistory,audit)
+ for(const a of data.audit) { node('p',a.at+' · '+a.op,audit); if(a.snapshot) node('pre',JSON.stringify({text:a.snapshot.text,status:a.snapshot.status,assignee:a.snapshot.details.assignee,deadline:a.snapshot.details.deadline,taskState:a.snapshot.details.taskState},null,2),audit) }
 }
 async function memberView() {
  $('audit').hidden=true; $('actions').replaceChildren()

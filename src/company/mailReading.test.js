@@ -47,3 +47,17 @@ test('revocation while fetching a full message discards it', async () => {
   const f = fixture(); f.onRead(f.revoke)
   await assert.rejects(f.mailbox.read({ owner: true }, 'abc123'), /mail_access_denied/)
 })
+test('concurrent source checks do not revoke each other, while an actual grant change does', async t => {
+  const fs = require('node:fs'); const path = require('node:path'); const os = require('node:os')
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mail-concurrency-'))
+  t.after(() => { assert.ok(path.resolve(dir).startsWith(path.join(path.resolve(os.tmpdir()), 'mail-concurrency-'))); fs.rmSync(dir, { recursive: true, force: true }) })
+  const registry = require('./access').createRegistry({ file: path.join(dir, 'access.json') })
+  registry.recordMailState('connected')
+  const email = registry.source('admin-mail').mailbox
+  const mailbox = createMailbox({ registry, present: () => true, load: () => ({ email, client: {} }),
+    serviceFor: () => ({ users: { getProfile: async () => ({ data: { emailAddress: email } }) } }) })
+  await Promise.all([mailbox.check({ owner: true }), mailbox.check({ owner: true })])
+  const verify = mailbox.lease({ owner: true }); await mailbox.check({ owner: true }); verify()
+  registry.setGrant('ivy', 'admin-mail', false)
+  assert.throws(verify, /mail_access_denied/)
+})
