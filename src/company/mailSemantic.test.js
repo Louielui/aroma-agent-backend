@@ -490,3 +490,76 @@ test('classification batches reconcile exhausted originals during durable quota 
   assert.equal((await f.memory.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
   assert.equal((await f.memory.status()).hindsight.backoffUntil, '2026-10-01T16:15:00.000Z')
 })
+
+async function persistSubscriptionWait (f, state, mailbox = f.mailbox) {
+  return require('./mailState').createMailState({ store: f.store, mailbox, kind: 'scheduler',
+    clock: () => '2026-10-01T16:00:00.000Z' }).update(() => state)
+}
+
+test('persisted subscription quota blocks both mail provider reads and extraction after restart without spending retries', async () => {
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.')
+  await persistSubscriptionWait(f, { reason: 'subscription_limit_reached', nextAt: '2026-10-01T17:00:00.000Z' })
+  const before = await f.store.all(); let providerReads = 0
+  f.client.get = async () => { providerReads++; return null }
+  const restarted = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine,
+    clock: () => '2026-10-01T16:01:00.000Z' })
+  assert.deepEqual(await restarted.indexNext(f.owner), {
+    state: 'backoff', reason: 'subscription_limit_reached', retryAt: '2026-10-01T17:00:00.000Z'
+  })
+  assert.equal(providerReads, 0); assert.equal(f.calls.length, 0)
+  assert.deepEqual(await f.store.all(), before)
+  const status = (await restarted.status()).hindsight
+  assert.equal(status.backoffUntil, '2026-10-01T17:00:00.000Z')
+  assert.equal(status.backoffReason, 'subscription_limit_reached')
+  assert.equal(status.saved, 0); assert.equal(status.pending, 1)
+})
+
+test('local source classification continues during subscription wait and leaves exhausted eligible originals intact', async () => {
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.')
+  const original = (await f.store.all()).find(row => row.source.kind === 'admin_mail_message')
+  await f.store.commit([{ expected: original.version, row: { ...original, version: original.version + 1,
+    index: { state: 'unconfirmed', attempts: 3, reason: 'memory_unavailable', contentHash: original.details.hash,
+      nextRetryAt: null, facts: null } } }], { op: 'fixture_failure', actor: 'owner' })
+  const exhausted = await f.store.get(original.id)
+  await f.add('abd', 'The sender mentioned CRA form T2.', 'Historical notice')
+  await f.add('abe', 'Vendor agreed Monday.')
+  await persistSubscriptionWait(f, { reason: 'subscription_limit_reached', nextAt: '2026-10-01T17:00:00.000Z' })
+  let providerReads = 0; f.client.get = async () => { providerReads++; return null }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'backoff')
+  assert.equal(providerReads, 0); assert.equal(f.calls.length, 0)
+  assert.deepEqual(await f.store.get(original.id), exhausted)
+  const status = (await f.memory.status()).hindsight
+  assert.equal(status.sourceOnly, 1); assert.equal(status.exhausted, 1)
+})
+
+test('subscription wait expires normally and unrelated or foreign scheduler deadlines do not block indexing', async () => {
+  for (const state of [
+    { reason: 'subscription_limit_reached', nextAt: '2026-10-01T15:59:59.000Z' },
+    { reason: 'subscription_limit_reached', nextAt: null },
+    { reason: 'subscription_limit_reached', nextAt: 'invalid' },
+    { reason: 'hourly_budget', nextAt: '2026-10-01T17:00:00.000Z' }
+  ]) {
+    const f = fixture(); await f.add('abc', 'Vendor agreed Friday.'); await persistSubscriptionWait(f, state)
+    assert.equal((await f.memory.indexNext(f.owner)).state, 'saved')
+    assert.equal(f.calls.length, 1); assert.equal((await f.memory.status()).hindsight.backoffUntil, null)
+  }
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.')
+  await persistSubscriptionWait(f, { reason: 'subscription_limit_reached', nextAt: '2026-10-01T17:00:00.000Z' },
+    { status: () => ({ mailbox: 'different@example.test' }) })
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'saved'); assert.equal(f.calls.length, 1)
+})
+
+test('revocation during the new scheduler read fails closed before any provider contact', async () => {
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.')
+  await persistSubscriptionWait(f, { reason: 'subscription_limit_reached', nextAt: '2026-10-01T15:59:59.000Z' })
+  const get = f.store.get; let providerReads = 0
+  f.client.get = async () => { providerReads++; return null }
+  f.store.get = async id => {
+    const row = await get(id)
+    if (row?.source.kind === 'admin_mail_scheduler') f.revoke()
+    return row
+  }
+  await assert.rejects(f.memory.indexNext(f.owner), /mail_access_denied/)
+  assert.equal(providerReads, 0); assert.equal(f.calls.length, 0)
+})

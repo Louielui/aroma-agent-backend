@@ -72,6 +72,28 @@ source recall remains available while the semantic index is missing or rebuildin
 No live index must be wiped for acceptance; a separate test bank or injected engine
 can prove reconstruction, then live indexing of an explicit acceptance source can
 verify transport. Large-corpus throughput remains a separate measured limit.
+
+## Source-bound mail subscription cooldown
+
+The 2026-10-01 read-only observation found a persisted administrative mail analysis
+deadline for `subscription_limit_reached` while semantic indexing continued
+spending source retry attempts. The original hashes and Owner decisions remained
+intact; successful semantic indexing had not increased. Hindsight failures were
+stored as `memory_unavailable`, so their underlying cause remained unconfirmed.
+
+Before any dedicated mail-bank provider read or extraction, semantic indexing now
+reads the same source-bound scheduler deadline. A future subscription-limit
+deadline returns a visible backoff without changing the original, retry counter,
+approval or existing failed outcome. Local policy classification and historical
+source import remain independent. The deadline survives restart through the
+canonical checkpoint. Expired, missing, invalid, unrelated and foreign-mailbox
+deadlines do not create an indefinite pause. A normal due attempt can resume;
+this correction neither resets exhausted sources nor bypasses subscription limits.
+
+Semantic status exposes the later active engine or subscription deadline and its
+reason. The existing mail-memory view displays that deadline. Regression tests
+prove zero provider reads/extractions during the wait, unchanged source records,
+continued local classification, normal expiry and revocation during the new read.
 # Live acceptance, 2026-10-01
 
 On deployed commit `9460a99e65117d1fd8a9bf9d080f5f4f5880470f`, both known Startup shortcuts were repaired under the normal Owner account and their Node targets and arguments were independently read back. Neither entry was disabled. The supervisors first measured the existing healthy listeners without adopting or terminating them. After exact launcher identity and creation-time checks, the two previously authorized recovery roots were replaced by supervisor-owned runtimes.

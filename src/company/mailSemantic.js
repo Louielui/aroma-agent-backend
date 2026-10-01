@@ -39,6 +39,7 @@ function tokens (query) {
 function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial }) {
   const rebuildState = createMailState({ store, mailbox, clock, kind: 'index_rebuild' })
   const runtimeState = createMailState({ store, mailbox, clock, kind: 'index_runtime' })
+  const schedulerState = createMailState({ store, mailbox, clock, kind: 'scheduler' })
   let indexing = false; let lastError = null; let abort = null; let job = null; let generation = 0
   let connectionState = engine?.forMailSource ? 'unverified' : 'not_connected'; let connectionCheckedAt = null
   const account = () => mailbox.status().mailbox
@@ -50,6 +51,11 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
   const client = () => engine?.forMailSource ? engine.forMailSource(account()) : null
   const sources = async () => (await (store.mailRows ? store.mailRows(account()) : store.all()))
     .filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
+  async function subscriptionWait () {
+    const state = await schedulerState.read()
+    return state.reason === 'subscription_limit_reached' && Date.parse(state.nextAt) > Date.parse(clock())
+      ? { state: 'backoff', reason: 'subscription_limit_reached', retryAt: state.nextAt } : null
+  }
   function retryReason (error) {
     return ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(error.message)
       ? error.message : 'memory_unavailable'
@@ -217,6 +223,12 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       const next = selected[0]
       const runtime = await runtimeState.read(); verify()
       if (started !== generation) return { state: 'yielded' }
+      // Classification and extraction share the same subscription. Preserve its
+      // durable analysis deadline before any provider read or retain can consume
+      // a source retry; local eligibility reconciliation above can still finish.
+      const waiting = await subscriptionWait()
+      const stopped = interruption(verify, started); if (stopped) return stopped
+      if (waiting) return waiting
       if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
       if (!next) return { state: engine?.forMailSource ? 'idle' : 'not_connected' }
       const { row } = next
@@ -334,6 +346,10 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     const all = (snapshot || await sources()).filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
     const rows = recallable(all, clock())
     const runtime = await runtimeState.read()
+    const waiting = await subscriptionWait()
+    const engineBackoff = runtime.quotaUntil && runtime.quotaUntil > clock() ? runtime.quotaUntil : null
+    const subscriptionBackoff = waiting?.retryAt || null
+    const subscriptionLater = subscriptionBackoff && (!engineBackoff || Date.parse(subscriptionBackoff) >= Date.parse(engineBackoff))
     const matching = state => rows.filter(r => r.index?.state === state && r.index.contentHash === r.details.hash).length
     const saved = matching('saved'); const rawOnly = matching('raw_only'); const sourceOnly = matching('source_only')
     const sourceOnlyReasons = {}
@@ -348,7 +364,8 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       exhausted: rows.filter(r => r.index?.state === 'unconfirmed' && (r.index.attempts || 0) >= 3).length,
       unavailableOriginals: all.filter(r => message(r) && active(r, clock()) && !intact(r)).length,
       rebuild: await rebuildStatus(all),
-      backoffUntil: runtime.quotaUntil && runtime.quotaUntil > clock() ? runtime.quotaUntil : null,
+      backoffUntil: subscriptionLater ? subscriptionBackoff : engineBackoff,
+      backoffReason: subscriptionLater ? waiting.reason : engineBackoff ? 'memory_rate_limited' : null,
       coverage: 'saved_sources_only', bank: 'source_bound_admin_mail' }
   }
   function cancel () { generation++; abort?.abort(); return job ? job.catch(() => {}) : Promise.resolve() }
