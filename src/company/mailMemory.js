@@ -33,6 +33,9 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     indexTimer.unref()
   }
   const account = () => mailbox.status().mailbox
+  const sourceRows = async (kinds = ['admin_mail_message', 'admin_mail_thread']) =>
+    (await (store.mailRows ? store.mailRows(account(), kinds) : store.all()))
+      .filter(r => kinds.includes(r.source?.kind) && r.details?.mailbox === account())
   const key = (kind, id) => stableId('admin-mail:' + account() + ':' + kind + ':' + id)
   function guard (actor) {
     if (actor?.owner !== true) throw Error('mail_access_denied')
@@ -109,14 +112,17 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     (row.details.needsReview && (row.approval || !['notification', 'promotion'].includes(category(row))))
   async function threads (actor) {
     const verify = await checked(actor)
-    const rows = (await store.all()).filter(r => r.source?.kind === 'admin_mail_thread' && r.details.mailbox === account())
+    const rows = await sourceRows(['admin_mail_thread'])
     verify(); return rows
   }
-  async function list (actor, query = '', filter = 'all') {
+  function validateQuery (query, filter) {
     if (typeof query !== 'string' || query.length > 400) throw Error('invalid_query')
     if (!['all', 'attention', 'decision', 'follow_up', 'notification', 'promotion', 'unknown'].includes(filter)) throw Error('invalid_query')
+  }
+  async function list (actor, query = '', filter = 'all', snapshot = null) {
+    validateQuery(query, filter)
     const verify = await checked(actor)
-    const all = (await store.all()).filter(r => isMail(r) && r.details.mailbox === account())
+    const all = (snapshot || await sourceRows()).filter(r => isMail(r) && r.details.mailbox === account())
     const rows = all.filter(r => r.source.kind === 'admin_mail_thread')
     const terms = query.toLowerCase().trim().split(/\s+/).filter(Boolean)
     const messages = new Map(all.filter(r => r.source.kind === 'admin_mail_message').map(r => [r.source.id, r]))
@@ -293,17 +299,24 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     } catch (e) { error = 'mail_memory_sync_unavailable'; throw e }
     finally { busy = false }
   }
-  async function status () {
+  async function status (snapshot = null) {
     const row = await store.get(key('sync', 'checkpoint'))
-    const rows = (await store.all()).filter(r => r.source?.kind === 'admin_mail_thread' && r.details.mailbox === account())
+    const rows = (snapshot || await sourceRows(['admin_mail_thread'])).filter(r => r.source?.kind === 'admin_mail_thread' && r.details.mailbox === account())
     return { state: 'source_bound', busy, error, enabled: allowed(), initialWindow: '30_days', intervalSeconds: 300,
       analysis: { connected: !!analyzer, busy: analyzing, pending: rows.filter(r => r.details.analysis?.state !== 'ready').length,
         failed: rows.filter(r => r.details.analysis?.state === 'failed').length, ready: rows.filter(r => r.details.analysis?.state === 'ready').length },
       checkedAt: row?.details.checkedAt || null, completedAt: row?.details.completedAt || null,
       hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null,
-      hindsight: { ...await semantic.status(), indexer: { concurrency: 1, activeDelayMs: 2000, idleDelayMs: 30000, foregroundPollMs: 5000 } } }
+      hindsight: { ...await semantic.status(snapshot), indexer: { concurrency: 1, activeDelayMs: 2000, idleDelayMs: 30000, foregroundPollMs: 5000 } } }
   }
-  return { capture, list, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
+  async function view (actor, query = '', filter = 'all') {
+    validateQuery(query, filter)
+    const verify = await checked(actor)
+    const snapshot = await sourceRows(); verify()
+    const result = { ...await list(actor, query, filter, snapshot), sync: await status(snapshot) }
+    verify(); return result
+  }
+  return { capture, list, view, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
     recall: semantic.recall, indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
     enabled: allowed,
     backgroundAnalysisDemand: requested => { analysisWaiting = requested === true; if (!analysisWaiting) preferAnalysis = false },

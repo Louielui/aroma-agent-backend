@@ -316,3 +316,31 @@ independently verified as archived non-business acceptance fixtures with no
 candidates; they are preserved historical audit results, not eligible retry work.
 New-version load, normal live mirror correction, bounded classification progress,
 provider indexing and full historical completion remain gated separately.
+
+## Large-mailbox read correction
+
+Actual Owner mail search timed out at 35,011 ms as historical originals grew.
+The endpoint read the whole canonical store three times for listing, thread
+analysis counts and original-index counts. The source now uses fixed-cutoff
+keyset pages selected by mailbox and allowed source kinds, bounded to eight MiB
+and at most 2,000 records per packet. Thread-only reads omit original bodies.
+One endpoint response shares one source snapshot for its list and statistics.
+Source leases are checked before and after the response work; source/hash/thread
+integrity and per-write current-version guards remain intact. Transport errors
+never trigger an unbounded fallback. Older injected test stores remain supported.
+
+Read-only candidate transport acceptance selected 8,082 actual source records in
+4,077 ms using nine bounded packets; 3,246 thread records took 602 ms. The fixed
+cutoff, mailbox isolation, Unicode and absence of writes or model calls were
+verified. Focused paging and view regressions passed seven initial cases; the
+broader company/memory suite passed 275 cases. Full suite, actual new backend
+load, large-mailbox HTTP search and natural original recall are separate delivery
+gates. This performance correction does not declare historical import or the
+eligible derived backlog complete.
+
+The final candidate passed the full 6,332-test suite: 6,316 passed, zero failed
+and sixteen explicitly skipped. The additional view-input test proves invalid
+search requests do not start private source reads. No provider fallback, source
+permission expansion, canonical write, Owner decision change or forced backup is
+part of this correction. Actual loaded-version HTTP and recall acceptance remain
+pending until the local backend restart is confirmed.

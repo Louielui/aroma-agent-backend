@@ -48,7 +48,8 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
   }
   async function checked (actor) { guard(actor); if (mailbox.check) await mailbox.check(actor); return guard(actor) }
   const client = () => engine?.forMailSource ? engine.forMailSource(account()) : null
-  const sources = async () => (await store.all()).filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
+  const sources = async () => (await (store.mailRows ? store.mailRows(account()) : store.all()))
+    .filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
   function retryReason (error) {
     return ['memory_timeout', 'memory_rate_limited', 'memory_unauthorized', 'memory_invalid_request', 'memory_invalid_text', 'memory_invalid_result', 'memory_unconfirmed'].includes(error.message)
       ? error.message : 'memory_unavailable'
@@ -329,8 +330,9 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       unavailableOriginals: rows.filter(r => message(r) && active(r, clock()) && !intact(r)).length, checkedAt: clock() }
     return result
   }
-  async function status () {
-    const all = await sources(); const rows = recallable(all, clock())
+  async function status (snapshot = null) {
+    const all = (snapshot || await sources()).filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
+    const rows = recallable(all, clock())
     const runtime = await runtimeState.read()
     const matching = state => rows.filter(r => r.index?.state === state && r.index.contentHash === r.details.hash).length
     const saved = matching('saved'); const rawOnly = matching('raw_only'); const sourceOnly = matching('source_only')

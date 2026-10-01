@@ -68,7 +68,9 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
     if (Object.keys(req.query).some(k => !['q', 'id', 'filter'].includes(k)) || ((req.query.q || req.query.filter) && req.query.id)) return res.status(400).json({ error: 'invalid_query' })
     try {
       const verify = mailbox.lease({ owner: true }); verify()
-      const result = req.query.id ? await mailMemory.detail({ owner: true }, req.query.id) : { ...await mailMemory.list({ owner: true }, req.query.q || '', req.query.filter || 'all'), sync: await mailMemory.status() }
+      const result = req.query.id ? await mailMemory.detail({ owner: true }, req.query.id)
+        : mailMemory.view ? await mailMemory.view({ owner: true }, req.query.q || '', req.query.filter || 'all')
+          : { ...await mailMemory.list({ owner: true }, req.query.q || '', req.query.filter || 'all'), sync: await mailMemory.status() }
       verify(); res.json(result)
     }
     catch (_) { res.status(403).json({ error: 'mail_memory_unavailable' }) }

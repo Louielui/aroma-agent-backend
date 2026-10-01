@@ -33,6 +33,9 @@ async def main(req):
         if op == "queue_index":
             from indexRebuild import queue_index
             return await queue_index(db, req)
+        if op == "mail_page":
+            from mailRows import mail_page
+            return await mail_page(db, req)
         if op == "get":
             value = await db.fetchval("SELECT body FROM memory.records WHERE id=$1", req["id"])
             return json.loads(value) if value else None
