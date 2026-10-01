@@ -4,7 +4,7 @@ const path = require('node:path')
 const { t } = require('../i18n/t')
 function buildHtml() {
   const labels = {
-    backupStatus:t('memoryOps.backupStatus'),backupVerified:t('memoryOps.backupVerified'),backupRunning:t('memoryOps.backupRunning'),backupFailed:t('memoryOps.backupFailed'),backupHelp:t('memoryOps.backupHelp'),backupAttempt:t('memoryOps.backupAttempt'),backupProof:t('memoryOps.backupProof'),backupScheduled:t('memoryOps.backupScheduled'),backupManual:t('memoryOps.backupManual'),rebuild:t('memoryOps.rebuild'),rebuildHelp:t('memoryOps.rebuildHelp'),
+    backupStatus:t('memoryOps.backupStatus'),backupVerified:t('memoryOps.backupVerified'),backupRunning:t('memoryOps.backupRunning'),backupFailed:t('memoryOps.backupFailed'),backupHelp:t('memoryOps.backupHelp'),backupAttempt:t('memoryOps.backupAttempt'),backupProof:t('memoryOps.backupProof'),backupScheduled:t('memoryOps.backupScheduled'),backupManual:t('memoryOps.backupManual'),backupSucceededAt:t('memoryOps.backupSucceededAt'),backupNextAt:t('memoryOps.backupNextAt'),retainedOriginals:t('memoryOps.retainedOriginals'),rebuild:t('memoryOps.rebuild'),rebuildHelp:t('memoryOps.rebuildHelp'),
     operations:t('memoryOps.title'),operationsHelp:t('memoryOps.help'),bridge:t('memoryOps.bridge'),database:t('memoryOps.database'),hindsight:t('memoryOps.hindsight'),
     degraded:t('memoryOps.degraded'),foreign:t('memoryOps.foreign'),notMeasured:t('memoryOps.notMeasured'),receipts:t('memoryOps.receipts'),coverageUnavailable:t('memoryOps.coverageUnavailable'),
     mailCoverage:t('memoryOps.mailCoverage'),historyComplete:t('memoryOps.historyComplete'),historyRunning:t('memoryOps.historyRunning'),historyNotStarted:t('memoryOps.historyNotStarted'),

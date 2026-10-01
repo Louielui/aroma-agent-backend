@@ -42,14 +42,14 @@ async function loadOperations(){
   if(d.general.counts)area.append(node('p',L.review+' '+d.general.counts.candidate))
   area.append(node('p',L.rebuildHelp),button(L.rebuild,()=>act({op:'rebuild_index'})))
   if(d.general.indexRebuild)area.append(node('p',L.rebuild+' · '+L.pending+' '+d.general.indexRebuild.pending+' · '+L.unconfirmed+' '+d.general.indexRebuild.unconfirmed))
-  area.append(node('p',L.mailCoverage+' · '+(d.history.state==='completed'?L.historyComplete:d.history.state==='running'?L.historyRunning:d.history.state==='not_started'?L.historyNotStarted:L.unavailable)+(d.history.retained!==null&&d.history.retained!==undefined?' · '+L.saved+' '+d.history.retained:'')))
+  area.append(node('p',L.mailCoverage+' · '+(d.history.state==='completed'?L.historyComplete:d.history.state==='running'?L.historyRunning:d.history.state==='not_started'?L.historyNotStarted:L.unavailable)+(d.history.retained!==null&&d.history.retained!==undefined?' · '+L.retainedOriginals+' '+d.history.retained:'')))
   const backupState={verified:L.backupVerified,running:L.backupRunning,failed:L.backupFailed,not_started:L.notMeasured,not_measured:L.notMeasured,unavailable:L.unavailable}
   area.append(node('h3',L.backupStatus),node('p',backupState[d.backup.state]||L.unavailable),node('p',L.backupHelp))
   const backupTrigger={scheduled:L.backupScheduled,manual:L.backupManual}
   area.append(node('p',L.backupAttempt+' · '+(backupTrigger[d.backup.trigger]||L.notMeasured)))
   if(d.backup.lastSucceededAt)area.append(node('p',L.backupProof+' · '+(backupTrigger[d.backup.lastSucceededTrigger]||L.notMeasured)))
-  if(d.backup.lastSucceededAt)area.append(node('p',L.completed+' · '+new Date(d.backup.lastSucceededAt).toLocaleString()))
-  if(d.backup.nextAt)area.append(node('p',L.nextRetry+' · '+new Date(d.backup.nextAt).toLocaleString()))
+  if(d.backup.lastSucceededAt)area.append(node('p',L.backupSucceededAt+' · '+new Date(d.backup.lastSucceededAt).toLocaleString()))
+  if(d.backup.nextAt)area.append(node('p',L.backupNextAt+' · '+new Date(d.backup.nextAt).toLocaleString()))
   const detail=document.createElement('details');detail.append(node('summary',L.source),node('pre',JSON.stringify({checkedAt:d.checkedAt,mail:d.mail,history:d.history,backup:d.backup,rebuild:d.general.indexRebuild},null,2)));area.append(detail)
  }catch(_){area.append(node('p',L.coverageUnavailable))}
 }

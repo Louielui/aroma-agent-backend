@@ -154,3 +154,54 @@ verified backend boot, its restore proof and its next daily due time. A successf
 manual run alone does not prove scheduling. Attempt trigger and successful-proof
 trigger are distinct so a later failed attempt cannot relabel an earlier proof;
 legacy state without those fields remains unknown.
+
+## Running backend acceptance on 744e93e
+
+After the Owner restarted the local Windows service, `/health` reported the
+delivered commit and boot time 2026-10-01T11:54:57.515Z. All three independently
+probed memory services were ready. Owner HTTP acceptance exercised all six
+layers, exact approvals, corrected current decisions, superseded exclusion,
+procedural source-version preservation, working closure and traceable audit.
+Its eight clearly labeled synthetic records were archived in cleanup.
+
+The real scheduled backup completed at 11:55:03.287Z after that boot, with both
+attempt and successful-proof triggers recorded as scheduled. Its next due time
+was exactly one day later. Independent restore verified 1,622 records, 6,503
+audit events and 182 private files, sealed hashes and protected Windows ACLs.
+No manual backup was substituted for the scheduler evidence.
+
+A bounded general rebuild used one synthetic record in a previously empty
+allowed memory scope. The normal background worker moved it from pending to
+saved; the retained Hindsight document matched the canonical text. Source and
+approval were unchanged, as were 536 pre-existing originals and source rights.
+The fixture was archived and its five-event audit chain was verified. This
+proves a scoped Memory Gateway operation, not a connected external QA Agent.
+
+Administrative mail's named notification test passed natural source-bound chat
+with the exact original ID, canonical ID, original date, content hash and Gmail
+link. The mail rebuild preserved all six existing derived documents and the
+original and Owner decision while advancing its durable cursor. The full-history
+snapshot and derived backlog remain in progress; their current coverage must
+come from the mail page. A read-only identity audit found no duplicate original
+keys: 675 originals had 675 distinct mailbox/message identities. Thread review
+and immutable original records deliberately have different stable IDs.
+
+Live acceptance exposed one permanently ineligible original repeatedly failing
+Hindsight text policy. The correction reuses that authoritative policy on the
+exact indexed body and metadata. It preserves canonical originals and lexical
+recall, reconciles old exhausted/future-retry records to explicit source-only
+state and reports the reason. Eligible provider failures remain retryable and
+quota cooldown remains in force. This correction requires its own new-backend
+load and live reconciliation check; injected tests alone are not final evidence.
+
+The interface correction distinguishes historical originals retained from
+semantic documents indexed, and uses backup-specific completion/due labels.
+The architecture checklist now describes the dedicated mail index as connected
+within its measured scope, with full-history and index coverage shown separately.
+Full history/backlog completion, corrected-version load and corrected UI/reason
+readback remain outstanding; memory completion is not yet claimed.
+
+The corrective version passed all 6,237 tests: 6,221 passed, zero failed and
+16 were explicitly skipped. The seven additional mail eligibility cases include
+old exhausted attempts, future retry deadlines, metadata policy, local
+classification during quota cooldown and bounded rebuild eligibility.

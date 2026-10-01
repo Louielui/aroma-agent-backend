@@ -100,6 +100,7 @@ async function memoryView(query='',filter=memoryFilter) {
    node('h3',L.mailIndex,panel)
    node('p',h.connectionState==='unavailable'?L.automation.unavailable:h.configured?L.mailIndexConfigured:L.notConnected,panel)
    node('p',L.mailIndexTotal+' '+h.total+' · '+L.mailMemorySaved+' '+h.saved+' · '+L.mailIndexRawOnly+' '+h.rawOnly+' · '+L.mailIndexSourceOnly+' '+h.sourceOnly+' · '+L.mailAnalysisPending+' '+h.pending+' · '+L.mailAnalysisFailed+' '+h.failed+' · '+L.mailIndexPartial+' '+(h.partialIndex??'—'),panel)
+   for(const [reason,count]of Object.entries(h.sourceOnlyReasons||{})) if(count>0) node('p',(L.mailIndexSourceOnlyReasons[reason]||L.mailIndexSourceOnly)+' '+count,panel,'muted')
    if(h.rebuild) node('p',(L.mailIndexRebuildStates[h.rebuild.state]||L.automation.unavailable)+' · '+h.rebuild.queued+'／'+h.rebuild.total+' · '+L.mailAnalysisPending+' '+h.rebuild.remaining,panel)
    if(h.backoffUntil&&Date.parse(h.backoffUntil)>Date.now()) node('p',L.automation.quota+' · '+L.automation.next+' '+new Date(h.backoffUntil).toLocaleString(),panel,'note')
    if(h.failed>0) button(L.mailIndexRetry,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'retryIndex'});await memoryView(query)})

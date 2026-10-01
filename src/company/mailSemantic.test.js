@@ -288,3 +288,89 @@ test('quota cooldown survives a source revision racing the failed retain', async
   const original = (await f.store.all()).find(row => row.source.kind === 'admin_mail_message')
   assert.equal(original.text, 'Revised delivery.'); assert.equal(original.index.attempts, 0)
 })
+
+test('a policy-ineligible historical original becomes explicit source-only while preserving canonical evidence and Owner decision', async () => {
+  const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.', 'Historical notice')
+  const thread = (await f.memory.list(f.owner)).items[0]
+  await f.memory.update(f.owner, thread.id, thread.version, { action: 'approve', text: 'Owner acknowledged this notice.', assignee: null, deadline: null, taskState: 'done' })
+  const decision = await f.store.get(thread.id)
+  const before = (await f.store.all()).find(row => row.source.kind === 'admin_mail_message')
+  let reads = 0; f.client.get = async () => { reads++; throw Error('unexpected_provider_read') }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+  const after = await f.store.get(before.id)
+  assert.equal(after.index.reason, 'text_policy_excluded'); assert.equal(after.index.attempts, 0)
+  assert.equal(after.index.contentHash, before.details.hash); assert.equal(after.index.nextRetryAt, null)
+  assert.equal(f.calls.length, 0); assert.equal(reads, 0)
+  assert.equal(after.text, before.text); assert.deepEqual(after.source, before.source); assert.deepEqual(after.details, before.details)
+  assert.deepEqual(await f.store.get(thread.id), decision)
+  const recalled = await f.memory.recall(f.owner, 'historical notice')
+  assert.equal(recalled.length, 1); assert.equal(recalled[0].text, before.text)
+  assert.equal(recalled[0].contentHash, before.details.hash); assert.equal(recalled[0].date, before.source.at)
+  assert.equal(recalled[0].canonicalDecision.text, decision.text)
+})
+
+test('an already exhausted policy-rejected original reconciles automatically instead of waiting for futile retry', async () => {
+  const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.', 'Historical notice')
+  const row = (await f.store.all()).find(value => value.source.kind === 'admin_mail_message')
+  await f.store.commit([{ expected: row.version, row: { ...row, version: row.version + 1,
+    index: { state: 'unconfirmed', reason: 'memory_invalid_text', facts: null, attempts: 3,
+      contentHash: row.details.hash, nextRetryAt: '2099-01-01T00:00:00.000Z' } } }], { op: 'test_previous_failure', actor: 'owner' })
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'idle'); assert.equal(f.calls.length, 0)
+  const status = (await f.memory.status()).hindsight
+  assert.equal(status.sourceOnly, 1); assert.equal(status.failed, 0); assert.equal(status.exhausted, 0)
+  assert.equal(status.sourceOnlyReasons.text_policy_excluded, 1)
+})
+
+test('preflight applies the authoritative text policy to indexed source metadata as well as original body', async () => {
+  const f = fixture(); await f.add('abc', 'A routine retained notice.', 'CRA notification')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+  const row = (await f.store.all()).find(value => value.source.kind === 'admin_mail_message')
+  assert.equal(row.index.reason, 'text_policy_excluded'); assert.equal(f.calls.length, 0)
+})
+
+test('source-only eligibility preserves short and oversized originals while the exact text limit remains indexable', async () => {
+  for (const [length, expected, reason] of [[1, 'source_only', 'text_too_short'], [32000, 'saved', null], [32001, 'source_only', 'text_too_long']]) {
+    const f = fixture(); await f.add('abc', 'z'.repeat(length))
+    assert.equal((await f.memory.indexNext(f.owner)).state, expected)
+    const row = (await f.store.all()).find(value => value.source.kind === 'admin_mail_message')
+    assert.equal(row.text.length, length); assert.equal(row.index.reason, reason)
+    assert.equal(f.calls.length, Number(expected === 'saved'))
+    if (expected === 'saved') assert.equal(row.index.partial, true)
+  }
+})
+
+test('eligible provider failures still retry and can become verified instead of being classified source-only', async () => {
+  for (const reason of ['memory_timeout', 'memory_invalid_text']) {
+    const f = fixture(); await f.add('abc', 'Vendor agreed Friday.'); let attempts = 0
+    const retain = f.client.retainAutomatic
+    f.client.retainAutomatic = async (...args) => { if (++attempts === 1) throw Error(reason); return retain(...args) }
+    assert.equal((await f.memory.indexNext(f.owner)).state, 'unconfirmed')
+    const afterBackoff = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:06:00.000Z' })
+    assert.equal((await afterBackoff.indexNext(f.owner)).state, 'saved'); assert.equal(attempts, 2)
+    assert.equal((await afterBackoff.status()).hindsight.sourceOnly, 0)
+  }
+})
+
+test('terminal local eligibility reconciles during quota cooldown without bypassing provider backoff', async () => {
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.'); let calls = 0
+  f.client.retainAutomatic = async () => { calls++; throw Error('memory_rate_limited') }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'unconfirmed')
+  await f.add('abd', 'The sender mentioned CRA form T2.', 'Historical notice')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only'); assert.equal(calls, 1)
+  assert.equal((await f.memory.status()).hindsight.backoffUntil, '2026-10-01T16:15:00.000Z')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+})
+
+test('rebuild scope honors the same terminal eligibility and leaves excluded original recall intact', async () => {
+  const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.', 'Historical notice'); await f.add('abd', 'Vendor agreed Friday.')
+  assert.equal((await f.memory.rebuildIndex(f.owner)).count, 1)
+  const manifest = (await f.memory.status()).hindsight.rebuild
+  assert.equal(manifest.sourceOnlyAtStart, 1); assert.equal(manifest.total, 1)
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'queued')
+  const excluded = (await f.store.all()).find(value => value.source.id === 'abc' && value.source.kind === 'admin_mail_message')
+  assert.notEqual(excluded.index.rebuildId, manifest.id)
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only'); assert.equal(f.calls.length, 0)
+  assert.equal((await f.memory.recall(f.owner, 'historical notice')).length, 1)
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'saved')
+})

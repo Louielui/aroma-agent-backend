@@ -1,7 +1,7 @@
 'use strict'
 const { createHash, randomUUID } = require('node:crypto')
 const { stableId } = require('../memory/governed')
-const { ID } = require('../memory/hindsight')
+const { ID, validText } = require('../memory/hindsight')
 const { exclusionReason } = require('../memory/capturePolicy')
 const { sourceOnlyReason } = require('../memory/indexPolicy')
 const { createMailState } = require('./mailState')
@@ -25,6 +25,9 @@ function recallable (rows, now) {
 const sourceText = row => 'SOURCE-BOUND HISTORICAL EMAIL\n' + JSON.stringify({ documentId: row.id,
   messageId: row.source.id, mailbox: row.details.mailbox, date: row.source.at, hash: row.details.hash,
   subject: row.subject, from: row.details.from, partial: row.details.bodyTruncated || row.text.length > 24000 }) + '\nORIGINAL BODY:\n' + row.text.slice(0, 24000)
+// Canonical evidence remains available locally even when the authoritative
+// Hindsight text policy forbids sending its body or metadata for extraction.
+const eligibilityReason = row => sourceOnlyReason(row.text) || (validText(sourceText(row)) ? null : 'text_policy_excluded')
 function tokens (query) {
   const parts = query.toLowerCase().match(/[a-z0-9_@.-]{2,}|[\u3400-\u9fff]+/g) || []
   const stop = new Set(['the', 'and', 'what', 'was', 'were', 'last', 'previous', 'email', 'mail', 'said', 'that', 'this'])
@@ -51,7 +54,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       ? error.message : 'memory_unavailable'
   }
   const rebuilding = state => ['queued', 'running', 'failed'].includes(state)
-  const snapshotRows = (rows, state) => recallable(rows, clock()).filter(row => row.createdAt <= state.cutoff && !sourceOnlyReason(row.text))
+  const snapshotRows = (rows, state) => recallable(rows, clock()).filter(row => row.createdAt <= state.cutoff && !eligibilityReason(row))
   async function rebuildStatus (rows) {
     const state = await rebuildState.read()
     if (!state.id) return { state: 'not_started', id: null, total: null, queued: null, remaining: null }
@@ -71,13 +74,13 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       }
       const at = clock(); const rows = await sources(); verify()
       const visible = recallable(rows, at)
-      const total = visible.filter(row => row.createdAt <= at && !sourceOnlyReason(row.text)).length
+      const total = visible.filter(row => row.createdAt <= at && !eligibilityReason(row)).length
       const id = randomUUID()
       state = await rebuildState.update(() => {
         verify()
         return { id, state: 'queued', scope: 'current_indexable_saved_mail_at_start', cutoff: at, startedAt: at,
           total, queued: 0, processed: 0, skipped: 0, scopeChanged: 0, lastId: null, completedAt: null,
-          sourceOnlyAtStart: visible.filter(row => sourceOnlyReason(row.text)).length,
+          sourceOnlyAtStart: visible.filter(row => eligibilityReason(row)).length,
           checkedAt: at, reason: null, retryAt: null }
       })
       verify(); return { state: 'queued', id: state.id, count: state.total, queued: 0 }
@@ -109,7 +112,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
           assertActive()
           let queued = false
           if (current && active(current, clock()) && intact(current) && visibleThread(owningThread, clock()) &&
-            owningThread.details.mailbox === account() && !sourceOnlyReason(current.text)) {
+            owningThread.details.mailbox === account() && !eligibilityReason(current)) {
             if (current.index?.rebuildId !== state.id) {
               const expected = current.version
               current.version++; current.updatedAt = clock()
@@ -155,47 +158,58 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     try {
       const rebuilt = await advanceRebuild(actor, verify, started)
       if (rebuilt) return rebuilt
-      const runtime = await runtimeState.read(); verify()
-      if (started !== generation) return { state: 'yielded' }
-      if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
-      const configured = client(); if (!configured) return { state: 'not_connected' }
-      const adapter = configured.withSignal ? configured.withSignal(abort.signal) : configured
       const now = clock()
       const rows = recallable(await sources(), now)
-      const row = rows.filter(r => !['saved', 'raw_only', 'source_only'].includes(r.index?.state) || r.index?.contentHash !== r.details.hash)
-        .filter(r => (r.index?.attempts || 0) < 3)
-        .filter(r => !r.index?.nextRetryAt || r.index.nextRetryAt <= now).sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0]
-      verify(); if (!row) return { state: 'idle' }
+      const selected = rows.map(row => ({ row, reason: eligibilityReason(row) })).filter(({ row, reason }) =>
+        !['saved', 'raw_only', 'source_only'].includes(row.index?.state) || row.index?.contentHash !== row.details.hash ||
+        (reason && (row.index.state !== 'source_only' || row.index.reason !== reason)))
+        // Permanent local eligibility is reconciled even after an older retry
+        // policy exhausted its attempts or persisted a future retry deadline.
+        .filter(({ row, reason }) => reason || (row.index?.attempts || 0) < 3)
+        .filter(({ row, reason }) => reason || !row.index?.nextRetryAt || row.index.nextRetryAt <= now)
+        .sort((a, b) => Number(!!b.reason) - Number(!!a.reason) || a.row.createdAt.localeCompare(b.row.createdAt))[0]
+      verify()
+      if (started !== generation) return { state: 'yielded' }
+      if (!selected?.reason) {
+        const runtime = await runtimeState.read(); verify()
+        if (started !== generation) return { state: 'yielded' }
+        if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
+      }
+      if (!selected) return { state: engine?.forMailSource ? 'idle' : 'not_connected' }
+      const { row, reason } = selected
       const expected = row.version; const contentHash = row.details.hash
       const documentId = stableId('admin-mail-index:' + account() + ':' + row.id + ':' + contentHash)
       const text = sourceText(row); let index
-      const reason = sourceOnlyReason(row.text)
       if (reason) index = { state: 'source_only', reason, facts: null, attempts: row.index?.attempts || 0, checkedAt: now,
         contentHash, documentId: null, nextRetryAt: null }
-      else try {
-        verify(); const old = adapter.get ? await adapter.get(documentId) : null; verify()
-        const result = old?.text === text ? old : await adapter.retainAutomatic(documentId, text,
-          { ...row.source, canonicalId: row.id, mailbox: account(), contentHash, attribution: 'external_claim' })
-        verify()
-        if (result?.id !== documentId || result.text !== text || !Number.isInteger(result.facts) || result.facts < 0) throw Error('memory_unconfirmed')
-        index = { state: result.facts ? 'saved' : 'raw_only', reason: result.facts ? null : 'no_extracted_facts', facts: result.facts,
-          attempts: (row.index?.attempts || 0) + 1, checkedAt: clock(), contentHash, documentId, nextRetryAt: null,
-          partial: row.details.bodyTruncated || row.text.length > 24000 }
-        lastError = null
-        connectionState = 'verified'; connectionCheckedAt = clock()
-      } catch (e) {
-        if (abort.signal.aborted) return { state: 'yielded' }
-        verify(); const attempts = (row.index?.attempts || 0) + 1; const reason = retryReason(e)
-        const delay = reason === 'memory_rate_limited' ? 900000 : reason === 'memory_timeout' ? 300000 : Math.min(1800000, 30000 * 2 ** Math.min(attempts - 1, 6))
-        index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,
-          nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }; lastError = reason
-        connectionState = 'unavailable'; connectionCheckedAt = clock()
-        // Provider quota is a mailbox-wide durable circuit. A source revision or
-        // manual retry cannot make the next original bypass that same cooldown.
-        if (reason === 'memory_rate_limited') await runtimeState.update(state => {
-          verify(); if (started !== generation) throw Error('mail_index_yielded')
-          return { ...state, quotaUntil: new Date(Date.parse(clock()) + 900000).toISOString(), reason, checkedAt: clock() }
-        })
+      else {
+        const configured = client(); if (!configured) return { state: 'not_connected' }
+        const adapter = configured.withSignal ? configured.withSignal(abort.signal) : configured
+        try {
+          verify(); const old = adapter.get ? await adapter.get(documentId) : null; verify()
+          const result = old?.text === text ? old : await adapter.retainAutomatic(documentId, text,
+            { ...row.source, canonicalId: row.id, mailbox: account(), contentHash, attribution: 'external_claim' })
+          verify()
+          if (result?.id !== documentId || result.text !== text || !Number.isInteger(result.facts) || result.facts < 0) throw Error('memory_unconfirmed')
+          index = { state: result.facts ? 'saved' : 'raw_only', reason: result.facts ? null : 'no_extracted_facts', facts: result.facts,
+            attempts: (row.index?.attempts || 0) + 1, checkedAt: clock(), contentHash, documentId, nextRetryAt: null,
+            partial: row.details.bodyTruncated || row.text.length > 24000 }
+          lastError = null
+          connectionState = 'verified'; connectionCheckedAt = clock()
+        } catch (e) {
+          if (abort.signal.aborted) return { state: 'yielded' }
+          verify(); const attempts = (row.index?.attempts || 0) + 1; const reason = retryReason(e)
+          const delay = reason === 'memory_rate_limited' ? 900000 : reason === 'memory_timeout' ? 300000 : Math.min(1800000, 30000 * 2 ** Math.min(attempts - 1, 6))
+          index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,
+            nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }; lastError = reason
+          connectionState = 'unavailable'; connectionCheckedAt = clock()
+          // Provider quota is a mailbox-wide durable circuit. A source revision or
+          // manual retry cannot make the next original bypass that same cooldown.
+          if (reason === 'memory_rate_limited') await runtimeState.update(state => {
+            verify(); if (started !== generation) throw Error('mail_index_yielded')
+            return { ...state, quotaUntil: new Date(Date.parse(clock()) + 900000).toISOString(), reason, checkedAt: clock() }
+          })
+        }
       }
       if (started !== generation || abort.signal.aborted) return { state: 'yielded' }
       if (mailbox.check) await mailbox.check(actor)
@@ -288,8 +302,12 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     const runtime = await runtimeState.read()
     const matching = state => rows.filter(r => r.index?.state === state && r.index.contentHash === r.details.hash).length
     const saved = matching('saved'); const rawOnly = matching('raw_only'); const sourceOnly = matching('source_only')
+    const sourceOnlyReasons = {}
+    for (const row of rows.filter(row => row.index?.state === 'source_only' && row.index.contentHash === row.details.hash)) {
+      sourceOnlyReasons[row.index.reason] = (sourceOnlyReasons[row.index.reason] || 0) + 1
+    }
     return { configured: !!engine?.forMailSource, connected: connectionState === 'unverified' ? null : connectionState === 'verified',
-      connectionState, connectionCheckedAt, busy: indexing, total: rows.length, saved, rawOnly, sourceOnly,
+      connectionState, connectionCheckedAt, busy: indexing, total: rows.length, saved, rawOnly, sourceOnly, sourceOnlyReasons,
       pending: rows.length - saved - rawOnly - sourceOnly, failed: matching('unconfirmed'), error: lastError,
       partialIndex: rows.filter(r => ['saved', 'raw_only'].includes(r.index?.state) && r.index.contentHash === r.details.hash && r.index.partial).length,
       retrying: rows.filter(r => r.index?.state === 'unconfirmed' && r.index.nextRetryAt && (r.index.attempts || 0) < 3).length,
