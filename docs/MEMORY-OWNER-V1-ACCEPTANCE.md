@@ -97,7 +97,7 @@ and `MEMORY-RUNTIME-RELIABILITY.md` for local startup and supervision.
 
 ## Delivery verification
 
-The delivery suite completed 6,225 tests: 6,209 passed, 16 environment-dependent
+The recovery follow-up suite completed 6,230 tests: 6,214 passed, 16 environment-dependent
 tests skipped, zero failures. It ran with four concurrent test processes. A prior
 default-concurrency run had one unrelated WorkerFlow fixture failure; its log is
 retained. That failure did not reproduce in its focused run or 24 concurrent
@@ -110,4 +110,47 @@ without a duplicate or a second audit change. Recovery fixture tests preserved a
 historical import checkpoint and department permission scope, excluded credentials,
 rejected modified audit/assets and overwrite attempts, and measured protected
 Windows backup/restore ACLs. These are isolated acceptance proofs; live provider
-history, a new backend boot and the actual canonical backup remain separately gated.
+history and a new backend boot remain separately gated.
+
+## Independent live data acceptance, 2026-10-01
+
+The deployed authenticated bridge and canonical store passed six-layer acceptance
+without model calls. Exact-revision approval, candidate exclusion, current
+decisions and preferences, conflicting active revisions, supersession, archived
+working context, procedural source versions and stale multi-row rollback were
+checked against real PostgreSQL. Thirty-four hash-linked audit snapshots matched.
+The eleven clearly marked non-business fixtures were archived; no current recall
+remains from those fixtures and principals were unchanged. This independently
+verifies the core store; it does not certify the old running backend's new HTTP
+routes or interface. Core verifier commit was 925a857, while the backend still
+reported bootCommit 640aefd.
+
+A fresh independent recovery bundle matched four canonical tables: 1,610 records,
+6,009 audit events, zero principals and zero access-audit rows. All 181 private
+recovery files matched the sealed manifest in a new isolated directory. Snapshot
+SHA-256 was 7ac86a56365eae1b87b83cda852f8a8be2adb66e9f919627521ddc1533d0181a.
+Both the backup and restored files had protected Windows ACLs without inherited
+rules. This is actual backup/restore evidence, not daily-scheduler acceptance or
+a real member-scope restore claim; the captured principals table was empty.
+Credentials remain excluded and the derived Hindsight index must be rebuilt.
+
+That acceptance also exposed a recovery policy gap: a self-consistent backup
+containing two active preferences for the same scope and subject could be restored
+by the old verifier. The corrected verifier rejects duplicate active decisions
+and preferences before database access, preserving distinct scopes, subjects,
+types and inactive history. Active decisions and preferences also require
+non-empty string scopes and subjects; malformed keys are rejected consistently
+before database access, while inactive historical rows remain unchanged.
+Newly created isolated restore schemas also enforce
+active preference uniqueness. Normal live commits already enforced this rule;
+no live schema migration or Owner policy change was required. A native PostgreSQL
+JSONB proof reproduced the old acceptance, and the same snapshot was rejected by
+the repaired helper with zero database connections. The full-mail snapshot,
+source-bound live chat, new backend boot, derived-index rebuild and daily-scheduler
+proof remain required acceptance items.
+
+Daily scheduler acceptance must identify a completed scheduled attempt after the
+verified backend boot, its restore proof and its next daily due time. A successful
+manual run alone does not prove scheduling. Attempt trigger and successful-proof
+trigger are distinct so a later failed attempt cannot relabel an earlier proof;
+legacy state without those fields remains unknown.

@@ -19,10 +19,19 @@ def validate_snapshot(snapshot):
     if any(not isinstance(data[t], list) for t in TABLES):
         raise ValueError("backup_snapshot_invalid")
     records = {}
+    active_current = set()
     for row in data["records"]:
         body = json.loads(row["body"])
         if row["id"] in records or body.get("id") != row["id"] or body.get("version") != row["version"]:
             raise ValueError("backup_snapshot_invalid")
+        if body.get("status") == "active" and body.get("type") in ("decision", "preference"):
+            scope, subject = body.get("scope"), body.get("subject")
+            if not isinstance(scope, str) or not scope.strip() or not isinstance(subject, str) or not subject.strip():
+                raise ValueError("backup_snapshot_invalid")
+            key = (body["type"], scope, subject)
+            if key in active_current:
+                raise ValueError("backup_snapshot_invalid")
+            active_current.add(key)
         records[row["id"]] = body
     previous = {}; last = {}; sequence = 0
     for row in data["audit"]:
@@ -90,6 +99,8 @@ async def verify_restore(source):
                       CREATE TABLE memory.access_audit(sequence bigserial PRIMARY KEY,body jsonb NOT NULL);
                       CREATE UNIQUE INDEX active_decision ON memory.records((body->>'scope'),(body->>'subject'))
                         WHERE body->>'type'='decision' AND body->>'status'='active';
+                      CREATE UNIQUE INDEX active_preference ON memory.records((body->>'scope'),(body->>'subject'))
+                        WHERE body->>'type'='preference' AND body->>'status'='active';
                     """)
                     columns = {"records": ["sequence", "id", "version", "body"], "audit": ["sequence", "record_id", "body", "previous_hash", "hash"],
                                "principals": ["id", "body"], "access_audit": ["sequence", "body"]}

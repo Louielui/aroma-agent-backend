@@ -33,6 +33,14 @@ hash, shows failure without provider error text, retries failed jobs after
 30 minutes, and retries an interrupted job after service restart. Manual run
 shares its concurrency gate and bypasses the scheduled due date.
 
+Schedule state records each attempt's `trigger` as `scheduled` for an automatic
+tick or `manual` for an Owner run, including failures and interrupted-job retries.
+A restart tick is a new scheduled attempt. `lastSucceededTrigger` identifies the
+latest verified proof separately, so a later failed attempt cannot relabel it.
+Legacy state has null trigger fields and remains unknown until a new attempt;
+it is not evidence of daily scheduling. Current backend bootCommit/restart proof
+is still required before accepting the deployed release.
+
 Tests exercise 1,234 canonical records, source checkpoint values, audit damage,
 file damage, excluded credential files, refusal to overwrite an existing file
 restore destination, daily scheduling, retry backoff, and missing restore proof.

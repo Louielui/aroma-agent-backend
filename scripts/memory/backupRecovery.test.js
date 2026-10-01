@@ -6,6 +6,14 @@ const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
 const python = 'C:/Aroma/hindsight-runtime/Scripts/python.exe'
+
+test('canonical restore rejects contradictory active decisions and preferences before database access while retaining scoped and historical variants', { skip: !fs.existsSync(python) }, t => {
+  const source = path.join(os.tmpdir(), 'xx-backup-policy-' + require('node:crypto').randomUUID() + '.json')
+  t.after(() => { if (fs.existsSync(source)) fs.unlinkSync(source) })
+  const run = spawnSync(python, ['-B', '-X', 'utf8', path.join(__dirname, 'backupPolicy.fixture.py'), source], { encoding: 'utf8', windowsHide: true })
+  assert.equal(run.status, 0, run.stderr || run.stdout)
+  assert.deepEqual(JSON.parse(run.stdout), { duplicateDecision: 'rejected', duplicatePreference: 'rejected', distinctCurrentAndHistory: 'accepted', malformedActiveKeys: 40, restoreConnections: 0 })
+})
 test('private recovery bundle restores receipt queue and coverage checkpoints, excludes credentials and detects damage', { skip: !fs.existsSync(python) }, t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-recovery-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
