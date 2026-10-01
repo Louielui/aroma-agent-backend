@@ -561,7 +561,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           let historySaved = true
           try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
           emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
-          return { lane: 'chat', reply, liveContext: report, historySaved, servedBy: null }
+          return { lane: 'chat', mode: 'chat', reply, liveContext: report, historySaved, servedBy: null }
         })()
         contextReceipts.set(workflowRequestId, receipt)
         if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)

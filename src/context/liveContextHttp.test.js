@@ -41,6 +41,7 @@ test('explicit development chat returns measured source values and saves history
   assert.equal((await post(server,'/api/v1/demo/intake',body,{origin:'https://evil.test'})).status,403);assert.equal(reads,0)
   const result=await post(server,'/api/v1/demo/intake',body)
   assert.equal(result.status,200);assert.equal(models,0);assert.equal(reads,1);assert.equal(saved.length,1)
+  assert.equal(result.value.mode,'chat','the browser requires an explicit chat response mode')
   assert.equal(result.value.liveContext.remoteCommit,'a'.repeat(40));assert.match(result.value.reply,/bbbbbbb/)
   assert.match(result.value.reply,/尚未發布/);assert.match(result.value.reply,/\/live-context/)
   assert.equal((await post(server,'/api/v1/demo/intake',body)).status,200);assert.equal(saved.length,1);assert.equal(reads,1)
