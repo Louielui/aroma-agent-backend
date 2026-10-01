@@ -4,6 +4,7 @@
 </style>
 <main><nav style="flex-wrap:wrap"><a href="/demo" data-l="back"></a><a href="/architecture" data-l="architecture"></a><a href="/memory/legacy" data-l="legacy"></a><a href="/company-access#mail-memory" data-l="mailMemory"></a></nav>
 <h1 data-l="title"></h1><p data-l="intro"></p><p id="notice" role="status"></p><div id="layers" class="layers"></div><p id="health" class="meta"></p><details class="panel"><summary data-l="backup"></summary><button id="backup" data-l="backup"></button><pre id="backup-result"></pre></details>
+<section class="panel" aria-labelledby="operations-title"><h2 id="operations-title" data-l="operations"></h2><p data-l="operationsHelp"></p><div id="operations-status" role="status"></div><button id="operations-refresh" data-l="refresh"></button><a href="/company-access#mail-memory" data-l="mailMemory"></a></section>
 <section class="panel" aria-labelledby="consolidation-title"><h2 id="consolidation-title" data-l="consolidation"></h2><p data-l="consolidationHelp"></p><p id="consolidation-status" role="status"></p><button id="consolidation-toggle"></button><button id="review-suggestions" data-l="review"></button></section>
 <form id="search"><div class="row"><label><span data-l="query"></span><input id="query" maxlength="2000" required></label></div><button data-l="search"></button><button type="button" id="reset" data-l="refresh"></button></form>
 <details class="panel" id="editor"><summary data-l="propose"></summary><form id="proposal">
@@ -28,6 +29,27 @@ for(const type of types){option(el('filter-type'),type,L[type]);if(type!=='worki
 for(const state of states)option(el('filter-status'),state,L[state])
 function node(tag,text,cls){const n=document.createElement(tag);if(text!==undefined)n.textContent=text;if(cls)n.className=cls;return n}
 function button(label,action){const b=node('button',label);b.type='button';b.onclick=action;return b}
+async function loadOperations(){
+ const area=el('operations-status');area.replaceChildren()
+ try{
+  const r=await fetch('/api/v1/memory/operations',{cache:'no-store'});if(!r.ok)throw Error();const d=await r.json()
+  const labels={bridge:L.bridge,database:L.database,hindsight:L.hindsight}
+  const state={ready:L.connected,unavailable:L.unavailable,degraded:L.degraded,foreign:L.foreign,disabled:L.paused,not_connected:L.unavailable,not_measured:L.notMeasured}
+  for(const [key,value]of Object.entries(d.services||{}))area.append(node('p',(labels[key]||key)+' · '+(state[value.state]||L.unavailable)))
+  area.append(node('p',L.receipts+' '+(d.receipts.pending??'—')+' · '+(d.receipts.enabled===true?L.automatic:d.receipts.enabled===false?L.paused:L.unavailable)))
+  if(d.general.index)area.append(node('p',L.indexes+' · '+['saved','raw_only','source_only','pending','unconfirmed'].map(k=>L[k]+' '+d.general.index[k]).join(' · ')))
+  else area.append(node('p',L.coverageUnavailable))
+  if(d.general.counts)area.append(node('p',L.review+' '+d.general.counts.candidate))
+  area.append(node('p',L.rebuildHelp),button(L.rebuild,()=>act({op:'rebuild_index'})))
+  if(d.general.indexRebuild)area.append(node('p',L.rebuild+' · '+L.pending+' '+d.general.indexRebuild.pending+' · '+L.unconfirmed+' '+d.general.indexRebuild.unconfirmed))
+  area.append(node('p',L.mailCoverage+' · '+(d.history.state==='completed'?L.historyComplete:d.history.state==='running'?L.historyRunning:d.history.state==='not_started'?L.historyNotStarted:L.unavailable)+(d.history.retained!==null&&d.history.retained!==undefined?' · '+L.saved+' '+d.history.retained:'')))
+  const backupState={verified:L.backupVerified,running:L.backupRunning,failed:L.backupFailed,not_started:L.notMeasured,not_measured:L.notMeasured,unavailable:L.unavailable}
+  area.append(node('h3',L.backupStatus),node('p',backupState[d.backup.state]||L.unavailable),node('p',L.backupHelp))
+  if(d.backup.lastSucceededAt)area.append(node('p',L.completed+' · '+new Date(d.backup.lastSucceededAt).toLocaleString()))
+  if(d.backup.nextAt)area.append(node('p',L.nextRetry+' · '+new Date(d.backup.nextAt).toLocaleString()))
+  const detail=document.createElement('details');detail.append(node('summary',L.source),node('pre',JSON.stringify({checkedAt:d.checkedAt,mail:d.mail,history:d.history,backup:d.backup,rebuild:d.general.indexRebuild},null,2)));area.append(detail)
+ }catch(_){area.append(node('p',L.coverageUnavailable))}
+}
 async function api(body){const r=await fetch('/api/v1/memory/catalog',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});const d=await r.json();if(!r.ok)throw Error(d.error);return d.result}
 async function act(body){if(pending)return;pending=true;document.querySelectorAll('button').forEach(b=>b.disabled=true);el('notice').textContent=L.loading
 try{const result=await api(body);await load();el('notice').textContent=L.done;return result}catch(e){el('notice').textContent=L.error+' · '+e.message}finally{pending=false;document.querySelectorAll('button').forEach(b=>b.disabled=false)}}
@@ -52,7 +74,7 @@ if(r.type==='procedural')card.append(button(L.recordUsage,()=>{const runId=promp
 if(r.type==='working'&&r.status==='temporary')card.append(button(L.finish,()=>act({op:'finish',id:r.id,version:r.version,outcome:'completed'})))
 card.append(button(L.audit,async()=>{try{const res=await fetch('/api/v1/memory/catalog/'+r.id);if(!res.ok)throw Error();const d=await res.json();const pre=node('pre',JSON.stringify(d.audit,null,2));card.append(pre)}catch(_){el('notice').textContent=L.error}}));el('records').append(card)}}
 function filter(){render(rows.filter(r=>(!el('filter-type').value||r.type===el('filter-type').value)&&(!el('filter-status').value||r.status===el('filter-status').value)&&(!el('filter-scope').value||r.scope===el('filter-scope').value)&&(!el('filter-index').value||r.index.state===el('filter-index').value)))}
-async function load(){const res=await fetch('/api/v1/memory/catalog'+(reviewOnly?'?status=candidate':''),{cache:'no-store'});if(!res.ok)throw Error('memory_unavailable');const d=await res.json();rows=d.items;total=d.total;el('more').hidden=rows.length>=total;el('layers').replaceChildren();for(const r of d.status.layers){const n=node('div',L[r.type],'layer');n.append(node('strong',String(r.active)),node('small',L.totals+' '+r.total));el('layers').append(n)}
+async function load(){await loadOperations();const res=await fetch('/api/v1/memory/catalog'+(reviewOnly?'?status=candidate':''),{cache:'no-store'});if(!res.ok)throw Error('memory_unavailable');const d=await res.json();rows=d.items;total=d.total;el('more').hidden=rows.length>=total;el('layers').replaceChildren();for(const r of d.status.layers){const n=node('div',L[r.type],'layer');n.append(node('strong',String(r.active)),node('small',L.totals+' '+r.total));el('layers').append(n)}
 consolidationEnabled=d.consolidation?.enabled===true;el('consolidation-toggle').textContent=consolidationEnabled?L.pause:L.resume;el('consolidation-status').textContent=(consolidationEnabled&&d.consolidation?.captureEnabled&&d.status.consolidation.review<20?L.automatic:L.paused)+' · '+L.queued+' '+d.status.consolidation.pending+' · '+L.processed+' '+d.status.consolidation.done+' · '+L.empty+' '+d.status.consolidation.empty+' · '+L.failed+' '+d.status.consolidation.failed+' · '+L.candidate+' '+d.status.consolidation.review+(d.consolidation?.busy?' · '+L.loading:'')+(d.consolidation?.error?' · '+d.consolidation.error:'')
 el('health').textContent='PostgreSQL · '+(d.status.database.state==='connected'?L.connected:L.unavailable)+' | pgvector · '+(d.status.database.vector?L.connected:L.unavailable)+' | '+['pending','unconfirmed','saved','raw_only','source_only','retrying'].map(k=>L[k]+' '+d.status.index[k]).join(' · ')+(d.runtime?.error?' | '+d.runtime.error:'')
 el('total').textContent=L.totals+' '+d.total+' · '+L.loaded+' '+rows.length;if(!el('scope').options.length)for(const s of d.status.scopes){option(el('scope'),s,s);option(el('filter-scope'),s,s);if(s!=='private:owner')option(el('grant-scopes'),s,s)}if(!supersedes)el('scope').value='private:owner'
@@ -64,6 +86,7 @@ el('reflect-form').onsubmit=e=>{e.preventDefault();const evidence=rows.filter(r=
 el('work-form').onsubmit=e=>{e.preventDefault();act({op:'working',request:{subject:el('work-goal').value.slice(0,240),goal:el('work-goal').value,project:el('work-project').value,worker:el('work-worker').value,runId:el('work-run').value,context:[],ttlSeconds:86400,scope:el('scope').value}})}
 el('grant-form').onsubmit=async e=>{e.preventDefault();const scopes=[...el('grant-scopes').selectedOptions].map(o=>o.value);const result=await act({op:'grant',request:{id:el('agent-id').value,scopes,writeScopes:scopes}});if(result)el('agent-token').textContent=result.token}
 el('backup').onclick=async()=>{const r=await act({op:'backup'});if(r)el('backup-result').textContent=JSON.stringify(r,null,2)}
+el('operations-refresh').onclick=loadOperations
 el('consolidation-toggle').onclick=()=>act({op:'consolidationSettings',enabled:!consolidationEnabled})
 el('review-suggestions').onclick=()=>{reviewOnly=true;for(const id of ['filter-type','filter-scope','filter-index'])el(id).value='';el('filter-status').value='candidate';load().catch(()=>el('notice').textContent=L.error)}
 for(const id of ['filter-type','filter-status','filter-scope','filter-index'])el(id).onchange=filter

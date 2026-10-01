@@ -210,12 +210,19 @@ describe('boot identity survives the ownership change', () => {
 })
 
 describe('production identity cannot be redirected from the environment', () => {
-  test('*** ⛔ AMBIENT AROMA_SERVICE_REPO CANNOT MOVE THE SERVICE ***', () => {
+  test('*** ⛔ AMBIENT AROMA_SERVICE_REPO CANNOT MOVE THE SERVICE ***', t => {
     // This used to be honoured. Anything able to set a machine or service environment variable
     // could then point the resident service at another tree, and ANY directory containing
     // src/index.js would boot under production's identity, reporting whatever bootCommit that
     // tree carried. A test seam is not worth an ambient redirect of production identity.
-    const alt = path.resolve(REPO, '..', 'x44')      // a real sibling worktree with src/index.js
+    // Own the alternate fixture. A missing developer sibling used to fail this
+    // guard even though production identity was correctly fixed.
+    const temporaryRoot = path.resolve(require('node:os').tmpdir())
+    const alt = fs.mkdtempSync(path.join(temporaryRoot, 'xiangxiang-runtime-alt-'))
+    assert.equal(path.dirname(path.resolve(alt)), temporaryRoot)
+    t.after(() => fs.rmSync(alt, { recursive: true, force: true }))
+    fs.mkdirSync(path.join(alt, 'src'))
+    fs.writeFileSync(path.join(alt, 'src', 'index.js'), "'use strict'\nmodule.exports = {}\n")
     const hasEntry = fs.existsSync(path.join(alt, 'src', 'index.js'))
     const saved = process.env.AROMA_SERVICE_REPO
     process.env.AROMA_SERVICE_REPO = alt

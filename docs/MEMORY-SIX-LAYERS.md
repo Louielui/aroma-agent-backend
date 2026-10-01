@@ -4,6 +4,14 @@ Owner request: implement the complete supplied architecture, 2026-09-29.
 This checklist distinguishes implementation from live acceptance below.
 The supplied July Drive quotation is a design input, not independently verified evidence.
 
+Current operations and recovery contracts are maintained in
+[MEMORY-RUNTIME-RELIABILITY.md](MEMORY-RUNTIME-RELIABILITY.md) and
+[MEMORY-RECOVERY.md](MEMORY-RECOVERY.md). Dated acceptance below is retained as
+historical evidence; it does not establish the health or coverage of a later boot.
+The 2026-10-01 implementation adds supervised runtime recovery, source-bound mail
+recall and historical coverage, verified file recovery, and daily backups.
+Final live acceptance is recorded separately from the implementation checklist.
+
 ## Required acceptance
 
 - [x] Working: current goal/project/worker/run/context, expiry and terminal cleanup.
@@ -61,7 +69,9 @@ M2: reflection uses Hindsight with strict document tags from selected approved e
 Summaries are semantic candidates, persisted as mental models in canonical storage.
 Refresh creates a new candidate; approval replaces the older model only after evidence
 revision validation. This is gateway-managed mental models, not automatic Hindsight
-consolidation. Consolidation remains disabled. Five scope classes use explicit grants
+consolidation. Reviewable consolidation is now separately managed by the workflow
+described in [MEMORY-CONSOLIDATION.md](MEMORY-CONSOLIDATION.md); its actual pause,
+retry and approval states remain visible. Five scope classes use explicit grants
 without implicit inheritance. Agent tokens are hashed, rotatable and revocable.
 
 M3: every listed domain has a scope. Connected read adapters enqueue private external
@@ -83,13 +93,18 @@ Setup: scripts/memory/setupStructured.py, invoked with the existing local Python
 History import: scripts/memory/importHistory.js. Unknown legacy approvals become
 candidates; original files remain untouched. Blank messages are not memory content.
 
-Backup: scripts/memory/backupStructured.py backup <absolute-new-path>.
-Verify/restore: the same script verify-restore <snapshot>. This creates a separate
-restore database, compares every record/audit/grant and never overwrites the live DB.
-The owner UI runs backup-and-verify with a generated local filename.
-Backups contain canonical records and audit; existing chat archives, pending filesystem
-outbox files and the rebuildable Hindsight index are separate data and are not included.
-For machine recovery preserve those directories and private runtime configuration too.
+Backup: scripts/memory/backupStructured.py backup-and-verify <absolute-new-path>.
+Verify/restore: the same script verify-restore <canonical.json>. This creates a separate
+restore database, validates audit chains, compares every record/audit/grant, restores
+sequence positions, and never overwrites the live DB. The owner UI and daily scheduler
+run this combined backup operation with a generated private bundle directory.
+Current bundles include canonical records and audit plus existing conversation files,
+pending filesystem outbox, capture/consolidation state and the source permission registry.
+Every file is hashed and restored into a new isolated destination before success is
+reported. Credentials are excluded, and the Hindsight index is derived data rebuilt
+from active scoped originals. Reauthentication and explicit recovery deployment are
+required on another machine; automatic machine recreation is not claimed. See
+[MEMORY-RECOVERY.md](MEMORY-RECOVERY.md) for exact boundaries and recovery procedure.
 Archive excludes recall and keeps the historical audit; it is not a privacy-erasure command.
 
 ## Measured acceptance before service cutover

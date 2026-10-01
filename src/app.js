@@ -831,20 +831,23 @@ function createApp (options = {}) {
   const companyRegistry = opts.companyOptions?.registry || require('./company/access').createRegistry()
   const companyMailbox = opts.companyOptions?.mailbox || require('./company/mailbox').createMailbox({ registry: companyRegistry })
   const governedMemory = opts.governedMemory || (!process.env.NODE_TEST_CONTEXT && process.env.XIANGXIANG_MEMORY === 'on' ? require('./memory/runtime').runtime() : null)
+  let mailForeground = 0; let mailForegroundUntil = 0
   const companyMailMemory = opts.companyOptions?.mailMemory || (companyAccessEnabled && governedMemory ? require('./company/mailMemory').createMailMemory({
     analyzer: require('./company/mailAnalysis').createMailAnalyzer(),
+    engine: require('./memory/hindsight').createHindsight(),
+    foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil,
     store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, allowed: () => governedMemory.status().enabled
   }) : null)
   if (companyMailMemory && !process.env.NODE_TEST_CONTEXT) companyMailMemory.start()
   const mailPubsub = opts.companyOptions?.mailPubsub || (companyAccessEnabled ? require('./company/mailPubsub').createMailPubsub({ registry: companyRegistry }) : null)
-  let mailForeground = 0; let mailForegroundUntil = 0
   const mailServices = companyMailMemory && !process.env.NODE_TEST_CONTEXT ? {
     store: require('./memory/structuredStore').createStructuredStore(), mailbox: companyMailbox, memory: companyMailMemory
   } : null
   const mailScheduler = opts.companyOptions?.mailScheduler || (mailServices ? require('./company/mailScheduler').createMailScheduler({ ...mailServices,
     foreground: () => mailForeground > 0 || Date.now() < mailForegroundUntil }) : null)
   const mailEvents = opts.companyOptions?.mailEvents || (mailServices && mailPubsub ? require('./company/mailEvents').createMailEvents({ ...mailServices, pubsub: mailPubsub }) : null)
-  mailScheduler?.start?.(); mailEvents?.start?.()
+  const mailHistory = opts.companyOptions?.mailHistory || (mailServices ? require('./company/mailHistory').createMailHistory(mailServices) : null)
+  mailScheduler?.start?.(); mailEvents?.start?.(); mailHistory?.start?.()
   app.use('/api/v1/demo/intake', requireOwner, (req, res, next) => {
     if (req.method !== 'POST') return next()
     mailForeground++; mailForegroundUntil = Date.now() + 60000
@@ -852,7 +855,7 @@ function createApp (options = {}) {
     Promise.resolve(companyMailMemory?.cancelAnalysis?.()).then(() => next(), () => next())
   })
   app.use(require('./company/routes').createRouter({ ...opts.companyOptions, registry: companyRegistry, mailbox: companyMailbox, mailMemory: companyMailMemory,
-    mailPubsub, mailScheduler, mailEvents, requireOwner, enabled: companyAccessEnabled,
+    mailPubsub, mailScheduler, mailEvents, mailHistory, requireOwner, enabled: companyAccessEnabled,
     endOwnerSession: (req, res) => {
       const auth = require('./governance/ownerAuth')
       try { ownerSessions.revoke(auth.readCookie(req, auth.SESSION_COOKIE)) } catch (_) { /* Malformed cookies confer no authority. */ }
@@ -1006,7 +1009,13 @@ function createApp (options = {}) {
   const memoryCapture = opts.memoryCapture || require('./memory/capture').createCapture({ client: memoryClient,
     available: () => process.env.XIANGXIANG_MEMORY === 'on' && !process.env.NODE_TEST_CONTEXT })
   if (!process.env.NODE_TEST_CONTEXT) memoryCapture.start()
-  if (governedMemory) app.use(require('./memory/governedRoutes').createGovernedRouter({ gateway: governedMemory.gateway, runtime: governedMemory }))
+  const memoryRecovery = opts.memoryBackupScheduler || (governedMemory && !process.env.NODE_TEST_CONTEXT ? require('./memory/backupScheduler').createBackupScheduler({backup:()=>governedMemory.backup()}) : null)
+  memoryRecovery?.start?.()
+  const memoryOperations = opts.memoryOperations || (governedMemory ? require('./memory/operations').createMemoryOperations({
+    gateway:governedMemory.gateway,runtime:governedMemory,mailMemory:companyMailMemory,mailHistory,recovery:memoryRecovery,
+    ...(process.env.NODE_TEST_CONTEXT ? {probe:async()=>({state:'not_measured',services:null})} : {})
+  }) : null)
+  if (governedMemory) app.use(require('./memory/governedRoutes').createGovernedRouter({ gateway: governedMemory.gateway, runtime: governedMemory, operations:memoryOperations, recovery:memoryRecovery }))
   app.use(require('./memory/routes').createMemoryRouter({ client: memoryClient, capture: memoryCapture, governed: Boolean(governedMemory) }))
   app.use('/workers', requireOwner)
   app.use('/api/v1/worker-flow', requireOwner)

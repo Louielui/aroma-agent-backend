@@ -17,7 +17,7 @@ function fixture () {
     setCredentials: () => {} }
   const gmail = { users: { getProfile: async () => { if (!live) throw Error('Google denied'); return { data: { emailAddress: email } } },
     messages: {
-      list: async () => { readHook(); return { data: { messages: [{ id: 'abc123' }], nextPageToken: 'private-page' } } },
+      list: async params => { readHook(params); return { data: { messages: [{ id: 'abc123' }], nextPageToken: 'private-page' } } },
       get: async () => ({ data: { id: 'abc123', snippet: 'Preview', payload: { headers: [{ name: 'Subject', value: '<script>secret</script>' }] } } })
     } } }
   const mailbox = createMailbox({ registry, clientFactory: () => ({ client, audience: 'expected-audience' }),
@@ -77,4 +77,12 @@ test('disconnect invalidates outstanding authorization, including replay', async
   f.mailbox.disconnect()
   await assert.rejects(f.mailbox.finish({ state: f.consent().state, cookie: start.cookie, code: 'code' }))
   assert.equal(f.stored(), null)
+})
+
+test('snapshot in:anywhere scans explicitly include Spam and Trash while ordinary scans retain their scope', async () => {
+  const f = fixture(); await connect(f); const calls = []; f.onRead(args => calls.push(args))
+  await f.mailbox.scan({ owner: true }, { q: 'in:anywhere before:1790840000' })
+  await f.mailbox.scan({ owner: true }, { q: 'after:1790000000', pageToken: 'next-page' })
+  assert.equal(calls[0].includeSpamTrash, true); assert.equal(calls[0].maxResults, 10)
+  assert.equal(calls[1].includeSpamTrash, undefined); assert.equal(calls[1].pageToken, 'next-page')
 })

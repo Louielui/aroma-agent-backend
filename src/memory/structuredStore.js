@@ -10,12 +10,13 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
   const runLocal = request => new Promise((resolve, reject) => {
     if (isTestProcess()) return reject(Error('memory_database_test_fence'))
     const backup = request.op === 'backup'
+    const slow = backup || request.op === 'queue_index'
     const args = backup
       ? ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/backupStructured.py'), 'backup-and-verify', path.join('C:/Aroma/hindsight-runtime/backups', 'memory-' + require('node:crypto').randomUUID() + '.json')]
       : ['-B', '-X', 'utf8', path.join(__dirname, '../../scripts/memory/structured.py')]
     const child = spawn('C:/Aroma/hindsight-runtime/Scripts/python.exe', args, { windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] })
     let raw = ''; let failed = false
-    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, backup ? 60000 : 15000)
+    const timeout = setTimeout(() => { failed = true; child.kill(); reject(Error('memory_database_unavailable')) }, slow ? 60000 : 15000)
     readUtf8(child.stdout, chunk => { raw += chunk; if (raw.length > 64000000) { failed = true; child.kill() } })
     child.stderr.resume()
     child.on('error', () => { clearTimeout(timeout); reject(Error('memory_database_unavailable')) })
@@ -29,7 +30,7 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
   const remote = async request => {
     if (!/^[a-f0-9]{64}$/.test(env.CODEX_CHAT_BRIDGE_TOKEN || '')) throw Error('memory_database_unavailable')
     const res = await require('../adapters/liveEgressFence').fencedFetch('memory_gateway')('http://127.0.0.1:8091/memory-store', {
-      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(request.op === 'backup' ? 65000 : 20000),
+      method: 'POST', redirect: 'error', signal: AbortSignal.timeout(['backup', 'queue_index'].includes(request.op) ? 65000 : 20000),
       headers: { authorization: 'Bearer ' + env.CODEX_CHAT_BRIDGE_TOKEN, 'content-type': 'application/json' }, body: JSON.stringify(request) })
     if (!res.ok) throw Error('memory_database_unavailable')
     const value = await res.json()
@@ -39,6 +40,7 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
   const run = invoke || (local ? runLocal : remote)
   return {
     request: run, backup: () => run({ op: 'backup' }),
+    queueIndex: request => run({ ...request, op: 'queue_index' }),
     get: id => run({ op: 'get', id }),
     all: async () => {
       const rows = []
@@ -58,7 +60,7 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
 // Injected only by tests. Runtime has no file or in-memory fallback for canonical data.
 function createTestStore() {
   const rows = new Map(); const events = []; const grants = new Map()
-  return {
+  const store = {
     get: async id => structuredClone(rows.get(id) || null), all: async () => structuredClone([...rows.values()]),
     commit: async (changes, event) => {
       for (const c of changes) if ((rows.get(c.row.id)?.version || 0) !== c.expected) throw Error('revision_conflict')
@@ -74,5 +76,21 @@ function createTestStore() {
     grant: async g => { grants.set(g.id, structuredClone(g)); return g },
     health: async () => ({ state: 'connected', database: 'test', vector: true })
   }
+  const queueIndex = async ({ id, at, scope }) => {
+    let queued = 0, sourceOnly = 0
+    const changes = [...rows.values()].filter(r => r.status === 'active' && (!r.expiresAt || r.expiresAt > at) &&
+      !r.source?.kind?.startsWith('admin_mail_') && (!scope || r.scope === scope)).map(previous => {
+      const row = structuredClone(previous), reason = require('./indexPolicy').sourceOnlyReason(row.text)
+      row.index = { state: reason ? 'source_only' : 'pending', attempts: 0, facts: null, reason: reason || null,
+        checkedAt: reason ? at : null, nextRetryAt: null, rebuildId: id, queuedAt: at }
+      row.version++; row.updatedAt = at
+      if (reason) sourceOnly++; else queued++
+      return { expected: previous.version, row }
+    })
+    await store.commit(changes, { op: 'index_rebuild_queued', actor: 'owner', at, rebuildId: id })
+    return { id, queued, sourceOnly, scope }
+  }
+  store.queueIndex = queueIndex
+  return store
 }
 module.exports = { createStructuredStore, createTestStore, readUtf8 }

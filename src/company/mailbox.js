@@ -113,7 +113,8 @@ function createMailbox ({ registry, clientFactory = auth.createAdminMailConsentC
   function scan (actor, { q, pageToken } = {}) {
     if (typeof q !== 'string' || q.length > 400 || (pageToken && (typeof pageToken !== 'string' || pageToken.length > 4096))) throw Error('invalid_mail_query')
     return guarded(actor, async gmail => {
-      const page = (await gmail.users.messages.list({ userId: 'me', q, maxResults: 10, ...(pageToken ? { pageToken } : {}) })).data
+      const page = (await gmail.users.messages.list({ userId: 'me', q, maxResults: 10,
+        ...(/(?:^|\s)in:anywhere(?:\s|$)/.test(q) ? { includeSpamTrash: true } : {}), ...(pageToken ? { pageToken } : {}) })).data
       if (!Array.isArray(page.messages || []) || (page.messages || []).some(r => !validId(r.id))) throw Error('invalid_message')
       return { messages: (page.messages || []).slice(0, 10).map(r => ({ id: r.id })), nextPageToken: page.nextPageToken || null }
     })

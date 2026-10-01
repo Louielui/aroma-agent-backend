@@ -27,6 +27,27 @@ function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapt
     if (busy) throw Error('mail_busy')
     busy = true
     try {
+      if (request.mode === 'recall') {
+        if (!memory?.recall) throw Error('mail_memory_unavailable')
+        const result = await memory.recall(actor, request.q)
+        const lines = [t('company.mailRecallScope'), t('company.mailRecallCount', { count: result.length, total: result.retrieval?.total ?? result.length })]
+        if (result.retrieval?.semantic === 'unavailable') lines.push(t('company.mailRecallUnavailableSemantic'))
+        if (result.retrieval?.semantic === 'not_connected') lines.push(t('company.mailRecallUnindexed'))
+        if (result.retrieval?.unavailableOriginals) lines.push(t('company.mailRecallUnavailableOriginals', { count: result.retrieval.unavailableOriginals }))
+        if (!result.length) lines.push(t('company.mailRecallEmpty'))
+        for (const row of result) {
+          lines.push('[' + safe(row.subject || row.sourceId) + '](' + row.url + ')', safe(row.from || ''),
+            t('company.mailRecallSource', { id: safe(row.sourceId + ' · ' + row.documentId), date: safe(row.date || t('company.mailRecallUnknownDate')), hash: row.contentHash }))
+          if (row.canonicalDecision?.approval?.kind === 'owner') {
+            lines.push(t('company.mailRecallApprovedDecision', { text: safe(row.canonicalDecision.text) }))
+            if (row.canonicalDecision.needsReview) lines.push(t('company.mailRecallNeedsReview'))
+          }
+          lines.push(t('company.mailRecallQuote', { text: safe(row.text) }))
+          if (row.partial) lines.push(t('company.mailRecallPartial'))
+        }
+        if (result.retrieval?.truncated) lines.push(t('company.mailRecallLimited'))
+        return { reply: lines.join('\n\n'), messageCount: result.length, summaryState: 'not_requested', sourceBound: true }
+      }
       if (request.mode === 'memory') {
         if (!memory) throw Error('mail_memory_unavailable')
         const result = await memory.list(actor, request.q)

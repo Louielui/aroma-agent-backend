@@ -1,5 +1,16 @@
 # Local Hindsight memory pilot
 
+Historical pilot record, 2026-09-29. The descriptions below document the initial
+manual-only pilot and its measured acceptance; they are not the current capture,
+coverage, backup, or supervisor contract. Automatic private history capture,
+reviewable consolidation, scoped and source-bound mail indexes, historical mail
+import, and operational recovery have since been implemented. Current contracts:
+[MEMORY-SIX-LAYERS.md](MEMORY-SIX-LAYERS.md),
+[MEMORY-CONSOLIDATION.md](MEMORY-CONSOLIDATION.md),
+[MEMORY-RUNTIME-RELIABILITY.md](MEMORY-RUNTIME-RELIABILITY.md), and
+[MEMORY-RECOVERY.md](MEMORY-RECOVERY.md). A configured adapter or an earlier
+acceptance does not establish the current running service's health.
+
 Hindsight 0.10.2 is installed in the separate `C:\Aroma\hindsight-runtime` Python environment.
 The backend has no new package dependency. The existing Memory Gateway exposes the Hindsight
 adapter alongside its local-decision adapter. The owner page `/memory` supports explicit

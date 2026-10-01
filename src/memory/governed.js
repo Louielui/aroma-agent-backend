@@ -188,6 +188,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       result = { state: 'unconfirmed', facts: null, attempts, reason, checkedAt: clock(),
         nextRetryAt: retryable && attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }
     }
+    if (row.index.rebuildId) result = { ...result, rebuildId: row.index.rebuildId, queuedAt: row.index.queuedAt }
     // Never replace a newer approval, archive or supersession when an index call finishes late.
     const latest = await get(actor, id)
     if (latest.version !== expected) return latest
@@ -201,6 +202,12 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     const job = runIndex(actor, id).finally(() => indexing.delete(id))
     indexing.set(id, job)
     return job
+  }
+  async function rebuildIndex(actor, scope = null) {
+    owner(actor)
+    if (scope !== null) await authorize(actor, scope)
+    if (!engine || typeof store.queueIndex !== 'function') throw Error('not_indexable')
+    return store.queueIndex({ id: randomUUID(), at: clock(), scope })
   }
   async function working(actor, input) {
     const { subject, goal, project, worker, runId, context, ttlSeconds, scope } = input
@@ -250,12 +257,18 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function status(actor) {
     owner(actor); const rows = (await store.all()).filter(r => !sourceBound(r))
     const active = rows.filter(current)
+    const batch = rows.filter(r => r.index.rebuildId).sort((a, b) => b.index.queuedAt.localeCompare(a.index.queuedAt))[0]?.index
+    const rebuilt = batch ? rows.filter(r => r.index.rebuildId === batch.rebuildId) : []
     return { database: await store.health(), layers: TYPES.map(type => ({ type, total: rows.filter(r => r.type === type).length, active: active.filter(r => r.type === type).length })),
       scopes: SCOPES, counts: Object.fromEntries(STATUSES.map(s => [s, rows.filter(r => r.status === s).length])),
       index: { pending: active.filter(r => r.index.state === 'pending').length, unconfirmed: active.filter(r => r.index.state === 'unconfirmed').length, saved: active.filter(r => r.index.state === 'saved').length,
         raw_only: active.filter(r => r.index.state === 'raw_only').length,
         source_only: active.filter(r => r.index.state === 'source_only').length,
         retrying: active.filter(r => r.index.state === 'unconfirmed' && r.index.nextRetryAt).length },
+      indexRebuild: batch ? { id: batch.rebuildId, queuedAt: batch.queuedAt, total: rebuilt.length,
+        ...Object.fromEntries(['pending', 'saved', 'raw_only', 'source_only', 'unconfirmed'].map(state => [state, rebuilt.filter(r => r.index.state === state).length])),
+        retrying: rebuilt.filter(r => r.index.state === 'unconfirmed' && r.index.nextRetryAt).length,
+        exhausted: rebuilt.filter(r => r.index.state === 'unconfirmed' && !r.index.nextRetryAt).length } : null,
       staleModels: active.filter(r => r.details.mentalModel && r.details.evidenceVersions?.some(e => !active.some(a => a.id === e.id && matchesEvidence(a, e)))).map(r => r.id),
       consolidation: { pending: rows.filter(r => require('./consolidationPolicy').eligible(r) && !r.details.consolidation).length,
         running: rows.filter(r => r.details.consolidation?.state === 'running').length,
@@ -318,7 +331,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
     }
   }
   return { engine: 'memory_gateway', authorize, get, list, propose: (actor, input) => create(actor, input, false),
-    observe: (actor, input) => create(actor, input, true), transition, getDecision, recall, index, working, finishWork,
+    observe: (actor, input) => create(actor, input, true), transition, getDecision, recall, index, rebuildIndex, working, finishWork,
     grant, authenticate, reflect, consolidate, status, audit: async (actor, id) => { const r = await get(actor, id); return r ? store.audit(id) : [] } }
 }
 module.exports = { createGateway, OWNER, TYPES, SCOPES, STATUSES, stableId }

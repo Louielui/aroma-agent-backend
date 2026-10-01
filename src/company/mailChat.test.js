@@ -40,3 +40,30 @@ test('mail memory is recalled only through its source gate without model generat
   assert.match((await chat.answer({ mode: 'memory', q: 'invoice' })).reply, /Owner decided to review/)
   assert.equal(models, 0); access = false; await assert.rejects(chat.answer({ mode: 'memory', q: '' }), /denied/)
 })
+test('natural historical mail intent and scoped follow-up stay in the transient source-bound lane', () => {
+  assert.deepEqual(parseMailRequest('上次供應商答應了甚麼？'), { mode: 'recall', q: '上次供應商答應了甚麼？' })
+  assert.equal(parseMailRequest('上次行政部電郵原話是甚麼？').mode, 'recall')
+  assert.equal(parseMailRequest('What did the supplier promise in their previous email?').mode, 'recall')
+  assert.equal(parseMailRequest('佢原話係點？', [{ role: 'user', text: '上次供應商答應了甚麼？' }]).mode, 'recall')
+  assert.equal(parseMailRequest('佢話哪天？', [{ role: 'user', content: '上次供應商答應了甚麼？' }]).mode, 'recall')
+  assert.equal(parseMailRequest('佢原話係點？', [{ role: 'assistant', text: 'Previous vendor email' }]), null)
+  assert.equal(parseMailRequest('行政部今天有甚麼電郵？').mode, 'summary')
+  assert.equal(parseMailRequest('供應商最新價錢是多少？'), null)
+  assert.equal(parseMailRequest('寄出電郵通知供應商上次承諾'), null)
+  assert.equal(parseMailRequest('What was in my personal email last Friday?'), null)
+})
+test('natural recall renders current originals and approved decision with hash/date citations without another model', async () => {
+  let models = 0; let recalled
+  const chat = createMailChat({ mailbox: {}, memory: { recall: async (actor, query) => {
+    assert.equal(actor.owner, true); recalled = query
+    const rows = [{ documentId: 'xx-test', sourceId: 'abc', text: 'Vendor promised Friday.', date: null,
+      contentHash: 'abc-hash', url: 'https://mail.google.com/mail/#all/abc', subject: 'Delivery', from: 'Vendor', partial: true,
+      canonicalDecision: { text: 'Owner decided Monday.', approval: { kind: 'owner' }, needsReview: true } }]
+    rows.retrieval = { source: 'ok', semantic: 'unavailable', coverage: 'saved_sources_only', total: 9, truncated: true }; return rows
+  } }, adapterFactory: () => { models++; throw Error('unexpected') } })
+  const result = await chat.answer({ mode: 'recall', q: 'supplier promise' }, 'question')
+  assert.equal(recalled, 'supplier promise'); assert.equal(result.messageCount, 1); assert.equal(result.summaryState, 'not_requested')
+  assert.match(result.reply, /Vendor promised Friday/); assert.match(result.reply, /Owner decided Monday/)
+  assert.match(result.reply, /abc-hash/); assert.match(result.reply, /xx-test/); assert.equal(models, 0)
+  assert.equal(result.sourceBound, true)
+})

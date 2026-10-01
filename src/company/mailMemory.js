@@ -7,9 +7,10 @@ const digest = value => createHash('sha256').update(JSON.stringify(value)).diges
 const isMail = row => row?.source?.kind?.startsWith('admin_mail_') === true
 // Source-bound records share the canonical PostgreSQL store, but never enter a
 // shared Hindsight bank or the general conversation/consolidation pipeline.
-function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new Date().toISOString(), allowed = () => true }) {
-  let tail = Promise.resolve(); let timer; let busy = false; let error = null; let analyzing = false
+function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clock = () => new Date().toISOString(), allowed = () => true, foreground = () => false }) {
+  let tail = Promise.resolve(); let timer; let indexTimer; let busy = false; let error = null; let analyzing = false
   const serial = fn => { const next = tail.then(fn); tail = next.catch(() => {}); return next }
+  const semantic = require('./mailSemantic').createMailSemantic({ store, mailbox, engine, clock, allowed, serial })
   const account = () => mailbox.status().mailbox
   const key = (kind, id) => stableId('admin-mail:' + account() + ':' + kind + ':' + id)
   function guard (actor) {
@@ -35,8 +36,9 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
     if (!allowed()) return { state: 'paused' }
     if (!message || message.mailbox !== account() || !/^[a-f0-9]{1,100}$/i.test(message.id || '') ||
         (message.threadId && !/^[a-f0-9]{1,100}$/i.test(message.threadId))) throw Error('invalid_mail_evidence')
-    if (!message.body || message.bodyState === 'unavailable') return { state: 'body_unavailable' }
-    if (exclusionReason(message.body) || exclusionReason(JSON.stringify([message.subject, message.from]), false)) return { state: 'excluded' }
+    if (!message.body || message.bodyState === 'unavailable') return { state: 'body_unavailable', reason: 'body_unavailable' }
+    const excluded = exclusionReason(message.body) || exclusionReason(JSON.stringify([message.subject, message.from]), false)
+    if (excluded) return { state: 'excluded', reason: excluded }
     const payload = { subject: message.subject || null, from: message.from || null, date: message.date || null,
       internalDate: message.internalDate || null, threadId: message.threadId || message.id,
       body: message.body, bodyState: message.bodyState, bodyTruncated: message.bodyTruncated === true }
@@ -53,7 +55,6 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
     const previous = await store.get(key('thread', payload.threadId))
     const thread = previous ? structuredClone(previous) : base('thread', payload.threadId, message.subject, message.subject || message.id)
     const ids = thread.details.messageIds || []
-    if (!ids.includes(message.id) && ids.length >= 100) return { state: 'thread_limit' }
     const evidenceChanged = changes.length > 0
     if (!previous) { thread.status = 'candidate'; thread.details = { ...thread.details, assignee: null, deadline: null, taskState: null, needsReview: true, messageIds: [] } }
     if (!ids.includes(message.id)) thread.details.messageIds.push(message.id)
@@ -79,7 +80,7 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
     verify()
     if (changes.length) await commit(changes, 'mail_observed')
     verify()
-    return { state: changes.length ? 'saved' : 'unchanged', id: thread.id }
+    return { state: changes.length ? 'saved' : 'unchanged', id: thread.id, bodyTruncated: message.bodyTruncated === true }
   }
   const capture = (actor, message, suggestion) => serial(() => captureNow(actor, message, suggestion))
   const category = row => row.details.analysis?.state === 'ready' ? row.details.analysis.category : 'unknown'
@@ -126,6 +127,7 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
     if (!allowed()) throw Error('mail_memory_paused')
     if (analyzing) throw Error('mail_analysis_busy')
     analyzing = true
+    await semantic.cancel()
     let record; let verify
     try {
       const detailView = await detail(actor, id); record = detailView.record; verify = guard(actor)
@@ -244,11 +246,17 @@ function createMailMemory ({ store, mailbox, analyzer = null, clock = () => new 
       analysis: { connected: !!analyzer, busy: analyzing, pending: rows.filter(r => r.details.analysis?.state !== 'ready').length,
         failed: rows.filter(r => r.details.analysis?.state === 'failed').length, ready: rows.filter(r => r.details.analysis?.state === 'ready').length },
       checkedAt: row?.details.checkedAt || null, completedAt: row?.details.completedAt || null,
-      hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null, hindsight: 'not_indexed' }
+      hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null, hindsight: await semantic.status() }
   }
   return { capture, list, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
-    enabled: allowed, cancelAnalysis: () => analyzer?.cancel?.(),
-    start () { if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() } },
-    stop () { clearInterval(timer); timer = null } }
+    recall: semantic.recall, indexNext: semantic.indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
+    enabled: allowed, cancelAnalysis: () => Promise.all([semantic.cancel(), Promise.resolve(analyzer?.cancel?.())]),
+    start () {
+      if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() }
+      if (!indexTimer && engine) { indexTimer = setInterval(() => {
+        if (!foreground() && !analyzing && allowed()) void semantic.indexNext(OWNER).catch(() => {})
+      }, 30000); indexTimer.unref() }
+    },
+    stop () { clearInterval(timer); clearInterval(indexTimer); timer = null; indexTimer = null; semantic.cancel() } }
 }
 module.exports = { createMailMemory, isMail }

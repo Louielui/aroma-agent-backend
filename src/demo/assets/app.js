@@ -1297,6 +1297,10 @@
     if (chatLevel) chatLevel.disabled = p
   }
 
+  function assistantHistory (response) {
+    return { role: 'assistant', text: response.sourceBound === true ? t('company.mailHistoryReceipt') : response.reply, sourceBound: response.sourceBound === true }
+  }
+
   function submit () {
     if (pending) return
     /**
@@ -1388,7 +1392,9 @@
           : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
             : previousLane
       labelServedBy(render(o.status, o.body, conv), o.body)
-      if (o.body && o.body.reply) conv.history.push({ role: 'assistant', text: o.body.reply })
+      // Mail stays in the displayed answer. Model history receives a neutral
+      // receipt even if an earlier source question falls out of its context.
+      if (o.body && o.body.reply) conv.history.push(assistantHistory(o.body))
       // The server has just written this turn, so the conversation is now history: it
       // survives a refresh and it can be deleted. `loaded` is set with it — the thread on
       // screen IS the transcript, so re-selecting this conversation must not re-fetch and

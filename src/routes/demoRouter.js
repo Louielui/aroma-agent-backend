@@ -498,10 +498,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
-        entry?.role === 'assistant' && all[i - 1]?.role === 'user' && require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content)
+        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1))))
           ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
       const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
-        ? require('../company/mailIntent').parseMailRequest(message) : null
+        ? require('../company/mailIntent').parseMailRequest(message, history) : null
       // Mail content is transient. Only a neutral receipt enters conversation history;
       // it never enters the automatic memory journal or a later model's history.
       if (mailChat && mailRequest) {
@@ -514,7 +514,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }); historySaved = true } catch (_) {}
           }
           emit('mail_read', 200, null)
-          return res.json({ lane: 'chat', ...result, historySaved })
+          return res.json({ lane: 'chat', ...result, sourceBound: true, historySaved })
         } catch (_) {
           emit('mail_unavailable', 503, 'mail_unavailable')
           return res.status(503).json({ error: { message: t('company.mailReadFailed'), retryable: true } })

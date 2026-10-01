@@ -87,3 +87,9 @@ test('revocation during store read fails closed and a source-bound ID cannot be 
   f.store.all = async () => { const rows = await original(); f.revoke(); return rows }
   await assert.rejects(f.memory.list(f.owner, ''), /denied/)
 })
+test('complete threads retain more than one hundred messages without dropping the newest source', async () => {
+  const f = fixture()
+  for (let n = 1; n <= 101; n++) { const id = n.toString(16); f.add(id, 'Delivery source ' + n); const result = await f.memory.capture(f.owner, await f.mailbox.read(f.owner, id)); assert.equal(result.state, 'saved') }
+  const row = (await f.memory.list(f.owner)).items[0]
+  assert.equal(row.details.messageIds.length, 101); assert.equal((await f.memory.detail(f.owner, row.id)).messages.length, 101)
+})

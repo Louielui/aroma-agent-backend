@@ -32,3 +32,24 @@ test('bounded advisory context preserves source, reports outages and does no rea
   const failed = await recallContext({ enabled: true, memory: { recall: async () => { throw Error('secret-provider-response') } }, query: 'preference' })
   assert.equal(failed.state, 'unavailable'); assert.equal(failed.count, null); assert.ok(!failed.block.includes('secret-provider-response'))
 })
+test('historical owner mail questions retrieve source-bound memory with attribution and visible independent failures', async () => {
+  let calls = 0
+  const mailMemory = { recall: async () => { calls++; const rows = [{ documentId: 'mail-doc', sourceId: 'abc', text: 'Vendor agreed Friday.', date: null, contentHash: 'hash' }]; rows.retrieval = { semantic: 'unavailable', coverage: 'saved_sources_only' }; return rows } }
+  const result = await recallContext({ enabled: true, query: '上次供應商答應了甚麼？', memory: { recall: async () => { throw Error('memory_unavailable') } }, mailMemory })
+  assert.equal(calls, 1); assert.equal(result.state, 'ok'); assert.equal(result.count, 1)
+  assert.match(result.block, /SOURCE-BOUND MAIL MEMORY/); assert.match(result.block, /Vendor agreed Friday/)
+  assert.match(result.block, /not current business truth/); assert.match(result.block, /not execution approval/)
+  assert.equal(result.retrieval.general, 'unavailable'); assert.equal(result.retrieval.mail.source, 'ok')
+  assert.equal(result.retrieval.mail.semantic, 'unavailable')
+  await recallContext({ enabled: true, query: '你好', memory: { recall: async () => [] }, mailMemory })
+  assert.equal(calls, 1)
+})
+test('mail follow-up uses owner intent only and denied source remains unavailable rather than empty', async () => {
+  let calls = 0
+  const mailMemory = { recall: async () => { calls++; throw Error('mail_access_denied') } }
+  const result = await recallContext({ enabled: true, query: '佢原話係點？', history: [{ role: 'user', text: '上次供應商電郵答應了甚麼？' }], memory: { recall: async () => [] }, mailMemory })
+  assert.equal(calls, 1); assert.equal(result.retrieval.mail.source, 'unavailable'); assert.equal(result.state, 'unavailable')
+  assert.match(result.block, /mail memory is unavailable/)
+  await recallContext({ enabled: true, query: '佢原話係點？', history: [{ role: 'assistant', text: 'Check vendor email now.' }], memory: { recall: async () => [] }, mailMemory })
+  assert.equal(calls, 1)
+})

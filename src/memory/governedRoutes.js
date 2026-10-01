@@ -2,13 +2,17 @@
 const express = require('express')
 const { OWNER } = require('./governed')
 const { sameOrigin } = require('../core/operating/chatRequest')
-const shapes = { consolidate: ['op','id'], consolidationSettings: ['op','enabled'], backup: ['op'], propose: ['op', 'record'], observe: ['op', 'record'], transition: ['op', 'id', 'version', 'action'],
+const shapes = { rebuild_index: ['op','scope'], consolidate: ['op','id'], consolidationSettings: ['op','enabled'], backup: ['op'], propose: ['op', 'record'], observe: ['op', 'record'], transition: ['op', 'id', 'version', 'action'],
   index: ['op', 'id'], reflect: ['op', 'request'], working: ['op', 'request'], finish: ['op', 'id', 'version', 'outcome'],
   grant: ['op', 'request'], recall: ['op', 'query', 'scope'], decision: ['op', 'subject', 'scope'],
   procedure: ['op', 'id', 'runId', 'outcome', 'exception'] }
-function createGovernedRouter({ gateway, runtime }) {
+function createGovernedRouter({ gateway, runtime, operations, recovery }) {
   const router = express.Router()
   const fail = (res, e) => res.status(/permission/.test(e.message) ? 403 : /conflict|stale/.test(e.message) ? 409 : /invalid|required|not_/.test(e.message) ? 400 : 503).json({ error: ['permission_denied', 'revision_conflict', 'stale_evidence', 'invalid_supersession', 'sop_link_and_version_required', 'decision_conflict'].includes(e.message) ? e.message : 'memory_operation_unconfirmed' })
+  router.get('/api/v1/memory/operations', async (req,res) => {
+    if (!operations) return res.status(503).json({error:'memory_status_unavailable'})
+    try { res.set('Cache-Control','no-store').json(await operations.status()) } catch (_) { res.status(503).json({error:'memory_status_unavailable'}) }
+  })
   router.get('/api/v1/memory/catalog', async (req, res) => {
     try {
       const filter = { scope: req.query.scope, type: req.query.type, status: req.query.status }
@@ -25,7 +29,8 @@ function createGovernedRouter({ gateway, runtime }) {
     switch (b.op) {
       case 'consolidate': return gateway.consolidate(actor, b.id)
       case 'consolidationSettings': return runtime.consolidation.configure(b.enabled)
-      case 'backup': return runtime.backup()
+      case 'backup': return recovery ? recovery.run() : runtime.backup()
+      case 'rebuild_index': return gateway.rebuildIndex(actor, b.scope)
       case 'propose': return gateway.propose(actor, b.record)
       case 'observe': return gateway.observe(actor, b.record)
       case 'transition': return gateway.transition(actor, b.id, b.version, b.action)

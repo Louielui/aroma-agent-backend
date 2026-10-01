@@ -4,6 +4,10 @@ const path = require('node:path')
 const { t } = require('../i18n/t')
 function buildHtml() {
   const labels = {
+    backupStatus:t('memoryOps.backupStatus'),backupVerified:t('memoryOps.backupVerified'),backupRunning:t('memoryOps.backupRunning'),backupFailed:t('memoryOps.backupFailed'),backupHelp:t('memoryOps.backupHelp'),rebuild:t('memoryOps.rebuild'),rebuildHelp:t('memoryOps.rebuildHelp'),
+    operations:t('memoryOps.title'),operationsHelp:t('memoryOps.help'),bridge:t('memoryOps.bridge'),database:t('memoryOps.database'),hindsight:t('memoryOps.hindsight'),
+    degraded:t('memoryOps.degraded'),foreign:t('memoryOps.foreign'),notMeasured:t('memoryOps.notMeasured'),receipts:t('memoryOps.receipts'),coverageUnavailable:t('memoryOps.coverageUnavailable'),
+    mailCoverage:t('memoryOps.mailCoverage'),historyComplete:t('memoryOps.historyComplete'),historyRunning:t('memoryOps.historyRunning'),historyNotStarted:t('memoryOps.historyNotStarted'),
     mailMemory: t('company.mailMemory'),
     consolidation: t('mem6.consolidation'), consolidationHelp: t('mem6.consolidationHelp'), automatic: t('mem6.automatic'), paused: t('mem6.paused'),
     pause: t('mem6.pause'), resume: t('mem6.resume'), review: t('mem6.review'), queued: t('mem6.queued'), processed: t('mem6.processed'),

@@ -68,12 +68,15 @@ access, pause during pull, failed persistence, expired cursors, pagination, larg
 IDs, OAuth identity/nonce rejection, IAM preservation, source-bound thread
 priority and model cancellation. Live acceptance must separately verify the
 boot commit, UI status, a real authorized Watch, notification timestamp and
-captured new message. On 2026-09-30, the API, topic, pull subscription and Watch
-were confirmed live. Valid-notification receipt and new-message persistence
-remain unverified; the first discarded notification predates reason counters
-and its rejection cause is unknown. The architecture checklist reflects that
-partial connection. No automatic email sending or task execution is
-introduced. Ivy mail memory, attachments and Hindsight mail indexing remain
+captured new message. The API, topic, pull subscription and Watch were confirmed
+live. The Owner test message at 2026-10-01T02:55:14Z produced a valid notification
+at 02:55:30.712Z, a persisted source at 02:55:32.591Z and analysis at
+02:56:07.532Z. This measured delivery took about 19 seconds to save and 54 seconds
+to classify. Earlier discarded notifications predate reason counters; their
+cause remains unknown. No automatic email sending or task execution is
+introduced. Resumable full-history coverage and dedicated Hindsight mail recall
+are implemented in the 2026-10-01 release and still require deployed acceptance;
+see `MEMORY-OWNER-V1-ACCEPTANCE.md`. Ivy mail memory and attachments remain
 unconnected.
 
 References: [Gmail push](https://developers.google.com/workspace/gmail/api/guides/push),

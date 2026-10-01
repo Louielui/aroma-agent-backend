@@ -75,3 +75,20 @@ test('zero extracted facts still confirm the exact stored original', async () =>
     : Response.json({ id, bank_id: 'xiangxiang-owner', original_text: 'Hello again.', memory_unit_count: 0 }) })
   assert.equal((await client.retainAutomatic(id, 'Hello again.', { at: null })).facts, 0)
 })
+test('mail source banks are isolated from shared scope and owner banks', async () => {
+  const urls = []; const bank = 'xiangxiang-mail-' + require('node:crypto').createHash('sha256').update('admin-mail:adm@example.test').digest('hex').slice(0, 24)
+  const client = createHindsight({ env, transport: async (url, init) => {
+    urls.push(url); assert.ok(url.startsWith('http://127.0.0.1:8888/v1/default/banks/' + bank))
+    return Response.json({ results: [] })
+  } })
+  assert.deepEqual(await client.forMailSource('adm@example.test').recall('old invoice'), [])
+  assert.equal(urls.length, 1)
+  assert.throws(() => client.forMailSource('invalid/path'), /invalid_mail_source/)
+  assert.throws(() => client.forScope('admin-mail:adm@example.test'), /invalid_scope/)
+})
+test('dedicated indexing request can be cancelled for foreground owner conversation', async () => {
+  const abort = new AbortController(); let begin; const began = new Promise(resolve => { begin = resolve })
+  const client = createHindsight({ env, transport: async (url, init) => { begin(); await new Promise((resolve, reject) => init.signal.addEventListener('abort', () => reject(new DOMException('Cancelled', 'AbortError')), { once: true })); return null } })
+  const job = client.forMailSource('adm@example.test').withSignal(abort.signal).recall('earlier invoice')
+  await began; abort.abort(); await assert.rejects(job, /memory_yielded/)
+})

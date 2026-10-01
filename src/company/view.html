@@ -95,6 +95,15 @@ async function memoryView(query='',filter=memoryFilter) {
  if(data.sync.excluded>0) node('p',L.mailMemoryExcluded+' '+data.sync.excluded,area,'note')
  node('p',L.mailAnalysisNote,area,'muted')
  if(data.sync.analysis) node('p',L.mailAnalysisReady+' '+data.sync.analysis.ready+' · '+L.mailAnalysisPending+' '+data.sync.analysis.pending+' · '+L.mailAnalysisFailed+' '+data.sync.analysis.failed,area)
+ if(data.sync.hindsight) {
+   const h=data.sync.hindsight; const panel=node('section',null,area,'card')
+   node('h3',L.mailIndex,panel)
+   node('p',h.connectionState==='unavailable'?L.automation.unavailable:h.configured?L.mailIndexConfigured:L.notConnected,panel)
+   node('p',L.mailIndexTotal+' '+h.total+' · '+L.mailMemorySaved+' '+h.saved+' · '+L.mailIndexRawOnly+' '+h.rawOnly+' · '+L.mailIndexSourceOnly+' '+h.sourceOnly+' · '+L.mailAnalysisPending+' '+h.pending+' · '+L.mailAnalysisFailed+' '+h.failed+' · '+L.mailIndexPartial+' '+(h.partialIndex??'—'),panel)
+   if(h.rebuild) node('p',(L.mailIndexRebuildStates[h.rebuild.state]||L.automation.unavailable)+' · '+h.rebuild.queued+'／'+h.rebuild.total+' · '+L.mailAnalysisPending+' '+h.rebuild.remaining,panel)
+   if(h.failed>0) button(L.mailIndexRetry,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'retryIndex'});await memoryView(query)})
+   button(L.mailIndexRebuild,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'rebuildIndex'});await memoryView(query)})
+ }
  button(L.mailMemorySync,area,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'sync'}); await memoryView(query) })
  const label=node('label',L.mailMemorySearch,area); label.style.display='block'; const search=node('input',null,label); search.value=query; search.maxLength=400; search.style.cssText='display:block;width:100%;font:inherit;padding:8px'
  button(L.mailSearch,area,()=>memoryView(search.value))
@@ -126,20 +135,20 @@ async function memoryView(query='',filter=memoryFilter) {
 async function automationView(area) {
  const a=L.automation; const data=await api('/api/v1/company-access/mail-automation'); area.replaceChildren()
  node('h3',a.title,area); node('p',a.note,area,'muted')
- const e=data.events; const eventState=!data.cloud.configured?'not_connected':e?.paused?'paused':e?.state==='watching'?'watching':e?.state==='failed'?'failed':e?.state==='recovering'?'recovering':'setup_required'
- node('p',a.events+' · '+a.states[eventState],area,'badge')
+ const e=data.events; const eventState=data.cloud.state==='unavailable'||e?.state==='unavailable'?'unavailable':!data.cloud.configured?'not_connected':e?.paused?'paused':e?.state==='watching'?'watching':e?.state==='failed'?'failed':e?.state==='recovering'?'recovering':'setup_required'
+ node('p',a.events+' · '+(eventState==='unavailable'?a.unavailable:a.states[eventState]),area,'badge')
  if(e?.lastNotificationAt) node('p',a.last+' '+new Date(e.lastNotificationAt).toLocaleString(),area)
  else if(eventState==='watching') node('p',a.awaiting,area,'note')
  if(e?.discarded>0) { node('p',a.rejected+' '+e.discarded,area,'muted'); for(const [reason,count] of Object.entries(e.discardReasons||{})) node('p',(a.reasons[reason]||'—')+' '+count,area,'muted') }
  if(e?.excluded>0) node('p',L.mailMemoryExcluded+' '+e.excluded,area,'note')
- if(!data.cloud.configured) button(a.authorize,area,async()=>{const r=await api('/api/v1/company-access/mail-automation',{op:'authorize'}); window.location.assign(r.url)})
- else {
+ if(eventState!=='unavailable'&&!data.cloud.configured) button(a.authorize,area,async()=>{const r=await api('/api/v1/company-access/mail-automation',{op:'authorize'}); window.location.assign(r.url)})
+ else if(eventState!=='unavailable') {
    button(e?.paused?a.resume:a.pause,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:!e?.paused}); await automationView(area)})
    button(a.retry,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'events',paused:false}); await automationView(area)})
    button(a.disconnect,area,async()=>{await api('/api/v1/company-access/mail-automation',{op:'disconnect'}); await automationView(area)})
  }
  const s=data.scheduler
- if(s) {
+ if(s && s.state!=='unavailable') {
    node('h3',a.scheduler,area); node('p',s.paused?a.states.paused:s.foreground?a.foreground:s.reason==='subscription_limit_reached'?a.quota:['analysis_unavailable','subscription_login_required'].includes(s.reason)?a.unavailable:a.states.active,area,'badge')
    const label=node('label',a.scheduler,area); label.style.display='block'; const mode=node('select',null,label); mode.style.cssText='display:block;font:inherit;padding:8px;max-width:100%'
    for(const v of ['catchup','balanced']) {const o=node('option',a[v],mode); o.value=v}; mode.value=s.mode
@@ -148,6 +157,22 @@ async function automationView(area) {
    button(s.paused?a.resume:a.pause,area,()=>save(!s.paused)); button(a.retry,area,()=>save(false))
    if(s.nextAt) node('p',a.next+' '+new Date(s.nextAt).toLocaleString(),area,'muted')
  }
+ if(s?.state==='unavailable') node('p',a.scheduler+' · '+a.unavailable,area,'note')
+ const h=data.history; const hi=L.historyImport
+ const panel=node('section',null,area,'card'); panel.id='mail-history'
+ node('h3',hi.title,panel);node('p',hi.scope,panel,'muted')
+ node('p',hi.states[h?.state]||a.unavailable,panel,'badge')
+ if(h?.enabled===false) node('p',L.disabled,panel,'note')
+ if(h?.startedAt) node('p',hi.snapshot+' '+new Date(h.startedAt).toLocaleString(),panel)
+ if(h?.processed!==null&&h?.processed!==undefined) node('p',hi.processed+' '+h.processed+' · '+hi.retained+' '+h.retained+' · '+hi.excluded+' '+h.excluded+' · '+hi.partial+' '+h.partial,panel)
+ if(h?.oldestAt) node('p',hi.range+' '+new Date(h.oldestAt).toLocaleDateString()+' → '+new Date(h.newestAt).toLocaleDateString(),panel)
+ for(const [reason,count] of Object.entries(h?.exclusionReasons||{})) node('p',(hi.reasons[reason]||hi.unavailable)+' '+count,panel,'muted')
+ const control=async(action)=>{await api('/api/v1/company-access/mail-automation',{op:'history',action});await automationView(area)}
+ if(h?.state==='not_started') button(hi.start,panel,()=>control('start'))
+ if(h?.state==='completed') button(L.mailHistoryNewPass,panel,()=>control('start'))
+ if(h?.state==='running') button(a.pause,panel,()=>control('pause'))
+ if(['paused','cancelled','failed'].includes(h?.state)) button(a.resume,panel,()=>control('resume'))
+ if(['running','paused','failed'].includes(h?.state)) button(hi.cancel,panel,()=>control('cancel'))
  button(a.refresh,area,()=>automationView(area))
 }
 function renderMemoryDetail(data,card,query) {

@@ -21,7 +21,7 @@ function setCookie (res, name, value, seconds, callback = false) {
     '; Max-Age=' + seconds + '; HttpOnly; SameSite=' + (callback ? 'Lax' : 'Strict') + '; Secure')
 }
 function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = false, registry = createRegistry(), flow = createFlow({ registry }), readers = googleReaders(), probe,
-  mailbox = require('./mailbox').createMailbox({ registry }), mailMemory = null, mailPubsub = null, mailScheduler = null, mailEvents = null } = {}) {
+  mailbox = require('./mailbox').createMailbox({ registry }), mailMemory = null, mailPubsub = null, mailScheduler = null, mailEvents = null, mailHistory = null } = {}) {
   const router = express.Router(); const gateway = createGateway({ registry, ...readers })
   const safe = fn => (req, res, next) => Promise.resolve().then(() => fn(req, res)).catch(next)
   const noStore = (req, res, next) => { res.set({ 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Frame-Options': 'DENY' }); next() }
@@ -32,7 +32,14 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
   router.get('/api/v1/company-access', (req, res) => res.json({ ...registry.snapshot(), mailbox: mailbox.status(), enabled, memberAcceptance: 'pending', memory: mailMemory ? 'source_bound' : 'not_connected' }))
   const eventCookie = (res, value, seconds) => res.append('Set-Cookie', 'xiangxiang_mail_events_flow=' + encodeURIComponent(value) + '; Path=/company/mail-notifications/callback; Max-Age=' + seconds + '; HttpOnly; SameSite=Lax; Secure')
   router.get('/api/v1/company-access/mail-automation', safe(async (req, res) => {
-    res.json({ cloud: mailPubsub?.status() || { state: 'not_connected', configured: false }, events: await mailEvents?.status() || null, scheduler: await mailScheduler?.status() || null })
+    const status = async (component, absent = null) => {
+      if (!component) return absent
+      try { return await component.status() } catch (_) { return { state: 'unavailable', reason: 'read_failed' } }
+    }
+    const [cloud, events, scheduler, history] = await Promise.all([
+      status(mailPubsub, { state: 'not_connected', configured: false }), status(mailEvents), status(mailScheduler), status(mailHistory, { state: 'not_started' })
+    ])
+    res.json({ cloud, events, scheduler, history })
   }))
   router.post('/api/v1/company-access/mail-automation', same, safe(async (req, res) => {
     const b = req.body || {}
@@ -44,6 +51,7 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
       if (b.op === 'disconnect' && Object.keys(b).join(',') === 'op' && mailPubsub) { mailPubsub.disconnect(); return res.json({ ok: true }) }
       if (b.op === 'events' && Object.keys(b).sort().join(',') === 'op,paused' && mailEvents) return res.json(await mailEvents.control({ owner: true }, b.paused))
       if (b.op === 'scheduler' && Object.keys(b).sort().join(',') === 'mode,op,paused' && mailScheduler) return res.json(await mailScheduler.control({ owner: true }, { mode: b.mode, paused: b.paused }))
+      if (b.op === 'history' && Object.keys(b).sort().join(',') === 'action,op' && ['start','pause','resume','cancel'].includes(b.action) && mailHistory) return res.json(await mailHistory.control({ owner: true }, b.action))
       return res.status(400).json({ error: 'invalid_request' })
     } catch (_) { return res.status(503).json({ error: 'mail_automation_unavailable' }) }
   }))
@@ -72,6 +80,8 @@ function createRouter ({ requireOwner, endOwnerSession = () => {}, enabled = fal
       if (b.op === 'sync' && Object.keys(b).join(',') === 'op') return res.json(await mailMemory.sync())
       if (b.op === 'analyze' && Object.keys(b).sort().join(',') === 'id,op') return res.json(await mailMemory.analyze({ owner: true }, b.id))
       if (b.op === 'analyzeBatch' && Object.keys(b).join(',') === 'op') return res.json(await mailMemory.analyzeBatch({ owner: true }))
+      if (b.op === 'retryIndex' && Object.keys(b).join(',') === 'op' && mailMemory.retryIndex) return res.json(await mailMemory.retryIndex({ owner: true }))
+      if (b.op === 'rebuildIndex' && Object.keys(b).join(',') === 'op' && mailMemory.rebuildIndex) return res.json(await mailMemory.rebuildIndex({ owner: true }))
       if (b.op === 'update' && Object.keys(b).sort().join(',') === 'id,input,op,version') return res.json(await mailMemory.update({ owner: true }, b.id, b.version, b.input))
       return res.status(400).json({ error: 'invalid_request' })
     } catch (e) { res.status(e.message === 'revision_conflict' ? 409 : 503).json({ error: 'mail_memory_operation_unconfirmed' }) }
