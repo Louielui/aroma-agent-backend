@@ -9,8 +9,44 @@ function sourceId(key) {
   const h = createHash('sha256').update(key).digest('hex')
   return 'xx-' + h.slice(0, 8) + '-' + h.slice(8, 12) + '-4' + h.slice(13, 16) + '-8' + h.slice(17, 20) + '-' + h.slice(20, 32)
 }
+const digest = value => createHash('sha256').update(value).digest('hex')
+function capturePolicyText(row) {
+  if (row.source.kind !== 'conversation') return row.text
+  const prefix = 'Conversation ' + row.source.id + ', turn ' + row.source.turn + ', captured ' + row.source.at + '\nOWNER SAID:\n'
+  const marker = '\nASSISTANT SAID (suggestions and claims, not verified actions):\n'
+  const end = row.text.indexOf(marker, prefix.length)
+  return row.text.startsWith(prefix) && end >= prefix.length ? row.text.slice(prefix.length, end) : null
+}
+function reconcilable(row) {
+  if (row.state !== 'unconfirmed' || !['write_unconfirmed', 'restart_interrupted'].includes(row.reason) || !row.text || row.text.length > 30000 ||
+      !['conversation', 'briefing'].includes(row.source?.kind) || typeof row.source.id !== 'string' || !row.source.id ||
+      typeof row.source.at !== 'string' || !Number.isFinite(Date.parse(row.source.at)) ||
+      row.id !== sourceId(row.source.kind + ':' + row.source.id + ':' + (row.source.turn || ''))) return false
+  const policy = capturePolicyText(row)
+  return policy !== null && !exclusionReason(policy) && !exclusionReason(row.text, false)
+}
+function verifiedCapture(row, proof) {
+  const r = proof?.record, indexed = proof?.indexed, origin = proof?.origin
+  if (!r || !indexed || !origin || r.id !== row.id || r.text !== row.text || r.subject !== row.source.kind + ' · ' + row.source.id ||
+      r.type !== 'episodic' || r.scope !== 'private:owner' || r.owner !== 'owner' || r.status !== 'active' || r.supersedes || r.supersededBy ||
+      (r.expiresAt && (!Number.isFinite(Date.parse(r.expiresAt)) || Date.parse(r.expiresAt) <= Date.now())) ||
+      r.approval?.kind !== 'policy' || r.approval.id !== 'owner_history' || r.approval.actor !== 'owner' ||
+      typeof r.approval.at !== 'string' || !Number.isFinite(Date.parse(r.approval.at)) || !Number.isInteger(r.version) || r.version <= 0 ||
+      !Number.isInteger(r.index?.facts) || typeof r.index.checkedAt !== 'string' || !Number.isFinite(Date.parse(r.index.checkedAt)) ||
+      !((r.index.state === 'saved' && r.index.facts > 0) || (r.index.state === 'raw_only' && r.index.facts === 0)) ||
+      indexed.state !== r.index.state || indexed.facts !== r.index.facts || indexed.canonicalVersion !== r.version || indexed.textHash !== digest(row.text)) return false
+  const migrated = r.source?.kind === 'historical_import'
+  const expected = { kind: migrated ? 'historical_import' : row.source.kind, id: row.source.id + ':' + (row.source.turn || ''), at: row.source.at,
+    attribution: row.source.kind === 'briefing' ? 'measured_result' : 'historical_import' }
+  const sameSource = source => source && Object.keys(source).length === Object.keys(expected).length && Object.entries(expected).every(([key, value]) => source[key] === value)
+  if (!sameSource(r.source)) return false
+  if (!migrated) return origin.kind === 'native_capture'
+  return origin.kind === 'capture_history_import' && origin.firstVersion === 1 && /^[a-f0-9]{64}$/.test(origin.auditHash || '') &&
+    origin.textHash === indexed.textHash && sameSource(origin.source) && origin.approval &&
+    Object.keys(origin.approval).length === Object.keys(r.approval).length && Object.entries(r.approval).every(([key, value]) => origin.approval[key] === value)
+}
 function createCapture({ dir = path.join(resolveDataDir(), 'memory-capture'), client, available = () => true } = {}) {
-  let loaded = false; let enabled = true; let active = null; let locked = false; let lastError = null; let timer = null
+  let loaded = false; let enabled = true; let active = null; let locked = false; let lastError = null; let timer = null; let reconciledId = ''
   const entries = new Map()
   function persist(name, value) {
     fs.mkdirSync(dir, { recursive: true })
@@ -53,6 +89,28 @@ function createCapture({ dir = path.join(resolveDataDir(), 'memory-capture'), cl
     if (active || locked || !available()) return
     try {
       load(); if (!enabled) return
+      if (typeof client?.getCaptureEvidence === 'function') {
+        // One historical receipt per tick, rotating past unresolved evidence.
+        // This never retries extraction and cannot starve new pending receipts.
+        const history = [...entries.values()].filter(reconcilable).sort((a, b) => a.id.localeCompare(b.id))
+        const receipt = history.find(r => r.id.localeCompare(reconciledId) > 0) || history[0]
+        if (receipt) {
+          reconciledId = receipt.id; active = receipt.id
+          const original = structuredClone(receipt)
+          try {
+            const proof = await client.getCaptureEvidence(receipt.id)
+            const current = entries.get(receipt.id)
+            if (enabled && available() && !locked && JSON.stringify(current) === JSON.stringify(original) && reconcilable(current) && verifiedCapture(current, proof)) {
+              const row = structuredClone(current)
+              row.state = proof.record.index.state; row.facts = proof.record.index.facts; row.reason = row.state === 'saved' ? null : 'no_extracted_facts'
+              row.reconciliation = { at: new Date().toISOString(), canonicalVersion: proof.record.version, textHash: proof.indexed.textHash, origin: proof.origin.kind }
+              save(row)
+            }
+          } catch (_) { /* Unavailable, revoked or mismatched evidence remains retryable by the Owner. */ }
+          finally { active = null }
+        }
+      }
+      if (!enabled || !available() || locked) return
       const row = [...entries.values()].find(r => r.state === 'pending'); if (!row) return
       active = row.id; row.state = 'processing'; row.attempts++; save(row)
       try {

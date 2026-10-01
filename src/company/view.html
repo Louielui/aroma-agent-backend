@@ -10,15 +10,19 @@
 const C = /*CONFIG*/; const L = C.labels
 document.documentElement.lang = C.lang; document.title = C.owner ? L.title : L.memberTitle
 const $ = id => document.getElementById(id)
+let contentGeneration=0; let ownerGeneration=0
+function clearContent() { contentGeneration++; $('files').replaceChildren(); return contentGeneration }
 function node(tag, text, parent, cls) { const n = document.createElement(tag); if(text != null) n.textContent = text; if(cls) n.className = cls; if(parent) parent.appendChild(n); return n }
 function link(text, url, parent) { const n = node('a', text, parent); n.href = url; return n }
 function button(text, parent, action) { const n = node('button', text, parent); n.type = 'button'; n.addEventListener('click', async () => { n.disabled = true; $('status').textContent = L.loading; try { await action(); $('status').textContent = '' } catch (_) { $('status').textContent = L.error } finally { n.disabled = false } }); return n }
 async function api(url, body) { const r = await fetch(url, { cache: 'no-store', ...(body ? {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)} : {}) }); if(!r.ok) throw Error('request_failed'); return r.json() }
 $('title').textContent = C.owner ? L.title : L.memberTitle; $('intro').textContent=L.intro; $('limit').textContent=L.limit; $('local').textContent=L.local
 if(C.owner) { link(L.back, '/demo', $('nav')); link(L.architecture, '/architecture', $('nav')); link(L.portal, '/member', $('nav')) }
-async function change(body) { await api('/api/v1/company-access', body); await ownerView() }
+async function change(body) { ownerGeneration++; clearContent(); await api('/api/v1/company-access', body); await ownerView() }
 async function ownerView() {
+ const request=++ownerGeneration; const content=clearContent()
  const data = await api('/api/v1/company-access')
+ if(request!==ownerGeneration) return
  $('actions').replaceChildren(); node('span', data.enabled ? L.enabled : L.disabled, $('actions'), 'badge')
  $('people').replaceChildren(); node('h2', L.people, $('people')); const people = node('div',null,$('people'),'grid')
  for(const u of data.users) { const c=node('article',null,people,'card'); node('h3',u.name,c); node('p',u.email,c,'muted'); node('span',u.suspended ? L.suspended : u.verified ? L.verified : L.pending,c,'badge')
@@ -54,11 +58,12 @@ async function ownerView() {
  $('audit').querySelector('pre').textContent=data.audit.slice(-30).reverse().map(a=>a.at+' · '+a.actor+' · '+a.action+' · '+a.target).join('\n')
  const mailResult=new URLSearchParams(location.search).get('mail')
  if(mailResult) { $('status').textContent=mailResult==='success'&&data.mailbox.state==='connected'?L.mailSuccess:L.mailFailed; history.replaceState(null,'','/company-access') }
- if(location.hash==='#mail-memory'&&data.memory==='source_bound') await memoryView()
+ if(content===contentGeneration&&location.hash==='#mail-memory'&&data.memory==='source_bound'&&data.mailbox.state==='connected') await memoryView()
 }
 async function previewMail(owner,query) {
- $('files').replaceChildren()
+ const request=clearContent()
  const data=await api(owner?(typeof query==='string'?'/api/v1/company-access/mail/search?q='+encodeURIComponent(query):'/api/v1/company-access/mail'):'/api/v1/member/mail')
+ if(request!==contentGeneration) return
  node('h2',data.mailbox,$('files')); node('p',typeof query==='string'?L.mailSearchScope:L.mailScope,$('files'),'muted')
  if(!data.messages.length) node('p',L.mailEmpty,$('files'))
  if(data.truncated) node('p',L.mailResultsLimited,$('files'),'note')
@@ -74,8 +79,9 @@ async function previewMail(owner,query) {
  }
 }
 async function files(source, folderId) {
- $('files').replaceChildren()
+ const request=clearContent()
  const data=await api('/api/v1/member/files?sourceId='+encodeURIComponent(source.id)+'&folderId='+encodeURIComponent(folderId))
+ if(request!==contentGeneration) return
  node('h2',source.name,$('files')); button(L.root,$('files'),()=>files(source,source.rootId))
  const ul=node('ul',null,$('files'))
  for(const f of data.files) { const li=node('li',null,ul); link(f.name||f.id,f.url,li); if(f.mimeType==='application/vnd.google-apps.folder') button(L.open,li,()=>files(source,f.id)) }
@@ -86,9 +92,13 @@ let memoryFilter='attention'
 async function memoryView(query='',filter=memoryFilter) {
  memoryFilter=filter
  history.replaceState(null,'','/company-access#mail-memory')
- $('files').replaceChildren(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query)+'&filter='+encodeURIComponent(filter))
- const area=$('files'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
+ const request=clearContent(); const data=await api('/api/v1/company-access/mail-memory?q='+encodeURIComponent(query)+'&filter='+encodeURIComponent(filter))
+ if(request!==contentGeneration) return
+ // Build privately until both reads finish. An older request can never append
+ // its source data into the current content pane after a refresh or disconnect.
+ const area=node('div'); node('h2',L.mailMemory,area); node('p',L.mailMemoryScope,area,'note')
  await automationView(node('section',null,area,'card'))
+ if(request!==contentGeneration) return
  node('p',L.mailMemorySyncAt+' '+(data.sync.checkedAt?new Date(data.sync.checkedAt).toLocaleString():'—'),area,'muted')
  if(data.sync.error||!data.sync.enabled) node('p',L.mailMemoryFailed,area,'note')
  if(data.sync.hasMore) node('p',L.mailMemorySyncMore,area,'note')
@@ -99,9 +109,9 @@ async function memoryView(query='',filter=memoryFilter) {
    const h=data.sync.hindsight; const panel=node('section',null,area,'card')
    node('h3',L.mailIndex,panel)
    node('p',h.connectionState==='unavailable'?L.automation.unavailable:h.configured?L.mailIndexConfigured:L.notConnected,panel)
-   node('p',L.mailIndexTotal+' '+h.total+' · '+L.mailIndexSaved+' '+h.saved+' · '+L.mailIndexRawOnly+' '+h.rawOnly+' · '+L.mailIndexSourceOnly+' '+h.sourceOnly+' · '+L.mailAnalysisPending+' '+h.pending+' · '+L.mailAnalysisFailed+' '+h.failed+' · '+L.mailIndexPartial+' '+(h.partialIndex??'—'),panel)
+   node('p',L.mailIndexTotal+' '+h.total+' · '+L.mailIndexSaved+' '+h.saved+' · '+L.mailIndexRawOnly+' '+h.rawOnly+' · '+L.mailIndexSourceOnly+' '+h.sourceOnly+' · '+L.mailIndexPending+' '+h.pending+' · '+L.mailIndexFailed+' '+h.failed+' · '+L.mailIndexPartial+' '+(h.partialIndex??'—'),panel)
    for(const [reason,count]of Object.entries(h.sourceOnlyReasons||{})) if(count>0) node('p',(L.mailIndexSourceOnlyReasons[reason]||L.mailIndexSourceOnly)+' '+count,panel,'muted')
-   if(h.rebuild) node('p',(L.mailIndexRebuildStates[h.rebuild.state]||L.automation.unavailable)+' · '+h.rebuild.queued+'／'+h.rebuild.total+' · '+L.mailAnalysisPending+' '+h.rebuild.remaining,panel)
+   if(h.rebuild) node('p',(L.mailIndexRebuildStates[h.rebuild.state]||L.automation.unavailable)+' · '+h.rebuild.queued+'／'+h.rebuild.total+' · '+L.mailIndexRebuildRemaining+' '+h.rebuild.remaining,panel)
    if(h.backoffUntil&&Date.parse(h.backoffUntil)>Date.now()) node('p',L.automation.quota+' · '+L.automation.next+' '+new Date(h.backoffUntil).toLocaleString(),panel,'note')
    if(h.failed>0) button(L.mailIndexRetry,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'retryIndex'});await memoryView(query)})
    button(L.mailIndexRebuild,panel,async()=>{await api('/api/v1/company-access/mail-memory',{op:'rebuildIndex'});await memoryView(query)})
@@ -133,6 +143,7 @@ async function memoryView(query='',filter=memoryFilter) {
    } else button(L.mailAnalyze,c,async()=>{ await api('/api/v1/company-access/mail-memory',{op:'analyze',id:r.id}); await memoryView(query) })
    button(L.mailMemoryDetail,c,async()=>{ const data=await api('/api/v1/company-access/mail-memory?id='+encodeURIComponent(r.id)); renderMemoryDetail(data,c,query) })
  }
+ if(request===contentGeneration) $('files').replaceChildren(area)
 }
 async function automationView(area) {
  const a=L.automation; const data=await api('/api/v1/company-access/mail-automation'); area.replaceChildren()

@@ -374,3 +374,119 @@ test('rebuild scope honors the same terminal eligibility and leaves excluded ori
   assert.equal((await f.memory.recall(f.owner, 'historical notice')).length, 1)
   assert.equal((await f.memory.indexNext(f.owner)).state, 'saved')
 })
+
+test('bounded local classification drains twenty originals per tick before eligible provider work, without rereading the full store', async () => {
+  const f = fixture()
+  for (let n = 1; n <= 45; n++) await f.add(n.toString(16), 'The sender mentioned CRA form T2.', 'Historical notice')
+  await f.add('abc', 'Vendor agreed Friday.')
+  const thread = (await f.memory.list(f.owner)).items[0]
+  await f.memory.update(f.owner, thread.id, thread.version, { action: 'approve', text: 'Owner chose Monday.', assignee: null, deadline: null, taskState: 'open' })
+  const decision = await f.store.get(thread.id); const all = f.store.all; let reads = 0
+  f.store.all = async () => { reads++; return all() }
+  for (const total of [20, 40, 45]) {
+    const before = reads
+    assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+    assert.equal(reads - before, 1)
+    assert.equal((await all()).filter(row => row.index.reason === 'text_policy_excluded').length, total)
+    assert.equal(f.calls.length, 0)
+    assert.deepEqual(await f.store.get(thread.id), decision)
+  }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'saved'); assert.equal(f.calls.length, 1)
+})
+
+test('a local classification crash preserves per-original checkpoints and a fresh worker resumes the remainder', async () => {
+  const f = fixture()
+  for (let n = 1; n <= 5; n++) await f.add(n.toString(16), 'The sender mentioned CRA form T2.')
+  const originals = (await f.store.all()).filter(row => row.source.kind === 'admin_mail_message')
+  const commit = f.store.commit; let attempts = 0; let fail = true
+  f.store.commit = async (changes, event) => {
+    if (event.op === 'mail_source_index') { assert.equal(changes.length, 1); if (++attempts === 3 && fail) throw Error('simulated_process_interruption') }
+    return commit(changes, event)
+  }
+  await assert.rejects(f.memory.indexNext(f.owner), /simulated_process_interruption/)
+  const checkpointed = (await f.store.all()).filter(row => row.index.reason === 'text_policy_excluded')
+  assert.equal(checkpointed.length, 2); fail = false
+  const restarted = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:01:00.000Z' })
+  assert.equal((await restarted.indexNext(f.owner)).state, 'source_only')
+  assert.equal((await f.store.all()).filter(row => row.index.reason === 'text_policy_excluded').length, 5)
+  for (const row of originals) {
+    const current = await f.store.get(row.id)
+    assert.equal(current.text, row.text); assert.deepEqual(current.source, row.source); assert.deepEqual(current.details, row.details)
+  }
+  for (const row of checkpointed) assert.equal((await f.store.get(row.id)).version, row.version)
+  assert.equal(f.calls.length, 0)
+})
+
+test('revocation between local classifications stops subsequent commits while keeping the first checkpoint', async () => {
+  const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.'); await f.add('abd', 'The sender mentioned CRA form T2.')
+  const commit = f.store.commit; let indexed = 0
+  f.store.commit = async (changes, event) => {
+    const result = await commit(changes, event)
+    if (event.op === 'mail_source_index' && ++indexed === 1) f.revoke()
+    return result
+  }
+  await assert.rejects(f.memory.indexNext(f.owner), /mail_access_denied/)
+  assert.equal((await f.store.all()).filter(row => row.index.reason === 'text_policy_excluded').length, 1)
+  assert.equal(indexed, 1); assert.equal(f.calls.length, 0)
+})
+
+test('foreground cancellation and runtime pause yield between local classifications without changing remaining retries', async () => {
+  for (const action of ['cancel', 'pause']) {
+    const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.'); await f.add('abd', 'The sender mentioned CRA form T2.')
+    const originals = (await f.store.all()).filter(row => row.source.kind === 'admin_mail_message')
+    const commit = f.store.commit; let indexed = 0
+    f.store.commit = async (changes, event) => {
+      const result = await commit(changes, event)
+      if (event.op === 'mail_source_index' && ++indexed === 1) {
+        if (action === 'cancel') void f.memory.cancelAnalysis()
+        else f.pause(true)
+      }
+      return result
+    }
+    assert.equal((await f.memory.indexNext(f.owner)).state, action === 'cancel' ? 'yielded' : 'paused')
+    const current = (await f.store.all()).filter(row => row.source.kind === 'admin_mail_message')
+    assert.equal(current.filter(row => row.index.reason === 'text_policy_excluded').length, 1)
+    const untouched = current.find(row => row.index.reason !== 'text_policy_excluded')
+    assert.deepEqual(untouched, originals.find(row => row.id === untouched.id)); assert.equal(f.calls.length, 0)
+  }
+})
+
+test('each local classification rechecks current source revision and owning thread visibility', async () => {
+  for (const change of ['source_revision', 'thread_archived']) {
+    const f = fixture(); await f.add('abc', 'The sender mentioned CRA form T2.'); await f.add('abd', 'The sender mentioned CRA form T2.')
+    const rows = await f.store.all(); const second = rows.find(row => row.source.kind === 'admin_mail_message' && row.source.id === 'abd')
+    const thread = rows.find(row => row.source.kind === 'admin_mail_thread')
+    const get = f.store.get; const commit = f.store.commit; let firstSaved = false; let changed = false; let current
+    f.store.commit = async (changes, event) => { const result = await commit(changes, event); if (event.op === 'mail_source_index') firstSaved = true; return result }
+    f.store.get = async id => {
+      if (firstSaved && !changed && id === (change === 'source_revision' ? second.id : thread.id)) {
+        const old = await get(id); current = { ...old, version: old.version + 1,
+          ...(change === 'source_revision' ? { text: 'A newer canonical revision.' } : { status: 'archived' }) }
+        await commit([{ expected: old.version, row: current }], { op: 'test_race', actor: 'owner' }); changed = true
+      }
+      return get(id)
+    }
+    await f.memory.indexNext(f.owner)
+    assert.equal(changed, true, change)
+    assert.equal((await f.store.all()).filter(row => row.index.reason === 'text_policy_excluded').length, 1, change)
+    assert.deepEqual(await get(current.id), current); assert.equal(f.calls.length, 0)
+  }
+})
+
+test('classification batches reconcile exhausted originals during durable quota cooldown without provider retries', async () => {
+  const f = fixture(); await f.add('abc', 'Vendor agreed Friday.'); let calls = 0
+  f.client.retainAutomatic = async () => { calls++; throw Error('memory_rate_limited') }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'unconfirmed')
+  for (let n = 1; n <= 25; n++) await f.add(n.toString(16), 'The sender mentioned CRA form T2.')
+  const exhausted = (await f.store.all()).find(row => row.source.kind === 'admin_mail_message' && row.source.id === '1')
+  await f.store.commit([{ expected: exhausted.version, row: { ...exhausted, version: exhausted.version + 1,
+    index: { state: 'unconfirmed', reason: 'memory_invalid_text', attempts: 3, nextRetryAt: '2026-10-02T16:00:00.000Z' } } }], { op: 'test_old_failure', actor: 'owner' })
+  for (const count of [20, 25]) {
+    assert.equal((await f.memory.indexNext(f.owner)).state, 'source_only')
+    assert.equal((await f.store.all()).filter(row => row.index.reason === 'text_policy_excluded').length, count)
+    assert.equal(calls, 1)
+  }
+  assert.equal((await f.store.get(exhausted.id)).index.attempts, 3)
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+  assert.equal((await f.memory.status()).hindsight.backoffUntil, '2026-10-01T16:15:00.000Z')
+})

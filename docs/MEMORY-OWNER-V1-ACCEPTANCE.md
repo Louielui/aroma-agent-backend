@@ -238,3 +238,81 @@ The combined corrective delivery passed the full 6,248-test suite: 6,232 passed,
 zero failed and 16 were explicitly skipped. Both memory and company-page rendered
 scripts parsed successfully. Runtime load, policy reconciliation, UI readback and
 actual full-history/index completion remain acceptance gates.
+
+## Corrective live acceptance on ebc68fe
+
+The Owner's restart loaded ebc68fef45ef2448f6e23225aa107e6b0b57d96a;
+`/health` reported boot time 2026-10-01T13:11:46.294Z. The authenticated
+bridge, canonical PostgreSQL and Hindsight probes were ready. The existing
+scheduled backup and its sealed files remained verified, with the next due time
+preserved at 2026-10-02T11:55:03.287Z. Backup/restore implementation blobs were
+unchanged from the prior real scheduled and isolated-restore acceptance; no
+deadline was forced to manufacture another scheduled proof.
+
+All twelve old text-policy failures, including four exhausted records, became
+explicit source-only originals through the normal worker. Their text, source,
+date, content hash and Owner decision remained unchanged. The named mail test
+again passed source-bound original recall. Its derived index was still pending,
+so indexed-retrieval completion is not claimed.
+
+Both architecture entries were read back in the running interface: dedicated
+Owner mail indexing and source checks were connected within their measured scope;
+full historical coverage, attachments and member memory remained qualified.
+The memory page distinguished retained originals and verified backup dates, and
+the company page showed the dedicated semantic-index count and policy reasons.
+At 13:35:09.367Z, history had processed 1,947 messages, retained 1,938,
+excluded nine and declared 52 partial bodies. It was still running. Mail's
+semantic counts were 24 saved, nine raw-only, 67 source-only, 1,873 pending and
+zero failures. General canonical indexing had zero pending or unconfirmed
+records, while two older capture mirrors still reported unconfirmed receipts.
+
+Live observation also exposed two remaining operational defects: permanent
+eligibility metadata was classified only one original per full-store read,
+delaying provider indexing; and legacy capture receipts were not reconciled
+when canonical background indexing later succeeded. Corrections require their
+own focused tests, new running version and measured readback. Full provider
+history and eligible derived backlog remain separate completion gates.
+
+## Bounded classification and capture readback corrections
+
+Local permanent mail eligibility is now classified at most twenty originals per
+tick from one full source snapshot. Each original has its own current revision,
+content integrity, owning-thread visibility and mailbox lease checks, followed by
+an individual durable audit commit. Cancellation, pause, revocation, concurrent
+revision/archive and a mid-batch failure preserve committed progress and leave
+remaining records resumable. Quota cooldown and exhausted genuine provider errors
+are not reset. Red-first mail regressions failed five cases before the correction;
+the broader focused company, memory, chat and evidence suite passed all 243 cases.
+
+Historical unconfirmed capture mirrors now receive bounded read-only evidence
+checks, rotating at most one older receipt per tick without starving new captures.
+The current private Owner episodic original, policy, source, date, version and
+derived document must match exactly. The documented historical-import path also
+requires its intact first Owner-observation audit snapshot and genesis hash.
+Canonical records and audits are never changed by this reconciliation. Corrections,
+forgetting, archive, supersession, expiry, opt-out, pause and unavailable evidence
+remain guarded; manual retry stays available for unresolved writes.
+
+Focused capture/runtime/gateway/route verification passed 91 cases. An isolated
+copy of the two actual older receipts was then reconciled using live read-only
+canonical and Hindsight evidence: one saved native capture and one raw-only
+historical import. Original text, source and capture-attempt count were preserved.
+Actual receipt bytes, canonical records and audits were unchanged, with zero
+retain calls, model calls or canonical writes. This is evidence for the strict
+verifier; normal live mirror correction still requires the new backend load.
+
+The company page also discards stale overlapping mail-memory responses instead
+of appending duplicate panels or restoring private cards after a source change or
+disconnect. Dedicated labels distinguish pending/failed original indexing and
+remaining queue preparation from pending thread analysis. Interface race tests
+exercise deferred actual rendered-script responses, not static label snapshots.
+
+The combined delivery passed the full 6,324-test suite: 6,308 passed, zero failed
+and sixteen explicitly skipped. The memory page's rendered script parsed, while
+the company race tests executed the actual emitted script in both locales.
+Independent code review found no blocking defect in the classification or
+capture-evidence changes. Two consolidation failures in the live catalog were
+independently verified as archived non-business acceptance fixtures with no
+candidates; they are preserved historical audit results, not eligible retry work.
+New-version load, normal live mirror correction, bounded classification progress,
+provider indexing and full historical completion remain gated separately.

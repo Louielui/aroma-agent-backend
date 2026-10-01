@@ -7,6 +7,7 @@ function mailLabels () {
     mailIndex:t('mailHistory.index'),mailIndexRetry:t('mailHistory.indexRetry'),mailIndexRebuild:t('mailHistory.indexRebuild'),mailIndexConfigured:t('mailHistory.indexConfigured'),mailIndexSaved:t('mailHistory.indexSaved'),mailIndexRawOnly:t('mailHistory.indexRawOnly'),mailIndexSourceOnly:t('mailHistory.indexSourceOnly'),mailIndexPartial:t('mailHistory.indexPartial'),mailIndexTotal:t('mailHistory.indexTotal'),mailHistoryNewPass:t('mailHistory.newPass'),
     mailIndexRebuildStates:{queued:t('mailHistory.rebuilding'),running:t('mailHistory.rebuilding'),completed:t('mailHistory.rebuiltQueue'),failed:t('mailHistory.failed')},
     mailIndexSourceOnlyReasons:{text_policy_excluded:t('mailHistory.indexPolicyExcluded'),text_too_short:t('mailHistory.indexTooShort'),text_too_long:t('mailHistory.indexTooLong')},
+    mailIndexPending:t('mailHistory.indexPending'),mailIndexFailed:t('mailHistory.indexFailed'),mailIndexRebuildRemaining:t('mailHistory.indexRebuildRemaining'),
     automation: { title: t('mailAutomation.title'), note: t('mailAutomation.note'), authorize: t('mailAutomation.authorize'),
     disconnect: t('mailAutomation.disconnect'), refresh: t('mailAutomation.refresh'), pause: t('mailAutomation.pause'), resume: t('mailAutomation.resume'),
     retry: t('mailAutomation.retry'), events: t('mailAutomation.events'), scheduler: t('mailAutomation.scheduler'),

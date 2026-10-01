@@ -1,6 +1,7 @@
 'use strict'
 const fs = require('node:fs')
 const path = require('node:path')
+const { createHash } = require('node:crypto')
 const { createGateway, OWNER, stableId } = require('./governed')
 const { createStructuredStore } = require('./structuredStore')
 const { createHindsight } = require('./hindsight')
@@ -8,6 +9,22 @@ const { resolveDataDir } = require('../store/dataDir')
 const { exclusionReason } = require('./capturePolicy')
 const { sourceOnlyReason } = require('./indexPolicy')
 let singleton
+const digest = value => createHash('sha256').update(value).digest('hex')
+const ordered = value => Array.isArray(value) ? value.map(ordered) : value && typeof value === 'object'
+  ? Object.fromEntries(Object.keys(value).sort().map(key => [key, ordered(value[key])])) : value
+const encode = value => JSON.stringify(ordered(value))
+function captureOriginal(row) {
+  return row?.type === 'episodic' && row.scope === 'private:owner' && row.owner === 'owner' && row.status === 'active' &&
+    !row.supersedes && !row.supersededBy && (!row.expiresAt || (Number.isFinite(Date.parse(row.expiresAt)) && Date.parse(row.expiresAt) > Date.now())) &&
+    typeof row.text === 'string' && row.text.length > 0 && Number.isInteger(row.version) && row.version > 0 &&
+    row.approval?.kind === 'policy' && row.approval.id === 'owner_history' && row.approval.actor === 'owner' &&
+    typeof row.approval.at === 'string' && Number.isFinite(Date.parse(row.approval.at)) &&
+    ['conversation', 'briefing', 'historical_import'].includes(row.source?.kind)
+}
+function confirmedCapture(row) {
+  return captureOriginal(row) && Number.isInteger(row.index?.facts) && typeof row.index.checkedAt === 'string' && Number.isFinite(Date.parse(row.index.checkedAt)) &&
+    ((row.index.state === 'saved' && row.index.facts > 0) || (row.index.state === 'raw_only' && row.index.facts === 0))
+}
 function createRuntime({ store = createStructuredStore(), engine = createHindsight(), dir = path.join(resolveDataDir(), 'memory-outbox') } = {}) {
   const gateway = createGateway({ store, engine })
   let timer; let active = false; let indexActive = false; let lastError = null; let nextIndexAt = 0
@@ -88,6 +105,31 @@ function createRuntime({ store = createStructuredStore(), engine = createHindsig
       const r = await gateway.get(OWNER, id)
       if (!r) return null
       return { id, text: r.text, facts: r.index.facts, indexState: r.index.state, createdAt: r.createdAt, updatedAt: r.updatedAt }
+    },
+    getCaptureEvidence: async id => {
+      // Read-only reconciliation must prove the current scoped index, not merely
+      // a historical successful write. Legacy get deliberately keeps its shape.
+      const row = await gateway.get(OWNER, id)
+      if (!confirmedCapture(row) || row.id !== id) return null
+      let origin = { kind: 'native_capture' }
+      if (row.source.kind === 'historical_import') {
+        // importHistory preserved receipt ids and original source id/date while
+        // changing kind. Require its immutable first Owner observation snapshot.
+        const first = (await gateway.audit(OWNER, id))[0]
+        if (!first || first.op !== 'observe' || first.actor !== 'owner' || first.version !== 1 || first.recordId !== id ||
+            first.previousHash !== null || !/^[a-f0-9]{64}$/.test(first.hash || '') || !captureOriginal(first.snapshot) || first.snapshot.version !== 1 ||
+            first.snapshot.id !== id || first.snapshot.text !== row.text || first.snapshot.subject !== row.subject ||
+            first.snapshot.createdAt !== row.createdAt || encode(first.snapshot.source) !== encode(row.source) || encode(first.snapshot.approval) !== encode(row.approval)) return null
+        const { hash, previousHash, ...event } = first
+        if (digest(encode(event)) !== hash) return null
+        origin = { kind: 'capture_history_import', firstVersion: 1, auditHash: hash, textHash: digest(first.snapshot.text),
+          source: structuredClone(first.snapshot.source), approval: structuredClone(first.snapshot.approval) }
+      }
+      const document = await engine.forScope(row.scope).get(id)
+      if (!document || document.id !== id || document.text !== row.text || document.facts !== row.index.facts) return null
+      const latest = await gateway.get(OWNER, id)
+      if (!confirmedCapture(latest) || encode(latest) !== encode(row)) return null
+      return { record: row, indexed: { textHash: digest(document.text), facts: document.facts, state: row.index.state, canonicalVersion: row.version }, origin }
     },
     list: async () => {
       const rows = await gateway.list(OWNER, { status: 'active' })

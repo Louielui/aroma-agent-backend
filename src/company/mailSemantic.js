@@ -147,6 +147,46 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       return { state: 'rebuild_failed', id: state.id, queued: state.queued }
     }
   }
+  const interruption = (verify, started) => {
+    verify()
+    if (!allowed()) return { state: 'paused' }
+    if (started !== generation || abort?.signal.aborted) return { state: 'yielded' }
+    return null
+  }
+  async function saveIndex (row, index, owningThread, verify, started) {
+    return serial(async () => {
+      let stopped = interruption(verify, started); if (stopped) return stopped
+      const current = await store.get(row.id)
+      stopped = interruption(verify, started); if (stopped) return stopped
+      if (!current || current.version !== row.version || !message(current) || current.details.mailbox !== account() ||
+          current.details.hash !== row.details.hash || !active(current, clock()) || !intact(current)) return { state: 'changed' }
+      const currentThread = owningThread && await store.get(owningThread.id)
+      stopped = interruption(verify, started); if (stopped) return stopped
+      if (!currentThread || !visibleThread(currentThread, clock()) || currentThread.source.id !== current.details.threadId ||
+          currentThread.details.mailbox !== account()) return { state: 'changed' }
+      if (index.state === 'source_only' && eligibilityReason(current) !== index.reason) return { state: 'changed' }
+      const rebuild = current.index?.rebuildId ? { rebuildId: current.index.rebuildId, queuedAt: current.index.queuedAt, rebuildCutoff: current.index.rebuildCutoff } : {}
+      current.index = { ...index, ...rebuild }; current.version++; current.updatedAt = clock()
+      await store.commit([{ expected: row.version, row: current }], { op: 'mail_source_index', actor: 'owner', at: clock() }); verify()
+      return { state: index.state, id: current.id }
+    })
+  }
+  async function classifyLocal (actor, selected, threads, verify, started) {
+    // The source snapshot is read once. Each original then has its own current
+    // revision, thread, lease and durable checkpoint; interruption cannot lose
+    // completed classifications or overwrite a later canonical revision.
+    if (mailbox.check) await mailbox.check(actor)
+    let count = 0; let id = null
+    for (const { row, reason } of selected.slice(0, 20)) {
+      const stopped = interruption(verify, started); if (stopped) return { ...stopped, count }
+      const result = await saveIndex(row, { state: 'source_only', reason, facts: null, attempts: row.index?.attempts || 0,
+        checkedAt: clock(), contentHash: row.details.hash, documentId: null, nextRetryAt: null }, threads.get(row.details.threadId), verify, started)
+      if (['yielded', 'paused'].includes(result.state)) return { ...result, count }
+      if (result.state === 'source_only') { count++; id = result.id }
+    }
+    const stopped = interruption(verify, started); if (stopped) return { ...stopped, count }
+    return { state: count ? 'source_only' : 'changed', id, count }
+  }
   async function runIndex (actor) {
     const started = generation
     const verify = await checked(actor)
@@ -159,7 +199,8 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       const rebuilt = await advanceRebuild(actor, verify, started)
       if (rebuilt) return rebuilt
       const now = clock()
-      const rows = recallable(await sources(), now)
+      const all = await sources(); const rows = recallable(all, now)
+      const threads = new Map(all.filter(row => visibleThread(row, now)).map(row => [row.source.id, row]))
       const selected = rows.map(row => ({ row, reason: eligibilityReason(row) })).filter(({ row, reason }) =>
         !['saved', 'raw_only', 'source_only'].includes(row.index?.state) || row.index?.contentHash !== row.details.hash ||
         (reason && (row.index.state !== 'source_only' || row.index.reason !== reason)))
@@ -167,22 +208,21 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
         // policy exhausted its attempts or persisted a future retry deadline.
         .filter(({ row, reason }) => reason || (row.index?.attempts || 0) < 3)
         .filter(({ row, reason }) => reason || !row.index?.nextRetryAt || row.index.nextRetryAt <= now)
-        .sort((a, b) => Number(!!b.reason) - Number(!!a.reason) || a.row.createdAt.localeCompare(b.row.createdAt))[0]
+        .sort((a, b) => Number(!!b.reason) - Number(!!a.reason) || a.row.createdAt.localeCompare(b.row.createdAt))
       verify()
       if (started !== generation) return { state: 'yielded' }
-      if (!selected?.reason) {
-        const runtime = await runtimeState.read(); verify()
-        if (started !== generation) return { state: 'yielded' }
-        if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
-      }
-      if (!selected) return { state: engine?.forMailSource ? 'idle' : 'not_connected' }
-      const { row, reason } = selected
-      const expected = row.version; const contentHash = row.details.hash
+      const local = selected.filter(value => value.reason)
+      if (local.length) return await classifyLocal(actor, local, threads, verify, started)
+      const next = selected[0]
+      const runtime = await runtimeState.read(); verify()
+      if (started !== generation) return { state: 'yielded' }
+      if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
+      if (!next) return { state: engine?.forMailSource ? 'idle' : 'not_connected' }
+      const { row } = next
+      const contentHash = row.details.hash
       const documentId = stableId('admin-mail-index:' + account() + ':' + row.id + ':' + contentHash)
       const text = sourceText(row); let index
-      if (reason) index = { state: 'source_only', reason, facts: null, attempts: row.index?.attempts || 0, checkedAt: now,
-        contentHash, documentId: null, nextRetryAt: null }
-      else {
+      {
         const configured = client(); if (!configured) return { state: 'not_connected' }
         const adapter = configured.withSignal ? configured.withSignal(abort.signal) : configured
         try {
@@ -213,15 +253,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       }
       if (started !== generation || abort.signal.aborted) return { state: 'yielded' }
       if (mailbox.check) await mailbox.check(actor)
-      return await serial(async () => {
-        verify(); if (!allowed()) return { state: 'paused' }
-        const current = await store.get(row.id)
-        if (!current || current.version !== expected || current.details.hash !== contentHash || !active(current, clock())) return { state: 'changed' }
-        const rebuild = row.index?.rebuildId ? { rebuildId: row.index.rebuildId, queuedAt: row.index.queuedAt, rebuildCutoff: row.index.rebuildCutoff } : {}
-        current.index = { ...index, ...rebuild }; current.version++; current.updatedAt = clock()
-        await store.commit([{ expected, row: current }], { op: 'mail_source_index', actor: 'owner', at: clock() }); verify()
-        return { state: index.state, id: current.id }
-      })
+      return await saveIndex(row, index, threads.get(row.details.threadId), verify, started)
     } finally { indexing = false; abort = null }
   }
   function indexNext (actor) {
