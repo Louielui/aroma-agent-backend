@@ -214,7 +214,8 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null } = {}) {
+  const contextReceipts = new Map()
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
@@ -543,6 +544,30 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
 
       const briefingRequest = require('../core/operating/chatRequest')
+      if (liveContext && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') && require('../context/developmentContext').isDevelopmentRequest(message)) {
+        if (!briefingRequest.sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const previous = contextReceipts.get(workflowRequestId)
+        if (previous && (previous.conversationId !== conversationId || previous.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (previous) {
+          try { return res.set('Cache-Control', 'no-store').json(await previous.result) }
+          catch (_) { return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+        }
+        const receipt = { conversationId, message }
+        receipt.result = (async () => {
+          const report = await liveContext.read({ id: 'owner', role: 'owner' })
+          const reply = require('../context/liveContextView').developmentReply(report)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+          emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
+          return { lane: 'chat', reply, liveContext: report, historySaved, servedBy: null }
+        })()
+        contextReceipts.set(workflowRequestId, receipt)
+        if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { contextReceipts.delete(workflowRequestId); emit('context_read_failed', 503, 'context_unavailable'); return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+      }
       if (operatingManager && !contextCard && !req.body.attachSection &&
           (!req.body.interactionMode || req.body.interactionMode === 'chat') && briefingRequest.isBriefingRequest(message)) {
         if (!briefingRequest.sameOrigin(req)) { emit('validation_rejected', 403, 'same_origin_required'); return res.status(403).json({ error: 'same_origin_required' }) }

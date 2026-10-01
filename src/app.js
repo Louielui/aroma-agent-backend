@@ -1023,6 +1023,13 @@ function createApp (options = {}) {
   app.use('/api/v1/manager', requireOwner)
   const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null, mailMemory: companyMailMemory })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
+  const liveContext = opts.liveContext || require('./context/developmentContext').createRuntimeDevelopmentContext({ runtime: () => ({
+    deployedCommit: require('./governance/bootCommit').readHeadSync(require('node:path').resolve(__dirname, '..')),
+    bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT
+  }) })
+  app.use('/live-context', requireOwner)
+  app.use('/api/v1/live-context', requireOwner)
+  app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -1124,6 +1131,7 @@ function createApp (options = {}) {
   })
 
   app.use(createDemoRouter({
+    liveContext,
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,

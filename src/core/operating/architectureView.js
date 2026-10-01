@@ -12,7 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-01' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'),
+    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -55,7 +55,7 @@ function buildArchitectureHtml () {
   const integrations = registered.map(item => `<tr data-integration="${escape(item.id)}"><th scope="row">${item.number ? escape(item.number) + ' · ' : ''}${escape(integrationNames[item.id] || item.id)}</th><td><span class="badge ${escape(item.state)}">${escape(labels[item.state] || labels.unknown)}</span></td><td>${item.phase != null ? 'Phase ' + escape(item.phase) : escape(labels.later)}</td></tr>`).join('')
   // The numbered inventory is a design/evidence snapshot, never a routable plan.
   const connections = [
-    ['01', 'GitHub', 'pending_verification', t('master.github')],
+    ['01', 'GitHub', 'partial', t('master.github')],
     ['02', 'Google Drive', 'foundation', t('master.drive')],
     ['03', 'Aroma System API', 'foundation', t('master.aroma')],
     ['04', 'Google Calendar', 'foundation', t('master.calendar')],

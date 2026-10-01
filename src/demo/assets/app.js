@@ -2318,6 +2318,8 @@
   var homeBtn = document.getElementById('open-home')
   if (homeBtn) homeBtn.addEventListener('click', function () { showHome() })
   var managerBtn = document.getElementById('open-manager')
+  var liveContextBtn = document.getElementById('open-live-context')
+  if (liveContextBtn) liveContextBtn.addEventListener('click', function () { window.location.href = '/live-context' })
   var architectureBtn = document.getElementById('open-architecture')
   var memoryBtn = document.getElementById('open-memory')
   if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
@@ -2514,6 +2516,7 @@
     ['chat-level-standard', 'text', function () { return t('chat.standard') }],
     ['chat-level-deep', 'text', function () { return t('chat.deep') }],
     ['manager-label', 'text', function () { return t('manager.title') }],
+    ['live-context-label', 'text', function () { return t('live.title') }],
     ['architecture-label', 'text', function () { return t('architecture.title') }],
     ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],

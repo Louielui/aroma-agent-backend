@@ -5,10 +5,10 @@ const { randomUUID } = require('node:crypto')
 const { resolveDataDir } = require('../../store/dataDir')
 
 // One exclusive-create file per event: no overwritten audit or stored source text.
-function createActivityStore ({ dir = path.join(resolveDataDir(), 'manager-activity') } = {}) {
+function createActivityStore ({ dir = path.join(resolveDataDir(), 'manager-activity'), workflow = 'daily_briefing', reason = 'owner_requested_briefing' } = {}) {
   function append (entry) {
     const event = { id: randomUUID(), runId: entry.runId, sequence: entry.sequence,
-      at: entry.at, actor: entry.actor, workflow: 'daily_briefing', reason: 'owner_requested_briefing',
+      at: entry.at, actor: entry.actor, workflow, reason,
       agent: entry.agent || null, model: null, tool: entry.tool || null,
       source: entry.source || null, layer: entry.layer || null, action: 'read',
       approval: 'not_required', result: entry.result, count: Number.isInteger(entry.count) ? entry.count : null }
