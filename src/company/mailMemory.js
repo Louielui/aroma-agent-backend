@@ -10,6 +10,8 @@ const isMail = row => row?.source?.kind?.startsWith('admin_mail_') === true
 function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clock = () => new Date().toISOString(), allowed = () => true, foreground = () => false }) {
   let tail = Promise.resolve(); let timer; let indexTimer; let indexRunning = false; let indexGeneration = 0
   let busy = false; let error = null; let analyzing = false
+  let indexAttemptActive = false; let backgroundReservation = false; let analysisWaiting = false
+  let preferIndexUntil = 0; let preferAnalysis = false
   const serial = fn => { const next = tail.then(fn); tail = next.catch(() => {}); return next }
   const semantic = require('./mailSemantic').createMailSemantic({ store, mailbox, engine, clock, allowed, serial })
   function scheduleIndex (delay, run) {
@@ -20,9 +22,9 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
       try {
         if (foreground() || analyzing) next = 5000
         else if (allowed()) {
-          const result = await semantic.indexNext(OWNER)
+          const result = await indexNext(OWNER, { background: true })
           if (['saved', 'raw_only', 'source_only', 'rebuilding', 'queued', 'changed'].includes(result.state)) next = 2000
-          else if (['busy', 'yielded'].includes(result.state)) next = 5000
+          else if (['busy', 'yielded', 'deferred'].includes(result.state)) next = 5000
           else if (result.state === 'backoff') next = Math.max(30000, Math.min(900000, Date.parse(result.retryAt) - Date.parse(clock())))
         }
       } catch (_) { /* Failed checks defer the serial worker; source state stays authoritative. */ }
@@ -140,16 +142,33 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     const audit = await store.audit(id); after()
     return { record: row, messages, audit, checkedAt: clock() }
   }
-  async function analyze (actor, id) {
+  async function indexNext (actor, { background = false } = {}) {
+    guard(actor)()
+    if (analyzing || backgroundReservation || indexAttemptActive) return { state: 'busy' }
+    if (background && preferAnalysis) return { state: 'deferred', reason: 'background_analysis_turn' }
+    // Reserve synchronously, before the semantic worker awaits its source checks.
+    indexAttemptActive = true
+    try { return await semantic.indexNext(actor) }
+    finally {
+      indexAttemptActive = false; preferIndexUntil = 0
+      // Hand off to an explicitly waiting scheduler even when its source reads
+      // are slow. The scheduler withdraws demand on pause, stop or future due dates.
+      if (analysisWaiting) preferAnalysis = true
+    }
+  }
+  async function analyze (actor, id, { background = false } = {}) {
     guard(actor)
     if (!analyzer) throw Error('mail_analysis_not_connected')
     if (!allowed()) throw Error('mail_memory_paused')
     if (analyzing) throw Error('mail_analysis_busy')
+    if (background && (indexAttemptActive || semantic.busy())) return { state: 'deferred', reason: 'semantic_index_active' }
     analyzing = true
-    await semantic.cancel()
     let record; let verify
     try {
+      if (!background) await semantic.cancel()
       const detailView = await detail(actor, id); record = detailView.record; verify = guard(actor)
+      verify(); if (!allowed()) throw Error('mail_memory_paused')
+      if (background && foreground()) return { state: 'deferred', reason: 'foreground_busy' }
       if (record.details.analysis?.state === 'ready') return { state: 'unchanged', id }
       const ordered = detailView.messages.sort((a, b) => (Number(a.details.internalDate) || Date.parse(a.details.date) || 0) - (Number(b.details.internalDate) || Date.parse(b.details.date) || 0))
       const evidence = ordered.slice(-3).map(m => ({ id: m.source.id, subject: m.subject, from: m.details.from, date: m.details.date,
@@ -181,7 +200,12 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
         await commit([{ expected: record.version, row: current }], 'mail_analysis_failed')
       }).catch(() => {})
       throw e
-    } finally { analyzing = false }
+    } finally {
+      analyzing = false
+      // Give the five-second index poll one opportunity, but never wait for a
+      // quota-sleeping worker. An actual in-flight retain owns its separate slot.
+      if (background && indexRunning) preferIndexUntil = Date.parse(clock()) + 6000
+    }
   }
   async function analyzeBatch (actor) {
     guard(actor)
@@ -195,14 +219,25 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     for (const row of pending) { guard(actor)(); try { await analyze(actor, row.id); completed++ } catch (_) { guard(actor)(); failed++ } }
     return { completed, failed }
   }
-  async function analyzeNext (actor, { oldest = false } = {}) {
+  async function analyzeNext (actor, { oldest = false, background = false } = {}) {
     guard(actor)
-    const rows = (await threads(actor)).filter(r => r.details.analysis?.state !== 'ready' &&
-      (!r.details.analysis?.retryAt || Date.parse(r.details.analysis.retryAt) <= Date.parse(clock()) || r.details.analysis.state === 'stale'))
-    // Approved replies first; reserve every fifth scheduler attempt for the oldest remaining thread.
-    const score = r => Number(!!r.approval && r.details.needsReview)
-    rows.sort((a, b) => score(b) - score(a) || (oldest ? a.createdAt.localeCompare(b.createdAt) : (b.details.latestTimestamp || 0) - (a.details.latestTimestamp || 0)))
-    return rows.length ? analyze(actor, rows[0].id) : { state: 'idle' }
+    if (background) {
+      if (foreground()) return { state: 'deferred', reason: 'foreground_busy' }
+      if (indexAttemptActive || semantic.busy()) { analysisWaiting = true; return { state: 'deferred', reason: 'semantic_index_active' } }
+      if (indexRunning && Date.parse(clock()) < preferIndexUntil) return { state: 'deferred', reason: 'semantic_index_turn' }
+      if (analyzing || backgroundReservation) return { state: 'deferred', reason: 'mail_analysis_busy' }
+      backgroundReservation = true; preferAnalysis = false; analysisWaiting = false
+    }
+    try {
+      const rows = (await threads(actor)).filter(r => r.details.analysis?.state !== 'ready' &&
+        (!r.details.analysis?.retryAt || Date.parse(r.details.analysis.retryAt) <= Date.parse(clock()) || r.details.analysis.state === 'stale'))
+      guard(actor)()
+      if (background && foreground()) return { state: 'deferred', reason: 'foreground_busy' }
+      // Approved replies first; reserve every fifth scheduler attempt for the oldest remaining thread.
+      const score = r => Number(!!r.approval && r.details.needsReview)
+      rows.sort((a, b) => score(b) - score(a) || (oldest ? a.createdAt.localeCompare(b.createdAt) : (b.details.latestTimestamp || 0) - (a.details.latestTimestamp || 0)))
+      return rows.length ? await analyze(actor, rows[0].id, { background }) : { state: 'idle' }
+    } finally { if (background) backgroundReservation = false }
   }
   async function briefing (actor) {
     const rows = await threads(actor)
@@ -269,8 +304,10 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
       hindsight: { ...await semantic.status(), indexer: { concurrency: 1, activeDelayMs: 2000, idleDelayMs: 30000, foregroundPollMs: 5000 } } }
   }
   return { capture, list, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
-    recall: semantic.recall, indexNext: semantic.indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
-    enabled: allowed, cancelAnalysis: () => Promise.all([semantic.cancel(), Promise.resolve(analyzer?.cancel?.())]),
+    recall: semantic.recall, indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
+    enabled: allowed,
+    backgroundAnalysisDemand: requested => { analysisWaiting = requested === true; if (!analysisWaiting) preferAnalysis = false },
+    cancelAnalysis: () => Promise.all([semantic.cancel(), Promise.resolve(analyzer?.cancel?.())]),
     start () {
       if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() }
       if (!indexRunning && engine) { indexRunning = true; scheduleIndex(2000, ++indexGeneration) }

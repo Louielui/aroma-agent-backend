@@ -205,3 +205,36 @@ The corrective version passed all 6,237 tests: 6,221 passed, zero failed and
 16 were explicitly skipped. The seven additional mail eligibility cases include
 old exhausted attempts, future retry deadlines, metadata policy, local
 classification during quota cooldown and bounded rebuild eligibility.
+
+## Background mail fairness correction
+
+Further live observation found analysis deadlines preceding their completion,
+with no quota pause and a growing eligible index backlog. An isolated combined
+worker test reproduced starvation: repeated background analysis cancelled slow
+retains before canonical indexing could commit. The correction reserves the
+mail model slot before awaited source checks. Background analysis defers to an
+active retain, while manual/foreground cancellation remains immediate. Deadlines
+now start at completion, and deferred requests do not consume the hourly model
+attempt budget. A six-second index opportunity expires when the indexer sleeps
+through quota backoff; explicitly waiting analysis retains its turn across short
+deferred deadlines and slow persistence, but withdraws on pause, stop, foreground,
+source denial and real idle/quota/budget waits.
+
+Nine combined regressions cover slow and fast sustained backlogs, maximum one
+mail model call, manual cancellation, source-read revocation, foreground arrival,
+quota-sleeping and disconnected providers, staggered two-second persistence and
+paused waiting demand. Focused verification passed all 72 tests. This is isolated
+test evidence; loading the correction and measuring live progress remain required.
+The mail page also uses a dedicated semantic-index count label, separate from the
+canonical-capture feedback sentence and historical retained-original count.
+
+At 2026-10-01T12:52:03.771Z, the historical snapshot had processed 996 messages,
+retained 992, explicitly excluded four and recorded 31 partial bodies. The prior
+643-source rebuild preparation was complete, while semantic backlog remained.
+Neither code delivery nor a completed queue preparation proves that full history
+or eligible derived indexing has finished.
+
+The combined corrective delivery passed the full 6,248-test suite: 6,232 passed,
+zero failed and 16 were explicitly skipped. Both memory and company-page rendered
+scripts parsed successfully. Runtime load, policy reconciliation, UI readback and
+actual full-history/index completion remain acceptance gates.
