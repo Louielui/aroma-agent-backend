@@ -22,9 +22,10 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
     if (!input || typeof input !== 'object' || Array.isArray(input)) throw Error('invalid_request')
     const params = spec.params(input)
     const runId = randomUUID(), startedAt = clock()
-    const event = { runId, at: startedAt, actor: 'owner', agent: 'context', tool: resource.id + '.' + op, source: resource.source, layer: 'truth' }
+    const layer = resource.layer || 'truth'
+    const event = { runId, at: startedAt, actor: 'owner', agent: 'context', tool: resource.id + '.' + op, source: resource.source, layer }
     record({ ...event, sequence: 1, result: 'started' })
-    const base = { version: 1, source: resource.source, sourceId: resource.scope, resource: resource.id, operation: op,
+    const base = { version: 1, source: resource.source, sourceId: resource.scope, resource: resource.id, operation: op, layer,
       retrievedAt: startedAt, originalDate: null, link: resource.link || null, sensitivity: resource.sensitivity,
       access: { role: 'owner', scope: resource.scope }, contentPolicy: 'data_only', freshness: { state: 'retrieved', sourceUpdatedAt: null } }
     let result
@@ -41,7 +42,7 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
         coverage: { scope: evidence.queryScope?.window || resource.scope,
           complete: typeof evidence.completeWithinScope === 'boolean' ? evidence.completeWithinScope && !truncated : null,
           truncated, sourceTotal: Number.isInteger(evidence.sourceTotal) && evidence.sourceTotal >= 0 ? evidence.sourceTotal : null,
-          revision: evidence.revision || null }, error: null }
+          revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
         content: null, coverage: { scope: resource.scope, complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }

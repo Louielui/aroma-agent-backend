@@ -92,7 +92,7 @@ function createRegistry ({ file = path.join(resolveDataDir(), 'company-access.js
     mailAllowed: sub => { ensureMailboxRegistered(); const u = identity(sub); return !!(u && u.grants.includes('admin-mail') && state.sources.find(s => s.id === 'admin-mail')?.mailbox) },
     identity: sub => { const u = identity(sub); return u ? { id: u.id, name: u.name, role: u.role } : null },
     source: id => { ensureMailboxRegistered(); return clone(state.sources.find(s => s.id === id) || null) },
-    snapshot: () => { ensureMailboxRegistered(); return { ...clone(state), users: state.users.map(({ sub, ...u }) => ({ ...clone(u), verified: !!sub })) } }
+    snapshot: ({ readOnly = false } = {}) => { if (!readOnly) ensureMailboxRegistered(); return { ...clone(state), users: state.users.map(({ sub, ...u }) => ({ ...clone(u), verified: !!sub })) } }
   }
 }
 function createGateway ({ registry, getFile, listFiles }) {

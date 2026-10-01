@@ -20,7 +20,7 @@ function developmentReply (report) {
     retrievedAt: report.retrievedAt || t('live.unknown') })
 }
 function buildLiveContextHtml () {
-  const labels = { title: t('live.title'), intro: t('live.intro'), back: t('manager.back'), refresh: t('live.refresh'), idle: t('live.idle'), loading: t('live.loading'), error: t('live.error'),
+  const labels = { title: t('live.title'), intro: t('live.intro'), back: t('manager.back'), drive: t('driveContext.title'), refresh: t('live.refresh'), idle: t('live.idle'), loading: t('live.loading'), error: t('live.error'),
     versions: t('live.versions'), remote: t('live.remote'), deployed: t('live.deployed'), running: t('live.running'), restart: t('live.restart'), architecture: t('architecture.title'),
     tests: t('live.tests'), testsAbsent: t('live.testsAbsent'), testsSuccess: t('live.testsSuccess'), testsFailed: t('live.testsFailed'), testsPending: t('live.testsPending'), testsIncomplete: t('live.testsIncomplete'), testsUnavailable: t('live.testsUnavailable'),
     metadata: t('live.metadata'), commits: t('live.commits'), pullRequests: t('live.pullRequests'), checks: t('live.checks'), statuses: t('live.statuses'),

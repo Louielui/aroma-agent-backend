@@ -1023,11 +1023,12 @@ function createApp (options = {}) {
   app.use('/api/v1/manager', requireOwner)
   const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null, mailMemory: companyMailMemory })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
-  const liveContext = opts.liveContext || require('./context/developmentContext').createRuntimeDevelopmentContext({ runtime: () => ({
+  const liveContext = opts.liveContext || require('./context/liveContextService').createRuntimeLiveContext({ registry: companyRegistry, runtime: () => ({
     deployedCommit: require('./governance/bootCommit').readHeadSync(require('node:path').resolve(__dirname, '..')),
     bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT
   }) })
   app.use('/live-context', requireOwner)
+  app.use('/drive-context', requireOwner)
   app.use('/api/v1/live-context', requireOwner)
   app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
   // Conversation History v1 lives on the demo router and is gated the same way — same

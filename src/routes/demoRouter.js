@@ -544,7 +544,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
 
       const briefingRequest = require('../core/operating/chatRequest')
-      if (liveContext && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') && require('../context/developmentContext').isDevelopmentRequest(message)) {
+      const driveRequest = liveContext?.drive ? require('../context/driveContextService').driveIntent(message) : null
+      if (liveContext && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') &&
+          (driveRequest || require('../context/developmentContext').isDevelopmentRequest(message))) {
         if (!briefingRequest.sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const { conversationId, workflowRequestId } = req.body
         if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
@@ -556,12 +558,12 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         }
         const receipt = { conversationId, message }
         receipt.result = (async () => {
-          const report = await liveContext.read({ id: 'owner', role: 'owner' })
-          const reply = require('../context/liveContextView').developmentReply(report)
+          const report = driveRequest ? await liveContext.drive.read({ id: 'owner', role: 'owner' }, driveRequest.operation, driveRequest.input) : await liveContext.read({ id: 'owner', role: 'owner' })
+          const reply = driveRequest ? require('../context/driveContextView').driveReply(report) : require('../context/liveContextView').developmentReply(report)
           let historySaved = true
           try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
           emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
-          return { lane: 'chat', mode: 'chat', reply, liveContext: report, historySaved, servedBy: null }
+          return { lane: 'chat', mode: 'chat', reply, ...(driveRequest ? { driveContext: report } : { liveContext: report }), historySaved, servedBy: null }
         })()
         contextReceipts.set(workflowRequestId, receipt)
         if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)
