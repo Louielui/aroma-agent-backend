@@ -72,3 +72,10 @@ source recall remains available while the semantic index is missing or rebuildin
 No live index must be wiped for acceptance; a separate test bank or injected engine
 can prove reconstruction, then live indexing of an explicit acceptance source can
 verify transport. Large-corpus throughput remains a separate measured limit.
+# Live acceptance, 2026-10-01
+
+On deployed commit `9460a99e65117d1fd8a9bf9d080f5f4f5880470f`, both known Startup shortcuts were repaired under the normal Owner account and their Node targets and arguments were independently read back. Neither entry was disabled. The supervisors first measured the existing healthy listeners without adopting or terminating them. After exact launcher identity and creation-time checks, the two previously authorized recovery roots were replaced by supervisor-owned runtimes.
+
+A subsequent controlled process-tree failure of each owned runtime recovered automatically: bridge in 14 seconds and Hindsight in 22 seconds, measured by the next ready probe. Both retained the same supervisor PID, reported two starts, and cleared retry failures. A second instance of each supervisor exited successfully while the original instance retained its lease. Authenticated final probes at `2026-10-01T08:20:10.628Z` measured bridge, canonical PostgreSQL and Hindsight as ready. No backend restart, credential change, ACL change, data deletion or bank wipe was part of this dependency acceptance.
+
+This proves service recovery in the current Owner session. An actual Windows reboot followed by Owner login has not yet been observed; the installed shortcut and disabled-state readback are startup configuration evidence, not a claim that a reboot acceptance has passed.

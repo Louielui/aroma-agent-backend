@@ -232,3 +232,59 @@ test('rebuild progress is bounded, pauses while runtime or source permission is 
   const later = (await f.store.all()).find(r => r.source.id === 'abc' && r.source.kind === 'admin_mail_message')
   assert.notEqual(later.index.rebuildId, declared.id); assert.equal(f.calls.length, 0)
 })
+
+test('mail indexing drains serially after completion and yields during foreground cooldown', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const f = fixture(); let foreground = false
+  for (const id of ['abc', 'abd', 'abe']) await f.add(id, 'Delivery source ' + id)
+  const worker = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine,
+    foreground: () => foreground, clock: () => '2026-10-01T16:00:00.000Z' })
+  t.after(() => worker.stop())
+  const flush = () => new Promise(resolve => setImmediate(resolve))
+  worker.start(); worker.start(); t.mock.timers.tick(2000); await flush()
+  assert.equal(f.calls.length, 1)
+  t.mock.timers.tick(1000); await flush(); assert.equal(f.calls.length, 1)
+  t.mock.timers.tick(1000); await flush(); assert.equal(f.calls.length, 2)
+  foreground = true; t.mock.timers.tick(2000); await flush(); assert.equal(f.calls.length, 2)
+  foreground = false; t.mock.timers.tick(5000); await flush(); assert.equal(f.calls.length, 3)
+  worker.stop(); t.mock.timers.tick(60000); await flush(); assert.equal(f.calls.length, 3)
+})
+
+test('the completion timer never overlaps retains and stop cannot resurrect its loop', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  const f = fixture(); await f.add('abc', 'Delivery source.'); await f.add('abd', 'Another source.')
+  let release; let calls = 0
+  f.client.retainAutomatic = async (id, text) => { calls++; await new Promise(resolve => { release = resolve }); return { id, text, facts: 1 } }
+  const worker = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:00:00.000Z' })
+  t.after(() => worker.stop())
+  const flush = () => new Promise(resolve => setImmediate(resolve))
+  worker.start(); t.mock.timers.tick(2000); await flush(); assert.equal(calls, 1)
+  t.mock.timers.tick(60000); await flush(); assert.equal(calls, 1)
+  worker.stop(); release(); await flush(); t.mock.timers.tick(60000); await flush(); assert.equal(calls, 1)
+  assert.equal((await f.store.all()).filter(row => row.source.kind === 'admin_mail_message' && row.index.state === 'saved').length, 0)
+})
+
+test('one provider quota failure blocks other mail originals durably until cooldown expires', async () => {
+  const f = fixture(); await f.add('abc', 'First delivery.'); await f.add('abd', 'Second delivery.')
+  let calls = 0
+  f.client.retainAutomatic = async () => { calls++; throw Error('memory_rate_limited') }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'unconfirmed')
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+  assert.equal((await f.memory.status()).hindsight.backoffUntil, '2026-10-01T16:15:00.000Z')
+  const restarted = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:01:00.000Z' })
+  assert.equal((await restarted.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+  await restarted.retryIndex(f.owner)
+  assert.equal((await restarted.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+  const later = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:16:00.000Z' })
+  assert.equal((await later.indexNext(f.owner)).state, 'unconfirmed'); assert.equal(calls, 2)
+})
+
+test('quota cooldown survives a source revision racing the failed retain', async () => {
+  const f = fixture(); await f.add('abc', 'Original delivery.'); let calls = 0
+  f.client.retainAutomatic = async () => { calls++; await f.add('abc', 'Revised delivery.'); throw Error('memory_rate_limited') }
+  assert.equal((await f.memory.indexNext(f.owner)).state, 'changed')
+  const restarted = createMailMemory({ store: f.store, mailbox: f.mailbox, engine: f.engine, clock: () => '2026-10-01T16:01:00.000Z' })
+  assert.equal((await restarted.indexNext(f.owner)).state, 'backoff'); assert.equal(calls, 1)
+  const original = (await f.store.all()).find(row => row.source.kind === 'admin_mail_message')
+  assert.equal(original.text, 'Revised delivery.'); assert.equal(original.index.attempts, 0)
+})

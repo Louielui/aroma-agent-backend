@@ -13,7 +13,7 @@ const quote = value => "'" + value.replace(/'/g, "''") + "'"
 function installScript(plan) {
   if (!Array.isArray(plan) || plan.length !== 2 || plan.some((p, i) => !safePath(p.target) || !safePath(p.workingDirectory) ||
     p.name !== ['Xiangxiang Subscription Bridge.lnk', 'Xiangxiang Memory.lnk'][i] || p.component !== ['bridge', 'hindsight'][i] || !safePath(p.legacy))) throw Error('invalid_runtime_path')
-  const rows = plan.map(p => '@{Name=' + quote(p.name) + ';Target=' + quote(p.target) + ';Arguments=' + quote(p.arguments) + ';WorkingDirectory=' + quote(p.workingDirectory) + ';Legacy=' + quote(p.legacy) + '}').join(',\n')
+  const rows = plan.map(p => '@{Name=' + quote(p.name) + ';Component=' + quote(p.component) + ';Target=' + quote(p.target) + ';Arguments=' + quote(p.arguments) + ';WorkingDirectory=' + quote(p.workingDirectory) + ';Legacy=' + quote(p.legacy) + '}').join(',\n')
   return `$ErrorActionPreference = 'Stop'
 $startup = [Environment]::GetFolderPath('Startup')
 $backup = Join-Path $env:LOCALAPPDATA ('AromaXiangXiang/startup-backups/' + [Guid]::NewGuid().ToString())

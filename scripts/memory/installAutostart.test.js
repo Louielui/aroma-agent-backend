@@ -37,6 +37,7 @@ test('native Windows shortcut repair verifies legacy arguments and leaves foreig
   assert.equal(repaired.status, 0, repaired.stderr)
   const report = JSON.parse(repaired.stdout)
   assert.equal(report.length, 2); assert.ok(report.every(r => r.verified))
+  assert.deepEqual(report.map(r => r.component), ['bridge', 'hindsight'])
   assert.ok(fs.existsSync(path.join(dir, 'backup', plan[0].name)))
   const foreign = `$shell=New-Object -ComObject WScript.Shell; $s=$shell.CreateShortcut(${q(path.join(dir,plan[1].name))}); $s.TargetPath='C:\\Windows\\notepad.exe'; $s.Arguments='foreign'; $s.Save()`
   assert.equal(run(foreign).status, 0)

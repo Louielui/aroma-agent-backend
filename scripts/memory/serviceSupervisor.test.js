@@ -22,3 +22,13 @@ test('tree cleanup targets only the exact owned process and never an exited hand
   await owned.stop()
   assert.equal(calls.length, 2)
 })
+
+test('owned runtime receives the configured data root used by supervisor probes', () => {
+  const child = Object.assign(new EventEmitter(), { pid: 987 })
+  const env = { AROMA_DATA_DIR: 'C:/fixture/owner-data', PATH: 'C:/fixture/runtime' }
+  let launched
+  startOwned({ entry: 'C:/fixture/entry.js', cwd: 'C:/fixture', env,
+    launch: (file, args, options) => { launched = options; return child } })
+  assert.equal(launched.env?.AROMA_DATA_DIR, 'C:/fixture/owner-data')
+  assert.equal(launched.env?.PATH, 'C:/fixture/runtime')
+})

@@ -35,6 +35,7 @@ function tokens (query) {
 // from the current source-bound canonical store after retrieval has completed.
 function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial }) {
   const rebuildState = createMailState({ store, mailbox, clock, kind: 'index_rebuild' })
+  const runtimeState = createMailState({ store, mailbox, clock, kind: 'index_runtime' })
   let indexing = false; let lastError = null; let abort = null; let job = null; let generation = 0
   let connectionState = engine?.forMailSource ? 'unverified' : 'not_connected'; let connectionCheckedAt = null
   const account = () => mailbox.status().mailbox
@@ -58,7 +59,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     const marked = rows.filter(row => message(row) && row.index?.rebuildId === state.id).length
     return { ...state, queued: Math.max(state.queued || 0, marked),
       remaining: state.state === 'completed' ? 0 : eligible.filter(row => (!state.lastId || row.id > state.lastId) && row.index?.rebuildId !== state.id).length,
-      enabled: allowed(), intervalSeconds: 30, batchSize: 20 }
+      enabled: allowed(), intervalSeconds: 2, batchSize: 20 }
   }
   async function startRebuild (actor) {
     const verify = await checked(actor); await cancel()
@@ -154,6 +155,9 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     try {
       const rebuilt = await advanceRebuild(actor, verify, started)
       if (rebuilt) return rebuilt
+      const runtime = await runtimeState.read(); verify()
+      if (started !== generation) return { state: 'yielded' }
+      if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
       const configured = client(); if (!configured) return { state: 'not_connected' }
       const adapter = configured.withSignal ? configured.withSignal(abort.signal) : configured
       const now = clock()
@@ -186,7 +190,14 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
         index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,
           nextRetryAt: attempts < 3 ? new Date(Date.parse(clock()) + delay).toISOString() : null }; lastError = reason
         connectionState = 'unavailable'; connectionCheckedAt = clock()
+        // Provider quota is a mailbox-wide durable circuit. A source revision or
+        // manual retry cannot make the next original bypass that same cooldown.
+        if (reason === 'memory_rate_limited') await runtimeState.update(state => {
+          verify(); if (started !== generation) throw Error('mail_index_yielded')
+          return { ...state, quotaUntil: new Date(Date.parse(clock()) + 900000).toISOString(), reason, checkedAt: clock() }
+        })
       }
+      if (started !== generation || abort.signal.aborted) return { state: 'yielded' }
       if (mailbox.check) await mailbox.check(actor)
       return await serial(async () => {
         verify(); if (!allowed()) return { state: 'paused' }
@@ -274,6 +285,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
   }
   async function status () {
     const all = await sources(); const rows = recallable(all, clock())
+    const runtime = await runtimeState.read()
     const matching = state => rows.filter(r => r.index?.state === state && r.index.contentHash === r.details.hash).length
     const saved = matching('saved'); const rawOnly = matching('raw_only'); const sourceOnly = matching('source_only')
     return { configured: !!engine?.forMailSource, connected: connectionState === 'unverified' ? null : connectionState === 'verified',
@@ -284,6 +296,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       exhausted: rows.filter(r => r.index?.state === 'unconfirmed' && (r.index.attempts || 0) >= 3).length,
       unavailableOriginals: all.filter(r => message(r) && active(r, clock()) && !intact(r)).length,
       rebuild: await rebuildStatus(all),
+      backoffUntil: runtime.quotaUntil && runtime.quotaUntil > clock() ? runtime.quotaUntil : null,
       coverage: 'saved_sources_only', bank: 'source_bound_admin_mail' }
   }
   function cancel () { generation++; abort?.abort(); return job ? job.catch(() => {}) : Promise.resolve() }

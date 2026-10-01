@@ -67,6 +67,22 @@ Injected tests cover large snapshots, crash replay, permission loss, quota
 backoff, cancellation, corrupted backups and lost derived indexes. These tests
 supplement live evidence; they do not replace deployed acceptance.
 
+Mail semantic indexing uses one completion-driven worker, with no overlapping
+retains. It waits 2 seconds after successful indexing or bounded rebuild progress,
+30 seconds after idle or ordinary failure, and polls foreground/analysis eligibility
+every 5 seconds. Foreground cancellation and the application's existing 60-second
+cooldown retain priority. These are scheduling delays, not measured throughput or
+a promised backlog completion time; retain latency and subscription availability
+still determine progress. Source-bound lexical recall remains available while
+semantic indexing is pending.
+
+A provider quota failure persists a mailbox-wide 15-minute circuit in the excluded
+`admin_mail_index_runtime` checkpoint. It survives process restart, a racing source
+revision and manual retry, preventing other pending originals from bypassing the
+same cooldown. The mail page reports its expiry separately from per-source retry
+and exhaustion counts. Rebuild manifests reset at most 20 originals per pass,
+checkpoint every source, and finish queue preparation before model indexing.
+
 ## Explicitly unavailable sources
 
 Ivy's private chat/memory, mail attachments, provider-deleted messages,
@@ -78,3 +94,20 @@ Keep these limits visible while their adapters are added.
 
 See `MEMORY-RECOVERY.md` for backup/recovery and the full-mail snapshot,
 and `MEMORY-RUNTIME-RELIABILITY.md` for local startup and supervision.
+
+## Delivery verification
+
+The delivery suite completed 6,225 tests: 6,209 passed, 16 environment-dependent
+tests skipped, zero failures. It ran with four concurrent test processes. A prior
+default-concurrency run had one unrelated WorkerFlow fixture failure; its log is
+retained. That failure did not reproduce in its focused run or 24 concurrent
+isolated repeats, and its original cause remains unproven. No WorkerFlow code was
+changed to make the result pass.
+
+Independent process tests verified that an offline receipt survives an exit,
+drains after restart, remains source-searchable with a raw-only index, and replays
+without a duplicate or a second audit change. Recovery fixture tests preserved a
+historical import checkpoint and department permission scope, excluded credentials,
+rejected modified audit/assets and overwrite attempts, and measured protected
+Windows backup/restore ACLs. These are isolated acceptance proofs; live provider
+history, a new backend boot and the actual canonical backup remain separately gated.

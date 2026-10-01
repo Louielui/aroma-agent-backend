@@ -8,9 +8,28 @@ const isMail = row => row?.source?.kind?.startsWith('admin_mail_') === true
 // Source-bound records share the canonical PostgreSQL store, but never enter a
 // shared Hindsight bank or the general conversation/consolidation pipeline.
 function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clock = () => new Date().toISOString(), allowed = () => true, foreground = () => false }) {
-  let tail = Promise.resolve(); let timer; let indexTimer; let busy = false; let error = null; let analyzing = false
+  let tail = Promise.resolve(); let timer; let indexTimer; let indexRunning = false; let indexGeneration = 0
+  let busy = false; let error = null; let analyzing = false
   const serial = fn => { const next = tail.then(fn); tail = next.catch(() => {}); return next }
   const semantic = require('./mailSemantic').createMailSemantic({ store, mailbox, engine, clock, allowed, serial })
+  function scheduleIndex (delay, run) {
+    if (!indexRunning || run !== indexGeneration) return
+    indexTimer = setTimeout(async () => {
+      indexTimer = null
+      let next = 30000
+      try {
+        if (foreground() || analyzing) next = 5000
+        else if (allowed()) {
+          const result = await semantic.indexNext(OWNER)
+          if (['saved', 'raw_only', 'source_only', 'rebuilding', 'queued', 'changed'].includes(result.state)) next = 2000
+          else if (['busy', 'yielded'].includes(result.state)) next = 5000
+          else if (result.state === 'backoff') next = Math.max(30000, Math.min(900000, Date.parse(result.retryAt) - Date.parse(clock())))
+        }
+      } catch (_) { /* Failed checks defer the serial worker; source state stays authoritative. */ }
+      scheduleIndex(next, run)
+    }, delay)
+    indexTimer.unref()
+  }
   const account = () => mailbox.status().mailbox
   const key = (kind, id) => stableId('admin-mail:' + account() + ':' + kind + ':' + id)
   function guard (actor) {
@@ -246,17 +265,16 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
       analysis: { connected: !!analyzer, busy: analyzing, pending: rows.filter(r => r.details.analysis?.state !== 'ready').length,
         failed: rows.filter(r => r.details.analysis?.state === 'failed').length, ready: rows.filter(r => r.details.analysis?.state === 'ready').length },
       checkedAt: row?.details.checkedAt || null, completedAt: row?.details.completedAt || null,
-      hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null, hindsight: await semantic.status() }
+      hasMore: !!row?.details.pageToken, excluded: row?.details.excluded ?? null,
+      hindsight: { ...await semantic.status(), indexer: { concurrency: 1, activeDelayMs: 2000, idleDelayMs: 30000, foregroundPollMs: 5000 } } }
   }
   return { capture, list, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
     recall: semantic.recall, indexNext: semantic.indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
     enabled: allowed, cancelAnalysis: () => Promise.all([semantic.cancel(), Promise.resolve(analyzer?.cancel?.())]),
     start () {
       if (!timer) { timer = setInterval(() => { void sync().catch(() => {}) }, 300000); timer.unref() }
-      if (!indexTimer && engine) { indexTimer = setInterval(() => {
-        if (!foreground() && !analyzing && allowed()) void semantic.indexNext(OWNER).catch(() => {})
-      }, 30000); indexTimer.unref() }
+      if (!indexRunning && engine) { indexRunning = true; scheduleIndex(2000, ++indexGeneration) }
     },
-    stop () { clearInterval(timer); clearInterval(indexTimer); timer = null; indexTimer = null; semantic.cancel() } }
+    stop () { clearInterval(timer); clearTimeout(indexTimer); timer = null; indexTimer = null; indexRunning = false; indexGeneration++; semantic.cancel() } }
 }
 module.exports = { createMailMemory, isMail }

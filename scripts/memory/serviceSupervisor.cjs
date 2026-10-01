@@ -3,8 +3,8 @@ const fs = require('node:fs'), path = require('node:path'), { spawn } = require(
 const { createSupervisor } = require('./runtimeSupervisor')
 const { acquireLease } = require('./supervisorLease')
 const { probeBridge, probeHindsight } = require('../../src/memory/serviceHealth')
-function startOwned({ entry, cwd, executable = process.execPath, launch = spawn, platform = process.platform }) {
-  const processHandle = launch(executable, [entry], { cwd, windowsHide: true, stdio: 'ignore' })
+function startOwned({ entry, cwd, env = process.env, executable = process.execPath, launch = spawn, platform = process.platform }) {
+  const processHandle = launch(executable, [entry], { cwd, env, windowsHide: true, stdio: 'ignore' })
   let exited = false
   processHandle.once('exit', () => { exited = true })
   processHandle.once('error', () => { exited = true })
@@ -37,7 +37,7 @@ async function run(component) {
   const entry = component === 'bridge' ? path.join(repo, 'scripts', 'subscription', 'startBridge.js') : path.join(repo, 'scripts', 'memory', 'startHindsight.cjs')
   const supervisor = createSupervisor({ component,
     probe: async () => component === 'bridge' ? (await probeBridge({ env })).bridge : probeHindsight({ env }),
-    start: () => startOwned({ entry, cwd: repo }),
+    start: () => startOwned({ entry, cwd: repo, env: { ...process.env, ...env } }),
     save: value => {
       const file = path.join(dir, component + '-status.json'), temp = file + '.' + process.pid + '.tmp'
       fs.writeFileSync(temp, JSON.stringify(value), { mode: 0o600 }); fs.renameSync(temp, file)
