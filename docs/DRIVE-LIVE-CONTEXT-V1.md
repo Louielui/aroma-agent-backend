@@ -64,5 +64,6 @@ Official API references: [list](https://developers.google.com/workspace/drive/ap
 [scopes](https://developers.google.com/workspace/drive/api/guides/api-specific-auth),
 [document tabs](https://developers.google.com/workspace/docs/api/how-tos/tabs).
 
-Next sources remain Aroma System, Calendar and Gmail. Existing mail memory and
+Owner Aroma System C4 now adds bounded replenishment/invoice Truth Context Packs.
+Next sources remain Calendar and Gmail. Existing mail memory and
 background completion are preserved; C3 does not declare memory acceptance complete.

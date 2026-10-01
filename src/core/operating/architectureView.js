@@ -12,7 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-01' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'),
+    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -35,10 +35,10 @@ function buildArchitectureHtml () {
     { id: 'mail-memory', state: 'partial', title: t('architecture.mailMemoryTitle'), purpose: t('architecture.mailMemoryPurpose'), component: 'PostgreSQL / Gmail / Hindsight / GPT subscription', current: t('architecture.mailMemoryCurrent'), next: t('architecture.mailMemoryNext'), evidence: 'src/company/mailMemory.js; mailSemantic.js; mailHistory.js; mailChat.test.js; docs/MEMORY-RECOVERY.md; docs/ADMIN-MAIL-NOTIFICATIONS.md' },
     { id: 'brain', state: 'foundation', title: t('architecture.brainTitle'), purpose: t('architecture.brainPurpose'), component: t('architecture.brainComponent'), current: t('architecture.brainCurrent'), next: t('architecture.brainNext'), evidence: 'src/adapters/; src/subscription/' },
     { id: 'core', state: 'partial', title: t('architecture.coreTitle'), purpose: t('architecture.corePurpose'), component: t('architecture.coreComponent'), current: t('architecture.coreCurrent'), next: t('architecture.coreNext'), evidence: 'src/core/operating/registry.js; manager.js; gateway.js' },
-    { id: 'tools', state: 'partial', title: t('architecture.toolsTitle'), purpose: t('architecture.toolsPurpose'), component: t('architecture.toolsComponent'), current: t('architecture.toolsCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack' }), next: t('architecture.toolsNext'), evidence: 'src/context/; src/agent/; src/computer/' },
+    { id: 'tools', state: 'partial', title: t('architecture.toolsTitle'), purpose: t('architecture.toolsPurpose'), component: t('architecture.toolsComponent'), current: t('architecture.toolsCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack', truthPack: 'Truth Context Pack' }), next: t('architecture.toolsNext'), evidence: 'src/context/; src/agent/; src/computer/' },
     { id: 'workflow', state: 'partial', title: t('architecture.workflowTitle'), purpose: t('architecture.workflowPurpose'), component: t('architecture.workflowComponent'), current: t('architecture.workflowCurrent'), next: t('architecture.workflowNext'), evidence: 'src/core/operating/activityStore.js; src/store/; src/agent/' },
     { id: 'memory', state: 'partial', title: t('architecture.memoryTitle'), purpose: t('architecture.memoryPurpose'), component: t('architecture.memoryComponent', { component: 'Memory Gateway' }), current: t('architecture.memoryCurrent'), next: t('architecture.memoryNext'), evidence: 'src/memory/governed.js; runtime.js; operations.js; backupScheduler.js; scripts/memory/serviceSupervisor.cjs; docs/MEMORY-SIX-LAYERS.md; docs/MEMORY-OWNER-V1-ACCEPTANCE.md' },
-    { id: 'truth', state: 'foundation', title: t('architecture.truthTitle'), purpose: t('architecture.truthPurpose'), component: t('architecture.truthComponent'), current: t('architecture.truthCurrent'), next: t('architecture.truthNext'), evidence: 'src/context/adapters/aromaSystemRead.js' },
+    { id: 'truth', state: 'partial', title: t('architecture.truthTitle'), purpose: t('architecture.truthPurpose'), component: t('architecture.truthComponent'), current: t('architecture.truthCurrent', { pack: 'Truth Context Pack' }), next: t('architecture.truthNext'), evidence: 'src/context/adapters/aromaSystemRead.js; src/context/aromaContext.js; src/context/aromaContextService.js; docs/AROMA-LIVE-CONTEXT-V1.md' },
     { id: 'knowledge', state: 'partial', title: t('architecture.knowledgeTitle'), purpose: t('architecture.knowledgePurpose'), component: t('architecture.knowledgeComponent'), current: t('architecture.knowledgeCurrent', { drive: 'Aroma Base', pack: 'Knowledge Context Pack' }), next: t('architecture.knowledgeNext'), evidence: 'src/context/driveContext.js; src/context/driveScope.js; src/context/toolGateway.js' },
     { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
@@ -57,7 +57,7 @@ function buildArchitectureHtml () {
   const connections = [
     ['01', 'GitHub', 'partial', t('master.github')],
     ['02', 'Google Drive', 'partial', t('master.drive', { drive: 'Aroma Base' })],
-    ['03', 'Aroma System API', 'foundation', t('master.aroma')],
+    ['03', 'Aroma System API', 'partial', t('master.aroma')],
     ['04', 'Google Calendar', 'foundation', t('master.calendar')],
     ['05', 'Gmail', 'foundation', t('master.gmail')],
     ['06', 'OpenAI / API', 'partial', t('master.openai')],

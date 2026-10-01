@@ -73,7 +73,9 @@ requires the Owner if ordinary restart authority is unavailable; no bypass exist
 
 Owner Drive C3 now adds scoped Knowledge Context Packs and bounded supported-text
 reads; see [Drive Live Context](DRIVE-LIVE-CONTEXT-V1.md) for its explicit limits.
-Next acceptance order: unify Aroma System, Calendar and Gmail readers through
+Owner Aroma System C4 adds bounded replenishment/invoice Truth Context Packs;
+see [Aroma Live Context](AROMA-LIVE-CONTEXT-V1.md) for its explicit limits.
+Next acceptance order: unify Calendar and Gmail readers through
 Context Packs. Their established functionality is preserved; this release does
 not claim their unified coverage is complete. Private GitHub,
 multiple-repository and departmental Context policies remain pending. Action

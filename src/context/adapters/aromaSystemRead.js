@@ -737,6 +737,11 @@ function createAromaSystemReadAdapter (options = {}) {
       return { readState: READ_STATE.failed('bad json'), results: [makeUnavailable({ source: 'aroma_system', reason: 'bad json', retrievedAt })] }
     }
 
+    if (options.strictResponse === true && !(
+      (Array.isArray(body) || Array.isArray(body && body.data) || Array.isArray(body && body.items)) &&
+      (Array.isArray(body) ? body : (Array.isArray(body.data) ? body.data : body.items)).every(row => isPlainObject(row))
+    )) return { readState: READ_STATE.failed('invalid response'), results: [makeUnavailable({ source: 'aroma_system', reason: 'invalid response', retrievedAt })] }
+
     const rows = Array.isArray(body) ? body
       : (Array.isArray(body && body.data) ? body.data
           : (Array.isArray(body && body.items) ? body.items : []))
@@ -774,7 +779,7 @@ function createAromaSystemReadAdapter (options = {}) {
     const rank = RANKING_OF[endpointKey]
     const ordered = rank ? [...rows].sort((a, b) => rank.fn(b) - rank.fn(a)) : rows
     // ⛔ POLICY, NOT A CONSTANT. `null` keeps every row the server sent.
-    const clientLimit = clientLimitFor(endpointKey)
+    const clientLimit = Number.isInteger(options.snapshotRowLimit) && options.snapshotRowLimit > 0 && options.snapshotRowLimit <= 100 ? options.snapshotRowLimit : clientLimitFor(endpointKey)
     const kept = clientLimit === null ? ordered : ordered.slice(0, clientLimit)
 
     return {

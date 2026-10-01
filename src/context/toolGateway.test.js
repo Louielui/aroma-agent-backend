@@ -47,5 +47,6 @@ test('source truncation and missing completeness are visible rather than assumed
   const row = fixture(); row.results[0].truncated = true; row.evidence = null
   const result = await gateway(async () => row).list(actor, resource.id)
   assert.equal(result.coverage.truncated, true); assert.equal(result.coverage.complete, null)
+  assert.equal(result.coverage.selection, null, 'an absent selection declaration must stay unknown')
   assert.equal(result.content[0].truncated, true)
 })

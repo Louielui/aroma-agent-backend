@@ -37,12 +37,15 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
         fields: clone(row.fields || {}), link: row.link || null, trust: 'source_data', truncated: row.truncated === true,
         freshness: { state: 'retrieved', sourceUpdatedAt: row.originalDate || null } }))
       const evidence = value.evidence || {}
-      const truncated = value.truncatedCount > 0 || evidence.truncated === true || content.some(row => row.truncated)
+      const truncated = value.truncatedCount > 0 || evidence.truncated === true || content.some(row => row.truncated) ? true : evidence.truncated === null ? null : false
       result = { ...base, retrievedAt: value.asOf || startedAt, state: 'ok', trust: 'source_data', count: content.length, content,
         coverage: { scope: evidence.queryScope?.window || resource.scope,
           complete: typeof evidence.completeWithinScope === 'boolean' ? evidence.completeWithinScope && !truncated : null,
           truncated, sourceTotal: Number.isInteger(evidence.sourceTotal) && evidence.sourceTotal >= 0 ? evidence.sourceTotal : null,
-          revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null }, error: null }
+          revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null,
+          queryScope: clone(evidence.queryScope || null), returnedRows: evidence.returnedRows ?? null,
+            serverTruncated: evidence.serverTruncated ?? null, dataAsOf: evidence.dataAsOf ?? null, selection: evidence.selection || null,
+            provenance: evidence.provenance || null, rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
         content: null, coverage: { scope: resource.scope, complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }

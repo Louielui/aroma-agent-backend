@@ -18,10 +18,14 @@ function createRuntimeLiveContext ({ env = process.env, runtime, registry }) {
     connector.register(createDriveContextAdapter({ scope })); resources.push(...driveResources(source))
   }
   const dir = path.join(require('../store/dataDir').resolveDataDir(), 'context-activity')
+  const aromaAccess = require('./aromaContext').createAromaContextAccess(env)
+  connector.register(require('./aromaContext').createAromaContextAdapter({ env, verify: aromaAccess }))
+  resources.push(...require('./aromaContext').aromaResources())
   const githubAudit = createActivityStore({ dir, workflow: 'development_context', reason: 'owner_requested_context' })
   const driveAudit = createActivityStore({ dir, workflow: 'drive_context', reason: 'owner_requested_context' })
-  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
+  const aromaAudit = createActivityStore({ dir, workflow: 'aroma_context', reason: 'owner_requested_context' })
+  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'aroma_system' ? aromaAudit : e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
   const development = createDevelopmentContext({ gateway, repository, runtime, enabled: () => require('./flags').readAccessEnabled(env, 'github') })
-  return Object.freeze({ ...development, drive: createDriveContextService({ gateway, scope }), activity: () => githubAudit.list() })
+  return Object.freeze({ ...development, drive: createDriveContextService({ gateway, scope }), aroma: require('./aromaContextService').createAromaContextService({ gateway, verify: aromaAccess }), activity: () => githubAudit.list() })
 }
 module.exports = { createRuntimeLiveContext }

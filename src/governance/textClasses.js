@@ -80,6 +80,7 @@ const FILE_CLASS = Object.freeze({
   'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels
   'context/liveContextView.js': CLASS.INTERFACE,
   'context/driveContextView.js': CLASS.INTERFACE,
+  'context/aromaContextView.js': CLASS.INTERFACE,
   'core/operating/architectureView.js': CLASS.INTERFACE, // Owner-facing architecture inventory
   'core/workerFlow/view.js': CLASS.INTERFACE, // Owner-facing worker acceptance labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39
