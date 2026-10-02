@@ -35,7 +35,8 @@
 
   // THE PROVIDER PICK IS A HINT, NOT AUTHORITY. It is sent as one field; the server
   // validates it against its own closed allowlist and ignores anything else. The page
-  // cannot select a lane, a model id, a context source or anything executable.
+  // cannot select a lane, a context source or anything executable. Subscription
+  // chatModel is a closed choice, rechecked against the account per turn.
   //
   // WHAT THE OPTION SAYS MUST BE TRUE. Until the Owner's second GO, GPT was denied the
   // read-context and decision-recall blocks and this note said so. That claim is now
@@ -85,6 +86,8 @@
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
   var provider = SUBSCRIPTION_CHAT ? 'openai' : 'claude'
+  var chatModel = 'gpt-6-astra'
+  var modelsLoading = false
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
   // NAME only; the server re-validates it and refuses to continue into the proposal lane.
@@ -1386,7 +1389,7 @@
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
         carry ? { attachSection: carry } : {},
         websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
-        SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value } : {}))
+        SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
     }).then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
@@ -2241,6 +2244,9 @@
 
   /* ── provider picker ──────────────────────────────────────────────────── */
   function currentProvider () {
+    if (SUBSCRIPTION_CHAT) {
+      for (var j = 0; j < PROVIDERS.length; j++) if (PROVIDERS[j].model === chatModel) return PROVIDERS[j]
+    }
     for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
     return PROVIDERS[0]
   }
@@ -2249,30 +2255,56 @@
     clear(pickerMenu)
     for (var i = 0; i < PROVIDERS.length; i++) {
       (function (pv) {
-        var b = el('button', 'opt' + (pv.id === provider ? ' active' : ''))
+        var selected = SUBSCRIPTION_CHAT ? pv.model === chatModel : pv.id === provider
+        var b = el('button', 'opt' + (selected ? ' active' : ''))
         b.setAttribute('type', 'button')
         b.setAttribute('role', 'option')
-        b.setAttribute('aria-selected', pv.id === provider ? 'true' : 'false')
-        b.appendChild(el('div', 'opt-name', pv.name + (pv.id === provider ? ' ✓' : '')))
+        b.disabled = pending || pv.available === false
+        b.setAttribute('aria-selected', selected ? 'true' : 'false')
+        b.appendChild(el('div', 'opt-name', pv.name + (selected ? ' ✓' : '')))
         b.appendChild(el('div', 'opt-note' + (pv.warn ? ' warn' : ''), pv.note))
         b.addEventListener('click', function () {
+          if (pending) return
           provider = pv.id
+          if (SUBSCRIPTION_CHAT && pv.model) chatModel = pv.model
           closePicker()
           renderPicker()
         })
         pickerMenu.appendChild(b)
       })(PROVIDERS[i])
     }
+    if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', t('provider.subscriptionNote')))
+  }
+  function loadChatModels () {
+    if (!SUBSCRIPTION_CHAT || modelsLoading || pending) return
+    modelsLoading = true
+    fetch('/api/v1/demo/models', { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
+      .then(function (catalog) {
+        if (catalog.billing !== 'chatgpt-subscription' || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
+        var notes = { 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
+          'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
+        PROVIDERS = catalog.models.map(function (row) {
+          return { id: 'openai', model: row.model, available: row.available === true, warn: false,
+            name: t('provider.subscriptionModel', { model: row.name }),
+            note: row.available ? notes[row.model] : t('provider.modelUnavailable') }
+        })
+        renderPicker()
+      }).catch(function () {
+        renderPicker()
+        pickerMenu.appendChild(el('div', 'opt-note', t('provider.modelsUnavailable')))
+      }).then(function () { modelsLoading = false })
   }
   function openPicker () { pickerMenu.className = ''; picker.setAttribute('aria-expanded', 'true') }
   function closePicker () { pickerMenu.className = 'hidden'; picker.setAttribute('aria-expanded', 'false') }
   picker.addEventListener('click', function (e) {
     e.stopPropagation()
-    if (pickerMenu.className === 'hidden') openPicker(); else closePicker()
+    if (pickerMenu.className === 'hidden') { openPicker(); loadChatModels() } else closePicker()
   })
   document.addEventListener('click', function () { closePicker(); closePlus() })
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePicker(); closePlus() } })
   renderPicker()
+  loadChatModels()
 
   /* ── composer + sidebar chrome ────────────────────────────────────────── */
   function autoGrow () {

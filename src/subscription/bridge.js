@@ -2,7 +2,8 @@
 
 const http = require('node:http')
 const crypto = require('node:crypto')
-const { complete, checkSubscription, SubscriptionError, createSession } = require('./codexClient')
+const { complete, checkSubscription, listSubscriptionModels, SubscriptionError, createSession } = require('./codexClient')
+const { isChatModel } = require('./chatModels')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
 
@@ -14,7 +15,8 @@ function authenticated (header, token) {
 }
 function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
-  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (input.model !== undefined && !isChatModel(input.model)) throw new SubscriptionError('subscription_model_unavailable')
   if (input.effort !== undefined && !['low', 'medium', 'high'].includes(input.effort)) throw new SubscriptionError('subscription_invalid_output')
   if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 500000) throw new SubscriptionError('subscription_invalid_output')
   if (input.system !== undefined && (typeof input.system !== 'string' || input.system.length > 200000)) throw new SubscriptionError('subscription_invalid_output')
@@ -22,17 +24,17 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, completeFn = complete, checkFn = checkSubscription, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
-  const memorySession = createSession(clientOptions)
+  const memorySession = createSession(memoryClientOptions)
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => {
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/workers', '/website', '/v1/chat/completions', '/memory-store'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
     if (!isStore && (isMemory ? memoryBusy : busy)) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -40,7 +42,7 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
     if (isMemory) memoryBusy = true; else if (!isStore) busy = true
     const controller = new AbortController()
     res.on('close', () => { if (!res.writableFinished) controller.abort() })
-    const options = { ...clientOptions, session: isMemory ? memorySession : session, signal: controller.signal }
+    const options = { ...(isMemory ? memoryClientOptions : clientOptions), session: isMemory ? memorySession : session, signal: controller.signal }
     try {
       const chunks = []
       let length = 0
@@ -73,8 +75,11 @@ function createBridge ({ token, clientOptions, completeFn = complete, checkFn = 
           catch (e) { reply(200, { error: ['not_enabled', 'invalid_work_order', 'approval_required', 'worker_busy'].includes(e.message) ? e.message : 'audit_unavailable' }) }
         }
       } else if (req.url === '/status') {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['model', 'effort'].includes(k)) || (input.model !== undefined && !isChatModel(input.model)) || (input.effort !== undefined && !['low', 'medium', 'high'].includes(input.effort))) { reply(400, { code: 'subscription_invalid_output' }); return }
+        reply(200, await checkFn({ ...options, ...input }))
+      } else if (req.url === '/models') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }
-        reply(200, await checkFn(options))
+        reply(200, await modelsFn(options))
       } else reply(200, await completeFn(options, validateInput(input)))
     } catch (error) {
       const safe = error instanceof SubscriptionError ? error : new SubscriptionError()

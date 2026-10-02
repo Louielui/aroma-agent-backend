@@ -5,7 +5,7 @@ const { spawn } = require('node:child_process')
 const { EventEmitter } = require('node:events')
 const { assertLiveEgressAllowed } = require('../adapters/liveEgressFence')
 
-const MODEL = 'gpt-6-astra'
+const { DEFAULT_MODEL: MODEL, CHAT_MODELS, isChatModel } = require('./chatModels')
 const CODES = new Set(['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'subscription_invalid_output'])
 class SubscriptionError extends Error {
   constructor (code = 'subscription_unavailable') {
@@ -42,9 +42,10 @@ const LOCKED_CONFIG = Object.freeze({
   'history.persistence': 'none'
 })
 
-function threadParams (cwd, system) {
+function threadParams (cwd, system, model = MODEL) {
+  if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
   return {
-    model: MODEL, modelProvider: 'openai', allowProviderModelFallback: false,
+    model, modelProvider: 'openai', allowProviderModelFallback: false,
     cwd, approvalPolicy: 'never', approvalsReviewer: 'user', sandbox: 'read-only',
     ephemeral: true, environments: [], selectedCapabilityRoots: [], dynamicTools: [],
     baseInstructions: system || 'Answer only from the supplied conversation and evidence.',
@@ -136,18 +137,36 @@ function configValue (value) {
   return JSON.stringify(value)
 }
 
-async function preflight (rpc, { allowCredits = false } = {}) {
+async function accountModels (rpc) {
   const auth = await rpc.request('account/read', { refreshToken: false })
   if (!auth || !auth.account || auth.account.type !== 'chatgpt') throw new SubscriptionError('subscription_login_required')
-  let found = false
+  const models = []
   let cursor = null
   for (let page = 0; page < 10; page++) {
     const catalog = await rpc.request('model/list', { cursor, limit: 100, includeHidden: false })
-    found = found || !!(catalog && Array.isArray(catalog.data) && catalog.data.some(m => m.model === MODEL))
+    if (!catalog || !Array.isArray(catalog.data)) throw new SubscriptionError()
+    models.push(...catalog.data)
     cursor = catalog && catalog.nextCursor
-    if (found || !cursor) break
+    if (!cursor) return { models, planType: auth.account.planType || null }
   }
-  if (!found) throw new SubscriptionError('subscription_model_unavailable')
+  throw new SubscriptionError()
+}
+
+async function listSubscriptionModels (options) {
+  return withClient(options, async rpc => {
+    const { models } = await accountModels(rpc)
+    return { defaultModel: MODEL, billing: 'chatgpt-subscription', models: CHAT_MODELS.map(item => {
+      const entry = models.find(m => m.model === item.model)
+      return { ...item, available: !!entry, efforts: entry?.supportedReasoningEfforts?.map(e => e.reasoningEffort).filter(e => ['low', 'medium', 'high'].includes(e)) || [] }
+    }) }
+  })
+}
+
+async function preflight (rpc, { allowCredits = false, model = MODEL, effort } = {}) {
+  if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
+  const catalog = await accountModels(rpc)
+  const found = catalog.models.find(m => m.model === model)
+  if (!found || (effort && Array.isArray(found.supportedReasoningEfforts) && !found.supportedReasoningEfforts.some(e => e.reasoningEffort === effort))) throw new SubscriptionError('subscription_model_unavailable')
   const limits = await rpc.request('account/rateLimits/read')
   const bucket = limits?.rateLimitsByLimitId ? limits.rateLimitsByLimitId.codex : limits?.rateLimits
   const reached = bucket?.rateLimitReachedType
@@ -167,7 +186,7 @@ async function preflight (rpc, { allowCredits = false } = {}) {
     const positiveBalance = typeof credits?.balance === 'string' && /^\d+(?:\.\d+)?$/.test(credits.balance) && Number.isFinite(Number(credits.balance)) && Number(credits.balance) > 0
     if (credits?.hasCredits !== true || typeof credits.unlimited !== 'boolean' || (credits.unlimited !== true && knownBalance && !positiveBalance)) throw new SubscriptionError('subscription_limit_reached')
   }
-  return { model: MODEL, billing: 'chatgpt-subscription', planType: auth.account.planType || null, ...(exhausted ? { usageMode: 'credits_available' } : {}) }
+  return { model, billing: 'chatgpt-subscription', planType: catalog.planType, ...(exhausted ? { usageMode: 'credits_available' } : {}) }
 }
 
 async function withClient (options, operation) {
@@ -241,16 +260,18 @@ function createSession (options = {}) {
 }
 
 async function complete (options, input) {
+  const model = input.model === undefined ? MODEL : input.model
+  if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
   const effort = input.effort === undefined ? 'low' : input.effort
   if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
   return withClient(options, async rpc => {
-    const allowance = await preflight(rpc, options)
-    const params = threadParams(options.cwd, input.system)
+    const allowance = await preflight(rpc, { ...options, model, effort })
+    const params = threadParams(options.cwd, input.system, model)
     // Disable every configured MCP by name, including servers added after installation.
     const cfg = await rpc.request('config/read', { includeLayers: false })
     for (const id of Object.keys((cfg && cfg.config && cfg.config.mcp_servers) || {})) params.config['mcp_servers.' + id + '.enabled'] = false
     const thread = await rpc.request('thread/start', params)
-    if (!thread || thread.model !== MODEL || thread.modelProvider !== 'openai' || !thread.thread || !thread.thread.id) throw new SubscriptionError('subscription_model_unavailable')
+    if (!thread || thread.model !== model || thread.modelProvider !== 'openai' || !thread.thread || !thread.thread.id) throw new SubscriptionError('subscription_model_unavailable')
     const mcp = await rpc.request('mcpServerStatus/list', { threadId: thread.thread.id, limit: 100 })
     if (!mcp || !Array.isArray(mcp.data) || mcp.nextCursor || mcp.data.some(s => Object.keys(s.tools || {}).length > 0)) throw new SubscriptionError()
     const start = Date.now()
@@ -280,7 +301,7 @@ async function complete (options, input) {
     finished.catch(() => {})
     try {
       await rpc.request('turn/start', {
-        threadId: thread.thread.id, model: MODEL, effort, serviceTierForTurn: 'default',
+        threadId: thread.thread.id, model, effort, serviceTierForTurn: 'default',
         environments: [], input: [{ type: 'text', text: input.prompt }],
         ...(input.schema ? { outputSchema: input.schema } : {})
       })
@@ -292,4 +313,4 @@ async function complete (options, input) {
   })
 }
 
-module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue, withClient }
+module.exports = { MODEL, LOCKED_CONFIG, SubscriptionError, cleanEnvironment, threadParams, preflight, connect, checkSubscription, complete, createSession, configValue, withClient, listSubscriptionModels }

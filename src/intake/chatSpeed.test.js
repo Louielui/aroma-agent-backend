@@ -35,6 +35,7 @@ test('HTTP validates levels before model acquisition and passes them only to cha
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
   const send = body => fetch('http://127.0.0.1:' + server.address().port + '/api/v1/demo/intake', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
   for (const chatLevel of ['ultra', null, {}]) assert.equal((await send({message:'hello',chatLevel})).status,400)
+  for (const chatModel of ['other', 'constructor', null, {}]) assert.equal((await send({message:'hello',chatModel})).status,400)
   assert.equal(acquisitions,0)
   for (const chatLevel of ['fast','standard','deep']) {
     assert.equal((await send({message:'hello',chatLevel})).status,200)
@@ -42,6 +43,12 @@ test('HTTP validates levels before model acquisition and passes them only to cha
   }
   await send({message:'hello',interactionMode:'email_draft',chatLevel:'deep'})
   assert.equal(seen.at(-1).chatLevel,undefined)
+  for (const chatModel of require('../subscription/chatModels').CHAT_MODELS.map(m => m.model)) {
+    assert.equal((await send({ message: 'hello', chatModel })).status, 200)
+    assert.equal(seen.at(-1).chatModel, chatModel)
+  }
+  await send({ message: 'hello', interactionMode: 'email_draft', chatModel: 'gpt-6.1-sol' })
+  assert.equal(seen.at(-1).chatModel, undefined)
 })
 
 test('subscription social turn uses one answer call and no control model, recall, read or verifier', async () => {
@@ -60,4 +67,24 @@ test('subscription social turn uses one answer call and no control model, recall
     assert.equal(answers,1)
     assert.equal(auxiliary,0)
   } finally { for(const k of Object.keys(process.env)) if(!(k in saved)) delete process.env[k]; Object.assign(process.env,saved) }
+})
+
+test('model catalogue is guarded, subscription-only and never acquires a completion adapter', async t => {
+  const previous = process.env.CHAT_BACKEND
+  const express = require('express'), { createDemoRouter } = require('../routes/demoRouter')
+  const app = express(); let reads = 0
+  app.use(createDemoRouter({ modelsFn: async () => { reads++; return { billing: 'chatgpt-subscription', models: [] } },
+    getAdapterFn: () => { throw Error('no completion required') } }))
+  const server = app.listen(0, '127.0.0.1')
+  await new Promise(resolve => server.once('listening', resolve))
+  t.after(() => { if (previous === undefined) delete process.env.CHAT_BACKEND; else process.env.CHAT_BACKEND = previous
+    return new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }) })
+  const request = () => fetch('http://127.0.0.1:' + server.address().port + '/api/v1/demo/models')
+  process.env.CHAT_BACKEND = 'codex-subscription'
+  assert.equal((await request()).status, 403); assert.equal(reads, 0)
+  app.locals.conversationDemo = true; process.env.CHAT_BACKEND = 'other'
+  assert.equal((await request()).status, 503); assert.equal(reads, 0)
+  process.env.CHAT_BACKEND = 'codex-subscription'
+  const response = await request()
+  assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'no-store'); assert.equal(reads, 1)
 })

@@ -483,7 +483,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // Check subscription availability before auxiliary model calls or source reads.
   const subscriptionMode = subscriptionChatEnabled(process.env, opts && opts.interactionMode)
   const chatProfile = profileFor(opts && opts.chatLevel)
-  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort })) : null
+  const subscriptionAdapter = subscriptionMode ? ((opts && opts.openaiAdapter) || new CodexSubscriptionAdapter({ effort: chatProfile.effort, model: opts && opts.chatModel })) : null
   if (subscriptionAdapter) await subscriptionAdapter.preflight()
 
   // Public navigation is a bounded read workflow, before business-world classification.

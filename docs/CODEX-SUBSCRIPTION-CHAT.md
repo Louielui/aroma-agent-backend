@@ -1,8 +1,10 @@
 # Codex subscription chat
 
 The opt-in `CHAT_BACKEND=codex-subscription` setting routes the chat lane to
-`gpt-6-astra` through the official Codex App Server and the owner's existing
-ChatGPT login. It overrides stale browser provider hints. Proposal, email,
+an account-verified model through the official Codex App Server and the owner's
+existing ChatGPT login. Astra remains the default; the chat picker also offers
+GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna when available. See
+[chat model selection](CHAT-MODEL-SELECTION.md). It overrides stale browser provider hints. Proposal, email,
 classification, verification and other worker roles keep their existing settings
 and may still incur API charges. This is not a migration of every model call.
 
@@ -19,6 +21,8 @@ Repository `.env` settings (never commit their values):
 - `CHAT_BACKEND=codex-subscription`
 - `CODEX_CHAT_BRIDGE_TOKEN`: 64 lowercase hexadecimal characters, generated randomly.
 - `CODEX_CHAT_EXECUTABLE`: absolute path to the installed native `codex.exe`.
+- `CODEX_CHAT_MODEL_EXECUTABLE`: optional separate updated official Codex binary
+  for chat; memory and work providers retain the original executable.
 - `CODEX_CHAT_ALLOW_CREDITS=true`: explicit Owner permission to use existing
   ChatGPT workspace credits after included quota is exhausted. Omitted or any
   other value preserves the quota-only policy. Restart the Owner bridge after
@@ -48,7 +52,8 @@ service after configuration changes, then reload the browser.
 - The bridge accepts one request at a time, bounds input/output size and cancels
   on client disconnect. Each App Server process has a 120-second timeout.
 - App Server does not expose the API adapter's `maxTokens`/temperature controls.
-  This adapter uses low reasoning effort, an optional output schema and a bounded
+  This adapter uses low / medium / high reasoning effort selected independently
+  from the model, an optional output schema and a bounded
   response size; it does not claim a provider-enforced output token ceiling.
 - Subscription tokens are not entered into the API-cost ledger. They remain in
   per-turn model telemetry. Account quota is shared with other Codex use. Account

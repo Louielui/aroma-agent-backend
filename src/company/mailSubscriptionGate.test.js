@@ -106,7 +106,7 @@ test('subscription adapter carries the status deadline through to its fixed loca
   const { CodexSubscriptionAdapter } = require('../adapters/CodexSubscriptionAdapter')
   const { MODEL } = require('../subscription/codexClient'); const signal = AbortSignal.timeout(10000)
   const adapter = new CodexSubscriptionAdapter({ request: async (route, input, env, received) => {
-    assert.equal(route, '/status'); assert.deepEqual(input, {}); assert.equal(received, signal)
+    assert.equal(route, '/status'); assert.deepEqual(input, { model: MODEL, effort: 'low' }); assert.equal(received, signal)
     return { model: MODEL, billing: 'chatgpt-subscription' }
   } })
   assert.equal((await adapter.preflight({ signal })).billing, 'chatgpt-subscription')

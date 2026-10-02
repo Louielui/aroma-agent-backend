@@ -5,6 +5,7 @@ const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
 const { assertLiveEgressAllowed } = require('./liveEgressFence')
 const { MODEL, SubscriptionError } = require('../subscription/codexClient')
+const { isChatModel } = require('../subscription/chatModels')
 const { validToken, DEFAULT_PORT } = require('../subscription/bridge')
 
 function subscriptionChatEnabled (env = process.env, lane) {
@@ -38,20 +39,22 @@ function localRequest (route, input, env, signal) {
 
 class CodexSubscriptionAdapter extends LLMAdapter {
   get providerName () { return 'openai' }
-  constructor ({ env = process.env, request = localRequest, effort = 'low' } = {}) {
+  constructor ({ env = process.env, request = localRequest, effort = 'low', model = MODEL } = {}) {
     super()
     if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
-    this.env = env; this.request = request; this._model = MODEL; this.effort = effort
+    if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
+    this.env = env; this.request = request; this._model = model; this.effort = effort
   }
+  async models ({ signal } = {}) { return this.request('/models', {}, this.env, signal) }
   async preflight ({ signal } = {}) {
-    const result = await this.request('/status', {}, this.env, signal)
-    if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription') throw new SubscriptionError()
+    const result = await this.request('/status', { model: this._model, effort: this.effort }, this.env, signal)
+    if (!result || result.model !== this._model || result.billing !== 'chatgpt-subscription') throw new SubscriptionError()
     return result
   }
   async complete (prompt, opts = {}) {
     const schema = opts.responseFormat ? assertResponseFormat(opts.responseFormat).schema : undefined
-    const result = await this.request('/complete', { prompt, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}) }, this.env, opts.signal)
-    if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription' || typeof result.text !== 'string' || !result.text || result.stopReason !== 'end_turn') throw new SubscriptionError('subscription_invalid_output')
+    const result = await this.request('/complete', { prompt, model: this._model, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}) }, this.env, opts.signal)
+    if (!result || result.model !== this._model || result.billing !== 'chatgpt-subscription' || typeof result.text !== 'string' || !result.text || result.stopReason !== 'end_turn') throw new SubscriptionError('subscription_invalid_output')
     return result
   }
 }

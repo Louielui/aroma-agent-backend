@@ -435,7 +435,7 @@ button[disabled] { opacity: .45; cursor: default; }
 #picker .caret { font-size: 10px; color: var(--faint); }
 #picker-menu {
   position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 20;
-  width: 320px; max-width: 78vw;
+  width: 320px; max-width: 78vw; max-height: 45vh; overflow-y: auto;
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
   padding: 6px; box-shadow: 0 10px 30px rgba(0,0,0,.14);
 }
@@ -449,6 +449,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .opt-name { font-size: var(--ui-size); font-weight: var(--weight-medium); }
 .opt-note { font-size: var(--small-size); color: var(--muted); margin-top: 3px; line-height: var(--ui-line); }
 .opt-note.warn { color: var(--warn); }
+.subscription-note { margin: 5px 10px; padding-top: 8px; border-top: 1px solid var(--line); }
 
 #send {
   flex: 0 0 32px; width: 32px; height: 32px; border-radius: 50%;
@@ -879,6 +880,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }
 #chat-level { font: inherit; font-size: var(--ui-size); max-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
 #chat-level:disabled { opacity: .55; cursor: wait; }
+#picker-menu .opt:disabled { opacity: .55; cursor: not-allowed; }
 
 /* Sidebar refresh: compact tools, searchable history and a stable footer. */
 #sidebar { gap: 3px; min-height: 0; padding: 12px 10px 10px; }

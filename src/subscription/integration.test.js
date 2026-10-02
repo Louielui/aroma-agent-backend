@@ -45,7 +45,7 @@ test('subscription adapter forwards schema and refuses other billing/model', asy
   const adapter = new CodexSubscriptionAdapter({ request: async (route, input) => { seen = input; return response } })
   const schema = { type: 'object' }
   await adapter.complete('prompt', { system: 'persona', responseFormat: { type: 'json_schema', name: 'answer', schema } })
-  assert.deepEqual(seen, { prompt: 'prompt', system: 'persona', effort: 'low', schema })
+  assert.deepEqual(seen, { prompt: 'prompt', model: 'gpt-6-astra', system: 'persona', effort: 'low', schema })
   response.billing = 'api'
   await assert.rejects(adapter.complete('prompt'), SubscriptionError)
 })
