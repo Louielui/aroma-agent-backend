@@ -47,6 +47,8 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /href="\/gmail-context"/)
   assert.match(html, /原文最多 16 KB/)
   assert.match(html, /Google 真實重新授權.*待驗收/)
+  assert.match(html, /不含本文的版本清單/)
+  assert.match(html, /送往 Hindsight 前及保存結果時再次重讀原信/)
   assert.match(html, /Manus.*Grok/)
   assert.doesNotMatch(html, /<script|<form|<button/)
   assert.equal(reads, 0)

@@ -33,7 +33,7 @@ async def main(req):
         if op == "queue_index":
             from indexRebuild import queue_index
             return await queue_index(db, req)
-        if op == "mail_page":
+        if op in ("mail_page", "mail_index_page"):
             from mailRows import mail_page
             return await mail_page(db, req)
         if op == "general_page":

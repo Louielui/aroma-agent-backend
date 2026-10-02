@@ -14,10 +14,24 @@ class Database:
         return max(r["sequence"] for r in self.rows)
     async def fetch(self, sql, account, kinds, after, cutoff):
         assert "body#>>'{details,mailbox}'=$1" in sql and "=ANY($2::text[])" in sql
-        assert "sequence > $3 AND sequence <= $4" in sql and "LIMIT 2000" in sql
+        assert "sequence > $3 AND sequence <= $4" in sql
+        limit = 10000 if 'jsonb_build_object' in sql else 2000
+        assert 'LIMIT ' + str(limit) in sql
         self.calls.append((account,copy.deepcopy(kinds),after,cutoff))
-        return [r for r in self.rows if after < r["sequence"] <= cutoff and
-          json.loads(r["body"])["details"]["mailbox"] == account and json.loads(r["body"])["source"]["kind"] in kinds][:2000]
+        rows = [r for r in self.rows if after < r["sequence"] <= cutoff and
+          json.loads(r["body"])["details"]["mailbox"] == account and json.loads(r["body"])["source"]["kind"] in kinds][:limit]
+        if 'jsonb_build_object' not in sql:
+            return rows
+        assert "'text'" not in sql and "'{details,body}'" not in sql
+        projected = []
+        for r in rows:
+            body = json.loads(r['body'])
+            value = {k:body.get(k) for k in ['id','version','status','createdAt','expiresAt','supersededBy']}
+            value['source'] = {k:body['source'].get(k) for k in ['kind','id']}
+            value['index'] = {k:(body.get('index') or {}).get(k) for k in ['state','contentHash','attempts','reason','nextRetryAt']}
+            value['details'] = {k:body['details'].get(k) for k in ['mailbox','hash','threadId']}
+            projected.append({'sequence':r['sequence'],'body':json.dumps(value)})
+        return projected
 
 async def main():
     db=Database()
@@ -45,6 +59,10 @@ async def main():
         else:
             raise AssertionError("invalid_request_accepted")
     assert len(db.calls) == before
+    metadata = await mail_page(db,{**request,'op':'mail_index_page'})
+    assert len(metadata['items']) == 10
+    assert all('text' not in r and 'body' not in r['details'] for r in metadata['items'])
+    assert not (await mail_page(db,{**request,'op':'mail_index_page','mailbox':'ivy@example.test'}))['items']
     try:
         await mail_page(db,request,max_bytes=513)
     except ValueError:

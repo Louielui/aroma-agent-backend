@@ -51,6 +51,47 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
   const client = () => engine?.forMailSource ? engine.forMailSource(account()) : null
   const sources = async () => (await (store.mailRows ? store.mailRows(account()) : store.all()))
     .filter(r => (message(r) || thread(r)) && r.details.mailbox === account())
+  // Eligibility is a process-local acceleration, never canonical memory or a
+  // source fallback. Its key includes the exact canonical revision and original
+  // hash. Cold starts check originals once; later attempts read body-free source
+  // manifests and recheck at most twenty changed originals before selection.
+  const eligibility = new Map(); let warmedAccount = null
+  function rememberEligibility (row) {
+    const valid = intact(row)
+    const value = { version: row.version, hash: row.details.hash, valid, reason: valid ? eligibilityReason(row) : null }
+    eligibility.set(row.id, value); return value
+  }
+  async function indexSources (verify, started) {
+    if (!store.mailIndexRows) {
+      const all = await sources()
+      for (const row of all.filter(message)) rememberEligibility(row)
+      return { all, scanning: false }
+    }
+    if (warmedAccount !== account()) {
+      eligibility.clear(); warmedAccount = null
+      const all = await sources(); verify()
+      if (started !== generation) return { all: [], scanning: true }
+      for (const row of all.filter(message)) rememberEligibility(row)
+      warmedAccount = account()
+      return { all, scanning: false }
+    }
+    const all = await store.mailIndexRows(account()); verify()
+    if (started !== generation) return { all: [], scanning: true }
+    const ids = new Set(all.filter(message).map(row => row.id))
+    for (const id of eligibility.keys()) if (!ids.has(id)) eligibility.delete(id)
+    const unknown = all.filter(row => message(row) && (() => {
+      const cached = eligibility.get(row.id)
+      return !cached || cached.version !== row.version || cached.hash !== row.details.hash
+    })())
+    for (const projection of unknown.slice(0, 20)) {
+      const row = await store.get(projection.id); verify()
+      if (started !== generation) return { all: [], scanning: true }
+      if (!row || row.id !== projection.id || !message(row) || row.details.mailbox !== account() || row.version !== projection.version ||
+          row.details.hash !== projection.details.hash) return { all: [], scanning: true }
+      rememberEligibility(row)
+    }
+    return { all, scanning: unknown.length > 20 }
+  }
   async function subscriptionWait () {
     const state = await schedulerState.read()
     return state.reason === 'subscription_limit_reached' && Date.parse(state.nextAt) > Date.parse(clock())
@@ -194,6 +235,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
       const rebuild = current.index?.rebuildId ? { rebuildId: current.index.rebuildId, queuedAt: current.index.queuedAt, rebuildCutoff: current.index.rebuildCutoff } : {}
       current.index = { ...index, ...rebuild }; current.version++; current.updatedAt = clock()
       await store.commit([{ expected: row.version, row: current }], { op: 'mail_source_index', actor: 'owner', at: clock() }); verify()
+      rememberEligibility(current)
       return { state: index.state, id: current.id }
     })
   }
@@ -225,9 +267,14 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
       const rebuilt = await advanceRebuild(actor, verify, started)
       if (rebuilt) return rebuilt
       const now = clock()
-      const all = await sources(); const rows = recallable(all, now)
+      const snapshot = await indexSources(verify, started)
+      if (started !== generation) return { state: 'yielded' }
+      if (snapshot.scanning) return { state: 'scanning' }
+      const all = snapshot.all
       const threads = new Map(all.filter(row => visibleThread(row, now)).map(row => [row.source.id, row]))
-      const selected = rows.map(row => ({ row, reason: eligibilityReason(row) })).filter(({ row, reason }) =>
+      const rows = all.filter(row => message(row) && active(row, now) && threads.has(row.details.threadId) &&
+        eligibility.get(row.id)?.valid)
+      const selected = rows.map(row => ({ row, reason: eligibility.get(row.id).reason })).filter(({ row, reason }) =>
         !['saved', 'raw_only', 'source_only'].includes(row.index?.state) || row.index?.contentHash !== row.details.hash ||
         (reason && (row.index.state !== 'source_only' || row.index.reason !== reason)))
         // Permanent local eligibility is reconciled even after an older retry
@@ -254,7 +301,16 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
       if (!engine?.forMailSource) return { state: 'not_connected' }
       const preflight = await subscriptionPreflight(verify, started)
       if (preflight) return preflight
-      const { row } = next
+      // Cached eligibility cannot authorize egress. Re-read the selected original
+      // and its current thread and verify the exact revision, hash and local
+      // policy before the first provider read. Later persistence checks them again.
+      const row = await store.get(next.row.id); verify()
+      const owningThread = row && await store.get(stableId('admin-mail:' + account() + ':thread:' + row.details.threadId)); verify()
+      const halted = interruption(verify, started); if (halted) return halted
+      if (!row || row.id !== next.row.id || !message(row) || row.details.mailbox !== account() || row.version !== next.row.version ||
+          row.details.hash !== next.row.details.hash || !active(row, clock()) || !intact(row) || eligibilityReason(row) ||
+          !owningThread || !visibleThread(owningThread, clock()) || owningThread.source.id !== row.details.threadId ||
+          owningThread.details.mailbox !== account()) return { state: 'changed' }
       const contentHash = row.details.hash
       const documentId = stableId('admin-mail-index:' + account() + ':' + row.id + ':' + contentHash)
       const text = sourceText(row); let index
@@ -295,7 +351,7 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, s
       }
       if (started !== generation || abort.signal.aborted) return { state: 'yielded' }
       if (mailbox.check) await mailbox.check(actor)
-      return await saveIndex(row, index, threads.get(row.details.threadId), verify, started)
+      return await saveIndex(row, index, owningThread, verify, started)
     } finally { indexing = false; abort = null }
   }
   function indexNext (actor) {

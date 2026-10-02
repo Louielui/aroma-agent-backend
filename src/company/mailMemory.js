@@ -24,7 +24,7 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
         if (foreground() || analyzing) next = 5000
         else if (allowed()) {
           const result = await indexNext(OWNER, { background: true })
-          if (['saved', 'raw_only', 'source_only', 'rebuilding', 'queued', 'changed'].includes(result.state)) next = 2000
+          if (['saved', 'raw_only', 'source_only', 'rebuilding', 'queued', 'changed', 'scanning'].includes(result.state)) next = 2000
           else if (['busy', 'yielded', 'deferred'].includes(result.state)) next = 5000
           else if (result.state === 'backoff') next = Math.max(30000, Math.min(900000, Date.parse(result.retryAt) - Date.parse(clock())))
         }

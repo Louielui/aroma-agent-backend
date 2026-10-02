@@ -59,26 +59,8 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
         after = page.nextSequence; snapshotSequence = page.snapshotSequence
       }
     },
-    mailRows: async (mailbox, kinds = ['admin_mail_message', 'admin_mail_thread']) => {
-      const fail = () => { throw Error('memory_database_unavailable') }
-      if (typeof mailbox !== 'string' || mailbox.length > 254 || !/^[a-z0-9.!#$%&'*+_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(mailbox) ||
-        !Array.isArray(kinds) || !kinds.length || new Set(kinds).size !== kinds.length ||
-        kinds.some(k => !['admin_mail_message', 'admin_mail_thread'].includes(k))) fail()
-      const rows = []; let after = 0; let snapshotSequence = null
-      for (;;) {
-        const page = await run({ op: 'mail_page', mailbox, kinds, after, snapshotSequence })
-        if (!page || !Array.isArray(page.items) || page.items.length > 2000 || typeof page.hasMore !== 'boolean' ||
-          !Number.isSafeInteger(page.snapshotSequence) || page.snapshotSequence < after ||
-          (snapshotSequence !== null && page.snapshotSequence !== snapshotSequence) ||
-          !Number.isSafeInteger(page.nextSequence) || page.nextSequence < after || page.nextSequence > page.snapshotSequence ||
-          (page.items.length && page.nextSequence <= after) ||
-          (page.hasMore && (!page.items.length || page.nextSequence <= after)) ||
-          page.items.some(row => row?.details?.mailbox !== mailbox || !kinds.includes(row?.source?.kind))) fail()
-        rows.push(...page.items)
-        if (!page.hasMore) return rows
-        after = page.nextSequence; snapshotSequence = page.snapshotSequence
-      }
-    },
+    mailRows: (mailbox, kinds = ['admin_mail_message', 'admin_mail_thread']) => readMailRows(mailbox, kinds, 'mail_page'),
+    mailIndexRows: mailbox => readMailRows(mailbox, ['admin_mail_message', 'admin_mail_thread'], 'mail_index_page'),
     all: async () => {
       const rows = []
       for (let offset = 0; ; offset += 200) {
@@ -92,6 +74,30 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
     grants: () => run({ op: 'grants' }),
     grant: value => run({ op: 'grant', value }),
     health: () => run({ op: 'health' })
+  }
+  async function readMailRows (mailbox, kinds, op) {
+      const fail = () => { throw Error('memory_database_unavailable') }
+      if (typeof mailbox !== 'string' || mailbox.length > 254 || !/^[a-z0-9.!#$%&'*+_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(mailbox) ||
+        !Array.isArray(kinds) || !kinds.length || new Set(kinds).size !== kinds.length ||
+        kinds.some(k => !['admin_mail_message', 'admin_mail_thread'].includes(k))) fail()
+      const rows = []; let after = 0; let snapshotSequence = null
+      for (;;) {
+        const page = await run({ op, mailbox, kinds, after, snapshotSequence })
+        if (!page || !Array.isArray(page.items) || page.items.length > (op === 'mail_index_page' ? 10000 : 2000) || typeof page.hasMore !== 'boolean' ||
+          !Number.isSafeInteger(page.snapshotSequence) || page.snapshotSequence < after ||
+          (snapshotSequence !== null && page.snapshotSequence !== snapshotSequence) ||
+          !Number.isSafeInteger(page.nextSequence) || page.nextSequence < after || page.nextSequence > page.snapshotSequence ||
+          (page.items.length && page.nextSequence <= after) ||
+          (page.hasMore && (!page.items.length || page.nextSequence <= after)) ||
+          page.items.some(row => row?.details?.mailbox !== mailbox || !kinds.includes(row?.source?.kind))) fail()
+        if (op === 'mail_index_page' && page.items.some(row =>
+          typeof row?.id !== 'string' || !Number.isSafeInteger(row.version) || row.version < 1 ||
+          typeof row.status !== 'string' || typeof row.createdAt !== 'string' ||
+          Object.hasOwn(row, 'text') || Object.hasOwn(row.details, 'body'))) fail()
+        rows.push(...page.items)
+        if (!page.hasMore) return rows
+        after = page.nextSequence; snapshotSequence = page.snapshotSequence
+      }
   }
 }
 // Injected only by tests. Runtime has no file or in-memory fallback for canonical data.

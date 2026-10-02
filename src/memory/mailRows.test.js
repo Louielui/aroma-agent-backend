@@ -47,6 +47,30 @@ test('invalid mailbox/kinds fail before transport; thread-only projection is exp
   assert.deepEqual(await store.mailRows('adm@example.test',['admin_mail_thread']),[])
   assert.deepEqual(calls[0].kinds,['admin_mail_thread'])
 })
+test('index manifests use the same source cutoff without transporting original bodies', async () => {
+  const calls = [], projection = { id: 'one', version: 1, status: 'active', createdAt: '2026-10-01T00:00:00Z',
+    source: { kind: 'admin_mail_message' }, details: { mailbox: 'adm@example.test' } }
+  const store = createStructuredStore({ invoke: async request => { calls.push(request); return {
+    items: [projection], nextSequence: 1, snapshotSequence: 1, hasMore: false } } })
+  assert.deepEqual(await store.mailIndexRows('adm@example.test'), [projection])
+  assert.equal(calls[0].op, 'mail_index_page'); assert.equal(calls[0].snapshotSequence, null)
+  for (const bad of [{ ...projection, text: 'private body' }, { ...projection, details: { ...projection.details, body: 'private body' } },
+    { ...projection, version: 0 }, { ...projection, details: { mailbox: 'ivy@example.test' } }]) {
+    const unsafe = createStructuredStore({ invoke: async () => ({ items: [bad], nextSequence: 1, snapshotSequence: 1, hasMore: false }) })
+    await assert.rejects(unsafe.mailIndexRows('adm@example.test'), /memory_database_unavailable/)
+  }
+})
+test('the larger manifest page bound never enlarges full-original or general-memory pages', async () => {
+  const make = (size, kind, projected) => Array.from({ length: size }, (_, n) => ({
+    id: String(n), version: 1, status: 'active', createdAt: '2026-10-01T00:00:00Z',
+    ...(!projected ? { text: 'body' } : {}), source: { kind }, details: { mailbox: 'adm@example.test' } }))
+  const build = items => createStructuredStore({ invoke: async () => ({ items, nextSequence: items.length, snapshotSequence: items.length, hasMore: false }) })
+  assert.equal((await build(make(10000, 'admin_mail_message', true)).mailIndexRows('adm@example.test')).length, 10000)
+  await assert.rejects(build(make(10001, 'admin_mail_message', true)).mailIndexRows('adm@example.test'), /memory_database_unavailable/)
+  await assert.rejects(build(make(2001, 'admin_mail_message', false)).mailRows('adm@example.test'), /memory_database_unavailable/)
+  assert.equal((await build(make(1, 'conversation', false)).generalRows()).length, 1)
+  await assert.rejects(build(make(2001, 'conversation', false)).generalRows(), /memory_database_unavailable/)
+})
 test('Python source pages are bounded, Unicode-exact and parameterized', { skip: !fs.existsSync('C:/Aroma/hindsight-runtime/Scripts/python.exe') }, () => {
   const result = spawnSync('C:/Aroma/hindsight-runtime/Scripts/python.exe', ['-B','-X','utf8',path.resolve(__dirname,'../../scripts/memory/mailRows.fixture.py')], {encoding:'utf8',windowsHide:true,timeout:10000})
   assert.equal(result.status,0,result.stderr)
