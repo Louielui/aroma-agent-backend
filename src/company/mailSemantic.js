@@ -36,7 +36,7 @@ function tokens (query) {
 }
 // The engine returns pointers only. Every emitted body and decision is re-read
 // from the current source-bound canonical store after retrieval has completed.
-function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial }) {
+function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial, subscriptionCheck = null }) {
   const rebuildState = createMailState({ store, mailbox, clock, kind: 'index_rebuild' })
   const runtimeState = createMailState({ store, mailbox, clock, kind: 'index_runtime' })
   const schedulerState = createMailState({ store, mailbox, clock, kind: 'scheduler' })
@@ -160,6 +160,25 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
     if (started !== generation || abort?.signal.aborted) return { state: 'yielded' }
     return null
   }
+  async function subscriptionPreflight (verify, started) {
+    if (!subscriptionCheck) return null
+    try { await subscriptionCheck() } catch (error) {
+      const stopped = interruption(verify, started); if (stopped) return stopped
+      const reason = ['subscription_limit_reached', 'subscription_login_required'].includes(error.code || error.message)
+        ? (error.code || error.message) : 'subscription_unavailable'
+      const retryAt = new Date(Date.parse(clock()) + (reason === 'subscription_unavailable' ? 300000 : 3600000)).toISOString()
+      await runtimeState.update(state => {
+        const interrupted = interruption(verify, started)
+        if (interrupted) throw Error('mail_index_yielded')
+        return { ...state, quotaUntil: retryAt, reason, checkedAt: clock() }
+      })
+      const interrupted = interruption(verify, started); if (interrupted) return interrupted
+      // Only the mailbox checkpoint changes. Subscription unavailability is not
+      // evidence of a bad source and cannot consume that original's retry budget.
+      return { state: 'backoff', reason, retryAt }
+    }
+    return interruption(verify, started)
+  }
   async function saveIndex (row, index, owningThread, verify, started) {
     return serial(async () => {
       let stopped = interruption(verify, started); if (stopped) return stopped
@@ -229,8 +248,12 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       const waiting = await subscriptionWait()
       const stopped = interruption(verify, started); if (stopped) return stopped
       if (waiting) return waiting
-      if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil, reason: 'memory_rate_limited' }
+      if (runtime.quotaUntil && runtime.quotaUntil > clock()) return { state: 'backoff', retryAt: runtime.quotaUntil,
+        reason: ['subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable'].includes(runtime.reason) ? runtime.reason : 'memory_rate_limited' }
       if (!next) return { state: engine?.forMailSource ? 'idle' : 'not_connected' }
+      if (!engine?.forMailSource) return { state: 'not_connected' }
+      const preflight = await subscriptionPreflight(verify, started)
+      if (preflight) return preflight
       const { row } = next
       const contentHash = row.details.hash
       const documentId = stableId('admin-mail-index:' + account() + ':' + row.id + ':' + contentHash)
@@ -251,6 +274,12 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
           connectionState = 'verified'; connectionCheckedAt = clock()
         } catch (e) {
           if (abort.signal.aborted) return { state: 'yielded' }
+          // Hindsight can wrap an LLM quota response in a generic HTTP failure.
+          // Recheck the actual subscription status; never infer quota from prose.
+          if (['memory_unavailable', 'memory_rate_limited'].includes(e.message)) {
+            const waiting = await subscriptionPreflight(verify, started)
+            if (waiting) return waiting
+          }
           verify(); const attempts = (row.index?.attempts || 0) + 1; const reason = retryReason(e)
           const delay = reason === 'memory_rate_limited' ? 900000 : reason === 'memory_timeout' ? 300000 : Math.min(1800000, 30000 * 2 ** Math.min(attempts - 1, 6))
           index = { state: 'unconfirmed', reason, facts: null, attempts, checkedAt: clock(), contentHash, documentId,
@@ -365,7 +394,8 @@ function createMailSemantic ({ store, mailbox, engine, clock, allowed, serial })
       unavailableOriginals: all.filter(r => message(r) && active(r, clock()) && !intact(r)).length,
       rebuild: await rebuildStatus(all),
       backoffUntil: subscriptionLater ? subscriptionBackoff : engineBackoff,
-      backoffReason: subscriptionLater ? waiting.reason : engineBackoff ? 'memory_rate_limited' : null,
+      backoffReason: subscriptionLater ? waiting.reason : engineBackoff ?
+        (['subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable'].includes(runtime.reason) ? runtime.reason : 'memory_rate_limited') : null,
       coverage: 'saved_sources_only', bank: 'source_bound_admin_mail' }
   }
   function cancel () { generation++; abort?.abort(); return job ? job.catch(() => {}) : Promise.resolve() }

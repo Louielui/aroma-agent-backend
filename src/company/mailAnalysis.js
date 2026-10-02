@@ -30,7 +30,8 @@ function runtimeAdapter () {
 }
 function createMailAnalyzer ({ adapterFactory = runtimeAdapter, timeoutMs = 65000 } = {}) {
   let pending = false; let controller; let settling = Promise.resolve()
-  return { cancel () { controller?.abort(); return settling.catch(() => {}) }, async analyze (input) {
+  return { preflight () { return adapterFactory().preflight({ signal: AbortSignal.timeout(10000) }) },
+    cancel () { controller?.abort(); return settling.catch(() => {}) }, async analyze (input) {
     if (pending) throw Error('mail_analysis_busy')
     pending = true; let timer; controller = new AbortController(); const active = controller
     const operation = Promise.resolve().then(() => adapterFactory().complete(JSON.stringify(input), {

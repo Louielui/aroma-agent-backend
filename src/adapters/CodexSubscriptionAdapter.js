@@ -43,8 +43,8 @@ class CodexSubscriptionAdapter extends LLMAdapter {
     if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
     this.env = env; this.request = request; this._model = MODEL; this.effort = effort
   }
-  async preflight () {
-    const result = await this.request('/status', {}, this.env)
+  async preflight ({ signal } = {}) {
+    const result = await this.request('/status', {}, this.env, signal)
     if (!result || result.model !== MODEL || result.billing !== 'chatgpt-subscription') throw new SubscriptionError()
     return result
   }

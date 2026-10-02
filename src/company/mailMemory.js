@@ -13,7 +13,8 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
   let indexAttemptActive = false; let backgroundReservation = false; let analysisWaiting = false
   let preferIndexUntil = 0; let preferAnalysis = false
   const serial = fn => { const next = tail.then(fn); tail = next.catch(() => {}); return next }
-  const semantic = require('./mailSemantic').createMailSemantic({ store, mailbox, engine, clock, allowed, serial })
+  const semantic = require('./mailSemantic').createMailSemantic({ store, mailbox, engine, clock, allowed, serial,
+    subscriptionCheck: typeof analyzer?.preflight === 'function' ? () => analyzer.preflight() : null })
   function scheduleIndex (delay, run) {
     if (!indexRunning || run !== indexGeneration) return
     indexTimer = setTimeout(async () => {
@@ -201,7 +202,9 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
         verify(); if (!allowed()) return
         const current = await store.get(id)
         if (current.version !== record.version) return
-        current.details.analysis = { state: 'failed', at: clock(), reason: 'analysis_unavailable', retryAt: new Date(Date.parse(clock()) + 1800000).toISOString() }
+        const reason = ['subscription_limit_reached', 'subscription_login_required'].includes(e.code || e.message) ? (e.code || e.message) : 'analysis_unavailable'
+        current.details.analysis = { state: 'failed', at: clock(), reason,
+          retryAt: new Date(Date.parse(clock()) + (reason.startsWith('subscription_') ? 3600000 : 1800000)).toISOString() }
         current.updatedAt = clock(); current.version++
         await commit([{ expected: record.version, row: current }], 'mail_analysis_failed')
       }).catch(() => {})
