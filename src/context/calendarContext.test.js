@@ -5,6 +5,12 @@ const { createReadConnector } = require('./readConnector')
 const { createToolGateway } = require('./toolGateway')
 const scopeName = 'https://www.googleapis.com/auth/calendar.readonly'
 const clock = () => '2026-10-01T02:00:00.000Z'
+test('Oversized calendar source text preserves truncation through the unified Context Pack', async () => {
+  const f = fixture(); f.events.push({ id: 'large12', summary: 'Review', description: '香'.repeat(9000) })
+  const p = await f.gateway.get({ role: 'owner' }, 'calendar.owner_events', { eventId: 'large12' })
+  assert.equal(p.content[0].truncated, true); assert.equal(p.coverage.complete, false)
+  assert.ok(Buffer.byteLength(p.content[0].content) <= 16000)
+})
 function fixture(overrides = {}) {
   let revision = 'v1', enabled = true
   const registry = { snapshot: () => ({ users: [{ id: 'owner', role: 'owner', email: 'chef@example.test', suspended: false }] }) }

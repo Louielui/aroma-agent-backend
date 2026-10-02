@@ -83,6 +83,8 @@ const FILE_CLASS = Object.freeze({
   'context/aromaContextView.js': CLASS.INTERFACE,
   'context/calendarContextView.js': CLASS.INTERFACE,
   'context/calendarContextService.js': CLASS.MATCHING,
+  'context/gmailContextView.js': CLASS.INTERFACE,
+  'context/gmailContextService.js': CLASS.MATCHING,
   'core/operating/architectureView.js': CLASS.INTERFACE, // Owner-facing architecture inventory
   'core/workerFlow/view.js': CLASS.INTERFACE, // Owner-facing worker acceptance labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39

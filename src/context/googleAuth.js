@@ -142,6 +142,22 @@ function createAdminMailConsentClient () {
   return { client, audience: c.client_id }
 }
 function adminMailPresent () { return fs.existsSync(ADMIN_MAIL_FILE) }
+function adminMailCredentialConfiguration () {
+  const stamp = p => { try { const s = fs.statSync(p); return s.size + ':' + s.mtimeMs } catch (_) { return null } }
+  const client = stamp(CLIENT_FILE), token = stamp(ADMIN_MAIL_FILE)
+  return { client: !!client, token: !!token, revision: String(client) + '/' + String(token) }
+}
+// A retrieval must never run the consent store's write probe or expose its mutators.
+function loadAdminMailReadOnlyGrant () {
+  assertGoogleLiveAuthAllowed()
+  const grant = JSON.parse(fs.readFileSync(ADMIN_MAIL_FILE, 'utf8'))
+  if (!['email', 'sub', 'refresh_token'].every(k => typeof grant[k] === 'string' && grant[k])) throw Error('incomplete_grant')
+  const raw = JSON.parse(fs.readFileSync(CLIENT_FILE, 'utf8')), c = raw.installed || raw.web
+  if (!c?.client_id || !c.client_secret) throw Error('oauth_configuration')
+  const client = new (loadGoogleapis().auth.OAuth2)(c.client_id, c.client_secret, ADMIN_MAIL_REDIRECT)
+  client.setCredentials({ refresh_token: grant.refresh_token })
+  return { client, email: grant.email }
+}
 function saveAdminMailGrant (grant) {
   assertGoogleLiveAuthAllowed()
   if (!grant || !['email', 'sub', 'refresh_token'].every(k => typeof grant[k] === 'string' && grant[k])) throw Error('incomplete_grant')
@@ -259,6 +275,8 @@ module.exports = {
   pubsubGrantStore,
   pubsubWithOAuth,
   adminMailPresent,
+  adminMailCredentialConfiguration,
+  loadAdminMailReadOnlyGrant,
   saveAdminMailGrant,
   loadAdminMailGrant,
   clearAdminMailGrant,

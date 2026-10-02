@@ -162,6 +162,7 @@ test('connection consent and credential persistence remain behind the Google tes
     for (const call of [
       () => googleAuth.createConsentClient(),
       () => googleAuth.persistRefreshToken('fixture-only'),
+      () => googleAuth.loadAdminMailReadOnlyGrant(),
       () => googleAuth.serviceWithOAuth('gmail', 'v1', {})
     ]) {
       const { error, seen } = withReadFileSpy(call)

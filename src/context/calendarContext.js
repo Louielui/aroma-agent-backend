@@ -86,13 +86,13 @@ function createCalendarContextAdapter ({ scope, readerFactory = createOwnerCalen
       if (!event || !ID.test(event.id || '')) throw Error('invalid_source_event')
       const title = text(event.summary, 1000), description = text(event.description, 16000), location = text(event.location, 2000)
       const start = dateValue(event.start?.dateTime || event.start?.date), end = dateValue(event.end?.dateTime || event.end?.date)
-      return makeContextResult({ source: 'calendar', sourceId: event.id, title: title.value, originalDate: dateValue(event.updated), retrievedAt,
+      return { ...makeContextResult({ source: 'calendar', sourceId: event.id, title: title.value, originalDate: dateValue(event.updated), retrievedAt,
         content: description.value || '', link: sourceLink(event.htmlLink), entityType: ENTITY_TYPES.EVENT,
         truncated: title.truncated || description.truncated || location.truncated,
         fields: { start, end, allDay: event.start?.date ? true : event.start?.dateTime ? false : null,
           endExclusive: true, status: typeof event.status === 'string' ? event.status : null, location: location.value,
           created: dateValue(event.created), updated: dateValue(event.updated), timeZone: event.start?.timeZone || metadata.timeZone || null,
-          recurringEventId: event.recurringEventId || null, originalStart: dateValue(event.originalStartTime?.dateTime || event.originalStartTime?.date) } })
+          recurringEventId: event.recurringEventId || null, originalStart: dateValue(event.originalStartTime?.dateTime || event.originalStartTime?.date) } }), truncated: title.truncated || description.truncated || location.truncated }
     }
     if (operation === 'readMetadata') return { results: [makeContextResult({ source: 'calendar', sourceId: 'primary', title: text(metadata.summary, 1000).value,
       originalDate: null, retrievedAt, content: '', entityType: ENTITY_TYPES.EVENT, fields: { timeZone: metadata.timeZone || null, queryTimeZone: TIME_ZONE, calendar: 'primary', scope: 'calendar.readonly', maxRows: 100 } })],

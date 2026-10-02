@@ -24,13 +24,17 @@ function createRuntimeLiveContext ({ env = process.env, runtime, registry }) {
   const calendarScope = require('./calendarContext').createOwnerCalendarScope({ registry, env })
   connector.register(require('./calendarContext').createCalendarContextAdapter({ scope: calendarScope }))
   resources.push(...require('./calendarContext').calendarResources())
+  const gmailScope = require('./gmailContext').createGmailScope({ registry, env })
+  connector.register(require('./gmailContext').createGmailContextAdapter({ scope: gmailScope }))
+  resources.push(...require('./gmailContext').gmailResources())
   const githubAudit = createActivityStore({ dir, workflow: 'development_context', reason: 'owner_requested_context' })
   const driveAudit = createActivityStore({ dir, workflow: 'drive_context', reason: 'owner_requested_context' })
   const aromaAudit = createActivityStore({ dir, workflow: 'aroma_context', reason: 'owner_requested_context' })
   const calendarAudit = createActivityStore({ dir, workflow: 'calendar_context', reason: 'owner_requested_context' })
-  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'calendar' ? calendarAudit : e.source === 'aroma_system' ? aromaAudit : e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
+  const gmailAudit = createActivityStore({ dir, workflow: 'gmail_context', reason: 'owner_requested_context' })
+  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'gmail' ? gmailAudit : e.source === 'calendar' ? calendarAudit : e.source === 'aroma_system' ? aromaAudit : e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
   const development = createDevelopmentContext({ gateway, repository, runtime, enabled: () => require('./flags').readAccessEnabled(env, 'github') })
   return Object.freeze({ ...development, drive: createDriveContextService({ gateway, scope }), aroma: require('./aromaContextService').createAromaContextService({ gateway, verify: aromaAccess }),
-    calendar: require('./calendarContextService').createCalendarContextService({ gateway, scope: calendarScope }), activity: () => githubAudit.list() })
+    calendar: require('./calendarContextService').createCalendarContextService({ gateway, scope: calendarScope }), gmail: require('./gmailContextService').createGmailContextService({ gateway, scope: gmailScope }), activity: () => githubAudit.list() })
 }
 module.exports = { createRuntimeLiveContext }

@@ -12,7 +12,7 @@ function buildArchitectureHtml () {
   const labels = {
     title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-01' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'),
+    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -59,7 +59,7 @@ function buildArchitectureHtml () {
     ['02', 'Google Drive', 'partial', t('master.drive', { drive: 'Aroma Base' })],
     ['03', 'Aroma System API', 'partial', t('master.aroma')],
     ['04', 'Google Calendar', 'partial', t('master.calendar')],
-    ['05', 'Gmail', 'foundation', t('master.gmail')],
+    ['05', 'Gmail', 'partial', t('master.gmail')],
     ['06', 'OpenAI / API', 'partial', t('master.openai')],
     ['07', 'Codex', 'partial', t('master.codex')],
     ['08', 'Claude / API', 'partial', t('master.claude')],

@@ -499,10 +499,39 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // Browser history can still contain the immediately displayed mail answer.
       // Replace it before ordinary intake; the source-bound lane rechecks access.
       const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
-        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1))))
+        entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content))))
           ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
       const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message, history) : null
+      const gmailRequest = liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+        ? require('../context/gmailContextService').gmailIntent(message) : null
+      if (gmailRequest) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const { conversationId, workflowRequestId } = req.body
+        if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
+        const previous = contextReceipts.get(workflowRequestId)
+        if (previous && (previous.conversationId !== conversationId || previous.message !== message)) return res.status(409).json({ error: 'request_conflict' })
+        if (previous) {
+          try { previous.gmailAccess(); const result = await previous.result; previous.gmailAccess(); return res.set('Cache-Control', 'no-store').json(result) }
+          catch (_) { return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+        }
+        const receipt = { conversationId, message }
+        try { receipt.gmailAccess = liveContext.gmail.captureAccess(gmailRequest.resource) }
+        catch (_) { return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+        receipt.result = (async () => {
+          const report = await liveContext.gmail.read({ id: 'owner', role: 'owner' }, gmailRequest.resource, gmailRequest.operation, gmailRequest.input)
+          receipt.gmailAccess()
+          const reply = require('../context/gmailContextView').gmailReply(report)
+          let historySaved = true
+          try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }) } catch (_) { historySaved = false }
+          emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
+          return { lane: 'chat', mode: 'chat', reply, gmailContext: report, sourceBound: true, historySaved, servedBy: null }
+        })()
+        contextReceipts.set(workflowRequestId, receipt)
+        if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)
+        try { return res.set('Cache-Control', 'no-store').json(await receipt.result) }
+        catch (_) { contextReceipts.delete(workflowRequestId); emit('context_read_failed', 503, 'context_unavailable'); return res.status(503).json({ error: { message: t('gmailContext.error'), retryable: false } }) }
+      }
       // Mail content is transient. Only a neutral receipt enters conversation history;
       // it never enters the automatic memory journal or a later model's history.
       if (mailChat && mailRequest) {
