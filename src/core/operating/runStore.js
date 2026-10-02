@@ -9,12 +9,13 @@ function createMemoryRunStore () {
   const rows = new Map()
   return { all: () => [...rows.values()].map(copy), get: id => copy(rows.get(id)), save: r => rows.set(r.id, copy(r)) }
 }
-function createRunStore ({ dir = path.join(resolveDataDir(), 'manager-runs') } = {}) {
+function createRunStore ({ dir = path.join(resolveDataDir(), 'manager-runs'), workflow = 'daily_briefing' } = {}) {
+  if (!['daily_briefing', 'development_proposal'].includes(workflow)) throw Error('invalid_workflow')
   function get (id) {
     if (!ID.test(id || '')) throw Error('invalid_run_id')
     try {
       const row = JSON.parse(fs.readFileSync(path.join(dir, id + '.json'), 'utf8'))
-      if (!row || row.id !== id || row.workflow !== 'daily_briefing' || !Array.isArray(row.steps) || !Array.isArray(row.sections)) throw Error('invalid_run')
+      if (!row || row.id !== id || row.workflow !== workflow || !Array.isArray(row.steps) || !Array.isArray(row.sections)) throw Error('invalid_run')
       return row
     } catch (e) { if (e.code === 'ENOENT') return null; throw Error('run_store_unavailable') }
   }

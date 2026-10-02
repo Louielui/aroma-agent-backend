@@ -10,9 +10,9 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 // briefing. Read the same planned-integration states used by the tool registry.
 function buildArchitectureHtml () {
   const labels = {
-    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-01' }),
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-02' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
-    workbench: t('workerFlow.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
+    workbench: t('workerFlow.title'), developmentPlan: t('plan.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
     foundation: t('architecture.foundation'), partial: t('architecture.partial'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
@@ -32,6 +32,7 @@ function buildArchitectureHtml () {
     deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
   }
   const rows = [
+    { id: 'development-plan', state: 'partial', title: t('architecture.planTitle'), purpose: t('architecture.planPurpose'), component: 'Capability Registry / Policy / Dispatcher / Codex subscription', current: t('architecture.planCurrent'), next: t('architecture.planNext'), evidence: 'src/core/developmentPlan/; src/capability/; docs/DEVELOPMENT-PROPOSAL-V1.md' },
     { id: 'mail-memory', state: 'partial', title: t('architecture.mailMemoryTitle'), purpose: t('architecture.mailMemoryPurpose'), component: 'PostgreSQL / Gmail / Hindsight / GPT subscription', current: t('architecture.mailMemoryCurrent'), next: t('architecture.mailMemoryNext'), evidence: 'src/company/mailMemory.js; mailSemantic.js; mailHistory.js; mailChat.test.js; docs/MEMORY-RECOVERY.md; docs/ADMIN-MAIL-NOTIFICATIONS.md' },
     { id: 'brain', state: 'foundation', title: t('architecture.brainTitle'), purpose: t('architecture.brainPurpose'), component: t('architecture.brainComponent'), current: t('architecture.brainCurrent'), next: t('architecture.brainNext'), evidence: 'src/adapters/; src/subscription/' },
     { id: 'core', state: 'partial', title: t('architecture.coreTitle'), purpose: t('architecture.corePurpose'), component: t('architecture.coreComponent'), current: t('architecture.coreCurrent'), next: t('architecture.coreNext'), evidence: 'src/core/operating/registry.js; manager.js; gateway.js' },

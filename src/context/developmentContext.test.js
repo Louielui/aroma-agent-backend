@@ -33,6 +33,14 @@ test('explicit progress intent excludes negation, quotations, business scope and
   for (const message of ['香香，現在開發進度怎樣？','目前香香開發到哪？','show development progress']) assert.equal(api.isDevelopmentRequest(message), true, message)
   for (const message of ['不要查開發進度','如果我說「現在開發進度怎樣」','Aroma System 現在開發到哪？','現在開發進度怎樣，然後部署','幫我改 GitHub']) assert.equal(api.isDevelopmentRequest(message), false, message)
 })
+test('worker evidence refresh bypasses the UI cache twice and exposes a current access check', async () => {
+  const { service, reads } = fixture()
+  await service.read(OWNER); await service.read(OWNER)
+  assert.equal(reads(), 5)
+  assert.equal((await service.read(OWNER, { refresh: true })).cached, false); assert.equal(reads(), 10)
+  await service.read(OWNER, { refresh: true }); assert.equal(reads(), 15)
+  assert.equal(typeof service.verify, 'function'); assert.throws(() => service.verify({ role: 'staff' }), /permission_denied/)
+})
 test('disabling a source blocks cached results and a late in-flight result', async () => {
   let enabled = true, reads = 0, finish
   const gateway = { readMetadata: () => { reads++; return new Promise(resolve => { finish = resolve }) } }

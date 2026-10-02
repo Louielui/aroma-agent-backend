@@ -31,11 +31,17 @@ function createDevelopmentContext ({ gateway, repository, runtime, clock = () =>
       packs, tests: { state: testState(checks, statuses), sha: SHA.test(sha || '') ? sha : null },
       counts: { commits: commits.count, pullRequests: prs.count, checks: checks?.count ?? null, statuses: statuses?.count ?? null } }
   }
-  async function read (actor) {
+  function verify (actor) {
     if (!actor || actor.role !== 'owner') throw Error('permission_denied')
     if (!enabled()) throw Error('read_access_disabled')
+  }
+  async function read (actor, { refresh = false } = {}) {
+    verify(actor)
+    // Worker result verification requires a new source observation. A preceding
+    // UI fetch must finish before that observation starts, never satisfy it.
+    if (refresh && active) { await active; verify(actor) }
     const now = Date.parse(clock())
-    const cached = !!cache && now - cache.at >= 0 && now - cache.at < cacheMs
+    const cached = !refresh && !!cache && now - cache.at >= 0 && now - cache.at < cacheMs
     if (!cached && !active) {
       active = retrieve(actor).then(result => { cache = { at: Date.parse(clock()), retrievedAt: clock(), result }; return result }).finally(() => { active = null })
     }
@@ -49,7 +55,7 @@ function createDevelopmentContext ({ gateway, repository, runtime, clock = () =>
         restartRequired: deployedCommit && bootCommit ? deployedCommit !== bootCommit : null,
         remoteMatchesDeployed: result.remoteCommit && deployedCommit ? result.remoteCommit === deployedCommit : null } }
   }
-  return Object.freeze({ read, capabilities: () => gateway.describe ? gateway.describe() : [] })
+  return Object.freeze({ read, verify, capabilities: () => gateway.describe ? gateway.describe() : [] })
 }
 function createRuntimeDevelopmentContext ({ env = process.env, runtime } = {}) {
   const { createReadConnector } = require('./readConnector')

@@ -990,6 +990,7 @@
           } else {
             var tEl = addBot(text, c)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
+            if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
@@ -1279,6 +1280,14 @@
   }
 
   /** What the server says the turn actually became — shown after the fact, never before. */
+  function renderDevelopmentPlanLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('plan.open'))
+    link.href = '/development-plan?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
+
+  /** What the server says the turn actually became — shown after the fact, never before. */
   // ⛔ Thunks, not key strings — a dynamic key is the one structural line (HR-48).
   var LANE_NAMES = {
     chat: function () { return t('lane.chat') },
@@ -1451,6 +1460,12 @@
       if (res.historySaved === false) addMeta(briefingTurn.body, t('workflow.historyFailed'))
       renderOperatingRun(briefingTurn, res.operatingRunId)
       return briefingTurn
+    }
+    if (res.developmentPlanRunId) {
+      var planTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(planTurn.body, t('workflow.historyFailed'))
+      renderDevelopmentPlanLink(planTurn, res.developmentPlanRunId)
+      return planTurn
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)
@@ -2328,6 +2343,8 @@
   if (calendarContextBtn) calendarContextBtn.addEventListener('click', function () { window.location.href = '/calendar-context' })
   var gmailContextBtn = document.getElementById('open-gmail-context')
   if (gmailContextBtn) gmailContextBtn.addEventListener('click', function () { window.location.href = '/gmail-context' })
+  var developmentPlanBtn = document.getElementById('open-development-plan')
+  if (developmentPlanBtn) developmentPlanBtn.addEventListener('click', function () { window.location.href = '/development-plan' })
   var architectureBtn = document.getElementById('open-architecture')
   var memoryBtn = document.getElementById('open-memory')
   if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
@@ -2529,6 +2546,7 @@
     ['aroma-context-label', 'text', function () { return t('aromaContext.title') }],
     ['calendar-context-label', 'text', function () { return t('calendarContext.title') }],
     ['gmail-context-label', 'text', function () { return t('gmailContext.title') }],
+    ['development-plan-label', 'text', function () { return t('plan.title') }],
     ['architecture-label', 'text', function () { return t('architecture.title') }],
     ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],

@@ -1034,6 +1034,16 @@ function createApp (options = {}) {
   app.use('/gmail-context', requireOwner)
   app.use('/api/v1/live-context', requireOwner)
   app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
+  const developmentPlan = opts.developmentPlan || (typeof liveContext.verify === 'function' ? require('./core/developmentPlan/service').createDevelopmentPlan({
+    source: liveContext,
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium' }),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'development-plan-runs'), workflow: 'development_proposal' }),
+    onFinish: run => governedMemory?.event('worker', 'development-plan:' + run.id,
+      JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true }), 'measured_result', run.finishedAt)
+  }) : null)
+  app.use('/development-plan', requireOwner)
+  app.use('/api/v1/development-plan', requireOwner)
+  app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: developmentPlan }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -1136,6 +1146,7 @@ function createApp (options = {}) {
 
   app.use(createDemoRouter({
     liveContext,
+    developmentPlan,
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,
