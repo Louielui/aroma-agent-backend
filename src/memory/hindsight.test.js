@@ -92,3 +92,21 @@ test('dedicated indexing request can be cancelled for foreground owner conversat
   const job = client.forMailSource('adm@example.test').withSignal(abort.signal).recall('earlier invoice')
   await began; abort.abort(); await assert.rejects(job, /memory_yielded/)
 })
+
+test('mail semantic recall accepts a measured response beyond six seconds while keeping its deadline bounded', async t => {
+  const deadlines = [], timeout = AbortSignal.timeout.bind(AbortSignal)
+  t.mock.method(AbortSignal, 'timeout', milliseconds => { deadlines.push(milliseconds); return timeout(milliseconds) })
+  let delayed = true
+  const client = createHindsight({ env, transport: async (url, init) => {
+    if (delayed) await new Promise((resolve, reject) => {
+      const timer = setTimeout(resolve, 6250)
+      init.signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Deadline', 'AbortError')) }, { once: true })
+    })
+    return Response.json({ results: [{ id: 'fact-1', document_id: id, text: 'Original notification test.', mentioned_at: null }] })
+  } })
+  const result = await client.forMailSource('adm@example.test').recall('notification test')
+  assert.equal(result[0].documentId, id); assert.deepEqual(deadlines, [10000])
+  delayed = false
+  await client.recall('notification test'); await client.forScope('domain:email').recall('notification test')
+  assert.deepEqual(deadlines, [10000, 6000, 6000])
+})

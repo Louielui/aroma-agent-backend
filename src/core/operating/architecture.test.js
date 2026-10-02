@@ -49,6 +49,8 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /Google 真實重新授權.*待驗收/)
   assert.match(html, /不含本文的版本清單/)
   assert.match(html, /送往 Hindsight 前及保存結果時再次重讀原信/)
+  assert.match(html, /電郵語意搜尋最多等待 10 秒/)
+  assert.match(html, /超時會明示語意搜尋不可用/)
   assert.match(html, /Manus.*Grok/)
   assert.doesNotMatch(html, /<script|<form|<button/)
   assert.equal(reads, 0)

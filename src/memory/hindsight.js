@@ -92,7 +92,9 @@ function createHindsight ({ env = process.env, transport = fencedFetch('hindsigh
     },
     async recall (query) {
       if (!validText(query)) throw Error('memory_invalid_text')
-      const r = await call('/memories/recall', 'POST', { query, budget: 'low', max_tokens: 800, types: ['world', 'experience'], tags: ['owner-explicit', 'xiangxiang-auto'], tags_match: 'any_strict' }, 6000)
+      // Measured local mail retrieval takes about seven seconds. Bound this
+      // source-specific wait without extending shared-bank calls or caller cancellation.
+      const r = await call('/memories/recall', 'POST', { query, budget: 'low', max_tokens: 800, types: ['world', 'experience'], tags: ['owner-explicit', 'xiangxiang-auto'], tags_match: 'any_strict' }, mailSource ? 10000 : 6000)
       if (!Array.isArray(r.results)) throw Error('memory_invalid_result')
       return r.results.slice(0, 5).map(row => {
         if (typeof row.id !== 'string' || typeof row.text !== 'string' || !ID.test(row.document_id || '')) throw Error('memory_invalid_result')
