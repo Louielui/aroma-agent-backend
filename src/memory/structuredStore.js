@@ -42,6 +42,23 @@ function createStructuredStore({ invoke, local = false, env = process.env } = {}
     request: run, backup: () => run({ op: 'backup' }),
     queueIndex: request => run({ ...request, op: 'queue_index' }),
     get: id => run({ op: 'get', id }),
+    generalRows: async () => {
+      const fail = () => { throw Error('memory_database_unavailable') }
+      const rows = []; let after = 0; let snapshotSequence = null
+      for (;;) {
+        const page = await run({ op: 'general_page', after, snapshotSequence })
+        if (!page || !Array.isArray(page.items) || page.items.length > 2000 || typeof page.hasMore !== 'boolean' ||
+          !Number.isSafeInteger(page.snapshotSequence) || page.snapshotSequence < after ||
+          (snapshotSequence !== null && page.snapshotSequence !== snapshotSequence) ||
+          !Number.isSafeInteger(page.nextSequence) || page.nextSequence < after || page.nextSequence > page.snapshotSequence ||
+          (page.items.length && page.nextSequence <= after) ||
+          (page.hasMore && (!page.items.length || page.nextSequence <= after)) ||
+          page.items.some(row => typeof row?.source?.kind !== 'string' || row.source.kind.startsWith('admin_mail_'))) fail()
+        rows.push(...page.items)
+        if (!page.hasMore) return rows
+        after = page.nextSequence; snapshotSequence = page.snapshotSequence
+      }
+    },
     mailRows: async (mailbox, kinds = ['admin_mail_message', 'admin_mail_thread']) => {
       const fail = () => { throw Error('memory_database_unavailable') }
       if (typeof mailbox !== 'string' || mailbox.length > 254 || !/^[a-z0-9.!#$%&'*+_`{|}~-]+@[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(mailbox) ||

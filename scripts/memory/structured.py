@@ -36,6 +36,9 @@ async def main(req):
         if op == "mail_page":
             from mailRows import mail_page
             return await mail_page(db, req)
+        if op == "general_page":
+            from generalRows import general_page
+            return await general_page(db, req)
         if op == "get":
             value = await db.fetchval("SELECT body FROM memory.records WHERE id=$1", req["id"])
             return json.loads(value) if value else None

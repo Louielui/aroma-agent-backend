@@ -21,6 +21,9 @@ const sourceBound = row => row?.source?.kind?.startsWith('admin_mail_') === true
 const text = (v, max) => typeof v === 'string' && v.trim().length > 0 && v.length <= max
 function createGateway({ store, engine, clock = () => new Date().toISOString() }) {
   const indexing = new Map()
+  // General memory never needs the source-bound mailbox bodies. Filter them in
+  // PostgreSQL before transport; injected older stores retain their safe fallback.
+  const generalRows = () => store.generalRows ? store.generalRows() : store.all()
   async function scopes(actor, write = false) {
     if (actor?.id === 'owner' && actor?.role === 'owner') return SCOPES
     if (actor?.role !== 'agent') throw Error('permission_denied')
@@ -42,7 +45,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
   async function list(actor, filter = {}) {
     const allowed = await scopes(actor)
     if (filter.scope) await authorize(actor, filter.scope)
-    return (await store.all()).filter(r => !sourceBound(r) && allowed.includes(r.scope) && (!filter.scope || r.scope === filter.scope) &&
+    return (await generalRows()).filter(r => !sourceBound(r) && allowed.includes(r.scope) && (!filter.scope || r.scope === filter.scope) &&
       (!filter.type || r.type === filter.type) && (!filter.status || r.status === filter.status))
   }
   function validate(input) {
@@ -255,7 +258,7 @@ function createGateway({ store, engine, clock = () => new Date().toISOString() }
       ...(modelId ? { supersedes: modelId } : {}) }, false)
   }
   async function status(actor) {
-    owner(actor); const rows = (await store.all()).filter(r => !sourceBound(r))
+    owner(actor); const rows = (await generalRows()).filter(r => !sourceBound(r))
     const active = rows.filter(current)
     const batch = rows.filter(r => r.index.rebuildId).sort((a, b) => b.index.queuedAt.localeCompare(a.index.queuedAt))[0]?.index
     const rebuilt = batch ? rows.filter(r => r.index.rebuildId === batch.rebuildId) : []
