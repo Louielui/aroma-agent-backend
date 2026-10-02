@@ -24,7 +24,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
@@ -34,7 +34,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
     if (!isStore && (isMemory ? memoryBusy : busy)) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -53,7 +53,12 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (isStore) {
+      if (req.url === '/code-diagnosis-source') {
+        if (!input || Array.isArray(input) || Object.keys(input).join(',') !== 'bootCommit' || !/^[a-f0-9]{40}$/.test(input.bootCommit || '')) { reply(400, { code: 'context_unavailable' }); return }
+        if (typeof codeSourceFactory !== 'function') { reply(503, { code: 'context_unavailable' }); return }
+        try { reply(200, await codeSourceFactory(input.bootCommit).read({ id: 'owner', role: 'owner' }, { signal: controller.signal })) }
+        catch (_) { reply(503, { code: 'context_unavailable' }) }
+      } else if (isStore) {
         if (!memoryEnabled || !memoryStore) { reply(503, { error: 'memory_database_unavailable' }); return }
         try { reply(200, { result: await memoryStore.request(input) }) }
         catch (e) { reply(200, { error: ['revision_conflict', 'decision_conflict'].includes(e.message) ? e.message : 'memory_database_unavailable' }) }

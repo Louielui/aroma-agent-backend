@@ -31,7 +31,8 @@ function main () {
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
-    memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }) })
+    memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
+    codeSourceFactory: bootCommit => require('../../src/core/codeDiagnosis/source').createCodeSource({ root: repo, env, bootCommit }) })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }

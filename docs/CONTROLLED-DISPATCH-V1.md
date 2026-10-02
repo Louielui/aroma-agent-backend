@@ -14,7 +14,12 @@ Open `/development-plan` → **程式診斷與派工**, or ask:
 The host supplies eight fixed committed dispatch source/test blobs from the local
 Xiangxiang backend. `contract.js` owns this profile; callers cannot supply project
 paths, prompts, credentials, tools, commands, worker identities or approval flags.
-The reader pins Git HEAD, checks the repository root, bounds each blob and the
+The reader runs in the existing authenticated, loopback-only Owner bridge. The
+Windows LocalService backend sends only its boot commit to the closed
+`/code-diagnosis-source` route; no caller-supplied path or command is accepted.
+This preserves normal Git ownership/trust checks instead of weakening Git or
+Windows service protection. Source reads never call a model. The reader pins
+Git HEAD, checks the repository root, bounds each blob and the
 whole packet, rejects recognizable credential content, and rechecks HEAD. Working
 tree changes, .env, logs, operational data and the production restaurant repository
 are outside this profile. Committed-only scope is explicit in every result.

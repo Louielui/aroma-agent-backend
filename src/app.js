@@ -1045,7 +1045,7 @@ function createApp (options = {}) {
   app.use('/api/v1/development-plan', requireOwner)
   app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: developmentPlan }))
   const codeDiagnosis = opts.codeDiagnosis || require('./core/codeDiagnosis/service').createCodeDiagnosis({
-    source: require('./core/codeDiagnosis/source').createCodeSource({ bootCommit: BOOT_COMMIT }),
+    source: require('./core/codeDiagnosis/remoteSource').createRemoteCodeSource({ bootCommit: BOOT_COMMIT }),
     provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6.1-sol' }),
     store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'code-diagnosis-runs'), workflow: 'code_diagnosis' }),
     onFinish: run => governedMemory?.event('worker', 'code-diagnosis:' + run.id,
