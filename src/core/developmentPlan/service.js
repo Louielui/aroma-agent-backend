@@ -75,10 +75,17 @@ function createDevelopmentPlan ({ source, provider, store, timeoutMs = 120000, c
   function list (actor) { owner(actor); return [...rows.values()].sort((a, b) => (b.startedAt || '').localeCompare(a.startedAt || '')).slice(0, 25).map(r => ({ id: r.id, state: r.state, reason: r.reason, startedAt: r.startedAt, finishedAt: r.finishedAt })) }
   async function execute (run, control) {
     const check = () => { if (control.abort.signal.aborted) throw Error(control.reason || 'cancelled'); owner({ id: 'owner', role: 'owner' }) }
+    const awaitStep = async call => {
+      check(); let listener
+      const pending = Promise.resolve().then(() => { check(); return call() }); control.inflight.add(pending)
+      pending.then(() => control.inflight.delete(pending), () => control.inflight.delete(pending))
+      const stopped = new Promise((resolve, reject) => { listener = () => reject(Error(control.reason || 'cancelled')); control.abort.signal.addEventListener('abort', listener, { once: true }) })
+      try { const value = await Promise.race([pending, stopped]); check(); return value } finally { control.abort.signal.removeEventListener('abort', listener) }
+    }
     try {
       check(); run.state = 'running'; record(run, 'subscription_check')
-      await provider.preflight({ signal: control.abort.signal }); check()
-      record(run, 'context_read'); const before = await source.read({ id: 'owner', role: 'owner' }, { refresh: true }); check()
+      await awaitStep(() => provider.preflight({ signal: control.abort.signal })); check()
+      record(run, 'context_read'); const before = await awaitStep(() => source.read({ id: 'owner', role: 'owner' }, { refresh: true })); check()
       const evidence = packet(before); run.evidence = evidence; run.retrievedAt = before.retrievedAt; run.evidenceHash = hash(evidence); record(run, 'context_received')
       // A second provider must never become a silent fallback for this narrow
       // subscription-only recipe, even if a future manifest claims its contract.
@@ -88,7 +95,7 @@ function createDevelopmentPlan ({ source, provider, store, timeoutMs = 120000, c
         invoke: async (id, version, input) => {
           check(); if (id !== CAPABILITY || version !== 1 || input.evidence !== evidence) throw Error('invalid_worker_result')
           try {
-            const reply = await provider.complete(JSON.stringify({ workOrder: WORK_ORDER, evidence }), { system: SYSTEM, signal: control.abort.signal, responseFormat: { type: 'json_schema', name: 'development_proposal', schema: PROPOSAL_SCHEMA } }); check()
+            const reply = await awaitStep(() => provider.complete(JSON.stringify({ workOrder: WORK_ORDER, evidence }), { system: SYSTEM, signal: control.abort.signal, responseFormat: { type: 'json_schema', name: 'development_proposal', schema: PROPOSAL_SCHEMA } })); check()
             if (reply.billing !== 'chatgpt-subscription' || reply.model !== MODEL || typeof reply.text !== 'string' || reply.text.length > 20000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(reply.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateProposal(result, evidence)) throw Error('invalid_worker_result')
@@ -99,7 +106,7 @@ function createDevelopmentPlan ({ source, provider, store, timeoutMs = 120000, c
       const dispatched = await dispatcher.dispatch({ capabilityId: CAPABILITY, version: 1, target: 'dev', context: { data_domains: ['public_development'], description: WORK_ORDER.goal }, input: { evidence } }); check()
       run.dispatch = { status: dispatched.status, agentId: dispatched.agentId || null, cost: null, latencyMs: dispatched.latencyMs ?? null }
       if (dispatched.status !== 'ok' || dispatched.agentId !== AGENT) throw Error(dispatched.error || 'invalid_worker_result')
-      record(run, 'source_verifying'); const after = await source.read({ id: 'owner', role: 'owner' }, { refresh: true }); check()
+      record(run, 'source_verifying'); const after = await awaitStep(() => source.read({ id: 'owner', role: 'owner' }, { refresh: true })); check()
       const matched = hash(packet(after)) === run.evidenceHash
       run.verification = { at: clock(), matched, scope: 'source_identity_revision_and_packet_hash', factualClaimsVerified: false }
       if (!matched) { run.state = 'needs_attention'; run.reason = 'evidence_changed'; record(run, 'evidence_changed') }
@@ -121,15 +128,14 @@ function createDevelopmentPlan ({ source, provider, store, timeoutMs = 120000, c
     if (activeId) throw Error('worker_busy')
     const run = { id: randomUUID(), workflow: 'development_proposal', requestId: input.requestId, conversationId: input.conversationId || null, actor: 'owner', startedAt: clock(), finishedAt: null, state: 'queued', reason: null, workOrder: WORK_ORDER, steps: [], sections: [], evidence: null, result: null, verification: null }
     record(run, 'owner_requested', { recipe: RECIPE }); activeId = run.id
-    const control = { abort: new AbortController(), reason: null }; controls.set(run.id, control)
-    let timer
-    const stopped = new Promise((resolve, reject) => {
-      control.abort.signal.addEventListener('abort', () => reject(Error(control.reason || 'cancelled')), { once: true })
-      timer = setTimeout(() => { control.reason = 'timed_out'; control.abort.abort() }, timeoutMs)
+    const control = { abort: new AbortController(), reason: null, inflight: new Set() }; controls.set(run.id, control)
+    const timer = setTimeout(() => { control.reason = 'timed_out'; control.abort.abort() }, timeoutMs)
+    control.promise = execute(run, control).finally(() => {
+      clearTimeout(timer)
+      const release = () => { if (activeId === run.id) activeId = null; controls.delete(run.id) }
+      if (control.inflight.size) Promise.allSettled([...control.inflight]).then(release)
+      else release()
     })
-    control.promise = Promise.race([execute(run, control), stopped]).catch(() => {
-      run.result = null; run.reason = control.reason || 'cancelled'; run.state = run.reason === 'timed_out' ? 'timed_out' : 'cancelled'; run.finishedAt = clock(); record(run, run.state)
-    }).finally(() => { clearTimeout(timer); if (activeId === run.id) activeId = null; controls.delete(run.id) })
     return structuredClone(rows.get(run.id))
   }
   function cancel (actor, id) { const run = get(actor, id); if (!run) throw Error('run_not_found'); const c = controls.get(id); if (c) { c.reason = 'cancelled'; c.abort.abort() } return run }

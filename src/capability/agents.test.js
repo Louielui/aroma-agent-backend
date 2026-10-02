@@ -19,6 +19,18 @@ const {
   rankByHealth
 } = agents
 
+test('unknown cost does not dilute measured averages or rank as free', () => {
+  const capability = 'CostRanking' + require('node:crypto').randomUUID().replaceAll('-', ''), unknown = 'unknown-cost-' + capability, measured = 'measured-cost-' + capability
+  require('./registry').register({ id: capability, version: 1, lifecycle: 'active', risk_tier: 'low', input_schema: {}, output_schema: {} })
+  const spec = id => ({ id, role: 'fixture', adapter: 'fixture', availability: 'local', status: 'active', provides: [{ capability, version: 1, seed_quality: 1, seed_cost: 'unknown' }] })
+  const a = registerAgent(spec(unknown)), b = registerAgent(spec(measured)), event = agentId => ({ agentId, capabilityId: capability, version: 1, success: true, latencyMs: 2 })
+  updateHealthFromEvent({ ...event(unknown), cost: null }); updateHealthFromEvent({ ...event(measured), cost: 6 })
+  assert.deepEqual(rankByHealth([a, b], capability, 1).map(x => x.id), [measured, unknown])
+  updateHealthFromEvent({ ...event(measured), cost: null }); const record = updateHealthFromEvent({ ...event(measured), cost: 10 })
+  assert.equal(record.cost, 8); assert.equal(record.cost_samples, 2); assert.equal(record.sample_count, 3); assert.equal(record.quality, 1); assert.equal(record.latency, 2)
+  const zero = updateHealthFromEvent({ ...event(unknown), cost: 0 }); assert.equal(zero.cost, 0); assert.equal(zero.cost_samples, 1)
+})
+
 test('registerAgent accepts the seeded claude-code manifest', () => {
   // The module seeds claude-code at load time; it should be routable & active.
   const [claudeCode] = agentsProviding('Develop', 1)

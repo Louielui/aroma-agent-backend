@@ -162,7 +162,8 @@ function updateHealthFromEvent (event) {
       version: event.version,
       quality: 0,
       latency: 0,
-      cost: 0,
+      cost: null,
+      cost_samples: 0,
       availability: 'up',
       sample_count: 0
     }
@@ -174,7 +175,10 @@ function updateHealthFromEvent (event) {
   // Incremental average: avg += (sample - avg) / n
   record.quality += (successValue - record.quality) / n
   record.latency += (event.latencyMs - record.latency) / n
-  record.cost += (event.cost - record.cost) / n
+  if (Number.isFinite(event.cost)) {
+    record.cost_samples++
+    record.cost = record.cost_samples === 1 ? event.cost : record.cost + (event.cost - record.cost) / record.cost_samples
+  }
   record.availability = availabilityFromQuality(record.quality)
   record.sample_count = n
 

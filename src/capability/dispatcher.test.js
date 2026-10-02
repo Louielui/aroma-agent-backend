@@ -457,3 +457,28 @@ test('runContext: AGENT_FINISHED carries cost null rather than zero when the ada
   assert.equal(finished.facts.success, true)
   assert.equal(finished.facts.cost, null) // null, not 0 — the cost was never proven
 })
+
+for (const [label, supplied, expected] of [['missing', undefined, null], ['null', null, null], ['NaN', NaN, null], ['infinite', Infinity, null], ['measured zero', 0, 0], ['measured numeric', 7, 7]]) {
+  test('adopted dispatcher keeps ' + label + ' cost consistent in result, event, timeline and health', async () => {
+    const rc = makeRunContext(), id = 'CostRegression' + require('node:crypto').randomUUID().replaceAll('-', ''), agent = 'cost-regression-' + id
+    register({ id, version: 1, lifecycle: 'active', risk_tier: 'low', input_schema: {}, output_schema: {} })
+    registerAgent({ id: agent, role: 'fixture', adapter: 'fixture', availability: 'local', status: 'active', provides: [{ capability: id, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
+    const d = createDispatcher({ allowedAgentIds: [agent], fallback: false, runContext: rc, adapters: { [agent]: { health: () => ({ availability: 'up', latencyMs: 0 }), invoke: async () => ({ ok: true, output: {}, cost: supplied }) } } })
+    const result = await d.dispatch({ capabilityId: id, version: 1, target: 'dev', input: {}, context: {} })
+    assert.equal(result.status, 'ok'); assert.equal(result.cost, expected); assert.equal(d.getEvents().at(-1).cost, expected)
+    assert.equal(rc.stages.find(s => s.stage === 'AGENT_FINISHED').facts.cost, expected)
+    assert.equal(getHealth(agent, id, 1).cost, expected); assert.equal(getHealth(agent, id, 1).cost_samples, expected === null ? 0 : 1)
+  })
+}
+
+for (const throws of [false, true]) {
+  test('adopted dispatcher failure retains unknown cost when ' + (throws ? 'invoke throws' : 'adapter reports failure'), async () => {
+    const id = 'CostFailure' + require('node:crypto').randomUUID().replaceAll('-', ''), agent = 'cost-failure-' + id, rc = makeRunContext()
+    register({ id, version: 1, lifecycle: 'active', risk_tier: 'low', input_schema: {}, output_schema: {} })
+    registerAgent({ id: agent, role: 'fixture', adapter: 'fixture', availability: 'local', status: 'active', provides: [{ capability: id, version: 1, seed_quality: 0, seed_cost: 'unknown' }] })
+    const d = createDispatcher({ allowedAgentIds: [agent], fallback: false, runContext: rc, adapters: { [agent]: { health: () => ({ availability: 'up', latencyMs: 0 }), invoke: async () => { if (throws) throw Error('fixture failure'); return { ok: false, error: 'fixture failure', cost: null } } } } })
+    const result = await d.dispatch({ capabilityId: id, version: 1, target: 'dev', input: {}, context: {} })
+    assert.equal(result.status, 'failed'); assert.equal(result.cost, null); assert.equal(d.getEvents().at(-1).cost, null)
+    assert.equal(getHealth(agent, id, 1).cost, null); assert.equal(rc.stages.find(s => s.stage === 'FAILED').facts.cost, null)
+  })
+}

@@ -127,3 +127,41 @@ test('UI scripts parse and render proposal and dispatch states with honest local
   assert.doesNotThrow(() => new vm.Script(script)); assert.match(html, /內容尚未獨立驗證/); assert.match(html, /訂閱額度／可用 credits 不足，或帳戶用量上限已達/)
   assert.doesNotMatch(html, /Preparing the briefing|正在整理簡報/)
 })
+
+for (const mode of ['cancel_late_resolve', 'cancel_late_reject', 'timeout_late_resolve']) {
+  test('adopted planner keeps one terminal receipt and busy protection: ' + mode, async () => {
+    let enter, resolveLate, rejectLate, calls = 0; const ready = new Promise(resolve => { enter = resolve }); const receipts = []
+    const h = setup({ timeoutMs: mode.startsWith('timeout') ? 30 : 1000,
+      provider: { complete: () => { if (++calls > 1) return Promise.resolve({ text: JSON.stringify(output()), model: 'gpt-6-astra', billing: 'chatgpt-subscription' }); enter(); return new Promise((resolve, reject) => { resolveLate = resolve; rejectLate = reject }) } },
+      onFinish: value => { receipts.push(value); return { state: 'queued' } }
+    })
+    const r = start(h.service); await ready
+    if (!mode.startsWith('timeout')) h.service.cancel(owner, r.id)
+    await h.service.wait(r.id)
+    const terminal = h.service.get(owner, r.id)
+    assert.equal(terminal.state, mode.startsWith('timeout') ? 'timed_out' : 'cancelled'); assert.equal(terminal.result, null)
+    assert.equal(receipts.length, 1); assert.equal(terminal.steps.filter(s => ['cancelled', 'timed_out', 'completed', 'failed'].includes(s.stage)).length, 1)
+    assert.throws(() => start(h.service), /worker_busy/, 'uncooperative provider still owns its busy slot')
+    if (mode.endsWith('reject')) rejectLate(Error('late failure'))
+    else resolveLate({ text: JSON.stringify(output()), model: 'gpt-6-astra', billing: 'chatgpt-subscription' })
+    await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(h.service.get(owner, r.id), terminal); assert.equal(receipts.length, 1)
+    const next = start(h.service); await h.service.wait(next.id); assert.equal(h.service.get(owner, next.id).state, 'completed'); assert.equal(receipts.length, 2)
+  })
+}
+
+for (const phase of ['preflight', 'source_read', 'source_reverify']) {
+  test('adopted planner cancellation bounds ' + phase + ' without replaying terminal work', async () => {
+    let enter, release; const ready = new Promise(resolve => { enter = resolve }); let reads = 0, receipts = 0
+    const pause = () => { enter(); return new Promise(resolve => { release = resolve }) }
+    const h = setup({ provider: phase === 'preflight' ? { preflight: pause } : {},
+      source: { read: async () => { if (++reads === (phase === 'source_reverify' ? 2 : 1) && phase !== 'preflight') { await pause() } return fixture() } },
+      onFinish: () => { receipts++; return { state: 'queued' } }
+    })
+    const r = start(h.service); await ready; h.service.cancel(owner, r.id); await h.service.wait(r.id)
+    const terminal = h.service.get(owner, r.id); assert.equal(terminal.state, 'cancelled'); assert.equal(terminal.result, null); assert.equal(receipts, 1)
+    assert.throws(() => start(h.service), /worker_busy/)
+    release(); await new Promise(resolve => setImmediate(resolve)); await new Promise(resolve => setImmediate(resolve))
+    assert.deepEqual(h.service.get(owner, r.id), terminal); assert.equal(receipts, 1)
+  })
+}

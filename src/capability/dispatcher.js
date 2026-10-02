@@ -85,7 +85,7 @@ function createDispatcher (options = {}) {
       rule_id: verdict.rule_id,
       success: success === true,
       latencyMs: Number.isFinite(latencyMs) ? latencyMs : 0,
-      cost: Number.isFinite(cost) ? cost : 0,
+      cost: Number.isFinite(cost) ? cost : null,
       timestamp: Date.now()
     }
   }
@@ -211,12 +211,12 @@ function createDispatcher (options = {}) {
           // Adapter reported failure: record a failing Event, fold health, fall back.
           lastError = result.error || 'adapter reported failure'
           lastAgentId = agentId
-          lastCost = result.cost
+          lastCost = provenCost
           lastLatencyMs = latencyMs
           attempts.push({ agentId, error: lastError })
           record(buildEvent({
             agentId, capabilityId, version: canonicalVersion, verdict,
-            success: false, latencyMs, cost: result.cost
+            success: false, latencyMs, cost: provenCost
           }))
           // (timeline) This attempt finished, unsuccessfully.
           stage('AGENT_FINISHED', { agentId, success: false, cost: provenCost, latencyMs })
@@ -226,7 +226,7 @@ function createDispatcher (options = {}) {
         // (9)/(11) Success: record, fold health, return.
         record(buildEvent({
           agentId, capabilityId, version: canonicalVersion, verdict,
-          success: true, latencyMs, cost: result.cost
+          success: true, latencyMs, cost: provenCost
         }))
         // (timeline) This attempt finished, successfully.
         stage('AGENT_FINISHED', { agentId, success: true, cost: provenCost, latencyMs })
@@ -236,17 +236,17 @@ function createDispatcher (options = {}) {
             typeof result.output.patchPath === 'string' && result.output.patchPath.length > 0) {
           stage('PATCH_READY', { patchPath: result.output.patchPath })
         }
-        return { status: 'ok', agentId, output: result.output, cost: result.cost, latencyMs }
+        return { status: 'ok', agentId, output: result.output, cost: provenCost, latencyMs }
       } catch (err) {
         // Thrown error (bad/missing adapter or invoke threw): record, fold, fall back.
         lastError = (err && err.message) || String(err)
         lastAgentId = agentId
-        lastCost = 0
+        lastCost = null
         lastLatencyMs = 0
         attempts.push({ agentId, error: lastError })
         record(buildEvent({
           agentId, capabilityId, version: canonicalVersion, verdict,
-          success: false, latencyMs: 0, cost: 0
+          success: false, latencyMs: 0, cost: null
         }))
         // (timeline) Only claim an AGENT_FINISHED if we truly reached invoke; a
         // thrown invoke proved no cost, so cost is null.

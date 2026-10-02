@@ -30,3 +30,23 @@ test('briefing commands exclude quoted examples, compound operations and negatio
   for (const message of ['今日營運簡報', '請整理今日營運簡報。', '香香，幫我整理今日營運簡報', 'Please show me today’s operations briefing'.replace('’', "'")]) assert.equal(isBriefingRequest(message), true, message)
   for (const message of ['不要整理今日營運簡報', '請解釋「今日營運簡報」', '今日營運簡報並寄給同事', '上星期營運簡報', '供應商要求：今日營運簡報']) assert.equal(isBriefingRequest(message), false, message)
 })
+
+test('all four workflows default to separate durable stores, preserving legacy briefing and explicit directories', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'workflow-adoption-')), previous = process.env.AROMA_DATA_DIR
+  process.env.AROMA_DATA_DIR = dir
+  t.after(() => { if (previous === undefined) delete process.env.AROMA_DATA_DIR; else process.env.AROMA_DATA_DIR = previous; assert.ok(path.resolve(dir).startsWith(path.resolve(os.tmpdir()) + path.sep)); fs.rmSync(dir, { recursive: true, force: true }) })
+  const workflows = { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs' }
+  const rows = Object.keys(workflows).map(workflow => ({ id: randomUUID(), workflow, steps: [], sections: [], state: 'completed' }))
+  for (const row of rows) createRunStore({ workflow: row.workflow }).save(row)
+  for (const row of rows) {
+    const reloaded = createRunStore({ workflow: row.workflow }); assert.deepEqual(reloaded.all(), [row]); assert.deepEqual(reloaded.get(row.id), row)
+    assert.ok(fs.existsSync(path.join(dir, workflows[row.workflow], row.id + '.json')))
+    for (const other of rows.filter(r => r !== row)) assert.equal(reloaded.get(other.id), null)
+  }
+  const explicitDir = path.join(dir, 'existing-explicit'), explicit = createRunStore({ dir: explicitDir, workflow: 'code_repair' }); explicit.save(rows[3])
+  assert.deepEqual(createRunStore({ dir: explicitDir, workflow: 'code_repair' }).all(), [rows[3]])
+  fs.writeFileSync(path.join(dir, workflows.code_repair, rows[3].id + '.json'), '{')
+  assert.throws(() => createRunStore({ workflow: 'code_repair' }).all(), /run_store_unavailable/)
+  assert.deepEqual(createRunStore().all(), [rows[0]], 'corruption of another workflow does not poison briefing history')
+  assert.throws(() => createRunStore({ workflow: '__proto__' }), /invalid_workflow/)
+})

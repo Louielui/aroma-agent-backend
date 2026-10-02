@@ -9,8 +9,9 @@ function createMemoryRunStore () {
   const rows = new Map()
   return { all: () => [...rows.values()].map(copy), get: id => copy(rows.get(id)), save: r => rows.set(r.id, copy(r)) }
 }
-function createRunStore ({ dir = path.join(resolveDataDir(), 'manager-runs'), workflow = 'daily_briefing' } = {}) {
+function createRunStore ({ dir, workflow = 'daily_briefing' } = {}) {
   if (!['daily_briefing', 'development_proposal', 'code_diagnosis', 'code_repair'].includes(workflow)) throw Error('invalid_workflow')
+  if (dir === undefined) dir = path.join(resolveDataDir(), { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs' }[workflow])
   function get (id) {
     if (!ID.test(id || '')) throw Error('invalid_run_id')
     try {
