@@ -2324,6 +2324,8 @@
   if (driveContextBtn) driveContextBtn.addEventListener('click', function () { window.location.href = '/drive-context' })
   var aromaContextBtn = document.getElementById('open-aroma-context')
   if (aromaContextBtn) aromaContextBtn.addEventListener('click', function () { window.location.href = '/aroma-context' })
+  var calendarContextBtn = document.getElementById('open-calendar-context')
+  if (calendarContextBtn) calendarContextBtn.addEventListener('click', function () { window.location.href = '/calendar-context' })
   var architectureBtn = document.getElementById('open-architecture')
   var memoryBtn = document.getElementById('open-memory')
   if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
@@ -2523,6 +2525,7 @@
     ['live-context-label', 'text', function () { return t('live.title') }],
     ['drive-context-label', 'text', function () { return t('driveContext.title') }],
     ['aroma-context-label', 'text', function () { return t('aromaContext.title') }],
+    ['calendar-context-label', 'text', function () { return t('calendarContext.title') }],
     ['architecture-label', 'text', function () { return t('architecture.title') }],
     ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],

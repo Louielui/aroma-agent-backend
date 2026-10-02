@@ -546,25 +546,31 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const briefingRequest = require('../core/operating/chatRequest')
       const driveRequest = liveContext?.drive ? require('../context/driveContextService').driveIntent(message) : null
       const aromaRequest = liveContext?.aroma ? require('../context/aromaContextService').aromaIntent(message) : null
+      const calendarRequest = liveContext?.calendar ? require('../context/calendarContextService').calendarIntent(message) : null
       if (liveContext && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') &&
-          (aromaRequest || driveRequest || require('../context/developmentContext').isDevelopmentRequest(message))) {
+          (calendarRequest || aromaRequest || driveRequest || require('../context/developmentContext').isDevelopmentRequest(message))) {
         if (!briefingRequest.sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const { conversationId, workflowRequestId } = req.body
         if (!isValidConversationId(conversationId) || !require('../core/operating/runStore').ID.test(workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
         const previous = contextReceipts.get(workflowRequestId)
         if (previous && (previous.conversationId !== conversationId || previous.message !== message)) return res.status(409).json({ error: 'request_conflict' })
         if (previous) {
-          try { if (aromaRequest) liveContext.aroma.verify(); const result = await previous.result; if (aromaRequest) liveContext.aroma.verify(); return res.set('Cache-Control', 'no-store').json(result) }
+          try { if (calendarRequest) { liveContext.calendar.verify(); previous.calendarAccess() } if (aromaRequest) liveContext.aroma.verify(); const result = await previous.result; if (calendarRequest) previous.calendarAccess(); if (aromaRequest) liveContext.aroma.verify(); return res.set('Cache-Control', 'no-store').json(result) }
           catch (_) { return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
         }
         const receipt = { conversationId, message }
+        if (calendarRequest) {
+          try { receipt.calendarAccess = liveContext.calendar.captureAccess() }
+          catch (_) { return res.status(503).json({ error: { message: t('live.error'), retryable: false } }) }
+        }
         receipt.result = (async () => {
-          const report = aromaRequest ? await liveContext.aroma.read({ id: 'owner', role: 'owner' }, aromaRequest.resource, aromaRequest.operation, aromaRequest.input) : driveRequest ? await liveContext.drive.read({ id: 'owner', role: 'owner' }, driveRequest.operation, driveRequest.input) : await liveContext.read({ id: 'owner', role: 'owner' })
-          const reply = aromaRequest ? require('../context/aromaContextView').aromaReply(report) : driveRequest ? require('../context/driveContextView').driveReply(report) : require('../context/liveContextView').developmentReply(report)
+          const report = calendarRequest ? await liveContext.calendar.read({ id: 'owner', role: 'owner' }, calendarRequest.operation, calendarRequest.input) : aromaRequest ? await liveContext.aroma.read({ id: 'owner', role: 'owner' }, aromaRequest.resource, aromaRequest.operation, aromaRequest.input) : driveRequest ? await liveContext.drive.read({ id: 'owner', role: 'owner' }, driveRequest.operation, driveRequest.input) : await liveContext.read({ id: 'owner', role: 'owner' })
+          if (calendarRequest) receipt.calendarAccess()
+          const reply = calendarRequest ? require('../context/calendarContextView').calendarReply(report) : aromaRequest ? require('../context/aromaContextView').aromaReply(report) : driveRequest ? require('../context/driveContextView').driveReply(report) : require('../context/liveContextView').developmentReply(report)
           let historySaved = true
           try { conversationStore.appendTurn({ id: conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
           emit('context_read', 200, historySaved ? null : 'conversation_write_failed')
-          return { lane: 'chat', mode: 'chat', reply, ...(aromaRequest ? { aromaContext: report } : driveRequest ? { driveContext: report } : { liveContext: report }), historySaved, servedBy: null }
+          return { lane: 'chat', mode: 'chat', reply, ...(calendarRequest ? { calendarContext: report } : aromaRequest ? { aromaContext: report } : driveRequest ? { driveContext: report } : { liveContext: report }), historySaved, servedBy: null }
         })()
         contextReceipts.set(workflowRequestId, receipt)
         if (contextReceipts.size > 100) contextReceipts.delete(contextReceipts.keys().next().value)

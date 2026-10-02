@@ -1030,6 +1030,7 @@ function createApp (options = {}) {
   app.use('/live-context', requireOwner)
   app.use('/drive-context', requireOwner)
   app.use('/aroma-context', requireOwner)
+  app.use('/calendar-context', requireOwner)
   app.use('/api/v1/live-context', requireOwner)
   app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
   // Conversation History v1 lives on the demo router and is gated the same way — same

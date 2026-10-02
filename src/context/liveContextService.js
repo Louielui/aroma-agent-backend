@@ -21,11 +21,16 @@ function createRuntimeLiveContext ({ env = process.env, runtime, registry }) {
   const aromaAccess = require('./aromaContext').createAromaContextAccess(env)
   connector.register(require('./aromaContext').createAromaContextAdapter({ env, verify: aromaAccess }))
   resources.push(...require('./aromaContext').aromaResources())
+  const calendarScope = require('./calendarContext').createOwnerCalendarScope({ registry, env })
+  connector.register(require('./calendarContext').createCalendarContextAdapter({ scope: calendarScope }))
+  resources.push(...require('./calendarContext').calendarResources())
   const githubAudit = createActivityStore({ dir, workflow: 'development_context', reason: 'owner_requested_context' })
   const driveAudit = createActivityStore({ dir, workflow: 'drive_context', reason: 'owner_requested_context' })
   const aromaAudit = createActivityStore({ dir, workflow: 'aroma_context', reason: 'owner_requested_context' })
-  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'aroma_system' ? aromaAudit : e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
+  const calendarAudit = createActivityStore({ dir, workflow: 'calendar_context', reason: 'owner_requested_context' })
+  const gateway = createToolGateway({ connector, resources, audit: { append: e => (e.source === 'calendar' ? calendarAudit : e.source === 'aroma_system' ? aromaAudit : e.source === 'drive' ? driveAudit : githubAudit).append(e) } })
   const development = createDevelopmentContext({ gateway, repository, runtime, enabled: () => require('./flags').readAccessEnabled(env, 'github') })
-  return Object.freeze({ ...development, drive: createDriveContextService({ gateway, scope }), aroma: require('./aromaContextService').createAromaContextService({ gateway, verify: aromaAccess }), activity: () => githubAudit.list() })
+  return Object.freeze({ ...development, drive: createDriveContextService({ gateway, scope }), aroma: require('./aromaContextService').createAromaContextService({ gateway, verify: aromaAccess }),
+    calendar: require('./calendarContextService').createCalendarContextService({ gateway, scope: calendarScope }), activity: () => githubAudit.list() })
 }
 module.exports = { createRuntimeLiveContext }
