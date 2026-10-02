@@ -3,6 +3,10 @@ const test = require('node:test'), assert = require('node:assert/strict')
 const { createRemoteCodeSource } = require('./remoteSource')
 const { createBridge } = require('../../subscription/bridge')
 const OWNER = { id: 'owner', role: 'owner' }, bootCommit = 'a'.repeat(40)
+test('Owner bridge host composition grants only its fixed reader, independent of absent service-launcher flags', () => {
+  const source = require('../../../scripts/subscription/startBridge').createOwnerCodeSource(__dirname, bootCommit)
+  assert.doesNotThrow(() => source.verify(OWNER)); assert.throws(() => source.verify({ id: 'ivy', role: 'owner' }), /permission_denied/)
+})
 test('service source hands only the boot commit to the fixed Owner bridge route, with cancellation and deadline', async () => {
   let seen
   const packet = { state: 'ok', evidence: { bootCommit } }

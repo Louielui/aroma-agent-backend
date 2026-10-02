@@ -5,6 +5,12 @@
 const fs = require('node:fs')
 const path = require('node:path')
 const { createBridge, DEFAULT_PORT } = require('../../src/subscription/bridge')
+// This is a closed Owner read grant at host composition, not a caller option.
+// The authenticated backend enforces its live READ_ACCESS flag before/after
+// every source request. The bridge's dotenv file has no service-launcher flags.
+function createOwnerCodeSource (repo, bootCommit) {
+  return require('../../src/core/codeDiagnosis/source').createCodeSource({ root: repo, env: { READ_ACCESS: 'on' }, bootCommit })
+}
 
 function main () {
   const repo = path.resolve(__dirname, '../..')
@@ -32,9 +38,9 @@ function main () {
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
-    codeSourceFactory: bootCommit => require('../../src/core/codeDiagnosis/source').createCodeSource({ root: repo, env, bootCommit }) })
+    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit) })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }
 if (require.main === module) main()
-module.exports = { main }
+module.exports = { main, createOwnerCodeSource }

@@ -17,6 +17,9 @@ paths, prompts, credentials, tools, commands, worker identities or approval flag
 The reader runs in the existing authenticated, loopback-only Owner bridge. The
 Windows LocalService backend sends only its boot commit to the closed
 `/code-diagnosis-source` route; no caller-supplied path or command is accepted.
+The backend enforces its live `READ_ACCESS` flag before and after requests. The
+bridge host grants only this fixed Owner reader, independently of launcher-only
+service flags; neither browser requests nor bridge JSON can override permissions.
 This preserves normal Git ownership/trust checks instead of weakening Git or
 Windows service protection. Source reads never call a model. The reader pins
 Git HEAD, checks the repository root, bounds each blob and the
