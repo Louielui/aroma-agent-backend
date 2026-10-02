@@ -51,7 +51,13 @@ const { getCapability, isRoutable } = require('./registry')
  * @returns {{ dispatch: function, getEvents: function }}
  */
 function createDispatcher (options = {}) {
+  options = options || {}
   const adapters = (options && options.adapters) || {}
+  // Host-scoped recipes may restrict candidates and refuse automatic fallback.
+  // These are constructor settings, never authority supplied in a request.
+  const allowedAgentIds = options.allowedAgentIds == null ? null : options.allowedAgentIds
+  if (allowedAgentIds !== null && (!Array.isArray(allowedAgentIds) || allowedAgentIds.length === 0 || allowedAgentIds.some(id => typeof id !== 'string' || !id) || new Set(allowedAgentIds).size !== allowedAgentIds.length)) throw TypeError('invalid_agent_scope')
+  if (options.fallback !== undefined && typeof options.fallback !== 'boolean') throw TypeError('invalid_fallback_setting')
   const eventSink = options && typeof options.eventSink === 'function' ? options.eventSink : null
   const runContext = options && options.runContext &&
     typeof options.runContext.appendStage === 'function' ? options.runContext : null
@@ -150,14 +156,14 @@ function createDispatcher (options = {}) {
     const canonicalVersion = getCapability(capabilityId, version).version
 
     // (6) Select candidate agents. None available → no_agent (still an Event).
-    const candidates = agentsProviding(capabilityId, canonicalVersion)
+    const candidates = agentsProviding(capabilityId, canonicalVersion).filter(agent => !allowedAgentIds || allowedAgentIds.includes(agent.id))
     if (candidates.length === 0) {
       record(buildEvent({ agentId: null, capabilityId, version: canonicalVersion, verdict, success: false }))
       return { status: 'no_agent' }
     }
 
     // (7) Rank best-first.
-    const ranked = rankByHealth(candidates, capabilityId, canonicalVersion)
+    const ranked = rankByHealth(candidates, capabilityId, canonicalVersion).slice(0, options.fallback === false ? 1 : undefined)
 
     // (timeline) An agent has been chosen. healthBasis records whether the live
     // rolling health decided the ranking, or the manifest seed values did (no

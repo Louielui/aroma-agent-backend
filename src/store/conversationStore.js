@@ -154,7 +154,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, operatingRunId = null, developmentPlanRunId = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const ts = now || new Date().toISOString()
 
@@ -179,6 +179,7 @@ function createConversationStore (options = {}) {
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
     if (typeof operatingRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(operatingRunId)) assistantMessage.operatingRunId = operatingRunId
     if (typeof developmentPlanRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(developmentPlanRunId)) assistantMessage.developmentPlanRunId = developmentPlanRunId
+    if (typeof codeDiagnosisRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(codeDiagnosisRunId)) assistantMessage.codeDiagnosisRunId = codeDiagnosisRunId
     conversation.messages.push(assistantMessage)
     conversation.updatedAt = ts
 

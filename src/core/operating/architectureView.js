@@ -32,7 +32,7 @@ function buildArchitectureHtml () {
     deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
   }
   const rows = [
-    { id: 'development-plan', state: 'partial', title: t('architecture.planTitle'), purpose: t('architecture.planPurpose'), component: 'Capability Registry / Policy / Dispatcher / Codex subscription', current: t('architecture.planCurrent'), next: t('architecture.planNext'), evidence: 'src/core/developmentPlan/; src/capability/; docs/DEVELOPMENT-PROPOSAL-V1.md' },
+    { id: 'development-plan', state: 'partial', title: t('architecture.planTitle'), purpose: t('architecture.planPurpose'), component: 'Capability Registry / Policy / Dispatcher / Codex subscription', current: t('architecture.planCurrent'), next: t('architecture.planNext'), evidence: 'src/core/developmentPlan/; src/core/codeDiagnosis/; src/capability/requestRouter.js; docs/CONTROLLED-DISPATCH-V1.md' },
     { id: 'mail-memory', state: 'partial', title: t('architecture.mailMemoryTitle'), purpose: t('architecture.mailMemoryPurpose'), component: 'PostgreSQL / Gmail / Hindsight / GPT subscription', current: t('architecture.mailMemoryCurrent'), next: t('architecture.mailMemoryNext'), evidence: 'src/company/mailMemory.js; mailSemantic.js; mailHistory.js; mailChat.test.js; docs/MEMORY-RECOVERY.md; docs/ADMIN-MAIL-NOTIFICATIONS.md' },
     { id: 'brain', state: 'foundation', title: t('architecture.brainTitle'), purpose: t('architecture.brainPurpose'), component: t('architecture.brainComponent'), current: t('architecture.brainCurrent'), next: t('architecture.brainNext'), evidence: 'src/adapters/; src/subscription/chatModels.test.js; docs/CHAT-MODEL-SELECTION.md' },
     { id: 'core', state: 'partial', title: t('architecture.coreTitle'), purpose: t('architecture.corePurpose'), component: t('architecture.coreComponent'), current: t('architecture.coreCurrent'), next: t('architecture.coreNext'), evidence: 'src/core/operating/registry.js; manager.js; gateway.js' },
@@ -71,6 +71,7 @@ function buildArchitectureHtml () {
   ]
   const checklist = connections.map(([id, name, state, scope]) => `<tr data-connection="${id}" data-state="${escape(state)}"><th scope="row">${id} · ${escape(name)}</th><td><span class="badge ${escape(state)}">${escape(labels[state] || labels.unknown)}</span></td><td>${escape(scope)}</td></tr>`).join('')
   const optional = t('master.optional')
+  labels.codeDiagnosis = t('work.title')
   const capabilities = [
     ['coding', 'Coding', 'Codex', 'Claude'], ['browser', 'Browser', 'Codex', 'Manus · ' + optional],
     ['computer', 'Computer Use', 'Codex', 'Manus · ' + optional], ['qa', 'System QA', 'Codex / Claude', 'Grok · ' + optional],

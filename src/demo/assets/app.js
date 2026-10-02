@@ -994,6 +994,7 @@
             var tEl = addBot(text, c)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
+            if (m[i] && m[i].codeDiagnosisRunId) renderCodeDiagnosisLink(tEl, m[i].codeDiagnosisRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
             c.history.push({ role: 'assistant', text: text })
@@ -1289,6 +1290,12 @@
     link.href = '/development-plan?run=' + encodeURIComponent(runId)
     turn.body.appendChild(link)
   }
+  function renderCodeDiagnosisLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('work.open'))
+    link.href = '/code-diagnosis?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
 
   /** What the server says the turn actually became — shown after the fact, never before. */
   // ⛔ Thunks, not key strings — a dynamic key is the one structural line (HR-48).
@@ -1469,6 +1476,12 @@
       if (res.historySaved === false) addMeta(planTurn.body, t('workflow.historyFailed'))
       renderDevelopmentPlanLink(planTurn, res.developmentPlanRunId)
       return planTurn
+    }
+    if (res.codeDiagnosisRunId) {
+      var diagnosisTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(diagnosisTurn.body, t('workflow.historyFailed'))
+      renderCodeDiagnosisLink(diagnosisTurn, res.codeDiagnosisRunId)
+      return diagnosisTurn
     }
     if (res.blocked === true) {
       var b = addBot(res.reply || '', conv)

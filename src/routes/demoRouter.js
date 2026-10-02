@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
@@ -560,15 +560,19 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
       // The conversation store captures the accepted request. Its terminal worker
       // receipt comes from the job itself; HTTP acceptance is not job completion.
-      if (developmentPlan && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') && require('../core/developmentPlan/service').isDevelopmentPlanRequest(message)) {
+      const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
+      const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : null
+      if (workRoute && workService) {
+        if (workRoute.service === 'codeDiagnosis' && Object.keys(req.body).some(key => !['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode'].includes(key))) return res.status(400).json({ error: 'invalid_request' })
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         if (!isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request_id' })
         try {
-          const run = developmentPlan.start({ id: 'owner', role: 'owner' }, { recipe: 'development-proposal-v1', requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
-          const reply = t('plan.accepted', { url: '/development-plan?run=' + run.id }); let historySaved = true
-          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, developmentPlanRunId: run.id }) } catch (_) { historySaved = false } }
+          const run = workService.start({ id: 'owner', role: 'owner' }, { recipe: workRoute.recipe, requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
+          const reply = workRoute.service === 'codeDiagnosis' ? t('work.accepted', { url: workRoute.url + '?run=' + run.id }) : t('plan.accepted', { url: workRoute.url + '?run=' + run.id }); let historySaved = true
+          const field = workRoute.service === 'codeDiagnosis' ? 'codeDiagnosisRunId' : 'developmentPlanRunId'
+          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, [field]: run.id }) } catch (_) { historySaved = false } }
           emit('development_plan_started', 200, historySaved ? null : 'conversation_write_failed')
-          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, developmentPlanRunId: run.id, historySaved, servedBy: null })
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, [field]: run.id, historySaved, servedBy: null })
         } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('plan.error'), retryable: false } }) }
       }
       // Persist receipt before any model call. A failed generation is still an observed event.

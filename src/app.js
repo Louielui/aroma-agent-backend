@@ -1044,6 +1044,16 @@ function createApp (options = {}) {
   app.use('/development-plan', requireOwner)
   app.use('/api/v1/development-plan', requireOwner)
   app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: developmentPlan }))
+  const codeDiagnosis = opts.codeDiagnosis || require('./core/codeDiagnosis/service').createCodeDiagnosis({
+    source: require('./core/codeDiagnosis/source').createCodeSource({ bootCommit: BOOT_COMMIT }),
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6.1-sol' }),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'code-diagnosis-runs'), workflow: 'code_diagnosis' }),
+    onFinish: run => governedMemory?.event('worker', 'code-diagnosis:' + run.id,
+      JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker || null, model: run.workOrder.model || null, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true, findings: run.result?.findings.length ?? null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
+  })
+  app.use('/code-diagnosis', requireOwner)
+  app.use('/api/v1/code-diagnosis', requireOwner)
+  app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: codeDiagnosis, diagnosis: true }))
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -1147,6 +1157,7 @@ function createApp (options = {}) {
   app.use(createDemoRouter({
     liveContext,
     developmentPlan,
+    codeDiagnosis,
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,
