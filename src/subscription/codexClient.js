@@ -136,7 +136,7 @@ function configValue (value) {
   return JSON.stringify(value)
 }
 
-async function preflight (rpc) {
+async function preflight (rpc, { allowCredits = false } = {}) {
   const auth = await rpc.request('account/read', { refreshToken: false })
   if (!auth || !auth.account || auth.account.type !== 'chatgpt') throw new SubscriptionError('subscription_login_required')
   let found = false
@@ -149,11 +149,25 @@ async function preflight (rpc) {
   }
   if (!found) throw new SubscriptionError('subscription_model_unavailable')
   const limits = await rpc.request('account/rateLimits/read')
-  const bucket = (limits && limits.rateLimitsByLimitId && limits.rateLimitsByLimitId.codex) || (limits && limits.rateLimits)
+  const bucket = limits?.rateLimitsByLimitId ? limits.rateLimitsByLimitId.codex : limits?.rateLimits
+  const reached = bucket?.rateLimitReachedType
+  const individual = bucket?.individualLimit
+  // Credits are capacity on the same ChatGPT account, not a provider fallback.
+  // An Owner opt-in cannot override provider spending or member/workspace caps.
+  if (bucket?.spendControlReached === true || (individual && (!Number.isFinite(individual.remainingPercent) || individual.remainingPercent <= 0)) ||
+    (reached != null && reached !== 'rate_limit_reached')) throw new SubscriptionError('subscription_limit_reached')
   const windows = bucket ? [bucket.primary, bucket.secondary].filter(Boolean) : []
   if (!windows.length || windows.some(w => !Number.isFinite(w.usedPercent))) throw new SubscriptionError()
-  if (windows.some(w => w.usedPercent >= 100)) throw new SubscriptionError('subscription_limit_reached')
-  return { model: MODEL, billing: 'chatgpt-subscription', planType: auth.account.planType || null }
+  const exhausted = windows.some(w => w.usedPercent >= 100) || reached === 'rate_limit_reached'
+  if (exhausted) {
+    if (allowCredits !== true) throw new SubscriptionError('subscription_limit_reached')
+    if (bucket.spendControlReached !== false) throw new SubscriptionError()
+    const credits = bucket.credits
+    const knownBalance = credits?.balance != null
+    const positiveBalance = typeof credits?.balance === 'string' && /^\d+(?:\.\d+)?$/.test(credits.balance) && Number.isFinite(Number(credits.balance)) && Number(credits.balance) > 0
+    if (credits?.hasCredits !== true || typeof credits.unlimited !== 'boolean' || (credits.unlimited !== true && knownBalance && !positiveBalance)) throw new SubscriptionError('subscription_limit_reached')
+  }
+  return { model: MODEL, billing: 'chatgpt-subscription', planType: auth.account.planType || null, ...(exhausted ? { usageMode: 'credits_available' } : {}) }
 }
 
 async function withClient (options, operation) {
@@ -174,7 +188,7 @@ async function withClient (options, operation) {
   }
 }
 
-async function checkSubscription (options) { return withClient(options, preflight) }
+async function checkSubscription (options) { return withClient(options, rpc => preflight(rpc, options)) }
 
 // Reuse only the transport. Each completion still creates an isolated ephemeral
 // thread and rechecks account/quota. Failures are never automatically replayed.
@@ -230,7 +244,7 @@ async function complete (options, input) {
   const effort = input.effort === undefined ? 'low' : input.effort
   if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
   return withClient(options, async rpc => {
-    await preflight(rpc)
+    const allowance = await preflight(rpc, options)
     const params = threadParams(options.cwd, input.system)
     // Disable every configured MCP by name, including servers added after installation.
     const cfg = await rpc.request('config/read', { includeLayers: false })
@@ -257,7 +271,7 @@ async function complete (options, input) {
         if (message.method === 'turn/completed') {
           if (!p.turn || p.turn.status !== 'completed') reject(wireError(p.turn && p.turn.error))
           else if (!text || text.length > 100000) reject(new SubscriptionError('subscription_invalid_output'))
-          else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', usage: usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens } : null })
+          else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', ...(allowance.usageMode ? { usageMode: allowance.usageMode } : {}), usage: usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens } : null })
         }
       }
       rpc.events.on('notification', onNotification)

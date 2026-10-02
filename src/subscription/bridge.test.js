@@ -37,5 +37,5 @@ test('bridge serializes calls', async t => {
   assert.equal((await first).status, 200)
 })
 test('bridge input is bounded and cannot supply model or execution settings', () => {
-  for (const input of [null, [], { prompt: 'x', model: 'other' }, { prompt: 'x'.repeat(500001) }, { prompt: 'x', schema: [] }]) assert.throws(() => validateInput(input), SubscriptionError)
+  for (const input of [null, [], { prompt: 'x', model: 'other' }, { prompt: 'x'.repeat(500001) }, { prompt: 'x', schema: [] }, { prompt: 'x', allowCredits: true }]) assert.throws(() => validateInput(input), SubscriptionError)
 })

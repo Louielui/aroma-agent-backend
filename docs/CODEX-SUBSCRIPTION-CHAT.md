@@ -19,6 +19,10 @@ Repository `.env` settings (never commit their values):
 - `CHAT_BACKEND=codex-subscription`
 - `CODEX_CHAT_BRIDGE_TOKEN`: 64 lowercase hexadecimal characters, generated randomly.
 - `CODEX_CHAT_EXECUTABLE`: absolute path to the installed native `codex.exe`.
+- `CODEX_CHAT_ALLOW_CREDITS=true`: explicit Owner permission to use existing
+  ChatGPT workspace credits after included quota is exhausted. Omitted or any
+  other value preserves the quota-only policy. Restart the Owner bridge after
+  changing this host-owned setting; request bodies cannot enable it.
 
 Run `scripts/subscription/startBridge.ps1` as the owner. An optional per-user
 Startup shortcut runs this supervisor after login. It restarts an exited bridge
@@ -29,8 +33,11 @@ service after configuration changes, then reload the browser.
 
 - ChatGPT authentication, exact model availability and subscription quota are
   checked before source reads/auxiliary calls, and again before each completion.
-- Exhausted/unknown quota, missing login/model, connection failure or invalid
-  output stops the chat. There is no Claude or OpenAI API fallback for this lane.
+- Unknown quota, missing login/model, connection failure or invalid output stops
+  the chat. Exhausted included quota can continue only with explicit Owner
+  credit permission, provider-reported available credits and a confirmed clear
+  spend-control state. Depleted credits, member/workspace usage caps and actual
+  provider refusals still stop work. There is no Claude or OpenAI API fallback.
 - The bridge strips API credentials and Node startup hooks from the child
   environment. Each completion uses an ephemeral thread, an empty working
   directory, no execution environments, no dynamic tools, and disabled shell,
@@ -47,6 +54,9 @@ service after configuration changes, then reload the browser.
   per-turn model telemetry. Account quota is shared with other Codex use. Account
   credits/billing settings remain managed by OpenAI; this bridge does not change
   them or purchase credits.
+- `usageMode=credits_available` records credit eligibility at the fresh
+  preflight, not a measured credit charge. A null balance stays unknown. Each
+  completion rechecks credit availability and caps; no earned reset is consumed.
 
 ## Rollback
 

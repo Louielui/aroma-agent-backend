@@ -124,6 +124,6 @@ test('real atomic run store and conversation history retain this workflow across
 test('UI scripts parse and render proposal and dispatch states with honest localized labels', () => {
   const vm = require('node:vm'), { buildHtml } = require('./view')
   const html = buildHtml(); const script = html.match(/<script>([\s\S]*)<\/script>/)[1]
-  assert.doesNotThrow(() => new vm.Script(script)); assert.match(html, /內容尚未獨立驗證/); assert.match(html, /訂閱額度不足/)
+  assert.doesNotThrow(() => new vm.Script(script)); assert.match(html, /內容尚未獨立驗證/); assert.match(html, /訂閱額度／可用 credits 不足，或帳戶用量上限已達/)
   assert.doesNotMatch(html, /Preparing the briefing|正在整理簡報/)
 })
