@@ -36,9 +36,14 @@ function main () {
     dir: path.join(env.AROMA_DATA_DIR || path.join(repo, 'data'), 'memory-outbox') }) : null
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
+  const repairClient = { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }
+  const codexClient = require('../../src/subscription/codexClient')
+  const codeRepair = require('../../src/core/codeRepair/service').createCodeRepair({ repo, root: path.join(workspaceRoot,'controlled-repairs'), store: require('../../src/core/operating/runStore').createRunStore({dir:path.join(env.AROMA_DATA_DIR || path.join(repo,'data'),'code-repair-runs'),workflow:'code_repair'}),
+    provider: { preflight: options => codexClient.checkSubscription({...repairClient,...options,model:'gpt-6.1-sol',effort:'medium'}), complete: (prompt,options) => codexClient.complete({...repairClient,signal:options.signal},{prompt,system:options.system,schema:options.responseFormat.schema,model:'gpt-6.1-sol',effort:'medium'}) },
+    onFinish: run => memoryRuntime ? memoryRuntime.event('worker','code-repair:'+run.id,JSON.stringify({id:run.id,state:run.state,reason:run.reason,diagnosisId:run.diagnosisId,approvalHash:run.approvalHash,patchHash:run.result?.patchHash || null,tests:run.tests?{tests:run.tests.tests,pass:run.tests.pass,fail:run.tests.fail}:null,sourceRevision:run.source?.revision,appliedToLive:false}),'measured_result',run.finishedAt) : {state:'not_connected'} })
   const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
-    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit) })
+    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }

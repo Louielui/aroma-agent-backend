@@ -75,6 +75,8 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'core/codeRepair/view.js': CLASS.INTERFACE, // Owner repair scope, approval and evidence labels
+  'core/codeRepair/recipes.js': CLASS.INTERFACE, // Display titles only; executable recipe bytes are never translated
   // ── INTERFACE ──────────────────────────────────────────────────────────────
   'demo/assets/app.js': CLASS.INTERFACE,              // 139 — the screen itself
   'core/operating/view.js': CLASS.INTERFACE,           // Owner-facing operations briefing labels

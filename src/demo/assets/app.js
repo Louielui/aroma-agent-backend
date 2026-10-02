@@ -994,6 +994,7 @@
             var tEl = addBot(text, c)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
+            if (m[i] && m[i].codeRepairRunId) renderCodeRepairLink(tEl, m[i].codeRepairRunId)
             if (m[i] && m[i].codeDiagnosisRunId) renderCodeDiagnosisLink(tEl, m[i].codeDiagnosisRunId)
             // The same disclosure a live turn carries: who actually answered.
             if (m[i] && m[i].servedBy) labelServedBy(tEl, { servedBy: m[i].servedBy })
@@ -1290,6 +1291,12 @@
     link.href = '/development-plan?run=' + encodeURIComponent(runId)
     turn.body.appendChild(link)
   }
+  function renderCodeRepairLink (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var link = el('a', 'briefing-link', t('repair.title'))
+    link.href = '/code-repair?run=' + encodeURIComponent(runId)
+    turn.body.appendChild(link)
+  }
   function renderCodeDiagnosisLink (turn, runId) {
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
     var link = el('a', 'briefing-link', t('work.open'))
@@ -1476,6 +1483,12 @@
       if (res.historySaved === false) addMeta(planTurn.body, t('workflow.historyFailed'))
       renderDevelopmentPlanLink(planTurn, res.developmentPlanRunId)
       return planTurn
+    }
+    if (res.codeRepairRunId) {
+      var repairTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(repairTurn.body, t('workflow.historyFailed'))
+      renderCodeRepairLink(repairTurn, res.codeRepairRunId)
+      return repairTurn
     }
     if (res.codeDiagnosisRunId) {
       var diagnosisTurn = addBot(res.reply, conv)

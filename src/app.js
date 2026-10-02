@@ -1054,6 +1054,10 @@ function createApp (options = {}) {
   app.use('/code-diagnosis', requireOwner)
   app.use('/api/v1/code-diagnosis', requireOwner)
   app.use(require('./core/developmentPlan/routes').createDevelopmentPlanRouter({ service: codeDiagnosis, diagnosis: true }))
+  app.use('/code-repair', requireOwner)
+  app.use('/api/v1/code-repair', requireOwner)
+  app.use(require('./core/codeRepair/routes').createRepairRouter({ bootCommit: BOOT_COMMIT, ...opts.codeRepairOptions }))
+  const codeRepair = opts.codeRepair || require('./core/codeRepair/remote').createRemoteRepair({bootCommit:BOOT_COMMIT,diagnosis:codeDiagnosis})
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
   // protected than the page that draws it.
@@ -1158,6 +1162,7 @@ function createApp (options = {}) {
     liveContext,
     developmentPlan,
     codeDiagnosis,
+    codeRepair,
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,

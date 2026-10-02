@@ -18,7 +18,7 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.equal(response.status, 200)
   assert.equal(response.headers.get('cache-control'), 'no-store')
   const html = await response.text()
-  assert.equal((html.match(/data-component=/g) || []).length, 10)
+  assert.equal((html.match(/data-component=/g) || []).length, 11)
   assert.match(html, /data-component="development-plan" data-state="partial"/)
   assert.match(html, /來源核對及真實方案回傳，以工作單實測為準/)
   assert.match(html, /每次回覆重新檢查 credits、花費及個人用量上限/)
