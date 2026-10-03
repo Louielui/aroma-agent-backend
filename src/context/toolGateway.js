@@ -11,7 +11,7 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
     }
     registry.set(resource.id, Object.freeze({ ...resource, operations: Object.freeze({ ...resource.operations }) }))
   }
-  function describe () { return [...registry.values()].map(r => ({ id: r.id, source: r.source, scope: r.scope, sensitivity: r.sensitivity, operations: Object.keys(r.operations) })) }
+  function describe () { return [...registry.values()].map(r => ({ id: r.id, source: r.source, scope: snapshotValue(r.scope), sensitivity: r.sensitivity, operations: Object.keys(r.operations) })) }
   function record (entry) { try { audit.append(entry) } catch (_) { throw Error('audit_unavailable') } }
   async function call (op, actor, resourceId, input = {}) {
     if (!actor || actor.role !== 'owner') throw Error('permission_denied')
