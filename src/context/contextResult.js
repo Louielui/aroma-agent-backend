@@ -36,7 +36,7 @@ function makeContextResult ({ source, sourceId = null, title = null, originalDat
     content: content == null ? '' : String(content),
     link: link == null ? null : String(link),
     entityType: entityType == null ? null : String(entityType),
-    fields: (fields && typeof fields === 'object' && !Array.isArray(fields)) ? fields : {},
+    fields: (fields && typeof fields === 'object' && !Array.isArray(fields)) ? structuredClone(fields) : {},
     trust: 'live',
     error: null
   }
