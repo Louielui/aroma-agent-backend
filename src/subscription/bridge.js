@@ -81,7 +81,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         if (!workerFlow || !workerProviders) { reply(503, { code: 'subscription_unavailable' }); return }
         const allowed = { list: ['op'], status: ['op'], get: ['op', 'id'], start: ['op', 'recipe', 'approved'], review: ['op', 'id', 'approved'] }
         if (!input || !Object.hasOwn(allowed, input.op) || Object.keys(input).some(k => !allowed[input.op].includes(k))) { reply(400, { code: 'invalid_work_order' }); return }
-        if (input.op === 'list') reply(200, { enabled: workerFlow.enabled(), workOrder: workerFlow.workOrder, runs: workerFlow.list() })
+        if (input.op === 'list') reply(200, { enabled: workerFlow.enabled(), workOrder: workerFlow.workOrder, runs: workerFlow.list(), isolation: workerProviders.isolation ? await workerProviders.isolation() : null })
         if (input.op === 'get') reply(200, { run: workerFlow.get(input.id) })
         if (input.op === 'status') reply(200, { providers: await workerProviders.status(), enabled: workerFlow.enabled() })
         if (input.op === 'start' || input.op === 'review') {

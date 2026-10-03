@@ -4,14 +4,14 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const ACTIVE = new Set(['queued', 'checking', 'coding', 'reviewing'])
-const SAFE_ERRORS = new Set(['provider_not_ready', 'subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'sandbox_failed', 'scope_changed', 'baseline_not_red', 'claude_unavailable', 'claude_login_required', 'worker_timeout', 'invalid_worker_result'])
+const SAFE_ERRORS = new Set(['provider_not_ready', 'subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'sandbox_failed', 'scope_changed', 'baseline_not_red', 'claude_unavailable', 'claude_login_required', 'worker_timeout', 'invalid_worker_result', 'windows_sandbox_not_enabled', 'windows_restart_required', 'windows_sandbox_cli_unavailable', 'windows_sandbox_unavailable', 'sandbox_unavailable', 'sandbox_stop_unconfirmed', 'acceptance_failed'])
 
 // This first registered work order is deliberately concrete. Adding a real-repo
 // recipe requires its own file scope and acceptance tests, not a browser path.
 const WORK_ORDER = Object.freeze({ recipe: 'duration-v1', version: 1, capability: 'coding_then_review',
   goal: 'Implement formatDuration(seconds): finite nonnegative numbers become m:ss; floor fractional seconds; minutes may exceed 59; invalid inputs throw RangeError.',
   allowedFiles: ['duration.js'], protectedFiles: ['duration.test.js'],
-  testCommand: ['node', '--permission', '--allow-fs-read=<fixture>', '--test', '--test-isolation=none', '--test-reporter=tap', 'duration.test.js'], scope: 'disposable_fixture',
+  testCommand: ['node', '--test', '--test-reporter=tap', 'duration.test.js'], scope: 'offline_windows_sandbox_disposable_fixture',
   providers: ['codex', 'claude'], approval: 'owner_explicit', billing: 'subscriptions_no_api_fallback' })
 
 function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
@@ -35,6 +35,7 @@ function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
   async function execute (run, reviewOnly = false) {
     try {
       run.state = 'checking'; record(run, 'checking')
+      if (!reviewOnly && providers.isolation) { const isolation = await providers.isolation(); if (!isolation.ready) throw Error(isolation.reason || 'sandbox_unavailable'); run.isolation = isolation }
       run.providers = await providers.status()
       if ((!reviewOnly && !run.providers.codex?.ready) || !run.providers.claude?.ready) throw Error('provider_not_ready')
       if (!reviewOnly) {

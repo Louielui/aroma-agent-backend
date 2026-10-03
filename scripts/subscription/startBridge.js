@@ -27,7 +27,7 @@ function main () {
   const workerRoot = path.join(process.env.LOCALAPPDATA || process.env.TEMP, 'AromaXiangXiang', 'worker-flow')
   const configuredRoot = env.XIANGXIANG_WORKER_WORKSPACE_ROOT
   const workspaceRoot = configuredRoot && path.isAbsolute(configuredRoot) ? configuredRoot : path.join(require('node:os').homedir(), 'Documents', 'AromaXiangXiang', 'worker-workspaces')
-  const workerProviders = createProviders({ executable, root: workspaceRoot })
+  const workerProviders = createProviders({ executable: chatExecutable, root: workspaceRoot, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' })
   // The new switch enables only this fixed recipe within the existing sandbox
   // worker lane. Other execution lanes still conflict through the shared matrix.
   const enabled = () => env.XIANGXIANG_WORKER_FLOW === 'on' && authorizeExecution({ worker: 'on',
