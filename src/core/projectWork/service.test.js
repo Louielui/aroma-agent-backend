@@ -76,3 +76,9 @@ test('formal review failure retains safe diagnostics and cannot approve adoption
   assert.equal(r.failureDiagnostic.subtype, 'error_max_turns'); assert.equal(JSON.stringify(r.failureDiagnostic).includes('secret'), false)
   assert.throws(() => f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }), /approval_unavailable/)
 })
+
+test('structured response exhaustion has a distinct safe terminal reason', async () => {
+  const f = fixture({ review: () => { const error = Error('claude_invalid_structured_output'); error.safeDiagnostics = { exitCode: 1, parsedJson: true, subtype: 'error_max_structured_output_retries', stdoutBytes: 12, stderrBytes: 0 }; throw error } }), p = await f.prepare()
+  f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
+  const r = f.flow.get(OWNER, p.run.id); assert.equal(r.reason, 'claude_invalid_structured_output'); assert.equal(r.failureDiagnostic.subtype, 'error_max_structured_output_retries'); assert.equal(r.state, 'failed'); assert.equal(r.appliedToLive, false); assert.deepEqual(f.calls(), [1, 1])
+})

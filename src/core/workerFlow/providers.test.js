@@ -29,6 +29,8 @@ test('reviewer has no tools, no discovery and no API-key authentication fallback
   const args = claudeArgs()
   assert.equal(args[args.indexOf('--tools') + 1], ''); assert.ok(args.includes('--restricted')); assert.ok(args.includes('--strict-mcp-config')); assert.ok(!args.includes('--dangerously-skip-permissions'))
   assert.equal(args[args.indexOf('--max-turns') + 1], '6')
+  assert.match(args[args.indexOf('--system-prompt') + 1], /StructuredOutput response formatter is allowed solely/)
+  assert.match(args[args.indexOf('--system-prompt') + 1], /Filesystem, shell, network and external tools are disabled/)
   assert.throws(() => readReview({ type: 'result', subtype: 'success', is_error: false, result: 'looks done' }), /invalid_worker_result/)
   assert.throws(() => readReview({ type: 'result', subtype: 'success', structured_output: { verdict: 'pass', summary: 'x', findings: ['bad'] } }), /invalid_worker_result/)
 })
@@ -46,16 +48,16 @@ test('large multi-file review is streamed through stdin, never expanded into com
 
 test('review failures retain bounded diagnostic enums and byte counts without raw output', async () => {
   const { EventEmitter } = require('node:events'), { PassThrough, Writable } = require('node:stream')
-  for (const subtype of ['error_max_turns', 'unexpected-sensitive-value']) {
+  for (const subtype of ['error_max_turns', 'error_max_structured_output_retries', 'unexpected-sensitive-value']) {
     await assert.rejects(runClaude([], { input: 'packet', resolveCommand: () => ({ ok: true, command: 'fixture' }), spawnImpl: () => {
       const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => {}
       child.stdin = new Writable({ write (c, e, done) { done() }, final (done) { done(); process.nextTick(() => {
         child.stdout.end(JSON.stringify({ subtype, errors: ['private source and credentials'] })); child.stderr.end('secret credential'); child.emit('close', 1)
       }) } }); return child
     } }), error => {
-      assert.equal(error.message, subtype === 'error_max_turns' ? 'claude_max_turns' : 'claude_unavailable')
+      assert.equal(error.message, subtype === 'error_max_turns' ? 'claude_max_turns' : subtype === 'error_max_structured_output_retries' ? 'claude_invalid_structured_output' : 'claude_unavailable')
       assert.deepEqual(Object.keys(error.safeDiagnostics).sort(), ['exitCode', 'parsedJson', 'stderrBytes', 'stdoutBytes', 'subtype'])
-      assert.equal(error.safeDiagnostics.subtype, subtype === 'error_max_turns' ? subtype : 'unknown')
+      assert.equal(error.safeDiagnostics.subtype, subtype.startsWith('error_max_') ? subtype : 'unknown')
       assert.equal(error.safeDiagnostics.exitCode, 1); assert.equal(error.safeDiagnostics.parsedJson, true); assert.ok(error.safeDiagnostics.stderrBytes > 0)
       assert.equal(JSON.stringify(error.safeDiagnostics).includes('credential'), false); assert.equal(JSON.stringify(error.safeDiagnostics).includes('private'), false)
       return true

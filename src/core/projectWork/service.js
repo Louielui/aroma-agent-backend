@@ -4,7 +4,7 @@ const { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox')
 const { PROJECT, RECIPES, recipe } = require('./contract')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
-const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'worker_timeout'])
+const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
 function createProjectWork ({ source, providers, store, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore() }) {
   const sessions = new Map(), controllers = new Map()
@@ -70,7 +70,7 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
       record(r, r.state, { sourceRevision: snapshot.evidence.revision, patchHash: coding.patchHash, tests: coding.tests.total, appliedToLive: false })
     } catch (e) {
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
-        parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
+        parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
         stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) ? e.safeDiagnostics.stderrBytes : null }
       r.state = signal.aborted ? 'cancelled' : 'failed'; r.reason = ERRORS.has(e.code || e.message) ? (e.code || e.message) : 'worker_unavailable'; r.finishedAt = new Date().toISOString()
       record(r, r.state, { reason: r.reason, appliedToLive: false })

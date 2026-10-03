@@ -49,6 +49,11 @@ An actual three-turn review exhausted its limit despite the candidate passing
 all protected tests. Failure diagnostics retain only exit code, whitelisted
 envelope subtype and byte counts; no raw provider errors or source are retained.
 A failed review cannot authorize adoption, retry itself or replace its audit.
+The response-only StructuredOutput formatter is explicitly permitted in the
+review prompt; filesystem, shell, network and external tools remain disabled.
+This avoids conflating the CLI's JSON response formatter with task execution.
+The host still validates the successful envelope, verdict and finding scope.
+Structured-output retry exhaustion is recorded as a distinct bounded failure.
 
 New proposals without registration remain viewable drafts, including clarified
 UI improvements. Arbitrary tasks, other projects, dependency installation,
