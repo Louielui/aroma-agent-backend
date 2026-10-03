@@ -9,7 +9,7 @@ function fixture (options = {}) {
   const source = { read: async () => ({ hash: 'b'.repeat(64), evidence: { bootCommit: HEAD, revision: HEAD }, order: { files: { [FILE]: 'source', [TEST]: TESTS }, editable: [FILE], tests: [TEST], expectedTests: 8, sourceRevision: HEAD } }), verify: async () => { if (changed) throw Error('source_changed') } }
   const providers = { isolation: async () => ({ ready: true }), status: async () => ({ codex: { ready: true }, claude: { ready: true } }),
     codeOrder: async value => { codeCalls++; await value.verify(); if (options.code) return options.code(value); return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', execution: 'windows_sandbox_offline', appliedToLive: false, changedFiles: [FILE], changes: [{ file: FILE, before: 'source', after: 'result' }], baseline: { total: 8, failed: 5 }, tests: { exitCode: 0, total: 8, passed: 8, failed: 0, skipped: 0, cancelled: 0 }, patchHash: 'c'.repeat(64) } },
-    reviewOrder: async () => { reviewCalls++; return { verdict: 'pass' } } }
+    reviewOrder: async () => { reviewCalls++; if (options.review) return options.review(); return { verdict: 'pass' } } }
   const flow = createProjectWork({ source, providers, store, enabled: () => true, onEvent: event => events.push(event), ...options })
   const prepare = () => flow.prepare(OWNER, { bootCommit: HEAD, projectId: PROJECT, recipe: RECIPE, requestId: randomUUID() })
   return { flow, prepare, store, events, drift: () => { changed = true }, calls: () => [codeCalls, reviewCalls] }
@@ -64,5 +64,15 @@ test('failed audit persistence prevents all model dispatch', async () => {
   const f = fixture({ store }), p = await f.prepare(); fail = true
   assert.throws(() => f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }), /disk_unavailable/)
   assert.deepEqual(f.calls(), [0, 0]); fail = false
+  assert.throws(() => f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }), /approval_unavailable/)
+})
+
+test('formal review failure retains safe diagnostics and cannot approve adoption or repeat work', async () => {
+  const f = fixture({ review: () => { const error = Error('claude_max_turns'); error.safeDiagnostics = { exitCode: 1, parsedJson: true, subtype: 'error_max_turns', stdoutBytes: 45, stderrBytes: 0, raw: 'secret' }; throw error } }), p = await f.prepare()
+  f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
+  const r = f.flow.get(OWNER, p.run.id)
+  assert.equal(r.state, 'failed'); assert.equal(r.reason, 'claude_max_turns'); assert.equal(r.result.tests.passed, 8); assert.equal(r.review, undefined)
+  assert.equal(r.appliedToLive, false); assert.deepEqual(f.calls(), [1, 1]); assert.equal(r.steps.filter(x => x.stage === 'failed').length, 1)
+  assert.equal(r.failureDiagnostic.subtype, 'error_max_turns'); assert.equal(JSON.stringify(r.failureDiagnostic).includes('secret'), false)
   assert.throws(() => f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }), /approval_unavailable/)
 })

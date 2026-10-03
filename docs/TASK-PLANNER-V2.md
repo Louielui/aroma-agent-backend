@@ -44,6 +44,12 @@ remain in force. One plan prepares once; durable preparation intent precedes the
 bridge call. Unknown outcomes require readback, never a write retry or new ticket.
 History contains no nonce; replay cannot reissue one.
 
+Claude's text-only structured review is bounded to six turns and 180 seconds.
+An actual three-turn review exhausted its limit despite the candidate passing
+all protected tests. Failure diagnostics retain only exit code, whitelisted
+envelope subtype and byte counts; no raw provider errors or source are retained.
+A failed review cannot authorize adoption, retry itself or replace its audit.
+
 New proposals without registration remain viewable drafts, including clarified
 UI improvements. Arbitrary tasks, other projects, dependency installation,
 automatic adoption, remote push and production business writes remain unconnected.
