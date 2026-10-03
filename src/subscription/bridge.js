@@ -24,7 +24,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, codeRepair = null, projectWork = null, projectAdoption = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
@@ -34,7 +34,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/code-repair', '/project-work', '/project-adoption'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
     if (!isStore && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -85,6 +85,9 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
           else if(op==='get')reply(200,{run:codeRepair.get(actor,body.id)})
           else reply(200,{run:codeRepair[op](actor,op==='cancel'?body.id:body)})
         }catch(e){reply(200,{error:['worker_busy','unsupported_diagnosis','invalid_request','approval_unavailable','evidence_changed','request_conflict'].includes(e.message)?e.message:'workflow_unavailable'})}
+      } else if (req.url === '/task-plan-source') {
+        if (!taskPlanSource || !input || Object.keys(input).sort().join(',') !== 'bootCommit,profile') { reply(400, { code: 'context_unavailable' }); return }
+        try { reply(200, await taskPlanSource.read(input, controller.signal)) } catch (_) { reply(503, { code: 'context_unavailable' }) }
       } else if (req.url === '/code-diagnosis-source') {
         if (!input || Array.isArray(input) || Object.keys(input).join(',') !== 'bootCommit' || !/^[a-f0-9]{40}$/.test(input.bootCommit || '')) { reply(400, { code: 'context_unavailable' }); return }
         if (typeof codeSourceFactory !== 'function') { reply(503, { code: 'context_unavailable' }); return }

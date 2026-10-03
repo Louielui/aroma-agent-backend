@@ -10,8 +10,8 @@ function createMemoryRunStore () {
   return { all: () => [...rows.values()].map(copy), get: id => copy(rows.get(id)), save: r => rows.set(r.id, copy(r)) }
 }
 function createRunStore ({ dir, workflow = 'daily_briefing' } = {}) {
-  if (!['daily_briefing', 'development_proposal', 'code_diagnosis', 'code_repair', 'project_work', 'project_adoption'].includes(workflow)) throw Error('invalid_workflow')
-  if (dir === undefined) dir = path.join(resolveDataDir(), { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs', project_work: 'project-work-runs', project_adoption: 'project-adoption-runs' }[workflow])
+  if (!['daily_briefing', 'development_proposal', 'code_diagnosis', 'code_repair', 'project_work', 'project_adoption', 'task_plan'].includes(workflow)) throw Error('invalid_workflow')
+  if (dir === undefined) dir = path.join(resolveDataDir(), { daily_briefing: 'manager-runs', development_proposal: 'development-plan-runs', code_diagnosis: 'code-diagnosis-runs', code_repair: 'code-repair-runs', project_work: 'project-work-runs', project_adoption: 'project-adoption-runs', task_plan: 'task-plan-runs' }[workflow])
   function get (id) {
     if (!ID.test(id || '')) throw Error('invalid_run_id')
     try {

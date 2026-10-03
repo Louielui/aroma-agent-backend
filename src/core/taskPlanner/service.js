@@ -1,0 +1,111 @@
+'use strict'
+const { randomUUID } = require('node:crypto'), { ID } = require('../operating/runStore')
+const { classify, SYSTEM, SCHEMA, validatePacket, validateResult, hash } = require('./contract')
+const { PROJECT, FAILURE_RECIPE } = require('../projectWork/contract')
+const { register } = require('../../capability/registry'), { registerAgent } = require('../../capability/agents')
+const { evaluate } = require('../../capability/policy'), { createDispatcher } = require('../../capability/dispatcher')
+const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
+const SAFE = new Set(['worker_busy', 'invalid_request', 'permission_denied', 'read_access_disabled', 'evidence_changed', 'context_unavailable', 'source_dirty', 'source_sensitive', 'subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable', 'subscription_model_unavailable', 'invalid_worker_result', 'cancelled', 'timed_out', 'run_store_unavailable', 'request_conflict', 'not_enabled'])
+const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'planning_unavailable'
+// Execution selection is host-owned current-request matching. An LLM plan, source
+// instruction or a browser recipe field can never grant mutable paths or tests.
+function eligibleRecipe (message) {
+  return classify(message)?.profile === 'context' && /(?:unavailable|失敗|無法取得|離線)/i.test(message) && /(?:scope|範圍)/i.test(message) && /(?:snapshot|快照|改寫|修改|mutat)/i.test(message) ? FAILURE_RECIPE : null
+}
+function createPlanner ({ source, provider, store, bootCommit, prepareWork, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
+  const capability = 'TaskPlanning', worker = 'codex-task-planner'
+  register({ id: capability, version: 2, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'], properties: { evidence: { type: 'object' } } }, output_schema: SCHEMA })
+  registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
+  const controls = new Map(); let active = null
+  const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied'); source.verify(actor) }
+  const save = r => store.save(r)
+  const record = (r, stage) => { r.steps.push({ stage, sequence: r.steps.length + 1, at: new Date().toISOString() }); save(r) }
+  for (const r of store.all()) if (['queued', 'running'].includes(r.state)) { r.state = 'interrupted'; r.reason = 'process_restarted'; r.result = null; r.finishedAt = new Date().toISOString(); record(r, 'interrupted') }
+  const get = (actor, id) => { owner(actor); if (!ID.test(id || '')) throw Error('invalid_request'); return store.get(id) }
+  async function execute (r, c) {
+    const check = () => { if (c.abort.signal.aborted) throw Error(c.reason || 'cancelled'); owner(OWNER) }
+    const step = async fn => {
+      check(); let listener
+      const pending = Promise.resolve().then(() => { check(); return fn() }); c.inflight.add(pending)
+      pending.then(() => c.inflight.delete(pending), () => c.inflight.delete(pending))
+      const stopped = new Promise((resolve, reject) => { listener = () => reject(Error(c.reason || 'cancelled')); c.abort.signal.addEventListener('abort', listener, { once: true }) })
+      try { const v = await Promise.race([pending, stopped]); check(); return v } finally { c.abort.signal.removeEventListener('abort', listener) }
+    }
+    try {
+      const dispatchRequest = { capabilityId: capability, version: 2, target: 'dev', context: { data_domains: ['local_development_code'], description: 'Plan within fixed committed profiles' } }
+      if (evaluate(dispatchRequest).verdict !== 'allow') throw Error('permission_denied')
+      check(); record(r, 'policy_checked')
+      r.state = 'running'; record(r, 'source_read')
+      const packet = await step(() => source.read(OWNER, r.profile, c.abort.signal)), evidence = validatePacket(packet, r.profile)
+      if (evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
+      r.evidence = evidence; r.evidenceHash = packet.hash; r.retrievedAt = packet.retrievedAt; record(r, 'source_received')
+      const ready = await step(() => provider.preflight({ signal: c.abort.signal }))
+      if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
+      record(r, 'planning')
+      const numbered = { ...evidence, files: evidence.files.map(({ content, ...f }) => ({ ...f, source: content.split('\n').map((s, i) => (i + 1) + ' | ' + s).join('\n') })) }
+      const dispatcher = createDispatcher({ allowedAgentIds: [worker], fallback: false, adapters: { [worker]: {
+        health: () => ({ availability: 'up', latencyMs: 0 }),
+        invoke: async (id, version, input) => {
+          try {
+            check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
+            const response = await step(() => provider.complete(JSON.stringify({ request: r.message, evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
+            if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
+            let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
+            if (!validateResult(result, evidence)) throw Error('invalid_worker_result')
+            return { ok: true, output: result, cost: null, latencyMs: response.latencyMs ?? null }
+          } catch (e) { return { ok: false, error: safe(e), cost: null } }
+        }
+      } } })
+      const dispatched = await step(() => dispatcher.dispatch({ ...dispatchRequest, input: { evidence } }))
+      if (dispatched.status !== 'ok' || dispatched.agentId !== worker) throw Error(dispatched.error || 'invalid_worker_result')
+      const result = dispatched.output
+      r.dispatch = { capability, version: 2, worker, cost: null }
+      const after = await step(() => source.read(OWNER, r.profile, c.abort.signal)); validatePacket(after, r.profile)
+      if (after.hash !== packet.hash) throw Error('evidence_changed')
+      r.result = result; r.verification = { matched: true, citationsVerified: true, testsExecuted: false, filesChanged: false, factualClaimsVerified: false }
+      r.executableRecipe = result.questions.length === 0 ? eligibleRecipe(r.message) : null
+      r.planHash = hash(JSON.stringify({ result, evidenceHash: packet.hash, message: r.message, executableRecipe: r.executableRecipe }))
+      r.state = result.questions.length ? 'needs_clarification' : 'completed'; record(r, 'source_verified')
+    } catch (e) { r.result = null; r.executableRecipe = null; r.reason = safe(e); r.state = r.reason === 'cancelled' ? 'cancelled' : r.reason === 'timed_out' ? 'timed_out' : 'failed' }
+    finally {
+      r.finishedAt = new Date().toISOString()
+      try { record(r, r.state) } catch (_) { r.state = 'failed'; r.result = null; r.executableRecipe = null; r.reason = 'run_store_unavailable'; return }
+      let timer
+      try { const receipt = await Promise.race([Promise.resolve().then(() => onFinish(structuredClone(r))), new Promise(resolve => { timer = setTimeout(() => resolve({ state: 'unavailable' }), 3000) })]); r.memoryReceipt = ['queued', 'saved', 'not_connected'].includes(receipt?.state) ? receipt.state : 'unavailable'; save(r) } catch (_) { /* The durable plan remains readable; no replay. */ } finally { clearTimeout(timer) }
+    }
+  }
+  function start (actor, input) {
+    owner(actor)
+    if (!input || Object.keys(input).sort().join(',') !== 'conversationId,message,requestId' || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    const prior = store.all().find(r => r.requestId === input.requestId)
+    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId) throw Error('request_conflict'); return { ...prior, reused: true } }
+    if (active) throw Error('worker_busy')
+    const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription' }
+    record(r, 'owner_requested'); active = r.id
+    const c = { abort: new AbortController(), inflight: new Set(), reason: null }; controls.set(r.id, c)
+    const timer = setTimeout(() => { c.reason = 'timed_out'; c.abort.abort() }, timeoutMs)
+    c.promise = execute(r, c).finally(() => { clearTimeout(timer); const release = () => { if (active === r.id) active = null; controls.delete(r.id) }; if (c.inflight.size) Promise.allSettled([...c.inflight]).then(release); else release() })
+    return store.get(r.id)
+  }
+  async function prepare (actor, input) {
+    owner(actor)
+    if (!input || Object.keys(input).sort().join(',') !== 'id,requestId' || !ID.test(input.id || '') || !ID.test(input.requestId || '')) throw Error('invalid_request')
+    const r = get(actor, input.id)
+    if (!r || r.state !== 'completed' || !r.executableRecipe || r.executableRecipe !== eligibleRecipe(r.message) || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (r.preparation) { if (r.preparation.requestId !== input.requestId || !r.workRunId) throw Error('request_conflict'); return { run: r, work: { run: { id: r.workRunId }, approval: null } } }
+    if (active) throw Error('worker_busy')
+    active = r.id
+    try {
+      const fresh = await source.read(actor, r.profile); validatePacket(fresh, r.profile)
+      if (fresh.hash !== r.evidenceHash || fresh.evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
+      // Persist intent BEFORE issuing authority; uncertain outcomes require inspection.
+      r.preparation = { requestId: input.requestId, state: 'pending' }; record(r, 'work_prepare_requested')
+      const work = await prepareWork({ op: 'prepare', projectId: PROJECT, recipe: r.executableRecipe, requestId: input.requestId, bootCommit })
+      if (work?.error || work?.run?.workflow !== 'project_work' || work.run.requestId !== input.requestId || work.run.workOrder?.recipe !== r.executableRecipe || work.run.source?.evidence?.revision !== bootCommit) throw Error(work?.error || 'invalid_worker_result')
+      r.workRunId = work.run.id; r.preparation.state = 'prepared'; record(r, 'work_prepared')
+      return { run: r, work }
+    } finally { if (active === r.id) active = null }
+  }
+  return { start, prepare, get, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }
+}
+module.exports = { createPlanner, eligibleRecipe }

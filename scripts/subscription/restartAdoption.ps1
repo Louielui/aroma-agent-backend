@@ -18,6 +18,7 @@ try {
     'context-fields-snapshot-v1' { $adoptionNames = @('src/context/contextResult.js') }
     'context-provenance-snapshot-v2' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
     'context-coverage-snapshot-v3' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
+    'context-unavailable-snapshot-v4' { $adoptionNames = @('src/context/toolGateway.js') }
     default { throw 'UnknownRecipe' }
   }
   if ($adoptionRecipe -ne 'context-fields-snapshot-v1' -and (($adoptionRecord.after.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($adoptionNames | Sort-Object) -join ',')) { throw 'UnexpectedSourceSet' }

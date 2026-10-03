@@ -1062,6 +1062,15 @@ function createApp (options = {}) {
   app.use('/code-repair', requireOwner)
   app.use('/api/v1/code-repair', requireOwner)
   app.use(require('./core/codeRepair/routes').createRepairRouter({ bootCommit: BOOT_COMMIT, ...opts.codeRepairOptions }))
+  const taskPlanner = opts.taskPlanner || require('./core/taskPlanner/service').createPlanner({
+    bootCommit: BOOT_COMMIT, source: require('./core/taskPlanner/source').createRemoteSource({ bootCommit: BOOT_COMMIT }),
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'high', model: 'gpt-6.1-sol' }),
+    store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'task-plan-runs'), workflow: 'task_plan' }),
+    prepareWork: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-work', input, process.env),
+    onFinish: run => governedMemory?.event('worker', 'task-plan:' + run.id, JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, profile: run.profile, evidenceHash: run.evidenceHash || null, planHash: run.planHash || null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
+  })
+  app.use('/api/v1/task-plan', requireOwner)
+  app.use(require('./core/taskPlanner/routes').createRouter({ service: taskPlanner }))
   const chatWork = opts.chatWork || require('./core/projectWork/chat').createChatWork({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions })
   const codeRepair = opts.codeRepair || require('./core/codeRepair/remote').createRemoteRepair({bootCommit:BOOT_COMMIT,diagnosis:codeDiagnosis})
   // Conversation History v1 lives on the demo router and is gated the same way — same
@@ -1166,6 +1175,7 @@ function createApp (options = {}) {
 
   app.use(createDemoRouter({
     liveContext,
+    taskPlanner,
     developmentPlan,
     codeDiagnosis,
     codeRepair,

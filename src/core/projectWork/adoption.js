@@ -28,7 +28,15 @@ function validateAccepted (run, isolated) {
     const evidence = run.source.evidence.acceptanceFiles.filter(f => f.path === name)
     if (evidence.length !== 1 || evidence[0].sha256 !== digest(text) || isolated.workOrder.files[name] !== text) throw Error('accepted_evidence_changed')
   }
-  if (Object.keys(isolated.workOrder.files).sort().join(',') !== [...names, ...Object.keys(protectedTests)].sort().join(',')) throw Error('accepted_evidence_changed')
+  const dependencies = {}
+  for (const name of w.readonlyFiles || []) {
+    const sources = run.source.evidence.dependencyFiles?.filter(f => f.path === name)
+    const text = isolated.workOrder.files[name]
+    if (typeof text !== 'string' || !text || sources?.length !== 1 || sources[0].sha256 !== digest(text)) throw Error('accepted_evidence_changed')
+    dependencies[name] = text
+  }
+  if (w.readonlyFiles && run.source.evidence.dependencyFiles?.length !== w.readonlyFiles.length) throw Error('accepted_evidence_changed')
+  if (Object.keys(isolated.workOrder.files).sort().join(',') !== [...names, ...(w.readonlyFiles || []), ...Object.keys(protectedTests)].sort().join(',')) throw Error('accepted_evidence_changed')
   if (w.effort && (result.effort !== w.effort || isolated.effort !== w.effort || isolated.workOrder.effort !== w.effort ||
       isolated.workOrder.expectedTests !== w.expectedTests || JSON.stringify(isolated.workOrder.editable) !== JSON.stringify(names) ||
       !boundaryValid(result.baseline) || JSON.stringify(result.baseline) !== JSON.stringify(isolated.baseline) || result.baseline.total !== w.expectedTests ||
@@ -36,6 +44,7 @@ function validateAccepted (run, isolated) {
   for (const evidence of [result.tests, isolated.tests]) if (evidence?.total !== w.expectedTests || evidence.passed !== w.expectedTests || evidence.failed !== 0 || evidence.exitCode !== 0 ||
     evidence.skipped !== 0 || evidence.cancelled !== 0 || !boundaryValid(evidence)) throw Error('accepted_evidence_changed')
   return { before: w.recipe === RECIPE ? before[FILE] : before, after: w.recipe === RECIPE ? after[FILE] : after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })),
+    ...(w.readonlyFiles ? { dependencies } : {}),
     ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }
 }
 function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore() }) {
@@ -70,6 +79,7 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
       const recipeId = accepted.recipe || RECIPE, snapshot = await source.read(input.bootCommit, undefined, recipeId)
       const before = input.action === 'adopt' ? accepted.before : accepted.after, after = input.action === 'adopt' ? accepted.after : accepted.before
       if (Object.entries(sourceValues(recipeId, before)).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
+      if (Object.entries(accepted.dependencies || {}).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
       if (input.action === 'rollback' && !store.all().some(r => r.workRunId === input.runId && r.action === 'adopt' && r.state === 'completed')) throw Error('rollback_unavailable')
       const id = randomUUID(), hash = digest(JSON.stringify({ action: input.action, runId: input.runId, snapshot, accepted, before, after }))
       const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, accepted, action: input.action, runId: input.runId, before, after }, proposalId: id })
@@ -91,7 +101,7 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
       await source.verify(r.source)
       r.state = 'testing'; record(r, 'testing')
       const definition = recipe(r.accepted.recipe || RECIPE), w = definition.workOrder
-      const pack = { files: { ...sourceValues(w.recipe, r.after), ...definition.tests }, tests: Object.keys(definition.tests), expectedTests: w.expectedTests }
+      const pack = { files: { ...sourceValues(w.recipe, r.after), ...(r.accepted.dependencies || {}), ...definition.tests }, tests: Object.keys(definition.tests), expectedTests: w.expectedTests }
       r.tests = await executor.run(pack)
       const expectedPass = r.action === 'adopt' ? w.expectedTests : (r.accepted.baseline?.passed ?? 3), expectedFail = w.expectedTests - expectedPass
       if (r.tests.total !== w.expectedTests || r.tests.passed !== expectedPass || r.tests.failed !== expectedFail || r.tests.exitCode !== (expectedFail ? 1 : 0) || r.tests.skipped !== 0 || r.tests.cancelled !== 0 ||

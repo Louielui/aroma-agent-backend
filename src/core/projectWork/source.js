@@ -37,7 +37,7 @@ function createSource ({ root, readGit = gitRead, health = async () => {
     const runtime = await health()
     if (head !== bootCommit || runtime.status !== 'ok' || runtime.bootCommit !== head) throw Error('source_changed')
     const files = {}, sourceFiles = []
-    for (const name of workOrder.allowedFiles) {
+    for (const name of [...workOrder.allowedFiles, ...(workOrder.readonlyFiles || [])]) {
       regular(resolved, name)
       const mode = (await readGit(resolved, ['ls-tree', head, '--', name], signal)).trim()
       if (!/^100644 blob [a-f0-9]{40}\t/.test(mode)) throw Error('source_unavailable')
@@ -49,7 +49,9 @@ function createSource ({ root, readGit = gitRead, health = async () => {
     }
     if ((await readGit(resolved, ['rev-parse', 'HEAD'], signal)).trim() !== head) throw Error('source_changed')
     const evidence = { projectId: PROJECT, recipe: recipeId, revision: head, bootCommit: runtime.bootCommit,
-      sourceFiles, acceptanceFiles: Object.entries(tests).map(([name, text]) => ({ path: name, sha256: digest(text) })), committedOnly: true, dirtyScope: false }
+      sourceFiles: sourceFiles.filter(f => workOrder.allowedFiles.includes(f.path)),
+      ...(workOrder.readonlyFiles ? { dependencyFiles: sourceFiles.filter(f => workOrder.readonlyFiles.includes(f.path)) } : {}),
+      acceptanceFiles: Object.entries(tests).map(([name, text]) => ({ path: name, sha256: digest(text) })), committedOnly: true, dirtyScope: false }
     return { evidence, hash: digest(JSON.stringify(evidence)), order: { goal: workOrder.goal, files: { ...files, ...tests },
       editable: [...workOrder.allowedFiles], tests: Object.keys(tests), expectedTests: workOrder.expectedTests, sourceRevision: head,
       ...(workOrder.effort ? { effort: workOrder.effort } : {}) } }

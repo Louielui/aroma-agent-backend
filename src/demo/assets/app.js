@@ -992,6 +992,7 @@
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
+            if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
             if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
@@ -1203,6 +1204,64 @@
   })
   renderPlusMenu()
 
+  function renderTaskPlan (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('div', 'project-work-card'), content = el('div'), nested = el('div')
+    turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    var busy = false, preparing = false, workShown = false
+    async function request (body) {
+      var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
+      try {
+        var r = await fetch('/api/v1/task-plan' + (body ? '' : '/' + encodeURIComponent(runId)), { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
+        var v = await r.json(); if (!r.ok || v.error) throw Error('unavailable'); return v
+      } finally { clearTimeout(timeout) }
+    }
+    function draw (r) {
+      clear(content)
+      content.appendChild(el('strong', '', t('taskPlan.title')))
+      content.appendChild(el('p', '', t('taskPlan.boundary')))
+      content.appendChild(el('p', '', r.state + (r.reason ? ' · ' + r.reason : '')))
+      if (r.evidence) content.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
+      if (r.result) {
+        content.appendChild(el('h4', '', r.result.goal))
+        ;[["steps", t('taskPlan.steps')], ["acceptanceChecks", t('taskPlan.acceptanceChecks')], ["questions", t('taskPlan.questions')], ["risks", t('taskPlan.risks')]].forEach(function (entry) {
+          var key = entry[0]
+          content.appendChild(el('strong', '', entry[1]))
+          var list = el('ul'); r.result[key].forEach(function (text) { list.appendChild(el('li', '', text)) }); content.appendChild(list)
+        })
+        content.appendChild(el('strong', '', t('taskPlan.citations')))
+        r.result.citations.forEach(function (c) { var f = r.evidence.files.find(function (f) { return f.evidenceId === c.evidenceId }); content.appendChild(el('pre', '', f.path + ':' + c.startLine + '-' + c.endLine + '\n' + c.quote)) })
+        content.appendChild(el('p', '', r.executableRecipe ? t('taskPlan.registered') : t('taskPlan.draftOnly')))
+      }
+      if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
+      if (r.state === 'completed' && r.executableRecipe && !r.preparation && !preparing) {
+        var button = el('button', '', t('taskPlan.prepare'))
+        button.addEventListener('click', async function () {
+          if (busy || preparing) return
+          preparing = true; busy = true; button.disabled = true
+          try {
+            var v = await request({ op: 'prepare', id: runId, requestId: crypto.randomUUID() })
+            if (!workShown && v.work && v.work.run) { workShown = true; renderProjectWork({ body: nested }, v.work.run.id, v.work) }
+            draw(v.run)
+          } catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.uncertain'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
+          finally { busy = false }
+        }); content.appendChild(button)
+      }
+      if (['queued', 'running'].includes(r.state)) {
+        var cancel = el('button', '', t('taskPlan.cancel'))
+        cancel.addEventListener('click', async function () { if (busy) return; busy = true; cancel.disabled = true; try { await request({ op: 'cancel', id: runId }) } catch (_) { content.appendChild(el('p', '', t('taskPlan.uncertain'))) } finally { busy = false; read() } }); content.appendChild(cancel)
+        setTimeout(read, 2500)
+      }
+    }
+    async function read () {
+      if (busy) return
+      busy = true
+      try { var v = await request(); draw(v.run) }
+      catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
+      finally { busy = false }
+    }
+    read()
+  }
   function renderProjectWork (turnEl, runId, prepared) {
     if (!/^[a-f0-9-]{36}$/i.test(runId)) return
     var card = el('section', 'briefing-run'); turnEl.body.appendChild(card)
@@ -1575,6 +1634,12 @@
     if (status === 400) return addError(t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
+    }
+    if (res.taskPlanRunId) {
+      var taskTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(taskTurn.body, t('workflow.historyFailed'))
+      renderTaskPlan(taskTurn, res.taskPlanRunId)
+      return taskTurn
     }
     if (res.projectWorkRunId) {
       var workTurn = addBot(res.reply, conv)

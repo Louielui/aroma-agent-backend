@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
@@ -561,6 +561,20 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
       // The conversation store captures the accepted request. Its terminal worker
       // receipt comes from the job itself; HTTP acceptance is not job completion.
+      const planning = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/taskPlanner/contract').classify(message) : null
+      if (planning) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        if (planning.clarification) return res.set('Cache-Control', 'no-store').json({ lane: 'chat', reply: t('taskPlan.clarify'), servedBy: null })
+        try {
+          if (!taskPlanner) throw Error('not_enabled')
+          const run = taskPlanner.start({ id: 'owner', role: 'owner' }, { message, requestId: req.body.workflowRequestId, conversationId: req.body.conversationId })
+          let historySaved = true
+          if (!run.reused) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: t('taskPlan.started'), taskPlanRunId: run.id }) } catch (_) { historySaved = false } }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', reply: t('taskPlan.started'), taskPlanRunId: run.id, historySaved, servedBy: null })
+        } catch (e) { return res.status(['worker_busy', 'request_conflict'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } }) }
+      }
       const chatTask = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
       if (chatTask) {
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })

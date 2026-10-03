@@ -80,11 +80,33 @@ const COVERAGE_WORK_ORDER = { projectId: PROJECT, recipe: COVERAGE_RECIPE, versi
   allowedFiles: [FILE, GATEWAY], protectedFiles: [COVERAGE_TEST], expectedTests: 8, effort: 'high',
   scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false,
   providers: ['codex', 'claude'], billing: 'subscriptions_no_api_fallback' }
+const FAILURE_RECIPE = 'context-unavailable-snapshot-v4', FAILURE_TEST = 'acceptance/context-unavailable.test.cjs'
+const FAILURE_TESTS = `'use strict'
+const test=require('node:test'),assert=require('node:assert/strict')
+const {createToolGateway}=require('../src/context/toolGateway.js')
+const {makeContextResult}=require('../src/context/contextResult.js')
+const OWNER={role:'owner'}
+function setup(fail=true){const scope={ids:[1],nested:{n:1}},events=[],resources=[{id:'repo',source:'github',scope,sensitivity:'public',operations:{list:{method:'listCommits',params:()=>({})}}}],gateway=createToolGateway({connector:{read:async()=>{if(fail)throw Error('offline');return{results:[makeContextResult({source:'github',sourceId:'one',fields:{n:1}})]}}},resources,audit:{append:e=>events.push(e)}});return{scope,gateway,events}}
+test('failed source scope is a detached snapshot',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');f.scope.ids.push(2);assert.deepEqual(r.coverage.scope.ids,[1])})
+test('failed returned scope cannot mutate source',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');r.coverage.scope.nested.n=9;assert.equal(f.scope.nested.n,1)})
+test('failed reads cannot mutate another result',async()=>{const f=setup(),a=await f.gateway.list(OWNER,'repo'),b=await f.gateway.list(OWNER,'repo');a.coverage.scope.ids.push(2);assert.deepEqual(b.coverage.scope.ids,[1])})
+test('access scope cannot mutate source on failure',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');r.access.scope.ids.push(2);assert.deepEqual(f.scope.ids,[1])})
+test('sourceId cannot mutate source on failure',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');r.sourceId.nested.n=9;assert.equal(f.scope.nested.n,1)})
+test('returned sourceId access scope and coverage are independent',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');r.coverage.scope.ids.push(2);assert.deepEqual(r.access.scope.ids,[1]);assert.deepEqual(r.sourceId.ids,[1]);r.access.scope.nested.n=2;assert.equal(r.sourceId.nested.n,1)})
+test('successful fallback scope is detached from base metadata',async()=>{const f=setup(false),r=await f.gateway.list(OWNER,'repo');r.sourceId.ids.push(2);assert.deepEqual(r.access.scope.ids,[1]);assert.deepEqual(r.coverage.scope.ids,[1]);assert.deepEqual(f.scope.ids,[1]);assert.equal(r.state,'ok')})
+test('failure metadata permissions and audit stay honest',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');assert.equal(r.state,'unavailable');assert.equal(r.trust,'unavailable');assert.equal(r.count,null);assert.equal(r.content,null);assert.equal(r.coverage.complete,null);assert.equal(r.freshness.state,'unknown');assert.equal(r.error,'source_unavailable');assert.deepEqual(f.events.map(e=>e.sequence),[1,2]);await assert.rejects(f.gateway.list({role:'manager'},'repo'),/permission_denied/)})
+`
+const FAILURE_WORK_ORDER = { projectId: PROJECT, recipe: FAILURE_RECIPE, version: 4,
+  title: 'Unavailable Live Context scope snapshot repair',
+  goal: 'Detach all returned registered-scope references from caller data and each other in toolGateway.js: base.sourceId, base.access.scope and unavailable coverage.scope each use an independent snapshotValue(resource.scope). Keep successful coverage semantics, failed source honesty, audit, permissions and exports. Reuse the existing shared snapshotValue import. Change only toolGateway.js; no dependencies; protected eight tests cannot change.',
+  allowedFiles: [GATEWAY], readonlyFiles: [FILE], protectedFiles: [FAILURE_TEST], expectedTests: 8, effort: 'high', scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false,
+  providers: ['codex', 'claude'], billing: 'subscriptions_no_api_fallback' }
 function freeze (value) { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value) } return value }
 const RECIPES = freeze({
   [RECIPE]: { workOrder: WORK_ORDER, tests: { [TEST]: TESTS } },
   [MULTI_RECIPE]: { workOrder: MULTI_WORK_ORDER, tests: { [MULTI_TEST]: MULTI_TESTS } },
-  [COVERAGE_RECIPE]: { workOrder: COVERAGE_WORK_ORDER, tests: { [COVERAGE_TEST]: COVERAGE_TESTS } }
+  [COVERAGE_RECIPE]: { workOrder: COVERAGE_WORK_ORDER, tests: { [COVERAGE_TEST]: COVERAGE_TESTS } },
+  [FAILURE_RECIPE]: { workOrder: FAILURE_WORK_ORDER, tests: { [FAILURE_TEST]: FAILURE_TESTS } }
 })
 function recipe (id = RECIPE) { if (!Object.hasOwn(RECIPES, id)) throw Error('invalid_request'); return RECIPES[id] }
 // Only registered paths are reachable. Legacy one-file receipts retain their shape.
@@ -94,4 +116,4 @@ function sourceValues (id, value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== names.slice().sort().join(',') || names.some(n => typeof value[n] !== 'string' || !value[n] || Buffer.byteLength(value[n]) > 100000)) throw Error('invalid_request')
   return value
 }
-module.exports = { PROJECT, RECIPE, FILE, TEST, TESTS, WORK_ORDER, MULTI_RECIPE, GATEWAY, MULTI_TEST, MULTI_TESTS, MULTI_WORK_ORDER, COVERAGE_RECIPE, COVERAGE_TEST, COVERAGE_TESTS, COVERAGE_WORK_ORDER, RECIPES, recipe, sourceValues }
+module.exports = { PROJECT, RECIPE, FILE, TEST, TESTS, WORK_ORDER, MULTI_RECIPE, GATEWAY, MULTI_TEST, MULTI_TESTS, MULTI_WORK_ORDER, COVERAGE_RECIPE, COVERAGE_TEST, COVERAGE_TESTS, COVERAGE_WORK_ORDER, RECIPES, recipe, sourceValues, FAILURE_RECIPE, FAILURE_TESTS, FAILURE_WORK_ORDER }

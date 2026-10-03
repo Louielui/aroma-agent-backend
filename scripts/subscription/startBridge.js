@@ -59,7 +59,7 @@ function main () {
     onFinish: run => memoryRuntime ? memoryRuntime.event('worker','code-repair:'+run.id,JSON.stringify({id:run.id,state:run.state,reason:run.reason,diagnosisId:run.diagnosisId,approvalHash:run.approvalHash,patchHash:run.result?.patchHash || null,tests:run.tests?{tests:run.tests.tests,pass:run.tests.pass,fail:run.tests.fail}:null,sourceRevision:run.source?.revision,appliedToLive:false}),'measured_result',run.finishedAt) : {state:'not_connected'} })
   const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
-    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork, projectAdoption })
+    taskPlanSource: require('../../src/core/taskPlanner/source').createSource({ root: repo }), codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork, projectAdoption })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }
