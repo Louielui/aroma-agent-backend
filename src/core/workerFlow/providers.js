@@ -78,6 +78,8 @@ function createProviders ({ executable, root, allowCredits = false }) {
     return executor.isBusy() ? { ...value, ready: false, reason: 'sandbox_recovery_or_work_pending' } : value
   }
   return {
+    testOrder: pack => executor.run(pack),
+    executionBusy: () => executor.isBusy(),
     isolation,
     async status () {
       const check = async fn => { try { return { ...await fn(), ready: true, checkedAt: new Date().toISOString() } } catch (e) { return { ready: false, error: e.code || (['claude_login_required', 'claude_unavailable'].includes(e.message) ? e.message : 'subscription_unavailable'), checkedAt: new Date().toISOString() } } }

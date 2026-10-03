@@ -1023,6 +1023,8 @@ function createApp (options = {}) {
   app.use('/project-work', requireOwner)
   app.use('/api/v1/project-work', requireOwner)
   app.use(require('./core/projectWork/routes').createProjectRouter({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions }))
+  app.use('/api/v1/project-adoption', requireOwner)
+  app.use(require('./core/projectWork/adoptionRoutes').createAdoptionRouter({ bootCommit: BOOT_COMMIT, ...opts.projectAdoptionOptions }))
   app.use('/api/v1/manager', requireOwner)
   const operatingManager = opts.operatingManager || require('./core/operating/manager').createRuntimeManager({ proposalStore, memoryCapture, mailbox: companyAccessEnabled ? companyMailbox : null, mailMemory: companyMailMemory })
   app.use(require('./core/operating/routes').createManagerRouter({ manager: operatingManager, mailbox: companyAccessEnabled ? companyMailbox : null }))
