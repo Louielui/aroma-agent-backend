@@ -4,9 +4,9 @@ const { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox')
 const { ID } = require('../operating/runStore')
 const { FILES, keys, request, draft, definition, SCHEMA, SYSTEM } = require('./contract')
-const ACTIVE = ['queued', 'reading', 'drafting', 'reviewing'], SAFE = new Set(['invalid_request', 'invalid_worker_result', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'provider_not_ready', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'cancelled', 'timed_out', 'not_enabled'])
+const ACTIVE = ['queued', 'reading', 'drafting', 'reviewing'], SAFE = new Set(['invalid_request', 'invalid_worker_result', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'provider_not_ready', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'worker_cancelled', 'cancelled', 'timed_out', 'not_enabled'])
 const owner = a => { if (a?.id !== 'owner' || a.role !== 'owner') throw Error('permission_denied') }
-function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork, onEvent = () => {}, timeoutMs = 480000, approvals = createOwnerApprovalStore() }) {
+function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork, onEvent = () => {}, timeoutMs = 540000, approvals = createOwnerApprovalStore() }) {
   let active = null, pending = Promise.resolve(); const controls = new Map(), tickets = new Map(), sessions = new Map()
   function record (r, stage, facts = {}) { r.steps.push({ sequence: r.steps.length + 1, stage, at: new Date().toISOString(), facts }); store.save(r); try { onEvent({ id: r.id, stage, state: r.state, facts }) } catch (_) {} }
   for (const r of store.all()) if ([...ACTIVE, 'awaiting_approval'].includes(r.state)) { r.state = 'interrupted'; r.reason = 'process_restarted'; record(r, 'interrupted', { automaticResume: false }) }
@@ -47,7 +47,12 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
       check(c.signal); r.approvalHash = hash; r.expiresAt = sealed.record.expiresAt; r.state = 'awaiting_approval'
       record(r, 'draft_ready', { testsExecuted: false, filesChanged: false, model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription' })
       sessions.set(r.id, session); tickets.set(r.id, { id: r.id, hash, nonce: approvals.issueNonce({ approvalId: r.id, workOrderHash: hash, sessionId: session }), expiresAt: r.expiresAt })
-    } catch (e) { r.state = c.signal.aborted ? (c.signal.reason?.message === 'timed_out' ? 'timed_out' : 'cancelled') : 'failed'; r.reason = SAFE.has(e.code || e.message) ? (e.code || e.message) : 'registration_unavailable'; record(r, r.state) }
+    } catch (e) {
+      if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
+        parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
+        stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) && e.safeDiagnostics.stdoutBytes >= 0 ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) && e.safeDiagnostics.stderrBytes >= 0 ? e.safeDiagnostics.stderrBytes : null }
+      r.state = c.signal.aborted ? (c.signal.reason?.message === 'timed_out' ? 'timed_out' : 'cancelled') : 'failed'; r.reason = SAFE.has(e.code || e.message) ? (e.code || e.message) : 'registration_unavailable'; record(r, r.state, { reason: r.reason })
+    }
     finally { r.finishedAt = new Date().toISOString(); store.save(r) }
   }
   function start (actor, input) {

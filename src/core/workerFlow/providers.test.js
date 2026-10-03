@@ -64,3 +64,13 @@ test('review failures retain bounded diagnostic enums and byte counts without ra
     })
   }
 })
+
+test('review deadline retains byte counts without retaining raw provider output', async () => {
+  const { EventEmitter } = require('node:events'), { PassThrough, Writable } = require('node:stream')
+  let killed = false
+  await assert.rejects(runClaude([], { timeoutMs: 20, resolveCommand: () => ({ ok: true, command: 'fixture' }), spawnImpl: () => {
+    const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); child.kill = () => { killed = true }
+    child.stdin = new Writable({ write (c, e, done) { done() } }); process.nextTick(() => { child.stdout.write('private source'); child.stderr.write('secret') }); return child
+  } }), error => { assert.equal(error.message, 'worker_timeout'); assert.deepEqual(error.safeDiagnostics, { exitCode: null, parsedJson: false, subtype: 'unknown', stdoutBytes: 14, stderrBytes: 6 }); return true })
+  assert.equal(killed, true)
+})

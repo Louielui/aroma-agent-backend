@@ -75,3 +75,15 @@ test('timeout and cancellation do not free the provider lane before inflight wor
     release({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(generated) }); await new Promise(r => setImmediate(r)); assert.equal(f.service.isActive(), false); assert.equal(f.calls.includes('review'), false)
   }
 })
+
+test('review timeout and provider failure retain only safe diagnostics and never grant task authority', async () => {
+  for (const reason of ['worker_timeout', 'claude_invalid_structured_output', 'secret-provider-error']) {
+    const error = Error(reason); error.safeDiagnostics = { exitCode: 1, parsedJson: true, subtype: 'private-value', stdoutBytes: 123, stderrBytes: -1, stdout: 'private source', token: 'secret' }
+    const f = fixture({ review: async () => { throw error } }), v = await f.ready()
+    assert.equal(v.run.state, 'failed'); assert.equal(v.run.reason, reason === 'secret-provider-error' ? 'registration_unavailable' : reason); assert.equal(v.approval, null)
+    assert.deepEqual(v.run.failureDiagnostic, { exitCode: 1, parsedJson: true, subtype: 'unknown', stdoutBytes: 123, stderrBytes: null })
+    assert.equal(v.run.steps.at(-1).facts.reason, v.run.reason); assert.equal(f.calls.includes('prepare'), false)
+    assert.throws(() => createRegistry(f.store).resolve(v.run.registration.workOrder.recipe), /invalid_request/)
+    assert.doesNotMatch(JSON.stringify(v.run), /private source|private-value|secret-provider-error/)
+  }
+})
