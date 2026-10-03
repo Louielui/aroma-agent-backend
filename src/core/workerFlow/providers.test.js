@@ -1,6 +1,6 @@
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path')
-const { code, claudeArgs, readReview } = require('./providers')
+const { code, claudeArgs, readReview, runClaude } = require('./providers')
 const { SOURCE, TESTS } = require('./fixture')
 test('registered workbench delegates executable bytes only to the offline executor and protects tests', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xiang-provider-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -30,4 +30,15 @@ test('reviewer has no tools, no discovery and no API-key authentication fallback
   assert.equal(args[args.indexOf('--tools') + 1], ''); assert.ok(args.includes('--restricted')); assert.ok(args.includes('--strict-mcp-config')); assert.ok(!args.includes('--dangerously-skip-permissions'))
   assert.throws(() => readReview({ type: 'result', subtype: 'success', is_error: false, result: 'looks done' }), /invalid_worker_result/)
   assert.throws(() => readReview({ type: 'result', subtype: 'success', structured_output: { verdict: 'pass', summary: 'x', findings: ['bad'] } }), /invalid_worker_result/)
+})
+test('large multi-file review is streamed through stdin, never expanded into command arguments', async () => {
+  const { EventEmitter } = require('node:events'), { PassThrough, Writable } = require('node:stream')
+  const packet = JSON.stringify({ files: { 'one.js': 'a'.repeat(40000), 'two.js': 'b'.repeat(40000) } }), calls = []
+  const value = await runClaude(claudeArgs(['one.js', 'two.js']), { input: packet, resolveCommand: () => ({ ok: true, command: 'fixture' }), spawnImpl: (exe, args, options) => {
+    calls.push({ exe, args, options }); const child = new EventEmitter(); child.stdout = new PassThrough(); child.stderr = new PassThrough(); let input = ''
+    child.stdin = new Writable({ write (chunk, encoding, done) { input += chunk.toString(); done() }, final (done) { assert.equal(input, packet); done(); process.nextTick(() => { child.stdout.end(JSON.stringify({ type: 'result', subtype: 'success' })); child.emit('close', 0) }) } }); child.kill = () => {}
+    return child
+  } })
+  assert.equal(value.subtype, 'success'); assert.equal(calls.length, 1); assert.ok(calls[0].args.join(' ').length < 5000); assert.equal(calls[0].args.includes(packet), false); assert.equal(calls[0].options.shell, false); assert.deepEqual(calls[0].options.stdio, ['pipe', 'pipe', 'pipe']); assert.equal(calls[0].options.env.ANTHROPIC_API_KEY, undefined)
+  await assert.rejects(runClaude([], { input: 'x'.repeat(1000001) }), /invalid_worker_result/)
 })
