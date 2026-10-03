@@ -12,6 +12,10 @@
  * can say "目前讀不到" instead of guessing from memory.
  */
 
+function snapshotFields (fields) {
+  return (fields && typeof fields === 'object' && !Array.isArray(fields)) ? structuredClone(fields) : {}
+}
+
 /**
  * WHAT KIND OF THING THIS ROW IS, and the FIELDS THAT MEAN SOMETHING.
  *
@@ -36,7 +40,7 @@ function makeContextResult ({ source, sourceId = null, title = null, originalDat
     content: content == null ? '' : String(content),
     link: link == null ? null : String(link),
     entityType: entityType == null ? null : String(entityType),
-    fields: (fields && typeof fields === 'object' && !Array.isArray(fields)) ? structuredClone(fields) : {},
+    fields: snapshotFields(fields),
     trust: 'live',
     error: null
   }
@@ -77,4 +81,4 @@ const ENTITY_TYPES = Object.freeze({
   THREAD: 'thread'
 })
 
-module.exports = { makeContextResult, makeUnavailable, ENTITY_TYPES }
+module.exports = { makeContextResult, makeUnavailable, ENTITY_TYPES, snapshotFields }

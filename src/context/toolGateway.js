@@ -1,5 +1,6 @@
 'use strict'
 const { randomUUID } = require('node:crypto')
+const { snapshotFields } = require('./contextResult.js')
 const OPS = Object.freeze(['search', 'list', 'get', 'readMetadata'])
 const clone = value => JSON.parse(JSON.stringify(value))
 function createToolGateway ({ connector, resources, audit, clock = () => new Date().toISOString() }) {
@@ -34,7 +35,7 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
       if (!value || value.trust === 'unavailable' || !Array.isArray(value.results) || value.results.some(row => !row || row.source !== resource.source || row.trust !== 'live' || typeof row.sourceId !== 'string' || !row.sourceId || (resource.validateRow && !resource.validateRow(row)))) throw Error('source_unavailable')
       const content = value.results.map(row => ({ source: row.source, sourceId: row.sourceId, title: row.title,
         retrievedAt: value.asOf || startedAt, originalDate: row.originalDate || null, content: row.content,
-        fields: clone(row.fields || {}), link: row.link || null, trust: 'source_data', truncated: row.truncated === true,
+        fields: snapshotFields(row.fields), link: row.link || null, trust: 'source_data', truncated: row.truncated === true,
         freshness: { state: 'retrieved', sourceUpdatedAt: row.originalDate || null } }))
       const evidence = value.evidence || {}
       const truncated = value.truncatedCount > 0 || evidence.truncated === true || content.some(row => row.truncated) ? true : evidence.truncated === null ? null : false
@@ -45,7 +46,7 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
           revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null,
           queryScope: clone(evidence.queryScope || null), returnedRows: evidence.returnedRows ?? null,
             serverTruncated: evidence.serverTruncated ?? null, dataAsOf: evidence.dataAsOf ?? null, selection: evidence.selection || null,
-            provenance: evidence.provenance || null, rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
+            provenance: structuredClone(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
         content: null, coverage: { scope: resource.scope, complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }
