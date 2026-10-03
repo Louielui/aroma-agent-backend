@@ -25,9 +25,9 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
     const layer = resource.layer || 'truth'
     const event = { runId, at: startedAt, actor: 'owner', agent: 'context', tool: resource.id + '.' + op, source: resource.source, layer }
     record({ ...event, sequence: 1, result: 'started' })
-    const base = { version: 1, source: resource.source, sourceId: resource.scope, resource: resource.id, operation: op, layer,
+    const base = { version: 1, source: resource.source, sourceId: snapshotValue(resource.scope), resource: resource.id, operation: op, layer,
       retrievedAt: startedAt, originalDate: null, link: resource.link || null, sensitivity: resource.sensitivity,
-      access: { role: 'owner', scope: resource.scope }, contentPolicy: 'data_only', freshness: { state: 'retrieved', sourceUpdatedAt: null } }
+      access: { role: 'owner', scope: snapshotValue(resource.scope) }, contentPolicy: 'data_only', freshness: { state: 'retrieved', sourceUpdatedAt: null } }
     let result
     try {
       const value = await connector.read(resource.source, spec.method, params)
@@ -48,7 +48,7 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
             provenance: snapshotValue(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
-        content: null, coverage: { scope: resource.scope, complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }
+        content: null, coverage: { scope: snapshotValue(resource.scope), complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }
     }
     record({ ...event, at: clock(), sequence: 2, result: result.state, count: result.count })
     return result
