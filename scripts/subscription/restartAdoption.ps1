@@ -19,7 +19,17 @@ try {
     'context-provenance-snapshot-v2' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
     'context-coverage-snapshot-v3' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
     'context-unavailable-snapshot-v4' { $adoptionNames = @('src/context/toolGateway.js') }
-    default { throw 'UnknownRecipe' }
+    default {
+      if ($adoptionRecipe -notmatch '^registered-task-[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$') { throw 'UnknownRecipe' }
+      $adoptionNames = @($adoptionRecord.after.PSObject.Properties.Name)
+      if ($adoptionNames.Count -lt 1 -or $adoptionNames.Count -gt 2 -or @($adoptionNames | Where-Object { $_ -cnotin @('src/context/contextResult.js','src/context/toolGateway.js') }).Count -ne 0) { throw 'UnexpectedSourceSet' }
+      $adoptionValidator = Join-Path $adoptionRepository 'scripts/subscription/validateRegisteredReload.cjs'
+      $adoptionValidatorSource = (Get-Content -LiteralPath $adoptionValidator -Raw -Encoding UTF8).Replace("`r`n","`n")
+      $adoptionValidatorCommitted = ((& git --no-replace-objects -C $adoptionRepository show ($adoptionRecord.commit + ':scripts/subscription/validateRegisteredReload.cjs')) -join "`n") + "`n"
+      if ($adoptionValidatorSource -cne $adoptionValidatorCommitted) { throw 'ReloadValidatorChanged' }
+      & node $adoptionValidator $RunId
+      if ($LASTEXITCODE -ne 0) { throw 'RegistrationChanged' }
+    }
   }
   if ($adoptionRecipe -ne 'context-fields-snapshot-v1' -and (($adoptionRecord.after.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($adoptionNames | Sort-Object) -join ',')) { throw 'UnexpectedSourceSet' }
   foreach ($adoptionName in $adoptionNames) {

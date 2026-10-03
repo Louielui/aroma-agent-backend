@@ -8,7 +8,7 @@ function git (root, args) {
   return new Promise((resolve, reject) => execFile('git', ['--no-replace-objects', '-c', 'core.hooksPath=', '-c', 'core.fsmonitor=false', '-c', 'commit.gpgsign=false', '-C', root, ...args],
     { env, encoding: 'utf8', windowsHide: true, timeout: 15000, maxBuffer: 5000000 }, (error, out) => error ? reject(Error('repository_unavailable')) : resolve(out)))
 }
-function createRepository ({ root, source, command = git }) {
+function createRepository ({ root, source, command = git, resolveRecipe = recipe }) {
   const head = async () => (await command(root, ['rev-parse', 'HEAD'])).trim()
   const outside = async names => JSON.stringify(await Promise.all([
     command(root, ['diff', '--binary', '--no-ext-diff', '--no-textconv', '--', '.', ...names.map(n => ':(exclude)' + n)]),
@@ -29,8 +29,8 @@ function createRepository ({ root, source, command = git }) {
     finally { if (fs.existsSync(temp)) fs.unlinkSync(temp) }
   }
   async function apply ({ snapshot, before, after, id, action }) {
-    const recipeId = snapshot?.evidence?.recipe || RECIPE, names = recipe(recipeId).workOrder.allowedFiles
-    const oldFiles = sourceValues(recipeId, before), newFiles = sourceValues(recipeId, after)
+    const recipeId = snapshot?.evidence?.recipe || RECIPE, names = resolveRecipe(recipeId).workOrder.allowedFiles
+    const oldFiles = sourceValues(recipeId, before, resolveRecipe), newFiles = sourceValues(recipeId, after, resolveRecipe)
     if (!/^[a-f0-9-]{36}$/.test(id || '') || !['adopt', 'rollback'].includes(action) || names.some(n => snapshot.order.files[n] !== oldFiles[n] || oldFiles[n] === newFiles[n])) throw Error('invalid_request')
     await source.verify(snapshot)
     const previous = snapshot.evidence.revision, unaffected = await outside(names), originalBytes = {}
@@ -62,10 +62,10 @@ function createRepository ({ root, source, command = git }) {
     }
   }
   async function verifyLoaded (row) {
-    const recipeId = row.source?.evidence.recipe || RECIPE, fresh = await source.read(row.commit, undefined, recipeId), values = sourceValues(recipeId, row.after)
+    const recipeId = row.source?.evidence.recipe || RECIPE, fresh = await source.read(row.commit, undefined, recipeId), values = sourceValues(recipeId, row.after, resolveRecipe)
     const expected = recipeId === RECIPE ? [row.change] : row.change.files
     if (recipeId !== RECIPE && (!Array.isArray(expected) || JSON.stringify(expected.map(c => c?.file).sort()) !== JSON.stringify(Object.keys(values).sort()))) throw Error('source_changed')
-    if (!Array.isArray(expected) || expected.length !== Object.keys(values).length || expected.some(c => !c || !Object.hasOwn(values, c.file || recipe(recipeId).workOrder.allowedFiles[0]) || digest(values[c.file || recipe(recipeId).workOrder.allowedFiles[0]]) !== c.afterHash) || Object.entries(values).some(([n, text]) => fresh.order.files[n] !== text)) throw Error('source_changed')
+    if (!Array.isArray(expected) || expected.length !== Object.keys(values).length || expected.some(c => !c || !Object.hasOwn(values, c.file || resolveRecipe(recipeId).workOrder.allowedFiles[0]) || digest(values[c.file || resolveRecipe(recipeId).workOrder.allowedFiles[0]]) !== c.afterHash) || Object.entries(values).some(([n, text]) => fresh.order.files[n] !== text)) throw Error('source_changed')
     return { bootCommit: fresh.evidence.bootCommit, ...(recipeId === RECIPE ? { sourceHash: digest(row.after) } : { sourceHashes: Object.fromEntries(Object.entries(values).map(([n, text]) => [n, digest(text)])) }) }
   }
   return { apply, verifyLoaded, head }

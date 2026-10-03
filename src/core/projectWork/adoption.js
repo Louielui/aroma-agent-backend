@@ -5,9 +5,9 @@ const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}
 const BOUNDARY = ['noExternalInterfaces', 'hostReadDenied', 'hostWriteDenied', 'readonlyInputDenied', 'readonlyToolsDenied', 'loopbackDenied', 'ipv6LoopbackDenied', 'internetDenied', 'cleanIdentity', 'secretsAbsent']
 const boundaryValid = e => e?.engine === 'windows-sandbox-offline-v1' && Object.keys(e.boundary || {}).length === 10 && BOUNDARY.every(k => e.boundary[k] === true)
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function validateAccepted (run, isolated) {
+function validateAccepted (run, isolated, resolveRecipe = recipe) {
   const result = run?.result
-  let definition; try { definition = recipe(run?.workOrder?.recipe) } catch (_) { throw Error('accepted_evidence_changed') }
+  let definition; try { definition = resolveRecipe(run?.workOrder?.recipe) } catch (_) { throw Error('accepted_evidence_changed') }
   const w = definition.workOrder, names = w.allowedFiles, protectedTests = definition.tests
   if (!run?.source?.evidence || !Array.isArray(result?.changes) || !isolated?.workOrder?.files) throw Error('accepted_evidence_changed')
   if (run.state !== 'completed' || JSON.stringify(run.workOrder) !== JSON.stringify(w) || run.review?.verdict !== 'pass' || run.review.billing !== 'claude-subscription' ||
@@ -47,7 +47,7 @@ function validateAccepted (run, isolated) {
     ...(w.readonlyFiles ? { dependencies } : {}),
     ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }
 }
-function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore() }) {
+function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe }) {
   let busy = false, pending = Promise.resolve(), refreshing = null
   const sessions = new Map(), active = new Set(['queued', 'testing', 'applying'])
   function record (r, stage, facts = {}) {
@@ -75,10 +75,10 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
     if (existing) { if (existing.workRunId !== input.runId || existing.action !== input.action || existing.source.evidence.bootCommit !== input.bootCommit) throw Error('request_conflict'); return { run: existing, approval: null } }
     busy = true
     try {
-      const original = work.get(actor, input.runId), accepted = validateAccepted(original, await isolated(original?.result?.isolatedRunId))
+      const original = work.get(actor, input.runId), accepted = validateAccepted(original, await isolated(original?.result?.isolatedRunId), resolveRecipe)
       const recipeId = accepted.recipe || RECIPE, snapshot = await source.read(input.bootCommit, undefined, recipeId)
       const before = input.action === 'adopt' ? accepted.before : accepted.after, after = input.action === 'adopt' ? accepted.after : accepted.before
-      if (Object.entries(sourceValues(recipeId, before)).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
+      if (Object.entries(sourceValues(recipeId, before, resolveRecipe)).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
       if (Object.entries(accepted.dependencies || {}).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
       if (input.action === 'rollback' && !store.all().some(r => r.workRunId === input.runId && r.action === 'adopt' && r.state === 'completed')) throw Error('rollback_unavailable')
       const id = randomUUID(), hash = digest(JSON.stringify({ action: input.action, runId: input.runId, snapshot, accepted, before, after }))
@@ -96,12 +96,12 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
     try {
       if (!enabled()) throw Error('not_enabled')
       const original = work.get({ id: 'owner', role: 'owner' }, r.workRunId)
-      const current = validateAccepted(original, await isolated(original?.result?.isolatedRunId))
+      const current = validateAccepted(original, await isolated(original?.result?.isolatedRunId), resolveRecipe)
       if (current.evidenceHash !== r.accepted.evidenceHash) throw Error('accepted_evidence_changed')
       await source.verify(r.source)
       r.state = 'testing'; record(r, 'testing')
-      const definition = recipe(r.accepted.recipe || RECIPE), w = definition.workOrder
-      const pack = { files: { ...sourceValues(w.recipe, r.after), ...(r.accepted.dependencies || {}), ...definition.tests }, tests: Object.keys(definition.tests), expectedTests: w.expectedTests }
+      const definition = resolveRecipe(r.accepted.recipe || RECIPE), w = definition.workOrder
+      const pack = { files: { ...sourceValues(w.recipe, r.after, resolveRecipe), ...(r.accepted.dependencies || {}), ...definition.tests }, tests: Object.keys(definition.tests), expectedTests: w.expectedTests }
       r.tests = await executor.run(pack)
       const expectedPass = r.action === 'adopt' ? w.expectedTests : (r.accepted.baseline?.passed ?? 3), expectedFail = w.expectedTests - expectedPass
       if (r.tests.total !== w.expectedTests || r.tests.passed !== expectedPass || r.tests.failed !== expectedFail || r.tests.exitCode !== (expectedFail ? 1 : 0) || r.tests.skipped !== 0 || r.tests.cancelled !== 0 ||

@@ -110,8 +110,8 @@ const RECIPES = freeze({
 })
 function recipe (id = RECIPE) { if (!Object.hasOwn(RECIPES, id)) throw Error('invalid_request'); return RECIPES[id] }
 // Only registered paths are reachable. Legacy one-file receipts retain their shape.
-function sourceValues (id, value) {
-  const names = recipe(id).workOrder.allowedFiles
+function sourceValues (id, value, resolveRecipe = recipe) {
+  const names = resolveRecipe(id).workOrder.allowedFiles
   if (id === RECIPE && typeof value === 'string') return { [FILE]: value }
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== names.slice().sort().join(',') || names.some(n => typeof value[n] !== 'string' || !value[n] || Buffer.byteLength(value[n]) > 100000)) throw Error('invalid_request')
   return value

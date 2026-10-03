@@ -6,7 +6,7 @@ const { PROJECT, RECIPES, recipe } = require('./contract')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function createProjectWork ({ source, providers, store, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore() }) {
+function createProjectWork ({ source, providers, store, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
@@ -19,8 +19,9 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
   async function prepare (actor, input) {
     owner(actor)
     if (!enabled()) throw Error('not_enabled')
-    if (!input || Object.keys(input).sort().join(',') !== 'bootCommit,projectId,recipe,requestId' || input.projectId !== PROJECT || !Object.hasOwn(RECIPES, input.recipe) || !/^[a-f0-9-]{36}$/.test(input.requestId || '')) throw Error('invalid_request')
-    const WORK_ORDER = recipe(input.recipe).workOrder
+    if (!input || Object.keys(input).sort().join(',') !== 'bootCommit,projectId,recipe,requestId' || input.projectId !== PROJECT || typeof input.recipe !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId || '')) throw Error('invalid_request')
+    const WORK_ORDER = resolveRecipe(input.recipe).workOrder
+    if (WORK_ORDER.registeredRevision && WORK_ORDER.registeredRevision !== input.bootCommit) throw Error('source_changed')
     if (busy) throw Error('worker_busy')
     const old = all().find(r => r.requestId === input.requestId)
     if (old) { if (old.source?.evidence.bootCommit !== input.bootCommit || old.workOrder.recipe !== input.recipe) throw Error('request_conflict'); return { run: old, approval: null } }
@@ -41,7 +42,7 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
     } finally { busy = false }
   }
   async function execute (r, snapshot, signal) {
-    const WORK_ORDER = recipe(r.workOrder.recipe).workOrder
+    const WORK_ORDER = resolveRecipe(r.workOrder.recipe).workOrder
     try {
       r.state = 'checking'; record(r, 'checking')
       if (!enabled()) throw Error('not_enabled')
@@ -99,6 +100,6 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
     r.state = 'cancelled'; r.finishedAt = new Date().toISOString(); sessions.delete(id); record(r, 'cancelled'); return r
   }
   return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, settled: () => pending,
-    isActive: () => busy, catalogue: actor => { owner(actor); return { enabled: enabled(), workOrders: Object.values(RECIPES).map(r => r.workOrder), limits: ['other_projects', 'dependency_installation', 'general_chat_dispatch', 'automatic_live_application'] } } }
+    isActive: () => busy, catalogue: actor => { owner(actor); return { enabled: enabled(), workOrders: catalogueRecipes().map(r => r.workOrder), limits: ['other_projects', 'dependency_installation', 'general_chat_dispatch', 'automatic_live_application'] } } }
 }
 module.exports = { createProjectWork }

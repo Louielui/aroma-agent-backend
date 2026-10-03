@@ -1,11 +1,11 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { execFile } = require('node:child_process')
 const { git, normalize } = require('./adoptionRepository')
-function createLoader ({ root, run = execFile }) {
+function createLoader ({ root, run = execFile, resolveRecipe = require('./contract').recipe }) {
   return async row => {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(row.id || '') || !/^[a-f0-9]{40}$/.test(row.commit || '') || row.state !== 'awaiting_restart') throw Error('invalid_request')
     if ((await git(root, ['rev-parse', 'HEAD'])).trim() !== row.commit) throw Error('source_changed')
-    const { RECIPE, sourceValues } = require('./contract'), values = sourceValues(row.source?.evidence.recipe || RECIPE, row.after)
+    const { RECIPE, sourceValues } = require('./contract'), values = sourceValues(row.source?.evidence.recipe || RECIPE, row.after, resolveRecipe)
     for (const [name, text] of Object.entries(values)) {
       const sourcePath = path.join(root, name), sourceStat = fs.lstatSync(sourcePath)
       if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || sourceStat.nlink !== 1 || path.resolve(fs.realpathSync(sourcePath)).toLowerCase() !== path.resolve(sourcePath).toLowerCase() || normalize(fs.readFileSync(sourcePath, 'utf8')) !== text || normalize(await git(root, ['show', row.commit + ':' + name])) !== text || (await git(root, ['status', '--porcelain=v1', '--', name])).trim()) throw Error('source_changed')

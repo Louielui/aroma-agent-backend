@@ -21,14 +21,14 @@ function regular (root, name) {
 }
 // The host binds its own backend root at composition. Project IDs in the truth
 // registry do not become execution roots; Aroma System has no adapter here.
-function createSource ({ root, readGit = gitRead, health = async () => {
+function createSource ({ root, resolveRecipe = recipe, readGit = gitRead, health = async () => {
   const response = await fetch('http://127.0.0.1:8090/health', { signal: AbortSignal.timeout(3000) })
   if (!response.ok) throw Error('source_unavailable')
   return response.json()
 } }) {
   const resolved = path.resolve(root)
   async function read (bootCommit, signal, recipeId = RECIPE) {
-    const { workOrder, tests } = recipe(recipeId)
+    const { workOrder, tests } = resolveRecipe(recipeId)
     if (!SHA.test(bootCommit || '')) throw Error('invalid_request')
     if (fs.realpathSync(resolved).toLowerCase() !== resolved.toLowerCase()) throw Error('source_unavailable')
     const top = (await readGit(resolved, ['rev-parse', '--show-toplevel'], signal)).trim()

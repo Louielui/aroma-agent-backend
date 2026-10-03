@@ -89,6 +89,7 @@ const FILE_CLASS = Object.freeze({
   'context/gmailContextService.js': CLASS.MATCHING,
   'core/operating/architectureView.js': CLASS.INTERFACE, // Owner-facing architecture inventory
   'core/workerFlow/view.js': CLASS.INTERFACE, // Owner-facing worker acceptance labels
+  'core/projectTasks/view.js': CLASS.INTERFACE, // Owner-facing registration labels only
   'core/projectWork/view.js': CLASS.INTERFACE, // Owner-facing source work order labels; no source or model text is translated
   'core/developmentPlan/view.js': CLASS.INTERFACE, // Owner-facing proposal and work-order labels
   'agent/workOrderView.js': CLASS.INTERFACE,          //  39

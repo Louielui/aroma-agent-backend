@@ -2,7 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), { t, currentLocale } = require('../../i18n/t')
 function buildHtml () {
   const labels = {
-    title: t('projectWork.title'), intro: t('projectWork.intro'), prepare: t('projectWork.prepare'), approve: t('projectWork.approve'), approval: t('projectWork.approval'),
+    taskRegister: t('projectTask.title'), title: t('projectWork.title'), intro: t('projectWork.intro'), prepare: t('projectWork.prepare'), approve: t('projectWork.approve'), approval: t('projectWork.approval'),
     source: t('projectWork.source'), scope: t('projectWork.scope'), recipe: t('projectWork.recipe'), single: t('projectWork.single'), multi: t('projectWork.multi'), coverage: t('chatWork.task'), limits: t('projectWork.limits'), history: t('projectWork.history'), before: t('projectWork.before'), after: t('projectWork.after'),
     tests: t('projectWork.tests'), review: t('projectWork.review'), cancel: t('projectWork.cancel'), awaiting_approval: t('projectWork.awaitingApproval'), cancelled: t('projectWork.cancelled'),
     error: t('projectWork.error'), empty: t('projectWork.empty'), details: t('projectWork.details'), result: t('projectWork.result'),

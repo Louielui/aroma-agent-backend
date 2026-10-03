@@ -2578,6 +2578,8 @@
   if (gmailContextBtn) gmailContextBtn.addEventListener('click', function () { window.location.href = '/gmail-context' })
   var developmentPlanBtn = document.getElementById('open-development-plan')
   if (developmentPlanBtn) developmentPlanBtn.addEventListener('click', function () { window.location.href = '/development-plan' })
+  var projectTasksBtn = document.getElementById('open-project-tasks')
+  if (projectTasksBtn) projectTasksBtn.addEventListener('click', function () { window.location.href = '/project-tasks' })
   var architectureBtn = document.getElementById('open-architecture')
   var memoryBtn = document.getElementById('open-memory')
   if (memoryBtn) memoryBtn.addEventListener('click', function () { window.location.href = '/memory' })
@@ -2780,6 +2782,7 @@
     ['calendar-context-label', 'text', function () { return t('calendarContext.title') }],
     ['gmail-context-label', 'text', function () { return t('gmailContext.title') }],
     ['development-plan-label', 'text', function () { return t('plan.title') }],
+    ['project-tasks-label', 'text', function () { return t('projectTask.title') }],
     ['architecture-label', 'text', function () { return t('architecture.title') }],
     ['memory-label', 'text', function () { return t('memory.title') }],
     ['settings-label', 'text', function () { return t('shell.settings') }],
