@@ -1,6 +1,6 @@
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), os = require('node:os'), path = require('node:path')
-const { code, claudeArgs, readReview, runClaude } = require('./providers')
+const { code, claudeArgs, readReview, runClaude, textReviewArgs, readTextReview } = require('./providers')
 const { SOURCE, TESTS } = require('./fixture')
 test('registered workbench delegates executable bytes only to the offline executor and protects tests', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xiang-provider-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }))
@@ -73,4 +73,17 @@ test('review deadline retains byte counts without retaining raw provider output'
     child.stdin = new Writable({ write (c, e, done) { done() } }); process.nextTick(() => { child.stdout.write('private source'); child.stderr.write('secret') }); return child
   } }), error => { assert.equal(error.message, 'worker_timeout'); assert.deepEqual(error.safeDiagnostics, { exitCode: null, parsedJson: false, subtype: 'unknown', stdoutBytes: 14, stderrBytes: 6 }); return true })
   assert.equal(killed, true)
+})
+
+test('project review transport disables CLI formatter tools and host validates exact JSON authority', () => {
+  const files = ['acceptance/registered-task.test.cjs'], args = textReviewArgs(files, 'Review test draft.')
+  assert.equal(args.includes('--json-schema'), false); assert.equal(args[args.indexOf('--tools') + 1], '')
+  assert.ok(args.includes('--strict-mcp-config')); assert.ok(args.includes('--restricted')); assert.ok(!args.includes('--dangerously-skip-permissions'))
+  assert.match(args[args.indexOf('--system-prompt') + 1], /acceptance\/registered-task.test.cjs/)
+  const review = { verdict: 'pass', summary: 'Checked assertions only', findings: [] }, envelope = result => ({ type: 'result', subtype: 'success', is_error: false, result: JSON.stringify(result), modelUsage: { sonnet: {} } })
+  assert.equal(readTextReview(envelope(review), files).billing, 'claude-subscription')
+  const finding = { file: files[0], line: 2, message: 'Missing assertion' }
+  assert.equal(readTextReview(envelope({ verdict: 'changes_requested', summary: 'Review refused', findings: [finding] }), files).verdict, 'changes_requested')
+  for (const result of [{ ...review, approved: true }, { ...review, verdict: 'approved' }, { ...review, findings: [finding] }, { ...review, verdict: 'changes_requested', findings: [{ ...finding, file: '.env' }] }, { ...review, verdict: 'changes_requested', findings: [{ ...finding, line: 0 }] }, { ...review, verdict: 'changes_requested', findings: [{ ...finding, command: 'run' }] }]) assert.throws(() => readTextReview(envelope(result), files), /invalid_worker_result/)
+  for (const e of [{ ...envelope(review), result: '```json\n' + JSON.stringify(review) + '\n```' }, { ...envelope(review), is_error: true }, { ...envelope(review), subtype: 'error_max_turns' }, { ...envelope(review), result: 'looks fine' }, { ...envelope(review), result: 'x'.repeat(50001) }]) assert.throws(() => readTextReview(e, files), /invalid_worker_result/)
 })

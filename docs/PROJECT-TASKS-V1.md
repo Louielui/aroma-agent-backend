@@ -6,6 +6,8 @@ Owner scope: local Xiangxiang backend Context module only. Memory completion acc
 
 Sol 6.1 High drafts tests through the subscription text-only provider. Source is committed, clean within the profile and identical to `/health bootCommit`. Test code is compiled for syntax without executing on the host. Claude independently reviews the test draft against the Owner criteria and source. Drafts have no execution authority and no claim that tests passed.
 
+Project draft and implementation reviews use a text-only Claude result. The host strictly validates the exact JSON keys, verdict, bounded summary/findings, registered file paths and positive line numbers. A pass cannot carry findings. The CLI structured-output formatter is not requested; malformed output fails closed without model repair or automatic retry. Tools, hooks, MCP and API-key fallback remain disabled.
+
 Owner approval binds definition, criteria, revision, source snapshot, protected test bytes, expected test count and review into a hash and one-use session nonce. Only approved durable records enter the injected project recipe registry. Restart interrupts active drafts and invalidates pending approvals; approved definitions persist without automatic work. Source drift requires a fresh registration.
 
 Preparing work is a separate operation. Coding approval is independently issued by the existing project-work workflow. Windows Sandbox verifies actual offline baseline failures and candidate results with ten OS boundaries. Coding cannot change protected tests or read-only dependencies. Claude then reviews the implementation. A green baseline or mismatched test count fails rather than fabricating an error.
