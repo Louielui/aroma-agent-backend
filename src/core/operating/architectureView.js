@@ -10,11 +10,11 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 // briefing. Read the same planned-integration states used by the tool registry.
 function buildArchitectureHtml () {
   const labels = {
-    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-02' }),
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-03' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
     workbench: t('workerFlow.title'), developmentPlan: t('plan.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
-    foundation: t('architecture.foundation'), partial: t('architecture.partial'),
+    foundation: t('architecture.foundation'), partial: t('architecture.partial'), connected: t('architecture.connected'),
     pending_verification: t('architecture.pendingVerification'), statusGuide: t('architecture.statusGuide'),
     stage: t('architecture.stage'), later: t('architecture.later'), integrationScope: t('architecture.integrationScope'),
     not_connected: t('architecture.notConnected'), not_enabled: t('architecture.notEnabled'),
@@ -32,7 +32,7 @@ function buildArchitectureHtml () {
     deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
   }
   const rows = [
-    { id: 'worker-isolation', state: 'partial', title: t('isolation.title'), purpose: t('isolation.purpose'), component: 'Windows Sandbox / offline packaged workspace / text-only Codex / one-use approval', current: t('isolation.current'), next: t('isolation.next'), evidence: 'src/workers/execution/; docs/WORKER-ISOLATION-V1.md; /workers' },
+    { id: 'worker-isolation', state: 'connected', title: t('isolation.title'), purpose: t('isolation.purpose'), component: 'Windows Sandbox / offline packaged workspace / text-only Codex / one-use approval', current: t('isolation.current'), next: t('isolation.next'), evidence: 'src/workers/execution/; docs/WORKER-ISOLATION-V1.md; /workers' },
     { id: 'code-repair', state: 'partial', title: t('repair.title'), purpose: t('repair.intro'), component: 'Capability Registry / Policy / single-use Owner approval / Codex / fixed repair catalogue', current: t('repair.adoptionCurrent'), next: t('repair.limits'), evidence: 'src/core/codeRepair/; docs/CONTROLLED-REPAIR-V1.md; docs/CONTROLLED-REPAIR-ADOPTION-V1.md' },
     { id: 'development-plan', state: 'partial', title: t('architecture.planTitle'), purpose: t('architecture.planPurpose'), component: 'Capability Registry / Policy / Dispatcher / Codex subscription', current: t('architecture.planCurrent'), next: t('architecture.planNext'), evidence: 'src/core/developmentPlan/; src/core/codeDiagnosis/; src/capability/requestRouter.js; docs/CONTROLLED-DISPATCH-V1.md' },
     { id: 'mail-memory', state: 'partial', title: t('architecture.mailMemoryTitle'), purpose: t('architecture.mailMemoryPurpose'), component: 'PostgreSQL / Gmail / Hindsight / GPT subscription', current: t('architecture.mailMemoryCurrent'), next: t('architecture.mailMemoryNext'), evidence: 'src/company/mailMemory.js; mailSemantic.js; mailHistory.js; mailChat.test.js; docs/MEMORY-RECOVERY.md; docs/ADMIN-MAIL-NOTIFICATIONS.md' },

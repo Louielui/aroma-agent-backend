@@ -13,7 +13,7 @@
 for(const id of ['title','intro','back','architecture','billing','check','workOrder','goal','scope','approval','run','history']) $(id).textContent=L[id]; document.title=L.title;
 for(const id of ['gptState','codexState','claudeState'])$(id).textContent=L.unknown;
 $('isolationTitle').textContent=L.isolation;$('isolationNotice').textContent=L.isolationNotice;$('isolationState').textContent=L.isolationPending;
-const isolationReasons={windows_restart_required:L.isolationRestart,windows_sandbox_cli_unavailable:L.isolationCli,sandbox_recovery_or_work_pending:L.isolationRecovery};
+const isolationReasons={windows_restart_required:L.isolationRestart,windows_sandbox_cli_unavailable:L.isolationCli,windows_virtualization_unavailable:L.isolationVirtualization,sandbox_recovery_or_work_pending:L.isolationRecovery};
 function controls(){ $('run').disabled=!enabled||!isolationReady||busy||posting||!$('approve').checked }
 $('approve').onchange=controls;
 async function request(body){const r=await fetch('/api/v1/worker-flow',body?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}:{});const v=await r.json();if(!r.ok||v.error)throw Error(v.error||'worker_unavailable');return v}

@@ -12,7 +12,7 @@ function buildWorkerHtml () {
     unknown: t('manager.unknown'), ready: t('workerFlow.ready'), unavailable: t('workerFlow.unavailable'), disabled: t('workerFlow.disabled'),
     queued: t('workerFlow.queued'), checking: t('workerFlow.checking'), coding: t('workerFlow.coding'), reviewing: t('workerFlow.reviewing'),
     completed: t('workerFlow.completed'), needs_attention: t('workerFlow.needsAttention'), failed: t('workerFlow.failed'), interrupted: t('workerFlow.interrupted'),
-    elapsed: t('workerFlow.elapsed'), details: t('manager.details'), retry: t('workerFlow.retry'), isolation: t('isolation.title'), isolationPending: t('isolation.pending'), isolationReady: t('isolation.ready'), isolationNotice: t('isolation.notice'), isolationRestart: t('isolation.restart'), isolationCli: t('isolation.cli'), isolationRecovery: t('isolation.recovery')
+    elapsed: t('workerFlow.elapsed'), details: t('manager.details'), retry: t('workerFlow.retry'), isolation: t('isolation.title'), isolationPending: t('isolation.pending'), isolationReady: t('isolation.ready'), isolationNotice: t('isolation.notice'), isolationRestart: t('isolation.restart'), isolationCli: t('isolation.cli'), isolationVirtualization: t('isolation.virtualization'), isolationRecovery: t('isolation.recovery')
   }
   return fs.readFileSync(path.join(__dirname, 'view.html'), 'utf8').replace('/*LOCALE*/', currentLocale())
     .replace('/*LABELS*/', JSON.stringify(labels).replace(/</g, '\\u003c'))

@@ -7,9 +7,12 @@ adoption are not connected by this chapter. Production Aroma is never mounted.
 
 The executor uses Microsoft's Windows Sandbox OS isolation, with networking,
 vGPU, audio, video, printers and clipboard disabled and ProtectedClient enabled.
-It requires the installed feature and supported `wsb.exe` CLI. Windows reports
-that this machine requires a computer restart after feature installation.
-The implemented guard therefore refuses execution until the OS is available.
+It requires the installed feature, an active hypervisor and supported `wsb.exe`
+CLI. Feature installation required a computer restart; first launch then installed
+Microsoft's Store-updated Sandbox 0.8.107.0. The machine-wide CBS pending-reboot
+flag can remain set by other servicing work, so that flag alone is not proof this
+feature is unavailable. Missing hypervisor/CLI and failed boundary probes still
+refuse execution. No registry flags are changed or cleared.
 There is no fallback to host execution, the old command/exec sandbox or paid APIs.
 
 Three per-execution directories are mapped: packaged inputs and a copied Node
@@ -50,11 +53,26 @@ Explicit recovery checks the owned job's directory and record before stopping
 that ID, and never resumes code/model execution. Artifacts and terminal failure
 evidence remain available; no generic sandbox sweeper deletes these workspaces.
 
-Delivery status: implementation/unit and integration tests are available;
-**actual OS isolation and subscription coding acceptance are pending a computer
-restart**. Do not report network isolation verified or arbitrary coding connected
-from mocked tests, successful feature installation, a permission flag or a queued
-job. The in-app architecture remains partial until measured acceptance is recorded.
+Actual OS acceptance, 2026-10-03: baseline and candidate ran in separate offline
+VMs. All ten boundary probes passed. The host-reviewed second work order's seven
+tests changed from one pass/six failures to seven passes with latest Sol through
+the existing subscription, run `6af1a360-64d5-4d8b-a280-c007a76a9e07`.
+Patch SHA-256: `898ff4729553b38493f0785010e224e206a221115ed6357f6109775416d3a72e`.
+The fixture is an independent acceptance example, not a production Aroma repair.
+
+Actual cancellation stopped owned VM `79485ea4-cd6f-41d4-ad7c-b594339f624b`.
+After deliberately terminating the owned execution process, a fresh executor
+remained blocked by its durable lease; explicit owned recovery stopped VM
+`4d13e82e-904f-4f38-a752-e43ec98b5d07` without resuming code/model work.
+No owned VM remained. Artifacts and original source/test hashes were retained.
+Proofs in the development workspace: `outputs/worker-sandbox-os-probe.json`,
+`outputs/worker-isolation-post-reboot-coding.json`, and
+`outputs/worker-sandbox-recovery-acceptance.json`.
+
+The architecture marks this packaged Node.js execution foundation connected;
+arbitrary project integration and automatic adoption remain unconnected. Actual
+boundary probes must pass again for every future execution. Unit mocks, a queued
+job or installation alone are never sufficient acceptance evidence.
 
 Official OS references:
 - https://learn.microsoft.com/en-us/windows/security/application-security/application-isolation/windows-sandbox/windows-sandbox-configure-using-wsb-file

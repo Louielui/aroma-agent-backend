@@ -42,14 +42,17 @@ function execute (exe, args, { timeout = 30000, signal } = {}) {
 async function readiness ({ run = execute, platform = process.platform } = {}) {
   if (platform !== 'win32') return { ready: false, reason: 'windows_required', engine: VERSION }
   try {
-    const script = "$f=Get-CimInstance Win32_OptionalFeature | Where-Object Name -eq 'Containers-DisposableClientVM';$c=Get-Command wsb.exe -ErrorAction SilentlyContinue;[PSCustomObject]@{featureInstalled=($f.InstallState -eq 1);restartPending=(Test-Path 'HKLM:/SOFTWARE/Microsoft/Windows/CurrentVersion/Component Based Servicing/RebootPending');cli=if($c){$c.Source}else{$null}} | ConvertTo-Json -Compress"
+    const script = "$f=Get-CimInstance Win32_OptionalFeature | Where-Object Name -eq 'Containers-DisposableClientVM';$c=Get-Command wsb.exe -ErrorAction SilentlyContinue;$h=Get-CimInstance Win32_ComputerSystem;[PSCustomObject]@{featureInstalled=($f.InstallState -eq 1);hypervisorPresent=($h.HypervisorPresent -eq $true);restartPending=(Test-Path 'HKLM:/SOFTWARE/Microsoft/Windows/CurrentVersion/Component Based Servicing/RebootPending');cli=if($c){$c.Source}else{$null}} | ConvertTo-Json -Compress"
     const state = JSON.parse(await run(path.join(process.env.SystemRoot || 'C:/Windows', 'System32/WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', script]))
     if (!state.featureInstalled) return { ready: false, reason: 'windows_sandbox_not_enabled', engine: VERSION }
-    if (state.restartPending === true) return { ready: false, reason: 'windows_restart_required', engine: VERSION }
+    // CBS is a machine-wide Windows Update flag; it may remain set even after
+    // this feature's reboot. Require the actual hypervisor and CLI instead of
+    // trapping an already running Sandbox in an endless reboot prompt.
+    if (state.hypervisorPresent !== true) return { ready: false, reason: state.restartPending === true ? 'windows_restart_required' : 'windows_virtualization_unavailable', engine: VERSION }
     if (typeof state.cli !== 'string' || !path.isAbsolute(state.cli)) return { ready: false, reason: 'windows_sandbox_cli_unavailable', engine: VERSION }
     const help = await run(state.cli, ['--help'])
     if (!['start', 'stop', 'connect'].every(x => new RegExp('\\b' + x + '\\b', 'i').test(help))) return { ready: false, reason: 'windows_sandbox_cli_unavailable', engine: VERSION }
-    return { ready: true, engine: VERSION, cli: state.cli, boundaryVerified: false }
+    return { ready: true, engine: VERSION, cli: state.cli, boundaryVerified: false, systemRestartPending: state.restartPending === true }
   } catch (_) { return { ready: false, reason: 'windows_sandbox_unavailable', engine: VERSION } }
 }
 function configuration (job) {

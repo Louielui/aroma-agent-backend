@@ -15,9 +15,19 @@ test('Windows dependency absence fails closed without executing code or installi
 })
 test('readiness requires an installed feature and supported CLI, not merely a permission flag', async () => {
   assert.equal((await readiness({ platform: 'win32', run: async () => JSON.stringify({ featureInstalled: false }) })).ready, false)
-  assert.equal((await readiness({ platform: 'win32', run: async () => JSON.stringify({ featureInstalled: true, cli: null }) })).ready, false)
-  let calls = 0; const result = await readiness({ platform: 'win32', run: async () => ++calls === 1 ? JSON.stringify({ featureInstalled: true, cli: process.execPath }) : 'start stop connect' })
+  assert.equal((await readiness({ platform: 'win32', run: async () => JSON.stringify({ featureInstalled: true, hypervisorPresent: true, cli: null }) })).ready, false)
+  let calls = 0; const result = await readiness({ platform: 'win32', run: async () => ++calls === 1 ? JSON.stringify({ featureInstalled: true, hypervisorPresent: true, cli: process.execPath }) : 'start stop connect' })
   assert.equal(result.ready, true); assert.equal(result.boundaryVerified, false)
+})
+
+test('an active hypervisor and CLI are not blocked by unrelated global Windows Update reboot flags', async () => {
+  let calls = 0
+  const result = await readiness({ platform: 'win32', run: async () => ++calls === 1 ? JSON.stringify({ featureInstalled: true, hypervisorPresent: true, restartPending: true, cli: process.execPath }) : 'start stop connect' })
+  assert.equal(result.ready, true); assert.equal(result.systemRestartPending, true); assert.equal(result.boundaryVerified, false)
+  const pending = await readiness({ platform: 'win32', run: async () => JSON.stringify({ featureInstalled: true, hypervisorPresent: false, restartPending: true, cli: process.execPath }) })
+  assert.equal(pending.ready, false); assert.equal(pending.reason, 'windows_restart_required')
+  const absent = await readiness({ platform: 'win32', run: async () => JSON.stringify({ featureInstalled: true, hypervisorPresent: false, restartPending: false, cli: process.execPath }) })
+  assert.equal(absent.ready, false); assert.equal(absent.reason, 'windows_virtualization_unavailable')
 })
 test('package denies traversal, ADS, case aliases, secrets, external commands and unbounded content', () => {
   for (const n of ['../other.js', '/outside.js', 'C:/other.js', 'src/a.js:evil', '.env', '.codex/auth.json', 'node_modules/x.js', 'data/x.json', 'src/a&b.js']) assert.throws(() => validatePackage({ ...pack, files: { ...pack.files, [n]: 'x' } }), /invalid_work_order/)
