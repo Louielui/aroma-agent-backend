@@ -1290,7 +1290,11 @@
     function poll () {
       if (busy || polling) return
       clearTimeout(timer); polling = true; status.textContent = t('workflow.loading')
-      Promise.all([api('project-work/' + encodeURIComponent(runId)), api('project-adoption')]).then(function (values) {
+      // Both reads share the single bridge control lane. Read sequentially so
+      // polling cannot reject its own second request as subscription_unavailable.
+      api('project-work/' + encodeURIComponent(runId)).then(function (workValue) {
+        return api('project-adoption').then(function (adoptionValue) { return [workValue, adoptionValue] })
+      }).then(function (values) {
         run = values[0].run; if (!run) throw Error()
         adoption = values[1].runs.find(function (a) { return a.workRunId === runId }) || null
         if (run.state !== 'awaiting_approval') approval = null

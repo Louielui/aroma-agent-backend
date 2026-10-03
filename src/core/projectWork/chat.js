@@ -6,7 +6,7 @@ const { localRequest } = require('../../adapters/CodexSubscriptionAdapter')
 function classify (message) {
   if (typeof message !== 'string' || message.length > 500) return null
   const s = message.trim().replace(/^(?:香香[，,：:\s]*|xiangxiang[, :]*)(?:幫我|請)?/i, '').trim()
-  if (/^(?:請|幫我)?(?:修正|修復|改善)(?:香香(?:後端)?的?)?(?:LiveContext|ContextPack|即時資料|查詢)(?:的)?(?:查詢)?範圍(?:快照)?(?:會被來源修改|被來源改寫|互相影響|別名問題|快照問題)?[。.!！]?$/i.test(s.replace(/\s+/g, '')) || /^fix (?:xiangxiang )?(?:live context|context pack) (?:query )?scope (?:snapshot|aliasing)[.!]?$/i.test(s)) return { recipe: COVERAGE_RECIPE }
+  if (/^(?:請|幫我)?(?:修正|修復|改善)(?:香香(?:後端)?的?)?(?:LiveContext|ContextPack|即時資料|查詢)(?:的)?(?:查詢)?範圍(?:快照)?(?:會被來源修改|被來源改寫|互相影響|別名問題|快照問題)?[。.!！]?$/i.test(s.replace(/\s+/g, '')) || /^fix (?:xiangxiang )?(?:the )?(?:live context|context pack) (?:query )?scope (?:snapshot|aliasing)[.!]?$/i.test(s)) return { recipe: COVERAGE_RECIPE }
   if (/^(?:請|幫我)?(?:修正|修復|改善|開發)香香(?:後端)?(?:功能|程式)?[。.!！]?$/.test(s) || /^develop xiangxiang[.!]?$/i.test(s)) return { clarification: true }
   return null
 }
