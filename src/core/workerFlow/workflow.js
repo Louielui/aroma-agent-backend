@@ -75,6 +75,6 @@ function createWorkflow ({ dir, providers, enabled, onEvent = () => {} }) {
     busy = true; pending = Promise.resolve().then(() => execute(run, true))
     return structuredClone(run)
   }
-  return { start, reviewAgain, list, get, settled: () => pending, workOrder: WORK_ORDER, enabled }
+  return { start, reviewAgain, list, get, settled: () => pending, workOrder: WORK_ORDER, enabled, isActive: () => busy }
 }
 module.exports = { createWorkflow, WORK_ORDER }

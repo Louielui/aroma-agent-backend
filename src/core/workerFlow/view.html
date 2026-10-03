@@ -4,6 +4,7 @@
 </style></head><body><main>
 <nav><a href="/demo" id="back"></a><a href="/architecture" id="architecture"></a></nav>
 <h1 id="title"></h1><p id="intro"></p>
+<section class="card"><h2 id="projectTitle"></h2><p id="projectIntro"></p><a href="/project-work" id="projectLink"></a></section>
 <section class="card"><h2 id="isolationTitle"></h2><p id="isolationState" role="status"></p><p id="isolationNotice" class="muted"></p></section>
 <section class="card"><div class="grid"><div class="provider"><b>06 · OpenAI / GPT</b><p id="gptState"></p></div><div class="provider"><b>07 · Codex</b><p id="codexState"></p></div><div class="provider"><b>08 · Claude</b><p id="claudeState"></p></div></div><p class="muted" id="billing"></p><button id="check" class="secondary"></button></section>
 <section class="card"><h2 id="workOrder"></h2><p id="goal"></p><p class="muted" id="scope"></p><label><input id="approve" type="checkbox"> <span id="approval"></span></label><div class="actions"><button id="run" disabled></button><span id="timer" class="muted"></span></div><p id="message" role="status"></p></section>
@@ -11,6 +12,7 @@
 </main><script>
 'use strict'; const L=/*LABELS*/; const $=id=>document.getElementById(id); let enabled=false,busy=false,posting=false,lastRender='',isolationReady=false;
 for(const id of ['title','intro','back','architecture','billing','check','workOrder','goal','scope','approval','run','history']) $(id).textContent=L[id]; document.title=L.title;
+for(const id of ['projectTitle','projectIntro','projectLink'])$(id).textContent=L[id];
 for(const id of ['gptState','codexState','claudeState'])$(id).textContent=L.unknown;
 $('isolationTitle').textContent=L.isolation;$('isolationNotice').textContent=L.isolationNotice;$('isolationState').textContent=L.isolationPending;
 const isolationReasons={windows_restart_required:L.isolationRestart,windows_sandbox_cli_unavailable:L.isolationCli,windows_virtualization_unavailable:L.isolationVirtualization,sandbox_recovery_or_work_pending:L.isolationRecovery};

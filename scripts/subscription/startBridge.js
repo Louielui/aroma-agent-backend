@@ -36,6 +36,10 @@ function main () {
     dir: path.join(env.AROMA_DATA_DIR || path.join(repo, 'data'), 'memory-outbox') }) : null
   const workerFlow = createWorkflow({ dir: path.join(workerRoot, 'runs'), providers: workerProviders, enabled,
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
+  const projectWork = require('../../src/core/projectWork/service').createProjectWork({
+    source: require('../../src/core/projectWork/source').createSource({ root: repo }), providers: workerProviders, enabled,
+    store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
+    onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const repairClient = { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }
   const codexClient = require('../../src/subscription/codexClient')
   const codeRepair = require('../../src/core/codeRepair/service').createCodeRepair({ repo, root: path.join(workspaceRoot,'controlled-repairs'), store: require('../../src/core/operating/runStore').createRunStore({dir:path.join(env.AROMA_DATA_DIR || path.join(repo,'data'),'code-repair-runs'),workflow:'code_repair'}),
@@ -43,7 +47,7 @@ function main () {
     onFinish: run => memoryRuntime ? memoryRuntime.event('worker','code-repair:'+run.id,JSON.stringify({id:run.id,state:run.state,reason:run.reason,diagnosisId:run.diagnosisId,approvalHash:run.approvalHash,patchHash:run.result?.patchHash || null,tests:run.tests?{tests:run.tests.tests,pass:run.tests.pass,fail:run.tests.fail}:null,sourceRevision:run.source?.revision,appliedToLive:false}),'measured_result',run.finishedAt) : {state:'not_connected'} })
   const server = createBridge({ token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
-    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair })
+    codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))
 }

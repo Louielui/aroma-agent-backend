@@ -39,3 +39,15 @@ test('bridge serializes calls', async t => {
 test('bridge input is bounded and cannot supply model or execution settings', () => {
   for (const input of [null, [], { prompt: 'x', model: 'other' }, { prompt: 'x'.repeat(500001) }, { prompt: 'x', schema: [] }, { prompt: 'x', allowCredits: true }]) assert.throws(() => validateInput(input), SubscriptionError)
 })
+test('project-work bridge only accepts closed request shapes and shares the execution lane', async t => {
+  const token = 'c'.repeat(64), calls = []
+  let active = false
+  const server = createBridge({ token, projectWork: { isActive: () => active, catalogue: () => ({ workOrders: [] }), list: () => [] , prepare: async (actor, body) => { calls.push({ actor, body }); return { run: {} } } } })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const url = 'http://127.0.0.1:' + server.address().port
+  const send = (route, body) => fetch(url + route, { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+  const input = { op: 'prepare', projectId: 'aroma-agent-backend', recipe: 'context-fields-snapshot-v1', requestId: require('node:crypto').randomUUID(), bootCommit: 'a'.repeat(40) }
+  assert.equal((await send('/project-work', { ...input, command: 'anything' })).status, 400); assert.equal(calls.length, 0)
+  assert.equal((await send('/project-work', input)).status, 200); assert.equal(calls[0].actor.id, 'owner')
+  active = true; assert.equal((await send('/status', {})).status, 503); assert.equal((await send('/project-work', { op: 'list' })).status, 200)
+})

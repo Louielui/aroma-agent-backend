@@ -4,6 +4,7 @@ const path = require('node:path')
 const { t, currentLocale } = require('../../i18n/t')
 function buildWorkerHtml () {
   const labels = {
+    projectTitle: t('projectWork.title'), projectIntro: t('projectWork.intro'), projectLink: t('projectWork.open'),
     title: t('workerFlow.title'), intro: t('workerFlow.intro'), check: t('workerFlow.check'), run: t('workerFlow.run'), approval: t('workerFlow.approval'),
     scope: t('workerFlow.scope'), billing: t('workerFlow.billing'), workOrder: t('workerFlow.workOrder'), goal: t('workerFlow.goal'),
     back: t('manager.back'), architecture: t('architecture.title'), history: t('workerFlow.history'), empty: t('workerFlow.empty'),
