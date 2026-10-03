@@ -12,8 +12,12 @@
  * can say "目前讀不到" instead of guessing from memory.
  */
 
+function snapshotValue (value) {
+  return structuredClone(value)
+}
+
 function snapshotFields (fields) {
-  return (fields && typeof fields === 'object' && !Array.isArray(fields)) ? structuredClone(fields) : {}
+  return (fields && typeof fields === 'object' && !Array.isArray(fields)) ? snapshotValue(fields) : {}
 }
 
 /**
@@ -81,4 +85,4 @@ const ENTITY_TYPES = Object.freeze({
   THREAD: 'thread'
 })
 
-module.exports = { makeContextResult, makeUnavailable, ENTITY_TYPES, snapshotFields }
+module.exports = { makeContextResult, makeUnavailable, ENTITY_TYPES, snapshotFields, snapshotValue }

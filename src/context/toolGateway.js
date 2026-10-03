@@ -1,8 +1,7 @@
 'use strict'
 const { randomUUID } = require('node:crypto')
-const { snapshotFields } = require('./contextResult.js')
+const { snapshotFields, snapshotValue } = require('./contextResult.js')
 const OPS = Object.freeze(['search', 'list', 'get', 'readMetadata'])
-const clone = value => JSON.parse(JSON.stringify(value))
 function createToolGateway ({ connector, resources, audit, clock = () => new Date().toISOString() }) {
   const registry = new Map()
   for (const resource of resources) {
@@ -40,13 +39,13 @@ function createToolGateway ({ connector, resources, audit, clock = () => new Dat
       const evidence = value.evidence || {}
       const truncated = value.truncatedCount > 0 || evidence.truncated === true || content.some(row => row.truncated) ? true : evidence.truncated === null ? null : false
       result = { ...base, retrievedAt: value.asOf || startedAt, state: 'ok', trust: 'source_data', count: content.length, content,
-        coverage: { scope: evidence.queryScope?.window || resource.scope,
+        coverage: { scope: snapshotValue(evidence.queryScope?.window || resource.scope),
           complete: typeof evidence.completeWithinScope === 'boolean' ? evidence.completeWithinScope && !truncated : null,
           truncated, sourceTotal: Number.isInteger(evidence.sourceTotal) && evidence.sourceTotal >= 0 ? evidence.sourceTotal : null,
           revision: evidence.revision || null, excluded: Number.isInteger(evidence.excludedCount) && evidence.excludedCount >= 0 ? evidence.excludedCount : null,
-          queryScope: clone(evidence.queryScope || null), returnedRows: evidence.returnedRows ?? null,
+          queryScope: snapshotValue(evidence.queryScope || null), returnedRows: evidence.returnedRows ?? null,
             serverTruncated: evidence.serverTruncated ?? null, dataAsOf: evidence.dataAsOf ?? null, selection: evidence.selection || null,
-            provenance: structuredClone(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
+            provenance: snapshotValue(evidence.provenance || null), rankingCompleteWithinScope: evidence.rankingCompleteWithinScope ?? null }, error: null }
     } catch (_) {
       result = { ...base, state: 'unavailable', trust: 'unavailable', freshness: { state: 'unknown', sourceUpdatedAt: null }, count: null,
         content: null, coverage: { scope: resource.scope, complete: null, truncated: null, sourceTotal: null, revision: null }, error: 'source_unavailable' }
