@@ -53,10 +53,38 @@ const MULTI_WORK_ORDER = { projectId: PROJECT, recipe: MULTI_RECIPE, version: 2,
   allowedFiles: [FILE, GATEWAY], protectedFiles: [MULTI_TEST], expectedTests: 10, effort: 'high',
   scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false,
   providers: ['codex', 'claude'], billing: 'subscriptions_no_api_fallback' }
+const COVERAGE_RECIPE = 'context-coverage-snapshot-v3', COVERAGE_TEST = 'acceptance/context-coverage.test.cjs'
+const COVERAGE_TESTS = `'use strict'
+const test=require('node:test'),assert=require('node:assert/strict')
+const {snapshotValue,snapshotFields,makeContextResult}=require('../src/context/contextResult.js')
+const {createToolGateway}=require('../src/context/toolGateway.js')
+const OWNER={role:'owner'}
+function setup(window={days:7,nested:{ids:[1]}}){
+ const queryScope={window,at:new Date('2026-10-01T00:00:00Z'),optional:undefined},provenance={origin:{sha:'old'}}
+ const value={results:[makeContextResult({source:'github',sourceId:'one',fields:{nested:{n:1}}})],evidence:{queryScope,provenance,completeWithinScope:true}}
+ const events=[],gateway=createToolGateway({connector:{read:async()=>value},resources:[{id:'repo',source:'github',scope:'repo-1',sensitivity:'public',operations:{list:{method:'listCommits',params:()=>({})}}}],audit:{append:e=>events.push(e)}})
+ return {queryScope,provenance,value,gateway,events}
+}
+test('shared value snapshot detaches objects and arrays',()=>{const f={ids:[1]},r=snapshotValue(f);f.ids.push(2);assert.deepEqual(r,{ids:[1]});r.ids.push(3);assert.deepEqual(f.ids,[1,2])})
+test('value snapshot preserves primitives dates and undefined',()=>{for(const v of[null,undefined,0,false,''])assert.equal(snapshotValue(v),v);const d=new Date('2026-10-01T00:00:00Z');assert.ok(snapshotValue(d) instanceof Date);assert.notEqual(snapshotValue(d),d)})
+test('source mutation cannot rewrite coverage scope',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');f.queryScope.window.days=99;f.queryScope.window.nested.ids.push(2);assert.deepEqual(r.coverage.scope,{days:7,nested:{ids:[1]}})})
+test('returned scope cannot mutate source or another read',async()=>{const f=setup(),a=await f.gateway.list(OWNER,'repo'),b=await f.gateway.list(OWNER,'repo');a.coverage.scope.nested.ids.push(2);assert.deepEqual(f.queryScope.window.nested.ids,[1]);assert.deepEqual(b.coverage.scope.nested.ids,[1])})
+test('query scope retains structured metadata',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');assert.ok(r.coverage.queryScope.at instanceof Date);assert.ok(Object.hasOwn(r.coverage.queryScope,'optional'))})
+test('returned scope and queryScope are independent snapshots',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');r.coverage.scope.days=99;assert.equal(r.coverage.queryScope.window.days,7)})
+test('missing window keeps registered scope and unknown evidence',async()=>{const f=setup();delete f.value.evidence.queryScope;delete f.value.evidence.provenance;const r=await f.gateway.list(OWNER,'repo');assert.equal(r.coverage.scope,'repo-1');assert.equal(r.coverage.queryScope,null);assert.equal(r.coverage.provenance,null)})
+test('structured fields provenance permissions and audit remain intact',async()=>{const f=setup(),r=await f.gateway.list(OWNER,'repo');f.provenance.origin.sha='changed';assert.equal(r.coverage.provenance.origin.sha,'old');assert.equal(r.content[0].fields.nested.n,1);assert.equal(r.contentPolicy,'data_only');assert.deepEqual(f.events.map(e=>e.sequence),[1,2]);await assert.rejects(f.gateway.list({role:'manager'},'repo'),/permission_denied/);for(const v of[null,undefined,1,[]])assert.deepEqual(snapshotFields(v),{})})
+`
+const COVERAGE_WORK_ORDER = { projectId: PROJECT, recipe: COVERAGE_RECIPE, version: 3,
+  title: 'Live Context query scope snapshot repair',
+  goal: 'Fix the actual current gateway coverage.scope aliasing defect and queryScope JSON-clone metadata loss. Add and export a shared snapshotValue(value) using structuredClone in contextResult.js; reuse it in snapshotFields without changing invalid-field empty-object semantics. Import and use snapshotValue in toolGateway.js for coverage.scope, queryScope and provenance. Scope and queryScope must be independently detached from source and each other, preserving Date and undefined metadata. Preserve existing fallback scope, unavailable results, permissions, audit, exports and all metadata. Change both registered files only; no dependencies; protected acceptance tests cannot change.',
+  allowedFiles: [FILE, GATEWAY], protectedFiles: [COVERAGE_TEST], expectedTests: 8, effort: 'high',
+  scope: 'current_committed_backend_source_offline_nodejs', appliedToLive: false,
+  providers: ['codex', 'claude'], billing: 'subscriptions_no_api_fallback' }
 function freeze (value) { if (value && typeof value === 'object') { Object.values(value).forEach(freeze); Object.freeze(value) } return value }
 const RECIPES = freeze({
   [RECIPE]: { workOrder: WORK_ORDER, tests: { [TEST]: TESTS } },
-  [MULTI_RECIPE]: { workOrder: MULTI_WORK_ORDER, tests: { [MULTI_TEST]: MULTI_TESTS } }
+  [MULTI_RECIPE]: { workOrder: MULTI_WORK_ORDER, tests: { [MULTI_TEST]: MULTI_TESTS } },
+  [COVERAGE_RECIPE]: { workOrder: COVERAGE_WORK_ORDER, tests: { [COVERAGE_TEST]: COVERAGE_TESTS } }
 })
 function recipe (id = RECIPE) { if (!Object.hasOwn(RECIPES, id)) throw Error('invalid_request'); return RECIPES[id] }
 // Only registered paths are reachable. Legacy one-file receipts retain their shape.
@@ -66,4 +94,4 @@ function sourceValues (id, value) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== names.slice().sort().join(',') || names.some(n => typeof value[n] !== 'string' || !value[n] || Buffer.byteLength(value[n]) > 100000)) throw Error('invalid_request')
   return value
 }
-module.exports = { PROJECT, RECIPE, FILE, TEST, TESTS, WORK_ORDER, MULTI_RECIPE, GATEWAY, MULTI_TEST, MULTI_TESTS, MULTI_WORK_ORDER, RECIPES, recipe, sourceValues }
+module.exports = { PROJECT, RECIPE, FILE, TEST, TESTS, WORK_ORDER, MULTI_RECIPE, GATEWAY, MULTI_TEST, MULTI_TESTS, MULTI_WORK_ORDER, COVERAGE_RECIPE, COVERAGE_TEST, COVERAGE_TESTS, COVERAGE_WORK_ORDER, RECIPES, recipe, sourceValues }

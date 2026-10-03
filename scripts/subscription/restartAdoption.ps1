@@ -17,9 +17,10 @@ try {
   switch ($adoptionRecipe) {
     'context-fields-snapshot-v1' { $adoptionNames = @('src/context/contextResult.js') }
     'context-provenance-snapshot-v2' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
+    'context-coverage-snapshot-v3' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
     default { throw 'UnknownRecipe' }
   }
-  if ($adoptionRecipe -eq 'context-provenance-snapshot-v2' -and (($adoptionRecord.after.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($adoptionNames | Sort-Object) -join ',')) { throw 'UnexpectedSourceSet' }
+  if ($adoptionRecipe -ne 'context-fields-snapshot-v1' -and (($adoptionRecord.after.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($adoptionNames | Sort-Object) -join ',')) { throw 'UnexpectedSourceSet' }
   foreach ($adoptionName in $adoptionNames) {
     $adoptionExpectedSource = if ($adoptionRecipe -eq 'context-fields-snapshot-v1') { $adoptionRecord.after } else { $adoptionRecord.after.$adoptionName }
     $adoptionSource = (Get-Content -LiteralPath (Join-Path $adoptionRepository $adoptionName) -Raw -Encoding UTF8).Replace("`r`n","`n")

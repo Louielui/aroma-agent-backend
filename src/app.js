@@ -1062,6 +1062,7 @@ function createApp (options = {}) {
   app.use('/code-repair', requireOwner)
   app.use('/api/v1/code-repair', requireOwner)
   app.use(require('./core/codeRepair/routes').createRepairRouter({ bootCommit: BOOT_COMMIT, ...opts.codeRepairOptions }))
+  const chatWork = opts.chatWork || require('./core/projectWork/chat').createChatWork({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions })
   const codeRepair = opts.codeRepair || require('./core/codeRepair/remote').createRemoteRepair({bootCommit:BOOT_COMMIT,diagnosis:codeDiagnosis})
   // Conversation History v1 lives on the demo router and is gated the same way — same
   // owner session, same loopback. It holds conversation text, so it is never less
@@ -1168,6 +1169,7 @@ function createApp (options = {}) {
     developmentPlan,
     codeDiagnosis,
     codeRepair,
+    chatWork,
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,

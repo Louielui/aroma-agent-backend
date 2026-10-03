@@ -992,6 +992,7 @@
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
+            if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
             if (m[i] && m[i].codeRepairRunId) renderCodeRepairLink(tEl, m[i].codeRepairRunId)
@@ -1201,6 +1202,105 @@
     if (plusMenu.className === 'hidden') openPlus(); else closePlus()
   })
   renderPlusMenu()
+
+  function renderProjectWork (turnEl, runId, prepared) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId)) return
+    var card = el('section', 'briefing-run'); turnEl.body.appendChild(card)
+    var status = el('p', 'sec-t'); status.setAttribute('role', 'status'); card.appendChild(status)
+    var details = el('div', 'sec-b'); card.appendChild(details)
+    var actions = el('div', 'briefing-actions'); card.appendChild(actions)
+    var approval = prepared && prepared.approval; var adoptionApproval = null
+    var run = prepared && prepared.run; var adoption = null; var timer; var busy = false; var polling = false
+    var labels = { awaiting_approval: t('projectWork.awaitingApproval'), queued: t('workerFlow.queued'), checking: t('workerFlow.checking'), coding: t('workerFlow.coding'), reviewing: t('workerFlow.reviewing'), completed: t('workerFlow.completed'), failed: t('workerFlow.failed'), cancelled: t('projectWork.cancelled'), interrupted: t('workerFlow.interrupted'), needs_attention: t('workerFlow.needsAttention'), testing: t('projectAdoption.testing'), applying: t('projectAdoption.applying'), awaiting_restart: t('projectAdoption.awaitingRestart') }
+    function section (name, value) {
+      var box = el('details'); box.appendChild(el('summary', null, name))
+      box.appendChild(el('pre', null, typeof value === 'string' ? value : JSON.stringify(value, null, 2))); details.appendChild(box)
+    }
+    function api (lane, body) {
+      var controller = new AbortController(); var timeout = setTimeout(function () { controller.abort() }, 135000)
+      return fetch('/api/v1/' + lane, Object.assign({ credentials: 'same-origin', signal: controller.signal }, body ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}))
+        .then(function (r) { if (!r.ok || r.redirected) throw Error(); return r.json() })
+        .then(function (v) { if (v.error) throw Error(); return v }).finally(function () { clearTimeout(timeout) })
+    }
+    function button (name, action) {
+      var b = el('button', 'briefing-action', name); b.type = 'button'; b.disabled = busy
+      b.addEventListener('click', function () { if (!busy) action() }); actions.appendChild(b); return b
+    }
+    function failed () {
+      approval = null; adoptionApproval = null; clearTimeout(timer); clear(actions)
+      status.textContent = t('chatWork.statusFailed'); button(t('workflow.reload'), poll)
+      var a = el('a', 'briefing-link', t('projectWork.open')); a.href = '/project-work?run=' + encodeURIComponent(runId); actions.appendChild(a)
+    }
+    // One POST per explicit click; uncertain outcomes are read back, never retried.
+    function act (lane, body, apply) {
+      if (busy) return
+      busy = true; clearTimeout(timer); clear(actions); status.textContent = t('workflow.loading')
+      api(lane, body).then(function (v) { apply(v); busy = false; draw(); if (!approval && !adoptionApproval) poll() })
+        .catch(function () { busy = false; failed() })
+    }
+    function confirmation (ticket, text, lane, onApproved) {
+      if (!ticket || Date.parse(ticket.expiresAt) <= Date.now()) { approval = null; adoptionApproval = null; details.appendChild(el('p', 'meta', t('chatWork.expired'))); return }
+      section(t('projectWork.details'), { id: ticket.id, hash: ticket.hash, expiresAt: ticket.expiresAt })
+      var label = el('label'), check = el('input'); check.type = 'checkbox'; label.appendChild(check); label.appendChild(el('span', null, text)); actions.appendChild(label)
+      var b = button(t('projectWork.approve'), function () {
+        if (!check.checked) return
+        var once = ticket; approval = null; adoptionApproval = null
+        act(lane, { op: 'approve', id: once.id, hash: once.hash, nonce: once.nonce }, onApproved)
+      }); b.disabled = true; check.addEventListener('change', function () { b.disabled = !check.checked || busy })
+      timer = setTimeout(function () { approval = null; adoptionApproval = null; draw() }, Math.max(1, Date.parse(ticket.expiresAt) - Date.now()))
+    }
+    function draw () {
+      if (!run) return
+      clear(details); clear(actions); clearTimeout(timer)
+      status.textContent = t('chatWork.task') + ' · ' + (labels[run.state] || run.state)
+      details.appendChild(el('p', 'meta', t('projectWork.source') + ': ' + run.source.evidence.revision))
+      details.appendChild(el('p', 'meta', t('chatWork.risk')))
+      section(t('chatWork.order'), run.workOrder)
+      section(t('projectWork.details'), { source: run.source, steps: run.steps, reason: run.reason || null })
+      if (run.result) {
+        section(t('projectWork.tests'), { baseline: run.result.baseline, candidate: run.result.tests })
+        ;(run.result.changes || []).forEach(function (c) { section(t('projectWork.before') + ' · ' + c.file, c.before); section(t('projectWork.after') + ' · ' + c.file, c.after) })
+      }
+      if (run.review) section(t('projectWork.review'), run.review)
+      if (run.state === 'awaiting_approval') {
+        if (approval) confirmation(approval, t('projectWork.approval'), 'project-work', function (v) { run = v.run })
+        else details.appendChild(el('p', 'meta', t('chatWork.expired')))
+        button(t('projectWork.cancel'), function () { approval = null; act('project-work', { op: 'cancel', id: runId }, function (v) { run = v.run }) })
+      } else if (['queued', 'checking', 'coding', 'reviewing'].includes(run.state)) {
+        button(t('projectWork.cancel'), function () { act('project-work', { op: 'cancel', id: runId }, function (v) { run = v.run }) })
+      }
+      if (adoption) {
+        details.appendChild(el('p', 'meta', t('projectAdoption.title') + ' · ' + (labels[adoption.state] || adoption.state)))
+        section(t('projectAdoption.title'), { id: adoption.id, state: adoption.state, action: adoption.action, reason: adoption.reason, commit: adoption.commit, loaded: adoption.loaded, steps: adoption.steps, tests: adoption.tests })
+        if (adoption.state === 'completed') details.appendChild(el('p', 'meta', t('projectAdoption.loaded') + ' · ' + adoption.loaded.bootCommit))
+        if (adoption.state === 'awaiting_approval') {
+          section(t('projectWork.source'), adoption.source.evidence); section(t('projectWork.before'), adoption.before); section(t('projectWork.after'), adoption.after)
+          if (adoptionApproval) confirmation(adoptionApproval, t('projectAdoption.approval'), 'project-adoption', function (v) { adoption = v.run })
+          else details.appendChild(el('p', 'meta', t('chatWork.expired')))
+          button(t('projectAdoption.cancel'), function () { adoptionApproval = null; act('project-adoption', { op: 'cancel', id: adoption.id }, function (v) { adoption = v.run }) })
+        }
+        if (adoption.state === 'awaiting_restart') button(t('projectAdoption.reload'), function () { act('project-adoption', { op: 'reload', id: adoption.id }, function (v) { adoption = v.run }) })
+      }
+      if (run.state === 'completed' && run.review && run.review.verdict === 'pass' && (!adoption || ['failed', 'cancelled', 'interrupted'].includes(adoption.state))) {
+        details.appendChild(el('p', 'meta', t('projectWork.result')))
+        button(t('projectAdoption.prepare'), function () { act('project-adoption', { op: 'prepare', action: 'adopt', runId: runId, requestId: crypto.randomUUID() }, function (v) { adoption = v.run; adoptionApproval = v.approval }) })
+      }
+      var link = el('a', 'briefing-link', t('projectWork.open')); link.href = '/project-work?run=' + encodeURIComponent(runId); actions.appendChild(link)
+    }
+    function poll () {
+      if (busy || polling) return
+      clearTimeout(timer); polling = true; status.textContent = t('workflow.loading')
+      Promise.all([api('project-work/' + encodeURIComponent(runId)), api('project-adoption')]).then(function (values) {
+        run = values[0].run; if (!run) throw Error()
+        adoption = values[1].runs.find(function (a) { return a.workRunId === runId }) || null
+        if (run.state !== 'awaiting_approval') approval = null
+        if (!adoption || adoption.state !== 'awaiting_approval') adoptionApproval = null
+        draw()
+        if (['queued', 'checking', 'coding', 'reviewing'].includes(run.state) || (adoption && ['queued', 'testing', 'applying', 'awaiting_restart'].includes(adoption.state))) timer = setTimeout(poll, 2500)
+      }).catch(failed).finally(function () { polling = false })
+    }
+    if (run) draw(); else poll()
+  }
 
   function renderOperatingRun (turnEl, initialId) {
     var runId = initialId
@@ -1471,6 +1571,12 @@
     if (status === 400) return addError(t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
+    }
+    if (res.projectWorkRunId) {
+      var workTurn = addBot(res.reply, conv)
+      if (res.historySaved === false) addMeta(workTurn.body, t('workflow.historyFailed'))
+      renderProjectWork(workTurn, res.projectWorkRunId, res.projectWork)
+      return workTurn
     }
     if (res.operatingRunId) {
       var briefingTurn = addBot(res.reply, conv)

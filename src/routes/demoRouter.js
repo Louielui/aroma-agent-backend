@@ -214,8 +214,9 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
+  const chatWorkReceipts = new Map()
   const router = express.Router()
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
@@ -560,6 +561,32 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       }
       // The conversation store captures the accepted request. Its terminal worker
       // receipt comes from the job itself; HTTP acceptance is not job completion.
+      const chatTask = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
+      if (chatTask) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        if (chatTask.clarification) return res.json({ lane: 'chat', mode: 'chat', reply: t('chatWork.clarify'), servedBy: null })
+        const key = req.body.workflowRequestId, identity = JSON.stringify([req.body.conversationId, message])
+        const prior = chatWorkReceipts.get(key)
+        if (prior) {
+          if (prior.identity !== identity || !prior.runId) return res.status(409).json({ error: 'request_conflict' })
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply: t('chatWork.prepared'), projectWorkRunId: prior.runId, historySaved: prior.historySaved, servedBy: null })
+        }
+        // Keep uncertain requests without a ticket; replay must not issue authority.
+        if (chatWorkReceipts.size >= 500) return res.status(409).json({ error: 'request_limit' })
+        const receipt = { identity, runId: null }; chatWorkReceipts.set(key, receipt)
+        try {
+          if (!chatWork) throw Error('not_enabled')
+          const prepared = await chatWork.prepare({ id: 'owner', role: 'owner' }, { message, requestId: req.body.workflowRequestId })
+          const reply = t('chatWork.prepared'); let historySaved = true
+          // A persisted reference is display-only. Never persist the approval nonce.
+          if (prepared.approval) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, projectWorkRunId: prepared.run.id }) } catch (_) { historySaved = false } }
+          receipt.runId = prepared.run.id; receipt.historySaved = historySaved
+          emit('project_work_prepared', 200, historySaved ? null : 'conversation_write_failed')
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, projectWorkRunId: prepared.run.id, projectWork: prepared, historySaved, servedBy: null })
+        } catch (e) { return res.status(e.message === 'worker_busy' ? 409 : 503).json({ error: { message: t('chatWork.error'), retryable: false } }) }
+      }
       const workRoute = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../capability/requestRouter').routeWorkRequest(message) : null
       const workService = workRoute?.service === 'developmentPlan' ? developmentPlan : workRoute?.service === 'codeDiagnosis' ? codeDiagnosis : workRoute?.service === 'codeRepair' ? codeRepair : null
       if (workRoute && workService) {
