@@ -1,26 +1,42 @@
 'use strict'
 const { randomUUID } = require('node:crypto'), { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
-const { digest } = require('../../workers/execution/windowsSandbox'), { FILE, TEST, TESTS, WORK_ORDER } = require('./contract')
+const { digest } = require('../../workers/execution/windowsSandbox'), { RECIPE, FILE, recipe, sourceValues } = require('./contract')
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const BOUNDARY = ['noExternalInterfaces', 'hostReadDenied', 'hostWriteDenied', 'readonlyInputDenied', 'readonlyToolsDenied', 'loopbackDenied', 'ipv6LoopbackDenied', 'internetDenied', 'cleanIdentity', 'secretsAbsent']
 const boundaryValid = e => e?.engine === 'windows-sandbox-offline-v1' && Object.keys(e.boundary || {}).length === 10 && BOUNDARY.every(k => e.boundary[k] === true)
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
 function validateAccepted (run, isolated) {
-  const result = run?.result, c = result?.changes?.[0]
-  if (!run?.source?.evidence || !result || !c || !isolated?.workOrder?.files) throw Error('accepted_evidence_changed')
-  if (run?.state !== 'completed' || run.workOrder?.recipe !== WORK_ORDER.recipe || run.review?.verdict !== 'pass' || run.review.billing !== 'claude-subscription' ||
+  const result = run?.result
+  let definition; try { definition = recipe(run?.workOrder?.recipe) } catch (_) { throw Error('accepted_evidence_changed') }
+  const w = definition.workOrder, names = w.allowedFiles, protectedTests = definition.tests
+  if (!run?.source?.evidence || !Array.isArray(result?.changes) || !isolated?.workOrder?.files) throw Error('accepted_evidence_changed')
+  if (run.state !== 'completed' || JSON.stringify(run.workOrder) !== JSON.stringify(w) || run.review?.verdict !== 'pass' || run.review.billing !== 'claude-subscription' ||
       run.appliedToLive !== false || result?.appliedToLive !== false || result?.model !== 'gpt-6.1-sol' || result.billing !== 'chatgpt-subscription' ||
-      result.changes?.length !== 1 || c?.file !== FILE || typeof c.before !== 'string' || typeof c.after !== 'string' || !c.after || c.before === c.after ||
-      digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash || digest(JSON.stringify(result.changes)) !== result.patchHash ||
-      Buffer.byteLength(c.before) > 100000 || Buffer.byteLength(c.after) > 100000 || run.source.evidence.sourceFiles?.length !== 1 || run.source.evidence.acceptanceFiles?.length !== 1 ||
-      run.source.evidence.sourceFiles?.[0]?.path !== FILE || run.source.evidence.acceptanceFiles?.[0]?.path !== TEST ||
-      run.source.evidence.sourceFiles?.[0]?.sha256 !== c.beforeHash || run.source.evidence.acceptanceFiles?.[0]?.sha256 !== digest(TESTS) ||
+      result.changes.length !== names.length || new Set(result.changes.map(c => c?.file)).size !== names.length || digest(JSON.stringify(result.changes)) !== result.patchHash ||
+      run.source.evidence.sourceFiles?.length !== names.length || run.source.evidence.acceptanceFiles?.length !== Object.keys(protectedTests).length ||
       isolated?.state !== 'accepted_isolated' || isolated.id !== result.isolatedRunId || isolated.patchHash !== result.patchHash ||
-      JSON.stringify(isolated.changes) !== JSON.stringify(result.changes) || isolated.workOrder.files[TEST] !== TESTS || isolated.workOrder.files[FILE] !== c.before ||
+      JSON.stringify(isolated.changes) !== JSON.stringify(result.changes) ||
       isolated.workOrder.sourceRevision !== run.source.evidence.revision) throw Error('accepted_evidence_changed')
-  for (const evidence of [result.tests, isolated.tests]) if (evidence?.total !== 8 || evidence.passed !== 8 || evidence.failed !== 0 || evidence.exitCode !== 0 ||
+  const before = {}, after = {}
+  for (const name of names) {
+    const c = result.changes.find(c => c.file === name), source = run.source.evidence.sourceFiles.filter(f => f.path === name)
+    if (!c || typeof c.before !== 'string' || typeof c.after !== 'string' || !c.after || c.before === c.after || Buffer.byteLength(c.before) > 100000 || Buffer.byteLength(c.after) > 100000 ||
+        digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash || source.length !== 1 || source[0].sha256 !== c.beforeHash || isolated.workOrder.files[name] !== c.before) throw Error('accepted_evidence_changed')
+    before[name] = c.before; after[name] = c.after
+  }
+  for (const [name, text] of Object.entries(protectedTests)) {
+    const evidence = run.source.evidence.acceptanceFiles.filter(f => f.path === name)
+    if (evidence.length !== 1 || evidence[0].sha256 !== digest(text) || isolated.workOrder.files[name] !== text) throw Error('accepted_evidence_changed')
+  }
+  if (Object.keys(isolated.workOrder.files).sort().join(',') !== [...names, ...Object.keys(protectedTests)].sort().join(',')) throw Error('accepted_evidence_changed')
+  if (w.effort && (result.effort !== w.effort || isolated.effort !== w.effort || isolated.workOrder.effort !== w.effort ||
+      isolated.workOrder.expectedTests !== w.expectedTests || JSON.stringify(isolated.workOrder.editable) !== JSON.stringify(names) ||
+      !boundaryValid(result.baseline) || JSON.stringify(result.baseline) !== JSON.stringify(isolated.baseline) || result.baseline.total !== w.expectedTests ||
+      result.baseline.failed < 1 || result.baseline.passed + result.baseline.failed !== w.expectedTests || result.baseline.skipped !== 0 || result.baseline.cancelled !== 0 || result.baseline.exitCode !== 1)) throw Error('accepted_evidence_changed')
+  for (const evidence of [result.tests, isolated.tests]) if (evidence?.total !== w.expectedTests || evidence.passed !== w.expectedTests || evidence.failed !== 0 || evidence.exitCode !== 0 ||
     evidence.skipped !== 0 || evidence.cancelled !== 0 || !boundaryValid(evidence)) throw Error('accepted_evidence_changed')
-  return { before: c.before, after: c.after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })) }
+  return { before: w.recipe === RECIPE ? before[FILE] : before, after: w.recipe === RECIPE ? after[FILE] : after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })),
+    ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }
 }
 function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore() }) {
   let busy = false, pending = Promise.resolve(), refreshing = null
@@ -51,9 +67,9 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
     busy = true
     try {
       const original = work.get(actor, input.runId), accepted = validateAccepted(original, await isolated(original?.result?.isolatedRunId))
-      const snapshot = await source.read(input.bootCommit)
+      const recipeId = accepted.recipe || RECIPE, snapshot = await source.read(input.bootCommit, undefined, recipeId)
       const before = input.action === 'adopt' ? accepted.before : accepted.after, after = input.action === 'adopt' ? accepted.after : accepted.before
-      if (snapshot.order.files[FILE] !== before) throw Error('source_changed')
+      if (Object.entries(sourceValues(recipeId, before)).some(([name, text]) => snapshot.order.files[name] !== text)) throw Error('source_changed')
       if (input.action === 'rollback' && !store.all().some(r => r.workRunId === input.runId && r.action === 'adopt' && r.state === 'completed')) throw Error('rollback_unavailable')
       const id = randomUUID(), hash = digest(JSON.stringify({ action: input.action, runId: input.runId, snapshot, accepted, before, after }))
       const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, accepted, action: input.action, runId: input.runId, before, after }, proposalId: id })
@@ -74,15 +90,16 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
       if (current.evidenceHash !== r.accepted.evidenceHash) throw Error('accepted_evidence_changed')
       await source.verify(r.source)
       r.state = 'testing'; record(r, 'testing')
-      const pack = { files: { [FILE]: r.after, [TEST]: TESTS }, tests: [TEST], expectedTests: 8 }
+      const definition = recipe(r.accepted.recipe || RECIPE), w = definition.workOrder
+      const pack = { files: { ...sourceValues(w.recipe, r.after), ...definition.tests }, tests: Object.keys(definition.tests), expectedTests: w.expectedTests }
       r.tests = await executor.run(pack)
-      const expectedPass = r.action === 'adopt' ? 8 : 3, expectedFail = 8 - expectedPass
-      if (r.tests.total !== 8 || r.tests.passed !== expectedPass || r.tests.failed !== expectedFail || r.tests.exitCode !== (expectedFail ? 1 : 0) || r.tests.skipped !== 0 || r.tests.cancelled !== 0 ||
+      const expectedPass = r.action === 'adopt' ? w.expectedTests : (r.accepted.baseline?.passed ?? 3), expectedFail = w.expectedTests - expectedPass
+      if (r.tests.total !== w.expectedTests || r.tests.passed !== expectedPass || r.tests.failed !== expectedFail || r.tests.exitCode !== (expectedFail ? 1 : 0) || r.tests.skipped !== 0 || r.tests.cancelled !== 0 ||
           !boundaryValid(r.tests)) throw Error('acceptance_failed')
       record(r, 'tests_verified', { passed: expectedPass, failed: expectedFail, rollbackRestoresOriginalBehavior: r.action === 'rollback' })
       await source.verify(r.source)
       if (!enabled()) throw Error('not_enabled')
-      r.state = 'applying'; record(r, 'write_authorized', { parentCommit: r.source.evidence.revision, patchHash: r.accepted.patchHash, file: FILE })
+      r.state = 'applying'; record(r, 'write_authorized', { parentCommit: r.source.evidence.revision, patchHash: r.accepted.patchHash, files: w.allowedFiles })
       r.change = await repository.apply({ snapshot: r.source, before: r.before, after: r.after, id: r.id, action: r.action })
       r.commit = r.change.commit; r.appliedToLive = r.action === 'adopt'; r.rollbackAvailable = r.action === 'adopt'
       r.state = 'awaiting_restart'; record(r, 'commit_created', r.change)

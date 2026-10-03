@@ -11,8 +11,20 @@ try {
   if ($adoptionRecord.id -ne $RunId -or $adoptionRecord.workflow -ne 'project_adoption' -or $adoptionRecord.state -ne 'awaiting_restart' -or $adoptionRecord.commit -notmatch '^[a-f0-9]{40}$') { throw 'AdoptionNotReady' }
   Get-ChildItem Env:GIT_* | Remove-Item
   if ((& git --no-replace-objects -C $adoptionRepository rev-parse HEAD).Trim() -ne $adoptionRecord.commit) { throw 'HeadChanged' }
-  $adoptionSource = (Get-Content -LiteralPath (Join-Path $adoptionRepository 'src/context/contextResult.js') -Raw -Encoding UTF8).Replace("`r`n","`n")
-  if ($adoptionSource -cne $adoptionRecord.after -or (& git --no-replace-objects -c core.fsmonitor=false -C $adoptionRepository status --porcelain=v1 -- src/context/contextResult.js)) { throw 'SourceChanged' }
+  # Host-owned closed registry, never caller/model-supplied paths or commands.
+  $adoptionRecipe = $adoptionRecord.source.evidence.recipe
+  if (-not $adoptionRecipe) { $adoptionRecipe = 'context-fields-snapshot-v1' }
+  switch ($adoptionRecipe) {
+    'context-fields-snapshot-v1' { $adoptionNames = @('src/context/contextResult.js') }
+    'context-provenance-snapshot-v2' { $adoptionNames = @('src/context/contextResult.js','src/context/toolGateway.js') }
+    default { throw 'UnknownRecipe' }
+  }
+  if ($adoptionRecipe -eq 'context-provenance-snapshot-v2' -and (($adoptionRecord.after.PSObject.Properties.Name | Sort-Object) -join ',') -cne (($adoptionNames | Sort-Object) -join ',')) { throw 'UnexpectedSourceSet' }
+  foreach ($adoptionName in $adoptionNames) {
+    $adoptionExpectedSource = if ($adoptionRecipe -eq 'context-fields-snapshot-v1') { $adoptionRecord.after } else { $adoptionRecord.after.$adoptionName }
+    $adoptionSource = (Get-Content -LiteralPath (Join-Path $adoptionRepository $adoptionName) -Raw -Encoding UTF8).Replace("`r`n","`n")
+    if ($adoptionSource -cne $adoptionExpectedSource -or (& git --no-replace-objects -c core.fsmonitor=false -C $adoptionRepository status --porcelain=v1 -- $adoptionName)) { throw 'SourceChanged' }
+  }
   Restart-Service -Name 'AromaXiangXiangBackend' -ErrorAction Stop
   $adoptionHealth = $null
   for ($adoptionAttempt = 0; $adoptionAttempt -lt 40; $adoptionAttempt++) {

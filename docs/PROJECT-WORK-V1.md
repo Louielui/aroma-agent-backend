@@ -32,4 +32,5 @@ unconsumed approvals and marks active work interrupted; it never resumes executi
 Cancellation uses the owned executor's stop and recovery protocol.
 
 This is a bounded backend profile, not arbitrary project/dependency/language support.
-General chat dispatch and adoption remain separate, unconnected capabilities.
+General chat dispatch remains unconnected. Independently approved local adoption is
+connected for the registered scope; see PROJECT-ADOPTION-V1.md and PROJECT-MULTIFILE-V2.md.

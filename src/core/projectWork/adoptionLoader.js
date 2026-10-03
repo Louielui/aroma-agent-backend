@@ -5,9 +5,11 @@ function createLoader ({ root, run = execFile }) {
   return async row => {
     if (!/^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/.test(row.id || '') || !/^[a-f0-9]{40}$/.test(row.commit || '') || row.state !== 'awaiting_restart') throw Error('invalid_request')
     if ((await git(root, ['rev-parse', 'HEAD'])).trim() !== row.commit) throw Error('source_changed')
-    const { FILE } = require('./contract')
-    const sourcePath = path.join(root, FILE), sourceStat = fs.lstatSync(sourcePath)
-    if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || sourceStat.nlink !== 1 || path.resolve(fs.realpathSync(sourcePath)).toLowerCase() !== path.resolve(sourcePath).toLowerCase() || normalize(fs.readFileSync(sourcePath, 'utf8')) !== row.after || normalize(await git(root, ['show', row.commit + ':' + FILE])) !== row.after || (await git(root, ['status', '--porcelain=v1', '--', FILE])).trim()) throw Error('source_changed')
+    const { RECIPE, sourceValues } = require('./contract'), values = sourceValues(row.source?.evidence.recipe || RECIPE, row.after)
+    for (const [name, text] of Object.entries(values)) {
+      const sourcePath = path.join(root, name), sourceStat = fs.lstatSync(sourcePath)
+      if (!sourceStat.isFile() || sourceStat.isSymbolicLink() || sourceStat.nlink !== 1 || path.resolve(fs.realpathSync(sourcePath)).toLowerCase() !== path.resolve(sourcePath).toLowerCase() || normalize(fs.readFileSync(sourcePath, 'utf8')) !== text || normalize(await git(root, ['show', row.commit + ':' + name])) !== text || (await git(root, ['status', '--porcelain=v1', '--', name])).trim()) throw Error('source_changed')
+    }
     const relative = 'scripts/subscription/restartAdoption.ps1', script = path.join(root, relative), st = fs.lstatSync(script)
     if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1 || path.resolve(fs.realpathSync(script)).toLowerCase() !== path.resolve(script).toLowerCase() || normalize(fs.readFileSync(script, 'utf8')) !== normalize(await git(root, ['show', row.commit + ':' + relative]))) throw Error('source_changed')
     const quote = value => "'" + value.replace(/'/g, "''") + "'"

@@ -21,7 +21,7 @@ async function code ({ root, executable, allowCredits = false, executor, provide
   // Browser input never supplies paths, source, commands, a model or credentials.
   order ||= { goal: WORK_ORDER.goal, files: { 'duration.js': SOURCE, 'duration.test.js': TESTS }, editable: ['duration.js'], tests: ['duration.test.js'], expectedTests: 5, sourceRevision: 'registered-duration-v1' }
   const result = await worker.execute({ approval: worker.prepare(order, 'owner'), actor: 'owner', emit, signal })
-  return { model: result.model, billing: result.billing, costUsd: null, execution: 'windows_sandbox_offline', changedFiles: result.changes.map(c => c.file), changes: result.changes, summary: result.summary, before: result.changes[0].before, after: result.changes[0].after, baseline: result.baseline, tests: result.tests, patchHash: result.patchHash, isolatedRunId: result.id, observations: result.events, appliedToLive: false }
+  return { model: result.model, effort: result.effort, billing: result.billing, costUsd: null, execution: 'windows_sandbox_offline', changedFiles: result.changes.map(c => c.file), changes: result.changes, summary: result.summary, before: result.changes[0].before, after: result.changes[0].after, baseline: result.baseline, tests: result.tests, patchHash: result.patchHash, isolatedRunId: result.id, observations: result.events, appliedToLive: false }
 }
 
 const REVIEW_SCHEMA = { type: 'object', additionalProperties: false, required: ['verdict', 'summary', 'findings'], properties: {

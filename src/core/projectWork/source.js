@@ -1,6 +1,6 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path'), { execFile } = require('node:child_process')
-const { PROJECT, FILE, TEST, TESTS, WORK_ORDER } = require('./contract')
+const { PROJECT, RECIPE, recipe } = require('./contract')
 const { digest } = require('../../workers/execution/windowsSandbox')
 const SHA = /^[a-f0-9]{40}$/
 const SECRET = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}|\bgh[pousr]_[A-Za-z0-9]{30,}|\bya29\.[A-Za-z0-9_-]{25,})/
@@ -27,7 +27,8 @@ function createSource ({ root, readGit = gitRead, health = async () => {
   return response.json()
 } }) {
   const resolved = path.resolve(root)
-  async function read (bootCommit, signal) {
+  async function read (bootCommit, signal, recipeId = RECIPE) {
+    const { workOrder, tests } = recipe(recipeId)
     if (!SHA.test(bootCommit || '')) throw Error('invalid_request')
     if (fs.realpathSync(resolved).toLowerCase() !== resolved.toLowerCase()) throw Error('source_unavailable')
     const top = (await readGit(resolved, ['rev-parse', '--show-toplevel'], signal)).trim()
@@ -35,22 +36,26 @@ function createSource ({ root, readGit = gitRead, health = async () => {
     const head = (await readGit(resolved, ['rev-parse', 'HEAD'], signal)).trim()
     const runtime = await health()
     if (head !== bootCommit || runtime.status !== 'ok' || runtime.bootCommit !== head) throw Error('source_changed')
-    regular(resolved, FILE)
-    const mode = (await readGit(resolved, ['ls-tree', head, '--', FILE], signal)).trim()
-    if (!/^100644 blob [a-f0-9]{40}\t/.test(mode)) throw Error('source_unavailable')
-    if ((await readGit(resolved, ['status', '--porcelain=v1', '--untracked-files=all', '--', FILE], signal)).trim()) throw Error('source_dirty')
-    const bytes = (await readGit(resolved, ['show', head + ':' + FILE], signal)).replace(/\r\n/g, '\n')
-    if (!bytes || bytes.includes('\0') || Buffer.byteLength(bytes) > 100000 || SECRET.test(bytes)) throw Error('source_sensitive')
-    if (fs.readFileSync(path.join(resolved, FILE), 'utf8').replace(/\r\n/g, '\n') !== bytes) throw Error('source_dirty')
+    const files = {}, sourceFiles = []
+    for (const name of workOrder.allowedFiles) {
+      regular(resolved, name)
+      const mode = (await readGit(resolved, ['ls-tree', head, '--', name], signal)).trim()
+      if (!/^100644 blob [a-f0-9]{40}\t/.test(mode)) throw Error('source_unavailable')
+      if ((await readGit(resolved, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
+      const bytes = (await readGit(resolved, ['show', head + ':' + name], signal)).replace(/\r\n/g, '\n')
+      if (!bytes || bytes.includes('\0') || Buffer.byteLength(bytes) > 100000 || SECRET.test(bytes)) throw Error('source_sensitive')
+      if (fs.readFileSync(path.join(resolved, name), 'utf8').replace(/\r\n/g, '\n') !== bytes) throw Error('source_dirty')
+      files[name] = bytes; sourceFiles.push({ path: name, blob: mode.split(/\s+/)[2], sha256: digest(bytes) })
+    }
     if ((await readGit(resolved, ['rev-parse', 'HEAD'], signal)).trim() !== head) throw Error('source_changed')
-    const evidence = { projectId: PROJECT, recipe: WORK_ORDER.recipe, revision: head, bootCommit: runtime.bootCommit,
-      sourceFiles: [{ path: FILE, blob: mode.split(/\s+/)[2], sha256: digest(bytes) }],
-      acceptanceFiles: [{ path: TEST, sha256: digest(TESTS) }], committedOnly: true, dirtyScope: false }
-    return { evidence, hash: digest(JSON.stringify(evidence)), order: { goal: WORK_ORDER.goal, files: { [FILE]: bytes, [TEST]: TESTS },
-      editable: [FILE], tests: [TEST], expectedTests: WORK_ORDER.expectedTests, sourceRevision: head } }
+    const evidence = { projectId: PROJECT, recipe: recipeId, revision: head, bootCommit: runtime.bootCommit,
+      sourceFiles, acceptanceFiles: Object.entries(tests).map(([name, text]) => ({ path: name, sha256: digest(text) })), committedOnly: true, dirtyScope: false }
+    return { evidence, hash: digest(JSON.stringify(evidence)), order: { goal: workOrder.goal, files: { ...files, ...tests },
+      editable: [...workOrder.allowedFiles], tests: Object.keys(tests), expectedTests: workOrder.expectedTests, sourceRevision: head,
+      ...(workOrder.effort ? { effort: workOrder.effort } : {}) } }
   }
   async function verify (snapshot, signal) {
-    const fresh = await read(snapshot.evidence.bootCommit, signal)
+    const fresh = await read(snapshot.evidence.bootCommit, signal, snapshot.evidence.recipe)
     if (fresh.hash !== snapshot.hash || JSON.stringify(fresh.order) !== JSON.stringify(snapshot.order)) throw Error('source_changed')
   }
   return { read, verify }
