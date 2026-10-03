@@ -15,3 +15,5 @@ Adoption still requires its own approval, a fresh offline retest, source and out
 All mutations persist their intent before authority or model dispatch. Duplicate starts return the original run without another nonce. Uncertain work preparation never automatically retries. Cancellation and timeout keep the provider lane busy until pending work settles. UI refresh performs reads only and does not retry POSTs.
 
 Limits: no arbitrary project registration, new files, wider file sets, interactive computer control, installed dependencies or autonomous adoption. Task test drafts require explicit human review; schema validity alone cannot prove their semantic adequacy. Acceptance receipts distinguish draft review, actual baseline and candidate execution, implementation review, commit and reload.
+
+Acceptance drafting has a 240-second subscription RPC limit; the entire source/draft/review phase is bounded to eight minutes. Other chat and coding connection limits stay unchanged. Failed or expired drafts are retained; retries require a new explicit task request.

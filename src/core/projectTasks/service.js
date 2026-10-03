@@ -6,7 +6,7 @@ const { ID } = require('../operating/runStore')
 const { FILES, keys, request, draft, definition, SCHEMA, SYSTEM } = require('./contract')
 const ACTIVE = ['queued', 'reading', 'drafting', 'reviewing'], SAFE = new Set(['invalid_request', 'invalid_worker_result', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'provider_not_ready', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'cancelled', 'timed_out', 'not_enabled'])
 const owner = a => { if (a?.id !== 'owner' || a.role !== 'owner') throw Error('permission_denied') }
-function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork, onEvent = () => {}, timeoutMs = 300000, approvals = createOwnerApprovalStore() }) {
+function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork, onEvent = () => {}, timeoutMs = 480000, approvals = createOwnerApprovalStore() }) {
   let active = null, pending = Promise.resolve(); const controls = new Map(), tickets = new Map(), sessions = new Map()
   function record (r, stage, facts = {}) { r.steps.push({ sequence: r.steps.length + 1, stage, at: new Date().toISOString(), facts }); store.save(r); try { onEvent({ id: r.id, stage, state: r.state, facts }) } catch (_) {} }
   for (const r of store.all()) if ([...ACTIVE, 'awaiting_approval'].includes(r.state)) { r.state = 'interrupted'; r.reason = 'process_restarted'; record(r, 'interrupted', { automaticResume: false }) }
