@@ -935,7 +935,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .briefing-run pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:400px;overflow:auto;font-size:var(--small-size)}.briefing-run details{margin-top:12px}.briefing-run summary{cursor:pointer}.briefing-run label{display:flex;gap:8px;align-items:flex-start}
 
 /* Confirmed background activity; reduced motion keeps a static readable label. */
-.work-activity { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; background: var(--panel); }
+.work-activity { padding: 6px 0; margin: 8px 0; }
 .work-activity-state { margin: 0; font-weight: var(--weight-medium); line-height: var(--ui-line); }
 .work-activity-state::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 9px; background: var(--muted); }
 .work-activity.is-working .work-activity-state::before { background: var(--accent); animation: work-pulse 1.6s ease-in-out infinite; }
@@ -949,4 +949,14 @@ button[disabled] { opacity: .45; cursor: default; }
 .work-plan-report { margin: 12px 0; }
 @keyframes work-pulse { 50% { opacity: .45; transform: scale(.85); } }
 @keyframes work-shimmer { 50% { opacity: .65; } }
+.composer-activity { display: flex; align-items: center; gap: 12px; min-height: 34px; margin: 0 12px 8px; flex-wrap: wrap; font-size: var(--small-size); }
+.composer-activity[hidden], .composer-activity button[hidden] { display: none; }
+.composer-activity-label { font-size: var(--ui-size); font-weight: var(--weight-medium); color: var(--ink); }
+.composer-activity-phase { color: var(--muted); overflow-wrap: anywhere; }
+.composer-activity-open { margin-left: auto; border: 0; padding: 6px 8px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.composer-activity-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.composer-activity.is-working .composer-activity-label { background: linear-gradient(100deg, var(--muted) 20%, var(--ink) 45%, var(--muted) 70%); background-size: 240% 100%; background-clip: text; -webkit-background-clip: text; color: transparent; animation: composer-shimmer 1.6s linear infinite; }
+@keyframes composer-shimmer { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+@media (max-width: 600px) { .composer-activity-phase { flex-basis: 100%; order: 3; } }
+@media (prefers-reduced-motion: reduce) { .composer-activity.is-working .composer-activity-label { animation: none; background: none; color: var(--ink); } }
 @media (prefers-reduced-motion: reduce) { .work-activity.is-working .work-activity-state, .work-activity.is-working .work-activity-state::before, .work-waiting { animation: none; } }

@@ -1204,12 +1204,42 @@
   })
   renderPlusMenu()
 
+  createComposerActivity(document.getElementById('composer').querySelector('.composer-col'), function () { return active && active.thread })
+  function createComposerActivity (composer, currentThread) {
+    if (!composer) return
+    var bar = el('div', 'composer-activity'), label = el('span', 'composer-activity-label'), phase = el('span', 'composer-activity-phase'), reveal = el('button', 'composer-activity-open')
+    label.setAttribute('role', 'status'); label.setAttribute('aria-live', 'polite')
+    reveal.setAttribute('type', 'button')
+    bar.appendChild(label); bar.appendChild(phase); bar.appendChild(reveal)
+    composer.insertBefore(bar, composer.firstChild)
+    var target = null
+    reveal.addEventListener('click', function () {
+      if (!target) return
+      var drawer = target.querySelector('.work-activity-drawer')
+      if (drawer) drawer.open = true
+      target.scrollIntoView({ block: 'center', behavior: 'instant' })
+    })
+    function refresh () {
+      var thread = currentThread(), cards = thread ? Array.from(thread.querySelectorAll('.work-activity')) : []
+      var typing = thread && thread.querySelector('.typing')
+      target = typing ? null : cards.filter(function (card) { return card.classList.contains('is-working') }).pop() || cards.pop() || null
+      bar.hidden = !typing && !target
+      var isBusySnapshot = !!typing || !!(target && target.classList.contains('is-working'))
+      bar.className = 'composer-activity' + (isBusySnapshot ? ' is-working' : '')
+      var heading = target && target.querySelector('.work-activity-state')
+      var text = typing ? t('workActivity.thinking') : isBusySnapshot ? t('workActivity.working') : heading ? heading.textContent : ''
+      if (label.textContent !== text) label.textContent = text
+      phase.textContent = isBusySnapshot && heading ? heading.textContent : ''
+      reveal.textContent = t('workActivity.open'); reveal.hidden = !target
+    }
+    refresh(); setInterval(refresh, 500)
+  }
   function createWorkActivity (host) {
     var box = el('section', 'work-activity'), heading = el('p', 'work-activity-state'), clock = el('p', 'work-activity-clock')
     var drawer = el('details', 'work-activity-drawer'), log = el('div', 'work-activity-log')
     heading.setAttribute('role', 'status'); heading.setAttribute('aria-live', 'polite')
     drawer.appendChild(el('summary', '', t('workActivity.open'))); drawer.appendChild(log)
-    box.appendChild(heading); box.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
+    box.appendChild(heading); drawer.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
     var current = null, kind = '', confirmedAt = 0, readable = false, ticker = null, logSignature = ''
     var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
     var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification') }
