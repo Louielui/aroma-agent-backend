@@ -9,8 +9,8 @@ function fixture (options = {}) {
   let task = { id: TASK, workflow: 'project_task', state: 'awaiting_approval', input: { goal: plan.result.goal, criteria: ['independent snapshot'], editable: ['src/context/toolGateway.js'], bootCommit: 'a'.repeat(40) }, registration: { workOrder: { readonlyFiles: ['src/context/contextResult.js'] } }, generated: { testCode: 'protected tests', expectedTests: 3 }, acceptanceReview: { verdict: 'pass' }, expiresAt: new Date(Date.now() + 60000).toISOString() }
   if (options.profile) plan.evidence.profile = options.profile
   const taskValue = () => ({ run: task, approval: task.state === 'awaiting_approval' ? { id: TASK, hash: 'a'.repeat(64), nonce: 'b'.repeat(48), expiresAt: task.expiresAt } : null })
-  const code = fs.readFileSync(path.join(__dirname, '../../demo/assets/app.js'), 'utf8'), fn = code.slice(code.indexOf('  function renderTaskPlan ('), code.indexOf('  function renderProjectWork ('))
-  const sandbox = { body, runId: PLAN, el, clear: n => { n.children = [] }, t: k => k, crypto: { randomUUID }, AbortController, setTimeout: (f, ms) => { timers.push({ f, ms }); return 1 }, clearTimeout () {}, renderProjectWork: (turn, id, value) => nested.push({ id, value }), fetch: async (url, opts) => {
+  const code = fs.readFileSync(path.join(__dirname, '../../demo/assets/app.js'), 'utf8'), fn = code.slice(code.indexOf('  function createWorkActivity ('), code.indexOf('  function renderProjectWork ('))
+  const sandbox = { body, runId: PLAN, el, clear: n => { n.children = [] }, t: k => k, crypto: { randomUUID }, AbortController, setInterval: () => 1, clearInterval () {}, setTimeout: (f, ms) => { timers.push({ f, ms }); return 1 }, clearTimeout () {}, renderProjectWork: (turn, id, value) => nested.push({ id, value }), fetch: async (url, opts) => {
     const b = opts.body ? JSON.parse(opts.body) : null; calls.push({ url, body: b })
     if (b && options.fail) throw Error('lost response')
     let value

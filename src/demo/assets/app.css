@@ -933,3 +933,20 @@ button[disabled] { opacity: .45; cursor: default; }
 
 .briefing-run{border:1px solid var(--line);border-radius:12px;padding:18px;margin-top:12px;max-width:820px}.briefing-actions{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:16px}.briefing-action{padding:7px 13px;border:1px solid var(--line);border-radius:8px;background:transparent;color:inherit;cursor:pointer}.briefing-steps{padding-left:20px;font-size:var(--small-size)}.briefing-section{border-top:1px solid var(--line);margin-top:12px;padding-top:10px}.briefing-link{color:inherit;text-decoration:underline}
 .briefing-run pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:400px;overflow:auto;font-size:var(--small-size)}.briefing-run details{margin-top:12px}.briefing-run summary{cursor:pointer}.briefing-run label{display:flex;gap:8px;align-items:flex-start}
+
+/* Confirmed background activity; reduced motion keeps a static readable label. */
+.work-activity { border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; margin: 12px 0; background: var(--panel); }
+.work-activity-state { margin: 0; font-weight: var(--weight-medium); line-height: var(--ui-line); }
+.work-activity-state::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 9px; background: var(--muted); }
+.work-activity.is-working .work-activity-state::before { background: var(--accent); animation: work-pulse 1.6s ease-in-out infinite; }
+.work-activity.is-working .work-activity-state, .work-waiting { animation: work-shimmer 2s ease-in-out infinite; }
+.work-activity-clock { font-size: var(--small-size); color: var(--muted); margin: 6px 0 10px; }
+.work-activity summary, .work-plan-report > summary { cursor: pointer; padding: 8px 0; font-weight: var(--weight-medium); }
+.work-activity summary:focus-visible, .work-plan-report > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.work-activity-log { max-height: 360px; overflow: auto; margin-top: 8px; }
+.work-activity-events { padding-left: 24px; font-size: var(--ui-size); line-height: var(--msg-line); }
+.work-activity pre, .work-plan-report pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--small-size); }
+.work-plan-report { margin: 12px 0; }
+@keyframes work-pulse { 50% { opacity: .45; transform: scale(.85); } }
+@keyframes work-shimmer { 50% { opacity: .65; } }
+@media (prefers-reduced-motion: reduce) { .work-activity.is-working .work-activity-state, .work-activity.is-working .work-activity-state::before, .work-waiting { animation: none; } }

@@ -1125,7 +1125,7 @@
     var dots = el('div', 'typing')
     dots.appendChild(el('i')); dots.appendChild(el('i')); dots.appendChild(el('i'))
     tEl.body.appendChild(dots)
-    var waited = el('div', 'wait-note')
+    var waited = el('div', 'wait-note work-waiting')
     var stage = el('div', 'wait-note')
     stage.setAttribute('role', 'status')
     tEl.body.appendChild(stage)
@@ -1204,10 +1204,61 @@
   })
   renderPlusMenu()
 
+  function createWorkActivity (host) {
+    var box = el('section', 'work-activity'), heading = el('p', 'work-activity-state'), clock = el('p', 'work-activity-clock')
+    var drawer = el('details', 'work-activity-drawer'), log = el('div', 'work-activity-log')
+    heading.setAttribute('role', 'status'); heading.setAttribute('aria-live', 'polite')
+    drawer.appendChild(el('summary', '', t('workActivity.open'))); drawer.appendChild(log)
+    box.appendChild(heading); box.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
+    var current = null, kind = '', confirmedAt = 0, readable = false, ticker = null, logSignature = ''
+    var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
+    var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification') }
+    var stages = { owner_requested: t('workActivity.requested'), policy_checked: t('workActivity.policy'), source_read: labels.reading, source_received: t('workActivity.sourceReceived'), planning: labels.running, source_verified: t('workActivity.sourceVerified'), coding: labels.coding, checking: labels.checking, reviewing: labels.reviewing, drafting: labels.drafting, reading: labels.reading, completed: t('workActivity.stageComplete'), failed: labels.failed, cancelled: labels.cancelled, testing: labels.testing, applying: labels.applying, task_draft_requested: labels.drafting, task_draft_linked: t('workActivity.draftLinked'), work_prepare_requested: t('workActivity.workRequested'), work_prepared: t('workActivity.workPrepared') }
+    function stop () { if (ticker !== null) clearInterval(ticker); ticker = null }
+    function tick () {
+      if (host.isConnected === false) { stop(); return }
+      var working = current && active.includes(current.state), fresh = readable && (!working || Date.now() - confirmedAt < 15000)
+      box.className = 'work-activity' + (working && fresh ? ' is-working' : '')
+      var text = !fresh ? t('workActivity.unconfirmed') : current.state === 'completed' ? (kind === 'plan' ? t('workActivity.planComplete') : kind === 'adoption' ? t('workActivity.adopted') : t('workActivity.workComplete')) : labels[current.state] || t('workActivity.unknown')
+      if (heading.textContent !== text) heading.textContent = text
+      var start = current && Date.parse(current.startedAt), end = current && Date.parse(current.finishedAt)
+      var seconds = Number.isFinite(start) ? Math.max(0, Math.floor(((working && fresh ? Date.now() : Number.isFinite(end) ? end : confirmedAt) - start) / 1000)) : null
+      clock.textContent = (seconds !== null ? t('workActivity.elapsed', { seconds: seconds }) + ' · ' : '') + (confirmedAt ? t('workActivity.checked', { time: new Date(confirmedAt).toLocaleTimeString() }) : t('workActivity.loading'))
+      if (!working || !fresh) stop()
+    }
+    function update (record, lane) {
+      current = record; kind = lane; confirmedAt = Date.now(); readable = true
+      tick(); if (active.includes(record.state) && ticker === null && host.isConnected !== false) ticker = setInterval(tick, 1000)
+      var signature = JSON.stringify([lane, record.state, record.reason, record.steps, record.generated, record.result && record.result.changes])
+      if (signature === logSignature) return
+      logSignature = signature; clear(log)
+      var steps = Array.isArray(record.steps) ? record.steps : [], list = el('ol', 'work-activity-events')
+      steps.forEach(function (step) {
+        var name = step.stage || step.step, label = stages[name] || t('workActivity.event')
+        var stamp = Number.isFinite(Date.parse(step.at)) ? new Date(step.at).toLocaleTimeString() : ''
+        list.appendChild(el('li', '', (stamp ? stamp + ' · ' : '') + label))
+      })
+      log.appendChild(steps.length ? list : el('p', '', t('workActivity.noEvents')))
+      var changes = record.result && record.result.changes
+      if (Array.isArray(changes) && changes.length) changes.forEach(function (change) {
+        var code = el('details'); code.appendChild(el('summary', '', t('workActivity.code') + ' · ' + change.file))
+        code.appendChild(el('strong', '', t('projectWork.before'))); code.appendChild(el('pre', '', change.before))
+        code.appendChild(el('strong', '', t('projectWork.after'))); code.appendChild(el('pre', '', change.after)); log.appendChild(code)
+      })
+      else if (record.generated && record.generated.testCode) { log.appendChild(el('p', '', t('workActivity.testDraft'))); log.appendChild(el('pre', '', record.generated.testCode)) }
+      else log.appendChild(el('p', '', lane === 'plan' ? t('workActivity.planOnly') : t('workActivity.codePending')))
+      // Keep raw evidence available without making internal identifiers the main UI.
+      var technical = el('details'); technical.appendChild(el('summary', '', t('workActivity.technical')))
+      technical.appendChild(el('pre', '', JSON.stringify({ state: record.state, reason: record.reason || null, steps: steps }, null, 2))); log.appendChild(technical)
+    }
+    function unavailable () { readable = false; tick(); stop() }
+    tick()
+    return { update: update, unavailable: unavailable }
+  }
   function renderTaskPlan (turn, runId) {
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
     var card = el('div', 'project-work-card'), content = el('div'), nested = el('div')
-    turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    turn.body.appendChild(card); var activity = createWorkActivity(card); card.appendChild(content); card.appendChild(nested)
     var busy = false, preparing = false, workShown = false, taskShown = false
     async function request (body) {
       var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
@@ -1217,23 +1268,26 @@
       } finally { clearTimeout(timeout) }
     }
     function draw (r) {
+      activity.update(r, 'plan')
       clear(content)
-      content.appendChild(el('strong', '', t('taskPlan.title')))
-      content.appendChild(el('p', '', t('taskPlan.boundary')))
-      if (r.effort) content.appendChild(el('p', '', t('taskPlan.effort', { effort: r.effort })))
-      content.appendChild(el('p', '', r.state + (r.reason ? ' · ' + r.reason : '')))
-      if (r.evidence) content.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
+      var report = el('details', 'work-plan-report'); report.appendChild(el('summary', '', t('workActivity.planDetails')))
+      report.appendChild(el('p', '', t('taskPlan.boundary')))
+      if (r.effort) report.appendChild(el('p', '', t('taskPlan.effort', { effort: r.effort })))
+      if (r.evidence) report.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
       if (r.result) {
         content.appendChild(el('h4', '', r.result.goal))
         ;[["steps", t('taskPlan.steps')], ["acceptanceChecks", t('taskPlan.acceptanceChecks')], ["questions", t('taskPlan.questions')], ["risks", t('taskPlan.risks')]].forEach(function (entry) {
           var key = entry[0]
-          content.appendChild(el('strong', '', entry[1]))
-          var list = el('ul'); r.result[key].forEach(function (text) { list.appendChild(el('li', '', text)) }); content.appendChild(list)
+          if (!r.result[key].length) return
+          var target = key === 'questions' ? content : report
+          target.appendChild(el('strong', '', entry[1]))
+          var list = el('ul'); r.result[key].forEach(function (text) { list.appendChild(el('li', '', text)) }); target.appendChild(list)
         })
-        content.appendChild(el('strong', '', t('taskPlan.citations')))
-        r.result.citations.forEach(function (c) { var f = r.evidence.files.find(function (f) { return f.evidenceId === c.evidenceId }); content.appendChild(el('pre', '', f.path + ':' + c.startLine + '-' + c.endLine + '\n' + c.quote)) })
-        content.appendChild(el('p', '', r.executableRecipe ? t('taskPlan.registered') : t('taskPlan.draftOnly')))
+        report.appendChild(el('strong', '', t('taskPlan.citations')))
+        r.result.citations.forEach(function (c) { var f = r.evidence.files.find(function (f) { return f.evidenceId === c.evidenceId }); report.appendChild(el('pre', '', f.path + ':' + c.startLine + '-' + c.endLine + '\n' + c.quote)) })
+        if (r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.taskRunId && !r.workRunId && !r.registrationPreparation && !r.preparation) content.appendChild(el('p', '', t('workActivity.nextDraft')))
       }
+      content.appendChild(report)
       if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
       if (r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
       if (r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
@@ -1282,14 +1336,14 @@
       if (busy) return
       busy = true
       try { var v = await request(); draw(v.run) }
-      catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
+      catch (_) { activity.unavailable(); clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
       finally { busy = false }
     }
     read()
   }
   function renderProjectTask (turn, runId) {
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
-    var card = el('section', 'project-work-card'), content = el('div'), nested = el('div'); turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    var card = el('section', 'project-work-card'), content = el('div'), nested = el('div'); turn.body.appendChild(card); var activity = createWorkActivity(card); card.appendChild(content); card.appendChild(nested)
     var busy = false, ticket = null, workShown = false, uncertain = false
     var labels = { queued: t('projectTask.state.queued'), reading: t('projectTask.state.reading'), drafting: t('projectTask.state.drafting'), reviewing: t('projectTask.state.reviewing'), awaiting_approval: t('projectTask.state.awaitingApproval'), registered: t('projectTask.state.registered'), failed: t('projectTask.state.failed'), cancelled: t('projectTask.state.cancelled'), timed_out: t('projectTask.state.timedOut'), interrupted: t('projectTask.state.interrupted'), needs_attention: t('projectTask.state.needsAttention') }
     async function api (body) {
@@ -1301,12 +1355,13 @@
     async function act (body, b) {
       if (busy) return; busy = true; ticket = null; b.disabled = true
       try { var v = await api(body); uncertain = false; if (v.work && v.work.run && !workShown) { workShown = true; renderProjectWork({ body: nested }, v.work.run.id, v.work) }; draw(v) }
-      catch (_) { uncertain = true; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) }
+      catch (_) { activity.unavailable(); uncertain = true; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) }
       finally { busy = false }
     }
     function draw (v) {
       var r = v.run; if (!r) throw Error('unavailable'); ticket = v.approval; clear(content)
-      content.appendChild(el('strong', '', t('projectTask.title'))); content.appendChild(el('p', '', labels[r.state] || r.state)); content.appendChild(el('p', '', r.input.goal)); content.appendChild(el('pre', '', r.input.criteria.join('\n')))
+      activity.update(r, 'task')
+      content.appendChild(el('strong', '', t('projectTask.title'))); content.appendChild(el('p', '', r.input.goal)); detail(t('projectTask.criteria'), r.input.criteria.join('\n'))
       detail(t('projectTask.source'), { revision: r.input.bootCommit, editable: r.input.editable, readonly: r.registration && r.registration.workOrder.readonlyFiles, approvalHash: r.approvalHash, expiresAt: r.expiresAt, reason: r.reason || null, steps: r.steps })
       if (r.generated) detail(t('projectTask.tests'), { expectedTests: r.generated.expectedTests, testCode: r.generated.testCode, executed: false })
       if (r.acceptanceReview) detail(t('projectTask.review'), r.acceptanceReview)
@@ -1320,12 +1375,13 @@
       button(t('projectTask.refresh'), read)
       if (['queued', 'reading', 'drafting', 'reviewing'].includes(r.state)) setTimeout(read, 2500)
     }
-    async function read () { if (busy) return; busy = true; try { draw(await api()) } catch (_) { ticket = null; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) } finally { busy = false } }
+    async function read () { if (busy) return; busy = true; try { draw(await api()) } catch (_) { activity.unavailable(); ticket = null; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) } finally { busy = false } }
     read()
   }
   function renderProjectWork (turnEl, runId, prepared) {
     if (!/^[a-f0-9-]{36}$/i.test(runId)) return
     var card = el('section', 'briefing-run'); turnEl.body.appendChild(card)
+    var activity = createWorkActivity(card)
     var status = el('p', 'sec-t'); status.setAttribute('role', 'status'); card.appendChild(status)
     var details = el('div', 'sec-b'); card.appendChild(details)
     var actions = el('div', 'briefing-actions'); card.appendChild(actions)
@@ -1347,6 +1403,7 @@
       b.addEventListener('click', function () { if (!busy) action() }); actions.appendChild(b); return b
     }
     function failed () {
+      activity.unavailable()
       approval = null; adoptionApproval = null; clearTimeout(timer); clear(actions)
       status.textContent = t('chatWork.statusFailed'); button(t('workflow.reload'), poll)
       var a = el('a', 'briefing-link', t('projectWork.open')); a.href = '/project-work?run=' + encodeURIComponent(runId); actions.appendChild(a)
@@ -1371,6 +1428,7 @@
     }
     function draw () {
       if (!run) return
+      activity.update(adoption || run, adoption ? 'adoption' : 'work')
       clear(details); clear(actions); clearTimeout(timer)
       status.textContent = t('chatWork.task') + ' · ' + (labels[run.state] || run.state)
       details.appendChild(el('p', 'meta', t('projectWork.source') + ': ' + run.source.evidence.revision))
@@ -1410,7 +1468,7 @@
     }
     function poll () {
       if (busy || polling) return
-      clearTimeout(timer); polling = true; status.textContent = t('workflow.loading')
+      clearTimeout(timer); polling = true; if (!run) status.textContent = t('workflow.loading')
       // Both reads share the single bridge control lane. Read sequentially so
       // polling cannot reject its own second request as subscription_unavailable.
       api('project-work/' + encodeURIComponent(runId)).then(function (workValue) {
