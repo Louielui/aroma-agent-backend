@@ -6,6 +6,8 @@ const confirmation = text => typeof text === 'string' && /^(?:(?:好|好的|同�
 const advice = text => /(?:建議|認為|覺得|討論|好嗎|好不好|suggest|recommend|what do you think)/i.test(text)
 const target = text => /(?:sidebar|側欄|聊天頁面|對話頁|chat page|composer)/i.test(text)
 const refinement = text => /(?:功能\s*bar|頂部|頁面上方|選單|top\s*bar|toolbar)/i.test(text)
+const navigation = text => /(?:功能\s*(?:bar|列)|top\s*bar|toolbar|navigation\s*bar)/i.test(text)
+const foreignNavigation = text => /(?:GPT|Codex|Google\s*Drive|Gmail|Calendar|其他網站|其他專案)\s*(?:的\s*)?(?:功能\s*(?:bar|列)|top\s*bar|toolbar|navigation\s*bar)/i.test(text)
 const excluded = text => /(?:production|Aroma\s*System|正式餐廳|\.env|[a-z]:[\\/]|\.\.[\\/]|寄信|寄出|send email|批准|approval|執行命令)/i.test(text)
 function validOffer(offer, revision, now = Date.now()) {
   return !!offer && Object.keys(offer).sort().join(',') === 'createdAt,digest,message,profile,revision' &&
@@ -20,10 +22,14 @@ function validOffer(offer, revision, now = Date.now()) {
 // only committed-source planning; registration, coding and adoption stay separate.
 function makeOffer(message, mode, prior, revision, now = Date.now()) {
   const text = normalize(message)
-  if (!['recommend','chat'].includes(mode) || !advice(text) || excluded(text) || !/^[a-f0-9]{40}$/.test(revision || '')) return null
+  if (!['recommend','chat'].includes(mode) || !advice(text) || excluded(text) || foreignNavigation(text) || !/^[a-f0-9]{40}$/.test(revision || '')) return null
   let request
   if (target(text)) request = '規劃香香介面：' + text
   else if (refinement(text) && validOffer(prior,revision,now)) request = prior.message + ' Owner refinement: ' + text
+  // A standalone navigation question is bounded to this app's fixed sidebar
+  // profile. Generic positioning and another application's toolbar are not a
+  // target; comparisons alone never expand the editable source profile.
+  else if (navigation(text)) request = '規劃香香介面：側欄功能導覽。Owner request: ' + text
   else return null
   const profile = classify(request)?.profile
   if (!['interface','chat'].includes(profile)) return null

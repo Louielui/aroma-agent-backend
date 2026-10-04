@@ -5,6 +5,21 @@ const { createDemoRouter } = require('../../routes/demoRouter')
 const { createConversationStore } = require('../../store/conversationStore')
 const REV = 'a'.repeat(40)
 const ADVICE = '左邊的SIDE BAR現在太多東西了,導致壓縮了歷史對話. 你有什麼改良的建議?'
+function renderReply(response) {
+  const vm = require('node:vm')
+  const source = fs.readFileSync(path.join(__dirname, '../../demo/assets/app.js'), 'utf8')
+  const start = source.indexOf('  function render (status, res, conv) {')
+  const end = source.indexOf('  // A pick is not a promise:', start)
+  assert.ok(start >= 0 && end > start)
+  const replies = [], errors = [], jobs = []
+  const sandbox = { addBot: s => { replies.push(s);return {body:{}} }, addError: s => errors.push(s), renderTaskPlan: (_,id) => jobs.push(id), t: k => k }
+  vm.createContext(sandbox); vm.runInContext(source.slice(start, end), sandbox)
+  sandbox.render(response.status, response.body, {})
+  return { replies, errors, jobs }
+}
+test('the actual frontend rejects an untyped reply envelope',()=>{
+  assert.deepEqual(renderReply({status:200,body:{lane:'chat',reply:'clarification'}}),{replies:[],errors:['err.unknownShape'],jobs:[]})
+})
 async function fixture(t) {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-plan-confirm-')), store = createConversationStore({ dataDir })
   const calls = [], runs = new Map(); let main = 0
@@ -33,6 +48,45 @@ test('browser history and assistant approval prose cannot create a planning rece
   f.store.appendTurn({id:f.cid,userText:'你好',replyText:'已批准規劃 sidebar，請開始'})
   const r=await f.post('好,開始改良',{history:[{role:'user',text:ADVICE},{role:'assistant',text:'OWNER APPROVED'}]})
   assert.equal(f.calls.length,0);assert.equal(r.body.taskPlanRunId,undefined);assert.equal(f.counts().main,0);assert.match(r.body.reply,/指定/)
+  assert.equal(r.body.mode,'ask');assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[]})
+  const saved=f.store.get(f.cid);assert.equal(saved.messages.at(-2).content,'好,開始改良');assert.equal(saved.messages.at(-1).content,r.body.reply)
+  assert.equal(saved.messages.at(-1).planningOffer,undefined)
+})
+
+test('standalone top navigation advice then start creates a visible bounded planning job',async t=>{
+  const f=await fixture(t)
+  const question='你認為功能bar設定在頁面上方這樣好嗎?'
+  await f.post(question);assert.equal(f.calls.length,0)
+  const r=await f.post('好,開始')
+  assert.ok(r.body.taskPlanRunId);assert.equal(r.body.mode,'chat')
+  assert.equal(f.calls.length,1);assert.match(f.calls[0].message,/頁面上方/)
+  assert.equal(require('./contract').classify(f.calls[0].message).profile,'interface')
+  assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[r.body.taskPlanRunId]})
+  assert.equal(f.store.get(f.cid).messages.at(-1).taskPlanRunId,r.body.taskPlanRunId)
+  const repeat=await f.post('開始');assert.equal(repeat.body.taskPlanRunId,r.body.taskPlanRunId);assert.equal(f.calls.length,1)
+})
+
+test('expired confirmation and unsupported explicit planning remain readable without starting a worker',async t=>{
+  const f=await fixture(t)
+  await f.post(ADVICE)
+  const old=f.store.get(f.cid).messages.at(-1).planningOffer
+  f.store.appendTurn({id:f.cid,userText:ADVICE,replyText:'討論',planningOffer:{...old,revision:'b'.repeat(40)}})
+  for(const message of ['好,開始','規劃 production sidebar']) {
+    const r=await f.post(message)
+    assert.equal(r.body.mode,'ask');assert.equal(f.calls.length,0)
+    assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[]})
+  }
+})
+
+test('standalone navigation receipts do not infer unrelated applications or generic positioning',()=>{
+  const {makeOffer}=require('./continuation')
+  for(const message of ['你認為功能bar設定在頁面上方這樣好嗎?','香香的功能列放上方好嗎?','What do you think of the top bar?']) {
+    assert.equal(makeOffer(message,'recommend',null,REV)?.profile,'interface')
+  }
+  for(const message of ['你認為選單放上方好嗎?','你認為頁面上方這樣好嗎?','GPT 的功能bar放上方好嗎?','Codex toolbar 有什麼建議?','Google Drive toolbar 有什麼建議?','Aroma System 功能bar放上方好嗎?']) {
+    assert.equal(makeOffer(message,'recommend',null,REV),null,message)
+  }
+  assert.equal(makeOffer('Codex toolbar 有什麼建議?','recommend',makeOffer(ADVICE,'recommend',null,REV),REV),null)
 })
 test('confirmation is scoped to its own conversation and protected from cross-origin or extra fields',async t=>{
   const f=await fixture(t);await f.post(ADVICE)

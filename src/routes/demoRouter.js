@@ -573,7 +573,13 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
         if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
-        if (planning.clarification) return res.set('Cache-Control', 'no-store').json({ lane: 'chat', reply: continued ? t('taskPlan.confirmClarify') : t('taskPlan.clarify'), servedBy: null })
+        if (planning.clarification) {
+          const reply = continued ? t('taskPlan.confirmClarify') : t('taskPlan.clarify')
+          let historySaved = true
+          // Persist a visible clarification without authority or an old receipt.
+          try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply }) } catch (_) { historySaved = false }
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'ask', reply, historySaved, servedBy: null })
+        }
         try {
           if (!taskPlanner) throw Error('not_enabled')
           const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
@@ -581,7 +587,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           let historySaved = true
           const reply = continued?.runId ? t('taskPlan.alreadyStarted') : t('taskPlan.started')
           if (!run.reused && !continued?.runId) { try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: reply, taskPlanRunId: run.id }) } catch (_) { historySaved = false } }
-          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', reply, taskPlanRunId: run.id, historySaved, servedBy: null })
+          return res.set('Cache-Control', 'no-store').json({ lane: 'chat', mode: 'chat', reply, taskPlanRunId: run.id, historySaved, servedBy: null })
         } catch (e) { return res.status(['worker_busy', 'request_conflict'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } }) }
       }
       const chatTask = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat') ? require('../core/projectWork/chat').classify(message) : null
