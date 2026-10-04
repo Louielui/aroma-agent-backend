@@ -5,7 +5,9 @@ const { spawn } = require('node:child_process')
 const { EventEmitter } = require('node:events')
 const { assertLiveEgressAllowed } = require('../adapters/liveEgressFence')
 
-const { DEFAULT_MODEL: MODEL, CHAT_MODELS, isChatModel } = require('./chatModels')
+const { DEFAULT_MODEL, REASONING_EFFORTS, CHAT_MODELS, isChatModel } = require('./chatModels')
+// Existing non-chat workloads keep their transport default; chat binds its own model.
+const MODEL = 'gpt-6-astra'
 const CODES = new Set(['subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'subscription_invalid_output'])
 class SubscriptionError extends Error {
   constructor (code = 'subscription_unavailable') {
@@ -155,9 +157,9 @@ async function accountModels (rpc) {
 async function listSubscriptionModels (options) {
   return withClient(options, async rpc => {
     const { models } = await accountModels(rpc)
-    return { defaultModel: MODEL, billing: 'chatgpt-subscription', models: CHAT_MODELS.map(item => {
+    return { defaultModel: DEFAULT_MODEL, billing: 'chatgpt-subscription', models: CHAT_MODELS.map(item => {
       const entry = models.find(m => m.model === item.model)
-      return { ...item, available: !!entry, efforts: entry?.supportedReasoningEfforts?.map(e => e.reasoningEffort).filter(e => ['low', 'medium', 'high'].includes(e)) || [] }
+      return { ...item, available: !!entry, efforts: entry?.supportedReasoningEfforts?.map(e => e.reasoningEffort).filter(e => REASONING_EFFORTS.includes(e)) || [] }
     }) }
   })
 }
@@ -263,7 +265,7 @@ async function complete (options, input) {
   const model = input.model === undefined ? MODEL : input.model
   if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
   const effort = input.effort === undefined ? 'low' : input.effort
-  if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
+  if (!REASONING_EFFORTS.includes(effort)) throw new SubscriptionError('subscription_invalid_output')
   return withClient(options, async rpc => {
     const allowance = await preflight(rpc, { ...options, model, effort })
     const params = threadParams(options.cwd, input.system, model)

@@ -8,7 +8,7 @@ test('CSS task carries immutable JS and protected tests through registration, is
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'interface-task-')), git = a => execFileSync('git', ['-C', root, '-c', 'core.hooksPath=', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8', windowsHide: true })
   t.after(() => { assert.equal(path.dirname(fs.realpathSync(root)).toLowerCase(), fs.realpathSync(os.tmpdir()).toLowerCase()); fs.rmSync(root, { recursive: true, force: true }) })
   git(['init', '-q']); git(['config', 'user.name', 'Fixture']); git(['config', 'user.email', 'fixture@example.invalid']); git(['config', 'core.autocrlf', 'false'])
-  const readonly = fs.readFileSync(path.join(__dirname, '../../demo/assets/sidebar.js'), 'utf8'), before = '.sidebar-group { color: red; }\n', after = '.sidebar-group { color: var(--ink); }\n'
+  const readonly = fs.readFileSync(path.join(__dirname, '../../demo/assets/sidebar.js'), 'utf8').replace(/\r\n/g, '\n'), before = '.sidebar-group { color: red; }\n', after = '.sidebar-group { color: var(--ink); }\n'
   for (const [name, content] of [[FILES[0], readonly], [FILES[1], before], ['outside.txt', 'preserve']]) { fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true }); fs.writeFileSync(path.join(root, name), content) }
   git(['add', '.']); git(['commit', '-qm', 'fixture']); const head = () => git(['rev-parse', 'HEAD']).trim(); let boot = head()
   const taskStore = createMemoryRunStore(), workStore = createMemoryRunStore(), registry = createRegistry(taskStore), health = async () => ({ status: 'ok', bootCommit: boot })

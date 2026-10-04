@@ -26,7 +26,7 @@ function validate (result, evidence) {
 }
 function runtimeAdapter () {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('subscription_unavailable')
-  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'low' })
+  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'low', model: 'gpt-6-astra' })
 }
 function createMailAnalyzer ({ adapterFactory = runtimeAdapter, timeoutMs = 65000 } = {}) {
   let pending = false; let controller; let settling = Promise.resolve()

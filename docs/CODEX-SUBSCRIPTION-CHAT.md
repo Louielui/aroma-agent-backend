@@ -2,8 +2,8 @@
 
 The opt-in `CHAT_BACKEND=codex-subscription` setting routes the chat lane to
 an account-verified model through the official Codex App Server and the owner's
-existing ChatGPT login. Astra remains the default; the chat picker also offers
-GPT-6.1 Sol, GPT-6 Sol and GPT-6 Luna when available. See
+existing ChatGPT login. GPT-6.1 Sol with Medium reasoning is the chat default;
+the picker also offers GPT-6 Astra, GPT-6 Sol and GPT-6 Luna when available. See
 [chat model selection](CHAT-MODEL-SELECTION.md). It overrides stale browser provider hints. Proposal, email,
 classification, verification and other worker roles keep their existing settings
 and may still incur API charges. This is not a migration of every model call.
@@ -52,7 +52,7 @@ service after configuration changes, then reload the browser.
 - The bridge accepts one request at a time, bounds input/output size and cancels
   on client disconnect. Each App Server process has a 120-second timeout.
 - App Server does not expose the API adapter's `maxTokens`/temperature controls.
-  This adapter uses low / medium / high reasoning effort selected independently
+  Chat offers low / medium / high / xhigh / max, defaulting to Medium, selected independently
   from the model, an optional output schema and a bounded
   response size; it does not claim a provider-enforced output token ceiling.
 - Subscription tokens are not entered into the API-cost ledger. They remain in

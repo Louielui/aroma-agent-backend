@@ -28,7 +28,7 @@ function fixture ({ available = CHAT_MODELS.map(m => m.model), returnedModel, ef
 test('account choices expose availability without spending quota or exposing account details', async () => {
   const rpc = fixture({ available: ['gpt-6-astra'], exhausted: true })
   const result = await listSubscriptionModels({ connect: () => rpc })
-  assert.equal(result.defaultModel, 'gpt-6-astra')
+  assert.equal(result.defaultModel, 'gpt-6.1-sol')
   assert.deepEqual(result.models.map(m => [m.model, m.available]), CHAT_MODELS.map(m => [m.model, m.model === 'gpt-6-astra']))
   assert.deepEqual(result.models[0].efforts, [])
   assert.deepEqual(Object.keys(result).sort(), ['billing', 'defaultModel', 'models'])

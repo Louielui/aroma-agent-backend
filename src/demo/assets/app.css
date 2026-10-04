@@ -882,7 +882,8 @@ button[disabled] { opacity: .45; cursor: default; }
 .place-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* The current destination, marked on the button rather than on a row. */
 .place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }
-#chat-level { font: inherit; font-size: var(--ui-size); max-width: 100px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
+#chat-level { font: inherit; font-size: var(--ui-size); max-width: 160px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
+@media (max-width: 600px) { .composer-bar, .bar-right { flex-wrap: wrap; } .bar-right { max-width: 100%; } }
 #chat-level:disabled { opacity: .55; cursor: wait; }
 #picker-menu .opt:disabled { opacity: .55; cursor: not-allowed; }
 

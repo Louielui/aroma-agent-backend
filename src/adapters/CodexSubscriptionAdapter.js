@@ -4,8 +4,8 @@ const http = require('node:http')
 const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
 const { assertLiveEgressAllowed } = require('./liveEgressFence')
-const { MODEL, SubscriptionError } = require('../subscription/codexClient')
-const { isChatModel } = require('../subscription/chatModels')
+const { SubscriptionError } = require('../subscription/codexClient')
+const { DEFAULT_MODEL, DEFAULT_EFFORT, REASONING_EFFORTS, isChatModel } = require('../subscription/chatModels')
 const { validToken, DEFAULT_PORT } = require('../subscription/bridge')
 
 function subscriptionChatEnabled (env = process.env, lane) {
@@ -39,9 +39,9 @@ function localRequest (route, input, env, signal) {
 
 class CodexSubscriptionAdapter extends LLMAdapter {
   get providerName () { return 'openai' }
-  constructor ({ env = process.env, request = localRequest, effort = 'low', model = MODEL } = {}) {
+  constructor ({ env = process.env, request = localRequest, effort = DEFAULT_EFFORT, model = DEFAULT_MODEL } = {}) {
     super()
-    if (!['low', 'medium', 'high'].includes(effort)) throw new SubscriptionError('subscription_invalid_output')
+    if (!REASONING_EFFORTS.includes(effort)) throw new SubscriptionError('subscription_invalid_output')
     if (!isChatModel(model)) throw new SubscriptionError('subscription_model_unavailable')
     this.env = env; this.request = request; this._model = model; this.effort = effort
   }

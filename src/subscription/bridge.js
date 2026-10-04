@@ -3,7 +3,7 @@
 const http = require('node:http')
 const crypto = require('node:crypto')
 const { complete, checkSubscription, listSubscriptionModels, SubscriptionError, createSession } = require('./codexClient')
-const { isChatModel } = require('./chatModels')
+const { REASONING_EFFORTS, isChatModel } = require('./chatModels')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
 
@@ -17,7 +17,7 @@ function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
   if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
   if (input.model !== undefined && !isChatModel(input.model)) throw new SubscriptionError('subscription_model_unavailable')
-  if (input.effort !== undefined && !['low', 'medium', 'high'].includes(input.effort)) throw new SubscriptionError('subscription_invalid_output')
+  if (input.effort !== undefined && !REASONING_EFFORTS.includes(input.effort)) throw new SubscriptionError('subscription_invalid_output')
   if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 500000) throw new SubscriptionError('subscription_invalid_output')
   if (input.system !== undefined && (typeof input.system !== 'string' || input.system.length > 200000)) throw new SubscriptionError('subscription_invalid_output')
   if (input.schema !== undefined && (!input.schema || typeof input.schema !== 'object' || Array.isArray(input.schema))) throw new SubscriptionError('subscription_invalid_output')
@@ -124,7 +124,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
           catch (e) { reply(200, { error: ['not_enabled', 'invalid_work_order', 'approval_required', 'worker_busy'].includes(e.message) ? e.message : 'audit_unavailable' }) }
         }
       } else if (req.url === '/status') {
-        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['model', 'effort'].includes(k)) || (input.model !== undefined && !isChatModel(input.model)) || (input.effort !== undefined && !['low', 'medium', 'high'].includes(input.effort))) { reply(400, { code: 'subscription_invalid_output' }); return }
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['model', 'effort'].includes(k)) || (input.model !== undefined && !isChatModel(input.model)) || (input.effort !== undefined && !REASONING_EFFORTS.includes(input.effort))) { reply(400, { code: 'subscription_invalid_output' }); return }
         reply(200, await checkFn({ ...options, ...input }))
       } else if (req.url === '/models') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }

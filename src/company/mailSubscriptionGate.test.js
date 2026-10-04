@@ -105,7 +105,7 @@ test('mail analyzer status check uses a bounded signal and never completes a mod
 test('subscription adapter carries the status deadline through to its fixed local request', async () => {
   const { CodexSubscriptionAdapter } = require('../adapters/CodexSubscriptionAdapter')
   const { MODEL } = require('../subscription/codexClient'); const signal = AbortSignal.timeout(10000)
-  const adapter = new CodexSubscriptionAdapter({ request: async (route, input, env, received) => {
+  const adapter = new CodexSubscriptionAdapter({ model: MODEL, effort: 'low', request: async (route, input, env, received) => {
     assert.equal(route, '/status'); assert.deepEqual(input, { model: MODEL, effort: 'low' }); assert.equal(received, signal)
     return { model: MODEL, billing: 'chatgpt-subscription' }
   } })

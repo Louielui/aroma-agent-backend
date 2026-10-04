@@ -1044,7 +1044,7 @@ function createApp (options = {}) {
   app.use(require('./context/liveContextRoutes').createLiveContextRouter({ service: liveContext }))
   const developmentPlan = opts.developmentPlan || (typeof liveContext.verify === 'function' ? require('./core/developmentPlan/service').createDevelopmentPlan({
     source: liveContext,
-    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium' }),
+    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'medium', model: 'gpt-6-astra' }),
     store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'development-plan-runs'), workflow: 'development_proposal' }),
     onFinish: run => governedMemory?.event('worker', 'development-plan:' + run.id,
       JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, capability: run.workOrder.capability, worker: run.workOrder.worker, evidenceHash: run.evidenceHash || null, sourceVerified: run.verification?.matched === true }), 'measured_result', run.finishedAt)

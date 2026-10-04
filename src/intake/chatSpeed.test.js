@@ -6,7 +6,7 @@ const { processIntake } = require('./intakeService')
 
 test('profiles map to explicit efforts and reject arbitrary execution settings', () => {
   assert.deepEqual(['fast', 'standard', 'deep'].map(level => profileFor(level).effort), ['low', 'medium', 'high'])
-  assert.equal(profileFor().level, 'fast')
+  assert.equal(profileFor().level, 'medium')
   for (const input of ['ultra', 'constructor', {}, null]) assert.throws(() => profileFor(input))
 })
 
@@ -37,7 +37,9 @@ test('HTTP validates levels before model acquisition and passes them only to cha
   for (const chatLevel of ['ultra', null, {}]) assert.equal((await send({message:'hello',chatLevel})).status,400)
   for (const chatModel of ['other', 'constructor', null, {}]) assert.equal((await send({message:'hello',chatModel})).status,400)
   assert.equal(acquisitions,0)
-  for (const chatLevel of ['fast','standard','deep']) {
+  assert.equal((await send({message:'hello'})).status,200)
+  assert.equal(seen.at(-1).chatLevel,'medium')
+  for (const chatLevel of ['low','medium','high','xhigh','max','fast','standard','deep']) {
     assert.equal((await send({message:'hello',chatLevel})).status,200)
     assert.equal(seen.at(-1).chatLevel,chatLevel)
   }

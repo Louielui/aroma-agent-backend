@@ -481,7 +481,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         .isString().withMessage('interactionMode must be a string')
         .bail()
         .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal'),
-      body('chatLevel').optional().isString().bail().isIn(['fast', 'standard', 'deep']),
+      body('chatLevel').optional().isString().bail().isIn(['low', 'medium', 'high', 'xhigh', 'max', 'fast', 'standard', 'deep']),
       body('chatModel').optional().custom(require('../subscription/chatModels').isChatModel)
     ],
     async (req, res) => {
@@ -547,7 +547,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
         res.setHeader('Cache-Control', 'no-store')
         try {
-          const result = await mailChat.answer(mailRequest, message, req.body.chatLevel || 'fast', req.body.chatModel)
+          const result = await mailChat.answer(mailRequest, message, req.body.chatLevel || 'medium', req.body.chatModel)
           let historySaved = false
           if (isValidConversationId(req.body.conversationId)) {
             try { conversationStore.appendTurn({ id: req.body.conversationId, userText: message, replyText: t('company.mailHistoryReceipt') }); historySaved = true } catch (_) {}
@@ -731,7 +731,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
-        if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'fast'
+        if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'medium'
         if (interactionMode === 'chat' && req.body.chatModel !== undefined) opts.chatModel = req.body.chatModel
         if (interactionMode === 'chat' && require('../store/websiteRunStore').ID.test(req.body.websiteRequestId || '')) opts.websiteRequestId = req.body.websiteRequestId
 

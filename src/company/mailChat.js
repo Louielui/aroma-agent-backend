@@ -14,7 +14,7 @@ const SCHEMA = { type: 'object', additionalProperties: false, required: ['items'
 } }
 function runtimeAdapter (level, model) {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('subscription_unavailable')
-  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ model, effort: { fast: 'low', standard: 'medium', deep: 'high' }[level] || 'low' })
+  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ model, effort: require('../intake/chatSpeed').profileFor(level).effort })
 }
 function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapter, now = () => new Date() }) {
   let busy = false
@@ -23,7 +23,7 @@ function createMailChat ({ mailbox, memory = null, adapterFactory = runtimeAdapt
     try { return (await memory.capture(actor, row, suggestion)).state } catch (_) { return 'unavailable' }
   }
   const memoryNote = state => ['saved', 'unchanged'].includes(state) ? t('company.mailMemorySaved') : t('company.mailMemoryUnconfirmed', { state })
-  async function answer (request, question, level = 'fast', model) {
+  async function answer (request, question, level = 'medium', model) {
     if (busy) throw Error('mail_busy')
     busy = true
     try {

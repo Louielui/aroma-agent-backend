@@ -1,8 +1,10 @@
 # Subscription chat model selection
 
 The Owner can choose GPT-6.1 Sol, GPT-6 Astra, GPT-6 Luna or GPT-6 Sol in the
-chat composer. Astra remains the default for compatibility. Fast / Standard /
-Deep continue to mean low / medium / high reasoning effort; all use the default
+chat composer. GPT-6.1 Sol with Medium reasoning is the default (Owner request,
+2026-10-04). Low / Medium / High / Extra High / Max map directly to low / medium /
+high / xhigh / max. Legacy Fast / Standard / Deep requests remain compatible.
+All use the default
 provider service tier, not the separately priced Fast priority tier.
 
 `GET /api/v1/demo/models` is guarded like the chat UI. It reads the signed-in

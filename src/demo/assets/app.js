@@ -86,7 +86,7 @@
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
   var provider = SUBSCRIPTION_CHAT ? 'openai' : 'claude'
-  var chatModel = 'gpt-6-astra'
+  var chatModel = 'gpt-6.1-sol'
   var modelsLoading = false
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
@@ -2826,9 +2826,11 @@
     ['company-access-label', 'text', function () { return t('company.title') }],
     ['history-label', 'text', function () { return t('shell.historyLabel') }],
     ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
-    ['chat-level-fast', 'text', function () { return t('chat.fast') }],
-    ['chat-level-standard', 'text', function () { return t('chat.standard') }],
-    ['chat-level-deep', 'text', function () { return t('chat.deep') }],
+    ['chat-level-low', 'text', function () { return t('chat.low') }],
+    ['chat-level-medium', 'text', function () { return t('chat.medium') }],
+    ['chat-level-high', 'text', function () { return t('chat.high') }],
+    ['chat-level-xhigh', 'text', function () { return t('chat.xhigh') }],
+    ['chat-level-max', 'text', function () { return t('chat.max') }],
     ['manager-label', 'text', function () { return t('manager.title') }],
     ['live-context-label', 'text', function () { return t('live.title') }],
     ['drive-context-label', 'text', function () { return t('driveContext.title') }],

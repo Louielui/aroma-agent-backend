@@ -1,12 +1,14 @@
 # Subscription chat speed and thinking levels
 
-Owner-authorized on 2026-09-29. The chat model and subscription billing remain
-GPT-6 Astra through the personal Codex App Server bridge.
+Owner-authorized on 2026-09-29 and updated on 2026-10-04. Chat defaults to
+GPT-6.1 Sol with Medium reasoning through the personal Codex App Server bridge.
+Non-chat transport, memory and work-role defaults remain unchanged.
 
 ## Controls
 
-The subscription composer offers Fast (low), Standard (medium) and Deep (high).
-Fast is the default. Selection stays in the current page and applies to subsequent
+The subscription composer offers Low, Medium, High, Extra High and Max, mapped
+directly to low, medium, high, xhigh and max. Medium is the default. Legacy Fast,
+Standard and Deep inputs remain aliases for low, medium and high. Selection stays in the current page and applies to subsequent
 chat turns until changed or the page reloads. It is disabled while sending.
 The server validates the closed level list before acquiring an adapter. Other
 lanes do not receive the setting. Control/verifier model bindings are unchanged.
