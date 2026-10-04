@@ -1,10 +1,10 @@
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict'), { randomUUID } = require('node:crypto')
-const { createPlanner } = require('./service'), { PROFILES, hash, classify } = require('./contract')
+const { createPlanner } = require('./service'), { READ_PROFILES, hash, classify } = require('./contract')
 const { createMemoryRunStore } = require('../operating/runStore')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
 function fixture (options = {}) {
-  const store = createMemoryRunStore(), calls = [], evidence = { project: 'aroma-agent-backend', profile: options.profile || 'context', revision: HEAD, bootCommit: HEAD, committedOnly: true, files: PROFILES[options.profile || 'context'].map((path, i) => ({ path, evidenceId: 'plan-' + i, content: "'use strict'\n", lineCount: 2, sha256: hash("'use strict'\n") })) }
+  const store = createMemoryRunStore(), calls = [], evidence = { project: 'aroma-agent-backend', profile: options.profile || 'context', revision: HEAD, bootCommit: HEAD, committedOnly: true, files: READ_PROFILES[options.profile || 'context'].map((path, i) => ({ path, evidenceId: 'plan-' + i, content: "'use strict'\n", lineCount: 2, sha256: hash("'use strict'\n") })) }
   const packet = () => ({ state: 'ok', retrievedAt: new Date().toISOString(), evidence, hash: hash(JSON.stringify(evidence)) })
   const source = { verify: a => { if (a.role !== 'owner') throw Error('permission_denied') }, read: async () => packet() }
   const provider = { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: 'Improve source snapshots', steps: ['Read source'], acceptanceChecks: ['Returned data must remain independent'], questions: options.questions || [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) }

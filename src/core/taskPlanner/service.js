@@ -5,6 +5,7 @@ const { PROJECT, FAILURE_RECIPE } = require('../projectWork/contract')
 const { register } = require('../../capability/registry'), { registerAgent } = require('../../capability/agents')
 const { evaluate } = require('../../capability/policy'), { createDispatcher } = require('../../capability/dispatcher')
 const { DEFAULT_EFFORT, REASONING_EFFORTS } = require('../../subscription/chatModels')
+const { numberedEvidence } = require('./numberedEvidence')
 const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
 const SAFE = new Set(['worker_busy', 'invalid_request', 'permission_denied', 'read_access_disabled', 'evidence_changed', 'context_unavailable', 'source_dirty', 'source_sensitive', 'subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable', 'subscription_model_unavailable', 'invalid_worker_result', 'cancelled', 'timed_out', 'run_store_unavailable', 'request_conflict', 'not_enabled'])
 const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'planning_unavailable'
@@ -44,7 +45,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       const ready = await step(() => runProvider.preflight({ signal: c.abort.signal }))
       if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
       record(r, 'planning')
-      const numbered = { ...evidence, files: evidence.files.map(({ content, ...f }) => ({ ...f, source: content.split('\n').map((s, i) => (i + 1) + ' | ' + s).join('\n') })) }
+      const numbered = numberedEvidence(evidence)
       const dispatcher = createDispatcher({ allowedAgentIds: [worker], fallback: false, adapters: { [worker]: {
         health: () => ({ availability: 'up', latencyMs: 0 }),
         invoke: async (id, version, input) => {

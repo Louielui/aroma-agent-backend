@@ -1,10 +1,10 @@
 'use strict'
 const test = require('node:test'), assert = require('node:assert/strict'), fs = require('node:fs'), path = require('node:path'), { randomUUID } = require('node:crypto')
-const { createPlanner } = require('./service'), { classify, PROFILES, hash, validateResult, validatePacket } = require('./contract')
+const { createPlanner } = require('./service'), { classify, READ_PROFILES, hash, validateResult, validatePacket } = require('./contract')
 const { createMemoryRunStore } = require('../operating/runStore'), { FAILURE_RECIPE, FAILURE_WORK_ORDER } = require('../projectWork/contract')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40), MESSAGE = 'plan Xiangxiang unavailable context scope mutation snapshot repair'
 function packet (profile = 'context') {
-  const evidence = { project: 'aroma-agent-backend', profile, revision: HEAD, bootCommit: HEAD, committedOnly: true, files: PROFILES[profile].map((p, i) => { const content = fs.readFileSync(path.join(__dirname, '../../..', p), 'utf8').replace(/\r\n/g, '\n'); return { path: p, evidenceId: 'plan-' + i, content, lineCount: content.split('\n').length, sha256: hash(content) } }) }
+  const evidence = { project: 'aroma-agent-backend', profile, revision: HEAD, bootCommit: HEAD, committedOnly: true, files: READ_PROFILES[profile].map((p, i) => { const content = fs.readFileSync(path.join(__dirname, '../../..', p), 'utf8').replace(/\r\n/g, '\n'); return { path: p, evidenceId: 'plan-' + i, content, lineCount: content.split('\n').length, sha256: hash(content) } }) }
   return { state: 'ok', retrievedAt: new Date().toISOString(), evidence, hash: hash(JSON.stringify(evidence)) }
 }
 function result (p) { return { goal: 'Bounded repair', steps: ['Read source', 'Detach snapshots'], acceptanceChecks: ['Source mutation must not alter returned scope'], questions: [], risks: ['Other projects unavailable'], citations: [{ evidenceId: 'plan-1', startLine: 1, endLine: 1, quote: "'use strict'" }] } }

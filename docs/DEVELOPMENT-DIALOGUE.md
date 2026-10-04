@@ -53,3 +53,13 @@ Providers in those tests are fixtures; real model results belong in delivery
 evidence, not inferred from mocked success. Full-suite runs use a clean isolated
 checkout without remotes; actual source generation and live acceptance use the
 existing subscriptions, never an API fallback.
+
+## Supporting interface context
+
+Sidebar planning also reads committed page markup, existing event bindings and
+layout styles. These dependencies are separately hashed and checked for drift;
+they do not expand the two editable sidebar files. The provider receives numbered
+excerpts of the large application files, while full source remains in the plan
+evidence for exact citations and revalidation. Missing source is a verification
+risk, not a request for the Owner to locate files. Clarification questions are
+reserved for unresolved Owner choices.

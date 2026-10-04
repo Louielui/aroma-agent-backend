@@ -1,16 +1,16 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path')
-const { PROFILES, hash } = require('./contract'), { gitRead } = require('../projectWork/source')
+const { READ_PROFILES, hash } = require('./contract'), { gitRead } = require('../projectWork/source')
 const SECRET = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}|\bgh[pousr]_[A-Za-z0-9]{30,}|\bya29\.[A-Za-z0-9_-]{25,})/
 function createSource ({ root, readGit = gitRead, health = async () => (await fetch('http://127.0.0.1:8090/health', { signal: AbortSignal.timeout(3000) })).json() }) {
   root = path.resolve(root)
   async function read ({ bootCommit, profile }, signal) {
-    if (!Object.hasOwn(PROFILES, profile || '') || !/^[a-f0-9]{40}$/.test(bootCommit || '')) throw Error('invalid_request')
+    if (!Object.hasOwn(READ_PROFILES, profile || '') || !/^[a-f0-9]{40}$/.test(bootCommit || '')) throw Error('invalid_request')
     if (fs.realpathSync(root).toLowerCase() !== root.toLowerCase() || path.resolve((await readGit(root, ['rev-parse', '--show-toplevel'], signal)).trim()).toLowerCase() !== root.toLowerCase()) throw Error('context_unavailable')
     const head = (await readGit(root, ['rev-parse', 'HEAD'], signal)).trim(), live = await health()
     if (head !== bootCommit || live.status !== 'ok' || live.bootCommit !== head) throw Error('evidence_changed')
     const files = []
-    for (const name of PROFILES[profile]) {
+    for (const name of READ_PROFILES[profile]) {
       let current = root
       for (const part of name.split('/')) { current = path.join(current, part); const s = fs.lstatSync(current); if (s.isSymbolicLink() || fs.realpathSync(current).toLowerCase() !== current.toLowerCase() || (current === path.join(root, name) && (!s.isFile() || s.nlink !== 1))) throw Error('context_unavailable') }
       if (!/^100644 blob [a-f0-9]{40}\t/.test((await readGit(root, ['ls-tree', head, '--', name], signal)).trim()) || (await readGit(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
