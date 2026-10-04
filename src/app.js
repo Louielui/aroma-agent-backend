@@ -1067,7 +1067,7 @@ function createApp (options = {}) {
   app.use(require('./core/codeRepair/routes').createRepairRouter({ bootCommit: BOOT_COMMIT, ...opts.codeRepairOptions }))
   const taskPlanner = opts.taskPlanner || require('./core/taskPlanner/service').createPlanner({
     bootCommit: BOOT_COMMIT, source: require('./core/taskPlanner/source').createRemoteSource({ bootCommit: BOOT_COMMIT }),
-    provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'high', model: 'gpt-6.1-sol' }),
+    providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),
     store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'task-plan-runs'), workflow: 'task_plan' }),
     prepareWork: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-work', input, process.env),
     registerTask: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', input, process.env),

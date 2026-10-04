@@ -62,3 +62,19 @@ test('cancellation, permission, extra inputs and restart remain closed', async (
   const persisted = { ...f.service.get(OWNER, r.id), state: 'running' }; f.store.save(persisted)
   createPlanner({ source: f.source, provider: {}, store: f.store, bootCommit: HEAD }); assert.equal(f.store.get(r.id).state, 'interrupted'); assert.equal(f.store.get(r.id).result, null)
 })
+
+test('planning defaults to medium and creates a provider matching each requested reasoning level', async () => {
+  const seen=[]
+  const service=createPlanner({source:{verify:()=>{},read:async(a,profile)=>packet(profile)},store:createMemoryRunStore(),bootCommit:HEAD,
+    providerFor:settings=>{seen.push(settings);return {preflight:async()=>({model:'gpt-6.1-sol',billing:'chatgpt-subscription'}),complete:async()=>({model:'gpt-6.1-sol',billing:'chatgpt-subscription',text:JSON.stringify(result(packet()))})}}})
+  for(const effort of [undefined,'low','medium','high','xhigh','max']) {
+    const input={message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),...(effort?{effort}:{})}
+    const run=service.start(OWNER,input);await service.wait(run.id)
+    assert.equal(service.get(OWNER,run.id).effort,effort||'medium');assert.equal(service.get(OWNER,run.id).state,'completed')
+    assert.deepEqual(seen.at(-1),{model:'gpt-6.1-sol',effort:effort||'medium'})
+    assert.equal(service.start(OWNER,input).reused,true)
+    if(effort)assert.throws(()=>service.start(OWNER,{...input,effort:effort==='low'?'medium':'low'}),/request_conflict/)
+  }
+  assert.equal(seen.length,6)
+  for(const effort of ['ultra','none','fast',null,{},''])assert.throws(()=>service.start(OWNER,{message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),effort}),/invalid_request/)
+})

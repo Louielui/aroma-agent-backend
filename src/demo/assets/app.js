@@ -1220,6 +1220,7 @@
       clear(content)
       content.appendChild(el('strong', '', t('taskPlan.title')))
       content.appendChild(el('p', '', t('taskPlan.boundary')))
+      if (r.effort) content.appendChild(el('p', '', t('taskPlan.effort', { effort: r.effort })))
       content.appendChild(el('p', '', r.state + (r.reason ? ' · ' + r.reason : '')))
       if (r.evidence) content.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
       if (r.result) {

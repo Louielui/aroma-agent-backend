@@ -4,6 +4,7 @@ const { classify, SYSTEM, SCHEMA, validatePacket, validateResult, hash } = requi
 const { PROJECT, FAILURE_RECIPE } = require('../projectWork/contract')
 const { register } = require('../../capability/registry'), { registerAgent } = require('../../capability/agents')
 const { evaluate } = require('../../capability/policy'), { createDispatcher } = require('../../capability/dispatcher')
+const { DEFAULT_EFFORT, REASONING_EFFORTS } = require('../../subscription/chatModels')
 const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
 const SAFE = new Set(['worker_busy', 'invalid_request', 'permission_denied', 'read_access_disabled', 'evidence_changed', 'context_unavailable', 'source_dirty', 'source_sensitive', 'subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable', 'subscription_model_unavailable', 'invalid_worker_result', 'cancelled', 'timed_out', 'run_store_unavailable', 'request_conflict', 'not_enabled'])
 const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'planning_unavailable'
@@ -12,7 +13,7 @@ const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'plann
 function eligibleRecipe (message) {
   return classify(message)?.profile === 'context' && /(?:unavailable|失敗|無法取得|離線)/i.test(message) && /(?:scope|範圍)/i.test(message) && /(?:snapshot|快照|改寫|修改|mutat)/i.test(message) ? FAILURE_RECIPE : null
 }
-function createPlanner ({ source, provider, store, bootCommit, prepareWork, registerTask, findTask, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
+function createPlanner ({ source, provider, providerFor, store, bootCommit, prepareWork, registerTask, findTask, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
   const capability = 'TaskPlanning', worker = 'codex-task-planner'
   register({ id: capability, version: 2, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'], properties: { evidence: { type: 'object' } } }, output_schema: SCHEMA })
   registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
@@ -39,7 +40,8 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, regi
       const packet = await step(() => source.read(OWNER, r.profile, c.abort.signal)), evidence = validatePacket(packet, r.profile)
       if (evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
       r.evidence = evidence; r.evidenceHash = packet.hash; r.retrievedAt = packet.retrievedAt; record(r, 'source_received')
-      const ready = await step(() => provider.preflight({ signal: c.abort.signal }))
+      const runProvider = providerFor ? providerFor({ model: r.model, effort: r.effort }) : provider
+      const ready = await step(() => runProvider.preflight({ signal: c.abort.signal }))
       if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
       record(r, 'planning')
       const numbered = { ...evidence, files: evidence.files.map(({ content, ...f }) => ({ ...f, source: content.split('\n').map((s, i) => (i + 1) + ' | ' + s).join('\n') })) }
@@ -48,7 +50,7 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, regi
         invoke: async (id, version, input) => {
           try {
             check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
-            const response = await step(() => provider.complete(JSON.stringify({ request: r.message, evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
+            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateResult(result, evidence)) throw Error('invalid_worker_result')
@@ -76,11 +78,13 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, regi
   }
   function start (actor, input) {
     owner(actor)
-    if (!input || Object.keys(input).sort().join(',') !== 'conversationId,message,requestId' || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    const effort = Object.hasOwn(input, 'effort') ? input.effort : DEFAULT_EFFORT
+    if (!REASONING_EFFORTS.includes(effort)) throw Error('invalid_request')
     const prior = store.all().find(r => r.requestId === input.requestId)
-    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId) throw Error('request_conflict'); return { ...prior, reused: true } }
+    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId || prior.effort !== effort) throw Error('request_conflict'); return { ...prior, reused: true } }
     if (active) throw Error('worker_busy')
-    const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription' }
+    const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model: 'gpt-6.1-sol', effort, billing: 'chatgpt-subscription' }
     record(r, 'owner_requested'); active = r.id
     const c = { abort: new AbortController(), inflight: new Set(), reason: null }; controls.set(r.id, c)
     const timer = setTimeout(() => { c.reason = 'timed_out'; c.abort.abort() }, timeoutMs)

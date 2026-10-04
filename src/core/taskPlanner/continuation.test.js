@@ -24,6 +24,7 @@ test('three-turn advice then explicit confirmation starts a persisted planner an
   await f.post('你認為功能bar設定在頁面上方這樣好嗎?'); assert.equal(f.calls.length,0)
   const r=await f.post('好,開始改良'); assert.equal(r.status,200); assert.ok(r.body.taskPlanRunId)
   assert.equal(f.calls.length,1); assert.match(f.calls[0].message,/sidebar/i);assert.match(f.calls[0].message,/頁面上方/)
+  assert.equal(f.calls[0].effort,'medium')
   assert.equal(f.counts().main,2); const saved=f.store.get(f.cid);assert.equal(saved.messages.at(-2).content,'好,開始改良');assert.equal(saved.messages.at(-1).taskPlanRunId,r.body.taskPlanRunId)
   const again=await f.post('開始');assert.equal(again.body.taskPlanRunId,r.body.taskPlanRunId);assert.equal(f.calls.length,1)
 })
@@ -64,4 +65,11 @@ test('an uncertain chat write reuses the same persisted request identity',()=>{
   const first=resolveConfirmation('開始',conversation,REV), retry=resolveConfirmation('好，開始改良',structuredClone(conversation),REV)
   assert.equal(first.requestId,retry.requestId);assert.match(first.requestId,/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/)
   assert.equal(first.message,retry.message)
+})
+test('the planner receives the selected effort, including legacy depth aliases',async t=>{
+  const f=await fixture(t)
+  for(const level of ['low','medium','high','xhigh','max','fast','standard','deep']) {
+    const r=await f.post('規劃香香 sidebar 功能入口改善',{chatLevel:level})
+    assert.equal(r.status,200);assert.equal(f.calls.at(-1).effort,({fast:'low',standard:'medium',deep:'high'})[level]||level)
+  }
 })

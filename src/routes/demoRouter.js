@@ -576,7 +576,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (planning.clarification) return res.set('Cache-Control', 'no-store').json({ lane: 'chat', reply: continued ? t('taskPlan.confirmClarify') : t('taskPlan.clarify'), servedBy: null })
         try {
           if (!taskPlanner) throw Error('not_enabled')
-          const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId })
+          const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
           if (!run || (continued?.runId && run.conversationId !== req.body.conversationId)) throw Error('invalid_request')
           let historySaved = true
           const reply = continued?.runId ? t('taskPlan.alreadyStarted') : t('taskPlan.started')
