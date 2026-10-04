@@ -936,6 +936,8 @@ button[disabled] { opacity: .45; cursor: default; }
 
 /* Confirmed background activity; reduced motion keeps a static readable label. */
 .work-activity { padding: 6px 0; margin: 8px 0; }
+.work-activity-trail { list-style: none; margin: 0 0 10px; padding: 0 0 0 14px; border-left: 1px solid var(--line); color: var(--muted); font-size: var(--small-size); line-height: 1.9; }
+.work-activity-trail:empty { display: none; }
 .work-activity-state { margin: 0; font-weight: var(--weight-medium); line-height: var(--ui-line); }
 .work-activity-state::before { content: ''; display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 9px; background: var(--muted); }
 .work-activity.is-working .work-activity-state::before { background: var(--accent); animation: work-pulse 1.6s ease-in-out infinite; }

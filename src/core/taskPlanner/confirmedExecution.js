@@ -77,6 +77,7 @@ function createConfirmedExecution ({ store, source, bootCommit, registerTask, rp
     const pause = () => new Promise(resolve => { c.wake = resolve; c.timer = setTimeout(() => { c.wake = null; resolve() }, pollMs) })
     const observe = (child, kind) => {
       check()
+      if (e.child && e.child.id !== child.id) e.previousChildSteps = (e.previousChildSteps || []).concat(e.child.steps || [])
       const state = child.state === 'awaiting_approval' || child.state === 'registered' ? 'checking' : child.state
       if (ACTIVE.includes(state)) e.state = state
       e.child = { kind, id: child.id, state: child.state, reason: child.reason || null, steps: child.steps || [], ...(child.generated ? { generated: child.generated } : {}), ...(child.result ? { result: child.result } : {}) }

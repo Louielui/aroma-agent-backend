@@ -58,6 +58,8 @@ test('one explicit plan confirmation runs real task approval and coding; reading
   assert.equal(f.calls.filter(c => c === 'work:approve').length, 1)
   assert.equal(JSON.stringify(f.store.all()).includes('secret-once'), false)
   assert.ok(r.execution.steps.some(s => s.stage === 'coding_authorized'))
+  assert.ok(r.execution.previousChildSteps.some(s => s.stage === 'drafting'))
+  assert.ok(r.execution.previousChildSteps.some(s => s.stage === 'reviewing'))
   await f.service.executeConfirmed(OWNER, f.input)
   assert.equal(f.calls.filter(c => c === 'task:start').length, 1)
   await assert.rejects(f.service.executeConfirmed(OWNER, { ...f.input, requestId: randomUUID() }), /request_conflict/)

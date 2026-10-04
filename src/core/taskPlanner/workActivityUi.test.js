@@ -39,6 +39,24 @@ test('drawer shows real events and returned code as text, never inventing a live
 test('removed cards release their activity clock', () => {
   const f = fixture(); f.view.update({ state: 'running', steps: [] }, 'plan'); f.root.isConnected = false; f.advance(1000); assert.ok(f.stopped() > 0)
 })
+
+test('visible current action follows real worker events even while the outer state stays coding', () => {
+  const f = fixture(), run = { state: 'coding', steps: [{ stage: 'coding', at: '2026-10-04T20:00:01Z' }, { stage: 'tests_started', at: '2026-10-04T20:00:03Z' }] }
+  f.view.update(run, 'work')
+  assert.equal(f.nodes().find(n => n.className === 'work-activity-state').textContent, 'workActivity.testing')
+  const trail = f.nodes().find(n => n.className === 'work-activity-trail')
+  assert.ok(trail); assert.equal(trail.children.length, 2)
+  f.view.update({ ...run, state: 'failed' }, 'work')
+  assert.equal(f.nodes().find(n => n.className === 'work-activity-state').textContent, 'workActivity.failed')
+})
+
+test('merged events are chronological and unknown events cannot masquerade as progress', () => {
+  const f = fixture(); f.view.update({ state: 'coding', steps: [{ stage: 'tests_started', at: '2026-10-04T20:00:03Z' }, { stage: 'coding', at: '2026-10-04T20:00:01Z' }, { stage: 'invented_tool', at: '2026-10-04T20:00:04Z' }] }, 'work')
+  const trail = f.nodes().find(n => n.className === 'work-activity-trail')
+  assert.ok(trail); assert.ok(trail.children[0].textContent.includes('workActivity.coding'))
+  assert.equal(trail.children.length, 2)
+  f.advance(16000); assert.equal(f.nodes().find(n => n.className === 'work-activity-state').textContent, 'workActivity.unconfirmed')
+})
 test('independent job cards never share working state and keep unchanged evidence expanded', () => {
   const a = fixture(), b = fixture(), run = { state: 'coding', steps: [] }
   a.view.update(run, 'work'); b.view.update({ state: 'failed', steps: [] }, 'work')

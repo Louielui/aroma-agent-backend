@@ -1236,20 +1236,28 @@
   }
   function createWorkActivity (host) {
     var box = el('section', 'work-activity'), heading = el('p', 'work-activity-state'), clock = el('p', 'work-activity-clock')
+    var trail = el('ol', 'work-activity-trail')
     var drawer = el('details', 'work-activity-drawer'), log = el('div', 'work-activity-log')
     heading.setAttribute('role', 'status'); heading.setAttribute('aria-live', 'polite')
     drawer.appendChild(el('summary', '', t('workActivity.open'))); drawer.appendChild(log)
-    box.appendChild(heading); drawer.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
+    box.appendChild(trail); box.appendChild(heading); box.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
     var current = null, kind = '', confirmedAt = 0, readable = false, ticker = null, logSignature = ''
     var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
     var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification') }
     var stages = { owner_requested: t('workActivity.requested'), policy_checked: t('workActivity.policy'), source_read: labels.reading, source_received: t('workActivity.sourceReceived'), planning: labels.running, source_verified: t('workActivity.sourceVerified'), coding: labels.coding, checking: labels.checking, reviewing: labels.reviewing, drafting: labels.drafting, reading: labels.reading, completed: t('workActivity.stageComplete'), failed: labels.failed, cancelled: labels.cancelled, testing: labels.testing, applying: labels.applying, task_draft_requested: labels.drafting, task_draft_linked: t('workActivity.draftLinked'), work_prepare_requested: t('workActivity.workRequested'), work_prepared: t('workActivity.workPrepared') }
+    Object.assign(stages, { checking_isolation: t('workActivity.isolation'), baseline_started: t('workActivity.baseline'), baseline_failed: t('workActivity.baselineResult'), tests_started: labels.testing, accepted_isolated: t('workActivity.testsPassed'), draft_ready: t('workActivity.draftReady'), owner_confirmed: t('workActivity.confirmed'), coding_authorized: t('workActivity.dispatch'), needs_attention: labels.needs_attention, timed_out: labels.timed_out, interrupted: labels.interrupted })
+    function orderedSteps () { return (current && Array.isArray(current.steps) ? current.steps : []).slice().sort(function (a, b) { var x = Date.parse(a.at), y = Date.parse(b.at); return Number.isFinite(x) && Number.isFinite(y) ? x - y : 0 }) }
     function stop () { if (ticker !== null) clearInterval(ticker); ticker = null }
     function tick () {
       if (host.isConnected === false) { stop(); return }
       var working = current && active.includes(current.state), fresh = readable && (!working || Date.now() - confirmedAt < 15000)
       box.className = 'work-activity' + (working && fresh ? ' is-working' : '')
       var text = !fresh ? t('workActivity.unconfirmed') : current.state === 'completed' ? (kind === 'plan' ? t('workActivity.planComplete') : kind === 'adoption' ? t('workActivity.adopted') : t('workActivity.workComplete')) : labels[current.state] || t('workActivity.unknown')
+      if (working && fresh) {
+        var action = orderedSteps().filter(function (s) { return ['source_read', 'source_received', 'planning', 'reading', 'drafting', 'checking', 'checking_isolation', 'baseline_started', 'baseline_failed', 'coding', 'tests_started', 'accepted_isolated', 'reviewing'].includes(s.stage) }).pop()
+        if (action) text = stages[action.stage]
+        if (current.state === 'reviewing' && (kind === 'task' || current.activityKind === 'task')) text = t('workActivity.reviewTests')
+      }
       if (heading.textContent !== text) heading.textContent = text
       var start = current && Date.parse(current.startedAt), end = current && Date.parse(current.finishedAt)
       var seconds = Number.isFinite(start) ? Math.max(0, Math.floor(((working && fresh ? Date.now() : Number.isFinite(end) ? end : confirmedAt) - start) / 1000)) : null
@@ -1261,12 +1269,13 @@
       tick(); if (active.includes(record.state) && ticker === null && host.isConnected !== false) ticker = setInterval(tick, 1000)
       var signature = JSON.stringify([lane, record.state, record.reason, record.steps, record.generated, record.result && record.result.changes])
       if (signature === logSignature) return
-      logSignature = signature; clear(log)
-      var steps = Array.isArray(record.steps) ? record.steps : [], list = el('ol', 'work-activity-events')
+      logSignature = signature; clear(log); clear(trail)
+      var steps = orderedSteps(), list = el('ol', 'work-activity-events'), previousLabel = ''
       steps.forEach(function (step) {
         var name = step.stage || step.step, label = stages[name] || t('workActivity.event')
         var stamp = Number.isFinite(Date.parse(step.at)) ? new Date(step.at).toLocaleTimeString() : ''
         list.appendChild(el('li', '', (stamp ? stamp + ' · ' : '') + label))
+        if (stages[name] && label !== previousLabel) { trail.appendChild(el('li', '', label)); previousLabel = label }
       })
       log.appendChild(steps.length ? list : el('p', '', t('workActivity.noEvents')))
       var changes = record.result && record.result.changes
@@ -1300,7 +1309,7 @@
     function draw (r) {
       if (r.updatedPlanRunId && r.updatedPlanRunId !== runId) { runId = r.updatedPlanRunId; setTimeout(read, 0); return }
       var execution = r.execution, executing = execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(execution.state)
-      var visible = execution ? Object.assign({}, execution, { steps: execution.steps.concat(execution.child ? execution.child.steps : []), generated: execution.child && execution.child.generated, result: execution.child && execution.child.result }) : r
+      var visible = execution ? Object.assign({}, execution, { activityKind: execution.child && execution.child.kind, steps: (r.steps || []).concat(execution.steps, execution.previousChildSteps || [], execution.child ? execution.child.steps : []), generated: execution.child && execution.child.generated, result: execution.child && execution.child.result }) : r
       activity.update(visible, execution ? 'work' : 'plan')
       clear(content)
       var report = el('details', 'work-plan-report'); report.appendChild(el('summary', '', t('workActivity.planDetails')))
