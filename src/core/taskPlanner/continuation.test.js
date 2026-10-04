@@ -66,6 +66,24 @@ test('standalone top navigation advice then start creates a visible bounded plan
   const repeat=await f.post('開始');assert.equal(repeat.body.taskPlanRunId,r.body.taskPlanRunId);assert.equal(f.calls.length,1)
 })
 
+test('explicit sidebar improvement commands start planning without a prior discussion or file prompt',async t=>{
+  const f=await fixture(t)
+  for(const message of ['開始改良side bar','開始改良 side bar','香香，開始改善側欄','請開始優化 sidebar','幫我改良 side bar','開始改善功能bar','開始改良聊天頁面']) {
+    const r=await f.post(message)
+    assert.equal(r.status,200);assert.ok(r.body.taskPlanRunId,message);assert.equal(r.body.mode,'chat')
+    assert.equal(f.calls.at(-1).message,message);assert.equal(f.calls.at(-1).effort,'medium')
+    assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[r.body.taskPlanRunId]})
+  }
+  assert.equal(f.counts().main,0);assert.equal(f.calls.length,7)
+})
+
+test('explicit starts do not use other applications, arbitrary paths or history to infer a target',()=>{
+  const {classify}=require('./contract')
+  for(const message of ['開始改良 Codex side bar','開始改良 Google Drive toolbar','開始改良','開始','開始寄出電郵']) assert.equal(classify(message),null,message)
+  for(const message of ['開始改良side bar，修改 production','開始改良side bar，修改 C:/secret','開始改良side bar，寄信']) assert.equal(classify(message)?.clarification,true,message)
+  assert.equal(classify('香香，幫我修正 Live Context 查詢範圍快照'),null)
+})
+
 test('expired confirmation and unsupported explicit planning remain readable without starting a worker',async t=>{
   const f=await fixture(t)
   await f.post(ADVICE)

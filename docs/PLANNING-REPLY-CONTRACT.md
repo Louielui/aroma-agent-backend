@@ -22,6 +22,14 @@ remain enforced. The explicit start creates a source-verified planning job only;
 registration, coding, execution and adoption require their separate approvals.
 The interface profile does not gain arbitrary files or other project access.
 
+Direct current-message improvement commands also enter planning without a prior
+receipt: `開始改良side bar`, spaced `side bar`, explicit sidebar variants, and
+named feature-bar/chat-page starts. Bare `開始` still requires the current
+same-conversation receipt. Named starts are bounded to the registered app surface;
+foreign-app prefixes, arbitrary paths and production requests confer no authority.
+Established exact repair commands retain their existing approval lane. The current
+Owner request is kept unchanged in the job, and default reasoning remains Medium.
+
 Regression coverage includes the two-turn screenshot sequence, typed and expired
 clarifications, their persisted history, repeated start readback, unrelated
 targets, and the actual frontend `render` function receiving HTTP fixture replies.
