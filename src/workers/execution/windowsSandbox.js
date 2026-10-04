@@ -6,12 +6,14 @@ const fs = require('node:fs')
 const path = require('node:path')
 const { execFile } = require('node:child_process')
 const { randomUUID, createHash } = require('node:crypto')
+const browserEvidence = require('./browserEvidence')
 const digest = value => createHash('sha256').update(value).digest('hex')
 const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const VERSION = 'windows-sandbox-offline-v1'
 function xml (value) { return String(value).replace(/[&<>"']/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[x]) }
 function fileName (name) {
-  if (typeof name !== 'string' || name.length > 160 || !/^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:js|cjs|json|css)$/.test(name) || /(?:^|\/)(?:node_modules|data|credentials|secrets)(?:\/|\.)/i.test(name) || name.split('/').some(n => /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(n))) throw Error('invalid_work_order')
+  const chatAsset = ['src/demo/assets/index.html', 'src/demo/assets/dot.svg'].includes(name)
+  if (typeof name !== 'string' || name.length > 160 || (!chatAsset && !/^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:js|cjs|json|css)$/.test(name)) || /(?:^|\/)(?:node_modules|data|credentials|secrets)(?:\/|\.)/i.test(name) || name.split('/').some(n => /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(n))) throw Error('invalid_work_order')
   return name
 }
 function validatePackage ({ files, tests, expectedTests }) {
@@ -19,7 +21,7 @@ function validatePackage ({ files, tests, expectedTests }) {
   const names = Object.keys(files).map(fileName)
   if (new Set(names.map(n => n.toLowerCase())).size !== names.length || new Set(tests).size !== tests.length) throw Error('invalid_work_order')
   let bytes = 0
-  for (const n of names) { if (typeof files[n] !== 'string' || Buffer.byteLength(files[n]) > 100000) throw Error('invalid_work_order'); bytes += Buffer.byteLength(files[n]) }
+  for (const n of names) { if (typeof files[n] !== 'string' || Buffer.byteLength(files[n]) > require('./packageLimits').fileLimit(n)) throw Error('invalid_work_order'); bytes += Buffer.byteLength(files[n]) }
   if (bytes > 1000000 || tests.some(n => !names.includes(fileName(n)) || !/\.test\.(?:js|cjs)$/.test(n))) throw Error('invalid_work_order')
   return { files: { ...files }, tests: [...tests], expectedTests }
 }
@@ -70,7 +72,7 @@ function prepare ({ root, pack, node = process.execPath }) {
   fs.writeFileSync(path.join(job.tools, 'launch.ps1'), "$ErrorActionPreference='Stop'\n& 'C:/XiangTools/node.exe' 'C:/XiangTools/runner.cjs'\n", { flag: 'wx' })
   const sentinel = path.join(dir, 'host-only-canary.txt'); fs.writeFileSync(sentinel, 'nonsecret ' + id, { flag: 'wx' })
   for (const [name, content] of Object.entries(pack.files)) { const p = path.join(job.input, ...name.split('/')); fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, content, { flag: 'wx' }) }
-  const manifest = { id, engine: VERSION, expectedTests: pack.expectedTests, tests: pack.tests, hashes: Object.fromEntries(Object.entries(pack.files).map(([n, c]) => [n, digest(c)])), sentinel, hostLoopbackPort: 8091 }
+  const manifest = { id, engine: VERSION, expectedTests: pack.expectedTests, tests: pack.tests, hashes: Object.fromEntries(Object.entries(pack.files).map(([n, c]) => [n, digest(c)])), sentinel, hostLoopbackPort: 8091, browser: pack.tests.includes(browserEvidence.TEST) }
   fs.writeFileSync(path.join(job.tools, 'manifest.json'), JSON.stringify(manifest), { flag: 'wx' })
   job.manifest = manifest; job.hashes = { ...manifest.hashes }
   job.toolHashes = Object.fromEntries(fs.readdirSync(job.tools).map(n => [n, digest(regular(path.join(job.tools, n), 100000000))]))
@@ -94,21 +96,30 @@ function verifyInputs (job) {
 }
 function evidence (job) {
   verifyInputs(job); directory(job.output)
-  if (fs.readdirSync(job.output).sort().join(',') !== 'evidence.json') throw Error('invalid_sandbox_evidence')
+  const outputNames = fs.readdirSync(job.output)
+  if (!outputNames.includes('evidence.json') || outputNames.some(n => n !== 'evidence.json' && !(job.manifest.browser && browserEvidence.NAMES.includes(n)))) throw Error('invalid_sandbox_evidence')
   const raw = regular(path.join(job.output, 'evidence.json')), value = JSON.parse(raw.toString('utf8'))
   const b = value.boundary
   if (value.id !== job.id || value.engine !== VERSION || !b || !['noExternalInterfaces', 'hostReadDenied', 'hostWriteDenied', 'readonlyInputDenied', 'readonlyToolsDenied', 'loopbackDenied', 'ipv6LoopbackDenied', 'internetDenied', 'cleanIdentity', 'secretsAbsent'].every(k => b[k] === true) || JSON.stringify(value.inputHashes) !== JSON.stringify(job.hashes)) throw Error('sandbox_failed')
   const r = value.tests
   if (!r || ![0, 1].includes(r.exitCode) || ![r.total, r.passed, r.failed].every(n => Number.isSafeInteger(n) && n >= 0) || r.total !== job.manifest.expectedTests || r.cancelled !== 0 || r.skipped !== 0 || r.passed + r.failed !== r.total || (r.exitCode === 0 && r.failed !== 0) || (r.exitCode === 1 && r.failed < 1) || typeof r.stdout !== 'string' || r.stdout.length > 200000 || typeof r.stderr !== 'string' || r.stderr.length > 20000) throw Error('invalid_sandbox_evidence')
+  if (job.manifest.browser) {
+    if (!Array.isArray(r.browser) || r.browser.length > 4 || new Set(r.browser.map(p => p.name)).size !== r.browser.length || outputNames.length !== r.browser.length + 1 || (r.exitCode === 0 && !browserEvidence.complete(r.browser))) throw Error('invalid_sandbox_evidence')
+    for (const p of r.browser) {
+      browserEvidence.validate(p)
+      const png = regular(path.join(job.output, p.name))
+      if (png.length !== p.screenshotBytes || digest(png) !== p.screenshotHash || png.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || png.readUInt32BE(16) !== p.width || png.readUInt32BE(20) !== p.height) throw Error('invalid_sandbox_evidence')
+    }
+  } else if (r.browser !== undefined) throw Error('invalid_sandbox_evidence')
   return { ...r, boundary: b, evidenceHash: digest(raw), inputHashes: job.hashes, configHash: job.configHash, engine: VERSION, workspace: job.dir, at: value.at, trust: 'guest_test_output_requires_owner_review' }
 }
 function boundOutput (job) {
   directory(job.output)
   const names = fs.readdirSync(job.output)
-  if (names.some(n => !['evidence.tmp', 'evidence.json', 'error.json'].includes(n))) throw Error('invalid_sandbox_evidence')
+  if (names.some(n => !['evidence.tmp', 'evidence.json', 'error.json', ...(job.manifest.browser ? browserEvidence.NAMES : [])].includes(n))) throw Error('invalid_sandbox_evidence')
   let bytes = 0
   for (const n of names) { const st = fs.lstatSync(path.join(job.output, n)); if (!st.isFile() || st.isSymbolicLink() || st.nlink !== 1) throw Error('scope_changed'); bytes += st.size }
-  if (bytes > 4000000) throw Error('invalid_sandbox_evidence')
+  if (bytes > (job.manifest.browser ? 10000000 : 4000000)) throw Error('invalid_sandbox_evidence')
 }
 function createExecutor ({ root, run = execute, check = readiness, timeoutMs = 240000, node = process.execPath, pollMs = 500 } = {}) {
   fs.mkdirSync(root, { recursive: true }); root = directory(root)

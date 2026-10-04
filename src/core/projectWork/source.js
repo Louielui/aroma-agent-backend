@@ -8,7 +8,7 @@ function gitRead (root, args, signal) {
   const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => !/^GIT_/i.test(key)))
   Object.assign(env, { GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: process.platform === 'win32' ? 'NUL' : '/dev/null', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' })
   return new Promise((resolve, reject) => execFile('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=', '-C', root, ...args],
-    { env, signal, windowsHide: true, timeout: 5000, maxBuffer: 150000, encoding: 'utf8' }, (error, out) => error ? reject(Error('source_unavailable')) : resolve(out)))
+    { env, signal, windowsHide: true, timeout: 5000, maxBuffer: 700000, encoding: 'utf8' }, (error, out) => error ? reject(Error('source_unavailable')) : resolve(out)))
 }
 function regular (root, name) {
   let current = root
@@ -43,7 +43,7 @@ function createSource ({ root, resolveRecipe = recipe, readGit = gitRead, health
       if (!/^100644 blob [a-f0-9]{40}\t/.test(mode)) throw Error('source_unavailable')
       if ((await readGit(resolved, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
       const bytes = (await readGit(resolved, ['show', head + ':' + name], signal)).replace(/\r\n/g, '\n')
-      if (!bytes || bytes.includes('\0') || Buffer.byteLength(bytes) > 100000 || SECRET.test(bytes)) throw Error('source_sensitive')
+      if (!bytes || bytes.includes('\0') || Buffer.byteLength(bytes) > require('../../workers/execution/packageLimits').fileLimit(name) || SECRET.test(bytes)) throw Error('source_sensitive')
       if (fs.readFileSync(path.join(resolved, name), 'utf8').replace(/\r\n/g, '\n') !== bytes) throw Error('source_dirty')
       files[name] = bytes; sourceFiles.push({ path: name, blob: mode.split(/\s+/)[2], sha256: digest(bytes) })
     }

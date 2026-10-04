@@ -15,3 +15,11 @@ test('exact Owner work requests are server-bound to boot; caller authority and c
   assert.equal(calls.length, 0); assert.equal((await send(body)).status, 200); assert.deepEqual(calls, [{ ...body, bootCommit: 'a'.repeat(40) }])
   const html = await (await fetch(url + '/project-work')).text(); assert.match(html, /src\/context\/contextResult.js/); assert.match(html, /尚未接通/); assert.doesNotMatch(html, /\/\*LABELS\*\//)
 })
+
+test('browser image reads accept only a registered run and fixed screenshot name', async t => {
+  const calls=[],app=express(),id=randomUUID(),png=Buffer.from('89504e470d0a1a0a','hex')
+  app.use(createProjectRouter({env:{READ_ACCESS:'on'},request:async input=>{calls.push(input);return{name:input.name,content:png.toString('base64')}}}))
+  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}));const base='http://127.0.0.1:'+server.address().port
+  for(const route of ['/api/v1/project-work/invalid/browser/browser-zh-390.png','/api/v1/project-work/'+id+'/browser/credentials.png'])assert.equal((await fetch(base+route)).status,400)
+  assert.equal(calls.length,0);const r=await fetch(base+'/api/v1/project-work/'+id+'/browser/browser-zh-390.png');assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'image/png');assert.equal(r.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await r.arrayBuffer()),png);assert.deepEqual(calls,[{op:'browser',id,name:'browser-zh-390.png'}])
+})

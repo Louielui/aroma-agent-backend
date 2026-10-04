@@ -11,7 +11,7 @@ test('interface registration has a closed profile and immutable sibling asset', 
   assert.equal(profileFor(v), 'interface'); assert.deepEqual(filesFor(v), UI)
   assert.deepEqual(d.workOrder.allowedFiles, [UI[0]]); assert.deepEqual(d.workOrder.readonlyFiles, [UI[1]])
   assert.deepEqual(PROFILES.interface, UI); assert.match(systemFor(v), /sidebar\.js/)
-  for (const editable of [[UI[0], 'src/context/toolGateway.js'], ['src/demo/assets/app.js'], ['src/demo/assets/index.html'], ['.env'], ['src/demo/assets/new.js']]) assert.throws(() => request({ ...v, editable }), /invalid_request/)
+  for (const editable of [[UI[0], 'src/context/toolGateway.js'], [UI[0], 'src/demo/assets/app.js'], [UI[1], 'src/demo/assets/index.html'], ['.env'], ['src/demo/assets/new.js']]) assert.throws(() => request({ ...v, editable }), /invalid_request/)
 })
 test('Sandbox accepts only bounded UI asset suffixes, still rejects executable and traversal names', () => {
   const p = validatePackage({ files: { [UI[0]]: 'module.exports={}', [UI[1]]: '.nav{}', 'acceptance/ui.test.cjs': generated.testCode }, tests: ['acceptance/ui.test.cjs'], expectedTests: 3 })

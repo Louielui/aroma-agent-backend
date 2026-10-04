@@ -31,9 +31,19 @@ async function main () {
   // Node permissions are an additional guard only. The security boundary is the
   // offline VM, including children. Test isolation keeps test stdout separated
   // from reporter statistics. No npm, shell, hooks or network install command.
-  const result = await new Promise((resolve, reject) => cp.execFile(TOOLS + '/node.exe', ['--permission', '--allow-fs-read=' + INPUT, '--allow-fs-write=' + scratch, '--allow-child-process', '--test', '--test-reporter=tap', ...manifest.tests], { cwd: INPUT, env: { SystemRoot: 'C:/Windows', TEMP: scratch, TMP: scratch, PATH: TOOLS }, windowsHide: true, timeout: 120000, maxBuffer: 400000, encoding: 'utf8' }, (err, stdout, stderr) => err && !Number.isInteger(err.code) ? reject(Error('test_evidence_unavailable')) : resolve({ exitCode: err ? err.code : 0, stdout, stderr })))
+  const result = await new Promise((resolve, reject) => cp.execFile(TOOLS + '/node.exe', ['--permission', '--allow-fs-read=' + INPUT, '--allow-fs-read=' + scratch, '--allow-fs-write=' + scratch, '--allow-child-process', '--test', '--test-reporter=tap', ...manifest.tests], { cwd: INPUT, env: { SystemRoot: 'C:/Windows', TEMP: scratch, TMP: scratch, PATH: TOOLS }, windowsHide: true, timeout: 120000, maxBuffer: 400000, encoding: 'utf8' }, (err, stdout, stderr) => err && !Number.isInteger(err.code) ? reject(Error('test_evidence_unavailable')) : resolve({ exitCode: err ? err.code : 0, stdout, stderr })))
   const count = key => { const matches = [...result.stdout.matchAll(new RegExp('^# ' + key + ' (\\d+)$', 'gm'))]; if (matches.length !== 1) throw Error('test_evidence_unavailable'); return Number(matches[0][1]) }
   const tests = { exitCode: result.exitCode, total: count('tests'), passed: count('pass'), failed: count('fail'), skipped: count('skipped'), cancelled: count('cancelled'), stdout: result.stdout, stderr: result.stderr }
+  if (manifest.browser) {
+    tests.browser = []
+    for (const locale of ['zh', 'en']) for (const width of [1280, 390]) {
+      const stem = 'browser-' + locale + '-' + width
+      if (!fs.existsSync(scratch + '/' + stem + '.json')) continue
+      const p = JSON.parse(fs.readFileSync(scratch + '/' + stem + '.json', 'utf8')), png = fs.readFileSync(scratch + '/' + stem + '.png')
+      if (png.length > 2000000) throw Error('invalid_sandbox_evidence')
+      fs.writeFileSync(OUTPUT + '/' + stem + '.png', png, { flag: 'wx' }); tests.browser.push({ ...p, name: stem + '.png' })
+    }
+  }
   for (const [n, h] of Object.entries(inputHashes)) if (hash(fs.readFileSync(path.join(INPUT, n))) !== h) throw Error('scope_changed')
   const value = { id: manifest.id, engine: manifest.engine, boundary, inputHashes, tests, at: new Date().toISOString() }
   fs.writeFileSync(OUTPUT + '/evidence.tmp', JSON.stringify(value), { flag: 'wx' }); fs.renameSync(OUTPUT + '/evidence.tmp', OUTPUT + '/evidence.json')

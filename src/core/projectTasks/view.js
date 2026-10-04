@@ -10,6 +10,7 @@ function buildHtml () {
     profile: t('projectTask.profile'),
     contextProfile: t('projectTask.contextProfile'),
     interfaceProfile: t('projectTask.interfaceProfile'),
+    chatProfile: t('projectTask.chatProfile'),
     start: t('projectTask.start'),
     history: t('projectTask.history'),
     refresh: t('projectTask.refresh'),

@@ -67,3 +67,20 @@ test('pre-cancelled work never starts a VM', async t => {
   const runner = createExecutor({ root: temp(t), check: ready, run: async () => { calls++ } })
   await assert.rejects(runner.run(pack, { signal: controller.signal }), /worker_cancelled/); assert.equal(calls, 0)
 })
+
+test('chat PNG artifacts are retained, hashed and refused when missing, altered or foreign', t => {
+  const { TEST, screenshot } = require('./browserEvidence'), { digest } = require('./windowsSandbox')
+  const root = temp(t), p = { ...pack, files: { ...pack.files, [TEST]: '/* fixed browser test fixture */' }, tests: [TEST] }
+  const job = prepare({ root, pack: p }), browser = []
+  for (const locale of ['zh', 'en']) for (const width of [1280, 390]) {
+    const name = `browser-${locale}-${width}.png`, png = Buffer.alloc(1100)
+    Buffer.from('89504e470d0a1a0a','hex').copy(png); png.writeUInt32BE(width,16); png.writeUInt32BE(900,20)
+    fs.writeFileSync(path.join(job.output,name),png)
+    browser.push({name,engine:'edge-headless-offline-v1',browserVersion:'Edg/154.0',locale,width,height:900,failedReads:locale==='zh'&&width===390,pageHash:'a'.repeat(64),screenshotHash:digest(png),screenshotBytes:png.length,checks:Object.fromEntries(['startup','labels','fiveDepths','mediumDefault','solDefault','layout','keyboard','picker','chatScope','explicitConfirmation','noPageErrors','onlyFixtureRequests'].map(k=>[k,true])),routes:['/demo']})
+  }
+  guest(job, { tests: { exitCode:0,total:2,passed:2,failed:0,cancelled:0,skipped:0,stdout:'unit mock',stderr:'',browser } })
+  const result = evidence(job); assert.equal(result.browser.length,4); assert.equal(Buffer.from(screenshot(result,browser[0].name).content,'base64').length,1100)
+  assert.throws(()=>screenshot(result,'../../.env'),/invalid_sandbox_evidence/)
+  fs.appendFileSync(path.join(job.output,browser[0].name),'tamper'); assert.throws(()=>evidence(job),/invalid_sandbox_evidence/); assert.throws(()=>screenshot(result,browser[0].name),/invalid_sandbox_evidence/)
+  fs.unlinkSync(path.join(job.output,browser[0].name)); assert.throws(()=>evidence(job),/invalid_sandbox_evidence/)
+})

@@ -1236,12 +1236,12 @@
       if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
       if (r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
       if (r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
-      if (r.state === 'completed' && r.evidence && ['context', 'interface'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
+      if (r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
         var form = el('details', 'chat-task-form'); form.appendChild(el('summary', '', t('taskPlan.newTask')))
         var goalLabel = el('label', '', t('projectTask.goal')), goal = el('textarea'); goal.maxLength = 3000; goal.value = r.result.goal; goalLabel.appendChild(goal); form.appendChild(goalLabel)
         var criteriaLabel = el('label', '', t('projectTask.criteria')), criteria = el('textarea'); criteria.maxLength = 12000; criteria.value = r.result.acceptanceChecks.join('\n'); criteriaLabel.appendChild(criteria); form.appendChild(criteriaLabel)
         var scope = el('fieldset'), selectedFiles = []; scope.appendChild(el('legend', '', t('projectTask.scope')))
-        var profileFiles = r.evidence.profile === 'context' ? ['src/context/contextResult.js', 'src/context/toolGateway.js'] : ['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css']
+        var profileFiles = { context: ['src/context/contextResult.js', 'src/context/toolGateway.js'], interface: ['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css'], chat: ['src/demo/assets/index.html', 'src/demo/assets/app.js', 'src/demo/assets/app.css'] }[r.evidence.profile]
         ;profileFiles.forEach(function (file) { var label = el('label', '', file), check = el('input'); check.type = 'checkbox'; check.checked = false; label.appendChild(check); scope.appendChild(label); selectedFiles.push({ file: file, check: check }) }); form.appendChild(scope)
         var confirmation = el('label', '', t('taskPlan.confirmDraft')), checked = el('input'); checked.type = 'checkbox'; confirmation.appendChild(checked); form.appendChild(confirmation)
         var draftButton = el('button', '', t('projectTask.start')); draftButton.type = 'button'; draftButton.disabled = true
@@ -1378,6 +1378,7 @@
       section(t('projectWork.details'), { source: run.source, steps: run.steps, reason: run.reason || null })
       if (run.result) {
         section(t('projectWork.tests'), { baseline: run.result.baseline, candidate: run.result.tests })
+        ;(run.result.tests.browser || []).forEach(function (proof) { var link = el('a', 'briefing-link', t('projectTask.browserEvidence') + ' · ' + proof.locale + ' · ' + proof.width); link.href = '/api/v1/project-work/' + encodeURIComponent(runId) + '/browser/' + encodeURIComponent(proof.name); link.target = '_blank'; link.rel = 'noopener'; details.appendChild(link) })
         ;(run.result.changes || []).forEach(function (c) { section(t('projectWork.before') + ' · ' + c.file, c.before); section(t('projectWork.after') + ' · ' + c.file, c.after) })
       }
       if (run.review) section(t('projectWork.review'), run.review)

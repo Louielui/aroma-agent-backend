@@ -1,6 +1,7 @@
 'use strict'
 const { randomUUID } = require('node:crypto'), { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox'), { RECIPE, FILE, recipe, sourceValues } = require('./contract')
+const browserEvidence = require('../../workers/execution/browserEvidence')
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const BOUNDARY = ['noExternalInterfaces', 'hostReadDenied', 'hostWriteDenied', 'readonlyInputDenied', 'readonlyToolsDenied', 'loopbackDenied', 'ipv6LoopbackDenied', 'internetDenied', 'cleanIdentity', 'secretsAbsent']
 const boundaryValid = e => e?.engine === 'windows-sandbox-offline-v1' && Object.keys(e.boundary || {}).length === 10 && BOUNDARY.every(k => e.boundary[k] === true)
@@ -20,7 +21,7 @@ function validateAccepted (run, isolated, resolveRecipe = recipe) {
   const before = {}, after = {}
   for (const name of names) {
     const c = result.changes.find(c => c.file === name), source = run.source.evidence.sourceFiles.filter(f => f.path === name)
-    if (!c || typeof c.before !== 'string' || typeof c.after !== 'string' || !c.after || c.before === c.after || Buffer.byteLength(c.before) > 100000 || Buffer.byteLength(c.after) > 100000 ||
+    if (!c || typeof c.before !== 'string' || typeof c.after !== 'string' || !c.after || c.before === c.after || Buffer.byteLength(c.before) > require('../../workers/execution/packageLimits').fileLimit(name) || Buffer.byteLength(c.after) > require('../../workers/execution/packageLimits').fileLimit(name) ||
         digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash || source.length !== 1 || source[0].sha256 !== c.beforeHash || isolated.workOrder.files[name] !== c.before) throw Error('accepted_evidence_changed')
     before[name] = c.before; after[name] = c.after
   }
@@ -43,6 +44,7 @@ function validateAccepted (run, isolated, resolveRecipe = recipe) {
       result.baseline.failed < 1 || result.baseline.passed + result.baseline.failed !== w.expectedTests || result.baseline.skipped !== 0 || result.baseline.cancelled !== 0 || result.baseline.exitCode !== 1)) throw Error('accepted_evidence_changed')
   for (const evidence of [result.tests, isolated.tests]) if (evidence?.total !== w.expectedTests || evidence.passed !== w.expectedTests || evidence.failed !== 0 || evidence.exitCode !== 0 ||
     evidence.skipped !== 0 || evidence.cancelled !== 0 || !boundaryValid(evidence)) throw Error('accepted_evidence_changed')
+  if (Object.hasOwn(protectedTests, browserEvidence.TEST) && (!browserEvidence.complete(result.tests.browser) || JSON.stringify(result.tests.browser) !== JSON.stringify(isolated.tests.browser))) throw Error('accepted_evidence_changed')
   return { before: w.recipe === RECIPE ? before[FILE] : before, after: w.recipe === RECIPE ? after[FILE] : after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })),
     ...(w.readonlyFiles ? { dependencies } : {}),
     ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }
@@ -106,6 +108,7 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
       const expectedPass = r.action === 'adopt' ? w.expectedTests : (r.accepted.baseline?.passed ?? 3), expectedFail = w.expectedTests - expectedPass
       if (r.tests.total !== w.expectedTests || r.tests.passed !== expectedPass || r.tests.failed !== expectedFail || r.tests.exitCode !== (expectedFail ? 1 : 0) || r.tests.skipped !== 0 || r.tests.cancelled !== 0 ||
           !boundaryValid(r.tests)) throw Error('acceptance_failed')
+      if (r.action === 'adopt' && Object.hasOwn(definition.tests, browserEvidence.TEST) && !browserEvidence.complete(r.tests.browser)) throw Error('acceptance_failed')
       record(r, 'tests_verified', { passed: expectedPass, failed: expectedFail, rollbackRestoresOriginalBehavior: r.action === 'rollback' })
       await source.verify(r.source)
       if (!enabled()) throw Error('not_enabled')

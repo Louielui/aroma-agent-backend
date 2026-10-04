@@ -75,13 +75,14 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
           else reply(200, { run: projectAdoption[op](actor, op === 'cancel' ? body.id : body) })
         } catch (e) { reply(200, { error: ['invalid_request', 'source_changed', 'source_dirty', 'accepted_evidence_changed', 'request_conflict', 'approval_unavailable', 'rollback_unavailable', 'worker_busy', 'reload_pending', 'not_enabled'].includes(e.message) ? e.message : 'adoption_unavailable' }) }
       } else if (req.url === '/project-work') {
-        const shapes = { list: ['op'], get: ['op', 'id'], prepare: ['op', 'projectId', 'recipe', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
+        const shapes = { list: ['op'], get: ['op', 'id'], browser: ['op', 'id', 'name'], prepare: ['op', 'projectId', 'recipe', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
         if (!projectWork || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }
         const actor = { id: 'owner', role: 'owner' }, { op, ...body } = input
         try {
-          if (!['list', 'get'].includes(op) && projectAdoption?.isActive()) throw Error('worker_busy')
+          if (!['list', 'get', 'browser'].includes(op) && projectAdoption?.isActive()) throw Error('worker_busy')
           if (op === 'list') reply(200, { ...projectWork.catalogue(actor), runs: projectWork.list(actor) })
           else if (op === 'get') reply(200, { run: projectWork.get(actor, body.id) })
+          else if (op === 'browser') reply(200, projectWork.browser(actor, body.id, body.name))
           else if (op === 'prepare') reply(200, await projectWork.prepare(actor, body))
           else reply(200, { run: projectWork[op](actor, op === 'cancel' ? body.id : body) })
         } catch (e) { reply(200, { error: ['invalid_request', 'worker_busy', 'approval_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'not_enabled', 'request_conflict'].includes(e.message) ? e.message : 'workflow_unavailable' }) }

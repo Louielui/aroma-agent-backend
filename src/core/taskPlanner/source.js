@@ -15,7 +15,7 @@ function createSource ({ root, readGit = gitRead, health = async () => (await fe
       for (const part of name.split('/')) { current = path.join(current, part); const s = fs.lstatSync(current); if (s.isSymbolicLink() || fs.realpathSync(current).toLowerCase() !== current.toLowerCase() || (current === path.join(root, name) && (!s.isFile() || s.nlink !== 1))) throw Error('context_unavailable') }
       if (!/^100644 blob [a-f0-9]{40}\t/.test((await readGit(root, ['ls-tree', head, '--', name], signal)).trim()) || (await readGit(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
       const content = (await readGit(root, ['show', head + ':' + name], signal)).replace(/\r\n/g, '\n')
-      if (!content || content.includes('\0') || Buffer.byteLength(content) > 100000 || SECRET.test(content)) throw Error('source_sensitive')
+      if (!content || content.includes('\0') || Buffer.byteLength(content) > require('../../workers/execution/packageLimits').fileLimit(name) || SECRET.test(content)) throw Error('source_sensitive')
       if (fs.readFileSync(path.join(root, name), 'utf8').replace(/\r\n/g, '\n') !== content) throw Error('source_dirty')
       files.push({ path: name, evidenceId: 'plan-' + files.length, content, sha256: hash(content), lineCount: content.split('\n').length })
     }

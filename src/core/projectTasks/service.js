@@ -3,7 +3,7 @@ const { randomUUID } = require('node:crypto')
 const { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox')
 const { ID } = require('../operating/runStore')
-const { FILES, INTERFACE_FILES, filesFor, systemFor, keys, request, draft, definition, SCHEMA } = require('./contract')
+const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor, systemFor, keys, request, draft, definition, SCHEMA } = require('./contract')
 const ACTIVE = ['queued', 'reading', 'drafting', 'reviewing'], SAFE = new Set(['invalid_request', 'invalid_worker_result', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'provider_not_ready', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'worker_cancelled', 'cancelled', 'timed_out', 'not_enabled'])
 const owner = a => { if (a?.id !== 'owner' || a.role !== 'owner') throw Error('permission_denied') }
 function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork, onEvent = () => {}, timeoutMs = 540000, approvals = createOwnerApprovalStore() }) {
@@ -95,6 +95,6 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
     } finally { active = null }
   }
   function cancel (actor, id) { const r = get(actor, id).run; if (!r || ![...ACTIVE, 'awaiting_approval'].includes(r.state)) throw Error('invalid_request'); const c = controls.get(id); if (c) c.abort.abort(Error('cancelled')); else { r.state = 'cancelled'; record(r, 'cancelled'); tickets.delete(id); sessions.delete(id) }; return { run: store.get(id), approval: null } }
-  return { start, get, find, approve, prepare, cancel, settled: () => pending, isActive: () => !!active, list: actor => { owner(actor); return { files: FILES, profiles: { context: FILES, interface: INTERFACE_FILES }, enabled: enabled(), runs: store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(r => ({ id: r.id, state: r.state, goal: r.input.goal, startedAt: r.startedAt, workRunId: r.workRunId, reason: r.reason || null })) } } }
+  return { start, get, find, approve, prepare, cancel, settled: () => pending, isActive: () => !!active, list: actor => { owner(actor); return { files: FILES, profiles: { context: FILES, interface: INTERFACE_FILES, chat: CHAT_FILES }, enabled: enabled(), runs: store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(r => ({ id: r.id, state: r.state, goal: r.input.goal, startedAt: r.startedAt, workRunId: r.workRunId, reason: r.reason || null })) } } }
 }
 module.exports = { createTasks }

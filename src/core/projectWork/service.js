@@ -3,6 +3,7 @@ const { randomUUID } = require('node:crypto')
 const { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox')
 const { PROJECT, RECIPES, recipe } = require('./contract')
+const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
@@ -60,6 +61,7 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
           JSON.stringify(coding.changedFiles?.slice().sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) || coding.baseline?.failed < 1 || coding.baseline?.total !== WORK_ORDER.expectedTests ||
           coding.tests?.exitCode !== 0 || coding.tests?.total !== WORK_ORDER.expectedTests || coding.tests?.passed !== WORK_ORDER.expectedTests || coding.tests?.failed !== 0 ||
           coding.tests?.skipped !== 0 || coding.tests?.cancelled !== 0 || !/^[a-f0-9]{64}$/.test(coding.patchHash || '') || !Array.isArray(coding.changes) || coding.changes.length !== WORK_ORDER.allowedFiles.length || (WORK_ORDER.effort && coding.effort !== WORK_ORDER.effort)) throw Error('invalid_worker_result')
+      if (WORK_ORDER.protectedFiles.includes(browserEvidence.TEST) && !browserEvidence.complete(coding.tests.browser)) throw Error('invalid_worker_result')
       r.result = coding
       if (signal.aborted) throw Error('worker_cancelled')
       r.state = 'reviewing'; record(r, 'reviewing')
@@ -99,7 +101,7 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
     if (controller) { controller.abort(); return r }
     r.state = 'cancelled'; r.finishedAt = new Date().toISOString(); sessions.delete(id); record(r, 'cancelled'); return r
   }
-  return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, settled: () => pending,
+  return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, browser: (actor, id, name) => { owner(actor); return browserEvidence.screenshot(store.get(id)?.result?.tests, name) }, settled: () => pending,
     isActive: () => busy, catalogue: actor => { owner(actor); return { enabled: enabled(), workOrders: catalogueRecipes().map(r => r.workOrder), limits: ['other_projects', 'dependency_installation', 'general_chat_dispatch', 'automatic_live_application'] } } }
 }
 module.exports = { createProjectWork }

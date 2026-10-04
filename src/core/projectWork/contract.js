@@ -113,7 +113,7 @@ function recipe (id = RECIPE) { if (!Object.hasOwn(RECIPES, id)) throw Error('in
 function sourceValues (id, value, resolveRecipe = recipe) {
   const names = resolveRecipe(id).workOrder.allowedFiles
   if (id === RECIPE && typeof value === 'string') return { [FILE]: value }
-  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== names.slice().sort().join(',') || names.some(n => typeof value[n] !== 'string' || !value[n] || Buffer.byteLength(value[n]) > 100000)) throw Error('invalid_request')
+  if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).sort().join(',') !== names.slice().sort().join(',') || names.some(n => typeof value[n] !== 'string' || !value[n] || Buffer.byteLength(value[n]) > require('../../workers/execution/packageLimits').fileLimit(n))) throw Error('invalid_request')
   return value
 }
 module.exports = { PROJECT, RECIPE, FILE, TEST, TESTS, WORK_ORDER, MULTI_RECIPE, GATEWAY, MULTI_TEST, MULTI_TESTS, MULTI_WORK_ORDER, COVERAGE_RECIPE, COVERAGE_TEST, COVERAGE_TESTS, COVERAGE_WORK_ORDER, RECIPES, recipe, sourceValues, FAILURE_RECIPE, FAILURE_TESTS, FAILURE_WORK_ORDER }

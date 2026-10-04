@@ -19,7 +19,7 @@ function replacements (o, raw) {
   if (!raw || Object.keys(raw).sort().join(',') !== 'changes,summary' || typeof raw.summary !== 'string' || raw.summary.length > 10000 || !Array.isArray(raw.changes) || !raw.changes.length || raw.changes.length > o.editable.length || new Set(raw.changes.map(x => x?.file)).size !== raw.changes.length) throw Error('invalid_worker_result')
   const files = { ...o.files }
   for (const c of raw.changes) {
-    if (!c || Object.keys(c).sort().join(',') !== 'content,file' || !o.editable.includes(c.file) || typeof c.content !== 'string' || !c.content || Buffer.byteLength(c.content) > 100000 || c.content === files[c.file]) throw Error('invalid_worker_result')
+    if (!c || Object.keys(c).sort().join(',') !== 'content,file' || !o.editable.includes(c.file) || typeof c.content !== 'string' || !c.content || Buffer.byteLength(c.content) > require('./packageLimits').fileLimit(c.file) || c.content === files[c.file]) throw Error('invalid_worker_result')
     files[c.file] = c.content
   }
   validatePackage({ files, tests: o.tests, expectedTests: o.expectedTests })

@@ -2,7 +2,8 @@
 const { createHash } = require('node:crypto')
 const PROFILES = Object.freeze({
   context: Object.freeze(['src/context/contextResult.js', 'src/context/toolGateway.js']),
-  interface: Object.freeze(['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css'])
+  interface: Object.freeze(['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css']),
+  chat: require('../projectTasks/chatProfile').CHAT_FILES
 })
 const hash = value => createHash('sha256').update(value).digest('hex')
 const exact = (v, keys) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === keys.slice().sort().join(',')
@@ -18,6 +19,9 @@ function classify (message) {
   if (/(?:Aroma\s*System|正式餐廳|production|\.env|[a-z]:[\\/]|\.\.[\\/]|寄信|寄出|send email)/i.test(request)) return { clarification: true }
   const context = /(?:即時資料|查詢|範圍|快照|context|gateway)/i.test(request)
   const ui = /(?:介面|側欄|工作單|按鈕|sidebar|interface|work order|button)/i.test(request)
+  const chat = /(?:聊天|對話頁|模型選單|chat|composer)/i.test(request)
+  if (chat && context) return { clarification: true }
+  if (chat) return { profile: 'chat' }
   if (context === ui) return { clarification: true }
   return { profile: context ? 'context' : 'interface' }
 }
@@ -39,7 +43,7 @@ function validateResult (v, e) {
 function validatePacket (p, profile) {
   const e = p?.evidence, names = PROFILES[profile]
   if (!names || p.state !== 'ok' || Math.abs(Date.now() - Date.parse(p.retrievedAt)) > 60000 || !Number.isFinite(Date.parse(p.retrievedAt)) || !exact(e, ['project', 'profile', 'revision', 'bootCommit', 'committedOnly', 'files']) || e.project !== 'aroma-agent-backend' || e.profile !== profile || e.committedOnly !== true || !/^[a-f0-9]{40}$/.test(e.revision || '') || e.revision !== e.bootCommit || !Array.isArray(e.files) || e.files.length !== names.length || p.hash !== hash(JSON.stringify(e))) throw Error('context_unavailable')
-  e.files.forEach((f, i) => { if (!exact(f, ['path', 'evidenceId', 'sha256', 'lineCount', 'content']) || f.path !== names[i] || f.evidenceId !== 'plan-' + i || typeof f.content !== 'string' || !f.content || Buffer.byteLength(f.content) > 100000 || f.content.includes('\0') || f.sha256 !== hash(f.content) || f.lineCount !== f.content.split('\n').length) throw Error('context_unavailable') })
+  e.files.forEach((f, i) => { if (!exact(f, ['path', 'evidenceId', 'sha256', 'lineCount', 'content']) || f.path !== names[i] || f.evidenceId !== 'plan-' + i || typeof f.content !== 'string' || !f.content || Buffer.byteLength(f.content) > require('../../workers/execution/packageLimits').fileLimit(f.path) || f.content.includes('\0') || f.sha256 !== hash(f.content) || f.lineCount !== f.content.split('\n').length) throw Error('context_unavailable') })
   return e
 }
 module.exports = { PROFILES, SYSTEM, SCHEMA, classify, hash, validatePacket, validateResult }

@@ -25,8 +25,8 @@ const path = require('node:path')
 const { iconDataUri } = require('./appManifest') // the padded square: favicon + app icon
 
 const ASSET_DIR = path.join(__dirname, 'assets')
-// Newlines alone do not separate adjacent IIFEs under automatic semicolon insertion.
-const SCRIPT_BOUNDARY = '\n;\n'
+// Runtime pages and isolated browser acceptance share the same pure assembly.
+const { assemblePage, SCRIPT_BOUNDARY } = require('./pageTemplate')
 
 function readAsset (name) {
   const p = path.join(ASSET_DIR, name)
@@ -130,27 +130,10 @@ function readSourceLabelsJson () {
  * otherwise be interpreted as a substitution pattern and silently corrupt the asset.
  */
 function buildDemoHtml () {
-  const parts = {
-    // ⛔ BEFORE the script in the document: app.js closes over CATALOGUE and createResolver.
-    '/*INLINE_I18N*/': require('../i18n/browserResolver').browserI18nSource(),
-    '/*INLINE_CSS*/': readAsset('app.css') + '\n' + readAsset('sidebar.css'),
-    '/*INLINE_JS*/': SCRIPT_BOUNDARY + readAsset('sidebar.js') + SCRIPT_BOUNDARY + readAsset('app.js'),
-    // The same dot fills both the header mark and the avatar template, so one entry
-    // replaces both occurrences.
-    '/*INLINE_DOT*/': inlineSvg('dot.svg'),
-    // The favicon is the padded SQUARE form, shared with the installed app icon so the
-    // tab and the taskbar show the same thing. appManifest owns that geometry.
-    '/*FAVICON_URI*/': iconDataUri(),
-    '/*READ_SOURCE_LABELS*/': readSourceLabelsJson(),
-    '/*BUILD_STAMP*/': BUILD_STAMP,
-    '/*SUBSCRIPTION_CHAT*/': JSON.stringify(process.env.CHAT_BACKEND === 'codex-subscription')
-  }
-  let out = readAsset('index.html')
-  for (const key of PLACEHOLDERS) out = out.split(key).join(parts[key])
-  for (const key of PLACEHOLDERS) {
-    if (out.includes(key)) throw new Error('demoHtml: an inline placeholder was not replaced: ' + key)
-  }
-  return out
+  return assemblePage({ template: readAsset('index.html'), i18n: require('../i18n/browserResolver').browserI18nSource(),
+    css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), app: readAsset('app.js'),
+    dot: inlineSvg('dot.svg'), favicon: iconDataUri(), sourceLabels: JSON.parse(readSourceLabelsJson()), buildStamp: BUILD_STAMP,
+    subscription: process.env.CHAT_BACKEND === 'codex-subscription' })
 }
 
 const DEMO_HTML = buildDemoHtml()
