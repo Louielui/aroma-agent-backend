@@ -1,9 +1,9 @@
 # Task planner v2
 
 Owner chat requests beginning with `香香，規劃…` or `Plan Xiangxiang …`
-select one fixed source profile: Live Context or work order interface. For example:
+select one fixed source profile: Live Context or sidebar interface. For example:
 `香香，規劃即時資料來源失敗時範圍快照被修改的修正` and
-`Plan Xiangxiang work order button improvements`.
+`Plan Xiangxiang sidebar group improvements`.
 Ambiguous profiles, unknown areas and other projects ask for clarification.
 History and source content cannot route a request or grant authority.
 
@@ -11,8 +11,8 @@ The Owner bridge reads only registered, committed, clean regular files at the
 same HEAD as the backend boot. It rejects symlinks, hardlinks, dirty selected
 files, oversized/binary source and credential patterns. No working tree fallback,
 Git trust changes, impersonation, production access or arbitrary file reader.
-Interface scope is specifically the work order HTML/CSS and chat preparation
-module; it does not cover every screen or the entire client/server repository.
+Interface source scope is specifically the standalone sidebar JavaScript and CSS
+profile; it does not cover every screen or the entire client/server repository.
 
 Sol 6.1 High returns a read-only subscription draft: goal, steps, proposed
 acceptance, questions, risks and exact source quotes. Host validation checks
@@ -55,8 +55,10 @@ This avoids conflating the CLI's JSON response formatter with task execution.
 The host still validates the successful envelope, verdict and finding scope.
 Structured-output retry exhaustion is recorded as a distinct bounded failure.
 
-New proposals without registration remain viewable drafts, including clarified
-UI improvements. Arbitrary tasks, other projects, dependency installation,
+New proposals without registration remain viewable drafts. Context and sidebar
+plans can enter the separate task registration flow documented in
+`PROJECT-TASKS-V1.md` and `INTERFACE-TASKS-V1.md`. Other screens, arbitrary tasks,
+other projects, dependency installation,
 automatic adoption, remote push and production business writes remain unconnected.
 Memory final acceptance and its automation remain paused by Owner. Normal private
 worker receipt capture is independent of long-term indexing completion.

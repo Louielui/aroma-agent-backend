@@ -113,10 +113,10 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, regi
   }
   async function registerFromPlan (actor, input) {
     owner(actor)
-    const { keys, request } = require('../projectTasks/contract')
+    const { keys, request, profileFor } = require('../projectTasks/contract')
     if (!keys(input, ['id', 'requestId', 'goal', 'criteria', 'editable']) || !ID.test(input.id || '')) throw Error('invalid_request')
     const taskInput = request({ bootCommit, requestId: input.requestId, goal: input.goal, criteria: input.criteria, editable: input.editable }), r = get(actor, input.id)
-    if (!r || r.profile !== 'context' || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (!r || r.profile !== profileFor(taskInput) || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
     if (r.preparation) throw Error('request_conflict')
     if (r.registrationPreparation) { if (JSON.stringify(r.registrationPreparation.input) !== JSON.stringify(taskInput) || !r.taskRunId) throw Error('request_conflict'); return { run: r, task: { run: { id: r.taskRunId }, approval: null } } }
     if (active) throw Error('worker_busy')

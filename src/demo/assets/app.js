@@ -1236,12 +1236,13 @@
       if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
       if (r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
       if (r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
-      if (r.state === 'completed' && r.evidence && r.evidence.profile === 'context' && !r.registrationPreparation && !r.preparation && !preparing) {
+      if (r.state === 'completed' && r.evidence && ['context', 'interface'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
         var form = el('details', 'chat-task-form'); form.appendChild(el('summary', '', t('taskPlan.newTask')))
         var goalLabel = el('label', '', t('projectTask.goal')), goal = el('textarea'); goal.maxLength = 3000; goal.value = r.result.goal; goalLabel.appendChild(goal); form.appendChild(goalLabel)
         var criteriaLabel = el('label', '', t('projectTask.criteria')), criteria = el('textarea'); criteria.maxLength = 12000; criteria.value = r.result.acceptanceChecks.join('\n'); criteriaLabel.appendChild(criteria); form.appendChild(criteriaLabel)
         var scope = el('fieldset'), selectedFiles = []; scope.appendChild(el('legend', '', t('projectTask.scope')))
-        ;['src/context/contextResult.js', 'src/context/toolGateway.js'].forEach(function (file) { var label = el('label', '', file), check = el('input'); check.type = 'checkbox'; check.checked = false; label.appendChild(check); scope.appendChild(label); selectedFiles.push({ file: file, check: check }) }); form.appendChild(scope)
+        var profileFiles = r.evidence.profile === 'context' ? ['src/context/contextResult.js', 'src/context/toolGateway.js'] : ['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css']
+        ;profileFiles.forEach(function (file) { var label = el('label', '', file), check = el('input'); check.type = 'checkbox'; check.checked = false; label.appendChild(check); scope.appendChild(label); selectedFiles.push({ file: file, check: check }) }); form.appendChild(scope)
         var confirmation = el('label', '', t('taskPlan.confirmDraft')), checked = el('input'); checked.type = 'checkbox'; confirmation.appendChild(checked); form.appendChild(confirmation)
         var draftButton = el('button', '', t('projectTask.start')); draftButton.type = 'button'; draftButton.disabled = true
         var inputError = el('p'); inputError.setAttribute('role', 'status'); form.appendChild(inputError)
@@ -2587,14 +2588,8 @@
   document.getElementById('open-workers').addEventListener('click', function () { window.location.href = '/workers' })
   document.getElementById('open-connections').addEventListener('click', function () { window.location.href = '/connections' })
   document.getElementById('open-company-access').addEventListener('click', function () { window.location.href = '/company-access' })
-  document.getElementById('collapse').addEventListener('click', function () {
-    sidebar.className = 'collapsed'
-    document.getElementById('expand').className = 'icon-btn'
-  })
-  document.getElementById('expand').addEventListener('click', function () {
-    sidebar.className = ''
-    document.getElementById('expand').className = 'icon-btn hidden'
-  })
+  var sidebarLabels = { daily: t('sidebarGroup.daily'), development: t('sidebarGroup.development'), management: t('sidebarGroup.management') }
+  var sidebarController = XiangxiangSidebar.mount(document, sidebarLabels)
 
   /* ── SETTINGS SHEET ────────────────────────────────────────────────────────
    * The same three settings as /settings, opened in this window over the conversation.
@@ -2874,6 +2869,11 @@
 
   function applyShellText () {
     document.title = t('shell.title')
+    if (sidebarController) {
+      sidebarController.groups.daily.children[0].textContent = t('sidebarGroup.daily')
+      sidebarController.groups.development.children[0].textContent = t('sidebarGroup.development')
+      sidebarController.groups.management.children[0].textContent = t('sidebarGroup.management')
+    }
     for (var i = 0; i < SHELL_TEXT.length; i++) {
       var id = SHELL_TEXT[i][0]
       var how = SHELL_TEXT[i][1]

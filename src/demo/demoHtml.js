@@ -87,7 +87,7 @@ function computeBuildStamp (overrides = {}) {
   const h = crypto.createHash('sha256')
   // Exactly the assets that can go stale in a browser. index.html is included because the
   // placeholders and structure live there too.
-  for (const name of ['app.js', 'app.css', 'index.html']) {
+  for (const name of ['app.js', 'app.css', 'index.html', 'sidebar.js', 'sidebar.css']) {
     h.update(name)
     h.update(Object.prototype.hasOwnProperty.call(overrides, name) ? overrides[name] : readAsset(name))
   }
@@ -130,8 +130,8 @@ function buildDemoHtml () {
   const parts = {
     // ⛔ BEFORE the script in the document: app.js closes over CATALOGUE and createResolver.
     '/*INLINE_I18N*/': require('../i18n/browserResolver').browserI18nSource(),
-    '/*INLINE_CSS*/': readAsset('app.css'),
-    '/*INLINE_JS*/': readAsset('app.js'),
+    '/*INLINE_CSS*/': readAsset('app.css') + '\n' + readAsset('sidebar.css'),
+    '/*INLINE_JS*/': readAsset('sidebar.js') + '\n' + readAsset('app.js'),
     // The same dot fills both the header mark and the avatar template, so one entry
     // replaces both occurrences.
     '/*INLINE_DOT*/': inlineSvg('dot.svg'),

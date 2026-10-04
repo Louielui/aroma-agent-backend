@@ -2,7 +2,7 @@
 const { createHash } = require('node:crypto')
 const PROFILES = Object.freeze({
   context: Object.freeze(['src/context/contextResult.js', 'src/context/toolGateway.js']),
-  interface: Object.freeze(['src/core/projectWork/chat.js', 'src/core/projectWork/view.js', 'src/core/projectWork/view.html', 'src/demo/assets/app.css'])
+  interface: Object.freeze(['src/demo/assets/sidebar.js', 'src/demo/assets/sidebar.css'])
 })
 const hash = value => createHash('sha256').update(value).digest('hex')
 const exact = (v, keys) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).sort().join(',') === keys.slice().sort().join(',')

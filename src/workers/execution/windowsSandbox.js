@@ -11,7 +11,7 @@ const UUID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{1
 const VERSION = 'windows-sandbox-offline-v1'
 function xml (value) { return String(value).replace(/[&<>"']/g, x => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[x]) }
 function fileName (name) {
-  if (typeof name !== 'string' || name.length > 160 || !/^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:js|cjs|json)$/.test(name) || /(?:^|\/)(?:node_modules|data|credentials|secrets)(?:\/|\.)/i.test(name) || name.split('/').some(n => /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(n))) throw Error('invalid_work_order')
+  if (typeof name !== 'string' || name.length > 160 || !/^(?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\.(?:js|cjs|json|css)$/.test(name) || /(?:^|\/)(?:node_modules|data|credentials|secrets)(?:\/|\.)/i.test(name) || name.split('/').some(n => /^(?:con|prn|aux|nul|com[0-9]|lpt[0-9])(?:\.|$)/i.test(n))) throw Error('invalid_work_order')
   return name
 }
 function validatePackage ({ files, tests, expectedTests }) {

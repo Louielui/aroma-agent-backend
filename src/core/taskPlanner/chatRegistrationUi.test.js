@@ -7,6 +7,7 @@ function fixture (options = {}) {
   const body = el('div'), flat = n => [n, ...n.children.flatMap(flat)]
   let plan = { id: PLAN, state: 'completed', executableRecipe: null, evidence: { profile: 'context', revision: 'a'.repeat(40), files: [{ evidenceId: 'one', path: 'source.js' }] }, result: { goal: '<script>example</script>', steps: ['inspect'], acceptanceChecks: ['independent snapshot'], questions: [], risks: [], citations: [{ evidenceId: 'one', startLine: 1, endLine: 1, quote: 'source' }] }, ...(options.history ? { taskRunId: TASK, registrationPreparation: { state: 'prepared' } } : {}) }
   let task = { id: TASK, workflow: 'project_task', state: 'awaiting_approval', input: { goal: plan.result.goal, criteria: ['independent snapshot'], editable: ['src/context/toolGateway.js'], bootCommit: 'a'.repeat(40) }, registration: { workOrder: { readonlyFiles: ['src/context/contextResult.js'] } }, generated: { testCode: 'protected tests', expectedTests: 3 }, acceptanceReview: { verdict: 'pass' }, expiresAt: new Date(Date.now() + 60000).toISOString() }
+  if (options.profile) plan.evidence.profile = options.profile
   const taskValue = () => ({ run: task, approval: task.state === 'awaiting_approval' ? { id: TASK, hash: 'a'.repeat(64), nonce: 'b'.repeat(48), expiresAt: task.expiresAt } : null })
   const code = fs.readFileSync(path.join(__dirname, '../../demo/assets/app.js'), 'utf8'), fn = code.slice(code.indexOf('  function renderTaskPlan ('), code.indexOf('  function renderProjectWork ('))
   const sandbox = { body, runId: PLAN, el, clear: n => { n.children = [] }, t: k => k, crypto: { randomUUID }, AbortController, setTimeout: (f, ms) => { timers.push({ f, ms }); return 1 }, clearTimeout () {}, renderProjectWork: (turn, id, value) => nested.push({ id, value }), fetch: async (url, opts) => {
@@ -45,4 +46,13 @@ test('history and refresh restore links through reads; expired tickets and uncer
 test('invalid criteria can be corrected locally without issuing a request', async () => {
   const f = fixture(); await f.flush(); await confirm(f); const criteria = f.nodes().filter(n => n.tag === 'textarea')[1]; criteria.value = ''; await f.click('projectTask.start'); await f.flush(); assert.equal(f.calls.filter(c => c.body).length, 0); assert.ok(f.nodes().some(n => n.textContent === 'taskPlan.invalidDraft'))
   criteria.value = 'Corrected criterion'; await f.click('projectTask.start'); await f.flush(); assert.equal(f.calls.filter(c => c.body).length, 1)
+})
+test('sidebar plan displays only its closed profile and requests no automatic coding', async () => {
+  const f = fixture({ profile: 'interface' }); await f.flush()
+  assert.ok(f.nodes().some(n => n.textContent === 'src/demo/assets/sidebar.js'))
+  assert.ok(f.nodes().some(n => n.textContent === 'src/demo/assets/sidebar.css'))
+  assert.equal(f.nodes().some(n => n.textContent === 'src/context/toolGateway.js'), false)
+  await confirm(f); await f.click('projectTask.start'); await f.flush()
+  assert.deepEqual(f.calls.filter(c => c.body).map(c => c.body.op), ['register'])
+  assert.deepEqual(f.calls.find(c => c.body).body.editable, ['src/demo/assets/sidebar.css']); assert.equal(f.nested.length, 0)
 })

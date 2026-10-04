@@ -28,13 +28,23 @@ test('chat registration starts drafts only after explicit scope confirmation, su
   await assert.rejects(f.service.registerTask(OWNER, { ...f.input, goal: 'different' }), /request_conflict/)
   assert.equal(f.build().get(OWNER, f.input.id).taskRunId, v.task.run.id)
 })
-test('tampered plans, foreign actors, wider files, clarification and interface profiles cannot register', async () => {
+test('tampered plans, foreign actors, wider files, clarification and cross-profile scope cannot register', async () => {
   const f = fixture(); await f.ready()
   await assert.rejects(f.service.registerTask({ id: 'ivy', role: 'member' }, f.input), /permission_denied/)
   await assert.rejects(f.service.registerTask(OWNER, { ...f.input, editable: ['.env'] }), /invalid_request/)
   f.store.get(f.input.id).result.goal = 'tampered'; const r = f.store.get(f.input.id); r.result.goal = 'tampered'; f.store.save(r)
   await assert.rejects(f.service.registerTask(OWNER, f.input), /invalid_request/); assert.equal(f.calls.length, 0)
   for (const opts of [{ questions: ['Which behavior?'] }, { profile: 'interface' }]) { const other = fixture(opts); await other.ready(); await assert.rejects(other.service.registerTask(OWNER, other.input), /invalid_request/); assert.equal(other.calls.length, 0) }
+})
+test('sidebar plans register only their own closed files and replay returns the original task without approval', async () => {
+  const f = fixture({ profile: 'interface' }); await f.ready()
+  const input = { ...f.input, editable: ['src/demo/assets/sidebar.js'] }
+  const v = await f.service.registerTask(OWNER, input); assert.equal(f.calls.length, 1)
+  assert.deepEqual(f.calls[0].editable, input.editable); assert.equal(v.run.taskRunId, v.task.run.id)
+  assert.equal((await f.service.registerTask(OWNER, input)).task.approval, null); assert.equal(f.calls.length, 1)
+  const another = fixture({ profile: 'interface' }); await another.ready()
+  await assert.rejects(another.service.registerTask(OWNER, { ...another.input, editable: ['src/demo/assets/sidebar.js', 'src/demo/assets/app.js'] }), /invalid_request/)
+  assert.equal(another.calls.length, 0)
 })
 test('source drift fails before draft authority', async () => {
   const f = fixture(); await f.ready(); f.evidence.files[0].content += '// drift'; f.evidence.files[0].lineCount = 2; f.evidence.files[0].sha256 = hash(f.evidence.files[0].content)
