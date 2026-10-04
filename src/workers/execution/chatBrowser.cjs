@@ -47,6 +47,26 @@ function navigationGeometry () {
     return hit === e || e.contains(hit)
   })
 }
+async function verifyNavigationMatrix (rpc, evaluate) {
+  for (const theme of ['light', 'dark']) {
+    await rpc.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }] })
+    for (const width of [360, 390, 700, 760, 1280]) for (const height of [900, 480]) {
+      await rpc.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 760 })
+      if (!await evaluate('(' + navigationGeometry.toString() + ')()')) throw Error('browser_navigation_geometry_failed')
+      const usable = await evaluate(`(() => {
+        for (const e of document.querySelectorAll('details[open]')) e.querySelector('summary')?.click();
+        const side=document.getElementById('sidebar'), collapse=document.getElementById('collapse');
+        if (innerWidth <= 760 && side && !side.inert && collapse) collapse.click();
+        const e=document.getElementById('msg'); if(!e)return false;
+        e.scrollIntoView({block:'nearest',inline:'nearest',behavior:'instant'});
+        const r=e.getBoundingClientRect(),hit=document.elementFromPoint((r.left+r.right)/2,(r.top+r.bottom)/2);
+        return r.width>0 && r.height>0 && r.left>=-1 && r.right<=innerWidth+1 && r.top>=0 && r.bottom<=innerHeight+1 &&
+          (hit===e || e.contains(hit)) && document.documentElement.scrollWidth<=innerWidth+1;
+      })()`)
+      if (!usable) throw Error('browser_navigation_geometry_failed')
+    }
+  }
+}
 async function run ({ locale, width, failedReads = false, sidebar = false }) {
   if (!['zh', 'en'].includes(locale) || ![1280, 390].includes(width) || process.platform !== 'win32' || !/WDAGUtilityAccount/i.test(require('node:os').userInfo().username)) throw Error('offline_guest_required')
   const root = 'C:/XiangScratch', profile = root + '/edge-' + randomUUID(); fs.mkdirSync(profile, { recursive: true })
@@ -81,10 +101,8 @@ async function run ({ locale, width, failedReads = false, sidebar = false }) {
     const initial = await evaluate("({brand:document.getElementById('brand-name').textContent, model:document.getElementById('picker-label').textContent, depth:document.getElementById('chat-level').value, options:Array.from(document.getElementById('chat-level').options,o=>({value:o.value,text:o.textContent})), placeholder:document.getElementById('msg').placeholder, disabled:document.getElementById('send').disabled})")
     if (!initial.brand || !initial.placeholder || initial.depth !== 'medium' || !initial.model.includes('GPT-6.1 Sol') || initial.disabled !== true || JSON.stringify(initial.options.map(o => o.value)) !== JSON.stringify(['low','medium','high','xhigh','max']) || initial.options.some(o => !o.text)) throw Error('browser_controls_failed')
     if (sidebar) {
-      for (const height of [900, 480]) {
-        await rpc.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 })
-        if (!await evaluate('(' + navigationGeometry.toString() + ')()')) throw Error('browser_navigation_geometry_failed')
-      }
+      await verifyNavigationMatrix(rpc, evaluate)
+      await rpc.call('Emulation.setEmulatedMedia', { features: [] })
       await rpc.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width === 390 })
     }
     if (width === 390) await evaluate("document.getElementById('collapse').click()")
@@ -113,4 +131,4 @@ async function run ({ locale, width, failedReads = false, sidebar = false }) {
     fs.writeFileSync(root + '/' + name + '.png', png); fs.writeFileSync(root + '/' + name + '.json', JSON.stringify(proof)); return proof
   } finally { if (rpc) { await rpc.call('Browser.close').catch(() => {}); rpc.close() }; child.kill() }
 }
-module.exports = { run, page, navigationGeometry }
+module.exports = { run, page, navigationGeometry, verifyNavigationMatrix }
