@@ -12,7 +12,7 @@ const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'plann
 function eligibleRecipe (message) {
   return classify(message)?.profile === 'context' && /(?:unavailable|失敗|無法取得|離線)/i.test(message) && /(?:scope|範圍)/i.test(message) && /(?:snapshot|快照|改寫|修改|mutat)/i.test(message) ? FAILURE_RECIPE : null
 }
-function createPlanner ({ source, provider, store, bootCommit, prepareWork, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
+function createPlanner ({ source, provider, store, bootCommit, prepareWork, registerTask, findTask, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
   const capability = 'TaskPlanning', worker = 'codex-task-planner'
   register({ id: capability, version: 2, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'], properties: { evidence: { type: 'object' } } }, output_schema: SCHEMA })
   registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
@@ -92,6 +92,7 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, time
     if (!input || Object.keys(input).sort().join(',') !== 'id,requestId' || !ID.test(input.id || '') || !ID.test(input.requestId || '')) throw Error('invalid_request')
     const r = get(actor, input.id)
     if (!r || r.state !== 'completed' || !r.executableRecipe || r.executableRecipe !== eligibleRecipe(r.message) || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (r.registrationPreparation) throw Error('request_conflict')
     if (r.preparation) { if (r.preparation.requestId !== input.requestId || !r.workRunId) throw Error('request_conflict'); return { run: r, work: { run: { id: r.workRunId }, approval: null } } }
     if (active) throw Error('worker_busy')
     active = r.id
@@ -106,6 +107,36 @@ function createPlanner ({ source, provider, store, bootCommit, prepareWork, time
       return { run: r, work }
     } finally { if (active === r.id) active = null }
   }
-  return { start, prepare, get, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }
+  function attachTask (r, v) {
+    if (v?.error || !ID.test(v?.run?.id || '') || v.run.workflow !== 'project_task' || JSON.stringify(v.run.input) !== JSON.stringify(r.registrationPreparation.input)) throw Error('invalid_worker_result')
+    r.taskRunId = v.run.id; r.registrationPreparation.state = 'prepared'; record(r, 'task_draft_linked'); return { run: r, task: v }
+  }
+  async function registerFromPlan (actor, input) {
+    owner(actor)
+    const { keys, request } = require('../projectTasks/contract')
+    if (!keys(input, ['id', 'requestId', 'goal', 'criteria', 'editable']) || !ID.test(input.id || '')) throw Error('invalid_request')
+    const taskInput = request({ bootCommit, requestId: input.requestId, goal: input.goal, criteria: input.criteria, editable: input.editable }), r = get(actor, input.id)
+    if (!r || r.profile !== 'context' || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (r.preparation) throw Error('request_conflict')
+    if (r.registrationPreparation) { if (JSON.stringify(r.registrationPreparation.input) !== JSON.stringify(taskInput) || !r.taskRunId) throw Error('request_conflict'); return { run: r, task: { run: { id: r.taskRunId }, approval: null } } }
+    if (active) throw Error('worker_busy')
+    if (typeof registerTask !== 'function') throw Error('not_enabled')
+    active = r.id
+    try {
+      const fresh = await source.read(actor, r.profile); validatePacket(fresh, r.profile)
+      if (fresh.hash !== r.evidenceHash || fresh.evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
+      // Persist the explicit Owner request before dispatching a draft. A lost
+      // response permits readback only, never another automatic start or nonce.
+      r.registrationPreparation = { state: 'pending', input: taskInput }; record(r, 'task_draft_requested')
+      return attachTask(r, await registerTask({ op: 'start', ...structuredClone(taskInput) }))
+    } finally { if (active === r.id) active = null }
+  }
+  async function refreshRegistration (actor, id) {
+    const r = get(actor, id)
+    if (!r || r.taskRunId || r.registrationPreparation?.state !== 'pending' || active || typeof findTask !== 'function') return r
+    active = r.id
+    try { const actual = await findTask(r.registrationPreparation.input.requestId); return actual ? attachTask(r, actual).run : r } finally { if (active === r.id) active = null }
+  }
+  return { start, prepare, registerTask: registerFromPlan, refreshRegistration, get, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }
 }
 module.exports = { createPlanner, eligibleRecipe }

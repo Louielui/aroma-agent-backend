@@ -9,7 +9,10 @@ const exact = (v, keys) => !!v && typeof v === 'object' && !Array.isArray(v) && 
 function classify (message) {
   if (typeof message !== 'string' || !message.trim() || message.length > 1500) return null
   // An explicit current-message planning request, never instructions in history.
-  const m = message.trim().match(/^(?:香香[，,：:\s]*)?(?:請|幫我)?(?:規劃|設計)(?:香香(?:後端|介面)?[：:，,\s]*)?(.+)$/u) || message.trim().match(/^plan (?:xiangxiang )?(.+)$/i)
+  const improvement = message.trim().match(/^(?:香香[，,：:\s]*)?(?:請)?幫我(?:改善|修正|開發|新增)(.+)$/u)
+  // Established exact repair commands retain their existing Owner approval lane.
+  if (improvement && require('../projectWork/chat').classify(message)) return null
+  const m = message.trim().match(/^(?:香香[，,：:\s]*)?(?:請|幫我)?(?:規劃|設計)(?:香香(?:後端|介面)?[：:，,\s]*)?(.+)$/u) || improvement || message.trim().match(/^plan (?:xiangxiang )?(.+)$/i)
   if (!m) return null
   const request = m[1].trim()
   if (/(?:Aroma\s*System|正式餐廳|production|\.env|[a-z]:[\\/]|\.\.[\\/]|寄信|寄出|send email)/i.test(request)) return { clarification: true }

@@ -54,11 +54,11 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
       if (req.url === '/project-tasks') {
-        const shapes = { list: ['op'], get: ['op', 'id'], start: ['op', 'bootCommit', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
+        const shapes = { list: ['op'], get: ['op', 'id'], find: ['op', 'requestId'], start: ['op', 'bootCommit', 'requestId', 'goal', 'criteria', 'editable'], approve: ['op', 'id', 'hash', 'nonce'], prepare: ['op', 'id', 'requestId'], cancel: ['op', 'id'] }
         if (!projectTasks || !input || Array.isArray(input) || !Object.hasOwn(shapes, input.op) || Object.keys(input).sort().join(',') !== shapes[input.op].sort().join(',')) { reply(400, { error: 'invalid_request' }); return }
         const actor = { id: 'owner', role: 'owner' }, { op, ...body } = input
         try {
-          if (!['list', 'get', 'cancel'].includes(op) && (projectWork?.isActive() || projectAdoption?.isActive())) throw Error('worker_busy')
+          if (!['list', 'get', 'find', 'cancel'].includes(op) && (projectWork?.isActive() || projectAdoption?.isActive())) throw Error('worker_busy')
           const value = op === 'list' ? projectTasks.list(actor) : op === 'get' ? projectTasks.get(actor, body.id) : op === 'cancel' ? projectTasks.cancel(actor, body.id) : await projectTasks[op](actor, body)
           reply(200, value)
         } catch (e) { reply(200, { error: ['invalid_request', 'worker_busy', 'approval_unavailable', 'source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'not_enabled', 'request_conflict'].includes(e.message) ? e.message : 'registration_unavailable' }) }

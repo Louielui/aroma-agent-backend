@@ -528,6 +528,10 @@ button[disabled] { opacity: .45; cursor: default; }
   padding: 9px 11px; font: inherit; font-size: var(--ui-size); resize: vertical;
 }
 .sheet textarea:focus { outline: none; border-color: var(--focus); }
+.chat-task-form label { display:block; margin:12px 0; }
+.chat-task-form textarea { display:block; width:100%; box-sizing:border-box; min-height:80px; font:inherit; color:inherit; background:var(--bg); border:1px solid var(--line); border-radius:8px; padding:10px; }
+.chat-task-form fieldset { min-width:0; overflow-wrap:anywhere; }
+.chat-task-form input[type=checkbox] { margin:0 8px; }
 
 .set-count { text-align: right; font-size: var(--small-size); color: var(--faint); margin-top: 5px; }
 .set-count.over { color: var(--bad); font-weight: var(--weight-medium); }

@@ -1208,7 +1208,7 @@
     if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
     var card = el('div', 'project-work-card'), content = el('div'), nested = el('div')
     turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
-    var busy = false, preparing = false, workShown = false
+    var busy = false, preparing = false, workShown = false, taskShown = false
     async function request (body) {
       var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
       try {
@@ -1234,7 +1234,30 @@
         content.appendChild(el('p', '', r.executableRecipe ? t('taskPlan.registered') : t('taskPlan.draftOnly')))
       }
       if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
-      if (r.state === 'completed' && r.executableRecipe && !r.preparation && !preparing) {
+      if (r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
+      if (r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
+      if (r.state === 'completed' && r.evidence && r.evidence.profile === 'context' && !r.registrationPreparation && !r.preparation && !preparing) {
+        var form = el('details', 'chat-task-form'); form.appendChild(el('summary', '', t('taskPlan.newTask')))
+        var goalLabel = el('label', '', t('projectTask.goal')), goal = el('textarea'); goal.maxLength = 3000; goal.value = r.result.goal; goalLabel.appendChild(goal); form.appendChild(goalLabel)
+        var criteriaLabel = el('label', '', t('projectTask.criteria')), criteria = el('textarea'); criteria.maxLength = 12000; criteria.value = r.result.acceptanceChecks.join('\n'); criteriaLabel.appendChild(criteria); form.appendChild(criteriaLabel)
+        var scope = el('fieldset'), selectedFiles = []; scope.appendChild(el('legend', '', t('projectTask.scope')))
+        ;['src/context/contextResult.js', 'src/context/toolGateway.js'].forEach(function (file) { var label = el('label', '', file), check = el('input'); check.type = 'checkbox'; check.checked = false; label.appendChild(check); scope.appendChild(label); selectedFiles.push({ file: file, check: check }) }); form.appendChild(scope)
+        var confirmation = el('label', '', t('taskPlan.confirmDraft')), checked = el('input'); checked.type = 'checkbox'; confirmation.appendChild(checked); form.appendChild(confirmation)
+        var draftButton = el('button', '', t('projectTask.start')); draftButton.type = 'button'; draftButton.disabled = true
+        var inputError = el('p'); inputError.setAttribute('role', 'status'); form.appendChild(inputError)
+        function enableDraft () { draftButton.disabled = busy || preparing || !checked.checked || !selectedFiles.some(function (v) { return v.check.checked }) }
+        checked.addEventListener('change', enableDraft); selectedFiles.forEach(function (v) { v.check.addEventListener('change', enableDraft) })
+        draftButton.addEventListener('click', async function () {
+          if (busy || preparing || !checked.checked || !selectedFiles.some(function (v) { return v.check.checked })) return
+          var acceptedCriteria = criteria.value.split('\n').map(function (s) { return s.trim() }).filter(Boolean)
+          if (!goal.value.trim() || goal.value.includes('\0') || goal.value.length > 3000 || !acceptedCriteria.length || acceptedCriteria.length > 12 || acceptedCriteria.some(function (s) { return s.length > 1000 || s.includes('\0') })) { inputError.textContent = t('taskPlan.invalidDraft'); return }
+          preparing = true; busy = true; draftButton.disabled = true
+          try { var value = await request({ op: 'register', id: runId, requestId: crypto.randomUUID(), goal: goal.value, criteria: acceptedCriteria, editable: selectedFiles.filter(function (v) { return v.check.checked }).map(function (v) { return v.file }) }); draw(value.run) }
+          catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.uncertain'))); var refreshDraft = el('button', '', t('taskPlan.refresh')); refreshDraft.addEventListener('click', read); content.appendChild(refreshDraft) }
+          finally { busy = false }
+        }); form.appendChild(draftButton); content.appendChild(form)
+      }
+      if (r.state === 'completed' && r.executableRecipe && !r.preparation && !r.registrationPreparation && !preparing) {
         var button = el('button', '', t('taskPlan.prepare'))
         button.addEventListener('click', async function () {
           if (busy || preparing) return
@@ -1260,6 +1283,42 @@
       catch (_) { clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
       finally { busy = false }
     }
+    read()
+  }
+  function renderProjectTask (turn, runId) {
+    if (!/^[a-f0-9-]{36}$/i.test(runId || '')) return
+    var card = el('section', 'project-work-card'), content = el('div'), nested = el('div'); turn.body.appendChild(card); card.appendChild(content); card.appendChild(nested)
+    var busy = false, ticket = null, workShown = false, uncertain = false
+    var labels = { queued: t('projectTask.state.queued'), reading: t('projectTask.state.reading'), drafting: t('projectTask.state.drafting'), reviewing: t('projectTask.state.reviewing'), awaiting_approval: t('projectTask.state.awaitingApproval'), registered: t('projectTask.state.registered'), failed: t('projectTask.state.failed'), cancelled: t('projectTask.state.cancelled'), timed_out: t('projectTask.state.timedOut'), interrupted: t('projectTask.state.interrupted'), needs_attention: t('projectTask.state.needsAttention') }
+    async function api (body) {
+      var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
+      try { var response = await fetch('/api/v1/project-tasks' + (body ? '' : '/' + encodeURIComponent(runId)), { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined }); var value = await response.json(); if (!response.ok || response.redirected || value.error) throw Error('unavailable'); return value } finally { clearTimeout(timeout) }
+    }
+    function detail (name, value) { var box = el('details'); box.appendChild(el('summary', '', name)); box.appendChild(el('pre', '', typeof value === 'string' ? value : JSON.stringify(value, null, 2))); content.appendChild(box) }
+    function button (name, action) { var b = el('button', '', name); b.type = 'button'; b.addEventListener('click', function () { if (!busy) action(b) }); content.appendChild(b); return b }
+    async function act (body, b) {
+      if (busy) return; busy = true; ticket = null; b.disabled = true
+      try { var v = await api(body); uncertain = false; if (v.work && v.work.run && !workShown) { workShown = true; renderProjectWork({ body: nested }, v.work.run.id, v.work) }; draw(v) }
+      catch (_) { uncertain = true; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) }
+      finally { busy = false }
+    }
+    function draw (v) {
+      var r = v.run; if (!r) throw Error('unavailable'); ticket = v.approval; clear(content)
+      content.appendChild(el('strong', '', t('projectTask.title'))); content.appendChild(el('p', '', labels[r.state] || r.state)); content.appendChild(el('p', '', r.input.goal)); content.appendChild(el('pre', '', r.input.criteria.join('\n')))
+      detail(t('projectTask.source'), { revision: r.input.bootCommit, editable: r.input.editable, readonly: r.registration && r.registration.workOrder.readonlyFiles, approvalHash: r.approvalHash, expiresAt: r.expiresAt, reason: r.reason || null, steps: r.steps })
+      if (r.generated) detail(t('projectTask.tests'), { expectedTests: r.generated.expectedTests, testCode: r.generated.testCode, executed: false })
+      if (r.acceptanceReview) detail(t('projectTask.review'), r.acceptanceReview)
+      if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
+      if (r.state === 'awaiting_approval' && ticket && Date.parse(ticket.expiresAt || r.expiresAt) > Date.now()) {
+        var label = el('label', '', t('projectTask.confirm')), check = el('input'); check.type = 'checkbox'; label.appendChild(check); content.appendChild(label)
+        var approve = button(t('projectTask.approve'), function (b) { if (!check.checked || !ticket) return; var current = ticket; act({ op: 'approve', id: current.id, hash: current.hash, nonce: current.nonce }, b) }); approve.disabled = true; check.addEventListener('change', function () { approve.disabled = busy || !check.checked })
+      }
+      if (r.state === 'registered' && !r.preparation && !uncertain) button(t('projectTask.prepare'), function (b) { act({ op: 'prepare', id: runId, requestId: crypto.randomUUID() }, b) })
+      if (['queued', 'reading', 'drafting', 'reviewing', 'awaiting_approval'].includes(r.state)) button(t('projectTask.cancel'), function (b) { act({ op: 'cancel', id: runId }, b) })
+      button(t('projectTask.refresh'), read)
+      if (['queued', 'reading', 'drafting', 'reviewing'].includes(r.state)) setTimeout(read, 2500)
+    }
+    async function read () { if (busy) return; busy = true; try { draw(await api()) } catch (_) { ticket = null; clear(content); content.appendChild(el('p', '', t('projectTask.uncertain'))); button(t('projectTask.refresh'), read) } finally { busy = false } }
     read()
   }
   function renderProjectWork (turnEl, runId, prepared) {

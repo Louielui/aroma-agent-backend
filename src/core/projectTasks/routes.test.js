@@ -13,10 +13,13 @@ test('task HTTP bodies reject caller authority and bind boot on the server; bili
 })
 test('task bridge control reads work while provider runs; other execution lanes cannot overlap', async t => {
   let active = true, workActive = false, starts = 0
-  const projectTasks = { isActive: () => active, list: () => ({ runs: [] }), get: () => ({ run: null }), start: () => { starts++; return { run: {} } } }, token = 'a'.repeat(64)
+  let lookups = 0
+  const projectTasks = { isActive: () => active, list: () => ({ runs: [] }), get: () => ({ run: null }), find: (actor, input) => { assert.deepEqual(actor, { id: 'owner', role: 'owner' }); assert.ok(input.requestId); lookups++; return { run: null, approval: null } }, start: () => { starts++; return { run: {} } } }, token = 'a'.repeat(64)
   const server = createBridge({ token, projectTasks, projectWork: { isActive: () => workActive } }); await new Promise(r => server.listen(0, '127.0.0.1', r)); t.after(() => new Promise(r => { server.closeAllConnections(); server.close(r) })); const url = 'http://127.0.0.1:' + server.address().port
   const post = (route, b) => fetch(url + route, { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify(b) })
   assert.equal((await post('/project-tasks', { op: 'list' })).status, 200); assert.equal((await post('/complete', { prompt: 'x' })).status, 503); assert.equal((await post('/project-work', { op: 'list' })).status, 503)
   active = false; workActive = true; const r = await post('/project-tasks', { op: 'start', bootCommit: 'a'.repeat(40), requestId: randomUUID(), goal: 'x', criteria: ['x'], editable: [] }); assert.equal((await r.json()).error, 'worker_busy'); assert.equal(starts, 0)
   assert.equal((await post('/project-tasks', { op: 'list' })).status, 200)
+  assert.equal((await post('/project-tasks', { op: 'find', requestId: randomUUID() })).status, 200); assert.equal(lookups, 1); assert.equal(starts, 0)
+  assert.equal((await post('/project-tasks', { op: 'find', requestId: randomUUID(), start: true })).status, 400); assert.equal(lookups, 1)
 })

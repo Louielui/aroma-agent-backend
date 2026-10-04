@@ -20,6 +20,7 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   const html = await response.text()
   assert.equal((html.match(/data-component=/g) || []).length, 16)
   assert.match(html, /data-component="project-tasks" data-state="partial"/)
+  assert.match(html, /可從聊天方案或任務頁建立新的 Context 任務/)
   assert.match(html, /data-component="task-planner" data-state="partial"/)
   assert.match(html, /data-component="project-adoption" data-state="partial"/)
   assert.match(html, /data-component="project-work" data-state="partial"/)

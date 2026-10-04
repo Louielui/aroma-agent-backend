@@ -1070,6 +1070,8 @@ function createApp (options = {}) {
     provider: new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)({ effort: 'high', model: 'gpt-6.1-sol' }),
     store: require('./core/operating/runStore').createRunStore({ dir: require('node:path').join(require('./store/dataDir').resolveDataDir(), 'task-plan-runs'), workflow: 'task_plan' }),
     prepareWork: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-work', input, process.env),
+    registerTask: input => require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', input, process.env),
+    findTask: async requestId => { const value = await require('./adapters/CodexSubscriptionAdapter').localRequest('/project-tasks', { op: 'find', requestId }, process.env); if (value.error) throw Error(value.error); return value.run ? value : null },
     onFinish: run => governedMemory?.event('worker', 'task-plan:' + run.id, JSON.stringify({ runId: run.id, state: run.state, reason: run.reason, profile: run.profile, evidenceHash: run.evidenceHash || null, planHash: run.planHash || null, testsExecuted: false, filesChanged: false }), 'measured_result', run.finishedAt)
   })
   app.use('/api/v1/task-plan', requireOwner)

@@ -68,6 +68,7 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
     return { run: store.get(r.id), approval: null }
   }
   function get (actor, id) { owner(actor); if (!ID.test(id || '')) throw Error('invalid_request'); return { run: store.get(id), approval: tickets.get(id) || null } }
+  function find (actor, input) { owner(actor); if (!keys(input, ['requestId']) || !ID.test(input.requestId || '')) throw Error('invalid_request'); const rows = store.all().filter(r => r.requestId === input.requestId); if (rows.length > 1) throw Error('request_conflict'); return rows.length ? get(actor, rows[0].id) : { run: null, approval: null } }
   async function approve (actor, input) {
     owner(actor); check(); if (!keys(input, ['id', 'hash', 'nonce']) || active) throw Error(active ? 'worker_busy' : 'invalid_request')
     const r = get(actor, input.id).run, sealed = approvals.loadSealed(input.id), sessionId = sessions.get(input.id)
@@ -93,6 +94,6 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
     } finally { active = null }
   }
   function cancel (actor, id) { const r = get(actor, id).run; if (!r || ![...ACTIVE, 'awaiting_approval'].includes(r.state)) throw Error('invalid_request'); const c = controls.get(id); if (c) c.abort.abort(Error('cancelled')); else { r.state = 'cancelled'; record(r, 'cancelled'); tickets.delete(id); sessions.delete(id) }; return { run: store.get(id), approval: null } }
-  return { start, get, approve, prepare, cancel, settled: () => pending, isActive: () => !!active, list: actor => { owner(actor); return { files: FILES, enabled: enabled(), runs: store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(r => ({ id: r.id, state: r.state, goal: r.input.goal, startedAt: r.startedAt, workRunId: r.workRunId, reason: r.reason || null })) } } }
+  return { start, get, find, approve, prepare, cancel, settled: () => pending, isActive: () => !!active, list: actor => { owner(actor); return { files: FILES, enabled: enabled(), runs: store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(r => ({ id: r.id, state: r.state, goal: r.input.goal, startedAt: r.startedAt, workRunId: r.workRunId, reason: r.reason || null })) } } }
 }
 module.exports = { createTasks }

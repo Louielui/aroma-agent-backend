@@ -18,4 +18,12 @@ All mutations persist their intent before authority or model dispatch. Duplicate
 
 Limits: no arbitrary project registration, new files, wider file sets, interactive computer control, installed dependencies or autonomous adoption. Task test drafts require explicit human review; schema validity alone cannot prove their semantic adequacy. Acceptance receipts distinguish draft review, actual baseline and candidate execution, implementation review, commit and reload.
 
+## Chat registration
+
+Explicit chat improvement requests first enter the read-only task planner. Vague targets require clarification. A completed Context plan exposes a new-task form in the conversation: the Owner can edit the goal and individual criteria and must select editable files and confirm the draft request. Interface plans remain planning-only. Host code verifies the plan hash, quotes, current committed source and boot revision before issuing a draft through the existing task service. Plans never grant execution authority.
+
+The plan persists the draft request before dispatch. It stores only the resulting task link, never approval nonces. An uncertain response permits a read-only lookup of the original request; the matching full task input must agree before the link is attached. Missing or conflicting records remain unresolved and are never replayed automatically. Legacy repair preparation and new-task preparation are mutually exclusive on one plan.
+
+The conversation restores task progress from the link. Protected tests, review and scope are visible before an explicit registration confirmation. Preparing a work order is a separate click; the existing work card retains independent coding and adoption approvals. Refresh and history only read existing records. The registration page remains available as a separate entry point.
+
 Acceptance drafting and its independent review each have a 240-second subscription limit; the entire source/draft/review phase is bounded to nine minutes. The draft prompt requests 3 to 6 fixed tests with shared helpers and complete assertions rather than repeated boilerplate. Other chat and coding connection limits stay unchanged. Failures retain a safe reason and diagnostic enums/byte counts, never raw provider output. Failed or expired drafts are retained; retries require a new explicit task request.
