@@ -4,6 +4,26 @@ const { createTasks } = require('./service'), { createRegistry, FILES, TEST, dra
 const { createMemoryRunStore } = require('../operating/runStore'), { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
 const generated = { testCode: "const test=require('node:test'),assert=require('node:assert/strict');test('first',()=>assert.equal(1,1));test('second',()=>assert.equal(2,2));test('third',()=>assert.equal(3,3));", expectedTests: 3 }
+
+test('invalid drafts retain a safe precise validation reason without retaining rejected source', async () => {
+  for (const [text, reason] of [
+    ['not-json-sensitive-marker', 'json'],
+    [JSON.stringify({ testCode: 'const sensitiveMarker = ;', expectedTests: 3 }), 'syntax'],
+    [JSON.stringify({ testCode: 'x'.repeat(30001), expectedTests: 3 }), 'shape'],
+    [JSON.stringify({ testCode: 'const sensitiveMarker = 1', expectedTests: 3 }), 'contract']
+  ]) {
+    let reviewed = false
+    const f = fixture({ provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ text, model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }) }, review: async () => { reviewed = true } })
+    const { run } = await f.ready()
+    assert.equal(run.state, 'failed'); assert.equal(reviewed, false)
+    assert.equal(run.draftValidation.reason, reason)
+    assert.equal(run.draftValidation.responseChars, text.length)
+    assert.equal(run.draftValidation.attempt, 1)
+    assert.equal(JSON.stringify(run).includes('sensitiveMarker'), false)
+    assert.equal(JSON.stringify(run).includes('sensitive-marker'), false)
+    assert.equal(run.registration, null)
+  }
+})
 function fixture (opts = {}) {
   const store = opts.store || createMemoryRunStore(), calls = []; let drift = false
   const sourceFor = d => ({ read: async () => { calls.push('read'); return { evidence: { bootCommit: HEAD, recipe: d.workOrder.recipe }, hash: 'b'.repeat(64), order: { files: { [FILES[0]]: 'original1', [FILES[1]]: 'original2', ...d.tests } } } }, verify: async () => { calls.push('verify'); if (drift) throw Error('source_changed') } })

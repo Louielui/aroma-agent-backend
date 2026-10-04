@@ -27,10 +27,11 @@ function request (v) {
   return structuredClone(v)
 }
 function draft (v) {
-  if (!keys(v, ['testCode', 'expectedTests']) || !text(v.testCode, 30000) || !Number.isInteger(v.expectedTests) || v.expectedTests < 3 || v.expectedTests > 30) throw Error('invalid_worker_result')
+  const invalid = reason => { const error = Error('invalid_worker_result'); error.draftFailure = reason; throw error }
+  if (!keys(v, ['testCode', 'expectedTests']) || !text(v.testCode, 30000) || !Number.isInteger(v.expectedTests) || v.expectedTests < 3 || v.expectedTests > 30) invalid('shape')
   // Compilation does not run the draft. Only Windows Sandbox may execute tests.
-  try { new Script(v.testCode) } catch (_) { throw Error('invalid_worker_result') }
-  if (!/node:test/.test(v.testCode) || !/node:assert/.test(v.testCode) || /(?:-----BEGIN .*PRIVATE KEY|\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}|\bgh[pousr]_[A-Za-z0-9]{30,})/.test(v.testCode)) throw Error('invalid_worker_result')
+  try { new Script(v.testCode) } catch (_) { invalid('syntax') }
+  if (!/node:test/.test(v.testCode) || !/node:assert/.test(v.testCode) || /(?:-----BEGIN .*PRIVATE KEY|\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}|\bgh[pousr]_[A-Za-z0-9]{30,})/.test(v.testCode)) invalid('contract')
   return structuredClone(v)
 }
 function definition (id, input, generated, { legacyInterface = false } = {}) {
