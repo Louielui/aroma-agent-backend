@@ -75,3 +75,11 @@ Test draft generation uses Sol 6.1 Medium with compact shared fixtures, separate
 from High-effort coding. Its actual effort is recorded on the drafting event.
 Claude review, protected tests and Owner approval are unchanged; failed or
 uncertain generations are never automatically replayed.
+
+The review policy is selected from the exact registered source profile. Sidebar
+acceptance may read the packaged CSS inside the offline executor; Context tests
+retain their no-filesystem boundary. Reviewer tools remain disabled. A generated
+draft or a failed subscription review never counts as approved or executed tests.
+Actual delivery evidence covers Chinese, English and mixed-language sidebar
+planning. The latest test draft reached review, which failed authentication;
+full review and coding are not accepted by that observation.

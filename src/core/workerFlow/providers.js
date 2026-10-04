@@ -92,6 +92,23 @@ function readTextReview (envelope, files) {
   if (!exact(r, ['verdict', 'summary', 'findings']) || !Array.isArray(r.findings) || r.findings.some(f => !exact(f, ['file', 'line', 'message'])) || (r.verdict === 'pass' && r.findings.length)) throw Error('invalid_worker_result')
   return readReview({ ...envelope, structured_output: r }, files)
 }
+function acceptanceReviewArgs (packet) {
+  const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor } = require('../projectTasks/contract')
+  const source = packet?.source
+  if (!source || typeof source !== 'object' || Array.isArray(source)) throw Error('invalid_worker_result')
+  const names = Object.keys(source).sort().join('\n')
+  const profile = Object.entries({ context: FILES, interface: INTERFACE_FILES, chat: CHAT_FILES })
+    .find(([, editable]) => filesFor({ editable }).slice().sort().join('\n') === names)?.[0]
+  if (!profile) throw Error('invalid_worker_result')
+  // These rules describe packaged tests inside the offline executor, not reviewer tools.
+  // The host selects a closed profile; packet prose cannot expand its capabilities.
+  const limits = {
+    context: 'Tests may use node:test, node:assert/strict and the supplied contextResult/toolGateway modules only. No filesystem access.',
+    interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry.',
+    chat: 'Tests may use the supplied chat modules and registered read-only dependencies. The fixed browser acceptance harness remains protected. Assess the generated Node tests and the supplied browser tests together, without inferring execution or allowing changes to read-only dependencies.'
+  }
+  return textReviewArgs(['acceptance/registered-task.test.cjs'], 'Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion is actually asserted, total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.')
+}
 function createProviders ({ executable, root, allowCredits = false }) {
   fs.mkdirSync(root, { recursive: true })
   const executor = require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
@@ -113,7 +130,7 @@ function createProviders ({ executable, root, allowCredits = false }) {
     codeOrder: input => code({ ...input, executable, root, allowCredits, executor }),
     async reviewAcceptance (packet, { signal } = {}) {
       await claudeStatus({ cwd: root })
-      const files = ['acceptance/registered-task.test.cjs'], args = textReviewArgs(files, 'Review the protected Node.js acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion is actually asserted, test count is exact, at least one test must genuinely fail on current behavior, tests are deterministic and use only node:test, node:assert/strict and the two supplied Context modules. Reject forced failures, missing assertions, skipped tests, dependency installation, filesystem/process/network use, or claims of execution.')
+      const files = ['acceptance/registered-task.test.cjs'], args = acceptanceReviewArgs(packet)
       return readTextReview(await runClaude(args, { cwd: root, timeoutMs: 240000, signal, input: JSON.stringify(packet) }), files)
     },
     async reviewOrder (packet, { signal } = {}) {
@@ -130,4 +147,4 @@ function createProviders ({ executable, root, allowCredits = false }) {
     }
   }
 }
-module.exports = { createProviders, code, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview }
+module.exports = { createProviders, code, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs }
