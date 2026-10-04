@@ -59,8 +59,7 @@ function main () {
   const codexClient = require('../../src/subscription/codexClient')
   const projectTasks = require('../../src/core/projectTasks/service').createTasks({ store: taskStore, enabled,
     sourceFor: definition => require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe: id => { if (id !== definition.workOrder.recipe) throw Error('invalid_request'); return definition } }),
-    provider: { preflight: options => codexClient.checkSubscription({ ...repairClient, ...options, model: 'gpt-6.1-sol', effort: 'high' }),
-      complete: (prompt, options) => codexClient.complete({ ...repairClient, signal: options.signal, timeoutMs: 240000 }, { prompt, system: options.system, schema: options.schema, model: 'gpt-6.1-sol', effort: 'high' }) },
+    provider: require('../../src/core/projectTasks/provider').createDraftProvider({ client: codexClient, options: repairClient }),
     review: (packet, options) => workerProviders.reviewAcceptance(packet, options), prepareWork: input => projectWork.prepare({ id: 'owner', role: 'owner' }, input),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-task:' + value.id + ':' + value.stage, JSON.stringify(value), 'measured_result', new Date().toISOString()) })
   const codeRepair = require('../../src/core/codeRepair/service').createCodeRepair({ repo, root: path.join(workspaceRoot,'controlled-repairs'), store: require('../../src/core/operating/runStore').createRunStore({dir:path.join(env.AROMA_DATA_DIR || path.join(repo,'data'),'code-repair-runs'),workflow:'code_repair'}),

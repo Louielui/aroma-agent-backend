@@ -27,7 +27,8 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
       const snapshot = await step(() => initialSource.read(r.input.bootCommit, c.signal, initial.workOrder.recipe))
       const ready = await step(() => provider.preflight({ signal: c.signal }))
       if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
-      r.state = 'drafting'; record(r, 'drafting')
+      r.draftEffort = ready.effort || 'high'
+      r.state = 'drafting'; record(r, 'drafting', { model: ready.model, effort: r.draftEffort, billing: ready.billing })
       const response = await step(() => provider.complete(JSON.stringify({ goal: r.input.goal, criteria: r.input.criteria, editable: r.input.editable, protectedTestPath: 'acceptance/registered-task.test.cjs', files: Object.fromEntries(files.map(f => [f, snapshot.order.files[f]])) }), { system: systemFor(r.input), schema: SCHEMA, signal: c.signal }))
       if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 50000) throw Error('invalid_worker_result')
       let generated; try { generated = draft(JSON.parse(response.text)) } catch (_) { throw Error('invalid_worker_result') }
@@ -46,7 +47,7 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
       const session = approvals.createSession(), sealed = approvals.seal({ workOrder: { approvalId: r.id, workOrderHash: hash, registration: r.registration, snapshot: r.snapshot, review: r.acceptanceReview }, proposalId: r.id })
       if (!sealed.ok) throw Error('invalid_worker_result')
       check(c.signal); r.approvalHash = hash; r.expiresAt = sealed.record.expiresAt; r.state = 'awaiting_approval'
-      record(r, 'draft_ready', { testsExecuted: false, filesChanged: false, model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription' })
+      record(r, 'draft_ready', { testsExecuted: false, filesChanged: false, model: 'gpt-6.1-sol', effort: r.draftEffort, billing: 'chatgpt-subscription' })
       sessions.set(r.id, session); tickets.set(r.id, { id: r.id, hash, nonce: approvals.issueNonce({ approvalId: r.id, workOrderHash: hash, sessionId: session }), expiresAt: r.expiresAt })
     } catch (e) {
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,

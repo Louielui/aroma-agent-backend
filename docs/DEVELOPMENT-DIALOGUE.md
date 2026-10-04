@@ -70,3 +70,8 @@ plan. It cannot silently draft obsolete acceptance criteria.
 The semantic development lane precedes keyword mail routing. Mentioning a Mail
 button and chat history does not query a mailbox. An actual topic change returns
 to the existing mail lane and its unchanged source/access checks.
+
+Test draft generation uses Sol 6.1 Medium with compact shared fixtures, separately
+from High-effort coding. Its actual effort is recorded on the drafting event.
+Claude review, protected tests and Owner approval are unchanged; failed or
+uncertain generations are never automatically replayed.
