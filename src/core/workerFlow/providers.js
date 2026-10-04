@@ -8,12 +8,20 @@ const { assertLiveEgressAllowed } = require('../../adapters/liveEgressFence')
 const { SOURCE, TESTS } = require('./fixture')
 const { WORK_ORDER } = require('./workflow')
 
+function codingProvider (client, codexClient = require('../../subscription/codexClient')) {
+  // Full replacement files need a development budget, not the short chat
+  // transport default. Keep cancellation and a finite deadline; never replay.
+  return {
+    preflight: options => codexClient.checkSubscription({ ...client, ...options, timeoutMs: 30000 }),
+    complete: (prompt, options) => codexClient.complete({ ...client, signal: options.signal, timeoutMs: 480000 }, { prompt, system: options.system, schema: options.responseFormat.schema, model: options.model, effort: options.effort })
+  }
+}
+
 async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal }) {
   const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits }
   fs.mkdirSync(client.cwd, { recursive: true })
-  const codexClient = require('../../subscription/codexClient')
   executor ||= require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
-  provider ||= { preflight: options => codexClient.checkSubscription({ ...client, ...options }), complete: (prompt, options) => codexClient.complete({ ...client, signal: options.signal }, { prompt, system: options.system, schema: options.responseFormat.schema, model: options.model, effort: options.effort }) }
+  provider ||= codingProvider(client)
   if (verify) { const original = provider; provider = { preflight: async options => { await verify(); return original.preflight(options) }, complete: async (...args) => { await verify(); return original.complete(...args) } } }
   const guardedExecutor = verify ? { readiness: () => executor.readiness(), isBusy: () => executor.isBusy(), run: async (...args) => { await verify(); const result = await executor.run(...args); await verify(); return result } } : executor
   const worker = require('../../workers/execution/isolatedCoding').createIsolatedCoding({ root: path.join(root, 'isolated-coding-runs'), executor: guardedExecutor, provider })
@@ -150,4 +158,4 @@ function createProviders ({ executable, root, allowCredits = false }) {
     }
   }
 }
-module.exports = { createProviders, code, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs }
+module.exports = { createProviders, code, codingProvider, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs }

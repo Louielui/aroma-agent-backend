@@ -3,6 +3,23 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { code, claudeArgs, readReview, runClaude, textReviewArgs, readTextReview } = require('./providers')
 const { SOURCE, TESTS } = require('./fixture')
 
+test('coding completion gets a bounded development deadline without extending preflight or enabling tools', async () => {
+  const calls = [], signal = new AbortController().signal
+  const client = require('./providers').codingProvider({ executable: 'codex', cwd: 'empty', allowCredits: true }, {
+    checkSubscription: async options => { calls.push(['check', options]); return { model: 'gpt-6.1-sol' } },
+    complete: async (options, input) => { calls.push(['complete', options, input]); return { text: 'result' } }
+  })
+  await client.preflight({ signal, model: 'gpt-6.1-sol', effort: 'high' })
+  const result = await client.complete('source', { signal, model: 'gpt-6.1-sol', effort: 'high', system: 'text only', responseFormat: { schema: { type: 'object' } } })
+  assert.equal(result.text, 'result')
+  assert.equal(calls[0][1].timeoutMs, 30000)
+  assert.equal(calls[1][1].timeoutMs, 480000)
+  assert.equal(calls[1][1].signal, signal)
+  assert.equal(calls[1][1].allowCredits, true)
+  assert.deepEqual(calls[1][2], { prompt: 'source', system: 'text only', schema: { type: 'object' }, model: 'gpt-6.1-sol', effort: 'high' })
+  assert.equal(calls.length, 2)
+})
+
 test('acceptance review follows the closed registered source profile, never a packet-supplied policy', () => {
   const { acceptanceReviewArgs } = require('./providers')
   const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor } = require('../projectTasks/contract')
