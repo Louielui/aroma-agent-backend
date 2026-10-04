@@ -66,15 +66,43 @@ test('standalone top navigation advice then start creates a visible bounded plan
   const repeat=await f.post('開始');assert.equal(repeat.body.taskPlanRunId,r.body.taskPlanRunId);assert.equal(f.calls.length,1)
 })
 
+test('the screenshot advice followed by a natural positive confirmation starts the same bounded goal',async t=>{
+  const f=await fixture(t),question='我想改良左邊的side bar,你有什麼建議?'
+  for(const message of ['很好,開始改良','很好，開始改良','很好，請開始改良吧','好呀，開始改善','好啊，開始','沒問題，開始做','可以的，開始規劃','好，按你的建議開始改良','就照你的建議做','great, go ahead','sounds good, start']) {
+    const id=randomUUID();await f.post(question,{conversationId:id})
+    const r=await f.post(message,{conversationId:id})
+    assert.equal(r.status,200);assert.ok(r.body.taskPlanRunId,message)
+    assert.match(f.calls.at(-1).message,/我想改良左邊的sidebar/)
+    assert.equal(f.calls.at(-1).effort,'medium');assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[r.body.taskPlanRunId]})
+    assert.equal(f.store.get(id).messages.at(-2).content,message)
+  }
+  assert.equal(f.calls.length,11);assert.equal(f.counts().main,11)
+})
+
+test('natural confirmations without a receipt clarify visibly rather than ask for arbitrary files',async t=>{
+  const f=await fixture(t)
+  for(const message of ['很好,開始改良','就照你的建議做','好，按你的建議開始改良']) {
+    const r=await f.post(message,{conversationId:randomUUID()})
+    assert.equal(r.body.mode,'ask',message);assert.equal(r.body.taskPlanRunId,undefined)
+    assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[]})
+  }
+  assert.equal(f.counts().main,0);assert.equal(f.calls.length,0)
+})
+
+test('confirmation grammar rejects praise alone, negation, quotes and expanded authority',()=>{
+  const {confirmation}=require('./continuation')
+  for(const message of ['很好','好呀','沒問題','Great','很好，但先不要開始','很好，暫時不要改良','如果我說很好，開始改良會怎樣？','「很好，開始改良」','很好，開始改良並寄信','好，按你的建議修改 production','好，開始修改 C:/secret']) assert.equal(confirmation(message),false,message)
+})
+
 test('explicit sidebar improvement commands start planning without a prior discussion or file prompt',async t=>{
   const f=await fixture(t)
-  for(const message of ['開始改良side bar','開始改良 side bar','香香，開始改善側欄','請開始優化 sidebar','幫我改良 side bar','開始改善功能bar','開始改良聊天頁面']) {
+  for(const message of ['開始改良side bar','開始改良 side bar','香香，開始改善側欄','請開始優化 sidebar','幫我改良 side bar','開始改善功能bar','開始改良聊天頁面','很好，開始改良side bar','好呀，開始改善側欄']) {
     const r=await f.post(message)
     assert.equal(r.status,200);assert.ok(r.body.taskPlanRunId,message);assert.equal(r.body.mode,'chat')
     assert.equal(f.calls.at(-1).message,message);assert.equal(f.calls.at(-1).effort,'medium')
     assert.deepEqual(renderReply(r),{replies:[r.body.reply],errors:[],jobs:[r.body.taskPlanRunId]})
   }
-  assert.equal(f.counts().main,0);assert.equal(f.calls.length,7)
+  assert.equal(f.counts().main,0);assert.equal(f.calls.length,9)
 })
 
 test('explicit starts do not use other applications, arbitrary paths or history to infer a target',()=>{

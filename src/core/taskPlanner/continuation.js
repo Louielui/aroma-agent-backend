@@ -2,7 +2,10 @@
 const { classify, hash } = require('./contract')
 const TTL = 30 * 60 * 1000
 const normalize = text => String(text || '').replace(/side\s+bar/ig, 'sidebar')
-const confirmation = text => typeof text === 'string' && /^(?:(?:好|好的|同意|可以)[,，、!！\s]*)?(?:請)?(?:開始|開始改良|開始改善|開始規劃|開始做|開始尹良|go ahead|start)[。.!！\s]*$/i.test(text.trim())
+// A positive acknowledgement is optional, but an explicit start or instruction
+// to follow the current suggestion is required. This closed grammar cannot add
+// a target, path, second action or authority; the host-owned receipt supplies it.
+const confirmation = text => typeof text === 'string' && /^(?:(?:很?好(?:的|啊|呀|嘅)?|同意|可以(?:的|啊)?|沒問題|ok(?:ay)?|great|sounds good)[,，、!！\s]*)?(?:請)?(?:開始(?:改良|改善|規劃|做|尹良)?|(?:就)?(?:照|按)(?:你(?:的)?|上述|剛才)(?:的)?建議(?:開始(?:改良|改善|規劃|做)?|做)|go ahead|start)(?:吧|啦|喇)?[。.!！\s]*$/i.test(text.trim())
 const advice = text => /(?:建議|認為|覺得|討論|好嗎|好不好|suggest|recommend|what do you think)/i.test(text)
 const target = text => /(?:sidebar|側欄|聊天頁面|對話頁|chat page|composer)/i.test(text)
 const refinement = text => /(?:功能\s*bar|頂部|頁面上方|選單|top\s*bar|toolbar)/i.test(text)

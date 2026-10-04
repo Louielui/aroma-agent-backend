@@ -30,6 +30,19 @@ foreign-app prefixes, arbitrary paths and production requests confer no authorit
 Established exact repair commands retain their existing approval lane. The current
 Owner request is kept unchanged in the job, and default reasoning remains Medium.
 
+Natural positive acknowledgements are accepted before a start: for example
+`很好，開始改良`, `好呀，開始改善`, and `沒問題，開始做`. An explicit
+instruction to follow the current suggestion, such as `就照你的建議做`, also
+uses the host-owned receipt. The full screenshot dialogue is an HTTP regression,
+including the exact initial Owner question and confirmation. Acknowledged named
+surface starts also use the direct planning lane without a file prompt.
+
+Praise alone does not start work. Negation, quoted/example confirmations and added
+actions cannot match this closed grammar. A valid receipt is still required for
+any confirmation without a current named surface. Missing/expired receipts show
+a typed clarification without consulting older assistant prose or browser history.
+No coding, execution, adoption or business write authority is added.
+
 Regression coverage includes the two-turn screenshot sequence, typed and expired
 clarifications, their persisted history, repeated start readback, unrelated
 targets, and the actual frontend `render` function receiving HTTP fixture replies.

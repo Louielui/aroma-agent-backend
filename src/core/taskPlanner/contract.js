@@ -15,7 +15,7 @@ function classify (message) {
   if (improvement && require('../projectWork/chat').classify(message)) return null
   // Explicit start plus a current, named app surface does not need a prior
   // discussion receipt. A bare start still uses the same-conversation receipt.
-  const directStart = message.trim().match(/^(?:香香[，,：:\s]*)?(?:請)?開始(?:改良|改善|優化)\s*(?:香香[的：:，,\s]*)?((?:side\s*bar|側欄|功能\s*(?:bar|列)|聊天頁面|對話頁|chat\s*page|composer)(?:[，,:：\s].*)?)[。.!！]?$/iu)
+  const directStart = message.trim().match(/^(?:香香[，,：:\s]*)?(?:(?:很?好(?:的|啊|呀|嘅)?|同意|可以(?:的|啊)?|沒問題|ok(?:ay)?|great|sounds good)[,，、!！\s]*)?(?:請)?開始(?:改良|改善|優化)\s*(?:香香[的：:，,\s]*)?((?:side\s*bar|側欄|功能\s*(?:bar|列)|聊天頁面|對話頁|chat\s*page|composer)(?:[，,:：\s].*)?)[。.!！]?$/iu)
   const m = message.trim().match(/^(?:香香[，,：:\s]*)?(?:請|幫我)?(?:規劃|設計)(?:香香(?:後端|介面)?[：:，,\s]*)?(.+)$/u) || improvement || directStart || message.trim().match(/^plan (?:xiangxiang )?(.+)$/i)
   if (!m) return null
   const request = m[1].trim()
