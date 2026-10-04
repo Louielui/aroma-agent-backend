@@ -25,6 +25,8 @@ const path = require('node:path')
 const { iconDataUri } = require('./appManifest') // the padded square: favicon + app icon
 
 const ASSET_DIR = path.join(__dirname, 'assets')
+// Newlines alone do not separate adjacent IIFEs under automatic semicolon insertion.
+const SCRIPT_BOUNDARY = '\n;\n'
 
 function readAsset (name) {
   const p = path.join(ASSET_DIR, name)
@@ -101,6 +103,7 @@ function computeBuildStamp (overrides = {}) {
   h.update('i18n')
   h.update(String(process.env.CHAT_BACKEND === 'codex-subscription'))
   h.update(require('../i18n/browserResolver').browserI18nSource())
+  h.update(SCRIPT_BOUNDARY)
   return h.digest('hex').slice(0, 12)
 }
 
@@ -131,7 +134,7 @@ function buildDemoHtml () {
     // ⛔ BEFORE the script in the document: app.js closes over CATALOGUE and createResolver.
     '/*INLINE_I18N*/': require('../i18n/browserResolver').browserI18nSource(),
     '/*INLINE_CSS*/': readAsset('app.css') + '\n' + readAsset('sidebar.css'),
-    '/*INLINE_JS*/': readAsset('sidebar.js') + '\n' + readAsset('app.js'),
+    '/*INLINE_JS*/': SCRIPT_BOUNDARY + readAsset('sidebar.js') + SCRIPT_BOUNDARY + readAsset('app.js'),
     // The same dot fills both the header mark and the avatar template, so one entry
     // replaces both occurrences.
     '/*INLINE_DOT*/': inlineSvg('dot.svg'),
