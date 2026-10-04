@@ -14,7 +14,7 @@ const safe = e => SAFE.has(e.code || e.message) ? (e.code || e.message) : 'plann
 function eligibleRecipe (message) {
   return classify(message)?.profile === 'context' && /(?:unavailable|失敗|無法取得|離線)/i.test(message) && /(?:scope|範圍)/i.test(message) && /(?:snapshot|快照|改寫|修改|mutat)/i.test(message) ? FAILURE_RECIPE : null
 }
-function createPlanner ({ source, provider, providerFor, store, bootCommit, prepareWork, registerTask, findTask, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
+function createPlanner ({ source, provider, providerFor, store, bootCommit, prepareWork, registerTask, findTask, executionRpc, executionPollMs, timeoutMs = 120000, onFinish = () => ({ state: 'not_connected' }) }) {
   const capability = 'TaskPlanning', worker = 'codex-task-planner'
   register({ id: capability, version: 2, lifecycle: 'active', risk_tier: 'low', input_schema: { type: 'object', required: ['evidence'], properties: { evidence: { type: 'object' } } }, output_schema: SCHEMA })
   registerAgent({ id: worker, role: 'Read-only task planner', adapter: 'bounded-subscription-text', availability: 'local', status: 'active', provides: [{ capability, version: 2, seed_quality: 0, seed_cost: 'unknown' }] })
@@ -23,7 +23,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
   const save = r => store.save(r)
   const record = (r, stage) => { r.steps.push({ stage, sequence: r.steps.length + 1, at: new Date().toISOString() }); save(r) }
   for (const r of store.all()) if (['queued', 'running'].includes(r.state)) { r.state = 'interrupted'; r.reason = 'process_restarted'; r.result = null; r.finishedAt = new Date().toISOString(); record(r, 'interrupted') }
-  const get = (actor, id) => { owner(actor); if (!ID.test(id || '')) throw Error('invalid_request'); return store.get(id) }
+  const get = (actor, id) => { owner(actor); if (!ID.test(id || '')) throw Error('invalid_request'); const r = store.get(id); return r ? { ...r, executionAvailable: execution.enabled(), executionStale: !!r.evidence && r.evidence.bootCommit !== bootCommit } : r }
   async function execute (r, c) {
     const check = () => { if (c.abort.signal.aborted) throw Error(c.reason || 'cancelled'); owner(OWNER) }
     const step = async fn => {
@@ -143,6 +143,21 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     active = r.id
     try { const actual = await findTask(r.registrationPreparation.input.requestId); return actual ? attachTask(r, actual).run : r } finally { if (active === r.id) active = null }
   }
-  return { start, prepare, registerTask: registerFromPlan, refreshRegistration, get, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }
+  const execution = require('./confirmedExecution').createConfirmedExecution({ store, source, bootCommit, registerTask: registerFromPlan, rpc: executionRpc, pollMs: executionPollMs })
+  function replan (actor, input) {
+    owner(actor)
+    if (!require('../projectTasks/contract').keys(input, ['id', 'requestId']) || !ID.test(input.requestId || '')) throw Error('invalid_request')
+    const old = get(actor, input.id)
+    if (!old || !['completed', 'failed', 'interrupted', 'needs_clarification'].includes(old.state) || old.execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(old.execution.state)) throw Error('invalid_request')
+    if (old.updatedPlanRunId) return { run: get(actor, old.updatedPlanRunId) }
+    let dialogue
+    if (old.dialogue) {
+      const context = require('./dialogueContext').seal({ ...old.dialogue.context, revision: bootCommit, createdAt: new Date().toISOString() })
+      dialogue = { ...old.dialogue, context, contextDigest: context.digest, confirmation: 'Owner requested a refreshed plan through its confirmation card' }
+    }
+    const next = start(actor, { message: old.message, requestId: input.requestId, conversationId: old.conversationId, effort: old.effort, ...(dialogue ? { dialogue } : {}) })
+    old.updatedPlanRunId = next.id; record(old, 'owner_requested_updated_plan'); return { run: get(actor, next.id) }
+  }
+  return { start, prepare, replan, registerTask: registerFromPlan, refreshRegistration, get, executeConfirmed: execution.start, cancelExecution: execution.cancel, waitExecution: execution.wait, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }
 }
 module.exports = { createPlanner, eligibleRecipe }

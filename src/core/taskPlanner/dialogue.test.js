@@ -15,8 +15,29 @@ function fixture(t, outputs) {
   const providerFor = () => ({ complete: async (prompt, opts) => { calls.push({ body: JSON.parse(prompt), opts }); const v = outputs.shift(); return typeof v === 'function' ? v() : { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(v) } } })
   const service = createDialogue({ store, planner, revision: REV, providerFor })
   const cid = randomUUID(), send = (message, extra = {}, actor = OWNER) => service.handle(actor, { message, conversationId: cid, requestId: randomUUID(), effort: 'medium', model: 'gpt-6.1-sol', ...extra })
-  return { service, store, calls, starts, runs, drafts, cancels, cid, send }
+  return { service, store, planner, calls, starts, runs, drafts, cancels, cid, send }
 }
+
+test('a current plain confirmation of a completed plan starts its bounded execution in Chinese and English', async t => {
+  for (const message of ['好，開始', '確認並開始', '很好,開始改良', 'Confirm and start', 'Go ahead']) {
+    const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' }), decision('start', '')])
+    const first = await f.send('Improve the sidebar'), run = f.runs.get(first.taskPlanRunId), calls = []
+    Object.assign(run, { state: 'completed', executionAvailable: true, planHash: 'b'.repeat(64), result: { goal: 'Top navigation', questions: [] } })
+    f.planner.executeConfirmed = async (a, input) => { calls.push(input); run.execution = { state: 'queued' }; return { run } }
+    const response = await f.send(message)
+    assert.equal(calls.length, 1); assert.equal(calls[0].planHash, run.planHash); assert.equal(response.taskPlanRunId, run.id); assert.equal(f.starts.length, 1)
+  }
+})
+
+test('a model start classification cannot turn negated, quoted or changed instructions into execution consent', async t => {
+  for (const message of ['不要開始', '"Go ahead"', 'If I say go ahead, what happens?', 'Go ahead and change the login too']) {
+    const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' }), decision('start', '')])
+    const first = await f.send('Improve the sidebar'), run = f.runs.get(first.taskPlanRunId)
+    Object.assign(run, { state: 'completed', executionAvailable: true, planHash: 'b'.repeat(64), result: { goal: 'Top navigation', questions: [] } })
+    let executions = 0; f.planner.executeConfirmed = async () => { executions++ }
+    await f.send(message); assert.equal(executions, 0)
+  }
+})
 test('multilingual discussion carries the actual proposal and Owner refinements into planning', async t => {
   const f = fixture(t, [decision('discuss', 'Move functions to the top; keep history on the left.', { targetQuote: 'left panel' }), decision('refine', 'Use a compact top menu on mobile.'), decision('start', '')])
   const advice = await f.send('The left panel is crowded. Any suggestions?'); assert.equal(advice.servedBy, 'gpt-6.1-sol')

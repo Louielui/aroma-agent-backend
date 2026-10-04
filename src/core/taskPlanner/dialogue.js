@@ -8,6 +8,10 @@ const SCHEMA = { type: 'object', additionalProperties: false, required: ['intent
   intent: { type: 'string', enum: INTENTS }, profile: { type: 'string', enum: ['interface', 'chat', 'none'] }, targetQuote: { type: 'string' }, language: { type: 'string', enum: ['en', 'zh'] }, reply: { type: 'string' }
 } }
 const { SYSTEM, surface, forbidden } = require('./dialogueIntent')
+// Only a standalone confirmation may consume the already displayed plan.
+// Semantic classification alone cannot turn a quote, negation or refinement
+// into execution authority. All other confirmations use the visible button.
+const plainConfirmation = s => /^(?:(?:好|好的|很好|可以|確認|同意)[,，、!！\s]*(?:並|就)?(?:開始|執行|開始改良|開始執行)|(?:請)?(?:開始|執行)|(?:yes[,!\s]*)?(?:go ahead|confirm and start|start|proceed)(?: please)?)[.!。！\s]*$/iu.test(s.trim())
 function createDialogue ({ store, planner, revision, providerFor, receipts = createMemoryRunStore(), timeoutMs = 60000 }) {
   const running = new Map()
   const snapshot = id => store.get(id)
@@ -68,6 +72,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
         let reply, mode = 'chat'
         if (v.intent === 'other') { receipt.state = 'unrelated'; receipts.save(receipt); return null }
         if (v.intent === 'cancel') {
+          if (run?.execution && typeof planner.cancelExecution === 'function') await planner.cancelExecution(actor, run.id)
           if (run && ['queued', 'running'].includes(run.state)) planner.cancel(actor, run.id)
           reply = t('dialogue.cancelled', undefined, v.language); ctx = null; run = null
         } else if (!scoped || v.intent === 'clarify') {
@@ -85,7 +90,11 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
           const replan = v.intent === 'refine' && run?.state === 'needs_clarification'
           if (v.intent === 'start' || replan) {
             const changed = run?.dialogue && run.dialogue.contextDigest !== ctx.digest
-            if (run && !replan && (!changed || ['queued', 'running'].includes(run.state))) reply = t('dialogue.existing', undefined, v.language)
+            if (run && !replan && !changed && run.state === 'completed' && run.executionAvailable && !run.execution && !run.registrationPreparation && !run.preparation && plainConfirmation(message)) {
+              receipt.state = 'execution_requested'; receipt.taskPlanRunId = run.id; receipts.save(receipt)
+              run = (await planner.executeConfirmed(actor, { id: run.id, requestId, planHash: run.planHash })).run
+              reply = t('confirmedWork.started', undefined, v.language)
+            } else if (run && !replan && (!changed || ['queued', 'running'].includes(run.state))) reply = t('dialogue.existing', undefined, v.language)
             else {
               const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
               run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, dialogue })

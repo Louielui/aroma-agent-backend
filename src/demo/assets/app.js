@@ -1264,11 +1264,14 @@
       var controller = new AbortController(), timeout = setTimeout(function () { controller.abort() }, 135000)
       try {
         var r = await fetch('/api/v1/task-plan' + (body ? '' : '/' + encodeURIComponent(runId)), { method: body ? 'POST' : 'GET', credentials: 'same-origin', redirect: 'error', signal: controller.signal, headers: body ? { 'content-type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined })
-        var v = await r.json(); if (!r.ok || v.error) throw Error('unavailable'); return v
+        var v = await r.json(); if (!r.ok || v.error) throw Error(v.error || 'unavailable'); return v
       } finally { clearTimeout(timeout) }
     }
     function draw (r) {
-      activity.update(r, 'plan')
+      if (r.updatedPlanRunId && r.updatedPlanRunId !== runId) { runId = r.updatedPlanRunId; setTimeout(read, 0); return }
+      var execution = r.execution, executing = execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(execution.state)
+      var visible = execution ? Object.assign({}, execution, { steps: execution.steps.concat(execution.child ? execution.child.steps : []), generated: execution.child && execution.child.generated, result: execution.child && execution.child.result }) : r
+      activity.update(visible, execution ? 'work' : 'plan')
       clear(content)
       var report = el('details', 'work-plan-report'); report.appendChild(el('summary', '', t('workActivity.planDetails')))
       report.appendChild(el('p', '', t('taskPlan.boundary')))
@@ -1285,13 +1288,46 @@
         })
         report.appendChild(el('strong', '', t('taskPlan.citations')))
         r.result.citations.forEach(function (c) { var f = r.evidence.files.find(function (f) { return f.evidenceId === c.evidenceId }); report.appendChild(el('pre', '', f.path + ':' + c.startLine + '-' + c.endLine + '\n' + c.quote)) })
-        if (r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.taskRunId && !r.workRunId && !r.registrationPreparation && !r.preparation) content.appendChild(el('p', '', t('workActivity.nextDraft')))
+        if (!r.executionAvailable && !execution && r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.taskRunId && !r.workRunId && !r.registrationPreparation && !r.preparation) content.appendChild(el('p', '', t('workActivity.nextDraft')))
       }
       content.appendChild(report)
-      if (r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
-      if (r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
-      if (r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
-      if (r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
+      if (execution) {
+        content.appendChild(el('p', '', executing ? t('confirmedWork.running') : execution.state === 'completed' ? t('confirmedWork.completed') : execution.state === 'cancelled' ? t('workActivity.cancelled') : t('confirmedWork.stopped')))
+        if (execution.reason) {
+          var reasons = { review_changes_requested: t('confirmedWork.reviewBlocked'), claude_unavailable: t('confirmedWork.reviewerUnavailable'), claude_max_turns: t('confirmedWork.reviewerUnavailable'), worker_timeout: t('confirmedWork.timeout'), timed_out: t('confirmedWork.timeout'), subscription_limit_reached: t('confirmedWork.limit'), evidence_changed: t('confirmedWork.changed'), source_changed: t('confirmedWork.changed'), source_dirty: t('confirmedWork.changed'), cancellation_unconfirmed: t('confirmedWork.cancelUnconfirmed') }
+          content.appendChild(el('p', '', reasons[execution.reason] || t('confirmedWork.unconfirmed')))
+        }
+        if (executing) {
+          var stopWork = el('button', '', t('confirmedWork.stop')); stopWork.type = 'button'
+          stopWork.addEventListener('click', async function () { if (busy) return; busy = true; stopWork.disabled = true; try { draw((await request({ op: 'stop', id: runId })).run) } catch (_) { activity.unavailable() } finally { busy = false } }); content.appendChild(stopWork)
+          setTimeout(read, 2500)
+        } else {
+          var readWork = el('button', '', t('taskPlan.refresh')); readWork.addEventListener('click', read); content.appendChild(readWork)
+          if (execution.workRunId) { var resultLink = el('a', 'briefing-link', t('confirmedWork.result')); resultLink.href = '/project-work?run=' + encodeURIComponent(execution.workRunId); content.appendChild(resultLink) }
+        }
+      }
+      if (!execution && r.workRunId && !workShown) { workShown = true; renderProjectWork({ body: nested }, r.workRunId, null) }
+      if (!execution && r.taskRunId && !taskShown) { taskShown = true; renderProjectTask({ body: nested }, r.taskRunId) }
+      if (!execution && r.registrationPreparation && !r.taskRunId) { content.appendChild(el('p', '', t('taskPlan.uncertain'))); var readback = el('button', '', t('taskPlan.refresh')); readback.addEventListener('click', read); content.appendChild(readback) }
+      if (r.executionAvailable && r.executionStale && !execution && !preparing) {
+        content.appendChild(el('p', '', t('confirmedWork.changed')))
+        var updatePlan = el('button', '', t('confirmedWork.refreshPlan')); updatePlan.type = 'button'
+        updatePlan.addEventListener('click', async function () { if (busy || preparing) return; busy = true; preparing = true; updatePlan.disabled = true; try { var updated = await request({ op: 'replan', id: runId, requestId: crypto.randomUUID() }); runId = updated.run.id; preparing = false; draw(updated.run) } catch (_) { activity.unavailable(); preparing = false } finally { busy = false } }); content.appendChild(updatePlan)
+      }
+      if (r.executionAvailable && !r.executionStale && !execution && r.state === 'completed' && !r.result.questions.length && !r.registrationPreparation && !r.preparation && !preparing) {
+        var confirmationCard = el('div', 'confirmed-work')
+        confirmationCard.appendChild(el('p', '', t('confirmedWork.scope')))
+        confirmationCard.appendChild(el('p', 'meta', t('confirmedWork.delivery')))
+        var executeButton = el('button', 'briefing-action', t('confirmedWork.start')); executeButton.type = 'button'
+        executeButton.addEventListener('click', async function () {
+          if (busy || preparing) return
+          busy = true; preparing = true; executeButton.disabled = true
+          try { draw((await request({ op: 'execute', id: runId, requestId: crypto.randomUUID(), planHash: r.planHash })).run) }
+          catch (e) { activity.unavailable(); clear(content); content.appendChild(el('p', '', e.message === 'evidence_changed' ? t('confirmedWork.changed') : t('confirmedWork.unconfirmed'))); var refreshExecution = el('button', '', t('taskPlan.refresh')); refreshExecution.addEventListener('click', read); content.appendChild(refreshExecution) }
+          finally { busy = false }
+        }); confirmationCard.appendChild(executeButton); content.appendChild(confirmationCard)
+      }
+      if (!r.executionAvailable && !execution && r.state === 'completed' && r.evidence && ['context', 'interface', 'chat'].includes(r.evidence.profile) && !r.registrationPreparation && !r.preparation && !preparing) {
         var form = el('details', 'chat-task-form'); form.appendChild(el('summary', '', t('taskPlan.newTask')))
         var goalLabel = el('label', '', t('projectTask.goal')), goal = el('textarea'); goal.maxLength = 3000; goal.value = r.result.goal; goalLabel.appendChild(goal); form.appendChild(goalLabel)
         var criteriaLabel = el('label', '', t('projectTask.criteria')), criteria = el('textarea'); criteria.maxLength = 12000; criteria.value = r.result.acceptanceChecks.join('\n'); criteriaLabel.appendChild(criteria); form.appendChild(criteriaLabel)
@@ -1313,7 +1349,7 @@
           finally { busy = false }
         }); form.appendChild(draftButton); content.appendChild(form)
       }
-      if (r.state === 'completed' && r.executableRecipe && !r.preparation && !r.registrationPreparation && !preparing) {
+      if (!r.executionAvailable && !execution && r.state === 'completed' && r.executableRecipe && !r.preparation && !r.registrationPreparation && !preparing) {
         var button = el('button', '', t('taskPlan.prepare'))
         button.addEventListener('click', async function () {
           if (busy || preparing) return
