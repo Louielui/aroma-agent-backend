@@ -95,6 +95,7 @@ test('review deadline retains byte counts without retaining raw provider output'
 
 test('project review transport disables CLI formatter tools and host validates exact JSON authority', () => {
   const files = ['acceptance/registered-task.test.cjs'], args = textReviewArgs(files, 'Review test draft.')
+  assert.equal(args[args.indexOf('--effort') + 1], 'medium')
   assert.equal(args.includes('--json-schema'), false); assert.equal(args[args.indexOf('--tools') + 1], '')
   assert.ok(args.includes('--strict-mcp-config')); assert.ok(args.includes('--restricted')); assert.ok(!args.includes('--dangerously-skip-permissions'))
   assert.match(args[args.indexOf('--system-prompt') + 1], /acceptance\/registered-task.test.cjs/)

@@ -28,3 +28,11 @@ not the source, test, review or approval verification mechanisms.
 Automated integration checks use controlled providers and are not evidence of a
 successful live Claude review or operating-system sandbox run. Delivery evidence
 must state those separately.
+
+Live follow-up: the first confirmed sidebar run generated its protected tests,
+then the default-effort Claude review timed out after 240 seconds. A fixed
+connectivity probe succeeded. A read-only review of the preserved draft with
+explicit Medium effort returned a valid pass in 116 seconds (another diagnostic
+returned an invalid result). Project reviews now pin Medium effort; strict JSON
+validation and existing time limits remain. This does not establish reliability
+or completed coding. The original failed run stays unchanged.
