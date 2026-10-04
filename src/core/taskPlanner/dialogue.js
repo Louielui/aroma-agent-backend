@@ -94,7 +94,12 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             }
           } else if (v.intent === 'draft') {
             if (!run || run.state !== 'completed') reply = t('dialogue.planFirst', undefined, v.language)
-            else if (run.taskRunId || run.registrationPreparation) reply = t('dialogue.existing', undefined, v.language)
+            else if (run.dialogue?.contextDigest !== ctx.digest) {
+              const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
+              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, dialogue })
+              receipt.taskPlanRunId = run.id; receipt.state = 'planning_started'; receipts.save(receipt)
+              reply = t('dialogue.replanning', undefined, v.language)
+            } else if (run.taskRunId || run.registrationPreparation) reply = t('dialogue.existing', undefined, v.language)
             else {
               receipt.state = 'draft_requested'; receipt.taskPlanRunId = run.id; receipts.save(receipt)
               await planner.registerTask(actor, { id: run.id, requestId, goal: run.result.goal, criteria: run.result.acceptanceChecks, editable: [...PROFILES[ctx.profile]] })

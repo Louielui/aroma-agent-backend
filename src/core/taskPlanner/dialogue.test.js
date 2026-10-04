@@ -124,3 +124,13 @@ test('request language is isolated from other concurrent dialogue replies', asyn
   assert.match(t('dialogue.notStarted', undefined, 'zh'), /尚未建立/)
   assert.match(t('dialogue.notStarted', undefined, 'en'), /no job has started/)
 })
+
+test('refinements after a completed plan cannot silently draft its obsolete criteria', async t => {
+  const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' }), decision('refine', 'Use only Calendar at the top.'), decision('draft', '')])
+  const r = await f.send('Improve sidebar'), plan = f.runs.get(r.taskPlanRunId)
+  Object.assign(plan, { state: 'completed', result: { goal: 'Top navigation', acceptanceChecks: ['Show four functions'], questions: [] } })
+  await f.send('Change that: show only Calendar at the top.')
+  const updated = await f.send('Prepare the tests for this updated design')
+  assert.equal(f.drafts.length, 0); assert.equal(f.starts.length, 2); assert.notEqual(updated.taskPlanRunId, plan.id)
+  assert.equal(f.starts[1].dialogue.ownerRequests.at(-1), 'Change that: show only Calendar at the top.')
+})

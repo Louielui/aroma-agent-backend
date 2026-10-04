@@ -510,6 +510,22 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       const history = Array.isArray(req.body.history) ? req.body.history.map((entry, i, all) =>
         entry?.role === 'assistant' && (entry.sourceBound === true || (all[i - 1]?.role === 'user' && (require('../company/mailIntent').parseMailRequest(all[i - 1].text || all[i - 1].content, all.slice(0, i - 1)) || require('../context/gmailContextService').gmailIntent(all[i - 1].text || all[i - 1].content))))
           ? { ...entry, text: t('company.mailHistoryReceipt'), content: t('company.mailHistoryReceipt') } : entry) : req.body.history
+      // Resolve a bounded development conversation before keyword-based mail lanes:
+      // navigation labels and chat history are not requests to read a mailbox.
+      // A semantic topic change returns null and preserves ordinary mail routing.
+      const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      if (planningLane && taskDialogue && taskDialogue.candidate(message, req.body.conversationId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        try {
+          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || 'gpt-6.1-sol' })
+          if (answer) { emit('development_dialogue', 200, null); return res.set('Cache-Control', 'no-store').json(answer) }
+        } catch (e) {
+          emit('development_dialogue_failed', 503, 'dialogue_unavailable')
+          return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
+        }
+      }
       const mailRequest = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
         ? require('../company/mailIntent').parseMailRequest(message, history) : null
       const gmailRequest = liveContext?.gmail && !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
@@ -562,19 +578,6 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // The conversation store captures the accepted request. Its terminal worker
       // receipt comes from the job itself; HTTP acceptance is not job completion.
       const planContinuation = require('../core/taskPlanner/continuation')
-      const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
-      if (planningLane && taskDialogue && taskDialogue.candidate(message, req.body.conversationId)) {
-        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
-        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
-        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
-        try {
-          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || 'gpt-6.1-sol' })
-          if (answer) { emit('development_dialogue', 200, null); return res.set('Cache-Control', 'no-store').json(answer) }
-        } catch (e) {
-          emit('development_dialogue_failed', 503, 'dialogue_unavailable')
-          return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
-        }
-      }
       let continued = null
       if (planningLane && planContinuation.confirmation(message)) {
         try { continued = planContinuation.resolveConfirmation(message, conversationStore.get?.(req.body.conversationId), planningRevision) }

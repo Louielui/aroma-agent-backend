@@ -63,3 +63,10 @@ excerpts of the large application files, while full source remains in the plan
 evidence for exact citations and revalidation. Missing source is a verification
 risk, not a request for the Owner to locate files. Clarification questions are
 reserved for unresolved Owner choices.
+
+An explicit draft request after requirements changed first creates an updated
+plan. It cannot silently draft obsolete acceptance criteria.
+
+The semantic development lane precedes keyword mail routing. Mentioning a Mail
+button and chat history does not query a mailbox. An actual topic change returns
+to the existing mail lane and its unchanged source/access checks.
