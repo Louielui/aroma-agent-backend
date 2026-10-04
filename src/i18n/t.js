@@ -78,8 +78,8 @@ function currentLocale () {
  *   in `textResolver.test.js`. See `textResolver.js` for why the obvious check for that is wrong.
  * @param {object=} slots inserted VERBATIM. Never looked up, never translated.
  */
-function t (key, slots) {
-  return resolverFor(currentLocale())(key, slots)
+function t (key, slots, locale) {
+  return resolverFor(LOCALES.includes(locale) ? locale : currentLocale())(key, slots)
 }
 
 module.exports = { t, currentLocale }

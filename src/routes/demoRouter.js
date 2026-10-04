@@ -214,7 +214,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
@@ -563,6 +563,18 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       // receipt comes from the job itself; HTTP acceptance is not job completion.
       const planContinuation = require('../core/taskPlanner/continuation')
       const planningLane = !contextCard && !req.body.attachSection && (!req.body.interactionMode || req.body.interactionMode === 'chat')
+      if (planningLane && taskDialogue && taskDialogue.candidate(message, req.body.conversationId)) {
+        if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: 'same_origin_required' })
+        const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
+        if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
+        try {
+          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || 'gpt-6.1-sol' })
+          if (answer) { emit('development_dialogue', 200, null); return res.set('Cache-Control', 'no-store').json(answer) }
+        } catch (e) {
+          emit('development_dialogue_failed', 503, 'dialogue_unavailable')
+          return res.status(['worker_busy', 'request_conflict', 'conversation_changed'].includes(e.message) ? 409 : 503).json({ error: { message: t('taskPlan.error'), retryable: false } })
+        }
+      }
       let continued = null
       if (planningLane && planContinuation.confirmation(message)) {
         try { continued = planContinuation.resolveConfirmation(message, conversationStore.get?.(req.body.conversationId), planningRevision) }

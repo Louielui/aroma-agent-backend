@@ -1178,9 +1178,16 @@ function createApp (options = {}) {
     }
   })
 
+  const capturedConversationStore = require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
+  const taskDialogue = opts.taskDialogue || (process.env.CHAT_BACKEND === 'codex-subscription' ? require('./core/taskPlanner/dialogue').createDialogue({
+    store: capturedConversationStore, planner: taskPlanner, revision: BOOT_COMMIT,
+    providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),
+    receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
+  }) : null)
   app.use(createDemoRouter({
     liveContext,
     taskPlanner,
+    taskDialogue,
     developmentPlan,
     codeDiagnosis,
     codeRepair,
@@ -1188,7 +1195,7 @@ function createApp (options = {}) {
     mailChat: companyAccessEnabled ? require('./company/mailChat').createMailChat({ mailbox: companyMailbox, memory: companyMailMemory }) : null,
     operatingManager,
     memoryJournal: governedMemory,
-    conversationStore: require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture),
+    conversationStore: capturedConversationStore,
     readBacklogFn: process.env.READ_ACCESS === 'on' ? readBacklogFn : null,
     // ⛔ Round B: the section attachment is RE-DERIVED server-side from this store. The browser
     // sends a section id and never the lines — see demoRouter's attachSection block.

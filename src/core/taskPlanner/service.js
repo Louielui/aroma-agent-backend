@@ -50,7 +50,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
         invoke: async (id, version, input) => {
           try {
             check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
-            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
+            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateResult(result, evidence)) throw Error('invalid_worker_result')
@@ -66,7 +66,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       if (after.hash !== packet.hash) throw Error('evidence_changed')
       r.result = result; r.verification = { matched: true, citationsVerified: true, testsExecuted: false, filesChanged: false, factualClaimsVerified: false }
       r.executableRecipe = result.questions.length === 0 ? eligibleRecipe(r.message) : null
-      r.planHash = hash(JSON.stringify({ result, evidenceHash: packet.hash, message: r.message, executableRecipe: r.executableRecipe }))
+      r.planHash = hash(JSON.stringify({ result, evidenceHash: packet.hash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))
       r.state = result.questions.length ? 'needs_clarification' : 'completed'; record(r, 'source_verified')
     } catch (e) { r.result = null; r.executableRecipe = null; r.reason = safe(e); r.state = r.reason === 'cancelled' ? 'cancelled' : r.reason === 'timed_out' ? 'timed_out' : 'failed' }
     finally {
@@ -78,11 +78,12 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
   }
   function start (actor, input) {
     owner(actor)
-    if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId','conversationId,dialogue,effort,message,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    if (input.dialogue && !require('./dialogueContext').validDialogue(input.dialogue, bootCommit, input.conversationId, classify(input.message).profile)) throw Error('invalid_request')
     const effort = Object.hasOwn(input, 'effort') ? input.effort : DEFAULT_EFFORT
     if (!REASONING_EFFORTS.includes(effort)) throw Error('invalid_request')
     const prior = store.all().find(r => r.requestId === input.requestId)
-    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId || prior.effort !== effort) throw Error('request_conflict'); return { ...prior, reused: true } }
+    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId || prior.effort !== effort || JSON.stringify(prior.dialogue) !== JSON.stringify(input.dialogue)) throw Error('request_conflict'); return { ...prior, reused: true } }
     if (active) throw Error('worker_busy')
     const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model: 'gpt-6.1-sol', effort, billing: 'chatgpt-subscription' }
     record(r, 'owner_requested'); active = r.id
@@ -95,7 +96,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     owner(actor)
     if (!input || Object.keys(input).sort().join(',') !== 'id,requestId' || !ID.test(input.id || '') || !ID.test(input.requestId || '')) throw Error('invalid_request')
     const r = get(actor, input.id)
-    if (!r || r.state !== 'completed' || !r.executableRecipe || r.executableRecipe !== eligibleRecipe(r.message) || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (!r || r.state !== 'completed' || !r.executableRecipe || r.executableRecipe !== eligibleRecipe(r.message) || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))) throw Error('invalid_request')
     if (r.registrationPreparation) throw Error('request_conflict')
     if (r.preparation) { if (r.preparation.requestId !== input.requestId || !r.workRunId) throw Error('request_conflict'); return { run: r, work: { run: { id: r.workRunId }, approval: null } } }
     if (active) throw Error('worker_busy')
@@ -120,7 +121,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     const { keys, request, profileFor } = require('../projectTasks/contract')
     if (!keys(input, ['id', 'requestId', 'goal', 'criteria', 'editable']) || !ID.test(input.id || '')) throw Error('invalid_request')
     const taskInput = request({ bootCommit, requestId: input.requestId, goal: input.goal, criteria: input.criteria, editable: input.editable }), r = get(actor, input.id)
-    if (!r || r.profile !== profileFor(taskInput) || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))) throw Error('invalid_request')
+    if (!r || r.profile !== profileFor(taskInput) || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))) throw Error('invalid_request')
     if (r.preparation) throw Error('request_conflict')
     if (r.registrationPreparation) { if (JSON.stringify(r.registrationPreparation.input) !== JSON.stringify(taskInput) || !r.taskRunId) throw Error('request_conflict'); return { run: r, task: { run: { id: r.taskRunId }, approval: null } } }
     if (active) throw Error('worker_busy')
