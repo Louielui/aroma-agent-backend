@@ -87,3 +87,45 @@ test('review timeout and provider failure retain only safe diagnostics and never
     assert.doesNotMatch(JSON.stringify(v.run), /private source|private-value|secret-provider-error/)
   }
 })
+
+test('review feedback repairs the draft once, preserves both attempts and approves only a fresh pass', async () => {
+  let drafts = 0, reviews = 0; const prompts = []
+  const f = fixture({ provider: {
+    preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }),
+    complete: async prompt => { prompts.push(JSON.parse(prompt)); drafts++; return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ ...generated, testCode: generated.testCode + '\n// attempt ' + drafts }) } }
+  }, review: async () => ({ verdict: ++reviews === 1 ? 'changes_requested' : 'pass', summary: 'Add a missing behaviour assertion', findings: [], billing: 'claude-subscription' }) })
+  const v = await f.ready()
+  assert.equal(drafts, 2); assert.equal(reviews, 2); assert.equal(v.run.state, 'awaiting_approval')
+  assert.equal(v.run.attempts.length, 2); assert.equal(v.run.attempts[0].review.verdict, 'changes_requested')
+  assert.match(v.run.attempts[0].generated.testCode, /attempt 1/)
+  assert.match(prompts[1].previousDraft.testCode, /attempt 1/)
+  assert.equal(prompts[1].reviewFeedback.summary, 'Add a missing behaviour assertion')
+  assert.deepEqual(prompts[1].criteria, f.input.criteria); assert.deepEqual(prompts[1].editable, f.input.editable)
+  assert.match(v.run.generated.testCode, /attempt 2/); assert.ok(v.approval)
+})
+
+test('repeated review refusal stops after one repair and retains the reason without authority', async () => {
+  let reviews = 0
+  const f = fixture({ review: async () => { reviews++; return { verdict: 'changes_requested', summary: 'Still missing coverage', billing: 'claude-subscription' } } })
+  const v = await f.ready()
+  assert.equal(reviews, 2); assert.equal(v.run.state, 'needs_attention')
+  assert.equal(v.run.reason, 'review_changes_requested'); assert.equal(v.approval, null)
+  assert.equal(v.run.attempts.length, 2)
+})
+
+test('source drift after review rejection prevents repair model calls', async () => {
+  let f
+  f = fixture({ review: async () => { f.drift(); return { verdict: 'changes_requested', billing: 'claude-subscription' } } })
+  const v = await f.ready()
+  assert.equal(v.run.reason, 'source_changed'); assert.equal(f.calls.filter(c => c === 'draft').length, 1)
+})
+
+test('subscription quota during a repair is terminal and never causes a third model attempt', async () => {
+  let calls = 0
+  const f = fixture({ provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }),
+    complete: async () => { if (++calls === 2) throw Error('subscription_limit_reached'); return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(generated) } } },
+    review: async () => ({ verdict: 'changes_requested', billing: 'claude-subscription' }) })
+  const v = await f.ready()
+  assert.equal(calls, 2); assert.equal(v.run.reason, 'subscription_limit_reached')
+  assert.equal(v.run.attempts.length, 1); assert.equal(v.approval, null)
+})

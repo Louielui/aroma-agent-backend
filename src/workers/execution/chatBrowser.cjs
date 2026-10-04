@@ -24,7 +24,30 @@ async function connect (url) {
     const id = ++sequence, timer = setTimeout(() => { pending.delete(id); reject(Error('browser_timeout')) }, 10000); pending.set(id, { resolve, reject, timer }); ws.send(JSON.stringify({ id, method, params }))
   }), close () { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(Error('browser_closed')) }; pending.clear(); ws.close() } }
 }
-async function run ({ locale, width, failedReads = false }) {
+// Operate the actual rendered controls, not CSS source-text assertions.
+function navigationGeometry () {
+  const ids = ['open-home', 'new-chat', 'open-settings', 'open-manager', 'open-drive-context', 'open-aroma-context', 'open-calendar-context', 'open-gmail-context', 'open-live-context', 'open-development-plan', 'open-project-tasks', 'open-workers', 'open-memory', 'open-connections', 'open-company-access', 'open-architecture']
+  const expand = document.getElementById('expand')
+  if (expand && getComputedStyle(expand).display !== 'none') expand.click()
+  return ids.every(id => {
+    const matches = document.querySelectorAll('[id="' + id + '"]'), e = matches[0]
+    if (matches.length !== 1 || !e || !e.textContent.trim()) return false
+    for (let a = e.parentElement; a; a = a.parentElement) if (a.tagName === 'DETAILS' && !a.open) a.querySelector('summary').click()
+    e.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
+    const r = e.getBoundingClientRect(), s = getComputedStyle(e)
+    if (r.width <= 0 || r.height <= 0 || s.display === 'none' || s.visibility === 'hidden' || e.closest('[inert]')) return false
+    let left = Math.max(0, r.left), right = Math.min(innerWidth, r.right), top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom)
+    for (let a = e.parentElement; a; a = a.parentElement) {
+      const b = a.getBoundingClientRect(), c = getComputedStyle(a)
+      if (/hidden|clip|auto|scroll/.test(c.overflowX)) { left = Math.max(left, b.left); right = Math.min(right, b.right) }
+      if (/hidden|clip|auto|scroll/.test(c.overflowY)) { top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom) }
+    }
+    if (right - left < Math.min(24, r.width) || bottom - top < Math.min(16, r.height)) return false
+    const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
+    return hit === e || e.contains(hit)
+  })
+}
+async function run ({ locale, width, failedReads = false, sidebar = false }) {
   if (!['zh', 'en'].includes(locale) || ![1280, 390].includes(width) || process.platform !== 'win32' || !/WDAGUtilityAccount/i.test(require('node:os').userInfo().username)) throw Error('offline_guest_required')
   const root = 'C:/XiangScratch', profile = root + '/edge-' + randomUUID(); fs.mkdirSync(profile, { recursive: true })
   const child = cp.spawn('C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe', ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', '--disable-background-networking', '--remote-debugging-port=0', '--user-data-dir=' + profile, 'about:blank'], { windowsHide: true, stdio: 'ignore' })
@@ -57,6 +80,13 @@ async function run ({ locale, width, failedReads = false }) {
     for (let n = 0; n < 80; n++) { if (errors.length) throw Error('browser_page_startup_failed'); if (await evaluate("!!document.getElementById('brand-name')?.textContent")) break; await wait(100) }
     const initial = await evaluate("({brand:document.getElementById('brand-name').textContent, model:document.getElementById('picker-label').textContent, depth:document.getElementById('chat-level').value, options:Array.from(document.getElementById('chat-level').options,o=>({value:o.value,text:o.textContent})), placeholder:document.getElementById('msg').placeholder, disabled:document.getElementById('send').disabled})")
     if (!initial.brand || !initial.placeholder || initial.depth !== 'medium' || !initial.model.includes('GPT-6.1 Sol') || initial.disabled !== true || JSON.stringify(initial.options.map(o => o.value)) !== JSON.stringify(['low','medium','high','xhigh','max']) || initial.options.some(o => !o.text)) throw Error('browser_controls_failed')
+    if (sidebar) {
+      for (const height of [900, 480]) {
+        await rpc.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width === 390 })
+        if (!await evaluate('(' + navigationGeometry.toString() + ')()')) throw Error('browser_navigation_geometry_failed')
+      }
+      await rpc.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width === 390 })
+    }
     if (width === 390) await evaluate("document.getElementById('collapse').click()")
     const geometry = await evaluate("['msg','chat-level','picker','send'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect(),s=getComputedStyle(e);return {id,left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height,display:s.display,visibility:s.visibility}})")
     if (geometry.some(r => r.width <= 0 || r.height <= 0 || r.left < -1 || r.right > width + 1 || r.bottom > 901 || r.display === 'none' || r.visibility === 'hidden')) throw Error('browser_layout_failed')
@@ -83,4 +113,4 @@ async function run ({ locale, width, failedReads = false }) {
     fs.writeFileSync(root + '/' + name + '.png', png); fs.writeFileSync(root + '/' + name + '.json', JSON.stringify(proof)); return proof
   } finally { if (rpc) { await rpc.call('Browser.close').catch(() => {}); rpc.close() }; child.kill() }
 }
-module.exports = { run, page }
+module.exports = { run, page, navigationGeometry }

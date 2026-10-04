@@ -5,6 +5,8 @@ const { createMemoryRunStore } = require('../operating/runStore')
 const { createTasks } = require('../projectTasks/service'), { definition } = require('../projectTasks/contract')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
 async function fixture (options = {}) {
+ const browser=['zh','en'].flatMap(locale=>[1280,390].map(width=>({name:`browser-${locale}-${width}.png`,engine:'edge-headless-offline-v1',browserVersion:'Edg/154.0',locale,width,height:900,failedReads:locale==='zh'&&width===390,pageHash:'a'.repeat(64),screenshotHash:'b'.repeat(64),screenshotBytes:2000,checks:Object.fromEntries(['startup','labels','fiveDepths','mediumDefault','solDefault','layout','keyboard','picker','chatScope','explicitConfirmation','noPageErrors','onlyFixtureRequests'].map(k=>[k,true])),routes:['/demo']})))
+
   const store = createMemoryRunStore(), tasks = createMemoryRunStore(), calls = [], workId = randomUUID()
   const evidence = { project: 'aroma-agent-backend', profile: 'interface', revision: HEAD, bootCommit: HEAD, committedOnly: true, files: READ_PROFILES.interface.map((path, i) => ({ path, evidenceId: 'plan-' + i, content: "'use strict'\n", lineCount: 2, sha256: hash("'use strict'\n") })) }
   const packet = () => ({ state: 'ok', retrievedAt: new Date().toISOString(), evidence, hash: hash(JSON.stringify(evidence)) })
@@ -27,14 +29,14 @@ async function fixture (options = {}) {
       providers: { isolation: async () => ({ ready: true }), status: async () => ({ codex: { ready: true }, claude: { ready: true } }),
         codeOrder: async ({ order }) => {
           const changes = order.allowedFiles.map(file => ({ file, before: 'old', after: 'new', beforeHash: hash('old'), afterHash: hash('new') }))
-          return { changes, changedFiles: order.allowedFiles, patchHash: hash(JSON.stringify(changes)), model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription', execution: 'windows_sandbox_offline', appliedToLive: false, baseline: { total: 3, failed: 1 }, tests: { total: 3, passed: 3, failed: 0, skipped: 0, cancelled: 0, exitCode: 0 } }
+          return { changes, changedFiles: order.allowedFiles, patchHash: hash(JSON.stringify(changes)), model: 'gpt-6.1-sol', effort: 'high', billing: 'chatgpt-subscription', execution: 'windows_sandbox_offline', appliedToLive: false, baseline: { total: 7, failed: 1 }, tests: { total: 7, passed: 7, failed: 0, skipped: 0, cancelled: 0, exitCode: 0, browser } }
         }, reviewOrder: async () => ({ verdict: 'pass', billing: 'claude-subscription' }) }
     })
   }
   const workRpc = async b => {
     calls.push('work:' + b.op)
     if (workService) { const { op, ...input } = b; return { run: op === 'approve' ? workService.approve(OWNER, input) : op === 'cancel' ? workService.cancel(OWNER, b.id) : workService.get(OWNER, b.id) } }
-    if (b.op === 'approve') { assert.equal(b.nonce, 'secret-once'); work.state = 'coding'; if (options.onCode) options.onCode(); if (!options.keepCoding) { work.state = 'completed'; work.result = { changes: [], tests: { total: 3, passed: 3, failed: 0, skipped: 0, cancelled: 0 } }; work.review = { verdict: 'pass', billing: 'claude-subscription' } } }
+    if (b.op === 'approve') { assert.equal(b.nonce, 'secret-once'); work.state = 'coding'; if (options.onCode) options.onCode(); if (!options.keepCoding) { work.state = 'completed'; work.result = { changes: [], tests: { total: 7, passed: 7, failed: 0, skipped: 0, cancelled: 0 } }; work.review = { verdict: 'pass', billing: 'claude-subscription' } } }
     if (b.op === 'cancel') work.state = 'cancelled'; return { run: structuredClone(work) }
   }
   const args = { bootCommit: HEAD, store, executionRpc: { task: taskRpc, work: workRpc }, executionPollMs: 1,
@@ -101,7 +103,7 @@ test('planner, test registration, registry, sealed work approvals and developmen
   const r = f.service.get(OWNER, f.input.id)
   assert.equal(r.execution.state, 'completed', JSON.stringify(r.execution))
   assert.equal(r.execution.child.result.changes.length, 2)
-  assert.equal(r.execution.child.result.tests.passed, 3)
+  assert.equal(r.execution.child.result.tests.passed, 7)
   assert.equal(r.execution.child.steps.filter(s => s.stage === 'approved').length, 1)
   assert.equal(r.execution.child.steps.find(s => s.stage === 'approved').facts.actor, 'owner')
   assert.equal(r.execution.appliedToLive, false)

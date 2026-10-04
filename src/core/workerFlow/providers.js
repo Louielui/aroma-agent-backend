@@ -100,14 +100,14 @@ function acceptanceReviewArgs (packet) {
   const source = packet?.source
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw Error('invalid_worker_result')
   const names = Object.keys(source).sort().join('\n')
-  const profile = Object.entries({ context: FILES, interface: INTERFACE_FILES, chat: CHAT_FILES })
-    .find(([, editable]) => filesFor({ editable }).slice().sort().join('\n') === names)?.[0]
+  const profile = Object.entries({ context: FILES, interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
+    .find(([, files]) => files.slice().sort().join('\n') === names)?.[0] || (names === INTERFACE_FILES.slice().sort().join('\n') ? 'interface' : null)
   if (!profile) throw Error('invalid_worker_result')
   // These rules describe packaged tests inside the offline executor, not reviewer tools.
   // The host selects a closed profile; packet prose cannot expand its capabilities.
   const limits = {
     context: 'Tests may use node:test, node:assert/strict and the supplied contextResult/toolGateway modules only. No filesystem access.',
-    interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry.',
+    interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry. If supplied, the immutable host browser tests and chatBrowser.cjs harness check actual navigation bounds, ancestor clipping and hit testing at desktop/mobile widths and low heights in the offline guest. Assess generated tests and host browser tests together. The four browser cases add to the generated count. Do not permit generated tests to launch processes or alter the harness; do not infer that these tests have already run.',
     chat: 'Tests may use the supplied chat modules and registered read-only dependencies. The fixed browser acceptance harness remains protected. Assess the generated Node tests and the supplied browser tests together, without inferring execution or allowing changes to read-only dependencies.'
   }
   return textReviewArgs(['acceptance/registered-task.test.cjs'], 'Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion is actually asserted, total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.')
