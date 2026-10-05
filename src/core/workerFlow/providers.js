@@ -104,6 +104,22 @@ function readTextReview (envelope, files) {
   if (!exact(r, ['verdict', 'summary', 'findings']) || !Array.isArray(r.findings) || r.findings.some(f => !exact(f, ['file', 'line', 'message'])) || (r.verdict === 'pass' && r.findings.length)) invalid('schema')
   try { return readReview({ ...envelope, structured_output: r }, files) } catch (_) { invalid('finding') }
 }
+async function runTextReview (args, options, files, run = runClaude) {
+  const deadline = Date.now() + (options.timeoutMs || 90000)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    if (options.signal?.aborted) throw Error('worker_cancelled')
+    const timeoutMs = deadline - Date.now()
+    if (timeoutMs <= 0) throw Error('worker_timeout')
+    // Re-read the identical packet only. No draft generation, approval or work
+    // dispatch is replayed, and the overall review deadline is not extended.
+    const envelope = await run(args, { ...options, timeoutMs })
+    try { return { ...readTextReview(envelope, files), formatAttempts: attempt } } catch (error) {
+      let parsed; try { parsed = JSON.parse(envelope?.result) } catch (_) {}
+      const negative = /\"verdict\"\s*:\s*\"changes_requested\"|\"findings\"\s*:\s*\[\s*\{/.test(envelope?.result || '') || parsed?.verdict === 'changes_requested' || (Array.isArray(parsed?.findings) && parsed.findings.length > 0)
+      if (negative || attempt === 3 || !['json', 'schema'].includes(error.reviewValidation?.stage)) throw error
+    }
+  }
+}
 function acceptanceReviewScope (packet) {
   const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor } = require('../projectTasks/contract')
   const source = packet?.source
@@ -152,13 +168,12 @@ function createProviders ({ executable, root, allowCredits = false }) {
     async reviewAcceptance (packet, { signal } = {}) {
       await claudeStatus({ cwd: root })
       const files = acceptanceReviewFiles(packet), args = acceptanceReviewArgs(packet)
-      return readTextReview(await runClaude(args, { cwd: root, timeoutMs: 240000, signal, input: JSON.stringify(packet) }), files)
+      return runTextReview(args, { cwd: root, timeoutMs: 240000, signal, input: JSON.stringify(packet) }, files)
     },
     async reviewOrder (packet, { signal, emit = () => {} } = {}) {
       await claudeStatus({ cwd: root })
       const files = packet.workOrder.allowedFiles
-      const envelope = await runClaude(textReviewArgs(files, 'Review only the supplied work order, source changes and measured tests for correctness, scope and preservation of existing behavior.'), { cwd: root, timeoutMs: 180000, signal, input: JSON.stringify(packet) })
-      const review = readTextReview(envelope, files)
+      const review = await runTextReview(textReviewArgs(files, 'Review only the supplied work order, source changes and measured tests for correctness, scope and preservation of existing behavior.'), { cwd: root, timeoutMs: 180000, signal, input: JSON.stringify(packet) }, files)
       // New UI candidates must pass both correctness and actual-pixel review.
       // Existing archived receipts are never rewritten or replayed.
       if (review.verdict === 'pass' && require('../../design/uiDesign').forFiles(files)) {
@@ -176,4 +191,4 @@ function createProviders ({ executable, root, allowCredits = false }) {
     }
   }
 }
-module.exports = { createProviders, code, codingProvider, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs, acceptanceReviewFiles }
+module.exports = { createProviders, code, codingProvider, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, runTextReview, acceptanceReviewArgs, acceptanceReviewFiles }

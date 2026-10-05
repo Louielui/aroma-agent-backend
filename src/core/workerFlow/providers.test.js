@@ -3,6 +3,29 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { code, claudeArgs, readReview, runClaude, textReviewArgs, readTextReview } = require('./providers')
 const { SOURCE, TESTS } = require('./fixture')
 
+test('read-only review retries bounded invalid formatting, never a rejection or transport failure', async () => {
+  const { runTextReview } = require('./providers')
+  const pass = { type: 'result', subtype: 'success', result: JSON.stringify({ verdict: 'pass', summary: 'Valid review', findings: [] }) }
+  const reject = { ...pass, result: JSON.stringify({ verdict: 'changes_requested', summary: 'Missing check', findings: [{ file: 'test.cjs', line: 1, message: 'Required behavior is not asserted' }] }) }
+  let calls = 0
+  const options = { cwd: 'empty', signal: new AbortController().signal, input: 'same packet' }
+  const run = async (args, o) => { calls++; assert.equal(o.input, options.input); assert.equal(o.signal, options.signal); assert.ok(o.timeoutMs > 0 && o.timeoutMs <= 90000); return calls < 3 ? { ...pass, result: 'invalid JSON' } : pass }
+  const result = await runTextReview(['--system-prompt', 'bounded review'], options, ['test.cjs'], run)
+  assert.equal(result.verdict, 'pass'); assert.equal(result.formatAttempts, 3); assert.equal(calls, 3)
+  calls = 0
+  const refused = await runTextReview([], options, ['test.cjs'], async () => { calls++; return reject })
+  assert.equal(refused.verdict, 'changes_requested'); assert.equal(calls, 1)
+  for (const response of [{ ...pass, result: '```json\n' + reject.result + '\n```' }, { ...pass, result: JSON.stringify({ ...JSON.parse(reject.result), extra: true }) }, { ...pass, result: JSON.stringify({ ...JSON.parse(pass.result), findings: JSON.parse(reject.result).findings }) }]) {
+    calls = 0; await assert.rejects(runTextReview([], options, ['test.cjs'], async () => { calls++; return response }), /invalid_worker_result/); assert.equal(calls, 1)
+  }
+  calls = 0
+  await assert.rejects(runTextReview([], options, ['test.cjs'], async () => { calls++; return { ...pass, result: 'invalid JSON' } }), /invalid_worker_result/)
+  assert.equal(calls, 3)
+  calls = 0
+  await assert.rejects(runTextReview([], options, ['test.cjs'], async () => { calls++; throw Error('worker_timeout') }), /worker_timeout/)
+  assert.equal(calls, 1)
+})
+
 test('coding completion gets a bounded development deadline without extending preflight or enabling tools', async () => {
   const calls = [], signal = new AbortController().signal
   const client = require('./providers').codingProvider({ executable: 'codex', cwd: 'empty', allowCredits: true }, {
