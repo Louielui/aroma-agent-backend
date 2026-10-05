@@ -27,7 +27,7 @@ test('CSS task carries immutable JS and protected tests through registration, is
   const providers = { isolation: executor.readiness, status: async () => ({ codex: { ready: true }, claude: { ready: true } }), codeOrder: async ({ order }) => {
     isolated = await coder.execute({ actor: 'owner', approval: coder.prepare(order, 'owner') })
     return { ...isolated, execution: 'windows_sandbox_offline', changedFiles: isolated.changes.map(c => c.file), isolatedRunId: isolated.id }
-  }, reviewOrder: async () => { reviews++; return { verdict: 'pass', billing: 'claude-subscription' } } }
+  }, reviewOrder: async packet => { reviews++; return { verdict: 'pass', billing: 'claude-subscription', visual: { verdict: 'pass', summary: 'Fixture visual receipt', findings: [], inspected: browser.map(p => p.name), screenshots: browser.map(p => ({ name: p.name, screenshotHash: p.screenshotHash })), design: packet.design, patchHash: packet.patchHash, model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', reviewedAt: new Date().toISOString() } } } }
   const work = createProjectWork({ source, providers, store: workStore, enabled: () => true, resolveRecipe: registry.resolve, catalogueRecipes: registry.catalogue })
   const tasks = createTasks({ store: taskStore, enabled: () => true, sourceFor: d => createSource({ root, health, resolveRecipe: () => d }), provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async (prompt, options) => { drafts++; assert.match(options.system, /sidebar/); assert.deepEqual(Object.keys(JSON.parse(prompt).files), [...FILES, 'src/workers/execution/chatBrowser.cjs']); return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(generated) } } }, review: async () => ({ verdict: 'pass', billing: 'claude-subscription' }), prepareWork: i => work.prepare(OWNER, i) })
   const input = { bootCommit: boot, requestId: randomUUID(), goal: 'Use theme tokens', criteria: ['Sidebar CSS uses the ink token'], editable: [FILES[1]] }, started = tasks.start(OWNER, input)
@@ -39,6 +39,8 @@ test('CSS task carries immutable JS and protected tests through registration, is
   const r = work.get(OWNER, p.work.run.id); assert.equal(r.state, 'completed'); assert.equal(coding, 1); assert.equal(reviews, 1)
   assert.equal(packs.length, 2); assert.equal(packs[0].files[FILES[0]], readonly); assert.equal(packs[1].files[FILES[0]], readonly); assert.equal(packs[0].files[TEST], packs[1].files[TEST])
   const accepted = validateAccepted(r, isolated, registry.resolve); assert.equal(accepted.dependencies[FILES[0]], readonly); assert.ok(accepted.dependencies['src/workers/execution/chatBrowser.cjs'])
+  const tampered = structuredClone(r); delete tampered.review.visual; assert.throws(() => validateAccepted(tampered, isolated, registry.resolve), /accepted_evidence_changed/)
+  const removed = structuredClone(r); delete removed.result.design; assert.throws(() => validateAccepted(removed, isolated, registry.resolve), /accepted_evidence_changed/)
   fs.writeFileSync(path.join(root, 'outside.txt'), 'pending outside')
   const repository = createRepository({ root, source, resolveRecipe: registry.resolve }), recipe = r.workOrder.recipe
   const change = await repository.apply({ snapshot: await source.read(boot, undefined, recipe), before: accepted.before, after: accepted.after, id: randomUUID(), action: 'adopt' }); boot = head()

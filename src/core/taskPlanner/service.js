@@ -41,6 +41,8 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       const packet = await step(() => source.read(OWNER, r.profile, c.abort.signal)), evidence = validatePacket(packet, r.profile)
       if (evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
       r.evidence = evidence; r.evidenceHash = packet.hash; r.retrievedAt = packet.retrievedAt; record(r, 'source_received')
+      const uiDesign = require('../../design/uiDesign').guidance(r.profile)
+      if (uiDesign) { r.design = uiDesign.receipt; record(r, 'design_guidance_loaded') }
       const runProvider = providerFor ? providerFor({ model: r.model, effort: r.effort }) : provider
       const ready = await step(() => runProvider.preflight({ signal: c.abort.signal }))
       if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
@@ -51,7 +53,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
         invoke: async (id, version, input) => {
           try {
             check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
-            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), evidence: numbered }), { system: SYSTEM, signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
+            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateResult(result, evidence)) throw Error('invalid_worker_result')

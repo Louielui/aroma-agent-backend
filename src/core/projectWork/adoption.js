@@ -45,6 +45,8 @@ function validateAccepted (run, isolated, resolveRecipe = recipe) {
   for (const evidence of [result.tests, isolated.tests]) if (evidence?.total !== w.expectedTests || evidence.passed !== w.expectedTests || evidence.failed !== 0 || evidence.exitCode !== 0 ||
     evidence.skipped !== 0 || evidence.cancelled !== 0 || !boundaryValid(evidence)) throw Error('accepted_evidence_changed')
   if (Object.hasOwn(protectedTests, browserEvidence.TEST) && (!browserEvidence.complete(result.tests.browser) || JSON.stringify(result.tests.browser) !== JSON.stringify(isolated.tests.browser))) throw Error('accepted_evidence_changed')
+  // Preserve legacy receipts; new design-guided runs need exact visual evidence.
+  if (result.design || isolated.design) require('../../design/visualReview').verifyReceipt(run.review.visual, result, isolated.design)
   return { before: w.recipe === RECIPE ? before[FILE] : before, after: w.recipe === RECIPE ? after[FILE] : after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })),
     ...(w.readonlyFiles ? { dependencies } : {}),
     ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }

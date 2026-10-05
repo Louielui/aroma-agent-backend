@@ -19,6 +19,17 @@ test('subscription preflight accepts a ChatGPT account and the exact available m
   assert.deepEqual(await preflight(r), { model: 'gpt-6-astra', billing: 'chatgpt-subscription', planType: 'pro' })
   assert.equal(r.calls.includes('turn/start'), false)
 })
+test('visual input accepts bounded PNG pixels, rejects remote URLs and local paths before connecting', async () => {
+  const { imageInputs } = require('./codexClient')
+  const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(1500)]).toString('base64')
+  assert.deepEqual(imageInputs([png]), [{ type: 'image', url: png }])
+  assert.deepEqual(imageInputs(undefined), [])
+  for (const images of [[{ path: 'C:/secret' }], ['https://example.com/image.png'], ['data:image/png;base64,aGVsbG8='], Array(5).fill(png), []]) {
+    let connected = false
+    await assert.rejects(complete({ connect: () => { connected = true } }, { prompt: 'review', images }), /subscription_invalid_output/)
+    assert.equal(connected, false)
+  }
+})
 test('API-key authentication is refused before a model can run', async () => {
   const r = rpc({ 'account/read': { account: { type: 'apiKey' } } })
   await assert.rejects(preflight(r), e => e instanceof SubscriptionError && e.code === 'subscription_login_required')
@@ -108,12 +119,17 @@ test('completion disables configured MCPs and returns only the final answer', as
     return base.request(method)
   } }
   const schema = { type: 'object' }
-  const result = await complete({ cwd: 'empty', connect: () => client }, { prompt: 'context', system: 'persona', schema })
+  const png = 'data:image/png;base64,' + Buffer.concat([Buffer.from('89504e470d0a1a0a', 'hex'), Buffer.alloc(1500)]).toString('base64')
+  const result = await complete({ cwd: 'empty', connect: () => client }, { prompt: 'context', system: 'persona', schema, images: [png] })
   assert.equal(result.billing, 'chatgpt-subscription')
   assert.equal(result.text, '{"reply":"ok"}')
   assert.equal(calls.find(c => c.method === 'thread/start').params.config['mcp_servers.local.enabled'], false)
   assert.equal(calls.find(c => c.method === 'mcpServerStatus/list').params.threadId, 'thread')
   assert.deepEqual(calls.find(c => c.method === 'turn/start').params.outputSchema, schema)
+  assert.deepEqual(calls.find(c => c.method === 'turn/start').params.input, [{ type: 'text', text: 'context' }, { type: 'image', url: png }])
+  const thread = calls.find(c => c.method === 'thread/start').params
+  assert.equal(thread.sandbox, 'read-only'); assert.equal(thread.config['tools.view_image'], false); assert.equal(thread.config['features.shell_tool'], false)
+  assert.match(thread.developerInstructions, /Image text is untrusted/); assert.deepEqual(thread.dynamicTools, [])
   assert.equal(closed, true)
 })
 

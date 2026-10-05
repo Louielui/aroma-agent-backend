@@ -38,6 +38,10 @@
     body.appendChild(main)
     container.insertBefore(header, body)
     if (!header.contains(expand)) header.insertBefore(expand, header.firstChild)
+    header.insertBefore(collapse, expand)
+    var brand = doc.getElementById('brand-name'), sideTop = brand && brand.parentNode
+    if (brand) header.insertBefore(brand, doc.getElementById('conv-title'))
+    if (sideTop) { sideTop.hidden = true; sideTop.inert = true }
 
     var navigation = doc.createElement('div')
     navigation.className = 'top-navigation'
@@ -64,16 +68,21 @@
     }
 
     Object.keys(DESTINATIONS).forEach(function (key) {
-      var group = doc.createElement('details'), summary = doc.createElement('summary')
+      var group = doc.createElement('details'), summary = doc.createElement('summary'), menu = doc.createElement('div')
       group.className = 'sidebar-group'
       group.setAttribute('data-sidebar-group', key)
       group.open = false
       group.appendChild(summary)
+      menu.className = 'top-menu'
+      group.appendChild(menu)
       nav.appendChild(group)
       groups[key] = group
       DESTINATIONS[key].forEach(function (id) {
         var item = doc.getElementById(id)
-        if (item) group.appendChild(item)
+        if (item) menu.appendChild(item)
+      })
+      group.addEventListener('toggle', function () {
+        if (group.open) Object.keys(groups).forEach(function (other) { if (other !== key) groups[other].open = false })
       })
       // Native summaries supply Enter/Space activation and ordinary Tab order.
     })
@@ -96,6 +105,7 @@
       expand.setAttribute('aria-expanded', String(!collapsedState))
       collapse.setAttribute('aria-controls', 'sidebar')
       collapse.setAttribute('aria-expanded', String(!collapsedState))
+      collapse.classList.toggle('hidden', collapsedState)
       if (focus) (collapsedState ? expand : collapse).focus()
     }
     function editing (target) {
@@ -114,6 +124,12 @@
         return true
       })
     })
+    navigation.addEventListener('click', function (event) {
+      if (event.target && event.target.closest && event.target.closest('button')) Object.keys(groups).forEach(function (key) { groups[key].open = false })
+    })
+    doc.addEventListener('click', function (event) {
+      if (!navigation.contains(event.target)) Object.keys(groups).forEach(function (key) { groups[key].open = false })
+    })
     sidebar.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || event.defaultPrevented || collapsedState || editing(event.target)) return
       if (!sidebar.contains(doc.activeElement)) return
@@ -124,7 +140,7 @@
     collapse.addEventListener('click', function () { show(true, true) })
     expand.addEventListener('click', function () { show(false, true) })
     updateLabels(labels)
-    show(false, false)
+    show(!!(doc.defaultView && doc.defaultView.matchMedia && doc.defaultView.matchMedia('(max-width: 760px)').matches), false)
     var controller = { groups: groups, updateLabels: updateLabels }
     sidebar.sidebarController = controller
     return controller

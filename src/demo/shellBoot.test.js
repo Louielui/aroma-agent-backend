@@ -32,7 +32,8 @@ function dom (html) {
   for (const id of ['chat-level-low', 'chat-level-medium', 'chat-level-high', 'chat-level-xhigh', 'chat-level-max']) { const option = ids.get(id); select.appendChild(option); if (option.selected) select.value = option.value }
   const body = make('body')
   body.appendChild(ids.get('app')); ids.get('app').appendChild(ids.get('sidebar')); ids.get('app').appendChild(ids.get('main'))
-  ids.get('main').appendChild(ids.get('topbar')); ids.get('topbar').appendChild(ids.get('expand'))
+  ids.get('main').appendChild(ids.get('topbar')); ids.get('topbar').appendChild(ids.get('expand')); ids.get('topbar').appendChild(ids.get('conv-title'))
+  const sideTop = make('div'); sideTop.className = 'side-top'; ids.get('sidebar').appendChild(sideTop); sideTop.appendChild(ids.get('brand-name')); sideTop.appendChild(ids.get('collapse'))
   ids.get('sidebar').appendChild(ids.get('workspace-nav'))
   return { ids, document: { title: '', body, getElementById: id => ids.get(id) || null, createElement: make, createTextNode: text => Object.assign(make('#text'), { textContent: text }), addEventListener () {} } }
 }

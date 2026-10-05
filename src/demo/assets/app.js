@@ -80,7 +80,7 @@
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
   var PROVIDERS = SUBSCRIPTION_CHAT ? [
-    { id: 'openai', name: t('provider.subscription'), note: t('provider.subscriptionNote'), warn: true }
+    { id: 'openai', modelName: 'GPT-6.1 Sol', name: t('provider.subscription'), note: t('provider.subscriptionNote'), warn: true }
   ] : [
     { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
@@ -1245,7 +1245,7 @@
     var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
     var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification') }
     var stages = { owner_requested: t('workActivity.requested'), policy_checked: t('workActivity.policy'), source_read: labels.reading, source_received: t('workActivity.sourceReceived'), planning: labels.running, source_verified: t('workActivity.sourceVerified'), coding: labels.coding, checking: labels.checking, reviewing: labels.reviewing, drafting: labels.drafting, reading: labels.reading, completed: t('workActivity.stageComplete'), failed: labels.failed, cancelled: labels.cancelled, testing: labels.testing, applying: labels.applying, task_draft_requested: labels.drafting, task_draft_linked: t('workActivity.draftLinked'), work_prepare_requested: t('workActivity.workRequested'), work_prepared: t('workActivity.workPrepared') }
-    Object.assign(stages, { repairing_code: t('workActivity.repairingCode'), repairing_tests: t('workActivity.repairingTests'), checking_isolation: t('workActivity.isolation'), baseline_started: t('workActivity.baseline'), baseline_failed: t('workActivity.baselineResult'), tests_started: labels.testing, accepted_isolated: t('workActivity.testsPassed'), draft_ready: t('workActivity.draftReady'), owner_confirmed: t('workActivity.confirmed'), coding_authorized: t('workActivity.dispatch'), needs_attention: labels.needs_attention, timed_out: labels.timed_out, interrupted: labels.interrupted })
+    Object.assign(stages, { visual_review: t('uiDesign.reviewing'), design_guidance_loaded: t('uiDesign.guidance'), repairing_code: t('workActivity.repairingCode'), repairing_tests: t('workActivity.repairingTests'), checking_isolation: t('workActivity.isolation'), baseline_started: t('workActivity.baseline'), baseline_failed: t('workActivity.baselineResult'), tests_started: labels.testing, accepted_isolated: t('workActivity.testsPassed'), draft_ready: t('workActivity.draftReady'), owner_confirmed: t('workActivity.confirmed'), coding_authorized: t('workActivity.dispatch'), needs_attention: labels.needs_attention, timed_out: labels.timed_out, interrupted: labels.interrupted })
     function orderedSteps () { return (current && Array.isArray(current.steps) ? current.steps : []).slice().sort(function (a, b) { var x = Date.parse(a.at), y = Date.parse(b.at); return Number.isFinite(x) && Number.isFinite(y) ? x - y : 0 }) }
     function stop () { if (ticker !== null) clearInterval(ticker); ticker = null }
     function tick () {
@@ -1254,7 +1254,7 @@
       box.className = 'work-activity' + (working && fresh ? ' is-working' : '')
       var text = !fresh ? t('workActivity.unconfirmed') : current.state === 'completed' ? (kind === 'plan' ? t('workActivity.planComplete') : kind === 'adoption' ? t('workActivity.adopted') : t('workActivity.workComplete')) : labels[current.state] || t('workActivity.unknown')
       if (working && fresh) {
-        var action = orderedSteps().filter(function (s) { return ['source_read', 'source_received', 'planning', 'reading', 'drafting', 'checking', 'checking_isolation', 'baseline_started', 'baseline_failed', 'coding', 'repairing_code', 'tests_started', 'accepted_isolated', 'reviewing'].includes(s.stage) }).pop()
+        var action = orderedSteps().filter(function (s) { return ['source_read', 'source_received', 'planning', 'reading', 'drafting', 'checking', 'checking_isolation', 'baseline_started', 'baseline_failed', 'coding', 'repairing_code', 'tests_started', 'accepted_isolated', 'reviewing', 'visual_review'].includes(s.stage) }).pop()
         if (action) text = stages[action.stage]
         if (current.state === 'reviewing' && (kind === 'task' || current.activityKind === 'task')) text = t('workActivity.reviewTests')
       }
@@ -1527,7 +1527,20 @@
       section(t('projectWork.details'), { source: run.source, steps: run.steps, reason: run.reason || null })
       if (run.result) {
         section(t('projectWork.tests'), { baseline: run.result.baseline, candidate: run.result.tests })
-        ;(run.result.tests.browser || []).forEach(function (proof) { var link = el('a', 'briefing-link', t('projectTask.browserEvidence') + ' · ' + proof.locale + ' · ' + proof.width); link.href = '/api/v1/project-work/' + encodeURIComponent(runId) + '/browser/' + encodeURIComponent(proof.name); link.target = '_blank'; link.rel = 'noopener'; details.appendChild(link) })
+        var screenshots = (run.result.tests.browser || []).filter(function (proof) { return /^browser-(zh|en)-(1280|390)\.png$/.test(proof.name) })
+        if (screenshots.length) {
+          var preview = el('details', 'ui-preview'), grid = el('div', 'ui-preview-grid')
+          preview.appendChild(el('summary', '', t('uiDesign.preview')))
+          var visual = run.review && run.review.visual
+          preview.appendChild(el('p', 'meta', visual ? (visual.verdict === 'pass' ? t('uiDesign.passed') : t('uiDesign.changes')) : t('uiDesign.unreviewed')))
+          if (visual && visual.summary) preview.appendChild(el('p', '', visual.summary))
+          screenshots.forEach(function (proof) {
+            var label = proof.locale.toUpperCase() + ' · ' + proof.width + 'px', link = el('a'), image = el('img')
+            link.href = '/api/v1/project-work/' + encodeURIComponent(runId) + '/browser/' + encodeURIComponent(proof.name); link.target = '_blank'; link.rel = 'noopener'
+            image.src = link.href; image.alt = t('uiDesign.preview') + ' · ' + label; image.loading = 'lazy'; link.appendChild(image); link.appendChild(el('span', '', label)); grid.appendChild(link)
+          })
+          preview.appendChild(grid); details.appendChild(preview)
+        }
         ;(run.result.changes || []).forEach(function (c) { section(t('projectWork.before') + ' · ' + c.file, c.before); section(t('projectWork.after') + ' · ' + c.file, c.after) })
       }
       if (run.review) section(t('projectWork.review'), run.review)
@@ -2663,6 +2676,9 @@
   }
   function renderPicker () {
     pickerLabel.textContent = currentProvider().name
+    pickerLabel.setAttribute('data-compact-label', currentProvider().modelName || currentProvider().name)
+    picker.setAttribute('aria-label', currentProvider().name)
+    picker.setAttribute('title', currentProvider().name)
     clear(pickerMenu)
     for (var i = 0; i < PROVIDERS.length; i++) {
       (function (pv) {
@@ -2696,7 +2712,7 @@
         var notes = { 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
-          return { id: 'openai', model: row.model, available: row.available === true, warn: false,
+          return { id: 'openai', model: row.model, modelName: row.name, available: row.available === true, warn: false,
             name: t('provider.subscriptionModel', { model: row.name }),
             note: row.available ? notes[row.model] : t('provider.modelUnavailable') }
         })

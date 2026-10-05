@@ -21,6 +21,8 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
     }
     try {
       const files = filesFor(r.input)
+      const uiDesign = require('../../design/uiDesign').guidance(profileFor(r.input))
+      if (uiDesign) r.design = uiDesign.receipt
       const promptFiles = profileFor(r.input) === 'interface' ? [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'] : files
       r.state = 'reading'; record(r, 'reading')
       const placeholder = { testCode: "const test=require('node:test'),assert=require('node:assert/strict');", expectedTests: 3 }

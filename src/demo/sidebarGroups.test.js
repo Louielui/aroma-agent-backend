@@ -21,10 +21,20 @@ function fixture () {
   const controller = require('./assets/sidebar').mount(doc, { daily: 'Daily', development: 'Development', management: 'Management' })
   return { ids, buttons, controller, handlers, doc }
 }
+test('compact navigation closes other menus and returns focus on Escape', () => {
+  const f = fixture(), a = f.controller.groups.daily, b = f.controller.groups.development
+  a.open = true; a.events.toggle()
+  b.open = true; b.events.toggle()
+  assert.equal(a.open, false); assert.equal(b.open, true)
+  const navigation = f.ids['workspace-nav'].parentNode
+  b.children[0].focus()
+  navigation.events.keydown({ key: 'Escape', target: b.children[0], preventDefault () {}, stopPropagation () {} })
+  assert.equal(b.open, false); assert.equal(f.doc.activeElement, b.children[0])
+})
 test('grouping moves the same destinations exactly once and leaves conversation history intact', () => {
-  const f = fixture(), all = Object.values(f.controller.groups).flatMap(g => g.children.filter(n => n.id))
+  const f = fixture(), all = Object.values(f.controller.groups).flatMap(g => g.children[1].children.filter(n => n.id))
   assert.deepEqual(all.map(n => n.id).sort(), f.buttons.sort()); assert.equal(new Set(all).size, f.buttons.length)
-  assert.equal(f.ids['open-gmail-context'].parentNode, f.controller.groups.daily); assert.equal(f.ids['open-workers'].parentNode, f.controller.groups.development)
+  assert.equal(f.ids['open-gmail-context'].parentNode, f.controller.groups.daily.children[1]); assert.equal(f.ids['open-workers'].parentNode, f.controller.groups.development.children[1])
   for (const n of all) assert.equal(n.listener(), n.id)
   assert.deepEqual(f.ids.convs.messages, ['preserved']); assert.equal(f.ids['history-count'].textContent, '167')
 })
@@ -33,7 +43,7 @@ test('group collapse and whole sidebar retain page state, toggles restore keyboa
   assert.equal(f.ids.sidebar.className, 'collapsed'); assert.equal(f.ids.expand.attrs['aria-expanded'], 'false'); assert.equal(f.ids.expand.focused, true)
   assert.equal(f.ids.sidebar.inert, true); f.ids.expand.events.click(); assert.equal(f.ids.sidebar.className, ''); assert.equal(f.ids.collapse.focused, true)
   assert.equal(f.ids.sidebar.inert, false); assert.equal(f.controller.groups.daily.open, false)
-  f.ids.collapse.focus(); f.ids.sidebar.events.keydown({ key: 'Escape', target: f.ids.collapse, preventDefault () {}, stopPropagation () {} }); assert.equal(f.ids.sidebar.className, 'collapsed')
+  f.ids.convs.focus(); f.ids.sidebar.events.keydown({ key: 'Escape', target: f.ids.convs, preventDefault () {}, stopPropagation () {} }); assert.equal(f.ids.sidebar.className, 'collapsed')
 })
 test('repeat mounting preserves node identities and collapsed groups; dialogs retain Escape', () => {
   const f = fixture(); f.controller.groups.daily.open = false

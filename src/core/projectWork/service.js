@@ -5,7 +5,7 @@ const { digest } = require('../../workers/execution/windowsSandbox')
 const { PROJECT, RECIPES, recipe } = require('./contract')
 const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
-const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout'])
+const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
 function createProjectWork ({ source, providers, store, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
@@ -65,10 +65,11 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
       r.result = coding
       if (signal.aborted) throw Error('worker_cancelled')
       r.state = 'reviewing'; record(r, 'reviewing')
-      r.review = await providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal })
+      r.review = await providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) })
       if (signal.aborted) throw Error('worker_cancelled')
       await source.verify(snapshot, signal)
       if (!['pass', 'changes_requested'].includes(r.review?.verdict)) throw Error('invalid_worker_result')
+      if (coding.design && r.review.verdict === 'pass') require('../../design/visualReview').verifyReceipt(r.review.visual, coding, coding.design)
       r.state = r.review.verdict === 'pass' ? 'completed' : 'needs_attention'; r.finishedAt = new Date().toISOString()
       record(r, r.state, { sourceRevision: snapshot.evidence.revision, patchHash: coding.patchHash, tests: coding.tests.total, appliedToLive: false })
     } catch (e) {
