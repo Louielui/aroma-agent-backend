@@ -25,34 +25,37 @@ async function connect (url) {
   }), close () { for (const p of pending.values()) { clearTimeout(p.timer); p.reject(Error('browser_closed')) }; pending.clear(); ws.close() } }
 }
 // Operate the actual rendered controls, not CSS source-text assertions.
-function navigationGeometry () {
+function navigationGeometry (detailed = false) {
   const ids = ['open-home', 'new-chat', 'open-settings', 'open-manager', 'open-drive-context', 'open-aroma-context', 'open-calendar-context', 'open-gmail-context', 'open-live-context', 'open-development-plan', 'open-project-tasks', 'open-workers', 'open-memory', 'open-connections', 'open-company-access', 'open-architecture']
   const expand = document.getElementById('expand')
   if (expand && getComputedStyle(expand).display !== 'none') expand.click()
-  return ids.every(id => {
+  const fail = (id, reason) => detailed ? { ok: false, id, reason } : false
+  for (const id of ids) {
     const matches = document.querySelectorAll('[id="' + id + '"]'), e = matches[0]
-    if (matches.length !== 1 || !e || !e.textContent.trim()) return false
+    if (matches.length !== 1 || !e || !e.textContent.trim()) return fail(id, 'missing_duplicate_or_empty')
     for (let a = e.parentElement; a; a = a.parentElement) if (a.tagName === 'DETAILS' && !a.open) a.querySelector('summary').click()
     e.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
     const r = e.getBoundingClientRect(), s = getComputedStyle(e)
-    if (r.width <= 0 || r.height <= 0 || s.display === 'none' || s.visibility === 'hidden' || e.closest('[inert]')) return false
+    if (r.width <= 0 || r.height <= 0 || s.display === 'none' || s.visibility === 'hidden' || e.closest('[inert]')) return fail(id, 'hidden_or_inert')
     let left = Math.max(0, r.left), right = Math.min(innerWidth, r.right), top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom)
     for (let a = e.parentElement; a; a = a.parentElement) {
       const b = a.getBoundingClientRect(), c = getComputedStyle(a)
       if (/hidden|clip|auto|scroll/.test(c.overflowX)) { left = Math.max(left, b.left); right = Math.min(right, b.right) }
       if (/hidden|clip|auto|scroll/.test(c.overflowY)) { top = Math.max(top, b.top); bottom = Math.min(bottom, b.bottom) }
     }
-    if (right - left < Math.min(24, r.width) || bottom - top < Math.min(16, r.height)) return false
+    if (right - left < Math.min(24, r.width) || bottom - top < Math.min(16, r.height)) return fail(id, 'clipped')
     const hit = document.elementFromPoint((left + right) / 2, (top + bottom) / 2)
-    return hit === e || e.contains(hit)
-  })
+    if (hit !== e && !e.contains(hit)) return fail(id, 'covered')
+  }
+  return detailed ? { ok: true } : true
 }
 async function verifyNavigationMatrix (rpc, evaluate) {
   for (const theme of ['light', 'dark']) {
     await rpc.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }] })
     for (const width of [360, 390, 700, 760, 1280]) for (const height of [900, 480]) {
       await rpc.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 760 })
-      if (!await evaluate('(' + navigationGeometry.toString() + ')()')) throw Error('browser_navigation_geometry_failed')
+      const navigation = await evaluate('(' + navigationGeometry.toString() + ')(true)')
+      if (navigation?.ok !== true) throw Error('browser_navigation_geometry_failed:' + theme + ':' + width + 'x' + height + ':' + navigation?.id + ':' + navigation?.reason)
       const usable = await evaluate(`(() => {
         for (const e of document.querySelectorAll('details[open]')) e.querySelector('summary')?.click();
         const side=document.getElementById('sidebar'), collapse=document.getElementById('collapse');
@@ -63,7 +66,7 @@ async function verifyNavigationMatrix (rpc, evaluate) {
         return r.width>0 && r.height>0 && r.left>=-1 && r.right<=innerWidth+1 && r.top>=0 && r.bottom<=innerHeight+1 &&
           (hit===e || e.contains(hit)) && document.documentElement.scrollWidth<=innerWidth+1;
       })()`)
-      if (!usable) throw Error('browser_navigation_geometry_failed')
+      if (!usable) throw Error('browser_navigation_geometry_failed:' + theme + ':' + width + 'x' + height + ':composer:unusable_or_overflow')
     }
   }
 }

@@ -6,9 +6,9 @@ test('real browser matrix visits requested breakpoint, height and theme combinat
   const { verifyNavigationMatrix } = require('./chatBrowser.cjs')
   const seen = []; let state = {}
   const rpc = { call: async (method, value) => { if (method === 'Emulation.setDeviceMetricsOverride') state = { ...state, width: value.width, height: value.height }; else state.theme = value.features[0].value } }
-  await verifyNavigationMatrix(rpc, async () => { seen.push({ ...state }); return true })
+  await verifyNavigationMatrix(rpc, async expression => { seen.push({ ...state }); return expression.includes('navigationGeometry') ? { ok: true } : true })
   for (const width of [360, 390, 700, 760, 1280]) for (const height of [480, 900]) for (const theme of ['light', 'dark']) assert.ok(seen.some(x => x.width === width && x.height === height && x.theme === theme))
-  await assert.rejects(verifyNavigationMatrix(rpc, async () => !(state.width === 700 && state.height === 480 && state.theme === 'dark')), /browser_navigation_geometry_failed/)
+  await assert.rejects(verifyNavigationMatrix(rpc, async expression => expression.includes('navigationGeometry') ? (state.width === 700 && state.height === 480 && state.theme === 'dark' ? { ok: false, id: 'open-manager', reason: 'clipped' } : { ok: true }) : true), /browser_navigation_geometry_failed:dark:700x480:open-manager:clipped/)
 })
 
 function measure (change = {}) {
@@ -18,9 +18,14 @@ function measure (change = {}) {
   if (change.hidden) control.style.visibility = 'hidden'
   if (change.inert) control.closest = () => parent
   const document = { getElementById: () => null, querySelectorAll: () => change.duplicate ? [control, control] : [control], elementFromPoint: () => change.covered ? parent : control }
-  return vm.runInNewContext('(' + navigationGeometry.toString() + ')()', { document, innerWidth: 390, innerHeight: 480, getComputedStyle: e => e.style })
+  return vm.runInNewContext('(' + navigationGeometry.toString() + ')(' + Boolean(change.detailed) + ')', { document, innerWidth: 390, innerHeight: 480, getComputedStyle: e => e.style })
 }
 test('navigation geometry rejects clipped, covered, hidden, duplicate and inert controls', () => {
   assert.equal(measure(), true)
   for (const fault of ['clipped', 'covered', 'hidden', 'duplicate', 'inert']) assert.equal(measure({ [fault]: true }), false, fault)
+})
+
+test('geometry diagnostics identify the failing control without copying page content', () => {
+  const result = measure({ clipped: true, detailed: true })
+  assert.equal(result.ok, false); assert.equal(result.id, 'open-home'); assert.equal(result.reason, 'clipped')
 })
