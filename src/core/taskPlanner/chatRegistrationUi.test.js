@@ -10,6 +10,7 @@ function fixture (options = {}) {
   if (options.profile) plan.evidence.profile = options.profile
   if (options.confirmed) { plan.executionAvailable = true; plan.planHash = 'd'.repeat(64) }
   if (options.completed) plan.execution = { state: 'completed', steps: [], workRunId: WORK, finishedAt: new Date().toISOString() }
+  if (options.failure) plan.execution = { state: 'needs_attention', reason: options.failure, steps: [], workRunId: WORK }
   const taskValue = () => ({ run: task, approval: task.state === 'awaiting_approval' ? { id: TASK, hash: 'a'.repeat(64), nonce: 'b'.repeat(48), expiresAt: task.expiresAt } : null })
   const code = fs.readFileSync(path.join(__dirname, '../../demo/assets/app.js'), 'utf8'), fn = code.slice(code.indexOf('  function createWorkActivity ('), code.indexOf('  function renderProjectWork ('))
   const sandbox = { body, runId: PLAN, el, clear: n => { n.children = [] }, t: k => k, crypto: { randomUUID }, AbortController, setInterval: () => 1, clearInterval () {}, setTimeout: (f, ms) => { timers.push({ f, ms }); return 1 }, clearTimeout () {}, renderProjectWork: (turn, id, value) => nested.push({ id, value }), fetch: async (url, opts) => {
@@ -29,6 +30,15 @@ function fixture (options = {}) {
   return { calls, nested, timers, nodes, flush, click, setTask: patch => { task = { ...task, ...patch } } }
 }
 async function confirm (f) { const checks = f.nodes().filter(n => n.tag === 'input'); checks[1].checked = true; checks[1].events.change(); checks[2].checked = true; checks[2].events.change() }
+
+test('known invalid and empty coding results show a concrete failure instead of uncertain execution', async () => {
+  for (const [reason, key] of [['worker_no_changes', 'confirmedWork.noChanges'], ['invalid_worker_result', 'confirmedWork.invalidResult']]) {
+    const f = fixture({ failure: reason }); await f.flush()
+    assert.ok(f.nodes().some(n => n.textContent === key))
+    assert.equal(f.nodes().some(n => n.textContent === 'confirmedWork.unconfirmed'), false)
+    assert.equal(f.calls.filter(c => c.body).length, 0)
+  }
+})
 
 test('completed plan reads verified adoption and shows applied without repeating execution', async () => {
   const f = fixture({ completed: true, adoptions: [{ workRunId: WORK, action: 'adopt', state: 'completed', appliedToLive: true, commit: 'a'.repeat(40), loaded: { bootCommit: 'a'.repeat(40) }, steps: [] }] }); await f.flush()

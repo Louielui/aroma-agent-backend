@@ -4,7 +4,7 @@ const path = require('node:path')
 const { randomUUID } = require('node:crypto')
 const ID = /^[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/
 const ACTIVE = new Set(['queued', 'checking', 'coding', 'reviewing'])
-const SAFE_ERRORS = new Set(['provider_not_ready', 'subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'sandbox_failed', 'scope_changed', 'baseline_not_red', 'claude_unavailable', 'claude_login_required', 'worker_timeout', 'invalid_worker_result', 'windows_sandbox_not_enabled', 'windows_restart_required', 'windows_virtualization_unavailable', 'windows_sandbox_cli_unavailable', 'windows_sandbox_unavailable', 'sandbox_unavailable', 'sandbox_stop_unconfirmed', 'acceptance_failed'])
+const SAFE_ERRORS = new Set(['provider_not_ready', 'subscription_login_required', 'subscription_limit_reached', 'subscription_unavailable', 'subscription_model_unavailable', 'sandbox_failed', 'scope_changed', 'baseline_not_red', 'claude_unavailable', 'claude_login_required', 'worker_timeout', 'invalid_worker_result', 'worker_no_changes', 'windows_sandbox_not_enabled', 'windows_restart_required', 'windows_virtualization_unavailable', 'windows_sandbox_cli_unavailable', 'windows_sandbox_unavailable', 'sandbox_unavailable', 'sandbox_stop_unconfirmed', 'acceptance_failed'])
 
 // This first registered work order is deliberately concrete. Adding a real-repo
 // recipe requires its own file scope and acceptance tests, not a browser path.

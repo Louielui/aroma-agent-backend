@@ -1438,7 +1438,7 @@
         content.appendChild(el('p', '', adopted ? t('confirmedWork.applied') : executing ? t('confirmedWork.running') : execution.state === 'completed' ? t('confirmedWork.completed') : execution.state === 'cancelled' ? t('workActivity.cancelled') : t('confirmedWork.stopped')))
         if (r.adoptionUnavailable) content.appendChild(el('p', '', t('confirmedWork.adoptionUnknown')))
         if (execution.reason) {
-          var reasons = { review_changes_requested: t('confirmedWork.reviewBlocked'), claude_unavailable: t('confirmedWork.reviewerUnavailable'), claude_max_turns: t('confirmedWork.reviewerUnavailable'), worker_timeout: t('confirmedWork.timeout'), timed_out: t('confirmedWork.timeout'), subscription_limit_reached: t('confirmedWork.limit'), evidence_changed: t('confirmedWork.changed'), source_changed: t('confirmedWork.changed'), source_dirty: t('confirmedWork.changed'), cancellation_unconfirmed: t('confirmedWork.cancelUnconfirmed') }
+          var reasons = { worker_no_changes: t('confirmedWork.noChanges'), invalid_worker_result: t('confirmedWork.invalidResult'), review_changes_requested: t('confirmedWork.reviewBlocked'), claude_unavailable: t('confirmedWork.reviewerUnavailable'), claude_max_turns: t('confirmedWork.reviewerUnavailable'), worker_timeout: t('confirmedWork.timeout'), timed_out: t('confirmedWork.timeout'), subscription_limit_reached: t('confirmedWork.limit'), evidence_changed: t('confirmedWork.changed'), source_changed: t('confirmedWork.changed'), source_dirty: t('confirmedWork.changed'), cancellation_unconfirmed: t('confirmedWork.cancelUnconfirmed') }
           content.appendChild(el('p', '', reasons[execution.reason] || t('confirmedWork.unconfirmed')))
         }
         if (executing) {

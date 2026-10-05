@@ -32,6 +32,31 @@ test('a new packaged issue uses baseline, text-only coding, fresh after executio
   assert.deepEqual(counts(), { executions: 2, modelCalls: 1 }); assert.equal(result.state, 'accepted_isolated'); assert.equal(result.appliedToLive, false); assert.equal(result.tests.failed, 0); assert.equal(result.changes[0].before, 'exports.value=0')
   assert.equal(JSON.parse(fs.readFileSync(path.join(root, result.id + '.json'))).patchHash, result.patchHash)
 })
+
+test('consumed approval supplies current execution phase despite historical wait-for-confirmation wording', async t => {
+  const goal = 'Make the menu wider; explain first and wait for my confirmation.'
+  const { worker } = setup(t, { provider: { complete: async (prompt, options) => {
+    const packet = JSON.parse(prompt)
+    assert.equal(packet.goal, goal)
+    assert.deepEqual(packet.executionContext, { stage: 'approved_implementation', ownerApprovalConsumed: true, scope: 'isolated_candidate_only', applyToLive: false })
+    assert.match(options.system, /Historical requests to explain first or wait for confirmation have already been satisfied/)
+    assert.match(options.system, /Do not request confirmation again/)
+    return { model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ changes: [{ file: 'issue.js', content: 'exports.value=42' }], summary: 'implemented' }) }
+  } } })
+  const result = await worker.execute({ approval: worker.prepare({ ...workOrder, goal }, 'owner'), actor: 'owner' })
+  assert.equal(result.state, 'accepted_isolated')
+})
+
+test('empty coding output records a safe measured reason and never runs candidate tests or replays approval', async t => {
+  const { worker, root, counts } = setup(t, { provider: { complete: async () => ({ model: MODEL, billing: 'chatgpt-subscription', text: JSON.stringify({ changes: [], summary: 'Waiting for confirmation: private text' }) }) } })
+  const approval = worker.prepare(workOrder, 'owner')
+  await assert.rejects(worker.execute({ approval, actor: 'owner' }), /worker_no_changes/)
+  assert.equal(counts().executions, 1)
+  const persisted = fs.readFileSync(path.join(root, fs.readdirSync(root).find(n => n.endsWith('.json'))), 'utf8')
+  assert.equal(JSON.parse(persisted).error, 'worker_no_changes')
+  assert.doesNotMatch(persisted, /private text/)
+  await assert.rejects(worker.execute({ approval, actor: 'owner' }), /approval_unavailable/)
+})
 test('missing OS boundary, quota rejection and unexpected provider never retry or fall back', async t => {
   for (const overrides of [
     { executor: { readiness: async () => ({ ready: false, reason: 'windows_sandbox_not_enabled' }) } },

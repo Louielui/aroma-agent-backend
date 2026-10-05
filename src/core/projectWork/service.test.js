@@ -26,6 +26,14 @@ test('source drift consumes approval but dispatches neither model', async () => 
   const f = fixture(), p = await f.prepare(); f.drift(); f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
   assert.equal(f.flow.get(OWNER, p.run.id).reason, 'source_changed'); assert.deepEqual(f.calls(), [0, 0])
 })
+
+test('empty coding result remains a concrete terminal reason without review or repeated dispatch', async () => {
+  const f = fixture({ code: async () => { throw Error('worker_no_changes') } }), p = await f.prepare()
+  f.flow.approve(OWNER, { id: p.approval.id, hash: p.approval.hash, nonce: p.approval.nonce }); await f.flow.settled()
+  assert.equal(f.flow.get(OWNER, p.run.id).reason, 'worker_no_changes')
+  assert.equal(f.flow.get(OWNER, p.run.id).state, 'failed')
+  assert.deepEqual(f.calls(), [1, 0])
+})
 test('incorrect displayed hash cannot later replay the nonce', async () => {
   const f = fixture(), p = await f.prepare(), args = { id: p.approval.id, hash: '0'.repeat(64), nonce: p.approval.nonce }
   assert.throws(() => f.flow.approve(OWNER, args), /approval_unavailable/); args.hash = p.approval.hash

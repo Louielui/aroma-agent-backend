@@ -5,7 +5,7 @@ const { PROFILES, hash, validatePacket, validateResult } = require('./contract')
 const { keys, request, definition } = require('../projectTasks/contract')
 const ACTIVE = ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing']
 const OWNER = Object.freeze({ id: 'owner', role: 'owner' })
-const SAFE = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'evidence_changed', 'not_enabled', 'worker_busy', 'subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'timed_out', 'worker_timeout', 'approval_unavailable', 'invalid_worker_result', 'consent_expired', 'cancelled'])
+const SAFE = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'evidence_changed', 'not_enabled', 'worker_busy', 'subscription_limit_reached', 'subscription_login_required', 'subscription_unavailable', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'timed_out', 'worker_timeout', 'approval_unavailable', 'invalid_worker_result', 'worker_no_changes', 'consent_expired', 'cancelled'])
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 const planHash = r => hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))
 // This is a bounded delegation, granted by an explicit Owner POST over the
