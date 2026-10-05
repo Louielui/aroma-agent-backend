@@ -33,6 +33,87 @@
   var pickerLabel = document.getElementById('picker-label')
   var pickerMenu = document.getElementById('picker-menu')
 
+  // Attachments belong to their conversation and are read only after Send.
+  var imagePreview = document.getElementById('image-preview')
+  var imageError = document.getElementById('image-error')
+  var imageFiles = document.getElementById('image-files')
+  function imageNotice(text) {
+    imageError.textContent = text || ''
+    imageError.classList.toggle('hidden', !text)
+  }
+  function refreshImages() {
+    clear(imagePreview)
+    var pictures = active && active.pendingImages || []
+    if (active && active.imagePreparing) imagePreview.appendChild(el('span', '', t('imageChat.reading')))
+    pictures.forEach(function (dataUrl, index) {
+      var item = el('div', 'image-preview-item'), image = el('img')
+      image.src = dataUrl; image.alt = t('imageChat.preview')
+      item.appendChild(image)
+      var remove = el('button', 'image-remove', '×')
+      remove.type = 'button'; remove.setAttribute('aria-label', t('imageChat.remove')); remove.disabled = pending
+      remove.addEventListener('click', function () { active.pendingImages.splice(index, 1); refreshImages() })
+      item.appendChild(remove); imagePreview.appendChild(item)
+    })
+    imagePreview.classList.toggle('hidden', !pictures.length && !(active && active.imagePreparing))
+    send.disabled = pending || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)
+    imageFiles.disabled = pending
+  }
+  function normalizeImage(file) {
+    return new Promise(function (resolve, reject) {
+      if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type) || !file.size || file.size > 20000000) return reject(Error(t('imageChat.format')))
+      var reader = new FileReader()
+      reader.onerror = function () { reject(Error(t('imageChat.prepareFailed'))) }
+      reader.onload = function () {
+        var picture = new Image()
+        picture.onerror = function () { reject(Error(t('imageChat.prepareFailed'))) }
+        picture.onload = function () {
+          try {
+            if (!picture.naturalWidth || !picture.naturalHeight || picture.naturalWidth * picture.naturalHeight > 80000000) throw Error(t('imageChat.format'))
+            var canvas = document.createElement('canvas'), maximum = 2048, result
+            do {
+              var scale = Math.min(1, maximum / Math.max(picture.naturalWidth, picture.naturalHeight))
+              canvas.width = Math.max(1, Math.round(picture.naturalWidth * scale)); canvas.height = Math.max(1, Math.round(picture.naturalHeight * scale))
+              canvas.getContext('2d').drawImage(picture, 0, 0, canvas.width, canvas.height)
+              result = canvas.toDataURL('image/png'); maximum = Math.floor(maximum * 0.75)
+            } while (result.length > 2000022 && maximum >= 400)
+            if (!/^data:image\/png;base64,/.test(result) || result.length > 2000022) throw Error(t('imageChat.prepareFailed'))
+            resolve(result)
+          } catch (e) { reject(e) }
+        }
+        picture.src = reader.result
+      }
+      reader.readAsDataURL(file)
+    })
+  }
+  function queueImages(files) {
+    if (!SUBSCRIPTION_CHAT || !active || attachedKind) { imageNotice(t('imageChat.context')); return }
+    if (pending || active.imagePreparing) { imageNotice(t('imageChat.reading')); return }
+    var conv = active, existing = conv.pendingImages || []
+    if (files.length + existing.length > 4) { imageNotice(t('imageChat.limit')); return }
+    conv.imagePreparing = true; imageNotice(''); refreshImages()
+    Promise.all(files.map(normalizeImage)).then(function (values) {
+      conv.pendingImages = existing.concat(values); if (active === conv) setForced(null)
+    }).catch(function (e) { if (active === conv) imageNotice(e.message || t('imageChat.prepareFailed')) })
+      .then(function () { conv.imagePreparing = false; if (active === conv) refreshImages() })
+  }
+  msg.addEventListener('paste', function (event) {
+    var files = Array.from(event.clipboardData && event.clipboardData.items || []).filter(function (item) { return item.kind === 'file' }).map(function (item) { return item.getAsFile() }).filter(Boolean)
+    if (!files.length) return
+    event.preventDefault(); queueImages(files)
+  })
+  imageFiles.addEventListener('change', function () { var files = Array.from(imageFiles.files || []); imageFiles.value = ''; if (files.length) queueImages(files) })
+  function drawImages(turn, images) {
+    if (!Array.isArray(images)) return
+    var group = el('div', 'chat-images')
+    images.slice(0, 4).forEach(function (value) {
+      var dataUrl = typeof value === 'string' ? value : value && value.dataUrl
+      if (typeof dataUrl !== 'string' || dataUrl.length > 2000022 || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(dataUrl)) return
+      var image = el('img'); image.src = dataUrl; image.alt = t('imageChat.preview'); group.appendChild(image)
+    })
+    if (group.childNodes.length) turn.body.appendChild(group)
+  }
+
+
   // THE PROVIDER PICK IS A HINT, NOT AUTHORITY. It is sent as one field; the server
   // validates it against its own closed allowlist and ignores anything else. The page
   // cannot select a lane, a context source or anything executable. Subscription
@@ -808,6 +889,7 @@
     markHome(false)
     showComposer(true)
     active = c
+    imageNotice(''); refreshImages()
     clear(log)
     log.appendChild(c.thread)
     titleEl.textContent = isListed(c) ? c.title : t('brand.name')
@@ -988,7 +1070,7 @@
         for (var i = 0; i < m.length; i++) {
           var text = String(m[i] && m[i].content != null ? m[i].content : '')
           if (m[i] && m[i].role === 'user') {
-            addUser(text, c)
+            drawImages(addUser(text, c), m[i].images)
             c.history.push({ role: 'user', text: text })
           } else {
             var tEl = addBot(text, c)
@@ -1179,6 +1261,14 @@
 
   function renderPlusMenu () {
     clear(plusMenu)
+    if (SUBSCRIPTION_CHAT) {
+      var upload = el('button', 'opt')
+      upload.type = 'button'; upload.setAttribute('role', 'menuitem')
+      upload.appendChild(el('div', 'opt-name', t('imageChat.upload')))
+      upload.appendChild(el('div', 'opt-note', t('imageChat.uploadNote')))
+      upload.addEventListener('click', function () { closePlus(); imageFiles.click() })
+      plusMenu.appendChild(upload)
+    }
     for (var i = 0; i < SHORTCUTS.length; i++) {
       (function (s) {
         var b = el('button', 'opt' + (s.mode === forcedMode ? ' active' : ''))
@@ -1704,7 +1794,7 @@
     msg.disabled = p
     // Send stays disabled while busy AND while the box is empty, so the button never
     // invites a click that would do nothing.
-    send.disabled = p || msg.value.trim() === ''
+    refreshImages()
     if (picker) picker.disabled = p
     if (chatLevel) chatLevel.disabled = p
   }
@@ -1735,7 +1825,10 @@
     var carry = attachedKind
     if (!active && carry) newConversation(false)
     if (!active) return
-    var text = msg.value.trim()
+    var pictures = (active.pendingImages || []).slice()
+    if (active.imagePreparing) return
+    if (pictures.length && (carry || forcedMode)) { imageNotice(t('imageChat.context')); return }
+    var text = msg.value.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
     if (!text) return
     clearErrors()
     if (active.history.length === 0) {
@@ -1745,7 +1838,9 @@
     }
     var conv = active
     clearEmptyScreen(conv)   // captured BEFORE anything renders: a click must not steal this turn
-    addUser(text, conv)
+    drawImages(addUser(text, conv), pictures)
+    conv.pendingImages = []
+    imageNotice('')
     conv.history.push({ role: 'user', text: text })
     msg.value = ''
     autoGrow()
@@ -1774,7 +1869,7 @@
     var forced = forcedMode
     setForced(null)
 
-    fetch('/api/v1/demo/intake', {
+    var requestOptions = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'same-origin',
@@ -1783,14 +1878,16 @@
       // ⛔ THE SECTION ID TRAVELS, NEVER THE LINES. The server re-derives them from its own
       // store, so text the browser composed can never enter the prompt wearing the section's
       // name — the same discipline as workRequestRoute re-deriving the file from his words.
-      body: JSON.stringify(Object.assign(
+      body: JSON.stringify(pictures.length ? { message: text, images: pictures, conversationId: conv.cid, chatLevel: chatLevel.value, chatModel: chatModel } : Object.assign(
         forced
           ? { message: text, interactionMode: forced, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid }
           : { message: text, history: conv.history, providerHint: provider, previousLane: previousLane, conversationId: conv.cid },
         carry ? { attachSection: carry } : {},
         websiteRequestId ? { websiteRequestId: websiteRequestId, workflowRequestId: websiteRequestId } : {},
         SUBSCRIPTION_CHAT && chatLevel ? { chatLevel: chatLevel.value, chatModel: chatModel } : {}))
-    }).then(function (r) {
+    }
+    var response = pictures.length ? fetch('/api/v1/demo/image-intake', requestOptions) : fetch('/api/v1/demo/intake', requestOptions)
+    response.then(function (r) {
       return r.json().catch(function () { return {} }).then(function (j) { return { status: r.status, body: j } })
     }).then(function (o) {
       stopWebsitePoll()
@@ -1803,6 +1900,7 @@
         : (o.body && o.body.stage === 'SHADOW_ONLY') ? 'email_draft'
           : (o.body && (o.body.demoOutcome === 'execution_proposal' || o.body.demoOutcome === 'clarification')) ? 'proposal'
             : previousLane
+      if (pictures.length && o.status !== 200) conv.pendingImages = pictures
       labelServedBy(render(o.status, o.body, conv), o.body)
       // Mail stays in the displayed answer. Model history receives a neutral
       // receipt even if an earlier source question falls out of its context.
@@ -1819,6 +1917,7 @@
       stopWebsitePoll()
       typing.stopWaiting()
       if (typing.root.parentNode) typing.root.parentNode.removeChild(typing.root)
+      if (pictures.length) conv.pendingImages = pictures
       addError(t('err.connection'), conv)
     }).then(function () {
       // THE ONE PLACE THAT RUNS ON EVERY OUTCOME. Clearing this in the success handler and
@@ -1854,7 +1953,7 @@
   function render (status, res, conv) {
     res = res || {}
     if (status === 403) return addError(t('err.demoDisabled'), conv)
-    if (status === 400) return addError(t('err.badInput'), conv)
+    if (status === 400) return addError(res.error && res.error.message ? res.error.message : t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
     }
@@ -2740,7 +2839,7 @@
   }
   msg.addEventListener('input', function () {
     autoGrow()
-    send.disabled = pending || msg.value.trim() === ''   // disabled until real input
+    refreshImages()
   })
   send.addEventListener('click', submit)
   msg.addEventListener('keydown', function (e) {
@@ -3030,6 +3129,7 @@
     ['convs', 'aria', function () { return t('shell.historyLabel') }],
     ['plus', 'both', function () { return t('shell.more') }],
     ['plus-menu', 'aria', function () { return t('shell.shortcuts') }],
+    ['image-files', 'aria', function () { return t('imageChat.upload') }],
     ['picker-menu', 'aria', function () { return t('shell.pickWho') }],
     ['send', 'aria', function () { return t('shell.send') }],
     ['close-settings', 'both', function () { return t('shell.close') }]

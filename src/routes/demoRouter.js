@@ -214,10 +214,37 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
   return null
 }
 
-function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, imageAdapterFn = selection => {
+  if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
+  return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
+}, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
+  // This image-only chat entrance never reaches tools, mail reads, planning,
+  // execution, the research archive or automatic long-term memory ingestion.
+  router.post('/api/v1/demo/image-intake', demoGuard, async (req, res) => {
+    res.set('Cache-Control', 'no-store')
+    if (!require('../core/operating/chatRequest').sameOrigin(req)) return res.status(403).json({ error: { message: t('imageChat.invalid'), retryable: false } })
+    let images, input = req.body
+    try {
+      const allowed = ['message', 'images', 'conversationId', 'chatModel', 'chatLevel']
+      if (!input || Array.isArray(input) || Object.keys(input).some(k => !allowed.includes(k)) || typeof input.message !== 'string' || !input.message.trim() || input.message.length > 2000 || !isValidConversationId(input.conversationId)) throw Error('invalid_request')
+      if (input.chatModel !== undefined && !require('../subscription/chatModels').isChatModel(input.chatModel)) throw Error('invalid_request')
+      if (input.chatLevel !== undefined && !require('../subscription/chatModels').REASONING_EFFORTS.includes(input.chatLevel)) throw Error('invalid_request')
+      images = require('../chat/imageAttachments').validateImages(input.images).map(i => i.dataUrl)
+    } catch (_) { return res.status(400).json({ error: { message: t('imageChat.invalid'), retryable: false } }) }
+    const imageOwnerSession = ownerSessionIdOf(req)
+    if (imageOwnerSession) pendingResolutions.supersede(imageOwnerSession, input.conversationId)
+    try {
+      const existing = conversationStore.get(input.conversationId)
+      const adapter = imageAdapterFn({ model: input.chatModel || require('../subscription/chatModels').DEFAULT_MODEL, effort: input.chatLevel || require('../subscription/chatModels').DEFAULT_EFFORT })
+      const result = await require('../chat/imageChat').processImageChat({ message: input.message.trim(), images, history: existing?.messages || [] }, adapter)
+      let historySaved = true
+      try { conversationStore.appendTurn({ id: input.conversationId, userText: input.message.trim(), replyText: result.reply, servedBy: result.servedBy, images }) } catch (_) { historySaved = false }
+      return res.json({ ...result, historySaved })
+    } catch (_) { return res.status(503).json({ error: { message: t('imageChat.failed'), retryable: false } }) }
+  })
   router.get('/api/v1/demo/website-status/:id', demoGuard, (req, res) => {
     const store = require('../store/websiteRunStore')
     if (!store.ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_run_id' })

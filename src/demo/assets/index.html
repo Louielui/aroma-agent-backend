@@ -80,6 +80,9 @@
                anything is typed. Filled from the server's own preview, never composed here. -->
           <div id="attach-preview" class="attach-preview hidden" aria-live="polite"></div>
           <div id="composer-box">
+            <div id="image-preview" class="image-preview hidden" aria-live="polite"></div>
+            <div id="image-error" class="image-error hidden" role="alert"></div>
+            <input id="image-files" class="hidden" type="file" accept="image/png,image/jpeg,image/webp" multiple>
             <textarea id="msg" rows="1"></textarea>
             <div class="composer-bar">
               <div id="plus-wrap">

@@ -16,7 +16,10 @@ function authenticated (header, token) {
 }
 function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
-  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model', 'images'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (input.images !== undefined) {
+    try { require('../chat/imageAttachments').validateImages(input.images) } catch (_) { throw new SubscriptionError('subscription_invalid_output') }
+  }
   if (input.model !== undefined && !isChatModel(input.model)) throw new SubscriptionError('subscription_model_unavailable')
   if (input.effort !== undefined && !REASONING_EFFORTS.includes(input.effort)) throw new SubscriptionError('subscription_invalid_output')
   if (typeof input.prompt !== 'string' || !input.prompt.trim() || input.prompt.length > 500000) throw new SubscriptionError('subscription_invalid_output')
@@ -49,7 +52,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       let length = 0
       for await (const chunk of req) {
         length += chunk.length
-        if (length > MAX_BODY) { reply(413, { code: 'subscription_unavailable' }); req.destroy(); return }
+        if (length > (req.url === '/complete' ? 9 * MAX_BODY : MAX_BODY)) { reply(413, { code: 'subscription_unavailable' }); req.destroy(); return }
         chunks.push(chunk)
       }
       let input

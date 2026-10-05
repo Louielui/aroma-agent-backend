@@ -267,7 +267,7 @@ function imageInputs (images) {
   return images.map(url => {
     if (typeof url !== 'string' || url.length > 2700000 || !/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/.test(url)) throw new SubscriptionError('subscription_invalid_output')
     const encoded = url.slice(22), bytes = Buffer.from(encoded, 'base64')
-    if (bytes.length < 1001 || bytes.length > 2000000 || bytes.toString('base64') !== encoded || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new SubscriptionError('subscription_invalid_output')
+    if (bytes.length < 67 || bytes.length > 2000000 || bytes.toString('base64') !== encoded || bytes.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a') throw new SubscriptionError('subscription_invalid_output')
     return { type: 'image', url }
   })
 }

@@ -315,7 +315,7 @@ async function turn (opts) {
 
 /** Every fixture in the Owner's list, and what the prompt must look like for each. */
 const FIXTURES = [
-  { n: 1, m: '香香，你現在能看圖像，分析圖像嗎？', shape: true, capability: 'image.input', state: IMPLEMENTATION.NOT_IMPLEMENTED },
+  { n: 1, m: '香香，你現在能看圖像，分析圖像嗎？', shape: true, capability: 'image.input', state: IMPLEMENTATION.IMPLEMENTED },
   { n: 2, m: '你可以幫我改 code 嗎?', shape: true, capability: 'github.write', state: IMPLEMENTATION.NOT_IMPLEMENTED },
   { n: 3, m: '你記唔記得我哋上次講咩?', shape: true, capability: 'conversation_recall', state: IMPLEMENTATION.IMPLEMENTED },
   { n: 4, m: '你而家讀唔讀到 Calendar?', shape: true, capability: 'calendar.read', state: IMPLEMENTATION.IMPLEMENTED },
@@ -342,12 +342,12 @@ describe('CX1 PART 2 — the answer-shape directive reaches exactly the right tu
     })
   }
 
-  test('*** ⛔ THE PRIMARY FAILURE, END TO END: the shape directive and image.input：未實作 ***', async () => {
+  test('*** ⛔ THE PRIMARY FAILURE, END TO END: the shape directive and implemented image input ***', async () => {
     await withEnv(async () => {
       const t = await turn({ message: '香香，你現在能看圖像，分析圖像嗎？' })
-      assert.equal(implementationOf('image.input'), IMPLEMENTATION.NOT_IMPLEMENTED)
+      assert.equal(implementationOf('image.input'), IMPLEMENTATION.IMPLEMENTED)
       assert.ok(t.terminal.includes(SHAPE_MARKER), '⛔ the answer-shape directive never reached the model')
-      assert.match(t.terminal, /image\.input（睇圖／收圖）：未實作/, '⛔ the fact did not travel')
+      assert.match(t.terminal, /image\.input（睇圖／收圖）：已實作/, '⛔ the fact did not travel')
       // The shape directive sits directly under the facts it is about.
       assert.ok(t.terminal.indexOf('【SELF CAPABILITY') < t.terminal.indexOf(SHAPE_MARKER),
         '⛔ the directive was placed above the facts it refers to')
@@ -417,9 +417,9 @@ describe('CX1 PART 3 — honesty survives the narrowing', () => {
    * CX1 only changes how that is said. A tranche that had to edit the registry to make a
    * capability question answer well would be changing the product, not the prose.
    */
-  test('*** ⛔ the capability registry was not touched: the block is byte-identical ***', () => {
+  test('*** ⛔ capability wording matches the current implementation registry ***', () => {
     const block = capabilityBlock()
-    assert.match(block, /image\.input（睇圖／收圖）：未實作/)
+    assert.match(block, /image\.input（睇圖／收圖）：已實作/)
     assert.match(block, /file\.input（收檔案附件）：未實作/)
     assert.match(block, /gmail\.send（send／回覆郵件）：未實作/)
     assert.match(block, /aroma_system\.write（改 Aroma System 資料）：未實作/)

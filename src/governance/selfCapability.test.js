@@ -80,15 +80,18 @@ describe('S1 the registry is checked against real production surfaces', () => {
       /refuses write-shaped method/, '⛔ the write fence is gone')
   })
 
-  test('*** ⛔ image.input / file.input not_implemented — no route, no adapter, no UI accepts one ***', () => {
-    // The intake route validates exactly two string fields.
+  test('image.input has a bounded raster chat entrance; general file input is still absent', () => {
     const router = codeOf('routes/demoRouter.js')
-    assert.equal(/multipart|type=["']file["']|req\.files|upload/i.test(router), false, 'the route accepts an upload')
-    // No adapter builds an image content block for any provider.
+    assert.match(router, /\/api\/v1\/demo\/image-intake/)
+    assert.match(codeOf('adapters/CodexSubscriptionAdapter.js'), /images: opts\.images/)
+    assert.equal(typeof require('../chat/imageChat').processImageChat, 'function')
+    assert.equal(typeof require('../chat/imageAttachments').validateImages, 'function')
+    assert.equal(/multipart|req\.files/.test(router), false, 'general file input remains absent')
+    // The other paid-provider adapters remain text-only.
     for (const rel of ['adapters/ClaudeAdapter.js', 'adapters/OpenAIAdapter.js']) {
       assert.equal(/image_url|type: *'image'|"type": *"image"/.test(codeOf(rel)), false, rel + ' sends images')
     }
-    assert.equal(implementationOf('image.input'), IMPLEMENTATION.NOT_IMPLEMENTED)
+    assert.equal(implementationOf('image.input'), IMPLEMENTATION.IMPLEMENTED)
     assert.equal(implementationOf('file.input'), IMPLEMENTATION.NOT_IMPLEMENTED)
   })
 
@@ -293,7 +296,8 @@ describe('S1 FIXTURE C — image input', () => {
       })
       assert.equal(t.reads, 0)
       assert.match(t.terminal, /佢要求嘅能力：image\.input/)
-      assert.match(t.terminal, /未實作】/)
+      assert.match(t.terminal, /image\.input（睇圖／收圖）：已實作/)
+      assert.match(t.terminal, /未附圖嘅一轉唔好話已經睇到/)
       assert.equal(/公開|外面/.test(String(t.res.reply)), false, '⛔ a world clarification appeared')
     })
   })

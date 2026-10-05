@@ -38,6 +38,21 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'imageChat.upload': { zh: '加入圖片', en: 'Add images' },
+  'imageChat.uploadNote': { zh: '貼上或選擇圖片，送出後香香會讀圖', en: 'Paste or choose images for Xiangxiang to inspect when sent' },
+  'imageChat.remove': { zh: '移除圖片', en: 'Remove image' },
+  'imageChat.preview': { zh: '已加入的圖片', en: 'Attached image' },
+  'imageChat.reading': { zh: '正在準備圖片…', en: 'Preparing images…' },
+  'imageChat.defaultRequest': { zh: '請查看這張圖片。', en: 'Please inspect this image.' },
+  'imageChat.limit': { zh: '每次最多加入 4 張圖片。', en: 'Attach up to 4 images per turn.' },
+  'imageChat.format': { zh: '請使用 PNG、JPEG 或 WebP 圖片（每張最多 20 MB）。', en: 'Use PNG, JPEG or WebP images (up to 20 MB each).' },
+  'imageChat.prepareFailed': { zh: '無法讀取這張圖片，請重新複製或選擇圖片。', en: 'This image could not be opened. Copy it again or choose an image file.' },
+  'imageChat.invalid': { zh: '圖片未能送出，請重新加入 PNG、JPEG 或 WebP 圖片。', en: 'The images could not be sent. Add PNG, JPEG or WebP images again.' },
+  'imageChat.failed': { zh: '這次未能完成讀圖，圖片仍保留在輸入框。請確認模型連接狀態後再送出。', en: 'Image inspection did not complete. The attachments remain in the composer. Check the model connection before sending again.' },
+  'imageChat.context': { zh: '圖片請在一般對話中送出；先清除其他工作或資料快捷選項。', en: 'Send images in an ordinary subscription chat; clear other work or source shortcuts first.' },
+  'imageChat.title': { zh: '聊天圖片理解', en: 'Chat image understanding' },
+  'imageChat.current': { zh: '支援在對話貼上或選擇 PNG、JPEG、WebP；顯示預覽及移除，經正規化後把真正圖片像素交給所選 GPT 訂閱模型。圖片及來源雜湊保留在受保護的對話紀錄。', en: 'Paste or choose PNG, JPEG and WebP in chat, preview and remove them, and send normalized pixels to the selected GPT subscription model. Images and source hashes stay in protected conversation history.' },
+  'imageChat.limits': { zh: '每次最多 4 張；圖片內容不會批准派工，也不代表可自行查看桌面。一般檔案、其他供應商看圖及圖片自動長期記憶尚未接通。', en: 'Up to 4 images per turn. Image content grants no dispatch approval or desktop access. General files, other vision providers and automatic long-term image memory are not connected.' },
   'calendarContext.title': { zh: '日曆行程', en: 'Calendar events' },
   'gmailContext.title': { zh: '即時電郵', en: 'Live email' },
   'gmailContext.intro': { zh: '按信箱查看最新收件區資料。今天以 Winnipeg 時區計算；內容每次由 Gmail 重新讀取。', en: 'Read current inbox data for the selected mailbox. Today uses Winnipeg time; data is retrieved afresh from Gmail.' },

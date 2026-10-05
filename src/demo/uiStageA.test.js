@@ -254,8 +254,8 @@ test('the composer is sticky with room beneath, and the send button lives inside
 
 test('send is disabled until there is real input, and while a reply is in flight', () => {
   assert.ok(DEMO_HTML.includes('send.disabled = true'), 'starts disabled')
-  assert.ok(DEMO_HTML.includes("send.disabled = pending || msg.value.trim() === ''"), 'enabled only on real input')
-  assert.ok(DEMO_HTML.includes("send.disabled = p || msg.value.trim() === ''"), 'stays disabled while busy')
+  assert.ok(DEMO_HTML.includes('send.disabled = pending || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)'), 'text or image enables Send only after preparation and while idle')
+  assert.match(DEMO_HTML, /function setPending \(p\)[\s\S]*?pending = p[\s\S]*?refreshImages\(\)/, 'busy transitions apply the same text and image eligibility')
   assert.ok(DEMO_HTML.includes('msg.disabled = p'), 'the box is busy too')
   // Enter/Shift+Enter behaviour is unchanged
   assert.ok(DEMO_HTML.includes("e.key === 'Enter' && !e.shiftKey"), 'Enter sends, Shift+Enter newlines')

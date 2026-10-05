@@ -154,8 +154,9 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
+    const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
 
     // STRICT, and this is the important one. Lenient here would mean: cannot read the
@@ -175,7 +176,7 @@ function createConversationStore (options = {}) {
     // conversation the Owner has already learned to recognise in the list.
     if (!conversation.title) conversation.title = titleFrom(userText)
 
-    conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts })
+    conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
     if (require('../core/taskPlanner/continuation').validOffer(planningOffer, planningOffer?.revision)) assistantMessage.planningOffer = structuredClone(planningOffer)
     if (require('../core/taskPlanner/dialogueContext').validContext(planningContext, planningContext?.revision, id)) assistantMessage.planningContext = structuredClone(planningContext)

@@ -768,7 +768,8 @@ function createApp (options = {}) {
   app.locals.ownerApprovalStore = ownerApprovalStore
 
   // ── Middleware ────────────────────────────────────────────────────────────────
-  app.use(express.json({ limit: '50kb' }))
+  const ordinaryJson = express.json({ limit: '50kb' }), imageJson = require('./chat/imageBodyParser').createImageBodyParser()
+  app.use((req, res, next) => (req.path === '/api/v1/demo/image-intake' ? imageJson : ordinaryJson)(req, res, next))
   app.use(express.urlencoded({ extended: false }))
 
   // ── OWNER AUTHENTICATION ──────────────────────────────────────────────────────

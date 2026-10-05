@@ -120,6 +120,8 @@ const FILE_CLASS = Object.freeze({
   // S1: the SELF CAPABILITY block she is SHOWN, plus each capability's Owner-facing label.
   // Translating 「未實作」 into something softer changes what she believes she can do, which is
   // the one thing this registry exists to keep true. MODEL.
+  'chat/imageChat.js': CLASS.MODEL,                 // Image-chat instructions are model context.
+  'chat/imageBodyParser.js': CLASS.INTERFACE,
   'governance/selfCapability.js': CLASS.MODEL,        //  S1 — the capability block and labels
   'intake/executiveJudgment.js': CLASS.MODEL,        //  X3 — the judgement directive and the rendered position labels
   'intake/investigationState.js': CLASS.MODEL,       //  X4 — the investigation block and its read-state labels
