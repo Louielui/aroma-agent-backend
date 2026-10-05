@@ -41,7 +41,7 @@ async function fixture (options = {}) {
   }
   const args = { bootCommit: HEAD, store, executionRpc: { task: taskRpc, work: workRpc }, executionPollMs: 1,
     source: { verify: () => {}, read: async () => packet() }, registerTask: taskRpc,
-    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: options.goal || 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
+    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: options.goal || 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], capability: { status: 'supported', explanation: 'Fits the registered files', missingCapabilities: [] }, citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
   const service = createPlanner(args), run = service.start(OWNER, { message: 'plan Xiangxiang sidebar', requestId: randomUUID(), conversationId: 'chat-' + randomUUID() }); await service.wait(run.id)
   const input = { id: run.id, requestId: randomUUID(), planHash: service.get(OWNER, run.id).planHash }
   return { service, store, tasks, calls, evidence, input, rebuild: () => createPlanner(args), taskService }

@@ -18,6 +18,54 @@ function fixture(t, outputs) {
   return { service, store, planner, calls, starts, runs, drafts, cancels, cid, send }
 }
 
+test('displayed plan confirmations use the bound job without another model interpretation', async t => {
+  for (const message of ['好，可以開始', '好，開始吧', '好，照這個方案做', 'Okay, go ahead', 'Yes, please proceed']) {
+    const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' })])
+    const first = await f.send('Improve sidebar'), run = f.runs.get(first.taskPlanRunId)
+    Object.assign(run, { state: 'completed', executionAvailable: true, planHash: 'b'.repeat(64), result: { goal: 'Move navigation', questions: [] } })
+    let executions = 0
+    f.planner.executeConfirmed = async (actor, input) => { assert.equal(input.planHash, run.planHash); executions++; run.execution = { state: 'drafting' }; return { run } }
+    const response = await f.send(message)
+    assert.equal(executions, 1); assert.equal(f.calls.length, 1); assert.equal(response.taskPlanRunId, run.id)
+    const repeated = await f.send(message)
+    assert.equal(executions, 1); assert.equal(f.calls.length, 1); assert.equal(repeated.taskPlanRunId, run.id)
+  }
+})
+
+test('confirmation after a stopped job reports its recorded failure without retry or interpretation', async t => {
+  const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' })])
+  const first = await f.send('Improve sidebar'), run = f.runs.get(first.taskPlanRunId)
+  Object.assign(run, { state: 'completed', execution: { state: 'needs_attention', reason: 'worker_timeout' } })
+  const response = await f.send('好，開始')
+  assert.match(response.reply, /timed out|超時/); assert.equal(response.taskPlanRunId, run.id)
+  assert.equal(f.calls.length, 1); assert.equal(f.starts.length, 1)
+})
+
+test('a stored plan remains readable after dialogue context expires, and cross-conversation jobs stay closed', async t => {
+  const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' })])
+  const first = await f.send('Improve sidebar'), run = f.runs.get(first.taskPlanRunId)
+  Object.assign(run, { state: 'completed', executionAvailable: true, executionStale: true })
+  f.store.appendTurn({ id: f.cid, userText: 'Status', replyText: 'Plan ready', taskPlanRunId: run.id })
+  const response = await f.send('Go ahead')
+  assert.equal(response.taskPlanRunId, run.id); assert.match(response.reply, /changed|更新|變更/)
+  assert.equal(f.calls.length, 1)
+  run.conversationId = randomUUID()
+  await assert.rejects(f.send('Go ahead'), /invalid_request/)
+  assert.equal(f.starts.length, 1)
+})
+
+test('an unsupported request can be narrowed into a new plan without starting its old work', async t => {
+  const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' }), decision('refine', 'Only adjust the sidebar spacing.')])
+  const first = await f.send('Improve sidebar'), run = f.runs.get(first.taskPlanRunId)
+  Object.assign(run, { state: 'out_of_scope', result: { capability: { status: 'unsupported', explanation: 'Backend storage is unavailable.' } } })
+  await f.send('好，開始')
+  assert.equal(f.calls.length, 1); assert.equal(f.starts.length, 1)
+  const next = await f.send('Only adjust the spacing; leave topic storage for later.')
+  assert.notEqual(next.taskPlanRunId, run.id); assert.equal(f.starts.length, 2)
+  assert.match(f.starts[1].dialogue.ownerRequests.at(-1), /Only adjust/)
+  assert.equal(f.drafts.length, 0)
+})
+
 test('a current plain confirmation of a completed plan starts its bounded execution in Chinese and English', async t => {
   for (const message of ['好，開始', '確認並開始', '很好,開始改良', 'Confirm and start', 'Go ahead']) {
     const f = fixture(t, [decision('start', '', { targetQuote: 'sidebar' }), decision('start', '')])

@@ -53,10 +53,10 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
         invoke: async (id, version, input) => {
           try {
             check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
-            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
+            const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), capabilities: require('./capabilities').capabilities(r.profile), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM + ' ' + require('./capabilities').INSTRUCTION, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
-            if (!validateResult(result, evidence)) throw Error('invalid_worker_result')
+            if (!validateResult(result, evidence, { requireCapability: true })) throw Error('invalid_worker_result')
             return { ok: true, output: result, cost: null, latencyMs: response.latencyMs ?? null }
           } catch (e) { return { ok: false, error: safe(e), cost: null } }
         }
@@ -68,9 +68,9 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       const after = await step(() => source.read(OWNER, r.profile, c.abort.signal)); validatePacket(after, r.profile)
       if (after.hash !== packet.hash) throw Error('evidence_changed')
       r.result = result; r.verification = { matched: true, citationsVerified: true, testsExecuted: false, filesChanged: false, factualClaimsVerified: false }
-      r.executableRecipe = result.questions.length === 0 ? eligibleRecipe(r.message) : null
+      r.executableRecipe = result.capability.status === 'supported' && result.questions.length === 0 ? eligibleRecipe(r.message) : null
       r.planHash = hash(JSON.stringify({ result, evidenceHash: packet.hash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))
-      r.state = result.questions.length ? 'needs_clarification' : 'completed'; record(r, 'source_verified')
+      r.state = result.capability.status === 'unsupported' ? 'out_of_scope' : result.questions.length ? 'needs_clarification' : 'completed'; record(r, 'source_verified')
     } catch (e) { r.result = null; r.executableRecipe = null; r.reason = safe(e); r.state = r.reason === 'cancelled' ? 'cancelled' : r.reason === 'timed_out' ? 'timed_out' : 'failed' }
     finally {
       r.finishedAt = new Date().toISOString()
@@ -124,7 +124,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     const { keys, request, profileFor } = require('../projectTasks/contract')
     if (!keys(input, ['id', 'requestId', 'goal', 'criteria', 'editable']) || !ID.test(input.id || '')) throw Error('invalid_request')
     const taskInput = request({ bootCommit, requestId: input.requestId, goal: input.goal, criteria: input.criteria, editable: input.editable }), r = get(actor, input.id)
-    if (!r || r.profile !== profileFor(taskInput) || r.state !== 'completed' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))) throw Error('invalid_request')
+    if (!r || r.profile !== profileFor(taskInput) || r.state !== 'completed' || r.result?.capability?.status === 'unsupported' || !r.verification?.matched || !validateResult(r.result, r.evidence) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.planHash !== hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe, ...(r.dialogue ? { dialogue: r.dialogue } : {}) }))) throw Error('invalid_request')
     if (r.preparation) throw Error('request_conflict')
     if (r.registrationPreparation) { if (JSON.stringify(r.registrationPreparation.input) !== JSON.stringify(taskInput) || !r.taskRunId) throw Error('request_conflict'); return { run: r, task: { run: { id: r.taskRunId }, approval: null } } }
     if (active) throw Error('worker_busy')
@@ -150,7 +150,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
     owner(actor)
     if (!require('../projectTasks/contract').keys(input, ['id', 'requestId']) || !ID.test(input.requestId || '')) throw Error('invalid_request')
     const old = get(actor, input.id)
-    if (!old || !['completed', 'failed', 'interrupted', 'needs_clarification'].includes(old.state) || old.execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(old.execution.state)) throw Error('invalid_request')
+    if (!old || !['completed', 'failed', 'interrupted', 'needs_clarification', 'out_of_scope'].includes(old.state) || old.execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(old.execution.state)) throw Error('invalid_request')
     if (old.updatedPlanRunId) return { run: get(actor, old.updatedPlanRunId) }
     let dialogue
     if (old.dialogue) {

@@ -11,7 +11,7 @@ const { SYSTEM, surface, forbidden } = require('./dialogueIntent')
 // Only a standalone confirmation may consume the already displayed plan.
 // Semantic classification alone cannot turn a quote, negation or refinement
 // into execution authority. All other confirmations use the visible button.
-const plainConfirmation = s => /^(?:(?:好|好的|很好|可以|確認|同意)[,，、!！\s]*(?:並|就)?(?:開始|執行|開始改良|開始執行)|(?:請)?(?:開始|執行)|(?:yes[,!\s]*)?(?:go ahead|confirm and start|start|proceed)(?: please)?)[.!。！\s]*$/iu.test(s.trim())
+const { confirmation: plainConfirmation, status: boundStatus } = require('./boundPlan')
 function createDialogue ({ store, planner, revision, providerFor, receipts = createMemoryRunStore(), timeoutMs = 60000 }) {
   const running = new Map()
   const snapshot = id => store.get(id)
@@ -35,7 +35,8 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
     }
     return null
   }
-  function candidate (message, conversationId) { return !!surface(message) || !!current(snapshot(conversationId), conversationId) }
+  const displayedPlan = c => c?.messages?.at(-1)?.role === 'assistant' && ID.test(c.messages.at(-1).taskPlanRunId || '') ? c.messages.at(-1).taskPlanRunId : null
+  function candidate (message, conversationId) { const c = snapshot(conversationId); return !!surface(message) || !!current(c, conversationId) || !!(plainConfirmation(message) && displayedPlan(c)) }
   async function handle (actor, input) {
     if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied')
     const { message, conversationId, requestId, effort = 'medium', model = 'gpt-6.1-sol' } = input
@@ -52,7 +53,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
       throw Error('request_conflict')
     }
     const before = snapshot(conversationId), last = current(before, conversationId)
-    if (!surface(message) && !last) return null
+    if (!surface(message) && !last && !(plainConfirmation(message) && displayedPlan(before))) return null
     const receipt = { id: requestId, workflow: 'dialogue_request', steps: [], sections: [], identity, conversationId, state: 'interpreting', startedAt: new Date().toISOString() }
     receipts.save(receipt)
     const work = interpret(); running.set(requestId, work)
@@ -62,8 +63,23 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
       let abortListener
       try {
         const old = last?.planningContext || null
-        let run = last?.taskPlanRunId ? planner.get(actor, last.taskPlanRunId) : null
+        let run = displayedPlan(before) ? planner.get(actor, displayedPlan(before)) : null
+        if (displayedPlan(before) && !run) throw Error('invalid_request')
         if (run && run.conversationId !== conversationId) throw Error('invalid_request')
+        if (run && plainConfirmation(message)) {
+          receipt.interpretation = 'bound_plan_confirmation'
+          receipt.taskPlanRunId = run.id
+          let reply, language = /[\u3400-\u9fff]/u.test(message) ? 'zh' : 'en'
+          if (run.state === 'completed' && run.result?.capability?.status !== 'unsupported' && !run.result?.questions?.length && run.executionAvailable && !run.executionStale && !run.execution && !run.registrationPreparation && !run.preparation && !run.taskRunId && !run.workRunId) {
+            receipt.state = 'execution_requested'; receipts.save(receipt)
+            run = (await planner.executeConfirmed(actor, { id: run.id, requestId, planHash: run.planHash })).run
+            reply = t('confirmedWork.started', undefined, language)
+          } else reply = boundStatus(run, language)
+          const output = { lane: 'chat', mode: 'chat', reply, taskPlanRunId: run.id, historySaved: true, servedBy: null }
+          store.appendTurn({ id: conversationId, userText: message, replyText: reply, taskPlanRunId: run.id, planningContext: old })
+          receipt.state = 'completed'; receipt.response = output; receipts.save(receipt)
+          return output
+        }
         const provider = providerFor({ model, effort })
         const pending = provider.complete(JSON.stringify({ currentMessage: message, context: old, recentConversation: (before?.messages || []).slice(-8).map(m => ({ role: m.role, content: String(m.content).slice(0, 4000) })), job: run ? { id: run.id, state: run.state, goal: run.result?.goal, questions: run.result?.questions, taskRunId: run.taskRunId || null } : null }), { system: SYSTEM, signal: controller.signal, responseFormat: { type: 'json_schema', name: 'development_dialogue', schema: SCHEMA } })
         const stopped = new Promise((resolve, reject) => { abortListener = () => reject(Error('timed_out')); controller.signal.addEventListener('abort', abortListener, { once: true }) })
@@ -94,7 +110,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
           }
           if (ctx.ownerRequests.length > 12 || ctx.proposals.length > 12) throw Error('context_limit')
           ctx = seal(ctx)
-          const replan = v.intent === 'refine' && ['needs_clarification', 'completed'].includes(run?.state)
+          const replan = v.intent === 'refine' && ['needs_clarification', 'completed', 'out_of_scope'].includes(run?.state)
           const initialRequest = !old && v.intent === 'refine'
           if (v.intent === 'start' || replan || initialRequest) {
             const changed = run?.dialogue && run.dialogue.contextDigest !== ctx.digest

@@ -22,7 +22,7 @@ function createConfirmedExecution ({ store, source, bootCommit, registerTask, rp
     record(r.id, r.execution, 'interrupted', { automaticResume: false })
   }
   function checkPlan (r, input) {
-    if (!r || r.state !== 'completed' || r.result?.questions?.length || !r.verification?.matched || !validateResult(r.result, r.evidence) || !Object.hasOwn(PROFILES, r.profile)) throw Error('invalid_request')
+    if (!r || r.state !== 'completed' || r.result?.capability?.status === 'unsupported' || r.result?.questions?.length || !r.verification?.matched || !validateResult(r.result, r.evidence) || !Object.hasOwn(PROFILES, r.profile)) throw Error('invalid_request')
     if (input.planHash !== r.planHash || r.planHash !== planHash(r) || r.evidenceHash !== hash(JSON.stringify(r.evidence)) || r.evidence.bootCommit !== bootCommit) throw Error('evidence_changed')
   }
   async function start (actor, input) {

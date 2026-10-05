@@ -88,3 +88,22 @@ commit. The canonical store used for approval, source verification, adoption and
 rollback is untouched, and the transport limit is unchanged. A red-first real HTTP
 regression checks large history, all adoption operations, unchanged approval
 arguments and preservation of the complete host receipt.
+
+## Bound confirmation and capability fit
+
+A standalone Chinese or English confirmation of the latest displayed plan now
+reads that server-held job directly. It does not ask another model to reinterpret
+the approval. Conversation identity, source freshness, evidence hashes and the
+existing isolated-development consent checks remain mandatory. Repeating the
+confirmation reads current progress or the recorded stop reason; it never retries
+a failed job. Missing records fail closed. Negations, quotations and changed
+requirements cannot use this path.
+
+New plans must assess the entire requested outcome against host-selected editable
+files and existing mechanisms. An unsupported outcome is saved as `out_of_scope`,
+with its original goal, a plain-language explanation and missing capabilities.
+It cannot start drafting or coding. The Owner can narrow the request to generate
+a new source-backed plan. The assessment is advisory, not write authority; fixed
+profiles and approval checks still enforce every mutation. Historical plans retain
+their original schema and hashes. This does not add arbitrary backend development,
+new connectors, production writes or automatic adoption.

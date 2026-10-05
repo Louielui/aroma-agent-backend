@@ -38,6 +38,16 @@ function dom (plan, fail = false) {
   return { calls, nested, timers, nodes: () => flat(body), flush: async () => { for (let i = 0; i < 5; i++) await new Promise(r => setImmediate(r)) } }
 }
 const plan = () => ({ id: randomUUID(), state: 'completed', executableRecipe: 'registered', evidence: { revision: 'a'.repeat(40), profile: 'context', files: [{ evidenceId: 'one', path: 'registered.js' }] }, result: { goal: '<script>untrusted</script>', steps: ['read'], acceptanceChecks: ['verify'], questions: [], risks: [], citations: [{ evidenceId: 'one', startLine: 1, endLine: 1, quote: 'untrusted text' }] } })
+test('unsupported work explains the missing capability on the visible card with no execution controls', async () => {
+  const p = plan(); p.state = 'out_of_scope'; p.executionAvailable = true
+  p.result.capability = { status: 'unsupported', explanation: 'Durable storage is not available in this editing scope.', missingCapabilities: ['Topic storage'] }
+  const f = dom(p); await f.flush()
+  assert.ok(f.nodes().some(n => n.textContent === p.result.capability.explanation))
+  assert.ok(f.nodes().some(n => n.textContent === 'Topic storage'))
+  assert.ok(f.nodes().some(n => n.textContent === 'taskPlan.outOfScope'))
+  assert.equal(f.nodes().some(n => ['confirmedWork.start', 'taskPlan.prepare', 'projectTask.start'].includes(n.textContent)), false)
+  assert.equal(f.calls.filter(c => c.body).length, 0)
+})
 test('real UI displays draft safely and requires one deliberate preparation click; no coding approval is automatic', async () => {
   const p = plan(), f = dom(p); await f.flush(); assert.equal(f.calls.length, 1); assert.equal(f.calls[0].body, null); assert.ok(f.nodes().some(n => n.textContent === p.result.goal))
   const button = f.nodes().find(n => n.textContent === 'taskPlan.prepare'); button.events.click(); button.events.click(); await f.flush(); assert.equal(f.calls.filter(c => c.body).length, 1); assert.equal(f.calls[1].body.op, 'prepare'); assert.equal(f.nested.length, 1); assert.equal(f.nested[0].p.approval.nonce, 'ram-only')

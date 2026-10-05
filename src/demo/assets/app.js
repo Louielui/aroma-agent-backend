@@ -1338,7 +1338,7 @@
     box.appendChild(trail); box.appendChild(heading); box.appendChild(clock); box.appendChild(drawer); host.appendChild(box)
     var current = null, kind = '', confirmedAt = 0, readable = false, ticker = null, logSignature = ''
     var active = ['queued', 'running', 'reading', 'drafting', 'checking', 'coding', 'reviewing', 'testing', 'applying']
-    var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification') }
+    var labels = { queued: t('workActivity.queued'), running: t('workActivity.planning'), reading: t('workActivity.reading'), drafting: t('workActivity.drafting'), checking: t('workActivity.checking'), coding: t('workActivity.coding'), reviewing: t('workActivity.reviewing'), testing: t('workActivity.testing'), applying: t('workActivity.applying'), awaiting_approval: t('workActivity.approval'), awaiting_restart: t('workActivity.restart'), registered: t('workActivity.registered'), failed: t('workActivity.failed'), cancelled: t('workActivity.cancelled'), timed_out: t('workActivity.timedOut'), interrupted: t('workActivity.interrupted'), needs_attention: t('workActivity.attention'), needs_clarification: t('workActivity.clarification'), out_of_scope: t('taskPlan.outOfScope') }
     var stages = { owner_requested: t('workActivity.requested'), policy_checked: t('workActivity.policy'), source_read: labels.reading, source_received: t('workActivity.sourceReceived'), planning: labels.running, source_verified: t('workActivity.sourceVerified'), coding: labels.coding, checking: labels.checking, reviewing: labels.reviewing, drafting: labels.drafting, reading: labels.reading, completed: t('workActivity.stageComplete'), failed: labels.failed, cancelled: labels.cancelled, testing: labels.testing, applying: labels.applying, task_draft_requested: labels.drafting, task_draft_linked: t('workActivity.draftLinked'), work_prepare_requested: t('workActivity.workRequested'), work_prepared: t('workActivity.workPrepared') }
     Object.assign(stages, { visual_review: t('uiDesign.reviewing'), repairing_visual: t('uiDesign.repairing'), design_guidance_loaded: t('uiDesign.guidance'), repairing_code: t('workActivity.repairingCode'), repairing_tests: t('workActivity.repairingTests'), checking_isolation: t('workActivity.isolation'), baseline_started: t('workActivity.baseline'), baseline_failed: t('workActivity.baselineResult'), tests_started: labels.testing, accepted_isolated: t('workActivity.testsPassed'), draft_ready: t('workActivity.draftReady'), owner_confirmed: t('workActivity.confirmed'), coding_authorized: t('workActivity.dispatch'), needs_attention: labels.needs_attention, timed_out: labels.timed_out, interrupted: labels.interrupted })
     function orderedSteps () { return (current && Array.isArray(current.steps) ? current.steps : []).slice().sort(function (a, b) { var x = Date.parse(a.at), y = Date.parse(b.at); return Number.isFinite(x) && Number.isFinite(y) ? x - y : 0 }) }
@@ -1414,6 +1414,14 @@
       if (r.evidence) report.appendChild(el('p', '', r.evidence.profile + ' · ' + r.evidence.revision))
       if (r.result) {
         content.appendChild(el('h4', '', r.result.goal))
+        if (r.result.capability && r.result.capability.status === 'unsupported') {
+          content.appendChild(el('p', '', t('taskPlan.outOfScope')))
+          content.appendChild(el('p', '', r.result.capability.explanation))
+          content.appendChild(el('strong', '', t('taskPlan.missingCapabilities')))
+          var missingCapabilities = el('ul')
+          r.result.capability.missingCapabilities.forEach(function (text) { missingCapabilities.appendChild(el('li', '', text)) })
+          content.appendChild(missingCapabilities)
+        }
         ;[["steps", t('taskPlan.steps')], ["acceptanceChecks", t('taskPlan.acceptanceChecks')], ["questions", t('taskPlan.questions')], ["risks", t('taskPlan.risks')]].forEach(function (entry) {
           var key = entry[0]
           if (!r.result[key].length) return

@@ -51,7 +51,10 @@ test('legacy topic recovery never upgrades stale work receipts or forbidden targ
   }
   const f = fixture(t, [])
   f.store.appendTurn({ id: f.cid, userText: ORIGINAL, replyText: 'Old task', taskPlanRunId: randomUUID() })
-  assert.equal(f.service.candidate('好，開始', f.cid), false)
+  // A displayed receipt is routed to readback, never recovered as new consent.
+  assert.equal(f.service.candidate('好，開始', f.cid), true)
+  await assert.rejects(f.send('好，開始'), /invalid_request/)
+  assert.equal(f.executions.length, 0); assert.equal(f.starts.length, 0); assert.equal(f.seen.length, 0)
   const stale = fixture(t, [])
   stale.store.appendTurn({ id: stale.cid, userText: ORIGINAL, replyText: 'Old proposal', planningContext: require('./dialogueContext').seal({ version: 1, profile: 'interface', revision: 'b'.repeat(40), conversationId: stale.cid, createdAt: new Date().toISOString(), ownerRequests: [ORIGINAL], proposals: ['Old proposal'], language: 'zh' }) })
   assert.equal(stale.service.candidate('好，開始', stale.cid), false)
