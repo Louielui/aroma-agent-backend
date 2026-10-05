@@ -107,3 +107,11 @@ a new source-backed plan. The assessment is advisory, not write authority; fixed
 profiles and approval checks still enforce every mutation. Historical plans retain
 their original schema and hashes. This does not add arbitrary backend development,
 new connectors, production writes or automatic adoption.
+
+## Stage-correct test review
+
+The host supplies the same pre-implementation stage contract to acceptance drafting and review. The general design guide remains active, but future screenshots and runtime results are not prerequisites for drafting tests. Missing functional assertions still fail review. Fixed browser cases and the separate actual-pixel gate remain mandatory after coding; neither a draft pass nor a CSS string assertion proves visual correctness.
+
+Planning receives the actual verification envelope: source guards, deterministic tests, fixed candidate screenshots and their limitations. It must preserve explicit Owner requirements without inventing paired screenshot or arbitrary numeric geometry obligations the harness cannot produce. Unsupported verification requirements must be disclosed before execution.
+
+Live inspection on 2026-10-05 measured direct confirmation at 553 ms and same-job replay. That trial stopped at invalid test-draft syntax after review feedback; it did not reach coding or adoption. The historical receipt is retained. Stage tests verify both drafting and reviewer prompts; final completion still requires a fresh full pipeline run.

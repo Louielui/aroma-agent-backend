@@ -12,4 +12,8 @@ function forFiles (files) {
   return guidance(Object.keys(profiles).find(k => files.every(f => profiles[k].includes(f))))
 }
 function systemFor (system, profile) { const g = guidance(profile); return g ? system + '\nHost-owned UI design guidance (no additional authority):\n' + g.instructions : system }
-module.exports = { guidance, forFiles, systemFor }
+// The design guide describes the complete delivery, while this stage only drafts
+// and reviews tests. Keep future evidence obligations out of the pre-code gate.
+const TEST_DRAFT_STAGE = 'Current host stage: protected test draft, BEFORE implementation or execution. Apply the design guidance as coverage requirements for future execution, not as evidence already available. Do not request completed screenshots or executed test results at this stage. The existing offline browser harness produces candidate desktop/mobile Chinese/English screenshots; actual-pixel review remains mandatory after implementation and failure or missing evidence blocks completion. It does not produce paired before/after screenshots, dark-theme screenshots, or arbitrary numeric geometry assertions. Do not invent these receipts: custom pixel measurements require explicit harness coverage. Reject uncovered behavior even when later visual review is available. CSS declaration checks prove declarations only. For a CSS-only request, test the changed declaration and meaningful preserved invariants; do not rebuild unrelated application behavior or embed the entire stylesheet as a brittle snapshot. A passing draft review authorizes only the next stage, never completion or deployment.'
+function testDraftSystem (system, profile) { return systemFor(system, profile) + '\n' + TEST_DRAFT_STAGE }
+module.exports = { guidance, forFiles, systemFor, testDraftSystem, TEST_DRAFT_STAGE }
