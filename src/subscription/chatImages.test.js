@@ -4,6 +4,16 @@ const { CodexSubscriptionAdapter } = require('../adapters/CodexSubscriptionAdapt
 const { validateInput } = require('./bridge')
 const { createBridge } = require('./bridge')
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMsAAAAAASUVORK5CYII='
+test('image service composes with the real subscription adapter structured-response contract', async () => {
+  let captured
+  const adapter = new CodexSubscriptionAdapter({ request: async (route, input) => {
+    captured = validateInput(input)
+    return { text: '{"reply":"Visible pixels"}', model: input.model, billing: 'chatgpt-subscription', stopReason: 'end_turn' }
+  } })
+  const reply = await require('../chat/imageChat').processImageChat({ message: 'Inspect', images: [PNG] }, adapter)
+  assert.equal(reply.reply, 'Visible pixels'); assert.deepEqual(captured.images, [PNG])
+  assert.equal(captured.schema.required[0], 'reply'); assert.equal(captured.schema.additionalProperties, false)
+})
 test('subscription adapter and bridge retain image pixels without allowing path or tool settings', async () => {
   let captured
   const a = new CodexSubscriptionAdapter({ request: async (route, input) => { captured = validateInput(input); return { text: 'ok', model: input.model, billing: 'chatgpt-subscription', stopReason: 'end_turn' } } })

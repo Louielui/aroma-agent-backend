@@ -18,6 +18,8 @@ The existing Owner session, demo guard and same-origin checks apply. The route
 uses the selected GPT subscription model and thinking level, with no paid API-key
 fallback. Its provider bridge retains the image pixels. The model receives the
 current images and up to eight bounded text turns loaded from the server's store.
+The structured response uses the adapter's `type: json_schema` contract; a
+composition test exercises the real service, adapter and bridge validation together.
 The returned model identity must match the selection. Images and their text have
 no authority to approve work or run tools. This route does not dispatch, send mail,
 read the desktop or import images into long-term memory.
