@@ -64,3 +64,27 @@ failures; the visual correction allows one candidate only. The job therefore has
 at most three coding candidates and two full reviews. A second rejection stops
 without adoption. Archived failures are never reset or replayed, and applying an
 accepted candidate still requires the normal separate adoption approval.
+
+Actual subscription acceptance completed with plan
+`f67dc36e-02e9-442a-8dd4-01e394b3430f` and work
+`8974b8a4-9cb4-4f20-8fc7-55bc7f7b0dd4`. One development confirmation
+continued through real test drafting, Claude review and Sol 6.1 High coding.
+The first candidate passed all nine protected tests but pixel review rejected
+mobile labels and row balance. The same approval made one visual correction;
+the second candidate passed all nine tests, fresh Claude code review and four
+Chinese/English desktop/mobile pixel reviews. Both candidates remain preserved.
+Normal separately approved adoption reran all nine tests and verified the loaded
+`0f69e3258286a802b6f978c4df32732ea6b9a354` commit and both source hashes.
+
+Full-suite acceptance updates the served-page packaging assertion to the actual
+760px shell overlay boundary. Optional narrower padding rules are not mandatory;
+the immutable browser matrix still measures real layout at every listed width.
+
+Actual adoption history exceeded the existing two-million-character transport
+limit because sealed source inputs and accepted copies were repeated in each
+receipt. Browser-facing views omit those duplicates while retaining before/after
+comparisons, source provenance, evidence hashes, test results, state and loaded
+commit. The canonical store used for approval, source verification, adoption and
+rollback is untouched, and the transport limit is unchanged. A red-first real HTTP
+regression checks large history, all adoption operations, unchanged approval
+arguments and preservation of the complete host receipt.

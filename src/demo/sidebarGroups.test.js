@@ -57,7 +57,9 @@ test('served page includes standalone sidebar assets in its fingerprint, support
   const { buildDemoHtml, computeBuildStamp } = require('./demoHtml'), { CATALOGUE } = require('../i18n/catalogue')
   const html = buildDemoHtml(); assert.match(html, /XiangxiangSidebar/); assert.match(html, /sidebar-group/)
   assert.notEqual(computeBuildStamp(), computeBuildStamp({ 'sidebar.js': 'changed' })); assert.notEqual(computeBuildStamp(), computeBuildStamp({ 'sidebar.css': 'changed' }))
-  const css = fs.readFileSync(path.join(assets, 'sidebar.css'), 'utf8'); assert.match(css, /@media\s*\(max-width:\s*700px\)/); assert.match(css, /:focus-visible/)
+  // The shared shell switches to the mobile overlay at 760px. Optional narrower
+  // padding overrides are not the layout boundary; rendered acceptance is separate.
+  const css = fs.readFileSync(path.join(assets, 'sidebar.css'), 'utf8'); assert.match(css, /@media\s*\(max-width:\s*760px\)/); assert.match(css, /:focus-visible/)
   for (const key of ['sidebarGroup.daily', 'sidebarGroup.development', 'sidebarGroup.management']) { assert.ok(CATALOGUE[key].zh); assert.ok(CATALOGUE[key].en) }
   for (const m of html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)) if (m[1].trim()) new vm.Script(m[1])
 })

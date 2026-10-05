@@ -4,6 +4,7 @@ const http = require('node:http')
 const crypto = require('node:crypto')
 const { complete, checkSubscription, listSubscriptionModels, SubscriptionError, createSession } = require('./codexClient')
 const { REASONING_EFFORTS, isChatModel } = require('./chatModels')
+const { adoptionView } = require('../core/projectWork/adoptionView')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
 
@@ -69,10 +70,12 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         try {
           if (op !== 'list' && projectWork?.isActive()) throw Error('worker_busy')
           await projectAdoption.refresh()
-          if (op === 'list') reply(200, { enabled: projectAdoption.enabled(), runs: projectAdoption.list(actor) })
-          else if (op === 'prepare') reply(200, await projectAdoption.prepare(actor, body))
-          else if (op === 'reload') reply(200, { run: await projectAdoption.reload(actor, body.id) })
-          else reply(200, { run: projectAdoption[op](actor, op === 'cancel' ? body.id : body) })
+          if (op === 'list') reply(200, { enabled: projectAdoption.enabled(), runs: projectAdoption.list(actor).map(adoptionView) })
+          else if (op === 'prepare') {
+            const value = await projectAdoption.prepare(actor, body)
+            reply(200, { ...value, run: adoptionView(value.run) })
+          } else if (op === 'reload') reply(200, { run: adoptionView(await projectAdoption.reload(actor, body.id)) })
+          else reply(200, { run: adoptionView(projectAdoption[op](actor, op === 'cancel' ? body.id : body)) })
         } catch (e) { reply(200, { error: ['invalid_request', 'source_changed', 'source_dirty', 'accepted_evidence_changed', 'request_conflict', 'approval_unavailable', 'rollback_unavailable', 'worker_busy', 'reload_pending', 'not_enabled'].includes(e.message) ? e.message : 'adoption_unavailable' }) }
       } else if (req.url === '/project-work') {
         const shapes = { list: ['op'], get: ['op', 'id'], browser: ['op', 'id', 'name'], prepare: ['op', 'projectId', 'recipe', 'requestId', 'bootCommit'], approve: ['op', 'id', 'hash', 'nonce'], cancel: ['op', 'id'] }
