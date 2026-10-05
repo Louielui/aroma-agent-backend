@@ -5,7 +5,7 @@ function preview (run) {
   const make = tag => ({ tag, children: [], append (...nodes) { this.children.push(...nodes) } })
   const script = buildHtml().match(/<script>([\s\S]*?)<\/script>/)[1]
   const ctx = vm.createContext({ document: { createElement: make }, encodeURIComponent })
-  vm.runInContext(script.match(/const L=(.*?), \$=id/)[0].replace(/, \$=id$/, ';') + script.match(/function text\(parent,value\)\{[^\n]*\}/)[0] + script.match(/function browser\(parent,r\)\{[^\n]*\}/)[0], ctx)
+  vm.runInContext(script.match(/const L=(.*?), \$=id/)[0].replace(/, \$=id$/, ';') + script.match(/function text\(parent,value\)\{[^\n]*\}/)[0] + script.match(/function browser\(parent,r,expanded=false\)\{[^\n]*\}/)[0], ctx)
   const parent = make('section'); ctx.browser(parent, run); return parent
 }
 test('work previews are collapsed, use protected image routes and keep legacy reviews honest', () => {

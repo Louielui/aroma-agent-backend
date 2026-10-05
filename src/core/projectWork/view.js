@@ -2,6 +2,7 @@
 const fs = require('node:fs'), path = require('node:path'), { t, currentLocale } = require('../../i18n/t')
 function buildHtml () {
   const labels = {
+    ...require('./resultLabels').resultLabels(),
     browser: t('projectTask.browserEvidence'),
     preview: t('uiDesign.preview'), visualPassed: t('uiDesign.passed'), visualChanges: t('uiDesign.changes'), visualUnreviewed: t('uiDesign.unreviewed'),
     taskRegister: t('projectTask.title'), title: t('projectWork.title'), intro: t('projectWork.intro'), prepare: t('projectWork.prepare'), approve: t('projectWork.approve'), approval: t('projectWork.approval'),
