@@ -276,6 +276,7 @@ const FILE_CLASS = Object.freeze({
   // ── MATCHING — his words are compared against this. ────────────────────────
   'core/taskPlanner/continuation.js': CLASS.MATCHING, // Current Owner confirmation and bounded design scope.
   'core/taskPlanner/dialogue.js': CLASS.INTERFACE, // Host action receipts in the current dialogue language.
+  'core/taskPlanner/dialogueIntent.js': CLASS.MODEL, // Semantic intent prompt and fixed surface vocabulary must not be translated.
   'intake/scopeNotes.js': CLASS.MATCHING,             //   3 — 「哪個倉」/「邊個倉」 both spellings
   'persona/ownerSettings.js': CLASS.MATCHING,         //   2 — injection patterns
   'intake/traditionalGuard.js': CLASS.MATCHING,       //   2 — the simplified charset IS the guard

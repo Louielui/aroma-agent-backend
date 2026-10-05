@@ -41,7 +41,7 @@ async function fixture (options = {}) {
   }
   const args = { bootCommit: HEAD, store, executionRpc: { task: taskRpc, work: workRpc }, executionPollMs: 1,
     source: { verify: () => {}, read: async () => packet() }, registerTask: taskRpc,
-    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
+    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: options.goal || 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
   const service = createPlanner(args), run = service.start(OWNER, { message: 'plan Xiangxiang sidebar', requestId: randomUUID(), conversationId: 'chat-' + randomUUID() }); await service.wait(run.id)
   const input = { id: run.id, requestId: randomUUID(), planHash: service.get(OWNER, run.id).planHash }
   return { service, store, tasks, calls, evidence, input, rebuild: () => createPlanner(args), taskService }
@@ -65,6 +65,34 @@ test('one explicit plan confirmation runs real task approval and coding; reading
   await f.service.executeConfirmed(OWNER, f.input)
   assert.equal(f.calls.filter(c => c === 'task:start').length, 1)
   await assert.rejects(f.service.executeConfirmed(OWNER, { ...f.input, requestId: randomUUID() }), /request_conflict/)
+})
+test('the exact Owner top-functions request crosses HTTP into a visible plan and one confirmed sealed work chain', async t => {
+  const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), express = require('express')
+  const message = '我想把頂端的功能由右上搬到左上', goal = 'Move top functions from right to left; preserve their order and history'
+  const f = await fixture({ realWorkService: true, goal }), dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-navigation-http-'))
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const conversationStore = require('../../store/conversationStore').createConversationStore({ dataDir: dir }), cid = randomUUID()
+  const outputs = [{ intent: 'start', targetQuote: '頂端的功能' }, { intent: 'start', targetQuote: '' }]
+  const taskDialogue = require('./dialogue').createDialogue({ store: conversationStore, planner: f.service, revision: HEAD, providerFor: () => ({ complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ profile: 'interface', language: 'zh', reply: '', ...outputs.shift() }) }) }) })
+  const app = express(); app.locals.conversationDemo = true; app.use(express.json()); app.use(require('../../routes/demoRouter').createDemoRouter({ conversationStore, taskPlanner: f.service, taskDialogue, processIntakeFn: () => { throw Error('must_not_enter_plain_chat_or_file_editor') } }))
+  const server = app.listen(0, '127.0.0.1'); await new Promise(r => server.once('listening', r))
+  t.after(async () => { server.closeAllConnections(); await new Promise(r => server.close(r)) })
+  const post = text => new Promise((resolve, reject) => {
+    const req = require('node:http').request({ hostname: '127.0.0.1', port: server.address().port, path: '/api/v1/demo/intake', method: 'POST', headers: { host: '127.0.0.1:8090', origin: 'http://127.0.0.1:8090', 'content-type': 'application/json' } }, res => {
+      let body = ''; res.on('data', c => { body += c }); res.on('end', () => { try { assert.equal(res.statusCode, 200); resolve(JSON.parse(body)) } catch (e) { reject(e) } })
+    }); req.on('error', reject); req.end(JSON.stringify({ message: text, conversationId: cid, workflowRequestId: randomUUID() }))
+  })
+  const first = await post(message); assert.ok(first.taskPlanRunId)
+  await f.service.wait(first.taskPlanRunId)
+  const plan = f.service.get(OWNER, first.taskPlanRunId)
+  assert.equal(plan.state, 'completed'); assert.equal(plan.result.goal, goal); assert.deepEqual(plan.dialogue.ownerRequests, [message]); assert.equal(plan.executionAvailable, true)
+  assert.deepEqual(f.calls, []); assert.equal(conversationStore.get(cid).messages.at(-1).taskPlanRunId, plan.id)
+  const started = await post('好，開始'); assert.equal(started.taskPlanRunId, plan.id)
+  await f.service.waitExecution(plan.id)
+  const completed = f.service.get(OWNER, plan.id)
+  assert.equal(completed.execution.state, 'completed'); assert.equal(completed.execution.child.result.changes.length, 2)
+  assert.equal(f.calls.filter(c => c === 'work:approve').length, 1); assert.deepEqual(f.tasks.all()[0].input.editable, PROFILES.interface)
+  assert.equal(completed.execution.appliedToLive, false)
 })
 test('foreign actors, altered plan hash, injected fields and source drift never reach workers', async () => {
   const f = await fixture()

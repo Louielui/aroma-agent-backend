@@ -26,6 +26,13 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
     if (require('./continuation').validOffer(offer, revision) && ['interface', 'chat'].includes(offer.profile) && typeof last.content === 'string' && last.content.length <= 4000) {
       return { ...last, planningContext: seal({ version: 1, profile: offer.profile, revision, conversationId: id, createdAt: offer.createdAt, ownerRequests: [offer.message], proposals: [last.content], language: /[\u3400-\u9fff]/u.test(last.content) ? 'zh' : 'en' }) }
     }
+    // Recover an unregistered UI discussion from the actual server transcript.
+    // This supplies read-only planning context, never execution consent. Existing
+    // work receipts and stale sealed contexts cannot be upgraded by this path.
+    const user = c.messages.at(-2), profile = user?.role === 'user' && typeof user.content === 'string' && user.content.length <= 2000 && !forbidden(user.content) ? surface(user.content) : null
+    if (profile && !last.planningContext && !last.planningOffer && !['taskPlanRunId', 'projectWorkRunId', 'operatingRunId', 'developmentPlanRunId', 'codeDiagnosisRunId', 'codeRepairRunId'].some(k => last[k]) && typeof last.content === 'string' && last.content.length <= 4000) {
+      return { ...last, planningContext: seal({ version: 1, profile, revision, conversationId: id, createdAt: new Date().toISOString(), ownerRequests: [user.content], proposals: [last.content], language: /[\u3400-\u9fff]/u.test(user.content) ? 'zh' : 'en' }) }
+    }
     return null
   }
   function candidate (message, conversationId) { return !!surface(message) || !!current(snapshot(conversationId), conversationId) }
@@ -87,8 +94,9 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
           }
           if (ctx.ownerRequests.length > 12 || ctx.proposals.length > 12) throw Error('context_limit')
           ctx = seal(ctx)
-          const replan = v.intent === 'refine' && run?.state === 'needs_clarification'
-          if (v.intent === 'start' || replan) {
+          const replan = v.intent === 'refine' && ['needs_clarification', 'completed'].includes(run?.state)
+          const initialRequest = !old && v.intent === 'refine'
+          if (v.intent === 'start' || replan || initialRequest) {
             const changed = run?.dialogue && run.dialogue.contextDigest !== ctx.digest
             if (run && !replan && !changed && run.state === 'completed' && run.executionAvailable && !run.execution && !run.registrationPreparation && !run.preparation && plainConfirmation(message)) {
               receipt.state = 'execution_requested'; receipt.taskPlanRunId = run.id; receipts.save(receipt)
