@@ -12,17 +12,17 @@ function page () {
 function dom (html) {
   const ids = new Map()
   function make (tag) {
-    const n = { tagName: tag, children: [], parentNode: null, attrs: {}, events: {}, style: {}, value: '', className: '', textContent: '', scrollHeight: 40, scrollTop: 0, disabled: false,
+    const n = { tagName: tag.toUpperCase(), children: [], parentNode: null, attrs: {}, events: {}, style: {}, value: '', className: '', textContent: '', scrollHeight: 40, scrollTop: 0, disabled: false,
       get childNodes () { return this.children }, get firstChild () { return this.children[0] || null },
       appendChild (c) { if (c.parentNode) c.parentNode.removeChild(c); this.children.push(c); c.parentNode = this; return c },
-      insertBefore (c, before) { if (!before) return this.appendChild(c); const index = this.children.indexOf(before); assert.ok(index >= 0); this.children.splice(index, 0, c); c.parentNode = this; return c },
+      insertBefore (c, before) { if (!before) return this.appendChild(c); if (c.parentNode) c.parentNode.removeChild(c); const index = this.children.indexOf(before); assert.ok(index >= 0); this.children.splice(index, 0, c); c.parentNode = this; return c },
       removeChild (c) { const index = this.children.indexOf(c); assert.ok(index >= 0); this.children.splice(index, 1); c.parentNode = null; return c },
       setAttribute (k, v) { this.attrs[k] = String(v) }, getAttribute (k) { return this.attrs[k] ?? null },
       addEventListener (k, f) { this.events[k] = f }, focus () {},
       querySelector (selector) { return this.children.find(c => selector[0] === '.' && c.className.split(/\s+/).includes(selector.slice(1))) || null },
       contains (c) { return c === this || this.children.some(child => child.contains(c)) }
     }
-    n.classList = { add (v) { if (!this.contains(v)) n.className = (n.className + ' ' + v).trim() }, remove (v) { n.className = n.className.split(/\s+/).filter(c => c !== v).join(' ') }, contains (v) { return n.className.split(/\s+/).includes(v) }, toggle (v) { if (this.contains(v)) this.remove(v); else this.add(v) } }
+    n.classList = { add (v) { if (!this.contains(v)) n.className = (n.className + ' ' + v).trim() }, remove (v) { n.className = n.className.split(/\s+/).filter(c => c !== v).join(' ') }, contains (v) { return n.className.split(/\s+/).includes(v) }, toggle (v, force) { if (force === undefined ? this.contains(v) : !force) this.remove(v); else this.add(v) } }
     return n
   }
   for (const match of html.matchAll(/<([a-z][a-z0-9]*)\b([^>]*\bid="([^"]+)"[^>]*)>/g)) {
@@ -30,7 +30,11 @@ function dom (html) {
   }
   const select = ids.get('chat-level')
   for (const id of ['chat-level-low', 'chat-level-medium', 'chat-level-high', 'chat-level-xhigh', 'chat-level-max']) { const option = ids.get(id); select.appendChild(option); if (option.selected) select.value = option.value }
-  return { ids, document: { title: '', body: make('body'), getElementById: id => ids.get(id) || null, createElement: make, createTextNode: text => Object.assign(make('#text'), { textContent: text }), addEventListener () {} } }
+  const body = make('body')
+  body.appendChild(ids.get('app')); ids.get('app').appendChild(ids.get('sidebar')); ids.get('app').appendChild(ids.get('main'))
+  ids.get('main').appendChild(ids.get('topbar')); ids.get('topbar').appendChild(ids.get('expand'))
+  ids.get('sidebar').appendChild(ids.get('workspace-nav'))
+  return { ids, document: { title: '', body, getElementById: id => ids.get(id) || null, createElement: make, createTextNode: text => Object.assign(make('#text'), { textContent: text }), addEventListener () {} } }
 }
 async function boot (locale, unavailable = false) {
   const html = page(), f = dom(html), requests = [], errors = []
@@ -56,6 +60,8 @@ for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test
   assert.equal(ids.get('chat-level').classList.contains('hidden'), false); assert.equal(ids.get('chat-level').value, 'medium')
   for (const [id, key] of [['chat-level-low', 'chat.low'], ['chat-level-medium', 'chat.medium'], ['chat-level-high', 'chat.high'], ['chat-level-xhigh', 'chat.xhigh'], ['chat-level-max', 'chat.max']]) assert.equal(ids.get(id).textContent, CATALOGUE[key][locale])
   assert.match(ids.get('picker-label').textContent, /GPT-6\.1 Sol/); assert.equal(ids.get('workspace-nav').children.length, 3)
+  assert.equal(ids.get('sidebar').contains(ids.get('workspace-nav')), false)
+  assert.equal(ids.get('topbar').contains(ids.get('workspace-nav')), true)
   ids.get('msg').value = 'Fixture text'; ids.get('msg').events.input(); assert.equal(ids.get('send').disabled, false)
   assert.ok(f.requests.some(r => r.url === '/api/v1/conversations')); assert.ok(f.requests.some(r => r.url === '/api/v1/demo/models'))
 })
