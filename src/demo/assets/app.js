@@ -1310,7 +1310,8 @@
       if (r.updatedPlanRunId && r.updatedPlanRunId !== runId) { runId = r.updatedPlanRunId; setTimeout(read, 0); return }
       var execution = r.execution, executing = execution && ['queued', 'reading', 'drafting', 'checking', 'coding', 'reviewing'].includes(execution.state)
       var visible = execution ? Object.assign({}, execution, { activityKind: execution.child && execution.child.kind, steps: (r.steps || []).concat(execution.steps, execution.previousChildSteps || [], execution.child ? execution.child.steps : []), generated: execution.child && execution.child.generated, result: execution.child && execution.child.result }) : r
-      activity.update(visible, execution ? 'work' : 'plan')
+      var adopted = r.adoption && r.adoption.action === 'adopt' && r.adoption.state === 'completed' && r.adoption.appliedToLive === true && r.adoption.commit && r.adoption.loaded && r.adoption.loaded.bootCommit === r.adoption.commit
+      activity.update(adopted ? Object.assign({}, r.adoption, { steps: (visible.steps || []).concat(r.adoption.steps || []) }) : visible, adopted ? 'adoption' : execution ? 'work' : 'plan')
       clear(content)
       var report = el('details', 'work-plan-report'); report.appendChild(el('summary', '', t('workActivity.planDetails')))
       report.appendChild(el('p', '', t('taskPlan.boundary')))
@@ -1331,7 +1332,8 @@
       }
       content.appendChild(report)
       if (execution) {
-        content.appendChild(el('p', '', executing ? t('confirmedWork.running') : execution.state === 'completed' ? t('confirmedWork.completed') : execution.state === 'cancelled' ? t('workActivity.cancelled') : t('confirmedWork.stopped')))
+        content.appendChild(el('p', '', adopted ? t('confirmedWork.applied') : executing ? t('confirmedWork.running') : execution.state === 'completed' ? t('confirmedWork.completed') : execution.state === 'cancelled' ? t('workActivity.cancelled') : t('confirmedWork.stopped')))
+        if (r.adoptionUnavailable) content.appendChild(el('p', '', t('confirmedWork.adoptionUnknown')))
         if (execution.reason) {
           var reasons = { review_changes_requested: t('confirmedWork.reviewBlocked'), claude_unavailable: t('confirmedWork.reviewerUnavailable'), claude_max_turns: t('confirmedWork.reviewerUnavailable'), worker_timeout: t('confirmedWork.timeout'), timed_out: t('confirmedWork.timeout'), subscription_limit_reached: t('confirmedWork.limit'), evidence_changed: t('confirmedWork.changed'), source_changed: t('confirmedWork.changed'), source_dirty: t('confirmedWork.changed'), cancellation_unconfirmed: t('confirmedWork.cancelUnconfirmed') }
           content.appendChild(el('p', '', reasons[execution.reason] || t('confirmedWork.unconfirmed')))
@@ -1410,7 +1412,20 @@
     async function read () {
       if (busy) return
       busy = true
-      try { var v = await request(); draw(v.run) }
+      try {
+        var v = await request()
+        if (v.run.execution && v.run.execution.state === 'completed' && v.run.execution.workRunId) {
+          var adoptionController = new AbortController(), adoptionTimeout = setTimeout(function () { adoptionController.abort() }, 12000)
+          try {
+            var adoptionResponse = await fetch('/api/v1/project-adoption', { credentials: 'same-origin', redirect: 'error', signal: adoptionController.signal })
+            if (!adoptionResponse.ok) throw Error('unavailable')
+            var adoptionValue = await adoptionResponse.json()
+            if (!Array.isArray(adoptionValue.runs)) throw Error('unavailable')
+            v.run.adoption = adoptionValue.runs.find(function (a) { return a.workRunId === v.run.execution.workRunId }) || null
+          } catch (_) { v.run.adoptionUnavailable = true } finally { clearTimeout(adoptionTimeout) }
+        }
+        draw(v.run)
+      }
       catch (_) { activity.unavailable(); clear(content); content.appendChild(el('p', '', t('taskPlan.error'))); var refresh = el('button', '', t('taskPlan.refresh')); refresh.addEventListener('click', read); content.appendChild(refresh) }
       finally { busy = false }
     }
