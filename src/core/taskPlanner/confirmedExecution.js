@@ -37,7 +37,7 @@ function createConfirmedExecution ({ store, source, bootCommit, registerTask, rp
     checkPlan(r, input)
     if (r.registrationPreparation || r.preparation) throw Error('request_conflict')
     if (reserving || running.size) throw Error('worker_busy')
-    const taskInput = request({ bootCommit, requestId: randomUUID(), goal: r.result.goal, criteria: r.result.acceptanceChecks, editable: [...PROFILES[r.profile]] })
+    const taskInput = request({ bootCommit, requestId: randomUUID(), goal: r.result.goal, criteria: r.result.acceptanceChecks, editable: [...(r.result.editableFiles || PROFILES[r.profile])] })
     reserving = true
     try {
       const packet = await source.read(actor, r.profile); validatePacket(packet, r.profile)

@@ -3,10 +3,12 @@ const test = require('node:test'), assert = require('node:assert/strict'), { ran
 const { createPlanner } = require('./service'), { READ_PROFILES, PROFILES, hash } = require('./contract')
 const { createMemoryRunStore } = require('../operating/runStore')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
-async function fixture (capability) {
+async function fixture (capability, selection) {
   const evidence = { project: 'aroma-agent-backend', profile: 'interface', revision: HEAD, bootCommit: HEAD, committedOnly: true,
     files: READ_PROFILES.interface.map((path, i) => ({ path, evidenceId: 'plan-' + i, content: "'use strict'", lineCount: 1, sha256: hash("'use strict'") })) }
-  const result = { goal: 'Make EMAIL a persistent topic workspace', steps: ['Create topic storage'], acceptanceChecks: ['Reopen a topic and retain follow-ups'], questions: [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }], ...(capability ? { capability } : {}) }
+  const result = { editableFiles: capability?.status === 'supported' ? PROFILES.interface : [], goal: 'Make EMAIL a persistent topic workspace', steps: ['Create topic storage'], acceptanceChecks: ['Reopen a topic and retain follow-ups'], questions: [], risks: [], citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }], ...(capability ? { capability } : {}) }
+  if (selection === null) delete result.editableFiles
+  else if (selection !== undefined) result.editableFiles = selection
   const calls = [], prompts = [], store = createMemoryRunStore()
   const service = createPlanner({ bootCommit: HEAD, store, source: { verify: () => {}, read: async () => ({ state: 'ok', retrievedAt: new Date().toISOString(), evidence, hash: hash(JSON.stringify(evidence)) }) },
     provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async p => { prompts.push(JSON.parse(p)); return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(result) } } },
@@ -41,4 +43,16 @@ test('contradictory supported assessments and invented write authority are rejec
     { status: 'unsupported', explanation: 'Not supported', missingCapabilities: [] },
     { status: 'supported', explanation: 'Ready', missingCapabilities: [], editableFiles: ['.env'] }
   ]) { const f = await fixture(capability); assert.equal(f.run.reason, 'invalid_worker_result'); assert.equal(f.calls.length, 0) }
+})
+
+test('fresh executable plans require a nonempty unique subset of their host profile', async () => {
+  const capability = { status: 'supported', explanation: 'CSS change', missingCapabilities: [] }
+  for (const selection of [null, [], ['.env'], ['src/demo/assets/app.js'], [PROFILES.interface[1], PROFILES.interface[1]]]) {
+    const f = await fixture(capability, selection)
+    assert.equal(f.run.reason, 'invalid_worker_result')
+    assert.equal(f.calls.length, 0)
+  }
+  const f = await fixture(capability, [PROFILES.interface[1]])
+  assert.equal(f.run.state, 'completed')
+  assert.deepEqual(f.run.result.editableFiles, [PROFILES.interface[1]])
 })

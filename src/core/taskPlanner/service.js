@@ -56,7 +56,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
             const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), capabilities: require('./capabilities').capabilities(r.profile), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM + ' ' + require('./capabilities').INSTRUCTION, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
             if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
-            if (!validateResult(result, evidence, { requireCapability: true })) throw Error('invalid_worker_result')
+            if (!validateResult(result, evidence, { requireCapability: true, requireSelection: true })) throw Error('invalid_worker_result')
             return { ok: true, output: result, cost: null, latencyMs: response.latencyMs ?? null }
           } catch (e) { return { ok: false, error: safe(e), cost: null } }
         }

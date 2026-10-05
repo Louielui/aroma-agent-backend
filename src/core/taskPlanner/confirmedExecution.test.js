@@ -41,7 +41,7 @@ async function fixture (options = {}) {
   }
   const args = { bootCommit: HEAD, store, executionRpc: { task: taskRpc, work: workRpc }, executionPollMs: 1,
     source: { verify: () => {}, read: async () => packet() }, registerTask: taskRpc,
-    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: options.goal || 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], capability: { status: 'supported', explanation: 'Fits the registered files', missingCapabilities: [] }, citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
+    provider: { preflight: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription' }), complete: async () => ({ model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ goal: options.goal || 'Put navigation above chat; preserve history', steps: ['Move navigation'], acceptanceChecks: ['History retains its own scroll region'], questions: [], risks: [], capability: { status: 'supported', explanation: 'Fits the registered files', missingCapabilities: [] }, editableFiles: PROFILES.interface, citations: [{ evidenceId: 'plan-0', startLine: 1, endLine: 1, quote: "'use strict'" }] }) }) } }
   const service = createPlanner(args), run = service.start(OWNER, { message: 'plan Xiangxiang sidebar', requestId: randomUUID(), conversationId: 'chat-' + randomUUID() }); await service.wait(run.id)
   const input = { id: run.id, requestId: randomUUID(), planHash: service.get(OWNER, run.id).planHash }
   return { service, store, tasks, calls, evidence, input, rebuild: () => createPlanner(args), taskService }
@@ -65,6 +65,19 @@ test('one explicit plan confirmation runs real task approval and coding; reading
   await f.service.executeConfirmed(OWNER, f.input)
   assert.equal(f.calls.filter(c => c === 'task:start').length, 1)
   await assert.rejects(f.service.executeConfirmed(OWNER, { ...f.input, requestId: randomUUID() }), /request_conflict/)
+})
+
+test('confirmed CSS-only scope stays CSS-only through registration and coding', async () => {
+  const f = await fixture({ realWorkService: true })
+  const r = f.store.get(f.input.id)
+  r.result.editableFiles = [PROFILES.interface[1]]
+  r.planHash = hash(JSON.stringify({ result: r.result, evidenceHash: r.evidenceHash, message: r.message, executableRecipe: r.executableRecipe }))
+  f.store.save(r)
+  await f.service.executeConfirmed(OWNER, { ...f.input, planHash: r.planHash })
+  await f.service.waitExecution(r.id)
+  assert.deepEqual(f.tasks.all()[0].input.editable, [PROFILES.interface[1]])
+  assert.equal(f.service.get(OWNER, r.id).execution.state, 'completed')
+  assert.ok(f.tasks.all()[0].registration.workOrder.readonlyFiles.includes(PROFILES.interface[0]))
 })
 test('the exact Owner top-functions request crosses HTTP into a visible plan and one confirmed sealed work chain', async t => {
   const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), express = require('express')

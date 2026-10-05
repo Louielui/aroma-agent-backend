@@ -135,7 +135,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             } else if (run.taskRunId || run.registrationPreparation) reply = t('dialogue.existing', undefined, v.language)
             else {
               receipt.state = 'draft_requested'; receipt.taskPlanRunId = run.id; receipts.save(receipt)
-              await planner.registerTask(actor, { id: run.id, requestId, goal: run.result.goal, criteria: run.result.acceptanceChecks, editable: [...PROFILES[ctx.profile]] })
+              await planner.registerTask(actor, { id: run.id, requestId, goal: run.result.goal, criteria: run.result.acceptanceChecks, editable: [...(run.result.editableFiles || PROFILES[ctx.profile])] })
               reply = t('dialogue.drafted', undefined, v.language)
             }
           } else if (v.intent === 'status') reply = run ? t('dialogue.existing', undefined, v.language) : t('dialogue.notStarted', undefined, v.language)
