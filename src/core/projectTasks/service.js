@@ -66,6 +66,7 @@ function createTasks ({ store, sourceFor, provider, review, enabled, prepareWork
       record(r, 'draft_ready', { testsExecuted: false, filesChanged: false, model: 'gpt-6.1-sol', effort: r.draftEffort, billing: 'chatgpt-subscription' })
       sessions.set(r.id, session); tickets.set(r.id, { id: r.id, hash, nonce: approvals.issueNonce({ approvalId: r.id, workOrderHash: hash, sessionId: session }), expiresAt: r.expiresAt })
     } catch (e) {
+      if (e.reviewValidation) r.reviewValidation = { stage: ['envelope', 'json', 'schema', 'finding'].includes(e.reviewValidation.stage) ? e.reviewValidation.stage : 'unknown', responseChars: Number.isInteger(e.reviewValidation.responseChars) && e.reviewValidation.responseChars >= 0 && e.reviewValidation.responseChars <= 100000 ? e.reviewValidation.responseChars : null }
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
         parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',
         stdoutBytes: Number.isInteger(e.safeDiagnostics.stdoutBytes) && e.safeDiagnostics.stdoutBytes >= 0 ? e.safeDiagnostics.stdoutBytes : null, stderrBytes: Number.isInteger(e.safeDiagnostics.stderrBytes) && e.safeDiagnostics.stderrBytes >= 0 ? e.safeDiagnostics.stderrBytes : null }

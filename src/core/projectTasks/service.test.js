@@ -33,6 +33,17 @@ function fixture (opts = {}) {
   const input = { bootCommit: HEAD, requestId: randomUUID(), goal: 'Support a new criterion', criteria: ['New behavior', 'Preserve existing behavior'], editable: [FILES[1]] }
   return { service, store, calls, input, sourceFor, drift: () => { drift = true }, async ready () { const { run } = service.start(OWNER, input); await service.settled(); return service.get(OWNER, run.id) } }
 }
+
+test('invalid reviewer JSON retains a safe validation stage without registering or dispatching', async () => {
+  const { readTextReview } = require('../workerFlow/providers')
+  const f = fixture({ review: async () => readTextReview({ type: 'result', subtype: 'success', result: 'private-review-text' }, ['acceptance/registered-task.test.cjs']) })
+  const value = await f.ready()
+  assert.equal(value.run.state, 'failed'); assert.equal(value.run.reason, 'invalid_worker_result')
+  assert.deepEqual(value.run.reviewValidation, { stage: 'json', responseChars: 19 })
+  assert.equal(value.approval, null); assert.equal(f.calls.includes('prepare'), false)
+  assert.equal(JSON.stringify(value).includes('private-review-text'), false)
+  assert.throws(() => createRegistry(f.store).resolve(value.run.registration.workOrder.recipe), /invalid_request/)
+})
 test('new task draft is not executable; registration, coding preparation and adoption have distinct authority', async () => {
   const f = fixture(), v = await f.ready(), registry = createRegistry(f.store)
   assert.equal(v.run.state, 'awaiting_approval'); assert.equal(f.calls.includes('prepare'), false)

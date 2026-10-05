@@ -97,13 +97,14 @@ function textReviewArgs (files, purpose) {
   return args
 }
 function readTextReview (envelope, files) {
-  if (envelope?.type !== 'result' || envelope.subtype !== 'success' || envelope.is_error === true || typeof envelope.result !== 'string' || envelope.result.length > 50000) throw Error('invalid_worker_result')
-  let r; try { r = JSON.parse(envelope.result) } catch (_) { throw Error('invalid_worker_result') }
+  const invalid = stage => { const error = Error('invalid_worker_result'); error.reviewValidation = { stage, responseChars: typeof envelope?.result === 'string' ? envelope.result.length : null }; throw error }
+  if (envelope?.type !== 'result' || envelope.subtype !== 'success' || envelope.is_error === true || typeof envelope.result !== 'string' || envelope.result.length > 50000) invalid('envelope')
+  let r; try { r = JSON.parse(envelope.result) } catch (_) { invalid('json') }
   const exact = (value, keys) => value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).sort().join(',') === keys.slice().sort().join(',')
-  if (!exact(r, ['verdict', 'summary', 'findings']) || !Array.isArray(r.findings) || r.findings.some(f => !exact(f, ['file', 'line', 'message'])) || (r.verdict === 'pass' && r.findings.length)) throw Error('invalid_worker_result')
-  return readReview({ ...envelope, structured_output: r }, files)
+  if (!exact(r, ['verdict', 'summary', 'findings']) || !Array.isArray(r.findings) || r.findings.some(f => !exact(f, ['file', 'line', 'message'])) || (r.verdict === 'pass' && r.findings.length)) invalid('schema')
+  try { return readReview({ ...envelope, structured_output: r }, files) } catch (_) { invalid('finding') }
 }
-function acceptanceReviewArgs (packet) {
+function acceptanceReviewScope (packet) {
   const { FILES, INTERFACE_FILES, CHAT_FILES, filesFor } = require('../projectTasks/contract')
   const source = packet?.source
   if (!source || typeof source !== 'object' || Array.isArray(source)) throw Error('invalid_worker_result')
@@ -111,6 +112,14 @@ function acceptanceReviewArgs (packet) {
   const profile = Object.entries({ context: FILES, interface: [...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'], chat: filesFor({ editable: CHAT_FILES }) })
     .find(([, files]) => files.slice().sort().join('\n') === names)?.[0] || (names === INTERFACE_FILES.slice().sort().join('\n') ? 'interface' : null)
   if (!profile) throw Error('invalid_worker_result')
+  const files = ['acceptance/registered-task.test.cjs']
+  if (profile === 'chat' || (profile === 'interface' && Object.hasOwn(source, 'src/workers/execution/chatBrowser.cjs'))) files.push('acceptance/chat-browser.test.cjs')
+  if (packet.protectedTests && Object.keys(packet.protectedTests).sort().join('\n') !== files.slice().sort().join('\n')) throw Error('invalid_worker_result')
+  return { profile, files }
+}
+function acceptanceReviewFiles (packet) { return acceptanceReviewScope(packet).files }
+function acceptanceReviewArgs (packet) {
+  const { profile, files } = acceptanceReviewScope(packet)
   // These rules describe packaged tests inside the offline executor, not reviewer tools.
   // The host selects a closed profile; packet prose cannot expand its capabilities.
   const limits = {
@@ -118,7 +127,7 @@ function acceptanceReviewArgs (packet) {
     interface: 'Tests may use node:test, node:assert/strict and the supplied sidebar.js module with a deterministic DOM double. node:fs and node:path may read only packaged sidebar.css inside the offline sandbox. No filesystem writes. DOM doubles cannot replace the implementation under test; CSS text assertions alone do not prove rendered geometry. If supplied, the immutable host browser tests and chatBrowser.cjs harness check actual navigation bounds, ancestor clipping and hit testing at desktop/mobile widths and low heights in the offline guest. Assess generated tests and host browser tests together. The four browser cases add to the generated count. Do not permit generated tests to launch processes or alter the harness; do not infer that these tests have already run.',
     chat: 'Tests may use the supplied chat modules and registered read-only dependencies. The fixed browser acceptance harness remains protected. Assess the generated Node tests and the supplied browser tests together, without inferring execution or allowing changes to read-only dependencies.'
   }
-  return textReviewArgs(['acceptance/registered-task.test.cjs'], require('../../design/uiDesign').systemFor('Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion through explicit tests or the host guards described below; every functional requirement must be asserted. Verify total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. The host separately enforces the exact editable file allowlist and before/after hashes of all protected tests and read-only dependencies, rejects out-of-scope changes, and executes in an offline Windows Sandbox. Do not require generated tests to read or hash files outside their permitted imports to duplicate these host guards. These guards do not prove application behavior: still require assertions for new storage/network attempts, preserved handlers and requested UI changes. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.', profile))
+  return textReviewArgs(files, require('../../design/uiDesign').systemFor('Review the protected acceptance TEST DRAFT against the supplied current source and Owner criteria. This is not an implementation review; tests are not yet executed. Verify every criterion through explicit tests or the host guards described below; every functional requirement must be asserted. Verify total test count is exact across protected tests, at least one test must genuinely fail on current behavior, and tests are deterministic. The host separately enforces the exact editable file allowlist and before/after hashes of all protected tests and read-only dependencies, rejects out-of-scope changes, and executes in an offline Windows Sandbox. Do not require generated tests to read or hash files outside their permitted imports to duplicate these host guards. These guards do not prove application behavior: still require assertions for new storage/network attempts, preserved handlers and requested UI changes. ' + limits[profile] + ' Reject forced failures, missing assertions, skipped tests, undeclared imports or dependencies, installation, process execution, network use or claims of execution. Reviewer tools remain disabled.', profile))
 }
 function createProviders ({ executable, root, allowCredits = false }) {
   fs.mkdirSync(root, { recursive: true })
@@ -142,7 +151,7 @@ function createProviders ({ executable, root, allowCredits = false }) {
     codeOrder: input => code({ ...input, executable, root, allowCredits, executor }),
     async reviewAcceptance (packet, { signal } = {}) {
       await claudeStatus({ cwd: root })
-      const files = ['acceptance/registered-task.test.cjs'], args = acceptanceReviewArgs(packet)
+      const files = acceptanceReviewFiles(packet), args = acceptanceReviewArgs(packet)
       return readTextReview(await runClaude(args, { cwd: root, timeoutMs: 240000, signal, input: JSON.stringify(packet) }), files)
     },
     async reviewOrder (packet, { signal, emit = () => {} } = {}) {
@@ -167,4 +176,4 @@ function createProviders ({ executable, root, allowCredits = false }) {
     }
   }
 }
-module.exports = { createProviders, code, codingProvider, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs }
+module.exports = { createProviders, code, codingProvider, claudeArgs, readReview, claudeStatus, runClaude, textReviewArgs, readTextReview, acceptanceReviewArgs, acceptanceReviewFiles }

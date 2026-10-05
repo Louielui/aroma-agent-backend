@@ -37,6 +37,30 @@ test('acceptance review follows the closed registered source profile, never a pa
   }
   for (const source of [null, {}, { '.env': 'secret' }, { 'src/demo/assets/sidebar.js': 'incomplete' }]) assert.throws(() => acceptanceReviewArgs({ source }), /invalid_worker_result/)
 })
+
+test('acceptance review permits findings on each immutable test in the closed interface profile', () => {
+  const { acceptanceReviewArgs, acceptanceReviewFiles } = require('./providers')
+  const { INTERFACE_FILES } = require('../projectTasks/contract')
+  const files = ['acceptance/registered-task.test.cjs', 'acceptance/chat-browser.test.cjs']
+  const packet = { source: Object.fromEntries([...INTERFACE_FILES, 'src/workers/execution/chatBrowser.cjs'].map(n => [n, 'source'])), protectedTests: Object.fromEntries(files.map(n => [n, 'test'])) }
+  assert.deepEqual(acceptanceReviewFiles(packet), files)
+  const args = acceptanceReviewArgs(packet), prompt = args[args.indexOf('--system-prompt') + 1]
+  for (const file of files) assert.ok(prompt.includes(file))
+  const envelope = { type: 'result', subtype: 'success', result: JSON.stringify({ verdict: 'changes_requested', summary: 'Rendered breakpoint coverage is missing', findings: [{ file: files[1], line: 2, message: 'Missing rendered size assertion' }] }) }
+  assert.equal(readTextReview(envelope, acceptanceReviewFiles(packet)).verdict, 'changes_requested')
+  for (const protectedTests of [{ ...packet.protectedTests, '.env': 'secret' }, { [files[0]]: 'test' }]) assert.throws(() => acceptanceReviewArgs({ ...packet, protectedTests }), /invalid_worker_result/)
+})
+
+test('invalid review output exposes only a closed validation stage, never private provider text', () => {
+  for (const [result, stage] of [['private-source', 'json'], [JSON.stringify({ verdict: 'pass', summary: 'secret', findings: [], command: 'secret-command' }), 'schema'], [JSON.stringify({ verdict: 'changes_requested', summary: 'secret', findings: [{ file: '.env', line: 1, message: 'secret' }] }), 'finding']]) {
+    assert.throws(() => readTextReview({ type: 'result', subtype: 'success', result }, ['test.cjs']), e => {
+      assert.equal(e.message, 'invalid_worker_result')
+      assert.deepEqual(e.reviewValidation, { stage, responseChars: result.length })
+      assert.equal(JSON.stringify(e.reviewValidation).includes('secret'), false)
+      return true
+    })
+  }
+})
 test('registered workbench delegates executable bytes only to the offline executor and protects tests', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xiang-provider-test-')); t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const calls = []; let models = 0

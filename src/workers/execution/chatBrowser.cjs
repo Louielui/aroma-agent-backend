@@ -30,13 +30,18 @@ function navigationGeometry (detailed = false) {
   const expand = document.getElementById('expand')
   if (expand && getComputedStyle(expand).display !== 'none') expand.click()
   const fail = (id, reason) => detailed ? { ok: false, id, reason } : false
-  for (const id of ids) {
-    const matches = document.querySelectorAll('[id="' + id + '"]'), e = matches[0]
-    if (matches.length !== 1 || !e || !e.textContent.trim()) return fail(id, 'missing_duplicate_or_empty')
+  const controls = ids.map(id => { const matches = document.querySelectorAll('[id="' + id + '"]'); return { id, e: matches.length === 1 ? matches[0] : null } })
+  controls.push(...Array.from(document.querySelectorAll('.top-navigation summary'), (e,i) => ({ id: 'navigation-summary-' + i, e })))
+  for (const { id, e } of controls) {
+    if (!e || !e.textContent.trim()) return fail(id, 'missing_duplicate_or_empty')
     for (let a = e.parentElement; a; a = a.parentElement) if (a.tagName === 'DETAILS' && !a.open) a.querySelector('summary').click()
     e.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'instant' })
     const r = e.getBoundingClientRect(), s = getComputedStyle(e)
     if (r.width <= 0 || r.height <= 0 || s.display === 'none' || s.visibility === 'hidden' || e.closest('[inert]')) return fail(id, 'hidden_or_inert')
+    // Measure the actual rendered targets. CSS source tokens cannot establish
+    // that another selector, inheritance or a breakpoint kept these sizes.
+    const minimumHeight = innerWidth <= 760 && e.closest('.top-menu') ? 44 : 36
+    if (e.closest('.top-navigation') && r.height < minimumHeight) return fail(id, 'undersized_control')
     let left = Math.max(0, r.left), right = Math.min(innerWidth, r.right), top = Math.max(0, r.top), bottom = Math.min(innerHeight, r.bottom)
     for (let a = e.parentElement; a; a = a.parentElement) {
       const b = a.getBoundingClientRect(), c = getComputedStyle(a)
@@ -52,7 +57,7 @@ function navigationGeometry (detailed = false) {
 async function verifyNavigationMatrix (rpc, evaluate) {
   for (const theme of ['light', 'dark']) {
     await rpc.call('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }, { name: 'prefers-reduced-motion', value: 'reduce' }] })
-    for (const width of [360, 390, 700, 760, 1280]) for (const height of [900, 480]) {
+    for (const width of [320, 360, 375, 390, 700, 760, 1050, 1280, 1440]) for (const height of [900, 480]) {
       await rpc.call('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 1, mobile: width < 760 })
       const navigation = await evaluate('(' + navigationGeometry.toString() + ')(true)')
       if (navigation?.ok !== true) throw Error('browser_navigation_geometry_failed:' + theme + ':' + width + 'x' + height + ':' + navigation?.id + ':' + navigation?.reason)
