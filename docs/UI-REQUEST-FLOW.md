@@ -44,3 +44,23 @@ protected test without granting editing authority. Extra or missing test paths
 are refused. Invalid review output retains a bounded validation stage and character
 count, never raw rejected text or an inferred passing verdict. Actual execution
 success remains a separate measured acceptance requirement.
+
+A subsequent actual run passed all nine protected functional tests and independent
+code review, but pixel review rejected uneven English mobile navigation rows. That
+candidate remains rejected and unadopted; passing tests did not override the pixels.
+
+New confirmed jobs can make one correction after a verified visual rejection.
+The host binds feedback to the original source, selected files, patch, current
+design guidance and all four screenshot hashes. It passes opinion data to the
+text-only coding provider without replacing the approved goal, source, immutable
+tests or authority. The correction reruns the original red baseline, all protected
+tests and complete independent code and pixel review. Both candidates and reviews
+remain in the job history, and activity explicitly reports visual correction.
+
+Only a visual rejection after successful code review enters this branch. Source
+drift, quota, authentication, malformed evidence and provider failures stop it.
+The first coding run retains its existing single correction for measured test
+failures; the visual correction allows one candidate only. The job therefore has
+at most three coding candidates and two full reviews. A second rejection stops
+without adoption. Archived failures are never reset or replayed, and applying an
+accepted candidate still requires the normal separate adoption approval.

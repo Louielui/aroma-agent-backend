@@ -53,25 +53,40 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
       r.providers = await providers.status()
       if (!r.providers.codex?.ready || !r.providers.claude?.ready) throw Error('provider_not_ready')
       r.state = 'coding'; record(r, 'coding')
-      const coding = await providers.codeOrder({ order: snapshot.order, signal, verify: () => source.verify(snapshot, signal), emit: (stage, facts) => record(r, stage, facts) })
-      await source.verify(snapshot, signal)
-      if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
-          coding.changes.some(c => c.before !== snapshot.order.files[c.file] || typeof c.after !== 'string' || !c.after || c.before === c.after || digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash) || digest(JSON.stringify(coding.changes)) !== coding.patchHash)) throw Error('invalid_worker_result')
-      if (coding?.model !== 'gpt-6.1-sol' || coding.billing !== 'chatgpt-subscription' || coding.execution !== 'windows_sandbox_offline' || coding.appliedToLive !== false ||
-          JSON.stringify(coding.changedFiles?.slice().sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) || coding.baseline?.failed < 1 || coding.baseline?.total !== WORK_ORDER.expectedTests ||
-          coding.tests?.exitCode !== 0 || coding.tests?.total !== WORK_ORDER.expectedTests || coding.tests?.passed !== WORK_ORDER.expectedTests || coding.tests?.failed !== 0 ||
-          coding.tests?.skipped !== 0 || coding.tests?.cancelled !== 0 || !/^[a-f0-9]{64}$/.test(coding.patchHash || '') || !Array.isArray(coding.changes) || coding.changes.length !== WORK_ORDER.allowedFiles.length || (WORK_ORDER.effort && coding.effort !== WORK_ORDER.effort)) throw Error('invalid_worker_result')
-      if (WORK_ORDER.protectedFiles.includes(browserEvidence.TEST) && !browserEvidence.complete(coding.tests.browser)) throw Error('invalid_worker_result')
-      r.result = coding
-      if (signal.aborted) throw Error('worker_cancelled')
-      r.state = 'reviewing'; record(r, 'reviewing')
-      r.review = await providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) })
-      if (signal.aborted) throw Error('worker_cancelled')
-      await source.verify(snapshot, signal)
-      if (!['pass', 'changes_requested'].includes(r.review?.verdict)) throw Error('invalid_worker_result')
-      if (coding.design && r.review.verdict === 'pass') require('../../design/visualReview').verifyReceipt(r.review.visual, coding, coding.design)
-      r.state = r.review.verdict === 'pass' ? 'completed' : 'needs_attention'; r.finishedAt = new Date().toISOString()
-      record(r, r.state, { sourceRevision: snapshot.evidence.revision, patchHash: coding.patchHash, tests: coding.tests.total, appliedToLive: false })
+      let reviewRepair
+      r.attempts = []
+      for (let attempt = 1; attempt <= 2; attempt++) {
+        if (signal.aborted) throw Error('worker_cancelled')
+        if (attempt > 1) { r.state = 'coding'; record(r, 'repairing_visual', { attempt, previousPatchHash: reviewRepair.patchHash }) }
+        const coding = await providers.codeOrder({ order: snapshot.order, signal, verify: () => source.verify(snapshot, signal), emit: (stage, facts) => record(r, stage, facts), ...(reviewRepair ? { reviewRepair } : {}) })
+        await source.verify(snapshot, signal)
+        if (WORK_ORDER.effort && (!Array.isArray(coding?.changes) || JSON.stringify(coding.changes.map(c => c.file).sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) ||
+            coding.changes.some(c => c.before !== snapshot.order.files[c.file] || typeof c.after !== 'string' || !c.after || c.before === c.after || digest(c.before) !== c.beforeHash || digest(c.after) !== c.afterHash) || digest(JSON.stringify(coding.changes)) !== coding.patchHash)) throw Error('invalid_worker_result')
+        if (coding?.model !== 'gpt-6.1-sol' || coding.billing !== 'chatgpt-subscription' || coding.execution !== 'windows_sandbox_offline' || coding.appliedToLive !== false ||
+            JSON.stringify(coding.changedFiles?.slice().sort()) !== JSON.stringify(WORK_ORDER.allowedFiles.slice().sort()) || coding.baseline?.failed < 1 || coding.baseline?.total !== WORK_ORDER.expectedTests ||
+            coding.tests?.exitCode !== 0 || coding.tests?.total !== WORK_ORDER.expectedTests || coding.tests?.passed !== WORK_ORDER.expectedTests || coding.tests?.failed !== 0 ||
+            coding.tests?.skipped !== 0 || coding.tests?.cancelled !== 0 || !/^[a-f0-9]{64}$/.test(coding.patchHash || '') || !Array.isArray(coding.changes) || coding.changes.length !== WORK_ORDER.allowedFiles.length || (WORK_ORDER.effort && coding.effort !== WORK_ORDER.effort)) throw Error('invalid_worker_result')
+        if (WORK_ORDER.protectedFiles.includes(browserEvidence.TEST) && !browserEvidence.complete(coding.tests.browser)) throw Error('invalid_worker_result')
+        r.result = coding
+        if (signal.aborted) throw Error('worker_cancelled')
+        r.state = 'reviewing'; record(r, 'reviewing')
+        r.review = await providers.reviewOrder({ workOrder: WORK_ORDER, ...coding }, { signal, emit: (stage, facts) => record(r, stage, facts) })
+        if (signal.aborted) throw Error('worker_cancelled')
+        await source.verify(snapshot, signal)
+        if (!['pass', 'changes_requested'].includes(r.review?.verdict)) throw Error('invalid_worker_result')
+        if (coding.design && r.review.verdict === 'pass') require('../../design/visualReview').verifyReceipt(r.review.visual, coding, coding.design)
+        r.attempts.push({ attempt, result: structuredClone(coding), review: structuredClone(r.review), reviewedAt: new Date().toISOString() })
+        record(r, 'candidate_reviewed', { attempt, verdict: r.review.verdict, patchHash: coding.patchHash })
+        if (attempt === 1 && r.review.verdict === 'changes_requested' && r.review.visual?.verdict === 'changes_requested') {
+          reviewRepair = require('../../workers/execution/visualRepairFeedback').fromReview(snapshot.order, coding, r.review)
+          // A single verified pixel correction stays inside the original approval.
+          // Source/provider failures never reach this branch, and history is retained.
+          continue
+        }
+        r.state = r.review.verdict === 'pass' ? 'completed' : 'needs_attention'; r.finishedAt = new Date().toISOString()
+        record(r, r.state, { sourceRevision: snapshot.evidence.revision, patchHash: coding.patchHash, tests: coding.tests.total, appliedToLive: false })
+        break
+      }
     } catch (e) {
       if (e.safeDiagnostics) r.failureDiagnostic = { exitCode: Number.isInteger(e.safeDiagnostics.exitCode) ? e.safeDiagnostics.exitCode : null,
         parsedJson: e.safeDiagnostics.parsedJson === true, subtype: ['success', 'error_max_turns', 'error_during_execution', 'error_max_budget_usd', 'error_max_structured_output_retries'].includes(e.safeDiagnostics.subtype) ? e.safeDiagnostics.subtype : 'unknown',

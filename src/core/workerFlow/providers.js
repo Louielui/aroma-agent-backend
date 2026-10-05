@@ -17,7 +17,7 @@ function codingProvider (client, codexClient = require('../../subscription/codex
   }
 }
 
-async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal }) {
+async function code ({ root, executable, allowCredits = false, executor, provider, emit = () => {}, order, verify, signal, reviewRepair }) {
   const client = { executable, cwd: path.join(root, 'text-only-empty'), allowCredits }
   fs.mkdirSync(client.cwd, { recursive: true })
   executor ||= require('../../workers/execution/windowsSandbox').createExecutor({ root: path.join(root, 'offline-execution') })
@@ -28,7 +28,7 @@ async function code ({ root, executable, allowCredits = false, executor, provide
   // This host-registered work order is authorized by the existing Owner workflow.
   // Browser input never supplies paths, source, commands, a model or credentials.
   order ||= { goal: WORK_ORDER.goal, files: { 'duration.js': SOURCE, 'duration.test.js': TESTS }, editable: ['duration.js'], tests: ['duration.test.js'], expectedTests: 5, sourceRevision: 'registered-duration-v1' }
-  const result = await worker.execute({ approval: worker.prepare(order, 'owner'), actor: 'owner', emit, signal })
+  const result = await worker.execute({ approval: worker.prepare(order, 'owner'), actor: 'owner', emit, signal, ...(reviewRepair ? { reviewRepair } : {}) })
   return { model: result.model, effort: result.effort, billing: result.billing, costUsd: null, execution: 'windows_sandbox_offline', changedFiles: result.changes.map(c => c.file), changes: result.changes, summary: result.summary, before: result.changes[0].before, after: result.changes[0].after, baseline: result.baseline, tests: result.tests, patchHash: result.patchHash, isolatedRunId: result.id, observations: result.events, ...(result.design ? { design: result.design } : {}), appliedToLive: false }
 }
 
