@@ -39,13 +39,16 @@
     container.insertBefore(header, body)
     if (!header.contains(expand)) header.insertBefore(expand, header.firstChild)
     header.insertBefore(collapse, expand)
+    var title = doc.getElementById('conv-title')
+    var titleReference = title && title.parentNode === header ? title : null
     var brand = doc.getElementById('brand-name'), sideTop = brand && brand.parentNode
-    if (brand) header.insertBefore(brand, doc.getElementById('conv-title'))
+    if (brand) header.insertBefore(brand, titleReference)
     if (sideTop) { sideTop.hidden = true; sideTop.inert = true }
 
     var navigation = doc.createElement('div')
     navigation.className = 'top-navigation'
-    header.appendChild(navigation)
+    // DOM order and visual order both lead with navigation, then the conversation title.
+    header.insertBefore(navigation, titleReference)
     var places = doc.getElementById('places')
     if (!places) {
       places = doc.createElement('nav')
@@ -56,8 +59,7 @@
     var home = doc.getElementById('open-home')
     if (home) places.appendChild(home)
 
-    // Retain the old workspace label for the existing language-update code,
-    // but leave no empty disclosure or duplicate destination in the sidebar.
+    // Retain the workspace label for existing language updates, without a duplicate entry.
     var oldWorkspace = nav.parentNode
     navigation.appendChild(nav)
     if (oldWorkspace && oldWorkspace !== sidebar &&
@@ -65,6 +67,33 @@
       oldWorkspace.hidden = true
       oldWorkspace.inert = true
       oldWorkspace.setAttribute('aria-hidden', 'true')
+    }
+
+    function closeGroups (except) {
+      Object.keys(groups).forEach(function (key) {
+        if (groups[key] !== except) groups[key].open = false
+      })
+    }
+    function positionMenu (group) {
+      var view = doc.defaultView, trigger = group.children[0], menu = group.children[1]
+      if (!group.open || !view || !trigger.getBoundingClientRect || !menu.getBoundingClientRect) return
+      var viewport = view.visualViewport
+      var width = viewport ? viewport.width : view.innerWidth
+      var height = viewport ? viewport.height : view.innerHeight
+      if (!(width > 0 && height > 0)) return
+      var originX = viewport ? viewport.offsetLeft : 0
+      var originY = viewport ? viewport.offsetTop : 0
+      var edge = 12, gap = 8
+      var rect = trigger.getBoundingClientRect()
+      var menuWidth = menu.getBoundingClientRect().width
+      var left = Math.max(originX + edge, Math.min(rect.left, originX + width - menuWidth - edge))
+      var top = Math.max(originY + edge, Math.min(rect.bottom + gap, originY + height - edge - 44))
+      menu.style.left = left + 'px'
+      menu.style.top = top + 'px'
+      menu.style.maxHeight = Math.max(0, originY + height - edge - top) + 'px'
+    }
+    function positionOpenMenus () {
+      Object.keys(groups).forEach(function (key) { positionMenu(groups[key]) })
     }
 
     Object.keys(DESTINATIONS).forEach(function (key) {
@@ -81,10 +110,20 @@
         var item = doc.getElementById(id)
         if (item) menu.appendChild(item)
       })
-      group.addEventListener('toggle', function () {
-        if (group.open) Object.keys(groups).forEach(function (other) { if (other !== key) groups[other].open = false })
+      // Native summaries turn Enter/Space into clicks. Handle that click synchronously
+      // so a newly opened menu is bounded and exclusive before the delayed toggle event.
+      summary.addEventListener('click', function (event) {
+        event.preventDefault()
+        var opening = !group.open
+        closeGroups(group)
+        group.open = opening
+        positionMenu(group)
       })
-      // Native summaries supply Enter/Space activation and ordinary Tab order.
+      group.addEventListener('toggle', function () {
+        if (!group.open) return
+        closeGroups(group)
+        positionMenu(group)
+      })
     })
     var settings = doc.getElementById('open-settings')
     if (settings) navigation.appendChild(settings)
@@ -93,6 +132,7 @@
       Object.keys(DESTINATIONS).forEach(function (key) {
         if (next && typeof next[key] === 'string') groups[key].children[0].textContent = next[key]
       })
+      positionOpenMenus()
     }
     function show (collapsed, focus) {
       collapsedState = !!collapsed
@@ -111,24 +151,25 @@
     function editing (target) {
       return target && target.closest && target.closest('input, textarea, select, [contenteditable], dialog, [role="dialog"]')
     }
-    navigation.addEventListener('keydown', function (event) {
+    function escapeMenu (event) {
       if (event.key !== 'Escape' || event.defaultPrevented || editing(event.target)) return
-      var active = doc.activeElement
       Object.keys(DESTINATIONS).some(function (key) {
         var group = groups[key]
-        if (!group.open || !group.contains(active)) return false
+        if (!group.open) return false
         group.open = false
         group.children[0].focus()
         event.preventDefault()
         event.stopPropagation()
         return true
       })
-    })
+    }
+    navigation.addEventListener('keydown', escapeMenu)
+    doc.addEventListener('keydown', escapeMenu)
     navigation.addEventListener('click', function (event) {
-      if (event.target && event.target.closest && event.target.closest('button')) Object.keys(groups).forEach(function (key) { groups[key].open = false })
+      if (event.target && event.target.closest && event.target.closest('button')) closeGroups()
     })
     doc.addEventListener('click', function (event) {
-      if (!navigation.contains(event.target)) Object.keys(groups).forEach(function (key) { groups[key].open = false })
+      if (!navigation.contains(event.target)) closeGroups()
     })
     sidebar.addEventListener('keydown', function (event) {
       if (event.key !== 'Escape' || event.defaultPrevented || collapsedState || editing(event.target)) return
@@ -139,8 +180,14 @@
     })
     collapse.addEventListener('click', function () { show(true, true) })
     expand.addEventListener('click', function () { show(false, true) })
+    var view = doc.defaultView
+    if (view && view.addEventListener) view.addEventListener('resize', positionOpenMenus)
+    if (view && view.visualViewport && view.visualViewport.addEventListener) {
+      view.visualViewport.addEventListener('resize', positionOpenMenus)
+      view.visualViewport.addEventListener('scroll', positionOpenMenus)
+    }
     updateLabels(labels)
-    show(!!(doc.defaultView && doc.defaultView.matchMedia && doc.defaultView.matchMedia('(max-width: 760px)').matches), false)
+    show(!!(view && view.matchMedia && view.matchMedia('(max-width: 760px)').matches), false)
     var controller = { groups: groups, updateLabels: updateLabels }
     sidebar.sidebarController = controller
     return controller
