@@ -10,33 +10,122 @@
     management: ['open-memory', 'open-connections', 'open-company-access', 'open-architecture']
   }
   function mount (doc, labels) {
-    var sidebar = doc.getElementById('sidebar'), nav = doc.getElementById('workspace-nav'), expand = doc.getElementById('expand'), collapse = doc.getElementById('collapse')
-    if (!sidebar || !nav || !expand || !collapse) return null
-    if (sidebar.sidebarController) return sidebar.sidebarController
-    var collapsedState = false, groups = {}
-    function show (collapsed, focus) {
-      collapsedState = collapsed; sidebar.className = collapsed ? 'collapsed' : ''
-      // Inert prevents keyboard focus from reaching the offscreen destinations.
-      sidebar.inert = collapsed; sidebar.setAttribute('aria-hidden', String(collapsed))
-      expand.className = collapsed ? 'icon-btn' : 'icon-btn hidden'
-      expand.setAttribute('aria-controls', 'sidebar'); expand.setAttribute('aria-expanded', String(!collapsed))
-      collapse.setAttribute('aria-controls', 'sidebar'); collapse.setAttribute('aria-expanded', String(!collapsed))
-      if (focus) (collapsed ? expand : collapse).focus()
+    var sidebar = doc.getElementById('sidebar'), nav = doc.getElementById('workspace-nav')
+    var expand = doc.getElementById('expand'), collapse = doc.getElementById('collapse')
+    var main = doc.getElementById('main')
+    if (!sidebar || !nav || !expand || !collapse || !main) return null
+    if (sidebar.sidebarController) {
+      sidebar.sidebarController.updateLabels(labels)
+      return sidebar.sidebarController
     }
+
+    var container = main.parentNode
+    if (!container || sidebar.parentNode !== container) return null
+    var groups = {}, collapsedState = false
+    var header = doc.getElementById('topbar') || doc.getElementById('page-header')
+    if (!header) {
+      header = doc.createElement('header')
+      header.appendChild(expand)
+    }
+    header.classList.add('top-feature-header')
+    container.classList.add('sidebar-layout')
+
+    // Keep the header outside all conversation views, including the centred empty view.
+    var body = doc.createElement('div')
+    body.className = 'sidebar-body'
+    container.insertBefore(body, sidebar)
+    body.appendChild(sidebar)
+    body.appendChild(main)
+    container.insertBefore(header, body)
+    if (!header.contains(expand)) header.insertBefore(expand, header.firstChild)
+
+    var navigation = doc.createElement('div')
+    navigation.className = 'top-navigation'
+    header.appendChild(navigation)
+    var places = doc.getElementById('places')
+    if (!places) {
+      places = doc.createElement('nav')
+      places.id = 'places'
+      places.className = 'places'
+    }
+    navigation.appendChild(places)
+    var home = doc.getElementById('open-home')
+    if (home) places.appendChild(home)
+
+    // Retain the old workspace label for the existing language-update code,
+    // but leave no empty disclosure or duplicate destination in the sidebar.
+    var oldWorkspace = nav.parentNode
+    navigation.appendChild(nav)
+    if (oldWorkspace && oldWorkspace !== sidebar &&
+        (oldWorkspace.tagName === 'DETAILS' || oldWorkspace.classList.contains('side-workspace'))) {
+      oldWorkspace.hidden = true
+      oldWorkspace.inert = true
+      oldWorkspace.setAttribute('aria-hidden', 'true')
+    }
+
     Object.keys(DESTINATIONS).forEach(function (key) {
       var group = doc.createElement('details'), summary = doc.createElement('summary')
-      group.className = 'sidebar-group'; group.setAttribute('data-sidebar-group', key); group.open = true
-      summary.textContent = labels[key]; group.appendChild(summary); nav.appendChild(group); groups[key] = group
-      DESTINATIONS[key].forEach(function (id) { var item = doc.getElementById(id); if (item) group.appendChild(item) })
+      group.className = 'sidebar-group'
+      group.setAttribute('data-sidebar-group', key)
+      group.open = false
+      group.appendChild(summary)
+      nav.appendChild(group)
+      groups[key] = group
+      DESTINATIONS[key].forEach(function (id) {
+        var item = doc.getElementById(id)
+        if (item) group.appendChild(item)
+      })
+      // Native summaries supply Enter/Space activation and ordinary Tab order.
+    })
+    var settings = doc.getElementById('open-settings')
+    if (settings) navigation.appendChild(settings)
+
+    function updateLabels (next) {
+      Object.keys(DESTINATIONS).forEach(function (key) {
+        if (next && typeof next[key] === 'string') groups[key].children[0].textContent = next[key]
+      })
+    }
+    function show (collapsed, focus) {
+      collapsedState = !!collapsed
+      sidebar.classList.toggle('collapsed', collapsedState)
+      sidebar.inert = collapsedState
+      sidebar.setAttribute('aria-hidden', String(collapsedState))
+      expand.classList.add('icon-btn')
+      expand.classList.toggle('hidden', !collapsedState)
+      expand.setAttribute('aria-controls', 'sidebar')
+      expand.setAttribute('aria-expanded', String(!collapsedState))
+      collapse.setAttribute('aria-controls', 'sidebar')
+      collapse.setAttribute('aria-expanded', String(!collapsedState))
+      if (focus) (collapsedState ? expand : collapse).focus()
+    }
+    function editing (target) {
+      return target && target.closest && target.closest('input, textarea, select, [contenteditable], dialog, [role="dialog"]')
+    }
+    navigation.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || event.defaultPrevented || editing(event.target)) return
+      var active = doc.activeElement
+      Object.keys(DESTINATIONS).some(function (key) {
+        var group = groups[key]
+        if (!group.open || !group.contains(active)) return false
+        group.open = false
+        group.children[0].focus()
+        event.preventDefault()
+        event.stopPropagation()
+        return true
+      })
+    })
+    sidebar.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape' || event.defaultPrevented || collapsedState || editing(event.target)) return
+      if (!sidebar.contains(doc.activeElement)) return
+      event.preventDefault()
+      event.stopPropagation()
+      show(true, true)
     })
     collapse.addEventListener('click', function () { show(true, true) })
     expand.addEventListener('click', function () { show(false, true) })
-    doc.addEventListener('keydown', function (event) {
-      // Escape closes navigation only when focus is inside it; dialogs retain their own Escape.
-      if (event.key === 'Escape' && !collapsedState && (!sidebar.contains || sidebar.contains(doc.activeElement))) show(true, true)
-    })
+    updateLabels(labels)
     show(false, false)
-    var controller = { groups: groups }
+    var controller = { groups: groups, updateLabels: updateLabels }
     sidebar.sidebarController = controller
     return controller
   }
