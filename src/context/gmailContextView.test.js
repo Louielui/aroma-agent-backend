@@ -11,7 +11,8 @@ test('Gmail UI uses escaped data, separate mailbox selection and explicit body/p
 test('Actual mail UI renders hostile titles and originals as text, preserving partial-body and source dates', () => {
   class Element { constructor () { this.children = []; this.dataset = {}; this.textContent = ''; this.value = 'today'; this.parentElement = this } append (...children) { this.children.push(...children) } replaceChildren (...children) { this.children = children } setAttribute () {} addEventListener () {} }
   const elements = new Map(), document = { getElementById: id => { if (!elements.has(id)) elements.set(id, new Element()); return elements.get(id) }, createElement: () => new Element() }
-  const context = vm.createContext({ document, Date, Number, fetch: () => { throw Error('unexpected_read') } })
+  const window = {}; window.parent = window
+  const context = vm.createContext({ document, window, Date, Number, fetch: () => { throw Error('unexpected_read') } })
   vm.runInContext(api.buildGmailContextHtml().match(/<script>([\s\S]*)<\/script>/)[1], context)
   context.report = { mailbox: 'admin', pack: { state: 'ok', count: 1, operation: 'get', retrievedAt: '2026-10-01T18:00:00Z', coverage: { scope: 'message abc123', complete: false, truncated: true }, content: [{ sourceId: 'abc123', title: '<script>unsafe()</script>', originalDate: '2026-10-01T15:00:00Z', content: 'Source original text', truncated: true, link: 'https://mail.google.com/mail/?authuser=adm%40example.test#all/abc123', fields: { from: 'supplier@example.test', originalBodyComplete: false } }] } }
   vm.runInContext('render(report)', context)

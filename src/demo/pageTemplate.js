@@ -4,7 +4,7 @@ function assemblePage (p) {
   const parts = {
     '/*INLINE_I18N*/': p.i18n,
     '/*INLINE_CSS*/': p.css + '\n' + p.sidebarCss,
-    '/*INLINE_JS*/': SCRIPT_BOUNDARY + p.sidebar + SCRIPT_BOUNDARY + p.app,
+    '/*INLINE_JS*/': SCRIPT_BOUNDARY + p.sidebar + SCRIPT_BOUNDARY + (p.topics || '') + SCRIPT_BOUNDARY + p.app,
     '/*INLINE_DOT*/': p.dot,
     '/*FAVICON_URI*/': p.favicon,
     '/*READ_SOURCE_LABELS*/': JSON.stringify(p.sourceLabels),

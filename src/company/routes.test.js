@@ -19,7 +19,7 @@ test('company boundary denies all legacy owner paths, including anonymous caller
   const paths = ['/api/v1/tasks', '/api/v1/events', '/api/v1/decisions', '/api/v1/dispatches', '/api/v1/workers',
     '/api/v1/llm-usage/summary', '/api/v1/demo/conversations/secret', '/api/v1/conversations/secret',
     '/api/v1/memory/catalog', '/api/v1/memory/records/secret', '/api/v1/manager/runs/secret',
-    '/api/v1/context/recent', '/api/v1/company-access', '/company-access', '/proposals', '/runs',
+    '/api/v1/context/recent', '/api/v1/company-access', '/api/v1/topic-workspaces/email', '/company-access', '/proposals', '/runs',
     '/api/v1/dispatch/secret', '/demo', '/memory', '/connections', '/architecture', '/arbitrary-future-data-route']
   for (const url of paths) {
     for (const cookie of ['', 'xiangxiang_member_session=member-session']) {

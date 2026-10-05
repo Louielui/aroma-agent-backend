@@ -10,7 +10,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 // briefing. Read the same planned-integration states used by the tool registry.
 function buildArchitectureHtml () {
   const labels = {
-    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-04' }),
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-05' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
     workbench: t('workerFlow.title'), developmentPlan: t('plan.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
@@ -32,6 +32,7 @@ function buildArchitectureHtml () {
     deferred: t('master.deferred'), deferredText: t('master.deferredText', { businessProfile: 'Google Business Profile' }), agentOrder: t('master.agentOrder')
   }
   const rows = [
+    { id: 'topic-workspaces', state: 'partial', title: t('topic.architectureTitle'), purpose: t('topic.intro'), component: 'Owner topic membership / durable chat history / revisioned manual follow-ups / source-ID-only email handoff', current: t('topic.current'), next: t('topic.limits'), evidence: 'src/topics/; src/demo/assets/topics.js; src/context/gmailContextView.html; docs/TOPIC-WORKSPACES-V1.md; /demo?topic=email; /api/v1/topic-workspaces' },
     { id: 'project-tasks', title: t('projectTask.title'), purpose: t('projectTask.intro'), component: 'Immutable task registry / closed Context and sidebar profiles / protected acceptance drafts / independent approvals / offline execution', state: 'partial', current: t('projectTask.current') + ' ' + t('dialogue.reviewChecks'), next: t('projectTask.next'), evidence: 'src/core/projectTasks/; src/core/workerFlow/providers.js; src/workers/execution/chatBrowser.cjs; docs/INTERFACE-TASKS-V1.md; docs/UI-REQUEST-FLOW.md; /project-tasks; /api/v1/project-tasks' },
     { id: 'task-planner', title: t('taskPlan.title'), purpose: t('taskPlan.boundary'), component: 'Fixed committed profiles / verified quotes / subscription planning / host-owned UI design system / actual-pixel review', state: 'partial', current: t('taskPlan.current') + ' ' + t('dialogue.requestFlow') + ' ' + t('uiDesign.current'), next: t('taskPlan.next') + ' ' + t('dialogue.requestFlowLimits') + ' ' + t('uiDesign.limits'), evidence: 'src/core/taskPlanner/; src/design/; skills/xiangxiang-ui-design/; docs/UI-REQUEST-FLOW.md; docs/UI-DESIGN-V1.md; /demo; /api/v1/task-plan' },
     { id: 'project-adoption', state: 'partial', title: t('projectAdoption.title'), purpose: t('projectAdoption.intro'), component: 'Owner approval / whole-file-set source / offline retest / one local commit / verified reload / whole-set rollback / compact evidence views', current: t('projectAdoption.current'), next: t('projectAdoption.limits'), evidence: 'src/core/projectWork/adoption*.js; src/subscription/adoptionPayload.test.js; docs/PROJECT-MULTIFILE-V2.md; docs/UI-REQUEST-FLOW.md; /project-work' },

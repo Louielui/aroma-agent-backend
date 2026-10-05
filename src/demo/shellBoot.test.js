@@ -46,7 +46,7 @@ async function boot (locale, unavailable = false) {
     const body = url === '/api/v1/demo/models' ? { billing: 'chatgpt-subscription', models } : url === '/api/v1/demo/greeting' ? { line: 'Fixture greeting' } : url === '/api/v1/home/settings' ? { entries: [] } : url === '/api/v1/conversations' ? { ok: true, conversations: [] } : {}
     return { ok: true, status: 200, json: async () => body }
   }
-  const ctx = vm.createContext({ document: f.document, window: { crypto: { randomUUID }, location: { href: '' } }, fetch, console: { log () {}, error: error => errors.push(error) }, URL, AbortController, setTimeout: () => 0, clearTimeout () {}, setInterval: () => 0, clearInterval () {} })
+  const ctx = vm.createContext({ document: f.document, window: { crypto: { randomUUID }, location: { href: '', search: '' } }, fetch, console: { log () {}, error: error => errors.push(error) }, URL, URLSearchParams, AbortController, setTimeout: () => 0, clearTimeout () {}, setInterval: () => 0, clearInterval () {} })
   const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   assert.equal(scripts.length, 1)
   vm.runInContext(scripts[0][1].replace(/var INITIAL_LOCALE = "(?:zh|en)";/, 'var INITIAL_LOCALE = ' + JSON.stringify(locale) + ';'), ctx, { timeout: 2000, filename: 'served-demo.js' })

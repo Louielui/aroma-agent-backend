@@ -1184,6 +1184,10 @@ function createApp (options = {}) {
   })
 
   const capturedConversationStore = require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
+  app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
+    store: require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() }),
+    conversations: capturedConversationStore
+  }))
   const taskDialogue = opts.taskDialogue || (process.env.CHAT_BACKEND === 'codex-subscription' ? require('./core/taskPlanner/dialogue').createDialogue({
     store: capturedConversationStore, planner: taskPlanner, revision: BOOT_COMMIT,
     providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),

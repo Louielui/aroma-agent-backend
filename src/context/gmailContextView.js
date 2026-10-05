@@ -12,7 +12,7 @@ function gmailReply (report) {
 function buildGmailContextHtml () {
   const labels = { title: t('gmailContext.title'), intro: t('gmailContext.intro'), back: t('manager.back'), architecture: t('architecture.title'), owner: t('gmailContext.owner'), admin: t('gmailContext.admin'),
     today: t('calendarContext.today'), unread: t('gmailContext.unread'), latest: t('gmailContext.latest'), list: t('gmailContext.list'), metadata: t('gmailContext.metadata'),
-    options: t('gmailContext.options'), query: t('gmailContext.query'), search: t('driveContext.search'), messageId: t('gmailContext.messageId'), get: t('gmailContext.get'),
+    options: t('gmailContext.options'), query: t('gmailContext.query'), search: t('driveContext.search'), messageId: t('gmailContext.messageId'), get: t('gmailContext.get'), discuss: t('topic.discuss'), track: t('topic.track'),
     keyword: t('gmailContext.keyword'), subject: t('gmailContext.subject'), from: t('gmailContext.from'), idle: t('gmailContext.idle'), loading: t('gmailContext.loading'), error: t('gmailContext.error'), empty: t('gmailContext.empty'),
     count: t('live.count'), fetched: t('live.fetched'), original: t('live.original'), unknown: t('live.unknown'), scope: t('live.scope'), coverage: t('live.complete'),
     complete: t('gmailContext.complete'), partial: t('live.partial'), truncated: t('live.truncated'), source: t('live.source'), details: t('live.details'),

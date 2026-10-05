@@ -177,6 +177,7 @@
   var pending = false
   var convs = []      // [{ id, title, history: [{role,text}], thread: HTMLElement }]
   var active = null
+  var topicController = window.XiangxiangTopics && window.XiangxiangTopics.mount(document, t, function (text) { if (pending || msg.value.trim()) return false; msg.value = text; autoGrow(); refreshImages(); msg.focus(); return true })
 
   /* ── tiny DOM helpers ─────────────────────────────────────────────────── */
   function el (tag, cls, text) {
@@ -885,6 +886,7 @@
   }
   function isListed (c) { return c.stored === true || c.history.length > 0 }
   function selectConversation (c) {
+    if (topicController) topicController.selected(c.cid)
     // A conversation is the current destination, so 首頁 is not.
     markHome(false)
     showComposer(true)
@@ -1027,8 +1029,7 @@
   function convCount (c) { return c.history.length > 0 ? c.history.length : (c.messageCount || 0) }
 
   function bootHistory () {
-    fetch('/api/v1/conversations', { credentials: 'same-origin' })
-      .then(function (r) { return r.json() })
+    (topicController ? topicController.load() : fetch('/api/v1/conversations', { credentials: 'same-origin' }).then(function (r) { return r.json() }))
       .then(function (j) {
         if (!j || !j.ok || !j.conversations) return
         for (var i = 0; i < j.conversations.length; i++) {
@@ -1039,6 +1040,10 @@
           convs.push(stubFor(row))
         }
         renderConvList()
+        if (topicController && j.workspace && j.workspace.lastConversationId) {
+          var last = findConv(j.workspace.lastConversationId)
+          if (last) selectConversation(last)
+        }
       })
       .catch(function () { /* history is an addition; losing it must not break the page */ })
   }
@@ -1803,7 +1808,7 @@
     return { role: 'assistant', text: response.sourceBound === true ? t('company.mailHistoryReceipt') : response.reply, sourceBound: response.sourceBound === true }
   }
 
-  function submit () {
+  async function submit () {
     if (pending) return
     /**
      * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
@@ -1830,6 +1835,13 @@
     if (pictures.length && (carry || forcedMode)) { imageNotice(t('imageChat.context')); return }
     var text = msg.value.trim() || (pictures.length ? t('imageChat.defaultRequest') : '')
     if (!text) return
+    if (topicController) {
+      var topicConversation = active
+      setPending(true)
+      var linked = await topicController.link(topicConversation.cid)
+      setPending(false)
+      if (!linked || active !== topicConversation) return
+    }
     clearErrors()
     if (active.history.length === 0) {
       active.title = titleFrom(text)
@@ -3167,6 +3179,7 @@
     }
     // The picker shows the provider it is on, and provider names are catalogue entries too.
     if (pickerLabel) pickerLabel.textContent = currentProvider().name
+    if (topicController) topicController.labels()
   }
   applyShellText()
 

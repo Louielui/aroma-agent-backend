@@ -4,6 +4,8 @@ function gmailMailbox (resource) { if (!['gmail.owner_mail', 'gmail.admin_mail']
 function gmailIntent (message) {
   if (typeof message !== 'string') return null
   const value = message.trim().replace(/[。！!？?]+$/, '').trim().replace(/^香香[，,\s]*/, '')
+  const original = value.match(/^Read (my|administrative) email original ([a-f0-9]{1,100})$/i)
+  if (original) return { resource: original[1].toLowerCase() === 'my' ? 'gmail.owner_mail' : 'gmail.admin_mail', operation: 'get', input: { messageId: original[2] } }
   let match = value.match(/^(?:請|幫我)?(?:查看|列出|查詢)(今天)?(我的|行政部)(今天|未讀|最新)?(?:的)?(?:電郵|郵件)$/)
   if (match) return { resource: match[2] === '我的' ? 'gmail.owner_mail' : 'gmail.admin_mail', operation: 'list', input: { window: match[1] || match[3] === '今天' ? 'today' : match[3] === '未讀' ? 'unread' : 'latest' } }
   match = value.match(/^(?:請|幫我)?查看(我的|行政部)(?:電郵|郵件)原文 ([a-f0-9]{1,100})$/i)
