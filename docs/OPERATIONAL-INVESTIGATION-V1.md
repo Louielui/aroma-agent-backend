@@ -27,6 +27,10 @@ Chat requests cannot override those roots. Missing roots remain visible as gaps.
 The Windows service identity also needs Owner-approved read access to those roots;
 path configuration does not grant permission. Unreadable automation directories and
 rejected files have explicit coverage states and cannot establish absence.
+Canonical path checks reject symlinks/junction redirects without requiring metadata
+access above the approved roots. The protected read-only context inspection route can
+narrow to `?sources=xiangxiang_operations` for a zero-model-call service preflight;
+disabled and unknown source requests are rejected rather than broadening the read.
 The answer guard verifies nested scalar facts against the cited section and localizes
 section labels; values from another section cannot substantiate a claimed fact.
 

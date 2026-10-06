@@ -43,6 +43,28 @@ test('unreadable automation directories and rejected files are explicit coverage
   assert.equal(rejected.automationReadErrors, 1)
 })
 
+test('reading an allowed source does not require metadata access above its configured root', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/fixture/automation.toml', 'name = "Readable task"\nstatus = "PAUSED"')
+  const originalStat = fs.lstatSync
+  t.mock.method(fs, 'lstatSync', function (p, ...args) {
+    if (path.resolve(p) === path.dirname(dir)) throw Object.assign(Error('Parent metadata denied'), { code: 'EACCES' })
+    return originalStat.call(fs, p, ...args)
+  })
+  const out = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  assert.equal(out.results.find(r => r.fields.section === 'schedules').fields.records[1]?.name, 'Readable task')
+})
+
+test('a junction cannot redirect an operational source to a different canonical directory', async t => {
+  const { dir, put } = fixture(t)
+  put('actual/fixture/automation.toml', 'name = "Redirected task"\nstatus = "PAUSED"')
+  fs.symlinkSync(path.join(dir, 'actual'), path.join(dir, 'redirect'), 'junction')
+  const out = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'redirect'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const schedules = out.results.find(r => r.fields.section === 'schedules').fields
+  assert.equal(schedules.automationReadErrors, 1)
+  assert.ok(!schedules.records.some(r => r.name === 'Redirected task'))
+})
+
 test('nested operational facts survive the real answer guard while invented and cross-section values are rejected', async t => {
   const { dir, put } = fixture(t)
   put('automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')

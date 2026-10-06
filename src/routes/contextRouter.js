@@ -52,7 +52,13 @@ function createContextRouter (deps = {}) {
 
   router.get('/api/v1/context/recent', gate, async (req, res) => {
     try {
-      const sources = enabledSources(process.env)
+      let sources = enabledSources(process.env)
+      if (req.query.sources !== undefined) {
+        if (typeof req.query.sources !== 'string' || req.query.sources.length > 512) return res.status(400).json({ error: 'invalid_source_scope' })
+        const requested = [...new Set(req.query.sources.split(',').map(s => s.trim()))]
+        if (!requested.length || requested.some(s => !sources.includes(s))) return res.status(400).json({ error: 'invalid_source_scope' })
+        sources = requested
+      }
       if (sources.length === 0) return res.json({ sources: [], status: 'NO_SOURCES', perSource: [], block: null })
       const { connector } = buildConnector(process.env)
       const rc = await build({ connector, message: String(req.query.q || ''), sources, env: process.env })

@@ -17,8 +17,11 @@ const digest = v => createHash('sha256').update(JSON.stringify(v)).digest('hex')
 const date = v => typeof v === 'string' && Number.isFinite(Date.parse(v)) ? v : null
 
 function readText (file, max = 2 * 1024 * 1024) {
-  // Reject symlinks/junctions both at the file and along its parent chain.
-  for (let p = file; p && p !== path.dirname(p); p = path.dirname(p)) if (fs.lstatSync(p).isSymbolicLink()) throw Error('unsafe_source')
+  // Native canonical resolution rejects redirected paths without requiring directory
+  // metadata rights above the approved root (LocalService may only traverse them).
+  const expected = path.resolve(file), actual = fs.realpathSync.native(file)
+  const same = process.platform === 'win32' ? expected.toLowerCase() === actual.toLowerCase() : expected === actual
+  if (!same || fs.lstatSync(file).isSymbolicLink()) throw Error('unsafe_source')
   const stat = fs.statSync(file)
   if (!stat.isFile() || stat.size > max) throw Error('source_limit')
   return fs.readFileSync(file, 'utf8')
