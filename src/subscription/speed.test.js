@@ -67,9 +67,9 @@ test('concurrent use is refused and a timeout discards the connection', async ()
   } finally { session.close() }
 })
 
-test('only five explicit effort levels can cross the bridge; adapter binds them', async () => {
-  for (const effort of ['low', 'medium', 'high', 'xhigh', 'max']) assert.equal(validateInput({ prompt: 'x', effort }).effort, effort)
-  for (const effort of ['ultra', '', null, {}, 'LOW']) assert.throws(() => validateInput({ prompt: 'x', effort }))
+test('provider effort vocabulary can cross the bridge; adapter binds it', async () => {
+  for (const effort of ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']) assert.equal(validateInput({ prompt: 'x', effort }).effort, effort)
+  for (const effort of ['invalid', '', null, {}, 'LOW']) assert.throws(() => validateInput({ prompt: 'x', effort }))
   let input
   const adapter = new CodexSubscriptionAdapter({ model: 'gpt-6-astra', effort: 'high', request: async (_, body) => { input = body; return { text: 'ok', model: 'gpt-6-astra', billing: 'chatgpt-subscription', stopReason: 'end_turn' } } })
   await adapter.complete('hello')

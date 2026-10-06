@@ -10,8 +10,8 @@ The loopback bridge runs Claude Code under the signed-in Owner using the existin
 sanitized child environment. API keys are excluded. Auth must report claude.ai
 and firstParty, without an API-key source. Tools, MCP, hooks and session persistence
 are disabled. Prompts and image pixels are passed on stdin, not shell arguments.
-Sonnet completion provenance is checked; separately accounted Claude Code Haiku
-helpers are allowed, but a substitute Opus or absent Sonnet result is refused.
+Selected model completion provenance is checked; separately accounted Claude Code
+Haiku helpers are allowed, but a substitute or absent selected model is refused.
 There is no provider fallback, automatic retry, API fallback or new execution
 authority. Native JSON-schema formatting and existing host result validation apply.
 
@@ -27,3 +27,9 @@ Verification: claudeBrain.test.js covers auth, provider/billing mismatches,
 structured image stdin and bridge routing with unavailable GPT. shellBoot.test.js
 executes the assembled bilingual UI and checks selection persistence and forged
 values. The full repository suite covers existing approval and execution fences.
+
+## Provider-specific model picker
+
+The composer separates Claude and GPT before listing models. Claude model IDs, versions and allowed effort levels come from the installed Claude Code initialize control response; this read sends no user message and performs no inference. Default/duplicate aliases and unrecognized families are omitted. Generation rechecks the catalogue and pins the resolved model ID; unsupported effort is refused before generation. Haiku has no effort control and sends no --effort flag. GPT uses its account model/list capabilities, including ultra when advertised. Medium remains the initial user preference where supported. There is no automatic provider or model fallback. Subscription authentication does not change the account extra-usage policy; model availability is not a guarantee of included quota.
+
+References: https://code.claude.com/docs/en/model-config and https://developers.openai.com/api/docs/guides/reasoning .

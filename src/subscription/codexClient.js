@@ -159,7 +159,7 @@ async function listSubscriptionModels (options) {
     const { models } = await accountModels(rpc)
     return { defaultModel: DEFAULT_MODEL, billing: 'chatgpt-subscription', models: CHAT_MODELS.map(item => {
       const entry = models.find(m => m.model === item.model)
-      return { ...item, available: !!entry, efforts: entry?.supportedReasoningEfforts?.map(e => e.reasoningEffort).filter(e => REASONING_EFFORTS.includes(e)) || [] }
+      return { ...item, provider: 'openai', defaultEffort: entry?.defaultReasoningEffort || 'medium', available: !!entry, efforts: entry?.supportedReasoningEfforts?.map(e => e.reasoningEffort).filter(e => REASONING_EFFORTS.includes(e)) || [] }
     }) }
   })
 }

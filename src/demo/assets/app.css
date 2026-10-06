@@ -911,7 +911,7 @@ button[disabled] { opacity: .45; cursor: default; }
 .place-btn:hover { border-color: var(--accent); color: var(--accent); }
 /* The current destination, marked on the button rather than on a row. */
 .place-btn.side-item-on { border-color: var(--accent); color: var(--accent); }
-#chat-level { font: inherit; font-size: var(--ui-size); max-width: 160px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
+#brain-company, #chat-level { font: inherit; font-size: var(--ui-size); max-width: 160px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: var(--card); cursor: pointer; }
 @media (max-width: 600px) { .composer-bar, .bar-right { flex-wrap: wrap; } .bar-right { max-width: 100%; } }
 #chat-level:disabled { opacity: .55; cursor: wait; }
 #picker-menu .opt:disabled { opacity: .55; cursor: not-allowed; }
@@ -991,3 +991,12 @@ button[disabled] { opacity: .45; cursor: default; }
 @media (max-width: 600px) { .composer-activity-phase { flex-basis: 100%; order: 3; } }
 @media (prefers-reduced-motion: reduce) { .composer-activity.is-working .composer-activity-label { animation: none; background: none; color: var(--ink); } }
 @media (prefers-reduced-motion: reduce) { .work-activity.is-working .work-activity-state, .work-activity.is-working .work-activity-state::before, .work-waiting { animation: none; } }
+
+#brain-company { order: 0; max-width: 100px; }
+#picker-wrap { order: 1; }
+#chat-level { order: 2; }
+#send { order: 3; }
+#picker-menu { max-height: min(60vh, 420px); overflow-y: auto; max-width: calc(100vw - 32px); }
+@media (max-width: 600px) {
+  #picker-menu { position: fixed; left: 16px; right: 16px; bottom: 128px; width: auto; max-height: 50vh; }
+}

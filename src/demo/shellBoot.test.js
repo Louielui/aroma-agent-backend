@@ -39,7 +39,7 @@ function dom (html) {
 }
 async function boot (locale, unavailable = false, savedModel = null) {
   const html = page(), f = dom(html), requests = [], errors = []
-  const models = [{ model: 'claude-sonnet', name: 'Claude Sonnet', available: true }, { model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true }]
+  const models = [{ model: 'claude-sonnet', name: 'Claude Sonnet', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }, { model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true, efforts: ['low','medium','high','xhigh','max'], supportsEffort: true }]
   const fetch = async (url, options) => {
     requests.push({ url, options }); assert.ok(!options?.method || options.method === 'GET', 'boot must never write')
     if (unavailable) throw Error('fixture unavailable')
@@ -59,7 +59,7 @@ for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test
   const f = await boot(locale, unavailable), ids = f.ids
   for (const [id, key] of [['brand-name', 'shell.title'], ['home-label', 'nav.home'], ['new-chat-label', 'shell.newConversation'], ['memory-label', 'memory.title']]) assert.equal(ids.get(id).textContent, CATALOGUE[key][locale])
   assert.equal(ids.get('msg').attrs.placeholder, CATALOGUE['shell.composerPlaceholder'][locale]); assert.equal(ids.get('send').disabled, true)
-  assert.equal(ids.get('chat-level').classList.contains('hidden'), false); assert.equal(ids.get('chat-level').value, 'medium')
+  assert.equal(ids.get('chat-level').classList.contains('hidden'), false); assert.equal(ids.get('chat-level').value, unavailable ? 'auto' : 'medium')
   for (const [id, key] of [['chat-level-low', 'chat.low'], ['chat-level-medium', 'chat.medium'], ['chat-level-high', 'chat.high'], ['chat-level-xhigh', 'chat.xhigh'], ['chat-level-max', 'chat.max']]) assert.equal(ids.get(id).textContent, CATALOGUE[key][locale])
   assert.match(ids.get('picker-label').textContent, /Claude Sonnet/); assert.equal(ids.get('workspace-nav').children.length, 3)
   assert.equal(ids.get('sidebar').contains(ids.get('workspace-nav')), false)
@@ -70,6 +70,7 @@ for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test
 
  test('model picker saves only the chosen brain, restores it and ignores forged saved values', async () => {
   const f = await boot('en')
+  const company = f.ids.get('brain-company'); company.value = 'openai'; company.events.change()
   const menu = f.ids.get('picker-menu')
   const choice = menu.children.find(n => n.children.some(c => /GPT-6.1 Sol/.test(c.textContent)))
   assert.ok(choice); choice.events.click()

@@ -168,8 +168,12 @@
   ]
   var provider = 'claude'
   var chatModel = 'claude-sonnet'
-  try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0) chatModel = savedBrain } catch (_) {}
+  try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0 || /^claude-(?:sonnet|opus|haiku|fable)-\d+(?:-\d+){0,3}(?:\[1m\])?$/.test(savedBrain || '')) chatModel = savedBrain } catch (_) {}
   var modelsLoading = false
+  var companyPicker = document.getElementById('brain-company')
+  var lastCompanyModel = { claude: 'claude-sonnet', openai: 'gpt-6.1-sol' }
+  var modelEfforts = {}
+  function brainCompany (model) { return /^claude-/.test(model) ? 'claude' : 'openai' }
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
   // NAME only; the server re-validates it and refuses to continue into the proposal lane.
@@ -1810,7 +1814,8 @@
     // invites a click that would do nothing.
     refreshImages()
     if (picker) picker.disabled = p
-    if (chatLevel) chatLevel.disabled = p
+    if (companyPicker) companyPicker.disabled = p
+    renderEfforts()
   }
 
   function assistantHistory (response) {
@@ -2790,18 +2795,34 @@
   function currentProvider () {
     if (SUBSCRIPTION_CHAT) {
       for (var j = 0; j < PROVIDERS.length; j++) if (PROVIDERS[j].model === chatModel) return PROVIDERS[j]
-      return { id: chatModel === 'claude-sonnet' ? 'claude' : 'openai', name: t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
+      return { id: brainCompany(chatModel), name: t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
     }
     for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
     return PROVIDERS[0]
   }
+  function renderEfforts () {
+    if (!SUBSCRIPTION_CHAT || !chatLevel) return
+    var pv = currentProvider()
+    var levels = pv.supportsEffort === false ? ['auto'] : (pv.efforts || [])
+    var selected = modelEfforts[chatModel] || 'medium'
+    if (levels.indexOf(selected) < 0) selected = levels.indexOf(pv.defaultEffort) >= 0 ? pv.defaultEffort : levels[0] || 'auto'
+    var labels = { auto: t('chat.auto'), none: t('chat.none'), minimal: t('chat.minimal'), low: t('chat.low'), medium: t('chat.medium'), high: t('chat.high'), xhigh: t('chat.xhigh'), max: t('chat.max'), ultra: t('chat.ultra') }
+    clear(chatLevel)
+    levels.forEach(function (level) { var o = el('option', null, labels[level] || level); o.value = level; chatLevel.appendChild(o) })
+    if (!levels.length) { var unknown = el('option', null, t('provider.modelsUnavailable')); unknown.value = 'auto'; chatLevel.appendChild(unknown) }
+    chatLevel.value = selected
+    chatLevel.disabled = pending || pv.supportsEffort === false || !levels.length
+  }
   function renderPicker () {
-    pickerLabel.textContent = currentProvider().name
+    if (SUBSCRIPTION_CHAT && companyPicker) { companyPicker.classList.remove('hidden'); companyPicker.value = brainCompany(chatModel); companyPicker.disabled = pending }
+    renderEfforts()
+    pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
     pickerLabel.setAttribute('data-compact-label', currentProvider().modelName || currentProvider().name)
     picker.setAttribute('aria-label', currentProvider().name)
     picker.setAttribute('title', currentProvider().name)
     clear(pickerMenu)
     for (var i = 0; i < PROVIDERS.length; i++) {
+      if (SUBSCRIPTION_CHAT && PROVIDERS[i].id !== brainCompany(chatModel)) continue
       (function (pv) {
         var selected = SUBSCRIPTION_CHAT ? pv.model === chatModel : pv.id === provider
         var b = el('button', 'opt' + (selected ? ' active' : ''))
@@ -2809,19 +2830,19 @@
         b.setAttribute('role', 'option')
         b.disabled = pending || pv.available === false
         b.setAttribute('aria-selected', selected ? 'true' : 'false')
-        b.appendChild(el('div', 'opt-name', pv.name + (selected ? ' ✓' : '')))
+        b.appendChild(el('div', 'opt-name', (SUBSCRIPTION_CHAT ? pv.modelName : pv.name) + (selected ? ' ✓' : '')))
         b.appendChild(el('div', 'opt-note' + (pv.warn ? ' warn' : ''), pv.note))
         b.addEventListener('click', function () {
           if (pending) return
           provider = pv.id
-          if (SUBSCRIPTION_CHAT && pv.model) { chatModel = pv.model; try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {} }
+          if (SUBSCRIPTION_CHAT && pv.model) { chatModel = pv.model; lastCompanyModel[pv.id] = chatModel; try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {} }
           closePicker()
           renderPicker()
         })
         pickerMenu.appendChild(b)
       })(PROVIDERS[i])
     }
-    if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', t('provider.subscriptionNote')))
+    if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', brainCompany(chatModel) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote')))
   }
   function loadChatModels () {
     if (!SUBSCRIPTION_CHAT || modelsLoading || pending) return
@@ -2833,9 +2854,9 @@
         var notes = { 'claude-sonnet': t('provider.claudeSubscriptionNote'), 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
-          return { id: row.model === 'claude-sonnet' ? 'claude' : 'openai', model: row.model, modelName: row.name, available: row.available === true, warn: false,
+          return { id: brainCompany(row.model), efforts: row.efforts || [], supportsEffort: row.supportsEffort, defaultEffort: row.defaultEffort, model: row.model, modelName: row.name, available: row.available === true, warn: false,
             name: t('provider.subscriptionModel', { model: row.name }),
-            note: row.available ? notes[row.model] : t('provider.modelUnavailable') }
+            note: row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
         })
         renderPicker()
       }).catch(function () {
@@ -2845,6 +2866,17 @@
   }
   function openPicker () { pickerMenu.className = ''; picker.setAttribute('aria-expanded', 'true') }
   function closePicker () { pickerMenu.className = 'hidden'; picker.setAttribute('aria-expanded', 'false') }
+  if (chatLevel) chatLevel.addEventListener('change', function () { if (!pending) modelEfforts[chatModel] = chatLevel.value })
+  if (companyPicker) companyPicker.addEventListener('change', function () {
+    if (pending || !SUBSCRIPTION_CHAT) return
+    var company = companyPicker.value
+    if (company !== 'claude' && company !== 'openai') return
+    lastCompanyModel[brainCompany(chatModel)] = chatModel
+    chatModel = lastCompanyModel[company]
+    provider = company
+    try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {}
+    closePicker(); renderPicker(); loadChatModels()
+  })
   picker.addEventListener('click', function (e) {
     e.stopPropagation()
     if (pickerMenu.className === 'hidden') { openPicker(); loadChatModels() } else closePicker()
@@ -3112,6 +3144,7 @@
     ['connections-label', 'text', function () { return t('connections.title') }],
     ['company-access-label', 'text', function () { return t('company.title') }],
     ['history-label', 'text', function () { return t('shell.historyLabel') }],
+    ['brain-company', 'aria', function () { return t('provider.company') }],
     ['chat-level', 'aria', function () { return t('chat.levelLabel') }],
     ['chat-level-low', 'text', function () { return t('chat.low') }],
     ['chat-level-medium', 'text', function () { return t('chat.medium') }],
@@ -3188,7 +3221,7 @@
       else { n.setAttribute('aria-label', text); n.setAttribute('title', text) }
     }
     // The picker shows the provider it is on, and provider names are catalogue entries too.
-    if (pickerLabel) pickerLabel.textContent = currentProvider().name
+    if (pickerLabel) pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
     if (topicController) topicController.labels()
   }
   applyShellText()

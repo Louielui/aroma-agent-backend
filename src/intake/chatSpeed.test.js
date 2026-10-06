@@ -7,7 +7,7 @@ const { processIntake } = require('./intakeService')
 test('profiles map to explicit efforts and reject arbitrary execution settings', () => {
   assert.deepEqual(['fast', 'standard', 'deep'].map(level => profileFor(level).effort), ['low', 'medium', 'high'])
   assert.equal(profileFor().level, 'medium')
-  for (const input of ['ultra', 'constructor', {}, null]) assert.throws(() => profileFor(input))
+  for (const input of ['invalid', 'constructor', {}, null]) assert.throws(() => profileFor(input))
 })
 
 test('only standalone social turns with no earlier conversation or attached context qualify', () => {
@@ -34,12 +34,12 @@ test('HTTP validates levels before model acquisition and passes them only to cha
   await new Promise(resolve => server.once('listening', resolve))
   t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
   const send = body => fetch('http://127.0.0.1:' + server.address().port + '/api/v1/demo/intake', {method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)})
-  for (const chatLevel of ['ultra', null, {}]) assert.equal((await send({message:'hello',chatLevel})).status,400)
+  for (const chatLevel of ['invalid', null, {}]) assert.equal((await send({message:'hello',chatLevel})).status,400)
   for (const chatModel of ['other', 'constructor', null, {}]) assert.equal((await send({message:'hello',chatModel})).status,400)
   assert.equal(acquisitions,0)
   assert.equal((await send({message:'hello'})).status,200)
   assert.equal(seen.at(-1).chatLevel,'medium')
-  for (const chatLevel of ['low','medium','high','xhigh','max','fast','standard','deep']) {
+  for (const chatLevel of ['auto','none','minimal','low','medium','high','xhigh','max','ultra','fast','standard','deep']) {
     assert.equal((await send({message:'hello',chatLevel})).status,200)
     assert.equal(seen.at(-1).chatLevel,chatLevel)
   }

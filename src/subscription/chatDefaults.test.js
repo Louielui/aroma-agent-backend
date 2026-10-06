@@ -3,7 +3,7 @@ const test = require('node:test'), assert = require('node:assert/strict'), fs = 
 const { DEFAULT_MODEL } = require('./chatModels'), { MODEL, complete, listSubscriptionModels } = require('./codexClient')
 const { CodexSubscriptionAdapter } = require('../adapters/CodexSubscriptionAdapter'), { PROFILES, profileFor } = require('../intake/chatSpeed')
 const { validateInput, createBridge } = require('./bridge'), { EventEmitter } = require('node:events')
-const LEVELS = ['low', 'medium', 'high', 'xhigh', 'max']
+const LEVELS = ['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra']
 function rpcFixture (efforts = LEVELS) {
   const calls = [], events = new EventEmitter()
   return { calls, events, notify () {}, close () {}, async request (method, params) {
@@ -28,7 +28,7 @@ test('chat defaults are Claude and Medium without migrating non-chat transport w
   await adapter.preflight(); await adapter.complete('hello')
   assert.deepEqual(calls[0].input, { model: 'claude-sonnet', effort: 'medium' }); assert.equal(calls[1].input.model, 'claude-sonnet'); assert.equal(calls[1].input.effort, 'medium')
 })
-test('all five canonical choices and legacy aliases preserve the exact requested effort across adapter, bridge and turn', async () => {
+test('provider effort values and legacy aliases preserve the exact requested effort across adapter, bridge and turn', async () => {
   assert.deepEqual(Object.keys(PROFILES), LEVELS)
   for (const level of LEVELS) {
     const rpc = rpcFixture()
@@ -38,9 +38,9 @@ test('all five canonical choices and legacy aliases preserve the exact requested
     assert.equal(turn.effort, level); assert.equal(turn.model, 'gpt-6.1-sol'); assert.deepEqual(turn.environments, [])
   }
   for (const [old, effort] of [['fast', 'low'], ['standard', 'medium'], ['deep', 'high']]) assert.deepEqual(profileFor(old), { level: effort, effort })
-  for (const value of ['none', 'minimal', 'ultra', 'constructor', {}, null]) assert.throws(() => profileFor(value))
+  for (const value of ['invalid', 'constructor', {}, null]) assert.throws(() => profileFor(value))
 })
-test('catalogue exposes five supported levels but unavailable efforts cannot silently become another level', async () => {
+test('catalogue exposes only reported supported levels but unavailable efforts cannot silently become another level', async () => {
   const rpc = rpcFixture(), catalog = await listSubscriptionModels({ connect: () => rpc })
   assert.equal(catalog.defaultModel, 'gpt-6.1-sol'); assert.deepEqual(catalog.models[0].efforts, LEVELS)
   assert.equal(rpc.calls.some(c => c.method === 'turn/start'), false)
@@ -51,21 +51,21 @@ test('catalogue exposes five supported levels but unavailable efforts cannot sil
 test('composer exposes exactly five localized options with Medium selected and a Claude initial model', () => {
   const { buildDemoHtml } = require('../demo/demoHtml'), html = buildDemoHtml(), { CATALOGUE } = require('../i18n/catalogue')
   const select = html.match(/<select id="chat-level"[^>]*>([\s\S]*?)<\/select>/)[1]
-  assert.deepEqual([...select.matchAll(/value="([^"]+)"/g)].map(m => m[1]), LEVELS)
+  assert.deepEqual([...select.matchAll(/value="([^"]+)"/g)].map(m => m[1]), ['low', 'medium', 'high', 'xhigh', 'max'])
   assert.match(select, /value="medium" selected/); assert.match(html, /var chatModel = 'claude-sonnet'/)
   for (const key of ['chat.low', 'chat.medium', 'chat.high', 'chat.xhigh', 'chat.max']) { assert.ok(CATALOGUE[key]?.zh); assert.ok(CATALOGUE[key]?.en) }
   for (const script of html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)) new vm.Script(script[1])
   const source = fs.readFileSync(path.join(__dirname, '../demo/assets/app.js'), 'utf8')
-  for (const level of LEVELS) assert.ok(source.includes("['chat-level-" + level + "', 'text'"))
+  for (const level of ['low','medium','high','xhigh','max']) assert.ok(source.includes("['chat-level-" + level + "', 'text'"))
 })
-test('authenticated status accepts all five efforts before completion and rejects values outside the closed set', async t => {
+test('authenticated status accepts provider effort values before completion and rejects values outside the closed set', async t => {
   const token = 'b'.repeat(64), seen = [], server = createBridge({ token, checkFn: async input => { seen.push(input.effort); return { model: input.model, billing: 'chatgpt-subscription' } } })
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
   for (const effort of LEVELS) {
     const r = await fetch('http://127.0.0.1:' + server.address().port + '/status', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'gpt-6.1-sol', effort }) })
     assert.equal(r.status, 200); assert.equal((await r.json()).model, 'gpt-6.1-sol')
   }
-  for (const effort of ['ultra', 'none', 'minimal', '', null, {}]) {
+  for (const effort of ['invalid', '', null, {}]) {
     const r = await fetch('http://127.0.0.1:' + server.address().port + '/status', { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json' }, body: JSON.stringify({ model: 'gpt-6.1-sol', effort }) })
     assert.equal(r.status, 400)
   }

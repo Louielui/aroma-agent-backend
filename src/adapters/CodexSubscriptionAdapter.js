@@ -5,7 +5,7 @@ const { LLMAdapter } = require('./LLMAdapter')
 const { assertResponseFormat } = require('./adapterErrors')
 const { assertLiveEgressAllowed } = require('./liveEgressFence')
 const { SubscriptionError } = require('../subscription/codexClient')
-const { DEFAULT_BRAIN_MODEL, DEFAULT_EFFORT, REASONING_EFFORTS, isBrainModel, billingFor } = require('../subscription/chatModels')
+const { DEFAULT_BRAIN_MODEL, DEFAULT_EFFORT, REASONING_EFFORTS, isBrainModel, isClaudeModel, billingFor } = require('../subscription/chatModels')
 const { validToken, DEFAULT_PORT } = require('../subscription/bridge')
 
 function subscriptionChatEnabled (env = process.env, lane) {
@@ -38,7 +38,7 @@ function localRequest (route, input, env, signal) {
 }
 
 class CodexSubscriptionAdapter extends LLMAdapter {
-  get providerName () { return this._model === DEFAULT_BRAIN_MODEL ? 'claude' : 'openai' }
+  get providerName () { return isClaudeModel(this._model) ? 'claude' : 'openai' }
   constructor ({ env = process.env, request = localRequest, effort = DEFAULT_EFFORT, model = DEFAULT_BRAIN_MODEL } = {}) {
     super()
     if (!REASONING_EFFORTS.includes(effort)) throw new SubscriptionError('subscription_invalid_output')

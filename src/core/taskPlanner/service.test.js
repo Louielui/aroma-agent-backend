@@ -67,7 +67,7 @@ test('planning defaults to medium and creates a provider matching each requested
   const seen=[]
   const service=createPlanner({source:{verify:()=>{},read:async(a,profile)=>packet(profile)},store:createMemoryRunStore(),bootCommit:HEAD,
     providerFor:settings=>{seen.push(settings);return {preflight:async()=>({model:'gpt-6.1-sol',billing:'chatgpt-subscription'}),complete:async()=>({model:'gpt-6.1-sol',billing:'chatgpt-subscription',text:JSON.stringify(result(packet()))})}}})
-  for(const effort of [undefined,'low','medium','high','xhigh','max']) {
+  for(const effort of [undefined,'auto','none','minimal','low','medium','high','xhigh','max','ultra']) {
     const input={message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),...(effort?{effort}:{})}
     const run=service.start(OWNER,input);await service.wait(run.id)
     assert.equal(service.get(OWNER,run.id).effort,effort||'medium');assert.equal(service.get(OWNER,run.id).state,'completed')
@@ -75,6 +75,6 @@ test('planning defaults to medium and creates a provider matching each requested
     assert.equal(service.start(OWNER,input).reused,true)
     if(effort)assert.throws(()=>service.start(OWNER,{...input,effort:effort==='low'?'medium':'low'}),/request_conflict/)
   }
-  assert.equal(seen.length,6)
-  for(const effort of ['ultra','none','fast',null,{},''])assert.throws(()=>service.start(OWNER,{message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),effort}),/invalid_request/)
+  assert.equal(seen.length,10)
+  for(const effort of ['invalid','fast',null,{},''])assert.throws(()=>service.start(OWNER,{message:MESSAGE,requestId:randomUUID(),conversationId:randomUUID(),effort}),/invalid_request/)
 })

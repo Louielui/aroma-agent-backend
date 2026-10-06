@@ -37,7 +37,7 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /自動套用/)
   assert.match(html, /來源核對及真實方案回傳，以工作單實測為準/)
   assert.match(html, /核對登入方式、回覆模型及計費來源/)
-  assert.match(html, /可選 Claude 或原有四個 GPT 模型/)
+  assert.match(html, /Claude 與 GPT 分開選擇/)
   assert.match(html, /無 API 或跨供應商自動後備/)
   assert.match(html, /背景電郵分析與 Hindsight 索引改用 Claude 訂閱/)
   assert.match(html, /href="\/development-plan"/)

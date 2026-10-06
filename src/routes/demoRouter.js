@@ -508,7 +508,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         .isString().withMessage('interactionMode must be a string')
         .bail()
         .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal'),
-      body('chatLevel').optional().isString().bail().isIn(['low', 'medium', 'high', 'xhigh', 'max', 'fast', 'standard', 'deep']),
+      body('chatLevel').optional().isString().bail().isIn(['auto', 'none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra', 'fast', 'standard', 'deep']),
       body('chatModel').optional().custom(require('../subscription/chatModels').isBrainModel)
     ],
     async (req, res) => {
