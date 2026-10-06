@@ -230,7 +230,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     try {
       const allowed = ['message', 'images', 'conversationId', 'chatModel', 'chatLevel']
       if (!input || Array.isArray(input) || Object.keys(input).some(k => !allowed.includes(k)) || typeof input.message !== 'string' || !input.message.trim() || input.message.length > 2000 || !isValidConversationId(input.conversationId)) throw Error('invalid_request')
-      if (input.chatModel !== undefined && !require('../subscription/chatModels').isChatModel(input.chatModel)) throw Error('invalid_request')
+      if (input.chatModel !== undefined && !require('../subscription/chatModels').isBrainModel(input.chatModel)) throw Error('invalid_request')
       if (input.chatLevel !== undefined && !require('../subscription/chatModels').REASONING_EFFORTS.includes(input.chatLevel)) throw Error('invalid_request')
       images = require('../chat/imageAttachments').validateImages(input.images).map(i => i.dataUrl)
     } catch (_) { return res.status(400).json({ error: { message: t('imageChat.invalid'), retryable: false } }) }
@@ -238,7 +238,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     if (imageOwnerSession) pendingResolutions.supersede(imageOwnerSession, input.conversationId)
     try {
       const existing = conversationStore.get(input.conversationId)
-      const adapter = imageAdapterFn({ model: input.chatModel || require('../subscription/chatModels').DEFAULT_MODEL, effort: input.chatLevel || require('../subscription/chatModels').DEFAULT_EFFORT })
+      const adapter = imageAdapterFn({ model: input.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort: input.chatLevel || require('../subscription/chatModels').DEFAULT_EFFORT })
       const result = await require('../chat/imageChat').processImageChat({ message: input.message.trim(), images, history: existing?.messages || [] }, adapter)
       let historySaved = true
       try { conversationStore.appendTurn({ id: input.conversationId, userText: input.message.trim(), replyText: result.reply, servedBy: result.servedBy, images }) } catch (_) { historySaved = false }
@@ -509,7 +509,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         .bail()
         .isIn(INTERACTION_MODES).withMessage('interactionMode must be one of chat|email_draft|proposal'),
       body('chatLevel').optional().isString().bail().isIn(['low', 'medium', 'high', 'xhigh', 'max', 'fast', 'standard', 'deep']),
-      body('chatModel').optional().custom(require('../subscription/chatModels').isChatModel)
+      body('chatModel').optional().custom(require('../subscription/chatModels').isBrainModel)
     ],
     async (req, res) => {
       // Server-owned correlation id. A browser-supplied requestId is IGNORED.
@@ -546,7 +546,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         const allowed = ['message', 'conversationId', 'workflowRequestId', 'websiteRequestId', 'history', 'providerHint', 'previousLane', 'chatLevel', 'chatModel', 'interactionMode']
         if (Object.keys(req.body).some(k => !allowed.includes(k)) || !isValidConversationId(req.body.conversationId) || !require('../core/operating/runStore').ID.test(req.body.workflowRequestId || '')) return res.status(400).json({ error: 'invalid_request' })
         try {
-          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || 'gpt-6.1-sol' })
+          const answer = await taskDialogue.handle({ id: 'owner', role: 'owner' }, { message, conversationId: req.body.conversationId, requestId: req.body.workflowRequestId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL })
           if (answer) { emit('development_dialogue', 200, null); return res.set('Cache-Control', 'no-store').json(answer) }
         } catch (e) {
           emit('development_dialogue_failed', 503, 'dialogue_unavailable')
@@ -624,7 +624,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         }
         try {
           if (!taskPlanner) throw Error('not_enabled')
-          const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
+          const run = continued?.runId ? taskPlanner.get({ id: 'owner', role: 'owner' }, continued.runId) : taskPlanner.start({ id: 'owner', role: 'owner' }, { message: continued?.message || message, requestId: continued?.requestId || req.body.workflowRequestId, conversationId: req.body.conversationId, model: req.body.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort: require('../intake/chatSpeed').profileFor(req.body.chatLevel || 'medium').effort })
           if (!run || (continued?.runId && run.conversationId !== req.body.conversationId)) throw Error('invalid_request')
           let historySaved = true
           const reply = continued?.runId ? t('taskPlan.alreadyStarted') : t('taskPlan.started')

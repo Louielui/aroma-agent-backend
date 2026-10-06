@@ -6,7 +6,7 @@ const { createBridge } = require('./bridge')
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aMsAAAAAASUVORK5CYII='
 test('image service composes with the real subscription adapter structured-response contract', async () => {
   let captured
-  const adapter = new CodexSubscriptionAdapter({ request: async (route, input) => {
+  const adapter = new CodexSubscriptionAdapter({ model: 'gpt-6.1-sol', request: async (route, input) => {
     captured = validateInput(input)
     return { text: '{"reply":"Visible pixels"}', model: input.model, billing: 'chatgpt-subscription', stopReason: 'end_turn' }
   } })
@@ -16,7 +16,7 @@ test('image service composes with the real subscription adapter structured-respo
 })
 test('subscription adapter and bridge retain image pixels without allowing path or tool settings', async () => {
   let captured
-  const a = new CodexSubscriptionAdapter({ request: async (route, input) => { captured = validateInput(input); return { text: 'ok', model: input.model, billing: 'chatgpt-subscription', stopReason: 'end_turn' } } })
+  const a = new CodexSubscriptionAdapter({ model: 'gpt-6.1-sol', request: async (route, input) => { captured = validateInput(input); return { text: 'ok', model: input.model, billing: 'chatgpt-subscription', stopReason: 'end_turn' } } })
   await a.complete('Inspect the attachment', { images: [PNG] })
   assert.deepEqual(captured.images, [PNG]); assert.equal(captured.model, 'gpt-6.1-sol'); assert.equal(captured.effort, 'medium')
   for (const extra of [{ images: ['https://example.com/p.png'] }, { tools: [] }, { path: 'C:/secret' }]) assert.throws(() => validateInput({ prompt: 'Inspect', ...extra }))

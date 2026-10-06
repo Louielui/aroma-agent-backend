@@ -3,7 +3,7 @@
 const http = require('node:http')
 const crypto = require('node:crypto')
 const { complete, checkSubscription, listSubscriptionModels, SubscriptionError, createSession } = require('./codexClient')
-const { REASONING_EFFORTS, isChatModel } = require('./chatModels')
+const { REASONING_EFFORTS, isBrainModel: isChatModel, DEFAULT_BRAIN_MODEL } = require('./chatModels')
 const { adoptionView } = require('../core/projectWork/adoptionView')
 const MAX_BODY = 1024 * 1024
 const DEFAULT_PORT = 8091
@@ -28,7 +28,7 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
@@ -115,7 +115,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         catch (e) { reply(200, { error: ['revision_conflict', 'decision_conflict'].includes(e.message) ? e.message : 'memory_database_unavailable' }) }
       } else if (req.url === '/v1/chat/completions') {
         if (!memoryEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
-        reply(200, await require('./memoryCompletion').memoryCompletion(options, input, completeFn))
+        reply(200, await require('./memoryCompletion').memoryCompletion(options, input, backgroundModel === DEFAULT_BRAIN_MODEL ? (opts, body) => claudeFn(opts, { ...body, model: DEFAULT_BRAIN_MODEL }) : completeFn))
       } else if (req.url === '/website') {
         if (!websiteEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
         reply(200, await findWebsiteFn(options, input))
@@ -132,11 +132,13 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         }
       } else if (req.url === '/status') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).some(k => !['model', 'effort'].includes(k)) || (input.model !== undefined && !isChatModel(input.model)) || (input.effort !== undefined && !REASONING_EFFORTS.includes(input.effort))) { reply(400, { code: 'subscription_invalid_output' }); return }
-        reply(200, await checkFn({ ...options, ...input }))
+        reply(200, await (input.model === DEFAULT_BRAIN_MODEL ? claudeCheckFn : checkFn)({ ...options, ...input }))
       } else if (req.url === '/models') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }
-        reply(200, await modelsFn(options))
-      } else reply(200, await completeFn(options, validateInput(input)))
+        const [gpt, claude] = await Promise.allSettled([modelsFn(options), claudeModelsFn(options)])
+        const gptModels = gpt.status === 'fulfilled' ? gpt.value.models : require('./chatModels').CHAT_MODELS.map(m => ({ ...m, available: false, efforts: [] }))
+        reply(200, { billing: 'subscriptions', defaultModel: DEFAULT_BRAIN_MODEL, models: [...(claude.status === 'fulfilled' ? claude.value.models : [{ model: DEFAULT_BRAIN_MODEL, name: 'Claude Sonnet', available: false, efforts: [] }]), ...gptModels] })
+      } else reply(200, await (input?.model === DEFAULT_BRAIN_MODEL ? claudeFn : completeFn)(options, validateInput(input)))
     } catch (error) {
       const safe = error instanceof SubscriptionError ? error : new SubscriptionError()
       reply(safe.code === 'subscription_limit_reached' ? 429 : 503, { code: safe.code })

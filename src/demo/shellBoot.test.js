@@ -37,22 +37,23 @@ function dom (html) {
   ids.get('sidebar').appendChild(ids.get('workspace-nav'))
   return { ids, document: { title: '', body, getElementById: id => ids.get(id) || null, createElement: make, createTextNode: text => Object.assign(make('#text'), { textContent: text }), addEventListener () {} } }
 }
-async function boot (locale, unavailable = false) {
+async function boot (locale, unavailable = false, savedModel = null) {
   const html = page(), f = dom(html), requests = [], errors = []
-  const models = [{ model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true }]
+  const models = [{ model: 'claude-sonnet', name: 'Claude Sonnet', available: true }, { model: 'gpt-6.1-sol', name: 'GPT-6.1 Sol', available: true }]
   const fetch = async (url, options) => {
     requests.push({ url, options }); assert.ok(!options?.method || options.method === 'GET', 'boot must never write')
     if (unavailable) throw Error('fixture unavailable')
     const body = url === '/api/v1/demo/models' ? { billing: 'chatgpt-subscription', models } : url === '/api/v1/demo/greeting' ? { line: 'Fixture greeting' } : url === '/api/v1/home/settings' ? { entries: [] } : url === '/api/v1/conversations' ? { ok: true, conversations: [] } : {}
     return { ok: true, status: 200, json: async () => body }
   }
-  const ctx = vm.createContext({ document: f.document, window: { crypto: { randomUUID }, location: { href: '', search: '' } }, fetch, console: { log () {}, error: error => errors.push(error) }, URL, URLSearchParams, AbortController, setTimeout: () => 0, clearTimeout () {}, setInterval: () => 0, clearInterval () {} })
+  const saved = new Map(savedModel ? [['xiangxiang-brain-v1', savedModel]] : [])
+  const ctx = vm.createContext({ localStorage: { getItem: key => saved.get(key), setItem: (key, value) => saved.set(key, value) }, document: f.document, window: { crypto: { randomUUID }, location: { href: '', search: '' } }, fetch, console: { log () {}, error: error => errors.push(error) }, URL, URLSearchParams, AbortController, setTimeout: () => 0, clearTimeout () {}, setInterval: () => 0, clearInterval () {} })
   const scripts = [...html.matchAll(/<script(?:\s[^>]*)?>([\s\S]*?)<\/script>/g)]
   assert.equal(scripts.length, 1)
   vm.runInContext(scripts[0][1].replace(/var INITIAL_LOCALE = "(?:zh|en)";/, 'var INITIAL_LOCALE = ' + JSON.stringify(locale) + ';'), ctx, { timeout: 2000, filename: 'served-demo.js' })
   for (let i = 0; i < 25; i++) await Promise.resolve()
   assert.deepEqual(errors, [])
-  return { ...f, requests }
+  return { ...f, requests, saved }
 }
 for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test('complete page boots visible labels and model controls in ' + locale + (unavailable ? ' despite failed reads' : ''), async () => {
   const f = await boot(locale, unavailable), ids = f.ids
@@ -60,9 +61,20 @@ for (const locale of ['zh', 'en']) for (const unavailable of [false, true]) test
   assert.equal(ids.get('msg').attrs.placeholder, CATALOGUE['shell.composerPlaceholder'][locale]); assert.equal(ids.get('send').disabled, true)
   assert.equal(ids.get('chat-level').classList.contains('hidden'), false); assert.equal(ids.get('chat-level').value, 'medium')
   for (const [id, key] of [['chat-level-low', 'chat.low'], ['chat-level-medium', 'chat.medium'], ['chat-level-high', 'chat.high'], ['chat-level-xhigh', 'chat.xhigh'], ['chat-level-max', 'chat.max']]) assert.equal(ids.get(id).textContent, CATALOGUE[key][locale])
-  assert.match(ids.get('picker-label').textContent, /GPT-6\.1 Sol/); assert.equal(ids.get('workspace-nav').children.length, 3)
+  assert.match(ids.get('picker-label').textContent, /Claude Sonnet/); assert.equal(ids.get('workspace-nav').children.length, 3)
   assert.equal(ids.get('sidebar').contains(ids.get('workspace-nav')), false)
   assert.equal(ids.get('topbar').contains(ids.get('workspace-nav')), true)
   ids.get('msg').value = 'Fixture text'; ids.get('msg').events.input(); assert.equal(ids.get('send').disabled, false)
   assert.ok(f.requests.some(r => r.url === '/api/v1/conversations')); assert.ok(f.requests.some(r => r.url === '/api/v1/demo/models'))
 })
+
+ test('model picker saves only the chosen brain, restores it and ignores forged saved values', async () => {
+  const f = await boot('en')
+  const menu = f.ids.get('picker-menu')
+  const choice = menu.children.find(n => n.children.some(c => /GPT-6.1 Sol/.test(c.textContent)))
+  assert.ok(choice); choice.events.click()
+  assert.equal(f.saved.get('xiangxiang-brain-v1'), 'gpt-6.1-sol')
+  assert.equal(f.saved.size, 1)
+  assert.match((await boot('en', false, 'gpt-6.1-sol')).ids.get('picker-label').textContent, /GPT-6.1 Sol/)
+  assert.match((await boot('en', false, 'unexpected')).ids.get('picker-label').textContent, /Claude Sonnet/)
+ })

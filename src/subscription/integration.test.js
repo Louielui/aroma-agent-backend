@@ -42,7 +42,7 @@ test('chat preserves context and never calls Claude when subscription fails or o
 test('subscription adapter forwards schema and refuses other billing/model', async () => {
   let seen
   const response = { text: '{}', model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', stopReason: 'end_turn' }
-  const adapter = new CodexSubscriptionAdapter({ request: async (route, input) => { seen = input; return response } })
+  const adapter = new CodexSubscriptionAdapter({ model: 'gpt-6.1-sol', request: async (route, input) => { seen = input; return response } })
   const schema = { type: 'object' }
   await adapter.complete('prompt', { system: 'persona', responseFormat: { type: 'json_schema', name: 'answer', schema } })
   assert.deepEqual(seen, { prompt: 'prompt', model: 'gpt-6.1-sol', system: 'persona', effort: 'medium', schema })

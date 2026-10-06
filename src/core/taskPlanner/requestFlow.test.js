@@ -11,7 +11,7 @@ function fixture (t, decisions) {
   const store = createConversationStore({ dataDir: dir }), cid = randomUUID(), starts = [], runs = new Map(), executions = [], seen = []
   const planner = { start (actor, input) { const r = { ...input, id: randomUUID(), state: 'queued' }; starts.push(input); runs.set(r.id, r); return r }, get: (actor, id) => runs.get(id), async executeConfirmed (actor, input) { executions.push(input); const run = runs.get(input.id); run.execution = { state: 'queued' }; return { run } } }
   const service = createDialogue({ store, planner, revision: REV, providerFor: () => ({ complete: async (prompt, options) => { seen.push({ body: JSON.parse(prompt), system: options.system }); return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify({ profile: 'interface', language: 'zh', reply: '', ...decisions.shift() }) } } }) })
-  const send = message => service.handle(OWNER, { message, conversationId: cid, requestId: randomUUID() })
+  const send = message => service.handle(OWNER, { model: 'gpt-6.1-sol', message, conversationId: cid, requestId: randomUUID() })
   return { store, cid, service, starts, runs, executions, seen, send }
 }
 test('ordinary Chinese, English and mixed top-navigation requests reach semantic interpretation', () => {

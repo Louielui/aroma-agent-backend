@@ -45,7 +45,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       if (uiDesign) { r.design = uiDesign.receipt; record(r, 'design_guidance_loaded') }
       const runProvider = providerFor ? providerFor({ model: r.model, effort: r.effort }) : provider
       const ready = await step(() => runProvider.preflight({ signal: c.abort.signal }))
-      if (ready?.model !== 'gpt-6.1-sol' || ready.billing !== 'chatgpt-subscription') throw Error('invalid_worker_result')
+      if (ready?.model !== r.model || ready.billing !== r.billing) throw Error('invalid_worker_result')
       record(r, 'planning')
       const numbered = numberedEvidence(evidence)
       const dispatcher = createDispatcher({ allowedAgentIds: [worker], fallback: false, adapters: { [worker]: {
@@ -54,7 +54,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
           try {
             check(); if (id !== capability || version !== 2 || input.evidence !== evidence) throw Error('invalid_worker_result')
             const response = await step(() => runProvider.complete(JSON.stringify({ request: r.message, ...(r.dialogue ? { dialogue: r.dialogue } : {}), capabilities: require('./capabilities').capabilities(r.profile), evidence: numbered }), { system: require('../../design/uiDesign').systemFor(SYSTEM + ' ' + require('./capabilities').INSTRUCTION, r.profile), signal: c.abort.signal, responseFormat: { type: 'json_schema', name: 'task_plan', schema: SCHEMA } }))
-            if (response?.model !== 'gpt-6.1-sol' || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
+            if (response?.model !== r.model || response.billing !== r.billing || typeof response.text !== 'string' || response.text.length > 40000) throw Error('invalid_worker_result')
             let result; try { result = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
             if (!validateResult(result, evidence, { requireCapability: true, requireSelection: true })) throw Error('invalid_worker_result')
             return { ok: true, output: result, cost: null, latencyMs: response.latencyMs ?? null }
@@ -81,14 +81,16 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
   }
   function start (actor, input) {
     owner(actor)
-    if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId','conversationId,dialogue,effort,message,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
+    if (!input || !['conversationId,message,requestId','conversationId,effort,message,requestId','conversationId,dialogue,effort,message,requestId','conversationId,dialogue,effort,message,model,requestId','conversationId,effort,message,model,requestId'].includes(Object.keys(input).sort().join(',')) || !ID.test(input.requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(input.conversationId || '') || !classify(input.message)?.profile) throw Error('invalid_request')
     if (input.dialogue && !require('./dialogueContext').validDialogue(input.dialogue, bootCommit, input.conversationId, classify(input.message).profile)) throw Error('invalid_request')
+    const model = input.model || 'gpt-6.1-sol'
+    if (!require('../../subscription/chatModels').isBrainModel(model)) throw Error('invalid_request')
     const effort = Object.hasOwn(input, 'effort') ? input.effort : DEFAULT_EFFORT
     if (!REASONING_EFFORTS.includes(effort)) throw Error('invalid_request')
     const prior = store.all().find(r => r.requestId === input.requestId)
-    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId || prior.effort !== effort || JSON.stringify(prior.dialogue) !== JSON.stringify(input.dialogue)) throw Error('request_conflict'); return { ...prior, reused: true } }
+    if (prior) { if (prior.message !== input.message || prior.conversationId !== input.conversationId || prior.effort !== effort || prior.model !== model || JSON.stringify(prior.dialogue) !== JSON.stringify(input.dialogue)) throw Error('request_conflict'); return { ...prior, reused: true } }
     if (active) throw Error('worker_busy')
-    const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model: 'gpt-6.1-sol', effort, billing: 'chatgpt-subscription' }
+    const r = { id: randomUUID(), workflow: 'task_plan', ...input, profile: classify(input.message).profile, state: 'queued', reason: null, startedAt: new Date().toISOString(), steps: [], sections: [], result: null, executableRecipe: null, workRunId: null, permissions: 'read_only_committed_profile', model, effort, billing: require('../../subscription/chatModels').billingFor(model) }
     record(r, 'owner_requested'); active = r.id
     const c = { abort: new AbortController(), inflight: new Set(), reason: null }; controls.set(r.id, c)
     const timer = setTimeout(() => { c.reason = 'timed_out'; c.abort.abort() }, timeoutMs)
@@ -157,7 +159,7 @@ function createPlanner ({ source, provider, providerFor, store, bootCommit, prep
       const context = require('./dialogueContext').seal({ ...old.dialogue.context, revision: bootCommit, createdAt: new Date().toISOString() })
       dialogue = { ...old.dialogue, context, contextDigest: context.digest, confirmation: 'Owner requested a refreshed plan through its confirmation card' }
     }
-    const next = start(actor, { message: old.message, requestId: input.requestId, conversationId: old.conversationId, effort: old.effort, ...(dialogue ? { dialogue } : {}) })
+    const next = start(actor, { message: old.message, requestId: input.requestId, conversationId: old.conversationId, effort: old.effort, model: old.model, ...(dialogue ? { dialogue } : {}) })
     old.updatedPlanRunId = next.id; record(old, 'owner_requested_updated_plan'); return { run: get(actor, next.id) }
   }
   return { start, prepare, replan, registerTask: registerFromPlan, refreshRegistration, get, executeConfirmed: execution.start, cancelExecution: execution.cancel, waitExecution: execution.wait, list: actor => { owner(actor); return store.all().sort((a, b) => b.startedAt.localeCompare(a.startedAt)).slice(0, 25).map(({ evidence, ...r }) => r) }, wait: id => controls.get(id)?.promise || Promise.resolve(), cancel: (actor, id) => { const r = get(actor, id), c = controls.get(id); if (!r) throw Error('invalid_request'); if (c) { c.reason = 'cancelled'; c.abort.abort() }; return r } }

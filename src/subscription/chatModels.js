@@ -12,4 +12,7 @@ const CHAT_MODELS = Object.freeze([
   Object.freeze({ model: 'gpt-6-sol', name: 'GPT-6 Sol', noteKey: 'provider.solPreviousNote' })
 ])
 function isChatModel (value) { return typeof value === 'string' && CHAT_MODELS.some(item => item.model === value) }
-module.exports = { DEFAULT_MODEL, DEFAULT_EFFORT, REASONING_EFFORTS, CHAT_MODELS, isChatModel }
+const DEFAULT_BRAIN_MODEL = 'claude-sonnet'
+function isBrainModel (value) { return value === DEFAULT_BRAIN_MODEL || isChatModel(value) }
+function billingFor (model) { return model === DEFAULT_BRAIN_MODEL ? 'claude-subscription' : 'chatgpt-subscription' }
+module.exports = { DEFAULT_BRAIN_MODEL, isBrainModel, billingFor, DEFAULT_MODEL, DEFAULT_EFFORT, REASONING_EFFORTS, CHAT_MODELS, isChatModel }

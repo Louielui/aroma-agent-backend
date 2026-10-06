@@ -161,13 +161,14 @@
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
   var PROVIDERS = SUBSCRIPTION_CHAT ? [
-    { id: 'openai', modelName: 'GPT-6.1 Sol', name: t('provider.subscription'), note: t('provider.subscriptionNote'), warn: true }
+    { id: 'claude', model: 'claude-sonnet', modelName: 'Claude Sonnet', name: t('provider.subscriptionModel', { model: 'Claude Sonnet' }), note: t('provider.claudeSubscriptionNote'), warn: false }
   ] : [
     { id: 'claude', name: t('provider.claude'), note: t('provider.canSee', { sources: SOURCE_TEXT }), warn: false },
     { id: 'openai', name: t('provider.gpt'), note: t('provider.canSeeButSends', { sources: SOURCE_TEXT }), warn: true }
   ]
-  var provider = SUBSCRIPTION_CHAT ? 'openai' : 'claude'
-  var chatModel = 'gpt-6.1-sol'
+  var provider = 'claude'
+  var chatModel = 'claude-sonnet'
+  try { var savedBrain = localStorage.getItem('xiangxiang-brain-v1'); if (['claude-sonnet', 'gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].indexOf(savedBrain) >= 0) chatModel = savedBrain } catch (_) {}
   var modelsLoading = false
   // The lane of the turn just rendered. Sent back so a short reply like 「1」 continues
   // what was happening instead of arriving as a fresh, contentless input. It is a lane
@@ -2789,6 +2790,7 @@
   function currentProvider () {
     if (SUBSCRIPTION_CHAT) {
       for (var j = 0; j < PROVIDERS.length; j++) if (PROVIDERS[j].model === chatModel) return PROVIDERS[j]
+      return { id: chatModel === 'claude-sonnet' ? 'claude' : 'openai', name: t('provider.subscriptionModel', { model: chatModel }), modelName: chatModel }
     }
     for (var i = 0; i < PROVIDERS.length; i++) if (PROVIDERS[i].id === provider) return PROVIDERS[i]
     return PROVIDERS[0]
@@ -2812,7 +2814,7 @@
         b.addEventListener('click', function () {
           if (pending) return
           provider = pv.id
-          if (SUBSCRIPTION_CHAT && pv.model) chatModel = pv.model
+          if (SUBSCRIPTION_CHAT && pv.model) { chatModel = pv.model; try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {} }
           closePicker()
           renderPicker()
         })
@@ -2827,11 +2829,11 @@
     fetch('/api/v1/demo/models', { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
       .then(function (catalog) {
-        if (catalog.billing !== 'chatgpt-subscription' || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
-        var notes = { 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
+        if (!['subscriptions', 'chatgpt-subscription'].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
+        var notes = { 'claude-sonnet': t('provider.claudeSubscriptionNote'), 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
-          return { id: 'openai', model: row.model, modelName: row.name, available: row.available === true, warn: false,
+          return { id: row.model === 'claude-sonnet' ? 'claude' : 'openai', model: row.model, modelName: row.name, available: row.available === true, warn: false,
             name: t('provider.subscriptionModel', { model: row.name }),
             note: row.available ? notes[row.model] : t('provider.modelUnavailable') }
         })

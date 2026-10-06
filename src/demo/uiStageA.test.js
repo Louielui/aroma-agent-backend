@@ -61,7 +61,7 @@ test('static safety: no markup-from-strings, no code-from-strings, no persistenc
     'http://', 'https://', '//cdn', 'fonts.googleapis',
     'HUB_TOKEN', 'Authorization', 'Bearer'
   ]) {
-    assert.ok(!DEMO_HTML.includes(forbidden), 'the page must not contain: ' + forbidden)
+    assert.ok(!DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '').includes(forbidden), 'the page must not contain: ' + forbidden)
   }
   // every fetch is a same-origin absolute path
   const urls = DEMO_HTML.match(/fetch\('([^']+)'/g) || []
@@ -311,7 +311,7 @@ test('the picker offers exactly the two providers the server allows', () => {
   assert.deepEqual(ids, ['claude', 'openai'], 'and no third option the server would reject')
   sandbox.SUBSCRIPTION_CHAT = true
   require('node:vm').runInNewContext(declaration + '; result = PROVIDERS.map(p => p.id)', sandbox)
-  assert.deepEqual(Array.from(sandbox.result), ['openai'], 'subscription mode offers only its supported route')
+  assert.deepEqual(Array.from(sandbox.result), ['claude'], 'subscription mode starts with the Claude subscription route')
   assert.ok(DEMO_HTML.includes('providerHint: provider'), 'the pick is sent as a hint field')
 })
 

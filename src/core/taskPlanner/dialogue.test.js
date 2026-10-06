@@ -171,7 +171,7 @@ test('durable receipts prevent replay across service restart, including uncertai
   const store = createConversationStore({ dataDir: dir }), receipts = createRunStore({ dir: path.join(dir, 'receipts'), workflow: 'dialogue_request' })
   let calls = 0
   const options = { store, receipts, revision: REV, planner: {}, providerFor: () => ({ complete: async () => { calls++; return { model: 'gpt-6.1-sol', billing: 'chatgpt-subscription', text: JSON.stringify(decision('discuss', 'Top navigation.', { targetQuote: 'sidebar' })) } } }) }
-  const input = { message: 'Discuss sidebar', conversationId: randomUUID(), requestId: randomUUID() }
+  const input = { model: 'gpt-6.1-sol', message: 'Discuss sidebar', conversationId: randomUUID(), requestId: randomUUID() }
   const first = await createDialogue(options).handle(OWNER, input)
   assert.deepEqual(await createDialogue(options).handle(OWNER, input), first); assert.equal(calls, 1)
   const row = receipts.get(input.requestId); delete row.response; row.state = 'draft_requested'; receipts.save(row)

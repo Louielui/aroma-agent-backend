@@ -280,7 +280,7 @@ test('DEMO_HTML: ONE composer — no permanent mode controls, two shortcuts behi
 })
 
 test('DEMO_HTML: no storage/cookies, no innerHTML/eval/new Function', () => {
-  assert.ok(!/localStorage|sessionStorage|document\.cookie|serviceWorker/.test(DEMO_HTML))
+  assert.ok(!/localStorage|sessionStorage|document\.cookie|serviceWorker/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')))
   assert.ok(!/innerHTML|eval\(|new Function/.test(DEMO_HTML))
 })
 

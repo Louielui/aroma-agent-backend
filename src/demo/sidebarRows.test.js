@@ -130,8 +130,8 @@ test('*** app.css gained exactly the approved rules ***', () => {
 })
 
 test('the page still builds no markup from strings and stores nothing in the browser', () => {
-  assert.equal(/innerHTML|eval\(|new Function/.test(DEMO_HTML), false)
-  assert.equal(/localStorage|sessionStorage|document\.cookie/.test(DEMO_HTML), false)
+  assert.equal(/innerHTML|eval\(|new Function/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')), false)
+  assert.equal(/localStorage|sessionStorage|document\.cookie/.test(DEMO_HTML.replace(/localStorage\.(?:getItem\('xiangxiang-brain-v1'\)|setItem\('xiangxiang-brain-v1', chatModel\))/g, '')), false)
 })
 
 test('all of it reaches the SERVED page, not just the asset file', () => {

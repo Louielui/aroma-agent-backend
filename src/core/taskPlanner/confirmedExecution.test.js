@@ -93,7 +93,7 @@ test('the exact Owner top-functions request crosses HTTP into a visible plan and
   const post = text => new Promise((resolve, reject) => {
     const req = require('node:http').request({ hostname: '127.0.0.1', port: server.address().port, path: '/api/v1/demo/intake', method: 'POST', headers: { host: '127.0.0.1:8090', origin: 'http://127.0.0.1:8090', 'content-type': 'application/json' } }, res => {
       let body = ''; res.on('data', c => { body += c }); res.on('end', () => { try { assert.equal(res.statusCode, 200); resolve(JSON.parse(body)) } catch (e) { reject(e) } })
-    }); req.on('error', reject); req.end(JSON.stringify({ message: text, conversationId: cid, workflowRequestId: randomUUID() }))
+    }); req.on('error', reject); req.end(JSON.stringify({ chatModel: 'gpt-6.1-sol', message: text, conversationId: cid, workflowRequestId: randomUUID() }))
   })
   const first = await post(message); assert.ok(first.taskPlanRunId)
   await f.service.wait(first.taskPlanRunId)

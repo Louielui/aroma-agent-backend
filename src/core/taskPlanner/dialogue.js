@@ -39,7 +39,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
   function candidate (message, conversationId) { const c = snapshot(conversationId); return !!surface(message) || !!current(c, conversationId) || !!(plainConfirmation(message) && displayedPlan(c)) }
   async function handle (actor, input) {
     if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied')
-    const { message, conversationId, requestId, effort = 'medium', model = 'gpt-6.1-sol' } = input
+    const { message, conversationId, requestId, effort = 'medium', model = require('../../subscription/chatModels').DEFAULT_BRAIN_MODEL } = input
     if (typeof message !== 'string' || !message.trim() || message.length > 2000 || !ID.test(requestId || '') || !/^[a-z0-9][a-z0-9-]{7,63}$/.test(conversationId || '')) throw Error('invalid_request')
     const identity = hash(JSON.stringify([conversationId, message, effort, model]))
     const previous = receipts.get(requestId)
@@ -86,7 +86,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
         const response = await Promise.race([pending, stopped])
         receipt.interpretationMs = Date.now() - Date.parse(receipt.startedAt)
         if (fingerprint(snapshot(conversationId)) !== fingerprint(before)) throw Error('conversation_changed')
-        if (response?.model !== model || response.billing !== 'chatgpt-subscription' || typeof response.text !== 'string' || response.text.length > 20000) throw Error('invalid_worker_result')
+        if (response?.model !== model || response.billing !== require('../../subscription/chatModels').billingFor(model) || typeof response.text !== 'string' || response.text.length > 20000) throw Error('invalid_worker_result')
         let v; try { v = JSON.parse(response.text) } catch (_) { throw Error('invalid_worker_result') }
         if (!v || Object.keys(v).sort().join() !== Object.keys(SCHEMA.properties).sort().join() || !INTENTS.includes(v.intent) || !['interface', 'chat', 'none'].includes(v.profile) || !['en', 'zh'].includes(v.language) || typeof v.targetQuote !== 'string' || v.targetQuote.length > 2000 || typeof v.reply !== 'string' || v.reply.length > 4000) throw Error('invalid_worker_result')
         let ctx = old ? structuredClone(old) : null
@@ -121,7 +121,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             } else if (run && !replan && (!changed || ['queued', 'running'].includes(run.state))) reply = t('dialogue.existing', undefined, v.language)
             else {
               const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
-              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, dialogue })
+              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
               receipt.taskPlanRunId = run.id; receipt.state = 'planning_started'; receipts.save(receipt)
               reply = t('dialogue.started', undefined, v.language)
             }
@@ -129,7 +129,7 @@ function createDialogue ({ store, planner, revision, providerFor, receipts = cre
             if (!run || run.state !== 'completed') reply = t('dialogue.planFirst', undefined, v.language)
             else if (run.dialogue?.contextDigest !== ctx.digest) {
               const dialogue = { context: ctx, contextDigest: ctx.digest, ownerRequests: ctx.ownerRequests, proposals: ctx.proposals, confirmation: message, language: v.language }
-              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, dialogue })
+              run = planner.start(actor, { message: ctx.profile === 'interface' ? 'plan Xiangxiang interface from agreed dialogue' : 'plan Xiangxiang chat page from agreed dialogue', conversationId, requestId, effort, model, dialogue })
               receipt.taskPlanRunId = run.id; receipt.state = 'planning_started'; receipts.save(receipt)
               reply = t('dialogue.replanning', undefined, v.language)
             } else if (run.taskRunId || run.registrationPreparation) reply = t('dialogue.existing', undefined, v.language)

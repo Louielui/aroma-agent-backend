@@ -1847,14 +1847,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       if (gptResult) {
         // Billable tokens exist the moment the provider returned — record BEFORE the
         // parse, so a fallback turn accounts for BOTH providers separately.
-        noteProvider('openai', gptResult)
+        noteProvider(gpt.providerName || 'openai', gptResult)
         await recordProviderUsage(gptResult)
         try {
           distilled = parseDistillResponse(gptResult.text, tel)
           if (socialFastPath && (distilled.mode !== 'chat' || distilled.nextRead || distilled.answerPlan ||
             (Array.isArray(distilled.tasks) && distilled.tasks.length))) throw new SubscriptionError('subscription_invalid_output')
           llmResult = gptResult
-          activeProvider = OPENAI // its envelope PARSED — this is the accepted provider
+          activeProvider = gpt.providerName === 'claude' ? CLAUDE : OPENAI // its envelope PARSED — this is the accepted provider
           activeAdapter = gpt
         } catch (err) {
           if (subscriptionMode) throw new SubscriptionError('subscription_invalid_output')
