@@ -46,9 +46,9 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const dataDir = options.dataDir || resolveDataDir()
   const env = options.env || process.env
   const clock = options.clock || (() => new Date().toISOString())
-  const automationDir = options.automationDir || (isTestProcess() ? path.join(dataDir, 'test-automations') : path.join(os.homedir(), '.codex', 'automations'))
+  const automationDir = options.automationDir || env.XIANGXIANG_OPERATIONS_AUTOMATION_DIR || (isTestProcess() ? path.join(dataDir, 'test-automations') : path.join(os.homedir(), '.codex', 'automations'))
   const scheduler = options.scheduler || (() => require('../../home/schedulerWitness').readSchedulerWitness())
-  const workerRoot = options.workerRoot || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
+  const workerRoot = options.workerRoot || env.XIANGXIANG_OPERATIONS_WORKER_ROOT || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
   async function section (name, query) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }

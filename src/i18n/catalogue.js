@@ -39,6 +39,8 @@
  */
 const CATALOGUE = Object.freeze({
   'investigation.title': { zh: '查看調查依據', en: 'View investigation evidence' },
+  'investigation.paused': { zh: '已暫停', en: 'Paused' },
+  'investigation.notInstalled': { zh: '未安裝', en: 'Not installed' },
   'investigation.planning': { zh: 'Thinking · 正在理解要調查的問題…', en: 'Thinking · identifying the investigation…' },
   'investigation.reading': { zh: '正在查核：{source}…', en: 'Checking {source}…' },
   'investigation.evaluating': { zh: '正在比對證據，整理可確認的結論…', en: 'Evaluating evidence and separating confirmed findings…' },

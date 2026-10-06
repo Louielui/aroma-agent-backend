@@ -20,6 +20,13 @@ Xiangxiang conversations, legacy usage, and an explicit billing connection gap.
 No arbitrary paths or commands are accepted. Symlinks and oversized files are
 rejected. This is a bounded investigation, not a complete historical account audit.
 
+Windows service identities can have a different home directory from the Owner.
+Set the server-owned `XIANGXIANG_OPERATIONS_AUTOMATION_DIR` and
+`XIANGXIANG_OPERATIONS_WORKER_ROOT` to the verified Owner source roots at delivery.
+Chat requests cannot override those roots. Missing roots remain visible as gaps.
+The answer guard verifies nested scalar facts against the cited section and localizes
+section labels; values from another section cannot substantiate a claimed fact.
+
 The normal answer pipeline receives the source receipts even when memory had no
 result. Progress and final evidence are saved in `investigation-runs` using the
 existing run store; the conversation retains the receipt ID. Reloading retrieves

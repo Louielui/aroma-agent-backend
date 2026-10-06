@@ -7,6 +7,7 @@ const path = require('node:path')
 const { createXiangxiangOperationsReadAdapter, SECTIONS } = require('./xiangxiangOperationsRead')
 const { createReadConnector } = require('../readConnector')
 const { buildReadContext } = require('../readContext')
+const { validatePlan } = require('../../intake/answerPlan')
 
 function fixture (t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-investigation-'))
@@ -18,6 +19,28 @@ function fixture (t) {
   put('conversations/11111111-1111-4111-8111-111111111111.json', { id: '11111111-1111-4111-8111-111111111111', title: 'Credit usage', updatedAt: '2026-10-01T11:00:00Z', messages: [{ role: 'user', text: 'Why was credit consumed?' }, { role: 'assistant', text: 'An old hypothesis, not a bill.' }] })
   return { dir, put }
 }
+
+test('service-configured Owner roots provide automations and worker evidence independently of the service profile', async t => {
+  const { dir, put } = fixture(t)
+  put('owner-automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  put('owner-workers/project-runs/22222222-2222-4222-8222-222222222222.json', { status: 'completed', model: 'fixture-worker-model', updatedAt: '2026-10-06T15:00:00Z' })
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, env: { XIANGXIANG_OPERATIONS_AUTOMATION_DIR: path.join(dir, 'owner-automations'), XIANGXIANG_OPERATIONS_WORKER_ROOT: path.join(dir, 'owner-workers') }, scheduler: async () => ({ state: 'NOT_INSTALLED' }) })
+  const { results } = await a.methods.readInvestigation()
+  assert.equal(results.find(r => r.fields.section === 'schedules').fields.records[1].name, 'Owner scheduled investigation')
+  assert.ok(results.find(r => r.fields.section === 'work').fields.records.some(r => r.model === 'fixture-worker-model'))
+})
+
+test('nested operational facts survive the real answer guard while invented and cross-section values are rejected', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const row = results.find(r => r.fields.section === 'schedules')
+  const checked = validatePlan({ directAnswer: '', sections: [{ heading: '', items: [{ sourceId: row.sourceId, title: 'Ignored', facts: [{ field: 'Name', value: 'Owner scheduled investigation' }, { field: 'State', value: 'PAUSED' }, { field: 'Invented', value: 'Invented charge cause' }, { field: 'Wrong section', value: 'claude-sonnet' }] }] }], limitations: [], followUp: null }, { itemsBySource: [{ source: row.source, items: results }] })
+  const item = checked.plan.sections[0].items[0]
+  assert.equal(item.title, '排程與自動工作')
+  assert.deepEqual(item.facts.map(f => f.value), ['Owner scheduled investigation', '已暫停'])
+  assert.equal(checked.droppedFacts, 2)
+})
 
 test('local investigation continues across missing sources, distinguishes historic statements and billing, and preserves evidence', async t => {
   const { dir } = fixture(t)
