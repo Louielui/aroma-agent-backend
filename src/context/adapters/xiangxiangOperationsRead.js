@@ -73,7 +73,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
             records.push({ sourceId: 'codex-automation:' + name, name: field('name'), state: field('status'), schedule: field('rrule'), model: field('model'), lastRunAt: null })
           } catch (_) { failed++ }
         }
-        return { state: witnessFailed && !records.length ? 'unavailable' : witnessFailed || missing || unreadable || failed || names.length > 20 ? 'partial' : 'ok', evidenceState: records.length ? 'confirmed' : 'not_established', records, missingAutomationDirectory: missing, witnessUnavailable: witnessFailed, note: 'Current schedule definitions and one Windows task witness only. A schedule is a possible usage source, not a billing cause. Codex execution history is not connected.' }
+        return { state: witnessFailed && !records.length ? 'unavailable' : witnessFailed || missing || unreadable || failed || names.length > 20 ? 'partial' : 'ok', evidenceState: records.length ? 'confirmed' : 'not_established', records, missingAutomationDirectory: missing, automationReadState: unreadable ? 'unavailable' : missing ? 'missing' : failed || names.length > 20 ? 'partial' : 'ok', automationReadErrors: failed, witnessUnavailable: witnessFailed, note: 'Current schedule definitions and one Windows task witness only. Unreadable or partial automation coverage cannot establish absence or exclude usage sources. A schedule is a possible usage source, not a billing cause. Codex execution history is not connected.' }
       }
       if (name === 'work') {
         const dirs = WORK_DIRS.map(folder => ({ folder, dir: path.join(dataDir, folder) })).concat(['project-runs', 'runs', 'adoptions'].map(folder => ({ folder: 'worker/' + folder, dir: path.join(workerRoot, folder) })))

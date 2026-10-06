@@ -24,6 +24,9 @@ Windows service identities can have a different home directory from the Owner.
 Set the server-owned `XIANGXIANG_OPERATIONS_AUTOMATION_DIR` and
 `XIANGXIANG_OPERATIONS_WORKER_ROOT` to the verified Owner source roots at delivery.
 Chat requests cannot override those roots. Missing roots remain visible as gaps.
+The Windows service identity also needs Owner-approved read access to those roots;
+path configuration does not grant permission. Unreadable automation directories and
+rejected files have explicit coverage states and cannot establish absence.
 The answer guard verifies nested scalar facts against the cited section and localizes
 section labels; values from another section cannot substantiate a claimed fact.
 

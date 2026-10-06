@@ -2200,6 +2200,7 @@ const ENTITY_LABELS = Object.freeze({
 })
 
 const SOURCE_LABELS = Object.freeze({
+  xiangxiang_operations: () => t('investigation.operations'),
   aroma_system: () => t('source.aromaSystem'),
   gmail: () => 'Gmail',
   drive: () => 'Drive',

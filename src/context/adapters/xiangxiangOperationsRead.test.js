@@ -30,6 +30,19 @@ test('service-configured Owner roots provide automations and worker evidence ind
   assert.ok(results.find(r => r.fields.section === 'work').fields.records.some(r => r.model === 'fixture-worker-model'))
 })
 
+test('unreadable automation directories and rejected files are explicit coverage gaps, never proof that no automation exists', async t => {
+  const { dir, put } = fixture(t)
+  put('not-a-directory', 'not a directory')
+  const inspect = async automationDir => (await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()).results.find(r => r.fields.section === 'schedules').fields
+  const inaccessible = await inspect(path.join(dir, 'not-a-directory'))
+  assert.equal(inaccessible.automationReadState, 'unavailable')
+  assert.equal(inaccessible.missingAutomationDirectory, false)
+  put('partial-automations/rejected/automation.toml', 'x'.repeat(66000))
+  const rejected = await inspect(path.join(dir, 'partial-automations'))
+  assert.equal(rejected.automationReadState, 'partial')
+  assert.equal(rejected.automationReadErrors, 1)
+})
+
 test('nested operational facts survive the real answer guard while invented and cross-section values are rejected', async t => {
   const { dir, put } = fixture(t)
   put('automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
