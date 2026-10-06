@@ -1,6 +1,6 @@
 'use strict'
 const fs = require('node:fs'), path = require('node:path')
-const { READ_PROFILES, hash } = require('./contract'), { gitRead } = require('../projectWork/source')
+const { READ_PROFILES, hash } = require('./contract'), { gitRead, scopeDirty } = require('../projectWork/source')
 const SECRET = /(?:-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----|\bsk-(?:proj-)?[A-Za-z0-9_-]{24,}|\bgh[pousr]_[A-Za-z0-9]{30,}|\bya29\.[A-Za-z0-9_-]{25,})/
 function createSource ({ root, readGit = gitRead, health = async () => (await fetch('http://127.0.0.1:8090/health', { signal: AbortSignal.timeout(3000) })).json() }) {
   root = path.resolve(root)
@@ -13,7 +13,7 @@ function createSource ({ root, readGit = gitRead, health = async () => (await fe
     for (const name of READ_PROFILES[profile]) {
       let current = root
       for (const part of name.split('/')) { current = path.join(current, part); const s = fs.lstatSync(current); if (s.isSymbolicLink() || fs.realpathSync(current).toLowerCase() !== current.toLowerCase() || (current === path.join(root, name) && (!s.isFile() || s.nlink !== 1))) throw Error('context_unavailable') }
-      if (!/^100644 blob [a-f0-9]{40}\t/.test((await readGit(root, ['ls-tree', head, '--', name], signal)).trim()) || (await readGit(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
+      if (!/^100644 blob [a-f0-9]{40}\t/.test((await readGit(root, ['ls-tree', head, '--', name], signal)).trim()) || await scopeDirty(root, head, name, signal, readGit)) throw Error('source_dirty')
       const content = (await readGit(root, ['show', head + ':' + name], signal)).replace(/\r\n/g, '\n')
       if (!content || content.includes('\0') || Buffer.byteLength(content) > require('../../workers/execution/packageLimits').fileLimit(name) || SECRET.test(content)) throw Error('source_sensitive')
       if (fs.readFileSync(path.join(root, name), 'utf8').replace(/\r\n/g, '\n') !== content) throw Error('source_dirty')

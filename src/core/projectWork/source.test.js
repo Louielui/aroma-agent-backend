@@ -26,6 +26,18 @@ test('dirty or staged affected source is rejected', async t => {
   const f = fixture(t); fs.appendFileSync(path.join(f.root, FILE), '// dirty\n')
   await assert.rejects(f.source.read(f.head()), /source_dirty/); f.git(['add', '--', FILE]); await assert.rejects(f.source.read(f.head()), /source_dirty/)
 })
+test('unchanged CRLF checkout survives stale stat data without accepting real or staged edits', async t => {
+  const f = fixture(t), name = path.join(f.root, FILE), original = f.git(['show', 'HEAD:' + FILE]).replace(/\r\n/g, '\n')
+  f.git(['config', 'core.autocrlf', 'false'])
+  fs.writeFileSync(name, original.replace(/\n/g, '\r\n'))
+  const stamp = new Date(Date.now() + 1000); fs.utimesSync(name, stamp, stamp)
+  assert.match(await gitRead(f.root, ['status', '--porcelain=v1', '--', FILE]), /^ M /)
+  const packet = await f.source.read(f.head()); assert.equal(packet.order.files[FILE], original)
+  await f.source.verify(packet)
+  fs.appendFileSync(name, '// actual edit\r\n'); await assert.rejects(f.source.read(f.head()), /source_dirty/)
+  f.git(['add', '--', FILE]); fs.writeFileSync(name, original)
+  await assert.rejects(f.source.read(f.head()), /source_dirty/)
+})
 test('runtime and committed source must match, and a later commit invalidates approval evidence', async t => {
   const f = fixture(t), packet = await f.source.read(f.head()); f.setBoot('a'.repeat(40))
   await assert.rejects(f.source.read(f.head()), /source_changed/); f.setBoot(f.head())

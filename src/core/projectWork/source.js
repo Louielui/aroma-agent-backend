@@ -10,6 +10,15 @@ function gitRead (root, args, signal) {
   return new Promise((resolve, reject) => execFile('git', ['--no-replace-objects', '-c', 'core.fsmonitor=false', '-c', 'core.hooksPath=', '-C', root, ...args],
     { env, signal, windowsHide: true, timeout: 5000, maxBuffer: 700000, encoding: 'utf8' }, (error, out) => error ? reject(Error('source_unavailable')) : resolve(out)))
 }
+async function scopeDirty (root, head, name, signal, readGit = gitRead) {
+  const status = await readGit(root, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)
+  if (!status.trim()) return false
+  // Read-only Git status can report unstaged CRLF/stat differences when the
+  // deployment checkout used Windows normalization. Staged/unknown states
+  // still fail. Verify the actual diff, then the caller verifies exact LF bytes.
+  if (status.trimEnd() !== ' M ' + name) return true
+  return !!(await readGit(root, ['-c', 'core.autocrlf=true', 'diff', '--no-ext-diff', '--no-textconv', '--raw', head, '--', name], signal)).trim()
+}
 function regular (root, name) {
   let current = root
   for (const part of name.split('/')) {
@@ -41,7 +50,7 @@ function createSource ({ root, resolveRecipe = recipe, readGit = gitRead, health
       regular(resolved, name)
       const mode = (await readGit(resolved, ['ls-tree', head, '--', name], signal)).trim()
       if (!/^100644 blob [a-f0-9]{40}\t/.test(mode)) throw Error('source_unavailable')
-      if ((await readGit(resolved, ['status', '--porcelain=v1', '--untracked-files=all', '--', name], signal)).trim()) throw Error('source_dirty')
+      if (await scopeDirty(resolved, head, name, signal, readGit)) throw Error('source_dirty')
       const bytes = (await readGit(resolved, ['show', head + ':' + name], signal)).replace(/\r\n/g, '\n')
       if (!bytes || bytes.includes('\0') || Buffer.byteLength(bytes) > require('../../workers/execution/packageLimits').fileLimit(name) || SECRET.test(bytes)) throw Error('source_sensitive')
       if (fs.readFileSync(path.join(resolved, name), 'utf8').replace(/\r\n/g, '\n') !== bytes) throw Error('source_dirty')
@@ -62,4 +71,4 @@ function createSource ({ root, resolveRecipe = recipe, readGit = gitRead, health
   }
   return { read, verify }
 }
-module.exports = { createSource, gitRead }
+module.exports = { createSource, gitRead, scopeDirty }

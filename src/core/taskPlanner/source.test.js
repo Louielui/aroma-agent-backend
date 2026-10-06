@@ -37,3 +37,13 @@ test('interface planning hashes supporting markup and bindings and rejects read-
   fs.appendFileSync(path.join(f.root, 'src/demo/assets/app.js'), '\n// dependency drift')
   await assert.rejects(f.source.read(input), /source_dirty/)
 })
+test('planner accepts only unchanged normalized CRLF bytes despite stale Git stat data', async t => {
+  const f = fixture(t), input = { bootCommit: f.head, profile: 'context' }, name = path.join(f.root, FILE)
+  const original = f.git(['show', 'HEAD:' + FILE]).replace(/\r\n/g, '\n')
+  f.git(['config', 'core.autocrlf', 'false']); fs.writeFileSync(name, original.replace(/\n/g, '\r\n'))
+  const stamp = new Date(Date.now() + 1000); fs.utimesSync(name, stamp, stamp)
+  assert.equal((await f.source.read(input)).evidence.files.find(f => f.path === FILE).content, original)
+  fs.appendFileSync(name, '// actual edit\r\n'); await assert.rejects(f.source.read(input), /source_dirty/)
+  f.git(['add', '--', FILE]); fs.writeFileSync(name, original)
+  await assert.rejects(f.source.read(input), /source_dirty/)
+})

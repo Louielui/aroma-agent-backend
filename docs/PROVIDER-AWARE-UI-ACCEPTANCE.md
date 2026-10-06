@@ -18,5 +18,15 @@ path and verify the saved evidence and image hashes. Missing or altered baseline
 evidence fails closed, without substituting a candidate or current live screen.
 Viewing and comparing images cannot dispatch work or approve adoption.
 
+Planning and task source readers tolerate unchanged Windows CRLF/stat differences
+without refreshing the host index. A sole unstaged `M` status is checked against
+the real raw Git diff with explicit Windows normalization; the committed blob and
+actual file must still match exactly after CRLF-to-LF normalization. Staged changes,
+unknown status shapes, mode changes, real byte changes and source revision drift
+remain rejected. The regression tests reproduce the false `source_dirty` rejection
+in a temporary repository and also reject actual edits and staged content even
+when the working file is restored. The first live failed attempt is retained;
+this fix does not rewrite or automatically retry it.
+
 This does not expand editable profiles, allow external browser access, change
 chat/model defaults or credit policy, or grant automatic live application.
