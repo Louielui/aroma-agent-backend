@@ -97,10 +97,10 @@ const HEALTH = Object.freeze({
  * what it actually registers equals this list. Add a builder there without adding it here, or
  * the reverse, and that test turns red.
  */
-const BUILDABLE_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'public_knowledge'])
+const BUILDABLE_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'public_knowledge', 'xiangxiang_operations'])
 
 /** Sources that need no credential because they never leave this machine. */
-const LOCAL_SOURCES = Object.freeze(['development_record'])
+const LOCAL_SOURCES = Object.freeze(['development_record', 'xiangxiang_operations'])
 
 /** The only source with an egress side: reading it sends the Owner's words outward. */
 const EGRESS_SOURCES = Object.freeze(['public_knowledge'])

@@ -35,7 +35,8 @@ const { buildWorkerPrompt } = require('./recoveryDecisionWorker')
 const { a4SemanticRoutingEnabled } = require('./a4Contract')
 
 /**
- * ⛔ THE RECOVERY WORKER'S MODEL IS PINNED, NOT INHERITED.
+ * The API-mode recovery worker remains pinned. Subscription mode explicitly uses
+ * the selected subscription adapter; it never falls back to a paid API.
  * It is a narrow, bounded classifier whose only job is 「which capability reaches the world the
  * main model just refused to read」. It was measured on this build and stays on it; letting it
  * follow the session model would silently re-benchmark a safety component.
@@ -44,7 +45,10 @@ const RECOVERY_WORKER_MODEL = 'claude-haiku-4-5-20251001'
 
 /**
  * ══════════════════════════════════════════════════════════════════════════════
- * ⛔ EVERY A4 ROLE IS PINNED TO THE MODEL ITS CONTRACT WAS VALIDATED ON.
+ * API MODE: each role remains pinned to the model its contract was validated on.
+ * SUBSCRIPTION MODE: the server supplies the selected subscription adapter. The
+ * role's frozen prompt, schema and fail-closed validators still apply. Provider
+ * availability is not evidence that a semantic contract passed acceptance.
  *
  * The first version of this composer handed the three verifiers the TURN'S MAIN ADAPTER. That
  * is a real defect, not a style point: `adapterFactory` defaults to Claude, so shipping it
@@ -141,14 +145,15 @@ function structuredCall (makeAdapter, role, name) {
 /**
  * Build A4's runtime dependency bundle.
  *
- * ⛔ THERE IS NO `adapter` PARAMETER, AND THAT IS THE FIX. The turn's conversational adapter is
- * not accepted here at all, so no future edit can quietly let the main model answer a verifier:
- * there is no channel to pass it through. A test asserts the module never mentions one.
+ * API composition uses pinned factories. Subscription composition requires an
+ * explicit server-owned factory and otherwise builds nothing. Request JSON never
+ * supplies an adapter or a factory.
  *
  * @param {object} [options]
  * @param {object} [options.env]
  * @param {function} [options.verifierAdapterFactory]  test seam — ({role, model, effort, apiKey}) => adapter
  * @param {function} [options.recoveryAdapterFactory]  test seam — (model) => adapter
+ * @param {function} [options.subscriptionAdapterFactory] server-selected subscription adapter
  * @returns {{deps: object|null, built: string[], skipped: {name:string, reason:string}[], roles: object}}
  */
 function createA4RuntimeDependencies (options = {}) {
@@ -167,10 +172,19 @@ function createA4RuntimeDependencies (options = {}) {
 
   const deps = {}
   const apiKey = env[PUBLIC_KEY_ENV]
-  const makeVerifier = options.verifierAdapterFactory || defaultVerifierAdapterFactory
+  // Subscription chat stays on the Owner's selected billing route. Role prompts and
+  // validators remain separate; the factory is server-owned, never request input.
+  const subscriptionFactory = env.CHAT_BACKEND === 'codex-subscription' ? options.subscriptionAdapterFactory : null
+  const roles = env.CHAT_BACKEND === 'codex-subscription'
+    ? Object.fromEntries(Object.keys(A4_ROLES).map(role => [role, { provider: 'selected_subscription', model: 'conversation_selection', effort: 'conversation_selection' }]))
+    : A4_ROLES
+  if (env.CHAT_BACKEND === 'codex-subscription' && typeof subscriptionFactory !== 'function') {
+    return { deps: null, built, skipped: [{ name: 'a4', reason: 'selected subscription adapter required' }], roles }
+  }
+  const makeVerifier = subscriptionFactory || options.verifierAdapterFactory || defaultVerifierAdapterFactory
 
   /**
-   * ⛔ NO KEY, NO VERIFIERS — AND NO SUBSTITUTE ANYWHERE.
+   * API mode requires a key. An explicit subscription factory requires no API key.
    *
    * The verifiers are simply absent, which lands each turn on its own runner's fail-closed
    * path: the resolver asks the Owner what he meant, the planner refuses to let anything leave.
@@ -180,7 +194,7 @@ function createA4RuntimeDependencies (options = {}) {
    * behaviour either, because legacy behaviour is 「answer anyway」, and answering without
    * establishing the world is the thing A4 exists to stop.
    */
-  if (!apiKey) {
+  if (!apiKey && !subscriptionFactory) {
     for (const role of ['sourceIntentResolver', 'finalVerifier', 'publicQueryPlanner']) {
       skipped.push({ name: role, reason: PUBLIC_KEY_ENV + ' not set' })
     }
@@ -212,7 +226,7 @@ function createA4RuntimeDependencies (options = {}) {
   }
 
   /**
-   * ⛔ THE RECOVERY WORKER STAYS EXACTLY WHERE IT WAS — Anthropic, Haiku 4.5, pinned. It has a
+   * In API mode the recovery worker stays on Anthropic, Haiku 4.5, pinned. It has a
    * different provider from the three verifiers ON PURPOSE: it exists because the GPT main
    * model failed the same recovery case repeatedly, so putting it on the same family it was
    * introduced to compensate for would undo the reason it exists. ClaudeAdapter's own defects
@@ -220,7 +234,7 @@ function createA4RuntimeDependencies (options = {}) {
    */
   const recoveryModel = options.recoveryWorkerModel || A4_ROLES.recoveryWorker.model
   deps.recoveryWorker = async (input) => {
-    const make = options.recoveryAdapterFactory ||
+    const make = subscriptionFactory || options.recoveryAdapterFactory ||
       ((model) => new (require('../adapters/ClaudeAdapter').ClaudeAdapter)({ model }))
     const a = make(recoveryModel)
     const r = await a.complete(buildWorkerPrompt(input), {
@@ -231,21 +245,21 @@ function createA4RuntimeDependencies (options = {}) {
   }
   built.push('recoveryWorker')
 
-  return { deps, built, skipped, roles: A4_ROLES }
+  return { deps, built, skipped, roles }
 }
 
 /**
  * ⛔ ONE CONTENT-FREE LINE SAYING WHAT A4 IS ACTUALLY MADE OF THIS PROCESS.
  * Names and reasons only — never a prompt, a schema, a model key or an Owner message.
  */
-function logA4Composition ({ built, skipped }, sink) {
+function logA4Composition ({ built, skipped, roles = A4_ROLES }, sink) {
   const line = {
     event: 'A4_COMPOSITION',
     timestamp: new Date().toISOString(),
     built: Array.isArray(built) ? built.slice().sort() : [],
     // ⛔ THE PINNED ROLE MAP, so a running process can be asked what its verifiers actually
     // are. Provider and model names only — never a key, a prompt or an Owner message.
-    roles: Object.fromEntries(Object.entries(A4_ROLES).map(([k, v]) => [k, v.provider + ':' + v.model])),
+    roles: Object.fromEntries(Object.entries(roles).map(([k, v]) => [k, v.provider + ':' + v.model])),
     skipped: Array.isArray(skipped) ? skipped.map((s) => ({ name: s.name, reason: s.reason })) : []
   }
   try { (sink || ((l) => console.log('[AROMA-A4-COMPOSITION]', JSON.stringify(l))))(line) } catch (_) {}

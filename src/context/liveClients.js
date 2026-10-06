@@ -39,7 +39,7 @@ const { a4SemanticRoutingEnabled } = require('../intake/a4Contract')
 // governed. It is now a first-class source subject to the ordinary rules — and to two extra
 // ones below — so activation is a decision someone makes, not a line someone has to add.
 const PUBLIC_KEY_ENV = 'OPENAI_API_KEY'
-const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record', 'public_knowledge'])
+const ALL_SOURCES = Object.freeze(['drive', 'gmail', 'calendar', 'github', 'aroma_system', 'development_record', 'public_knowledge', 'xiangxiang_operations'])
 
 /** Sources whose master+per-source flags are both exactly 'on'. */
 function enabledSources (env = process.env) {
@@ -67,6 +67,7 @@ function createLiveReadConnector (options = {}) {
     : googleAuthMod.service(name, version))
 
   const builders = {
+    xiangxiang_operations: () => require('./adapters/xiangxiangOperationsRead').createXiangxiangOperationsReadAdapter({ ...options.operationsOptions, env, clock: options.clock }),
     drive: () => createDriveReadAdapter({ client: googleSvc('drive', 'v3'), clock: options.clock }),
     gmail: () => createGmailReadAdapter({ client: googleSvc('gmail', 'v1'), clock: options.clock }),
     calendar: () => createCalendarReadAdapter({ client: googleSvc('calendar', 'v3'), clock: options.clock }),

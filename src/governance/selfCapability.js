@@ -65,6 +65,7 @@ const REGISTRY = Object.freeze([
   Object.freeze({ capability: 'calendar.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '加／改 Calendar 事件' }),
   Object.freeze({ capability: 'github.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '讀 GitHub' }),
   Object.freeze({ capability: 'github.write', kind: KIND.WRITE, implementation: IMPLEMENTATION.NOT_IMPLEMENTED, label: '改 GitHub' }),
+  Object.freeze({ capability: 'xiangxiang_operations.read', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: 'Read own settings, schedules, work, history and legacy usage; provider billing is not connected' }),
   Object.freeze({ capability: 'public_knowledge.search', kind: KIND.READ, implementation: IMPLEMENTATION.IMPLEMENTED, label: '搵公開資料' }),
   /**
    * ⛔ ONE VISUAL-INPUT CAPABILITY, NOT TWO. The product draws no line between 「貼圖」 and

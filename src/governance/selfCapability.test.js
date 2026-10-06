@@ -99,7 +99,8 @@ describe('S1 the registry is checked against real production surfaces', () => {
     const pairs = [
       ['gmail.read', 'context/adapters/gmailRead.js', 'createGmailReadAdapter'],
       ['drive.read', 'context/adapters/driveRead.js', 'createDriveReadAdapter'],
-      ['github.read', 'context/adapters/githubRead.js', 'createGithubReadAdapter']
+      ['github.read', 'context/adapters/githubRead.js', 'createGithubReadAdapter'],
+      ['xiangxiang_operations.read', 'context/adapters/xiangxiangOperationsRead.js', 'createXiangxiangOperationsReadAdapter']
     ]
     for (const [name, rel, factory] of pairs) {
       let m = []

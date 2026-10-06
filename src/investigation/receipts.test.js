@@ -1,0 +1,21 @@
+'use strict'
+const test = require('node:test'), assert = require('node:assert/strict')
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path'), { randomUUID } = require('node:crypto')
+const { createReceipts } = require('./receipts')
+test('durable receipts survive reopen, preserve partial evidence and reject duplicate request identities', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-receipts-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const id = randomUUID(), r = createReceipts({ dir }); r.begin(id, 'conversation1')
+  r.record(id, { state: 'reading', section: 'usage' })
+  r.record(id, { state: 'evaluating', investigation: { readOnly: true, sections: [{ section: 'billing', evidenceState: 'not_established' }] } })
+  r.finish(id, { reply: 'The charge cause is not established.' })
+  const got = createReceipts({ dir }).get(id)
+  assert.equal(got.state, 'completed'); assert.equal(got.investigation.sections[0].evidenceState, 'not_established')
+  assert.equal(got.events[1].section, 'usage'); assert.equal(got.reply, 'The charge cause is not established.')
+  assert.throws(() => r.begin(id, 'other'), /already_exists/)
+  assert.throws(() => r.begin('../escape', 'conversation1'), /invalid/)
+})
+test('a restarted process does not advertise an abandoned investigation as still working', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-receipts-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const id = randomUUID(), r = createReceipts({ dir }); r.begin(id, 'conversation1')
+  assert.equal(createReceipts({ dir }).get(id).state, 'interrupted')
+})

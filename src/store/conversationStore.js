@@ -154,7 +154,7 @@ function createConversationStore (options = {}) {
    * Called once per completed turn from the UI path and nowhere else. A turn is only
    * written after the reply exists, so a failed turn leaves no half-conversation behind.
    */
-  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null } = {}) {
+  function appendTurn ({ id, userText, replyText, servedBy = null, now = null, images, operatingRunId = null, developmentPlanRunId = null, codeDiagnosisRunId = null, codeRepairRunId = null, projectWorkRunId = null, taskPlanRunId = null, planningOffer = null, planningContext = null, investigationRunId = null } = {}) {
     if (!isValidId(id)) throw new Error('invalid_conversation_id')
     const attachments = images === undefined ? null : require('../chat/imageAttachments').validateImages(images)
     const ts = now || new Date().toISOString()
@@ -178,6 +178,7 @@ function createConversationStore (options = {}) {
 
     conversation.messages.push({ role: 'user', content: String(userText == null ? '' : userText), servedBy: null, ts, ...(attachments ? { images: attachments } : {}) })
     const assistantMessage = { role: 'assistant', content: String(replyText == null ? '' : replyText), servedBy: servedBy || null, ts }
+    if (require('../core/operating/runStore').ID.test(investigationRunId || '')) assistantMessage.investigationRunId = investigationRunId
     if (require('../core/taskPlanner/continuation').validOffer(planningOffer, planningOffer?.revision)) assistantMessage.planningOffer = structuredClone(planningOffer)
     if (require('../core/taskPlanner/dialogueContext').validContext(planningContext, planningContext?.revision, id)) assistantMessage.planningContext = structuredClone(planningContext)
     if (typeof operatingRunId === 'string' && /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(operatingRunId)) assistantMessage.operatingRunId = operatingRunId

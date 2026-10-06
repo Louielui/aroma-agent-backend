@@ -1089,6 +1089,7 @@
           } else {
             var tEl = addBot(text, c)
             if (m[i] && m[i].taskPlanRunId) renderTaskPlan(tEl, m[i].taskPlanRunId)
+            if (m[i] && m[i].investigationRunId) loadInvestigation(tEl, m[i].investigationRunId)
             if (m[i] && m[i].projectWorkRunId) renderProjectWork(tEl, m[i].projectWorkRunId, null)
             if (m[i] && m[i].operatingRunId) renderOperatingRun(tEl, m[i].operatingRunId)
             if (m[i] && m[i].developmentPlanRunId) renderDevelopmentPlanLink(tEl, m[i].developmentPlanRunId)
@@ -1216,6 +1217,35 @@
   function addMeta (host, text) { host.appendChild(el('div', 'meta', text)) }
 
   // A typing indicator the moment a message is sent — never a silent wait.
+  function investigationSource (name) {
+    var names = { configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), usage: t('investigation.usage'), billing: t('investigation.billing') }
+    return names[name] || t('investigation.operations')
+  }
+  function renderInvestigation (turnEl, report) {
+    if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
+    var details = el('details', 'investigation-evidence')
+    details.appendChild(el('summary', '', t('investigation.title')))
+    var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
+    var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
+    ;(report.sections || []).forEach(function (section) {
+      var row = el('section', 'investigation-source')
+      row.appendChild(el('strong', '', investigationSource(section.section)))
+      row.appendChild(el('p', '', (readStates[section.state] || readStates.unavailable) + ' · ' + (levels[section.evidenceState] || levels.not_established)))
+      var records = el('details'); records.appendChild(el('summary', '', t('investigation.details')))
+      records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
+      row.appendChild(records); details.appendChild(row)
+    })
+    turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
+    turnEl.body.appendChild(details)
+    turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
+    var link = el('a', '', t('investigation.settings')); link.href = '/model-center'; turnEl.body.appendChild(link)
+  }
+  function loadInvestigation (turnEl, id) {
+    fetch('/api/v1/demo/investigations/' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+      .then(function (data) { if (data.run && data.run.investigation) renderInvestigation(turnEl, data.run.investigation); else addMeta(turnEl.body, t('investigation.failed')) })
+      .catch(function () { addMeta(turnEl.body, t('investigation.failed')) })
+  }
   function addTyping (conv) {
     var tEl = turn('bot', conv)
     var dots = el('div', 'typing')
@@ -1231,6 +1261,15 @@
       else if (state === 'completed') stage.textContent = t('website.completed')
       else if (state === 'failed' || state === 'needs_input') stage.textContent = t('website.stopped')
       else stage.textContent = ''
+    }
+    tEl.setInvestigationStage = function (run) {
+      if (!run) return
+      var last = run.events && run.events[run.events.length - 1]
+      if (run.state === 'planning') stage.textContent = t('investigation.planning')
+      else if (run.state === 'reading' || run.state === 'source_complete') stage.textContent = t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'evaluating') stage.textContent = t('investigation.evaluating')
+      else if (run.state === 'interrupted') stage.textContent = t('investigation.interrupted')
+      else if (run.state === 'failed') stage.textContent = t('investigation.failed')
     }
     var started = Date.now()
     function updateWait () { waited.textContent = t('chat.waiting', { seconds: Math.floor((Date.now() - started) / 1000) }) }
@@ -1893,9 +1932,13 @@
     var websitePoll = websiteRequestId && setInterval(function () {
       if (statusBusy) return
       statusBusy = true
-      fetch('/api/v1/demo/website-status/' + websiteRequestId, { credentials: 'same-origin' })
-        .then(function (r) { return r.ok ? r.json() : null })
-        .then(function (v) { if (v && v.run) typing.setWebsiteStage(v.run.state) })
+      Promise.all(['/api/v1/demo/website-status/', '/api/v1/demo/investigations/'].map(function (url) {
+        return fetch(url + websiteRequestId, { credentials: 'same-origin' }).then(function (r) { return r.ok ? r.json() : null })
+      }))
+        .then(function (v) {
+          if (v[0] && v[0].run) typing.setWebsiteStage(v[0].run.state)
+          if (v[1] && v[1].run) typing.setInvestigationStage(v[1].run)
+        })
         .catch(function () {}).then(function () { statusBusy = false })
     }, 2000)
     var stopWebsitePoll = function () { if (websitePoll) clearInterval(websitePoll) }
@@ -1992,6 +2035,11 @@
     if (status === 400) return addError(res.error && res.error.message ? res.error.message : t('err.badInput'), conv)
     if (status >= 500 || (res.error && !res.blocked)) {
       return addError(errorLine(res), conv)
+    }
+    if (res.investigation) {
+      var investigationTurn = addBot(res.reply, conv)
+      renderInvestigation(investigationTurn, res.investigation)
+      return investigationTurn
     }
     if (res.taskPlanRunId) {
       var taskTurn = addBot(res.reply, conv)

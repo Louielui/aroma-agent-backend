@@ -532,6 +532,7 @@ function aromaMethodFor (text) {
  */
 const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
 function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null } = {}) {
+  if (source === 'xiangxiang_operations') return { method: 'readInvestigation', params: { query: String(message || '').slice(0, 2000) } }
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
   // Intent is read from what the Owner actually typed; the keywords are the fallback for
@@ -874,6 +875,7 @@ async function runStep (connector, source, step, caps) {
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
+  if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 6, maxItemChars: 2400, maxLineChars: 2700, maxTotalChars: 22000 }
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], retrievedItemsBySource: [], evidenceSets: [] }

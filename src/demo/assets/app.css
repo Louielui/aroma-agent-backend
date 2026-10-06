@@ -1009,3 +1009,9 @@ button[disabled] { opacity: .45; cursor: default; }
 @media (max-width: 600px) {
   #picker-menu { position: fixed; left: 16px; right: 16px; bottom: 128px; width: auto; max-height: 50vh; }
 }
+/* Investigation receipts stay compact; raw source data is opt-in and bounded. */
+.investigation-evidence { margin: 12px 0; border: 1px solid var(--line, #e5e5e5); border-radius: 12px; padding: 12px; }
+.investigation-source { padding: 10px 0; border-bottom: 1px solid var(--line, #e5e5e5); }
+.investigation-source:last-child { border-bottom: 0; }
+.investigation-source p { margin: 4px 0; }
+.investigation-source pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 280px; overflow-y: auto; font-size: var(--small-size); }

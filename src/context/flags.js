@@ -11,6 +11,7 @@
  */
 
 const SOURCE_FLAG = Object.freeze({
+  xiangxiang_operations: 'CONTEXT_XIANGXIANG_OPERATIONS',
   github: 'CONTEXT_GITHUB',
   drive: 'CONTEXT_DRIVE',
   gmail: 'CONTEXT_GMAIL',

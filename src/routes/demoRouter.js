@@ -221,6 +221,12 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   const contextReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
+  const investigationReceipts = require('../investigation/receipts').createReceipts()
+  router.get('/api/v1/demo/investigations/:id', demoGuard, (req, res) => {
+    if (!require('../core/operating/runStore').ID.test(req.params.id)) return res.status(400).json({ error: 'invalid_run_id' })
+    try { res.set('Cache-Control', 'no-store').json({ run: investigationReceipts.get(req.params.id) }) }
+    catch (_) { res.status(503).json({ error: 'investigation_unavailable' }) }
+  })
   // This image-only chat entrance never reaches tools, mail reads, planning,
   // execution, the research archive or automatic long-term memory ingestion.
   router.post('/api/v1/demo/image-intake', demoGuard, async (req, res) => {
@@ -809,6 +815,16 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
+        if (interactionMode === 'chat') opts.ownerInvestigation = true
+        const investigationId = require('../core/operating/runStore').ID.test(req.body.websiteRequestId || '') ? req.body.websiteRequestId : correlationId
+        let investigationStarted = false, investigationSaveFailed = false
+        if (interactionMode === 'chat') opts.onInvestigation = event => {
+          if (process.env.CONTEXT_XIANGXIANG_OPERATIONS !== 'on' || investigationSaveFailed) return
+          try {
+            if (!investigationStarted) { investigationReceipts.begin(investigationId, req.body.conversationId || null); investigationStarted = true }
+            investigationReceipts.record(investigationId, event)
+          } catch (_) { investigationSaveFailed = true }
+        }
         if (interactionMode === 'chat') opts.chatLevel = req.body.chatLevel || 'medium'
         if (interactionMode === 'chat' && req.body.chatModel !== undefined) opts.chatModel = req.body.chatModel
         if (interactionMode === 'chat' && require('../store/websiteRunStore').ID.test(req.body.websiteRequestId || '')) opts.websiteRequestId = req.body.websiteRequestId
@@ -844,7 +860,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
             // Test seam only — production sets nothing and gets the pinned role adapters.
             verifierAdapterFactory: req.app.locals && req.app.locals.a4VerifierAdapterFactory
           })
-          if (composed.deps) {
+          if (composed.deps && process.env.CHAT_BACKEND !== 'codex-subscription') {
             a4Runtime.logA4Composition(composed, req.app.locals && req.app.locals.a4CompositionSink)
             opts.readContextDeps = Object.assign(
               {},
@@ -894,7 +910,17 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         }
 
         // ALWAYS 4-arg — never the legacy 3-arg processIntake.
-        const result = await processIntakeFn(message, adapter, history || [], opts)
+        let result
+        try { result = await processIntakeFn(message, adapter, history || [], opts) }
+        catch (e) { if (investigationStarted) { try { investigationReceipts.finish(investigationId, null, true) } catch (_) {} } throw e }
+        if (result?.investigation) result.investigation.persistenceState = investigationStarted && !investigationSaveFailed ? 'saved' : 'unavailable'
+        if (investigationStarted && !investigationSaveFailed) {
+          try { investigationReceipts.finish(investigationId, result) } catch (_) { investigationSaveFailed = true }
+        }
+        if (result?.investigation) {
+          if (investigationStarted && !investigationSaveFailed) result.investigationRunId = investigationId
+          else result.investigation.persistenceState = 'unavailable'
+        }
 
         // ── THE OFFER DECISION, COMPUTED BEFORE THE LINE IS WRITTEN ───────────
         // It used to be computed a hundred lines below, AFTER emit() had already written
@@ -1140,6 +1166,7 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
                 id: conversationId,
                 userText: message,
                 replyText: shown,
+                investigationRunId: withOffer.investigationRunId || null,
                 planningOffer: planningLane ? planContinuation.makeOffer(message, withOffer.mode, conversationStore.get?.(conversationId)?.messages?.at(-1)?.planningOffer, planningRevision) : null,
                 servedBy: (telemetry && typeof telemetry.model === 'string' && telemetry.model) ? telemetry.model : null
               })
