@@ -54,6 +54,7 @@ test('actual central settings and independent bilingual topic controls persist, 
       await email.page.reload(); await email.page.waitForFunction(() => document.getElementById('picker-label').textContent === 'Claude Sonnet 5.5' && document.getElementById('chat-level').value === 'low')
       await email.page.locator('#brain-mode').selectOption('central'); await email.page.waitForFunction(() => document.getElementById('picker-label').textContent === 'GPT-6.1 Sol')
       for (const p of [central.page, email.page, dev.page]) assert.ok(await p.evaluate(() => document.documentElement.scrollWidth <= innerWidth))
+      if (width < 600) for (const id of ['brain-mode', 'brain-company', 'picker-wrap', 'chat-level']) assert.ok((await email.page.locator('#' + id).boundingBox()).width > 90, id + ' remains readable on mobile')
       if (process.env.BRAIN_SCREEN_DIR) { await central.page.screenshot({ path: path.join(process.env.BRAIN_SCREEN_DIR, 'model-center-' + lang + '-' + width + '.png'), fullPage: true }); await email.page.screenshot({ path: path.join(process.env.BRAIN_SCREEN_DIR, 'topic-model-' + lang + '-' + width + '.png') }) }
       for (const v of [central, email, dev]) await v.c.close()
       await center.saveSelection('topic', 'email', { revision: center.selection('topic', 'email').revision, mode: 'central' })

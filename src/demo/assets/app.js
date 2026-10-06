@@ -159,7 +159,6 @@
 
   var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
   var CENTRAL_MODELS = /*MODEL_CENTER*/
-  if (CENTRAL_MODELS) document.body.classList.add('central-models')
   var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null
   var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
   var chatLevel = document.getElementById('chat-level')
@@ -2970,6 +2969,7 @@
   document.getElementById('open-company-access').addEventListener('click', function () { window.location.href = '/company-access' })
   var sidebarLabels = { daily: t('sidebarGroup.daily'), development: t('sidebarGroup.development'), management: t('sidebarGroup.management') }
   var sidebarController = XiangxiangSidebar.mount(document, sidebarLabels)
+  if (CENTRAL_MODELS) document.body.classList.add('central-models')
 
   /* ── SETTINGS SHEET ────────────────────────────────────────────────────────
    * The same three settings as /settings, opened in this window over the conversation.
