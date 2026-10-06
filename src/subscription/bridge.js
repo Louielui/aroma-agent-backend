@@ -33,6 +33,19 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
   let busy = false; let memoryBusy = false
   const session = createSession(clientOptions)
   const memorySession = createSession(memoryClientOptions)
+  const catalogueSession = createSession({ ...clientOptions, timeoutMs: 20000 })
+  let cataloguePending = null, catalogueController = null
+  function readCatalogue () {
+    if (!cataloguePending) {
+      catalogueController = new AbortController()
+      const options = { ...clientOptions, session: catalogueSession, signal: AbortSignal.any([catalogueController.signal, AbortSignal.timeout(25000)]) }
+      cataloguePending = Promise.allSettled([Promise.resolve().then(() => modelsFn(options)), Promise.resolve().then(() => claudeModelsFn(options))]).then(([gpt, claude]) => {
+        const gptModels = gpt.status === 'fulfilled' ? gpt.value.models : require('./chatModels').CHAT_MODELS.map(m => ({ ...m, available: false, efforts: [] }))
+        return { billing: 'subscriptions', defaultModel: DEFAULT_BRAIN_MODEL, models: [...(claude.status === 'fulfilled' ? claude.value.models : [{ model: DEFAULT_BRAIN_MODEL, name: 'Claude Sonnet', available: false, efforts: [] }]), ...gptModels] }
+      }).finally(() => { cataloguePending = null; catalogueController = null })
+    }
+    return cataloguePending
+  }
   const server = http.createServer(async (req, res) => {
     const reply = (status, body) => {
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
@@ -41,9 +54,12 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
     if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
-    if (!isStore && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
+    const isCatalogue = req.url === '/models'
+    // Closed account metadata uses its own single-flight session. Reading it
+    // neither acquires nor releases the execution lane or dispatches a turn.
+    if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
     if (req.headers['content-type'] !== 'application/json') { reply(415, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (isMemory) memoryBusy = true; else if (!isStore) busy = true
+    if (isMemory) memoryBusy = true; else if (!isStore && !isCatalogue) busy = true
     const controller = new AbortController()
     res.on('close', () => { if (!res.writableFinished) controller.abort() })
     const options = { ...(isMemory ? memoryClientOptions : clientOptions), session: isMemory ? memorySession : session, signal: controller.signal }
@@ -136,17 +152,15 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         reply(200, await (isClaudeModel(input.model) ? claudeCheckFn : checkFn)({ ...options, ...input }))
       } else if (req.url === '/models') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }
-        const [gpt, claude] = await Promise.allSettled([modelsFn(options), claudeModelsFn(options)])
-        const gptModels = gpt.status === 'fulfilled' ? gpt.value.models : require('./chatModels').CHAT_MODELS.map(m => ({ ...m, available: false, efforts: [] }))
-        reply(200, { billing: 'subscriptions', defaultModel: DEFAULT_BRAIN_MODEL, models: [...(claude.status === 'fulfilled' ? claude.value.models : [{ model: DEFAULT_BRAIN_MODEL, name: 'Claude Sonnet', available: false, efforts: [] }]), ...gptModels] })
+        reply(200, await readCatalogue())
       } else reply(200, await (isClaudeModel(input?.model) ? claudeFn : completeFn)(options, validateInput(input)))
     } catch (error) {
       const safe = error instanceof SubscriptionError ? error : new SubscriptionError()
       reply(safe.code === 'subscription_limit_reached' ? 429 : 503, { code: safe.code })
-    } finally { if (isMemory) memoryBusy = false; else if (!isStore) busy = false }
+    } finally { if (isMemory) memoryBusy = false; else if (!isStore && !isCatalogue) busy = false }
   })
   server.requestTimeout = 150000
-  server.on('close', () => { session.close(); memorySession.close() })
+  server.on('close', () => { catalogueController?.abort(); catalogueSession.close(); session.close(); memorySession.close() })
   server.headersTimeout = 10000
   return server
 }

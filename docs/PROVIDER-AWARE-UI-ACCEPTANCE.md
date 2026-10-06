@@ -28,5 +28,13 @@ in a temporary repository and also reject actual edits and staged content even
 when the working file is restored. The first live failed attempt is retained;
 this fix does not rewrite or automatically retry it.
 
+The authenticated empty-shape `/models` bridge route is read-only account
+metadata. It uses a separate bounded subscription session and coalesces concurrent
+reads, without acquiring or releasing the execution lane. Catalogue reads remain
+available while task/status requests or workers are active; chat and execution
+requests still retain their existing overlap guards. The metadata reader starts
+no inference turn, exposes no credentials, and does not cache failed availability
+as a permanent account state. Other bridge routes keep their original policy.
+
 This does not expand editable profiles, allow external browser access, change
 chat/model defaults or credit policy, or grant automatic live application.
