@@ -217,7 +217,7 @@ function buildWorkRequestResolution ({ req, message, offerDecision, conversation
 function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn = processIntake, conversationStore = INERT_CONVERSATION_STORE, readBacklogFn = null, backlogTimeoutMs = 2500, errandStoreFn = null, operatingManager = null, memoryJournal = null, mailChat = null, liveContext = null, developmentPlan = null, codeDiagnosis = null, codeRepair = null, chatWork = null, taskPlanner = null, taskDialogue = null, imageAdapterFn = selection => {
   if (process.env.CHAT_BACKEND !== 'codex-subscription') throw Error('image_chat_unavailable')
   return new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(selection)
-}, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
+}, modelCenter = null, planningRevision = require('../governance/bootCommit').BOOT_COMMIT, modelsFn = async () => new (require('../adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models() } = {}) {
   const contextReceipts = new Map()
   const chatWorkReceipts = new Map()
   const router = express.Router()
@@ -238,6 +238,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
     if (imageOwnerSession) pendingResolutions.supersede(imageOwnerSession, input.conversationId)
     try {
       const existing = conversationStore.get(input.conversationId)
+      if (modelCenter) {
+        const chosen = modelCenter.resolveConversation(input.conversationId)
+        input = { ...input, chatModel: chosen.model, chatLevel: chosen.effort }
+      }
       const adapter = imageAdapterFn({ model: input.chatModel || require('../subscription/chatModels').DEFAULT_BRAIN_MODEL, effort: input.chatLevel || require('../subscription/chatModels').DEFAULT_EFFORT })
       const result = await require('../chat/imageChat').processImageChat({ message: input.message.trim(), images, history: existing?.messages || [] }, adapter)
       let historySaved = true
@@ -485,7 +489,14 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
   router.get('/api/v1/demo/models', demoGuard, async (req, res) => {
     res.setHeader('Cache-Control', 'no-store')
     if (process.env.CHAT_BACKEND !== 'codex-subscription') return res.status(503).json({ code: 'subscription_unavailable' })
-    try { res.json(await modelsFn()) }
+    try {
+      const catalog = await modelsFn()
+      if (!modelCenter) return res.json(catalog)
+      const topic = req.get('X-Xiangxiang-Topic'), cid = req.get('X-Xiangxiang-Conversation')
+      const settings = modelCenter.read()
+      const selection = topic ? modelCenter.selection('topic', topic) : cid ? modelCenter.selection('conversation', cid) : null
+      res.json({ ...catalog, defaultModel: settings.brain.model, central: settings.brain, centralRevision: settings.revision, selection })
+    }
     catch (_) { res.status(503).json({ code: 'subscription_unavailable' }) }
   })
 
@@ -529,6 +540,16 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
       if (!errors.isEmpty()) {
         emit('validation_rejected', 400, 'validation_failed')
         return res.status(400).json({ error: 'Validation failed', details: errors.array() })
+      }
+
+      // Resolve once before any asynchronous routing/model work. The immutable
+      // selection belongs to this accepted request, not to a later settings edit.
+      if (modelCenter && process.env.CHAT_BACKEND === 'codex-subscription') {
+        try {
+          if (!isValidConversationId(req.body.conversationId)) throw Error('invalid_request')
+          const chosen = modelCenter.resolveConversation(req.body.conversationId)
+          req.body = { ...req.body, chatModel: chosen.model, chatLevel: chosen.effort }
+        } catch (_) { return res.status(503).json({ error: { message: t('brain.failed'), retryable: false } }) }
       }
 
       const { message, contextCard, providerHint } = req.body

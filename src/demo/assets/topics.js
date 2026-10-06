@@ -80,6 +80,7 @@
     })
     labels()
     return {
+      topic: topic,
       load: function () { return loaded },
       link: async function (id) { try { await loaded; var result = await api('/conversations', 'POST', { id: id }); data.conversationIds = result.workspace.conversationIds; data.lastConversationId = id; return true } catch (_) { status.textContent = t('topic.saveFailed'); return false } },
       selected: function (id) { if (data && data.conversationIds.includes(id) && id !== data.lastConversationId) this.link(id) },

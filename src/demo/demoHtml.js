@@ -133,7 +133,7 @@ function buildDemoHtml () {
   return assemblePage({ template: readAsset('index.html'), i18n: require('../i18n/browserResolver').browserI18nSource(),
     css: readAsset('app.css'), sidebarCss: readAsset('sidebar.css'), sidebar: readAsset('sidebar.js'), topics: readAsset('topics.js'), app: readAsset('app.js'),
     dot: inlineSvg('dot.svg'), favicon: iconDataUri(), sourceLabels: JSON.parse(readSourceLabelsJson()), buildStamp: BUILD_STAMP,
-    subscription: process.env.CHAT_BACKEND === 'codex-subscription' })
+    subscription: process.env.CHAT_BACKEND === 'codex-subscription', modelCenter: true })
 }
 
 const DEMO_HTML = buildDemoHtml()

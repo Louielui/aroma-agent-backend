@@ -8,6 +8,8 @@
    * exactly where nobody would look for the disagreement.
    */
   var t = createResolver({ catalogue: CATALOGUE, locale: INITIAL_LOCALE })
+  var modelCenterLink = document.getElementById('model-center-link')
+  if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
 
   // ⛔ Thunks, not key strings — `t(LABELS[key])` would be a DYNAMIC key (HR-48).
   var LABELS = {

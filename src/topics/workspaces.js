@@ -56,6 +56,10 @@ function createTopicStore ({ dataDir }) {
     if (!n) throw Error('note_not_found'); if (n.revision !== input.revision) throw Error('revision_conflict')
     Object.assign(n, { state: input.state, nextStep: input.nextStep, revision: n.revision + 1, updatedAt: new Date().toISOString() }); write(d); return structuredClone(n)
   }
-  return { get, link, createNote, updateNote }
+  function topicForConversation (id) {
+    if (!isValidId(id)) throw Error('invalid_request')
+    return Object.entries(read().topics).find(([, row]) => row.conversationIds.includes(id))?.[0] || null
+  }
+  return { get, link, createNote, updateNote, topicForConversation }
 }
 module.exports = { TOPICS, STATES, createTopicStore }

@@ -1184,8 +1184,14 @@ function createApp (options = {}) {
   })
 
   const capturedConversationStore = require('./memory/capture').wrapConversationStore(realConversationStore, memoryCapture)
+  const topicStore = require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() })
+  const brainCatalogue = () => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)().models()
+  const modelCenter = require('./modelCenter/service').createModelCenter({ dataDir: require('./store/dataDir').resolveDataDir(), catalogue: brainCatalogue, topicForConversation: topicStore.topicForConversation })
+  app.use('/model-center', requireOwner)
+  app.use('/api/v1/model-center', requireOwner)
+  app.use(require('./modelCenter/routes').createModelCenterRouter({ center: modelCenter, catalogue: brainCatalogue }))
   app.use('/api/v1/topic-workspaces', requireOwner, require('./topics/routes').createTopicRouter({
-    store: require('./topics/workspaces').createTopicStore({ dataDir: require('./store/dataDir').resolveDataDir() }),
+    store: topicStore,
     conversations: capturedConversationStore
   }))
   const taskDialogue = opts.taskDialogue || (process.env.CHAT_BACKEND === 'codex-subscription' ? require('./core/taskPlanner/dialogue').createDialogue({
@@ -1194,6 +1200,7 @@ function createApp (options = {}) {
     receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
   }) : null)
   app.use(createDemoRouter({
+    modelCenter,
     liveContext,
     taskPlanner,
     taskDialogue,

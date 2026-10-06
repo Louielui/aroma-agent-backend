@@ -55,7 +55,7 @@
       item.appendChild(remove); imagePreview.appendChild(item)
     })
     imagePreview.classList.toggle('hidden', !pictures.length && !(active && active.imagePreparing))
-    send.disabled = pending || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)
+    send.disabled = pending || brainSaving || (SUBSCRIPTION_CHAT && CENTRAL_MODELS && !brainReady) || !!(active && active.imagePreparing) || (!msg.value.trim() && !pictures.length)
     imageFiles.disabled = pending
   }
   function normalizeImage(file) {
@@ -158,6 +158,10 @@
   var SOURCE_TEXT = READ_SOURCES.join(t('punct.sourceSep')) + t('provider.pastDecisions')
 
   var SUBSCRIPTION_CHAT = /*SUBSCRIPTION_CHAT*/
+  var CENTRAL_MODELS = /*MODEL_CENTER*/
+  if (CENTRAL_MODELS) document.body.classList.add('central-models')
+  var brainSelection = null, brainSaving = false, brainReady = false, modelsPromise = null
+  var brainMode = document.getElementById('brain-mode'), brainStatus = document.getElementById('brain-status')
   var chatLevel = document.getElementById('chat-level')
   if (chatLevel && SUBSCRIPTION_CHAT) chatLevel.classList.remove('hidden')
   var PROVIDERS = SUBSCRIPTION_CHAT ? [
@@ -896,6 +900,7 @@
     markHome(false)
     showComposer(true)
     active = c
+    if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) { brainReady = false; brainSelection = null; loadChatModels() }
     imageNotice(''); refreshImages()
     clear(log)
     log.appendChild(c.thread)
@@ -1815,6 +1820,7 @@
     refreshImages()
     if (picker) picker.disabled = p
     if (companyPicker) companyPicker.disabled = p
+    if (brainMode) brainMode.disabled = p || brainSaving
     renderEfforts()
   }
 
@@ -1823,7 +1829,7 @@
   }
 
   async function submit () {
-    if (pending) return
+    if (pending || brainSaving) return
     /**
      * ⛔ TWO THINGS BEFORE ANYTHING IS SENT, AND BOTH ARE HR-42.
      *
@@ -1855,6 +1861,11 @@
       var linked = await topicController.link(topicConversation.cid)
       setPending(false)
       if (!linked || active !== topicConversation) return
+    }
+    if (SUBSCRIPTION_CHAT && CENTRAL_MODELS) {
+      var modelConversation = active
+      await loadChatModels()
+      if (!brainReady || active !== modelConversation) return
     }
     clearErrors()
     if (active.history.length === 0) {
@@ -2811,10 +2822,18 @@
     levels.forEach(function (level) { var o = el('option', null, labels[level] || level); o.value = level; chatLevel.appendChild(o) })
     if (!levels.length) { var unknown = el('option', null, t('provider.modelsUnavailable')); unknown.value = 'auto'; chatLevel.appendChild(unknown) }
     chatLevel.value = selected
-    chatLevel.disabled = pending || pv.supportsEffort === false || !levels.length
+    chatLevel.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) || pv.supportsEffort === false || !levels.length
   }
   function renderPicker () {
-    if (SUBSCRIPTION_CHAT && companyPicker) { companyPicker.classList.remove('hidden'); companyPicker.value = brainCompany(chatModel); companyPicker.disabled = pending }
+    if (SUBSCRIPTION_CHAT && companyPicker) { companyPicker.classList.remove('hidden'); companyPicker.value = brainCompany(chatModel); companyPicker.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) }
+    if (brainMode && CENTRAL_MODELS && brainSelection) {
+      brainMode.classList.remove('hidden'); clear(brainMode)
+      var follow = el('option', null, t('brain.follow')); follow.value = 'central'; brainMode.appendChild(follow)
+      var custom = el('option', null, t('brain.custom')); custom.value = 'custom'; brainMode.appendChild(custom)
+      brainMode.value = brainSelection.mode; brainMode.disabled = pending || brainSaving
+      brainMode.setAttribute('aria-label', t('brain.model'))
+    }
+    else if (brainMode) brainMode.classList.add('hidden')
     renderEfforts()
     pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
     pickerLabel.setAttribute('data-compact-label', currentProvider().modelName || currentProvider().name)
@@ -2828,12 +2847,13 @@
         var b = el('button', 'opt' + (selected ? ' active' : ''))
         b.setAttribute('type', 'button')
         b.setAttribute('role', 'option')
-        b.disabled = pending || pv.available === false
+        b.disabled = pending || brainSaving || (CENTRAL_MODELS && !brainSelection) || pv.available === false
         b.setAttribute('aria-selected', selected ? 'true' : 'false')
         b.appendChild(el('div', 'opt-name', (SUBSCRIPTION_CHAT ? pv.modelName : pv.name) + (selected ? ' ✓' : '')))
         b.appendChild(el('div', 'opt-note' + (pv.warn ? ' warn' : ''), pv.note))
         b.addEventListener('click', function () {
           if (pending) return
+          if (CENTRAL_MODELS && brainSelection) { closePicker(); saveBrainSelection('custom', pv.model, pv.defaultEffort || 'medium'); return }
           provider = pv.id
           if (SUBSCRIPTION_CHAT && pv.model) { chatModel = pv.model; lastCompanyModel[pv.id] = chatModel; try { localStorage.setItem('xiangxiang-brain-v1', chatModel) } catch (_) {} }
           closePicker()
@@ -2845,12 +2865,18 @@
     if (SUBSCRIPTION_CHAT) pickerMenu.appendChild(el('div', 'opt-note subscription-note', brainCompany(chatModel) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote')))
   }
   function loadChatModels () {
-    if (!SUBSCRIPTION_CHAT || modelsLoading || pending) return
+    if (!SUBSCRIPTION_CHAT || pending) return modelsPromise
+    if (modelsLoading) return modelsPromise
     modelsLoading = true
-    fetch('/api/v1/demo/models', { credentials: 'same-origin' })
+    var loadingConversation = active && active.cid
+    var selectionHeaders = CENTRAL_MODELS && loadingConversation ? { 'X-Xiangxiang-Conversation': loadingConversation } : {}
+    if (CENTRAL_MODELS && topicController) selectionHeaders['X-Xiangxiang-Topic'] = topicController.topic
+    modelsPromise = fetch('/api/v1/demo/models', { credentials: 'same-origin', headers: selectionHeaders })
       .then(function (r) { if (!r.ok) throw Error('models_unavailable'); return r.json() })
       .then(function (catalog) {
         if (!['subscriptions', 'chatgpt-subscription'].includes(catalog.billing) || !Array.isArray(catalog.models) || !catalog.models.length) throw Error('models_unavailable')
+        if (CENTRAL_MODELS && loadingConversation && (!catalog.selection || !catalog.selection.effective)) throw Error('models_unavailable')
+        if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return
         var notes = { 'claude-sonnet': t('provider.claudeSubscriptionNote'), 'gpt-6.1-sol': t('provider.solLatestNote'), 'gpt-6-astra': t('provider.astraNote'),
           'gpt-6-luna': t('provider.lunaNote'), 'gpt-6-sol': t('provider.solPreviousNote') }
         PROVIDERS = catalog.models.map(function (row) {
@@ -2858,19 +2884,52 @@
             name: t('provider.subscriptionModel', { model: row.name }),
             note: row.available ? (notes[row.model] || (brainCompany(row.model) === 'claude' ? t('provider.claudeSubscriptionNote') : t('provider.subscriptionNote'))) : t('provider.modelUnavailable') }
         })
+        if (CENTRAL_MODELS && catalog.selection) {
+          brainSelection = catalog.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
+          var chosen = PROVIDERS.find(function (p) { return p.model === chatModel })
+          brainReady = !!chosen && chosen.available && (chosen.supportsEffort === false ? brainSelection.effective.effort === 'auto' : chosen.efforts.includes(brainSelection.effective.effort))
+          if (brainStatus) brainStatus.textContent = brainReady ? '' : t('brain.failed')
+        }
         renderPicker()
       }).catch(function () {
+        if (CENTRAL_MODELS) { brainReady = false; if (brainStatus) brainStatus.textContent = t('brain.failed') }
         renderPicker()
         pickerMenu.appendChild(el('div', 'opt-note', t('provider.modelsUnavailable')))
-      }).then(function () { modelsLoading = false })
+      }).then(function () { modelsLoading = false; refreshImages(); if (CENTRAL_MODELS && loadingConversation !== (active && active.cid)) return loadChatModels() })
+    return modelsPromise
+  }
+  async function saveBrainSelection (mode, model, effort) {
+    if (pending || brainSaving || !brainSelection) return
+    var captured = brainSelection, conversation = active
+    brainSaving = true; refreshImages(); renderPicker(); renderEfforts()
+    try {
+      var body = mode === 'central' ? { mode: mode, revision: captured.revision } : { mode: mode, revision: captured.revision, model: model, effort: effort }
+      var r = await fetch('/api/v1/model-center/selection/' + captured.scope.kind + '/' + encodeURIComponent(captured.scope.id), { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(25000) })
+      if (!r.ok) throw Error('settings_failed')
+      var value = await r.json()
+      if (active === conversation) {
+        brainSelection = value.selection; chatModel = brainSelection.effective.model; modelEfforts[chatModel] = brainSelection.effective.effort
+        var selectedProvider = PROVIDERS.find(function (p) { return p.model === chatModel })
+        brainReady = !!selectedProvider && selectedProvider.available && (selectedProvider.supportsEffort === false ? brainSelection.effective.effort === 'auto' : selectedProvider.efforts.includes(brainSelection.effective.effort))
+        if (brainStatus) brainStatus.textContent = brainReady ? t('brain.selectionSaved') : t('brain.failed')
+      }
+    } catch (_) { if (brainStatus) brainStatus.textContent = t('brain.failed') }
+    finally { brainSaving = false; renderPicker(); refreshImages(); if (active !== conversation) loadChatModels() }
   }
   function openPicker () { pickerMenu.className = ''; picker.setAttribute('aria-expanded', 'true') }
   function closePicker () { pickerMenu.className = 'hidden'; picker.setAttribute('aria-expanded', 'false') }
-  if (chatLevel) chatLevel.addEventListener('change', function () { if (!pending) modelEfforts[chatModel] = chatLevel.value })
+  if (chatLevel) chatLevel.addEventListener('change', function () { if (!pending) { if (CENTRAL_MODELS && brainSelection) saveBrainSelection('custom', chatModel, chatLevel.value); else modelEfforts[chatModel] = chatLevel.value } })
+  if (brainMode) brainMode.addEventListener('change', function () { saveBrainSelection(brainMode.value, chatModel, chatLevel.value) })
   if (companyPicker) companyPicker.addEventListener('change', function () {
     if (pending || !SUBSCRIPTION_CHAT) return
     var company = companyPicker.value
     if (company !== 'claude' && company !== 'openai') return
+    if (CENTRAL_MODELS && !brainSelection) return
+    if (CENTRAL_MODELS && brainSelection) {
+      var choice = PROVIDERS.find(function (p) { return p.id === company && p.available })
+      if (choice) saveBrainSelection('custom', choice.model, choice.defaultEffort || 'medium')
+      return
+    }
     lastCompanyModel[brainCompany(chatModel)] = chatModel
     chatModel = lastCompanyModel[company]
     provider = company
@@ -2884,6 +2943,8 @@
   document.addEventListener('click', function () { closePicker(); closePlus() })
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') { closePicker(); closePlus() } })
   renderPicker()
+  var modelCenterLink = document.getElementById('model-center-link')
+  if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
   loadChatModels()
 
   /* ── composer + sidebar chrome ────────────────────────────────────────── */
@@ -3223,6 +3284,7 @@
     // The picker shows the provider it is on, and provider names are catalogue entries too.
     if (pickerLabel) pickerLabel.textContent = SUBSCRIPTION_CHAT ? currentProvider().modelName : currentProvider().name
     if (topicController) topicController.labels()
+    if (modelCenterLink) modelCenterLink.textContent = t('brain.title')
   }
   applyShellText()
 

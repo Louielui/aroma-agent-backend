@@ -9,7 +9,8 @@ function assemblePage (p) {
     '/*FAVICON_URI*/': p.favicon,
     '/*READ_SOURCE_LABELS*/': JSON.stringify(p.sourceLabels),
     '/*BUILD_STAMP*/': p.buildStamp,
-    '/*SUBSCRIPTION_CHAT*/': JSON.stringify(p.subscription)
+    '/*SUBSCRIPTION_CHAT*/': JSON.stringify(p.subscription),
+    '/*MODEL_CENTER*/': JSON.stringify(p.modelCenter === true)
   }
   let html = p.template
   for (const [key, value] of Object.entries(parts)) {
