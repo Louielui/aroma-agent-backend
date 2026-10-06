@@ -388,10 +388,17 @@ test('*** the audit record shape carries no prompt, no diff, no Owner text ***',
  * an attempt, not an authorization; `repoRoot` names one machine's folder and would tie
  * every historical hash to that box. Both stay out, and are still asserted below.
  */
-test('*** Work Order canonical is exactly 15 fields — the RB1 identity pair included ***', () => {
+test('*** Work Order canonical is exactly 16 fields — identity pair AND task kind ***', () => {
+  // ⛔ GREW BY ONE when taskKind joined. The count is the point of this test: a canonical
+  // field that nobody noticed being added is a value inside the hash that no card displays.
+  // taskKind decides WHICH KIND OF WORK the approval authorizes — a read-only enquiry or a
+  // code change — so leaving it outside would have let the same approved card be spent on
+  // either lane. It is hashed, validated and displayed together; ownerDecisionCard.test.js
+  // asserts the display half.
   const keys = Object.keys(canonicalWorkOrder(WO()))
-  assert.equal(keys.length, 15)
+  assert.equal(keys.length, 16)
   assert.ok(keys.includes('projectId') && keys.includes('repoFullName'), 'the identity pair is canonical')
+  assert.ok(keys.includes('taskKind'), 'the kind of grant is canonical')
 })
 
 test('*** ⛔ REPOSITORY IDENTITY IS HASH-BOUND — AND A MACHINE ROOT STILL IS NOT ***', () => {
@@ -406,7 +413,7 @@ test('*** ⛔ REPOSITORY IDENTITY IS HASH-BOUND — AND A MACHINE ROOT STILL IS 
   for (const extra of [{ runId: 'run_x' }, { repoRoot: 'C:/somewhere' }, { repositoryId: 'r1' }, { repositoryBindingId: 'b1' }, { schemaVersion: 2 }]) {
     assert.equal(hashWorkOrder(Object.assign({}, base, extra)), hash,
       '⛔ ' + Object.keys(extra)[0] + ' entered the canonical order')
-    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 15)
+    assert.equal(Object.keys(canonicalWorkOrder(Object.assign({}, base, extra))).length, 16)
   }
 })
 

@@ -3278,7 +3278,7 @@ the LIST is reports only — opening the turns is a second, deliberate step
 the MODEL cannot set system-owned fields (they are overwritten, not trusted)
 the MockAdapter still recognises Cantonese greetings
 the OAuth credentials file the agent will use is reachable via the allowlisted vars
-the ONE difference is additive: a fifth field, always present, false by default
+the differences are ADDITIVE: every added lane is a new field, false by default
 the Owner's four examples land exactly where he specified
 the Owner-facing message names his PAYMENT, not a table
 the Owner-forbidden file operations are all in the required list

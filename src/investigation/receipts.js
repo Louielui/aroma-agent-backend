@@ -5,10 +5,10 @@ const { resolveDataDir } = require('../store/dataDir')
 function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs') } = {}) {
   const store = createRunStore({ dir, workflow: 'investigation' }), active = new Set()
   const clock = () => new Date().toISOString()
-  function begin (id, conversationId) {
+  function begin (id, conversationId, requestHash = null) {
     if (!ID.test(id || '')) throw Error('invalid_run_id')
     if (store.get(id)) throw Error('investigation_already_exists')
-    store.save({ id, workflow: 'investigation', conversationId, readOnly: true, state: 'planning', createdAt: clock(), updatedAt: clock(), steps: [], sections: [], events: [{ state: 'planning', at: clock() }] })
+    store.save({ id, workflow: 'investigation', conversationId, requestHash, readOnly: true, state: 'planning', createdAt: clock(), updatedAt: clock(), steps: [], sections: [], events: [{ state: 'planning', at: clock() }] })
     active.add(id)
   }
   function record (id, event) {
@@ -22,6 +22,7 @@ function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs
   function finish (id, result, failed = false) {
     const r = store.get(id); if (!r || !active.has(id)) return
     r.state = failed ? 'failed' : 'completed'; r.updatedAt = clock(); r.reply = typeof result?.reply === 'string' ? result.reply : null
+    r.response = result ? structuredClone(result) : null
     if (result?.investigation) r.investigation = structuredClone(result.investigation)
     r.events.push({ state: r.state, at: r.updatedAt }); store.save(r); active.delete(id)
   }
@@ -30,6 +31,11 @@ function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs
     if (r && !['completed', 'failed'].includes(r.state) && !active.has(id)) return { ...r, state: 'interrupted' }
     return r
   }
-  return { begin, record, finish, get }
+  function linkEnquiry (id, approvalId, previous = null) {
+    const r = store.get(id)
+    if (!r || r.state !== 'completed' || (r.enquiryApprovalId || null) !== previous || !/^appr_[a-z0-9]+$/i.test(approvalId || '')) throw Error('investigation_link_refused')
+    r.enquiryApprovalId = approvalId; store.save(r)
+  }
+  return { begin, record, finish, get, linkEnquiry }
 }
 module.exports = { createReceipts }

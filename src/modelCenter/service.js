@@ -37,12 +37,16 @@ function createModelCenter ({ dataDir, catalogue, topicForConversation = () => n
     const scope = key(kind, id), d = read(), s = d.scopes[scope] || { mode: 'central', revision: 0 }
     return { scope: { kind, id }, ...s, centralRevision: d.revision, effective: s.mode === 'central' ? { ...d.brain } : { model: s.model, effort: s.effort } }
   }
-  async function saveBrain (input) {
+  async function saveBrain (input, context = {}) {
     if (!exact(input, ['revision', 'model', 'effort']) || !rev(input.revision)) throw Error('invalid_request')
     await validateChoice(input); const d = read()
     if (d.revision !== input.revision) throw Error('revision_conflict')
     const before = { ...d.brain }; d.brain = { model: input.model, effort: input.effort }; d.revision++
-    write(d, { scope: 'brain', revision: d.revision, before, after: d.brain }); return read()
+    if (context.investigationId && !require('../core/operating/runStore').ID.test(context.investigationId)) throw Error('invalid_request')
+    write(d, { scope: 'brain', revision: d.revision, before, after: d.brain, ...(context.investigationId ? { investigationId: context.investigationId } : {}) })
+    const actual = read()
+    if (actual.revision !== d.revision || actual.brain.model !== input.model || actual.brain.effort !== input.effort) throw Error('model_settings_unavailable')
+    return actual
   }
   async function saveSelection (kind, id, input) {
     const scope = key(kind, id)

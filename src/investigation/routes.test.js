@@ -10,9 +10,11 @@ test('chat persists the real receipt, restores it, and never advertises a failed
   Object.assign(process.env, { AROMA_DATA_DIR: dir, CONTEXT_XIANGXIANG_OPERATIONS: 'on', CHAT_BACKEND: 'fixture', A4_KNOWLEDGE_ROUTING: 'off' })
   const conversationStore = createConversationStore({ dataDir: dir })
   const report = { state: 'partial', sections: [{ section: 'billing', state: 'unconnected', evidenceState: 'not_established', records: [] }], billingConfirmed: false, readOnly: true }
+  let calls = 0
   const build = () => {
     const app = express(); app.use(express.json()); app.locals.conversationDemo = true
     app.use(createDemoRouter({ conversationStore, getAdapterFn: () => ({}), processIntakeFn: async (m, a, h, opts) => {
+      calls++
       assert.equal(opts.ownerInvestigation, true)
       opts.onInvestigation({ state: 'planning' }); opts.onInvestigation({ state: 'evaluating', investigation: report })
       return { mode: 'chat', reply: 'Evidence remains incomplete.', investigation: structuredClone(report) }
@@ -33,7 +35,9 @@ test('chat persists the real receipt, restores it, and never advertises a failed
   assert.equal(snapshot.run.investigation.billingConfirmed, false)
   const unchanged = fs.readFileSync(path.join(dir, 'investigation-runs', id + '.json'), 'utf8')
   const duplicate = await post(id)
-  assert.equal(duplicate.investigationRunId, undefined)
-  assert.equal(duplicate.investigation.persistenceState, 'unavailable')
+  assert.equal(duplicate.investigationRunId, id)
+  assert.equal(duplicate.replayed, true)
+  assert.equal(duplicate.investigation.persistenceState, 'saved')
+  assert.equal(calls, 1)
   assert.equal(fs.readFileSync(path.join(dir, 'investigation-runs', id + '.json'), 'utf8'), unchanged)
 })

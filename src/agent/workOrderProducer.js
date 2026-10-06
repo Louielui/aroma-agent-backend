@@ -36,6 +36,9 @@ const {
 // System-owned defaults. 心燈 cannot raise these; the Owner changes them here.
 const DEFAULTS = Object.freeze({ timeoutSec: 120, costCapUsd: 0.5, approvalTtlSec: 600 })
 
+/** The kinds a proposal may ask for. Anything else is refused rather than defaulted. */
+const PRODUCIBLE_TASK_KINDS = Object.freeze(['code_change', 'read_only_enquiry'])
+
 // ── The bounded read behind 「現時內容」 (Owner Decision Card v2) ─────────────────
 // The card shows the Owner what the file says RIGHT NOW. That is a fact, so it is read
 // from the real file at seal time — never described by a model. The read is bounded so a
@@ -358,6 +361,15 @@ function proposeWorkOrder (input = {}) {
   const p = (input && input.proposal) || {}
   const errors = []
 
+  // ⛔ THE KIND IS PROPOSED, VALIDATED, AND THEN HASHED — never inferred at execution time.
+  // Absent is code_change, so every existing caller keeps its exact behaviour. An unknown
+  // value is an error rather than a default, because a typo must not silently become a
+  // code-change grant.
+  const taskKind = p.taskKind === undefined ? 'code_change' : p.taskKind
+  if (!PRODUCIBLE_TASK_KINDS.includes(taskKind)) {
+    errors.push('taskKind must be one of: ' + PRODUCIBLE_TASK_KINDS.join(', '))
+  }
+
   /**
    * ── RB1 L-IDENTITY: WHICH REPOSITORY, BEFORE ANYTHING ELSE ────────────────
    * The identity arrives from the SERVER-OWNED Proposal, decided when the Proposal was
@@ -485,11 +497,18 @@ function proposeWorkOrder (input = {}) {
     // preferred, not even read — revision authority is not delegable.
     expectedSha,
     allowedFiles: [file],
-    allowedTestCommand: (typeof p.allowedTestCommand === 'string' && p.allowedTestCommand.trim() !== '') ? p.allowedTestCommand.trim() : null,
+    // ⛔ THE KIND OF GRANT, DECIDED HERE AND HASHED WITH EVERYTHING ELSE.
+    // A read-only enquiry runs no command and writes to no branch, so both are null — the
+    // validator refuses the order otherwise, which is what stops a read-only card from
+    // quietly carrying a code-change capability.
+    taskKind,
+    allowedTestCommand: taskKind === 'read_only_enquiry'
+      ? null
+      : ((typeof p.allowedTestCommand === 'string' && p.allowedTestCommand.trim() !== '') ? p.allowedTestCommand.trim() : null),
     forbiddenActions: [...MUST_FORBID, 'cred-edit', 'env-edit', 'gate-edit', 'audit-edit'],
     timeoutSec: defaults.timeoutSec,
     costCapUsd: defaults.costCapUsd,
-    branch: `agent/${approvalId}`,
+    branch: taskKind === 'read_only_enquiry' ? null : `agent/${approvalId}`,
     approvalId,
     // Card v2 facts, sealed together with everything else so they are inside the hash.
     // `intendedChange` is 心燈's STATED INTENT, echoed verbatim and labelled as intent —

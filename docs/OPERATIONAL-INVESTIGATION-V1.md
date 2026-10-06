@@ -51,11 +51,42 @@ subscription billing route. Role-specific prompts, output validation, source gat
 and action approvals remain in force. API-mode behavior is unchanged. This change
 does not select the separate development workers or restart background automations.
 
-Investigation is read-only. The model-center link hands the Owner to the existing
-revision-checked confirmation interface. This release does not wire external
-schedule mutation, vendor billing, Codex chat/execution history, or a full Windows
-scheduled-task inventory. PR 64's approved external enquiry worker remains a
-separate unmerged integration and is not claimed as completed here.
+Investigation remains read-only. Its model-center link preserves the investigation
+ID through the existing revision-checked Owner confirmation. Saving records before
+and after values plus that ID, then reads back the revision and selected values.
+Reading the link makes no changes. External schedule mutation, vendor billing,
+Codex execution history and a full Windows task inventory remain unconnected.
+
+The approved read-only enquiry lane from PR 64 is integrated into this delivery.
+The chat offers a registered source check of `xiangxiangOperationsRead.js`; the
+Owner does not need to locate a file. Preparing the card does not execute anything.
+The existing typed EXECUTE, expiring nonce, canonical task-kind hash, proposal
+confirmation, authorization matrix and durable run claim remain the only entry.
+Source files come from the sealed commit, with blob and content hashes. They are
+regular text files, bounded to eight files and 180000 bytes; prohibited paths,
+symlinks, working-tree edits and arbitrary repositories are refused. The registered
+UI profile currently uses only the coverage adapter, not an arbitrary repo agent.
+
+One tool-free call uses the central subscription model captured at dispatch through
+the existing authenticated loopback bridge. It does not call a paid provider API.
+Its deadline is the approved order timeout. Array/string bounds, approved paths,
+exact quoted lines and snapshot hashes are checked locally before saving. A valid
+quote establishes the quoted text, not charge causality or exhaustive coverage.
+Unknown cost remains null. The displayed monetary bound is a pre-round check, not
+a guaranteed provider billing cap. Saved reports retain model, source manifest,
+approval ID, limits, citations and unknowns; read-back survives process restart.
+
+The service and launcher select READONLY_ENQUIRY=on and AGENT_BRIDGE=off for this
+chapter. Any two execution flags on still refuse all execution. This replaces the
+legacy single-file approval lane, not the separate registered project-development
+workflow. Restoring that legacy lane requires choosing that mode explicitly and
+disabling read-only enquiry first; the modes must not be combined.
+
+The intake stores request identity before invoking the model. Duplicate completed
+requests replay the saved answer; in-flight, interrupted, unreadable or conflicting
+requests cannot re-execute under the same ID. Reopening an enquiry reads its saved
+result and never dispatches it again. Evidence and source quotes stay folded until
+the Owner chooses to inspect them.
 
 Acceptance: missing memory continues to a judged local read; English and Chinese
 requests use the same path; unauthorized requests do not read; partial and corrupt

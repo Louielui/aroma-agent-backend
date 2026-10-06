@@ -281,3 +281,34 @@ describe('long sections collapse; short ones do not', () => {
     assert.ok(r.text.includes(CATALOGUE['inv.nothingChanged'].zh), 'what was applied is never collapsed')
   })
 })
+
+/* ══════════════ 2026-09-05: an unknown cost must never render as 0.00 ══════════════ */
+
+describe('the cost line tells the truth about what it knows', () => {
+  test('⛔ a null cost renders UNKNOWN, not 0.00', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, costUsd: null })
+    assert.match(r.text, /UNKNOWN/)
+    assert.ok(!/US\$0\.00/.test(r.text), 'Number(null).toFixed(2) would have printed US$0.00: ' + r.text)
+  })
+
+  test('⛔ an OMITTED cost is unknown, not free', () => {
+    const { costUsd, ...noCost } = { ...base }
+    const r = buildReport({ ...noCost, outcome: OUTCOME.CONCLUDED })
+    assert.match(r.text, /UNKNOWN/)
+    assert.ok(!/US\$0\.00/.test(r.text))
+  })
+
+  test('a genuine zero still prints as 0.00 — free and unknown are different facts', () => {
+    const r = buildReport({ ...base, outcome: OUTCOME.CONCLUDED, costUsd: 0 })
+    assert.match(r.text, /US\$0\.00/)
+    assert.ok(!/UNKNOWN/.test(r.text.split('\n').pop()), 'the footer must not say UNKNOWN for a known zero')
+  })
+
+  test('a known cost is unchanged', () => {
+    assert.match(buildReport({ ...base, outcome: OUTCOME.CONCLUDED, costUsd: 1.5 }).text, /US\$1\.50/)
+  })
+
+  test('the returned object keeps null as null', () => {
+    assert.strictEqual(buildReport({ ...base, outcome: OUTCOME.CONCLUDED, costUsd: null }).costUsd, null)
+  })
+})

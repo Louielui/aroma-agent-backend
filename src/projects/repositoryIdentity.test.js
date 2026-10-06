@@ -70,9 +70,9 @@ const WO = (over = {}) => Object.assign({
 
 /* ═══ 1. THE CANONICAL ORDER CARRIES THE IDENTITY ═══════════════════════════ */
 
-test('*** the canonical Work Order is 15 fields, identity second and third, revision fourth ***', () => {
+test('*** the canonical Work Order is 16 fields, identity second and third, revision fourth ***', () => {
   const keys = Object.keys(canonicalWorkOrder(WO()))
-  assert.equal(keys.length, 15)
+  assert.equal(keys.length, 16)
   assert.deepEqual(keys.slice(0, 4), ['goal', 'projectId', 'repoFullName', 'expectedSha'], 'serialization order is pinned')
 })
 
@@ -85,7 +85,7 @@ test('*** ⛔ CHANGING THE REPOSITORY CHANGES THE HASH ***', () => {
 test('*** ⛔ NO MACHINE ROOT REACHES THE CANONICAL ORDER ***', () => {
   const keys = Object.keys(canonicalWorkOrder(WO({ repoRoot: 'C:/Aroma/aroma-agent-backend' })))
   assert.equal(keys.includes('repoRoot'), false, '⛔ a machine path entered the hash')
-  assert.equal(keys.length, 15)
+  assert.equal(keys.length, 16)
   assert.equal(hashWorkOrder(WO({ repoRoot: 'C:/x' })), hashWorkOrder(WO()), '⛔ repoRoot moved the hash')
 })
 

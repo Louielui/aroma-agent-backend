@@ -62,6 +62,11 @@ function launcherContract () {
 }
 
 describe('the service runs the same assistant as the launcher', () => {
+  test('investigation mode selects one approval lane without enabling competing executors', () => {
+    assert.equal(STABLE_ENV.READONLY_ENQUIRY, 'on')
+    assert.equal(STABLE_ENV.AGENT_BRIDGE, 'off')
+    for (const key of ['WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'COMPUTER_OPERATOR']) assert.notEqual(STABLE_ENV[key], 'on')
+  })
   test('*** ⛔ EXACT KEY SET — no missing key, no extra key ***', () => {
     const live = launcherContract()
     const ours = Object.keys(STABLE_ENV).sort()

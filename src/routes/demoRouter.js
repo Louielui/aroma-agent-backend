@@ -818,6 +818,19 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         if (interactionMode === 'chat') opts.ownerInvestigation = true
         const investigationId = require('../core/operating/runStore').ID.test(req.body.websiteRequestId || '') ? req.body.websiteRequestId : correlationId
         let investigationStarted = false, investigationSaveFailed = false
+        if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {
+          const requestHash = require('node:crypto').createHash('sha256').update(JSON.stringify({ message, conversationId: req.body.conversationId || null })).digest('hex')
+          try {
+            const prior = investigationReceipts.get(investigationId)
+            if (prior) {
+              if (prior.requestHash !== requestHash) return res.status(409).json({ error: 'investigation_request_conflict' })
+              if (prior.state === 'completed' && prior.response) return res.json({ ...prior.response, ...(prior.investigation ? { investigationRunId: investigationId } : {}), replayed: true })
+              return res.status(409).json({ error: 'investigation_already_started', state: prior.state, investigationRunId: investigationId })
+            }
+            investigationReceipts.begin(investigationId, req.body.conversationId || null, requestHash)
+            investigationStarted = true
+          } catch (_) { return res.status(503).json({ error: 'investigation_store_unavailable' }) }
+        }
         if (interactionMode === 'chat') opts.onInvestigation = event => {
           if (process.env.CONTEXT_XIANGXIANG_OPERATIONS !== 'on' || investigationSaveFailed) return
           try {

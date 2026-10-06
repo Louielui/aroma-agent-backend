@@ -48,7 +48,12 @@ function authorizeExecution (o = {}) {
   const develop = o.develop === 'on' ? 'on' : 'off'
   const agent = o.agent === 'on' ? 'on' : 'off'
   const computer = o.computer === 'on' ? 'on' : 'off'
-  const onCount = [worker, develop, agent, computer].filter((x) => x === 'on').length
+  // ⛔ READ_ONLY_ENQUIRY IS A PEER, NOT AN EXEMPTION. It is a lane that starts a process on
+  //    this machine, so it belongs in the same mutual exclusion as the others. A side door
+  //    would make this a rule with one exception, and a rule with an exception has to be
+  //    remembered — the exact property this gate was built not to need.
+  const readOnly = o.readOnlyEnquiry === 'on' ? 'on' : 'off'
+  const onCount = [worker, develop, agent, computer, readOnly].filter((x) => x === 'on').length
 
   if (onCount >= 2) {
     return {
@@ -56,7 +61,8 @@ function authorizeExecution (o = {}) {
       workerAuthorized: false,
       developAuthorized: false,
       agentBridgeAuthorized: false,
-      computerOperatorAuthorized: false
+      computerOperatorAuthorized: false,
+      readOnlyEnquiryAuthorized: false
     }
   }
   const developAuthorized = develop === 'on' && o.dispatcherConfigured === true
@@ -65,14 +71,19 @@ function authorizeExecution (o = {}) {
   // Like the other lanes, the flag alone is not enough: a concrete supervisor must also
   // be configured. Today none is, so this can only ever be false.
   const computerOperatorAuthorized = computer === 'on' && o.computerSupervisorConfigured === true
+  // Like every other lane: the flag alone is not enough, a concrete service must be wired.
+  // app.js only builds one when the flag is on, so this cannot become true by accident.
+  const readOnlyEnquiryAuthorized = readOnly === 'on' && o.readOnlyEnquiryConfigured === true
   const status = developAuthorized
     ? 'develop_authorized'
     : (workerAuthorized
         ? 'worker_authorized'
         : (agentBridgeAuthorized
             ? 'agent_bridge_authorized'
-            : (computerOperatorAuthorized ? 'computer_operator_authorized' : 'not_authorized')))
-  return { status, workerAuthorized, developAuthorized, agentBridgeAuthorized, computerOperatorAuthorized }
+            : (computerOperatorAuthorized
+                ? 'computer_operator_authorized'
+                : (readOnlyEnquiryAuthorized ? 'read_only_enquiry_authorized' : 'not_authorized'))))
+  return { status, workerAuthorized, developAuthorized, agentBridgeAuthorized, computerOperatorAuthorized, readOnlyEnquiryAuthorized }
 }
 
 module.exports = { resolveAgentBridge, authorizeExecution }

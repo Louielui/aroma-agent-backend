@@ -77,14 +77,51 @@ test('*** with COMPUTER_OPERATOR off, all 32 combinations are byte-identical to 
   assert.equal(checked, 32, 'every combination was checked')
 })
 
-test('the ONE difference is additive: a fifth field, always present, false by default', () => {
+test('the differences are ADDITIVE: every added lane is a new field, false by default', () => {
   // Stated explicitly rather than left for a reader to discover. Three whole-object
   // assertions elsewhere had to be narrowed to the four original fields because of it.
+  //
+  // ⛔ UPDATED when READ_ONLY_ENQUIRY joined as the FIFTH lane. The property this test
+  // exists for is unchanged — a new lane may only ever ADD a field that defaults to false,
+  // never alter an existing one — so the key list grows with it rather than the test being
+  // deleted. computerOperatorAuthorized was the fifth field; readOnlyEnquiryAuthorized is
+  // the sixth.
   const r = authorizeExecution({ worker: 'off', develop: 'off', agent: 'off' })
   assert.deepEqual(Object.keys(r).sort(), [
-    'agentBridgeAuthorized', 'computerOperatorAuthorized', 'developAuthorized', 'status', 'workerAuthorized'
+    'agentBridgeAuthorized', 'computerOperatorAuthorized', 'developAuthorized',
+    'readOnlyEnquiryAuthorized', 'status', 'workerAuthorized'
   ])
   assert.equal(r.computerOperatorAuthorized, false)
+  assert.equal(r.readOnlyEnquiryAuthorized, false)
+})
+
+test('*** ANY two of the FIVE lanes on ⇒ configuration_conflict ⇒ zero execution ***', () => {
+  // The same ruling the four-lane test makes, extended to the lane added here. Written as
+  // its own test rather than by editing the existing one, so the original guarantee keeps
+  // its own name in the ledger.
+  const lanes = ['worker', 'develop', 'agent', 'computer', 'readOnlyEnquiry']
+  let pairs = 0
+  for (let i = 0; i < lanes.length; i++) {
+    for (let k = i + 1; k < lanes.length; k++) {
+      const input = {
+        dispatcherConfigured: true,
+        agentRunnerConfigured: true,
+        computerSupervisorConfigured: true,
+        readOnlyEnquiryConfigured: true
+      }
+      input[lanes[i]] = 'on'
+      input[lanes[k]] = 'on'
+      const r = authorizeExecution(input)
+      pairs++
+      assert.equal(r.status, 'configuration_conflict', lanes[i] + ' + ' + lanes[k])
+      assert.equal(r.workerAuthorized, false)
+      assert.equal(r.developAuthorized, false)
+      assert.equal(r.agentBridgeAuthorized, false)
+      assert.equal(r.computerOperatorAuthorized, false)
+      assert.equal(r.readOnlyEnquiryAuthorized, false)
+    }
+  }
+  assert.equal(pairs, 10, 'all ten pairs of five lanes must be covered')
 })
 
 /* ── the ruling: mutually exclusive, four ways ────────────────────────────── */

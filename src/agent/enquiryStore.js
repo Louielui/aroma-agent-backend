@@ -32,6 +32,14 @@ function createEnquiryStore (options = {}) {
 
   return {
     dir,
+    findByApprovalId (approvalId) {
+      if (typeof approvalId !== 'string' || !approvalId) return null
+      let names
+      try { names = fs.readdirSync(dir) } catch (e) { if (e.code === 'ENOENT') return null; throw e }
+      const rows = names.filter(n => n.endsWith('.json') && ID_RE.test(n.slice(0, -5))).map(n => JSON.parse(fs.readFileSync(path.join(dir, n), 'utf8'))).filter(r => r.approvalId === approvalId)
+      if (rows.length > 1) throw Error('ambiguous_enquiry')
+      return rows[0] || null
+    },
 
     save (enquiry) {
       const id = enquiry && enquiry.enquiryId

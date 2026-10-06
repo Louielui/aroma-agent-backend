@@ -67,10 +67,18 @@ const CATALOGUE = Object.freeze({
   'investigation.boundary': { zh: '找到可能消耗額度的工作，不代表已證明扣款原因。供應商帳單及逐次扣款對照尚未接通。', en: 'A task that may consume usage is not proof of a charge. Provider billing and execution-to-charge correlation are not connected.' },
   'investigation.readOnly': { zh: '這次只做調查。模型設定可在管理中心查看並確認修改；外部排程控制尚未接通，沒有停用或更改任何工作。', en: 'This was read-only. Model settings can be reviewed and confirmed in the management center. External schedule control is not connected; no jobs were stopped or changed.' },
   'investigation.settings': { zh: '查看模型設定', en: 'Review model settings' },
+  'investigation.enquiryOffer': { zh: '核對程式來源與調查範圍', en: 'Check source code and investigation coverage' },
+  'investigation.enquiryRunning': { zh: '正在查核已批准的程式來源…', en: 'Checking the approved source snapshot…' },
+  'investigation.enquirySaved': { zh: '查核紀錄已保存', en: 'Investigation record saved' },
+  'investigation.enquiryFailed': { zh: '查核未完成；沒有修改任何設定。', en: 'The enquiry did not complete; no settings were changed.' },
+  'investigation.enquiryUnavailable': { zh: '目前未能開啟查核。請重新載入紀錄；系統不會重複派工。', en: 'The enquiry is unavailable. Reload its record; work will not be dispatched again.' },
+  'investigation.citationBoundary': { zh: '引用已與批准版本的原文核對；原文相符並不代表已證實扣款因果或查遍所有來源。', en: 'Quotes were checked against the approved revision. Matching text does not prove charge attribution or complete coverage.' },
+  'investigation.actionContext': { zh: '這次調查：{goal}。下方只修改中央大腦預設；不會停用排程，也不會改動已自選模型的話題或開發執行器。', en: 'Investigation: {goal}. This changes only the central brain default; schedules, custom topic models and development workers are unaffected.' },
+  'investigation.actionVerified': { zh: '已套用並讀回核實；結果已連結到這次調查。', en: 'Applied and verified by reading back; the result is linked to this investigation.' },
   'investigation.details': { zh: '來源紀錄與範圍限制', en: 'Source records and coverage limits' },
   'investigation.judgmentOmitted': { zh: '額外判斷未經來源核對，已略去；保留調查回答與來源紀錄。', en: 'An additional judgment was omitted because it was not source-verified. The investigation answer and source records are retained.' },
-  'investigation.archCurrent': { zh: '已接上目標規劃與自身資料唯讀調查：模型設定、固定排程見證、工作紀錄、歷史對話及舊用量紀錄。保留來源狀態、雜湊、進度與結果；缺少帳單時不確認扣款原因。', en: 'Goal planning can read fixed local settings, schedule witnesses, work records, conversation history and legacy usage. Source states, hashes, progress and results are retained. Missing billing evidence cannot confirm charge attribution.' },
-  'investigation.archNext': { zh: '供應商帳單、Codex 執行歷史、完整 Windows 排程盤點及外部排程變更尚未接通。現有模型設定沿用 Owner 確認與版本核對。', en: 'Provider billing, Codex execution history, a complete Windows scheduler inventory and external schedule mutation remain unconnected. Model settings retain Owner confirmation and revision checks.' },
+  'investigation.archCurrent': { zh: '已接上目標規劃與自身資料唯讀調查：模型設定、固定排程見證、工作紀錄、歷史對話及舊用量紀錄。保留來源狀態、雜湊、進度與結果；重送讀回原結果。可批准訂閱模型核對已登記程式來源，保存逐行引用；中央模型修改保留調查關聯並讀回驗證。缺少帳單時不確認扣款原因。', en: 'Goal planning can read fixed local settings, schedule witnesses, work records, conversation history and legacy usage. Source states, hashes, progress and results are retained; duplicate requests replay saved results. Approved subscription enquiries check registered committed sources with saved line citations. Central model changes retain investigation provenance and read-back verification. Billing attribution remains unconfirmed.' },
+  'investigation.archNext': { zh: '供應商帳單、Codex 執行歷史、完整 Windows 排程盤點及外部排程變更尚未接通。目前使用唯讀查核批准模式；舊單檔 Agent Bridge 關閉，專案開發流程獨立保留。', en: 'Provider billing, Codex execution history, a complete Windows scheduler inventory and external schedule mutation remain unconnected. Read-only enquiry approval mode is enabled; the legacy single-file Agent Bridge is disabled. Registered project development remains separate.' },
   'imageChat.upload': { zh: '加入圖片', en: 'Add images' },
   'imageChat.uploadNote': { zh: '貼上或選擇圖片，送出後香香會讀圖', en: 'Paste or choose images for Xiangxiang to inspect when sent' },
   'imageChat.remove': { zh: '移除圖片', en: 'Remove image' },
@@ -1882,6 +1890,19 @@ const CATALOGUE = Object.freeze({
 
   // ── the face ──
   'card.heading': { zh: '香香想改一個檔案', en: 'Xiangxiang wants to change one file' },
+  /**
+   * ⛔ A READ-ONLY CARD MUST NOT SAY 「改」. The same card renderer serves both kinds of order,
+   * and a read-only enquiry shown under 「香香想改一個檔案」 asks the Owner to approve a file
+   * modification that is not going to happen — the wrong thing, described accurately enough
+   * to be believed. taskKind is inside the hash precisely so the card can say which it is.
+   */
+  'card.headingEnquiry': { zh: '香香想讀一個檔案來回答問題', en: 'Xiangxiang wants to read one file to answer a question' },
+  'card.scopeOneFileEnquiry': { zh: '只讀取 {file} 一個檔案，不會改動任何檔案。', en: 'Reads {file} and nothing else. No file is changed.' },
+  'card.worstCaseEnquiry': {
+    zh: '答錯了？它只會讀副本並引用出處，不會改動你的程式庫。',
+    en: 'Wrong answer? It only reads a copy and cites its sources; your repository is not touched.'
+  },
+  'card.enquiryQuestionTitle': { zh: '要回答的問題', en: 'The question to answer' },
   // RB1 — the repository, on the card's visible face. A repo-relative path alone is not an
   // identity: the same filename exists in both registered repositories.
   'card.scopeRepository': { zh: '程式庫：{repo}', en: 'Repository: {repo}' },
@@ -1903,6 +1924,7 @@ const CATALOGUE = Object.freeze({
     en: 'Breaks something? Only the copy changes; your repository is untouched.'
   },
   'card.caps': { zh: '最長 {time} · 最多 {money}', en: 'Up to {time} · at most {money}' },
+  'card.enquiryCaps': { zh: '最長 {time}；只呼叫一次中央預設的訂閱模型。{money} 是啟動前的預算檢查，並非供應商扣款上限；實際費用未知。', en: 'Up to {time}; one call to the central subscription model. {money} is a pre-start budget check, not a provider billing cap; actual cost is unknown.' },
   'card.secBeforeAfter': { zh: '現時內容 / 打算改成', en: 'Current content / intended change' },
   'card.secBefore': { zh: '現時內容', en: 'Current content' },
   'card.secWhatChanges': { zh: '要修改的內容', en: 'What changes' },

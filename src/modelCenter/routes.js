@@ -11,7 +11,7 @@ function inventory (locale) {
     { role: t('brain.roleRouting', undefined, locale), selection: t('brain.routingSelection', undefined, locale), status: t('brain.fixedWorker', undefined, locale) }
   ]
 }
-function createModelCenterRouter ({ center, catalogue }) {
+function createModelCenterRouter ({ center, catalogue, receipts = require('../investigation/receipts').createReceipts() }) {
   const router = express.Router()
   router.get('/model-center', (req, res) => res.type('html').send(require('./view').page()))
   router.use('/api/v1/model-center', (req, res, next) => {
@@ -28,8 +28,20 @@ function createModelCenterRouter ({ center, catalogue }) {
     return { revision: settings.revision, brain: settings.brain, models: models.models, billing: models.billing, roles: inventory(req.query.lang), autoFallback: false }
   }))
   router.put('/api/v1/model-center/brain', handle(async req => {
-    if (!req.body || Object.keys(req.body).sort().join(',') !== 'effort,model,revision') throw Error('invalid_request')
-    const value = await center.saveBrain(req.body); return { revision: value.revision, brain: value.brain }
+    if (!req.body || !['effort,model,revision', 'effort,investigationId,model,revision'].includes(Object.keys(req.body).sort().join(','))) throw Error('invalid_request')
+    const { investigationId, ...input } = req.body
+    if (Object.hasOwn(req.body, 'investigationId')) {
+      if (typeof investigationId !== 'string' || !require('../core/operating/runStore').ID.test(investigationId)) throw Error('invalid_request')
+      const run = receipts.get(investigationId)
+      if (run?.state !== 'completed' || !run.investigation) throw Error('invalid_request')
+    }
+    const value = await center.saveBrain(input, { investigationId }); return { revision: value.revision, brain: value.brain, ...(investigationId ? { action: { investigationId, state: 'verified', revision: value.revision } } : {}) }
+  }))
+  router.get('/api/v1/model-center/investigations/:id', handle(req => {
+    const run = receipts.get(req.params.id)
+    if (!run || run.state !== 'completed' || !run.investigation) throw Error('invalid_request')
+    const settings = center.read()
+    return { goal: run.investigation.goal || '', actions: settings.audit.filter(e => e.investigationId === req.params.id).map(e => ({ before: e.before, after: e.after, at: e.at, revision: e.revision, currentMatches: settings.brain.model === e.after.model && settings.brain.effort === e.after.effort })) }
   }))
   router.get('/api/v1/model-center/selection/:kind/:id', handle(req => ({ selection: center.selection(req.params.kind, req.params.id) })))
   router.put('/api/v1/model-center/selection/:kind/:id', handle(async req => ({ selection: await center.saveSelection(req.params.kind, req.params.id, req.body) })))

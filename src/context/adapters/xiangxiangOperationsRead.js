@@ -58,7 +58,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
       if (name === 'configuration') {
         const d = readJson(path.join(dataDir, 'model-center.json'))
         if (!d.brain || typeof d.brain.model !== 'string') throw Error('invalid_config')
-        const allowedFlags = ['CHAT_BACKEND', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
+        const allowedFlags = ['CHAT_BACKEND', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'COMPUTER_OPERATOR', 'READONLY_ENQUIRY', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
         const flags = Object.fromEntries(allowedFlags.map(k => [k, ['on', 'off', 'codex-subscription'].includes(env[k]) ? env[k] : null]))
         return { state: 'ok', evidenceState: 'confirmed', records: [{ model: small(d.brain.model), effort: small(d.brain.effort), revision: Number.isInteger(d.revision) ? d.revision : null, flags }], note: 'Observed current configuration; does not prove past execution or billing. Worker models can differ from the brain.' }
       }

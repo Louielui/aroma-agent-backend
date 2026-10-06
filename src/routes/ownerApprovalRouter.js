@@ -189,11 +189,11 @@ function createOwnerApprovalRouter (deps = {}) {
   // router.all, not router.post: a GET/HEAD/PUT must produce an EXPLICIT, audited
   // method refusal rather than falling through to the generic 404, so "POST only" is
   // an enforced property of this surface and not an accident of routing.
-  router.all('/api/v1/owner/work-orders', (req, res) => {
+  function sealWorkOrder (req, res, supplied) {
     const bad = transportRefusal(req)
     if (bad) return refuse(res, 403, bad, null, 'owner_local')
     const sid = ensureSession(req, res)
-    const b = req.body || {}
+    const b = supplied || req.body || {}
 
     // A Work Order only exists to execute an APPROVED Proposal. Bind it to a real,
     // still-pending Proposal HERE — refusing at seal time means no card is ever shown
@@ -236,6 +236,10 @@ function createOwnerApprovalRouter (deps = {}) {
         goal: b.goal,
         candidateFile: b.candidateFile,
         allowedTestCommand: b.allowedTestCommand,
+        // WHICH KIND of work this card asks the Owner to approve. The producer validates it,
+        // the canonical form hashes it, and the card therefore shows it. It is intent from the
+        // chat lane, exactly like goal and candidateFile — never an authority by itself.
+        taskKind: b.taskKind,
         intendedChange: b.intendedChange
       },
       // Server-owned, from the Proposal record. The producer re-verifies it anyway.
@@ -250,6 +254,7 @@ function createOwnerApprovalRouter (deps = {}) {
 
     const sealResult = store.seal({ workOrder: produced.workOrder, proposalId: proposal.id })
     if (!sealResult.ok) return refuse(res, 409, sealResult.reason, produced.workOrder.approvalId, 'owner_local')
+    if (supplied) deps.linkInvestigationEnquiry(req.params.id, produced.workOrder.approvalId, supplied.previousApprovalId)
 
     const view = buildApprovalView(sealResult.record.workOrder)
     const nonce = store.issueNonce({ approvalId: produced.workOrder.approvalId, workOrderHash: view.hash, sessionId: sid })
@@ -269,6 +274,16 @@ function createOwnerApprovalRouter (deps = {}) {
       typedConfirmationRequired: TYPED_CONFIRMATION,
       expiresInSec: Math.floor(store.APPROVAL_TTL_MS / 1000)
     })
+  }
+  router.all('/api/v1/owner/work-orders', (req, res) => sealWorkOrder(req, res))
+  router.all('/api/v1/owner/investigations/:id/work-order', (req, res) => {
+    const bad = transportRefusal(req)
+    if (bad) return refuse(res, 403, bad, null, 'owner_local')
+    if (!require('../core/operating/runStore').ID.test(req.params.id) || Object.keys(req.body || {}).length) return refuse(res, 400, 'invalid_request', null, 'owner_local')
+    try {
+      if (typeof deps.prepareInvestigationEnquiry !== 'function') throw Error('investigation_not_available')
+      return sealWorkOrder(req, res, deps.prepareInvestigationEnquiry(req.params.id))
+    } catch (_) { return refuse(res, 409, 'investigation_not_ready', null, 'owner_local') }
   })
 
   // ── LAYER 2: the result view (READ-ONLY) ──────────────────────────────────
@@ -283,6 +298,7 @@ function createOwnerApprovalRouter (deps = {}) {
     if (sfs !== undefined && sfs !== 'same-origin') return res.status(403).json({ error: 'approval_refused', reason: 'bad_sec_fetch_site' })
 
     const approvalId = req.params.approvalId
+    const savedEnquiry = deps.findEnquiryByApproval ? deps.findEnquiryByApproval(approvalId) : null
     const got = store.getResult(approvalId)
     const phases = typeof store.getPhases === 'function' ? store.getPhases(approvalId) : []
     const exec = typeof store.getExecution === 'function' ? store.getExecution(approvalId) : { ok: false }
@@ -303,7 +319,7 @@ function createOwnerApprovalRouter (deps = {}) {
     const running = !got.ok && phases.length > 0
     // 404 only when NEITHER ledger knows anything. A canonical Run is an answer on its
     // own, with or without the cache.
-    if (!got.ok && !running && !canonicalSpeaks) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
+    if (!got.ok && !running && !canonicalSpeaks && !savedEnquiry) return res.status(404).json({ error: 'no_result', approvalId, reason: got.reason })
 
     // FACTS COME FROM THE SNAPSHOT taken at hand-off — never from the sealed order, which
     // expires after 10 minutes and used to make a finished, in-scope run read as
@@ -327,12 +343,37 @@ function createOwnerApprovalRouter (deps = {}) {
       // result as enrichment — never the reverse.
       canonicalStatus: canonicalSpeaks ? canonicalStatus : null
     })
+    // ── THE READ-ONLY ENQUIRY FACTS, WHEN THAT IS WHAT RAN ────────────────
+    // buildAgentResultView speaks about files changed, diffs and test commands; an enquiry
+    // has none of those, and rendering one through that vocabulary would describe the wrong
+    // thing. So the enquiry's own facts are surfaced ALONGSIDE it, bounded and additive.
+    //
+    // ⛔ THE saved FLAG IS HERE BECAUSE A RESULT THAT WAS NOT STORED MUST NOT LOOK DELIVERED.
+    //    Without it the card would show a finished run and offer no way to tell that the
+    //    answer cannot be opened — the exact 「it ran and found nothing」 shape this project
+    //    keeps removing. enquiryId is null unless it really resolves.
+    const rawResult = got.ok ? got.record.result : savedEnquiry ? { ...savedEnquiry, kind: 'read_only_enquiry', saved: true } : null
+    const enquiry = rawResult && rawResult.kind === 'read_only_enquiry'
+      ? {
+          outcome: rawResult.outcome || null,
+          saved: rawResult.saved === true,
+          saveError: rawResult.saveError || null,
+          enquiryId: rawResult.saved === true ? (rawResult.enquiryId || null) : null,
+          stoppedAt: rawResult.stoppedAt || null,
+          reason: rawResult.reason || null,
+          verification: rawResult.verification || null,
+          costUsd: Object.prototype.hasOwnProperty.call(rawResult, 'costUsd') ? rawResult.costUsd : null
+        }
+      : null
+
     return res.status(200).json({
       approvalId,
-      status: view.status,
-      headline: view.headline,
-      sections: view.sections,
-      lines: view.lines,
+      // null for every code-change run; present only when an enquiry actually ran.
+      enquiry,
+      status: enquiry ? (enquiry.saved && enquiry.outcome === 'CONCLUDED' ? 'done' : 'failed') : view.status,
+      headline: enquiry ? (enquiry.saved && enquiry.outcome === 'CONCLUDED' ? require('../i18n/t').t('investigation.enquirySaved') : require('../i18n/t').t('investigation.enquiryFailed')) : view.headline,
+      sections: enquiry ? [] : view.sections,
+      lines: enquiry ? [] : view.lines,
       // Progress: fixed phase NAMES + their labels + timestamps. Nothing else crosses.
       phases: phases.map((p) => ({ phase: p.phase, label: phaseLabel(p.phase), at: p.at })),
       currentPhase: phases.length ? phases[phases.length - 1].phase : null,
@@ -341,7 +382,7 @@ function createOwnerApprovalRouter (deps = {}) {
       capSec: facts && Number.isFinite(facts.timeoutSec) ? facts.timeoutSec : null,
       // P1-C1c: an attempt is finished when EITHER ledger says it settled. Reading only
       // the memory cache made a restarted, long-finished run poll forever.
-      finished: got.ok || (canonicalSpeaks && CANONICAL_TERMINAL.has(canonicalStatus)),
+      finished: got.ok || !!savedEnquiry || (canonicalSpeaks && CANONICAL_TERMINAL.has(canonicalStatus)),
       // Bounded canonical facts, so the surface can be inspected without guessing which
       // ledger answered. Identifiers and one closed enum — nothing else.
       canonicalStatus: canonicalSpeaks ? canonicalStatus : null,

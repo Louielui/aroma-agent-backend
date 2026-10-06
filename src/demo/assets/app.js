@@ -1221,7 +1221,7 @@
     var names = { configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), usage: t('investigation.usage'), billing: t('investigation.billing') }
     return names[name] || t('investigation.operations')
   }
-  function renderInvestigation (turnEl, report) {
+  function renderInvestigation (turnEl, report, investigationId, approvalId) {
     if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
     var details = el('details', 'investigation-evidence')
     details.appendChild(el('summary', '', t('investigation.title')))
@@ -1239,12 +1239,26 @@
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
     turnEl.body.appendChild(details)
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
-    var link = el('a', '', t('investigation.settings')); link.href = '/model-center'; turnEl.body.appendChild(link)
+    var link = el('a', '', t('investigation.settings')); link.href = '/model-center' + (investigationId ? '?investigation=' + encodeURIComponent(investigationId) : ''); turnEl.body.appendChild(link)
+    if (investigationId) {
+      var check = el('button', 'ghost', t('investigation.enquiryOffer')); check.type = 'button'
+      turnEl.body.appendChild(check)
+      check.addEventListener('click', function () {
+        var investigationConversation = active
+        check.disabled = true
+        function prepare () { return fetch('/api/v1/owner/investigations/' + encodeURIComponent(investigationId) + '/work-order', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+          .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+          .then(function (sealed) { approvalId = sealed.approvalId; if (active === investigationConversation) renderCard(sealed, investigationConversation); else check.disabled = false })
+          .catch(function () { check.disabled = false; addMeta(turnEl.body, t('investigation.enquiryUnavailable')) }) }
+        if (approvalId) fetch('/api/v1/owner/results/' + encodeURIComponent(approvalId), { credentials: 'same-origin' }).then(function (r) { if (r.ok) watchProgress(approvalId, turnEl.body, {}, investigationConversation); else if (r.status === 404) prepare(); else throw Error() }).catch(function () { check.disabled = false })
+        else prepare()
+      })
+    }
   }
   function loadInvestigation (turnEl, id) {
     fetch('/api/v1/demo/investigations/' + encodeURIComponent(id), { credentials: 'same-origin' })
       .then(function (r) { if (!r.ok) throw Error(); return r.json() })
-      .then(function (data) { if (data.run && data.run.investigation) renderInvestigation(turnEl, data.run.investigation); else addMeta(turnEl.body, t('investigation.failed')) })
+      .then(function (data) { if (data.run && data.run.investigation) renderInvestigation(turnEl, data.run.investigation, id, data.run.enquiryApprovalId); else addMeta(turnEl.body, t('investigation.failed')) })
       .catch(function () { addMeta(turnEl.body, t('investigation.failed')) })
   }
   function addTyping (conv) {
@@ -2039,7 +2053,7 @@
     }
     if (res.investigation) {
       var investigationTurn = addBot(res.reply, conv)
-      renderInvestigation(investigationTurn, res.investigation)
+      renderInvestigation(investigationTurn, res.investigation, res.investigationRunId)
       return investigationTurn
     }
     if (res.taskPlanRunId) {
@@ -2677,8 +2691,8 @@
       }).then(function (o) {
         typed.disabled = true; no.disabled = true
         if (o.status === 201) {
-          if (o.body.dispatchStatus === 'agent_execute_accepted') {
-            out.textContent = t('approve.startedInCopy')
+          if (o.body.dispatchStatus === 'agent_execute_accepted' || o.body.dispatchStatus === 'read_only_enquiry_accepted') {
+            out.textContent = o.body.dispatchStatus === 'read_only_enquiry_accepted' ? t('investigation.enquiryRunning') : t('approve.startedInCopy')
             watchProgress(sealed.approvalId, card, sealed, conv)
           } else {
             out.textContent = t('approve.confirmedNotRun')
@@ -2775,7 +2789,8 @@
       var mark = el('span', state === 'done' ? 'done-mark' : 'fail-mark', state === 'done' ? '✓' : '✕')
       row.insertBefore(mark, label)
       label.textContent = (body && body.headline) || (state === 'done' ? t('run.done') : t('run.failed'))
-      if (body && Array.isArray(body.sections)) renderResult(card, body)
+      if (body && body.enquiry && body.enquiry.enquiryId) loadEnquiry(card, body.enquiry.enquiryId)
+      else if (body && Array.isArray(body.sections)) renderResult(card, body)
       /* ⛔ ADDITIVE, AND AFTER THE CARD. The card above is untouched — same mark, same
          headline, same sections. This adds the conversation message and nothing else, from
          the same body that is already in hand: no second fetch, no second endpoint.
@@ -2828,6 +2843,20 @@
     setTimeout(tick, 400)
   }
 
+  function loadEnquiry (card, id) {
+    fetch('/api/v1/demo/enquiries/' + encodeURIComponent(id), { credentials: 'same-origin' })
+      .then(function (r) { if (!r.ok) throw Error(); return r.json() })
+      .then(function (data) {
+        var r = data.enquiry, section = el('section', 'investigation-result')
+        section.appendChild(el('h3', '', t('investigation.enquirySaved')))
+        section.appendChild(el('p', 'prose', r.payload && r.payload.answer || t('investigation.enquiryFailed')))
+        ;(r.notEstablished || []).forEach(function (line) { section.appendChild(el('p', 'wait-note', line)) })
+        var details = el('details'); details.appendChild(el('summary', '', t('investigation.details')))
+        ;(r.payload && r.payload.citations || []).forEach(function (c) { details.appendChild(el('p', '', c.path + ':' + c.startLine + '-' + c.endLine)); details.appendChild(el('blockquote', '', c.quote)) })
+        details.appendChild(el('p', 'wait-note', t('investigation.citationBoundary')))
+        section.appendChild(details); card.appendChild(section)
+      }).catch(function () { addMeta(card, t('investigation.enquiryUnavailable')) })
+  }
   function renderResult (card, body) {
     var box = el('div', 'result')
     box.appendChild(el('div', 'sec-t', t('run.result')))

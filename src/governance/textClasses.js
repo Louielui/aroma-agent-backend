@@ -75,6 +75,8 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'investigation/enquiryOffer.js': CLASS.MODEL,
+  'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,
   'demo/assets/topics.js': CLASS.INTERFACE,

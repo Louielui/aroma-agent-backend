@@ -2,6 +2,7 @@
   'use strict'
   var lang = new URLSearchParams(location.search).get('lang') || INITIAL_LOCALE, t = createResolver({ catalogue: CATALOGUE, locale: lang })
   var by = function (id) { return document.getElementById(id) }, data = null, busy = false
+  var investigationId = new URLSearchParams(location.search).get('investigation'), investigationReady = !investigationId
   document.documentElement.lang = lang === 'en' ? 'en' : 'zh-Hant'
   by('title').textContent = t('brain.title'); document.title = t('brain.title')
   by('intro').textContent = t('brain.intro'); by('brain-title').textContent = t('brain.defaultTitle')
@@ -14,7 +15,7 @@
     var row = data.models.find(function (v) { return v.model === by('model').value }), list = row && (row.supportsEffort === false ? ['auto'] : row.efforts) || []
     by('effort').replaceChildren(); list.forEach(function (v) { option(by('effort'), v, levels[v] ? levels[v]() : v) })
     by('effort').value = list.includes(chosen) ? chosen : list.includes('medium') ? 'medium' : list[0] || ''
-    by('effort').disabled = busy || !row || row.supportsEffort === false; by('save').disabled = busy || !row || row.available !== true || !list.length
+    by('effort').disabled = busy || !row || row.supportsEffort === false; by('save').disabled = busy || !investigationReady || !row || row.available !== true || !list.length
   }
   function models (chosen) {
     by('model').replaceChildren()
@@ -34,10 +35,11 @@
   }
   by('company').addEventListener('change', function () { if (data) models() }); by('model').addEventListener('change', function () { if (data) efforts('medium') })
   by('brain-form').addEventListener('submit', async function (e) {
-    e.preventDefault(); if (!data || busy) return; busy = true; by('save').disabled = true; by('company').disabled = true; by('model').disabled = true; by('effort').disabled = true
-    try { var result = await request('/api/v1/model-center/brain', { revision: data.revision, model: by('model').value, effort: by('effort').value }); data.revision = result.revision; data.brain = result.brain; by('status').textContent = t('brain.saved'); busy = false; render() }
+    e.preventDefault(); if (!data || busy || !investigationReady) return; busy = true; by('save').disabled = true; by('company').disabled = true; by('model').disabled = true; by('effort').disabled = true
+    try { var result = await request('/api/v1/model-center/brain', { revision: data.revision, model: by('model').value, effort: by('effort').value, ...(investigationId ? { investigationId: investigationId } : {}) }); data.revision = result.revision; data.brain = result.brain; by('status').textContent = result.action && result.action.state === 'verified' ? t('investigation.actionVerified') : t('brain.saved'); busy = false; render() }
     catch (err) { by('status').textContent = err.message === 'conflict' ? t('brain.conflict') : t('brain.failed'); busy = false; efforts(by('effort').value) }
     finally { by('company').disabled = false; by('model').disabled = false }
   })
   request('/api/v1/model-center?lang=' + encodeURIComponent(lang)).then(function (v) { data = v; render() }).catch(function () { by('status').textContent = t('brain.failed') })
+  if (investigationId) request('/api/v1/model-center/investigations/' + encodeURIComponent(investigationId)).then(function (v) { investigationReady = true; by('investigation-context').textContent = t('investigation.actionContext', { goal: v.goal }); if (data) efforts(by('effort').value) }).catch(function () { by('investigation-context').textContent = t('investigation.failed') })
 })()
