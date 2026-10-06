@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', failed = false, verdict = 'allow_final' } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', failed = false, verdict = 'allow_final', judgment = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -11,7 +11,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
     calls.push({ p, schema: options.responseFormat?.name })
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify(options.responseFormat?.name === 'goal_plan'
       ? { question_restated: question, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }], joins: [] }
-      : { mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null }) }
+      : { mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
   } }
   let recall = 0
   const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, [], {
@@ -38,6 +38,13 @@ test('the same operational source choice handles English without a Chinese inten
   const x = await turn(t, { question: 'Find what previously kept consuming my credits and whether it is still running.' })
   assert.equal(x.reads.length, 1)
   assert.ok(x.result.investigation)
+})
+
+test('an operational answer does not prepend an unchecked auxiliary judgment over its evidence answer', async t => {
+  const x = await turn(t, { judgment: { status: 'provisional', statement: 'Unsupported-billing-judgment', uncertainties: ['This task has no execution records.'], changeIf: [] } })
+  assert.doesNotMatch(x.result.reply, /Unsupported-billing-judgment|no execution records/)
+  assert.equal(x.result.investigation.unverifiedJudgmentOmitted, true)
+  assert.match(x.result.reply, /扣款原因未確認/)
 })
 test('a plan cannot grant local operational access to a non-Owner caller', async t => {
   const x = await turn(t, { allowed: false })

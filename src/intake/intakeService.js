@@ -257,8 +257,16 @@ const { buildInvestigationState, investigationBlock, selfReadableObservation, X4
  * ⛔ AND THE SERVER STILL AUTHORS NO OPINION. Every word of the stance came from the model;
  * this function chooses placement, never content.
  */
-function leadWithJudgment (view, distilled, requestId, path) {
+function leadWithJudgment (view, distilled, requestId, path, investigation = null) {
   const j = distilled && distilled[JUDGMENT_KEY]
+  // This auxiliary prose bypasses the Answer Plan's source checks. The measured
+  // operational failure turned unconnected execution history into nonexistent records.
+  // Preserve the evidence answer and record the omission without another model call.
+  if (j && investigation) {
+    investigation.unverifiedJudgmentOmitted = true
+    try { console.log('[AROMA-X3]', JSON.stringify({ requestId, path, ledReply: false, reason: 'operational_judgment_not_source_verified' })) } catch (_) {}
+    return view
+  }
   const block = j ? renderJudgment(j) : null
   if (!block) return view
   const body = typeof view.reply === 'string' ? view.reply.trim() : ''
@@ -3348,7 +3356,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // ⛔ E2: ONE outcome decides both the screen and the count. `view.readClaim` was judged
     // against `view.reply` — the exact bytes he receives — so this can no longer report a
     // correction he never saw, nor stay silent about one he did.
-    leadWithJudgment(view, distilled, requestId, 'proposal-fallback')
+    leadWithJudgment(view, distilled, requestId, 'proposal-fallback', operationalInvestigation)
     const claim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (claim.corrected) logReadClaimCorrection(claim, requestId)
     return {
@@ -3497,7 +3505,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       history
     })
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
-    leadWithJudgment(view, distilled, requestId, 'chat')
+    leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,

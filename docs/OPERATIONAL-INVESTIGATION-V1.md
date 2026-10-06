@@ -36,6 +36,9 @@ section labels; values from another section cannot substantiate a claimed fact.
 Named task titles must match a retrieved record exactly; their facts are checked
 against that record rather than sibling tasks. Unconnected automation execution
 history is represented explicitly, without a synthetic null last-run observation.
+The auxiliary executive-judgment block bypasses answer source validation and is not
+prepended to operational investigations. Its omission is recorded in the receipt,
+metadata-only audit and folded evidence panel; no extra model call is made.
 
 The normal answer pipeline receives the source receipts even when memory had no
 result. Progress and final evidence are saved in `investigation-runs` using the

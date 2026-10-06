@@ -68,6 +68,7 @@ const CATALOGUE = Object.freeze({
   'investigation.readOnly': { zh: '這次只做調查。模型設定可在管理中心查看並確認修改；外部排程控制尚未接通，沒有停用或更改任何工作。', en: 'This was read-only. Model settings can be reviewed and confirmed in the management center. External schedule control is not connected; no jobs were stopped or changed.' },
   'investigation.settings': { zh: '查看模型設定', en: 'Review model settings' },
   'investigation.details': { zh: '來源紀錄與範圍限制', en: 'Source records and coverage limits' },
+  'investigation.judgmentOmitted': { zh: '額外判斷未經來源核對，已略去；保留調查回答與來源紀錄。', en: 'An additional judgment was omitted because it was not source-verified. The investigation answer and source records are retained.' },
   'investigation.archCurrent': { zh: '已接上目標規劃與自身資料唯讀調查：模型設定、固定排程見證、工作紀錄、歷史對話及舊用量紀錄。保留來源狀態、雜湊、進度與結果；缺少帳單時不確認扣款原因。', en: 'Goal planning can read fixed local settings, schedule witnesses, work records, conversation history and legacy usage. Source states, hashes, progress and results are retained. Missing billing evidence cannot confirm charge attribution.' },
   'investigation.archNext': { zh: '供應商帳單、Codex 執行歷史、完整 Windows 排程盤點及外部排程變更尚未接通。現有模型設定沿用 Owner 確認與版本核對。', en: 'Provider billing, Codex execution history, a complete Windows scheduler inventory and external schedule mutation remain unconnected. Model settings retain Owner confirmation and revision checks.' },
   'imageChat.upload': { zh: '加入圖片', en: 'Add images' },
