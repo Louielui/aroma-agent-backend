@@ -33,6 +33,9 @@ narrow to `?sources=xiangxiang_operations` for a zero-model-call service preflig
 disabled and unknown source requests are rejected rather than broadening the read.
 The answer guard verifies nested scalar facts against the cited section and localizes
 section labels; values from another section cannot substantiate a claimed fact.
+Named task titles must match a retrieved record exactly; their facts are checked
+against that record rather than sibling tasks. Unconnected automation execution
+history is represented explicitly, without a synthetic null last-run observation.
 
 The normal answer pipeline receives the source receipts even when memory had no
 result. Progress and final evidence are saved in `investigation-runs` using the

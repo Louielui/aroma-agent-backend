@@ -77,6 +77,21 @@ test('nested operational facts survive the real answer guard while invented and 
   assert.equal(checked.droppedFacts, 2)
 })
 
+test('named operational records retain their identity and cannot borrow facts from a sibling record', async t => {
+  const { dir, put } = fixture(t)
+  put('automations/first/automation.toml', 'name = "First task"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
+  put('automations/second/automation.toml', 'name = "Second task"\nstatus = "ACTIVE"\nrrule = "FREQ=DAILY"')
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, automationDir: path.join(dir, 'automations'), scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation()
+  const row = results.find(r => r.fields.section === 'schedules')
+  const checked = validatePlan({ directAnswer: '', sections: [{ heading: '', items: [{ sourceId: row.sourceId, title: 'First task', facts: [{ field: 'State', value: 'PAUSED' }, { field: 'Wrong task', value: 'ACTIVE' }] }] }], limitations: [], followUp: null }, { itemsBySource: [{ source: row.source, items: results }] })
+  assert.equal(checked.plan.sections[0].items[0].title, 'First task')
+  assert.deepEqual(checked.plan.sections[0].items[0].facts, [{ field: 'State', value: '已暫停' }])
+  assert.equal(checked.droppedFacts, 1)
+  const task = row.fields.records.find(r => r.name === 'First task')
+  assert.equal(task.executionHistoryState, 'unconnected')
+  assert.equal(Object.hasOwn(task, 'lastRunAt'), false, 'An unconnected execution source must not masquerade as a read null result')
+})
+
 test('local investigation continues across missing sources, distinguishes historic statements and billing, and preserves evidence', async t => {
   const { dir } = fixture(t)
   const seen = []

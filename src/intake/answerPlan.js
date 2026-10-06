@@ -613,8 +613,15 @@ function operationalValues (fields) {
   return out
 }
 
-function operationalTitle (row) {
+function operationalRecord (row, title) {
+  if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
+  const matches = (row.fields?.records || []).filter(record => record.name === title || record.sourceId === title)
+  return matches.length === 1 ? matches[0] : null
+}
+
+function operationalTitle (row, record) {
   if (row.source !== 'xiangxiang_operations') return row.title
+  if (record) return record.name || record.sourceId
   switch (row.fields?.section) {
     case 'configuration': return t('investigation.configuration')
     case 'schedules': return t('investigation.schedules')
@@ -1633,6 +1640,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         drops.push({ kind: 'item', sourceId: sourceId.slice(0, LIMITS.maxDropIdChars) })
         continue
       }
+      const record = operationalRecord(row, it.title)
       const facts = []
       const labels = metrics.get(row.source) || EMPTY_LABELS
       // TWO ALLOWANCES, COUNTED SEPARATELY. The ordinary cap is unchanged; a declared
@@ -1691,7 +1699,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
         // Everything else: unchanged. Verbatim, the translation of one, or the same
         // quantity written differently — never a substring, never fuzzy.
         // An operational fact must belong to the cited section, not another section.
-        const factIndex = row.source === 'xiangxiang_operations' ? evidenceIndex([], [{ source: row.source, items: [row] }]) : index
+        const factIndex = row.source === 'xiangxiang_operations' ? evidenceIndex([], [{ source: row.source, items: [record ? { ...row, fields: record } : row] }]) : index
         const m = matchValue(f.value, factIndex)
         if (!m.ok) {
           droppedFacts++
@@ -1727,7 +1735,7 @@ function validatePlan (plan, { evidenceSets = [], itemsBySource = [], message = 
        */
       items.push({
         sourceId,
-        title: operationalTitle(row) || String(it.title || ''),
+        title: operationalTitle(row, record) || String(it.title || ''),
         facts,
         canonical: canonicalOf(row),
         readKey: (typeof row.readKey === 'string' && row.readKey) ? row.readKey : null
