@@ -65,7 +65,7 @@
   max-width: 100%;
 }
 .top-navigation #places { display: flex; flex: 0 0 auto; margin: 0; padding: 0; border: 0; }
-.top-navigation #workspace-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; min-width: 0; max-width: 100%; }
+.top-navigation #workspace-nav { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; min-width: 0; max-width: 100%; }
 .sidebar-group { position: relative; flex: 0 0 auto; min-width: 0; max-width: 100%; margin: 0; }
 .sidebar-group > summary {
   display: flex;
@@ -160,7 +160,7 @@
   .sidebar-layout > #page-header.top-feature-header,
   .sidebar-layout > header.top-feature-header { gap: 8px; padding: 8px 12px; }
   .top-feature-header #conv-title { flex: 1 1 100%; max-width: none; padding: 0; border: 0; }
-  .top-navigation { flex: 0 0 100%; width: 100%; margin: 0; justify-content: flex-start; gap: 4px; }
+  .top-navigation { flex: 0 0 100%; width: 100%; margin: 0; justify-content: flex-start; gap: 12px; }
   .top-navigation #workspace-nav { display: contents; }
   /* Two deliberate, left-aligned rows in the same reading and Tab order:
      Home / daily / development, then management / labelled settings.
