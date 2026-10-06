@@ -75,6 +75,49 @@ async function verifyNavigationMatrix (rpc, evaluate) {
     }
   }
 }
+// Synthetic account capabilities for offline interaction checks, never a live
+// model catalogue or a claim about the Owner's subscription availability.
+function modelCatalogue () {
+  const row = (model, name, efforts) => ({ model, name, available: true, supportsEffort: efforts.length > 0, efforts, defaultEffort: efforts.length ? 'medium' : 'auto' })
+  return { billing: 'subscriptions', defaultModel: 'claude-sonnet', models: [
+    row('claude-sonnet', 'Claude Sonnet 5.5', ['low','medium','high','xhigh','max']),
+    row('claude-opus-4-6', 'Claude Opus 4.6', ['low','medium','high','max']),
+    row('claude-haiku-4-5-20251001', 'Claude Haiku 4.5', []),
+    ...['gpt-6.1-sol','gpt-6-astra','gpt-6-luna','gpt-6-sol'].map(model => row(model, model === 'gpt-6.1-sol' ? 'GPT-6.1 Sol' : model, ['low','medium','high','xhigh','max','ultra']))
+  ] }
+}
+async function verifyModelControls (evaluate, failedReads = false) {
+  const snapshot = `({brand:document.getElementById('brand-name')?.textContent,company:document.getElementById('brain-company')?.value,model:document.getElementById('picker-label')?.textContent,depth:document.getElementById('chat-level')?.value,disabled:document.getElementById('chat-level')?.disabled,options:Array.from(document.getElementById('chat-level')?.options||[],o=>({value:o.value,text:o.textContent})),placeholder:document.getElementById('msg')?.placeholder,sendDisabled:document.getElementById('send')?.disabled,menu:Array.from(document.querySelectorAll('#picker-menu .opt-name'),e=>e.textContent),unavailable:/temporarily unavailable|暫時無法/.test(document.getElementById('picker-menu')?.textContent||'')})`
+  let initial
+  for (let n = 0; n < 100; n++) {
+    initial = await evaluate(snapshot)
+    if (failedReads ? initial.unavailable : initial.model === 'Claude Sonnet 5.5' && initial.depth === 'medium') break
+    await wait(50)
+  }
+  const values = r => r.options.map(o => o.value).join(',')
+  if (!initial.brand || !initial.placeholder || initial.company !== 'claude' || !initial.model?.includes('Claude Sonnet') || initial.sendDisabled !== true || initial.options.some(o => !o.text) || !initial.menu.length || initial.menu.some(s => !s.startsWith('Claude'))) throw Error('browser_controls_failed')
+  if (failedReads) {
+    if (!initial.unavailable || initial.depth !== 'auto' || !initial.disabled || values(initial) !== 'auto') throw Error('browser_catalogue_failure_failed')
+    return initial
+  }
+  if (values(initial) !== 'low,medium,high,xhigh,max' || initial.disabled) throw Error('browser_model_efforts_failed')
+  const choose = async name => {
+    const chosen = await evaluate(`(() => { const b=Array.from(document.querySelectorAll('#picker-menu button')).find(e=>e.querySelector('.opt-name')?.textContent.startsWith(${JSON.stringify(name)})); if(!b || b.disabled)return false;document.getElementById('picker').click();b.click();return true })()`)
+    if (!chosen) throw Error('browser_model_selection_failed')
+    return evaluate(snapshot)
+  }
+  let selected = await choose('Claude Haiku')
+  if (!selected.disabled || selected.depth !== 'auto' || values(selected) !== 'auto') throw Error('browser_haiku_effort_failed')
+  selected = await choose('Claude Opus')
+  if (selected.disabled || values(selected) !== 'low,medium,high,max') throw Error('browser_model_efforts_failed')
+  await evaluate("document.getElementById('brain-company').value='openai';document.getElementById('brain-company').dispatchEvent(new Event('change',{bubbles:true}))")
+  selected = await evaluate(snapshot)
+  if (selected.company !== 'openai' || !selected.model.includes('GPT-6.1 Sol') || selected.menu.some(s => s.startsWith('Claude')) || values(selected) !== 'low,medium,high,xhigh,max,ultra') throw Error('browser_provider_isolation_failed')
+  await evaluate("document.getElementById('brain-company').value='claude';document.getElementById('brain-company').dispatchEvent(new Event('change',{bubbles:true}))")
+  selected = await choose('Claude Sonnet')
+  if (selected.company !== 'claude' || selected.depth !== 'medium' || selected.menu.some(s => !s.startsWith('Claude'))) throw Error('browser_provider_isolation_failed')
+  return initial
+}
 async function run ({ locale, width, failedReads = false, sidebar = false }) {
   if (!['zh', 'en'].includes(locale) || ![1280, 390].includes(width) || process.platform !== 'win32' || !/WDAGUtilityAccount/i.test(require('node:os').userInfo().username)) throw Error('offline_guest_required')
   const root = 'C:/XiangScratch', profile = root + '/edge-' + randomUUID(); fs.mkdirSync(profile, { recursive: true })
@@ -88,8 +131,7 @@ async function run ({ locale, width, failedReads = false, sidebar = false }) {
     const origin = 'http://127.0.0.1:' + port, version = await (await fetch(origin + '/json/version')).json(), targets = await (await fetch(origin + '/json/list')).json()
     const target = targets.find(t => t.type === 'page'); if (!target) throw Error('browser_unavailable')
     rpc = await connect(target.webSocketDebuggerUrl)
-    const models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna', 'gpt-6-sol'].map(model => ({ model, name: model === 'gpt-6.1-sol' ? 'GPT-6.1 Sol' : model, available: true, efforts: ['low', 'medium', 'high', 'xhigh', 'max'] }))
-    const fixtures = { '/api/v1/demo/models': { billing: 'chatgpt-subscription', defaultModel: 'gpt-6.1-sol', models }, '/api/v1/demo/greeting': { line: 'Browser fixture' }, '/api/v1/demo/version': { build: 'offline-browser-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/settings': { entries: [] }, '/manifest.webmanifest': {} }
+    const fixtures = { '/api/v1/demo/models': modelCatalogue(), '/api/v1/demo/greeting': { line: 'Browser fixture' }, '/api/v1/demo/version': { build: 'offline-browser-fixture' }, '/api/v1/conversations': { ok: true, conversations: [] }, '/api/v1/home/settings': { entries: [] }, '/manifest.webmanifest': {} }
     const planId = '00000000-0000-4000-8000-000000000001', planRoute = '/api/v1/task-plan/' + planId
     fixtures['/api/v1/demo/intake'] = { reply: 'Offline chat plan fixture', taskPlanRunId: planId, historySaved: false, lane: 'task_plan' }
     fixtures[planRoute] = { run: { id: planId, state: 'completed', evidence: { profile: 'chat', revision: 'a'.repeat(40), files: [] }, result: { goal: 'Chat page improvement', steps: ['Confirm the scope'], acceptanceChecks: ['Preserve model controls'], questions: [], risks: [], citations: [] } } }
@@ -106,22 +148,21 @@ async function run ({ locale, width, failedReads = false, sidebar = false }) {
     await rpc.call('Page.navigate', { url: 'http://xiangxiang.invalid/demo' })
     const evaluate = async expression => { const r = await rpc.call('Runtime.evaluate', { expression, returnByValue: true }); if (r.exceptionDetails) throw Error('browser_page_failed'); return r.result.value }
     for (let n = 0; n < 80; n++) { if (errors.length) throw Error('browser_page_startup_failed'); if (await evaluate("!!document.getElementById('brand-name')?.textContent")) break; await wait(100) }
-    const initial = await evaluate("({brand:document.getElementById('brand-name').textContent, model:document.getElementById('picker-label').textContent, depth:document.getElementById('chat-level').value, options:Array.from(document.getElementById('chat-level').options,o=>({value:o.value,text:o.textContent})), placeholder:document.getElementById('msg').placeholder, disabled:document.getElementById('send').disabled})")
-    if (!initial.brand || !initial.placeholder || initial.depth !== 'medium' || !initial.model.includes('GPT-6.1 Sol') || initial.disabled !== true || JSON.stringify(initial.options.map(o => o.value)) !== JSON.stringify(['low','medium','high','xhigh','max']) || initial.options.some(o => !o.text)) throw Error('browser_controls_failed')
+    await verifyModelControls(evaluate, failedReads)
     if (sidebar) {
       await verifyNavigationMatrix(rpc, evaluate)
       await rpc.call('Emulation.setEmulatedMedia', { features: [] })
       await rpc.call('Emulation.setDeviceMetricsOverride', { width, height: 900, deviceScaleFactor: 1, mobile: width === 390 })
     }
     if (width === 390) await evaluate("document.getElementById('collapse').click()")
-    const geometry = await evaluate("['msg','chat-level','picker','send'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect(),s=getComputedStyle(e);return {id,left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height,display:s.display,visibility:s.visibility}})")
+    const geometry = await evaluate("['msg','brain-company','chat-level','picker','send'].map(id=>{const e=document.getElementById(id),r=e.getBoundingClientRect(),s=getComputedStyle(e);return {id,left:r.left,right:r.right,bottom:r.bottom,width:r.width,height:r.height,display:s.display,visibility:s.visibility}})")
     if (geometry.some(r => r.width <= 0 || r.height <= 0 || r.left < -1 || r.right > width + 1 || r.bottom > 901 || r.display === 'none' || r.visibility === 'hidden')) throw Error('browser_layout_failed')
     await evaluate("document.getElementById('msg').focus()")
     await rpc.call('Input.insertText', { text: 'Offline keyboard check' })
     if (await evaluate("document.getElementById('send').disabled") !== false) throw Error('browser_keyboard_failed')
     await evaluate("document.getElementById('chat-level').focus()")
     await rpc.call('Input.dispatchKeyEvent', { type: 'keyDown', key: 'End', code: 'End', windowsVirtualKeyCode: 35 }); await rpc.call('Input.dispatchKeyEvent', { type: 'keyUp', key: 'End', code: 'End', windowsVirtualKeyCode: 35 })
-    if (await evaluate("document.getElementById('chat-level').value") !== 'max') throw Error('browser_depth_failed')
+    if (await evaluate("document.getElementById('chat-level').value") !== (failedReads ? 'auto' : 'max')) throw Error('browser_depth_failed')
     await evaluate("document.getElementById('picker').click()")
     if (await evaluate("document.getElementById('picker-menu').classList.contains('hidden')")) throw Error('browser_picker_failed')
     await wait(150); await evaluate("document.getElementById('picker').click();document.getElementById('msg').blur()")
@@ -135,8 +176,8 @@ async function run ({ locale, width, failedReads = false, sidebar = false }) {
     if (!form || form.files.join(',') !== 'src/demo/assets/index.html,src/demo/assets/app.js,src/demo/assets/app.css' || form.checks.length !== 4 || form.checks.some(Boolean) || form.disabled !== true) throw Error('browser_chat_scope_failed')
     const consent = await evaluate("(()=>{const f=document.querySelector('.chat-task-form'),checks=f.querySelectorAll('input');checks[2].click();const disabled=f.querySelector('button').disabled;checks[3].click();return {disabled,enabled:!f.querySelector('button').disabled}})()")
     if (!consent.disabled || !consent.enabled || errors.length || blocked.length) throw Error('browser_confirmation_failed')
-    const name = 'browser-' + locale + '-' + width, proof = { engine: 'edge-headless-offline-v1', browserVersion: version.Browser, locale, width, height: 900, failedReads, pageHash: hash(html), screenshotHash: hash(png), screenshotBytes: png.length, checks: { startup: true, labels: true, fiveDepths: true, mediumDefault: true, solDefault: true, layout: true, keyboard: true, picker: true, chatScope: true, explicitConfirmation: true, noPageErrors: true, onlyFixtureRequests: true }, routes }
+    const name = 'browser-' + locale + '-' + width, proof = { engine: 'edge-headless-offline-v2', browserVersion: version.Browser, locale, width, height: 900, failedReads, pageHash: hash(html), screenshotHash: hash(png), screenshotBytes: png.length, checks: { startup: true, labels: true, claudeDefault: true, providerIsolation: true, modelEfforts: true, catalogueFailureHandled: true, layout: true, keyboard: true, picker: true, chatScope: true, explicitConfirmation: true, noPageErrors: true, onlyFixtureRequests: true }, routes }
     fs.writeFileSync(root + '/' + name + '.png', png); fs.writeFileSync(root + '/' + name + '.json', JSON.stringify(proof)); return proof
   } finally { if (rpc) { await rpc.call('Browser.close').catch(() => {}); rpc.close() }; child.kill() }
 }
-module.exports = { run, page, navigationGeometry, verifyNavigationMatrix }
+module.exports = { run, page, navigationGeometry, verifyNavigationMatrix, modelCatalogue, verifyModelControls }

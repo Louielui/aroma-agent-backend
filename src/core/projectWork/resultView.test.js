@@ -2,10 +2,10 @@
 const test=require('node:test'), assert=require('node:assert/strict'), vm=require('node:vm')
 const { buildHtml }=require('./view')
 const ID='f5f8b397-34e4-46c8-8ba8-c86ae6e5e401', OTHER='00000000-0000-4000-8000-000000000002'
-function run(id=ID){return {id,state:'completed',startedAt:'2026-10-05T22:41:52Z',source:{evidence:{revision:'a'.repeat(40)}},workOrder:{recipe:'registered-task-example',allowedFiles:['sidebar.css']},review:{verdict:'pass'},result:{summary:'Spacing adjusted',changes:[],tests:{browser:[{name:'browser-zh-1280.png'}]}}}}
+function run(id=ID){return {id,state:'completed',startedAt:'2026-10-05T22:41:52Z',source:{evidence:{revision:'a'.repeat(40)}},workOrder:{recipe:'registered-task-example',allowedFiles:['sidebar.css']},review:{verdict:'pass'},result:{summary:'Spacing adjusted',changes:[],baseline:{browser:[{name:'browser-zh-1280.png'}]},tests:{browser:[{name:'browser-zh-1280.png'}]}}}}
 function fixture(search='?run='+ID, options={}){
  const calls=[], elements=new Map(), timers=[]
- const make=tag=>({tag,children:[],hidden:false,disabled:false,classList:{add(){}},append(...n){this.children.push(...n)},replaceChildren(...n){this.children=n},scrollIntoView(){}})
+ const make=tag=>({tag,children:[],hidden:false,disabled:false,classList:{add(){}},append(...n){this.children.push(...n)},replaceChildren(...n){this.children=n},setAttribute(k,v){this[k]=v},scrollIntoView(){}})
  const html=buildHtml();for(const m of html.matchAll(/id="([^"]+)"/g))elements.set(m[1],make('div'))
  elements.get('recipe').options=[{},{},{}]
  const flat=n=>[n,...n.children.flatMap(flat)], all=()=>[...elements.values()].flatMap(flat)
@@ -38,6 +38,17 @@ test('chat result loads exact task, opens protected previews and never prepares 
 })
 test('unselected overview still lists work; previews remain collapsed',async()=>{
  const f=fixture('');await f.flush();assert.equal(f.calls[0].url,'/api/v1/project-work');assert.equal(f.elements.get('runs').children.length,2);assert.ok(!f.all().some(n=>n.open))
+})
+
+test('targeted result compares original and candidate screenshots without preparing any work',async()=>{
+ const f=fixture();await f.flush()
+ const before=f.all().find(n=>n.tag==='button'&&n.dataset?.phase==='before'),after=f.all().find(n=>n.tag==='button'&&n.dataset?.phase==='after')
+ assert.ok(before&&after);assert.equal(after['aria-pressed'],'true')
+ before.onclick()
+ assert.ok(f.all().some(n=>n.tag==='img'&&n.src.endsWith('?phase=before')))
+ assert.equal(before['aria-pressed'],'true');assert.equal(after['aria-pressed'],'false')
+ after.onclick();assert.ok(f.all().some(n=>n.tag==='img'&&n.src.endsWith('/browser-zh-1280.png')))
+ assert.ok(f.calls.every(c=>!c.body))
 })
 test('invalid, missing or mismatched task never substitutes another task',async()=>{
  for(const [query,options] of [['?run=../bad',{}],['?run=',{}],['?run='+ID,{missing:true}],['?run='+ID,{mismatch:true}]]){

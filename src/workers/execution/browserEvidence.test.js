@@ -12,3 +12,11 @@ test('browser proof rejects foreign routes, unbounded metadata and bad hashes', 
   const good = fixture()[0]; assert.doesNotThrow(() => validate(good))
   for (const edit of [{ name: '../proof.png' }, { routes: ['https://external.invalid'] }, { screenshotBytes: 9000000 }, { pageHash: 'not a digest' }, { height: 500 }, { locale: 'fr' }]) assert.throws(() => validate({ ...good, ...edit }), /invalid_sandbox_evidence/)
 })
+
+test('provider-aware evidence is versioned and cannot reuse the legacy assertions', () => {
+  const checks = ['startup','labels','claudeDefault','providerIsolation','modelEfforts','catalogueFailureHandled','layout','keyboard','picker','chatScope','explicitConfirmation','noPageErrors','onlyFixtureRequests']
+  const rows = fixture().map(p => ({ ...p, engine: 'edge-headless-offline-v2', checks: Object.fromEntries(checks.map(k => [k, true])) }))
+  assert.equal(complete(rows), true)
+  assert.equal(complete(fixture()), true)
+  for (const bad of [{ ...rows[0], checks: fixture()[0].checks }, { ...rows[0], checks: { ...rows[0].checks, modelEfforts: false } }, { ...rows[0], engine: 'edge-headless-offline-v3' }]) assert.throws(() => validate(bad), /invalid_sandbox_evidence/)
+})

@@ -51,6 +51,16 @@ test('project-work bridge only accepts closed request shapes and shares the exec
   assert.equal((await send('/project-work', input)).status, 200); assert.equal(calls[0].actor.id, 'owner')
   active = true; assert.equal((await send('/status', {})).status, 503); assert.equal((await send('/project-work', { op: 'list' })).status, 200)
 })
+
+test('browser comparison phase crosses the bridge without accepting paths or arbitrary modes', async t => {
+  const token='e'.repeat(64),calls=[],server=createBridge({token,projectWork:{browser:(...args)=>{calls.push(args);return{name:args[2],content:'original'}}}})
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));t.after(()=>new Promise(resolve=>{server.closeAllConnections();server.close(resolve)}))
+  const input={op:'browser',id:require('node:crypto').randomUUID(),name:'browser-zh-390.png'},send=body=>fetch('http://127.0.0.1:'+server.address().port+'/project-work',{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body)})
+  for(const patch of [{phase:'live'},{phase:['before']},{phase:'before',path:'.env'}])assert.equal((await send({...input,...patch})).status,400)
+  assert.equal(calls.length,0)
+  assert.equal((await send({...input,phase:'before'})).status,200);assert.equal(calls[0][3],'before')
+  assert.equal((await send(input)).status,200);assert.equal(calls[1][3],undefined)
+})
 test('adoption and project work can be observed together but cannot dispatch overlapping writes', async t => {
   const token = 'd'.repeat(64), calls = []; let pending = true, workActive = false
   const server = createBridge({ token, projectWork: { isActive: () => workActive, catalogue: () => ({}), list: () => [], prepare: () => calls.push('work') }, projectAdoption: { isActive: () => pending, refresh: async () => {}, enabled: () => true, list: () => [], prepare: () => calls.push('adopt') } })

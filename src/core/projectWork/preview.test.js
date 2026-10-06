@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict'), vm = require('node:vm')
 const { buildHtml } = require('./view')
 function preview (run) {
-  const make = tag => ({ tag, children: [], append (...nodes) { this.children.push(...nodes) } })
+  const make = tag => ({ tag, children: [], dataset: {}, append (...nodes) { this.children.push(...nodes) }, replaceChildren (...nodes) { this.children = nodes }, setAttribute (key,value) { this[key] = value } })
   const script = buildHtml().match(/<script>([\s\S]*?)<\/script>/)[1]
   const ctx = vm.createContext({ document: { createElement: make }, encodeURIComponent })
   vm.runInContext(script.match(/const L=(.*?), \$=id/)[0].replace(/, \$=id$/, ';') + script.match(/function text\(parent,value\)\{[^\n]*\}/)[0] + script.match(/function browser\(parent,r,expanded=false\)\{[^\n]*\}/)[0], ctx)

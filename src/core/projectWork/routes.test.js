@@ -23,3 +23,14 @@ test('browser image reads accept only a registered run and fixed screenshot name
   for(const route of ['/api/v1/project-work/invalid/browser/browser-zh-390.png','/api/v1/project-work/'+id+'/browser/credentials.png'])assert.equal((await fetch(base+route)).status,400)
   assert.equal(calls.length,0);const r=await fetch(base+'/api/v1/project-work/'+id+'/browser/browser-zh-390.png');assert.equal(r.status,200);assert.equal(r.headers.get('content-type'),'image/png');assert.equal(r.headers.get('cache-control'),'no-store');assert.deepEqual(Buffer.from(await r.arrayBuffer()),png);assert.deepEqual(calls,[{op:'browser',id,name:'browser-zh-390.png'}])
 })
+
+test('before preview selects the original receipt explicitly; invalid phases cannot reach the bridge', async t => {
+  const calls=[],app=express(),id=randomUUID()
+  app.use(createProjectRouter({env:{READ_ACCESS:'on'},request:async input=>{calls.push(input);return{name:input.name,content:Buffer.from('original').toString('base64')}}}))
+  const server=app.listen(0,'127.0.0.1');await new Promise(r=>server.once('listening',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
+  const url='http://127.0.0.1:'+server.address().port+'/api/v1/project-work/'+id+'/browser/browser-zh-390.png'
+  for(const query of ['?phase=live','?phase=before&phase=after','?path=.env']) assert.equal((await fetch(url+query)).status,400)
+  assert.equal(calls.length,0)
+  assert.equal((await fetch(url+'?phase=before')).status,200)
+  assert.deepEqual(calls,[{op:'browser',id,name:'browser-zh-390.png',phase:'before'}])
+})

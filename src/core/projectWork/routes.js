@@ -9,9 +9,9 @@ function createProjectRouter ({ bootCommit, env = process.env, request = input =
   router.get('/api/v1/project-work', (req, res) => call(res, { op: 'list' }))
   router.get('/api/v1/project-work/:id', (req, res) => { if (!ID.test(req.params.id || '')) return res.status(400).json({ error: 'invalid_request' }); call(res, { op: 'get', id: req.params.id }) })
   router.get('/api/v1/project-work/:id/browser/:name', async (req, res) => {
-    if (!ID.test(req.params.id || '') || !require('../../workers/execution/browserEvidence').NAMES.includes(req.params.name)) return res.status(400).json({ error: 'invalid_request' })
+    if (!ID.test(req.params.id || '') || !require('../../workers/execution/browserEvidence').NAMES.includes(req.params.name) || Object.keys(req.query).some(k => k !== 'phase') || (req.query.phase !== undefined && !['before','after'].includes(req.query.phase))) return res.status(400).json({ error: 'invalid_request' })
     try {
-      const value = await request({ op: 'browser', id: req.params.id, name: req.params.name })
+      const value = await request({ op: 'browser', id: req.params.id, name: req.params.name, ...(req.query.phase !== undefined ? { phase: req.query.phase } : {}) })
       if (value.error || value.name !== req.params.name || typeof value.content !== 'string' || value.content.length > 2700000) return res.status(409).json({ error: 'evidence_unavailable' })
       res.set('Cache-Control', 'no-store').set('X-Content-Type-Options', 'nosniff').type('png').send(Buffer.from(value.content, 'base64'))
     } catch (_) { res.status(503).json({ error: 'evidence_unavailable' }) }

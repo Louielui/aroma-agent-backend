@@ -2,9 +2,11 @@
 const TEST = 'acceptance/chat-browser.test.cjs'
 const NAMES = Object.freeze(['zh', 'en'].flatMap(locale => [1280, 390].map(width => `browser-${locale}-${width}.png`)))
 const CHECKS = ['startup','labels','fiveDepths','mediumDefault','solDefault','layout','keyboard','picker','chatScope','explicitConfirmation','noPageErrors','onlyFixtureRequests']
+const CHECKS_V2 = ['startup','labels','claudeDefault','providerIsolation','modelEfforts','catalogueFailureHandled','layout','keyboard','picker','chatScope','explicitConfirmation','noPageErrors','onlyFixtureRequests']
 const ROUTES = ['/demo','/api/v1/demo/models','/api/v1/demo/greeting','/api/v1/demo/version','/api/v1/conversations','/api/v1/home/settings','/manifest.webmanifest','/api/v1/demo/intake','/api/v1/task-plan/00000000-0000-4000-8000-000000000001']
 function validate (p) {
-  if (!p || !NAMES.includes(p.name) || p.name !== `browser-${p.locale}-${p.width}.png` || p.engine !== 'edge-headless-offline-v1' || typeof p.browserVersion !== 'string' || !/^Edg\/[0-9.]+$/.test(p.browserVersion) || p.height !== 900 || p.failedReads !== (p.locale === 'zh' && p.width === 390) || !/^[a-f0-9]{64}$/.test(p.pageHash || '') || !/^[a-f0-9]{64}$/.test(p.screenshotHash || '') || !Number.isSafeInteger(p.screenshotBytes) || p.screenshotBytes < 1001 || p.screenshotBytes > 2000000 || Object.keys(p.checks || {}).length !== CHECKS.length || !CHECKS.every(k => p.checks[k] === true) || !Array.isArray(p.routes) || !p.routes.includes('/demo') || p.routes.length > 100 || p.routes.some(n => !ROUTES.includes(n))) throw Error('invalid_sandbox_evidence')
+  const checks = p?.engine === 'edge-headless-offline-v2' ? CHECKS_V2 : p?.engine === 'edge-headless-offline-v1' ? CHECKS : null
+  if (!p || !NAMES.includes(p.name) || p.name !== `browser-${p.locale}-${p.width}.png` || !checks || typeof p.browserVersion !== 'string' || !/^Edg\/[0-9.]+$/.test(p.browserVersion) || p.height !== 900 || p.failedReads !== (p.locale === 'zh' && p.width === 390) || !/^[a-f0-9]{64}$/.test(p.pageHash || '') || !/^[a-f0-9]{64}$/.test(p.screenshotHash || '') || !Number.isSafeInteger(p.screenshotBytes) || p.screenshotBytes < 1001 || p.screenshotBytes > 2000000 || Object.keys(p.checks || {}).length !== checks.length || !checks.every(k => p.checks[k] === true) || !Array.isArray(p.routes) || !p.routes.includes('/demo') || p.routes.length > 100 || p.routes.some(n => !ROUTES.includes(n))) throw Error('invalid_sandbox_evidence')
   return p
 }
 function complete (rows) {

@@ -117,7 +117,7 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
     if (controller) { controller.abort(); return r }
     r.state = 'cancelled'; r.finishedAt = new Date().toISOString(); sessions.delete(id); record(r, 'cancelled'); return r
   }
-  return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, browser: (actor, id, name) => { owner(actor); return browserEvidence.screenshot(store.get(id)?.result?.tests, name) }, settled: () => pending,
+  return { prepare, approve, cancel, list, get: (actor, id) => { owner(actor); return store.get(id) }, browser: (actor, id, name, phase = 'after') => { owner(actor); if (!['before','after'].includes(phase)) throw Error('invalid_request'); const result = store.get(id)?.result; return browserEvidence.screenshot(phase === 'before' ? result?.baseline : result?.tests, name) }, settled: () => pending,
     isActive: () => busy, catalogue: actor => { owner(actor); return { enabled: enabled(), workOrders: catalogueRecipes().map(r => r.workOrder), limits: ['other_projects', 'dependency_installation', 'general_chat_dispatch', 'automatic_live_application'] } } }
 }
 module.exports = { createProjectWork }
