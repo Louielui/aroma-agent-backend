@@ -98,6 +98,13 @@ active or unrecorded work cannot be retried through this path. The worker uses t
 generic adapter response-format contract, tested through the real subscription
 adapter with a local transport fixture.
 
+The subscription receives a numbered source view; line prefixes are metadata, not
+part of the quoted text. Before calling the model, the worker checks that its
+actual service identity can verify a sample line from each nonempty source.
+Rejected citations remain failures with bounded diagnostics and the unverified
+response saved separately from the deliverable payload. They are never silently
+repaired, treated as verified evidence, or retried automatically.
+
 Acceptance: missing memory continues to a judged local read; English and Chinese
 requests use the same path; unauthorized requests do not read; partial and corrupt
 sources do not manufacture zeroes; snapshots survive reload; no automatic action,

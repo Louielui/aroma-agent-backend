@@ -31,6 +31,7 @@ test('one subscription call receives only the approved snapshot and preserves un
   const out = await worker.dispatch({ goal: 'Investigate cost', sessionId: 'fixed' })
   assert.equal(f.calls.length, 1); assert.equal(f.calls[0].selection.model, 'claude-opus-5-5')
   assert.deepEqual(f.calls[0].prompt.files.map(x => x.path), ['settings.txt'])
+  assert.equal(f.calls[0].prompt.files[0].numberedText, '1: enabled = false\n2: ')
   assert.equal(out.costUsd, null); assert.equal(out.diagnostics.toolsEnabled, false)
   assert.equal(out.citations[0].status, 'CONFIRMED')
 })
@@ -42,12 +43,34 @@ test('a citation to an existing but unapproved file is refused', async t => {
 test('a mismatched quote cannot be delivered as a successful investigation', async t => {
   const value = result(); value.citations[0].quote = 'enabled = true'
   const f = fixture(t, value)
-  await assert.rejects(createEnquirySubscriptionWorker(f.args).dispatch({ goal: 'q' }), /citations/)
+  await assert.rejects(createEnquirySubscriptionWorker(f.args).dispatch({ goal: 'q' }), err => {
+    assert.match(err.message, /citations/)
+    assert.deepEqual(err.diagnostics.unverifiedPayload, value)
+    assert.equal(err.diagnostics.citationChecks[0].status, 'QUOTE_MISMATCH')
+    assert.equal(err.diagnostics.billing, 'subscription')
+    return true
+  })
+  const { runEnquiry } = require('./enquiryRunner')
+  const worker = createEnquirySubscriptionWorker(f.args)
+  const saved = await runEnquiry({ question: 'q', worker: input => worker.dispatch(input), next: () => ({ done: false, goal: 'q' }), budgetUsd: 5, maxRounds: 1 })
+  assert.equal(saved.report.outcome, 'FAILED')
+  assert.equal(saved.turns[0].payload, null)
+  assert.deepEqual(saved.turns[0].diagnostics.unverifiedPayload, value)
+  assert.equal(saved.turns.length, 1)
 })
 test('changed snapshot is refused before consuming the subscription', async t => {
   const f = fixture(t, result()); fs.writeFileSync(path.join(f.cwd, 'settings.txt'), 'modified\n')
   assert.throws(() => createEnquirySubscriptionWorker(f.args), /source_changed/)
   assert.equal(f.calls.length, 0)
+  const inaccessible = fixture(t, result()), worker = createEnquirySubscriptionWorker(inaccessible.args)
+  t.mock.method(fs.realpathSync, 'native', () => { throw Object.assign(Error('denied'), { code: 'EACCES' }) })
+  await assert.rejects(worker.dispatch({ goal: 'q' }), err => {
+    assert.equal(err.message, 'enquiry_source_unverifiable')
+    assert.equal(err.diagnostics.modelCalled, false)
+    assert.equal(err.diagnostics.citationChecks[0].status, 'OUTSIDE_COPY')
+    return true
+  })
+  assert.equal(inaccessible.calls.length, 0)
 })
 
 test('a source changed during the call cannot validate different evidence', async t => {
