@@ -3558,7 +3558,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,
       ...(operationalInvestigation && { investigation: operationalInvestigation }),
       ...(demo && { demoOutcome: classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome, contextCardWarnings: ctx.warnings }),
-      reply: view.reply, replyForArchive: guarded.reply, readClaimCorrected: chatClaim.corrected,
+      reply: view.reply, replyForArchive: operationalInvestigation?.readOnly === true ? view.reply : guarded.reply, readClaimCorrected: chatClaim.corrected,
       judgment: '', reasons: distilled.reasons || [], offer: distilled.offer || '', decision: null, tasks: [], risks: [], next_step: '', requestId }
   }
 

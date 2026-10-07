@@ -74,6 +74,7 @@ test('non-read-only report and absent draft do not invoke any model',async()=>{
 })
 test('the reviewer sees only referenced fresh receipts, with no previous transcript or unrelated source',async()=>{
  let prompt;const a={complete:async(p)=>{prompt=p;return{billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:'supported',reason:'matches_reference'}]})}}}
- const p=report();p.previousTranscript='PRIVATE_HISTORY';p.sections.push({sourceId:'private-unrelated',records:[{secret:'PRIVATE_UNRELATED'}]})
+ const p=report();p.previousTranscript='PRIVATE_HISTORY';p.sections.push({sourceId:'private-unrelated',records:[{secret:'PRIVATE_UNRELATED'}]});p.sections[0].records[0].uncitedField='UNCITED_RECORD_FIELD'
  const r=await check({claims:[claim()]},{report:p,adapter:a});assert.equal(r.accepted.length,1);assert.ok(!prompt.includes('PRIVATE_HISTORY'));assert.ok(!prompt.includes('PRIVATE_UNRELATED'))
+ assert.ok(!prompt.includes('UNCITED_RECORD_FIELD'),'Uncited fields cannot rescue an incomplete claim reference')
 })

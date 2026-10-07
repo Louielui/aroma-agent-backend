@@ -38,12 +38,14 @@ test('general English semantics reaches the actual final intake reply with visib
  const investigationAnswer={claims:[{id:'c1',text:'The billing source is not connected, so the actual charge cause is not established.',kind:'limitation',evidenceState:'not_established',temporalScope:'unknown',references:[{sourceId:'billing:abc',recordId:null,field:'state',value:'unconnected'}]}]}
  const x=await turn(t,{question:'Could the credits be coming from an unattended workflow? Find the evidence.',focus:'general',investigationAnswer})
  assert.match(x.result.reply,/billing source is not connected/);assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_semantic_review')
+ assert.equal(x.result.replyForArchive,x.result.reply,'Archive must preserve the reviewed answer rather than the unreviewed draft')
  assert.equal(x.result.investigation.semanticReview.accepted[0].references[0].sourceId,'billing:abc')
  assert.equal(x.result.investigation.semanticReview.calls,1);assert.equal(x.reads.length,1);assert.deepEqual(x.result.tasks,[])
  assert.ok(x.events.some(e=>e.state==='semantic_review'));assert.equal(x.calls.filter(c=>c.schema==='investigation_semantic_review').length,1)
  const withheld=await turn(t,{question:'Investigate credit usage',focus:'general',investigationAnswer,semanticDecision:'unsupported'})
  assert.doesNotMatch(withheld.result.reply,/billing source is not connected/);assert.equal(withheld.result.investigation.semanticReview.accepted.length,0)
  assert.match(withheld.result.reply,/No usable semantic review/)
+ assert.equal(withheld.result.replyForArchive,withheld.result.reply,'Withheld prose must not survive through the archive')
  const denied=await turn(t,{allowed:false,investigationAnswer});assert.equal(denied.calls.filter(c=>c.schema==='investigation_semantic_review').length,0)
 })
 test('legacy ambiguity remains terminal when the Owner operational read has no observed evidence', async t => {

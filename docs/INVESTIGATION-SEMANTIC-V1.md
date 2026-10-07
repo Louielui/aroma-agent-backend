@@ -21,7 +21,9 @@ unchanged since the receipt was captured.
 
 One bounded review call uses the same selected subscription adapter, model and
 billing identity. It judges paraphrase entailment against the referenced fresh
-records and their coverage. A changed identity, unavailable review, unclear,
+cited scalar fields and receipt coverage; uncited row fields and prior continuity
+do not enter the reviewer. Every comparison must cite both compared fields.
+A changed identity, unavailable review, unclear,
 contradicted, unsupported, missing or duplicate verdict withholds the statement.
 There is no automatic retry, API fallback or new source/worker execution. The
 review input is bounded to 24,000 characters and the review output to 1,800 tokens.
@@ -37,6 +39,8 @@ count, elapsed time and reported usage are saved with the investigation receipt.
 Usage nulls remain unknown; this is not account-wide consumption or billing.
 The progress surface shows the actual `semantic_review` stage. Sources and review
 details are expandable and reload from the saved receipt without a model call.
+The archive stores this same reviewed or bounded fallback answer, never the
+unreviewed original prose.
 
 If review is unavailable or yields no accepted statements, the bounded existing
 failure/background brief or an explicit insufficient-evidence explanation is
