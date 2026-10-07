@@ -815,7 +815,10 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
           providerHint
         })
         opts.telemetry = telemetry
-        if (interactionMode === 'chat') opts.ownerInvestigation = true
+        if (interactionMode === 'chat') {
+          opts.ownerInvestigation = true
+          opts.operationsBackgroundReader = req.app.locals.operationsBackgroundReader
+        }
         if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {
           opts.previousInvestigation = require('../investigation/continuity').previousInvestigation({ conversationId: req.body.conversationId, conversationStore, receipts: investigationReceipts })
         }

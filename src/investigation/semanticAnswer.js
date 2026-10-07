@@ -25,7 +25,8 @@ function referenceCatalog(report){
     }
    };walk(r)
    const row={recordId,fields},size=JSON.stringify(row).length
-   if(out.records.length>=6||used+size>18000){out.omittedRecords++;continue}
+   const limit=report.focus==='background'&&s.section==='configuration'?12:6
+   if(out.records.length>=limit||used+size>18000){out.omittedRecords++;continue}
    used+=size;out.records.push(row)
   }
   sections.push(out)

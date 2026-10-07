@@ -8,12 +8,16 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   const findings = [], gaps = [], contradictions = [], transitions = []
   const add = (s, r, kind, evidenceState, temporalScope, value = null) => findings.push({ kind, evidenceState, temporalScope, sourceId: s.sourceId, recordId: r?.sourceId || null, at: r?.at || r?.lastStartedAt || null, retrievedAt: s.retrievedAt, value })
   const schedules = sections.find(s => s.section === 'schedules')
+  const currentByIdentity = new Map()
   for (const s of sections) {
     if ((focus === 'cost' || !['billing', 'usage'].includes(s.section)) && (s.state !== 'ok' || !s.records?.length)) gaps.push({ section: s.section, state: s.state, sourceId: s.sourceId, coverage: s.coverage || null, omitted: s.omitted ?? null })
     if (s.section === 'billing') { if (focus === 'cost') add(s, null, 'charge_unverified', 'not_established', 'unknown'); continue }
     for (const r of s.records || []) {
       if (s.section === 'schedules') add(s, r, 'schedule_current', 'confirmed', 'current', { name: r.name || r.sourceId, state: r.state, model: r.model ?? null, currentRunningState: r.currentRunningState || 'unknown' })
-      else if (s.section === 'configuration') add(s, r, 'configuration_current', 'confirmed', 'current', { model: r.model, effort: r.effort })
+      else if (s.section === 'configuration') {
+        if (r.evidenceBasis === 'live_process_snapshot' && r.role) add(s,r,'background_activity_observed',r.currentRunningState === 'unknown' ? 'not_established' : 'confirmed','current',{role:r.role,state:r.currentRunningState,enabled:r.enabled,model:r.model,modelBasis:r.modelBasis,provider:r.provider,effort:r.effort,at:r.at,reason:r.reason,nextAt:r.nextAt})
+        else add(s, r, 'configuration_current', 'confirmed', 'current', { model: r.model, effort: r.effort })
+      }
       else if (s.section === 'execution') {
         if (r.lastStartedAt || r.lastCompletedAt) add(s, r, 'execution_observed', 'confirmed', 'historical', { model: r.model, startedAt: r.lastStartedAt, completedAt: r.lastCompletedAt })
         if (r.usage) add(s, r, 'usage_recorded', 'confirmed', 'historical', { usage: r.usage, usageAt: r.usageAt, basis: r.usageBasis })
@@ -28,15 +32,19 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
         if (r.sourceFiles?.length) add(s, r, 'source_snapshot_compared', 'confirmed', 'current_disk', { files: r.sourceFiles, sourceRevision: r.sourceRevision, provesFix: false })
       }
     }
-    const byId = new Map()
+    // Same source category, identity and observed facet only. Historical work
+    // state and a current schedule definition are not opposing observations.
+    const byId = currentByIdentity
     for (const r of s.records || []) {
-      if (!r.sourceId || !r.state) continue
-      const prior = byId.get(r.sourceId)
-      if (prior && prior.state !== r.state) {
+      if (!r.sourceId) continue
+      const identity = s.section + ':' + r.sourceId
+      const prior = byId.get(identity)
+      for (const field of ['state','currentRunningState','model']) {
+        if (!prior || typeof prior[field]!=='string' || typeof r[field]!=='string' || [prior[field],r[field]].some(v=>['unknown','UNREADABLE'].includes(v)) || prior[field]===r[field]) continue
         const target = prior.at && r.at && prior.at !== r.at ? transitions : contradictions
-        target.push({ sourceId: s.sourceId, recordId: r.sourceId, observations: [{ state: prior.state, at: prior.at || null }, { state: r.state, at: r.at || null }] })
+        target.push({ sourceId: s.sourceId, recordId: r.sourceId, field, observations: [{ state: prior[field], at: prior.at || null }, { state: r[field], at: r.at || null }] })
       }
-      byId.set(r.sourceId, r)
+      byId.set(identity, r)
     }
   }
   const required = focus === 'cost' ? ['execution', 'billing'] : focus === 'work_failure' ? ['work', 'configuration'] : focus === 'background' ? ['configuration', 'schedules'] : []
@@ -56,7 +64,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   const recommendations = (focus === 'cost' ? ['obtain_billing_evidence', 'compare_explicit_execution_identity'] : focus === 'work_failure' ? ['verify_same_task_current_source'] : focus === 'background' ? ['inspect_live_worker_activity'] : ['resolve_relevant_source_gaps']).map(kind => ({ kind, evidenceState: 'not_established', readOnly: true }))
   // Keep the requested evidence and its uncertainty boundary inside the display
   // budget. Full receipts and omitted counts remain available in every focus.
-  const priorityKinds = focus === 'background' ? ['workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded'] : focus === 'work_failure' ? ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'work_recorded', 'configuration_current'] : ['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link']
+  const priorityKinds = focus === 'background' ? ['background_activity_observed','workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded'] : focus === 'work_failure' ? ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'work_recorded', 'configuration_current'] : ['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link']
   findings.sort((a, b) => Number(priorityKinds.includes(b.kind)) - Number(priorityKinds.includes(a.kind)))
   return { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
 }

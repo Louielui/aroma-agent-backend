@@ -1355,7 +1355,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               sourcesForPlan(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))?.includes('xiangxiang_operations')) {
             investigationProgress({ state: 'reading', section: 'operations' })
             const connector = deps?.connector || createLiveReadConnector({ env: process.env,
-              operationsOptions: { onProgress: e => investigationProgress({ ...e, state: e.state === 'reading' ? 'reading' : 'source_complete', sourceState: e.state }) } }).connector
+              operationsOptions: { backgroundReader:opts.operationsBackgroundReader, onProgress: e => investigationProgress({ ...e, state: e.state === 'reading' ? 'reading' : 'source_complete', sourceState: e.state }) } }).connector
             const rc = await buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env })
             const sections = (rc.itemsBySource?.[0]?.items || []).map(r => ({ sourceId: r.sourceId, retrievedAt: r.retrievedAt, ...r.fields }))
             operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections })

@@ -28,9 +28,28 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, schedulerReader = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
+  const activeCalls = new Map()
+  async function observedCall (role, fn, options, body) {
+    activeCalls.set(role,{model:body.model || null,effort:body.effort || null,startedAt:new Date().toISOString()})
+    try { return await fn(options,body) } finally { activeCalls.delete(role) }
+  }
+  async function runtimeMetadata () {
+    let scheduler = null
+    try { scheduler = schedulerReader ? await schedulerReader() : null } catch (_) {
+      scheduler={state:'UNREADABLE',scheduled:null,healthy:null,lastRunAt:null,nextRunAt:null,currentRunningState:'unknown',readAt:Date.now()}
+    }
+    const at = new Date().toISOString()
+    return {state:'partial',bootCommit:require('../governance/bootCommit').BOOT_COMMIT,retrievedAt:at,scheduler,provesCharge:false,records:['chat_completion','memory_completion'].map(role=>{
+      const active=activeCalls.get(role),model=active?.model || (role==='memory_completion' ? backgroundModel : null)
+      return {sourceId:'bridge:'+role,role,at,model,effort:active?.effort || (role==='memory_completion' ? 'low' : null),
+        provider:model ? isClaudeModel(model) ? 'claude' : 'gpt' : null,
+        enabled:role==='memory_completion' ? memoryEnabled : true,currentRunningState:active?'active':'idle',
+        startedAt:active?.startedAt || null,evidenceBasis:'live_process_snapshot',modelBasis:active?'in_flight_request_selection':'bridge_route_configuration'}
+    }),note:'Only these bridge completion lanes are observed. Worker workflow occupancy and external processes are separate; no billing attribution.'}
+  }
   const session = createSession(clientOptions)
   const memorySession = createSession(memoryClientOptions)
   const catalogueSession = createSession({ ...clientOptions, timeoutMs: 20000 })
@@ -51,10 +70,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
-    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata'
+    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -73,7 +92,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (req.url === '/execution-metadata' || req.url === '/work-metadata') {
+      if (req.url === '/runtime-metadata') {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
+        try { reply(200,await runtimeMetadata()) } catch (_) { reply(503,{code:'context_unavailable'}) }
+      } else if (req.url === '/execution-metadata' || req.url === '/work-metadata') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'context_unavailable' }); return }
         const reader = req.url === '/work-metadata' ? workReader : executionReader
         if (!reader) { reply(503, { code: 'context_unavailable' }); return }
@@ -137,7 +159,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
         catch (e) { reply(200, { error: ['revision_conflict', 'decision_conflict'].includes(e.message) ? e.message : 'memory_database_unavailable' }) }
       } else if (req.url === '/v1/chat/completions') {
         if (!memoryEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
-        reply(200, await require('./memoryCompletion').memoryCompletion(options, input, backgroundModel === DEFAULT_BRAIN_MODEL ? (opts, body) => claudeFn(opts, { ...body, model: DEFAULT_BRAIN_MODEL }) : completeFn))
+        reply(200, await require('./memoryCompletion').memoryCompletion(options, input, (opts,body) => {
+          const routed = backgroundModel === DEFAULT_BRAIN_MODEL ? {...body,model:DEFAULT_BRAIN_MODEL} : body
+          return observedCall('memory_completion',isClaudeModel(routed.model)?claudeFn:completeFn,opts,routed)
+        }))
       } else if (req.url === '/website') {
         if (!websiteEnabled) { reply(503, { code: 'subscription_unavailable' }); return }
         reply(200, await findWebsiteFn(options, input))
@@ -158,7 +183,7 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       } else if (req.url === '/models') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400, { code: 'subscription_invalid_output' }); return }
         reply(200, await readCatalogue())
-      } else reply(200, await (isClaudeModel(input?.model) ? claudeFn : completeFn)(options, validateInput(input)))
+      } else reply(200, await observedCall('chat_completion',isClaudeModel(input?.model) ? claudeFn : completeFn,options,validateInput(input)))
     } catch (error) {
       const safe = error instanceof SubscriptionError ? error : new SubscriptionError()
       reply(safe.code === 'subscription_limit_reached' ? 429 : 503, { code: safe.code })

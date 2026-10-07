@@ -2,6 +2,14 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {renderOperationalBrief}=require('./operationalBrief')
 const report=(focus,sections)=>({version:1,focus,readOnly:true,sections})
+test('background summaries name the observed components and distinguish configured models from active inference',()=>{
+ const r=report('background',[{section:'configuration',state:'ok',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',model:'claude-sonnet',modelBasis:'bridge_route_configuration',currentRunningState:'idle',enabled:true,at:'2026-10-07T20:00:00Z',evidenceBasis:'live_process_snapshot'}]}])
+ const zh=renderOperationalBrief(r,{message:'哪些背景工作在運行？'}),en=renderOperationalBrief(r,{message:'What background jobs are running?'})
+ assert.match(zh,/電郵分析.*未在執行.*claude-sonnet/)
+ assert.match(en,/Mail analysis.*idle.*claude-sonnet/i)
+ assert.match(en,/route.*configuration|configured.*route/i)
+ assert.doesNotMatch(zh,/backend:mail_analysis/)
+})
 test('English operational briefs retain verified reasons and uncertainty without admitting model prose or claims of repair',()=>{
  const r=report('work_failure',[{section:'work',state:'partial',sourceId:'work:receipt',latestFailureId:'failed-id',records:[{sourceId:'failed-id',state:'failed',reason:'source_dirty',fixedInCurrentVersion:null},{sourceId:'unrelated',state:'completed',tests:{passed:9}}]}])
  const text=renderOperationalBrief(r,{message:'Why did the previous task fail? Is it fixed?',modelReply:'InventedCompany has fixed everything.'})

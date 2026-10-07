@@ -15,6 +15,11 @@ function fixture () {
   const add = (id, body, at = '2026-09-29T12:00:00Z') => rows.set(id, { id, threadId: 'aaa', body, subject: 'Invoice', from: 'Vendor', date: at, internalDate: String(Date.parse(at)), mailbox: 'adm@example.test', bodyState: 'available', bodyTruncated: false, readAt: '2026-09-29T20:00:00Z' })
   return { store, mailbox, memory, add, revoke: () => { allowed = false; rev++ }, owner: { owner: true } }
 }
+test('runtime probe does not read mailbox bodies, enumerate records or invoke inference',()=>{
+  const never=()=>{throw Error('read_or_inference_not_allowed')}
+  const memory=createMailMemory({store:{get:never,all:never,mailRows:never},mailbox:{status:()=>({mailbox:'fixture@example.test'}),read:never},analyzer:{analyze:never},allowed:()=>true})
+  assert.deepEqual(memory.runtimeStatus(),{enabled:true,syncActive:false,analysisConnected:true,analysisActive:false,indexEnabled:false,indexActive:false})
+})
 test('mail snapshots deduplicate, preserve provenance, and replies flag the same approved task for review', async () => {
   const f = fixture(); f.add('abc', 'Please confirm the invoice.')
   await f.memory.capture(f.owner, await f.mailbox.read(f.owner, 'abc'))

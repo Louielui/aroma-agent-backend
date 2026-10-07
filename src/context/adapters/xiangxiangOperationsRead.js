@@ -51,11 +51,16 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const env = options.env || process.env
   const clock = options.clock || (() => new Date().toISOString())
   const automationDir = options.automationDir || env.XIANGXIANG_OPERATIONS_AUTOMATION_DIR || (isTestProcess() ? path.join(dataDir, 'test-automations') : path.join(os.homedir(), '.codex', 'automations'))
-  const scheduler = options.scheduler || (() => require('../../home/schedulerWitness').readSchedulerWitness())
+  const runtimeReader = options.runtimeReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/runtime-metadata', {}, env,AbortSignal.timeout(10000)))
+  const scheduler = options.scheduler || (async runtime => {
+    const r = await runtime()
+    if (!r?.scheduler || !Object.values(require('../../home/schedulerWitness').WITNESS).includes(r.scheduler.state)) throw Error('scheduler_unavailable')
+    return r.scheduler
+  })
   const workerRoot = options.workerRoot || env.XIANGXIANG_OPERATIONS_WORKER_ROOT || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
-  const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env))
-  const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env))
-  async function section (name, query) {
+  const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env,AbortSignal.timeout(10000)))
+  const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env,AbortSignal.timeout(10000)))
+  async function section (name, query, runtime) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
       if (name === 'execution') {
@@ -70,11 +75,14 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
         const allowedFlags = ['CHAT_BACKEND', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'COMPUTER_OPERATOR', 'READONLY_ENQUIRY', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
         const flags = Object.fromEntries(allowedFlags.map(k => [k, ['on', 'off', 'codex-subscription'].includes(env[k]) ? env[k] : null]))
         const { BOOT_COMMIT, BOOTED_AT } = require('../../governance/bootCommit')
-        return { state: 'ok', evidenceState: 'confirmed', records: [{ role: 'central_brain_default', model: small(d.brain.model), effort: small(d.brain.effort), revision: Number.isInteger(d.revision) ? d.revision : null, bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT, flags }], note: 'Current central brain default and this process boot revision only. Topic overrides and worker models can differ. Historical worker models and bounded live bridge workflow occupancy are in work records. Full named job activity is not connected.' }
+        const [bridge, backend] = await Promise.all([runtime(), Promise.resolve().then(()=>options.backgroundReader?.()).catch(()=>null)])
+        const bridgeRecords = Array.isArray(bridge?.records) ? bridge.records : []
+        const backendRecords = Array.isArray(backend?.records) ? require('../../investigation/runtimeEvidence').joinBackgroundModels(backend.records, bridgeRecords) : []
+        return { state: bridge && backend ? 'ok' : 'partial', evidenceState: 'confirmed', records: [{ role: 'central_brain_default', model: small(d.brain.model), effort: small(d.brain.effort), revision: Number.isInteger(d.revision) ? d.revision : null, bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT, flags }, ...bridgeRecords, ...backendRecords], runtimeCoverage:{bridge:bridge?'partial':'unavailable',backend:backend?'partial':'unconnected'}, note: 'Central default is configuration, not a per-job model. Background rows are instantaneous registered-process observations; their configured bridge route is not proof of completed inference or charges. Nominal Hindsight GPT API labels are not the routed provider. External jobs and provider billing are not connected.' }
       }
       if (name === 'schedules') {
         let witness, witnessFailed = false
-        try { const w = await scheduler(); if (w.state === 'UNREADABLE') throw Error('unreadable'); witness = { sourceId: 'AromaXiangXiang-ErrandRecall', state: small(w.state), lastRunAt: w.lastRunAt ?? null, nextRunAt: w.nextRunAt ?? null, scheduled: typeof w.scheduled === 'boolean' ? w.scheduled : null } } catch (_) { witnessFailed = true }
+        try { const w = await scheduler(runtime); if (w.state === 'UNREADABLE') throw Error('unreadable'); witness = { sourceId: 'AromaXiangXiang-ErrandRecall', state: small(w.state), at: Number.isFinite(w.readAt) ? new Date(w.readAt).toISOString() : null, lastRunAt: w.lastRunAt ?? null, nextRunAt: w.nextRunAt ?? null, lastTaskResult:w.lastTaskResult ?? null, currentRunningState:w.currentRunningState || 'unknown', executionKind:w.executionKind || null, usesModel:typeof w.usesModel==='boolean'?w.usesModel:null, scheduled: typeof w.scheduled === 'boolean' ? w.scheduled : null } } catch (_) { witnessFailed = true }
         let names = [], missing = false, unreadable = false
         try { names = fs.readdirSync(automationDir).filter(n => /^[a-zA-Z0-9_-]+$/.test(n)) } catch (e) { missing = e.code === 'ENOENT'; unreadable = !missing }
         const records = witness ? [witness] : []
@@ -114,14 +122,18 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
     } catch (e) { return { state: e.code === 'ENOENT' ? 'missing' : 'unavailable', evidenceState: 'not_established', records: [], note: 'Source could not be inspected; this is not an empty result.' } }
   }
   return { source: SOURCE, methods: { async readInvestigation (params = {}) {
-    const retrievedAt = clock(), results = []
-    for (const name of SECTIONS) {
+    const retrievedAt = clock()
+    let runtimePending
+    const runtime = () => runtimePending || (runtimePending=Promise.resolve().then(()=>runtimeReader?.()).catch(()=>null))
+    const results = await Promise.all(SECTIONS.map(async name => {
+      const started = performance.now()
       try { options.onProgress?.({ section: name, state: 'reading' }) } catch (_) {}
-      const value = await section(name, String(params.query || '').slice(0, 2000))
-      const fields = { section: name, ...value, sha256: digest(value) }
-      results.push(makeContextResult({ source: SOURCE, sourceId: name + ':' + fields.sha256.slice(0, 16), title: name, retrievedAt, content: JSON.stringify(fields), fields }))
-      try { options.onProgress?.({ section: name, state: value.state }) } catch (_) {}
-    }
+      const value = await section(name, String(params.query || '').slice(0, 2000),runtime)
+      const readDurationMs = Math.round(performance.now()-started)
+      const fields = { section: name, ...value, readDurationMs, sha256: digest(value) }
+      try { options.onProgress?.({ section: name, state: value.state, readDurationMs }) } catch (_) {}
+      return makeContextResult({ source: SOURCE, sourceId: name + ':' + fields.sha256.slice(0, 16), title: name, retrievedAt, content: JSON.stringify(fields), fields })
+    }))
     return { results, evidence: { source: SOURCE, trust: 'live', shownCount: results.length, matchingTotal: results.length, sourceTotal: null, completeWithinScope: false, truncated: null, queryScope: { field: 'fixed local source sections', window: null }, dataAsOf: retrievedAt, note: 'Section receipts; each section has its own read state. Not a complete account audit.' } }
   } } }
 }

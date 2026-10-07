@@ -1235,6 +1235,7 @@ function createApp (options = {}) {
     providerFor: settings => new (require('./adapters/CodexSubscriptionAdapter').CodexSubscriptionAdapter)(settings),
     receipts: require('./core/operating/runStore').createRunStore({ dir: path.join(require('./store/dataDir').resolveDataDir(), 'dialogue-requests'), workflow: 'dialogue_request' })
   }) : null)
+  app.locals.operationsBackgroundReader = require('./investigation/runtimeEvidence').createBackendRuntimeReader({mailMemory:companyMailMemory,mailScheduler,memory:governedMemory}).read
   app.use(createDemoRouter({
     modelCenter,
     liveContext,

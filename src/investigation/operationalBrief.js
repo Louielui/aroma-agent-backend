@@ -8,6 +8,27 @@ function workflowTitle(role,locale){
  case 'review':return t('investigation.reviewWorkflow',{},locale)
  case 'adoption':return t('investigation.adoptionWorkflow',{},locale)
  default:return null
+}
+}
+function backgroundTitle(role,locale){
+ switch(role){
+ case 'mail_analysis':return t('investigation.mailAnalysis',{},locale)
+ case 'mail_sync':return t('investigation.mailSync',{},locale)
+ case 'mail_index':return t('investigation.mailIndex',{},locale)
+ case 'memory_index':return t('investigation.memoryIndex',{},locale)
+ case 'memory_outbox':return t('investigation.memoryOutbox',{},locale)
+ case 'memory_consolidation':return t('investigation.memoryConsolidation',{},locale)
+ case 'chat_completion':return t('investigation.chatCompletion',{},locale)
+ case 'memory_completion':return t('investigation.memoryCompletion',{},locale)
+ default:return null
+ }
+}
+function runningTitle(state,locale){
+ switch(state){
+ case 'active':return t('investigation.runtimeActive',{},locale)
+ case 'idle':return t('investigation.runtimeIdle',{},locale)
+ case 'disabled':return t('investigation.runtimeDisabled',{},locale)
+ default:return t('investigation.runtimeUnknown',{},locale)
  }
 }
 // The legacy prose-name gate is built for Cantonese answers with Latin entity
@@ -45,6 +66,9 @@ function renderOperationalBrief(report,{message=''}={}){
    case 'investigation.briefCentral':return t('investigation.briefCentral',values,locale)
    case 'investigation.briefActivityUnknown':return t('investigation.briefActivityUnknown',values,locale)
    case 'investigation.briefBackgroundRecommendation':return t('investigation.briefBackgroundRecommendation',values,locale)
+   case 'investigation.briefRuntime':return t('investigation.briefRuntime',values,locale)
+   case 'investigation.briefNoModel':return t('investigation.briefNoModel',values,locale)
+   case 'investigation.briefRecall':return t('investigation.briefRecall',values,locale)
    default:throw Error('unregistered_operational_presentation')
   }
  }
@@ -73,6 +97,7 @@ function renderOperationalBrief(report,{message=''}={}){
   for(const r of (schedules?.records||[]).slice(0,20)){
    const state=r.state==='PAUSED'?tr('investigation.paused'):r.state==='NOT_INSTALLED'?tr('investigation.notInstalled'):r.state?code(r.state):tr('investigation.briefNotRecorded')
    lines.push(tr('investigation.briefSchedule',{name:code(r.name||r.sourceId),state,model:r.model?code(r.model):tr('investigation.briefNotRecorded')}))
+   if(r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false)lines.push(tr('investigation.briefRecall',{state:runningTitle(r.currentRunningState,locale),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
   }
   if(!schedules?.records?.length)lines.push(tr('investigation.briefNoSchedules'))
   const work=section('work')
@@ -83,6 +108,11 @@ function renderOperationalBrief(report,{message=''}={}){
   }
   const config=section('configuration')?.records?.find(r=>r.role==='central_brain_default')
   if(config?.model)lines.push(tr('investigation.briefCentral',{model:code(config.model),effort:config.effort?code(config.effort):tr('investigation.briefNotRecorded')}))
+  for(const r of section('configuration')?.records||[]){
+   const role=backgroundTitle(r.role,locale)
+   if(!role||r.evidenceBasis!=='live_process_snapshot')continue
+   lines.push(tr('investigation.briefRuntime',{role,state:runningTitle(r.currentRunningState,locale),model:r.usesModel===false?tr('investigation.briefNoModel'):r.model?code(r.model):tr('investigation.briefNotRecorded'),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
+  }
   lines.push(tr('investigation.briefActivityUnknown'),tr('investigation.briefBackgroundRecommendation'))
  }else return null
  return lines.join('\n\n')

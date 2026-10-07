@@ -30,6 +30,29 @@ function fixture (t) {
   return { dir, put }
 }
 
+test('independent sources overlap and share one Owner runtime read; receipt order and failures remain explicit', async t => {
+  const {dir}=fixture(t);let runtimeReads=0,workEntered=false,executionEntered=false
+  let release;const barrier=new Promise(r=>{release=r})
+  const a=createXiangxiangOperationsReadAdapter({dataDir:dir,
+    runtimeReader:async()=>{runtimeReads++;return {state:'partial',scheduler:{state:'INSTALLED',scheduled:true,currentRunningState:'idle',readAt:Date.now()},records:[{sourceId:'bridge:memory_completion',role:'memory_completion',model:'claude-sonnet',provider:'claude',effort:'low',currentRunningState:'idle',at:'2026-10-07T20:00:00Z',modelBasis:'bridge_route_configuration'}]}},
+    backgroundReader:async()=>({state:'partial',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',model:null,currentRunningState:'active',at:'2026-10-07T20:00:00Z',evidenceBasis:'live_process_snapshot'}]}),
+    workReader:async()=>{workEntered=true;await barrier;return {state:'partial',records:[]}},
+    executionReader:async()=>{executionEntered=true;await barrier;throw Error('denied')}})
+  const pending=a.methods.readInvestigation()
+  await new Promise(r=>setTimeout(r,40));const overlapped=workEntered&&executionEntered;release()
+  const {results}=await pending
+  assert.equal(overlapped,true)
+  assert.equal(runtimeReads,1)
+  assert.deepEqual(results.map(x=>x.fields.section),SECTIONS)
+  assert.equal(results.find(x=>x.fields.section==='schedules').fields.records[0].state,'INSTALLED')
+  const records=results.find(x=>x.fields.section==='configuration').fields.records
+  assert.equal(records.find(x=>x.role==='mail_analysis').currentRunningState,'active')
+  assert.equal(records.find(x=>x.role==='mail_analysis').model,'claude-sonnet')
+  assert.equal(records.find(x=>x.role==='mail_analysis').modelBasis,'bridge_route_configuration')
+  assert.equal(results.find(x=>x.fields.section==='execution').fields.state,'unavailable')
+  assert.ok(results.every(x=>Number.isFinite(x.fields.readDurationMs)))
+})
+
 test('investigation retains failed task reasons and distinguishes candidate tests from current source verification', async t => {
   const { dir, put } = fixture(t)
   put('project-task-runs/22222222-2222-4222-8222-222222222222.json', { state: 'failed', reason: 'worker_timeout', finishedAt: '2026-10-07T01:00:00Z', input: { goal: 'Improve navigation', bootCommit: 'a'.repeat(40) }, taskRunId: '33333333-3333-4333-8333-333333333333', secret: 'PRIVATE_TOKEN', failureDiagnostic: { exitCode: 1, subtype: 'error_max_turns', stderr: 'PRIVATE_TOKEN' } })

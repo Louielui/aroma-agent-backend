@@ -49,11 +49,12 @@ const cacheStore = new Map()
 /** Ask Windows. Read-only: Get-ScheduledTask / Get-ScheduledTaskInfo, nothing else. */
 const PS = [
   '$ErrorActionPreference = "Stop"',
-  '$t = Get-ScheduledTask -TaskName "' + TASK_NAME + '" -ErrorAction SilentlyContinue',
+  '$t = @(Get-ScheduledTask -TaskPath "\\" -ErrorAction Stop | Where-Object { $_.TaskName -eq "' + TASK_NAME + '" })',
   'if (-not $t) { ConvertTo-Json @{found=$false} -Compress; exit 0 }',
-  '$i = Get-ScheduledTaskInfo -TaskName "' + TASK_NAME + '" -ErrorAction SilentlyContinue',
-  '$last = $null; if ($i -and $i.LastRunTime) { $last = $i.LastRunTime.ToString("s") }',
-  '$next = $null; if ($i -and $i.NextRunTime) { $next = $i.NextRunTime.ToString("s") }',
+  'if ($t.Count -ne 1) { throw "ambiguous_fixed_task" }; $t = $t[0]',
+  '$i = Get-ScheduledTaskInfo -TaskName "' + TASK_NAME + '" -TaskPath "\\" -ErrorAction Stop',
+  '$last = $null; if ($i -and $i.LastRunTime) { $last = $i.LastRunTime.ToUniversalTime().ToString("o") }',
+  '$next = $null; if ($i -and $i.NextRunTime) { $next = $i.NextRunTime.ToUniversalTime().ToString("o") }',
   '$res = $null;  if ($i) { $res = $i.LastTaskResult }',
   'ConvertTo-Json @{ found=$true; state=[string]$t.State; lastTaskResult=$res; lastRunTime=$last; nextRunTime=$next } -Compress'
 ].join('\n')
@@ -116,6 +117,19 @@ async function readSchedulerWitness (opts) {
     if (hit && (now - hit.readAt) < TTL_MS) return hit
   }
 
+  // The service identity cannot establish absence in the Owner's scheduler.
+  // Use the authenticated, fixed read under the signed-in Owner; failure stays unknown.
+  if (!o.exec && !require('../testProcess').isTestProcess() && process.env.CODEX_CHAT_BRIDGE_TOKEN) {
+    try {
+      const { scheduler: w } = await require('../adapters/CodexSubscriptionAdapter').localRequest('/runtime-metadata', {}, process.env,AbortSignal.timeout(10000))
+      if (!w || !Object.values(WITNESS).includes(w.state) || !Number.isFinite(w.readAt) ||
+        (w.state === WITNESS.NOT_INSTALLED && w.scheduled !== false)) throw Error('invalid_scheduler_receipt')
+      return remember(key, useCache, w)
+    } catch (_) {
+      return remember(key, useCache, {state:WITNESS.UNREADABLE,scheduled:null,healthy:null,lastRunAt:null,nextRunAt:null,currentRunningState:'unknown',readAt:now,saying:t('sched.unparseable')})
+    }
+  }
+
   let raw
   try {
     raw = await (o.exec || defaultExec)()
@@ -136,7 +150,7 @@ async function readSchedulerWitness (opts) {
 
   let d
   try { d = JSON.parse(String(raw).trim()) } catch (_) { d = null }
-  if (!d || typeof d !== 'object') {
+  if (!d || typeof d !== 'object' || Array.isArray(d) || typeof d.found !== 'boolean' || (d.found && !['ready','running','disabled','queued','unknown'].includes(String(d.state).toLowerCase()))) {
     return remember(key, useCache, {
       state: WITNESS.UNREADABLE,
       scheduled: null,
@@ -148,10 +162,11 @@ async function readSchedulerWitness (opts) {
     })
   }
 
-  if (!d.found) {
+  if (d.found === false) {
     return remember(key, useCache, {
       state: WITNESS.NOT_INSTALLED,
       scheduled: false,
+      currentRunningState: 'not_installed',
       healthy: null,
       lastRunAt: null,
       nextRunAt: null,
@@ -161,7 +176,7 @@ async function readSchedulerWitness (opts) {
   }
 
   const disabled = String(d.state || '').toLowerCase() === 'disabled'
-  const code = Number(d.lastTaskResult)
+  const code = typeof d.lastTaskResult === 'number' && Number.isInteger(d.lastTaskResult) ? d.lastTaskResult : NaN
   const ran = ms(d.lastRunTime)
   const status = Number.isFinite(code) ? SCHED_S[code] : undefined
 
@@ -191,6 +206,9 @@ async function readSchedulerWitness (opts) {
   return remember(key, useCache, {
     state: disabled ? WITNESS.DISABLED : WITNESS.INSTALLED,
     scheduled: !disabled,
+    currentRunningState: String(d.state).toLowerCase() === 'running' ? 'active' : disabled ? 'disabled' : String(d.state).toLowerCase() === 'ready' ? 'idle' : 'unknown',
+    executionKind: 'deterministic_food_recall_check',
+    usesModel: false,
     healthy,
     lastRunAt: ran,
     nextRunAt: ms(d.nextRunTime),
@@ -205,4 +223,4 @@ function remember (key, useCache, w) {
   return w
 }
 
-module.exports = { readSchedulerWitness, WITNESS, TASK_NAME, TTL_MS }
+module.exports = { readSchedulerWitness, readWindowsSchedulerWitness: () => readSchedulerWitness({exec:defaultExec,cache:false}), windowsCommand:PS, WITNESS, TASK_NAME, TTL_MS }

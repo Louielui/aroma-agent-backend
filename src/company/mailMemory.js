@@ -320,6 +320,8 @@ function createMailMemory ({ store, mailbox, analyzer = null, engine = null, clo
     verify(); return result
   }
   return { capture, list, view, detail, update, sync, status, analyze, analyzeBatch, analyzeNext, briefing,
+    runtimeStatus: () => ({ enabled:allowed(), syncActive:busy, analysisConnected:!!analyzer, analysisActive:analyzing,
+      indexEnabled:allowed() && indexRunning, indexActive:indexAttemptActive || semantic.busy() }),
     recall: semantic.recall, indexNext, retryIndex: semantic.retry, rebuildIndex: semantic.rebuild,
     enabled: allowed,
     backgroundAnalysisDemand: requested => { analysisWaiting = requested === true; if (!analysisWaiting) preferAnalysis = false },

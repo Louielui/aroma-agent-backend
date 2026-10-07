@@ -48,9 +48,9 @@ function compareInvestigation (report, previous, reference) {
    if (!b.has(id)) { missing.push({ section: s.section, recordId: id }); continue }
    const now = b.get(id)
    if (!old || !now) { ambiguous.push({ section: s.section, recordId: id }); if (id === selectedRecordId) targetState = 'ambiguous'; continue }
-   if (['state','model','reason'].some(f => typeof old[f] === 'string' && typeof now[f] === 'string')) compared++
+   if (['state','model','reason','currentRunningState'].some(f => typeof old[f] === 'string' && typeof now[f] === 'string')) compared++
    if (id === selectedRecordId) targetState = 'observed'
-   for (const field of ['state', 'model', 'reason']) {
+   for (const field of ['state', 'model', 'reason','currentRunningState']) {
     if (!Object.hasOwn(old, field) || !Object.hasOwn(now, field)) continue
     const x = old[field], y = now[field]
     if (![x,y].every(v => v === null || typeof v === 'string') || x === y) continue
