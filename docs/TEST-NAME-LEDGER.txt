@@ -3914,3 +3914,4 @@ Owner work metadata pins its approved root, strips worker bodies and records liv
 work metadata rejects a redirected root or nested record and cannot mistake failed reads for zero work
 an Owner-only judged operational read cannot have its evidence answer replaced by the legacy business ambiguity question
 legacy ambiguity remains terminal when the Owner operational read has no observed evidence
+an unavailable verification fact stays a report gap and cannot erase an observed operations answer

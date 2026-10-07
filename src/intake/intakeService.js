@@ -1359,6 +1359,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const rc = await buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env })
             const sections = (rc.itemsBySource?.[0]?.items || []).map(r => ({ sourceId: r.sourceId, retrievedAt: r.retrievedAt, ...r.fields }))
             operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections })
+            operationalInvestigation.plan.factResolution = plan.facts.map(f => ({ operation: f.operation, necessity: f.necessity, status: f.status }))
             for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
             if (rc.perSource?.some(row => row.source === 'xiangxiang_operations' && row.trust === 'live')) modelDirectedLiveOperations.add('xiangxiang_operations')
             for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)
@@ -2111,10 +2112,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // investigation. A completed, authorised, operations-only plan with observed
   // evidence must not lose its answer to that earlier unrelated ambiguity hint.
   // Unavailable evidence, mixed plans and non-Owner turns retain the old gate.
+  const requiredReadableFacts = (goalPlanObserved?.facts || []).filter(f => f.necessity === 'required' && f.operation)
   const ownOperationsSettled = opts.ownerInvestigation === true &&
     modelDirectedLiveOperations.has('xiangxiang_operations') &&
-    goalPlanObserved?.facts?.length > 0 &&
-    goalPlanObserved.facts.every(f => f.operation === 'xiangxiang_operations') &&
+    requiredReadableFacts.length > 0 &&
+    requiredReadableFacts.every(f => f.operation === 'xiangxiang_operations') &&
     operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0)
   if (semanticClarify && distilled && !ownOperationsSettled) {
     distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })

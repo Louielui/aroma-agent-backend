@@ -35,7 +35,9 @@ current execution. Named job activity and account-wide inventory remain gaps.
 Non-cost reports no longer display billing recommendations. Cost attribution
 continues to require provider billing and an authenticated execution identity.
 The legacy business-intent ambiguity hint cannot replace an evidence answer after
-an Owner-only, operations-only judged plan has actually read observed records.
+an Owner-only judged plan whose required readable facts are operations-only has
+actually read observed records. A null unavailable fact remains a verification
+gap; it cannot erase the observed answer or become a new read permission.
 Unavailable reads, mixed plans and non-Owner turns retain the existing gate. This
 egress correction adds no model retry or source access; its event is recorded.
 Actual acceptance receipts are saved in the development workspace outputs under

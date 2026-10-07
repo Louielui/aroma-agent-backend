@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -10,7 +10,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name })
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify(options.responseFormat?.name === 'goal_plan'
-      ? { question_restated: question, investigation_focus: focus, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }], joins: [] }
+      ? { question_restated: question, investigation_focus: focus, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }, ...(unavailableFact ? [{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}] : [])], joins: [] }
       : { mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
   } }
   let recall = 0
@@ -37,6 +37,14 @@ test('legacy ambiguity remains terminal when the Owner operational read has no o
   const x = await turn(t, { focus:'work_failure', failed:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })
   assert.equal(x.result.demoOutcome,'clarification')
   assert.match(x.result.reply,/你想睇邊方面/)
+})
+test('an unavailable verification fact stays a report gap and cannot erase an observed operations answer', async t => {
+  const x = await turn(t, { focus:'work_failure', unavailableFact:true, workEvidence:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })
+  assert.equal(x.result.mode,'chat')
+  assert.equal(x.result.demoOutcome,'speech')
+  assert.ok(x.result.investigation.gaps.some(g=>g.section==='same_failure_current_version_verification'))
+  assert.match(x.result.reply,/扣款原因未確認/)
+  assert.equal(x.reads.length,1)
 })
 
 test('a historical enquiry with empty memory reads own operational sources before answering, on the selected subscription', async t => {
