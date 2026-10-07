@@ -7,9 +7,10 @@ const { createHash } = require('node:crypto')
 const { resolveDataDir } = require('../../store/dataDir')
 const { isTestProcess } = require('../../testProcess')
 const { makeContextResult } = require('../contextResult')
+const { projectWorkRecord, selectWorkSample } = require('../../investigation/workEvidence')
 const SOURCE = 'xiangxiang_operations'
 const SECTIONS = Object.freeze(['configuration', 'schedules', 'work', 'history', 'execution', 'usage', 'billing'])
-const WORK_DIRS = Object.freeze(['project-work-runs', 'task-plan-runs', 'code-repair-runs', 'development-plan-runs', 'manager-runs'])
+const WORK_DIRS = Object.freeze(['project-work-runs', 'project-task-runs', 'project-adoption-runs', 'task-plan-runs', 'code-repair-runs', 'development-plan-runs', 'manager-runs'])
 const LIMIT = 5
 const ID = /^[a-z0-9][a-z0-9-]{7,63}\.json$/i
 const small = (v, n = 160) => typeof v === 'string' ? v.slice(0, n) : null
@@ -33,7 +34,7 @@ function jsonRows (dir, select) {
   const records = []; let failed = 0
   // Bounded scan; selection is not a claim about all historical records.
   for (const name of names.slice(0, 250)) {
-    try { const r = select(readJson(path.join(dir, name), 512 * 1024)); if (r) records.push({ sourceId: name.slice(0, -5), ...r }) } catch (_) { failed++ }
+    try { const r = select(readJson(path.join(dir, name), 2 * 1024 * 1024)); if (r) records.push({ sourceId: name.slice(0, -5), ...r }) } catch (_) { failed++ }
   }
   return { records, state: failed || names.length > 250 ? 'partial' : 'ok', scanned: Math.min(names.length, 250), omitted: Math.max(0, names.length - 250), failed }
 }
@@ -53,6 +54,7 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const scheduler = options.scheduler || (() => require('../../home/schedulerWitness').readSchedulerWitness())
   const workerRoot = options.workerRoot || env.XIANGXIANG_OPERATIONS_WORKER_ROOT || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
   const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env))
+  const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env))
   async function section (name, query) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
@@ -67,7 +69,8 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
         if (!d.brain || typeof d.brain.model !== 'string') throw Error('invalid_config')
         const allowedFlags = ['CHAT_BACKEND', 'WORKER_INVOCATION', 'DEVELOP_DISPATCH', 'AGENT_BRIDGE', 'COMPUTER_OPERATOR', 'READONLY_ENQUIRY', 'GOAL_DECOMPOSER', 'XIANGXIANG_MEMORY']
         const flags = Object.fromEntries(allowedFlags.map(k => [k, ['on', 'off', 'codex-subscription'].includes(env[k]) ? env[k] : null]))
-        return { state: 'ok', evidenceState: 'confirmed', records: [{ model: small(d.brain.model), effort: small(d.brain.effort), revision: Number.isInteger(d.revision) ? d.revision : null, flags }], note: 'Observed current configuration; does not prove past execution or billing. Worker models can differ from the brain.' }
+        const { BOOT_COMMIT, BOOTED_AT } = require('../../governance/bootCommit')
+        return { state: 'ok', evidenceState: 'confirmed', records: [{ role: 'central_brain_default', model: small(d.brain.model), effort: small(d.brain.effort), revision: Number.isInteger(d.revision) ? d.revision : null, bootCommit: BOOT_COMMIT, bootedAt: BOOTED_AT, flags }], note: 'Current central brain default and this process boot revision only. Topic overrides and worker models can differ. Historical worker models and bounded live bridge workflow occupancy are in work records. Full named job activity is not connected.' }
       }
       if (name === 'schedules') {
         let witness, witnessFailed = false
@@ -80,15 +83,22 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
           try {
             const text = readText(path.join(automationDir, name, 'automation.toml'), 65536)
             const field = key => small(new RegExp('^' + key + ' = "([^"\\r\\n]*)"', 'm').exec(text)?.[1], 220)
-            records.push({ sourceId: 'codex-automation:' + name, name: field('name'), state: field('status'), schedule: field('rrule'), model: field('model'), executionHistoryState: 'unconnected' })
+            records.push({ sourceId: 'codex-automation:' + name, name: field('name'), state: field('status'), schedule: field('rrule'), model: field('model'), effort: field('reasoning_effort'), currentRunningState: 'unknown', modelState: field('model') ? 'explicit_definition' : 'not_recorded', executionHistoryState: 'unconnected' })
           } catch (_) { failed++ }
         }
         return { state: witnessFailed && !records.length ? 'unavailable' : witnessFailed || missing || unreadable || failed || names.length > 20 ? 'partial' : 'ok', evidenceState: records.length ? 'confirmed' : 'not_established', records, missingAutomationDirectory: missing, automationReadState: unreadable ? 'unavailable' : missing ? 'missing' : failed || names.length > 20 ? 'partial' : 'ok', automationReadErrors: failed, witnessUnavailable: witnessFailed, note: 'Current schedule definitions and one Windows task witness only. Unreadable or partial automation coverage cannot establish absence or exclude usage sources. A schedule is a possible usage source, not a billing cause. Codex execution history is not connected.' }
       }
       if (name === 'work') {
+        if (workReader) {
+          const r=await workReader()
+          if (!['ok','partial','missing','unavailable'].includes(r?.state)||!Array.isArray(r.records)) throw Error('invalid_work_receipt')
+          return {...r,evidenceState:r.records.length?'confirmed':'not_established',provesCharge:false}
+        }
         const dirs = WORK_DIRS.map(folder => ({ folder, dir: path.join(dataDir, folder) })).concat(['project-runs', 'runs', 'adoptions'].map(folder => ({ folder: 'worker/' + folder, dir: path.join(workerRoot, folder) })))
-        const parts = dirs.map(({ folder, dir }) => jsonRows(dir, d => ({ kind: folder, state: small(d.status || d.state), at: date(d.updatedAt || d.finishedAt || d.startedAt || d.createdAt), model: small(d.model || d.execution?.model || d.result?.model), steps: Array.isArray(d.steps) ? d.steps.slice(-4).map(s => ({ id: small(s.id || s.key || s.stage), state: small(s.status || s.state), at: date(s.at) })) : [] })))
-        return { ...bounded({ records: parts.flatMap(p => p.records), state: parts.every(p => p.state === 'ok') ? 'ok' : 'partial', scanned: parts.reduce((n, p) => n + p.scanned, 0) }, query), evidenceState: 'confirmed', provesCharge: false, note: 'Saved Xiangxiang work lifecycle records; successful execution does not prove a charge. Missing directories are not zero work.' }
+        const repoRoot = options.repoRoot || path.resolve(__dirname, '../../..')
+        const parts = dirs.map(({ folder, dir }) => ({ folder, ...jsonRows(dir, d => projectWorkRecord(d, { kind: folder, readSource: name => readText(path.join(repoRoot, name), 512 * 1024) })) }))
+        const all = parts.flatMap(p => p.records), selected = selectWorkSample(all)
+        return { ...selected, state: parts.every(p => p.state === 'ok') && !selected.omitted ? 'ok' : 'partial', scanned: parts.reduce((n, p) => n + p.scanned, 0), coverage: parts.map(p => ({ kind: p.folder, state: p.state, scanned: p.scanned, failed: p.failed ?? null, omitted: p.omitted ?? null })), evidenceState: selected.records.length ? 'confirmed' : 'not_established', provesCharge: false, note: 'Latest recorded failure, explicit run-ID links and recent work within a bounded scan. Tests and reviews belong to their candidate/source revision. Current file hashes are disk observations, not proof that a failure is fixed in the running process. Saved running state is historical; current activity is unknown. Missing directories are not zero work.' }
       }
       if (name === 'history') {
         const rows = jsonRows(path.join(dataDir, 'conversations'), d => ({ title: small(d.title), at: date(d.updatedAt || d.createdAt), excerpts: Array.isArray(d.messages) ? d.messages.filter(m => ['user', 'assistant'].includes(m.role)).slice(-6).map(m => ({ role: m.role, text: small(m.text || m.content, 260) })) : [] }))

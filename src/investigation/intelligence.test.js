@@ -2,6 +2,21 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { evaluateInvestigation } = require('./intelligence')
 const section = (name, records, extra = {}) => ({ section: name, sourceId: name + ':receipt', retrievedAt: '2026-10-07T06:00:00Z', state: 'ok', records, ...extra })
+test('non-cost investigation reports failure and source gaps without billing recommendations or an invented fix', () => {
+  const r = evaluateInvestigation({ goal: 'Why did the last task fail; is it fixed?', focus: 'work_failure', sections: [section('work', [{ sourceId: 'failed-task', state: 'failed', reason: 'worker_timeout', tests: null, fixedInCurrentVersion: null }, { sourceId: 'unrelated-success', state: 'completed', tests: { passed: 9, failed: 0, exitCode: 0 } }]), section('billing', [], { state: 'unconnected' })] })
+  assert.equal(r.focus, 'work_failure')
+  assert.ok(r.findings.some(f => f.kind === 'work_failure_observed' && f.value.reason === 'worker_timeout'))
+  assert.ok(r.findings.some(f => f.kind === 'fix_unverified' && f.evidenceState === 'not_established'))
+  assert.ok(r.recommendations.some(f => f.kind === 'verify_same_task_current_source'))
+  assert.ok(r.recommendations.every(f => f.kind !== 'obtain_billing_evidence'))
+})
+test('background investigation separates current definitions, historical models and unknown live activity', () => {
+  const r = evaluateInvestigation({ goal: 'What background jobs and models are running?', focus: 'background', sections: [section('configuration', [{ model: 'claude-opus-5-5', effort: 'medium' }]), section('schedules', [{ sourceId: 'job', name: 'Job', state: 'ACTIVE', model: null, currentRunningState: 'unknown' }]), section('work', [{ sourceId: 'old-run', state: 'running', model: 'gpt-6.1-sol', currentRunningState: 'unknown' }])] })
+  assert.ok(r.findings.some(f => f.kind === 'activity_unverified' && f.evidenceState === 'not_established'))
+  assert.equal(r.findings.find(f => f.kind === 'work_recorded').temporalScope, 'historical')
+  assert.ok(r.recommendations.every(f => f.kind !== 'obtain_billing_evidence'))
+  assert.ok(r.findings.every(f => f.kind !== 'job_running_confirmed'))
+})
 test('investigation separates current candidates, historical execution, recorded tokens and unproven charges', () => {
   const r = evaluateInvestigation({ goal: 'Investigate credit', sections: [section('schedules', [{ sourceId: 'codex-automation:fixture', name: 'Fixture scheduler', state: 'PAUSED' }]), section('execution', [{ sourceId: 'codex-session:fixture', lastStartedAt: '2026-10-02T01:00:00Z', lastCompletedAt: '2026-10-02T01:01:00Z', declaredAutomationId: 'fixture', triggerVerified: false, usage: { total_tokens: 1200 }, usageAt: '2026-10-02T01:01:00Z' }]), section('billing', [], { state: 'unconnected' })] })
   assert.equal(r.billingConfirmed, false)

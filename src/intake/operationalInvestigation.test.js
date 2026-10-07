@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', failed = false, verdict = 'allow_final', judgment = null } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -10,7 +10,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name })
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify(options.responseFormat?.name === 'goal_plan'
-      ? { question_restated: question, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }], joins: [] }
+      ? { question_restated: question, investigation_focus: focus, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }], joins: [] }
       : { mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
   } }
   let recall = 0
@@ -38,6 +38,17 @@ test('the same operational source choice handles English without a Chinese inten
   const x = await turn(t, { question: 'Find what previously kept consuming my credits and whether it is still running.' })
   assert.equal(x.reads.length, 1)
   assert.ok(x.result.investigation)
+})
+
+test('judged Chinese and English work and background focuses survive the actual intake without granting actions', async t => {
+  for (const [focus,question] of [['work_failure','上一個開發任務為什麼失敗？現在修好了嗎？'],['work_failure','Why did the previous development task fail; is it fixed now?'],['background','現在有哪些背景工作？各自使用什麼模型？'],['background','What background jobs are configured and which models do they use?']]) {
+    const x=await turn(t,{focus,question})
+    assert.equal(x.result.investigation.focus,focus)
+    assert.equal(x.result.investigation.readOnly,true)
+    assert.equal(x.reads.length,1)
+    assert.ok(x.result.investigation.recommendations.every(r=>r.kind!=='obtain_billing_evidence'))
+    assert.ok(x.calls.some(r=>r.p.includes('QUESTION-SPECIFIC INVESTIGATION: report focus='+focus)))
+  }
 })
 
 test('an operational answer does not prepend an unchecked auxiliary judgment over its evidence answer', async t => {

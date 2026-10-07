@@ -76,6 +76,9 @@ const CLASS = Object.freeze({
  */
 const FILE_CLASS = Object.freeze({
   'investigation/enquiryOffer.js': CLASS.MODEL,
+  // Backward-compatible report focus reads historical question vocabulary;
+  // translating it would change old receipt presentation, never source routing.
+  'investigation/intelligence.js': CLASS.MATCHING,
   'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,

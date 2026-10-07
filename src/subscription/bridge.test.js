@@ -3,6 +3,16 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createBridge, validateInput } = require('./bridge')
 const { SubscriptionError } = require('./codexClient')
+test('work metadata is an authenticated closed read on the independent lane and cannot dispatch models or writes', async t => {
+  const token='8'.repeat(64); let reads=0,release,calls=0
+  const server=createBridge({token,workReader:{read:async()=>{reads++;return{state:'partial',records:[]}}},completeFn:async()=>{calls++;return new Promise(r=>{release=r})}})
+  await new Promise(r=>server.listen(0,'127.0.0.1',r));t.after(()=>new Promise(r=>{server.closeAllConnections();server.close(r)}))
+  const send=(route,body,headers={})=>fetch('http://127.0.0.1:'+server.address().port+route,{method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json',...headers},body:JSON.stringify(body)})
+  assert.equal((await send('/work-metadata',{}, {authorization:'bad'})).status,401)
+  assert.equal((await send('/work-metadata',{}, {origin:'http://evil'})).status,401)
+  const first=send('/complete',{prompt:'fixture'});while(!release)await new Promise(r=>setImmediate(r))
+  try { assert.equal((await send('/work-metadata',{path:'.env'})).status,400);assert.equal((await send('/work-metadata',{})).status,200);assert.equal((await send('/complete',{prompt:'duplicate'})).status,503);assert.equal(reads,1);assert.equal(calls,1) } finally {release({output:'fixture'});await first}
+})
 test('execution metadata bridge is authenticated, closed-shape and independent of the occupied model lane', async t => {
   let release, reads = 0, calls = 0
   const token = '9'.repeat(64)

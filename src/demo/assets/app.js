@@ -1230,10 +1230,18 @@
     var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
     if (report.version === 1) {
       var summary = el('section', 'investigation-summary')
-      summary.appendChild(el('strong', '', t('investigation.chargeUnverified')))
-      var execution = (report.sections || []).find(function (s) { return s.section === 'execution' })
-      summary.appendChild(el('p', '', execution && execution.records && execution.records.length ? t('investigation.executionObserved') : t('investigation.executionGap')))
-      summary.appendChild(el('p', '', t('investigation.recommendBilling')))
+      if (!report.focus || report.focus === 'cost') {
+        summary.appendChild(el('strong', '', t('investigation.chargeUnverified')))
+        var execution = (report.sections || []).find(function (s) { return s.section === 'execution' })
+        summary.appendChild(el('p', '', execution && execution.records && execution.records.length ? t('investigation.executionObserved') : t('investigation.executionGap')))
+        summary.appendChild(el('p', '', t('investigation.recommendBilling')))
+      } else if (report.focus === 'work_failure') {
+        summary.appendChild(el('strong', '', t('investigation.failureSummary')))
+        summary.appendChild(el('p', '', t('investigation.failureBoundary')))
+      } else if (report.focus === 'background') {
+        summary.appendChild(el('strong', '', t('investigation.backgroundSummary')))
+        summary.appendChild(el('p', '', t('investigation.activityBoundary')))
+      } else summary.appendChild(el('strong', '', t('investigation.generalSummary')))
       if ((report.contradictions || []).length) summary.appendChild(el('p', '', t('investigation.conflictFound')))
       turnEl.body.appendChild(summary)
       var evaluation = el('details'); evaluation.appendChild(el('summary', '', t('investigation.evaluation')))
@@ -1248,7 +1256,7 @@
       records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
       row.appendChild(records); details.appendChild(row)
     })
-    turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
+    if (!report.focus || report.focus === 'cost') turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
     turnEl.body.appendChild(details)
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.readOnly')))
     var link = el('a', '', t('investigation.settings')); link.href = '/model-center' + (investigationId ? '?investigation=' + encodeURIComponent(investigationId) : ''); turnEl.body.appendChild(link)

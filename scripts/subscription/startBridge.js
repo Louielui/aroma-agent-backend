@@ -68,6 +68,13 @@ function main () {
   const server = createBridge({ backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     taskPlanSource: require('../../src/core/taskPlanner/source').createSource({ root: repo }), codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork, projectAdoption, projectTasks,
+    workReader: require('../../src/investigation/workRecords').createWorkReader({ workerRoot, repoRoot: repo, activity: () => {
+      const draft=require('../../src/core/projectTasks/provider'),reviewArgs=require('../../src/core/workerFlow/providers').claudeArgs()
+      return [{role:'test_draft',state:projectTasks.isActive()?'occupied':'idle',model:draft.MODEL,effort:draft.EFFORT},
+        {role:'development',state:projectWork.isActive()?'occupied':'idle',model:require('../../src/workers/execution/isolatedCoding').MODEL},
+        {role:'review',state:projectTasks.isActive()||projectWork.isActive()?'occupied':'idle',model:reviewArgs[reviewArgs.indexOf('--model')+1]},
+        {role:'adoption',state:projectAdoption.isActive()?'occupied':'idle',model:null}]
+    } }),
     executionReader: require('../../src/investigation/executionRecords').createExecutionReader({ sessionRoot: path.join(require('node:os').homedir(), '.codex', 'sessions'), workspaceRoots: [repo, path.join(require('node:os').homedir(), 'Documents', 'Codex', '2026-09-06', 'xiangxiang-development')] }) })
   server.on('error', () => { console.error('Subscription bridge could not listen on its loopback port.'); process.exitCode = 1 })
   server.listen(DEFAULT_PORT, '127.0.0.1', () => console.log('Xiangxiang subscription bridge ready on loopback.'))

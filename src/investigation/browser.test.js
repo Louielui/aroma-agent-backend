@@ -11,7 +11,8 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
   const browser = await require('playwright-core').chromium.launch({ channel: 'msedge', headless: true })
   const report = require('./intelligence').evaluateInvestigation({ goal: 'Investigate credit', sections: [{ section: 'execution', sourceId: 'execution:fixture', retrievedAt: '2026-10-07T01:00:00Z', state: 'partial', evidenceState: 'confirmed', coverage: { sampledFiles: 1 }, records: [{ sourceId: 'codex-session:fixture', model: 'gpt-6.1-sol', lastStartedAt: '2026-10-02T01:00:00Z', usage: { total_tokens: 123 } }] }, { section: 'billing', state: 'unconnected', evidenceState: 'not_established', records: [] }] })
   try {
-    for (const [lang, width, retryFailed] of [['zh', 1280], ['en', 390], ['zh', 390, true]]) {
+    for (const [lang, width, retryFailed, focus] of [['zh', 1280], ['en', 390], ['zh', 390, true], ['zh', 390, false, 'work_failure'], ['en', 1280, false, 'background']]) {
+      const shownReport = focus ? { ...report, focus } : report
       let linked = !!retryFailed, approvals = 0, preparations = 0
       const unexpected = [], errors = [], c = await browser.newContext({ viewport: { width, height: 900 } })
       await c.route('**/*', async route => {
@@ -21,7 +22,7 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
         if (p === '/api/v1/demo/models') return json({ ...modelCatalogue(), central: { model: 'claude-sonnet', effort: 'medium' }, selection: { mode: 'central', revision: 0, effective: { model: 'claude-sonnet', effort: 'medium' } } })
         if (p === '/api/v1/conversations') return json({ ok: true, conversations: [{ id: cid, title: 'Investigate credit', updatedAt: new Date().toISOString(), messageCount: 2 }] })
         if (p === '/api/v1/conversations/' + cid) return json({ ok: true, conversation: { id: cid, messages: [{ role: 'user', content: 'Investigate credit' }, { role: 'assistant', content: 'Billing is not established.', investigationRunId: id }] } })
-        if (p === '/api/v1/demo/investigations/' + id) return json({ run: { id, state: 'completed', investigation: report, enquiryApprovalId: linked ? 'appr_fixture' : null } })
+        if (p === '/api/v1/demo/investigations/' + id) return json({ run: { id, state: 'completed', investigation: shownReport, enquiryApprovalId: linked ? 'appr_fixture' : null } })
         if (p === '/api/v1/owner/investigations/' + id + '/work-order') {
           preparations++; assert.equal(method, 'POST'); assert.deepEqual(r.postDataJSON(), {}); linked = true
           return json({ approvalId: 'appr_fixture', workOrderHash: 'hash', nonce: 'nonce', typedConfirmationRequired: 'EXECUTE', card: { heading: 'Read approved source', sections: [], actions: ['Approve', 'Reject'] } })
@@ -47,7 +48,9 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
       }
       const offer = () => page.getByRole('button', { name: lang === 'zh' ? '核對程式來源與調查範圍' : 'Check source code and investigation coverage', exact: true })
       await open(); assert.equal(await page.locator('.investigation-evidence').getAttribute('open'), null)
-      assert.match(await page.locator('.investigation-summary').textContent(), lang === 'zh' ? /token.*帳單/ : /tokens.*billing/)
+      const summary = await page.locator('.investigation-summary').textContent()
+      if (!focus) assert.match(summary, lang === 'zh' ? /token.*帳單/ : /tokens.*billing/)
+      else { assert.doesNotMatch(summary, /credit|billing|帳單/); assert.match(summary, focus === 'work_failure' ? /失敗紀錄.*目前版本/ : /Schedule definitions.*historical worker models/) }
       assert.equal(await page.locator('.investigation-summary pre').count(), 0)
       assert.match(await page.locator('a[href*="investigation="]').getAttribute('href'), new RegExp(id))
       await offer().click()

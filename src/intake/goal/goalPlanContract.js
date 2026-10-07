@@ -98,10 +98,11 @@ function goalPlanSchema () {
      * that the role is now asked what he is trying to ACCOMPLISH before it is asked which
      * facts that would take, and both answers now travel.
      */
-    required: ['question_restated', 'executive_frame', 'requested_capability', 'facts', 'joins'],
+    required: ['question_restated', 'executive_frame', 'requested_capability', 'investigation_focus', 'facts', 'joins'],
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
       executive_frame: executiveFrameSchema(),
+      investigation_focus: { anyOf: [{ type: 'string', enum: ['cost', 'work_failure', 'background', 'general'] }, { type: 'null' }], description: 'For enquiries about Xiangxiang itself: cost/credits, previous work failure and whether repaired, current background jobs and models, or general investigation. Null for other questions. This is a report focus, never permission or evidence.' },
       /**
        * ⛔ S1 — WHICH OF HER OWN ABILITIES HE IS ASKING FOR, OR NULL.
        *
@@ -471,6 +472,7 @@ function judgeGoalPlan (raw) {
     ok: true,
     plan: Object.freeze({
       questionRestated: String(raw.question_restated || ''),
+      investigationFocus: ['cost', 'work_failure', 'background', 'general'].includes(raw.investigation_focus) ? raw.investigation_focus : null,
         /**
          * ⛔ FAIL-SOFT, AND THE FACTS DO NOT GO DOWN WITH IT. A frame that cannot be judged
          * becomes `null` and the fact plan proceeds under the rules it always had — X1 must

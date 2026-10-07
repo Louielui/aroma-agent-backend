@@ -30,6 +30,36 @@ function fixture (t) {
   return { dir, put }
 }
 
+test('investigation retains failed task reasons and distinguishes candidate tests from current source verification', async t => {
+  const { dir, put } = fixture(t)
+  put('project-task-runs/22222222-2222-4222-8222-222222222222.json', { state: 'failed', reason: 'worker_timeout', finishedAt: '2026-10-07T01:00:00Z', input: { goal: 'Improve navigation', bootCommit: 'a'.repeat(40) }, taskRunId: '33333333-3333-4333-8333-333333333333', secret: 'PRIVATE_TOKEN', failureDiagnostic: { exitCode: 1, subtype: 'error_max_turns', stderr: 'PRIVATE_TOKEN' } })
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation({ query: 'Why did the previous development task fail?' })
+  const work = results.find(r => r.fields.section === 'work').fields
+  const failed = work.records.find(r => r.reason === 'worker_timeout')
+  assert.ok(failed)
+  assert.equal(failed.goal, 'Improve navigation')
+  assert.equal(failed.sourceRevision, 'a'.repeat(40))
+  assert.equal(failed.failureDiagnostic.exitCode, 1)
+  assert.equal(failed.currentRunningState, 'unknown')
+  assert.equal(failed.fixedInCurrentVersion, null)
+  assert.doesNotMatch(JSON.stringify(work), /PRIVATE_TOKEN|stderr/)
+})
+
+test('latest failure sample includes explicit linked work and adoption rather than declaring an unrelated success a fix', async t => {
+  const { dir, put } = fixture(t), failedId = '22222222-2222-4222-8222-222222222222', successId = '33333333-3333-4333-8333-333333333333'
+  put('test-workers/project-runs/' + failedId + '.json', { state: 'failed', reason: 'invalid_worker_result', finishedAt: '2026-10-07T01:00:00Z', workOrder: { goal: 'Navigation task' }, result: { model: 'gpt-6.1-sol', tests: { total: 9, passed: 8, failed: 1, exitCode: 1 }, before: 'PRIVATE_CODE' } })
+  put('test-workers/project-runs/' + successId + '.json', { state: 'completed', finishedAt: '2026-10-07T02:00:00Z', workOrder: { goal: 'Unrelated task' }, result: { tests: { total: 9, passed: 9, failed: 0, exitCode: 0 } }, appliedToLive: false })
+  put('test-workers/adoptions/44444444-4444-4444-8444-444444444444.json', { state: 'completed', workRunId: successId, action: 'adopt', appliedToLive: true, finishedAt: '2026-10-07T03:00:00Z', commit: 'b'.repeat(40), loaded: { bootCommit: 'b'.repeat(40) } })
+  const { results } = await createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }) }).methods.readInvestigation({ query: '上一個開發任務為什麼失敗？現在修好了嗎？' })
+  const work = results.find(r => r.fields.section === 'work').fields
+  const failed = work.records.find(r => r.sourceId === failedId)
+  assert.equal(failed.tests.failed, 1)
+  assert.equal(failed.model, 'gpt-6.1-sol')
+  assert.equal(failed.fixedInCurrentVersion, null)
+  assert.ok(work.records.some(r => r.workRunId === successId && r.appliedToLive === true))
+  assert.doesNotMatch(JSON.stringify(work), /PRIVATE_CODE/)
+})
+
 test('service-configured Owner roots provide automations and worker evidence independently of the service profile', async t => {
   const { dir, put } = fixture(t)
   put('owner-automations/fixture/automation.toml', 'name = "Owner scheduled investigation"\nstatus = "PAUSED"\nrrule = "FREQ=HOURLY"')
