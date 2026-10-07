@@ -9,7 +9,7 @@ const model=v=>typeof v==='string'&&/^[a-z0-9][a-z0-9.\[\]-]{0,99}$/.test(v)?v:n
 function projectUsage(value){if(!value||typeof value!=='object'||Array.isArray(value))return null;const r={};for(const key of TOKEN_FIELDS)if(number(value[key])!==null)r[key]=value[key];return Object.keys(r).length?r:null}
 function byModel(rows){return Array.isArray(rows)?rows.slice(0,8).filter(r=>model(r?.model)).map(r=>({model:model(r.model),usage:projectUsage(r.usage)})):[]}
 function projectRecord(r){
- if(!r||!UUID.test(r.invocationId)||!['chat_completion','memory_completion'].includes(r.role)||!['started','succeeded','failed','interrupted_unknown'].includes(r.state)||!Number.isFinite(Date.parse(r.startedAt)))throw Error('invalid_ledger')
+ if(!r||typeof r.invocationId!=='string'||!UUID.test(r.invocationId)||!['chat_completion','memory_completion'].includes(r.role)||!['started','succeeded','failed','interrupted_unknown'].includes(r.state)||typeof r.startedAt!=='string'||!Number.isFinite(Date.parse(r.startedAt)))throw Error('invalid_ledger')
  const at=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null
  const trace=validTrace({requestId:r.requestId,phase:r.phase})?{requestId:r.requestId,phase:r.phase}:{requestId:null,phase:'unspecified'}
  return {sourceId:'invocation:'+r.invocationId,invocationId:r.invocationId,role:r.role,...trace,state:r.state,model:model(r.model),actualModel:model(r.actualModel),effort:['low','medium','high','xhigh','max','ultra','auto'].includes(r.effort)?r.effort:null,

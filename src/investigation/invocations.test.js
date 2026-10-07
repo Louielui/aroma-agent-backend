@@ -45,6 +45,7 @@ test('subscription adapter transmits only host context, not a prompt-supplied tr
  assert.deepEqual(sent.trace,{requestId:uuid,phase:'answer'})
  await adapter.complete('private');assert.equal(sent.trace,undefined)
  assert.throws(()=>require('../subscription/bridge').validateInput({prompt:'hi',trace:{requestId:uuid,phase:'answer',command:'run'}}))
+ assert.throws(()=>require('../subscription/bridge').validateInput({prompt:'hi',trace:{requestId:[uuid],phase:'answer'}}))
 })
 test('authenticated ledger reads do not spend credits or acquire a busy memory lane',async t=>{
  const ledger=createInvocationLedger({file:fixture(t)});let release,entered;const waiting=new Promise(r=>{entered=r}),pending=new Promise(r=>{release=r});let calls=0
