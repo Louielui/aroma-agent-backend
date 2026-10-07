@@ -3529,6 +3529,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     })
     // ⛔ E2: same single outcome as the commit path — judged against the bytes he receives.
     leadWithJudgment(view, distilled, requestId, 'chat', operationalInvestigation)
+    const operationalBrief = require('../investigation/operationalBrief').renderOperationalBrief(operationalInvestigation, { message })
+    if (operationalBrief) {
+      view.reply = operationalBrief
+      operationalInvestigation.answerPresentation = { kind: 'source_bound_operational_brief', locale: 'en', modelProseUsed: false }
+    }
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,

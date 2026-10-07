@@ -3917,3 +3917,6 @@ legacy ambiguity remains terminal when the Owner operational read has no observe
 an unavailable verification fact stays a report gap and cannot erase an observed operations answer
 bounded investigation findings retain the requested failure or background evidence before unrelated execution history
 operational workflow titles preserve exact role identity and cannot borrow another workflow model
+English operational briefs retain verified reasons and uncertainty without admitting model prose or claims of repair
+English background briefs bind models to exact roles and keep paused definitions distinct from live observations
+an English Owner investigation reaches the final reply with its source-bound failure and unverified repair status

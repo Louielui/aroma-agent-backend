@@ -63,6 +63,14 @@ test('the same operational source choice handles English without a Chinese inten
   assert.equal(x.reads.length, 1)
   assert.ok(x.result.investigation)
 })
+test('an English Owner investigation reaches the final reply with its source-bound failure and unverified repair status',async t=>{
+  const x=await turn(t,{question:'Why did the previous task fail? Is it fixed?',focus:'work_failure',workEvidence:true})
+  assert.match(x.result.reply,/source_dirty/)
+  assert.match(x.result.reply,/not.*confirm/i)
+  assert.doesNotMatch(x.result.reply,/扣款原因/)
+  assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_operational_brief')
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,1)
+})
 
 test('judged Chinese and English work and background focuses survive the actual intake without granting actions', async t => {
   for (const [focus,question] of [['work_failure','上一個開發任務為什麼失敗？現在修好了嗎？'],['work_failure','Why did the previous development task fail; is it fixed now?'],['background','現在有哪些背景工作？各自使用什麼模型？'],['background','What background jobs are configured and which models do they use?']]) {

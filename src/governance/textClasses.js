@@ -79,6 +79,7 @@ const FILE_CLASS = Object.freeze({
   // Backward-compatible report focus reads historical question vocabulary;
   // translating it would change old receipt presentation, never source routing.
   'investigation/intelligence.js': CLASS.MATCHING,
+  'investigation/operationalBrief.js': CLASS.INTERFACE, // Receipt-bound presentation; script detection chooses locale only.
   'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,

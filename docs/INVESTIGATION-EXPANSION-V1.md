@@ -43,6 +43,13 @@ Workflow evidence titles resolve exact role identities rather than repeating the
 section name. Facts for a selected role must match that workflow's own fields;
 another role's model cannot satisfy them. Adoption here refers to the local
 Xiangxiang backend, never the production restaurant system.
+The legacy free-prose name checker assumes Cantonese prose with Latin entity
+names. Its protection is unchanged. English failure and background answers use
+a bounded source-field presentation after the same Owner read, with fixed
+uncertainty and read-only recommendations. Model prose is not promoted through a
+larger vocabulary allowlist. Record IDs, reasons, workflow/default-model pairs
+and observation times bind to the same receipt; empty reads establish no absence.
+This does not claim general English free-prose grounding is solved.
 The legacy business-intent ambiguity hint cannot replace an evidence answer after
 an Owner-only judged plan whose required readable facts are operations-only has
 actually read observed records. A null unavailable fact remains a verification
