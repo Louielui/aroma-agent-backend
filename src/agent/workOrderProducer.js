@@ -156,7 +156,9 @@ function readCurrentExcerptFromDisk (repoRoot, relPath) {
 
 /** git, no shell, no inherited stdio. Injectable so tests never touch a real repository. */
 function defaultGitRunner (args, cwd) {
-  const r = spawnSync('git', args, { cwd, encoding: 'utf8', shell: false, windowsHide: true })
+  // The service account differs from the checkout owner. Trust only this bound
+  // repository for this invocation; do not modify global Git configuration.
+  const r = spawnSync('git', ['-c', 'safe.directory=' + path.resolve(cwd), ...args], { cwd, encoding: 'utf8', shell: false, windowsHide: true })
   return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' }
 }
 

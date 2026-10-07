@@ -63,6 +63,9 @@ Owner does not need to locate a file. Preparing the card does not execute anythi
 The existing typed EXECUTE, expiring nonce, canonical task-kind hash, proposal
 confirmation, authorization matrix and durable run claim remain the only entry.
 Source files come from the sealed commit, with blob and content hashes. They are
+sealed using command-local Git trust for the server-bound checkout so the Windows
+service identity can read its revision without granting global repository trust.
+Uncommitted target files and revision changes still refuse approval. They remain
 regular text files, bounded to eight files and 180000 bytes; prohibited paths,
 symlinks, working-tree edits and arbitrary repositories are refused. The registered
 UI profile currently uses only the coverage adapter, not an arbitrary repo agent.
