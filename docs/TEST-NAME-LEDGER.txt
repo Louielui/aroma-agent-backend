@@ -3912,3 +3912,5 @@ work sampling retains the newest failure and explicit related records before unr
 unrecorded work diagnostics and test outcomes stay unknown rather than becoming passing values
 Owner work metadata pins its approved root, strips worker bodies and records live workflow occupancy without dispatch
 work metadata rejects a redirected root or nested record and cannot mistake failed reads for zero work
+an Owner-only judged operational read cannot have its evidence answer replaced by the legacy business ambiguity question
+legacy ambiguity remains terminal when the Owner operational read has no observed evidence

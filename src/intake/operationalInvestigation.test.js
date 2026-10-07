@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -15,13 +15,29 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   } }
   let recall = 0
   const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, [], {
-    demo: true, interactionMode: 'chat', ownerInvestigation: allowed, openaiAdapter: a, controlAdapter: { complete: async () => { throw Error('unexpected API control call') } },
+    demo: true, interactionMode: 'chat', ownerInvestigation: allowed, openaiAdapter: a, semanticCallModel, controlAdapter: { complete: async () => { throw Error('unexpected API control call') } },
     memoryClient: { recall: async () => { recall++; return [] } },
     onInvestigation: e => events.push(e),
-    readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: async (source, method) => { reads.push({ source, method }); if (failed) throw Error('unavailable'); return { results: [{ source, sourceId: 'billing:abc', title: 'billing', retrievedAt: '2026-10-06T12:00:00Z', content: 'Billing source is unconnected: charge cause not established.', trust: 'live', fields: { section: 'billing', state: 'unconnected', evidenceState: 'not_established', provesCharge: false, records: [], sha256: 'a'.repeat(64) } }] } } }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
+    readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: async (source, method) => { reads.push({ source, method }); if (failed) throw Error('unavailable'); return { results: [{ source, sourceId: 'billing:abc', title: 'billing', retrievedAt: '2026-10-06T12:00:00Z', content: 'Billing source is unconnected: charge cause not established.', trust: 'live', fields: { section: workEvidence ? 'work' : 'billing', state: workEvidence ? 'ok' : 'unconnected', evidenceState: workEvidence ? 'confirmed' : 'not_established', provesCharge: false, records: workEvidence ? [{sourceId:'failed-run',state:'failed',reason:'source_dirty'}] : [], sha256: 'a'.repeat(64) } }] } } }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
   })
   return { result, events, calls, reads, recall }
 }
+
+test('an Owner-only judged operational read cannot have its evidence answer replaced by the legacy business ambiguity question', async t => {
+  const x = await turn(t, { focus:'work_failure', question:'上一個開發任務為什麼失敗？現在修好了嗎？', workEvidence:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })
+  assert.ok(x.result.investigation)
+  assert.equal(x.result.mode, 'chat')
+  assert.equal(x.result.demoOutcome, 'speech')
+  assert.match(x.result.reply, /扣款原因未確認/)
+  assert.doesNotMatch(x.result.reply, /你想睇邊方面/)
+  assert.equal(x.reads.length, 1)
+  assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length, 1)
+})
+test('legacy ambiguity remains terminal when the Owner operational read has no observed evidence', async t => {
+  const x = await turn(t, { focus:'work_failure', failed:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })
+  assert.equal(x.result.demoOutcome,'clarification')
+  assert.match(x.result.reply,/你想睇邊方面/)
+})
 
 test('a historical enquiry with empty memory reads own operational sources before answering, on the selected subscription', async t => {
   const x = await turn(t)

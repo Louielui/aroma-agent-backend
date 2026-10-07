@@ -2107,9 +2107,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * answerPlan — so persistence, language enforcement, read-state truth, request identity and
    * turn telemetry all keep owning what they already owned.
    */
-  if (semanticClarify && distilled) {
+  // The old classifier knows business intents, not this separately judged Owner
+  // investigation. A completed, authorised, operations-only plan with observed
+  // evidence must not lose its answer to that earlier unrelated ambiguity hint.
+  // Unavailable evidence, mixed plans and non-Owner turns retain the old gate.
+  const ownOperationsSettled = opts.ownerInvestigation === true &&
+    modelDirectedLiveOperations.has('xiangxiang_operations') &&
+    goalPlanObserved?.facts?.length > 0 &&
+    goalPlanObserved.facts.every(f => f.operation === 'xiangxiang_operations') &&
+    operationalInvestigation?.sections.some(s => ['ok', 'partial'].includes(s.state) && s.records?.length > 0)
+  if (semanticClarify && distilled && !ownOperationsSettled) {
     distilled = Object.assign({}, distilled, { intent: 'unclear', mode: 'ask', reply: semanticClarify, nextRead: null, answerPlan: null })
     semanticClarifyTerminal = true
+  }
+  if (semanticClarify && ownOperationsSettled) {
+    try { console.log('[AROMA-INVESTIGATION]', JSON.stringify({ requestId, event: 'legacy_business_clarification_superseded_by_observed_owner_plan', sections: operationalInvestigation.sections.length })) } catch (_) {}
   }
 
   const initialTerminalMode = (distilled && typeof distilled.mode === 'string') ? distilled.mode : null
