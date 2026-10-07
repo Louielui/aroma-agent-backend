@@ -1,6 +1,6 @@
 'use strict'
 const test=require('node:test'),assert=require('node:assert/strict')
-const {withSemanticAnswer,reviewSemanticAnswer}=require('./semanticAnswer')
+const {withSemanticAnswer,constrainSemanticSources,reviewSemanticAnswer,referenceCatalog,bindClaim}=require('./semanticAnswer')
 const report=()=>({readOnly:true,focus:'cost',billingConfirmed:false,sections:[
  {section:'schedules',sourceId:'schedule-receipt',state:'ok',retrievedAt:'2026-10-07T00:00:00Z',coverage:'bounded',records:[{sourceId:'task-a',name:'Daily observer',state:'PAUSED',model:null}]},
  {section:'history',sourceId:'history-receipt',state:'partial',records:[{sourceId:'old-a',title:'Daily observer consumed credits',at:'2026-09-01T00:00:00Z'}]},
@@ -13,6 +13,23 @@ test('semantic schema is closed, required and isolated from ordinary schemas',()
  const s={type:'object',properties:{reply:{type:'string'}},required:['reply'],additionalProperties:false}
  const n=withSemanticAnswer(s);assert.equal(s.properties.investigationAnswer,undefined)
  assert.ok(n.required.includes('investigationAnswer'));assert.equal(n.properties.investigationAnswer.additionalProperties,false)
+})
+test('fresh reference catalog and binder share exact existing role identity for central configuration',()=>{
+ const p={readOnly:true,sections:[{sourceId:'configuration:fresh',section:'configuration',state:'ok',records:[{role:'central_brain_default',model:'claude-opus-5-5',flags:{API:null}}]}]}
+ const catalog=referenceCatalog(p);assert.equal(catalog.sections[0].records[0].recordId,'central_brain_default');assert.equal(catalog.sections[0].records[0].fields['flags.API'],null)
+ const c=claim({text:'The configured model is Claude Opus 5.5.',references:[{sourceId:'configuration:fresh',recordId:'central_brain_default',field:'model',value:'claude-opus-5-5'}]})
+ assert.ok(bindClaim(c,p).claim)
+ p.sections[0].records.push({...p.sections[0].records[0]});assert.equal(bindClaim(c,p).reason,'ambiguous_record')
+})
+test('reference catalog is bounded and reports omitted rows without inventing absence',()=>{
+ const p=report();p.sections[0].records=Array.from({length:9},(_,i)=>({sourceId:'row-'+i,state:'PAUSED',long:'x'.repeat(321)}))
+ const s=referenceCatalog(p).sections[0];assert.equal(s.records.length,6);assert.equal(s.omittedRecords,3);assert.equal(s.records[0].fields.long,undefined)
+})
+test('main answer schema permits only fresh source and record identities without mutating shared schemas',()=>{
+ const original=withSemanticAnswer({type:'object',properties:{},required:[]}),s=constrainSemanticSources(original,report())
+ const refs=s.properties.investigationAnswer.properties.claims.items.properties.references.items.properties
+ assert.deepEqual(refs.sourceId.enum,['schedule-receipt','history-receipt','billing-receipt']);assert.deepEqual(refs.recordId.enum,[null,'task-a','old-a'])
+ assert.equal(original.properties.investigationAnswer.properties.claims.items.properties.references.items.properties.sourceId.enum,undefined)
 })
 test('source-bound English paraphrase survives one semantic review with exact same subscription',async()=>{
  const r=await check({claims:[claim()]});assert.equal(r.state,'reviewed');assert.equal(r.accepted[0].text,claim().text)

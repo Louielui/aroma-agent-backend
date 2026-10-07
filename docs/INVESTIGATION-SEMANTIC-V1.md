@@ -12,7 +12,12 @@ answers and non-Owner requests retain their existing proof gates.
 
 The model may select up to six atomic observations, limitations or read-only
 recommendations in Chinese, English or mixed-language questions. Every statement
-names exact fresh receipt, record, field and scalar-value references. Code rejects
+names exact fresh receipt, record, field and scalar-value references.
+The existing main answer prompt receives a bounded fresh reference catalog with
+exact IDs and scalar fields, up to six rows per section and 18,000 row characters;
+omissions are explicit. Central configuration uses its existing role identity.
+This catalog supplies reference syntax without widening read authorization. The
+answer schema permits only these fresh source and record identities. Code rejects
 invented values, missing/duplicate identities, unknown observations, historical
 data promoted to current or confirmed facts, structured contradictions and
 numbers absent from that statement's own reference values. The current/historical

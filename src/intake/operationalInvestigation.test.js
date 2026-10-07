@@ -42,6 +42,7 @@ test('general English semantics reaches the actual final intake reply with visib
  assert.equal(x.result.investigation.semanticReview.accepted[0].references[0].sourceId,'billing:abc')
  assert.equal(x.result.investigation.semanticReview.calls,1);assert.equal(x.reads.length,1);assert.deepEqual(x.result.tasks,[])
  assert.ok(x.events.some(e=>e.state==='semantic_review'));assert.equal(x.calls.filter(c=>c.schema==='investigation_semantic_review').length,1)
+ assert.ok(x.calls.some(c=>c.p.includes('FRESH SEMANTIC REFERENCE CATALOG:')&&c.p.includes('billing:abc')),'Main model receives exact fresh reference identities rather than guessing labels')
  const withheld=await turn(t,{question:'Investigate credit usage',focus:'general',investigationAnswer,semanticDecision:'unsupported'})
  assert.doesNotMatch(withheld.result.reply,/billing source is not connected/);assert.equal(withheld.result.investigation.semanticReview.accepted.length,0)
  assert.match(withheld.result.reply,/No usable semantic review/)
