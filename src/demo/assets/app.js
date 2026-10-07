@@ -1228,6 +1228,19 @@
     if (report.unverifiedJudgmentOmitted) details.appendChild(el('p', 'wait-note', t('investigation.judgmentOmitted')))
     var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
     var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
+    if (report.semanticReview) {
+      var semantic = el('section', 'investigation-semantic')
+      semantic.appendChild(el('strong', '', t('investigation.semanticTitle')))
+      ;(report.semanticReview.accepted || []).forEach(function (claim) {
+        semantic.appendChild(el('p', '', (levels[claim.evidenceState] || levels.not_established) + ' · ' + claim.text))
+        var refs = el('details'); refs.appendChild(el('summary', '', t('investigation.details')))
+        refs.appendChild(el('pre', '', JSON.stringify({ temporalScope: claim.temporalScope, references: claim.references }, null, 2))); semantic.appendChild(refs)
+      })
+      if ((report.semanticReview.withheld || []).length) semantic.appendChild(el('p', 'wait-note', t('investigation.semanticWithheld', { count: report.semanticReview.withheld.length })))
+      semantic.appendChild(el('p', 'wait-note', t('investigation.semanticBoundary')))
+      var reviewLog = el('details'); reviewLog.appendChild(el('summary', '', t('investigation.evaluation')))
+      reviewLog.appendChild(el('pre', '', JSON.stringify(report.semanticReview, null, 2))); semantic.appendChild(reviewLog); details.appendChild(semantic)
+    }
     if (report.version === 1) {
       var summary = el('section', 'investigation-summary')
       if (!report.focus || report.focus === 'cost') {
@@ -1314,6 +1327,7 @@
       else if (run.state === 'reading') stage.textContent = t('investigation.reading', { source: investigationSource(last && last.section) })
       else if (run.state === 'source_complete') stage.textContent = last && ['missing', 'unavailable', 'unconnected'].includes(last.sourceState) ? t('investigation.sourceGap', { source: investigationSource(last.section) }) : t('investigation.sourceChecked', { source: investigationSource(last && last.section) })
       else if (run.state === 'evaluating') stage.textContent = t('investigation.evaluating')
+      else if (run.state === 'semantic_review') stage.textContent = t('investigation.semanticReview')
       else if (run.state === 'interrupted') stage.textContent = t('investigation.interrupted')
       else if (run.state === 'failed') stage.textContent = t('investigation.failed')
     }

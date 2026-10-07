@@ -6,6 +6,8 @@ test('durable receipts survive reopen, preserve partial evidence and reject dupl
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-receipts-')); t.after(() => fs.rmSync(dir, { recursive: true, force: true }))
   const id = randomUUID(), r = createReceipts({ dir }); r.begin(id, 'conversation1')
   r.record(id, { state: 'reading', section: 'usage' })
+  r.record(id, { state: 'semantic_review' })
+  assert.equal(r.get(id).state, 'semantic_review')
   r.record(id, { state: 'evaluating', investigation: { readOnly: true, sections: [{ section: 'billing', evidenceState: 'not_established' }] } })
   r.finish(id, { reply: 'The charge cause is not established.' })
   const got = createReceipts({ dir }).get(id)

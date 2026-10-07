@@ -13,7 +13,7 @@ function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs
   }
   function record (id, event) {
     const r = store.get(id); if (!r || !active.has(id)) return
-    if (!['planning', 'reading', 'source_complete', 'evaluating'].includes(event.state)) return
+    if (!['planning', 'reading', 'source_complete', 'evaluating', 'semantic_review'].includes(event.state)) return
     r.state = event.state; r.updatedAt = clock()
     r.events.push({ state: event.state, section: event.section || null, sourceState: event.sourceState || null, at: r.updatedAt }); r.events = r.events.slice(-40)
     if (event.investigation) r.investigation = structuredClone(event.investigation)

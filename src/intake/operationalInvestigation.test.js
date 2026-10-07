@@ -2,15 +2,16 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [] } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported' } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
   const events = [], calls = [], reads = []
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name })
+    if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
     if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
-    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
+    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
   const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, history, {
@@ -31,6 +32,19 @@ test('an Owner-only judged operational read cannot have its evidence answer repl
   assert.doesNotMatch(x.result.reply, /你想睇邊方面/)
   assert.equal(x.reads.length, 1)
   assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length, 1)
+})
+
+test('general English semantics reaches the actual final intake reply with visible source binding and one review',async t=>{
+ const investigationAnswer={claims:[{id:'c1',text:'The billing source is not connected, so the actual charge cause is not established.',kind:'limitation',evidenceState:'not_established',temporalScope:'unknown',references:[{sourceId:'billing:abc',recordId:null,field:'state',value:'unconnected'}]}]}
+ const x=await turn(t,{question:'Could the credits be coming from an unattended workflow? Find the evidence.',focus:'general',investigationAnswer})
+ assert.match(x.result.reply,/billing source is not connected/);assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_semantic_review')
+ assert.equal(x.result.investigation.semanticReview.accepted[0].references[0].sourceId,'billing:abc')
+ assert.equal(x.result.investigation.semanticReview.calls,1);assert.equal(x.reads.length,1);assert.deepEqual(x.result.tasks,[])
+ assert.ok(x.events.some(e=>e.state==='semantic_review'));assert.equal(x.calls.filter(c=>c.schema==='investigation_semantic_review').length,1)
+ const withheld=await turn(t,{question:'Investigate credit usage',focus:'general',investigationAnswer,semanticDecision:'unsupported'})
+ assert.doesNotMatch(withheld.result.reply,/billing source is not connected/);assert.equal(withheld.result.investigation.semanticReview.accepted.length,0)
+ assert.match(withheld.result.reply,/No usable semantic review/)
+ const denied=await turn(t,{allowed:false,investigationAnswer});assert.equal(denied.calls.filter(c=>c.schema==='investigation_semantic_review').length,0)
 })
 test('legacy ambiguity remains terminal when the Owner operational read has no observed evidence', async t => {
   const x = await turn(t, { focus:'work_failure', failed:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })

@@ -80,6 +80,7 @@ const FILE_CLASS = Object.freeze({
   // translating it would change old receipt presentation, never source routing.
   'investigation/intelligence.js': CLASS.MATCHING,
   'investigation/operationalBrief.js': CLASS.INTERFACE, // Receipt-bound presentation; script detection chooses locale only.
+  'investigation/semanticView.js': CLASS.INTERFACE, // Reviewed statement presentation, separated from model contracts.
   'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,

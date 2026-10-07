@@ -1734,7 +1734,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       return {
         type: 'json_schema',
         name: 'distill_with_read_decision',
-        schema: withJudgment(withReadChoices(withReadArgs(withChatKnowledgeModes(DISTILL_WITH_READ_DECISION_SCHEMA, a4ChatModes), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
+        schema: semanticInvestigationSchema(withJudgment(withReadChoices(withReadArgs(withChatKnowledgeModes(DISTILL_WITH_READ_DECISION_SCHEMA, a4ChatModes), a4On), openChoices, choiceGloss), goalUnderstandingObserved))
       }
     }
     // ⛔ THE REF COMES FROM THE GROUP'S OWN SOURCE, NEVER FROM THE MAP KEY. The key is now the
@@ -1753,8 +1753,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     // Reuses openChoices from above rather than recomputing, so the two schemas can never
     // disagree about what is still readable this turn.
     const shaped = withJudgment(withReadChoices(withReadArgs(withRowRefs(withChatKnowledgeModes(DISTILL_WITH_PLAN_SCHEMA, a4ChatModes), refs), a4On), openChoices, choiceGloss), goalUnderstandingObserved)
-    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: shaped }
+    return { type: 'json_schema', name: 'distill_with_answer_plan', schema: semanticInvestigationSchema(shaped) }
   }
+  const semanticInvestigationSchema = schema => opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true
+    ? require('../investigation/semanticAnswer').withSemanticAnswer(schema) : schema
   let llmResult = null
   // ⛔ THE PROVIDER THAT PRODUCED THE ACCEPTED ENVELOPE. Set at the orchestration branch
   // that actually made the call — never inferred from the result, because the real
@@ -3535,6 +3537,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (operationalBrief && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       view.reply = operationalBrief
       operationalInvestigation.answerPresentation = { kind: 'source_bound_operational_brief', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false }
+    }
+    if (opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
+      const semantic = require('../investigation/semanticAnswer')
+      const semanticView = require('../investigation/semanticView')
+      let draft = null
+      try { draft = JSON.parse(llmResult.text).investigationAnswer || null } catch (_) { /* invalid drafts are not evidence */ }
+      const review = await semantic.reviewSemanticAnswer({ draft, report: operationalInvestigation, adapter: activeAdapter, billing: llmResult.billing, model: llmResult.model, question: message, onProgress: investigationProgress })
+      operationalInvestigation.semanticReview = review
+      const reviewedReply = semanticView.renderSemanticAnswer(review, { message })
+      if (reviewedReply) {
+        view.reply = reviewedReply
+        operationalInvestigation.answerPresentation = { kind: 'source_bound_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: true, machineEntailmentProven: false }
+      } else if (draft || !operationalBrief) {
+        view.reply = (operationalBrief || semanticView.fallbackBrief(operationalInvestigation, { message })) + '\n\n' + semanticView.reviewUnavailable({ message })
+      }
     }
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
