@@ -1250,7 +1250,17 @@
           .then(function (r) { if (!r.ok) throw Error(); return r.json() })
           .then(function (sealed) { approvalId = sealed.approvalId; if (active === investigationConversation) renderCard(sealed, investigationConversation); else check.disabled = false })
           .catch(function () { check.disabled = false; addMeta(turnEl.body, t('investigation.enquiryUnavailable')) }) }
-        if (approvalId) fetch('/api/v1/owner/results/' + encodeURIComponent(approvalId), { credentials: 'same-origin' }).then(function (r) { if (r.ok) watchProgress(approvalId, turnEl.body, {}, investigationConversation); else if (r.status === 404) prepare(); else throw Error() }).catch(function () { check.disabled = false })
+        if (approvalId) fetch('/api/v1/owner/results/' + encodeURIComponent(approvalId), { credentials: 'same-origin' }).then(function (r) {
+          if (r.status === 404) return prepare()
+          if (!r.ok) throw Error()
+          return r.json().then(function (result) {
+            watchProgress(approvalId, turnEl.body, {}, investigationConversation)
+            if (result.finished && result.enquiry && result.enquiry.saved && result.enquiry.outcome === 'FAILED') {
+              var retry = el('button', 'ghost', t('investigation.enquiryRetry')); retry.type = 'button'; turnEl.body.appendChild(retry)
+              retry.addEventListener('click', function () { retry.disabled = true; prepare() })
+            }
+          })
+        }).catch(function () { check.disabled = false })
         else prepare()
       })
     }

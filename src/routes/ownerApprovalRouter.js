@@ -254,7 +254,7 @@ function createOwnerApprovalRouter (deps = {}) {
 
     const sealResult = store.seal({ workOrder: produced.workOrder, proposalId: proposal.id })
     if (!sealResult.ok) return refuse(res, 409, sealResult.reason, produced.workOrder.approvalId, 'owner_local')
-    if (supplied) deps.linkInvestigationEnquiry(req.params.id, produced.workOrder.approvalId, supplied.previousApprovalId)
+    if (supplied) deps.linkInvestigationEnquiry(req.params.id, produced.workOrder.approvalId, supplied.previousApprovalId, proposal.id)
 
     const view = buildApprovalView(sealResult.record.workOrder)
     const nonce = store.issueNonce({ approvalId: produced.workOrder.approvalId, workOrderHash: view.hash, sessionId: sid })

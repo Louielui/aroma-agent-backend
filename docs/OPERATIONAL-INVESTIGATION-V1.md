@@ -91,6 +91,13 @@ requests cannot re-execute under the same ID. Reopening an enquiry reads its sav
 result and never dispatches it again. Evidence and source quotes stay folded until
 the Owner chooses to inspect them.
 
+A saved failed enquiry can be explicitly retried using a new proposal, current
+snapshot and fresh approval. The failed record and consumed approval are preserved.
+Pending retry cards retain their proposal identity through reload. Successful,
+active or unrecorded work cannot be retried through this path. The worker uses the
+generic adapter response-format contract, tested through the real subscription
+adapter with a local transport fixture.
+
 Acceptance: missing memory continues to a judged local read; English and Chinese
 requests use the same path; unauthorized requests do not read; partial and corrupt
 sources do not manufacture zeroes; snapshots survive reload; no automatic action,

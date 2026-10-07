@@ -13,6 +13,19 @@ function fixture (t, output) {
   return { args, calls, cwd }
 }
 const result = () => ({ answer: 'The setting is disabled; spending is not established.', citations: [{ path: 'settings.txt', startLine: 1, endLine: 1, quote: 'enabled = false' }], notEstablished: ['No billing records supplied.'] })
+
+test('the real subscription adapter accepts the enquiry response contract before the transport call', async t => {
+  const f = fixture(t, result()), calls = []
+  const { CodexSubscriptionAdapter } = require('../adapters/CodexSubscriptionAdapter')
+  f.args.adapterFactory = selection => new CodexSubscriptionAdapter({ ...selection, request: async (route, input) => {
+    calls.push({ route, input })
+    return { model: selection.model, billing: 'claude-subscription', text: JSON.stringify(result()), stopReason: 'end_turn' }
+  } })
+  const out = await createEnquirySubscriptionWorker(f.args).dispatch({ goal: 'Check approved source' })
+  assert.equal(calls.length, 1); assert.equal(calls[0].route, '/complete')
+  assert.deepEqual(calls[0].input.schema.required, ['answer', 'citations', 'notEstablished'])
+  assert.equal(out.diagnostics.billing, 'claude-subscription')
+})
 test('one subscription call receives only the approved snapshot and preserves unknown cost', async t => {
   const f = fixture(t, result()), worker = createEnquirySubscriptionWorker(f.args)
   const out = await worker.dispatch({ goal: 'Investigate cost', sessionId: 'fixed' })

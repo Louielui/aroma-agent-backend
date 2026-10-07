@@ -1291,7 +1291,7 @@ function createApp (options = {}) {
     buildAgentResultView,
     sealedHashOf: confirmService.sealedHashOf,
     getProposal: (id) => proposalStore.getProposal(id),
-    prepareInvestigationEnquiry: require('./investigation/enquiryOffer').createEnquiryOffer({ receipts: require('./investigation/receipts').createReceipts(), proposals: proposalStore }).prepare,
+    prepareInvestigationEnquiry: require('./investigation/enquiryOffer').createEnquiryOffer({ receipts: require('./investigation/receipts').createReceipts(), proposals: proposalStore, findSavedEnquiry: id => enquiryStore.findByApprovalId ? enquiryStore.findByApprovalId(id) : null }).prepare,
     linkInvestigationEnquiry: require('./investigation/receipts').createReceipts().linkEnquiry,
     findEnquiryByApproval: id => enquiryStore.findByApprovalId ? enquiryStore.findByApprovalId(id) : null,
     cancelProposal: (id) => proposalStore.cancelProposal(id, LOCAL_OWNER),

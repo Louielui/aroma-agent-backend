@@ -31,10 +31,12 @@ function createReceipts ({ dir = path.join(resolveDataDir(), 'investigation-runs
     if (r && !['completed', 'failed'].includes(r.state) && !active.has(id)) return { ...r, state: 'interrupted' }
     return r
   }
-  function linkEnquiry (id, approvalId, previous = null) {
+  function linkEnquiry (id, approvalId, previous = null, proposalId = null) {
     const r = store.get(id)
     if (!r || r.state !== 'completed' || (r.enquiryApprovalId || null) !== previous || !/^appr_[a-z0-9]+$/i.test(approvalId || '')) throw Error('investigation_link_refused')
-    r.enquiryApprovalId = approvalId; store.save(r)
+    r.enquiryApprovalId = approvalId
+    if (proposalId) r.enquiryProposalId = proposalId
+    store.save(r)
   }
   return { begin, record, finish, get, linkEnquiry }
 }
