@@ -81,6 +81,7 @@ const FILE_CLASS = Object.freeze({
   'investigation/intelligence.js': CLASS.MATCHING,
   'investigation/operationalBrief.js': CLASS.INTERFACE, // Receipt-bound presentation; script detection chooses locale only.
   'investigation/semanticView.js': CLASS.INTERFACE, // Reviewed statement presentation, separated from model contracts.
+  'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
   'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,

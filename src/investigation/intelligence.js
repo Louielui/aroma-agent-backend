@@ -19,6 +19,10 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
         else add(s, r, 'configuration_current', 'confirmed', 'current', { model: r.model, effort: r.effort })
       }
       else if (s.section === 'execution') {
+        if(r.evidenceBasis==='owner_bridge_invocation_ledger') {
+          add(s,r,'invocation_attempt_observed','confirmed','historical',{role:r.role,state:r.state,requestId:r.requestId,phase:r.phase,model:r.model,actualModel:r.actualModel,durationMs:r.durationMs,preflightMs:r.preflightMs,providerWaitMs:r.providerWaitMs})
+          if(r.state==='succeeded'&&r.modelResultObserved===true)add(s,r,'model_result_observed','confirmed','historical',{role:r.role,actualModel:r.actualModel,finishedAt:r.finishedAt})
+        }
         if (r.lastStartedAt || r.lastCompletedAt) add(s, r, 'execution_observed', 'confirmed', 'historical', { model: r.model, startedAt: r.lastStartedAt, completedAt: r.lastCompletedAt })
         if (r.usage) add(s, r, 'usage_recorded', 'confirmed', 'historical', { usage: r.usage, usageAt: r.usageAt, basis: r.usageBasis })
         const matched = schedules?.records?.find(task => task.sourceId === 'codex-automation:' + r.declaredAutomationId)
@@ -64,8 +68,9 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   const recommendations = (focus === 'cost' ? ['obtain_billing_evidence', 'compare_explicit_execution_identity'] : focus === 'work_failure' ? ['verify_same_task_current_source'] : focus === 'background' ? ['inspect_live_worker_activity'] : ['resolve_relevant_source_gaps']).map(kind => ({ kind, evidenceState: 'not_established', readOnly: true }))
   // Keep the requested evidence and its uncertainty boundary inside the display
   // budget. Full receipts and omitted counts remain available in every focus.
-  const priorityKinds = focus === 'background' ? ['background_activity_observed','workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded'] : focus === 'work_failure' ? ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'work_recorded', 'configuration_current'] : ['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link']
-  findings.sort((a, b) => Number(priorityKinds.includes(b.kind)) - Number(priorityKinds.includes(a.kind)))
-  return { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
+  const priorityKinds = focus === 'background' ? ['background_activity_observed','workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded'] : focus === 'work_failure' ? ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'work_recorded', 'configuration_current'] : ['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link', 'invocation_attempt_observed','model_result_observed']
+  findings.sort((a, b) => Number(b.kind==='charge_unverified')-Number(a.kind==='charge_unverified') || Number(priorityKinds.includes(b.kind)) - Number(priorityKinds.includes(a.kind)))
+  const invocationCorrelation=require('./invocationCorrelation').correlateInvocations(sections)
+  return { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, invocationCorrelation, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
 }
 module.exports = { evaluateInvestigation }

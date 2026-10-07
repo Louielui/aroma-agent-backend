@@ -63,7 +63,7 @@ async function complete (options = {}, input) {
     wire = JSON.stringify({ type: 'user', message: { role: 'user', content: [{ type: 'text', text: packet }, ...images.map(i => ({ type: 'image', source: { type: 'base64', media_type: 'image/png', data: i.dataUrl.slice(22) } }))] } }) + '\n'
   }
   let result; const start = Date.now()
-  try { result = await (options.run || runClaude)(args, { ...options, timeoutMs: options.timeoutMs || 110000, input: wire, maxInputBytes: 9 * 1024 * 1024 }) }
+  try { options.onDispatch?.(); result = await (options.run || runClaude)(args, { ...options, timeoutMs: options.timeoutMs || 110000, input: wire, maxInputBytes: 9 * 1024 * 1024 }) }
   catch (error) { throw new SubscriptionError(error.message === 'subscription_limit_reached' ? 'subscription_limit_reached' : 'subscription_unavailable') }
   if (result?.api_error_status === 429 || (result?.is_error === true && /(?:hit (?:your|the) limit|usage limit|rate.limit|out of.*usage)/i.test(result?.result || ''))) throw new SubscriptionError('subscription_limit_reached')
   const used = Object.keys(result?.modelUsage || {})
@@ -73,6 +73,9 @@ async function complete (options = {}, input) {
   if (result?.type !== 'result' || result.subtype !== 'success' || result.is_error === true || actual.length !== 1 || used.some(value => value !== expected && !/^claude-haiku-[a-z0-9.-]+$/.test(value))) throw new SubscriptionError('subscription_invalid_output')
   const text = schema ? (result.structured_output === undefined ? '' : JSON.stringify(result.structured_output)) : result.result
   if (typeof text !== 'string' || !text.trim() || text.length > 100000) throw new SubscriptionError('subscription_invalid_output')
-  return { text, model, actualModel: actual[0], billing: 'claude-subscription', stopReason: 'end_turn', latencyMs: Date.now() - start, usage: null }
+  const {projectUsage}=require('../investigation/invocations')
+  return { text, model, actualModel: actual[0], billing: 'claude-subscription', stopReason: 'end_turn', latencyMs: Date.now() - start,
+    usage: projectUsage(result.modelUsage[actual[0]]), usageBasis:'provider_result_model_usage',
+    usageByModel:used.map(model=>({model,usage:projectUsage(result.modelUsage[model])})) }
 }
 module.exports = { MODEL, complete, checkSubscription, listModels, catalogueRows, readCatalogue }

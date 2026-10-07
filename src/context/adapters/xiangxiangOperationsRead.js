@@ -59,15 +59,23 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   })
   const workerRoot = options.workerRoot || env.XIANGXIANG_OPERATIONS_WORKER_ROOT || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
   const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env,AbortSignal.timeout(10000)))
+  const invocationReader = options.invocationReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/invocation-metadata', {}, env,AbortSignal.timeout(10000)))
   const workReader = options.workReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/work-metadata', {}, env,AbortSignal.timeout(10000)))
   async function section (name, query, runtime) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
       if (name === 'execution') {
-        if (!executionReader) return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false }
-        const r = await executionReader()
-        if (!['ok', 'partial', 'missing', 'unavailable'].includes(r?.state) || !Array.isArray(r.records)) throw Error('invalid_execution_receipt')
-        return { ...r, evidenceState: r.records.length ? 'confirmed' : 'not_established', provesCharge: false }
+        const read = async reader => {
+          if (!reader) return {state:'unconnected',records:[]}
+          try { const r=await reader();if(!['ok','partial','missing','unavailable','unconnected'].includes(r?.state)||!Array.isArray(r.records))throw Error('invalid_receipt');return r }
+          catch(_){return {state:'unavailable',records:[]}}
+        }
+        const [sessions,invocations]=await Promise.all([read(executionReader),read(invocationReader)])
+        if(!invocationReader)return {...sessions,evidenceState:sessions.records.length?'confirmed':'not_established',provesCharge:false}
+        const records=[...invocations.records,...sessions.records]
+        return {state:records.length?'partial':invocations.state==='unavailable'||sessions.state==='unavailable'?'unavailable':'unconnected',records,evidenceState:records.length?'confirmed':'not_established',provesCharge:false,
+          coverage:{sessions:sessions.state,invocations:invocations.state},invocationCoverage:{startedAt:invocations.coverageStartedAt??null,retained:invocations.retained??null,omitted:invocations.omitted??null},
+          note:[invocations.note||'Invocation coverage unavailable.',sessions.note||'Session records are a separate bounded source.','Do not sum session snapshots with invocation usage. Shared time or model is not a task identity or billing link.'].join(' ')}
       }
       if (name === 'configuration') {
         const d = readJson(path.join(dataDir, 'model-center.json'))

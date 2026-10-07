@@ -383,7 +383,7 @@ async function processIntake (message, adapter, history = [], opts = {}) {
   const supplied = opts && opts.requestId
   const requestId = (typeof supplied === 'string' && UUID_RE.test(supplied)) ? supplied : uuidv4()
   try {
-    return await runIntakePipeline(message, adapter, history, opts, requestId)
+    return await require('../investigation/invocationContext').withInvocationContext(requestId,()=>runIntakePipeline(message, adapter, history, opts, requestId))
   } catch (err) {
     // Slice B: every error leaving intake carries the correlationId (== requestId).
     // IntakeUpstreamError sets it in its constructor; DistillParseError and any
@@ -508,7 +508,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const website = await require('./websiteFlow').runWebsiteFlow({ message, history,
       readEnabled: require('../context/flags').readAccessEnabled(process.env, 'public_knowledge'),
       classify: deps.classify || (async prompt => {
-        const result = await subscriptionAdapter.complete(prompt, { system: SYSTEM, responseFormat: { type: 'json_schema', name: 'website_intent', strict: true, schema: SCHEMA } })
+        const result = await subscriptionAdapter.complete(prompt, { invocationPhase:'intent', system: SYSTEM, responseFormat: { type: 'json_schema', name: 'website_intent', strict: true, schema: SCHEMA } })
         plannerModel = result.model; return JSON.parse(result.text)
       }),
       search: deps.search || (target => localRequest('/website', { target }, process.env)),
@@ -589,7 +589,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     const callModel = (opts && typeof opts.semanticCallModel === 'function')
       ? opts.semanticCallModel
       : subscriptionAdapter
-        ? async ({ system, prompt }) => (await subscriptionAdapter.complete(prompt, { system, maxTokens: 128 })).text
+        ? async ({ system, prompt }) => (await subscriptionAdapter.complete(prompt, { invocationPhase:'intent', system, maxTokens: 128 })).text
         : defaultSemanticCallModel()
     const sem = await resolveSemanticFallback({
       message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM
@@ -1090,7 +1090,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // Provider-neutral by construction: B is handed a closure and never learns what is
           // behind it — the same arrangement reasoningLoop uses.
           callModel: async ({ prompt, responseFormat }) => {
-            const r = await controlAdapter.complete(prompt, { system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
+            const r = await controlAdapter.complete(prompt, { invocationPhase:'goal_understanding', system: effSystem, maxTokens, ...(responseFormat ? { responseFormat } : {}) })
             return { text: r && r.text, usage: r && r.usage }
           }
         })
@@ -1876,7 +1876,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const gptFormat = answerPlanFormat()
         gptResult = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: OPENAI, attempt: 1 },
-          () => gpt.complete(gptPrompt, { system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
+          () => gpt.complete(gptPrompt, { invocationPhase:'answer', system: effSystem, maxTokens, temperature: 0.3, ...(gptFormat ? { responseFormat: gptFormat } : {}) }),
           { clock: latencyClock, sink: latencySink })
       } catch (err) {
         // Content-free, but no longer blind: the adapter's allowlisted diagnostics
@@ -1924,6 +1924,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       llmResult = await timePhase(
         { requestId, phase: PHASE.MODEL_CALL, role: ROLE.MAIN, provider: CLAUDE, attempt: 1 },
         () => adapter.complete(claudePrompt, {
+          invocationPhase:'answer',
           system: effSystem,
           maxTokens,
           temperature: 0.3,
@@ -3116,7 +3117,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const fmt = answerPlanFormat(finalCall)
         const next = await timePhase(
           { requestId, phase: PHASE.MODEL_CALL, role: ROLE.REASONING_STEP, provider: activeProvider || null },
-          () => activeAdapter.complete(prompt, { system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }),
+          () => activeAdapter.complete(prompt, { invocationPhase:'answer', system: effSystem, maxTokens, ...(fmt ? { responseFormat: fmt } : {}) }),
           { clock: latencyClock, sink: latencySink })
         noteProvider(activeProvider === OPENAI ? 'openai' : 'claude', next) // provenance, per call
         await recordProviderUsage(next)                                     // ⛔ accounting, per call
@@ -3555,6 +3556,11 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         view.reply = (runtimeSummary?.text || operationalBrief || semanticView.fallbackBrief(operationalInvestigation, { message })) + '\n\n' + semanticView.reviewUnavailable({ message })
       }
       if (runtimeSummary) operationalInvestigation.answerPresentation.runtimeSummary = { ...runtimeSummary, text: undefined }
+      const invocationSummary=require('../investigation/invocationBrief').renderInvocationSummary(operationalInvestigation,{message})
+      if(invocationSummary){
+        view.reply=invocationSummary.text+'\n\n'+view.reply
+        operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),invocationSummary:{...invocationSummary,text:undefined}}
+      }
     }
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)

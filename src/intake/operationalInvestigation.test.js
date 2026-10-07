@@ -29,6 +29,14 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   return { result, events, calls, reads, recall }
 }
 
+test('actual Owner credit answer and archive retain source-bound call evidence with no billing inference',async t=>{
+ const evidenceSections=[{section:'execution',sourceId:'execution:abc',state:'partial',evidenceState:'confirmed',records:[{sourceId:'invocation:one',invocationId:'one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-07T20:00:00Z',usage:{inputTokens:13,outputTokens:4},durationMs:2500,evidenceBasis:'owner_bridge_invocation_ledger'}]}]
+ const x=await turn(t,{question:'Which calls consumed tokens and credits?',focus:'cost',evidenceSections})
+ assert.match(x.result.reply,/claude-sonnet-5-5/);assert.match(x.result.reply,/13\/4/);assert.match(x.result.reply,/charges.*unconfirmed/)
+ assert.equal(x.result.replyForArchive,x.result.reply);assert.equal(x.result.investigation.answerPresentation.invocationSummary.references[0].recordId,'invocation:one')
+ assert.deepEqual(x.result.tasks,[])
+})
+
 test('reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply',async t=>{
  const at='2026-10-07T20:00:00Z',evidenceSections=[
   {section:'configuration',sourceId:'configuration:abc',state:'partial',evidenceState:'confirmed',records:[

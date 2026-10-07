@@ -16,7 +16,8 @@ function authenticated (header, token) {
 }
 function validateInput (input) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new SubscriptionError('subscription_invalid_output')
-  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model', 'images'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (Object.keys(input).some(k => !['prompt', 'system', 'schema', 'effort', 'model', 'images', 'trace'].includes(k))) throw new SubscriptionError('subscription_invalid_output')
+  if (input.trace !== undefined && !require('../investigation/invocationContext').validTrace(input.trace)) throw new SubscriptionError('subscription_invalid_output')
   if (input.images !== undefined) {
     try { require('../chat/imageAttachments').validateImages(input.images) } catch (_) { throw new SubscriptionError('subscription_invalid_output') }
   }
@@ -28,13 +29,20 @@ function validateInput (input) {
   return input
 }
 
-function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, schedulerReader = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
+function createBridge ({ token, clientOptions, memoryClientOptions = clientOptions, completeFn = complete, claudeFn = require('./claudeClient').complete, claudeCheckFn = require('./claudeClient').checkSubscription, claudeModelsFn = require('./claudeClient').listModels, backgroundModel = null, checkFn = checkSubscription, modelsFn = listSubscriptionModels, workerFlow = null, workerProviders = null, websiteEnabled = false, memoryEnabled = false, memoryStore = null, codeSourceFactory = null, taskPlanSource = null, codeRepair = null, projectWork = null, projectAdoption = null, projectTasks = null, executionReader = null, workReader = null, schedulerReader = null, invocationLedger = null, findWebsiteFn = require('./websiteClient').findWebsite }) {
   if (!validToken(token)) throw new Error('bridge requires a 256-bit local token')
   let busy = false; let memoryBusy = false
   const activeCalls = new Map()
   async function observedCall (role, fn, options, body) {
     activeCalls.set(role,{model:body.model || null,effort:body.effort || null,startedAt:new Date().toISOString()})
-    try { return await fn(options,body) } finally { activeCalls.delete(role) }
+    const id=invocationLedger?.begin({role,model:body.model,effort:body.effort,trace:body.trace})
+    const {trace,...providerBody}=body
+    try {
+      const result=await fn({...options,onDispatch:()=>invocationLedger?.dispatched(id)},providerBody)
+      invocationLedger?.finish(id,result)
+      return result
+    } catch(error) { invocationLedger?.finish(id,null,error);throw error }
+    finally { activeCalls.delete(role) }
   }
   async function runtimeMetadata () {
     let scheduler = null
@@ -70,10 +78,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       if (!res.destroyed) { res.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store' }); res.end(JSON.stringify(body)) }
     }
     if (!authenticated(req.headers.authorization, token) || req.headers.origin) { reply(401, { code: 'subscription_unavailable' }); req.resume(); return }
-    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
+    if (req.method !== 'POST' || !['/complete', '/status', '/models', '/workers', '/website', '/v1/chat/completions', '/memory-store', '/code-diagnosis-source', '/task-plan-source', '/code-repair', '/project-work', '/project-adoption', '/project-tasks', '/execution-metadata', '/work-metadata', '/runtime-metadata', '/invocation-metadata'].includes(req.url)) { reply(404, { code: 'subscription_unavailable' }); req.resume(); return }
     const isMemory = req.url === '/v1/chat/completions'
     const isStore = req.url === '/memory-store'
-    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata'
+    const isCatalogue = req.url === '/models' || req.url === '/execution-metadata' || req.url === '/work-metadata' || req.url === '/runtime-metadata' || req.url === '/invocation-metadata'
     // Closed account metadata uses its own single-flight session. Reading it
     // neither acquires nor releases the execution lane or dispatches a turn.
     if (!isStore && !isCatalogue && ((isMemory ? memoryBusy : busy) || (!isMemory && req.url !== '/project-tasks' && projectTasks?.isActive()) || (!isMemory && req.url !== '/code-repair' && codeRepair?.isActive()) || (!isMemory && !['/project-work', '/project-adoption', '/project-tasks'].includes(req.url) && projectWork?.isActive()) || (!isMemory && req.url !== '/workers' && workerFlow?.isActive?.()) || (!isMemory && !['/project-adoption', '/project-work', '/project-tasks'].includes(req.url) && projectAdoption?.isActive()))) { reply(503, { code: 'subscription_unavailable' }); req.resume(); return }
@@ -92,7 +100,10 @@ function createBridge ({ token, clientOptions, memoryClientOptions = clientOptio
       }
       let input
       try { input = JSON.parse(Buffer.concat(chunks).toString('utf8')) } catch (_) { reply(400, { code: 'subscription_invalid_output' }); return }
-      if (req.url === '/runtime-metadata') {
+      if (req.url === '/invocation-metadata') {
+        if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
+        reply(200,invocationLedger ? invocationLedger.read() : {state:'unconnected',records:[],provesCharge:false})
+      } else if (req.url === '/runtime-metadata') {
         if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length) { reply(400,{code:'context_unavailable'}); return }
         try { reply(200,await runtimeMetadata()) } catch (_) { reply(503,{code:'context_unavailable'}) }
       } else if (req.url === '/execution-metadata' || req.url === '/work-metadata') {

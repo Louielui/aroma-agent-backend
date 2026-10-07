@@ -54,7 +54,8 @@ class CodexSubscriptionAdapter extends LLMAdapter {
   async complete (prompt, opts = {}) {
     const schema = opts.responseFormat ? assertResponseFormat(opts.responseFormat).schema : undefined
     if (opts.images !== undefined) require('../chat/imageAttachments').validateImages(opts.images)
-    const result = await this.request('/complete', { prompt, model: this._model, system: opts.system || '', effort: this.effort, ...(schema ? { schema } : {}), ...(opts.images !== undefined ? { images: opts.images } : {}) }, this.env, opts.signal)
+    const trace=require('../investigation/invocationContext').currentInvocationTrace(opts.invocationPhase)
+    const result = await this.request('/complete', { prompt, model: this._model, system: opts.system || '', effort: this.effort, ...(trace ? {trace} : {}), ...(schema ? { schema } : {}), ...(opts.images !== undefined ? { images: opts.images } : {}) }, this.env, opts.signal)
     if (!result || result.model !== this._model || result.billing !== billingFor(this._model) || typeof result.text !== 'string' || !result.text || result.stopReason !== 'end_turn') throw new SubscriptionError('subscription_invalid_output')
     return result
   }

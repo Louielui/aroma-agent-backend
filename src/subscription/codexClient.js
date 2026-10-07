@@ -306,7 +306,7 @@ async function complete (options, input) {
         if (message.method === 'turn/completed') {
           if (!p.turn || p.turn.status !== 'completed') reject(wireError(p.turn && p.turn.error))
           else if (!text || text.length > 100000) reject(new SubscriptionError('subscription_invalid_output'))
-          else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', ...(allowance.usageMode ? { usageMode: allowance.usageMode } : {}), usage: usage ? { inputTokens: usage.inputTokens, outputTokens: usage.outputTokens, totalTokens: usage.totalTokens } : null })
+          else resolve({ text, model: thread.model, latencyMs: Date.now() - start, stopReason: 'end_turn', billing: 'chatgpt-subscription', ...(allowance.usageMode ? { usageMode: allowance.usageMode } : {}), usageBasis:'provider_last_turn_usage', usage: require('../investigation/invocations').projectUsage(usage) })
         }
       }
       rpc.events.on('notification', onNotification)
@@ -314,6 +314,7 @@ async function complete (options, input) {
     // Attach immediately, so an early notification cannot create an unhandled rejection.
     finished.catch(() => {})
     try {
+      options.onDispatch?.()
       await rpc.request('turn/start', {
         threadId: thread.thread.id, model, effort, serviceTierForTurn: 'default',
         environments: [], input: [{ type: 'text', text: input.prompt }, ...images],
