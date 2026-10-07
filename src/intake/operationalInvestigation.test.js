@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported' } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -14,14 +14,40 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
+  const fixtureRead = async (source, method) => {
+    reads.push({ source, method })
+    if (failed) throw Error('unavailable')
+    if (evidenceSections) return {results:evidenceSections.map(s=>({source,sourceId:s.sourceId,title:s.section,retrievedAt:'2026-10-07T20:00:00Z',content:JSON.stringify(s),trust:'live',fields:s}))}
+    return {results:[{source,sourceId:'billing:abc',title:'billing',retrievedAt:'2026-10-06T12:00:00Z',content:'Billing source is unconnected: charge cause not established.',trust:'live',fields:{section:workEvidence?'work':'billing',state:workEvidence?'ok':'unconnected',evidenceState:workEvidence?'confirmed':'not_established',provesCharge:false,records:workEvidence?[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]:[],sha256:'a'.repeat(64)}}]}
+  }
   const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, history, {
     demo: true, interactionMode: 'chat', ownerInvestigation: allowed, openaiAdapter: a, semanticCallModel, controlAdapter: { complete: async () => { throw Error('unexpected API control call') } },
     previousInvestigation, memoryClient: { recall: async () => { recall++; return [] } },
     onInvestigation: e => events.push(e),
-    readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: async (source, method) => { reads.push({ source, method }); if (failed) throw Error('unavailable'); return { results: [{ source, sourceId: 'billing:abc', title: 'billing', retrievedAt: '2026-10-06T12:00:00Z', content: 'Billing source is unconnected: charge cause not established.', trust: 'live', fields: { section: workEvidence ? 'work' : 'billing', state: workEvidence ? 'ok' : 'unconnected', evidenceState: workEvidence ? 'confirmed' : 'not_established', provesCharge: false, records: workEvidence ? [{sourceId:'failed-run',state:'failed',reason:'source_dirty'}] : [], sha256: 'a'.repeat(64) } }] } } }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
+    readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: fixtureRead }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
   })
   return { result, events, calls, reads, recall }
 }
+
+test('reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply',async t=>{
+ const at='2026-10-07T20:00:00Z',evidenceSections=[
+  {section:'configuration',sourceId:'configuration:abc',state:'partial',evidenceState:'confirmed',records:[
+   {sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at},
+   {sourceId:'backend:memory_index',role:'memory_index',currentRunningState:'active',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at}]},
+  {section:'schedules',sourceId:'schedules:abc',state:'ok',evidenceState:'confirmed',records:[{sourceId:'paused-task',state:'PAUSED'}]}]
+ const investigationAnswer={claims:[{id:'c1',text:'A schedule is configured as PAUSED.',kind:'observation',evidenceState:'confirmed',temporalScope:'current',references:[{sourceId:'schedules:abc',recordId:'paused-task',field:'state',value:'PAUSED'}]}]}
+ for(const semanticDecision of ['supported','unsupported']){
+  const x=await turn(t,{question:'What background jobs are running and which models do they use?',focus:'background',evidenceSections,investigationAnswer,semanticDecision})
+  assert.match(x.result.reply,/Mail analysis.*idle.*claude-sonnet/)
+  assert.match(x.result.reply,/General memory indexing.*active.*claude-sonnet/)
+  assert.match(x.result.reply,/2026-10-07T20:00:00Z/)
+  assert.equal(x.result.replyForArchive,x.result.reply)
+  assert.equal(x.result.investigation.answerPresentation.runtimeSummary.references.length,2)
+  assert.equal(x.result.investigation.answerPresentation.runtimeSummary.references[1].fields.currentRunningState,'active')
+  assert.equal(x.result.investigation.semanticReview.accepted.length,semanticDecision==='supported'?1:0)
+  assert.deepEqual(x.result.tasks,[]);assert.equal(x.reads.length,1)
+ }
+})
 
 test('an Owner-only judged operational read cannot have its evidence answer replaced by the legacy business ambiguity question', async t => {
   const x = await turn(t, { focus:'work_failure', question:'上一個開發任務為什麼失敗？現在修好了嗎？', workEvidence:true, semanticCallModel:async()=>JSON.stringify({intent:'code',confidence:'MEDIUM'}) })

@@ -3547,12 +3547,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const review = await semantic.reviewSemanticAnswer({ draft, report: operationalInvestigation, adapter: activeAdapter, billing: llmResult.billing, model: llmResult.model, question: message, onProgress: investigationProgress })
       operationalInvestigation.semanticReview = review
       const reviewedReply = semanticView.renderSemanticAnswer(review, { message })
+      const runtimeSummary = require('../investigation/operationalBrief').renderRuntimeSummary(operationalInvestigation, { message })
       if (reviewedReply) {
-        view.reply = reviewedReply
+        view.reply = runtimeSummary ? runtimeSummary.text + '\n\n' + reviewedReply : reviewedReply
         operationalInvestigation.answerPresentation = { kind: 'source_bound_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: true, machineEntailmentProven: false }
       } else if (draft || !operationalBrief) {
-        view.reply = (operationalBrief || semanticView.fallbackBrief(operationalInvestigation, { message })) + '\n\n' + semanticView.reviewUnavailable({ message })
+        view.reply = (runtimeSummary?.text || operationalBrief || semanticView.fallbackBrief(operationalInvestigation, { message })) + '\n\n' + semanticView.reviewUnavailable({ message })
       }
+      if (runtimeSummary) operationalInvestigation.answerPresentation.runtimeSummary = { ...runtimeSummary, text: undefined }
     }
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)

@@ -31,6 +31,35 @@ function runningTitle(state,locale){
  default:return t('investigation.runtimeUnknown',{},locale)
  }
 }
+// Fixed receipt fields remain visible even when reviewed model prose omits them.
+// This does not admit rejected claims, read another source or infer past billing.
+function renderRuntimeSummary(report,{message=''}={}){
+ if(report?.readOnly!==true||report.focus!=='background'||!Array.isArray(report.sections))return null
+ const locale=/[\u3400-\u9fff]/.test(message)?'zh':'en'
+ const readable=name=>report.sections.filter(s=>s.section===name&&['ok','partial'].includes(s.state)&&s.sourceId)
+ const configuration=readable('configuration'),schedules=readable('schedules'),lines=[],references=[]
+ let ambiguous=0
+ const bind=(s,r)=>references.push({sourceId:s.sourceId,recordId:r.sourceId,fields:{role:r.role||null,currentRunningState:r.currentRunningState||'unknown',model:r.model??null,modelBasis:r.modelBasis||null,evidenceBasis:r.evidenceBasis||null,usesModel:r.usesModel??null,at:r.at||null}})
+ const value=v=>v?code(v):t('investigation.briefNotRecorded',{},locale)
+ for(const role of ['mail_sync','mail_analysis','mail_index','memory_index','memory_outbox','memory_consolidation','memory_completion']){
+  const id=(role==='memory_completion'?'bridge:':'backend:')+role
+  const matches=configuration.flatMap(s=>(s.records||[]).filter(r=>r.role===role&&r.sourceId===id&&r.evidenceBasis==='live_process_snapshot').map(r=>({s,r})))
+  if(matches.length>1){ambiguous++;continue}
+  if(!matches.length)continue
+  const {s,r}=matches[0],model=r.usesModel===false?t('investigation.briefNoModel',{},locale):['bridge_route_configuration','in_flight_request_selection'].includes(r.modelBasis)?value(r.model):t('investigation.briefNotRecorded',{},locale)
+  const basis=r.modelBasis==='in_flight_request_selection'?t('investigation.runtimeSelectedModel',{},locale):t('investigation.runtimeConfiguredModel',{},locale)
+  lines.push('- '+t('investigation.runtimeRow',{role:backgroundTitle(role,locale),state:runningTitle(r.currentRunningState,locale),basis,model,at:value(r.at)},locale));bind(s,r)
+ }
+ const recall=schedules.flatMap(s=>(s.records||[]).filter(r=>r.sourceId==='AromaXiangXiang-ErrandRecall'&&r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false).map(r=>({s,r})))
+ if(recall.length>1)ambiguous++
+ else if(recall.length===1){
+  const {s,r}=recall[0],installed=r.state==='INSTALLED'?t('investigation.runtimeInstalled',{},locale):r.state==='NOT_INSTALLED'?t('investigation.notInstalled',{},locale):t('investigation.runtimeUnknown',{},locale)
+  lines.push('- '+t('investigation.runtimeRecallRow',{installed,state:runningTitle(r.currentRunningState,locale),model:t('investigation.briefNoModel',{},locale),at:value(r.at)},locale));bind(s,r)
+ }
+ if(!lines.length&&!ambiguous)return null
+ const text=[t('investigation.runtimeInventory',{},locale),lines.join('\n'),...(ambiguous?[t('investigation.runtimeAmbiguous',{count:ambiguous},locale)]:[]),t('investigation.runtimeInventoryBoundary',{},locale)].filter(Boolean).join('\n\n')
+ return {version:1,text,references,ambiguousRows:ambiguous,scope:'registered_live_process_receipts_not_complete_worker_inventory'}
+}
 // The legacy prose-name gate is built for Cantonese answers with Latin entity
 // names. Do not weaken that protection or expand its vocabulary to arbitrary
 // English. This bounded bilingual presentation uses only the observed operational
@@ -117,4 +146,4 @@ function renderOperationalBrief(report,{message=''}={}){
  }else return null
  return lines.join('\n\n')
 }
-module.exports={renderOperationalBrief}
+module.exports={renderOperationalBrief,renderRuntimeSummary}

@@ -13,6 +13,12 @@ enumerate semantic records. Model routing is configuration evidence, separate
 from current occupancy, completed inference, historical execution and billing.
 The food-recall task is deterministic and does not use an AI model.
 
+The final Owner answer always retains a compact, receipt-bound inventory of the
+registered runtime observations when the model's reviewed explanation omits
+them. Each row retains its observation time and configured-vs-selected model
+basis. Ambiguous duplicate rows are disclosed rather than choosing one as fact.
+Rejected model claims remain rejected; saved replies include the same inventory.
+
 Independent evidence sections are read concurrently, in stable receipt order.
 They share one bridge snapshot per enquiry, retain per-source duration and each
 failure, and bound loopback metadata reads to ten seconds. Structured conflicts

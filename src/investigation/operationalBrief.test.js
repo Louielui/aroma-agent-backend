@@ -2,6 +2,28 @@
 const test=require('node:test'),assert=require('node:assert/strict')
 const {renderOperationalBrief}=require('./operationalBrief')
 const report=(focus,sections)=>({version:1,focus,readOnly:true,sections})
+
+test('runtime summary preserves fixed observed rows with bindings and refuses unavailable, historical or ambiguous data',()=>{
+ const {renderRuntimeSummary}=require('./operationalBrief'),at='2026-10-07T20:00:00Z'
+ const row={sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at}
+ const r=report('background',[{section:'configuration',sourceId:'configuration:receipt',state:'partial',records:[row,
+  {sourceId:'backend:memory_index',role:'memory_index',currentRunningState:'unknown',model:null,modelBasis:'not_observed',evidenceBasis:'live_process_snapshot',at},
+  {sourceId:'bridge:chat_completion',role:'chat_completion',currentRunningState:'active',model:'own-question',evidenceBasis:'live_process_snapshot',at}]},
+  {section:'schedules',sourceId:'schedules:receipt',state:'ok',records:[{sourceId:'AromaXiangXiang-ErrandRecall',state:'INSTALLED',currentRunningState:'idle',executionKind:'deterministic_food_recall_check',usesModel:false,at}]},
+  {section:'work',state:'ok',records:[{...row,model:'historical-model',currentRunningState:'active'}]}])
+ const x=renderRuntimeSummary(r,{message:'哪些工作在運行？'}),en=renderRuntimeSummary(r,{message:'What is running?'})
+ assert.match(x.text,/電郵分析.*未在執行.*claude-sonnet/);assert.match(x.text,/一般記憶索引.*未確認.*未記錄/)
+ assert.match(x.text,/食品召回.*未在執行.*不使用模型/)
+ assert.doesNotMatch(x.text,/own-question|historical-model/)
+ assert.equal(x.references.length,3);assert.equal(x.references[0].sourceId,'configuration:receipt');assert.equal(x.references[0].fields.currentRunningState,'idle')
+ assert.match(en.text,/configuration.*not.*completed model call/i)
+ assert.equal(renderRuntimeSummary({...r,readOnly:false}),null)
+ assert.equal(renderRuntimeSummary({...r,focus:'cost'}),null)
+ assert.equal(renderRuntimeSummary(report('background',[{...r.sections[0],state:'unavailable'}])),null)
+ const duplicate=renderRuntimeSummary(report('background',[r.sections[0],{...r.sections[0],records:[{...row,currentRunningState:'active'}]}]),{message:'What is running?'})
+ assert.doesNotMatch(duplicate.text,/Mail analysis.*idle|Mail analysis.*active/)
+ assert.match(duplicate.text,/ambiguous/i);assert.equal(duplicate.references.length,1)
+})
 test('background summaries name the observed components and distinguish configured models from active inference',()=>{
  const r=report('background',[{section:'configuration',state:'ok',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',model:'claude-sonnet',modelBasis:'bridge_route_configuration',currentRunningState:'idle',enabled:true,at:'2026-10-07T20:00:00Z',evidenceBasis:'live_process_snapshot'}]}])
  const zh=renderOperationalBrief(r,{message:'哪些背景工作在運行？'}),en=renderOperationalBrief(r,{message:'What background jobs are running?'})

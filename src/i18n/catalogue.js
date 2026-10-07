@@ -39,7 +39,7 @@
  */
 const CATALOGUE = Object.freeze({
   'investigation.title': { zh: '查看調查依據', en: 'View investigation evidence' },
-  'investigation.runtimeCurrent': {zh:'唯讀調查已接入 Owner 橋接的固定 Windows 排程見證，以及電郵同步、分析、索引、一般記憶與橋接模型請求的即時觀察；分開顯示設定模型、此刻執行與歷史紀錄。獨立來源並行讀取、橋接快照每次查詢只讀一次，保留各來源耗時及讀取失敗；完整外部工作清單及帳單仍未接通。',en:'Read-only investigation connects the fixed Windows scheduler witness through the Owner bridge and instantaneous mail sync/analysis/index, general memory and bridge inference observations. Configuration, current activity and history remain separate. Independent source reads overlap, the bridge snapshot is read once per enquiry, and source durations/failures are retained. External job inventory and billing remain unconnected.'},
+  'investigation.runtimeCurrent': {zh:'唯讀調查已接入 Owner 橋接的固定 Windows 排程見證，以及電郵同步、分析、索引、一般記憶與橋接模型請求的即時觀察；分開顯示設定模型、此刻執行與歷史紀錄。已讀取的背景工作會直接列在最終回答，附觀察時間，不依賴模型摘要是否提及。獨立來源並行讀取、橋接快照每次查詢只讀一次，保留各來源耗時及讀取失敗；完整外部工作清單及帳單仍未接通。',en:'Read-only investigation connects the fixed Windows scheduler witness through the Owner bridge and instantaneous mail sync/analysis/index, general memory and bridge inference observations. Configuration, current activity and history remain separate. The final answer retains observed runtime rows and timestamps independently of model omissions. Independent source reads overlap, the bridge snapshot is read once per enquiry, and source durations/failures are retained. External job inventory and billing remain unconnected.'},
   'investigation.mailAnalysis': {zh:'電郵分析',en:'Mail analysis'},
   'investigation.mailSync': {zh:'電郵同步',en:'Mail synchronization'},
   'investigation.mailIndex': {zh:'電郵記憶索引',en:'Mail memory indexing'},
@@ -52,6 +52,14 @@ const CATALOGUE = Object.freeze({
   'investigation.runtimeIdle': {zh:'觀察時未在執行',en:'idle at observation'},
   'investigation.runtimeDisabled': {zh:'已停用',en:'disabled'},
   'investigation.runtimeUnknown': {zh:'即時狀態未確認',en:'current activity unknown'},
+  'investigation.runtimeInventory': {zh:'已讀取的背景工作：',en:'Observed background work:'},
+  'investigation.runtimeRow': {zh:'{role}：{state}；{basis}：{model}；觀察於 {at}。',en:'{role}: {state}; {basis}: {model}; observed at {at}.'},
+  'investigation.runtimeSelectedModel': {zh:'此次請求模型',en:'selected request model'},
+  'investigation.runtimeConfiguredModel': {zh:'設定模型',en:'configured model'},
+  'investigation.runtimeInstalled': {zh:'已安裝',en:'installed'},
+  'investigation.runtimeRecallRow': {zh:'食品召回查核：{installed}；{state}；{model}；觀察於 {at}。',en:'Food recall check: {installed}; {state}; {model}; observed at {at}.'},
+  'investigation.runtimeAmbiguous': {zh:'另有 {count} 項即時紀錄重複或有衝突，未選其中一項作結論。',en:'Runtime entries with ambiguous or conflicting observations: {count}. No single observation was selected as fact.'},
+  'investigation.runtimeInventoryBoundary': {zh:'這是各項標示時間的快照；「未在執行」不代表已停用。設定模型不是已完成模型呼叫或實際扣款的證明；外部工作與帳單尚未完整接通。',en:'Each row is a snapshot at its stated time; idle does not mean disabled. Model configuration is not proof of a completed model call or actual charges. External work and billing coverage remain incomplete.'},
   'investigation.briefNoModel': {zh:'不使用模型',en:'no model used'},
   'investigation.briefRuntime': {zh:'{role}：{state}；路由設定模型：{model}；觀察時間：{at}。路由設定不是完成一次模型呼叫的證明。',en:'{role}: {state}; configured route model: {model}; observed at {at}. Route configuration does not prove a completed model call.'},
   'investigation.briefRecall': {zh:'這個 Windows 排程執行食品召回查核，不使用 AI 模型；{state}；觀察時間：{at}。',en:'This Windows task checks food recalls without an AI model; {state}; observed at {at}.'},
