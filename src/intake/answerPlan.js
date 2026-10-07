@@ -615,13 +615,22 @@ function operationalValues (fields) {
 
 function operationalRecord (row, title) {
   if (row.source !== 'xiangxiang_operations' || typeof title !== 'string') return null
-  const matches = (row.fields?.records || []).filter(record => record.name === title || record.sourceId === title)
+  const matches = [...(row.fields?.records || []), ...(row.fields?.workflows || [])].filter(record => record.name === title || record.sourceId === title || record.role === title)
   return matches.length === 1 ? matches[0] : null
 }
 
 function operationalTitle (row, record) {
   if (row.source !== 'xiangxiang_operations') return row.title
-  if (record) return record.name || record.sourceId
+  if (record) {
+    if (record.name || record.sourceId) return record.name || record.sourceId
+    switch (record.role) {
+      case 'test_draft': return t('investigation.testDraftWorkflow')
+      case 'development': return t('investigation.developmentWorkflow')
+      case 'review': return t('investigation.reviewWorkflow')
+      case 'adoption': return t('investigation.adoptionWorkflow')
+      default: return record.role
+    }
+  }
   switch (row.fields?.section) {
     case 'configuration': return t('investigation.configuration')
     case 'schedules': return t('investigation.schedules')

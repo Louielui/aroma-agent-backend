@@ -3915,3 +3915,5 @@ work metadata rejects a redirected root or nested record and cannot mistake fail
 an Owner-only judged operational read cannot have its evidence answer replaced by the legacy business ambiguity question
 legacy ambiguity remains terminal when the Owner operational read has no observed evidence
 an unavailable verification fact stays a report gap and cannot erase an observed operations answer
+bounded investigation findings retain the requested failure or background evidence before unrelated execution history
+operational workflow titles preserve exact role identity and cannot borrow another workflow model

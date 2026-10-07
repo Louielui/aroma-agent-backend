@@ -19,6 +19,14 @@ const {
 } = require('./answerPlan')
 
 const NOW = '2026-08-03T12:00:00.000Z'
+test('operational workflow titles preserve exact role identity and cannot borrow another workflow model', () => {
+  const row = { source: 'xiangxiang_operations', sourceId: 'work', fields: { section: 'work', records: [], workflows: [{ role: 'test_draft', state: 'idle', model: 'gpt-6.1-sol' }, { role: 'review', state: 'idle', model: 'sonnet' }] } }
+  const r = validatePlan({ directAnswer: '', sections: [{ heading: '', items: [{ sourceId: 'work', title: 'test_draft', facts: [{ field: 'model', value: 'gpt-6.1-sol' }, { field: 'model', value: 'sonnet' }] }, { sourceId: 'work', title: 'review', facts: [{ field: 'model', value: 'sonnet' }] }] }], limitations: [], followUp: null, unanswerable: false }, { evidenceSets: [], itemsBySource: [{ source: row.source, items: [row] }] })
+  assert.deepEqual(r.plan.sections[0].items.map(i => i.title), ['測試草稿流程', '審閱流程'])
+  assert.deepEqual(r.plan.sections[0].items[0].facts.map(f => f.value), ['gpt-6.1-sol'])
+  assert.deepEqual(r.plan.sections[0].items[1].facts.map(f => f.value), ['sonnet'])
+  assert.equal(r.droppedFacts, 1)
+})
 
 /* ── fixtures: the Owner's three real questions ───────────────────────────── */
 

@@ -2,6 +2,19 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { evaluateInvestigation } = require('./intelligence')
 const section = (name, records, extra = {}) => ({ section: name, sourceId: name + ':receipt', retrievedAt: '2026-10-07T06:00:00Z', state: 'ok', records, ...extra })
+test('bounded investigation findings retain the requested failure or background evidence before unrelated execution history', () => {
+  const sections = [section('execution', Array.from({ length: 45 }, (_, i) => ({ sourceId: 'execution-' + i, lastStartedAt: '2026-10-02T01:00:00Z', usage: { total_tokens: i + 1 } }))), section('work', [{ sourceId: 'failure', state: 'failed', reason: 'source_dirty' }, { sourceId: 'candidate', state: 'completed', tests: { total: 9, passed: 9, failed: 0 }, sourceFiles: [{ path: 'src/demo/assets/sidebar.css', comparison: 'matches_candidate' }] }], { workflows: ['test_draft', 'development', 'review', 'adoption'].map(role => ({ role, state: 'idle', model: role === 'review' ? 'sonnet' : null, modelBasis: 'host_workflow_default_not_per_job_selection' })) }), section('configuration', [{ model: 'claude-opus-5-5', effort: 'medium' }]), section('schedules', [{ sourceId: 'paused', state: 'PAUSED', model: null }])]
+  for (const [focus, requiredKinds] of [['background', ['workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded']], ['work_failure', ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'configuration_current']]]) {
+    const report = evaluateInvestigation({ focus, sections })
+    assert.equal(report.findings.length, 30)
+    assert.ok(report.findingsOmitted > 0)
+    assert.deepEqual(report.sections, sections)
+    for (const kind of requiredKinds) assert.ok(report.findings.some(f => f.kind === kind), focus + ': ' + kind)
+    if (focus === 'background') assert.equal(report.findings.filter(f => f.kind === 'workflow_occupancy_observed').length, 4)
+    assert.equal(report.findings.find(f => f.kind === (focus === 'background' ? 'activity_unverified' : 'fix_unverified')).evidenceState, 'not_established')
+    assert.ok(report.recommendations.every(r => r.readOnly))
+  }
+})
 test('non-cost investigation reports failure and source gaps without billing recommendations or an invented fix', () => {
   const r = evaluateInvestigation({ goal: 'Why did the last task fail; is it fixed?', focus: 'work_failure', sections: [section('work', [{ sourceId: 'failed-task', state: 'failed', reason: 'worker_timeout', tests: null, fixedInCurrentVersion: null }, { sourceId: 'unrelated-success', state: 'completed', tests: { passed: 9, failed: 0, exitCode: 0 } }]), section('billing', [], { state: 'unconnected' })] })
   assert.equal(r.focus, 'work_failure')

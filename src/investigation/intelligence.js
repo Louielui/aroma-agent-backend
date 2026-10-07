@@ -54,7 +54,10 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
     gaps.push({ section: 'live_worker_activity', state: work?.workflows?.length ? 'partial' : 'unconnected', sourceId: work?.sourceId || config.sourceId })
   }
   const recommendations = (focus === 'cost' ? ['obtain_billing_evidence', 'compare_explicit_execution_identity'] : focus === 'work_failure' ? ['verify_same_task_current_source'] : focus === 'background' ? ['inspect_live_worker_activity'] : ['resolve_relevant_source_gaps']).map(kind => ({ kind, evidenceState: 'not_established', readOnly: true }))
-  findings.sort((a, b) => Number(['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link'].includes(b.kind)) - Number(['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link'].includes(a.kind)))
+  // Keep the requested evidence and its uncertainty boundary inside the display
+  // budget. Full receipts and omitted counts remain available in every focus.
+  const priorityKinds = focus === 'background' ? ['workflow_occupancy_observed', 'activity_unverified', 'configuration_current', 'schedule_current', 'work_recorded'] : focus === 'work_failure' ? ['work_failure_observed', 'fix_unverified', 'candidate_tests_recorded', 'source_snapshot_compared', 'work_recorded', 'configuration_current'] : ['charge_unverified', 'execution_observed', 'usage_recorded', 'candidate_link']
+  findings.sort((a, b) => Number(priorityKinds.includes(b.kind)) - Number(priorityKinds.includes(a.kind)))
   return { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
 }
 module.exports = { evaluateInvestigation }

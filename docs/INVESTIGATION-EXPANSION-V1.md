@@ -34,6 +34,15 @@ current execution. Named job activity and account-wide inventory remain gaps.
 
 Non-cost reports no longer display billing recommendations. Cost attribution
 continues to require provider billing and an authenticated execution identity.
+The bounded findings list prioritizes the question's evidence and uncertainty:
+workflow occupancy and definitions for background enquiries; failure, candidate
+tests and source comparisons for failure enquiries. Unrelated execution history
+cannot consume their display budget. Full source receipts and omitted counts
+remain preserved.
+Workflow evidence titles resolve exact role identities rather than repeating the
+section name. Facts for a selected role must match that workflow's own fields;
+another role's model cannot satisfy them. Adoption here refers to the local
+Xiangxiang backend, never the production restaurant system.
 The legacy business-intent ambiguity hint cannot replace an evidence answer after
 an Owner-only judged plan whose required readable facts are operations-only has
 actually read observed records. A null unavailable fact remains a verification
