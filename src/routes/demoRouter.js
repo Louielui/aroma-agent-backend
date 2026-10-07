@@ -816,6 +816,9 @@ function createDemoRouter ({ getAdapterFn = getAdapterForLane, processIntakeFn =
         })
         opts.telemetry = telemetry
         if (interactionMode === 'chat') opts.ownerInvestigation = true
+        if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {
+          opts.previousInvestigation = require('../investigation/continuity').previousInvestigation({ conversationId: req.body.conversationId, conversationStore, receipts: investigationReceipts })
+        }
         const investigationId = require('../core/operating/runStore').ID.test(req.body.websiteRequestId || '') ? req.body.websiteRequestId : correlationId
         let investigationStarted = false, investigationSaveFailed = false
         if (interactionMode === 'chat' && process.env.CONTEXT_XIANGXIANG_OPERATIONS === 'on') {

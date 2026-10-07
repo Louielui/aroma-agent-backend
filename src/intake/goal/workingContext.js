@@ -60,7 +60,9 @@ function buildWorkingContext (history) {
     if (!role) continue
     // Both shapes are accepted: the wire carries `text`, the stored transcript uses `content`.
     const raw = typeof h.text === 'string' ? h.text : (typeof h.content === 'string' ? h.content : '')
-    const s = raw.trim().slice(0, MAX_MESSAGE_CHARS)
+    const text = raw.trim(), marker = ' …[middle omitted]… '
+    const head = Math.floor((MAX_MESSAGE_CHARS - marker.length) / 2)
+    const s = text.length <= MAX_MESSAGE_CHARS ? text : text.slice(0, head) + marker + text.slice(-(MAX_MESSAGE_CHARS - marker.length - head))
     if (!s) continue
     rows.push({ role, text: s })
   }

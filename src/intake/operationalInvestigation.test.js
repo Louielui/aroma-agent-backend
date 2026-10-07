@@ -2,21 +2,20 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [] } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
   const events = [], calls = [], reads = []
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name })
-    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify(options.responseFormat?.name === 'goal_plan'
-      ? { question_restated: question, investigation_focus: focus, facts: [{ id: 'f1', need: 'Investigate own previous usage and work', operation: 'xiangxiang_operations', entity: null, fields: [], necessity: 'required' }, ...(unavailableFact ? [{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}] : [])], joins: [] }
-      : { mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
+    return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment }) }
   } }
   let recall = 0
-  const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, [], {
+  const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, history, {
     demo: true, interactionMode: 'chat', ownerInvestigation: allowed, openaiAdapter: a, semanticCallModel, controlAdapter: { complete: async () => { throw Error('unexpected API control call') } },
-    memoryClient: { recall: async () => { recall++; return [] } },
+    previousInvestigation, memoryClient: { recall: async () => { recall++; return [] } },
     onInvestigation: e => events.push(e),
     readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: async (source, method) => { reads.push({ source, method }); if (failed) throw Error('unavailable'); return { results: [{ source, sourceId: 'billing:abc', title: 'billing', retrievedAt: '2026-10-06T12:00:00Z', content: 'Billing source is unconnected: charge cause not established.', trust: 'live', fields: { section: workEvidence ? 'work' : 'billing', state: workEvidence ? 'ok' : 'unconnected', evidenceState: workEvidence ? 'confirmed' : 'not_established', provesCharge: false, records: workEvidence ? [{sourceId:'failed-run',state:'failed',reason:'source_dirty'}] : [], sha256: 'a'.repeat(64) } }] } } }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
   })
@@ -28,7 +27,7 @@ test('an Owner-only judged operational read cannot have its evidence answer repl
   assert.ok(x.result.investigation)
   assert.equal(x.result.mode, 'chat')
   assert.equal(x.result.demoOutcome, 'speech')
-  assert.match(x.result.reply, /扣款原因未確認/)
+  assert.match(x.result.reply, /source_dirty/)
   assert.doesNotMatch(x.result.reply, /你想睇邊方面/)
   assert.equal(x.reads.length, 1)
   assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length, 1)
@@ -43,7 +42,7 @@ test('an unavailable verification fact stays a report gap and cannot erase an ob
   assert.equal(x.result.mode,'chat')
   assert.equal(x.result.demoOutcome,'speech')
   assert.ok(x.result.investigation.gaps.some(g=>g.section==='same_failure_current_version_verification'))
-  assert.match(x.result.reply,/扣款原因未確認/)
+  assert.match(x.result.reply,/source_dirty/)
   assert.equal(x.reads.length,1)
 })
 
@@ -93,6 +92,18 @@ test('a plan cannot grant local operational access to a non-Owner caller', async
   const x = await turn(t, { allowed: false })
   assert.deepEqual(x.reads, [])
   assert.equal(x.result.investigation, undefined)
+})
+
+test('a mixed-language follow-up uses a saved context reference but must perform a fresh authorized read', async t => {
+ const previousInvestigation={state:'available',runId:'prior-receipt',at:'2026-10-07T00:00:00Z',focus:'work_failure',failureId:'failed-run',goal:'Investigate previous failed task',investigation:{sections:[{section:'work',state:'ok',sourceId:'old-work',records:[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]}]}}
+ const x=await turn(t,{question:'剛才那個 task，now怎樣？',focus:'work_failure',reference:'previous',previousInvestigation,workEvidence:true,history:[{role:'assistant',text:'not evidence '+ 'x'.repeat(900)+' previous failed task'}]})
+ assert.equal(x.reads.length,1);assert.equal(x.result.investigation.continuity.referenceRunId,'prior-receipt')
+ assert.equal(x.result.investigation.continuity.selectedRecordId,'failed-run');assert.match(x.result.reply,/重新讀取/)
+ assert.ok(x.calls.find(c=>c.schema==='goal_plan').p.includes('PREVIOUS INVESTIGATION — CONTEXT, NOT CURRENT EVIDENCE'))
+ assert.equal(x.calls.filter(c=>c.schema==='goal_plan').length,1);assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length,1)
+ const denied=await turn(t,{allowed:false,question:'And now?',focus:'work_failure',reference:'previous',previousInvestigation})
+ assert.equal(denied.reads.length,0);assert.equal(denied.result.investigation,undefined)
+ assert.ok(!denied.calls.find(c=>c.schema==='goal_plan').p.includes('prior-receipt'))
 })
 
 test('a completed operational read satisfies an internal obligation without repeat reasoning or duplicate reads', async t => {
