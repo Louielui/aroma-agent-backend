@@ -1,0 +1,67 @@
+'use strict'
+const test = require('node:test')
+const assert = require('node:assert/strict')
+const fs = require('node:fs'), os = require('node:os'), path = require('node:path')
+const { createExecutionReader } = require('./executionRecords')
+function fixture (t) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-execution-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const workspace = path.join(root, 'registered-project')
+  const write = (name, events, cwd = workspace) => {
+    const file = path.join(root, 'sessions', '2026', '10', '07', name + '.jsonl')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, [JSON.stringify({ type: 'session_meta', timestamp: '2026-10-07T01:00:00Z', payload: { id: name, cwd, source: 'desktop', base_instructions: 'SECRET_INSTRUCTIONS', creator_account_id: 'SECRET_ACCOUNT' } }), ...events.map(e => JSON.stringify(e))].join('\n') + '\n')
+    return file
+  }
+  return { root, workspace, write, read: options => createExecutionReader({ sessionRoot: path.join(root, 'sessions'), workspaceRoots: [workspace], clock: () => '2026-10-07T06:00:00Z', ...options }).read() }
+}
+const event = (type, extra = {}, at = '2026-10-07T02:00:00Z') => ({ type: 'event_msg', timestamp: at, payload: { type, ...extra } })
+test('execution metadata is scoped, strips private text and takes one cumulative token snapshot per session', async t => {
+  const f = fixture(t)
+  f.write('fixture-session', [event('task_started', { turn_id: 'fixture-turn' }), { type: 'turn_context', timestamp: '2026-10-07T02:00:01Z', payload: { model: 'gpt-6.1-sol', effort: 'medium' } }, event('token_count', { info: { total_token_usage: { total_tokens: 100, input_tokens: 70, output_tokens: 30 }, last_token_usage: { total_tokens: 100 } }, rate_limits: { account: 'SECRET_ACCOUNT' } }), event('token_count', { info: { total_token_usage: { total_tokens: 100, input_tokens: 70, output_tokens: 30 } } }), event('task_complete', { turn_id: 'fixture-turn', last_agent_message: 'SECRET_REPLY' })])
+  f.write('unrelated', [event('task_started')], path.join(f.root, 'another-project'))
+  const r = await f.read()
+  assert.equal(r.records.length, 1)
+  assert.equal(r.records[0].usage.total_tokens, 100)
+  assert.equal(r.records[0].model, 'gpt-6.1-sol')
+  assert.equal(r.records[0].lastCompletedAt, '2026-10-07T02:00:00Z')
+  assert.equal(r.provesCharge, false)
+  assert.ok(!JSON.stringify(r).includes('SECRET'))
+  assert.equal(r.coverage.excludedWorkspaceFiles, 1)
+})
+test('large session sampling and malformed lines retain unknown coverage instead of claiming no activity', async t => {
+  const f = fixture(t)
+  f.write('large-session', [event('task_started'), { type: 'response_item', payload: { role: 'assistant', content: 'PRIVATE'.repeat(500) } }, event('token_count', { info: { total_token_usage: { total_tokens: 300 } } })])
+  const r = await f.read({ maxFileBytes: 900 })
+  assert.equal(r.state, 'partial')
+  assert.equal(r.records[0].completeFile, false)
+  assert.equal(r.records[0].usage.total_tokens, 300)
+  assert.equal(r.coverage.sampledFiles, 1)
+  fs.appendFileSync(path.join(f.root, 'sessions/2026/10/07/large-session.jsonl'), '{invalid}\n')
+  assert.ok((await f.read()).coverage.invalidLines > 0)
+})
+test('missing execution source and redirected roots fail closed without arbitrary file access', async t => {
+  const f = fixture(t)
+  assert.equal((await f.read()).state, 'missing')
+  f.write('fixture-session', [event('task_started')])
+  fs.symlinkSync(path.join(f.root, 'sessions'), path.join(f.root, 'redirect'), 'junction')
+  const r = await f.read({ sessionRoot: path.join(f.root, 'redirect') })
+  assert.equal(r.state, 'unavailable')
+  assert.deepEqual(r.records, [])
+})
+test('user-declared heartbeat identifiers cannot become authenticated scheduler execution or billing proof', async t => {
+  const f = fixture(t)
+  f.write('fixture-session', [{ type: 'response_item', timestamp: '2026-10-07T01:00:01Z', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<heartbeat><automation_id>fixture-automation</automation_id></heartbeat>' }] } }, event('task_started')])
+  const r = await f.read()
+  assert.equal(r.records[0].declaredAutomationId, 'fixture-automation')
+  assert.equal(r.records[0].triggerVerified, false)
+  assert.equal(r.records[0].provesCharge, false)
+})
+test('large private message lines are sliced in linear time without exposing their contents', async t => {
+  const f = fixture(t)
+  f.write('long-line-session', [{ type: 'response_item', payload: { role: 'assistant', content: 'SECRET_IMAGE'.repeat(150000) } }, event('token_count', { info: { total_token_usage: { total_tokens: 10 } } })])
+  const start = Date.now(), r = await f.read({ maxFileBytes: 1000000 })
+  assert.ok(Date.now() - start < 1000, 'Prefix/tail handling must not backtrack over private lines')
+  assert.equal(r.records[0].usage.total_tokens, 10)
+  assert.ok(!JSON.stringify(r).includes('SECRET_IMAGE'))
+})

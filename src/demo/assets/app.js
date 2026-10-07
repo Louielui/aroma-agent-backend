@@ -1218,7 +1218,7 @@
 
   // A typing indicator the moment a message is sent — never a silent wait.
   function investigationSource (name) {
-    var names = { configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), usage: t('investigation.usage'), billing: t('investigation.billing') }
+    var names = { configuration: t('investigation.configuration'), schedules: t('investigation.schedules'), work: t('investigation.work'), history: t('investigation.history'), execution: t('investigation.execution'), usage: t('investigation.usage'), billing: t('investigation.billing') }
     return names[name] || t('investigation.operations')
   }
   function renderInvestigation (turnEl, report, investigationId, approvalId) {
@@ -1228,12 +1228,24 @@
     if (report.unverifiedJudgmentOmitted) details.appendChild(el('p', 'wait-note', t('investigation.judgmentOmitted')))
     var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
     var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }
+    if (report.version === 1) {
+      var summary = el('section', 'investigation-summary')
+      summary.appendChild(el('strong', '', t('investigation.chargeUnverified')))
+      var execution = (report.sections || []).find(function (s) { return s.section === 'execution' })
+      summary.appendChild(el('p', '', execution && execution.records && execution.records.length ? t('investigation.executionObserved') : t('investigation.executionGap')))
+      summary.appendChild(el('p', '', t('investigation.recommendBilling')))
+      if ((report.contradictions || []).length) summary.appendChild(el('p', '', t('investigation.conflictFound')))
+      turnEl.body.appendChild(summary)
+      var evaluation = el('details'); evaluation.appendChild(el('summary', '', t('investigation.evaluation')))
+      evaluation.appendChild(el('pre', '', JSON.stringify({ plan: report.plan, findings: report.findings, findingsOmitted: report.findingsOmitted, gaps: report.gaps, contradictions: report.contradictions, transitions: report.transitions, recommendations: report.recommendations, evaluationScope: report.evaluationScope }, null, 2)))
+      details.appendChild(evaluation)
+    }
     ;(report.sections || []).forEach(function (section) {
       var row = el('section', 'investigation-source')
       row.appendChild(el('strong', '', investigationSource(section.section)))
       row.appendChild(el('p', '', (readStates[section.state] || readStates.unavailable) + ' · ' + (levels[section.evidenceState] || levels.not_established)))
       var records = el('details'); records.appendChild(el('summary', '', t('investigation.details')))
-      records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
+      records.appendChild(el('pre', '', JSON.stringify({ sourceId: section.sourceId, retrievedAt: section.retrievedAt, sha256: section.sha256, records: section.records, coverage: section.coverage, selection: section.selection, omitted: section.omitted, note: section.note }, null, 2)))
       row.appendChild(records); details.appendChild(row)
     })
     turnEl.body.appendChild(el('p', 'wait-note', t('investigation.boundary')))
@@ -1291,7 +1303,8 @@
       if (!run) return
       var last = run.events && run.events[run.events.length - 1]
       if (run.state === 'planning') stage.textContent = t('investigation.planning')
-      else if (run.state === 'reading' || run.state === 'source_complete') stage.textContent = t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'reading') stage.textContent = t('investigation.reading', { source: investigationSource(last && last.section) })
+      else if (run.state === 'source_complete') stage.textContent = last && ['missing', 'unavailable', 'unconnected'].includes(last.sourceState) ? t('investigation.sourceGap', { source: investigationSource(last.section) }) : t('investigation.sourceChecked', { source: investigationSource(last && last.section) })
       else if (run.state === 'evaluating') stage.textContent = t('investigation.evaluating')
       else if (run.state === 'interrupted') stage.textContent = t('investigation.interrupted')
       else if (run.state === 'failed') stage.textContent = t('investigation.failed')

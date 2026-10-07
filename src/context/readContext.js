@@ -875,7 +875,7 @@ async function runStep (connector, source, step, caps) {
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
 async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
-  if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 6, maxItemChars: 2400, maxLineChars: 2700, maxTotalChars: 22000 }
+  if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 7, maxItemChars: 6200, maxLineChars: 6500, maxTotalChars: 44000 }
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
     return { block: null, status: 'NO_SOURCES', perSource: [], itemsBySource: [], retrievedItemsBySource: [], evidenceSets: [] }

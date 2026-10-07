@@ -1,0 +1,28 @@
+'use strict'
+const test = require('node:test'), assert = require('node:assert/strict')
+const { evaluateInvestigation } = require('./intelligence')
+const section = (name, records, extra = {}) => ({ section: name, sourceId: name + ':receipt', retrievedAt: '2026-10-07T06:00:00Z', state: 'ok', records, ...extra })
+test('investigation separates current candidates, historical execution, recorded tokens and unproven charges', () => {
+  const r = evaluateInvestigation({ goal: 'Investigate credit', sections: [section('schedules', [{ sourceId: 'codex-automation:fixture', name: 'Fixture scheduler', state: 'PAUSED' }]), section('execution', [{ sourceId: 'codex-session:fixture', lastStartedAt: '2026-10-02T01:00:00Z', lastCompletedAt: '2026-10-02T01:01:00Z', declaredAutomationId: 'fixture', triggerVerified: false, usage: { total_tokens: 1200 }, usageAt: '2026-10-02T01:01:00Z' }]), section('billing', [], { state: 'unconnected' })] })
+  assert.equal(r.billingConfirmed, false)
+  assert.ok(r.findings.some(f => f.kind === 'execution_observed' && f.evidenceState === 'confirmed' && f.temporalScope === 'historical'))
+  assert.ok(r.findings.some(f => f.kind === 'candidate_link' && f.evidenceState === 'possible'))
+  assert.ok(r.findings.every(f => f.kind !== 'charge_confirmed'))
+  assert.ok(r.gaps.some(g => g.section === 'billing'))
+  assert.ok(r.recommendations.every(x => x.readOnly === true))
+})
+test('opposing lifecycle records remain a conflict while a later dated state is a transition', () => {
+  const r = evaluateInvestigation({ sections: [section('work', [{ sourceId: 'same', state: 'failed', at: '2026-10-02T01:00:00Z' }, { sourceId: 'same', state: 'completed', at: '2026-10-02T01:00:00Z' }, { sourceId: 'later', state: 'running', at: '2026-10-02T01:00:00Z' }, { sourceId: 'later', state: 'completed', at: '2026-10-02T02:00:00Z' }])] })
+  assert.equal(r.contradictions.length, 1)
+  assert.equal(r.contradictions[0].recordId, 'same')
+  assert.equal(r.transitions.length, 1)
+  assert.equal(r.transitions[0].recordId, 'later')
+})
+test('empty or unavailable evidence never proves absence and investigation planning remains bounded', () => {
+  const r = evaluateInvestigation({ sections: [section('execution', [], { state: 'unavailable' }), section('history', [], { state: 'partial', omitted: 5 })] })
+  assert.equal(r.state, 'partial')
+  assert.equal(r.plan.readOnly, true)
+  assert.equal(r.plan.automaticModelRetries, 0)
+  assert.ok(r.gaps.length >= 2)
+  assert.ok(r.findings.every(f => f.evidenceState === 'not_established'))
+})

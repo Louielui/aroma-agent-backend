@@ -8,6 +8,16 @@ const { createXiangxiangOperationsReadAdapter, SECTIONS } = require('./xiangxian
 const { createReadConnector } = require('../readConnector')
 const { buildReadContext } = require('../readContext')
 const { validatePlan } = require('../../intake/answerPlan')
+test('project execution metadata joins the governed read receipts with scope and no model dispatch', async t => {
+  const { dir } = fixture(t), events = []
+  const a = createXiangxiangOperationsReadAdapter({ dataDir: dir, scheduler: async () => ({ state: 'NOT_INSTALLED' }), executionReader: async () => ({ state: 'partial', retrievedAt: '2026-10-07T01:00:00Z', provesCharge: false, records: [{ sourceId: 'codex-session:fixture', model: 'gpt-6.1-sol', usage: { total_tokens: 123 } }], coverage: { scope: 'registered_project_sessions', sampledFiles: 1 } }), onProgress: e => events.push(e) })
+  const { results } = await a.methods.readInvestigation()
+  const r = results.find(r => r.fields.section === 'execution')
+  assert.equal(r.fields.records[0].usage.total_tokens, 123)
+  assert.equal(r.fields.coverage.sampledFiles, 1)
+  assert.equal(r.fields.provesCharge, false)
+  assert.equal(events.filter(e => e.section === 'execution').length, 2)
+})
 
 function fixture (t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'xx-investigation-'))

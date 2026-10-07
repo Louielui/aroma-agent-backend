@@ -3889,3 +3889,14 @@ zoneLabel takes the city, never the whole IANA string
 首頁 is a sidebar destination, beside 設定
 香香（Claude）receives the read-context and decision-recall blocks
 香香（GPT）NOW receives them too — the v0 exclusion is removed
+empty or unavailable evidence never proves absence and investigation planning remains bounded
+execution metadata bridge is authenticated, closed-shape and independent of the occupied model lane
+execution metadata is scoped, strips private text and takes one cumulative token snapshot per session
+investigation separates current candidates, historical execution, recorded tokens and unproven charges
+large private message lines are sliced in linear time without exposing their contents
+large session sampling and malformed lines retain unknown coverage instead of claiming no activity
+missing execution source and redirected roots fail closed without arbitrary file access
+opposing lifecycle records remain a conflict while a later dated state is a transition
+project execution metadata joins the governed read receipts with scope and no model dispatch
+user-declared heartbeat identifiers cannot become authenticated scheduler execution or billing proof
+an exhausted operational scope reports the gap without repeated subscription answers or reads

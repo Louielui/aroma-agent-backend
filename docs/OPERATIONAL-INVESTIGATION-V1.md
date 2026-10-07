@@ -55,7 +55,9 @@ Investigation remains read-only. Its model-center link preserves the investigati
 ID through the existing revision-checked Owner confirmation. Saving records before
 and after values plus that ID, then reads back the revision and selected values.
 Reading the link makes no changes. External schedule mutation, vendor billing,
-Codex execution history and a full Windows task inventory remain unconnected.
+a full Windows task inventory and authenticated trigger correlation remain unconnected.
+Project-scoped Codex metadata is now projected by the Owner-user bridge; see
+INVESTIGATION-INTELLIGENCE-V1.md for measured scope and gaps.
 
 The approved read-only enquiry lane from PR 64 is integrated into this delivery.
 The chat offers a registered source check of `xiangxiangOperationsRead.js`; the

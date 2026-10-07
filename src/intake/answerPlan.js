@@ -627,6 +627,7 @@ function operationalTitle (row, record) {
     case 'schedules': return t('investigation.schedules')
     case 'work': return t('investigation.work')
     case 'history': return t('investigation.history')
+    case 'execution': return t('investigation.execution')
     case 'usage': return t('investigation.usage')
     case 'billing': return t('investigation.billing')
     default: return row.title

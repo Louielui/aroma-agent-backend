@@ -70,5 +70,12 @@ test('a failed operational read is not counted as a fulfilled internal obligatio
   const x = await turn(t, { failed: true, verdict: 'require_internal' })
   assert.equal(x.result.investigation.state, 'unavailable')
   assert.deepEqual(x.result.investigation.sections, [])
-  assert.ok(x.calls.filter(c => c.schema !== 'goal_plan').length > 1)
+  assert.equal(x.result.investigation.plan.completion, 'sources_exhausted_with_gaps')
+})
+test('an exhausted operational scope reports the gap without repeated subscription answers or reads', async t => {
+  const x = await turn(t, { failed: true, verdict: 'require_internal' })
+  assert.equal(x.result.investigation.state, 'unavailable')
+  assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 1)
+  assert.equal(x.reads.length, 1)
+  assert.equal(x.result.investigation.plan.automaticModelRetries, 0)
 })

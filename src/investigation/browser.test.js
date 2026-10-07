@@ -9,7 +9,7 @@ function pageHtml (lang) {
 }
 test('bilingual desktop and mobile investigation approves once, shows saved citations and reloads without dispatch', { skip: process.platform !== 'win32', timeout: 60000 }, async () => {
   const browser = await require('playwright-core').chromium.launch({ channel: 'msedge', headless: true })
-  const report = { state: 'partial', goal: 'Investigate credit', readOnly: true, billingConfirmed: false, sections: [{ section: 'billing', state: 'unconnected', evidenceState: 'not_established', records: [] }] }
+  const report = require('./intelligence').evaluateInvestigation({ goal: 'Investigate credit', sections: [{ section: 'execution', sourceId: 'execution:fixture', retrievedAt: '2026-10-07T01:00:00Z', state: 'partial', evidenceState: 'confirmed', coverage: { sampledFiles: 1 }, records: [{ sourceId: 'codex-session:fixture', model: 'gpt-6.1-sol', lastStartedAt: '2026-10-02T01:00:00Z', usage: { total_tokens: 123 } }] }, { section: 'billing', state: 'unconnected', evidenceState: 'not_established', records: [] }] })
   try {
     for (const [lang, width, retryFailed] of [['zh', 1280], ['en', 390], ['zh', 390, true]]) {
       let linked = !!retryFailed, approvals = 0, preparations = 0
@@ -47,6 +47,8 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
       }
       const offer = () => page.getByRole('button', { name: lang === 'zh' ? '核對程式來源與調查範圍' : 'Check source code and investigation coverage', exact: true })
       await open(); assert.equal(await page.locator('.investigation-evidence').getAttribute('open'), null)
+      assert.match(await page.locator('.investigation-summary').textContent(), lang === 'zh' ? /token.*帳單/ : /tokens.*billing/)
+      assert.equal(await page.locator('.investigation-summary pre').count(), 0)
       assert.match(await page.locator('a[href*="investigation="]').getAttribute('href'), new RegExp(id))
       await offer().click()
       if (retryFailed) {

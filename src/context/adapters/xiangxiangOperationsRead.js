@@ -8,7 +8,7 @@ const { resolveDataDir } = require('../../store/dataDir')
 const { isTestProcess } = require('../../testProcess')
 const { makeContextResult } = require('../contextResult')
 const SOURCE = 'xiangxiang_operations'
-const SECTIONS = Object.freeze(['configuration', 'schedules', 'work', 'history', 'usage', 'billing'])
+const SECTIONS = Object.freeze(['configuration', 'schedules', 'work', 'history', 'execution', 'usage', 'billing'])
 const WORK_DIRS = Object.freeze(['project-work-runs', 'task-plan-runs', 'code-repair-runs', 'development-plan-runs', 'manager-runs'])
 const LIMIT = 5
 const ID = /^[a-z0-9][a-z0-9-]{7,63}\.json$/i
@@ -52,9 +52,16 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
   const automationDir = options.automationDir || env.XIANGXIANG_OPERATIONS_AUTOMATION_DIR || (isTestProcess() ? path.join(dataDir, 'test-automations') : path.join(os.homedir(), '.codex', 'automations'))
   const scheduler = options.scheduler || (() => require('../../home/schedulerWitness').readSchedulerWitness())
   const workerRoot = options.workerRoot || env.XIANGXIANG_OPERATIONS_WORKER_ROOT || (isTestProcess() ? path.join(dataDir, 'test-workers') : path.join(env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'AromaXiangXiang', 'worker-flow'))
+  const executionReader = options.executionReader || (isTestProcess() ? null : () => require('../../adapters/CodexSubscriptionAdapter').localRequest('/execution-metadata', {}, env))
   async function section (name, query) {
     try {
       if (name === 'billing') return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false, note: 'No provider billing ledger or execution-to-charge correlation is connected. Actual charges and their causes are NOT ESTABLISHED.' }
+      if (name === 'execution') {
+        if (!executionReader) return { state: 'unconnected', evidenceState: 'not_established', records: [], provesCharge: false }
+        const r = await executionReader()
+        if (!['ok', 'partial', 'missing', 'unavailable'].includes(r?.state) || !Array.isArray(r.records)) throw Error('invalid_execution_receipt')
+        return { ...r, evidenceState: r.records.length ? 'confirmed' : 'not_established', provesCharge: false }
+      }
       if (name === 'configuration') {
         const d = readJson(path.join(dataDir, 'model-center.json'))
         if (!d.brain || typeof d.brain.model !== 'string') throw Error('invalid_config')

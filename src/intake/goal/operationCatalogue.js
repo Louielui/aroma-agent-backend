@@ -230,7 +230,7 @@ const SOURCE_CATALOGUE = Object.freeze(SOURCE_LEVEL_OPERATIONS.map((o) => Object
 
 /** Owner-facing name, taken from the one label table already derived from ALL_SOURCES. */
 function sourceLabel (source) {
-  if (source === 'xiangxiang_operations') return 'Xiangxiang own operations: historical conversations, saved work/execution records, current automation schedules, model/worker configuration and legacy usage. Investigate unexplained credit consumption here before asking the Owner for locations. Billing ledger and Codex execution history are not connected.'
+  if (source === 'xiangxiang_operations') return 'Xiangxiang own operations: historical conversations, saved work, current automation schedules, model/worker configuration, bounded registered-project Codex execution metadata and legacy usage. Investigate unexplained credit consumption here before asking the Owner for locations. Execution events and recorded tokens are historical evidence, not billing. Source failures remain explicit gaps. Billing ledger and authenticated execution-to-charge correlation are not connected.'
   try {
     const { LABELS } = require('../readStateGuard')
     return LABELS[source] || source

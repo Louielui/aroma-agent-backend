@@ -3,6 +3,25 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const { createBridge, validateInput } = require('./bridge')
 const { SubscriptionError } = require('./codexClient')
+test('execution metadata bridge is authenticated, closed-shape and independent of the occupied model lane', async t => {
+  let release, reads = 0, calls = 0
+  const token = '9'.repeat(64)
+  const server = createBridge({ token, executionReader: { read: async () => { reads++; return { state: 'partial', records: [], provesCharge: false } } }, completeFn: async () => { calls++; return new Promise(resolve => { release = resolve }) } })
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve))
+  t.after(() => new Promise(resolve => { server.closeAllConnections(); server.close(resolve) }))
+  const send = (route, body, headers = {}) => fetch('http://127.0.0.1:' + server.address().port + route, { method: 'POST', headers: { authorization: 'Bearer ' + token, 'content-type': 'application/json', ...headers }, body: JSON.stringify(body) })
+  assert.equal((await send('/execution-metadata', {}, { authorization: 'bad' })).status, 401)
+  assert.equal((await send('/execution-metadata', {}, { origin: 'http://evil' })).status, 401)
+  const first = send('/complete', { prompt: 'fixture' })
+  while (!release) await new Promise(resolve => setImmediate(resolve))
+  try {
+    assert.equal((await send('/execution-metadata', { path: '.env' })).status, 400)
+    assert.equal((await send('/execution-metadata', {})).status, 200)
+    assert.equal((await send('/complete', { prompt: 'duplicate' })).status, 503)
+    assert.equal(reads, 1)
+    assert.equal(calls, 1)
+  } finally { release({ output: 'fixture' }); await first }
+})
 test('bridge authenticates, rejects browser origins and preserves safe errors', async t => {
   let calls = 0
   const token = 'a'.repeat(64)
