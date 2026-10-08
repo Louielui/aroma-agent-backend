@@ -24,8 +24,13 @@ from the answer prompt: it retains billing uncertainty and possible explicit
 links, reports sampled finding-kind counts, and relies on the already-sent
 scalar catalog for individual cited records. In the captured 28-record sample,
 the projected evaluation is 2,157 characters instead of 14,423. The full
-server-side investigation is unchanged. A further live result is needed to
-judge latency; model generation time can vary between otherwise similar runs.
+server-side investigation is unchanged. A second live acceptance on `9894157`
+took 92,366 ms and preserved the saved, source-reviewed read-only answer.
+The answer call took 45,476 ms and reported 43,213 cache-creation input
+tokens. This is near the original 93,306 ms total and below the first
+acceptance's 115,378 ms; it does not establish a general latency improvement.
+The sampled source set changed between requests, and model generation time can
+vary. Provider counters are not a billing measure.
 
 The invocation ledger labels source-intent, final-verification, public-query
 planning and recovery calls. The Owner summary displays provider-returned
