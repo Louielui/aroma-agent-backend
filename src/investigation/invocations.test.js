@@ -5,6 +5,12 @@ const {withInvocationContext,currentInvocationTrace}=require('./invocationContex
 const {createBridge}=require('../subscription/bridge')
 const uuid='12345678-1234-4234-8234-123456789012'
 function fixture(t){const dir=fs.mkdtempSync(path.join(os.tmpdir(),'invocations-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return path.join(dir,'ledger.json')}
+test('Owner composition uses Documents rather than virtualized packaged-app LocalAppData',t=>{
+ const home=path.dirname(fixture(t)),ledger=require('./invocations').createOwnerInvocationLedger({home})
+ const id=ledger.begin({role:'chat_completion',model:'claude-sonnet'})
+ assert.ok(id);const file=path.join(home,'Documents','AromaXiangXiang','subscription-invocations','ledger.json')
+ assert.equal(fs.existsSync(file),true);assert.equal(ledger.read().state,'partial');assert.equal(createInvocationLedger({file}).read().records[0].state,'interrupted_unknown')
+})
 test('provider token fields preserve explicit zero, unknown and separate helper usage without inventing charges',()=>{
  assert.deepEqual(projectUsage({inputTokens:12,outputTokens:0,cacheReadInputTokens:40,totalTokens:null,costUSD:2,secret:'private'}),{inputTokens:12,outputTokens:0,cacheReadInputTokens:40})
  assert.equal(projectUsage({inputTokens:-1,outputTokens:'23',totalTokens:null}),null)

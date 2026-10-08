@@ -68,7 +68,7 @@ function main () {
   const server = createBridge({ backgroundModel: require('../../src/subscription/chatModels').DEFAULT_BRAIN_MODEL, token: env.CODEX_CHAT_BRIDGE_TOKEN, clientOptions: { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, memoryClientOptions: { executable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }, workerFlow, workerProviders, websiteEnabled: env.XIANGXIANG_WEBSITE_FLOW === 'on', memoryEnabled: env.XIANGXIANG_MEMORY === 'on',
     memoryStore: require('../../src/memory/structuredStore').createStructuredStore({ local: true }),
     schedulerReader: require('../../src/home/schedulerWitness').readWindowsSchedulerWitness,
-    invocationLedger: require('../../src/investigation/invocations').createInvocationLedger({file:path.join(path.dirname(cwd),'invocations.json')}),
+    invocationLedger: require('../../src/investigation/invocations').createOwnerInvocationLedger(),
     taskPlanSource: require('../../src/core/taskPlanner/source').createSource({ root: repo }), codeSourceFactory: bootCommit => createOwnerCodeSource(repo, bootCommit), codeRepair, projectWork, projectAdoption, projectTasks,
     workReader: require('../../src/investigation/workRecords').createWorkReader({ workerRoot, repoRoot: repo, activity: () => {
       const draft=require('../../src/core/projectTasks/provider'),reviewArgs=require('../../src/core/workerFlow/providers').claudeArgs()

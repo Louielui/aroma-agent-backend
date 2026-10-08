@@ -50,4 +50,12 @@ function createInvocationLedger({file,clock=Date.now,limit=256}={}){
    note:'Bounded Owner bridge chat and memory completion records since coverageStartedAt, not account totals. Dispatch means an attempted provider call; a failed or interrupted call may still consume usage. Tokens are not subscription credits or charges. Memory rows have no per-email/job identity. Direct worker, website, API and external-app calls are not covered. No retrospective backfill.'}}
  }
 }
-module.exports={createInvocationLedger,projectUsage,projectRecord}
+function createOwnerInvocationLedger({home=require('node:os').homedir()}={}){
+ // Packaged Windows apps may virtualize individual LocalAppData files while
+ // leaving their parent directory canonical. Use the existing Owner Documents
+ // storage convention; retain the canonical-path guard rather than bypass it.
+ const dir=path.join(home,'Documents','AromaXiangXiang','subscription-invocations')
+ try{fs.mkdirSync(dir,{recursive:true})}catch(_){/* The reader reports unavailable; inference must remain independent. */}
+ return createInvocationLedger({file:path.join(dir,'ledger.json')})
+}
+module.exports={createInvocationLedger,createOwnerInvocationLedger,projectUsage,projectRecord}

@@ -14,6 +14,11 @@ an email, schedule, payment or user-intent proof. Memory completion lacks indivi
 job identity. Direct coding workers, website calls, APIs and other apps remain
 outside this ledger. Existing Codex session receipts remain a separate source.
 
+The fixed file is `Documents/AromaXiangXiang/subscription-invocations/ledger.json`
+under the Owner profile, following the existing worker-workspace convention.
+LocalAppData is unsuitable here: Windows packaged-app virtualization can redirect
+the file independently of its parent. Canonical-path checks remain enforced.
+
 Claude's validated modelUsage counters are projected by model, preserving cache
 and helper counters separately. Codex last-turn counters retain their provider
 basis. Missing is unknown, explicit zero stays zero, and no totals are invented.
