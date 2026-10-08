@@ -2,20 +2,21 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, externalEmpty = false, requestedCapability = null } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, externalEmpty = false, requestedCapability = null, primaryOperation = 'xiangxiang_operations', investigationEvidence = [], captureLocalParams = false } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
+  if(primaryOperation==='github')process.env.GITHUB_READ_REPO='fixture/project'
   const events = [], calls = [], reads = []
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
-    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,requested_capability:requestedCapability,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,requested_capability:requestedCapability,investigation_focus:focus,investigation_evidence:investigationEvidence,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:primaryOperation,entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
   const fixtureRead = async (source, method, params) => {
-    reads.push(source === 'gmail' ? { source, method, params } : { source, method })
+    reads.push((source === 'gmail' || captureLocalParams) ? { source, method, params } : { source, method })
     if (source !== 'xiangxiang_operations' && externalEmpty) return { results: [] }
     if (source === 'github' || source === 'drive') return { results: [{source, sourceId:source + ':one', title:'Related investigation record', content:'Historical evidence only', trust:'live', retrievedAt:'2026-10-08T01:00:00Z'}] }
     if (source === 'gmail') {
@@ -23,7 +24,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
       return {results:[{source,sourceId:'mail:one',title:'Provider usage notice',retrievedAt:'2026-10-07T20:00:00Z',content:'A usage notice was sent; this does not prove a charge.',trust:'live',fields:{}}]}
     }
     if (failed) throw Error('unavailable')
-    if (evidenceSections) return {results:evidenceSections.map(s=>({source,sourceId:s.sourceId,title:s.section,retrievedAt:'2026-10-07T20:00:00Z',content:JSON.stringify(s),trust:'live',fields:s}))}
+    if (evidenceSections) return {results:evidenceSections.map(s=>({source,sourceId:s.sourceId,title:s.section,retrievedAt:'2026-10-08T01:10:20.000Z',content:JSON.stringify(s),trust:'live',fields:s}))}
     return {results:[{source,sourceId:'billing:abc',title:'billing',retrievedAt:'2026-10-06T12:00:00Z',content:'Billing source is unconnected: charge cause not established.',trust:'live',fields:{section:workEvidence?'work':'billing',state:workEvidence?'ok':'unconnected',evidenceState:workEvidence?'confirmed':'not_established',provesCharge:false,records:workEvidence?[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]:[],sha256:'a'.repeat(64)}}]}
   }
   const result = await processIntake(question, { complete: async () => { throw Error('API must not be used') } }, history, {
@@ -201,7 +202,7 @@ test('cost investigation does not request either unused semantic claims or an An
 })
 
 test('reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply',async t=>{
- const at='2026-10-07T20:00:00Z',evidenceSections=[
+ const at='2026-10-08T01:10:19.069Z',evidenceSections=[
   {section:'configuration',sourceId:'configuration:abc',state:'partial',evidenceState:'confirmed',records:[
    {sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at},
    {sourceId:'backend:memory_index',role:'memory_index',currentRunningState:'active',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at}]},
@@ -211,7 +212,7 @@ test('reviewed prose cannot omit the observed runtime inventory from the actual 
   const x=await turn(t,{question:'What background jobs are running and which models do they use?',focus:'background',evidenceSections,investigationAnswer,semanticDecision})
   assert.match(x.result.reply,/Mail analysis.*idle.*claude-sonnet/)
   assert.match(x.result.reply,/General memory indexing.*active.*claude-sonnet/)
-  assert.match(x.result.reply,/2026-10-07T20:00:00Z/)
+  assert.match(x.result.reply,/2026-10-08T01:10:19.069Z/)
   assert.equal(x.result.replyForArchive,x.result.reply)
   assert.equal(x.result.investigation.answerPresentation.runtimeSummary.references.length,2)
   assert.equal(x.result.investigation.answerPresentation.runtimeSummary.references[1].fields.currentRunningState,'active')
@@ -400,4 +401,39 @@ test('empty follow-up search stops without recency fallback and differs from fai
   const denied=await turn(t,{focus:'cost',extraFacts:facts})
   assert.equal(denied.result.investigation.followupReads.decisions[0].reason,'not_authorized')
   assert.equal(denied.reads.some(r=>r.source==='gmail'),false)
+})
+
+
+test('development Chinese and English share evidence route, same-failure checks and no dispatch',async t=>{
+ const questions=['上一個開發任務為什麼失敗？現在修好了嗎？','What caused the previous development task to fail, and has it actually been fixed?']
+ const routes=[]
+ for(const question of questions){
+  const x=await turn(t,{question,focus:'work_failure',workEvidence:true,fastPath:true,captureLocalParams:true,investigationEvidence:['work_failure','source_revision','test_results','repair_verification']})
+  routes.push(x.result.investigation.routing.localSections)
+  assert.deepEqual(x.reads[0].params.sections,['work','configuration'])
+  assert.equal(x.result.investigation.evidenceModel.assertions.find(a=>a.facet==='repaired').state,'UNKNOWN')
+  assert.deepEqual(x.result.tasks,[]);assert.equal(x.result.replyForArchive,x.result.reply)
+ }
+ assert.deepEqual(routes[0],routes[1])
+})
+test('background route reads history and current witnesses while omitting unrelated mail and billing',async t=>{
+ const x=await turn(t,{question:'現在有哪些背景工作？各自使用什麼模型？',focus:'background',captureLocalParams:true})
+ assert.deepEqual(x.reads[0].params.sections,['configuration','schedules','execution','work'])
+ assert.deepEqual(x.result.tasks,[])
+})
+test('authorised external-only investigation does not force local operations or memory first',async t=>{
+ const x=await turn(t,{question:'Why did the repository check fail?',focus:'general',primaryOperation:'github',sources:['github'],investigationEvidence:['code_history']})
+ assert.ok(x.reads.length>0);assert.ok(x.reads.every(r=>r.source==='github'))
+ assert.deepEqual(x.result.investigation.routing.requiredSources,['github'])
+ assert.ok(x.result.investigation.evidenceModel.assertions.some(a=>a.facet==='source_statement'))
+ assert.deepEqual(x.result.tasks,[])
+})
+
+
+test('same-time conflicting claims are disclosed instead of presenting either as a conclusion',async t=>{
+ const x=await turn(t,{focus:'background',question:'Which model does this job use?',evidenceSections:[{section:'configuration',state:'ok',sourceId:'config:one',records:[{sourceId:'job',model:'a'},{sourceId:'job',model:'b'}]}]})
+ assert.match(x.result.reply,/Conflicting evidence/)
+ assert.doesNotMatch(x.result.reply,/A schedule is configured|已找到排程/)
+ assert.equal(x.result.replyForArchive,x.result.reply)
+ assert.deepEqual(x.result.tasks,[])
 })

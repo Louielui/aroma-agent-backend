@@ -227,3 +227,13 @@ test('schedule witness failure stays visible beside usable automation definition
   assert.deepEqual(Object.keys(a.methods), ['readInvestigation'])
   for (const r of out.results) assert.notEqual(r.fields.provesCharge, true)
 })
+
+
+test('selected evidence sections do not invoke unrelated readers and malformed selection never broadens scope',async t=>{
+ const {dir}=fixture(t);const reads=[]
+ const a=createXiangxiangOperationsReadAdapter({dataDir:dir,workReader:async()=>{reads.push('work');return {state:'ok',records:[]}},executionReader:async()=>{reads.push('execution');throw Error('must not call')},runtimeReader:async()=>{reads.push('runtime');throw Error('must not call')}})
+ const x=await a.methods.readInvestigation({sections:['work']})
+ assert.deepEqual(x.results.map(r=>r.fields.section),['work']);assert.deepEqual(reads,['work'])
+ for(const sections of [[],['arbitrary'],['work','../../credentials'],'work'])await assert.rejects(()=>a.methods.readInvestigation({sections}),/invalid_investigation_sections/)
+ assert.deepEqual(reads,['work'])
+})

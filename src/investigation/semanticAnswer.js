@@ -68,6 +68,7 @@ function bindClaim(c,report){
    if(['history','usage'].includes(section.section)&&c.evidenceState==='confirmed')return{reason:'grade_overclaim'}
    const temporal=['configuration','schedules'].includes(section.section)?'current':'historical'
    if(c.temporalScope!==temporal)return{reason:'time_overclaim'}
+   if(ref.field==='currentRunningState' && report.evidenceModel?.assertions.some(a=>a.sourceId===section.sourceId&&a.recordId===ref.recordId&&a.facet==='running'&&['UNKNOWN','UNAVAILABLE','CONTRADICTED'].includes(a.state)))return{reason:'runtime_not_established'}
    if(report.contradictions?.some(x=>x.sourceId===section.sourceId&&x.recordId===ref.recordId))return{reason:'conflicting_record'}
   }
   // Deliberately omit the rest of the row. Otherwise an uncited name, second

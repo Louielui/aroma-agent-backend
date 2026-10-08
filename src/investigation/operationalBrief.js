@@ -1,5 +1,6 @@
 'use strict'
 const {t}=require('../i18n/t')
+const {currentActivity}=require('./evidenceState')
 const code=v=>'`'+String(v).replace(/[`\\\r\n]/g,' ').slice(0,240)+'`'
 function workflowTitle(role,locale){
  switch(role){
@@ -48,13 +49,13 @@ function renderRuntimeSummary(report,{message=''}={}){
   if(!matches.length)continue
   const {s,r}=matches[0],model=r.usesModel===false?t('investigation.briefNoModel',{},locale):['bridge_route_configuration','in_flight_request_selection'].includes(r.modelBasis)?value(r.model):t('investigation.briefNotRecorded',{},locale)
   const basis=r.modelBasis==='in_flight_request_selection'?t('investigation.runtimeSelectedModel',{},locale):t('investigation.runtimeConfiguredModel',{},locale)
-  lines.push('- '+t('investigation.runtimeRow',{role:backgroundTitle(role,locale),state:runningTitle(r.currentRunningState,locale),basis,model,at:value(r.at)},locale));bind(s,r)
+  lines.push('- '+t('investigation.runtimeRow',{role:backgroundTitle(role,locale),state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),basis,model,at:value(r.at)},locale));bind(s,r)
  }
  const recall=schedules.flatMap(s=>(s.records||[]).filter(r=>r.sourceId==='AromaXiangXiang-ErrandRecall'&&r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false).map(r=>({s,r})))
  if(recall.length>1)ambiguous++
  else if(recall.length===1){
   const {s,r}=recall[0],installed=r.state==='INSTALLED'?t('investigation.runtimeInstalled',{},locale):r.state==='NOT_INSTALLED'?t('investigation.notInstalled',{},locale):t('investigation.runtimeUnknown',{},locale)
-  lines.push('- '+t('investigation.runtimeRecallRow',{installed,state:runningTitle(r.currentRunningState,locale),model:t('investigation.briefNoModel',{},locale),at:value(r.at)},locale));bind(s,r)
+  lines.push('- '+t('investigation.runtimeRecallRow',{installed,state:runningTitle(currentActivity(report,s.sourceId,r.sourceId,r.currentRunningState),locale),model:t('investigation.briefNoModel',{},locale),at:value(r.at)},locale));bind(s,r)
  }
  if(!lines.length&&!ambiguous)return null
  const text=[t('investigation.runtimeInventory',{},locale),lines.join('\n'),...(ambiguous?[t('investigation.runtimeAmbiguous',{count:ambiguous},locale)]:[]),t('investigation.runtimeInventoryBoundary',{},locale)].filter(Boolean).join('\n\n')
@@ -126,21 +127,21 @@ function renderOperationalBrief(report,{message=''}={}){
   for(const r of (schedules?.records||[]).slice(0,20)){
    const state=r.state==='PAUSED'?tr('investigation.paused'):r.state==='NOT_INSTALLED'?tr('investigation.notInstalled'):r.state?code(r.state):tr('investigation.briefNotRecorded')
    lines.push(tr('investigation.briefSchedule',{name:code(r.name||r.sourceId),state,model:r.model?code(r.model):tr('investigation.briefNotRecorded')}))
-   if(r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false)lines.push(tr('investigation.briefRecall',{state:runningTitle(r.currentRunningState,locale),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
+   if(r.executionKind==='deterministic_food_recall_check'&&r.usesModel===false)lines.push(tr('investigation.briefRecall',{state:runningTitle(currentActivity(report,schedules.sourceId,r.sourceId,r.currentRunningState),locale),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
   }
   if(!schedules?.records?.length)lines.push(tr('investigation.briefNoSchedules'))
   const work=section('work')
   for(const w of (work?.workflows||[]).slice(0,5)){
    const title=workflowTitle(w.role,locale)
    if(!title||w.modelBasis!=='host_workflow_default_not_per_job_selection')continue
-   lines.push(tr('investigation.briefWorkflow',{role:title,state:['idle','occupied'].includes(w.state)?code(w.state):tr('investigation.briefNotRecorded'),model:w.model?code(w.model):tr('investigation.briefNotRecorded'),at:w.at?code(w.at):tr('investigation.briefNotRecorded')}))
+   lines.push(tr('investigation.briefWorkflow',{role:title,state:['idle','occupied'].includes(currentActivity(report,work.sourceId,'workflow:'+w.role,w.state))?code(w.state):tr('investigation.briefNotRecorded'),model:w.model?code(w.model):tr('investigation.briefNotRecorded'),at:w.at?code(w.at):tr('investigation.briefNotRecorded')}))
   }
   const config=section('configuration')?.records?.find(r=>r.role==='central_brain_default')
   if(config?.model)lines.push(tr('investigation.briefCentral',{model:code(config.model),effort:config.effort?code(config.effort):tr('investigation.briefNotRecorded')}))
   for(const r of section('configuration')?.records||[]){
    const role=backgroundTitle(r.role,locale)
    if(!role||r.evidenceBasis!=='live_process_snapshot')continue
-   lines.push(tr('investigation.briefRuntime',{role,state:runningTitle(r.currentRunningState,locale),model:r.usesModel===false?tr('investigation.briefNoModel'):r.model?code(r.model):tr('investigation.briefNotRecorded'),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
+   lines.push(tr('investigation.briefRuntime',{role,state:runningTitle(currentActivity(report,section('configuration').sourceId,r.sourceId,r.currentRunningState),locale),model:r.usesModel===false?tr('investigation.briefNoModel'):r.model?code(r.model):tr('investigation.briefNotRecorded'),at:r.at?code(r.at):tr('investigation.briefNotRecorded')}))
   }
   lines.push(tr('investigation.briefActivityUnknown'),tr('investigation.briefBackgroundRecommendation'))
  }else return null

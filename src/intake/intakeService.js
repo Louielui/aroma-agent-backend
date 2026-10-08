@@ -1356,15 +1356,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // ⛔ X2: from the usable plan when there is one; `decomposeOnce` fills it from a
           // refused plan otherwise. Either way the goal survives to the main prompt.
           if (plan) goalUnderstandingObserved = plan
-          // The judged requirement selects a fixed local source. It cannot grant access.
+          const generalRoute = require('../investigation/generalRouter').investigationRoute(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
+          // The judged requirement selects fixed sources and local evidence sections. It cannot grant access.
           if (opts.ownerInvestigation === true && !operationalInvestigation &&
               sourcesForPlan(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))?.includes('xiangxiang_operations')) {
             investigationProgress({ state: 'reading', section: 'operations' })
             const connector = deps?.connector || createLiveReadConnector({ env: process.env,
               operationsOptions: { backgroundReader:opts.operationsBackgroundReader, onProgress: e => investigationProgress({ ...e, state: e.state === 'reading' ? 'reading' : 'source_complete', sourceState: e.state }) } }).connector
-            const rc = await buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env })
+            const rc = await buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env, investigationSections: generalRoute?.localSections?.length ? generalRoute.localSections : null })
             const sections = (rc.itemsBySource?.[0]?.items || []).map(r => ({ sourceId: r.sourceId, retrievedAt: r.retrievedAt, ...r.fields }))
             operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections })
+            operationalInvestigation.routing = generalRoute
             const continuity = require('../investigation/continuity').compareInvestigation(operationalInvestigation, opts.previousInvestigation, plan.investigationReference)
             if (continuity) operationalInvestigation.continuity = continuity
             operationalInvestigation.plan.factResolution = plan.facts.map(f => ({ operation: f.operation, necessity: f.necessity, status: f.status }))
@@ -1390,6 +1392,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             extraObservationBlocks.push('QUESTION-SPECIFIC INVESTIGATION: report focus=' + operationalInvestigation.focus + '. For work failures identify the latest sampled failed development run, reason, stage, source revision, linked run IDs and tests/review. Unrelated later success, a planner completed state, candidate passing tests, or a different boot commit cannot prove the same failure repaired. Distinguish candidate completion, adoption and current registered-file hash comparison. fixedInCurrentVersion=null means unverified. For background jobs report current definitions and explicitly configured models separately from historical worker models; null model means unrecorded, not the central brain. ACTIVE/PAUSED definitions and a saved running status do not prove a job is currently running. Bounded bridge workflows have current idle/occupied observations and host defaults; occupied can include waiting for a restart and does not identify a named running automation. Per-job selections and a complete named live job inventory remain unknown. Do not turn non-cost questions into billing reports. Give a concise answer in the language of the current question, followed by the actual evidence and a read-only recommendation. Never request a local source location from the Owner before reading available sources.')
             const recordIdentityContract = 'OPERATIONAL RECORD IDENTITY: For a named task in answerPlan use its exact retrieved name as item.title and cite its containing section sourceId. Facts must belong to that named record. Do not replace different task names with the same section label. executionHistoryState=unconnected means this integration did not inspect execution history; it does NOT mean no executions or records exist. Do not say no records were left, no task ran, charges stopped, or that an unseen source is the most suspicious. This coverage rule applies to executiveJudgment, uncertainties, directAnswer, limitations and followUp alike. A configuration backend label is not the currently selected model and does not prove usage.'
             if (boundFindings?.kind !== 'cost') extraObservationBlocks.push(recordIdentityContract)
+          }
+          if (opts.ownerInvestigation === true && !operationalInvestigation && generalRoute && generalRoute.requiredSources.some(s => s !== 'xiangxiang_operations')) {
+            operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections: [] })
+            operationalInvestigation.routing = generalRoute
           }
           // Required reads run first. A single gap-driven continuation may then
           // consult at most two authorised enriching sources from the judged plan.
@@ -1425,6 +1431,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               const result = await readExternal(source, 'followup')
               Object.assign(followup.decisions.find(d => d.source === source), { state: result?.state || 'unavailable', count: result?.count || 0 })
             }
+            operationalInvestigation.state = operationalInvestigation.sections.some(s => ['ok','partial'].includes(s.state)) ? 'partial' : 'unavailable'
+            operationalInvestigation.evidenceModel = require('../investigation/evidenceState').buildEvidenceState(operationalInvestigation)
+            extraObservationBlocks.push('ASSERTION EVIDENCE CONTRACT: CONFIRMED means this exact facet was observed; SUPPORTED is a source-supported statement; CANDIDATE is an unverified link; CONTRADICTED is incompatible observations of the same identity/facet/time; UNKNOWN is no adequate evidence; UNAVAILABLE means its source could not be read. Current configuration, current enablement, historical execution and current runtime are different facets. Never promote one to another. Read-only recommendations only. DATA: ' + JSON.stringify(require('../investigation/generalizationView').evidencePrompt(operationalInvestigation)))
             operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)
             if (operationalInvestigation.crossSourceReads?.length) {
               extraObservationBlocks.push('CROSS-SOURCE INVESTIGATION: These are bounded, read-only source-level samples. A recent-items fallback does not establish relevance; no sample establishes global absence, actual billing, or current execution. Cite external claims from the fresh reference catalog and keep source, record, time and uncertainty distinct. Unavailable sources were not read. DATA: ' + JSON.stringify(require('../investigation/semanticAnswer').referenceCatalog(operationalInvestigation)))
@@ -3687,6 +3696,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         operationalInvestigation.answerPresentation={...(operationalInvestigation.answerPresentation||{}),invocationSummary:{...invocationSummary,text:undefined}}
       }
     }
+    const generalizationSummary = require('../investigation/generalizationView').renderGeneralization(operationalInvestigation, message)
+    if (generalizationSummary) view.reply = operationalInvestigation.evidenceModel.contradictions.length ? generalizationSummary : view.reply + '\n\n' + generalizationSummary
     const followupSummary = require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
     if (followupSummary) view.reply += '\n\n' + followupSummary
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }

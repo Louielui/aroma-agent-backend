@@ -98,10 +98,11 @@ function goalPlanSchema () {
      * that the role is now asked what he is trying to ACCOMPLISH before it is asked which
      * facts that would take, and both answers now travel.
      */
-    required: ['question_restated', 'executive_frame', 'requested_capability', 'investigation_focus', 'investigation_reference', 'facts', 'joins'],
+    required: ['question_restated', 'executive_frame', 'requested_capability', 'investigation_focus', 'investigation_reference', 'investigation_evidence', 'facts', 'joins'],
     properties: {
       question_restated: { type: 'string', description: '你理解到嘅問題，用一句講返。Owner 會用呢句捉錯意。' },
       executive_frame: executiveFrameSchema(),
+      investigation_evidence: { type: 'array', items: { type: 'string', enum: Object.keys(require('../../investigation/generalRouter').NEEDS) }, description: 'Evidence needed to answer the goal, not a list of tools or permission. Separate configuration, enablement, historical execution, current live runtime, candidate tests and repair verification. Empty for non-investigation questions.' },
       investigation_focus: { anyOf: [{ type: 'string', enum: ['cost', 'work_failure', 'background', 'general'] }, { type: 'null' }], description: 'For enquiries about Xiangxiang itself: cost/credits, previous work failure and whether repaired, current background jobs and models, or general investigation. Null for other questions. This is a report focus, never permission or evidence.' },
       investigation_reference: { anyOf: [{ type: 'string', enum: ['previous'] }, { type: 'null' }], description: 'Select previous only if this question continues the server-saved previous investigation supplied as context. Null for a new topic or no saved reference. This grants no access and cannot satisfy current evidence needs.' },
       /**
@@ -475,6 +476,7 @@ function judgeGoalPlan (raw) {
     plan: Object.freeze({
       questionRestated: String(raw.question_restated || ''),
       investigationFocus: ['cost', 'work_failure', 'background', 'general'].includes(raw.investigation_focus) ? raw.investigation_focus : null,
+      investigationEvidence: Object.freeze([...new Set((Array.isArray(raw.investigation_evidence) ? raw.investigation_evidence : []).filter(n => Object.hasOwn(require('../../investigation/generalRouter').NEEDS, n)))]),
       investigationReference: raw.investigation_reference === 'previous' ? 'previous' : null,
         /**
          * ⛔ FAIL-SOFT, AND THE FACTS DO NOT GO DOWN WITH IT. A frame that cannot be judged

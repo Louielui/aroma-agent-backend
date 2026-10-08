@@ -20,6 +20,8 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   const html = await response.text()
   assert.equal((html.match(/data-component=/g) || []).length, 20)
   assert.match(html, /data-component="operational-investigation" data-state="partial"/)
+  assert.match(html, /調查泛化 v1 已接入/)
+  assert.match(html, /沒有新增管理權限/)
   assert.match(html, /新版實測 36\.4 秒，先前為 109\.1 秒/)
   assert.match(html, /前置意圖判斷已設 30 秒共同取消期限/)
   assert.match(html, /不能保證整段調查的時間/)

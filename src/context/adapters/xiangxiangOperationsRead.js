@@ -133,7 +133,9 @@ function createXiangxiangOperationsReadAdapter (options = {}) {
     const retrievedAt = clock()
     let runtimePending
     const runtime = () => runtimePending || (runtimePending=Promise.resolve().then(()=>runtimeReader?.()).catch(()=>null))
-    const results = await Promise.all(SECTIONS.map(async name => {
+    if (params.sections !== undefined && (!Array.isArray(params.sections) || !params.sections.length || params.sections.length > SECTIONS.length || params.sections.some(n=>!SECTIONS.includes(n)))) throw Error('invalid_investigation_sections')
+    const selected = params.sections === undefined ? SECTIONS : [...new Set(params.sections)]
+    const results = await Promise.all(selected.map(async name => {
       const started = performance.now()
       try { options.onProgress?.({ section: name, state: 'reading' }) } catch (_) {}
       const value = await section(name, String(params.query || '').slice(0, 2000),runtime)
