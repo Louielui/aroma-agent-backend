@@ -127,6 +127,7 @@ function structuredCall (makeAdapter, role, name) {
   return async (prompt, system, schema) => {
     const adapter = makeAdapter(role)
     const r = await adapter.complete(prompt, {
+      invocationPhase: { sourceIntentResolver:'source_intent', finalVerifier:'final_verification', publicQueryPlanner:'public_query_plan' }[role],
       system,
       // ⛔ `type` IS REQUIRED. Without it the adapter rejects the option, the runner swallows the
       // throw, and the turn silently degrades to its fail-closed answer — a broken verifier and
@@ -238,6 +239,7 @@ function createA4RuntimeDependencies (options = {}) {
       ((model) => new (require('../adapters/ClaudeAdapter').ClaudeAdapter)({ model }))
     const a = make(recoveryModel)
     const r = await a.complete(buildWorkerPrompt(input), {
+      invocationPhase: 'recovery_decision',
       system: input.system,
       responseFormat: { type: 'json_schema', name: 'recovery_decision', schema: input.schema, strict: true }
     })

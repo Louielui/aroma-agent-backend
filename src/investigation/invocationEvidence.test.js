@@ -16,6 +16,7 @@ test('ledger and session failures are isolated; actual tokens do not become bill
  const summary=renderInvocationSummary(report,{message:'什麼在扣 credit？'})
  assert.match(summary.text,/claude-sonnet-5-5/);assert.match(summary.text,/10/);assert.match(summary.text,/4/);assert.match(summary.text,/未確認/);assert.doesNotMatch(summary.text,/已證實扣款/)
  assert.equal(summary.references[0].recordId,'invocation:one')
+ assert.match(summary.text,/快取讀取 未記錄、快取建立 未記錄/)
 })
 test('only exact host request identity groups calls; equal time and similar names never link a schedule',()=>{
  const calls=[{...row,role:'chat_completion',requestId:'request-a',phase:'answer'}, {...row,sourceId:'invocation:two',invocationId:'two',requestId:'request-a',phase:'evidence_review'}, {...row,sourceId:'invocation:three',invocationId:'three',requestId:null}]
@@ -24,6 +25,15 @@ test('only exact host request identity groups calls; equal time and similar name
  assert.equal(report.findings.some(f=>f.kind==='candidate_link'),false);assert.equal(report.billingConfirmed,false)
  const failed=evaluateInvestigation({focus:'cost',sections:[{section:'execution',sourceId:'s',state:'partial',records:[{...row,state:'failed',modelResultObserved:false,actualModel:null,usage:null}]}]})
  assert.equal(failed.findings.some(f=>f.kind==='model_result_observed'),false);assert.match(renderInvocationSummary(failed,{message:'credit'}).text,/unknown|not recorded/)
+})
+
+test('Owner summary shows cache input separately from direct input without making a charge claim',()=>{
+ const cached={...row,usage:{inputTokens:2,cacheReadInputTokens:732,cacheCreationInputTokens:71544,outputTokens:4620}}
+ const report=evaluateInvestigation({focus:'cost',sections:[{section:'execution',sourceId:'execution:receipt',state:'partial',records:[cached]}]})
+ const summary=renderInvocationSummary(report,{message:'之前甚麼在扣 credit？'})
+ assert.match(summary.text,/直接輸入 2、快取讀取 732、快取建立 71544、輸出 4620/)
+ assert.match(summary.text,/不能把「直接輸入」當成完整輸入/)
+ assert.doesNotMatch(summary.text,/已證實扣款/)
 })
 test('many observed calls cannot crowd the unconfirmed billing boundary out of the findings budget',()=>{
  const report=evaluateInvestigation({focus:'cost',sections:[{section:'execution',sourceId:'s',state:'partial',records:Array.from({length:24},(_,i)=>({...row,sourceId:'invocation:'+i,invocationId:String(i)}))},{section:'billing',sourceId:'billing:s',state:'unconnected',records:[]}]})

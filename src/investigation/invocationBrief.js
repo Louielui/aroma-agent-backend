@@ -5,6 +5,10 @@ function phaseTitle(phase,locale){
  case 'intent':return t('investigation.callIntent',{},locale)
  case 'goal_understanding':return t('investigation.callGoal',{},locale)
  case 'answer':return t('investigation.callAnswer',{},locale)
+ case 'source_intent':return t('investigation.callSourceIntent',{},locale)
+ case 'final_verification':return t('investigation.callFinalVerification',{},locale)
+ case 'public_query_plan':return t('investigation.callPublicQueryPlan',{},locale)
+ case 'recovery_decision':return t('investigation.callRecoveryDecision',{},locale)
  case 'evidence_review':return t('investigation.callReview',{},locale)
  default:return t('investigation.callUnspecified',{},locale)
  }
@@ -22,7 +26,7 @@ function renderInvocationSummary(report,{message=''}={}){
   const role=r.role==='memory_completion'?t('investigation.memoryCompletion',{},locale):t('investigation.chatCompletion',{},locale)+' ('+phaseTitle(r.phase,locale)+')'
   const count=v=>Number.isSafeInteger(v)&&v>=0?String(v):unknown()
   references.push({sourceId:s.sourceId,recordId:r.sourceId,fields:{role:r.role,phase:r.phase,state:r.state,modelResultObserved:r.modelResultObserved,actualModel:r.actualModel,startedAt:r.startedAt,usage:r.usage,durationMs:r.durationMs,requestId:r.requestId}})
-  return '- '+t('investigation.callRow',{role,state,model:safe(r.actualModel),at:safe(r.startedAt),input:count(r.usage?.inputTokens),output:count(r.usage?.outputTokens),seconds:Number.isSafeInteger(r.durationMs)?String(Math.round(r.durationMs/100)/10):unknown()},locale)
+  return '- '+t('investigation.callRow',{role,state,model:safe(r.actualModel),at:safe(r.startedAt),input:count(r.usage?.inputTokens),cacheRead:count(r.usage?.cacheReadInputTokens),cacheCreate:count(r.usage?.cacheCreationInputTokens),output:count(r.usage?.outputTokens),seconds:Number.isSafeInteger(r.durationMs)?String(Math.round(r.durationMs/100)/10):unknown()},locale)
  })
  return {version:1,text:[t('investigation.callTitle',{},locale),lines.join('\n'),t('investigation.callBoundary',{},locale)].join('\n\n'),references,scope:'bounded_invocation_receipts_not_billing'}
 }

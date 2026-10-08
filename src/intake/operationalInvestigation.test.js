@@ -32,9 +32,26 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
 test('actual Owner credit answer and archive retain source-bound call evidence with no billing inference',async t=>{
  const evidenceSections=[{section:'execution',sourceId:'execution:abc',state:'partial',evidenceState:'confirmed',records:[{sourceId:'invocation:one',invocationId:'one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-07T20:00:00Z',usage:{inputTokens:13,outputTokens:4},durationMs:2500,evidenceBasis:'owner_bridge_invocation_ledger'}]}]
  const x=await turn(t,{question:'Which calls consumed tokens and credits?',focus:'cost',evidenceSections})
- assert.match(x.result.reply,/claude-sonnet-5-5/);assert.match(x.result.reply,/13\/4/);assert.match(x.result.reply,/charges.*unconfirmed/)
+ assert.match(x.result.reply,/claude-sonnet-5-5/);assert.match(x.result.reply,/direct input 13.*output 4/);assert.match(x.result.reply,/charges.*unconfirmed/)
  assert.equal(x.result.replyForArchive,x.result.reply);assert.equal(x.result.investigation.answerPresentation.invocationSummary.references[0].recordId,'invocation:one')
  assert.deepEqual(x.result.tasks,[])
+})
+
+test('cost investigation sends one bounded source catalog instead of repeating full operational receipts',async t=>{
+ const large='receipt detail '.repeat(2000)
+ const evidenceSections=[
+  {section:'work',sourceId:'work:large',state:'partial',records:[{sourceId:'run:one',state:'failed',reason:'source_dirty',goal:'Inspect credit use',sourceFiles:[{path:large}]}]},
+  {section:'billing',sourceId:'billing:gap',state:'unconnected',records:[]}
+ ]
+ const x=await turn(t,{focus:'cost',evidenceSections})
+ const answer=x.calls.find(c=>c.schema==='intake_answer_plan')||x.calls.find(c=>c.p.includes('FRESH SEMANTIC REFERENCE CATALOG:'))
+ assert.ok(answer,'The answer receives source identities')
+ assert.match(answer.p,/work:large/)
+ assert.match(answer.p,/billing:gap/)
+ assert.match(answer.p,/unconnected/)
+ assert.doesNotMatch(answer.p,/receipt detail receipt detail/,'Unrelated oversized raw receipt stays out of the model prompt')
+ assert.ok(answer.p.length<30000,'The cost-specific context stays bounded')
+ assert.equal(x.result.investigation.sections[0].records[0].sourceFiles[0].path,large,'The full receipt remains available for server-side verification')
 })
 
 test('reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply',async t=>{
@@ -102,7 +119,8 @@ test('a historical enquiry with empty memory reads own operational sources befor
   assert.ok(x.recall > 0)
   assert.equal(x.calls.filter(c => c.schema === 'goal_plan').length, 1)
   assert.deepEqual(x.reads, [{ source: 'xiangxiang_operations', method: 'readInvestigation' }])
-  assert.ok(x.calls.find(c => c.schema !== 'goal_plan').p.includes('charge cause not established'))
+  assert.ok(x.calls.find(c => c.schema !== 'goal_plan').p.includes('billing:abc'))
+  assert.ok(x.calls.find(c => c.schema !== 'goal_plan').p.includes('unconnected'))
   assert.equal(x.result.investigation.sections[0].evidenceState, 'not_established')
   assert.ok(x.events.some(e => e.state === 'reading'))
   assert.ok(x.events.some(e => e.state === 'evaluating'))
