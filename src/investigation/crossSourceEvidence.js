@@ -13,7 +13,7 @@ function requiredExternalSources (plan, authorised) {
     .map(f => f.operation))]
 }
 
-function appendCrossSourceEvidence (report, read) {
+function appendCrossSourceEvidence (report, read, { readProfile = null } = {}) {
   if (!report?.readOnly || !Array.isArray(report.sections)) return []
   const groups = new Map((read?.itemsBySource || []).map(g => [g.source, g]))
   const scopes = new Map((read?.evidenceSets || []).map(e => [e.source, e]))
@@ -46,6 +46,7 @@ function appendCrossSourceEvidence (report, read) {
     report.plan.sources.push(section.section)
     report.gaps.push({ section: section.section, state: section.state, sourceId: section.sourceId, coverage: section.coverage })
     entries.push({ source, state: live ? 'sampled' : 'unavailable', count: records.length,
+      ...(source === 'gmail' && readProfile === 'cost_provider_mail' ? { searchProfile: readProfile } : {}),
       usedFallback: status.usedFallback === true, durationMs: Number.isFinite(status.durationMs) ? status.durationMs : null })
   }
   report.crossSourceReads = entries
@@ -90,7 +91,7 @@ function compareCostEvidence (report) {
   return { version: 1, state: mailRead.state !== 'sampled' ? 'mail_unavailable'
     : !mail.length ? 'empty_sample' : !calls.length ? 'local_invocations_unavailable'
       : links.length ? 'possible_identifier_link' : 'no_shared_identifier_in_sample',
-  mailSelection: mailRead.usedFallback ? 'recency_fallback' : 'question_search',
+  mailSelection: mailRead.usedFallback ? 'recency_fallback' : mailRead.searchProfile === 'cost_provider_mail' ? 'provider_cost_search' : 'question_search',
   sampledMailCount: mail.length, sampledInvocationCount: calls.length,
   sampledInvocationUsageCount: calls.filter(hasMeasuredUsage).length,
   links, linksOmitted: Math.max(0, allLinks.length - links.length), billingConfirmed: false,
@@ -107,6 +108,9 @@ function renderCostEvidenceComparison (comparison, { message = '' } = {}) {
   if (comparison.mailSelection === 'recency_fallback') lines.push(zh
     ? '原問題的電郵關鍵字搜尋未命中，這些郵件是按最近時間回退取得，相關性未確認。'
     : 'The email keyword search for this question returned no matches; these messages came from a recent-items fallback and their relevance is unconfirmed.')
+  if (comparison.mailSelection === 'provider_cost_search') lines.push(zh
+    ? '電郵按 AI 供應商與額度／帳單關鍵字搜尋近兩年，最多取樣四封；搜尋命中仍須核對原文，沒有命中也不能推論其他郵件不存在。'
+    : 'Email was searched for AI providers and credit/billing terms over two years, with at most four sampled messages. Matches still need original-message verification; no matches do not establish global absence.')
   if (comparison.state === 'mail_unavailable') lines.push(zh ? '電郵未能讀取，無法對照。' : 'Email was unavailable, so no comparison was possible.')
   else if (comparison.state === 'empty_sample') lines.push(zh ? '本次取樣沒有電郵紀錄，不能推論其他郵件不存在。' : 'The sample has no email records; this does not mean other emails do not exist.')
   else if (comparison.state === 'local_invocations_unavailable') lines.push(zh ? '沒有可對照的本機呼叫取樣。' : 'No local invocation sample was available for comparison.')

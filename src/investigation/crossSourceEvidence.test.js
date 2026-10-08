@@ -47,6 +47,16 @@ test('recent fallback and nearby times without a shared ID do not become evidenc
   assert.match(answer, /關鍵字搜尋未命中/)
   assert.match(answer, /不能推論未取樣的紀錄也沒有關聯/)
 })
+test('targeted provider mail remains a bounded candidate search, including zero matches', () => {
+  const r = report()
+  const empty = { perSource: [{ source: 'gmail', trust: 'live', usedFallback: false }], itemsBySource: [], evidenceSets: [] }
+  appendCrossSourceEvidence(r, empty, { readProfile: 'cost_provider_mail' })
+  const comparison = compareCostEvidence(r)
+  assert.equal(comparison.state, 'empty_sample')
+  assert.equal(comparison.mailSelection, 'provider_cost_search')
+  assert.equal(comparison.billingConfirmed, false)
+  assert.match(renderCostEvidenceComparison(comparison, { message: '查額度' }), /按 AI 供應商.*最多取樣四封/)
+})
 
 test('substring mention, failed read and non-owner report cannot manufacture a link', () => {
   const r = report()

@@ -531,7 +531,7 @@ function aromaMethodFor (text) {
  * route ordinary repo questions into the index and quietly remove the commit view.
  */
 const RECORD_RE = /HR-[0-9]+|DEFECT-[0-9]+|house ?rules?|開發記錄|決定記錄|規則|裁決|缺陷/i
-function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null } = {}) {
+function planFor (source, { keywords = [], message = '', now, env = {}, caps = CAPS, operation = null, args = null, readProfile = null } = {}) {
   if (source === 'xiangxiang_operations') return { method: 'readInvestigation', params: { query: String(message || '').slice(0, 2000) } }
   const terms = keywords.slice(0, caps.maxTermsPerQuery)
   const n = caps.maxItemsPerSource
@@ -550,6 +550,13 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
   if (source === 'gmail') {
     const recent = { method: 'searchMessages', params: { q: 'newer_than:7d', maxResults: n }, hydrate: { method: 'getMessage', key: 'id' } }
     const hydrate = { method: 'getMessage', key: 'id' }
+    // Closed Owner cost-investigation profile. This retrieves candidate provider mail,
+    // never billing proof. A miss must stay a miss rather than silently become recent mail.
+    if (readProfile === 'cost_provider_mail') return {
+      method: 'searchMessages',
+      params: { q: capQuery('{"OpenAI" "Anthropic" "Claude" "ChatGPT" "Codex"} {billing usage credit invoice receipt subscription payment} newer_than:2y'), maxResults: Math.min(n, 4) },
+      hydrate
+    }
     if (terms.length === 0) return recent
     // OR the terms — never AND the whole question into one query
     return { method: 'searchMessages', params: { q: capQuery(`(${terms.map((t) => `"${t}"`).join(' OR ')}) newer_than:90d`), maxResults: n }, hydrate, fallback: recent }
@@ -874,7 +881,7 @@ async function runStep (connector, source, step, caps) {
  * Build the block. PURE apart from the injected connector's read calls.
  * @returns {Promise<{block: string|null, status: string, perSource: object[]}>}
  */
-async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null } = {}) {
+async function buildReadContext ({ connector, message, sources = [], env = process.env, now, caps = CAPS, logSink, operation = null, args = null, readProfile = null } = {}) {
   if (sources.includes('xiangxiang_operations')) caps = { ...caps, maxItemsPerSource: 7, maxItemChars: 16000, maxLineChars: 16500, maxTotalChars: 52000 }
   const asOf = now || new Date().toISOString()
   if (!connector || typeof connector.read !== 'function' || sources.length === 0) {
@@ -938,7 +945,7 @@ async function buildReadContext ({ connector, message, sources = [], env = proce
     try {
       // `operation` is ABSENT on every automatic read — the one-shot path passes no such
       // argument — so this call is byte-identical to before for every existing caller.
-      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args })
+      const plan = planFor(source, { keywords, message, now: asOf, env, caps, operation, args, readProfile })
 
       /**
        * ⛔ THE IDENTITY EXISTED ALL ALONG AND WAS DISCARDED ONE LINE LATER. On an automatic

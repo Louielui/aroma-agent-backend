@@ -1401,13 +1401,17 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const { requiredExternalSources, appendCrossSourceEvidence, compareCostEvidence } = require('../investigation/crossSourceEvidence')
             const external = requiredExternalSources(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
             if (external.length) {
+              // Only the judged, authorised Owner cost enquiry can select this closed
+              // Gmail read profile. Ordinary chat and other investigations retain their plans.
+              const readProfile = operationalInvestigation.focus === 'cost' && external.includes('gmail')
+                ? 'cost_provider_mail' : null
               investigationProgress({ state: 'reading', section: 'external', sources: external })
               const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
               const rc = await timePhase(
                 { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
-                () => buildReadContext({ connector, message, sources: external, env: process.env }),
+                () => buildReadContext({ connector, message, sources: external, env: process.env, readProfile }),
                 { clock: latencyClock, sink: latencySink })
-              appendCrossSourceEvidence(operationalInvestigation, rc)
+              appendCrossSourceEvidence(operationalInvestigation, rc, { readProfile })
               operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)
               for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
               for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)

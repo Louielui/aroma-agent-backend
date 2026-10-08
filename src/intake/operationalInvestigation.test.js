@@ -14,8 +14,8 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
-  const fixtureRead = async (source, method) => {
-    reads.push({ source, method })
+  const fixtureRead = async (source, method, params) => {
+    reads.push(source === 'gmail' ? { source, method, params } : { source, method })
     if (source === 'gmail') {
       if (externalUnavailable) throw Error('mail connector unavailable')
       return {results:[{source,sourceId:'mail:one',title:'Provider usage notice',retrievedAt:'2026-10-07T20:00:00Z',content:'A usage notice was sent; this does not prove a charge.',trust:'live',fields:{}}]}
@@ -99,7 +99,9 @@ test('required authorised Gmail evidence is read and source-bound alongside oper
     investigationAnswer:{claims:[{id:'c1',text:'A provider usage notice was found in email.',kind:'observation',evidenceState:'supported',temporalScope:'historical',references:[{sourceId:'read-context:gmail',recordId:'mail:one',field:'title',value:'Provider usage notice'}]}]} })
   assert.equal(x.reads[0].source,'xiangxiang_operations')
   assert.ok(x.reads.slice(1).every(r=>r.source==='gmail'),'Gmail search may hydrate its matched message')
+  assert.match(x.reads.find(r=>r.source==='gmail'&&r.method==='searchMessages').params.q,/OpenAI.*billing.*newer_than:2y/)
   assert.equal(x.result.investigation.crossSourceReads[0].state,'sampled')
+  assert.equal(x.result.investigation.crossSourceComparison.mailSelection,'provider_cost_search')
   assert.equal(x.result.investigation.crossSourceComparison.state,'no_shared_identifier_in_sample')
   assert.equal(x.result.investigation.sections.at(-1).sourceId,'read-context:gmail')
   assert.equal(x.result.investigation.semanticReview.accepted.length,1)
