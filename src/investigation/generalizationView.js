@@ -32,8 +32,19 @@ function renderGeneralization(report,message='') {
   }
  }
  if(report.focus==='background') {
+  for(const s of report.sections.filter(s=>s.section==='schedules'&&['ok','partial'].includes(s.state))) {
+   for(const r of (s.records||[]).filter(r=>r.sourceId?.startsWith('codex-automation:')).slice(0,8)) {
+    const rows=e.assertions.filter(a=>a.sourceId===s.sourceId&&a.recordId===r.sourceId)
+    const model=rows.find(a=>a.facet==='configured_model'),enabled=rows.find(a=>a.facet==='enabled'),running=rows.find(a=>a.facet==='running')
+    const observed=a=>a?.state==='CONFIRMED'?safe(a.value):state(a?.state||'UNKNOWN')
+    const enabledText=enabled?.state==='CONFIRMED'?(enabled.value?(zh?'啟用':'enabled'):(zh?'停用':'disabled')):state(enabled?.state||'UNKNOWN')
+    lines.push((zh?'已登記排程：':'Registered schedule: ')+safe(r.name||r.sourceId)+(zh?'；目前設定模型：':'; currently configured model: ')+observed(model)+(zh?'；定義：':'; definition: ')+enabledText+(zh?'；即時活動：':'; live activity: ')+observed(running)+'. '+refs(model))
+   }
+  }
+  lines.push(zh?'建議：如要核對某項工作的用量，下一步應比對同一工作識別碼的執行紀錄與實際模型回報。這次沒有暫停排程或修改設定。':'Recommendation: to investigate usage for a job, compare execution records with observed model results for that same job identity. No schedule was paused and no setting was changed.')
   lines.push(zh?'狀態判讀：目前設定、目前啟用、歷史執行和即時活動分開核對。設定的模型不等於某次呼叫實際使用的模型；即時活動只代表讀取時間。':'State interpretation: current configuration, enablement, historical execution and live activity are checked separately. A configured model is not proof of the model used by an invocation; live activity applies only at the observation time.')
  }
+ for(const f of report.routing.unmappedFacts||[]) lines.push((zh?'尚未取得的資料需求：':'Unresolved evidence need: ')+safe(f.need)+' — '+state(f.status)+(f.operation?' ('+safe(f.operation)+')':'')+'.')
  const unavailable=e.coverage.filter(c=>c.state==='UNAVAILABLE'&&!(report.focus!=='cost'&&c.section==='billing'))
  if(unavailable.length) lines.push((zh?'未能讀取的來源：':'Unavailable sources: ')+unavailable.map(c=>safe(c.section)+' ('+safe(c.sourceId)+')').join('; ')+(zh?'；不能當成沒有資料。':'; this is not evidence of no records.'))
  for(const c of e.contradictions.slice(0,3)) lines.push((zh?'資料矛盾：':'Conflicting evidence: ')+safe(c.subject)+' / '+safe(c.facet)+(zh?' 在同一觀察時間有不同值，暫不選其中一個作結論。':' has different values for the same observation time; neither is selected as the conclusion.'))

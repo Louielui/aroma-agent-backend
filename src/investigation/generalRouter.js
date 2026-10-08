@@ -29,7 +29,7 @@ function investigationRoute(plan, authorised=[]) {
   const localSections=local?[...new Set(requirements.flatMap(n=>NEEDS[n]))]:[]
   return {version:1,focus:plan.investigationFocus,goal:plan.questionRestated,readOnly:true,
     requirements,decisions,requiredSources:required,localSections:local?(localSections.length?localSections:['configuration','schedules','work','history','execution','usage','billing']):[],
-    unmappedFacts:(plan.facts||[]).filter(f=>!f.operation).map(f=>({id:f.id,need:f.need,status:'UNKNOWN'})),
+    unmappedFacts:(plan.facts||[]).filter(f=>!f.operation||!SOURCES.has(f.operation)).map(f=>({id:f.id,operation:f.operation||null,need:f.need,status:f.operation?'UNAVAILABLE':'UNKNOWN'})),
     policy:'judged_goal_and_requirements_intersect_existing_authorization',maxFollowupSources:2}
 }
 module.exports={NEEDS,investigationRoute}

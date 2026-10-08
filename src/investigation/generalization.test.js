@@ -60,3 +60,20 @@ test('candidate source and tests cannot certify a currently loaded repair; promp
  assert.match(renderGeneralization(r,'Was it fixed?'),/currently loaded version: unknown/)
  assert.doesNotMatch(JSON.stringify(evidencePrompt(r)),/registered.js|matches_candidate/)
 })
+
+test('background answer includes configured automation with unknown activity and a concrete read-only recommendation',()=>{
+ const r=report([section('schedules',[{sourceId:'codex-automation:one',name:'Follow-up',model:'model-a',state:'PAUSED',currentRunningState:'active'}])]);r.routing={localSections:['schedules']}
+ const answer=renderGeneralization(r,'Which background jobs run?')
+ assert.match(answer,/Follow-up.*model-a.*disabled.*unknown/)
+ assert.match(answer,/Recommendation:.*same job identity/)
+ assert.match(answer,/source: schedules:receipt/)
+ assert.doesNotMatch(answer,/live activity: active/)
+})
+
+test('a planned source outside the connected investigation adapters remains an explicit unavailable need',()=>{
+ const routing=investigationRoute({investigationFocus:'work_failure',facts:[{operation:'xiangxiang_operations',necessity:'required'},{id:'f2',operation:'development_record',need:'Saved design history',necessity:'enriching'}]},['xiangxiang_operations'])
+ assert.equal(routing.unmappedFacts[0].status,'UNAVAILABLE')
+ assert.deepEqual(routing.requiredSources,['xiangxiang_operations'])
+ const r=report([]);r.routing=routing
+ assert.match(renderGeneralization(r,'Why did it fail?'),/Saved design history.*unavailable.*development_record/)
+})
