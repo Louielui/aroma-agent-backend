@@ -1398,7 +1398,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
           // The closed source vocabulary and the active provider's existing
           // authorisation remain the only boundary. Enriching facts stay opt-in.
           if (operationalInvestigation && !operationalInvestigation.crossSourceReads) {
-            const { requiredExternalSources, appendCrossSourceEvidence } = require('../investigation/crossSourceEvidence')
+            const { requiredExternalSources, appendCrossSourceEvidence, compareCostEvidence } = require('../investigation/crossSourceEvidence')
             const external = requiredExternalSources(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
             if (external.length) {
               investigationProgress({ state: 'reading', section: 'external', sources: external })
@@ -1408,6 +1408,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
                 () => buildReadContext({ connector, message, sources: external, env: process.env }),
                 { clock: latencyClock, sink: latencySink })
               appendCrossSourceEvidence(operationalInvestigation, rc)
+              operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)
               for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
               for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)
               for (const g of rc.retrievedItemsBySource || []) turnRetrievedItems.set(g.source, g)
@@ -3640,8 +3641,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
         const scope = /[\u3400-\u9fff]/.test(message)
           ? '補充來源讀取狀態（限取樣，未能證明沒有其他紀錄）：' + statuses
           : 'Additional source reads (bounded samples, not proof of absence): ' + statuses
-        view.reply = [base, scope, reviewedReply || semanticView.reviewUnavailable({ message })].filter(Boolean).join('\n\n')
+        const comparison = require('../investigation/crossSourceEvidence').renderCostEvidenceComparison(operationalInvestigation.crossSourceComparison, { message })
+        view.reply = [base, scope, comparison, reviewedReply || semanticView.reviewUnavailable({ message })].filter(Boolean).join('\n\n')
         operationalInvestigation.answerPresentation = { kind: 'cross_source_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: !!reviewedReply, machineEntailmentProven: false,
+          ...(operationalInvestigation.crossSourceComparison ? { crossSourceComparison: { ...operationalInvestigation.crossSourceComparison, links: operationalInvestigation.crossSourceComparison.links.map(({ matchedId, ...link }) => link) } } : {}),
           ...(findings ? { findings: { ...findings, text: undefined } } : {}) }
       } else if (costFindings) {
         // A sampled call and current schedule definition already produce a

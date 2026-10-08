@@ -84,6 +84,7 @@ const FILE_CLASS = Object.freeze({
   'investigation/invocationBrief.js': CLASS.INTERFACE, // Receipt-bound call summary; no model prompt or intent routing.
   'investigation/costFindings.js': CLASS.INTERFACE, // Receipt-bound cost presentation; no model prompt, routing or new reads.
   'investigation/sourceBoundFindings.js': CLASS.INTERFACE, // Shared receipt-bound presentation; no source choice or new reads.
+  'investigation/crossSourceEvidence.js': CLASS.INTERFACE, // Receipt-bound comparison text; script detection selects locale only.
   'routes/ownerApprovalRouter.js': CLASS.INTERFACE,
   'modelCenter/client.js': CLASS.INTERFACE,
   'modelCenter/routes.js': CLASS.INTERFACE,
