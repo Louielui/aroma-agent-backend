@@ -18,7 +18,7 @@ const SOURCES = new Set(['xiangxiang_operations','gmail','drive','calendar','git
 function investigationRoute(plan, authorised=[]) {
   if(!plan || !Object.hasOwn(BASE,plan.investigationFocus)) return null
   const allow=new Set(authorised), facts=(plan.facts||[]).filter(f=>SOURCES.has(f.operation))
-  if(!facts.some(f=>f.necessity==='required')) return null
+  if(!(plan.facts||[]).some(f=>f.necessity==='required')) return null
   const requirements=[...new Set([...(BASE[plan.investigationFocus]||[]),...(plan.investigationEvidence||[]).filter(n=>Object.hasOwn(NEEDS,n))])]
   const decisions=[...new Set(facts.map(f=>f.operation))].map(source=>({source,
     necessity:facts.some(f=>f.operation===source&&f.necessity==='required')?'required':'enriching',
@@ -29,7 +29,24 @@ function investigationRoute(plan, authorised=[]) {
   const localSections=local?[...new Set(requirements.flatMap(n=>NEEDS[n]))]:[]
   return {version:1,focus:plan.investigationFocus,goal:plan.questionRestated,readOnly:true,
     requirements,decisions,requiredSources:required,localSections:local?(localSections.length?localSections:['configuration','schedules','work','history','execution','usage','billing']):[],
-    unmappedFacts:(plan.facts||[]).filter(f=>!f.operation||!SOURCES.has(f.operation)).map(f=>({id:f.id,operation:f.operation||null,need:f.need,status:f.operation?'UNAVAILABLE':'UNKNOWN'})),
+    unmappedFacts:(plan.facts||[]).filter(f=>!f.operation||!SOURCES.has(f.operation)).map(f=>({id:f.id,operation:f.operation||null,need:f.need,necessity:f.necessity,status:f.operation?'UNAVAILABLE':'UNKNOWN'})),
     policy:'judged_goal_and_requirements_intersect_existing_authorization',maxFollowupSources:2}
 }
-module.exports={NEEDS,investigationRoute}
+// These are access/coverage receipts, never source citations. A denied read and
+// an absent read receipt cannot be represented as a successful empty search.
+function requiredSourceCoverage(report) {
+  return (report.routing?.decisions || []).filter(d => d.necessity === 'required')
+    .filter(d => !d.authorized || !(report.sections || []).some(s => d.source === 'xiangxiang_operations'
+      ? !s.section.startsWith('external_') : s.section === 'external_' + d.source))
+    .map(d => ({ section:'source_' + d.source, source:d.source, sourceId:null,
+      state:'UNAVAILABLE', reason:d.authorized ? 'read_receipt_missing' : 'not_authorized',
+      attempted:d.authorized ? null : false, scope:'required_source_access_not_content_evidence', retrievedAt:null }))
+}
+function refreshRequiredSourceGaps(report) {
+  report.gaps = (report.gaps || []).filter(g => g.coverage !== 'required_source_access_not_content_evidence')
+  report.gaps.push(...requiredSourceCoverage(report).map(c => ({...c, coverage:c.scope})))
+  report.gaps = report.gaps.filter(g => g.coverage !== 'unmapped_required_need')
+  report.gaps.push(...(report.routing?.unmappedFacts || []).filter(f => f.necessity === 'required')
+    .map(f => ({section:'fact_' + f.id, state:f.status, reason:f.operation?'unmapped_operation':'unknown_operation', coverage:'unmapped_required_need'})))
+}
+module.exports={NEEDS,investigationRoute,requiredSourceCoverage,refreshRequiredSourceGaps}

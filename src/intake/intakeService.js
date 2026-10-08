@@ -1403,7 +1403,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const recordIdentityContract = 'OPERATIONAL RECORD IDENTITY: For a named task in answerPlan use its exact retrieved name as item.title and cite its containing section sourceId. Facts must belong to that named record. Do not replace different task names with the same section label. executionHistoryState=unconnected means this integration did not inspect execution history; it does NOT mean no executions or records exist. Do not say no records were left, no task ran, charges stopped, or that an unseen source is the most suspicious. This coverage rule applies to executiveJudgment, uncertainties, directAnswer, limitations and followUp alike. A configuration backend label is not the currently selected model and does not prove usage.'
             if (boundFindings?.kind !== 'cost') extraObservationBlocks.push(recordIdentityContract)
           }
-          if (opts.ownerInvestigation === true && !operationalInvestigation && generalRoute && generalRoute.requiredSources.some(s => s !== 'xiangxiang_operations')) {
+          if (opts.ownerInvestigation === true && !operationalInvestigation && generalRoute) {
             operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections: [] })
             operationalInvestigation.routing = generalRoute
           }
@@ -1440,6 +1440,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             for (const source of requiredExternalSources(plan, authorised)) {
               if (!turnPerSource.has(source)) await readExternal(source, 'required')
             }
+            require('../investigation/generalRouter').refreshRequiredSourceGaps(operationalInvestigation)
             const followup = planFollowupReads(operationalInvestigation, plan, authorised, [...turnPerSource.keys()])
             // Set before awaiting so later prompt builds cannot repeat this round.
             operationalInvestigation.followupReads = followup
@@ -1447,6 +1448,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               const result = await readExternal(source, 'followup')
               Object.assign(followup.decisions.find(d => d.source === source), { state: result?.state || 'unavailable', count: result?.count || 0 })
             }
+            require('../investigation/generalRouter').refreshRequiredSourceGaps(operationalInvestigation)
             operationalInvestigation.state = operationalInvestigation.sections.some(s => ['ok','partial'].includes(s.state)) ? 'partial' : 'unavailable'
             operationalInvestigation.workCorrelation = require('../investigation/workCorrelation').correlateWork(operationalInvestigation)
             operationalInvestigation.evidenceModel = require('../investigation/evidenceState').buildEvidenceState(operationalInvestigation)
@@ -3719,7 +3721,9 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       }
     }
     const generalizationSummary = require('../investigation/generalizationView').renderGeneralization(operationalInvestigation, message)
-    if (generalizationSummary) view.reply = operationalInvestigation.evidenceModel.contradictions.length ? generalizationSummary : view.reply + '\n\n' + generalizationSummary
+    if (generalizationSummary) view.reply = operationalInvestigation.evidenceModel.contradictions.length ||
+      (distilled.mode !== 'ask' && operationalInvestigation.sections.every(s => s.section.startsWith('external_') && !s.records?.length))
+      ? generalizationSummary : view.reply + '\n\n' + generalizationSummary
     const followupSummary = require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
     if (followupSummary) view.reply += '\n\n' + followupSummary
     if (operationalInvestigation?.readOnly === true) {

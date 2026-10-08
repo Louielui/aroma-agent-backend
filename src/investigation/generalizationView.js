@@ -8,7 +8,7 @@ function evidencePrompt(report) {
  // Full receipts stay server-side. Never replay source text or arbitrary object bodies.
  const assertions=rows.map(({id,sourceId,recordId,facet,temporalScope,state,value,observedAt})=>({id,sourceId,recordId,facet,temporalScope,state,observedAt,
   value:value===null||typeof value==='boolean'||typeof value==='number'?value:typeof value==='string'?safe(value):'[structured receipt retained]'}))
- return {route:report.routing,scope:e?.scope,assertions,workCorrelation:report.workCorrelation,
+ return {route:report.routing,scope:e?.scope,coverage:e?.coverage,assertions,workCorrelation:report.workCorrelation,
   omitted:Math.max(0,(e?.assertions?.length||0)-rows.length)+(e?.omitted||0),contradictions:e?.contradictions?.slice(0,4),transitions:e?.transitions?.slice(0,4)}
 }
 function renderGeneralization(report,message='') {
@@ -48,7 +48,9 @@ function renderGeneralization(report,message='') {
  }
  for(const f of report.routing.unmappedFacts||[]) lines.push((zh?'尚未取得的資料需求：':'Unresolved evidence need: ')+safe(f.need)+' — '+state(f.status)+(f.operation?' ('+safe(f.operation)+')':'')+'.')
  const unavailable=e.coverage.filter(c=>c.state==='UNAVAILABLE'&&!(report.focus!=='cost'&&c.section==='billing'))
- if(unavailable.length) lines.push((zh?'未能讀取的來源：':'Unavailable sources: ')+unavailable.map(c=>safe(c.section)+' ('+safe(c.sourceId)+')').join('; ')+(zh?'；不能當成沒有資料。':'; this is not evidence of no records.'))
+ if(unavailable.length) lines.push((zh?'未能讀取的來源：':'Unavailable sources: ')+unavailable.map(c=>safe(c.source||c.section)+(c.reason==='not_authorized'?(zh?' — 未獲授權，本次未查':' — not authorized; not read'):c.reason==='read_receipt_missing'?(zh?' — 尚未取得讀取紀錄':' — read receipt missing'):'')+(c.sourceId?' ('+safe(c.sourceId)+')':'')).join('; ')+(zh?'；不能當成沒有資料。':'; this is not evidence of no records.'))
+ const empty=e.coverage.filter(c=>c.state==='UNKNOWN'&&c.section.startsWith('external_'))
+ if(empty.length) lines.push((zh?'本次搜尋無命中：':'No matches in this search: ')+empty.map(c=>safe(c.section)).join('; ')+(zh?'。僅代表本次有限取樣，不能推論其他紀錄不存在。':'. This is a bounded sample, not evidence that other records do not exist.'))
  for(const c of e.contradictions.slice(0,3)) lines.push((zh?'資料矛盾：':'Conflicting evidence: ')+safe(c.subject)+' / '+safe(c.facet)+(zh?' 在同一觀察時間有不同值，暫不選其中一個作結論。':' has different values for the same observation time; neither is selected as the conclusion.'))
  const grades=Object.entries(e.counts).filter(([,n])=>n>0).map(([s])=>state(s))
  if(grades.length) lines.push((zh?'本次取樣的證據分級：':'Evidence grades in this sample: ')+grades.join(' / ')+(zh?'。分級針對每一項說法，並非整個來源都已證實。':'. Grades apply to individual assertions, not blanket verification of a source.'))

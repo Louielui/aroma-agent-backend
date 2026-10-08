@@ -59,6 +59,7 @@ function buildEvidenceState(report) {
       assertions.at(-1).references.forEach(ref=>{ref.collection='workflows';ref.recordId=w.role})
     }
   }
+  coverage.push(...require('./generalRouter').requiredSourceCoverage(report))
   const contradictions=[],transitions=[],byKey=new Map()
   for(const a of assertions) {
     if(['UNKNOWN','UNAVAILABLE'].includes(a.state)) continue

@@ -15,6 +15,7 @@ function reasonText (reason, locale) {
 function ownerBrief (report, { message = '', findings } = {}) {
   if (report?.readOnly !== true || report.continuity || report.evidenceModel?.contradictions?.length ||
       report.contradictions?.length || findings?.kind !== 'work_failure' || !findings.references?.length) return null
+  if (require('./generalRouter').requiredSourceCoverage(report).length) return null
   // A broader external enquiry can contribute facts beyond the failed-work
   // receipt. Keep its reviewed answer rather than silently hiding those facts.
   if (report.crossSourceReads?.some(r => r.scope !== 'exact_target_source_revision_not_repair_proof')) return null

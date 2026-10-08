@@ -462,6 +462,84 @@ test('same-time conflicting claims are disclosed instead of presenting either as
   assert.deepEqual(x.result.tasks,[])
 })
 
+test('background Chinese and English use the same source policy and keep saved activity unknown', async t => {
+ const routes=[]
+ for (const question of ['現在有哪些背景工作？各自使用什麼模型？','What background jobs exist now, and which model does each use?']) {
+  const x=await turn(t,{question,focus:'background',captureLocalParams:true,evidenceSections:[
+   {section:'schedules',sourceId:'schedules:one',state:'partial',records:[{sourceId:'codex-automation:job',name:'Follow-up',model:'gpt',state:'ACTIVE',currentRunningState:'active'}]},
+   {section:'execution',sourceId:'execution:one',state:'partial',records:[{sourceId:'invocation:old',model:'claude',at:'2026-10-07T12:00:00Z',state:'succeeded'}]}
+  ]})
+  routes.push(x.result.investigation.routing.localSections)
+  const assertions=x.result.investigation.evidenceModel.assertions
+  assert.equal(assertions.find(a=>a.facet==='configured_model').value,'gpt')
+  assert.equal(assertions.find(a=>a.facet==='enabled').value,true)
+  assert.equal(assertions.find(a=>a.facet==='running').state,'UNKNOWN')
+  assert.equal(assertions.find(a=>a.facet==='executed_model').temporalScope,'historical_execution')
+  assert.ok(x.reads.every(r=>r.source==='xiangxiang_operations'))
+  assert.deepEqual(x.result.tasks,[])
+ }
+ assert.deepEqual(routes[0],routes[1])
+})
+
+test('brief failure presentation cannot hide an unread required source behind a local record', async t => {
+ const x=await turn(t,{question:'Why did the task fail?',focus:'work_failure',workEvidence:true,fastPath:true,
+  extraFacts:[{id:'f2',need:'Required repository evidence',operation:'github',necessity:'required',entity:null,fields:[]}]})
+ assert.match(x.result.reply,/github — not authorized/)
+ assert.equal(x.result.investigation.answerPresentation?.ownerBrief,undefined)
+ assert.ok(x.reads.every(r=>r.source==='xiangxiang_operations'))
+ assert.deepEqual(x.result.tasks,[])
+})
+
+test('required denied source still produces an honest investigation without performing a read', async t => {
+ for (const question of ['為什麼上次開發失敗？', 'Why did the previous development task fail?']) {
+  const x = await turn(t, { question, focus:'general', primaryOperation:'github', sources:[], investigationEvidence:['code_history'] })
+  assert.ok(x.result.investigation, 'a denied required source must not silently remove the investigation')
+  const report = x.result.investigation
+  assert.deepEqual(x.reads, [])
+  assert.ok(report.evidenceModel.coverage.some(c => c.source==='github' && c.state==='UNAVAILABLE' && c.reason==='not_authorized' && c.attempted===false && c.sourceId===null))
+  assert.ok(report.gaps.some(g => g.reason==='not_authorized'))
+  assert.match(x.result.reply, /未獲授權|not authorized/)
+  assert.doesNotMatch(x.result.reply, /已找到排程/)
+  assert.equal(x.result.replyForArchive, x.result.reply)
+  assert.deepEqual(x.result.tasks, [])
+ }
+})
+
+test('unmapped or unknown required operations keep explicit gaps without inventing reads', async t => {
+ for (const operation of ['development_record', null]) {
+  const x = await turn(t, { question:'Investigate that task.', focus:'general', primaryOperation:operation, sources:[] })
+  assert.ok(x.result.investigation)
+  assert.deepEqual(x.reads, [])
+  assert.equal(x.result.investigation.routing.unmappedFacts[0].status, operation?'UNAVAILABLE':'UNKNOWN')
+  assert.ok(x.result.investigation.gaps.some(g => g.coverage==='unmapped_required_need'))
+  assert.match(x.result.reply,/Unresolved evidence need/)
+  assert.deepEqual(x.result.tasks, [])
+ }
+})
+
+test('empty external search stays unknown and failed source stays unavailable in both languages', async t => {
+ for (const question of ['找上次開發失敗的資料', 'Find evidence of the previous development failure']) {
+  for (const mode of ['externalEmpty', 'externalUnavailable']) {
+   const x = await turn(t, { question, focus:'general', primaryOperation:'github', sources:['github'], [mode]:true })
+   const coverage=x.result.investigation.evidenceModel.coverage.find(c => c.section==='external_github')
+   assert.equal(coverage.state, mode==='externalEmpty'?'UNKNOWN':'UNAVAILABLE')
+   assert.match(x.result.reply,mode==='externalEmpty'?/搜尋無命中|No matches/:/未能讀取|Unavailable sources/)
+   assert.doesNotMatch(x.result.reply,/已找到排程/)
+   assert.deepEqual(x.result.tasks, [])
+  }
+ }
+})
+
+test('a denied required source does not block one authorised evidence-equivalent fallback', async t => {
+ const x = await turn(t, { question:'Investigate the repository failure.', focus:'general', primaryOperation:'drive', sources:['github'], investigationEvidence:['code_history'] })
+ assert.ok(x.reads.length > 0)
+ assert.ok(x.reads.every(r => r.source==='github'))
+ assert.deepEqual(x.result.investigation.followupReads.sources,['github'])
+ assert.ok(x.result.investigation.evidenceModel.coverage.some(c => c.source==='drive' && c.reason==='not_authorized'))
+ assert.ok(x.result.investigation.evidenceModel.coverage.some(c => c.section==='external_github' && c.state==='SUPPORTED'))
+ assert.deepEqual(x.result.tasks, [])
+})
+
 test('development paraphrases stop after one exact revision probe, retain unknown repair, and skip unused prose calls', async t => {
   for (const question of ['上次改程式為何中斷？現在正常了嗎？', '之前開發失敗的原因找到了嗎，能確認已解決嗎？',
     'Why did our last code change stop, and is the issue resolved in the running version?',

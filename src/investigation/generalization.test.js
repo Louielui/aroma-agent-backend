@@ -6,6 +6,22 @@ const {evidencePrompt,renderGeneralization}=require('./generalizationView')
 const now='2026-10-08T12:00:00Z'
 const section=(section,records,state='ok')=>({section,records,state,sourceId:section+':receipt',retrievedAt:now})
 const report=sections=>{const r={sections,focus:'background',readOnly:true};r.evidenceModel=buildEvidenceState(r);return r}
+test('missing authorized receipt is not a denial, an empty search, or a fabricated citation',()=>{
+ const {refreshRequiredSourceGaps}=require('./generalRouter')
+ const r=report([])
+ r.routing=investigationRoute({investigationFocus:'general',facts:[{id:'f1',operation:'github',necessity:'required'}]},['github'])
+ refreshRequiredSourceGaps(r);refreshRequiredSourceGaps(r)
+ r.evidenceModel=buildEvidenceState(r)
+ const c=r.evidenceModel.coverage[0]
+ assert.equal(c.reason,'read_receipt_missing');assert.equal(c.attempted,null);assert.equal(c.sourceId,null)
+ assert.equal(r.gaps.length,1)
+ assert.match(renderGeneralization(r,'Find the code history'),/read receipt missing/)
+ assert.doesNotMatch(JSON.stringify(evidencePrompt(r)),/read-context:github/)
+ r.sections.push(section('external_github',[],'partial'))
+ refreshRequiredSourceGaps(r);r.evidenceModel=buildEvidenceState(r)
+ assert.equal(r.gaps.length,0)
+ assert.equal(r.evidenceModel.coverage[0].state,'UNKNOWN')
+})
 test('goal-based routes select distinct fixed source sections and intersect authority',()=>{
  const route=(focus,sources=['xiangxiang_operations'],need=[])=>investigationRoute({investigationFocus:focus,investigationEvidence:need,facts:[{operation:'xiangxiang_operations',necessity:'required'},{operation:'github',necessity:'required'},{operation:null,id:'f3',need:'Provider bill'}]},sources)
  assert.deepEqual(route('work_failure').localSections,['work','configuration'])
