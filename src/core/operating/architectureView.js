@@ -54,10 +54,10 @@ function buildArchitectureHtml () {
     { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
-  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review'
-  investigationRow.current += ' ' + t('investigation.findingsCurrent')
-  investigationRow.next += ' ' + t('investigation.findingsNext')
-  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/sourceBoundFindings.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md'
+  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review / bounded advisory intent wait'
+  investigationRow.current += ' ' + t('investigation.findingsCurrent') + ' ' + t('investigation.latencyCurrent')
+  investigationRow.next += ' ' + t('investigation.findingsNext') + ' ' + t('investigation.latencyNext')
+  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/sourceBoundFindings.test.js; src/intake/semanticFallbackSafety.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md; docs/INVESTIGATION-LATENCY-V1.md'
   const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">
     <div class="card-heading"><h2>${escape(row.title)}</h2><span class="badge ${escape(row.state)}">${escape(labels[row.state])}</span></div>
     <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>

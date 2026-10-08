@@ -403,11 +403,12 @@ async function processIntake (message, adapter, history = [], opts = {}) {
  * layer; the consensus logic stays in semanticFallback where it was proven.
  */
 const SEMANTIC_MODEL = 'claude-haiku-4-5-20251001'
+const SEMANTIC_ADVISORY_TIMEOUT_MS = 30000
 function defaultSemanticCallModel () {
   const { ClaudeAdapter } = require('../adapters/ClaudeAdapter')
   const adapter = new ClaudeAdapter({ model: SEMANTIC_MODEL })
-  return async ({ system, prompt }) => {
-    const r = await adapter.complete(prompt, { system, maxTokens: 64, temperature: 0 })
+  return async ({ system, prompt, signal }) => {
+    const r = await adapter.complete(prompt, { system, maxTokens: 64, temperature: 0, signal })
     return (r && typeof r.text === 'string') ? r.text : r
   }
 }
@@ -586,13 +587,18 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    */
   const semanticEgressOk = (opts && typeof opts.semanticCallModel === 'function') || liveEgressAllowed()
   if (!socialFastPath && semanticEgressOk && routeGoverns && routeDecision.route === 'CONVERSATION' && opts && opts.interactionMode === 'chat') {
+    // This classifier is advisory and fail-closed. A failed provider call once
+    // held an Owner investigation for 111 seconds before the unchanged Goal
+    // Decomposer could continue. Bound only these two intent opinions; never
+    // shorten the main answer, source read or evidence review.
+    const semanticSignal = AbortSignal.timeout(SEMANTIC_ADVISORY_TIMEOUT_MS)
     const callModel = (opts && typeof opts.semanticCallModel === 'function')
       ? opts.semanticCallModel
       : subscriptionAdapter
-        ? async ({ system, prompt }) => (await subscriptionAdapter.complete(prompt, { invocationPhase:'intent', system, maxTokens: 128 })).text
+        ? async ({ system, prompt, signal }) => (await subscriptionAdapter.complete(prompt, { invocationPhase:'intent', system, maxTokens: 128, signal })).text
         : defaultSemanticCallModel()
     const sem = await resolveSemanticFallback({
-      message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM
+      message, deterministicRoute: 'CONVERSATION', callModel, system: SEMANTIC_SYSTEM, signal: semanticSignal
     })
     semanticTel = sem.telemetry || null
     if (sem.decision === SEMANTIC.AUTO_READ && Array.isArray(sem.sources) && sem.sources.length > 0) {

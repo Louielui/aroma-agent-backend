@@ -28,6 +28,29 @@ test('*** BOTH CALLS TIMEOUT -> no read ***', async () => {
   assert.deepEqual(r.sources, [])
 })
 
+test('*** SHARED ABORT ENDS BOTH ADVISORY OPINIONS WITHOUT READ AUTHORITY ***', async () => {
+  const controller = new AbortController()
+  const signals = []
+  const result = resolveSemanticFallback({
+    message: '仲有幾多貨？', deterministicRoute: 'CONVERSATION', system: 'x', signal: controller.signal,
+    callModel: ({ signal }) => {
+      signals.push(signal)
+      return new Promise((resolve, reject) => {
+        if (signal.aborted) return reject(signal.reason)
+        signal.addEventListener('abort', () => reject(signal.reason), { once: true })
+      })
+    }
+  })
+  assert.equal(signals.length, 2)
+  controller.abort(new Error('advisory deadline'))
+  const r = await result
+  assert.deepEqual(signals, [controller.signal, controller.signal])
+  assert.equal(r.decision, DECISION.ABSTAIN)
+  assert.deepEqual(r.sources, [])
+  assert.equal(r.telemetry.okA, false)
+  assert.equal(r.telemetry.okB, false)
+})
+
 test('*** ONE VALID HIGH + ONE TIMEOUT -> never auto-read ***', async () => {
   for (const scripted of [pair(ok('inventory', 'HIGH'), boom('ETIMEDOUT')), pair(boom('ETIMEDOUT'), ok('inventory', 'HIGH'))]) {
     const r = await go(scripted)
