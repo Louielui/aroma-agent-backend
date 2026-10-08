@@ -70,6 +70,12 @@ function compareCostEvidence (report) {
   const execution = report.sections.find(row => row.section === 'execution')
   const mail = mailSection?.records || []
   const calls = (execution?.records || []).filter(row => row.evidenceBasis === 'owner_bridge_invocation_ledger')
+  // Surface concrete cost-related subject lines as leads. A search hit alone may
+  // be a newsletter; even a credit warning is a message, not a verified charge.
+  const mailLeads = mail.filter(row => /\b(?:credits?|billing|invoice|receipt|payment|charged?)\b/i.test(row.title || ''))
+    .slice(0, 2).map(row => ({ sourceId: mailSection.sourceId, recordId: row.sourceId,
+      title: short(row.title, 120), originalDate: row.originalDate || null,
+      evidenceState: 'possible', provesCharge: false }))
   const allLinks = []
   const seen = new Set()
   for (const message of mail) for (const call of calls) {
@@ -94,7 +100,7 @@ function compareCostEvidence (report) {
   mailSelection: mailRead.usedFallback ? 'recency_fallback' : mailRead.searchProfile === 'cost_provider_mail' ? 'provider_cost_search' : 'question_search',
   sampledMailCount: mail.length, sampledInvocationCount: calls.length,
   sampledInvocationUsageCount: calls.filter(hasMeasuredUsage).length,
-  links, linksOmitted: Math.max(0, allLinks.length - links.length), billingConfirmed: false,
+  mailLeads, links, linksOmitted: Math.max(0, allLinks.length - links.length), billingConfirmed: false,
   scope: 'bounded_samples_exact_identifier_text_only_no_billing_or_global_absence' }
 }
 
@@ -111,6 +117,9 @@ function renderCostEvidenceComparison (comparison, { message = '' } = {}) {
   if (comparison.mailSelection === 'provider_cost_search') lines.push(zh
     ? '電郵按 AI 供應商與額度／帳單關鍵字搜尋近兩年，最多取樣四封；搜尋命中仍須核對原文，沒有命中也不能推論其他郵件不存在。'
     : 'Email was searched for AI providers and credit/billing terms over two years, with at most four sampled messages. Matches still need original-message verification; no matches do not establish global absence.')
+  for (const lead of comparison.mailLeads || []) lines.push(zh
+    ? `郵件樣本有可能相關的標題「${lead.title}」（日期：${lead.originalDate || '未提供'}；郵件 ID：${lead.recordId}）。這只是待核對的郵件線索，不能證明實際扣款。`
+    : `A sampled email has a possibly relevant subject, “${lead.title}” (date: ${lead.originalDate || 'not provided'}; message ID: ${lead.recordId}). This is a lead to verify, not proof of a charge.`)
   if (comparison.state === 'mail_unavailable') lines.push(zh ? '電郵未能讀取，無法對照。' : 'Email was unavailable, so no comparison was possible.')
   else if (comparison.state === 'empty_sample') lines.push(zh ? '本次取樣沒有電郵紀錄，不能推論其他郵件不存在。' : 'The sample has no email records; this does not mean other emails do not exist.')
   else if (comparison.state === 'local_invocations_unavailable') lines.push(zh ? '沒有可對照的本機呼叫取樣。' : 'No local invocation sample was available for comparison.')

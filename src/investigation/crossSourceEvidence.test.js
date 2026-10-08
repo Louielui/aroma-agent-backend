@@ -57,6 +57,20 @@ test('targeted provider mail remains a bounded candidate search, including zero 
   assert.equal(comparison.billingConfirmed, false)
   assert.match(renderCostEvidenceComparison(comparison, { message: '查額度' }), /按 AI 供應商.*最多取樣四封/)
 })
+test('a credit-warning subject is shown as a traceable lead without becoming a charge', () => {
+  const r = report()
+  const sample = read('You used up credits')
+  sample.itemsBySource[0].items[0].title = 'Aroma Bistro is out of credits'
+  appendCrossSourceEvidence(r, sample, { readProfile: 'cost_provider_mail' })
+  const comparison = compareCostEvidence(r)
+  assert.deepEqual(comparison.mailLeads, [{ sourceId: 'read-context:gmail', recordId: 'mail:one',
+    title: 'Aroma Bistro is out of credits', originalDate: '2026-10-08T12:10:00Z',
+    evidenceState: 'possible', provesCharge: false }])
+  assert.equal(comparison.billingConfirmed, false)
+  const answer = renderCostEvidenceComparison(comparison, { message: '查 credit' })
+  assert.match(answer, /Aroma Bistro is out of credits.*郵件 ID：mail:one/)
+  assert.match(answer, /不能證明實際扣款/)
+})
 
 test('substring mention, failed read and non-owner report cannot manufacture a link', () => {
   const r = report()
