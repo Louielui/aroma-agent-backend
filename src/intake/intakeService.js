@@ -1891,7 +1891,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       message, plan: goalPlanObserved, report: operationalInvestigation,
       operationsLive: modelDirectedLiveOperations.has('xiangxiang_operations'),
       ownerInvestigation: opts.ownerInvestigation === true, subscriptionMode,
-      interactionMode: opts.interactionMode, previousInvestigation: opts.previousInvestigation
+      interactionMode: opts.interactionMode, previousInvestigation: opts.previousInvestigation,
+      onDecision: reason => { if (operationalInvestigation) operationalInvestigation.answerCallGate = reason }
     })
     if (!direct) return false
     // Keep the established chat guards, read gates and archive path below. No
