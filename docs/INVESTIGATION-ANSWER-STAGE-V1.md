@@ -31,3 +31,25 @@ call took 49,855 ms instead of 12,894 ms; source-intent also took 10,051 ms
 instead of 4,911 ms. This is one comparison with changing source state and
 provider timing. It supports a smaller answer-stage output, not a reliable
 end-to-end speedup. No extra automatic retry was introduced.
+
+## Goal-understanding latency attribution
+
+The same historical-credit question has goal-understanding call durations of
+11,952, 14,182, 12,894 and 49,855 ms in four local acceptance captures.
+On the slowest call, 1,101 ms was local preflight and 48,754 ms was the
+post-dispatch wait. Comparable output counts and the other three samples do
+not establish a larger prompt or a local routing regression. Background memory
+calls overlapped both fast and slow samples, so overlap alone does not prove
+contention.
+
+The Owner invocation ledger now retains two optional counters reported by
+Claude CLI: its total `duration_ms` and `duration_api_ms`. Both are projected
+as non-negative integers only. They supplement, rather than replace, the host
+clock's preflight and post-dispatch measurements. Neither counter identifies
+provider queue time or model generation separately. Missing/invalid counters
+remain unknown. The ledger stores no prompt, answer, credential, or CLI cost
+estimate; subscription credits and actual charges remain unverified.
+
+This change improves diagnosis and makes no claim of faster inference. A
+provider-side wait cannot be safely removed by lowering the Owner-selected
+model or effort without changing the task's reasoning contract.

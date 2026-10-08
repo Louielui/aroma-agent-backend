@@ -74,7 +74,15 @@ async function complete (options = {}, input) {
   const text = schema ? (result.structured_output === undefined ? '' : JSON.stringify(result.structured_output)) : result.result
   if (typeof text !== 'string' || !text.trim() || text.length > 100000) throw new SubscriptionError('subscription_invalid_output')
   const {projectUsage}=require('../investigation/invocations')
+  // Claude CLI reports both its own elapsed time and the time spent on API
+  // requests. Keep only these counters; subscription cost estimates are not
+  // account billing evidence and never cross this boundary.
+  const counter = value => Number.isSafeInteger(value) && value >= 0 ? value : null
+  const cliDurationMs = counter(result.duration_ms), apiDurationMs = counter(result.duration_api_ms)
+  const providerTiming = cliDurationMs === null && apiDurationMs === null ? null
+    : { cliDurationMs, apiDurationMs, basis: 'claude_cli_result' }
   return { text, model, actualModel: actual[0], billing: 'claude-subscription', stopReason: 'end_turn', latencyMs: Date.now() - start,
+    providerTiming,
     usage: projectUsage(result.modelUsage[actual[0]]), usageBasis:'provider_result_model_usage',
     usageByModel:used.map(model=>({model,usage:projectUsage(result.modelUsage[model])})) }
 }

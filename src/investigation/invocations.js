@@ -8,12 +8,17 @@ const number=v=>Number.isSafeInteger(v)&&v>=0?v:null
 const model=v=>typeof v==='string'&&/^[a-z0-9][a-z0-9.\[\]-]{0,99}$/.test(v)?v:null
 function projectUsage(value){if(!value||typeof value!=='object'||Array.isArray(value))return null;const r={};for(const key of TOKEN_FIELDS)if(number(value[key])!==null)r[key]=value[key];return Object.keys(r).length?r:null}
 function byModel(rows){return Array.isArray(rows)?rows.slice(0,8).filter(r=>model(r?.model)).map(r=>({model:model(r.model),usage:projectUsage(r.usage)})):[]}
+function projectTiming(value){
+ if(!value||typeof value!=='object'||Array.isArray(value)||value.basis!=='claude_cli_result')return null
+ const cliDurationMs=number(value.cliDurationMs),apiDurationMs=number(value.apiDurationMs)
+ return cliDurationMs===null&&apiDurationMs===null?null:{cliDurationMs,apiDurationMs,basis:'claude_cli_result'}
+}
 function projectRecord(r){
  if(!r||typeof r.invocationId!=='string'||!UUID.test(r.invocationId)||!['chat_completion','memory_completion'].includes(r.role)||!['started','succeeded','failed','interrupted_unknown'].includes(r.state)||typeof r.startedAt!=='string'||!Number.isFinite(Date.parse(r.startedAt)))throw Error('invalid_ledger')
  const at=v=>typeof v==='string'&&Number.isFinite(Date.parse(v))?v:null
  const trace=validTrace({requestId:r.requestId,phase:r.phase})?{requestId:r.requestId,phase:r.phase}:{requestId:null,phase:'unspecified'}
  return {sourceId:'invocation:'+r.invocationId,invocationId:r.invocationId,role:r.role,...trace,state:r.state,model:model(r.model),actualModel:model(r.actualModel),effort:['low','medium','high','xhigh','max','ultra','auto'].includes(r.effort)?r.effort:null,
-  at:at(r.finishedAt)||r.startedAt,startedAt:r.startedAt,dispatchedAt:at(r.dispatchedAt),finishedAt:at(r.finishedAt),durationMs:number(r.durationMs),preflightMs:number(r.preflightMs),providerWaitMs:number(r.providerWaitMs),
+  at:at(r.finishedAt)||r.startedAt,startedAt:r.startedAt,dispatchedAt:at(r.dispatchedAt),finishedAt:at(r.finishedAt),durationMs:number(r.durationMs),preflightMs:number(r.preflightMs),providerWaitMs:number(r.providerWaitMs),providerTiming:projectTiming(r.providerTiming),
   modelResultObserved:r.state==='succeeded'&&r.modelResultObserved===true,billingRoute:['claude-subscription','chatgpt-subscription'].includes(r.billingRoute)?r.billingRoute:null,
   usage:projectUsage(r.usage),usageByModel:byModel(r.usageByModel),usageBasis:['provider_result_model_usage','provider_last_turn_usage'].includes(r.usageBasis)?r.usageBasis:null,
   evidenceBasis:'owner_bridge_invocation_ledger',linkBasis:trace.requestId?'host_request_identity':'role_only_no_individual_job_link',provesCharge:false}
@@ -45,7 +50,7 @@ function createInvocationLedger({file,clock=Date.now,limit=256}={}){
   begin(input){if(unavailable)return null;const id=randomUUID();records.push(projectRecord({invocationId:id,role:input.role,state:'started',model:input.model,effort:input.effort,...(validTrace(input.trace)?input.trace:{}),startedAt:new Date(clock()).toISOString()}));save();return unavailable?null:id},
   dispatched(id){const r=records.find(r=>r.invocationId===id);if(!r||r.state!=='started'||r.dispatchedAt)return;r.dispatchedAt=new Date(clock()).toISOString();r.preflightMs=Math.max(0,Date.parse(r.dispatchedAt)-Date.parse(r.startedAt));save()},
   finish(id,result,error){const r=records.find(r=>r.invocationId===id);if(!r||r.state!=='started')return;r.finishedAt=new Date(clock()).toISOString();r.durationMs=Math.max(0,Date.parse(r.finishedAt)-Date.parse(r.startedAt));r.providerWaitMs=r.dispatchedAt?Math.max(0,Date.parse(r.finishedAt)-Date.parse(r.dispatchedAt)):null
-   r.state=error?'failed':'succeeded';r.modelResultObserved=!error;r.actualModel=error?null:model(result?.actualModel||result?.model);r.billingRoute=error?null:result?.billing;r.usage=error?null:projectUsage(result?.usage);r.usageByModel=error?[]:byModel(result?.usageByModel);r.usageBasis=error?null:result?.usageBasis;save()},
+   r.state=error?'failed':'succeeded';r.modelResultObserved=!error;r.actualModel=error?null:model(result?.actualModel||result?.model);r.billingRoute=error?null:result?.billing;r.usage=error?null:projectUsage(result?.usage);r.usageByModel=error?[]:byModel(result?.usageByModel);r.usageBasis=error?null:result?.usageBasis;r.providerTiming=error?null:projectTiming(result?.providerTiming);save()},
   read(){const sample=unavailable?[]:records.slice(-24).reverse().map(projectRecord);return {state:unavailable?'unavailable':'partial',records:sample,coverageStartedAt,retained:unavailable?null:records.length,omitted:unavailable?null:omitted+Math.max(0,records.length-24),provesCharge:false,
    note:'Bounded Owner bridge chat and memory completion records since coverageStartedAt, not account totals. Dispatch means an attempted provider call; a failed or interrupted call may still consume usage. Tokens are not subscription credits or charges. Memory rows have no per-email/job identity. Direct worker, website, API and external-app calls are not covered. No retrospective backfill.'}}
  }

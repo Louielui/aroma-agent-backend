@@ -20,7 +20,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
       }
       else if (s.section === 'execution') {
         if(r.evidenceBasis==='owner_bridge_invocation_ledger') {
-          add(s,r,'invocation_attempt_observed','confirmed','historical',{role:r.role,state:r.state,requestId:r.requestId,phase:r.phase,model:r.model,actualModel:r.actualModel,durationMs:r.durationMs,preflightMs:r.preflightMs,providerWaitMs:r.providerWaitMs})
+          add(s,r,'invocation_attempt_observed','confirmed','historical',{role:r.role,state:r.state,requestId:r.requestId,phase:r.phase,model:r.model,actualModel:r.actualModel,durationMs:r.durationMs,preflightMs:r.preflightMs,providerWaitMs:r.providerWaitMs,providerTiming:r.providerTiming||null})
           if(r.state==='succeeded'&&r.modelResultObserved===true)add(s,r,'model_result_observed','confirmed','historical',{role:r.role,actualModel:r.actualModel,finishedAt:r.finishedAt})
         }
         if (r.lastStartedAt || r.lastCompletedAt) add(s, r, 'execution_observed', 'confirmed', 'historical', { model: r.model, startedAt: r.lastStartedAt, completedAt: r.lastCompletedAt })

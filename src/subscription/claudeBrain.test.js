@@ -12,6 +12,18 @@ test('Claude uses subscription auth, bounded stdin, disabled tools and the selec
   assert.equal(calls[1].args[calls[1].args.indexOf('--effort') + 1], 'medium')
   assert.ok(calls[1].options.input.includes('Hello')); assert.ok(!calls[1].args.includes('Answer in English.'))
 })
+test('Claude returns only bounded CLI timing counters, never a cost estimate', async () => {
+  const run = async args => args.includes('status')
+    ? { loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty' }
+    : { ...envelope('Hello'), duration_ms: 18450, duration_api_ms: 17120, total_cost_usd: 999 }
+  const r = await complete({ catalogue, run }, { model: 'claude-sonnet', prompt: 'Hello' })
+  assert.deepEqual(r.providerTiming, { cliDurationMs: 18450, apiDurationMs: 17120, basis: 'claude_cli_result' })
+  assert.equal(JSON.stringify(r).includes('999'), false)
+  const absent = await complete({ catalogue, run: async args => args.includes('status')
+    ? { loggedIn: true, authMethod: 'claude.ai', apiProvider: 'firstParty' }
+    : { ...envelope('Hello'), duration_ms: -1, duration_api_ms: 'private' } }, { model: 'claude-sonnet', prompt: 'Hello' })
+  assert.equal(absent.providerTiming, null)
+})
 test('Claude refuses API auth, failed or substituted results; no fallback calls', async () => {
   await assert.rejects(checkSubscription({ run: async () => ({ loggedIn: true, authMethod: 'api_key', apiProvider: 'firstParty' }) }), /subscription_login_required/)
   for (const bad of [{ ...envelope('x'), is_error: true }, { ...envelope('x'), modelUsage: { 'claude-opus-4-6': {} } }, envelope('')]) {

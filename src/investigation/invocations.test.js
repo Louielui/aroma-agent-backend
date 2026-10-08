@@ -18,15 +18,22 @@ test('provider token fields preserve explicit zero, unknown and separate helper 
 test('durable call identity, lifecycle, elapsed time and bounded history survive reload without content',t=>{
  const file=fixture(t);let now=1000;const ledger=createInvocationLedger({file,clock:()=>now,limit:2})
  const id=ledger.begin({role:'chat_completion',model:'claude-sonnet',effort:'medium',trace:{requestId:uuid,phase:'answer'},prompt:'TOP SECRET'})
- now=1200;ledger.dispatched(id);now=1800;ledger.finish(id,{model:'claude-sonnet',actualModel:'claude-sonnet-5-5',billing:'claude-subscription',usage:{inputTokens:10,outputTokens:3},text:'TOP SECRET'})
+ now=1200;ledger.dispatched(id);now=1800;ledger.finish(id,{model:'claude-sonnet',actualModel:'claude-sonnet-5-5',billing:'claude-subscription',usage:{inputTokens:10,outputTokens:3},providerTiming:{cliDurationMs:550,apiDurationMs:500,basis:'claude_cli_result',secret:'TOP SECRET'},text:'TOP SECRET'})
  const row=createInvocationLedger({file}).read().records[0]
  assert.equal(row.invocationId,id);assert.equal(row.requestId,uuid);assert.equal(row.phase,'answer');assert.equal(row.state,'succeeded')
  assert.equal(row.durationMs,800);assert.equal(row.preflightMs,200);assert.equal(row.providerWaitMs,600)
+ assert.deepEqual(row.providerTiming,{cliDurationMs:550,apiDurationMs:500,basis:'claude_cli_result'})
  assert.equal(row.actualModel,'claude-sonnet-5-5');assert.deepEqual(row.usage,{inputTokens:10,outputTokens:3});assert.equal(row.provesCharge,false)
  assert.doesNotMatch(fs.readFileSync(file,'utf8'),/TOP SECRET/)
  ledger.begin({role:'memory_completion',model:'claude-sonnet'});ledger.begin({role:'memory_completion',model:'claude-sonnet'})
  const snapshot=ledger.read();assert.equal(snapshot.records.length,2);assert.equal(snapshot.omitted,1)
  assert.ok(createInvocationLedger({file}).read().records.every(r=>r.state==='interrupted_unknown'))
+})
+test('missing or malformed provider timing remains unknown in the durable ledger',t=>{
+ const ledger=createInvocationLedger({file:fixture(t)})
+ const id=ledger.begin({role:'chat_completion',model:'claude-sonnet'})
+ ledger.finish(id,{model:'claude-sonnet',providerTiming:{cliDurationMs:-5,apiDurationMs:'slow',basis:'claude_cli_result'}})
+ assert.equal(ledger.read().records[0].providerTiming,null)
 })
 test('failed and interrupted calls cannot imply zero usage or confirmed model completion',t=>{
  const ledger=createInvocationLedger({file:fixture(t)}),id=ledger.begin({role:'memory_completion',model:'claude-sonnet'})
