@@ -3,6 +3,21 @@ const test = require('node:test'), assert = require('node:assert/strict'), { ran
 const { createProjectWork } = require('./service'), { createMemoryRunStore } = require('../operating/runStore'), { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { PROJECT, RECIPE, FILE, TEST, TESTS } = require('./contract')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40)
+test('live baseline and explicit repair predecessor are sealed; idempotent preparation and metadata reads do not rerun checks',async()=>{
+ let observations=0
+ const f=fixture({observeLive:async input=>{observations++;return {state:'unavailable',reason:'live_verification_unavailable',workRunId:input.workRunId}}})
+ const predecessor={id:randomUUID(),state:'failed',startedAt:'2026-10-01T00:00:00Z',workOrder:{recipe:RECIPE}};f.store.save(predecessor)
+ const input={bootCommit:HEAD,projectId:PROJECT,recipe:RECIPE,requestId:randomUUID(),repairOf:predecessor.id}
+ const p=await f.flow.prepare(OWNER,input)
+ assert.equal(p.run.repairOf,predecessor.id);assert.equal(p.run.liveBaseline.workRunId,p.run.id)
+ await f.flow.prepare(OWNER,input);f.flow.list(OWNER);f.flow.get(OWNER,p.run.id);assert.equal(observations,1)
+ const tampered=f.store.get(p.run.id);tampered.repairOf=randomUUID();f.store.save(tampered)
+ assert.throws(()=>f.flow.approve(OWNER,{id:p.run.id,hash:p.approval.hash,nonce:p.approval.nonce}),/approval_unavailable/)
+ assert.deepEqual(f.calls(),[0,0])
+ await assert.rejects(f.flow.prepare(OWNER,{...input,repairOf:randomUUID(),requestId:randomUUID()}),/invalid_request/)
+ const q=await f.prepare(),tamperedBaseline=f.store.get(q.run.id);tamperedBaseline.liveBaseline.reason='tampered';f.store.save(tamperedBaseline)
+ assert.throws(()=>f.flow.approve(OWNER,{id:q.run.id,hash:q.approval.hash,nonce:q.approval.nonce}),/approval_unavailable/)
+})
 function fixture (options = {}) {
   let changed = false, codeCalls = 0, reviewCalls = 0
   const store = options.store || createMemoryRunStore(), events = []

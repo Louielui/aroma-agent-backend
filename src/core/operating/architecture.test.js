@@ -24,6 +24,8 @@ test('architecture page is owner-gated, distinguishes pilot memory, and does not
   assert.match(html, /泛化來源缺口已補強/)
   assert.match(html, /泛化實測已通過四題/)
   assert.match(html, /修復證據鏈已接入唯讀調查/)
+  assert.match(html, /載入後行為驗證已部分接通/)
+  assert.match(html, /其他功能的運行驗證尚未接通/)
   assert.match(html, /不等同實際運行路徑已修好/)
   assert.match(html, /缺口補查已接入/)
   assert.match(html, /沒有新增管理權限/)

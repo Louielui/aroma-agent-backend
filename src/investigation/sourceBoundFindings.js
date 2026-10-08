@@ -27,11 +27,13 @@ function renderWorkFailure(report,{message=''}={}){
    records.filter(r=>r?.sourceId===record.sourceId).length!==1)return null
  const locale=localeFor(message),references=[{sourceId:section.sourceId,recordId:record.sourceId,
   fields:{state:record.state,reason:record.reason}}]
+ const verified=report.workCorrelation?.componentVerification==='CONFIRMED'
+ if(verified)for(const ref of report.workCorrelation.repairChain.stages.find(s=>s.key==='live_failure_verification').references.filter(r=>r.value))references.push({sourceId:ref.sourceId,recordId:ref.recordId,fields:{liveVerification:ref.value}})
  return {version:1,kind:'work_failure',text:[
   t('investigation.briefFailure',{id:inline(record.sourceId),reason:inline(record.reason)},locale),
-  t('investigation.briefFixUnknown',{},locale),
-  t('investigation.briefFailureRecommendation',{},locale)
- ].join('\n\n'),references,scope:'one_sampled_failed_work_record_not_current_repair',modelProseUsed:false}
+  verified?t('investigation.repairComponentVerified',{},locale):t('investigation.briefFixUnknown',{},locale),
+  ...(verified?[]:[t('investigation.briefFailureRecommendation',{},locale)])
+ ].join('\n\n'),references,scope:verified?report.workCorrelation.repairScope:'one_sampled_failed_work_record_not_current_repair',modelProseUsed:false}
 }
 
 function renderSourceBoundFindings(report,{message='',plan=null}={}){

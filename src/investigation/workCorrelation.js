@@ -16,7 +16,7 @@ function correlateWork (report) {
   const { record: target, section } = targets[0]
   result.target = { sourceId: section.sourceId, recordId: targetId, reason: target.reason, state: target.state }
   const bootRows = (report.sections || []).filter(s => s.section === 'configuration' && readable(s))
-    .flatMap(s => (s.records || []).filter(r => sha(r.bootCommit)).map(r => ({ sourceId:s.sourceId, recordId:r.sourceId || r.role, revision:r.bootCommit, retrievedAt:s.retrievedAt })))
+    .flatMap(s => (s.records || []).filter(r => sha(r.bootCommit)).map(r => ({ sourceId:s.sourceId, recordId:r.sourceId || r.role, revision:r.bootCommit, bootedAt:r.bootedAt || null, retrievedAt:s.retrievedAt })))
   const revisions = [...new Set(bootRows.map(r => r.revision))]
   result.loadedReferences = bootRows
   if (revisions.length === 1) { result.loadedRevision = revisions[0] }
@@ -30,18 +30,18 @@ function correlateWork (report) {
   const connected = new Set([targetId])
   for(let depth=0;depth<3;depth++) for(const {record:r} of rows) {
     if(duplicates.has(r.sourceId))continue
-    for(const field of ['workRunId','taskRunId','registeredTaskId']) {
+    for(const field of ['workRunId','taskRunId','registeredTaskId','repairOf']) {
       if(connected.has(r.sourceId) && r[field])connected.add(r[field])
       if(r[field] && connected.has(r[field]))connected.add(r.sourceId)
     }
   }
   const workIds = new Set([target.workRunId,...(/project-runs|project-work-runs/.test(target.kind || '')?[targetId]:[])].filter(Boolean))
   for(const {record:r} of rows) if(!duplicates.has(r.sourceId) && /project-runs|project-work-runs/.test(r.kind || '') &&
-    (r.registeredTaskId===targetId || r.taskRunId===targetId))workIds.add(r.sourceId)
+    (r.registeredTaskId===targetId || r.taskRunId===targetId || r.repairOf===targetId))workIds.add(r.sourceId)
   for (const {record:r, section:s} of rows) {
     if (r === target || duplicates.has(r.sourceId)) continue
     const relationships = []
-    for (const field of ['workRunId','taskRunId','registeredTaskId']) {
+    for (const field of ['workRunId','taskRunId','registeredTaskId','repairOf']) {
       if (target[field] && target[field] === r.sourceId) relationships.push({ field, direction:'target_to_record', value:target[field] })
       if (r[field] && r[field] === targetId) relationships.push({ field, direction:'record_to_target', value:r[field] })
       if (r[field] && target[field] && r[field] === target[field]) relationships.push({ field, direction:'shared_parent', value:r[field] })
@@ -69,6 +69,11 @@ function correlateWork (report) {
   result.gaps.push('same_failure_regression_in_loaded_version_missing')
   result.repairChain = buildRepairChain(result, rows.filter(x=>x.record===target ||
     result.links.some(l=>l.recordId===x.record.sourceId&&l.sameWorkEligible)),report.sections)
+  if (result.repairChain.conclusion === 'loaded_component_verified') {
+    result.componentVerification='CONFIRMED'
+    result.repairScope=result.repairChain.scope
+    result.gaps=result.gaps.filter(g=>g!=='same_failure_regression_in_loaded_version_missing')
+  }
   return result
 }
 function renderWorkCorrelation (report, message = '') {

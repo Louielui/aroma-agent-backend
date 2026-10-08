@@ -7,7 +7,7 @@ const browserEvidence = require('../../workers/execution/browserEvidence')
 const ACTIVE = new Set(['awaiting_approval', 'queued', 'checking', 'coding', 'reviewing'])
 const ERRORS = new Set(['source_changed', 'source_dirty', 'source_sensitive', 'source_unavailable', 'approval_unavailable', 'not_enabled', 'worker_busy', 'worker_cancelled', 'baseline_not_red', 'acceptance_failed', 'subscription_limit_reached', 'subscription_model_unavailable', 'subscription_unavailable', 'sandbox_stop_unconfirmed', 'sandbox_recovery_or_work_pending', 'provider_not_ready', 'invalid_worker_result', 'worker_no_changes', 'claude_unavailable', 'claude_max_turns', 'claude_invalid_structured_output', 'worker_timeout', 'visual_evidence_unavailable', 'invalid_visual_review', 'accepted_evidence_changed'])
 const owner = actor => { if (actor?.id !== 'owner' || actor.role !== 'owner') throw Error('permission_denied') }
-function createProjectWork ({ source, providers, store, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
+function createProjectWork ({ source, providers, store, enabled, observeLive = null, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe, catalogueRecipes = () => Object.values(RECIPES) }) {
   const sessions = new Map(), controllers = new Map()
   let busy = false, pending = Promise.resolve()
   const all = () => store.all()
@@ -20,24 +20,32 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
   async function prepare (actor, input) {
     owner(actor)
     if (!enabled()) throw Error('not_enabled')
-    if (!input || Object.keys(input).sort().join(',') !== 'bootCommit,projectId,recipe,requestId' || input.projectId !== PROJECT || typeof input.recipe !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId || '')) throw Error('invalid_request')
+    if (!input || !['bootCommit,projectId,recipe,requestId','bootCommit,projectId,recipe,repairOf,requestId'].includes(Object.keys(input).sort().join(',')) || input.projectId !== PROJECT || typeof input.recipe !== 'string' || !/^[a-f0-9-]{36}$/.test(input.requestId || '')) throw Error('invalid_request')
+    let predecessor = null
+    if (Object.hasOwn(input,'repairOf')) {
+      predecessor = /^[a-f0-9-]{36}$/.test(input.repairOf || '') ? store.get(input.repairOf) : null
+      if (!predecessor || !['failed','timed_out','needs_attention'].includes(predecessor.state) || predecessor.workOrder?.recipe !== input.recipe) throw Error('invalid_request')
+    }
+    const lineage = predecessor ? {repairOf:predecessor.id} : {}
     const WORK_ORDER = resolveRecipe(input.recipe).workOrder
     if (WORK_ORDER.registeredRevision && WORK_ORDER.registeredRevision !== input.bootCommit) throw Error('source_changed')
     if (busy) throw Error('worker_busy')
     const old = all().find(r => r.requestId === input.requestId)
-    if (old) { if (old.source?.evidence.bootCommit !== input.bootCommit || old.workOrder.recipe !== input.recipe) throw Error('request_conflict'); return { run: old, approval: null } }
+    if (old) { if (old.source?.evidence.bootCommit !== input.bootCommit || old.workOrder.recipe !== input.recipe || old.repairOf !== lineage.repairOf) throw Error('request_conflict'); return { run: old, approval: null } }
     busy = true
     try {
       const snapshot = await source.read(input.bootCommit, undefined, input.recipe)
       const id = randomUUID(), session = approvals.createSession()
-      const hash = digest(JSON.stringify({ workOrder: WORK_ORDER, snapshot }))
-      const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, definition: WORK_ORDER }, proposalId: id })
+      const observation = observeLive ? {liveBaseline:await observeLive({recipe:input.recipe,bootCommit:input.bootCommit,sourceHash:snapshot.evidence.sourceFiles?.find(f=>f.path===require('./contract').FILE)?.sha256,workRunId:id})} : {}
+      const binding = {...lineage,...observation}
+      const hash = digest(JSON.stringify({ workOrder: WORK_ORDER, snapshot, ...binding }))
+      const sealed = approvals.seal({ workOrder: { approvalId: id, workOrderHash: hash, snapshot, definition: WORK_ORDER, ...binding }, proposalId: id })
       if (!sealed.ok) throw Error('approval_unavailable')
       const nonce = approvals.issueNonce({ approvalId: id, workOrderHash: hash, sessionId: session })
       sessions.set(id, session)
       const r = { id, workflow: 'project_work', state: 'awaiting_approval', startedAt: new Date().toISOString(), requestId: input.requestId,
         actor: 'owner', workOrder: WORK_ORDER, source: { evidence: snapshot.evidence, hash: snapshot.hash }, approvalHash: hash,
-        expiresAt: sealed.record.expiresAt, steps: [], sections: [], result: null, appliedToLive: false }
+        expiresAt: sealed.record.expiresAt, steps: [], sections: [], result: null, appliedToLive: false, ...binding }
       record(r, 'prepared', { sourceRevision: snapshot.evidence.revision, approvalHash: hash })
       return { run: r, approval: { id, hash, nonce, expiresAt: r.expiresAt } }
     } finally { busy = false }
@@ -103,7 +111,8 @@ function createProjectWork ({ source, providers, store, enabled, onEvent = () =>
     const r = store.get(input.id), sealed = approvals.loadSealed(input.id), sessionId = sessions.get(input.id)
     if (!r || r.state !== 'awaiting_approval' || !sealed.ok || !approvals.validSession(sessionId) || !approvals.consumeNonce({ nonce: input.nonce, approvalId: input.id, displayedHash: input.hash, sessionId }).ok) throw Error('approval_unavailable')
     const w = sealed.record.workOrder
-    if (r.approvalHash !== input.hash || digest(JSON.stringify({ workOrder: r.workOrder, snapshot: w.snapshot })) !== input.hash || JSON.stringify(r.source) !== JSON.stringify({ evidence: w.snapshot.evidence, hash: w.snapshot.hash })) throw Error('approval_unavailable')
+    const binding = {...(w.repairOf ? {repairOf:r.repairOf} : {}),...(Object.hasOwn(w,'liveBaseline') ? {liveBaseline:r.liveBaseline} : {})}
+    if (r.repairOf !== w.repairOf || JSON.stringify(r.liveBaseline) !== JSON.stringify(w.liveBaseline) || r.approvalHash !== input.hash || digest(JSON.stringify({ workOrder: r.workOrder, snapshot: w.snapshot, ...binding })) !== input.hash || JSON.stringify(r.source) !== JSON.stringify({ evidence: w.snapshot.evidence, hash: w.snapshot.hash })) throw Error('approval_unavailable')
     r.workOrder = structuredClone(w.definition)
     r.state = 'queued'; record(r, 'approved', { actor: 'owner', hash: input.hash })
     busy = true; const controller = new AbortController(); controllers.set(r.id, controller)

@@ -58,6 +58,7 @@ function buildArchitectureHtml () {
   investigationRow.current += ' ' + t('investigation.accessCoverageCurrent')
   investigationRow.current += ' ' + t('investigation.generalizationAcceptanceCurrent')
   investigationRow.current += ' ' + t('investigation.repairChainCurrent')
+  investigationRow.current += ' ' + t('investigation.liveVerificationCurrent')
   investigationRow.component += ' / required-source access coverage without fabricated citations / authorized equivalent fallback / bilingual empty-versus-unavailable evidence'
   investigationRow.evidence += '; docs/INVESTIGATION-GENERALIZATION-ACCEPTANCE-V1.md'
   investigationRow.component += ' / revision-only fixed-answer guard / brief Owner conclusion with collapsed evidence / saved non-additive phase measurements and bounded stop'

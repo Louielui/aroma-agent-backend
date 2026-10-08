@@ -32,7 +32,7 @@ function renderGeneralization(report,message='') {
    }else lines.push((zh?'目前程式比對：':'Current source comparison: ')+state(source?.state||'UNKNOWN')+'. '+refs(source))
    if(tests?.state==='CONFIRMED') lines.push((zh?'候選版本的測試紀錄：':'Candidate-version test record: ')+JSON.stringify(target.tests)+'. '+refs(tests))
    else lines.push((zh?'同一任務的測試紀錄：':'Test record for this task: ')+state(tests?.state||'UNKNOWN')+'. '+refs(tests))
-   lines.push(zh?'目前是否修好：未知。以上檔案或候選測試紀錄，不等於同一故障已在目前載入版本通過驗證。':'Fixed in the currently loaded version: unknown. File comparisons or candidate tests do not establish same-failure verification in the loaded version.')
+   lines.push(report.workCorrelation?.componentVerification==='CONFIRMED'?require('../i18n/t').t('investigation.repairComponentVerified',{},zh?'zh':'en'):(zh?'目前是否修好：未知。以上檔案或候選測試紀錄，不等於同一故障已在目前載入版本通過驗證。':'Fixed in the currently loaded version: unknown. File comparisons or candidate tests do not establish same-failure verification in the loaded version.'))
   }
  }
  if(report.focus==='background') {

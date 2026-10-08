@@ -40,12 +40,13 @@ function main () {
   const taskRegistry = require('../../src/core/projectTasks/contract').createRegistry(taskStore)
   const resolveRecipe = taskRegistry.resolve
   const projectSource = require('../../src/core/projectWork/source').createSource({ root: repo, resolveRecipe })
+  const observeLive = require('../../src/core/projectWork/liveVerification').createClient({token:env.HUB_TOKEN || process.env.HUB_TOKEN})
   const projectWork = require('../../src/core/projectWork/service').createProjectWork({
-    source: projectSource, providers: workerProviders, enabled, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
+    source: projectSource, providers: workerProviders, enabled, observeLive, resolveRecipe, catalogueRecipes: taskRegistry.catalogue,
     store: require('../../src/core/operating/runStore').createRunStore({ dir: path.join(workerRoot, 'project-runs'), workflow: 'project_work' }),
     onEvent: value => memoryRuntime && memoryRuntime.event('worker', 'project-work:' + value.id + ':' + value.stage + ':' + value.at, JSON.stringify(value), 'measured_result', value.at) })
   const repairClient = { executable: chatExecutable, cwd, allowCredits: env.CODEX_CHAT_ALLOW_CREDITS === 'true' }
-  const projectAdoption = require('../../src/core/projectWork/adoption').createAdoption({ source: projectSource, resolveRecipe,
+  const projectAdoption = require('../../src/core/projectWork/adoption').createAdoption({ source: projectSource, resolveRecipe, observeLive,
     repository: require('../../src/core/projectWork/adoptionRepository').createRepository({ root: repo, source: projectSource, resolveRecipe }),
     executor: { run: pack => workerProviders.testOrder(pack), isBusy: () => workerProviders.executionBusy() }, work: projectWork, enabled,
     isolated: id => {

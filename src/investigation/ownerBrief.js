@@ -25,14 +25,15 @@ function ownerBrief (report, { message = '', findings } = {}) {
   const rows = sections.length === 1 ? sections[0].records.filter(r => r.sourceId === ref.recordId) : []
   if (rows.length !== 1 || rows[0].reason !== ref.fields.reason || rows[0].state !== 'failed') return null
   const reason = reasonText(rows[0].reason, locale)
-  const lines = [t('investigation.ownerFailure', { reason }, locale), t('investigation.ownerRepairUnknown', {}, locale)]
+  const verified=report.workCorrelation?.componentVerification==='CONFIRMED'
+  const lines = [t('investigation.ownerFailure', { reason }, locale), verified?t('investigation.repairComponentVerified', {}, locale):t('investigation.ownerRepairUnknown', {}, locale)]
   if (report.workCorrelation?.operationRecovery === 'CONFIRMED') lines.push(t('investigation.ownerPrerequisiteRecovered', {}, locale))
   const reads = report.crossSourceReads || []
   if (reads.some(r => r.scope === 'exact_target_source_revision_not_repair_proof')) {
     lines.push(reads.some(r => r.state === 'sampled') ? t('investigation.ownerRevisionRead', {}, locale) : t('investigation.ownerRevisionUnavailable', {}, locale))
   }
   if (report.routing?.unmappedFacts?.length || findings.otherSourcesNotVerified) lines.push(t('investigation.ownerMissingSource', {}, locale))
-  if(report.workCorrelation?.repairChain)lines.push(require('./repairChainView').nextEvidence(report.workCorrelation.repairChain,locale))
+  if(report.workCorrelation?.repairChain && !verified)lines.push(require('./repairChainView').nextEvidence(report.workCorrelation.repairChain,locale))
   else lines.push(t('investigation.ownerRecommendation', {}, locale))
   return { text: lines.join('\n\n'), references: findings.references, kind: 'source_bound_owner_brief', locale, modelProseUsed: false }
 }

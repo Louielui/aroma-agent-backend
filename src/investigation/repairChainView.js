@@ -2,6 +2,7 @@
 const {t}=require('../i18n/t')
 const localeFor=message=>/[\u3400-\u9fff]/.test(message)?'zh':'en'
 function nextEvidence (chain, locale) {
+  if(chain?.conclusion==='loaded_component_verified')return t('investigation.repairComponentVerified',{},locale)
   switch(chain?.firstGap) {
     case 'failure':return t('investigation.repairNeedFailure',{},locale)
     case 'linked_correction':return t('investigation.repairNeedLink',{},locale)

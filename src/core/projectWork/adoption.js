@@ -48,10 +48,12 @@ function validateAccepted (run, isolated, resolveRecipe = recipe) {
   // Preserve legacy receipts; new design-guided runs need exact visual evidence.
   if (result.design || isolated.design) require('../../design/visualReview').verifyReceipt(run.review.visual, result, isolated.design)
   return { before: w.recipe === RECIPE ? before[FILE] : before, after: w.recipe === RECIPE ? after[FILE] : after, patchHash: result.patchHash, evidenceHash: digest(JSON.stringify({ run, isolated })),
+    ...(Object.hasOwn(run,'liveBaseline') ? {liveBaseline:structuredClone(run.liveBaseline)} : {}),
+    ...(run.repairOf ? {repairOf:run.repairOf} : {}),
     ...(w.readonlyFiles ? { dependencies } : {}),
     ...(w.recipe === RECIPE ? {} : { recipe: w.recipe, baseline: { passed: result.baseline.passed, failed: result.baseline.failed } }) }
 }
-function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe }) {
+function createAdoption ({ source, repository, executor, work, isolated, store, loader, enabled, observeLive = null, onEvent = () => {}, approvals = createOwnerApprovalStore(), resolveRecipe = recipe }) {
   let busy = false, pending = Promise.resolve(), refreshing = null
   const sessions = new Map(), active = new Set(['queued', 'testing', 'applying'])
   function record (r, stage, facts = {}) {
@@ -63,7 +65,16 @@ function createAdoption ({ source, repository, executor, work, isolated, store, 
     if (busy) return
     for (const r of store.all().filter(r => r.state === 'awaiting_restart')) {
       try {
-        r.loaded = await repository.verifyLoaded(r); r.state = 'completed'; r.finishedAt = new Date().toISOString()
+        r.loaded = await repository.verifyLoaded(r)
+        // Existing approved adoption only. Enquiry metadata never invokes this.
+        if (r.action === 'adopt' && observeLive && Object.hasOwn(r.accepted,'liveBaseline')) {
+          try {
+            r.liveVerification = await observeLive({recipe:r.accepted.recipe || RECIPE,bootCommit:r.loaded.bootCommit,
+              sourceHash:digest(sourceValues(r.accepted.recipe || RECIPE,r.after,resolveRecipe)[FILE] || ''),workRunId:r.workRunId})
+          } catch (_) { r.liveVerification={state:'unavailable',reason:'live_verification_unavailable'} }
+          record(r,'live_verification_observed',{probeId:r.liveVerification.probeId || null,passed:r.liveVerification.passed ?? null,failed:r.liveVerification.failed ?? null,state:r.liveVerification.state || 'observed'})
+        }
+        r.state = 'completed'; r.finishedAt = new Date().toISOString()
         record(r, 'completed', { action: r.action, commit: r.commit, workRunId: r.workRunId, appliedToLive: r.action === 'adopt', bootCommit: r.loaded.bootCommit })
       } catch (_) { /* Old boot or source drift does not report adoption complete. */ }
     }

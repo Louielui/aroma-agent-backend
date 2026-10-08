@@ -1062,6 +1062,7 @@ function createApp (options = {}) {
   app.use(require('./core/projectTasks/routes').createRouter({ bootCommit: BOOT_COMMIT, ...opts.projectTaskOptions }))
   app.use('/project-work', requireOwner)
   app.use('/api/v1/project-work', requireOwner)
+  app.use(require('./core/projectWork/liveVerification').createRouter({bootCommit:BOOT_COMMIT,bootedAt:BOOTED_AT,...opts.liveVerificationOptions}))
   app.use(require('./core/projectWork/routes').createProjectRouter({ bootCommit: BOOT_COMMIT, ...opts.projectWorkOptions }))
   app.use('/api/v1/project-adoption', requireOwner)
   app.use(require('./core/projectWork/adoptionRoutes').createAdoptionRouter({ bootCommit: BOOT_COMMIT, ...opts.projectAdoptionOptions }))

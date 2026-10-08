@@ -3,6 +3,27 @@ const test = require('node:test'), assert = require('node:assert/strict'), { ran
 const { createAdoption, validateAccepted } = require('./adoption'), { createMemoryRunStore } = require('../operating/runStore'), { createOwnerApprovalStore } = require('../../agent/ownerApprovalStore')
 const { digest } = require('../../workers/execution/windowsSandbox'), { FILE, TEST, TESTS, WORK_ORDER } = require('./contract')
 const OWNER = { id: 'owner', role: 'owner' }, HEAD = 'a'.repeat(40), COMMIT = 'b'.repeat(40)
+test('existing approved adoption observes component only after verified load, stores receipt once and does not rewrite baseline',async()=>{
+ let calls=0
+ const f=fixture({observeLive:async input=>{calls++;return {workRunId:input.workRunId,bootCommit:input.bootCommit,sourceHash:input.sourceHash,passed:8,failed:0}}})
+ f.work.liveBaseline={state:'unavailable',reason:'live_verification_unavailable'}
+ const original=JSON.stringify(f.work),p=await f.prepare()
+ assert.deepEqual(p.run.accepted.liveBaseline,f.work.liveBaseline);assert.equal(calls,0)
+ f.approve(p);await f.flow.settled();await f.flow.refresh();assert.equal(calls,0)
+ f.loaded();await Promise.all([f.flow.refresh(),f.flow.refresh()]);assert.equal(calls,1)
+ const r=f.flow.get(OWNER,p.run.id);assert.equal(r.liveVerification.workRunId,f.work.id);assert.equal(r.liveVerification.bootCommit,COMMIT)
+ assert.equal(r.liveVerification.sourceHash,digest('candidate'));assert.equal(r.state,'completed')
+ f.flow.list(OWNER);f.flow.get(OWNER,r.id);await f.flow.refresh();assert.equal(calls,1);assert.equal(JSON.stringify(f.work),original)
+})
+test('unavailable verification does not invent behavior proof or undo a verified adoption; legacy and rollback do not run new checks',async()=>{
+ let calls=0
+ const f=fixture({observeLive:async()=>{calls++;throw Error('offline')}})
+ f.work.liveBaseline={state:'unavailable'}
+ const p=await f.prepare();f.approve(p);await f.flow.settled();f.loaded();await f.flow.refresh()
+ assert.equal(f.flow.get(OWNER,p.run.id).state,'completed');assert.equal(f.flow.get(OWNER,p.run.id).liveVerification.state,'unavailable');assert.equal(calls,1)
+ const q=await f.prepare('rollback');f.approve(q);await f.flow.settled();await f.flow.refresh();assert.equal(calls,1)
+ const legacy=fixture({observeLive:async()=>{calls++;return {passed:8}}}),l=await legacy.prepare();legacy.approve(l);await legacy.flow.settled();legacy.loaded();await legacy.flow.refresh();assert.equal(calls,1)
+})
 const evidence = (passed = 8) => ({ total: 8, passed, failed: 8 - passed, skipped: 0, cancelled: 0, exitCode: passed === 8 ? 0 : 1, engine: 'windows-sandbox-offline-v1', boundary: Object.fromEntries(['noExternalInterfaces', 'hostReadDenied', 'hostWriteDenied', 'readonlyInputDenied', 'readonlyToolsDenied', 'loopbackDenied', 'ipv6LoopbackDenied', 'internetDenied', 'cleanIdentity', 'secretsAbsent'].map(k => [k, true])) })
 function fixture (options = {}) {
   const changes = [{ file: FILE, before: 'original', after: 'candidate', beforeHash: digest('original'), afterHash: digest('candidate') }]
