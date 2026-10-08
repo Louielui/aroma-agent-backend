@@ -51,6 +51,46 @@ skips after excluding one existing machine-dependent OAuth credential-shape test
 The initial unfiltered source/script run failed that unchanged test: the local
 credential file did not expose the refresh token it expects. The subscription-only
 preflight independently returned `subscription_login_required`; an API-key login
-is not accepted as a subscription. Live Chinese/English development and background
-acceptance is therefore pending Owner login, not reported as passed. No credential
-or authentication implementation was changed to make the test pass.
+is not accepted as a subscription. At that snapshot, live Chinese/English development
+and background acceptance was pending Owner login, not reported as passed. No
+credential or authentication implementation was changed to make the test pass.
+
+## Subscription acceptance after Owner login
+
+Owner completed CLI subscription login on 2026-10-08. The real bridge preflight
+reported Claude subscription billing; the previously failing OAuth-shape check
+then passed unchanged. The unfiltered canonical suite at implementation commit
+`d2701cf35e80aa0f8f70009a2b2e24d15fd5e0dd` passed 7,128 tests, with 5 environment
+skips and no failures.
+
+All four fresh Owner chat cases at that build used Claude Opus 5.5 / medium.
+Invocation receipts recorded four successful Opus calls per case. Each result was
+saved and read back with matching response and investigation measurements.
+
+| Case | Duration | Saved run |
+| --- | --- | --- |
+| Chinese development failure | 40,424 ms | `2f314635-6e8a-48c9-b410-66d8492aac62` |
+| English development failure | 40,353 ms | `09264814-c1dd-4571-b790-d222693fd9ef` |
+| Chinese background jobs | 36,515 ms | `1a387832-720d-4719-9a17-0fbb8f5b55a5` |
+| English background jobs | 44,848 ms | `a2519359-faef-43df-9d10-69526b411941` |
+
+Both development cases selected the same failed task and exact GitHub revision,
+kept repair UNKNOWN and gave a read-only recommendation. Both background cases
+read configuration, schedules, execution and work; they separated fresh runtime
+snapshots from enabled definitions and historical model evidence. No action tasks
+were returned. These single-run timings are not a latency guarantee.
+
+The initial harness incorrectly required identical supplemental section arrays
+across languages and an execution section for every development question. Its raw
+aggregate therefore remains `incomplete`, despite four passed cases. The Chinese
+plan additionally requested live_runtime (work/configuration/schedules); English
+requested execution_history (work/configuration/execution). The audit checks the
+shared mandatory failure/source/test/repair requirements, authorization policy,
+closed typed-needs mapping, exact task/revision and evidence semantics. All passed.
+The original raw receipt is preserved separately from this audit; no product route
+was rewritten to force matching arrays or hide an unavailable source.
+
+Delivery evidence in the owner workspace: `outputs/generalization-live.json`,
+`outputs/generalization-acceptance-audit.json`,
+`outputs/generalization-full-suite-final.txt`. The in-app checklist retains partial
+connection status and displays this bounded acceptance and remaining gaps.
