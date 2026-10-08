@@ -1405,13 +1405,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const authorised = authorisedSourcesFor(subscriptionAdapter?.providerName || providerName)
             const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
             async function readExternal (source, phase) {
-              const readProfile = operationalInvestigation.focus === 'cost' && source === 'gmail' ? 'cost_provider_mail' : null
+              const targetWork=operationalInvestigation.sections.find(s=>s.section==='work')
+              const targetId=operationalInvestigation.continuity?.selectedRecordId||targetWork?.latestFailureId
+              const targetRows=(targetWork?.records||[]).filter(r=>r.sourceId===targetId)
+              const revision=targetRows.length===1&&/^[a-f0-9]{40}$/i.test(targetRows[0].sourceRevision||'')?targetRows[0].sourceRevision:null
+              const exactRevision=phase==='followup'&&source==='github'&&operationalInvestigation.focus==='work_failure'
+              const readProfile = exactRevision ? 'investigation_revision' : operationalInvestigation.focus === 'cost' && source === 'gmail' ? 'cost_provider_mail' : null
               investigationProgress({ state: 'reading', section: source, phase })
               const rc = await timePhase(
                 { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
-                () => buildReadContext({ connector, message, sources: [source], env: process.env, readProfile, allowRecentFallback: phase !== 'followup' }),
+                () => buildReadContext({ connector, message, sources: [source], env: process.env, readProfile, args:exactRevision?{revision}:null, allowRecentFallback: phase !== 'followup' }),
                 { clock: latencyClock, sink: latencySink })
               const entries = appendCrossSourceEvidence(operationalInvestigation, rc, { readProfile, phase })
+              if(exactRevision)for(const entry of entries){entry.targetRecordId=targetId||null;entry.requestedRevision=revision;entry.scope='exact_target_source_revision_not_repair_proof'}
               for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
               for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)
               for (const g of rc.retrievedItemsBySource || []) turnRetrievedItems.set(g.source, g)
@@ -1432,6 +1438,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
               Object.assign(followup.decisions.find(d => d.source === source), { state: result?.state || 'unavailable', count: result?.count || 0 })
             }
             operationalInvestigation.state = operationalInvestigation.sections.some(s => ['ok','partial'].includes(s.state)) ? 'partial' : 'unavailable'
+            operationalInvestigation.workCorrelation = require('../investigation/workCorrelation').correlateWork(operationalInvestigation)
             operationalInvestigation.evidenceModel = require('../investigation/evidenceState').buildEvidenceState(operationalInvestigation)
             extraObservationBlocks.push('ASSERTION EVIDENCE CONTRACT: CONFIRMED means this exact facet was observed; SUPPORTED is a source-supported statement; CANDIDATE is an unverified link; CONTRADICTED is incompatible observations of the same identity/facet/time; UNKNOWN is no adequate evidence; UNAVAILABLE means its source could not be read. Current configuration, current enablement, historical execution and current runtime are different facets. Never promote one to another. Read-only recommendations only. DATA: ' + JSON.stringify(require('../investigation/generalizationView').evidencePrompt(operationalInvestigation)))
             operationalInvestigation.crossSourceComparison = compareCostEvidence(operationalInvestigation)

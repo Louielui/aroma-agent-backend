@@ -2,6 +2,17 @@
 const test = require('node:test'), assert = require('node:assert/strict'), crypto = require('node:crypto')
 const { projectWorkRecord, selectWorkSample } = require('./workEvidence')
 const hash = value => crypto.createHash('sha256').update(value).digest('hex')
+
+test('adoption projects only registered body hashes and exposes incomplete source coverage',()=>{
+ const name='src/demo/assets/sidebar.css'
+ const input={action:'adopt',source:{evidence:{sourceFiles:[{path:name,sha256:hash('before')}]}},after:{[name]:'after'}}
+ const r=projectWorkRecord(input,{kind:'worker/adoptions',readSource:()=> 'after'})
+ assert.equal(r.sourceFiles[0].candidateHash,hash('after'));assert.equal(r.sourceFiles[0].comparison,'matches_candidate')
+ assert.equal(r.sourceFilesComplete,true)
+ input.source.evidence.sourceFiles.push({path:'../../.env',sha256:hash('secret')})
+ const partial=projectWorkRecord(input,{kind:'worker/adoptions',readSource:()=> 'after'})
+ assert.equal(partial.sourceFilesComplete,false);assert.doesNotMatch(JSON.stringify(partial),/\.env|secret/)
+})
 test('work source comparison only reads registered files and never promotes a matching candidate to a confirmed repair', () => {
   const reads = [], name = 'src/demo/assets/sidebar.css'
   const r = projectWorkRecord({ state: 'completed', source: { evidence: { revision: 'a'.repeat(40), sourceFiles: [{ path: name, sha256: hash('old') }, { path: '../../.env', sha256: hash('secret') }] } }, result: { changes: [{ file: name, afterHash: hash('new'), before: 'PRIVATE_CODE', after: 'PRIVATE_CODE' }], tests: { total: 3, passed: 3, failed: 0, exitCode: 0 } }, review: { verdict: 'pass', findings: [{ message: 'PRIVATE_TOKEN' }] }, appliedToLive: false }, { kind: 'worker/project-runs', readSource: name => { reads.push(name); return 'new' } })

@@ -8,12 +8,14 @@ function evidencePrompt(report) {
  // Full receipts stay server-side. Never replay source text or arbitrary object bodies.
  const assertions=rows.map(({id,sourceId,recordId,facet,temporalScope,state,value,observedAt})=>({id,sourceId,recordId,facet,temporalScope,state,observedAt,
   value:value===null||typeof value==='boolean'||typeof value==='number'?value:typeof value==='string'?safe(value):'[structured receipt retained]'}))
- return {route:report.routing,scope:e?.scope,assertions,
+ return {route:report.routing,scope:e?.scope,assertions,workCorrelation:report.workCorrelation,
   omitted:Math.max(0,(e?.assertions?.length||0)-rows.length)+(e?.omitted||0),contradictions:e?.contradictions?.slice(0,4),transitions:e?.transitions?.slice(0,4)}
 }
 function renderGeneralization(report,message='') {
  if(!report?.routing||!report?.evidenceModel)return null
  const zh=zhFor(message),e=report.evidenceModel,lines=[]
+ const correlated=require('./workCorrelation').renderWorkCorrelation(report,message)
+ if(correlated)lines.push(correlated)
  const state=n=>({CONFIRMED:zh?'已確認':'confirmed',SUPPORTED:zh?'有來源支持':'supported',CANDIDATE:zh?'候選線索':'candidate',CONTRADICTED:zh?'資料矛盾':'contradicted',UNKNOWN:zh?'未知':'unknown',UNAVAILABLE:zh?'來源無法讀取':'unavailable'}[n]||n)
  const refs=a=>a?.sourceId?(zh?'來源：':'source: ')+safe(a.sourceId)+(a.recordId?' / '+safe(a.recordId):''):''
  if(report.focus==='work_failure'&&!e.contradictions.length) {

@@ -6,7 +6,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
-  if(primaryOperation==='github')process.env.GITHUB_READ_REPO='fixture/project'
+  if(sources.includes('github'))process.env.GITHUB_READ_REPO='fixture/project'
   const events = [], calls = [], reads = []
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
@@ -415,6 +415,23 @@ test('development Chinese and English share evidence route, same-failure checks 
   assert.deepEqual(x.result.tasks,[]);assert.equal(x.result.replyForArchive,x.result.reply)
  }
  assert.deepEqual(routes[0],routes[1])
+})
+
+test('unmapped development evidence triggers the same bounded exact revision read in Chinese and English',async t=>{
+ for(const question of ['之前的任務修好了嗎？','Has the previous task actually been fixed?']) {
+  const revision='a'.repeat(40)
+  const x=await turn(t,{question,focus:'work_failure',captureLocalParams:true,sources:['xiangxiang_operations','github'],
+   extraFacts:[{id:'f2',need:'Related development evidence',operation:'development_record',entity:null,fields:[],necessity:'enriching'}],
+   evidenceSections:[{section:'work',sourceId:'work:one',state:'partial',latestFailureId:'failed-run',records:[{sourceId:'failed-run',state:'failed',reason:'source_dirty',sourceRevision:revision}]}]})
+  assert.deepEqual(x.result.investigation.followupReads.sources,['github'])
+  const read=x.reads.find(r=>r.source==='github')
+  assert.equal(read.method,'listCommits');assert.equal(read.params.sha,revision);assert.equal(read.params.per_page,1)
+  assert.equal(x.reads.filter(r=>r.source==='github').length,1)
+  assert.equal(x.result.investigation.workCorrelation.targetId,'failed-run')
+  assert.equal(x.result.investigation.workCorrelation.repaired,'UNKNOWN')
+  assert.equal(x.result.investigation.crossSourceReads[0].requestedRevision,revision)
+  assert.deepEqual(x.result.tasks,[]);assert.equal(x.result.replyForArchive,x.result.reply)
+ }
 })
 test('background route reads history and current witnesses while omitting unrelated mail and billing',async t=>{
  const x=await turn(t,{question:'現在有哪些背景工作？各自使用什麼模型？',focus:'background',captureLocalParams:true})

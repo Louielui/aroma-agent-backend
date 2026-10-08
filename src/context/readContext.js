@@ -665,6 +665,13 @@ function planFor (source, { keywords = [], message = '', now, env = {}, caps = C
   }
 
   if (source === 'github') {
+    if (readProfile === 'investigation_revision') {
+      const repo=env.GITHUB_READ_REPO, revision=args?.revision
+      if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repo||'')) return { unavailable:'investigation repository not configured' }
+      if (!/^[a-f0-9]{40}$/i.test(revision||'')) return { unavailable:'same-task source revision not observed' }
+      const [owner,name]=repo.split('/')
+      return {method:'listCommits',params:{owner,repo:name,sha:revision,per_page:1}}
+    }
     // ── THE DEVELOPMENT RECORD COMES FIRST ────────────────────────────────
     // A question about a ruling, a defect or a house rule is answered from the INDEX, not
     // from commit titles. Before this, `getFileAtRef` existed on the adapter and was

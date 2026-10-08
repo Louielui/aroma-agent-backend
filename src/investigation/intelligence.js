@@ -72,6 +72,7 @@ function evaluateInvestigation ({ goal = '', focus = null, sections = [] } = {})
   findings.sort((a, b) => Number(b.kind==='charge_unverified')-Number(a.kind==='charge_unverified') || Number(priorityKinds.includes(b.kind)) - Number(priorityKinds.includes(a.kind)))
   const invocationCorrelation=require('./invocationCorrelation').correlateInvocations(sections)
   const report = { version: 1, focus, state: sections.length ? 'partial' : 'unavailable', goal, readOnly: true, billingConfirmed: false, sections, invocationCorrelation, plan: { goal, focus, readOnly: true, sources: sections.map(s => s.section), fallback: 'continue_available_authorised_sources_when_memory_insufficient', automaticModelRetries: 0 }, findings: findings.slice(0, 30), findingsOmitted: Math.max(0, findings.length - 30), contradictions, transitions, gaps, recommendations, evaluationScope: 'structured_receipt_fields_only_no_semantic_conflict_or_billing_inference' }
+  report.workCorrelation = require('./workCorrelation').correlateWork(report)
   report.evidenceModel = require('./evidenceState').buildEvidenceState(report)
   return report
 }
