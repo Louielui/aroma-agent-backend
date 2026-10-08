@@ -12,7 +12,7 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
   const report = require('./intelligence').evaluateInvestigation({ goal: 'Investigate credit', sections: [{ section: 'execution', sourceId: 'execution:fixture', retrievedAt: '2026-10-07T01:00:00Z', state: 'partial', evidenceState: 'confirmed', coverage: { sampledFiles: 1 }, records: [{ sourceId: 'codex-session:fixture', model: 'gpt-6.1-sol', lastStartedAt: '2026-10-02T01:00:00Z', usage: { total_tokens: 123 } }] }, { section: 'billing', state: 'unconnected', evidenceState: 'not_established', records: [] }] })
   try {
     for (const [lang, width, retryFailed, focus] of [['zh', 1280], ['en', 390], ['zh', 390, true], ['zh', 390, false, 'work_failure'], ['en', 1280, false, 'background']]) {
-      const shownReport = focus ? { ...report, focus } : report
+      const shownReport = { ...(focus ? { ...report, focus } : report), answerDetails:'Original source_dirty reason and exact task evidence.', performance:{version:1,totalMs:300,phases:[]} }
       let linked = !!retryFailed, approvals = 0, preparations = 0
       const unexpected = [], errors = [], c = await browser.newContext({ viewport: { width, height: 900 } })
       await c.route('**/*', async route => {
@@ -48,6 +48,11 @@ test('bilingual desktop and mobile investigation approves once, shows saved cita
       }
       const offer = () => page.getByRole('button', { name: lang === 'zh' ? '核對程式來源與調查範圍' : 'Check source code and investigation coverage', exact: true })
       await open(); assert.equal(await page.locator('.investigation-evidence').getAttribute('open'), null)
+      assert.equal(await page.locator('.investigation-evidence').getByText('Original source_dirty reason and exact task evidence.', {exact:true}).isVisible(), false)
+      await page.locator('.investigation-evidence > summary').click()
+      await page.getByText(lang === 'zh' ? '完整調查與來源核對' : 'Full investigation and source checks', {exact:true}).click()
+      assert.equal(await page.getByText('Original source_dirty reason and exact task evidence.', {exact:true}).isVisible(), true)
+      await page.locator('.investigation-evidence > summary').click()
       const summary = await page.locator('.investigation-summary').textContent()
       if (!focus) assert.match(summary, lang === 'zh' ? /token.*帳單/ : /tokens.*billing/)
       else { assert.doesNotMatch(summary, /credit|billing|帳單/); assert.match(summary, focus === 'work_failure' ? /失敗紀錄.*目前版本/ : /Schedule definitions.*historical worker models/) }

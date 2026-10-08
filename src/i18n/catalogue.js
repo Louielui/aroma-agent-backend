@@ -38,6 +38,20 @@
  * than editing the same strings twice.
  */
 const CATALOGUE = Object.freeze({
+  'investigation.briefReasonDirty': { zh: '工作目錄有未提交的改動，執行器因此停止', en: 'the executor stopped because the working directory had uncommitted changes' },
+  'investigation.briefReasonChanged': { zh: '來源版本在工作期間改變，執行器因此停止', en: 'the executor stopped because the source changed during the work' },
+  'investigation.briefReasonTimeout': { zh: '工作超時，未取得完成結果', en: 'the work timed out without a completed result' },
+  'investigation.briefReasonOther': { zh: '工作紀錄記有失敗，但單靠該紀錄尚不能解釋完整原因', en: 'the work record reports a failure, but that record alone does not explain the full cause' },
+  'investigation.ownerFailure': { zh: '這次取樣找到的失敗紀錄顯示：{reason}。這是紀錄中的停止原因，尚不是完整根本原因診斷。', en: 'The failed task found in this sample records that {reason}. This is the recorded stopping reason, not a complete root-cause diagnosis.' },
+  'investigation.ownerRepairUnknown': { zh: '目前仍未確認同一問題已修好：缺少這個任務在目前版本的修復及驗證證據。', en: 'It is not confirmed that the same problem is fixed: repair and verification evidence for this task in the current version is missing.' },
+  'investigation.ownerPrerequisiteRecovered': { zh: '同一採納操作的前置問題後來已恢復；產品故障是否修好仍需另行驗證。', en: 'The prerequisite for the same adoption operation later recovered; a product repair still needs separate verification.' },
+  'investigation.ownerRevisionRead': { zh: '已補查該任務的 GitHub 來源版本；這項核對不能證明修復已完成。', en: 'GitHub was also checked at this task’s source revision; this check does not prove a completed repair.' },
+  'investigation.ownerRevisionUnavailable': { zh: '已嘗試補查指定來源版本，但未取得可用結果；不能當作沒有相關紀錄。', en: 'The source revision check did not return usable evidence; this does not mean related records do not exist.' },
+  'investigation.ownerMissingSource': { zh: '另有需要的開發資料尚未接通，這部分仍未確認。', en: 'Additional requested development evidence is not connected, so that part remains unconfirmed.' },
+  'investigation.ownerRecommendation': { zh: '建議：核對這個任務的修復紀錄及目前版本的測試結果，再判斷是否完成。任務編號、原始原因與來源可展開「調查依據」查看。', en: 'Recommendation: check the repair record and current-version test results for this task before declaring completion. Expand the investigation evidence for the task ID, recorded reason and sources.' },
+  'investigation.answerDetails': { zh: '完整調查與來源核對', en: 'Full investigation and source checks' },
+  'investigation.performanceDetails': { zh: '調查步驟耗時', en: 'Investigation phase timings' },
+  'investigation.qualityCurrent': { zh: '調查品質與效率已補強：指定來源版本補查只供固定證據摘要時，省去不用的作答及語意審閱；必要來源仍照常讀取。開發失敗先顯示原因、未確認部分及建議，完整依據收起；保存步驟耗時及有限調查的結束狀態。', en: 'Investigation quality and efficiency are improved: revision-only follow-up used by a fixed evidence brief can omit unused answer and semantic-review calls; required sources are still read. Development failures lead with the recorded reason, uncertainty and recommendation, with detailed evidence collapsed. Phase timings and bounded-investigation stopping state are saved.' },
   'investigation.title': { zh: '查看調查依據', en: 'View investigation evidence' },
   'investigation.runtimeCurrent': {zh:'唯讀調查已接入 Owner 橋接的固定 Windows 排程見證，以及電郵同步、分析、索引、一般記憶與橋接模型請求的即時觀察；分開顯示設定模型、此刻執行與歷史紀錄。已讀取的背景工作會直接列在最終回答，附觀察時間，不依賴模型摘要是否提及。獨立來源並行讀取、橋接快照每次查詢只讀一次，保留各來源耗時及讀取失敗；完整外部工作清單及帳單仍未接通。',en:'Read-only investigation connects the fixed Windows scheduler witness through the Owner bridge and instantaneous mail sync/analysis/index, general memory and bridge inference observations. Configuration, current activity and history remain separate. The final answer retains observed runtime rows and timestamps independently of model omissions. Independent source reads overlap, the bridge snapshot is read once per enquiry, and source durations/failures are retained. External job inventory and billing remain unconnected.'},
   'investigation.mailAnalysis': {zh:'電郵分析',en:'Mail analysis'},

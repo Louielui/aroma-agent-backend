@@ -424,7 +424,14 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
    * Absent (production, and every existing test) → real monotonic clock, console.log.
    */
   const latencyClock = (opts && typeof opts.latencyClock === 'function') ? opts.latencyClock : undefined
-  const latencySink = (opts && typeof opts.latencySink === 'function') ? opts.latencySink : undefined
+  const latencyRecords = []
+  const intakeElapsed = startTimer(latencyClock)
+  const suppliedLatencySink = (opts && typeof opts.latencySink === 'function') ? opts.latencySink : null
+  const latencySink = (label, body) => {
+    try { if (latencyRecords.length < 32) latencyRecords.push(JSON.parse(body)) } catch (_) { /* measurement only */ }
+    if (suppliedLatencySink) suppliedLatencySink(label, body)
+    else console.log(label, body)
+  }
 
   /**
    * ⛔ THIS TURN DID NOT COME FROM A ROUTE, SO IT IS NOT VERIFICATION.
@@ -1363,7 +1370,10 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             investigationProgress({ state: 'reading', section: 'operations' })
             const connector = deps?.connector || createLiveReadConnector({ env: process.env,
               operationsOptions: { backgroundReader:opts.operationsBackgroundReader, onProgress: e => investigationProgress({ ...e, state: e.state === 'reading' ? 'reading' : 'source_complete', sourceState: e.state }) } }).connector
-            const rc = await buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env, investigationSections: generalRoute?.localSections?.length ? generalRoute.localSections : null })
+            const rc = await timePhase(
+              { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
+              () => buildReadContext({ connector, message, sources: ['xiangxiang_operations'], env: process.env, investigationSections: generalRoute?.localSections?.length ? generalRoute.localSections : null }),
+              { clock: latencyClock, sink: latencySink })
             const sections = (rc.itemsBySource?.[0]?.items || []).map(r => ({ sourceId: r.sourceId, retrievedAt: r.retrievedAt, ...r.fields }))
             operationalInvestigation = require('../investigation/intelligence').evaluateInvestigation({ goal: plan.questionRestated || message, focus: plan.investigationFocus, sections })
             operationalInvestigation.routing = generalRoute
@@ -3657,14 +3667,19 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       let review=null
       if(needsReview){
         try { draft = JSON.parse(llmResult.text).investigationAnswer || null } catch (_) { /* invalid drafts are not evidence */ }
+        const reviewElapsed = startTimer(latencyClock)
         review = await require('../investigation/semanticAnswer').reviewSemanticAnswer({ draft, report: operationalInvestigation, adapter: activeAdapter, billing: llmResult.billing, model: llmResult.model, question: message, onProgress: investigationProgress })
+        if (review.calls) emitPhase({ requestId, phase: PHASE.MODEL_CALL, role: ROLE.EVIDENCE_REVIEW, durationMs: reviewElapsed(), outcome: review.state === 'review_unavailable' ? OUTCOME.ERROR : OUTCOME.OK }, latencySink)
         operationalInvestigation.semanticReview = review
       }
       const reviewedReply = review && semanticView.renderSemanticAnswer(review, { message })
       const runtimeSummary = findings?.kind==='background' ? findings : null
       const costFindings = findings?.kind==='cost' ? findings : null
       const workFindings = findings?.kind==='work_failure' ? findings : null
-      if (crossSource) {
+      if (crossSource && tel.answerCallSkipped && workFindings) {
+        view.reply = workFindings.text
+        operationalInvestigation.answerPresentation = { kind: 'source_bound_work_findings', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, reviewSkipped: 'deterministic_verified_findings', answerCallSkipped: true, findings: { ...workFindings, text: undefined } }
+      } else if (crossSource) {
         const base = costFindings?.text || workFindings?.text || runtimeSummary?.text || operationalBrief || ''
         const statuses = operationalInvestigation.crossSourceReads.map(r => r.source + ': ' + r.state + ' (' + r.count + ')').join(', ')
         const scope = /[\u3400-\u9fff]/.test(message)
@@ -3707,6 +3722,21 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (generalizationSummary) view.reply = operationalInvestigation.evidenceModel.contradictions.length ? generalizationSummary : view.reply + '\n\n' + generalizationSummary
     const followupSummary = require('../investigation/followupReads').renderFollowupReads(operationalInvestigation?.followupReads, message)
     if (followupSummary) view.reply += '\n\n' + followupSummary
+    if (operationalInvestigation?.readOnly === true) {
+      const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
+      const brief = require('../investigation/ownerBrief').ownerBrief(operationalInvestigation, { message, findings })
+      if (brief) {
+        operationalInvestigation.answerDetails = view.reply
+        operationalInvestigation.answerPresentation = { ...operationalInvestigation.answerPresentation, ownerBrief: { ...brief, text: undefined } }
+        view.reply = brief.text
+      }
+      operationalInvestigation.performance = { version: 1, totalMs: Math.max(0, Math.round(intakeElapsed())), phases: latencyRecords,
+        mainAnswerSkipped: !!tel.answerCallSkipped, semanticReviewCalls: operationalInvestigation.semanticReview?.calls || 0,
+        accounting: 'nested_prompt_phases_not_additive; provider_ledger_is_call_count_authority' }
+      operationalInvestigation.stop = { state: 'bounded_investigation_finished', additionalReadRounds: operationalInvestigation.followupReads?.rounds || 0,
+        attemptedSources: [...new Set(operationalInvestigation.crossSourceReads?.map(r => r.source) || [])], remainingGaps: operationalInvestigation.gaps?.map(g => g.section) || [],
+        meaning: 'available_bound_reached_not_all_facts_proven' }
+    }
     const chatClaim = view.readClaim || { corrected: false, sources: [], kind: null }
     if (chatClaim.corrected) logReadClaimCorrection(chatClaim, requestId)
     return { blocked: false, mode: distilled.mode, intent: distilled.intent,

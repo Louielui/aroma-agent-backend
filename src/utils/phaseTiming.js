@@ -58,6 +58,7 @@ const ROLE = Object.freeze({
   MAIN: 'main',
   FINAL_VERIFIER: 'final_verifier',
   REASONING_STEP: 'reasoning_step',
+  EVIDENCE_REVIEW: 'evidence_review',
   RESERVED_COMPOSE: 'reserved_compose'
 })
 const ROLES = Object.freeze(Object.values(ROLE))

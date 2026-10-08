@@ -1225,6 +1225,18 @@
     if (report.persistenceState === 'unavailable') addMeta(turnEl.body, t('investigation.notSaved'))
     var details = el('details', 'investigation-evidence')
     details.appendChild(el('summary', '', t('investigation.title')))
+    if (typeof report.answerDetails === 'string' && report.answerDetails) {
+      var fullAnswer = el('details')
+      fullAnswer.appendChild(el('summary', '', t('investigation.answerDetails')))
+      fullAnswer.appendChild(el('p', 'prose', report.answerDetails))
+      details.appendChild(fullAnswer)
+    }
+    if (report.performance) {
+      var phaseTimes = el('details')
+      phaseTimes.appendChild(el('summary', '', t('investigation.performanceDetails')))
+      phaseTimes.appendChild(el('pre', '', JSON.stringify(report.performance, null, 2)))
+      details.appendChild(phaseTimes)
+    }
     if (report.unverifiedJudgmentOmitted) details.appendChild(el('p', 'wait-note', t('investigation.judgmentOmitted')))
     var readStates = { ok: t('investigation.ok'), partial: t('investigation.partial'), missing: t('investigation.missing'), unavailable: t('investigation.unavailable'), unconnected: t('investigation.unconnected') }
     var levels = { confirmed: t('investigation.confirmed'), supported: t('investigation.supported'), possible: t('investigation.possible'), not_established: t('investigation.notEstablished') }

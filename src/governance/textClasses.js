@@ -75,6 +75,7 @@ const CLASS = Object.freeze({
  * the test checks COVERAGE (is every such file listed), never the number.
  */
 const FILE_CLASS = Object.freeze({
+  'investigation/ownerBrief.js': CLASS.INTERFACE,
   'investigation/workCorrelation.js': CLASS.INTERFACE, // Receipt-bound bilingual explanation; identities are compared without language matching.
   'investigation/enquiryOffer.js': CLASS.MODEL,
   // Backward-compatible report focus reads historical question vocabulary;

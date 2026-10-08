@@ -18,7 +18,10 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const fixtureRead = async (source, method, params) => {
     reads.push((source === 'gmail' || captureLocalParams) ? { source, method, params } : { source, method })
     if (source !== 'xiangxiang_operations' && externalEmpty) return { results: [] }
-    if (source === 'github' || source === 'drive') return { results: [{source, sourceId:source + ':one', title:'Related investigation record', content:'Historical evidence only', trust:'live', retrievedAt:'2026-10-08T01:00:00Z'}] }
+    if (source === 'github' || source === 'drive') {
+      if (source === 'github' && externalUnavailable) throw Error('external connector unavailable')
+      return { results: [{source, sourceId:source + ':one', title:'Related investigation record', content:'Historical evidence only', trust:'live', retrievedAt:'2026-10-08T01:00:00Z'}] }
+    }
     if (source === 'gmail') {
       if (externalUnavailable) throw Error('mail connector unavailable')
       return {results:[{source,sourceId:'mail:one',title:'Provider usage notice',retrievedAt:'2026-10-07T20:00:00Z',content:'A usage notice was sent; this does not prove a charge.',trust:'live',fields:{}}]}
@@ -40,7 +43,8 @@ test('fresh source-bound failure answer skips only the unused main answer model 
   const x = await turn(t, { fastPath: true, focus: 'work_failure', workEvidence: true, previousInvestigation:{state:'absent'},
     question: 'Why did the previous development task fail; is it fixed now?' })
   assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
-  assert.match(x.result.reply, /source_dirty/)
+  assert.match(x.result.reply, /uncommitted changes/)
+  assert.match(x.result.investigation.answerDetails, /source_dirty/)
   assert.match(x.result.reply, /not.*confirm/i)
   assert.equal(x.result.replyForArchive, x.result.reply)
   assert.equal(x.result.investigation.answerPresentation.answerCallSkipped, true)
@@ -226,7 +230,8 @@ test('an Owner-only judged operational read cannot have its evidence answer repl
   assert.ok(x.result.investigation)
   assert.equal(x.result.mode, 'chat')
   assert.equal(x.result.demoOutcome, 'speech')
-  assert.match(x.result.reply, /source_dirty/)
+  assert.match(x.result.reply, /未提交的改動/)
+  assert.match(x.result.investigation.answerDetails, /source_dirty/)
   assert.doesNotMatch(x.result.reply, /你想睇邊方面/)
   assert.equal(x.reads.length, 1)
   assert.equal(x.calls.filter(c=>c.schema!=='goal_plan').length, 1)
@@ -257,7 +262,8 @@ test('an unavailable verification fact stays a report gap and cannot erase an ob
   assert.equal(x.result.mode,'chat')
   assert.equal(x.result.demoOutcome,'speech')
   assert.ok(x.result.investigation.gaps.some(g=>g.section==='same_failure_current_version_verification'))
-  assert.match(x.result.reply,/source_dirty/)
+  assert.match(x.result.reply,/未提交的改動/)
+  assert.match(x.result.investigation.answerDetails,/source_dirty/)
   assert.equal(x.reads.length,1)
 })
 
@@ -280,7 +286,8 @@ test('the same operational source choice handles English without a Chinese inten
 })
 test('an English Owner investigation reaches the final reply with its source-bound failure and unverified repair status',async t=>{
   const x=await turn(t,{question:'Why did the previous task fail? Is it fixed?',focus:'work_failure',workEvidence:true})
-  assert.match(x.result.reply,/source_dirty/)
+  assert.match(x.result.reply,/uncommitted changes/)
+  assert.match(x.result.investigation.answerDetails,/source_dirty/)
   assert.match(x.result.reply,/not.*confirm/i)
   assert.doesNotMatch(x.result.reply,/扣款原因/)
   assert.equal(x.result.investigation.answerPresentation.kind,'source_bound_work_findings')
@@ -452,5 +459,62 @@ test('same-time conflicting claims are disclosed instead of presenting either as
  assert.match(x.result.reply,/Conflicting evidence/)
  assert.doesNotMatch(x.result.reply,/A schedule is configured|已找到排程/)
  assert.equal(x.result.replyForArchive,x.result.reply)
- assert.deepEqual(x.result.tasks,[])
+  assert.deepEqual(x.result.tasks,[])
+})
+
+test('development paraphrases stop after one exact revision probe, retain unknown repair, and skip unused prose calls', async t => {
+  for (const question of ['上次改程式為何中斷？現在正常了嗎？', '之前開發失敗的原因找到了嗎，能確認已解決嗎？',
+    'Why did our last code change stop, and is the issue resolved in the running version?',
+    'Investigate the earlier development failure and tell me whether the fix has been verified.']) {
+    const x = await turn(t, { question, focus: 'work_failure', fastPath: true, sources: ['xiangxiang_operations', 'github'], captureLocalParams: true,
+      extraFacts: [{ id:'f2', need:'Additional development history', operation:'development_record', necessity:'enriching', entity:null, fields:[] }],
+      evidenceSections: [{ section:'work', sourceId:'work:one', state:'partial', latestFailureId:'failed-run', records:[{ sourceId:'failed-run', state:'failed', reason:'source_dirty', sourceRevision:'a'.repeat(40) }] }] })
+    assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
+    assert.equal(x.reads.filter(r => r.source === 'github').length, 1)
+    assert.equal(x.reads.find(r => r.source === 'github').params.sha, 'a'.repeat(40))
+    assert.equal(x.result.investigation.answerPresentation.answerCallSkipped, true)
+    assert.equal(x.result.investigation.workCorrelation.repaired, 'UNKNOWN')
+    assert.match(x.result.reply, /未確認|not confirmed/)
+    assert.doesNotMatch(x.result.reply, /source_dirty|Same-task investigation|同一任務追查結果|billing|帳單/)
+    assert.match(x.result.investigation.answerDetails, /failed-run/)
+    assert.deepEqual(x.result.investigation.stop.attemptedSources, ['github'])
+    const perf = x.result.investigation.performance
+    assert.ok(perf.totalMs >= 0)
+    assert.ok(perf.phases.some(p => p.phase === 'live_read_context'))
+    assert.ok(perf.phases.some(p => p.role === 'goal_decomposer'))
+    assert.equal(perf.semanticReviewCalls, 0)
+    assert.doesNotMatch(JSON.stringify(perf), /Additional development history|source_dirty|Related investigation record/)
+    assert.equal(x.result.replyForArchive, x.result.reply)
+    assert.deepEqual(x.result.tasks, [])
+  }
+})
+
+test('empty and unavailable revision follow-up finish without retry or manufactured repair proof', async t => {
+  for (const mode of ['externalEmpty', 'externalUnavailable']) {
+    const x = await turn(t, { [mode]:true, question:'Was the last development failure actually fixed?', focus:'work_failure', fastPath:true,
+      sources:['xiangxiang_operations','github'],
+      evidenceSections:[{section:'work',sourceId:'work:one',state:'partial',latestFailureId:'failed-run',records:[{sourceId:'failed-run',state:'failed',reason:'timeout',sourceRevision:'b'.repeat(40)}]}] })
+    assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 0)
+    assert.equal(x.reads.filter(r => r.source === 'github').length, 1)
+    assert.equal(x.result.investigation.crossSourceReads[0].state, mode === 'externalEmpty' ? 'empty' : 'unavailable')
+    assert.match(x.result.reply, /did not return usable evidence/)
+    assert.equal(x.result.investigation.workCorrelation.repaired, 'UNKNOWN')
+    assert.deepEqual(x.result.tasks, [])
+  }
+})
+
+test('required external evidence, mixed goals, conflicts and unresolved required facts retain the normal model path', async t => {
+  const record = {sourceId:'failed-run',state:'failed',reason:'source_dirty',sourceRevision:'c'.repeat(40)}
+  for (const variant of [
+    { extraFacts:[{id:'f2',need:'Required repository evidence',operation:'github',necessity:'required',entity:null,fields:[]}] },
+    { extraFacts:[{id:'f2',need:'A relevant email',operation:'gmail',necessity:'enriching',entity:null,fields:[]}] },
+    { unavailableFact:true },
+    { evidenceSections:[{section:'work',sourceId:'work:one',state:'partial',latestFailureId:'failed-run',records:[record, {...record,reason:'timeout'}]}] }
+  ]) {
+    const x=await turn(t,{question:'Why did our code task fail?',focus:'work_failure',fastPath:true,sources:['xiangxiang_operations','github','gmail'],
+      evidenceSections:[{section:'work',sourceId:'work:one',state:'partial',latestFailureId:'failed-run',records:[record]}],...variant})
+    assert.ok(x.calls.some(c => c.schema !== 'goal_plan'))
+    assert.notEqual(x.result.investigation.answerPresentation?.answerCallSkipped, true)
+    assert.deepEqual(x.result.tasks, [])
+  }
 })
