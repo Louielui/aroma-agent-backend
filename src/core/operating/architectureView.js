@@ -55,7 +55,7 @@ function buildArchitectureHtml () {
   ]
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
   investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review / bounded advisory intent wait / guarded direct source-bound answer / required authorised cross-source sample read and exact reference review'
-  investigationRow.current += ' ' + t('investigation.findingsCurrent') + ' ' + t('investigation.latencyCurrent') + ' ' + t('investigation.directAnswerCurrent') + ' ' + t('investigation.crossScenarioCurrent')
+  investigationRow.current += ' ' + t('investigation.findingsCurrent') + ' ' + t('investigation.latencyCurrent') + ' ' + t('investigation.latencyMeasured') + ' ' + t('investigation.directAnswerCurrent') + ' ' + t('investigation.crossScenarioCurrent')
   investigationRow.next += ' ' + t('investigation.findingsNext') + ' ' + t('investigation.latencyNext') + ' ' + t('investigation.crossScenarioNext')
   investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/answerFastPath.js; src/investigation/crossSourceEvidence.js; src/investigation/sourceBoundFindings.test.js; src/intake/operationalInvestigation.test.js; src/intake/semanticFallbackSafety.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md; docs/INVESTIGATION-LATENCY-V1.md; docs/INVESTIGATION-CROSS-SCENARIO-V1.md'
   const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">

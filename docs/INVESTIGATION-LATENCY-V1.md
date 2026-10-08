@@ -41,6 +41,10 @@ and 13,368 ms on evidence review; those are measured opportunities, not a
 guaranteed saving. Final knowledge
 and source-intent gates remain in place. This removes the observed redundant
 main call, not all provider calls: intent classification, goal decomposition and
-final gates may still use the selected subscription. New-version timing and
-quality must be measured live rather than inferred from the earlier 70-second
-sample.
+final gates may still use the selected subscription. On 2026-10-08, the same
+Owner background-work question took 109,147 ms with the initial loaded version
+and 36,427 ms after the fulfilled-operations-read guard was corrected. The
+follow-up receipt `46a98f5d-7f59-4c91-84cc-1a3f5ebc1f79` was saved with
+`answerCallGate=eligible`, `answerCallSkipped=true`, eight source references
+and explicit incomplete worker-activity coverage. This is one live comparison,
+not a general response-time guarantee.
