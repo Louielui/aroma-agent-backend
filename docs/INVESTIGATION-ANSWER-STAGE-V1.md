@@ -20,5 +20,14 @@ Acceptance must verify the exact request path, saved and reloaded Owner answer,
 source-bound claims, withheld unsupported claims, read-only state, billing
 uncertainty, and the in-app architecture entry. Provider output counters and
 elapsed time are separate observations; neither proves actual charges. The
-change is an output-contract reduction, and its effect on latency remains to
-be measured on the loaded version.
+change is an output-contract reduction, not a claim that total latency improved.
+
+The first loaded acceptance on `5970915` passed: the same question produced a
+saved and reloaded read-only result with source-reviewed claims and billing
+uncertainty intact. Its answer call took 34,720 ms with 3,576 output tokens,
+versus 45,476 ms and 5,409 output tokens on the preceding request. Total turn
+time increased from 92,366 ms to 126,433 ms because the goal-understanding
+call took 49,855 ms instead of 12,894 ms; source-intent also took 10,051 ms
+instead of 4,911 ms. This is one comparison with changing source state and
+provider timing. It supports a smaller answer-stage output, not a reliable
+end-to-end speedup. No extra automatic retry was introduced.
