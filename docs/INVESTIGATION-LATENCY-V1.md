@@ -30,7 +30,8 @@ development-failure answer with exact receipt references. The saved response
 retains its source references and uncertainty. It records that the answer call
 was skipped; it does not claim an answer model produced the fixed text.
 
-Missing frames, mixed-source requirements, requested actions or capabilities,
+Missing frames, mixed-source requirements, requested actions or capabilities
+other than the already fulfilled `xiangxiang_operations.read`,
 follow-up comparisons, unavailable records and general semantic investigations
 still use the established answer path. A fresh background inventory may now
 skip the main call and semantic review when its bounded live configuration

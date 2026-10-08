@@ -13,7 +13,9 @@ function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, owner
   const priorMayMatter = previousInvestigation && previousInvestigation.state !== 'absent'
   if (!ownerInvestigation || !subscriptionMode || interactionMode !== 'chat' || !operationsLive || priorMayMatter) return refused('outside_fresh_owner_read')
   if (!report || report.readOnly !== true || report.continuity || !plan || plan.investigationReference || plan.investigationFocus !== report.focus) return refused('report_or_focus_mismatch')
-  if (plan.requestedCapability || plan.requestedCapabilityImplementation) return refused('capability_requested')
+  // A fulfilled operations read is the evidence source for this answer, not a new action request.
+  if ((plan.requestedCapability || plan.requestedCapabilityImplementation) &&
+    !(plan.requestedCapability === 'xiangxiang_operations.read' && plan.requestedCapabilityImplementation === 'implemented')) return refused('capability_requested')
   const frame = plan.executiveFrame
   if (!frame || !['diagnose', 'retrieve', 'understand'].includes(frame.taskType) ||
     !['evidence_first', 'provisional'].includes(frame.answerPosture)) return refused('frame_not_eligible')

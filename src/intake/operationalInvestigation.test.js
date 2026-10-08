@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false, requestedCapability = null } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -10,7 +10,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
-    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,requested_capability:requestedCapability,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
@@ -64,6 +64,7 @@ test('fast path refuses action intent, missing verification operation, continuit
     { fastPath:true, taskType:'act', focus:'work_failure', workEvidence:true },
     { fastPath:true, focus:'work_failure', workEvidence:true, unavailableFact:true },
     { fastPath:true, focus:'work_failure', workEvidence:true, previousInvestigation:{state:'available'} },
+    { fastPath:true, focus:'work_failure', workEvidence:true, requestedCapability:'proposal.create' },
     { fastPath:true, focus:'work_failure', failed:true }
   ]) {
     const x = await turn(t, options)
@@ -73,7 +74,7 @@ test('fast path refuses action intent, missing verification operation, continuit
 })
 
 test('fresh unambiguous background inventory skips unused answer and review calls; follow-up does not', async t => {
-  const background = await turn(t, {fastPath:true,focus:'background',question:'Which background jobs are running and what models do they use?',
+  const background = await turn(t, {fastPath:true,focus:'background',requestedCapability:'xiangxiang_operations.read',question:'Which background jobs are running and what models do they use?',
     evidenceSections:[{section:'configuration',sourceId:'configuration:live',state:'partial',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at:'2026-10-08T01:10:19.069Z'}]}]})
   assert.equal(background.result.investigation.answerCallGate,'eligible')
   assert.equal(background.calls.filter(c=>c.schema!=='goal_plan').length,0)
