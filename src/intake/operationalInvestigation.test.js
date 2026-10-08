@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose' } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose' } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -10,7 +10,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
     calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
-    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
+    if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,executive_frame:fastPath?{taskType,decisionNeeded:true,successDefinition:'Explain the observed record and remaining uncertainty.',answerPosture:'evidence_first'}:undefined,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[]),...extraFacts],joins:[]}) }
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
   } }
   let recall = 0
@@ -66,6 +66,41 @@ test('fast path refuses action intent, missing verification operation, continuit
     assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 1)
     assert.notEqual(x.result.investigation?.answerPresentation?.answerCallSkipped, true)
   }
+})
+
+test('background inventory and a same-record follow-up do not borrow the fresh cost/failure answer shortcut', async t => {
+  const background = await turn(t, {fastPath:true,focus:'background',question:'Which background jobs are running and what models do they use?',
+    evidenceSections:[{section:'configuration',sourceId:'configuration:live',state:'partial',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at:'2026-10-08T01:10:19.069Z'}]}]})
+  assert.equal(background.result.investigation.answerCallGate,'no_fixed_findings')
+  assert.equal(background.calls.filter(c=>c.schema!=='goal_plan').length,1)
+  assert.notEqual(background.result.investigation.answerPresentation.answerCallSkipped,true)
+  assert.match(background.result.reply,/Mail analysis.*idle.*claude-sonnet/)
+
+  const previous={state:'available',runId:'previous-run',at:'2026-10-07T00:00:00Z',focus:'work_failure',failureId:'failed-run',goal:'Why did the task fail?',investigation:{sections:[{section:'work',state:'ok',sourceId:'work:old',records:[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]}]}}
+  const followup=await turn(t,{fastPath:true,focus:'work_failure',reference:'previous',previousInvestigation:previous,workEvidence:true,question:'Is that same failure fixed now?'})
+  assert.equal(followup.result.investigation.answerCallGate,'outside_fresh_owner_read')
+  assert.equal(followup.calls.filter(c=>c.schema!=='goal_plan').length,1)
+  assert.equal(followup.reads.length,1)
+  assert.equal(followup.result.investigation.continuity.selectedRecordId,'failed-run')
+  assert.equal(followup.result.investigation.continuity.provesRepair,false)
+  assert.notEqual(followup.result.investigation.answerPresentation?.answerCallSkipped,true)
+})
+
+test('cross-source enrichment keeps the main answer call and discloses the omitted source scope', async t => {
+  const x = await turn(t, { fastPath: true, focus: 'cost', question: 'Check my local calls and related email about credit charges.',
+    extraFacts: [{id:'f2',need:'Related provider email',operation:'gmail',entity:null,fields:[],necessity:'enriching'}],
+    evidenceSections: [
+      {section:'execution',sourceId:'execution:fresh',state:'partial',records:[{sourceId:'invocation:one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-08T01:10:19.069Z',usage:{outputTokens:149},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger'}]},
+      {section:'billing',sourceId:'billing:gap',state:'unconnected',records:[]}
+    ] })
+  assert.equal(x.result.investigation.answerCallGate, 'mixed_plan_facts')
+  assert.equal(x.result.investigation.answerPresentation.answerCallSkipped, undefined)
+  assert.equal(x.calls.filter(c => c.schema !== 'goal_plan').length, 1)
+  assert.deepEqual(x.reads, [{source:'xiangxiang_operations',method:'readInvestigation'}])
+  assert.match(x.result.reply, /charges and their cause remain unconfirmed/)
+  assert.match(x.result.reply, /Other sources named in the question are outside this evidence/)
+  assert.equal(x.result.investigation.answerPresentation.findings.otherSourcesNotVerified, true)
+  assert.equal(x.result.replyForArchive, x.result.reply)
 })
 
 test('actual Owner credit answer and archive retain source-bound call evidence with no billing inference',async t=>{

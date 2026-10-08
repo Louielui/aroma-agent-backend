@@ -3593,7 +3593,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     }
     if (opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       const semanticView = require('../investigation/semanticView')
-      const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message })
+      const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
       const needsReview = !findings || findings.kind==='background'
       let draft = null
       let review=null

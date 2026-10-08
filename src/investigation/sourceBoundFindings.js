@@ -34,16 +34,20 @@ function renderWorkFailure(report,{message=''}={}){
  ].join('\n\n'),references,scope:'one_sampled_failed_work_record_not_current_repair',modelProseUsed:false}
 }
 
-function renderSourceBoundFindings(report,{message=''}={}){
+function renderSourceBoundFindings(report,{message='',plan=null}={}){
  if(report?.readOnly!==true||!Array.isArray(report.sections))return null
+ const scoped=result=>{
+  if(!result||!Array.isArray(plan?.facts)||!plan.facts.some(f=>f.operation!=='xiangxiang_operations'))return result
+  return {...result,text:result.text+'\n\n'+t('investigation.otherSourcesNotVerified',{},localeFor(message)),otherSourcesNotVerified:true}
+ }
  if(report.focus==='cost'){
   const result=renderCostFindings(report,{message})
-  return result?{...result,kind:'cost'}:null
+  return scoped(result?{...result,kind:'cost'}:null)
  }
- if(report.focus==='work_failure')return renderWorkFailure(report,{message})
+ if(report.focus==='work_failure')return scoped(renderWorkFailure(report,{message}))
  if(report.focus==='background'){
   const result=renderRuntimeSummary(report,{message})
-  return result?{...result,kind:'background',modelProseUsed:false}:null
+  return scoped(result?{...result,kind:'background',modelProseUsed:false}:null)
  }
  return null // General investigations still require the reviewed semantic path.
 }

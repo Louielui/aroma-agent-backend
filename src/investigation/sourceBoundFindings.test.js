@@ -48,3 +48,14 @@ test('cost findings retain the verified receipt and billing gap; general questio
  assert.deepEqual(x.references.map(r=>r.sourceId),['billing:fresh'])
  assert.equal(renderSourceBoundFindings({...cost,focus:'general'}),null)
 })
+
+test('mixed-source findings disclose that the deterministic summary omits other named sources',()=>{
+ const cost=report('cost',[section('billing','billing:fresh',[],{state:'unconnected'})])
+ const mixed=renderSourceBoundFindings(cost,{message:'Check local usage and provider email',plan:{facts:[
+  {operation:'xiangxiang_operations',necessity:'required'},
+  {operation:'gmail',necessity:'enriching'}
+ ]}})
+ assert.equal(mixed.otherSourcesNotVerified,true)
+ assert.match(mixed.text,/Other sources named in the question are outside this evidence/)
+ assert.deepEqual(mixed.references,[{sourceId:'billing:fresh',recordId:null,fields:{state:'unconnected'}}])
+})

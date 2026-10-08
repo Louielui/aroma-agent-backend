@@ -19,8 +19,12 @@ function sourceBoundDirectAnswer ({ message, plan, report, operationsLive, owner
     !['evidence_first', 'provisional'].includes(frame.answerPosture)) return refused('frame_not_eligible')
   const required = Array.isArray(plan.facts) ? plan.facts.filter(f => f.necessity === 'required') : []
   if (!required.length || required.some(f => f.operation !== 'xiangxiang_operations')) return refused('mixed_required_facts')
+  // An enriching fact is not automatically read by the Goal Gate, but it can
+  // still change the answer the Owner expects. Keep the model path whenever
+  // the plan names any other source or an unmapped fact.
+  if (plan.facts.some(f => f.operation !== 'xiangxiang_operations')) return refused('mixed_plan_facts')
   if (!Array.isArray(report.sections) || !report.sections.some(s => ['ok', 'partial'].includes(s.state) && Array.isArray(s.records) && s.records.length)) return refused('no_readable_records')
-  const findings = renderSourceBoundFindings(report, { message })
+  const findings = renderSourceBoundFindings(report, { message, plan })
   if (!findings || !['cost', 'work_failure'].includes(findings.kind) || !findings.text || !findings.references?.length) return refused('no_fixed_findings')
   onDecision?.('eligible')
   const locale = /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en'
