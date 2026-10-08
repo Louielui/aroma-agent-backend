@@ -10,7 +10,7 @@ const escape = value => String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', 
 // briefing. Read the same planned-integration states used by the tool registry.
 function buildArchitectureHtml () {
   const labels = {
-    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-07' }),
+    title: t('architecture.title'), intro: t('architecture.intro'), snapshot: t('architecture.snapshot', { date: '2026-10-08' }),
     back: t('manager.back'), briefing: t('manager.title'), component: t('architecture.component'),
     workbench: t('workerFlow.title'), developmentPlan: t('plan.title'), connections: t('connections.title'), companyAccess: t('company.title'), liveContext: t('live.title'), driveContext: t('driveContext.title'), aromaContext: t('aromaContext.title'), calendarContext: t('calendarContext.title'), gmailContext: t('gmailContext.title'),
     current: t('architecture.current'), next: t('architecture.next'), details: t('architecture.details'),
@@ -54,10 +54,10 @@ function buildArchitectureHtml () {
     { id: 'approval', state: 'partial', title: t('architecture.approvalTitle'), purpose: t('architecture.approvalPurpose'), component: t('architecture.approvalComponent'), current: t('architecture.approvalCurrent'), next: t('architecture.approvalNext'), evidence: 'src/governance/ownerAuth.js; src/company/; docs/COMPANY-ACCESS.md' }
   ]
   const investigationRow = rows.find(row => row.id === 'operational-investigation')
-  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review / bounded advisory intent wait / guarded direct source-bound answer / cross-source scope disclosure'
+  investigationRow.component += ' / shared read-only source-bound findings / conditional semantic review / bounded advisory intent wait / guarded direct source-bound answer / required authorised cross-source sample read and exact reference review'
   investigationRow.current += ' ' + t('investigation.findingsCurrent') + ' ' + t('investigation.latencyCurrent') + ' ' + t('investigation.directAnswerCurrent') + ' ' + t('investigation.crossScenarioCurrent')
   investigationRow.next += ' ' + t('investigation.findingsNext') + ' ' + t('investigation.latencyNext') + ' ' + t('investigation.crossScenarioNext')
-  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/answerFastPath.js; src/investigation/sourceBoundFindings.test.js; src/intake/operationalInvestigation.test.js; src/intake/semanticFallbackSafety.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md; docs/INVESTIGATION-LATENCY-V1.md; docs/INVESTIGATION-CROSS-SCENARIO-V1.md'
+  investigationRow.evidence += '; src/investigation/sourceBoundFindings.js; src/investigation/answerFastPath.js; src/investigation/crossSourceEvidence.js; src/investigation/sourceBoundFindings.test.js; src/intake/operationalInvestigation.test.js; src/intake/semanticFallbackSafety.test.js; docs/INVESTIGATION-SOURCE-BOUND-V1.md; docs/INVESTIGATION-LATENCY-V1.md; docs/INVESTIGATION-CROSS-SCENARIO-V1.md'
   const cards = rows.map(row => `<article class="card" data-component="${escape(row.id)}" data-state="${escape(row.state)}">
     <div class="card-heading"><h2>${escape(row.title)}</h2><span class="badge ${escape(row.state)}">${escape(labels[row.state])}</span></div>
     <p class="purpose">${escape(row.purpose)}</p><dl><dt>${escape(labels.component)}</dt><dd>${escape(row.component)}</dd>

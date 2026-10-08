@@ -2,7 +2,7 @@
 const test = require('node:test'), assert = require('node:assert/strict')
 const { processIntake } = require('./intakeService')
 
-async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose' } = {}) {
+async function turn (t, { allowed = true, question = '之前有什麼會導致不停扣 credit？', focus = null, failed = false, verdict = 'allow_final', judgment = null, semanticCallModel = undefined, workEvidence = false, unavailableFact = false, extraFacts = [], previousInvestigation = null, reference = null, history = [], investigationAnswer = undefined, semanticDecision = 'supported', evidenceSections = null, fastPath = false, taskType = 'diagnose', sources = ['xiangxiang_operations'], externalUnavailable = false } = {}) {
   const old = { ...process.env }
   t.after(() => { for (const k of Object.keys(process.env)) if (!(k in old)) delete process.env[k]; Object.assign(process.env, old) })
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
@@ -16,6 +16,10 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   let recall = 0
   const fixtureRead = async (source, method) => {
     reads.push({ source, method })
+    if (source === 'gmail') {
+      if (externalUnavailable) throw Error('mail connector unavailable')
+      return {results:[{source,sourceId:'mail:one',title:'Provider usage notice',retrievedAt:'2026-10-07T20:00:00Z',content:'A usage notice was sent; this does not prove a charge.',trust:'live',fields:{}}]}
+    }
     if (failed) throw Error('unavailable')
     if (evidenceSections) return {results:evidenceSections.map(s=>({source,sourceId:s.sourceId,title:s.section,retrievedAt:'2026-10-07T20:00:00Z',content:JSON.stringify(s),trust:'live',fields:s}))}
     return {results:[{source,sourceId:'billing:abc',title:'billing',retrievedAt:'2026-10-06T12:00:00Z',content:'Billing source is unconnected: charge cause not established.',trust:'live',fields:{section:workEvidence?'work':'billing',state:workEvidence?'ok':'unconnected',evidenceState:workEvidence?'confirmed':'not_established',provesCharge:false,records:workEvidence?[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]:[],sha256:'a'.repeat(64)}}]}
@@ -24,7 +28,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
     demo: true, interactionMode: 'chat', ownerInvestigation: allowed, openaiAdapter: a, semanticCallModel, controlAdapter: { complete: async () => { throw Error('unexpected API control call') } },
     previousInvestigation, memoryClient: { recall: async () => { recall++; return [] } },
     onInvestigation: e => events.push(e),
-    readContextDeps: { sources: ['xiangxiang_operations'], connector: { read: fixtureRead }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
+    readContextDeps: { sources, connector: { read: fixtureRead }, finalVerifier: async () => ({ decision: verdict, question: null }), sourceIntentResolver: async () => JSON.stringify({ intent: 'internal', question: null }) }
   })
   return { result, events, calls, reads, recall }
 }
@@ -68,12 +72,12 @@ test('fast path refuses action intent, missing verification operation, continuit
   }
 })
 
-test('background inventory and a same-record follow-up do not borrow the fresh cost/failure answer shortcut', async t => {
+test('fresh unambiguous background inventory skips unused answer and review calls; follow-up does not', async t => {
   const background = await turn(t, {fastPath:true,focus:'background',question:'Which background jobs are running and what models do they use?',
     evidenceSections:[{section:'configuration',sourceId:'configuration:live',state:'partial',records:[{sourceId:'backend:mail_analysis',role:'mail_analysis',currentRunningState:'idle',model:'claude-sonnet',modelBasis:'bridge_route_configuration',evidenceBasis:'live_process_snapshot',at:'2026-10-08T01:10:19.069Z'}]}]})
-  assert.equal(background.result.investigation.answerCallGate,'no_fixed_findings')
-  assert.equal(background.calls.filter(c=>c.schema!=='goal_plan').length,1)
-  assert.notEqual(background.result.investigation.answerPresentation.answerCallSkipped,true)
+  assert.equal(background.result.investigation.answerCallGate,'eligible')
+  assert.equal(background.calls.filter(c=>c.schema!=='goal_plan').length,0)
+  assert.equal(background.result.investigation.answerPresentation.answerCallSkipped,true)
   assert.match(background.result.reply,/Mail analysis.*idle.*claude-sonnet/)
 
   const previous={state:'available',runId:'previous-run',at:'2026-10-07T00:00:00Z',focus:'work_failure',failureId:'failed-run',goal:'Why did the task fail?',investigation:{sections:[{section:'work',state:'ok',sourceId:'work:old',records:[{sourceId:'failed-run',state:'failed',reason:'source_dirty'}]}]}}
@@ -84,6 +88,33 @@ test('background inventory and a same-record follow-up do not borrow the fresh c
   assert.equal(followup.result.investigation.continuity.selectedRecordId,'failed-run')
   assert.equal(followup.result.investigation.continuity.provesRepair,false)
   assert.notEqual(followup.result.investigation.answerPresentation?.answerCallSkipped,true)
+})
+
+test('required authorised Gmail evidence is read and source-bound alongside operations', async t => {
+  const x = await turn(t, { fastPath:true, focus:'cost', sources:['xiangxiang_operations','gmail'],
+    question:'Check my local calls and related provider email about credit charges.',
+    extraFacts:[{id:'f2',need:'Related provider email',operation:'gmail',entity:null,fields:[],necessity:'required'}],
+    evidenceSections:[{section:'execution',sourceId:'execution:fresh',state:'partial',records:[{sourceId:'invocation:one',role:'memory_completion',state:'succeeded',modelResultObserved:true,actualModel:'claude-sonnet-5-5',startedAt:'2026-10-08T01:10:19.069Z',usage:{outputTokens:149},usageBasis:'provider_result_model_usage',evidenceBasis:'owner_bridge_invocation_ledger'}]}],
+    investigationAnswer:{claims:[{id:'c1',text:'A provider usage notice was found in email.',kind:'observation',evidenceState:'supported',temporalScope:'historical',references:[{sourceId:'read-context:gmail',recordId:'mail:one',field:'title',value:'Provider usage notice'}]}]} })
+  assert.equal(x.reads[0].source,'xiangxiang_operations')
+  assert.ok(x.reads.slice(1).every(r=>r.source==='gmail'),'Gmail search may hydrate its matched message')
+  assert.equal(x.result.investigation.crossSourceReads[0].state,'sampled')
+  assert.equal(x.result.investigation.sections.at(-1).sourceId,'read-context:gmail')
+  assert.equal(x.result.investigation.semanticReview.accepted.length,1)
+  assert.match(x.result.reply,/provider usage notice was found/i)
+  assert.match(x.result.reply,/charges and their cause remain unconfirmed/i)
+  assert.equal(x.result.investigation.answerPresentation.kind,'cross_source_semantic_review')
+  assert.equal(x.result.replyForArchive,x.result.reply)
+})
+
+test('unavailable required Gmail source is recorded as a gap, not an empty inbox', async t => {
+  const x=await turn(t,{focus:'cost',sources:['xiangxiang_operations','gmail'],externalUnavailable:true,
+    extraFacts:[{id:'f2',need:'Related provider email',operation:'gmail',entity:null,fields:[],necessity:'required'}]})
+  assert.deepEqual(x.reads.map(r=>r.source),['xiangxiang_operations','gmail'])
+  assert.equal(x.result.investigation.crossSourceReads[0].state,'unavailable')
+  assert.equal(x.result.investigation.sections.at(-1).state,'unconnected')
+  assert.match(x.result.reply,/gmail: unavailable/)
+  assert.doesNotMatch(x.result.reply,/inbox is empty/i)
 })
 
 test('cross-source enrichment keeps the main answer call and discloses the omitted source scope', async t => {

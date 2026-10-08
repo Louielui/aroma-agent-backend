@@ -1391,6 +1391,33 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
             const recordIdentityContract = 'OPERATIONAL RECORD IDENTITY: For a named task in answerPlan use its exact retrieved name as item.title and cite its containing section sourceId. Facts must belong to that named record. Do not replace different task names with the same section label. executionHistoryState=unconnected means this integration did not inspect execution history; it does NOT mean no executions or records exist. Do not say no records were left, no task ran, charges stopped, or that an unseen source is the most suspicious. This coverage rule applies to executiveJudgment, uncertainties, directAnswer, limitations and followUp alike. A configuration backend label is not the currently selected model and does not prove usage.'
             if (boundFindings?.kind !== 'cost') extraObservationBlocks.push(recordIdentityContract)
           }
+          // A judged REQUIRED source-level fact is read here for an Owner
+          // investigation, even with A4 semantic routing enabled. A4 normally
+          // leaves first reads to the reasoning loop; that can answer from the
+          // operational receipt alone before it ever consults the second source.
+          // The closed source vocabulary and the active provider's existing
+          // authorisation remain the only boundary. Enriching facts stay opt-in.
+          if (operationalInvestigation && !operationalInvestigation.crossSourceReads) {
+            const { requiredExternalSources, appendCrossSourceEvidence } = require('../investigation/crossSourceEvidence')
+            const external = requiredExternalSources(plan, authorisedSourcesFor(subscriptionAdapter?.providerName || providerName))
+            if (external.length) {
+              investigationProgress({ state: 'reading', section: 'external', sources: external })
+              const connector = deps?.connector || createLiveReadConnector({ env: process.env }).connector
+              const rc = await timePhase(
+                { requestId, phase: PHASE.LIVE_READ_CONTEXT, within: PHASE.PROMPT_BUILD },
+                () => buildReadContext({ connector, message, sources: external, env: process.env }),
+                { clock: latencyClock, sink: latencySink })
+              appendCrossSourceEvidence(operationalInvestigation, rc)
+              for (const row of rc.perSource || []) { turnPerSource.set(row.source, row); recordOperation(row.source, row.trust) }
+              for (const g of rc.itemsBySource || []) turnItems.set(g.source, g)
+              for (const g of rc.retrievedItemsBySource || []) turnRetrievedItems.set(g.source, g)
+              for (const e of rc.evidenceSets || []) turnEvidence.set(e.source, e)
+              if (rc.status === 'TRUNCATED') turnTruncated = true
+              if (rc.block) extraObservationBlocks.push(rc.block)
+              extraObservationBlocks.push('CROSS-SOURCE INVESTIGATION: These are bounded, read-only source-level samples. A recent-items fallback does not establish relevance; no sample establishes global absence, actual billing, or current execution. Cite external claims from the fresh reference catalog and keep source, record, time and uncertainty distinct. Unavailable sources were not read. DATA: ' + JSON.stringify(require('../investigation/semanticAnswer').referenceCatalog(operationalInvestigation)))
+              investigationProgress({ state: 'evaluating', investigation: operationalInvestigation })
+            }
+          }
           const wanted = sourcesForPlan(plan, all)
           if (wanted !== null) all = wanted
           /**
@@ -1674,7 +1701,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   // rows this turn retrieved makes the wrong answer unrepresentable rather than merely
   // detectable, which is the same reason the plan itself is bought at the API layer.
   const usesSourceBoundCostAnswer = () => opts.ownerInvestigation === true && subscriptionMode &&
-    operationalInvestigation?.focus === 'cost' && operationalInvestigation.readOnly === true
+    operationalInvestigation?.focus === 'cost' && operationalInvestigation.readOnly === true && !operationalInvestigation.crossSourceReads?.length
   const answerPlanFormat = (composeOnly = false) => {
     // ⛔ A4-0A. Off (the default, and production today) ⇒ withReadArgs returns the schema
     // OBJECT ITSELF, so an A4-off turn cannot differ from f836534 by even a key order.
@@ -1778,7 +1805,7 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
   const semanticInvestigationSchema = schema => {
     if(opts.ownerInvestigation!==true||!subscriptionMode||operationalInvestigation?.readOnly!==true)return schema
     const findings=require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation,{message})
-    if(findings&&findings.kind!=='background')return schema
+    if(findings&&findings.kind!=='background'&&!operationalInvestigation.crossSourceReads?.length)return schema
     return require('../investigation/semanticAnswer').constrainSemanticSources(require('../investigation/semanticAnswer').withSemanticAnswer(schema), operationalInvestigation)
   }
   let llmResult = null
@@ -3594,7 +3621,8 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
     if (opts.ownerInvestigation === true && subscriptionMode && operationalInvestigation?.readOnly === true && classifyDemoOutcome({ mode: distilled.mode, intent: distilled.intent }).outcome !== 'clarification') {
       const semanticView = require('../investigation/semanticView')
       const findings = require('../investigation/sourceBoundFindings').renderSourceBoundFindings(operationalInvestigation, { message, plan: goalPlanObserved })
-      const needsReview = !findings || findings.kind==='background'
+      const crossSource = operationalInvestigation.crossSourceReads?.length > 0
+      const needsReview = !tel.answerCallSkipped && (!findings || findings.kind==='background' || crossSource)
       let draft = null
       let review=null
       if(needsReview){
@@ -3605,15 +3633,28 @@ async function runIntakePipeline (message, adapter, history, opts, requestId) {
       const reviewedReply = review && semanticView.renderSemanticAnswer(review, { message })
       const runtimeSummary = findings?.kind==='background' ? findings : null
       const costFindings = findings?.kind==='cost' ? findings : null
-      if (costFindings) {
+      const workFindings = findings?.kind==='work_failure' ? findings : null
+      if (crossSource) {
+        const base = costFindings?.text || workFindings?.text || runtimeSummary?.text || operationalBrief || ''
+        const statuses = operationalInvestigation.crossSourceReads.map(r => r.source + ': ' + r.state + ' (' + r.count + ')').join(', ')
+        const scope = /[\u3400-\u9fff]/.test(message)
+          ? '補充來源讀取狀態（限取樣，未能證明沒有其他紀錄）：' + statuses
+          : 'Additional source reads (bounded samples, not proof of absence): ' + statuses
+        view.reply = [base, scope, reviewedReply || semanticView.reviewUnavailable({ message })].filter(Boolean).join('\n\n')
+        operationalInvestigation.answerPresentation = { kind: 'cross_source_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: !!reviewedReply, machineEntailmentProven: false,
+          ...(findings ? { findings: { ...findings, text: undefined } } : {}) }
+      } else if (costFindings) {
         // A sampled call and current schedule definition already produce a
         // source-bound answer. No unused free-form draft or review is requested.
         // The complete source receipts stay in the saved investigation.
         view.reply = costFindings.text
         operationalInvestigation.answerPresentation = { kind: 'source_bound_cost_findings', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, reviewSkipped: 'deterministic_verified_findings', ...(tel.answerCallSkipped ? { answerCallSkipped: true } : {}), costFindings: { ...costFindings, text: undefined }, findings: { ...costFindings, text: undefined } }
-      } else if(findings?.kind==='work_failure'){
+      } else if(workFindings){
         view.reply=findings.text
         operationalInvestigation.answerPresentation={kind:'source_bound_work_findings',locale:/[\u3400-\u9fff]/.test(message)?'zh':'en',modelProseUsed:false,reviewSkipped:'deterministic_verified_findings',...(tel.answerCallSkipped ? {answerCallSkipped:true} : {}),findings:{...findings,text:undefined}}
+      } else if (runtimeSummary && tel.answerCallSkipped) {
+        view.reply = runtimeSummary.text
+        operationalInvestigation.answerPresentation = { kind: 'source_bound_background_inventory', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: false, reviewSkipped: 'deterministic_verified_findings', answerCallSkipped: true }
       } else if (reviewedReply) {
         view.reply = runtimeSummary ? runtimeSummary.text + '\n\n' + reviewedReply : reviewedReply
         operationalInvestigation.answerPresentation = { kind: 'source_bound_semantic_review', locale: /[\u3400-\u9fff]/.test(message) ? 'zh' : 'en', modelProseUsed: true, machineEntailmentProven: false }

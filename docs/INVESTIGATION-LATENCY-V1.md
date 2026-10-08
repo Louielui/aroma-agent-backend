@@ -31,8 +31,13 @@ retains its source references and uncertainty. It records that the answer call
 was skipped; it does not claim an answer model produced the fixed text.
 
 Missing frames, mixed-source requirements, requested actions or capabilities,
-follow-up comparisons, unavailable records, background inventories and general
-semantic investigations still use the established answer path. Final knowledge
+follow-up comparisons, unavailable records and general semantic investigations
+still use the established answer path. A fresh background inventory may now
+skip the main call and semantic review when its bounded live configuration
+rows have unique identities and the plan names only local operations. The
+prior 95,838 ms background enquiry spent about 37,471 ms on the main answer
+and 13,368 ms on evidence review; those are measured opportunities, not a
+guaranteed saving. Final knowledge
 and source-intent gates remain in place. This removes the observed redundant
 main call, not all provider calls: intent classification, goal decomposition and
 final gates may still use the selected subscription. New-version timing and
