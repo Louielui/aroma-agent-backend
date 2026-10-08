@@ -14,6 +14,19 @@ binding, saved result and Owner-facing report. The catalogue is explicitly
 bounded and cannot prove absence outside its coverage. Other enquiry focuses
 retain their existing prompt path until measured separately.
 
+The first live acceptance on `a9fbabd` preserved the answer and evidence but
+took 115,378 ms, versus 93,306 ms for the previous request. Its answer call
+took 66,771 ms and returned 8,275 output tokens, versus 43,060 ms and 4,620
+output tokens before. The operational sample had also grown from 11 to 28
+execution records. This is a measured regression, not an improvement claim.
+An additional bounded projection now removes repeated per-invocation findings
+from the answer prompt: it retains billing uncertainty and possible explicit
+links, reports sampled finding-kind counts, and relies on the already-sent
+scalar catalog for individual cited records. In the captured 28-record sample,
+the projected evaluation is 2,157 characters instead of 14,423. The full
+server-side investigation is unchanged. A further live result is needed to
+judge latency; model generation time can vary between otherwise similar runs.
+
 The invocation ledger labels source-intent, final-verification, public-query
 planning and recovery calls. The Owner summary displays provider-returned
 direct-input, cache-read, cache-creation and output token counters separately.
