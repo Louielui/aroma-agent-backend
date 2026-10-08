@@ -8,7 +8,7 @@ async function turn (t, { allowed = true, question = '之前有什麼會導致�
   Object.assign(process.env, { CHAT_BACKEND: 'codex-subscription', GOAL_DECOMPOSER: 'on', READ_ACCESS: 'on', CONTEXT_XIANGXIANG_OPERATIONS: 'on', XIANGXIANG_MEMORY: 'on', TURN_ROUTER: 'on', A4_KNOWLEDGE_ROUTING: 'on', MULTI_AI_ROUTER: 'off', DECISION_RECALL: 'off', CONVERSATION_RECALL: 'off' })
   const events = [], calls = [], reads = []
   const a = { providerName: 'claude', preflight: async () => {}, complete: async (p, options = {}) => {
-    calls.push({ p, schema: options.responseFormat?.name })
+    calls.push({ p, schema: options.responseFormat?.name, format: options.responseFormat })
     if (options.responseFormat?.name === 'investigation_semantic_review') return {billing:'claude-subscription',model:'claude-opus-5-5',text:JSON.stringify({reviews:[{id:'c1',decision:semanticDecision,reason:'matches_reference'}]})}
     if (options.responseFormat?.name === 'goal_plan') return { billing:'claude-subscription', model:'claude-opus-5-5', text:JSON.stringify({question_restated:question,investigation_focus:focus,investigation_reference:reference,facts:[{id:'f1',need:'Investigate own previous usage and work',operation:'xiangxiang_operations',entity:null,fields:[],necessity:'required'},...(unavailableFact?[{id:'f2',need:'Runtime regression for the same failure',operation:null,entity:null,fields:[],necessity:'required'}]:[])],joins:[]}) }
     return { billing: 'claude-subscription', model: 'claude-opus-5-5', text: JSON.stringify({ mode: 'chat', intent: 'question', reply: '已找到排程設定，但實際扣款原因未確認。', nextRead: null, answerPlan: null, executiveJudgment: judgment, investigationAnswer }) }
@@ -52,6 +52,21 @@ test('cost investigation sends one bounded source catalog instead of repeating f
  assert.doesNotMatch(answer.p,/receipt detail receipt detail/,'Unrelated oversized raw receipt stays out of the model prompt')
  assert.ok(answer.p.length<30000,'The cost-specific context stays bounded')
  assert.equal(x.result.investigation.sections[0].records[0].sourceFiles[0].path,large,'The full receipt remains available for server-side verification')
+})
+
+test('cost investigation requests source-bound claims without a second unused Answer Plan', async t => {
+ const cost = await turn(t, {focus:'cost'})
+ const costCall = cost.calls.find(c => c.format?.schema?.properties?.investigationAnswer)
+ assert.ok(costCall)
+ assert.equal(costCall.schema,'distill_with_cost_investigation')
+ assert.equal(costCall.format.schema.properties.answerPlan,undefined)
+ assert.equal(costCall.format.schema.required.includes('answerPlan'),false)
+ assert.ok(costCall.format.schema.properties.investigationAnswer)
+ assert.equal(cost.result.investigation.readOnly,true)
+ assert.equal(cost.result.investigation.billingConfirmed,false)
+ const other = await turn(t,{focus:'background',question:'What background jobs use which models?'})
+ const otherCall = other.calls.find(c => c.format?.schema?.properties?.investigationAnswer)
+ assert.ok(otherCall.format.schema.properties.answerPlan,'other investigation focuses retain their established plan contract')
 })
 
 test('reviewed prose cannot omit the observed runtime inventory from the actual saved Owner reply',async t=>{

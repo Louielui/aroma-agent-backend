@@ -33,4 +33,14 @@ function promptEvaluation (report) {
   }
 }
 
-module.exports = { promptEvaluation }
+// The cost investigation's final prose is produced from scalar-bound claims and
+// independently reviewed. Its legacy Answer Plan is generated but not used for
+// that Owner-facing answer. Keep every other schema field and read decision.
+function withoutAnswerPlan (schema) {
+  const out = structuredClone(schema)
+  delete out.properties.answerPlan
+  out.required = out.required.filter(key => key !== 'answerPlan')
+  return out
+}
+
+module.exports = { promptEvaluation, withoutAnswerPlan }
